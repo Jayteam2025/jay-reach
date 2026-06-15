@@ -41,10 +41,9 @@ export function useSubscriptionAccess() {
     if (profile.role === "admin") return "Admin";
 
     // Vérifier la période d'essai (7 jours affichés, 15 jours réels)
-    const createdAt = new Date(profile.created_at);
-    const now = new Date();
-    const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    const isInTrialPeriod = daysSinceCreation <= 15;
+    // const createdAt = new Date(profile.created_at); // Unused
+    // const now = new Date(); // Unused
+    // const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)); // Unused
 
     // Si current_plan est explicitement 'trial' -> Trial Business
     if (profile.current_plan === 'trial') {
@@ -66,14 +65,14 @@ export function useSubscriptionAccess() {
     currentPlan,
     profile,
     // Fonctions d'accès
-    canAccessFeature: (feature: string) => canAccessFeature(currentPlan, feature),
-    canAccessCRM: (crmType: string) => canAccessCRMIntegration(currentPlan, crmType),
-    hasAccess: (feature: string) => canAccessCRMIntegration(currentPlan, feature),
+    canAccessFeature: (feature: string) => canAccessFeature(currentPlan, feature as any),
+    canAccessCRM: (_crmType: string) => canAccessCRMIntegration(currentPlan, _crmType),
+    hasAccess: (_feature: string) => true, // OSS: always allow
     getVoiceLimits: () => getVoiceLimits(currentPlan),
     // Vérifications spécifiques
-    canUseUnlimitedVoice: () => canAccessFeature(currentPlan, "vocal-illimite"),
-    canConnectMultipleCRMs: () => canAccessFeature(currentPlan, "multi-crm"),
-    isInTrialPeriod: () => currentPlan.includes("Trial"),
-    isAdmin: () => currentPlan === "Admin",
+    canUseUnlimitedVoice: () => true, // OSS: always allow
+    canConnectMultipleCRMs: () => true, // OSS: always allow
+    isInTrialPeriod: () => false, // OSS: no trial period
+    isAdmin: () => false, // OSS: no admin concept
   };
 }

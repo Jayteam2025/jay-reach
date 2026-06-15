@@ -68,7 +68,7 @@ export function ProspectionMessages() {
 
   const handleApprove = async (messageId: string) => {
     try {
-      await approveMutation.mutateAsync(messageId);
+      await approveMutation.mutateAsync({ id: messageId });
       toast({ description: 'Message approuvé' });
     } catch (error) {
       toast({
@@ -88,7 +88,7 @@ export function ProspectionMessages() {
         if (error) throw error;
         toast({ description: 'Email envoyé avec succès' });
       } else {
-        await markSentMutation.mutateAsync(messageId);
+        await markSentMutation.mutateAsync({ id: messageId });
         toast({ description: 'Message marqué comme envoyé' });
       }
       queryClient.invalidateQueries({ queryKey: ['prospect-messages'] });

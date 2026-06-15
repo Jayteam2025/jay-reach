@@ -389,7 +389,10 @@ export function CompanyEnrichedView({
       if (!acc[msg.prospect_id]) {
         acc[msg.prospect_id] = [];
       }
-      acc[msg.prospect_id].push(msg);
+      const group = acc[msg.prospect_id];
+      if (group) {
+        group.push(msg);
+      }
       return acc;
     },
     {} as Record<string, ProspectMessage[]>,

@@ -25,7 +25,7 @@ interface SourceState {
 
 type ScrapingPhase = 'idle' | 'scraping_jobs' | 'done';
 
-const SOURCES: Record<string, Omit<SourceState, 'status' | 'progress' | 'resultCount'>> = {
+const SOURCES = {
   france_travail: {
     name: 'France Travail',
     icon: <Radio className="h-4 w-4" />,
@@ -36,7 +36,7 @@ const SOURCES: Record<string, Omit<SourceState, 'status' | 'progress' | 'resultC
     icon: <Search className="h-4 w-4" />,
     accentColor: 'bg-orange-500',
   },
-};
+} as const;
 
 function StatusIcon({ status }: { status: SourceStatus }) {
   switch (status) {
@@ -113,26 +113,32 @@ export function ScrapingDashboard({
   // Start scraping jobs (France Travail + Job Boards)
   const startScrapeJobs = useCallback(async () => {
     setPhase('scraping_jobs');
-    setSources((prev) => ({
-      ...prev,
-      france_travail: { ...prev.france_travail, status: 'in_progress', progress: 0 },
-      job_boards: { ...prev.job_boards, status: 'in_progress', progress: 0 },
-    }));
+    setSources((prev) => {
+      const france_travail = prev.france_travail ?? { ...SOURCES.france_travail, status: 'idle', progress: 0, resultCount: 0 };
+      const job_boards = prev.job_boards ?? { ...SOURCES.job_boards, status: 'idle', progress: 0, resultCount: 0 };
+      return {
+        france_travail: { ...france_travail, status: 'in_progress', progress: 0 },
+        job_boards: { ...job_boards, status: 'in_progress', progress: 0 },
+      };
+    });
 
     try {
       // Simulate progress
       const progressInterval = setInterval(() => {
-        setSources((prev) => ({
-          ...prev,
-          france_travail: {
-            ...prev.france_travail,
-            progress: Math.min(prev.france_travail.progress + 15, 90),
-          },
-          job_boards: {
-            ...prev.job_boards,
-            progress: Math.min(prev.job_boards.progress + 12, 90),
-          },
-        }));
+        setSources((prev) => {
+          const france_travail = prev.france_travail ?? { ...SOURCES.france_travail, status: 'idle', progress: 0, resultCount: 0 };
+          const job_boards = prev.job_boards ?? { ...SOURCES.job_boards, status: 'idle', progress: 0, resultCount: 0 };
+          return {
+            france_travail: {
+              ...france_travail,
+              progress: Math.min(france_travail.progress + 15, 90),
+            },
+            job_boards: {
+              ...job_boards,
+              progress: Math.min(job_boards.progress + 12, 90),
+            },
+          };
+        });
       }, 500);
 
       const { data, error } = await supabase.functions.invoke('scrape-job-signals');
@@ -146,31 +152,37 @@ export function ScrapingDashboard({
       const adzunaInserted = data?.results?.adzuna?.inserted || 0;
       const jobResults = data?.total_inserted || (ftInserted + adzunaInserted);
 
-      setSources((prev) => ({
-        ...prev,
-        france_travail: {
-          ...prev.france_travail,
-          status: data?.results?.france_travail?.success === false ? 'error' : 'done',
-          progress: 100,
-          resultCount: ftInserted,
-        },
-        job_boards: {
-          ...prev.job_boards,
-          status: 'done',
-          progress: 100,
-          resultCount: adzunaInserted,
-        },
-      }));
+      setSources((prev) => {
+        const france_travail = prev.france_travail ?? { ...SOURCES.france_travail, status: 'idle', progress: 0, resultCount: 0 };
+        const job_boards = prev.job_boards ?? { ...SOURCES.job_boards, status: 'idle', progress: 0, resultCount: 0 };
+        return {
+          france_travail: {
+            ...france_travail,
+            status: data?.results?.france_travail?.success === false ? 'error' : 'done',
+            progress: 100,
+            resultCount: ftInserted,
+          },
+          job_boards: {
+            ...job_boards,
+            status: 'done',
+            progress: 100,
+            resultCount: adzunaInserted,
+          },
+        };
+      });
 
       setTotalResults(jobResults);
       setPhase('done');
     } catch (err) {
       logger.error('Job scraping error', err);
-      setSources((prev) => ({
-        ...prev,
-        france_travail: { ...prev.france_travail, status: 'error', progress: 0 },
-        job_boards: { ...prev.job_boards, status: 'error', progress: 0 },
-      }));
+      setSources((prev) => {
+        const france_travail = prev.france_travail ?? { ...SOURCES.france_travail, status: 'idle', progress: 0, resultCount: 0 };
+        const job_boards = prev.job_boards ?? { ...SOURCES.job_boards, status: 'idle', progress: 0, resultCount: 0 };
+        return {
+          france_travail: { ...france_travail, status: 'error', progress: 0 },
+          job_boards: { ...job_boards, status: 'error', progress: 0 },
+        };
+      });
       toast({
         description: 'Erreur lors du scraping des offres: ' + (err as Error).message,
         variant: 'destructive',

@@ -10,7 +10,12 @@ import { ScrapingDashboard } from './ScrapingDashboard';
 import { LinkedInContactPanel } from './LinkedInContactPanel';
 import { CompanyEnrichedView } from './CompanyEnrichedView';
 import { JobPostingPanel } from './JobPostingPanel';
-import { useScoreSignals, useArchiveUnselectedSignals, useEnrichCompany } from '@/hooks/useScoreSignals';
+import {
+  useScoreSignals,
+  useEnrichCompany,
+  useDeleteUnselectedSignals,
+  useGenerateCompanyMessages
+} from '@/hooks/useScoreSignals';
 
 const TABS = [
   { key: 'all', label: 'Tout', icon: Radio },
@@ -89,11 +94,15 @@ export function ProspectionSignals() {
 
     for (let i = 0; i < ids.length; i++) {
       setEnrichmentProgress({ current: i + 1, total: ids.length });
+      const signalId = ids[i];
+      if (!signalId) continue;
       try {
-        const result = await enrichCompany.mutateAsync({ signalId: ids[i] });
-        companyGroupIds.push(result.company_group_id);
+        const result = await enrichCompany.mutateAsync({ signalId });
+        if (result.company_group_id) {
+          companyGroupIds.push(result.company_group_id);
+        }
       } catch (err) {
-        logger.error('Enrichment failed for signal', err, { signalId: ids[i] });
+        logger.error('Enrichment failed for signal', err, { signalId });
       }
     }
 
@@ -107,10 +116,13 @@ export function ProspectionSignals() {
 
     // Open first enriched company view
     if (companyGroupIds.length > 0) {
-      const firstSignal = signals.find(s => s.id === ids[0]);
-      const ed = firstSignal?.extracted_data as Record<string, unknown> | null;
-      const name = (ed?.company_name as string) || firstSignal?.company_name || 'Entreprise';
-      setEnrichedCompany({ groupId: companyGroupIds[0], name });
+      const firstGroupId = companyGroupIds[0];
+      if (firstGroupId) {
+        const firstSignal = signals.find(s => s.id === ids[0]);
+        const ed = firstSignal?.extracted_data as Record<string, unknown> | null;
+        const name = ((ed?.company_name as string) || firstSignal?.company_name || 'Entreprise') as string;
+        setEnrichedCompany({ groupId: firstGroupId, name });
+      }
     }
 
     setEnrichmentProgress(null);

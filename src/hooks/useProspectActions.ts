@@ -101,7 +101,7 @@ export function useCompanyProgress(companyGroupId: string | null) {
       //  - 1 action LinkedIn (auto-invite) si linkedin_url present
       //  - +1 par autre reseau social (field-sales uniquement)
       let total = 0;
-      for (const p of (profiles || []) as Array<{ linkedin_url: string | null; instagram_url: string | null; tiktok_url: string | null; persona: { slug: string } | null }>) {
+      for (const p of (profiles || []) as unknown as Array<{ linkedin_url: string | null; instagram_url: string | null; tiktok_url: string | null; persona: { slug: string } | null }>) {
         const slug = p.persona?.slug;
         if (slug === 'hr-decision-maker') total += 1;
         if (slug === 'director') total += 1;
@@ -126,7 +126,7 @@ export function useCompanyProgress(companyGroupId: string | null) {
         if (!seen.has(key)) {
           seen.add(key);
           if (!byProspect[a.prospect_id]) byProspect[a.prospect_id] = new Set();
-          byProspect[a.prospect_id].add(a.channel);
+          byProspect[a.prospect_id]?.add(a.channel);
         }
       }
 

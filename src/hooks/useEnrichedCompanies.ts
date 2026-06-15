@@ -138,7 +138,10 @@ export function denormalizeProfilesToCompanies(
       (personaGroups[slug] ||= []).push(p);
     }
     for (const slug of Object.keys(personaGroups)) {
-      personaGroups[slug].sort(sortByBouncer);
+      const group = personaGroups[slug];
+      if (group) {
+        group.sort(sortByBouncer);
+      }
     }
 
     const hrList = groupProfiles.filter((p) => p.target_category === 'hr').sort(sortByBouncer);
@@ -155,7 +158,7 @@ export function denormalizeProfilesToCompanies(
 
     companies.push({
       company_group_id: groupId,
-      company_name: groupProfiles[0].company_name,
+      company_name: groupProfiles[0]?.company_name ?? "",
       profiles: groupProfiles,
       hr: hrList[0] || null,
       director: directorList[0] || null,

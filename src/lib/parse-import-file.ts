@@ -61,14 +61,17 @@ export function detectFormatFromFilename(filename: string): ImportFormat | null 
 }
 
 function pickBestSheet(workbook: XLSX.WorkBook): string {
-  if (workbook.SheetNames.length === 1) return workbook.SheetNames[0];
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return "";
+  if (workbook.SheetNames.length === 1) return firstSheetName;
 
   // Heuristique : la feuille avec le plus de lignes structurées (cellules
   // non vides sur les 5 premières colonnes des 15 premières lignes).
-  let bestName = workbook.SheetNames[0];
+  let bestName = firstSheetName;
   let bestScore = 0;
   for (const name of workbook.SheetNames) {
     const ws = workbook.Sheets[name];
+    if (!ws) continue;
     const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
     let score = 0;
     for (let i = 0; i < Math.min(rows.length, 15); i++) {
@@ -128,6 +131,9 @@ async function parseTabular(file: File, format: ParsedTabular["format"]): Promis
   const workbook = XLSX.read(buffer, { type: "array" });
   const selected = pickBestSheet(workbook);
   const ws = workbook.Sheets[selected];
+  if (!ws) {
+    throw new Error(`Sheet "${selected}" not found in workbook`);
+  }
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
   const { headers, sample_rows, header_index } = rowsToHeadersAndSample(rows);
 
@@ -213,7 +219,8 @@ export async function parseImportFile(file: File): Promise<ParsedFile> {
     };
   }
 
-  return parseTabular(file, format);
+  // At this point, format must be one of: "xlsx" | "xls" | "csv" | "tsv"
+  return parseTabular(file, format as Exclude<ImportFormat, "pdf" | "docx" | "text_paste">);
 }
 
 export function parsePastedText(text: string): Promise<ParsedFreetext> {

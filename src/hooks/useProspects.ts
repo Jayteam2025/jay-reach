@@ -162,11 +162,6 @@ interface MoveProspectPayload {
   targetGroupId: string | null;
 }
 
-interface ProspectsCacheData {
-  pages?: Array<{ data: Prospect[] }>;
-  pageParams?: unknown[];
-}
-
 export function useMoveProspect() {
   const queryClient = useQueryClient();
 

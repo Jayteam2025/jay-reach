@@ -155,7 +155,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
   }, [flagsByRow, rows.length, selected.size]);
 
   const cost = useMemo(() => {
-    const selectedRows = Array.from(selected).map((i) => rows[i]).filter(Boolean);
+    const selectedRows = Array.from(selected).map((i) => rows[i]).filter((r): r is PreviewRow => Boolean(r));
     return estimateImportCost(selectedRows);
   }, [selected, rows]);
 
@@ -180,7 +180,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
     const selectedRows = Array.from(selected)
       .sort((a, b) => a - b)
       .map((i) => rows[i])
-      .filter(Boolean);
+      .filter((r): r is PreviewRow => Boolean(r));
     onCommit(selectedRows);
   }
 
@@ -259,7 +259,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
                   className={cn(
                     "border-b border-border/50 hover:bg-violet-500/5",
                     !isSelected && "opacity-50",
-                    flags.doNotOutreachReasons && "bg-red-500/5"
+                    flags?.doNotOutreachReasons && "bg-red-500/5"
                   )}
                 >
                   <td className="px-3 py-2">
@@ -287,7 +287,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
-                      {flags.alreadyEnriched ? (
+                      {flags?.alreadyEnriched ? (
                         <Badge
                           variant="outline"
                           className="text-xs gap-1 text-emerald-700 dark:text-emerald-400 border-emerald-400"
@@ -295,7 +295,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
                         >
                           <Database className="w-3 h-3" /> déjà enrichi
                         </Badge>
-                      ) : flags.existsInBase && (
+                      ) : flags?.existsInBase && (
                         <Badge
                           variant="outline"
                           className="text-xs gap-1 text-amber-700 dark:text-amber-400 border-amber-400"
@@ -304,7 +304,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
                           <Database className="w-3 h-3" /> base
                         </Badge>
                       )}
-                      {flags.needsLinkedinSearch && (
+                      {flags?.needsLinkedinSearch && (
                         <Badge
                           variant="outline"
                           className="text-xs gap-1"
@@ -313,11 +313,11 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
                           <Linkedin className="w-3 h-3" /> à chercher
                         </Badge>
                       )}
-                      {flags.doNotOutreachReasons && (
+                      {flags?.doNotOutreachReasons && (
                         <Badge
                           variant="outline"
                           className="text-xs gap-1 text-red-700 dark:text-red-400 border-red-400"
-                          title={flags.doNotOutreachReasons.map(formatDoNotOutreachReason).join(", ")}
+                          title={flags?.doNotOutreachReasons.map(formatDoNotOutreachReason).join(", ")}
                         >
                           <ShieldAlert className="w-3 h-3" /> stop
                         </Badge>

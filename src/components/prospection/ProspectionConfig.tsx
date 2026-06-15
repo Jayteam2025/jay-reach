@@ -65,7 +65,7 @@ export function ProspectionConfig() {
   const { data: personas } = useIcpPersonas();
   const [category, setCategory] = useState<ProspectTargetCategory>('hr');
   const channels = CHANNELS_BY_CATEGORY[category];
-  const [channel, setChannel] = useState<ProspectChannel>(channels[0]);
+  const [channel, setChannel] = useState<ProspectChannel>(channels[0] ?? 'email');
 
   // Categories dynamiques derivees des personas actifs du workspace. Label vient
   // de persona.label, value est le target_category legacy mappe (transition V1).
@@ -90,7 +90,10 @@ export function ProspectionConfig() {
   // Reset channel quand on change de catégorie (si le canal actif n'existe plus)
   useEffect(() => {
     if (!CHANNELS_BY_CATEGORY[category].includes(channel)) {
-      setChannel(CHANNELS_BY_CATEGORY[category][0]);
+      const firstChannel = CHANNELS_BY_CATEGORY[category][0];
+      if (firstChannel) {
+        setChannel(firstChannel);
+      }
     }
   }, [category, channel]);
 
@@ -166,7 +169,7 @@ function CategoryPanel({
   onChannelChange,
 }: CategoryPanelProps) {
   const channels = CHANNELS_BY_CATEGORY[category];
-  const activeChannel = channels.includes(channel) ? channel : channels[0];
+  const activeChannel = channels.includes(channel) ? channel : (channels[0] ?? 'email');
   const template = templates.get(templateKey(category, activeChannel));
 
   return (

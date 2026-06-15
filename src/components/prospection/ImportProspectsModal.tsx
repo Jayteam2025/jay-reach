@@ -152,7 +152,7 @@ export function ImportProspectsModal({
         try {
           fileHash = await computeFileHash(file);
         } catch (err) {
-          logger.warn("[IMPORT_MODAL] hash failed", err);
+          logger.warn("[IMPORT_MODAL] hash failed");
         }
       }
 

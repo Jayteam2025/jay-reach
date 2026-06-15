@@ -94,8 +94,8 @@ function parseContactFull(raw: string): {
   if (!trimmed) return {};
 
   const roleMatch = trimmed.match(/^(.+?)\s*\(([^)]+)\)/);
-  const namePart = roleMatch ? roleMatch[1].trim() : trimmed;
-  const role = roleMatch ? roleMatch[2].trim() : undefined;
+  const namePart = roleMatch?.[1]?.trim() ?? trimmed;
+  const role = roleMatch?.[2]?.trim();
 
   const tokens = namePart.split(/\s+/);
   if (tokens.length === 0) return { role };
@@ -136,6 +136,7 @@ export function applyMapping(
 
     for (let i = 0; i < headers.length; i++) {
       const header = headers[i];
+      if (header === undefined) continue;
       const canonical = columnMapping[header];
       const value = trimToString(rawRow[i]);
 

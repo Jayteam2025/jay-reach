@@ -1,7 +1,8 @@
 // Logique de restriction d'accès selon le plan d'abonnement
 // Mis à jour pour le sprint Autonomie & Viralité (janvier 2026)
 
-export const ENABLE_SUBSCRIPTION_RESTRICTIONS = true;
+// OSS: No-op paywall - all features accessible
+export const ENABLE_SUBSCRIPTION_RESTRICTIONS = false;
 
 // Types pour les fonctionnalités
 export type PlanFeature =
@@ -90,7 +91,7 @@ function normalizePlanName(plan: string): string {
 // Obtenir la configuration d'un plan
 export function getPlanConfig(plan: string): PlanConfig {
   const normalizedPlan = normalizePlanName(plan);
-  return PLAN_CONFIGS[normalizedPlan] || PLAN_CONFIGS.Free;
+  return PLAN_CONFIGS[normalizedPlan] ?? (PLAN_CONFIGS["Free"] as PlanConfig);
 }
 
 // Vérifier l'accès à une feature
