@@ -376,7 +376,7 @@ export function CompanyEnrichedView({
 
       if (messageError) throw messageError;
 
-      return { profiles, messages: messages as ProspectMessage[] };
+      return { profiles, messages: messages };
     },
   });
 

@@ -37,7 +37,7 @@ export function useCompanyMessages(company: EnrichedCompany) {
         .from('prospect_messages')
         .select('id, prospect_id, channel, subject, body, icebreaker, status')
         .in('prospect_id', profileIds);
-      return (data || []) as ProspectMessage[];
+      return (data || []);
     },
   });
 

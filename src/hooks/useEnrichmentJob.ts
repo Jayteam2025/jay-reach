@@ -65,7 +65,7 @@ export function useEnrichmentJob(): UseEnrichmentJobReturn {
         return false;
       }
 
-      setJob(data as EnrichmentJobState);
+      setJob(data);
       // Stop le polling des que le job est en etat terminal
       return data.status !== 'completed' && data.status !== 'failed';
     };

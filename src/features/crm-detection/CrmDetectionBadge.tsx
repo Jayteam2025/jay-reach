@@ -54,7 +54,7 @@ export function CrmDetectionBadge({ detection, onRedetect, isRedetecting }: Prop
     Icon = DatabaseZap;
     iconClass = "opacity-40";
   } else {
-    variant = detection.crm_confidence as Variant;
+    variant = detection.crm_confidence;
     label = detection.crm_name;
     Icon = Database;
     iconClass = "";

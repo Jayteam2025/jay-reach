@@ -27,7 +27,7 @@ export function useActiveProspectBatches() {
         .order("submitted_at", { ascending: false });
 
       if (error) throw error;
-      return (data || []) as ActiveProspectBatch[];
+      return (data || []);
     },
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,

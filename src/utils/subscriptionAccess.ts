@@ -91,7 +91,7 @@ function normalizePlanName(plan: string): string {
 // Obtenir la configuration d'un plan
 export function getPlanConfig(plan: string): PlanConfig {
   const normalizedPlan = normalizePlanName(plan);
-  return PLAN_CONFIGS[normalizedPlan] ?? (PLAN_CONFIGS["Free"] as PlanConfig);
+  return PLAN_CONFIGS[normalizedPlan] ?? PLAN_CONFIGS.Free!;
 }
 
 // Vérifier l'accès à une feature

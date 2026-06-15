@@ -37,7 +37,6 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-        continue-on-error: true
 
       - name: Type check
         run: pnpm typecheck
@@ -64,13 +63,12 @@ jobs:
         with:
           deno-version: vx.x.x
 
-      - name: Deno check (sample functions)
+      - name: Deno check (all functions)
         run: |
-          # Check a few sample functions to verify Deno module resolution
-          for f in supabase/functions/generate-prospect-messages-bulk/index.ts \
-                   supabase/functions/score-prospect/index.ts; do
+          # Check all Deno functions in supabase/functions
+          for f in supabase/functions/*/index.ts; do
             if [ -f "$f" ]; then
               echo "Checking $f"
-              env DENO_NO_PACKAGE_JSON=1 deno check "$f" || true
+              env DENO_NO_PACKAGE_JSON=1 deno check "$f"
             fi
           done

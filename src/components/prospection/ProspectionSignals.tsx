@@ -120,7 +120,7 @@ export function ProspectionSignals() {
       if (firstGroupId) {
         const firstSignal = signals.find(s => s.id === ids[0]);
         const ed = firstSignal?.extracted_data as Record<string, unknown> | null;
-        const name = ((ed?.company_name as string) || firstSignal?.company_name || 'Entreprise') as string;
+        const name = ((ed?.company_name as string) || firstSignal?.company_name || 'Entreprise');
         setEnrichedCompany({ groupId: firstGroupId, name });
       }
     }

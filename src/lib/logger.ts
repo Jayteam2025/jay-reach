@@ -15,15 +15,21 @@
  *   logger.error('Error message', error, { userId: '123' });
  */
 
+ 
 // Sentry integration (optional - stub in OSS)
 const Sentry = (() => {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("@sentry/react");
   } catch {
     return {
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       captureException: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       captureMessage: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       setUser: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       addBreadcrumb: () => {},
     };
   }
