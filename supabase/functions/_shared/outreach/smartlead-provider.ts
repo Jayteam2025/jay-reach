@@ -2,7 +2,7 @@
 // Resout le campaign_id depuis smartlead_campaigns par persona_id uniquement,
 // puis push via l'API Smartlead.
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { addLeadsToCampaign, setCampaignStatus, type SmartleadLead } from "../smartlead.ts";
 import type { OutreachLead, OutreachProvider, OutreachProviderConfig, OutreachPushResult } from "./types.ts";
 

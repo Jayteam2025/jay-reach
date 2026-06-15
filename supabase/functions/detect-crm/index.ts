@@ -1,6 +1,6 @@
 // supabase/functions/detect-crm/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractUserId } from "../_shared/subscription-access.ts";
 import { resolveDomain } from "../_shared/crm-detection/domain-resolver.ts";

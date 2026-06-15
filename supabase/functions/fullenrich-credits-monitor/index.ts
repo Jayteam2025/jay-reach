@@ -15,7 +15,7 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createResendService } from "../_shared/resend.ts";
 import { resolveProviderForDefaultWorkspace } from "../_shared/providers/registry.ts";
 

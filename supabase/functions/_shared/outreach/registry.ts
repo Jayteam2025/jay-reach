@@ -8,7 +8,7 @@
 // La cle API est resolue via resolveProvider (Vault > env fallback) plutot que
 // d'etre lue depuis Deno.env dans _shared/smartlead.ts.
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { OutreachProvider, OutreachProviderConfig } from "./types.ts";
 import { smartleadProvider } from "./smartlead-provider.ts";
 import { resolveProvider } from "../providers/registry.ts";

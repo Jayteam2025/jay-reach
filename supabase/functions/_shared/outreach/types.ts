@@ -2,7 +2,7 @@
 // Chaque provider implemente OutreachProvider. send-via-smartlead resout
 // le provider actif pour (workspace_id, channel) via workspace_outreach_providers.
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export interface OutreachLead {
   prospect_id: string;

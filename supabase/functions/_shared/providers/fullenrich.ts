@@ -40,7 +40,7 @@ export const fullenrichEnricher: EnrichmentProvider = {
       last_name: c.lastName ?? '',
       company_name: c.companyName ?? '',
       linkedin_url: c.linkedinUrl ?? undefined,
-      enrich_fields: ['contact.work_emails'] as string[],
+      enrich_fields: ['contact.work_emails'] as Array<'contact.work_emails' | 'contact.phones' | 'contact.personal_emails'>,
     })).filter((c) => c.first_name && c.last_name && (c.linkedin_url || c.company_name));
 
     if (feContacts.length === 0) {

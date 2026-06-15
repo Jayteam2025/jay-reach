@@ -2,7 +2,7 @@
 // Pour V1 Jay : un user = un seul workspace (membership 1-1).
 // Cache in-memory pendant l'execution de l'edge function.
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cache = new Map<string, string | null>();
 

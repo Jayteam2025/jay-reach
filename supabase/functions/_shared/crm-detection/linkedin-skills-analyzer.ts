@@ -6,7 +6,7 @@
 // dans leurs skills LinkedIn ou leur titre actuel, c'est un signal tres fort
 // qu'il s'agit du CRM utilise en interne.
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { findCrmsInText } from "./jobs-analyzer.ts";
 
 export type LinkedInScanResult = {

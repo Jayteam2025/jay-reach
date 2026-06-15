@@ -72,7 +72,7 @@ async function getEncryptionKey(): Promise<CryptoKey> {
     throw new Error(`Invalid key length: expected 32 bytes, got ${keyBytes.length}`);
   }
 
-  return await crypto.subtle.importKey('raw', keyBytes, { name: ALGORITHM }, false, [
+  return await crypto.subtle.importKey('raw', keyBytes as BufferSource, { name: ALGORITHM }, false, [
     'encrypt',
     'decrypt',
   ]);

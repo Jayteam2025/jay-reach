@@ -18,7 +18,7 @@
  * existants pour ce company_name → on extrait le domain dominant.
  */
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildEmail,
   detectPattern,
@@ -132,6 +132,7 @@ export function buildDeducedResult(
   const status = tier === "high" ? "DEDUCED_HIGH" : "DEDUCED_MEDIUM";
 
   return {
+    input: contact,
     custom: contact.custom,
     contact_info: email
       ? {

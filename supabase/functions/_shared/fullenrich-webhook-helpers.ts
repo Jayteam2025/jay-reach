@@ -10,7 +10,7 @@
  * fullenrich-webhook pour le receiver cote DB.
  */
 
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { FullEnrichJobResult } from "./fullenrich.ts";
 
 /**

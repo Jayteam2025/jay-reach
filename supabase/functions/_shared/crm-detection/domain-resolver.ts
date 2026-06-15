@@ -1,5 +1,5 @@
 // supabase/functions/_shared/crm-detection/domain-resolver.ts
-import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { DomainResult, CompanyMetadata } from "./types.ts";
 
 const DOMAIN_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;

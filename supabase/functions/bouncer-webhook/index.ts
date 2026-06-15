@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseWebhookPayload, downloadResults, BouncerError, BouncerWebhookRequestSchema } from "../_shared/bouncer.ts";
 import { resolveProviderForDefaultWorkspace } from "../_shared/providers/registry.ts";
 import { validateOrRespond } from "../_shared/validation.ts";
