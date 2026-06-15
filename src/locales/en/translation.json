@@ -1,0 +1,2821 @@
+{
+  "common": {
+    "languages": {
+      "fr": "French",
+      "en": "English",
+      "nl": "Dutch"
+    },
+    "contact": {
+      "email": "Email:",
+      "phone": "Phone:"
+    }
+  },
+  "welcome": "Welcome to the website!",
+  "crmRequest": {
+    "validation": {
+      "selectCrm": "Please select a CRM or enter a custom CRM",
+      "enterCrmName": "Please enter your CRM name"
+    },
+    "toasts": {
+      "success": "Request sent successfully!",
+      "error": "Error sending request. Please try again."
+    },
+    "header": {
+      "title": "New CRM Request",
+      "requestTitle": "Request a new CRM",
+      "subtitle": "We will review your request and contact you shortly",
+      "description": "Your CRM is not integrated yet? Ask us and we'll add it to our platform!"
+    },
+    "success": {
+      "title": "Request sent successfully!",
+      "message": "We have received your CRM integration request. Our team will review it and get back to you as soon as possible.",
+      "backToDashboard": "Back to Dashboard",
+      "anotherRequest": "Make another request",
+      "needDiscuss": "Need to discuss?",
+      "bookAppointment": "Book an appointment with our team"
+    },
+    "form": {
+      "title": "Request form",
+      "description": "Select your CRM from the list or enter it manually if you don't find it",
+      "selectCrm": "Select your CRM *",
+      "customCrmCheckbox": "My CRM is not in the list (manual entry)",
+      "customCrmLabel": "Your CRM name *",
+      "customCrmPlaceholder": "Enter your CRM name",
+      "firstName": "First name",
+      "firstNamePlaceholder": "Your first name",
+      "lastName": "Last name",
+      "lastNamePlaceholder": "Your last name",
+      "email": "Email",
+      "emailPlaceholder": "your.email@example.com",
+      "phone": "Phone",
+      "phonePlaceholder": "+33 6 12 34 56 78",
+      "company": "Company name",
+      "companyPlaceholder": "Company name",
+      "employees": "Number of employees",
+      "employeesPlaceholder": "e.g., 50",
+      "message": "Message (optional)",
+      "messagePlaceholder": "Any additional information to share?",
+      "submit": "Send request",
+      "submitting": "Sending...",
+      "or": "or"
+    },
+    "back": "Back",
+    "info": {
+      "title": "Why request a CRM?",
+      "point1": "We regularly add new CRMs to our platform",
+      "point2": "Your request helps us prioritize important integrations for our users",
+      "point3": "We will contact you as soon as your CRM is available"
+    }
+  },
+  "stats": {
+    "title": "My performance",
+    "subtitle": "Track your activity with Jay",
+    "period": {
+      "thisMonth": "This month",
+      "lastMonth": "Last month",
+      "allTime": "All"
+    },
+    "actionsProcessed": "Actions processed",
+    "actionsHelp": "vocals processed by Jay",
+    "startUsing": "Start using Jay",
+    "timeSaved": "Time saved",
+    "timeSavedHelp": "thanks to your {{count}} actions",
+    "noTimeSaved": "No savings yet",
+    "teamRank": "Team ranking",
+    "outOf": "out of {{total}} members",
+    "noRankYet": "Not ranked yet",
+    "emptyState": "Record your first vocal to see your statistics appear here."
+  },
+  "statistics": {
+    "title": "Statistics",
+    "subtitle": "Track your activity with Jay",
+    "myStats": "My statistics",
+    "teamStats": "My team",
+    "vocals": "Vocals",
+    "vocalsHelp": "processed by Jay",
+    "startUsing": "Start using Jay",
+    "timeSaved": "Time saved",
+    "timeSavedHelp": "thanks to your actions",
+    "myRanking": "My ranking",
+    "outOf": "out of {{total}} members",
+    "noRankYet": "Not ranked yet",
+    "teamVocals": "Team vocals",
+    "savings": "Savings",
+    "setRate": "Set rate",
+    "rankMessage": "You are",
+    "outOfTeam": "out of",
+    "members": "members",
+    "keepGoing": "Keep using Jay to climb the leaderboard.",
+    "emptyState": "Record your first vocal to see your statistics appear here."
+  },
+  "teamOverview": {
+    "title": "My team",
+    "seats": "seats",
+    "viewDetails": "View details",
+    "vocals": "Vocals",
+    "timeSaved": "Time saved",
+    "savings": "Savings",
+    "setRate": "Set rate",
+    "thisMonth": "this month",
+    "inSettings": "in Settings",
+    "top3": "Top 3"
+  },
+  "landing": {
+    "hero": {
+      "badge": "50 free voice notes — no credit card",
+      "title": {
+        "line1": "Say goodbye",
+        "line2": "to CRM data entry"
+      },
+      "subtitle": "Send a WhatsApp voice note after your meeting. Jay updates your CRM in seconds.",
+      "cta": {
+        "start": "Try it",
+        "demo": "Watch the demo"
+      },
+      "imageAlt": "Salesperson using Jay"
+    },
+    "videoDemo": {
+      "title": "See Jay in action",
+      "subtitle": "47 seconds to understand how Jay turns your voice notes into CRM actions.",
+      "muted": "Muted",
+      "unmuted": "Sound on"
+    },
+    "painPoints": {
+      "title": "Salespeople deserve better",
+      "subtitle": "The reality of the field, told by those who live it every day.",
+      "painPoint1": {
+        "quote": "I feel like a secretary rather than a salesperson; admin takes 80% of my time when I should be closing.",
+        "author": "Field sales rep, SMB"
+      },
+      "painPoint2": {
+        "quote": "My CRM is a graveyard of outdated data because the entry process is too complex.",
+        "author": "Sales Director, mid-market"
+      },
+      "painPoint3": {
+        "quote": "They want me on the field, but they want real-time reports. It's physically impossible without an assistant.",
+        "author": "Business Developer, startup"
+      },
+      "painPoint4": {
+        "quote": "I lose opportunities because my follow-up emails go out too late.",
+        "author": "Account Executive, SaaS"
+      },
+      "metrics": {
+        "metric1": {
+          "label": "less admin time"
+        },
+        "metric2": {
+          "label": "CRM adoption"
+        },
+        "metric3": {
+          "label": "conversion rate"
+        }
+      }
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "subtitle": "Three steps. Zero apps to install.",
+      "step1": {
+        "title": "Sign up via WhatsApp",
+        "description": "Scan a QR code or send \"Hi\" to Jay. Connect your CRM in 2 minutes."
+      },
+      "step2": {
+        "title": "Send a voice note",
+        "description": "Tell Jay about your meeting like you'd tell a colleague. Jay understands context and extracts actions."
+      },
+      "step3": {
+        "title": "CRM updated",
+        "description": "Contacts, opportunities, notes, appointments — everything is created automatically in your CRM."
+      }
+    },
+    "testimonials": {
+      "title": "They use Jay every day"
+    },
+    "partnerLogos": {
+      "subtitle": "They trust us"
+    },
+    "useCases": {
+      "title": "Use cases by industry",
+      "subtitle": "Jay adapts to every sector. Discover the concrete benefits for your business.",
+      "tryCta": "Try it for my industry",
+      "autoGenerated": "Jay automatically generates",
+      "backHome": "Back",
+      "backToSectors": "All sectors",
+      "otherSectors": "Other sectors",
+      "discover": "Discover",
+      "hero": {
+        "badge": "One voice note. Done.",
+        "title": "Jay adapts to your industry",
+        "subtitle": "Whatever your business, a voice message is all it takes to update your CRM. Discover the concrete benefits for your industry.",
+        "stat1Value": "80%",
+        "stat1Label": "less admin time",
+        "stat2Value": "x10",
+        "stat2Label": "CRM adoption",
+        "stat3Value": "+20%",
+        "stat3Label": "conversion rate"
+      },
+      "howItWorks": {
+        "stepLabel": "Step",
+        "step1Title": "Dictate your report",
+        "step1Desc": "Send a WhatsApp voice note after your meeting, visit or call.",
+        "step2Title": "Jay analyzes and structures",
+        "step2Desc": "AI identifies contacts, actions and dates automatically.",
+        "step3Title": "Your CRM is up to date",
+        "step3Desc": "Notes, tasks and follow-ups created in your CRM in seconds."
+      },
+      "cta": {
+        "title": "Your industry, your advantage",
+        "subtitle": "50 free reports. No credit card. Compatible with all CRMs."
+      },
+      "scenarioTitle": "Voice note example",
+      "whyJay": {
+        "title": "Why choose Jay?",
+        "point1Title": "30 seconds, not 30 minutes",
+        "point1Desc": "A WhatsApp voice note is all it takes. No need to open the CRM, find the right contact, or fill in fields. Jay does it all automatically.",
+        "point2Title": "Works with your CRM",
+        "point2Desc": "Salesforce, HubSpot, Pipedrive, Zoho, Dynamics 365, Odoo, Teamleader... Jay integrates natively in 2 minutes.",
+        "point3Title": "AI that understands your industry",
+        "point3Desc": "Jay recognizes your sector's technical vocabulary and structures data intelligently. No complex setup required.",
+        "point4Title": "Secure and compliant",
+        "point4Desc": "ISO 27001, GDPR, AI Act compliant. Encrypted data hosted in the EU. Voice notes are deleted after processing."
+      },
+      "crmDemo": {
+        "title": "YOUR CRM",
+        "subtitle": "Contact card",
+        "updated": "Updated",
+        "completion": "Card completion"
+      },
+      "crm": {
+        "status": "Deal status",
+        "nextStep": "Next step",
+        "note": "Visit note",
+        "amount": "Estimated amount"
+      },
+      "illustration": {
+        "noteCreated": "Visit note created",
+        "followupPlanned": "Follow-up scheduled",
+        "dealUpdated": "Deal updated",
+        "reportCreated": "Report created",
+        "tasksCreated": "Tasks created",
+        "siteReport": "Site report created",
+        "callScheduled": "Call scheduled",
+        "auditSaved": "Audit saved",
+        "dataCaptured": "Technical data captured",
+        "visitReport": "Visit report created",
+        "nextVisit": "Next visit planned",
+        "sampleRequested": "Sample request noted",
+        "orderLogged": "Order logged",
+        "deliveryPlanned": "Delivery planned",
+        "briefCaptured": "Brief captured",
+        "meetingNote": "Meeting note created",
+        "quoteSent": "Quote follow-up tracked"
+      },
+      "realestate": {
+        "title": "Real Estate",
+        "subtitle": "Agencies, developers, independent agents",
+        "headline": "Turn every visit into a concrete opportunity",
+        "adv1Value": "2 hours saved per day",
+        "adv1Label": "No more manual data entry after each visit or call",
+        "adv2Value": "Pipeline always up to date",
+        "adv2Label": "Real-time visibility on every opportunity and follow-up",
+        "adv3Value": "+30% conversion rate",
+        "adv3Label": "No prospect forgotten thanks to automatic reminders",
+        "quote": "Before Jay, I spent my evenings filling in my CRM. Now, 30 seconds of voice note after a visit and it's done.",
+        "quoteAuthor": "Marie D., Real Estate Agent",
+        "why1Title": "Dictate between viewings",
+        "why1Desc": "Leaving a property? 30 seconds of voice note is all it takes. No more scribbling notes or waiting until evening to update the CRM.",
+        "why2Title": "No prospect forgotten",
+        "why2Desc": "Jay automatically schedules follow-ups and revisits. Every potential buyer stays in your pipeline.",
+        "why3Title": "Pipeline always up to date for the agency",
+        "why3Desc": "Your agency manager sees every mandate and visit progress in real time without bothering you.",
+        "why4Title": "Real estate vocabulary built-in",
+        "why4Desc": "Jay understands EPC, exclusive mandate, offer, square footage and structures your data correctly.",
+        "scenario": "Visit with Mr. Dupont for the 3-bed on Rue de la Paix. Very interested, wants to come back Monday with his wife. Budget confirmed 320K.",
+        "crm": {
+          "contactName": "Mr. Dupont",
+          "contactRole": "Buyer — 3-bed Rue de la Paix",
+          "f1": "Visit done — very interested",
+          "f2": "Second visit Monday with spouse",
+          "f3": "Budget 320K confirmed, financing ok",
+          "f4": "€320,000"
+        }
+      },
+      "consulting": {
+        "title": "Consulting",
+        "subtitle": "Consulting firms, freelancers, IT services",
+        "headline": "Capture every client decision before it fades",
+        "adv1Value": "Zero information lost",
+        "adv1Label": "Every decision and commitment captured instantly",
+        "adv2Value": "Team always aligned",
+        "adv2Label": "Colleagues see CRM updates in real time",
+        "adv3Value": "Client reports 3x faster",
+        "adv3Label": "Structured reports generated in seconds after every meeting",
+        "quote": "Between steering committees and workshops, I used to lose half the information. Jay captures everything while I move on to my next meeting.",
+        "quoteAuthor": "Thomas R., Senior Consultant",
+        "why1Title": "Capture everything between meetings",
+        "why1Desc": "Steering committee, workshop, client call: dictate your debrief and move on. Jay structures everything for the CRM.",
+        "why2Title": "Team always aligned",
+        "why2Desc": "Colleagues see decisions and commitments in real time. No more information lost between team members.",
+        "why3Title": "Client reports in seconds",
+        "why3Desc": "Jay automatically generates structured reports. No more hours spent writing at the end of the day.",
+        "why4Title": "Multi-project with zero effort",
+        "why4Desc": "Jay handles multiple client projects in parallel. Each voice note is linked to the right contact and project.",
+        "scenario": "Carrefour project steering committee done. Lot 2 validated, next delivery April 15th. Call back IT director Thursday.",
+        "crm": {
+          "contactName": "Jean Moreau",
+          "contactRole": "IT Director — Carrefour",
+          "f1": "Lot 2 validated in committee",
+          "f2": "Delivery Apr 15, call Thursday",
+          "f3": "IT director GO, next step lot 3",
+          "f4": "€85,000 / year"
+        }
+      },
+      "construction": {
+        "title": "Construction",
+        "subtitle": "Construction companies, project managers, contractors",
+        "headline": "From the job site to CRM, without going to the office",
+        "adv1Value": "100% mobile, 100% voice",
+        "adv1Label": "Update CRM from the construction site or the car",
+        "adv2Value": "Full management visibility",
+        "adv2Label": "Management tracks project progress without waiting",
+        "adv3Value": "CRM adoption x10",
+        "adv3Label": "Field teams finally use the CRM on a daily basis",
+        "quote": "My project managers never opened the CRM. With Jay, they dictate a voice note and everything is up to date.",
+        "quoteAuthor": "Pierre L., Construction Director",
+        "why1Title": "From job site to CRM, no office needed",
+        "why1Desc": "Dictate from the construction site or the car. No PC required to update project progress.",
+        "why2Title": "Instant field adoption",
+        "why2Desc": "Your project managers will never open a CRM. But a WhatsApp voice note? They know how.",
+        "why3Title": "Management informed in real time",
+        "why3Desc": "Every site's progress syncs automatically. No more weekly status meetings needed.",
+        "why4Title": "Construction vocabulary built-in",
+        "why4Desc": "Jay understands shell, fit-out, lots, trades, handover and structures your site data.",
+        "scenario": "Shell completed on the Leblanc site. Plumber starts Monday, client meeting Friday. Send joinery quote.",
+        "crm": {
+          "contactName": "Leblanc Client",
+          "contactRole": "Residential site — Main lot",
+          "f1": "Shell completed",
+          "f2": "Plumber Mon, client meeting Fri",
+          "f3": "Send joinery quote before Friday",
+          "f4": "€145,000"
+        }
+      },
+      "energy": {
+        "title": "Energy",
+        "subtitle": "Suppliers, installers, energy auditors",
+        "headline": "Document every field audit in real time",
+        "adv1Value": "Quotes 2x faster",
+        "adv1Label": "Technical data captured right from the field visit",
+        "adv2Value": "+25% closing rate",
+        "adv2Label": "Rigorous follow-up on every prospect through long sales cycles",
+        "adv3Value": "Industry vocabulary built-in",
+        "adv3Label": "Jay understands EPC, heat pumps, subsidies and structures the data",
+        "quote": "Jay understands my technical jargon. I dictate my findings and it structures everything for my CRM.",
+        "quoteAuthor": "Sarah M., Energy Sales Rep",
+        "why1Title": "Technical data captured on site",
+        "why1Desc": "Surface, orientation, consumption, subsidy eligibility: dictate your findings and Jay structures everything for the quote.",
+        "why2Title": "Long sales cycles mastered",
+        "why2Desc": "In energy, a prospect can take months to decide. Jay ensures follow-up and reminders automatically.",
+        "why3Title": "Native energy vocabulary",
+        "why3Desc": "EPC, heat pumps, subsidies, kWp, self-consumption: Jay understands your technical jargon without configuration.",
+        "why4Title": "Quotes generated faster",
+        "why4Desc": "All technical data is in the CRM right after the visit. Your office team can quote immediately.",
+        "scenario": "Audit at Mrs. Martin's. South-east roof 40sqm, consumption 8000 kWh, eligible for subsidies. Quote 12K with battery, call back in 3 days.",
+        "crm": {
+          "contactName": "Mrs. Martin",
+          "contactRole": "Homeowner — Energy audit",
+          "f1": "Audit done — eligible for subsidies",
+          "f2": "Call back in 3 days for quote",
+          "f3": "SE roof 40sqm, 8000 kWh consumption",
+          "f4": "€12,000"
+        }
+      },
+      "pharma": {
+        "title": "Pharmaceutical",
+        "subtitle": "Laboratories, medical reps, wholesalers",
+        "headline": "Every medical visit feeds your CRM automatically",
+        "adv1Value": "3x more visits documented",
+        "adv1Label": "No more visit reports at the end of the day",
+        "adv2Value": "Full traceability",
+        "adv2Label": "Complete history of every doctor/prescriber interaction",
+        "adv3Value": "Compliant traceability",
+        "adv3Label": "Structured data compliant with pharma traceability requirements",
+        "quote": "I do 8 visits a day. Thanks to Jay, every report is in the CRM before I even arrive at the next doctor.",
+        "quoteAuthor": "Sophie B., Medical Rep",
+        "why1Title": "Document 8 visits a day effortlessly",
+        "why1Desc": "Between two doctors, a 30-second voice note is enough. The visit report is in the CRM before you arrive at the next one.",
+        "why2Title": "Regulatory traceability ensured",
+        "why2Desc": "Every interaction is timestamped and structured. Complete history for your reporting obligations.",
+        "why3Title": "Samples and requests tracked",
+        "why3Desc": "Jay tracks sample requests, doctor feedback and schedules revisits automatically.",
+        "why4Title": "Medical vocabulary understood",
+        "why4Desc": "Jay recognizes specialties, treatment names, dosages and structures data for your pharma CRM.",
+        "scenario": "Visit to Dr Martin at Lyon Hospital. Interested in the new treatment, requesting samples. Revisit in 2 weeks.",
+        "crm": {
+          "contactName": "Dr Martin",
+          "contactRole": "Cardiologist — Lyon Hospital",
+          "f1": "Interested — samples requested",
+          "f2": "Revisit in 2 weeks",
+          "f3": "New treatment presented, positive feedback",
+          "f4": "50 boxes / quarter"
+        }
+      },
+      "agro": {
+        "title": "Food & Agriculture",
+        "subtitle": "Producers, distributors, field sales reps",
+        "headline": "From client rounds to CRM, without missing a beat",
+        "adv1Value": "Rounds 100% tracked",
+        "adv1Label": "Every client visit documented between two stops",
+        "adv2Value": "+20% reorder rate",
+        "adv2Label": "Orders and volumes captured and tracked automatically",
+        "adv3Value": "Trade terms centralized",
+        "adv3Label": "Promos, discounts and negotiated volumes visible to the entire team in real time",
+        "quote": "I visit 10 clients a day on my rounds. A voice note between each visit and my manager has full visibility.",
+        "quoteAuthor": "Marc F., Field Sales Rep",
+        "why1Title": "Rounds 100% documented",
+        "why1Desc": "10 clients a day? A voice note between each stop and every visit is in the CRM. Nothing is forgotten.",
+        "why2Title": "Trade terms centralized",
+        "why2Desc": "Discounts, volumes, promos: Jay captures negotiated terms and makes them visible to the entire team.",
+        "why3Title": "Manager informed in real time",
+        "why3Desc": "No more waiting until Friday for reporting. Your manager follows rounds in real time.",
+        "why4Title": "Orders and volumes tracked",
+        "why4Desc": "Jay logs ordered quantities, references and schedules deliveries automatically.",
+        "scenario": "Visit to Biocoop Lille. Order 200 units granola, -5% negotiated for volume. Want to try the gluten-free range.",
+        "crm": {
+          "contactName": "Biocoop Lille",
+          "contactRole": "Organic store — Purchasing manager",
+          "f1": "Order placed — 200 units",
+          "f2": "Send gluten-free range samples",
+          "f3": "-5% negotiated on volume, GF range test",
+          "f4": "€2,400"
+        }
+      },
+      "media": {
+        "title": "Media & Advertising",
+        "subtitle": "Agencies, ad networks, producers",
+        "headline": "Keep track of every advertiser relationship",
+        "adv1Value": "Zero briefs lost",
+        "adv1Label": "Every advertiser exchange is captured and structured",
+        "adv2Value": "Deals tracked in real time",
+        "adv2Label": "Instant visibility on budgets and ongoing campaigns",
+        "adv3Value": "Renewals better tracked",
+        "adv3Label": "No advertiser contract slips through the cracks thanks to automatic reminders",
+        "quote": "With Jay, I dictate my lunch debrief and the deal is updated before I even get back to the office.",
+        "quoteAuthor": "Camille V., Ad Sales Executive",
+        "why1Title": "Never lose an advertiser brief",
+        "why1Desc": "Lunch, call, trade show: dictate your debrief and Jay captures budgets, deadlines and key contacts.",
+        "why2Title": "Renewals anticipated",
+        "why2Desc": "Jay tracks every contract deadline and schedules reminders. No renewal slips through the cracks.",
+        "why3Title": "Sales pipe visibility",
+        "why3Desc": "Your sales director sees ongoing deals, amounts and key dates in real time.",
+        "why4Title": "Multi-advertiser without confusion",
+        "why4Desc": "Jay links each voice note to the right advertiser and campaign. No more mix-ups between clients.",
+        "scenario": "Lunch with L'Oréal. Q3 budget validated at 180K, digital + TV. Creative brief due by the 15th, call back Thursday.",
+        "crm": {
+          "contactName": "Sophie Durand",
+          "contactRole": "Media Director — L'Oréal",
+          "f1": "Q3 budget validated — digital + TV",
+          "f2": "Creative brief by 15th, call Thursday",
+          "f3": "Positive lunch, renewal confirmed",
+          "f4": "€180,000"
+        }
+      },
+      "industry": {
+        "title": "Industry & Manufacturing",
+        "subtitle": "Manufacturers, OEMs, subcontractors",
+        "headline": "Simplify your industrial project tracking",
+        "adv1Value": "Sales cycles mastered",
+        "adv1Label": "Rigorous tracking of 6-18 month projects with zero effort",
+        "adv2Value": "Multi-stakeholder visibility",
+        "adv2Label": "All contacts and decisions for a project in one place",
+        "adv3Value": "Reliable forecasts",
+        "adv3Label": "Up-to-date data for accurate sales forecasts",
+        "quote": "On 12-month industrial projects with 5 stakeholders, Jay keeps me from losing track.",
+        "quoteAuthor": "Antoine G., Sales Engineer",
+        "why1Title": "12-month projects with zero info loss",
+        "why1Desc": "Over long cycles with multiple stakeholders, Jay keeps track of every exchange and decision.",
+        "why2Title": "Multi-stakeholder mastered",
+        "why2Desc": "Procurement, engineering, design office: Jay links each piece of info to the right contact in the project.",
+        "why3Title": "Reliable sales forecasts",
+        "why3Desc": "With a CRM that's always up to date, your forecasts reflect reality. No more end-of-quarter surprises.",
+        "why4Title": "Industrial vocabulary built-in",
+        "why4Desc": "Lots, technical specs, RFPs, bill of materials: Jay structures your project data accurately.",
+        "scenario": "Airbus technical meeting. Lot 3 validated at 250K. Procurement director wants final quote by the 20th. Next meeting in 3 weeks.",
+        "crm": {
+          "contactName": "Marc Lefèvre",
+          "contactRole": "Procurement Director — Airbus",
+          "f1": "Lot 3 validated in technical meeting",
+          "f2": "Final quote by 20th, meeting in 3 weeks",
+          "f3": "Technical validation OK, awaiting quote",
+          "f4": "€250,000"
+        }
+      }
+    },
+    "integrations": {
+      "title": "Our CRMs & Integrations",
+      "subtitle": "Native integration. Setup in 2 minutes.",
+      "yourCrm": "Your CRM?"
+    },
+    "security": {
+      "title": "Security & compliance",
+      "subtitle": "Your business data deserves the highest level of protection.",
+      "iso27001": {
+        "title": "ISO 27001",
+        "description": "International security standards"
+      },
+      "rgpd": {
+        "title": "GDPR",
+        "description": "Personal data protection"
+      },
+      "ssl": {
+        "title": "SSL Encryption",
+        "description": "Data encrypted in transit"
+      },
+      "iaAct": {
+        "title": "AI Act",
+        "description": "Compliant with European AI regulation"
+      },
+      "euHosting": {
+        "title": "EU Hosting",
+        "description": "Data stored in the European Union"
+      }
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "faq1": {
+        "question": "How does Jay work?",
+        "answer": "Jay is a voice assistant that works via WhatsApp. After your meeting, send a voice message to tell Jay what happened. Jay transcribes, analyzes and automatically updates your CRM with the summary, next steps and follow-ups to schedule."
+      },
+      "faq2": {
+        "question": "Which CRMs are supported?",
+        "answer": "Jay is compatible with Salesforce, HubSpot, Pipedrive, Zoho, Odoo, Dynamics 365 and TeamLeader. We regularly add new integrations. If your CRM is not listed, contact us."
+      },
+      "faq3": {
+        "question": "Is my data secure?",
+        "answer": "Absolutely. Jay is ISO 27001, GDPR and AI Act compliant. All data is encrypted and hosted in the European Union. Voice notes are processed and deleted after transcription. No data is used to train AI models."
+      },
+      "faq4": {
+        "question": "How long does it take to get started?",
+        "answer": "Less than 2 minutes. Connect via WhatsApp, link your CRM, and you're good to go. No app to install, no training needed."
+      },
+      "faq5": {
+        "question": "Is the free plan really free?",
+        "answer": "Yes, 100% free. 30 voice notes per month, no credit card required. You can use Jay as long as you want with the free plan."
+      },
+      "faq6": {
+        "question": "Does Jay work in multiple languages?",
+        "answer": "Yes. Jay understands and transcribes in French, English and Dutch. You can mix languages in the same voice note, Jay adapts automatically."
+      }
+    },
+    "finalCTA": {
+      "title": {
+        "line1": "Ready to say goodbye",
+        "line2": "to CRM data entry?"
+      },
+      "subtitle": "Join the salespeople who save 2 hours per day with Jay. 50 free voice notes, no credit card.",
+      "button": "Try it — 50 voice notes included"
+    }
+  },
+  "nav": {
+    "features": "Features",
+    "howItWorks": "How it works",
+    "useCases": "Use cases",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "adopt": "Adopt Jay",
+    "startFree": "Try it",
+    "menu": "Menu",
+    "close": "Close",
+    "changeLanguage": "Change language",
+    "blog": "Blog",
+    "getStarted": "Get started"
+  },
+  "dashboard": {
+    "sidebar": {
+      "overview": "Overview",
+      "voice": "My Notes",
+      "emails_to_crm": "Emails → CRM",
+      "addressBook": "Address Book",
+      "integrations": "Connections",
+      "referral": "Referral",
+      "subscription": "Subscription",
+      "profile": "Profile",
+      "guide": "Documentation",
+      "documentation": "Documentation",
+      "help": {
+        "title": "Need help?",
+        "description": "Contact our support team",
+        "button": "Contact"
+      },
+      "lightMode": "Light mode",
+      "darkMode": "Dark mode"
+    },
+    "emailTab": {
+      "title": "Emails → CRM",
+      "subtitle": "CRM actions detected in your emails",
+      "refresh": "Refresh",
+      "back": "Back",
+      "searchPlaceholder": "Search by name...",
+      "filterAll": "All",
+      "filterPending": "Pending",
+      "filterDone": "Done",
+      "emptyTitle": "No emails analyzed yet",
+      "emptyHint": "Connect your inbox in Connections",
+      "syncSuccess": "Emails synced",
+      "syncError": "Sync error"
+    },
+    "contact": {
+      "title": "Contact us",
+      "subtitle": "We're here to help you!",
+      "form": {
+        "title": "Send us a message",
+        "description": "Describe your problem or question, we'll respond quickly",
+        "name": "Your name",
+        "email": "Your email",
+        "subject": "Subject",
+        "message": "Your message",
+        "send": "Send message",
+        "sending": "Sending...",
+        "success": "Message sent!",
+        "successDesc": "Thank you for contacting us. We'll get back to you very soon.",
+        "error": "Error sending message. Please try again.",
+        "sendAnother": "Send another message"
+      },
+      "info": {
+        "title": "Information",
+        "description": "Use the form to send us a message. We'll respond as soon as possible."
+      },
+      "faq": {
+        "title": "FAQ",
+        "description": "Check our documentation for quick answers",
+        "button": "View documentation"
+      }
+    },
+    "feedback": {
+      "button": "Feedback",
+      "title": "Give us your feedback",
+      "description": "Your feedback helps us improve Jay. Tell us what works well or what we can improve.",
+      "categoryLabel": "Category",
+      "categoryPlaceholder": "Select a category",
+      "categories": {
+        "bug": "Bug / Issue",
+        "feature": "New feature",
+        "improvement": "Improvement",
+        "other": "Other"
+      },
+      "messageLabel": "Your message",
+      "messagePlaceholder": "Describe your feedback in detail...",
+      "send": "Send feedback",
+      "sending": "Sending...",
+      "success": "Thank you for your feedback!",
+      "error": "Error sending feedback. Please try again.",
+      "validation": "Please select a category and write a message."
+    },
+    "overview": {
+      "title": "Let's set up your integrations together",
+      "description": "I'm Jay, your assistant. I'll help you configure your integrations so you can get the most out of our platform.",
+      "jayAlt": "Jay",
+      "previous": "Back",
+      "next": "Next",
+      "skip": "I don't want to connect integrations for this step",
+      "skipStep": "Skip this step",
+      "skipAll": "Skip all configuration",
+      "continue": "Continue",
+      "finish": "Finish",
+      "selectOrSkip": "Select an integration or skip this step",
+      "connectedCount": "{{count}} integration(s) connected",
+      "steps": {
+        "messaging": {
+          "title": "Choose your voice channel",
+          "description": "Select the messaging platform you want to use to communicate with Jay"
+        },
+        "crm": {
+          "title": "Configure your CRM",
+          "description": "Connect your CRM to manage your contacts and sales opportunities"
+        },
+        "email": {
+          "title": "Connect your emails",
+          "description": "Link your email accounts to manage your messaging directly from Jay"
+        },
+        "calendar": {
+          "title": "Sync your calendars",
+          "description": "Connect your calendars to manage your appointments and events"
+        },
+        "emailCalendar": {
+          "title": "Email & Calendar",
+          "description": "Connect your Google or Microsoft 365 suite for email and calendar access"
+        }
+      }
+    },
+    "profile": {
+      "stats": {
+        "voiceNotes": "Voice notes",
+        "actions": "Actions",
+        "timeSaved": "Time saved",
+        "memberSince": "Member since"
+      },
+      "personalInfo": {
+        "title": "Personal Information",
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "email": "Email",
+        "language": "Language",
+        "password": "Password",
+        "languageSelect": {
+          "placeholder": "Select a language",
+          "french": "French",
+          "english": "English",
+          "dutch": "Dutch"
+        },
+        "passwordInputs": {
+          "current": "Current password",
+          "new": "New password",
+          "confirm": "Confirm new password"
+        },
+        "updateButton": "Update information",
+        "errors": {
+          "noUser": "No user found",
+          "passwordMismatch": "Passwords do not match"
+        },
+        "toasts": {
+          "success": {
+            "title": "Profile updated",
+            "description": "Your information has been successfully updated."
+          },
+          "error": {
+            "title": "Error",
+            "fallback": "An error occurred while updating the profile."
+          }
+        }
+      },
+      "subscription": {
+        "title": "Subscription and Payment",
+        "currentPlan": "Current plan: Premium",
+        "billingInfo": "Billed monthly - Next payment on 04/15/2024",
+        "creditCard": {
+          "label": "Credit Card",
+          "details": "VISA ending in 4242"
+        },
+        "updateCardButton": "Update card",
+        "toasts": {
+          "comingSoon": {
+            "title": "Coming Soon",
+            "description": "Card update feature will be available soon."
+          }
+        },
+        "billing": {
+          "title": "Billing Information",
+          "updateButton": "Update billing information",
+          "errors": {
+            "noUser": "No user found"
+          },
+          "toasts": {
+            "success": {
+              "title": "Billing information updated",
+              "description": "Your information has been successfully updated."
+            },
+            "error": {
+              "title": "Error",
+              "fallback": "An error occurred while updating the billing information."
+            }
+          },
+          "company": {
+            "label": "Company",
+            "placeholder": "Company name for billing"
+          },
+          "vat": {
+            "label": "VAT Number",
+            "placeholder": "VAT Number"
+          },
+          "address": {
+            "line1": {
+              "label": "Address line 1",
+              "placeholder": "Street and number"
+            },
+            "line2": {
+              "label": "Address line 2",
+              "placeholder": "Additional address information"
+            },
+            "postalCode": {
+              "label": "Postal code",
+              "placeholder": "Postal code"
+            },
+            "city": {
+              "label": "City",
+              "placeholder": "City"
+            },
+            "country": {
+              "label": "Country",
+              "placeholder": "Country"
+            }
+          },
+          "email": {
+            "label": "Billing Email",
+            "placeholder": "Billing email address"
+          }
+        }
+      },
+      "deleteAccount": {
+        "title": "Danger zone",
+        "warning": "Deleting your account is irreversible.",
+        "button": "Delete my data",
+        "dialog": {
+          "title": "This action is irreversible. All your data will be permanently deleted.",
+          "description": "By confirming, you agree to permanently delete your account and all associated data. This action cannot be undone.",
+          "cancel": "Cancel",
+          "confirm": "Confirm deletion"
+        },
+        "toasts": {
+          "success": {
+            "title": "Account deleted",
+            "description": "Your account and all your data have been successfully deleted."
+          },
+          "error": {
+            "title": "Error",
+            "description": "An error occurred while deleting your account."
+          }
+        }
+      }
+    },
+    "subscriptionTab": {
+      "title": "Subscription",
+      "currentPlan": "Current plan",
+      "choosePlan": "Choose",
+      "header": {
+        "title": "Choose your plan",
+        "subtitle": "Boost your sales productivity with Jay. Start free, scale as you grow."
+      },
+      "billing": {
+        "monthly": "Monthly",
+        "yearly": "Yearly",
+        "discount": "-20%",
+        "perMonth": "/month",
+        "perYear": "/year",
+        "equivalent": "That's {{price}}€/month",
+        "yearlyBilling": "Billed {{price}}€ per year",
+        "perUser": "user",
+        "toggle": "Toggle between monthly and yearly"
+      },
+      "badges": {
+        "popular": "Popular",
+        "currentPlan": "Your plan"
+      },
+      "buttons": {
+        "loading": "Loading...",
+        "current": "Current plan",
+        "manage": "Manage my subscription"
+      },
+      "comparison": {
+        "title": "Detailed comparison",
+        "feature": "Feature",
+        "features": {
+          "voicePerMonth": "Voice notes per month",
+          "crmConnections": "CRM connections",
+          "textExtraction": "Scan & text extraction",
+          "emailGeneration": "Email generation",
+          "analytics": "Analytics dashboard",
+          "teamManagement": "Team management",
+          "prioritySupport": "Priority support",
+          "onboarding": "Onboarding & training"
+        },
+        "values": {
+          "unlimited": "Unlimited",
+          "dedicated": "Dedicated"
+        }
+      },
+      "trust": {
+        "text": "Secure payment via Stripe • Cancel anytime"
+      },
+      "plans": {
+        "free": {
+          "name": "Free",
+          "description": "To discover Jay",
+          "cta": "Free plan",
+          "customPrice": null,
+          "features": {
+            "voiceNotes": "30 voice notes per month",
+            "dailyLimit": "5 voice notes per day max",
+            "crmConnections": "1 CRM connection",
+            "support": "Standard support",
+            "textExtraction": "Scan & text extraction",
+            "emailGeneration": "Email generation"
+          }
+        },
+        "pro": {
+          "name": "Pro",
+          "description": "For active salespeople",
+          "cta": "Upgrade to Pro",
+          "customPrice": null,
+          "features": {
+            "voiceNotes": "100 voice notes per month",
+            "dailyLimit": "No daily limit",
+            "crmConnections": "1 CRM connection",
+            "support": "Priority support",
+            "textExtraction": "Scan & text extraction",
+            "emailGeneration": "Email generation"
+          }
+        },
+        "business": {
+          "name": "Business",
+          "description": "For sales teams",
+          "cta": "Upgrade to Business",
+          "customPrice": null,
+          "features": {
+            "voiceNotes": "Unlimited voice notes",
+            "multiCrm": "Multi-CRM",
+            "teamManagement": "Team management",
+            "analytics": "Analytics dashboard",
+            "structuredFields": "Structured fields",
+            "meetingBrief": "Automatic meeting briefs",
+            "support": "Premium support"
+          }
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "description": "Custom solution",
+          "cta": "Contact us",
+          "customPrice": "Custom quote",
+          "features": {
+            "businessIncluded": "Everything in Business",
+            "unlimitedUsers": "Unlimited users",
+            "personalizedOnboarding": "Personalized onboarding",
+            "meetingBrief": "Automatic meeting briefs",
+            "dedicatedSupport": "Dedicated priority support",
+            "customBilling": "Custom billing",
+            "teamTraining": "Team training included"
+          }
+        }
+      }
+    },
+    "connectionsPage": {
+      "title": "Connections",
+      "whatsapp": {
+        "connected": "Connected · {{phone}}",
+        "notConnected": "Connect WhatsApp to get started",
+        "gateway": "Jay entry point"
+      },
+      "section": {
+        "active": "Active",
+        "available": "Available",
+        "connectedCount": "{{count}} connected",
+        "connectedCount_plural": "{{count}} connected",
+        "noneConnected": "None",
+        "crmSubtitle": "Sync contacts and opportunities",
+        "emailSubtitle": "Send emails via voice notes",
+        "calendarSubtitle": "Create appointments via voice notes"
+      },
+      "calendar": {
+        "default": "Default",
+        "setDefault": "Set as default",
+        "defaultMeta": "Your voice note appointments will be created here"
+      },
+      "crmRequest": "Other CRM",
+      "disconnect": "Disconnect",
+      "connect": "Connect",
+      "upgrade": "Upgrade plan",
+      "crmLimitReached": "CRM already connected"
+    },
+    "integrationsTab": {
+      "tabs": {
+        "crm": "CRM",
+        "messaging": "Messaging",
+        "email": "Email",
+        "calendar": "Calendar"
+      },
+      "integrations": {
+        "whatsapp": {
+          "name": "WhatsApp",
+          "description": "Connect your WhatsApp account to communicate with the assistant."
+        },
+        "slack": {
+          "name": "Slack",
+          "description": "Connect your Slack workspace for team communication."
+        },
+        "salesforce": {
+          "name": "Salesforce",
+          "description": "Connect your Salesforce CRM to manage contacts and opportunities."
+        },
+        "hubspot": {
+          "name": "HubSpot",
+          "description": "Connect your HubSpot CRM to manage contacts and opportunities."
+        },
+        "odoo": {
+          "name": "Odoo",
+          "description": "Connect your Odoo CRM to manage your business processes."
+        },
+        "pipedrive": {
+          "name": "Pipedrive",
+          "description": "Connect your Pipedrive CRM to manage your sales pipeline."
+        },
+        "zoho": {
+          "name": "Zoho CRM",
+          "description": "Connect your Zoho CRM to manage your contacts and opportunities."
+        },
+        "jardipro": {
+          "name": "Jardipro",
+          "description": "Landscaping trade ERP (quotes, invoices, projects, plant catalog)",
+          "connect": "Connect Jardipro",
+          "disconnect": "Disconnect Jardipro",
+          "connected": "Jardipro connected",
+          "disconnected": "Jardipro disconnected",
+          "connection_dialog": {
+            "title": "Connect Jardipro",
+            "description": "Connect your Jardipro account using your API token and workspace.",
+            "token_label": "API Token",
+            "token_placeholder": "Your Jardipro API token",
+            "token_help": "The Bearer token provided by your Jardipro administrator",
+            "workspace_label": "Workspace",
+            "workspace_placeholder": "e.g.: gustin",
+            "workspace_help": "Your Jardipro workspace identifier"
+          },
+          "actions": {
+            "creer_devis": "Create a quote",
+            "modifier_devis": "Modify a quote",
+            "creer_facture": "Create an invoice",
+            "creer_projet": "Create a project",
+            "creer_fournisseur": "Create a supplier",
+            "chercher_catalogue": "Search catalog"
+          }
+        },
+        "notion": {
+          "name": "Notion",
+          "description": "Connect your Notion workspace for task and document management."
+        },
+        "webhook": {
+          "name": "Webhook CRM",
+          "description": "Connect your custom CRM via HTTP webhook"
+        },
+        "outlook": {
+          "name": "Outlook",
+          "description": "Connect your Outlook email account for email management."
+        },
+        "gmail": {
+          "name": "Gmail",
+          "description": "Connect your Gmail account for email management."
+        },
+        "googleCalendar": {
+          "name": "Google Calendar",
+          "description": "Connect your Google Calendar for appointment management."
+        },
+        "microsoftCalendar": {
+          "name": "Microsoft 365 Calendar",
+          "description": "Connect your Microsoft 365 Calendar for appointment management."
+        },
+        "microsoftEmail": {
+          "name": "Microsoft 365 Email",
+          "description": "Connect your Microsoft 365 email account for sending emails."
+        }
+      }
+    },
+    "main": {
+      "menu": "Menu",
+      "profile": "Profile",
+      "logout": "Logout",
+      "pageTitle": {
+        "voiceNotes": "Voice Notes",
+        "integrations": "Integrations",
+        "profile": "Profile"
+      },
+      "auth": {
+        "accessDenied": "Access denied",
+        "loginRequired": "Please login to access the dashboard.",
+        "logoutSuccess": "Logout successful",
+        "logoutMessage": "See you soon!",
+        "logoutError": "Error during logout",
+        "retryMessage": "Please try again."
+      },
+      "oauth": {
+        "authError": "Authentication error",
+        "slackConnected": "Slack connected",
+        "slackConnectedDesc": "Your Slack account has been successfully connected",
+        "slackError": "Unable to connect your Slack account",
+        "notionConnected": "Notion connected",
+        "notionConnectedDesc": "Your Notion account has been successfully connected",
+        "notionError": "Unable to connect your Notion account",
+        "pipedriveConnected": "Pipedrive connected",
+        "pipedriveConnectedDesc": "Your Pipedrive account has been successfully connected",
+        "pipedriveError": "Unable to connect your Pipedrive account",
+        "hubspotConnected": "HubSpot connected",
+        "hubspotConnectedDesc": "Your HubSpot account has been successfully connected",
+        "hubspotError": "HubSpot error",
+        "error": "Error",
+        "unknownService": "Unknown service:",
+        "sessionNotFound": "User session not found"
+      },
+      "integrationCard": {
+        "loading": "Loading...",
+        "connect": "Connect",
+        "disconnect": "Disconnect"
+      }
+    },
+    "integrationCard": {
+      "loading": "Loading...",
+      "connect": "Connect",
+      "disconnect": "Disconnect"
+    },
+    "voiceNoteHistory": {
+      "loading": "Loading...",
+      "error": "An error occurred while retrieving voice notes",
+      "noResults": "No results found",
+      "noTranscriptions": "No transcriptions available",
+      "sections": {
+        "transcription": "📝 Transcription",
+        "client": "👤 Client",
+        "actions": "✅ Actions performed",
+        "keyPoints": "📌 Important points",
+        "nextSteps": "⏭️ Next steps"
+      },
+      "fields": {
+        "name": "Name:",
+        "company": "Company:",
+        "position": "Position:"
+      },
+      "placeholders": {
+        "noTranscription": "No transcription",
+        "notSpecified": "Not specified",
+        "noActions": "No actions",
+        "noKeyPoints": "No important points",
+        "noNextSteps": "No next steps"
+      },
+      "createdOn": "Created on"
+    },
+    "voiceNoteTab": {
+      "title": "Voice Notes",
+      "description": "Record or upload your voice notes",
+      "processing": "Processing...",
+      "historyTitle": "Transcription History",
+      "toasts": {
+        "error": {
+          "title": "Error",
+          "noAudio": "No audio recording was captured.",
+          "unauthenticated": "User not authenticated",
+          "noUrl": "Failed to get public URL",
+          "processing": "An error occurred during processing."
+        },
+        "success": {
+          "title": "Success",
+          "processed": "Your voice note has been recorded and processed."
+        }
+      }
+    },
+    "integrationButton": {
+      "connecting": "Connecting...",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connectedTo": "Connected to",
+      "connectTo": "Connect to"
+    },
+    "slackAuth": {
+      "errors": {
+        "clientIdNotConfigured": "Slack Client ID not configured",
+        "connectionFailed": "Unable to connect to Slack. Please try again."
+      }
+    },
+    "recordingSection": {
+      "buttons": {
+        "record": "Record",
+        "stop": "Stop",
+        "download": "Download"
+      }
+    },
+    "profileTab": {
+      "errors": {
+        "noUser": "No user found",
+        "noProfile": "No profile found"
+      }
+    },
+    "searchBar": {
+      "placeholder": "Search..."
+    },
+    "whatsappDialog": {
+      "title": "WhatsApp Connection",
+      "instructions": "To connect your WhatsApp account, follow these steps:",
+      "steps": {
+        "openWhatsApp": "Click the button to open WhatsApp",
+        "sendMessage": "Send the pre-filled message to Jay",
+        "waitConfirmation": "Wait for connection confirmation"
+      },
+      "prefilledMessageLine1": "Hey Jay,",
+      "prefilledMessageLine2": "Connect {verificationCode}",
+      "whatsappMessage": "Hi Jay,\nConnect {verificationCode}",
+      "openButton": "Open WhatsApp",
+      "cancel": "Cancel"
+    },
+    "whatsappIntegration": {
+      "alert": {
+        "connected": "Your assistant is accessible via WhatsApp at {phoneNumber}",
+        "notConnected": "Connect your WhatsApp account to start using the assistant"
+      },
+      "buttons": {
+        "connect": "Connect WhatsApp",
+        "disconnect": "Disconnect WhatsApp"
+      },
+      "toasts": {
+        "connect": {
+          "success": {
+            "title": "WhatsApp",
+            "description": "Verification code generated: {code}. A WhatsApp window has been opened. Please send the message to connect."
+          }
+        },
+        "disconnect": {
+          "success": {
+            "title": "WhatsApp disconnected",
+            "description": "Your assistant is no longer accessible via WhatsApp"
+          }
+        },
+        "error": {
+          "title": "Error",
+          "verificationCode": "Unable to generate verification code. Please try again.",
+          "connect": "Unable to connect to WhatsApp. Please try again.",
+          "disconnect": "An error occurred while disconnecting from WhatsApp"
+        }
+      }
+    },
+    "integrationCategories": {
+      "messaging": "Messaging",
+      "crm": "CRM",
+      "tasks": "Tasks",
+      "mail": "Mail",
+      "calendar": "Calendar"
+    },
+    "integrationDescription": {
+      "connected": "{name} is connected to your account",
+      "notConnected": "Connect your {name} account"
+    },
+    "integrationHeader": {
+      "logoAlt": "{name} logo",
+      "status": {
+        "connected": "Connected",
+        "notConnected": "Not Connected"
+      }
+    },
+    "integrationHandlers": {
+      "errors": {
+        "hubspotConnection": "An error occurred while connecting to HubSpot",
+        "unexpected": "An unexpected error occurred"
+      }
+    },
+    "outlookAuth": {
+      "errors": {
+        "clientIdNotConfigured": "Microsoft Client ID is not configured.",
+        "connectionError": "Connection error",
+        "connectionFailed": "Unable to connect to Outlook. Please try again.",
+        "callbackFailed": "Unable to connect your Outlook account. Please try again."
+      },
+      "success": {
+        "connectedDev": "Outlook connected (DEV)",
+        "connectedDevDesc": "Your Outlook account has been successfully connected in development mode",
+        "connected": "Outlook connected",
+        "connectedDesc": "Your Outlook account has been successfully connected"
+      }
+    },
+    "microsoftAuth": {
+      "errors": {
+        "clientIdNotConfigured": "Microsoft Client ID is not configured.",
+        "connectionError": "Connection error",
+        "connectionFailed": "Unable to connect to Microsoft 365. Please try again.",
+        "callbackFailed": "Unable to connect your Microsoft 365 account. Please try again."
+      },
+      "success": {
+        "connectedDev": "Microsoft 365 connected (DEV)",
+        "connectedDevDesc": "Your Microsoft 365 account has been successfully connected in development mode",
+        "connected": "Microsoft 365 connected",
+        "connectedDesc": "Your Microsoft 365 account has been successfully connected"
+      }
+    },
+    "devModeTools": {
+      "title": "Development Tools",
+      "badge": "Developer Mode",
+      "description": "These tools allow you to test real integrations even in development mode. When the option is enabled, real connections are used instead of simulations.",
+      "status": {
+        "realConnectionEnabled": "Real connection enabled",
+        "simulatedConnection": "Simulated connection"
+      },
+      "resetButton": "Reset all connections"
+    },
+    "microsoftActions": {
+      "email": {
+        "sending": "Sending email...",
+        "sent": "Email sent successfully to {recipient}",
+        "error": "Error sending email",
+        "confirmation": "Do you want to send this email to {recipient}?",
+        "cancelled": "Email sending cancelled"
+      },
+      "calendar": {
+        "creating": "Creating event...",
+        "created": "Event created successfully: {title}",
+        "error": "Error creating event",
+        "confirmation": "Do you want to create this event: {title}?",
+        "cancelled": "Event creation cancelled"
+      }
+    },
+    "integration": {
+      "validation": {
+        "emailInvalid": "Invalid email",
+        "emailInvalidDescription": "Please enter a valid email address",
+        "passwordRequired": "Password required",
+        "passwordRequiredDescription": "Please enter your application password",
+        "smtpRequired": "SMTP server required",
+        "smtpRequiredDescription": "Please configure the SMTP server",
+        "caldavUsernameRequired": "CalDAV username required",
+        "caldavPasswordRequired": "Calendar password required"
+      },
+      "messages": {
+        "connectionError": "Connection error",
+        "connectionSuccess": "Connection successful",
+        "providerConnected": "{{provider}} has been successfully connected",
+        "infomaniakMailCalendarConnected": "Infomaniak Mail and Calendar connected",
+        "infomaniakMailConnected": "Infomaniak Mail connected",
+        "protonConnected": "Proton Mail connected via Bridge",
+        "emailSent": "Email sent",
+        "emailSentDescription": "Your email has been successfully sent",
+        "emailSendError": "Error",
+        "emailSendErrorDescription": "Unable to send the email. Please try again."
+      }
+    },
+    "documentation": {
+      "title": "Help & Guides",
+      "subtitle": "Everything you need to use Jay with your CRM and communication tools",
+      "odoo": {
+        "title": "User Documentation - Odoo Integration",
+        "subtitle": "Complete guide to using Jay with your Odoo ERP via WhatsApp",
+        "overview": {
+          "title": "Overview",
+          "description": "The Odoo integration lets you manage your contacts, opportunities and appointments directly from WhatsApp using natural voice or text commands.",
+          "features": {
+            "contacts": "Contact management",
+            "opportunities": "Sales opportunities",
+            "calendar": "Calendar management"
+          }
+        },
+        "contacts": {
+          "title": "Contact Management",
+          "subtitle": "Create and manage your Odoo contacts directly from WhatsApp",
+          "creation": {
+            "title": "Create a new contact",
+            "simple": "Simple example:",
+            "simpleExample": "Create a contact for Marie Dupont, email marie.dupont@example.com, phone 06.12.34.56.78",
+            "complete": "Full example with company:",
+            "completeExample": "Add a contact for Jean Martin, I spell J-E-A-N space M-A-R-T-I-N, email j.martin@techcorp.com, phone 01.23.45.67.89, he works at TechCorp as sales director",
+            "address": "With full address:",
+            "addressExample": "Create a contact Sophie Laurent, email s.laurent@digital.be, phone +32 2 123 45 67, address 15 rue de la Paix, 1000 Brussels, she's project manager at Digital Solutions"
+          },
+          "notes": {
+            "title": "Add notes to a contact",
+            "example": "Add a note about Marie Dupont: interested in our CRM solution, planned budget 50k€ for 2024",
+            "callExample": "Note for Jean Martin: very positive meeting, going to demo to his team next week"
+          },
+          "fields": {
+            "title": "Supported fields",
+            "name": "First and last name",
+            "email": "Email",
+            "phone": "Phone",
+            "address": "Full address",
+            "position": "Job title / Role",
+            "company": "Company"
+          }
+        },
+        "opportunities": {
+          "title": "Opportunity Management",
+          "subtitle": "Create and track your sales opportunities in Odoo",
+          "creation": {
+            "title": "Create a new opportunity",
+            "simple": "Simple example:",
+            "simpleExample": "Create a 25,000 euro opportunity for the CRM project",
+            "contact": "With specific contact:",
+            "contactExample": "Add an opportunity for Marie Dupont: digital transformation, 75,000 euros, qualification stage, probability 60%"
+          },
+          "modification": {
+            "title": "Modify an existing opportunity",
+            "amount": "Change the amount:",
+            "amountExample": "Update the CRM project opportunity, new amount 35,000 euros",
+            "stage": "Change the stage:",
+            "stageExample": "Move the digital transformation opportunity to Proposal stage"
+          },
+          "pipeline": {
+            "title": "Pipeline management",
+            "won": "Mark as won:",
+            "wonExample": "The CRM project opportunity is won",
+            "lost": "Mark as lost:",
+            "lostExample": "The digital transformation deal is lost, price too high"
+          },
+          "notes": {
+            "title": "Add notes to an opportunity",
+            "example": "Add a note about the CRM project opportunity: demo planned for Friday, very interested in the reporting features"
+          }
+        },
+        "calendar": {
+          "title": "Calendar Management",
+          "subtitle": "Create and manage your appointments in the Odoo calendar",
+          "creation": {
+            "title": "Create a new appointment",
+            "simple": "Simple example:",
+            "simpleExample": "Schedule an appointment with Marie Dupont tomorrow at 2:30 PM",
+            "complete": "With location and duration:",
+            "completeExample": "Create a meeting: product demo with TechCorp, next Tuesday at 10 AM, 2-hour duration, location our Paris office",
+            "followUp": "Follow-up appointment:",
+            "followUpExample": "Schedule a follow-up with Jean Martin Friday 3 PM: CRM project status update"
+          },
+          "modification": {
+            "title": "Modify an existing appointment",
+            "time": "Change the time:",
+            "timeExample": "Move the appointment with Marie Dupont to 4 PM instead of 2:30 PM",
+            "location": "Change the location:",
+            "locationExample": "Update the demo meeting: now over video call instead of the office"
+          },
+          "deletion": {
+            "title": "Delete an appointment",
+            "example": "Delete the appointment with TechCorp tomorrow, they cancelled"
+          }
+        },
+        "bestPractices": {
+          "title": "Tips and Best Practices",
+          "doTitle": "Do:",
+          "dontTitle": "Don't:",
+          "do": [
+            "Use full names to avoid duplicates",
+            "Always provide the email for better matching",
+            "Mention the company for professional context",
+            "Use spelling for complex names",
+            "Be precise about amounts"
+          ],
+          "dont": [
+            "Create contacts with only a first name",
+            "Omit amounts in opportunities",
+            "Schedule meetings without specifying the contact",
+            "Use abbreviations for companies",
+            "Mix multiple actions in one command"
+          ]
+        },
+        "quickActions": {
+          "title": "Quick Actions",
+          "subtitle": "Short commands for frequent actions",
+          "contacts": "Contacts:",
+          "contactsExample1": "Contact: Marie Dupont",
+          "contactsExample2": "Note Marie: call back Friday",
+          "opportunities": "Opportunities:",
+          "opportunitiesExample1": "Deal: 30k web project",
+          "opportunitiesExample2": "Web project won",
+          "appointments": "Appointments:",
+          "appointmentsExample1": "Meeting Marie tomorrow 2 PM",
+          "appointmentsExample2": "Cancel Marie meeting"
+        }
+      },
+      "tabs": {
+        "overview": "Overview",
+        "odoo": "Odoo",
+        "whatsapp": "WhatsApp",
+        "voice": "Voice notes",
+        "integrations": "Integrations",
+        "faq": "FAQ"
+      },
+      "overview": {
+        "welcome": "Welcome to Jay",
+        "subtitle": "Jay is your intelligent sales assistant that revolutionizes CRM management via WhatsApp",
+        "quickStart": "Quick start",
+        "availableGuides": "Available guides"
+      },
+      "badges": {
+        "creation": "Create",
+        "modification": "Modify",
+        "stages": "Stages",
+        "deletion": "Delete"
+      }
+    }
+  },
+  "contacts": {
+    "title": "Address Book",
+    "search": "Search a contact...",
+    "empty": "No contacts yet. Scan a business card to get started.",
+    "noResults": "No results for this search.",
+    "selectPrompt": "Select a contact to view details",
+    "back": "Back",
+    "addedOn": "Added on",
+    "syncAll": "Sync {{count}} contact(s)",
+    "syncAllAria": "Sync {{count}} contacts to {{crm}}",
+    "syncAllTooltip": "Sync {{count}} contacts → {{crm}}",
+    "noCrm": "Connect a CRM in Integrations to sync",
+    "kicker": "Book",
+    "selectPromptTitle": "Choose a contact",
+    "selectPromptBody": "Pick a card from the list to view its details, sync it to a CRM, or generate a brief.",
+    "syncStatus": {
+      "synced": "Synced",
+      "notSynced": "Not synced"
+    },
+    "noSelectionKicker": "No selection",
+    "detail": {
+      "noCrmConnected": "No CRM connected",
+      "source": {
+        "businessCardOcr": "Business card OCR",
+        "manual": "Manual entry",
+        "csvImport": "CSV import"
+      },
+      "fields": {
+        "email": "Email",
+        "phone": "Phone",
+        "company": "Company",
+        "address": "Address",
+        "note": "Note"
+      }
+    }
+  },
+  "loading": "Loading...",
+  "privacy": {
+    "title": "Privacy Policy",
+    "lastUpdated": "Last updated: 2026-02-09",
+    "sections": {
+      "introduction": {
+        "title": "1. Introduction",
+        "content": "HEY JAY, a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (SIRET: 992 172 866 00012), with its registered office at 87 Rue du Fontenoy, 59100 Roubaix, France (hereinafter \"Jay Assistant\", \"we\", \"our\", \"us\"), is the data controller for your personal data.\n\nWe are committed to protecting your privacy. This policy explains how we collect, use, store and protect your personal information when you use our AI assistant service. By using Jay Assistant, you agree to the practices described in this privacy policy."
+      },
+      "dataCollection": {
+        "title": "2. Information We Collect",
+        "content": "We collect information you provide directly (account, messages, third-party connections, preferences), automatically (usage data, IP, cookies, logs), and via third-party services (CRM, Google, WhatsApp)."
+      },
+      "dataUsage": {
+        "title": "3. How We Use Your Information",
+        "content": "We use your data to provide and improve our services, process your requests, manage your connections, personalize your experience, analyze usage, prevent fraud, comply with the law, and communicate with you."
+      },
+      "dataSharing": {
+        "title": "4. Sharing Your Information",
+        "content": "We do not sell or rent your data. We only share with: integrated third-party services (Google, WhatsApp, CRM), providers (hosting, support), legal obligations, or to protect our rights."
+      },
+      "security": {
+        "title": "5. Data Security",
+        "content": "We implement security measures: encryption, authentication, monitoring, staff training, backups."
+      },
+      "retention": {
+        "title": "6. Data Retention",
+        "content": "We retain your data as long as necessary to provide our services and comply with the law (account: active, messages: 12 months, connections: 6 months, billing: 7 years)."
+      },
+      "rights": {
+        "title": "7. Your Rights",
+        "content": "Under GDPR, you can request access, rectification, erasure, portability, objection or restriction of your data. Contact: hey@jay-assistant.fr."
+      },
+      "cookies": {
+        "title": "8. Cookies and Similar Technologies",
+        "content": "We use cookies to maintain your session, analyze usage, improve performance and personalize your experience. You can control cookies via your browser settings."
+      },
+      "transfers": {
+        "title": "9. International Transfers",
+        "content": "Your data may be transferred outside the EU with appropriate safeguards."
+      },
+      "changes": {
+        "title": "10. Changes to This Policy",
+        "content": "We may update this policy. Major changes will be notified by email or in-app."
+      },
+      "google": {
+        "title": "11. Use of Google Workspace Data",
+        "content": "Compliance with Google API Services User Data Policy. Google data is used only to provide expected features, never to train AI/ML models, nor shared with third parties except as functionally necessary."
+      },
+      "contact": {
+        "title": "12. Contact",
+        "content": "For any questions, contact us at hey@jay-assistant.fr, EuraTechnologies Blanchemaille - 87 Rue du Fontenoy, 59100 Roubaix, https://jay-assistant.fr."
+      }
+    }
+  },
+  "legal": {
+    "title": "Legal Notice",
+    "sections": {
+      "legalInfo": {
+        "title": "1. Legal Information",
+        "content": "HEY JAY is a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (head office SIRET: 992 172 866 00012).\n\nIntra-community VAT number: FR84 992 172 866\nAPE code: 62.01Z – Computer programming\nDate of incorporation: September 30, 2025\n\nRegistered office: 87 Rue du Fontenoy, 59100 Roubaix, France."
+      },
+      "director": {
+        "title": "2. Publication Director",
+        "content": "Alexandre De Clercq, acting as President of HEY JAY."
+      },
+      "hosting": {
+        "title": "3. Hosting",
+        "content": "The website jay-assistant.fr is hosted by Microsoft Azure (Azure Static Web Apps).\nMicrosoft France – 39 quai du Président Roosevelt, 92130 Issy-les-Moulineaux, France.\n\nApplication data is hosted by Supabase Inc. within the European Union (eu-west region)."
+      },
+      "contact": {
+        "title": "4. Contact",
+        "email": "Email: hey@jay-assistant.fr",
+        "phone": "Phone: +32 475 35 68 22"
+      }
+    }
+  },
+  "terms": {
+    "title": "Terms of Use",
+    "lastUpdated": "Last updated: 2026-02-09",
+    "sections": {
+      "acceptance": {
+        "title": "1. Acceptance of Terms",
+        "content": "By accessing and using Jay Assistant, you agree to be bound by these terms. If you do not agree, do not use the service."
+      },
+      "service": {
+        "title": "2. Service Description",
+        "content": "Jay Assistant is an AI assistant allowing you to send messages, create events, integrate CRMs, process business cards, manage voice notes, and connect to third-party services."
+      },
+      "account": {
+        "title": "3. Registration and User Account",
+        "content": "You must create an account with accurate information. You are responsible for the confidentiality and use of your account. Minimum age 18 (or parental consent between 13 and 17)."
+      },
+      "acceptableUse": {
+        "title": "4. Acceptable Use",
+        "content": "Permitted uses: manage your communications, organize, automate, integrate tools. Prohibited uses: breaking the law, spam, IP infringement, harassment, malware, unauthorized access, unauthorized commercial use."
+      },
+      "integrations": {
+        "title": "5. Third-Party Integrations",
+        "content": "The service integrates with Google Workspace, WhatsApp, CRM, etc. Use of these services is subject to their own terms."
+      },
+      "ip": {
+        "title": "6. Intellectual Property",
+        "content": "The service and its content are the property of Jay Assistant or its providers and protected by law. Limited, non-exclusive, non-transferable, revocable license for service use."
+      },
+      "billing": {
+        "title": "7. Billing and Payment",
+        "content": "Service use may be subject to fees depending on the plan. Prices are shown on the website. Payment in advance, non-refundable except as required by law. Termination possible at any time, no refund for already billed periods."
+      },
+      "liability": {
+        "title": "8. Limitation of Liability",
+        "content": "Jay Assistant is not liable for indirect damages, loss of profits or data. Total liability is limited to the amount paid in the last 12 months."
+      },
+      "warranty": {
+        "title": "9. Warranties and Exclusions",
+        "content": "The service is provided \"as is\". No guarantee of error-free or uninterrupted service. All implied warranties are excluded to the extent permitted by law."
+      },
+      "indemnification": {
+        "title": "10. Indemnification",
+        "content": "You agree to indemnify Jay Assistant for any claim related to your use of the service or violation of the terms."
+      },
+      "termination": {
+        "title": "11. Termination",
+        "content": "You may terminate at any time. We may suspend or terminate your access in case of violation. Upon termination, your right to use the service ceases immediately."
+      },
+      "law": {
+        "title": "12. Governing Law and Jurisdiction",
+        "content": "Terms governed by French law. Disputes subject to French courts."
+      },
+      "changes": {
+        "title": "13. Changes to Terms",
+        "content": "We may change these terms at any time. Changes take effect upon publication. Continued use means acceptance."
+      },
+      "contact": {
+        "title": "14. Contact",
+        "content": "For any questions, contact us at hey@jay-assistant.fr, EuraTechnologies Blanchemaille - 87 Rue du Fontenoy, 59100 Roubaix, https://jay-assistant.fr."
+      }
+    }
+  },
+  "features": {
+    "integrations": {
+      "title": "Our Integrations"
+    },
+    "quote": {
+      "lessTime": "Less time",
+      "inAdmin": "in admin.",
+      "means": "means",
+      "moreTime": "more time",
+      "withClients": "with your clients."
+    },
+    "cards": {
+      "voiceNote": {
+        "title": "<60Sec",
+        "subtitle": "Per voice note",
+        "description": "In less than 60 seconds, your voice note is sent to Jay! And this while walking or driving!"
+      },
+      "timeSaved": {
+        "title": "+2H",
+        "subtitle": "Saved per day",
+        "description": "Jay allows you to enrich your CRM with your leads and sales reports instantly."
+      },
+      "sales": {
+        "title": "35%+",
+        "subtitle": "more sales",
+        "description": "On average, Jay users increase their sales by 35%."
+      },
+      "stress": {
+        "title": "100%",
+        "subtitle": "less stress",
+        "description": "100% of our users report feeling less stress due to the reduction in administrative task time"
+      }
+    }
+  },
+  "pricing": {
+    "title": "Simple and transparent pricing",
+    "subtitle": "Start free, scale as you grow. No commitment.",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "billing": {
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "discount": "-20%",
+      "saveBadge": "Save 20%",
+      "yearlyBilling": "billed yearly excl. VAT",
+      "perMonth": "/month",
+      "perYear": "/year",
+      "perUser": "user",
+      "equivalent": "That's {{price}}€/month",
+      "toggle": "Toggle between monthly and yearly"
+    },
+    "badges": {
+      "popular": "Popular"
+    },
+    "buttons": {
+      "loading": "Loading..."
+    },
+    "trust": "Secure payment via Stripe • Cancel anytime • No commitment",
+    "landing": {
+      "free": {
+        "cta": "Try it",
+        "customPrice": null
+      },
+      "pro": {
+        "cta": "Try Pro",
+        "customPrice": null,
+        "tagline": "Cheaper than a coffee a day"
+      },
+      "business": {
+        "cta": "Choose Business",
+        "customPrice": null,
+        "tagline": "Cheaper than 30 minutes of your sales team"
+      },
+      "enterprise": {
+        "cta": "Contact us",
+        "customPrice": "Custom quote"
+      }
+    },
+    "plans": {
+      "light": {
+        "name": "Light",
+        "price": "€15/mo",
+        "yearly": "€12/mo",
+        "description": "No connection, limited features.",
+        "features": [
+          "No external connection",
+          "Limited features",
+          "Standard support"
+        ],
+        "cta": "Choose Light"
+      },
+      "starters": {
+        "name": "Starters",
+        "price": "€29/mo",
+        "yearly": "€23/mo",
+        "description": "No CRM connection, advanced access.",
+        "features": [
+          "No CRM connection",
+          "Advanced features",
+          "Priority support"
+        ],
+        "cta": "Choose Starters"
+      },
+      "business": {
+        "name": "Business",
+        "price": "€49/mo",
+        "yearly": "€39/mo",
+        "description": "Full unlimited, all connections and access.",
+        "features": [
+          "All unlimited",
+          "All connections (CRM, etc.)",
+          "Premium support"
+        ],
+        "cta": "Choose Business"
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "price": "Custom",
+        "description": "Custom solution, commercial access management, unique billing.",
+        "features": [
+          "Commercial access management",
+          "Single company invoice",
+          "Dedicated support"
+        ],
+        "cta": "Contact us"
+      },
+      "popular": "Popular",
+      "current": "Current",
+      "currentPlan": "✅ Current plan",
+      "trialUsed": "✅ Trial already used",
+      "free": {
+        "name": "Free",
+        "price": "€0",
+        "yearly": "€0",
+        "description": "1 voice note per day, no connection to other services.",
+        "features": [
+          "1 voice note/day",
+          "No external connection",
+          "Basic support"
+        ],
+        "cta": "Stay on Free"
+      },
+      "choosePlan": "Choose this plan",
+      "contactUs": "Contact us",
+      "savings": "Save",
+      "loading": "Loading plans...",
+      "error": "Error loading plans",
+      "previous": "Previous",
+      "next": "Next",
+      "toggleAnnualMonthly": "Toggle between annual and monthly",
+      "goToPlan": "Go to plan",
+      "toasts": {
+        "connectionRequired": {
+          "title": "Connection Required",
+          "description": "Please log in to start your trial."
+        },
+        "trialStarted": {
+          "title": "Business Trial Started!",
+          "description": "You now have access to all Business features for 7 days."
+        },
+        "trialError": {
+          "title": "Unable to Start Trial",
+          "description": "An unexpected error occurred."
+        },
+        "subscriptionRequired": {
+          "title": "Connection Required",
+          "description": "Please log in to subscribe to a plan."
+        },
+        "freePlan": {
+          "title": "Free Plan",
+          "description": "You are already on the free plan!"
+        },
+        "enterpriseContact": {
+          "title": "Contact Required",
+          "description": "Contact us for a custom solution."
+        },
+        "paymentError": {
+          "title": "Error",
+          "description": "Unable to create payment session."
+        }
+      },
+      "businessTrial": {
+        "title": "Business Trial",
+        "free": "FREE",
+        "duration": "7 days full access",
+        "price": "€0",
+        "originalPrice": "€49/mo",
+        "description": "🎯 Test all Business features for 7 days",
+        "terms": "No commitment • Cancel anytime • Once per account only",
+        "includedTitle": "Everything included:",
+        "features": [
+          "🚀 Unlimited voice notes",
+          "🔗 All CRM connections (Google, Outlook, HubSpot, Salesforce, etc.)",
+          "⚡ Priority processing",
+          "📊 Advanced analytics",
+          "🎯 Premium support",
+          "🔄 Automatic synchronization",
+          "📱 Advanced WhatsApp integrations",
+          "🛡️ Enhanced security"
+        ],
+        "startButton": "🚀 Start my free Business trial",
+        "starting": "Starting...",
+        "warning": "⚠️ Warning: Trial can only be used once per account"
+      },
+      "trialModal": {
+        "title": "🎉 Discover Business Trial!",
+        "duration": "7 days full access - 100% FREE",
+        "description": "🎯 Test all Business features",
+        "price": "€0",
+        "originalPrice": "€49/mo",
+        "free": "FREE",
+        "terms": "No commitment • Cancel anytime • Once per account only",
+        "includedTitle": "Everything included:",
+        "startButton": "🚀 Start my free Business trial",
+        "starting": "Starting...",
+        "laterButton": "Later",
+        "warning": "⚠️ Warning: Trial can only be used once per account"
+      },
+      "dashboardToasts": {
+        "trialStarted": {
+          "title": "🎉 Business Trial Started!",
+          "description": "You now have access to all features for 7 days."
+        },
+        "trialError": {
+          "title": "❌ Error",
+          "description": "Unable to start trial",
+          "technical": "A technical error occurred"
+        }
+      },
+      "featuresMapping": {
+        "1 vocal par jour": "1 voice note per day",
+        "Pas de connexion CRM": "No CRM connection",
+        "Support standard": "Standard support",
+        "Aucune connexion externe": "No external connection",
+        "Fonctionnalités limitées": "Limited features",
+        "Fonctionnalités avancées": "Advanced features",
+        "Support prioritaire": "Priority support",
+        "Vocal illimité": "Unlimited voice notes",
+        "Vocaux illimités": "Unlimited voice notes",
+        "Toutes connexions CRM": "All CRM connections",
+        "Toutes les connexions CRM": "All CRM connections",
+        "Support premium": "Premium support",
+        "Analyses avancées": "Advanced analytics",
+        "Période d'essai de 7 jours": "7-day trial period",
+        "Gestion des accès commerciaux": "Commercial access management",
+        "Facture unique entreprise": "Single company invoice",
+        "Accompagnement dédié": "Dedicated support",
+        "Support basique": "Basic support",
+        "Accès complet": "Full access",
+        "Solution sur mesure": "Tailored solution",
+        "Support dédié": "Dedicated support",
+        "Aucune connexion CRM": "No CRM connection",
+        "Connexions Google et Outlook uniquement": "Google & Outlook connections only"
+      },
+      "billing": {
+        "monthlySuffix": "month",
+        "yearlySuffix": "year"
+      },
+      "comingSoon": "Free until September 1st"
+    },
+    "highlight": "A single deal saved by Jay pays for years of subscription.",
+    "referral": "Earn bonus reports by referring your colleagues"
+  },
+  "footer": {
+    "copyright": "© 2026 Jay. All rights reserved.",
+    "links": {
+      "privacy": "Privacy Policy",
+      "legal": "Legal Notice",
+      "terms": "Terms of Use"
+    },
+    "blog": "Blog",
+    "linkedin": "Jay on LinkedIn"
+  },
+  "blog": {
+    "title": "Blog",
+    "loadError": "Error loading articles",
+    "errorOccurred": "An error occurred while loading articles.",
+    "noArticles": "No articles available yet.",
+    "subtitle": "Guides, tips and news about <1>CRM automation</1> and sales productivity.",
+    "previous": "Previous",
+    "next": "Next",
+    "tryFree": "Try Jay for free",
+    "tryFreeSubtitle": "Automate your CRM with voice notes. No credit card required.",
+    "startFree": "Start for free",
+    "articleNotFound": "Article not found",
+    "articleNotFoundDescription": "This article doesn't exist or has been removed.",
+    "backToBlog": "Back to blog",
+    "readingTime": "{{count}} min read",
+    "toc": "Table of contents"
+  },
+  "testimonials": {
+    "adrien": {
+      "name": "Adrien De Clercq",
+      "role": "Founder & CEO",
+      "company": "Recap Immo",
+      "quote": "Jay saves me from spending my evenings on my CRM. I can now focus entirely on my clients and my sales have increased."
+    },
+    "vasco": {
+      "name": "Vasco Calixto",
+      "role": "BDR",
+      "company": "AWS",
+      "quote": "Updating my CRM have always been the annoying part of my job!"
+    },
+    "aurelie": {
+      "name": "Aurélie Smith",
+      "role": "Real Estate Agent",
+      "company": "",
+      "quote": "Jay automates my visit reports and frees up 10 hours per week. This has allowed me to close more deals and focus on my prospects."
+    }
+  },
+  "credits": {
+    "title": "My credits",
+    "plan": "Plan",
+    "total": "available",
+    "available": "credits",
+    "low": "Running low",
+    "startup": "Startup",
+    "expiresIn": "{{days}}d left",
+    "limited": "Limited",
+    "bonus": "Bonus",
+    "noExpiry": "Permanent",
+    "none": "None",
+    "monthly": "Monthly",
+    "remaining": "{{count}} left",
+    "exhausted": "Exhausted",
+    "daily": "Daily",
+    "todayRemaining": "{{count}} left",
+    "dailyExhausted": "Tomorrow",
+    "unlimited": "Unlimited",
+    "lowWarning": "Low credits. Upgrade to Pro!"
+  },
+  "onboarding": {
+    "bonusProgress": "Welcome bonus",
+    "connectToUnlock": "Connect your services to unlock free voice notes",
+    "allBonusUnlocked": "All bonuses unlocked!",
+    "totalEarned": "+{{count}} voice notes earned",
+    "missionControl": {
+      "steps": {
+        "whatsapp": {
+          "title": "Start a conversation with Jay",
+          "subtitle": "Jay uses WhatsApp to receive your voice notes and photos. Your data stays private and GDPR compliant.",
+          "valueDemo": "\"Met Pierre from ACME, budget 50k, call back Friday\""
+        },
+        "crm": {
+          "title": "Connect your CRM",
+          "subtitle": "Jay will automatically sync your contacts",
+          "valueDemo": "→ Contact created + follow-up task scheduled"
+        },
+        "workspace": {
+          "title": "Connect Mail & Calendar",
+          "subtitle": "Optional: sync your emails and calendar",
+          "valueDemo": "📅 Appointments created automatically in your calendar"
+        }
+      },
+      "progress": {
+        "whatsapp": "WhatsApp",
+        "crm": "CRM",
+        "workspace": "Mail & Calendar"
+      },
+      "whatsappStep": {
+        "demo": "Example: send a voice note after a meeting",
+        "demoResult": "→ Contact created + follow-up task",
+        "connect": "Send a message to Jay",
+        "connected": "Connected ✓",
+        "bonusLabel": "bonus voice notes",
+        "bonusConnect": "by connecting WhatsApp",
+        "skipForNow": "I'll do it later",
+        "jayCreates": "Jay automatically creates:",
+        "contactCreated": "Contact \"Pierre\" at ACME",
+        "opportunity": "Opportunity: €50,000",
+        "task": "Task: Call back Friday",
+        "qrTitle": "Scan this QR code with your phone",
+        "qrStep1": "Scan the QR code with your camera",
+        "qrStep2": "WhatsApp opens with pre-filled message",
+        "qrStep3": "Press Send to activate the connection",
+        "verificationCode": "Verification code",
+        "messageSent": "I sent the message",
+        "openWhatsAppWeb": "Open WhatsApp Web"
+      },
+      "crmStep": {
+        "otherCRM": "Other?",
+        "skipForNow": "I'll connect my CRM later",
+        "continue": "Continue",
+        "bonusLabel": "bonus voice notes",
+        "connectingTo": "by connecting your CRM",
+        "connected": "connected"
+      },
+      "workspaceStep": {
+        "optional": "Optional - you can do this later",
+        "syncTitle": "Mail & Calendar synced",
+        "syncDescription": "Jay creates your appointments and sends emails automatically",
+        "skip": "Skip this step",
+        "finish": "Finish setup",
+        "mailOnly": "Email only (no calendar)",
+        "google": {
+          "name": "Google Workspace",
+          "description": "Gmail + Google Calendar"
+        },
+        "microsoft": {
+          "name": "Microsoft 365",
+          "description": "Outlook + Calendar"
+        },
+        "infomaniak": {
+          "name": "Infomaniak",
+          "description": "Mail + CalDAV"
+        },
+        "proton": {
+          "name": "Proton Mail",
+          "description": "Secure email"
+        },
+        "ovh": {
+          "name": "OVH Mail",
+          "description": "French hosting"
+        }
+      },
+      "celebration": {
+        "connected": "Connected!",
+        "bonusEarned": "+{{bonus}} bonus voice notes",
+        "complete": "Mission accomplished!",
+        "ready": "Jay is ready to assist you"
+      }
+    }
+  },
+  "referral": {
+    "title": "Invite your colleagues",
+    "subtitle": "Share Jay and earn free voice notes for each signup",
+    "earnRewards": "Earn rewards",
+    "yourCode": "Your referral code",
+    "codeCopied": "Code copied!",
+    "linkCopied": "Link copied!",
+    "copyLink": "Copy link",
+    "totalReferrals": "Referrals",
+    "converted": "Converted",
+    "pending": "Pending",
+    "bonusEarned": "Bonus earned",
+    "milestonesTitle": "Milestone rewards",
+    "milestonesSubtitle": "Unlock bonuses by referring",
+    "convertedCount": "converted",
+    "referralsShort": "referrals",
+    "voiceNotes": "voice notes",
+    "ambassadorBadge": "Ambassador badge",
+    "powerUserPermanent": "Permanent Power User",
+    "powerUser": "Power User status active",
+    "powerUserBonus": "+5 extra voice notes per converted referral",
+    "howItWorks": "How it works",
+    "step1Title": "Share your code",
+    "step1Desc": "Send your code or link to a colleague",
+    "step2Title": "They sign up",
+    "step2Desc": "Your referral creates an account with your code",
+    "step2Bonus": "+10 voice notes for them",
+    "step3Title": "They use Jay",
+    "step3Desc": "As soon as they process their first CRM voice note",
+    "step3Bonus": "+20 voice notes for you",
+    "whatsappMessage": "Hi! I use Jay to manage my CRM by voice, it's super handy. Sign up with my code {{code}} and we both get free voice notes: {{link}}",
+    "linkedinMessage": "I save tons of time managing my CRM by voice with Jay.\n\nAs a field salesperson, no more manual data entry after meetings. I dictate, Jay updates my CRM automatically.\n\nTry it free: {{link}}\n\n#CRM #SalesProductivity #SalesTech",
+    "errorLoading": "Unable to load data",
+    "input": {
+      "title": "Have a referral code?",
+      "description": "Enter it to receive +10 free voice notes",
+      "placeholder": "Ex: ABC12345",
+      "apply": "Apply",
+      "alreadyApplied": "Referral code applied",
+      "bonusReceived": "You received your bonus voice notes"
+    },
+    "applied": {
+      "success": "Referral code applied!",
+      "bonus": "+{{bonus}} voice notes unlocked!"
+    },
+    "errors": {
+      "title": "Error",
+      "invalid": "Invalid referral code",
+      "alreadyUsed": "You already have a referrer",
+      "selfRefer": "You cannot refer yourself",
+      "limitReached": "Referrer has reached their monthly limit",
+      "userNotFound": "User not found"
+    }
+  },
+  "auth": {
+    "errors": {
+      "googleConnection": {
+        "title": "Connection error",
+        "description": "An error occurred while connecting with Google. Please try again."
+      },
+      "microsoftConnection": {
+        "title": "Connection error",
+        "description": "An error occurred while connecting with Microsoft 365. Please try again."
+      }
+    },
+    "profileCompletion": {
+      "title": "Complete your profile",
+      "subtitle": "To continue, we need some additional information.",
+      "firstNamePlaceholder": "First name",
+      "lastNamePlaceholder": "Last name",
+      "phonePlaceholder": "Phone number",
+      "chooseLanguage": "Choose your language",
+      "submitButton": "Continue",
+      "submitting": "Saving...",
+      "toasts": {
+        "requiredFields": {
+          "title": "Required fields",
+          "description": "Please fill in all required fields."
+        },
+        "invalidPhone": {
+          "title": "Invalid number",
+          "description": "Phone number must contain only digits."
+        },
+        "missingCountryCode": {
+          "title": "Missing country code",
+          "description": "Please select a country code."
+        },
+        "success": {
+          "title": "Profile completed",
+          "description": "Your information has been saved successfully."
+        },
+        "error": {
+          "title": "Error",
+          "description": "An error occurred while saving your information. Please try again."
+        }
+      }
+    },
+    "validation": {
+      "lowercase": "a lowercase letter",
+      "uppercase": "an uppercase letter",
+      "number": "a number",
+      "special": "a special character"
+    },
+    "signup": {
+      "title": "Create an account",
+      "subtitle": "Start your experience with Jay",
+      "firstNamePlaceholder": "First Name",
+      "lastNamePlaceholder": "Last Name",
+      "languagePlaceholder": "Select your language",
+      "cta": {
+        "ariaLabel": "Signup offer",
+        "title": "New to Jay?",
+        "subtitle": "Get {{count}} credits when you sign up",
+        "button": "Create my free account"
+      }
+    },
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Continue your experience with Jay",
+      "emailPlaceholder": "Email",
+      "passwordPlaceholder": "Password",
+      "confirmPasswordPlaceholder": "Confirm Password",
+      "terms": {
+        "accept": "I have read and accept the",
+        "terms": "terms of use",
+        "and": "and the",
+        "privacy": "privacy policy"
+      },
+      "submit": {
+        "loading": "Loading...",
+        "signup": "Create account",
+        "login": "Sign in"
+      },
+      "divider": {
+        "text": "Or {{mode}} with",
+        "signup": "sign up",
+        "login": "continue"
+      },
+      "google": {
+        "loading": "Loading...",
+        "signup": "Sign up with",
+        "login": "Sign in with"
+      },
+      "microsoft": {
+        "loading": "Loading...",
+        "signup": "Sign up with",
+        "login": "Sign in with"
+      },
+      "toggle": {
+        "hasAccount": "Already have an account? Sign in",
+        "noAccount": "No account? Sign up"
+      },
+      "forgotPassword": {
+        "link": "Forgot password?",
+        "title": "Reset password",
+        "subtitle": "Enter your email address to receive a reset link",
+        "emailPlaceholder": "Your email address",
+        "sendButton": "Send link",
+        "sendingButton": "Sending...",
+        "backToLogin": "Back to login",
+        "checkEmail": "Check your email",
+        "emailSent": "A reset link has been sent to your email address. Also check your spam folder."
+      },
+      "resetPassword": {
+        "title": "New password",
+        "subtitle": "Enter your new password",
+        "newPasswordPlaceholder": "New password",
+        "confirmPasswordPlaceholder": "Confirm new password",
+        "updateButton": "Update password",
+        "updatingButton": "Updating...",
+        "backToLogin": "Back to login"
+      },
+      "toasts": {
+        "termsRequired": {
+          "title": "Terms Required",
+          "description": "Please accept the terms of use and privacy policy."
+        },
+        "pleaseWait": {
+          "title": "Please Wait",
+          "description": "For security reasons, please wait 3 seconds between each attempt."
+        },
+        "invalidPassword": {
+          "title": "Invalid Password",
+          "description": "The password must contain at least {requirements}"
+        },
+        "requiredFields": {
+          "title": "Required fields",
+          "description": "Please fill in all required fields."
+        },
+        "profileError": {
+          "title": "Profile Error",
+          "description": "Unable to create your profile. Please contact support."
+        },
+        "criticalError": {
+          "title": "Critical Error",
+          "description": "Error creating profile. Please try again."
+        },
+        "signupSuccess": {
+          "title": "Registration Successful",
+          "devDescription": "You can now log in to your account.",
+          "prodDescription": "A confirmation email has been sent to you. Please check your inbox and spam folder.",
+          "devModeDescription": "In development mode, you can log in without confirming your email."
+        },
+        "accountCreated": {
+          "title": "Account Created Successfully",
+          "description": "You are now logged in to Jay!"
+        },
+        "loginSuccess": {
+          "title": "Login Successful",
+          "description": "Welcome to Jay!"
+        },
+        "error": {
+          "title": "Error"
+        },
+        "forgotPassword": {
+          "success": {
+            "title": "Email sent",
+            "description": "A reset link has been sent to your email address."
+          },
+          "error": {
+            "title": "Error",
+            "description": "An error occurred while sending the email. Please try again."
+          }
+        },
+        "resetPassword": {
+          "success": {
+            "title": "Password updated",
+            "description": "Your password has been successfully updated. You can now log in."
+          },
+          "error": {
+            "title": "Error",
+            "description": "An error occurred while updating the password. Please try again."
+          },
+          "validation": {
+            "title": "Passwords don't match",
+            "description": "The passwords do not match. Please check."
+          }
+        }
+      }
+    },
+    "presentation": {
+      "titleStart": "Jay, your",
+      "titleHighlight": "assistant",
+      "titleEnd": "that follows you wherever you go",
+      "imageAlt": "Jay character"
+    },
+    "documentation": {
+      "title": "Help & Guides",
+      "subtitle": "Everything you need to use Jay with your CRM and communication tools",
+      "odoo": {
+        "title": "User Documentation - Odoo Integration",
+        "subtitle": "Complete guide to use Jay with your Odoo ERP via WhatsApp",
+        "overview": {
+          "title": "Overview",
+          "description": "Odoo integration allows you to manage your contacts, opportunities and appointments directly from WhatsApp through natural voice or text commands.",
+          "features": {
+            "contacts": "Contact management",
+            "opportunities": "Business opportunities",
+            "calendar": "Calendar management"
+          }
+        },
+        "contacts": {
+          "title": "Contact Management",
+          "subtitle": "Create and manage your Odoo contacts directly from WhatsApp",
+          "creation": {
+            "title": "Create a new contact",
+            "simple": "Simple example:",
+            "simpleExample": "Create an Odoo contact for Marie Dupont, email marie.dupont@example.fr, phone 06.12.34.56.78",
+            "complete": "Complete example with company:",
+            "completeExample": "Add an Odoo contact for Jean Martin, I spell J-E-A-N space M-A-R-T-I-N, email j.martin@techcorp.fr, phone 01.23.45.67.89, he works at TechCorp as sales director",
+            "address": "With complete address:",
+            "addressExample": "Create an Odoo contact Sophie Laurent, email s.laurent@digital.be, phone +32 2 123 45 67, address 15 rue de la Paix, 1000 Brussels, she is project manager at Digital Solutions"
+          },
+          "notes": {
+            "title": "Add notes to a contact",
+            "example": "Add a note about Marie Dupont: interested in our CRM solution, budget planned 50k€ for 2024",
+            "callExample": "Note for Jean Martin: very positive meeting, will do a demonstration to his team next week"
+          },
+          "fields": {
+            "title": "Supported fields",
+            "name": "First and last name",
+            "email": "Email",
+            "phone": "Phone",
+            "address": "Complete address",
+            "position": "Function/Position",
+            "company": "Company"
+          }
+        },
+        "opportunities": {
+          "title": "Opportunity Management",
+          "subtitle": "Create and track your business opportunities",
+          "creation": {
+            "title": "Create a new opportunity",
+            "simple": "Simple example:",
+            "simpleExample": "Create an opportunity of 25000 euros for the CRM project",
+            "contact": "With specific contact:",
+            "contactExample": "Add an opportunity for Marie Dupont: digital transformation, 75000 euros, qualification stage, 60% probability"
+          },
+          "modification": {
+            "title": "Modify an existing opportunity",
+            "amount": "Change amount:",
+            "amountExample": "Modify the CRM project opportunity, new amount 35000 euros",
+            "stage": "Change stage:",
+            "stageExample": "Move the digital transformation opportunity to Proposal stage"
+          },
+          "pipeline": {
+            "title": "Pipeline management",
+            "won": "Mark as won:",
+            "wonExample": "The CRM project opportunity is won",
+            "lost": "Mark as lost:",
+            "lostExample": "The digital transformation deal is lost, price too high"
+          },
+          "notes": {
+            "title": "Add notes to an opportunity",
+            "example": "Add a note on the CRM project opportunity: demonstration planned for Friday, very interested in reporting features"
+          }
+        },
+        "calendar": {
+          "title": "Calendar Management",
+          "subtitle": "Create and manage your appointments in Odoo calendar",
+          "creation": {
+            "title": "Create a new appointment",
+            "simple": "Simple example:",
+            "simpleExample": "Schedule an appointment with Marie Dupont tomorrow at 2:30 PM",
+            "complete": "With location and duration:",
+            "completeExample": "Create an appointment: product demonstration with TechCorp, next Tuesday at 10 AM, duration 2 hours, location our Paris office",
+            "followUp": "Follow-up appointment:",
+            "followUpExample": "Schedule a follow-up with Jean Martin Friday 3 PM: CRM project progress review"
+          },
+          "modification": {
+            "title": "Modify an existing appointment",
+            "time": "Change time:",
+            "timeExample": "Move the appointment with Marie Dupont to 4 PM instead of 2:30 PM",
+            "location": "Change location:",
+            "locationExample": "Modify the demonstration appointment: finally by video call instead of the office"
+          },
+          "deletion": {
+            "title": "Delete an appointment",
+            "example": "Delete the appointment with TechCorp tomorrow, they cancelled"
+          }
+        },
+        "bestPractices": {
+          "title": "Tips and Best Practices",
+          "doTitle": "Do:",
+          "dontTitle": "Don't:",
+          "do": [
+            "Use full names to avoid duplicates",
+            "Always specify email for better matching",
+            "Mention company for professional context",
+            "Use spelling for complex names",
+            "Be precise about amounts"
+          ],
+          "dont": [
+            "Create contacts with only a first name",
+            "Omit amounts in opportunities",
+            "Schedule appointments without specifying contact",
+            "Use abbreviations for companies",
+            "Mix multiple actions in one command"
+          ]
+        },
+        "quickActions": {
+          "title": "Quick Actions",
+          "subtitle": "Short commands for frequent actions",
+          "contacts": "Contacts:",
+          "contactsExample1": "Contact: Marie Dupont",
+          "contactsExample2": "Note Marie: call back Friday",
+          "opportunities": "Opportunities:",
+          "opportunitiesExample1": "Deal: 30k web project",
+          "opportunitiesExample2": "Web project won",
+          "appointments": "Appointments:",
+          "appointmentsExample1": "Appointment Marie tomorrow 2 PM",
+          "appointmentsExample2": "Cancel appointment Marie"
+        }
+      },
+      "tabs": {
+        "overview": "Overview",
+        "odoo": "Odoo",
+        "whatsapp": "WhatsApp",
+        "voice": "Voice notes",
+        "integrations": "Integrations",
+        "faq": "FAQ"
+      },
+      "whatsapp": {
+        "title": "WhatsApp Guide",
+        "subtitle": "How to use Jay effectively via WhatsApp Business",
+        "connection": {
+          "title": "🔗 WhatsApp Connection",
+          "description": "To get started, you need to connect your WhatsApp Business account to Jay. Follow these steps in the Integrations tab of your dashboard."
+        },
+        "messageTypes": {
+          "title": "💬 Supported message types",
+          "voice": {
+            "title": "🎤 Voice messages",
+            "description": "Send your commands by speaking naturally. Jay automatically transcribes and analyzes your requests."
+          },
+          "photos": {
+            "title": "📷 Photos (business cards)",
+            "description": "Photograph business cards for automatic data extraction and contact creation."
+          },
+          "spelling": {
+            "title": "🔤 Spelling",
+            "description": "For complex names, use spelling: \"J-E-A-N space M-A-R-T-I-N\""
+          }
+        },
+        "bestPractices": {
+          "title": "✨ Best practices",
+          "specific": {
+            "title": "Be specific:",
+            "description": "\"Create a contact for Marie Dupont\" rather than \"Add Marie\""
+          },
+          "oneAction": {
+            "title": "One action per message:",
+            "description": "Avoid mixing multiple requests in a single message"
+          },
+          "specifyCrm": {
+            "title": "Specify the CRM:",
+            "description": "Always mention which CRM to use (Odoo, Salesforce, etc.)"
+          }
+        }
+      },
+      "voice": {
+        "title": "Voice Notes Guide",
+        "subtitle": "Optimize voice command usage with Jay",
+        "tips": {
+          "title": "🎯 Tips for better results",
+          "do": {
+            "title": "✅ Do",
+            "speakClearly": "Speak clearly at normal speed",
+            "quietEnvironment": "Use a quiet environment",
+            "spellNames": "Spell difficult names",
+            "specifyAmounts": "Specify amounts and dates",
+            "mentionCrm": "Mention the target CRM"
+          },
+          "dont": {
+            "title": "❌ Don't",
+            "speakTooFast": "Speak too fast or too slowly",
+            "noisyEnvironment": "Record in a noisy environment",
+            "useAbbreviations": "Use abbreviations",
+            "mixActions": "Mix multiple actions",
+            "forgetDetails": "Forget to specify important details"
+          }
+        },
+        "examples": {
+          "title": "🗣️ Examples of effective voice commands",
+          "contact": {
+            "title": "Contact creation:",
+            "example": "\"Create a contact for Marie Dupont, I spell M-A-R-I-E space D-U-P-O-N-T, email marie.dupont@example.com, phone zero six twelve thirty four fifty six seventy eight\""
+          },
+          "opportunity": {
+            "title": "Opportunity creation:",
+            "example": "\"Add an opportunity for the CRM project, amount twenty-five thousand euros, contact Marie Dupont, qualification stage\""
+          }
+        }
+      },
+      "integrations": {
+        "title": "CRM Guide",
+        "subtitle": "Configuration and usage of all supported CRMs"
+      },
+      "faq": {
+        "title": "Frequently Asked Questions",
+        "questions": {
+          "howWorks": {
+            "question": "How does Jay understand my messages?",
+            "answer": "Jay uses advanced artificial intelligence to analyze your voice and text messages. It recognizes intentions, extracts important information (names, amounts, dates) and automatically executes actions in your CRMs."
+          },
+          "security": {
+            "question": "Is my data secure?",
+            "answer": "Absolutely. Jay uses end-to-end encryption for all communications. Your CRM data stays in your systems, Jay only facilitates interactions via secure APIs."
+          },
+          "cancelAction": {
+            "question": "Can I cancel an action by mistake?",
+            "answer": "Jay always confirms important actions before executing them. If an error occurs, you can always correct it directly in your CRM or ask Jay to modify/delete via a new message."
+          },
+          "offline": {
+            "question": "Does Jay work offline?",
+            "answer": "No, Jay requires an internet connection to function as it processes your messages via AI and syncs with your CRMs in real time. However, actions are very fast, usually within seconds."
+          },
+          "pricing": {
+            "question": "How much does Jay cost?",
+            "answer": "Jay offers several subscription plans according to your needs. Check the \"Subscription\" tab in your dashboard to see current details and pricing."
+          }
+        },
+        "needHelp": {
+          "title": "Need additional help?",
+          "description": "Our support team is available to guide you in using Jay.",
+          "contactSupport": "Contact support",
+          "viewOverview": "Overview"
+        }
+      },
+      "overview": {
+        "welcome": "Welcome to Jay",
+        "subtitle": "Jay is your intelligent sales assistant that revolutionizes CRM management via WhatsApp",
+        "quickStart": "Quick start",
+        "availableGuides": "Available guides"
+      },
+      "guides": {
+        "crm": {
+          "title": "📊 CRM Documentation",
+          "description": "Complete guide for all CRM integrations"
+        },
+        "whatsapp": {
+          "title": "💬 WhatsApp Guide",
+          "description": "How to use Jay via WhatsApp"
+        },
+        "voice": {
+          "title": "🎤 Voice Notes",
+          "description": "Optimize voice command usage"
+        },
+        "faq": {
+          "title": "❓ FAQ",
+          "description": "Frequently Asked Questions"
+        }
+      },
+      "badges": {
+        "creation": "Creation",
+        "modification": "Modification",
+        "stages": "Stages",
+        "deletion": "Deletion"
+      }
+    }
+  },
+  "cookieConsent": {
+    "title": "We respect your privacy",
+    "description": "We use cookies to improve your experience, analyze traffic and personalize ads. You can choose which categories you accept.",
+    "privacyLink": "Privacy Policy",
+    "acceptAll": "Accept all",
+    "rejectAll": "Reject all",
+    "customize": "Customize",
+    "savePreferences": "Save preferences",
+    "categories": {
+      "essential": {
+        "label": "Essential",
+        "description": "Required for the website to function. Cannot be disabled."
+      },
+      "analytics": {
+        "label": "Analytics",
+        "description": "Help us understand how you use the site so we can improve it."
+      },
+      "marketing": {
+        "label": "Marketing",
+        "description": "Allow us to show you relevant ads on other platforms."
+      }
+    }
+  },
+  "emailRecognition": {
+    "title": "Analyzed emails",
+    "empty": "No pending actions",
+    "pending": "pending",
+    "actions": {
+      "crm_update_contact": "Update contact",
+      "crm_update_deal": "Update deal",
+      "crm_add_note": "Add a note",
+      "crm_add_note_contact": "Add note to contact",
+      "crm_add_note_deal": "Add note to deal",
+      "crm_create_task": "Create a task",
+      "crm_move_deal": "Move deal stage",
+      "crm_win_deal": "Mark deal as won",
+      "crm_lose_deal": "Mark deal as lost",
+      "crm_create_quote": "Create a quote"
+    }
+  },
+  "brief": {
+    "loading": "Loading briefing...",
+    "joinVideo": "Join video call",
+    "error": {
+      "invalid": "Invalid link",
+      "connection": "Connection error",
+      "generic": "Error"
+    },
+    "empty": "No meetings found",
+    "generating": "Brief being generated...",
+    "section": {
+      "company": "Company",
+      "history": "History",
+      "recentEmails": "Recent emails",
+      "strategy": "Strategy",
+      "icebreakers": "Ice-Breakers",
+      "risks": "Risks"
+    },
+    "emails": {
+      "source": "Source: Gmail (read-only)",
+      "received": "Received",
+      "sent": "Sent",
+      "noSubject": "(no subject)"
+    },
+    "firstContact": "First contact — no history",
+    "labels": {
+      "angle": "Angle:",
+      "objections": "Objections:",
+      "lever": "Lever:"
+    },
+    "backButton": "All meetings",
+    "meetingCount": "meetings",
+    "contactFallback": "Contact"
+  },
+  "profile": {
+    "stats": {
+      "voiceNotes": "Voice notes",
+      "actions": "Actions",
+      "timeSaved": "Time saved",
+      "memberSince": "Member since"
+    }
+  },
+  "disc": {
+    "color": {
+      "rouge": "Red",
+      "jaune": "Yellow",
+      "vert": "Green",
+      "bleu": "Blue"
+    },
+    "pattern": {
+      "developer": "Developer",
+      "results_oriented": "Results-Oriented",
+      "inspirational": "Inspirational",
+      "creative": "Creative",
+      "promoter": "Promoter",
+      "persuader": "Persuader",
+      "counselor": "Counselor",
+      "appraiser": "Appraiser",
+      "specialist": "Specialist",
+      "achiever": "Achiever",
+      "agent": "Agent",
+      "investigator": "Investigator",
+      "objective_thinker": "Objective Thinker",
+      "perfectionist": "Perfectionist",
+      "practitioner": "Practitioner"
+    },
+    "confidence": {
+      "faible": "low",
+      "moyenne": "medium",
+      "haute": "high"
+    },
+    "blend_separator": " · "
+  },
+  "zohoLanding": {
+    "nav": {
+      "cta": "Start free"
+    },
+    "hero": {
+      "badge": "Built for Zoho CRM",
+      "titleLine1": "Jay for",
+      "subtitle": "Stop typing in CRM. Send a WhatsApp voice note and Jay updates Zoho CRM automatically — contacts, deals, notes, tasks, quotes.",
+      "audience": "Built for field sales reps and account managers across Europe.",
+      "cta": "Start your free trial",
+      "ctaSecondary": "Read the docs",
+      "languages": "Available in French, English & Dutch"
+    },
+    "features": {
+      "title": "Everything Jay does in Zoho CRM",
+      "subtitle": "From a single voice note, Jay handles the messy parts of your CRM so you can focus on closing.",
+      "businessPlan": "Business plan",
+      "voice": {
+        "title": "Voice-to-CRM automation",
+        "description": "Send a WhatsApp voice note in French, Dutch or English — Jay creates Contacts, Accounts, Deals, Notes, Tasks, Quotes and even Products in Zoho CRM. Records are matched by name, deduplicated, and confirmed in WhatsApp with a direct Zoho link."
+      },
+      "debrief": {
+        "title": "Auto-detected post-meeting debrief",
+        "description": "Jay detects when your meeting ends, pings you on WhatsApp, captures your voice debrief, and writes everything back to Zoho CRM: Notes on the right Contact, follow-up Tasks with due dates, Deal stage updates, new contacts created."
+      },
+      "brief": {
+        "title": "Pre-meeting briefs with DISC insights",
+        "description": "Before every appointment, Jay sends a WhatsApp brief with the full Zoho CRM context — Contact history, last Notes, open Deals, recent Activities — plus a DISC personality analysis to help you adapt your pitch."
+      },
+      "quotes": {
+        "title": "Localized Quote & Product management",
+        "description": "Dictate a Quote in any language and Jay handles the rest: auto-creates the Product in your Zoho catalog if missing, links Contact and Account, applies localized naming (Devis / Offerte / Quote) and respects your tax settings."
+      }
+    },
+    "aboutZoho": {
+      "title": "What is Zoho CRM?",
+      "body": "Zoho CRM is one of the world's most trusted CRM platforms, used by hundreds of thousands of businesses to manage leads, contacts, deals, and customer relationships at scale. Jay extends Zoho CRM with a voice-first interface on WhatsApp — so your reps update the CRM from the road, between meetings, without ever opening a laptop.",
+      "link": "Learn more about Zoho CRM"
+    },
+    "howItWorks": {
+      "title": "Get started in 3 minutes",
+      "subtitle": "Five steps from sign up to your first voice-driven update in Zoho CRM.",
+      "step1": {
+        "title": "Sign up to Jay",
+        "description": "Create your free Jay account — no credit card required."
+      },
+      "step2": {
+        "title": "Connect Zoho CRM",
+        "description": "From your Jay dashboard, open the Integrations page and click Connect Zoho CRM. Authorize Jay via Zoho's OAuth flow."
+      },
+      "step3": {
+        "title": "Link your WhatsApp",
+        "description": "Connect the WhatsApp number you use for business in one click. Jay replies on this number for every voice note."
+      },
+      "step4": {
+        "title": "Send your first voice note",
+        "description": "Describe what just happened with a prospect — Jay detects all CRM actions automatically."
+      },
+      "step5": {
+        "title": "Validate and you're done",
+        "description": "Jay shows the detected actions. Tap Validate — your records appear instantly in Zoho CRM, fully linked together."
+      }
+    },
+    "pricing": {
+      "title": "Simple, transparent pricing",
+      "subtitle": "Start free, upgrade when your team grows. All plans include the Zoho CRM integration.",
+      "perMonth": "/ month",
+      "perMonthPerUser": "/ user / month",
+      "footer": "Annual billing offers 20% discount. Custom Enterprise plans available on request.",
+      "starter": {
+        "name": "Starter",
+        "description": "For solo sales reps who want to update Zoho CRM from WhatsApp.",
+        "features": {
+          "0": "Voice-to-CRM automation (Contacts, Deals, Notes, Tasks, Quotes)",
+          "1": "Full multilingual support (FR / EN / NL)",
+          "2": "WhatsApp validation and confirmations",
+          "3": "OAuth-secured Zoho CRM connection"
+        }
+      },
+      "business": {
+        "name": "Business",
+        "description": "For sales teams that want pre-meeting briefs, DISC analysis, and team features.",
+        "features": {
+          "0": "Everything in Starter",
+          "1": "Pre-meeting briefs with DISC personality insights",
+          "2": "Auto-detected post-meeting debriefs",
+          "3": "Team management & shared dictionaries"
+        }
+      }
+    },
+    "vendor": {
+      "title": "Vendor information",
+      "subtitle": "Jay is built and maintained by Jay Assistant SRL — based in Roubaix, France. We're here to help.",
+      "contact": "Contact email",
+      "support": "Developer support",
+      "phone": "Phone"
+    },
+    "finalCta": {
+      "title": "Stop typing in CRM. Just talk to Jay.",
+      "subtitle": "Start your free trial today and update your Zoho CRM from a WhatsApp voice note in under 3 minutes.",
+      "cta": "Start your free trial",
+      "note": "No credit card required · Connect Zoho CRM in 1 click"
+    }
+  }
+}
