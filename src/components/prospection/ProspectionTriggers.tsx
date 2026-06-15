@@ -35,7 +35,8 @@ import {
   type SignalTriggerDraft,
 } from '@/hooks/useSignalTriggers';
 
-const JAY_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+// Workspace ID for filtering internal triggers (if using a multi-workspace architecture)
+const INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 
 const DEFAULT_DRAFT: SignalTriggerDraft = {
   slug: '',
@@ -114,7 +115,7 @@ export function ProspectionTriggers() {
     try {
       await upsert.mutateAsync({
         ...draft,
-        workspace_id: JAY_WORKSPACE_ID,
+        workspace_id: INTERNAL_WORKSPACE_ID,
       });
       toast({ title: draft.id ? 'Declencheur mis a jour' : 'Declencheur cree' });
       setOpen(false);

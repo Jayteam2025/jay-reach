@@ -100,7 +100,7 @@ export async function generateLetterDocx(data: LetterData): Promise<Blob> {
     senderStreet = '87 Rue du Fontenoy',
     senderZipCity = '59100 Roubaix',
     senderPhone = '+32 475 35 68 22',
-    senderEmail = 'hey@jay-assistant.fr',
+    senderEmail = 'contact@example.com',
     senderCity = 'Roubaix',
   } = data;
 

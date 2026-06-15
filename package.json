@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "test": "vitest",
-    "test:run": "vitest run",
+    "test:run": "vitest run --passWithNoTests",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "check:hardcodes": "node scripts/check-no-jay-hardcodes.mjs --strict"

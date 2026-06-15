@@ -36,7 +36,8 @@ import {
   type IcpPersonaDraft,
 } from '@/hooks/useIcpPersonas';
 
-const JAY_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+// Workspace ID for filtering internal personas (if using a multi-workspace architecture)
+const INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 
 const DEFAULT_DRAFT: IcpPersonaDraft = {
   slug: '',
@@ -115,7 +116,7 @@ export function ProspectionPersonas() {
     try {
       await upsert.mutateAsync({
         ...draft,
-        workspace_id: JAY_WORKSPACE_ID,
+        workspace_id: INTERNAL_WORKSPACE_ID,
       });
       toast({ title: draft.id ? 'Persona mis a jour' : 'Persona cree' });
       setOpen(false);

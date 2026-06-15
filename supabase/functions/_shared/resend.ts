@@ -83,8 +83,8 @@ export function createResendService(): ResendEmailService {
     throw new Error("RESEND_API_KEY n'est pas définie dans les variables d'environnement");
   }
 
-  const fromEmail = (globalThis as any).Deno?.env?.get("RESEND_FROM_EMAIL") || "jay@jay-assistant.fr";
-  const fromName = (globalThis as any).Deno?.env?.get("RESEND_FROM_NAME") || "Jay";
+  const fromEmail = (globalThis as any).Deno?.env?.get("RESEND_FROM_EMAIL") || "noreply@example.com";
+  const fromName = (globalThis as any).Deno?.env?.get("RESEND_FROM_NAME") || "Reach";
 
   return new ResendEmailService(apiKey, {
     email: fromEmail,

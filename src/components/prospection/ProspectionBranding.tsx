@@ -110,7 +110,7 @@ function RecipientsInput({ values, onChange }: RecipientsInputProps) {
           }}
           onKeyDown={handleKey}
           onBlur={commit}
-          placeholder={values.length === 0 ? 'jay@jay-assistant.fr' : ''}
+          placeholder={values.length === 0 ? 'contact@example.com' : ''}
           className="flex-1 min-w-[180px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
@@ -404,7 +404,7 @@ export function ProspectionBranding() {
             type="url"
             value={appUrl}
             onChange={(e) => setAppUrl(e.target.value)}
-            placeholder="https://jay-assistant.fr/prospection?tab=entreprises"
+            placeholder="https://example.com/prospection?tab=enterprises"
           />
         </div>
         <div className="space-y-2">

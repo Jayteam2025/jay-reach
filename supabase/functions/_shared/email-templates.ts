@@ -97,7 +97,7 @@ export function wrapEmailContent(
           <tr>
             <td align="center" style="padding-bottom: 16px;">
               <a href="${BRAND.url}" style="color: ${BRAND.colors.white}; text-decoration: none; font-size: 14px; font-weight: 600;">
-                jay-assistant.fr
+                ${new URL(BRAND.url).hostname}
               </a>
             </td>
           </tr>

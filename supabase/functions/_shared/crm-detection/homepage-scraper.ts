@@ -22,7 +22,7 @@ const PATHS_TO_SCAN = [
   "/contact",
 ];
 
-const USER_AGENT = "Mozilla/5.0 (compatible; JayCrmDetect/1.0; +https://jay-assistant.fr)";
+const USER_AGENT = "Mozilla/5.0 (compatible; ReachCrmDetect/1.0; +https://example.com)";
 const FETCH_TIMEOUT_MS = 8000;
 
 export type HtmlScanResult = {

@@ -3,12 +3,15 @@
 // Used by email-recognition cron to gate Mistral cost during rollout
 // (admin-only phase).
 
+// Configure internal emails and domains for your deployment.
+// These are typically admin/team emails that may have special privileges.
 const INTERNAL_EMAILS = new Set<string>([
-  "removed@example.invalid",
-  "removed@example.invalid",
+  // Add your internal team emails here
 ]);
 
-const INTERNAL_DOMAINS = ["jay-assistant.fr"];
+const INTERNAL_DOMAINS = [
+  // Add your internal company domains here (e.g., "company.com")
+];
 
 export function isInternalEmail(email?: string | null): boolean {
   if (!email) return false;

@@ -5,15 +5,14 @@
  * Seuls les domaines explicitement listés sont autorisés.
  */
 
-const APP_URL = Deno.env.get("APP_URL") || "https://jay-assistant.fr";
+const APP_URL = Deno.env.get("APP_URL") || "http://localhost:8080";
 
 const ALLOWED_ORIGINS = [
   // Dynamique via APP_URL (prod ou staging)
   APP_URL,
   APP_URL.replace('https://', 'https://www.'),
-  // Production (toujours autorisé pour les callbacks OAuth cross-env)
-  'https://jay-assistant.fr',
-  'https://www.jay-assistant.fr',
+  // Production origins (configure via APP_URL env var in production)
+  // Examples: 'https://example.com', 'https://www.example.com'
   // Chrome Extension publique (production)
   'chrome-extension://napclllinbhgdndgkhefajafnndjepam',
   // Chrome Extension interne (admin-only, ID stable via manifest.key)
