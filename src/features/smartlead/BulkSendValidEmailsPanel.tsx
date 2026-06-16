@@ -15,22 +15,16 @@ import { useToast } from '@/components/ui/use-toast';
 import type { EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import { useSmartleadPush } from './useSmartleadPush';
 
-function categoryLabel(count: number, kind: 'hr' | 'director' | 'sales'): string {
-  if (kind === 'hr') return 'RH';
-  if (kind === 'director') return count > 1 ? 'directeurs commerciaux' : 'directeur commercial';
-  return count > 1 ? 'commerciaux' : 'commercial';
-}
-
 /**
- * Pousse en Smartlead tous les leads d'une catégorie dont deliverability_status='valid'.
- * Le gate filtre quand même côté backend (defense in depth).
+ * Pousse en Smartlead tous les leads d'un persona dont deliverability_status='valid'.
+ * Le gate filtre quand même côté backend (defense in depth). `label` = nom du persona.
  */
 export function BulkSendValidEmailsPanel({
   profiles,
-  kind,
+  label,
 }: {
   profiles: EnrichedProfile[];
-  kind: 'hr' | 'director' | 'sales';
+  label: string;
 }) {
   const { toast } = useToast();
   const { eligible, alreadySent, totalWithEmail, push, sending } = useSmartleadPush(profiles);
@@ -38,8 +32,8 @@ export function BulkSendValidEmailsPanel({
 
   if (totalWithEmail === 0) return null;
 
-  const labelEligible = categoryLabel(eligible.length, kind);
-  const labelTotal = categoryLabel(totalWithEmail, kind);
+  const labelEligible = label;
+  const labelTotal = label;
 
   const handleSend = async () => {
     setDialogOpen(false);
@@ -73,7 +67,7 @@ export function BulkSendValidEmailsPanel({
               </>
             ) : alreadySent > 0 ? (
               <>
-                <strong>{alreadySent}</strong> {categoryLabel(alreadySent, kind)} déjà envoyé{alreadySent > 1 ? 's' : ''} sur Smartlead
+                <strong>{alreadySent}</strong> {label} déjà envoyé{alreadySent > 1 ? 's' : ''} sur Smartlead
               </>
             ) : (
               <>Aucun {labelTotal} avec email vérifié (lancer Bouncer d'abord)</>

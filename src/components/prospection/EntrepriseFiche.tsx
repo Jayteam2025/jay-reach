@@ -13,7 +13,6 @@ import { BulkSendValidEmailsPanel } from '@/features/smartlead/BulkSendValidEmai
 import { BulkLinkedInInvitePanel } from '@/features/smartlead/BulkLinkedInInvitePanel';
 import { getProfileLabel } from '@/features/messages/profile-helpers';
 import { EnrichmentStatusPanel } from '@/features/enrichment/EnrichmentStatusPanel';
-import { ExpandCategoryButton } from '@/features/enrichment/ExpandCategoryButton';
 
 interface Props {
   company: EnrichedCompany;
@@ -147,9 +146,9 @@ export function EntrepriseFiche({ company }: Props) {
 }
 
 // =============================================================================
-// CategoryTabs — 3 onglets RH / Directeur commercial / Commerciaux terrain
-// Seuls les onglets non vides sont affiches. Onglet actif par defaut = premier
-// dans l'ordre RH > Dir Co > Commerciaux qui a au moins un contact.
+// CategoryTabs — un onglet par PERSONA présent (plus de hr/director/sales en dur).
+// Dérivé de company.personaGroups (clé = slug persona). Seuls les onglets non
+// vides sont affichés. Fonctionne pour n'importe quel persona du workspace.
 // =============================================================================
 
 function CategoryTabs({
@@ -160,24 +159,23 @@ function CategoryTabs({
   messages: ProspectMessage[];
 }) {
   const tabs = useMemo(() => {
-    const list: Array<{ key: 'hr' | 'director' | 'sales'; tabKey: 'hr' | 'director' | 'field_sales'; label: string; count: number }> = [];
-    // Label dynamique = persona.label du 1er profile de la liste (fallback legacy
-    // CATEGORY_LABELS si aucun persona resolu, pour les rows pre-migration 1.2.2).
-    if (company.hrList.length > 0 && company.hrList[0])
-      list.push({ key: 'hr', tabKey: 'hr', label: getProfileLabel(company.hrList[0]), count: company.hrList.length });
-    if (company.directorList.length > 0 && company.directorList[0])
-      list.push({ key: 'director', tabKey: 'director', label: getProfileLabel(company.directorList[0]), count: company.directorList.length });
-    if (company.sales.length > 0 && company.sales[0])
-      list.push({ key: 'sales', tabKey: 'field_sales', label: getProfileLabel(company.sales[0]), count: company.sales.length });
-    return list;
+    return Object.entries(company.personaGroups)
+      .filter(([, profiles]) => profiles.length > 0)
+      .map(([slug, profiles]) => ({
+        slug,
+        // Libellé = label du persona résolu (fallback slug pour les rows sans persona).
+        label: profiles[0] ? getProfileLabel(profiles[0]) : slug,
+        count: profiles.length,
+        profiles,
+      }));
   }, [company]);
 
-  const [activeTab, setActiveTab] = useState<string>(tabs[0]?.key || 'hr');
+  const [activeTab, setActiveTab] = useState<string>(tabs[0]?.slug ?? '');
 
   // Si l'onglet actif disparait (ex: ajout/retrait de profils), retombe sur le premier
   useEffect(() => {
-    if (tabs.length > 0 && tabs[0] && !tabs.some(t => t.key === activeTab)) {
-      setActiveTab(tabs[0].key);
+    if (tabs.length > 0 && tabs[0] && !tabs.some(t => t.slug === activeTab)) {
+      setActiveTab(tabs[0].slug);
     }
   }, [tabs, activeTab]);
 
@@ -191,18 +189,18 @@ function CategoryTabs({
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="bg-transparent border-b border-border rounded-none p-0 h-auto w-full justify-start gap-6">
+      <TabsList className="bg-transparent border-b border-border rounded-none p-0 h-auto w-full justify-start gap-6 flex-wrap">
         {tabs.map(tab => (
           <TabsTrigger
-            key={tab.key}
-            value={tab.key}
+            key={tab.slug}
+            value={tab.slug}
             className="bg-transparent px-0 pb-3 pt-0 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-foreground text-muted-foreground font-normal text-[13px] gap-2 h-auto"
           >
             <span>{tab.label}</span>
             <span
               className={cn(
                 'inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded text-[11px] font-mono tabular-nums',
-                activeTab === tab.key
+                activeTab === tab.slug
                   ? 'bg-foreground/10 text-foreground'
                   : 'bg-muted text-muted-foreground/70',
               )}
@@ -213,77 +211,24 @@ function CategoryTabs({
         ))}
       </TabsList>
 
-      {company.hrList.length > 0 && (
-        <TabsContent value="hr" className="mt-8 focus-visible:ring-0 space-y-10">
+      {tabs.map(tab => (
+        <TabsContent key={tab.slug} value={tab.slug} className="mt-8 focus-visible:ring-0 space-y-10">
           <div className="space-y-3">
-            <BulkLinkedInInvitePanel profiles={company.hrList} categoryLabel="RH" />
-            <BulkSendValidEmailsPanel profiles={company.hrList} kind="hr" />
+            <BulkLinkedInInvitePanel profiles={tab.profiles} categoryLabel={tab.label} />
+            <BulkSendValidEmailsPanel profiles={tab.profiles} label={tab.label} />
           </div>
-          {company.hrList.map((profile, idx) => (
+          {tab.profiles.map((profile, idx) => (
             <ProfileBlock
               key={profile.id}
               profile={profile}
               company={company}
               messages={messages.filter(m => m.prospect_id === profile.id)}
               index={idx + 1}
-              total={company.hrList.length}
+              total={tab.profiles.length}
             />
           ))}
-          <ExpandCategoryButton
-            company={company}
-            category="hr"
-            label="RH"
-          />
         </TabsContent>
-      )}
-
-      {company.directorList.length > 0 && (
-        <TabsContent value="director" className="mt-8 focus-visible:ring-0 space-y-10">
-          <div className="space-y-3">
-            <BulkLinkedInInvitePanel profiles={company.directorList} categoryLabel="directeurs commerciaux" />
-            <BulkSendValidEmailsPanel profiles={company.directorList} kind="director" />
-          </div>
-          {company.directorList.map((profile, idx) => (
-            <ProfileBlock
-              key={profile.id}
-              profile={profile}
-              company={company}
-              messages={messages.filter(m => m.prospect_id === profile.id)}
-              index={idx + 1}
-              total={company.directorList.length}
-            />
-          ))}
-          <ExpandCategoryButton
-            company={company}
-            category="director"
-            label="directeurs commerciaux"
-          />
-        </TabsContent>
-      )}
-
-      {company.sales.length > 0 && (
-        <TabsContent value="sales" className="mt-8 focus-visible:ring-0 space-y-10">
-          <div className="space-y-3">
-            <BulkLinkedInInvitePanel profiles={company.sales} categoryLabel="commerciaux" />
-            <BulkSendValidEmailsPanel profiles={company.sales} kind="sales" />
-          </div>
-          {company.sales.map((profile, idx) => (
-            <ProfileBlock
-              key={profile.id}
-              profile={profile}
-              company={company}
-              messages={messages.filter(m => m.prospect_id === profile.id)}
-              index={idx + 1}
-              total={company.sales.length}
-            />
-          ))}
-          <ExpandCategoryButton
-            company={company}
-            category="field_sales"
-            label="commerciaux"
-          />
-        </TabsContent>
-      )}
+      ))}
     </Tabs>
   );
 }
