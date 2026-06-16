@@ -7,8 +7,6 @@ import { ProspectionSidebar } from './ProspectionSidebar';
 // actif (et ses dependances lourdes : xlsx/mammoth pour l'import, dnd-kit pour
 // le kanban) est telecharge. Les composants sont des exports nommes, d'ou le
 // remap .then(m => ({ default: m.X })).
-const ProspectionDashboard = lazy(() =>
-  import('./ProspectionDashboard').then((m) => ({ default: m.ProspectionDashboard })));
 const ProspectionEntreprises = lazy(() =>
   import('./ProspectionEntreprises').then((m) => ({ default: m.ProspectionEntreprises })));
 const ProspectionContactsLinkedIn = lazy(() =>
@@ -27,7 +25,6 @@ const ProspectionCampaigns = lazy(() =>
   import('./ProspectionCampaigns').then((m) => ({ default: m.ProspectionCampaigns })));
 
 export type ProspectionTab =
-  | 'dashboard'
   | 'entreprises'
   | 'linkedin'
   | 'triggers'
@@ -38,7 +35,6 @@ export type ProspectionTab =
   | 'providers';
 
 const VALID_TABS: ProspectionTab[] = [
-  'dashboard',
   'entreprises',
   'linkedin',
   'triggers',
@@ -52,16 +48,14 @@ const VALID_TABS: ProspectionTab[] = [
 export function ProspectionLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as ProspectionTab | null;
-  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'dashboard';
+  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'entreprises';
 
   const setActiveTab = (tab: ProspectionTab) => {
-    setSearchParams(tab === 'dashboard' ? {} : { tab });
+    setSearchParams(tab === 'entreprises' ? {} : { tab });
   };
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard':
-        return <ProspectionDashboard />;
       case 'entreprises':
         return <ProspectionEntreprises />;
       case 'linkedin':
@@ -79,7 +73,7 @@ export function ProspectionLayout() {
       case 'providers':
         return <ProspectionProviders />;
       default:
-        return <ProspectionDashboard />;
+        return <ProspectionEntreprises />;
     }
   };
 

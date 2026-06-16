@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BarChart3, Building2, Key, Palette, FileText, Radar, Users, Megaphone } from 'lucide-react';
+import { ArrowLeft, Building2, Key, Palette, FileText, Radar, Users, Megaphone } from 'lucide-react';
 import { ThemeSwitch } from '@/components/ThemeSwitch';
 import { ProspectionTab } from './ProspectionLayout';
 
@@ -14,7 +14,6 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
   const navigate = useNavigate();
 
   const tabs = [
-    { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
     { id: 'entreprises' as const, label: 'Entreprises', icon: Building2 },
     // 'linkedin' (Contacts LinkedIn) masque temporairement - feature WIP
     { id: 'triggers' as const, label: 'Declencheurs', icon: Radar },
