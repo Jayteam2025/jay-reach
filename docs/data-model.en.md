@@ -1,24 +1,24 @@
-> **Français** | [English](data-model.en.md)
+> [Français](data-model.md) | **English**
 
-# Modèle de Données — Jay Reach
+# Data Model — Jay Reach
 
-## Vue d'ensemble
+## Overview
 
-Jay Reach est multi-tenant. Chaque organisation (workspace) a ses propres prospects, triggers, personas et configurations. L'accès est protégé par **Row-Level Security (RLS)** Postgres.
+Jay Reach is multi-tenant. Each organization (workspace) has its own prospects, triggers, personas, and configurations. Access is protected by **Row-Level Security (RLS)** Postgres.
 
 ---
 
-## Tables Principales
+## Main Tables
 
-### Authentification & Tenancy
+### Authentication & Tenancy
 
 #### `auth.users` (Supabase Auth)
-- Gérée par Supabase — email + password hash
-- UUID primaire
-- Authentification JWT
+- Managed by Supabase — email + password hash
+- UUID primary key
+- JWT authentication
 
 #### `profiles`
-Profil utilisateur (extension auth.users).
+User profile (extension of auth.users).
 
 ```sql
 create table profiles (
@@ -33,14 +33,14 @@ create table profiles (
 ```
 
 #### `workspaces`
-Organisation (SaaS tenant).
+Organization (SaaS tenant).
 
 ```sql
 create table workspaces (
   id uuid primary key,
   name text not null,
   slug text unique,
-  settings jsonb default '{}'::jsonb,           -- branding, LLM model, seuils
+  settings jsonb default '{}'::jsonb,           -- branding, LLM model, thresholds
   created_by uuid references auth.users(id),
   is_active boolean default true,
   created_at timestamptz default now(),
@@ -49,7 +49,7 @@ create table workspaces (
 ```
 
 #### `workspace_members`
-Appartenance user → workspace + rôle.
+User → workspace membership + role.
 
 ```sql
 create table workspace_members (
@@ -62,7 +62,7 @@ create table workspace_members (
 );
 ```
 
-**Fonction RLS helper :**
+**RLS helper function:**
 
 ```sql
 create or replace function public.user_workspaces(min_role text default 'viewer')
@@ -78,14 +78,14 @@ returns setof uuid language sql stable security definer set search_path = 'publi
 $$;
 ```
 
-Utilisée par toutes les RLS policies workspace-based pour éviter les boucles infinies (SECURITY DEFINER).
+Used by all workspace-based RLS policies to avoid infinite loops (SECURITY DEFINER).
 
 ---
 
-### Prospects & Signaux
+### Prospects & Signals
 
 #### `prospects`
-Identité d'une personne prospectée.
+Identity of a prospected person.
 
 ```sql
 create table prospects (
@@ -93,7 +93,7 @@ create table prospects (
   workspace_id uuid not null references workspaces(id),
   first_name text not null,
   last_name text,
-  email text,                                    -- déductible ou enrichi
+  email text,                                    -- deduced or enriched
   company_id uuid references companies(id),
   created_at timestamptz default now()
 );
@@ -101,7 +101,7 @@ create table prospects (
 ```
 
 #### `prospect_signals`
-Signaux détectés pour un prospect (ex: annonce d'emploi).
+Signals detected for a prospect (e.g., job posting).
 
 ```sql
 create table prospect_signals (
@@ -118,7 +118,7 @@ create table prospect_signals (
 ```
 
 #### `prospect_profiles`
-Données enrichies (FullEnrich, LinkedIn, Bouncer).
+Enriched data (FullEnrich, LinkedIn, Bouncer).
 
 ```sql
 create table prospect_profiles (
@@ -126,7 +126,7 @@ create table prospect_profiles (
   workspace_id uuid not null,
   prospect_id uuid not null references prospects(id) unique,
   linkedin_url text,
-  linkedin_data jsonb,                          -- snapshot Apify
+  linkedin_data jsonb,                          -- Apify snapshot
   email_verified text,                          -- deduced|enriched|api
   bouncer_status text,                          -- valid|invalid|risky|disposable|unknown
   bouncer_result jsonb,                         -- full Bouncer response
@@ -138,7 +138,7 @@ create table prospect_profiles (
 ```
 
 #### `prospect_imports`
-Batches d'import CSV/manuels.
+Batches of CSV/manual imports.
 
 ```sql
 create table prospect_imports (
@@ -149,7 +149,7 @@ create table prospect_imports (
   status text default 'pending',                -- pending|processing|completed|failed
   total_rows int,
   successful_rows int,
-  mapping jsonb,                                -- colonnes mappées
+  mapping jsonb,                                -- mapped columns
   created_at timestamptz default now(),
   completed_at timestamptz
 );
@@ -157,10 +157,10 @@ create table prospect_imports (
 
 ---
 
-### Entreprises
+### Companies
 
 #### `companies`
-Données légales & enrichies (INSEE SIRENE, FullEnrich).
+Legal & enriched company data (INSEE SIRENE, FullEnrich).
 
 ```sql
 create table companies (
@@ -175,14 +175,14 @@ create table companies (
   founded_year int,
   location text,
   crm_detected text,                            -- Salesforce|HubSpot|Pipedrive|etc
-  crm_detection_metadata jsonb,                 -- signaux détection
+  crm_detection_metadata jsonb,                 -- detection signals
   enriched_at timestamptz,
   created_at timestamptz default now()
 );
 ```
 
 #### `domain_email_patterns`
-Patterns d'email déduction ([first.last@domain](mailto:first.last@domain)).
+Email deduction patterns ([first.last@domain](mailto:first.last@domain)).
 
 ```sql
 create table domain_email_patterns (
@@ -190,17 +190,17 @@ create table domain_email_patterns (
   workspace_id uuid not null,
   domain text not null,                         -- company.fr
   pattern text not null,                        -- {f}.{l}@{d} = f.l@company.fr
-  confidence numeric,                           -- 0-1 (empirique)
-  samples int,                                  -- nb emails observés
-  bounce_rate numeric,                          -- pour apprentissage
-  downgraded_at timestamptz,                    -- si bounce_rate > seuil
+  confidence numeric,                           -- 0-1 (empirical)
+  samples int,                                  -- number of observed emails
+  bounce_rate numeric,                          -- for learning
+  downgraded_at timestamptz,                    -- if bounce_rate > threshold
   downgrade_reason text,
   unique(workspace_id, domain)
 );
 ```
 
 #### `email_verification_cache`
-Cache des résultats Bouncer/Reoon.
+Cache of Bouncer/Reoon results.
 
 ```sql
 create table email_verification_cache (
@@ -218,34 +218,34 @@ create table email_verification_cache (
 ### Triggers, Personas, Templates
 
 #### `prospect_signal_triggers`
-Définition des signaux à détecter.
+Definition of signals to detect.
 
 ```sql
 create table prospect_signal_triggers (
   id uuid primary key,
   workspace_id uuid not null,
-  name text not null,                           -- "RH en CDI"
+  name text not null,                           -- "HR on permanent contract"
   signal_type text not null,                    -- job_posting|company_growth
-  filter_rules jsonb,                           -- {job_title: "RH", contract: "CDI"}
-  score_multiplier numeric default 1,           -- 1.0 = neutre, 1.5 = bonus
+  filter_rules jsonb,                           -- {job_title: "HR", contract: "CDI"}
+  score_multiplier numeric default 1,           -- 1.0 = neutral, 1.5 = bonus
   is_active boolean default true,
   created_at timestamptz default now()
 );
 ```
 
 #### `prospect_icp_personas`
-Critères de ciblage (Ideal Customer Profile).
+Targeting criteria (Ideal Customer Profile).
 
 ```sql
 create table prospect_icp_personas (
   id uuid primary key,
   workspace_id uuid not null,
-  name text not null,                           -- "Directeur Commercial"
+  name text not null,                           -- "Sales Director"
   description text,
-  job_titles text[],                            -- ex: ["Directeur Commercial", "VP Sales"]
+  job_titles text[],                            -- ex: ["Sales Director", "VP Sales"]
   sectors text[],                               -- ex: ["Tech", "Finance"]
   company_sizes text[],                         -- ex: ["50-250", "250+"]
-  geographies text[],                           -- ex: ["France", "Belgique"]
+  geographies text[],                           -- ex: ["France", "Belgium"]
   signal_triggers uuid[],                       -- references prospect_signal_triggers
   is_active boolean default true,
   created_at timestamptz default now()
@@ -253,7 +253,7 @@ create table prospect_icp_personas (
 ```
 
 #### `prospect_message_templates`
-Templates de message personnalisable (email, SMS, LinkedIn).
+Customizable message templates (email, SMS, LinkedIn).
 
 ```sql
 create table prospect_message_templates (
@@ -261,8 +261,8 @@ create table prospect_message_templates (
   workspace_id uuid not null,
   name text not null,
   channel text not null,                        -- email|sms|linkedin|whatsapp
-  subject text,                                 -- si email
-  body text not null,                           -- template avec {{variables}}
+  subject text,                                 -- if email
+  body text not null,                           -- template with {{variables}}
   persona_id uuid references prospect_icp_personas(id),
   variables text[],                             -- ex: [{{first_name}}, {{company}}]
   is_default boolean default false,
@@ -275,13 +275,13 @@ create table prospect_message_templates (
 ### Batches, Jobs, Actions
 
 #### `prospect_batches`
-Un batch = une campagne de sourcing.
+A batch = a sourcing campaign.
 
 ```sql
 create table prospect_batches (
   id uuid primary key,
   workspace_id uuid not null,
-  name text,                                    -- "Sourcing RH 2026-06"
+  name text,                                    -- "HR Sourcing 2026-06"
   status text default 'draft',                  -- draft|sourcing|scoring|enriching|ready|sent
   trigger_id uuid references prospect_signal_triggers(id),
   persona_id uuid references prospect_icp_personas(id),
@@ -295,7 +295,7 @@ create table prospect_batches (
 ```
 
 #### `prospect_enrichment_jobs`
-Queue d'enrichissement FullEnrich.
+FullEnrich enrichment queue.
 
 ```sql
 create table prospect_enrichment_jobs (
@@ -304,15 +304,15 @@ create table prospect_enrichment_jobs (
   batch_id uuid references prospect_batches(id),
   prospect_id uuid references prospects(id),
   status text default 'pending',                -- pending|processing|completed|failed
-  fullenrich_request_id text,                   -- ID API FullEnrich
-  result jsonb,                                 -- réponse FullEnrich
+  fullenrich_request_id text,                   -- FullEnrich API ID
+  result jsonb,                                 -- FullEnrich response
   created_at timestamptz default now(),
   completed_at timestamptz
 );
 ```
 
 #### `prospect_actions`
-Actions liées à un prospect (email sent, appel, etc).
+Actions linked to a prospect (email sent, call, etc).
 
 ```sql
 create table prospect_actions (
@@ -328,33 +328,33 @@ create table prospect_actions (
 
 ---
 
-### Configuration & Sécurité
+### Configuration & Security
 
 #### `workspace_provider_credentials`
-Clés API chiffrées (LLM, enrichement, outreach).
+Encrypted API keys (LLM, enrichment, outreach).
 
 ```sql
 create table workspace_provider_credentials (
   id uuid primary key,
   workspace_id uuid not null references workspaces(id),
   provider_id text not null,                    -- anthropic|fullenrich|bouncer|smartlead
-  encrypted_key text not null,                  -- AES-GCM chiffré avec TOKEN_ENCRYPTION_KEY
+  encrypted_key text not null,                  -- AES-GCM encrypted with TOKEN_ENCRYPTION_KEY
   created_at timestamptz default now(),
   unique(workspace_id, provider_id)
 );
 ```
 
-**Chiffrement** : côté edge function avec `token-encryption.ts`
+**Encryption**: in edge functions with `token-encryption.ts`
 
 ```typescript
 import { encryptToken, decryptToken } from './_shared/token-encryption.ts';
 
-const encrypted = encryptToken(apiKey, encryptionKey);  // stock encrypted_key
-const decrypted = decryptToken(encrypted, encryptionKey); // déchiffre at runtime
+const encrypted = encryptToken(apiKey, encryptionKey);  // store encrypted_key
+const decrypted = decryptToken(encrypted, encryptionKey); // decrypt at runtime
 ```
 
 #### `workspace_config`
-Configuration globale workspace (JSON).
+Global workspace configuration (JSON).
 
 ```sql
 create table workspace_config (
@@ -362,7 +362,7 @@ create table workspace_config (
   workspace_id uuid not null references workspaces(id) unique,
   llm_model text default 'claude-3-5-sonnet-20241022',
   llm_temperature numeric default 0.7,
-  scoring_threshold numeric default 0.7,       -- top-15 vs archivés
+  scoring_threshold numeric default 0.7,       -- top-15 vs archived
   email_deduction_confidence numeric default 0.85,
   bounce_rate_threshold numeric default 0.15,
   archive_retention_days int default 60,
@@ -372,14 +372,14 @@ create table workspace_config (
 ```
 
 #### `smartlead_campaigns`
-Mapping workspace → campagne Smartlead.
+Mapping workspace → Smartlead campaign.
 
 ```sql
 create table smartlead_campaigns (
   id uuid primary key,
   workspace_id uuid not null references workspaces(id),
   persona_id uuid references prospect_icp_personas(id),
-  smartlead_campaign_id text not null,          -- ID Smartlead
+  smartlead_campaign_id text not null,          -- Smartlead ID
   smartlead_campaign_name text,
   synced_at timestamptz,
   created_at timestamptz default now()
@@ -387,7 +387,7 @@ create table smartlead_campaigns (
 ```
 
 #### `recruitment_agencies_blacklist`
-Agences RH à exclure du sourcing (Heidrick, Korn Ferry, etc).
+HR agencies to exclude from sourcing (Heidrick, Korn Ferry, etc).
 
 ```sql
 create table recruitment_agencies_blacklist (
@@ -400,14 +400,14 @@ create table recruitment_agencies_blacklist (
 ```
 
 #### `extension_tokens`
-Tokens pour l'extension Chrome (LinkedIn scraping).
+Tokens for Chrome extension (LinkedIn scraping).
 
 ```sql
 create table extension_tokens (
   id uuid primary key,
   workspace_id uuid not null,
   user_id uuid references auth.users(id),
-  token text unique not null,                   -- JWT pour auth extension
+  token text unique not null,                   -- JWT for extension auth
   browser_id text,
   status text default 'active',                 -- active|revoked|expired
   created_at timestamptz default now(),
@@ -417,11 +417,11 @@ create table extension_tokens (
 
 ---
 
-## Patterns & Bonnes Pratiques
+## Patterns & Best Practices
 
 ### RLS Template
 
-Toute table prospect-related suit ce pattern :
+Every prospect-related table follows this pattern:
 
 ```sql
 alter table <table_name> enable row level security;
@@ -432,9 +432,9 @@ create policy "workspace_access"
   with check (workspace_id in (select public.user_workspaces('admin')));
 ```
 
-### Types & Schemas Zod
+### Types & Zod Schemas
 
-Validations d'input dans les edge functions :
+Input validations in edge functions:
 
 ```typescript
 // supabase/functions/_shared/schemas/common.ts
@@ -448,24 +448,24 @@ export const ProspectInput = z.object({
 });
 ```
 
-### Chiffrement des Secrets
+### Secret Encryption
 
 ```typescript
-// Dans une edge function
+// In an edge function
 import { decryptToken } from './_shared/token-encryption.ts';
 
 const encryptionKey = Deno.env.get('TOKEN_ENCRYPTION_KEY');
 const encrypted = await getWorkspaceCredential(workspace_id, 'anthropic');
 const api_key = decryptToken(encrypted, encryptionKey);
 
-// Utilise api_key pour appel API
+// Use api_key for API call
 ```
 
 ---
 
 ## Migrations & Versioning
 
-Migrations SQL sont dans `supabase/migrations/` avec timestamp :
+SQL migrations are in `supabase/migrations/` with timestamp:
 
 ```
 20260414120000_create_prospect_tables.sql
@@ -474,13 +474,13 @@ Migrations SQL sont dans `supabase/migrations/` avec timestamp :
 ...
 ```
 
-Appliquer avec :
+Apply with:
 
 ```bash
 supabase migration up --project-ref <ref>
 ```
 
-Ou au `pnpm run setup` (local) :
+Or during `pnpm run setup` (local):
 
 ```bash
 supabase db push
@@ -490,7 +490,7 @@ supabase db push
 
 ## Monitoring & Performance
 
-### Index Clés
+### Key Indexes
 
 ```sql
 create index idx_prospects_workspace on prospects(workspace_id);
@@ -501,17 +501,17 @@ create index idx_domain_patterns_domain on domain_email_patterns(domain);
 
 ### Cache & Real-Time
 
-Supabase real-time peut être activé sur les tables clés (prospects, signals) pour sync UI live.
+Supabase real-time can be enabled on key tables (prospects, signals) for live UI sync.
 
 ### Logs & Audit
 
-`audit_events` table (optionnel, non implémentée ici) pour tracer modifications.
+`audit_events` table (optional, not implemented here) to track modifications.
 
 ---
 
-## Ressources
+## Resources
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Pipeline, edge functions
-- [providers.md](providers.md) — Intégrer nouveaux fournisseurs
-- [self-host.md](self-host.md) — Déployer en production
-- Supabase Docs : [RLS](https://supabase.com/docs/guides/auth/row-level-security), [Edge Functions](https://supabase.com/docs/guides/functions)
+- [providers.md](providers.md) — Integrating new providers
+- [self-host.md](self-host.md) — Deploy to production
+- Supabase Docs: [RLS](https://supabase.com/docs/guides/auth/row-level-security), [Edge Functions](https://supabase.com/docs/guides/functions)

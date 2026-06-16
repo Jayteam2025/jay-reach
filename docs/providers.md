@@ -1,3 +1,5 @@
+> **Français** | [English](providers.en.md)
+
 # Providers — Intégrer des Fournisseurs
 
 Jay Reach utilise un modèle **BDD-first** pour les clés API : elles sont **saisies dans l'interface**, stockées **chiffrées en base de données**, et **jamais en `.env`**.
