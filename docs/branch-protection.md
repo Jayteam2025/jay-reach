@@ -29,4 +29,12 @@ par les permissions :
 - **Seul l'admin (@Jeeiib) merge.** Il vérifie manuellement, avant de merger, que la CI est
   verte et que le CLA est accepté (case du modèle de PR).
 
+> ⚠️ Pré-requis non rempli : l'org `Jayteam2025` **n'autorise pas le fork de repos privés**
+> (réglage org « Allow forking of private repositories », désactivé). De plus, le fork de
+> repo privé par des *outside collaborators* reste limité par GitHub. **Le plus simple est
+> donc d'attendre le passage en plan payant pour onboarder les contributeurs** (flow Write
+> + ruleset, propre et automatique). En intérimaire gratuit, **ne pas ajouter de
+> contributeurs en accès *write*** : sans protection de branche (indispo en gratuit), ils
+> pourraient pousser directement sur `main`.
+
 Dès l'upgrade en plan payant, appliquer le ruleset pour automatiser ces garde-fous.
