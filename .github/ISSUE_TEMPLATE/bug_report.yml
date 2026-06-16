@@ -1,0 +1,66 @@
+name: Rapport de bug
+description: Signalez un bug pour nous aider à améliorer Jay Reach
+title: "[BUG] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de signaler un bug ! Remplissez les détails ci-dessous pour nous aider à le reproduire et le corriger.
+  - type: textarea
+    attributes:
+      label: Description
+      description: Décrivez le bug de manière claire et concise.
+      placeholder: "Exemple: Quand je fais X, il se passe Y au lieu de Z."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Étapes pour reproduire
+      description: Comment reproduire le bug ?
+      placeholder: |
+        1. Allez à...
+        2. Cliquez sur...
+        3. Observez...
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Comportement attendu
+      description: Quel devrait être le comportement correct ?
+      placeholder: "Exemple: Le formulaire devrait valider les emails et afficher un message de succès."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Comportement observé
+      description: Qu'observez-vous au lieu du comportement attendu ?
+      placeholder: "Exemple: Aucun message ne s'affiche, la page reste vide."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environnement
+      description: |
+        Partagez votre environnement (navigateur, OS, version Node.js, etc.)
+      placeholder: |
+        - Navigateur: Chrome 125
+        - OS: macOS 14
+        - Node.js: 22.12
+        - Version du projet: main (commit XYZ)
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Logs ou screenshots
+      description: Si applicable, attachez des logs, des erreurs console, ou des screenshots.
+    validations:
+      required: false
+  - type: checkboxes
+    attributes:
+      label: Avant de soumettre
+      options:
+        - label: J'ai cherché les issues existantes pour ce bug
+          required: true
+        - label: Ce bug peut être reproduit sur la branche `main`
+          required: true

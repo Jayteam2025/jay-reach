@@ -1,0 +1,47 @@
+name: Demande de feature
+description: Suggérez une nouvelle fonctionnalité pour Jay Reach
+title: "[FEATURE] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de suggérer une amélioration ! Décrivez votre idée en détail ci-dessous.
+  - type: textarea
+    attributes:
+      label: Quel problème faut-il résoudre ?
+      description: Décrivez le problème ou le cas d'usage non satisfait actuellement.
+      placeholder: "Exemple: Je veux pouvoir exporter les prospects en CSV, mais actuellement c'est impossible."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Solution proposée
+      description: Décrivez comment vous aimeriez que la feature fonctionne.
+      placeholder: |
+        Exemple: Ajouter un bouton « Exporter en CSV » dans la page des prospects.
+        Quand on clique, un dialogue apparaît pour choisir les colonnes à exporter.
+        Le fichier est téléchargé automatiquement.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives considérées
+      description: Avez-vous pensé à d'autres approches ?
+      placeholder: "Exemple: - Export en JSON\n- Export en Excel\n- Intégration avec une API de stockage cloud"
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Contexte supplémentaire
+      description: Toute autre information qui serait utile ?
+    validations:
+      required: false
+  - type: checkboxes
+    attributes:
+      label: Avant de soumettre
+      options:
+        - label: J'ai cherché les features existantes ou en cours pour cette demande
+          required: true
+        - label: Cette feature est alignée avec la vision de Jay Reach
+          required: false
