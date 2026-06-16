@@ -1,34 +1,101 @@
-Jay Reach — Licence propriétaire (phase privée / pré-publication)
+# Functional Source License 1.1 - MIT Future License
 
-Copyright (c) 2026 Alexandre De Clercq et Jean-Baptiste Renart. Tous droits réservés.
+## Abbreviation
 
-1. Propriété
-   Ce logiciel, son code source, sa documentation et l'ensemble des éléments du présent
-   dépôt (le « Logiciel ») sont la propriété exclusive des titulaires des droits
-   ci-dessus (le « Titulaire »).
+   FSL-1.1-MIT
 
-2. Accès restreint
-   L'accès au Logiciel est accordé exclusivement aux personnes explicitement invitées
-   par le Titulaire (les « Contributeurs »), dans le seul but de contribuer au projet,
-   et est soumis à l'acceptation préalable du Contributor License Agreement (CLA, voir
-   CLA.md) et au respect de la confidentialité du dépôt.
+## Notice
 
-3. Aucune licence accordée
-   Aucun droit ni licence n'est accordé pour utiliser, copier, exécuter, modifier,
-   fusionner, publier, distribuer, sous-licencier, vendre ou exploiter tout ou partie
-   du Logiciel, en dehors des actes strictement nécessaires à la contribution au projet
-   dans le cadre défini par le Titulaire. Toute autre exploitation est interdite.
+   Copyright 2026 Alexandre De Clercq et Jean-Baptiste Renart
 
-4. Confidentialité
-   Tant que le dépôt n'est pas rendu public par le Titulaire, les Contributeurs
-   s'engagent à ne pas divulguer, publier ni partager le Logiciel ou son contenu.
+   This Software is licensed under the terms below.
 
-5. Évolution de licence
-   Lors de la publication du dépôt en open source, le Logiciel sera placé sous licence
-   Functional Source License 1.1 (FSL-1.1-MIT), dont le texte figure dans LICENSE-FSL.md.
-   Jusqu'à cette publication, seule la présente licence propriétaire s'applique.
+   Licensor: Alexandre De Clercq et Jean-Baptiste Renart
 
-6. Absence de garantie
-   LE LOGICIEL EST FOURNI « EN L'ÉTAT », SANS AUCUNE GARANTIE D'AUCUNE SORTE.
+## Terms
 
-Contact : [CONTACT — à compléter]
+   We grant you the right to use, copy, modify, create derivative
+   works, publish, and redistribute the Software, in each case subject to
+   the limitations and conditions below.
+
+## Limitations
+
+   You may make use of the Software only for the Permitted Purpose.
+
+   You may distribute the Software only under this License. You must
+   include a copy of this License with any copy of the Software you
+   distribute. You may not modify this License.
+
+   Any trademarks, service marks, logos, or trade names included with the
+   Software are the property of their respective owners. This License does
+   not grant any right to use them.
+
+## Permitted Purpose
+
+   A Permitted Purpose is any purpose other than a Competing Use.
+
+   A Competing Use means use of the Software in or for a commercial
+   product or service that competes with the Software or any other
+   product or service we offer using the Software as of the date
+   we make the Software available.
+
+   Permitted Purposes specifically include using the Software:
+   - for your internal business operations
+   - to develop a new product as long as such product is not a Competing Use
+   - for research and development
+   - to host or use the Software in any way that is not a Competing Use
+
+## Patents
+
+   To the extent your use for a Permitted Purpose would infringe any
+   patent claims we can license or becomes able to license, we
+   grant you a non-exclusive, worldwide, royalty-free patent
+   license under those claims, with the same scope and limitations as
+   the license to the Software.
+
+## Redistribution
+
+   The Terms apply to all copies, modifications, and derivatives of the
+   Software.
+
+   If you redistribute any copies, modifications, or derivatives of the
+   Software, you must include a copy of or a link to this License and
+   retain all copyright, patent, trademark, and attribution notices.
+
+## Disclaimer
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND WITHOUT WARRANTIES OF ANY KIND,
+   INCLUDING WITHOUT LIMITATION WARRANTIES OF MERCHANTABILITY OR FITNESS
+   FOR A PARTICULAR PURPOSE.
+
+   IN NO EVENT WILL WE BE LIABLE TO YOU FOR ANY DAMAGES ARISING
+   OUT OF THESE TERMS OR THE USE OR NATURE OF THE SOFTWARE.
+
+## Future License
+
+   On the second anniversary of the date we make any version of
+   the Software available, that version automatically becomes available
+   under the MIT License:
+
+   MIT License
+
+   Copyright 2026 Alexandre De Clercq et Jean-Baptiste Renart
+
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
+   distribute, sublicense, and/or sell copies of the Software, and to
+   permit persons to whom the Software is furnished to do so, subject to
+   the following conditions:
+
+   The above copyright notice and this permission notice shall be
+   included in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
