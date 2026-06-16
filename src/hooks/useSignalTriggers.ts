@@ -99,12 +99,11 @@ export function useDeleteSignalTrigger() {
   });
 }
 
+// Seules les sources réellement scrapées par scrape-job-signals (SCRAPER_BY_SOURCE) :
+// brave / linkedin_jobs / google_alerts n'ont pas de scraper → retirées.
 export const KNOWN_SOURCE_TYPES = [
   'adzuna',
   'france_travail',
-  'brave',
-  'linkedin_jobs',
-  'google_alerts',
 ] as const;
 
 export type SourceType = (typeof KNOWN_SOURCE_TYPES)[number];

@@ -390,7 +390,11 @@ export function ProspectionTriggers() {
             </div>
 
             <div>
-              <Label htmlFor="t-threshold">Seuil de qualification (0-100)</Label>
+              <Label htmlFor="t-threshold">Score minimum de qualification (0-100)</Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                L'IA note chaque offre scrappée de 0 à 100. En dessous de ce score,
+                l'entreprise est écartée (non enrichie). 60 = bon compromis.
+              </p>
               <Input
                 id="t-threshold"
                 type="number"

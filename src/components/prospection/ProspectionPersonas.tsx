@@ -399,24 +399,7 @@ export function ProspectionPersonas() {
             </div>
 
             <div>
-              <Label htmlFor="threshold">Seuil de match (0-100)</Label>
-              <Input
-                id="threshold"
-                type="number"
-                min={0}
-                max={100}
-                value={draft.persona_match_threshold}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    persona_match_threshold: Number(e.target.value),
-                  })
-                }
-              />
-            </div>
-
-            <div>
-              <Label>Canaux d'outreach (ordre de priorite)</Label>
+              <Label>Canaux d'outreach</Label>
               <div className="flex flex-wrap gap-2 mt-2">
                 {KNOWN_CHANNELS.map((channel) => {
                   const active = draft.channels_priority.includes(channel);

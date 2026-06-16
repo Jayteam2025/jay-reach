@@ -1,7 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { isInternalEmail } from "../_shared/internal-users.ts";
 import { validateOrRespond, z } from "../_shared/validation.ts";
 import {
   type EnrichmentForRender,
@@ -98,7 +97,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!isInternalEmail(user.email)) {
+    // OSS : l'opérateur est admin de son propre workspace (plus de gate Jay-staff
+    // isInternalEmail). On exige juste d'être owner/admin d'un workspace.
+    const { data: adminMembership } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("user_id", user.id)
+      .in("role", ["owner", "admin"])
+      .limit(1)
+      .maybeSingle();
+    if (!adminMembership) {
       return new Response(
         JSON.stringify({ error: "Forbidden: admin only" }),
         {
