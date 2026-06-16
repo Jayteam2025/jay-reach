@@ -26,6 +26,7 @@ import {
   type BrandAttachment,
 } from '@/hooks/useWorkspaceBrand';
 import { useIcpPersonas } from '@/hooks/useIcpPersonas';
+import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 
 const BUCKET = 'prospection-assets';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -145,6 +146,7 @@ function SectionHeader({ icon: Icon, title, hint }: SectionHeaderProps) {
 export function ProspectionBranding() {
   const { data: brand, isLoading } = useWorkspaceBrand();
   const { data: personas } = useIcpPersonas();
+  const { data: workspaceId } = useCurrentWorkspaceId();
   const mutation = useUpdateWorkspaceBrand();
 
   const [brandName, setBrandName] = useState('');
@@ -189,8 +191,39 @@ export function ProspectionBranding() {
 
   if (!brand) {
     return (
-      <div className="text-sm text-muted-foreground">
-        Aucun workspace_brand pour votre espace. Contactez l'administrateur.
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center space-y-3 max-w-md">
+        <Palette className="size-8 text-muted-foreground mx-auto" />
+        <div className="space-y-1">
+          <p className="text-foreground font-medium">Aucune identité de marque</p>
+          <p className="text-sm text-muted-foreground">
+            Configure le nom de ta marque, ta signature et tes infos d'expéditeur pour
+            personnaliser les messages générés.
+          </p>
+        </div>
+        <Button
+          onClick={async () => {
+            if (!workspaceId) {
+              toast.error('Workspace introuvable');
+              return;
+            }
+            try {
+              await mutation.mutateAsync({
+                workspace_id: workspaceId,
+                notification_recipients: [],
+                attachments: [],
+              });
+              toast.success('Branding initialisé');
+            } catch (err) {
+              toast.error('Échec', {
+                description: err instanceof Error ? err.message : 'Erreur inconnue',
+              });
+            }
+          }}
+          disabled={mutation.isPending || !workspaceId}
+        >
+          {mutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+          Créer mon branding
+        </Button>
       </div>
     );
   }

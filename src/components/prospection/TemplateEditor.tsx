@@ -8,10 +8,14 @@ import type {
 import type { MessageTemplate } from '@/lib/prospect-template-renderer';
 
 interface TemplateEditorProps {
-  template: ProspectMessageTemplate;
+  channel: ProspectChannel;
   draft: TemplateDraft;
   onDraftChange: (next: TemplateDraft) => void;
 }
+
+// Catégorie d'aperçu générique : sert uniquement à choisir le profil de démo pour
+// visualiser la substitution des variables. Les données restent persona-based.
+const PREVIEW_CATEGORY: ProspectTargetCategory = 'hr';
 
 export interface TemplateDraft {
   subject: string | null;
@@ -34,18 +38,18 @@ const CHANNEL_SUPPORTS_SUBJECT: Record<string, boolean> = {
   social_dm: false,
 };
 
-export function TemplateEditor({ template, draft, onDraftChange }: TemplateEditorProps) {
-  const supportsSubject = CHANNEL_SUPPORTS_SUBJECT[template.channel] ?? false;
+export function TemplateEditor({ channel, draft, onDraftChange }: TemplateEditorProps) {
+  const supportsSubject = CHANNEL_SUPPORTS_SUBJECT[channel] ?? false;
 
   const previewTemplate: MessageTemplate = useMemo(
     () => ({
-      target_category: template.target_category,
-      channel: template.channel,
+      target_category: PREVIEW_CATEGORY,
+      channel,
       subject: draft.subject?.trim() ? draft.subject : null,
       body: draft.body,
       icebreaker_template: draft.icebreaker_template,
     }),
-    [draft, template.target_category, template.channel],
+    [draft, channel],
   );
 
   return (
@@ -107,8 +111,8 @@ export function TemplateEditor({ template, draft, onDraftChange }: TemplateEdito
       <div className="lg:sticky lg:top-4 lg:self-start">
         <TemplatePreview
           template={previewTemplate}
-          category={template.target_category}
-          channel={template.channel}
+          category={PREVIEW_CATEGORY}
+          channel={channel}
         />
       </div>
     </div>

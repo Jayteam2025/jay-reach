@@ -34,9 +34,19 @@ import {
   type SignalTrigger,
   type SignalTriggerDraft,
 } from '@/hooks/useSignalTriggers';
+import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 
-// Workspace ID for filtering internal triggers (if using a multi-workspace architecture)
-const INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+// Slug stable dérivé du label (généré à la création, jamais modifié ensuite). Pas
+// de champ manuel.
+function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
 
 const DEFAULT_DRAFT: SignalTriggerDraft = {
   slug: '',
@@ -72,6 +82,7 @@ export function ProspectionTriggers() {
   const { data: triggers, isLoading } = useSignalTriggers();
   const upsert = useUpsertSignalTrigger();
   const remove = useDeleteSignalTrigger();
+  const { data: workspaceId } = useCurrentWorkspaceId();
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<SignalTriggerDraft>(DEFAULT_DRAFT);
@@ -103,19 +114,31 @@ export function ProspectionTriggers() {
   };
 
   const handleSave = async () => {
-    if (!draft.slug || !draft.label || draft.signal_scoring_prompt.length < 50) {
+    if (!draft.label || draft.signal_scoring_prompt.length < 50) {
       toast({
         variant: 'destructive',
         title: 'Champs manquants',
-        description: 'Slug, label et un prompt scoring d\'au moins 50 caracteres sont requis.',
+        description: 'Un nom et un prompt scoring d\'au moins 50 caractères sont requis.',
+      });
+      return;
+    }
+    if (!workspaceId) {
+      toast({
+        variant: 'destructive',
+        title: 'Workspace introuvable',
+        description: 'Impossible de résoudre votre workspace.',
       });
       return;
     }
 
+    // Slug généré du nom à la création ; conservé tel quel en édition (ID stable).
+    const slug = draft.id ? draft.slug : slugify(draft.label);
+
     try {
       await upsert.mutateAsync({
         ...draft,
-        workspace_id: INTERNAL_WORKSPACE_ID,
+        slug,
+        workspace_id: workspaceId,
       });
       toast({ title: draft.id ? 'Declencheur mis a jour' : 'Declencheur cree' });
       setOpen(false);
@@ -253,26 +276,19 @@ export function ProspectionTriggers() {
           </SheetHeader>
 
           <div className="space-y-4 py-6">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="t-slug">Slug</Label>
-                <Input
-                  id="t-slug"
-                  value={draft.slug}
-                  onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-                  placeholder="recrutement-commerciaux, levee-fonds, ..."
-                  disabled={!!draft.id}
-                />
-              </div>
-              <div>
-                <Label htmlFor="t-label">Label</Label>
-                <Input
-                  id="t-label"
-                  value={draft.label}
-                  onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                  placeholder="Boite qui recrute des commerciaux"
-                />
-              </div>
+            <div>
+              <Label htmlFor="t-label">Nom du déclencheur</Label>
+              <Input
+                id="t-label"
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                placeholder="ex : Boîte qui recrute des commerciaux"
+              />
+              {draft.id ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Identifiant : <span className="font-mono">{draft.slug}</span>
+                </p>
+              ) : null}
             </div>
 
             <div>

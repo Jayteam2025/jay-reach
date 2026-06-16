@@ -12,17 +12,16 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
-import { Loader2, FileText, Mail, Linkedin, Send } from 'lucide-react';
+import { Loader2, Mail, Linkedin, Send, Users } from 'lucide-react';
 import {
   useProspectMessageTemplates,
-  useUpdateProspectMessageTemplate,
+  useUpsertProspectMessageTemplate,
   useCountNonSentMessages,
   templateKey,
   type ProspectMessageTemplate,
-  type ProspectTargetCategory,
   type ProspectChannel,
 } from '@/hooks/useProspectMessageTemplates';
-import { useIcpPersonas } from '@/hooks/useIcpPersonas';
+import { useIcpPersonas, type IcpPersona } from '@/hooks/useIcpPersonas';
 import {
   TemplateEditor,
   deepEqualDraft,
@@ -30,123 +29,92 @@ import {
   type TemplateDraft,
 } from './TemplateEditor';
 
-// Mapping legacy persona slug -> target_category (1.2.3.e : V1 transition)
-const PERSONA_SLUG_TO_TARGET_CATEGORY: Record<string, ProspectTargetCategory> = {
-  'hr-decision-maker': 'hr',
-  'director': 'director',
-  'field-sales': 'field_sales',
-};
-
-// Labels fallback si pas de persona resolu (rows pre-migration ou hooks pas ready)
-const LEGACY_CATEGORY_LABELS: Record<ProspectTargetCategory, string> = {
-  hr: 'RH',
-  director: 'Directeur commercial',
-  field_sales: 'Commercial terrain',
-};
-
-const CHANNELS_BY_CATEGORY: Record<ProspectTargetCategory, ProspectChannel[]> = {
-  hr: ['email', 'linkedin'],
-  director: ['email', 'linkedin', 'postal_letter'],
-  field_sales: ['email', 'linkedin'],
-};
-
-const CHANNEL_META: Record<
-  ProspectChannel,
-  { label: string; icon: typeof Mail }
-> = {
+const CHANNEL_META: Record<ProspectChannel, { label: string; icon: typeof Mail }> = {
   email: { label: 'Email', icon: Mail },
   linkedin: { label: 'LinkedIn', icon: Linkedin },
   postal_letter: { label: 'Lettre postale', icon: Send },
   social_dm: { label: 'Social DM', icon: Send },
 };
 
+const KNOWN_CHANNELS: ProspectChannel[] = ['email', 'linkedin', 'postal_letter', 'social_dm'];
+
+const EMPTY_DRAFT: TemplateDraft = { subject: '', body: '', icebreaker_template: '' };
+
+// Canaux d'un persona = sa channels_priority filtrée aux canaux connus, fallback
+// email + linkedin si le persona n'en déclare aucun.
+function personaChannels(persona: IcpPersona): ProspectChannel[] {
+  const filtered = (persona.channels_priority ?? []).filter(
+    (c): c is ProspectChannel => (KNOWN_CHANNELS as string[]).includes(c),
+  );
+  return filtered.length ? filtered : ['email', 'linkedin'];
+}
+
 export function ProspectionConfig() {
   const { data: templates, isLoading } = useProspectMessageTemplates();
-  const { data: personas } = useIcpPersonas();
-  const [category, setCategory] = useState<ProspectTargetCategory>('hr');
-  const channels = CHANNELS_BY_CATEGORY[category];
-  const [channel, setChannel] = useState<ProspectChannel>(channels[0] ?? 'email');
+  const { data: personas, isLoading: personasLoading } = useIcpPersonas();
 
-  // Categories dynamiques derivees des personas actifs du workspace. Label vient
-  // de persona.label, value est le target_category legacy mappe (transition V1).
-  // Personas sans mapping legacy sont masques. Fallback aux 3 categories legacy
-  // si personas pas encore charges.
-  const CATEGORIES = useMemo(() => {
-    if (!personas || personas.length === 0) {
-      return (
-        Object.entries(LEGACY_CATEGORY_LABELS) as Array<[ProspectTargetCategory, string]>
-      ).map(([value, label]) => ({ value, label }));
-    }
-    return personas
-      .filter((p) => p.is_active)
-      .map((p) => {
-        const value = PERSONA_SLUG_TO_TARGET_CATEGORY[p.slug];
-        if (!value) return null;
-        return { value, label: p.label };
-      })
-      .filter((c): c is { value: ProspectTargetCategory; label: string } => c !== null);
-  }, [personas]);
+  const activePersonas = useMemo(
+    () => (personas ?? []).filter((p) => p.is_active),
+    [personas],
+  );
 
-  // Reset channel quand on change de catégorie (si le canal actif n'existe plus)
+  const [personaId, setPersonaId] = useState<string | null>(null);
+
+  // Sélectionne le 1er persona actif par défaut (ou re-sync si la liste change).
   useEffect(() => {
-    if (!CHANNELS_BY_CATEGORY[category].includes(channel)) {
-      const firstChannel = CHANNELS_BY_CATEGORY[category][0];
-      if (firstChannel) {
-        setChannel(firstChannel);
-      }
+    const first = activePersonas[0];
+    if (!first) {
+      setPersonaId(null);
+    } else if (!personaId || !activePersonas.some((p) => p.id === personaId)) {
+      setPersonaId(first.id);
     }
-  }, [category, channel]);
+  }, [activePersonas, personaId]);
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">
-          Templates de messages
-        </h2>
+        <h2 className="text-2xl font-bold text-foreground">Templates de messages</h2>
         <p className="text-muted-foreground mt-1">
-          Templates de messages par catégorie cible. Les modifications régénèrent
-          tous les messages non envoyés.
+          Un template par persona et par canal. Modifier un template régénère les
+          messages non encore envoyés.
         </p>
       </div>
 
-      {isLoading ? (
+      {isLoading || personasLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
-      ) : !templates || templates.size === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-center">
-          <FileText className="size-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-muted-foreground">
-            Aucun template trouvé. Vérifiez que la migration seed a bien été
-            appliquée.
+      ) : activePersonas.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center space-y-2">
+          <Users className="size-8 text-muted-foreground mx-auto" />
+          <p className="text-foreground font-medium">Aucun persona actif</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Les templates se configurent par persona. Crée d'abord au moins un persona
+            dans l'onglet « Personas », puis reviens ici pour rédiger ses messages par
+            canal.
           </p>
         </div>
       ) : (
         <Tabs
-          value={category}
-          onValueChange={(v) => setCategory(v as ProspectTargetCategory)}
+          value={personaId ?? activePersonas[0]?.id ?? ''}
+          onValueChange={setPersonaId}
           className="space-y-4"
         >
-          <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start h-auto p-0 gap-1">
-            {CATEGORIES.map((c) => (
+          <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start h-auto p-0 gap-1 flex-wrap">
+            {activePersonas.map((p) => (
               <TabsTrigger
-                key={c.value}
-                value={c.value}
+                key={p.id}
+                value={p.id}
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-violet-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2 text-sm text-muted-foreground data-[state=active]:text-foreground"
               >
-                {c.label}
+                {p.label}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {CATEGORIES.map((c) => (
-            <TabsContent key={c.value} value={c.value} className="space-y-4 mt-0">
-              <CategoryPanel
-                category={c.value}
-                templates={templates}
-                channel={channel}
-                onChannelChange={setChannel}
-              />
+          {activePersonas.map((p) => (
+            <TabsContent key={p.id} value={p.id} className="space-y-4 mt-0">
+              <PersonaPanel persona={p} templates={templates ?? new Map()} />
             </TabsContent>
           ))}
         </Tabs>
@@ -155,22 +123,21 @@ export function ProspectionConfig() {
   );
 }
 
-interface CategoryPanelProps {
-  category: ProspectTargetCategory;
-  templates: Map<string, ProspectMessageTemplate>;
-  channel: ProspectChannel;
-  onChannelChange: (next: ProspectChannel) => void;
-}
-
-function CategoryPanel({
-  category,
+function PersonaPanel({
+  persona,
   templates,
-  channel,
-  onChannelChange,
-}: CategoryPanelProps) {
-  const channels = CHANNELS_BY_CATEGORY[category];
-  const activeChannel = channels.includes(channel) ? channel : (channels[0] ?? 'email');
-  const template = templates.get(templateKey(category, activeChannel));
+}: {
+  persona: IcpPersona;
+  templates: Map<string, ProspectMessageTemplate>;
+}) {
+  const channels = useMemo(() => personaChannels(persona), [persona]);
+  const [channel, setChannel] = useState<ProspectChannel>(channels[0] ?? 'email');
+
+  useEffect(() => {
+    if (!channels.includes(channel)) setChannel(channels[0] ?? 'email');
+  }, [channels, channel]);
+
+  const template = templates.get(templateKey(persona.id, channel)) ?? null;
 
   return (
     <div className="space-y-4">
@@ -178,12 +145,12 @@ function CategoryPanel({
         {channels.map((ch) => {
           const meta = CHANNEL_META[ch];
           const Icon = meta.icon;
-          const isActive = activeChannel === ch;
+          const isActive = channel === ch;
           return (
             <button
               key={ch}
               type="button"
-              onClick={() => onChannelChange(ch)}
+              onClick={() => setChannel(ch)}
               className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${
                 isActive
                   ? 'border-violet-500 text-foreground'
@@ -197,45 +164,50 @@ function CategoryPanel({
         })}
       </div>
 
-      {template ? (
-        <TemplatePanel template={template} />
-      ) : (
-        <div className="rounded-lg border border-border bg-card p-6 text-center text-muted-foreground">
-          Template manquant pour {category}:{activeChannel}.
-        </div>
-      )}
+      <TemplateSlot
+        key={`${persona.id}:${channel}`}
+        persona={persona}
+        channel={channel}
+        template={template}
+      />
     </div>
   );
 }
 
-function TemplatePanel({ template }: { template: ProspectMessageTemplate }) {
-  const [draft, setDraft] = useState<TemplateDraft>(() => templateToDraft(template));
+function TemplateSlot({
+  persona,
+  channel,
+  template,
+}: {
+  persona: IcpPersona;
+  channel: ProspectChannel;
+  template: ProspectMessageTemplate | null;
+}) {
+  const baseDraft = template ? templateToDraft(template) : EMPTY_DRAFT;
+  const [draft, setDraft] = useState<TemplateDraft>(baseDraft);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Re-sync quand on change de template_id (changement de tab) ou quand la
-  // version DB change (= save reussi). Pas sur chaque ref change du template
-  // (sinon un refetch silencieux ecrase les modifications en cours).
+  // Re-sync quand le template (re)charge ou change de version (= save réussi).
   useEffect(() => {
-    setDraft(templateToDraft(template));
-  }, [template.id, template.version]);
+    setDraft(template ? templateToDraft(template) : EMPTY_DRAFT);
+  }, [template?.id, template?.version]);
 
-  const isDirty = useMemo(
-    () => !deepEqualDraft(draft, templateToDraft(template)),
-    [draft, template],
-  );
+  const isNew = !template;
+  const isDirty = useMemo(() => !deepEqualDraft(draft, baseDraft), [draft, baseDraft]);
+  const canSave = isDirty && draft.body.trim().length > 0;
 
   function reset() {
-    setDraft(templateToDraft(template));
+    setDraft(template ? templateToDraft(template) : EMPTY_DRAFT);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          {!template.is_active ? (
-            <Badge variant="secondary" className="text-xs">
-              Inactif
-            </Badge>
+          {isNew ? (
+            <Badge variant="secondary" className="text-xs">Nouveau template</Badge>
+          ) : !template.is_active ? (
+            <Badge variant="secondary" className="text-xs">Inactif</Badge>
           ) : null}
           {isDirty ? (
             <Badge className="bg-violet-500/10 text-violet-600 dark:text-violet-300 border-violet-500/20 hover:bg-violet-500/10 text-xs">
@@ -244,90 +216,68 @@ function TemplatePanel({ template }: { template: ProspectMessageTemplate }) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={reset}
-            disabled={!isDirty}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={reset} disabled={!isDirty}>
             Annuler
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setConfirmOpen(true)}
-            disabled={!isDirty}
-          >
-            Sauvegarder & Appliquer
+          <Button type="button" size="sm" onClick={() => setConfirmOpen(true)} disabled={!canSave}>
+            {isNew ? 'Créer & Appliquer' : 'Sauvegarder & Appliquer'}
           </Button>
         </div>
       </div>
 
-      <TemplateEditor template={template} draft={draft} onDraftChange={setDraft} />
+      <TemplateEditor channel={channel} draft={draft} onDraftChange={setDraft} />
 
       <RegenerateConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        template={template}
+        personaId={persona.id}
+        personaLabel={persona.label}
+        channel={channel}
         draft={draft}
       />
     </div>
   );
 }
 
-interface RegenerateConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-  template: ProspectMessageTemplate;
-  draft: TemplateDraft;
-}
-
 function RegenerateConfirmDialog({
   open,
   onOpenChange,
-  template,
+  personaId,
+  personaLabel,
+  channel,
   draft,
-}: RegenerateConfirmDialogProps) {
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  personaId: string;
+  personaLabel: string;
+  channel: ProspectChannel;
+  draft: TemplateDraft;
+}) {
   const { toast } = useToast();
   const { data: count, isLoading: countLoading } = useCountNonSentMessages(
-    template.persona_id,
-    template.channel,
+    personaId,
+    channel,
     open,
   );
-  const { data: personas } = useIcpPersonas();
-  const mutation = useUpdateProspectMessageTemplate();
-
-  // Resout le label de la categorie via persona.label (fallback legacy).
-  const categoryLabel = useMemo(() => {
-    if (personas) {
-      const persona = personas.find(
-        (p) => PERSONA_SLUG_TO_TARGET_CATEGORY[p.slug] === template.target_category,
-      );
-      if (persona) return persona.label;
-    }
-    return LEGACY_CATEGORY_LABELS[template.target_category];
-  }, [personas, template.target_category]);
+  const mutation = useUpsertProspectMessageTemplate();
 
   async function handleConfirm() {
     try {
       const result = await mutation.mutateAsync({
-        id: template.id,
-        subject: draft.subject,
+        persona_id: personaId,
+        channel,
+        subject: draft.subject?.trim() ? draft.subject : null,
         body: draft.body,
         icebreaker_template: draft.icebreaker_template,
       });
-
       toast({
-        description: `Template sauvegardé. ${result.regenerated_count} message${result.regenerated_count > 1 ? 's' : ''} régénéré${result.regenerated_count > 1 ? 's' : ''}.`,
+        description: `Template enregistré. ${result.regenerated_count} message${result.regenerated_count > 1 ? 's' : ''} régénéré${result.regenerated_count > 1 ? 's' : ''}.`,
       });
       onOpenChange(false);
     } catch (err) {
-      logger.error('Update template error', err);
-      toast({
-        description: `Erreur : ${(err as Error).message}`,
-        variant: 'destructive',
-      });
+      logger.error('Upsert template error', err);
+      toast({ description: `Erreur : ${(err as Error).message}`, variant: 'destructive' });
     }
   }
 
@@ -335,17 +285,16 @@ function RegenerateConfirmDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Régénérer les messages non envoyés ?</DialogTitle>
+          <DialogTitle>Enregistrer le template ?</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground pt-2">
             {countLoading ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 className="size-3 animate-spin" />
-                Calcul du nombre de messages…
+                <Loader2 className="size-3 animate-spin" /> Calcul du nombre de messages…
               </span>
             ) : count === 0 ? (
               <>
-                Aucun message non envoyé pour ce template. Le template sera quand
-                même sauvegardé pour les futurs envois.
+                Aucun message non envoyé pour ce persona/canal. Le template sera
+                enregistré pour les futurs envois.
               </>
             ) : (
               <>
@@ -353,44 +302,20 @@ function RegenerateConfirmDialog({
                 <span className="font-semibold text-foreground">
                   {count} message{count && count > 1 ? 's' : ''}
                 </span>{' '}
-                {CHANNEL_META[template.channel].label.toLowerCase()} pour la
-                catégorie{' '}
-                <span className="font-medium text-foreground">
-                  {categoryLabel}
-                </span>{' '}
-                qui n'ont pas encore été envoyés.
+                {CHANNEL_META[channel].label.toLowerCase()} pour le persona{' '}
+                <span className="font-medium text-foreground">{personaLabel}</span> qui
+                n'ont pas encore été envoyés.
               </>
             )}
-            <br />
-            <span className="text-xs">
-              Les messages déjà envoyés (status sent / replied / bounced) ne
-              seront pas touchés.
-            </span>
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
             Annuler
           </Button>
-          <Button
-            type="button"
-            onClick={handleConfirm}
-            disabled={mutation.isPending}
-            className="gap-2"
-          >
-            {mutation.isPending ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Régénération…
-              </>
-            ) : (
-              'Sauvegarder & régénérer'
-            )}
+          <Button onClick={handleConfirm} disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="size-4 mr-1.5 animate-spin" />}
+            Confirmer
           </Button>
         </DialogFooter>
       </DialogContent>

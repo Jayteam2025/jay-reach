@@ -6,7 +6,7 @@ export type ProspectChannel = 'email' | 'linkedin' | 'postal_letter' | 'social_d
 
 export interface ProspectMessageTemplate {
   id: string;
-  target_category: ProspectTargetCategory;
+  target_category: ProspectTargetCategory | null;
   persona_id: string | null;
   channel: ProspectChannel;
   subject: string | null;
@@ -20,11 +20,9 @@ export interface ProspectMessageTemplate {
 
 export type TemplatesByKey = Map<string, ProspectMessageTemplate>;
 
-export function templateKey(
-  category: ProspectTargetCategory,
-  channel: ProspectChannel,
-): string {
-  return `${category}:${channel}`;
+/** Clé d'un template : (persona_id, channel). Modèle persona-based. */
+export function templateKey(personaId: string, channel: ProspectChannel): string {
+  return `${personaId}:${channel}`;
 }
 
 export function useProspectMessageTemplates() {
@@ -36,14 +34,14 @@ export function useProspectMessageTemplates() {
         .select(
           'id, target_category, persona_id, channel, subject, body, icebreaker_template, is_active, version, updated_at, updated_by',
         )
-        .order('target_category')
         .order('channel');
 
       if (error) throw error;
 
       const map: TemplatesByKey = new Map();
       for (const t of (data || []) as ProspectMessageTemplate[]) {
-        map.set(templateKey(t.target_category, t.channel), t);
+        // Modèle persona-based : on n'indexe que les templates rattachés à un persona.
+        if (t.persona_id) map.set(templateKey(t.persona_id, t.channel), t);
       }
       return map;
     },
@@ -52,8 +50,9 @@ export function useProspectMessageTemplates() {
   });
 }
 
-export interface UpdateTemplateInput {
-  id: string;
+export interface UpsertTemplateInput {
+  persona_id: string;
+  channel: ProspectChannel;
   subject: string | null;
   body: string;
   icebreaker_template: string;
@@ -65,29 +64,71 @@ export interface RegenerateResult {
   skipped: number;
 }
 
-export function useUpdateProspectMessageTemplate() {
+/**
+ * Crée OU met à jour le template d'un (persona, canal), puis régénère les messages
+ * non envoyés. L'éditer alors qu'il n'existe pas encore = le créer (modèle OSS :
+ * pas de seed, l'opérateur configure ses templates par persona).
+ */
+export function useUpsertProspectMessageTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (
-      input: UpdateTemplateInput,
-    ): Promise<RegenerateResult> => {
-      const { error: updateError } = await supabase
-        .from('prospect_message_templates')
-        .update({
-          subject: input.subject,
-          body: input.body,
-          icebreaker_template: input.icebreaker_template,
-        })
-        .eq('id', input.id);
+    mutationFn: async (input: UpsertTemplateInput): Promise<RegenerateResult> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non authentifié');
 
-      if (updateError) throw updateError;
+      const { data: membership } = await supabase
+        .from('workspace_members')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      const workspaceId = membership?.workspace_id as string | undefined;
+      if (!workspaceId) throw new Error('Aucun workspace pour cet utilisateur');
+
+      // Upsert manuel (évite les ambiguïtés ON CONFLICT côté PostgREST).
+      const { data: existing } = await supabase
+        .from('prospect_message_templates')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('persona_id', input.persona_id)
+        .eq('channel', input.channel)
+        .maybeSingle();
+
+      let templateId = (existing?.id as string | undefined) ?? null;
+
+      if (templateId) {
+        const { error: updateError } = await supabase
+          .from('prospect_message_templates')
+          .update({
+            subject: input.subject,
+            body: input.body,
+            icebreaker_template: input.icebreaker_template,
+          })
+          .eq('id', templateId);
+        if (updateError) throw updateError;
+      } else {
+        const { data: inserted, error: insertError } = await supabase
+          .from('prospect_message_templates')
+          .insert({
+            workspace_id: workspaceId,
+            persona_id: input.persona_id,
+            channel: input.channel,
+            subject: input.subject,
+            body: input.body,
+            icebreaker_template: input.icebreaker_template,
+            is_active: true,
+          })
+          .select('id')
+          .single();
+        if (insertError) throw insertError;
+        templateId = inserted.id as string;
+      }
 
       const { data, error: invokeError } = await supabase.functions.invoke(
         'regenerate-prospect-messages-from-template',
-        { body: { template_id: input.id } },
+        { body: { template_id: templateId } },
       );
-
       if (invokeError) throw invokeError;
 
       return data as RegenerateResult;
@@ -102,9 +143,6 @@ export function useUpdateProspectMessageTemplate() {
 /**
  * Compte les messages "non envoyes" pour une paire (persona, channel).
  * Utilise pour la modale de confirmation avant regenerate.
- *
- * 2026-05-21 : RPC count_non_sent_messages qui fait 1 COUNT cote DB. Avant :
- * 2 SELECT sans limite tronquaient a 1000 et faussaient le compteur.
  */
 export function useCountNonSentMessages(
   personaId: string | null,

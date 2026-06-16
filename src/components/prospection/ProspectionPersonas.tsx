@@ -35,9 +35,19 @@ import {
   type IcpPersona,
   type IcpPersonaDraft,
 } from '@/hooks/useIcpPersonas';
+import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 
-// Workspace ID for filtering internal personas (if using a multi-workspace architecture)
-const INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+// Slug stable dérivé du label (généré à la création, jamais modifié ensuite pour ne
+// pas casser les références templates / messages). Pas de champ manuel.
+function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
 
 const DEFAULT_DRAFT: IcpPersonaDraft = {
   slug: '',
@@ -73,6 +83,7 @@ export function ProspectionPersonas() {
   const { data: personas, isLoading } = useIcpPersonas();
   const upsert = useUpsertIcpPersona();
   const remove = useDeleteIcpPersona();
+  const { data: workspaceId } = useCurrentWorkspaceId();
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<IcpPersonaDraft>(DEFAULT_DRAFT);
@@ -104,19 +115,31 @@ export function ProspectionPersonas() {
   };
 
   const handleSave = async () => {
-    if (!draft.slug || !draft.label || draft.persona_scoring_prompt.length < 50) {
+    if (!draft.label || draft.persona_scoring_prompt.length < 50) {
       toast({
         variant: 'destructive',
         title: 'Champs manquants',
-        description: 'Slug, label et un prompt scoring d\'au moins 50 caracteres sont requis.',
+        description: 'Un nom et un prompt scoring d\'au moins 50 caractères sont requis.',
+      });
+      return;
+    }
+    if (!workspaceId) {
+      toast({
+        variant: 'destructive',
+        title: 'Workspace introuvable',
+        description: 'Impossible de résoudre votre workspace.',
       });
       return;
     }
 
+    // Slug généré du nom à la création ; conservé tel quel en édition (ID stable).
+    const slug = draft.id ? draft.slug : slugify(draft.label);
+
     try {
       await upsert.mutateAsync({
         ...draft,
-        workspace_id: INTERNAL_WORKSPACE_ID,
+        slug,
+        workspace_id: workspaceId,
       });
       toast({ title: draft.id ? 'Persona mis a jour' : 'Persona cree' });
       setOpen(false);
@@ -263,26 +286,19 @@ export function ProspectionPersonas() {
           </SheetHeader>
 
           <div className="space-y-4 py-6">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="slug">Slug (URL-friendly)</Label>
-                <Input
-                  id="slug"
-                  value={draft.slug}
-                  onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-                  placeholder="hr-decision-maker, director, ..."
-                  disabled={!!draft.id}
-                />
-              </div>
-              <div>
-                <Label htmlFor="label">Label (affiche)</Label>
-                <Input
-                  id="label"
-                  value={draft.label}
-                  onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                  placeholder="DRH decideur"
-                />
-              </div>
+            <div>
+              <Label htmlFor="label">Nom du persona</Label>
+              <Input
+                id="label"
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                placeholder="ex : DRH décideur"
+              />
+              {draft.id ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Identifiant : <span className="font-mono">{draft.slug}</span>
+                </p>
+              ) : null}
             </div>
 
             <div>
