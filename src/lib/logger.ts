@@ -16,24 +16,16 @@
  */
 
  
-// Sentry integration (optional - stub in OSS)
-const Sentry = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("@sentry/react");
-  } catch {
-    return {
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      captureException: () => {},
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      captureMessage: () => {},
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      setUser: () => {},
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      addBreadcrumb: () => {},
-    };
-  }
-})();
+// Sentry retiré en OSS : stub no-op, aucune dépendance externe.
+// Un opérateur qui veut du suivi d'erreurs peut remplacer ce stub par son propre client.
+/* eslint-disable @typescript-eslint/no-empty-function */
+const Sentry = {
+  captureException: (_error?: unknown, _options?: unknown): void => {},
+  captureMessage: (_message?: string, _options?: unknown): void => {},
+  setUser: (_user?: unknown): void => {},
+  addBreadcrumb: (_breadcrumb?: unknown): void => {},
+};
+/* eslint-enable @typescript-eslint/no-empty-function */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type LogContext = Record<string, unknown>;
