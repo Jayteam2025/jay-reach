@@ -1532,11 +1532,11 @@
     "sections": {
       "legalInfo": {
         "title": "1. Informations Légales",
-        "content": "HEY JAY est une SAS (Société par Actions Simplifiée) au capital de 85 000 euros, immatriculée au RCS de Lille Métropole sous le numéro SIREN 992 172 866 (SIRET siège : 992 172 866 00012).\n\nN° TVA intracommunautaire : FR84 992 172 866\nCode APE : 62.01Z – Programmation informatique\nDate de création : 30 septembre 2025\n\nSiège social : 87 Rue du Fontenoy, 59100 Roubaix, France."
+        "content": "[Société] est une SAS (Société par Actions Simplifiée) au capital de 85 000 euros, immatriculée au RCS de Lille Métropole sous le numéro SIREN 992 172 866 (SIRET siège : 992 172 866 00012).\n\nN° TVA intracommunautaire : FR84 992 172 866\nCode APE : 62.01Z – Programmation informatique\nDate de création : 30 septembre 2025\n\nSiège social : 87 Rue du Fontenoy, 59100 Roubaix, France."
       },
       "director": {
         "title": "2. Directeur de la Publication",
-        "content": "Alexandre De Clercq, en qualité de Président de la société HEY JAY."
+        "content": "[Représentant légal], en qualité de Président de la société [Société]."
       },
       "hosting": {
         "title": "3. Hébergement",
@@ -1555,7 +1555,7 @@
     "sections": {
       "introduction": {
         "title": "1. Introduction",
-        "content": "La société HEY JAY, SAS au capital de 85 000 euros, immatriculée au RCS de Lille Métropole sous le numéro SIREN 992 172 866 (SIRET : 992 172 866 00012), dont le siège social est situé au 87 Rue du Fontenoy, 59100 Roubaix (ci-après « Jay Assistant », « nous », « notre », « nos »), est responsable du traitement de vos données personnelles.\n\nNous nous engageons à protéger votre vie privée. Cette politique de confidentialité explique comment nous collectons, utilisons, stockons et protégeons vos informations personnelles lorsque vous utilisez notre service d'assistant IA. En utilisant Jay Assistant, vous acceptez les pratiques décrites dans cette politique de confidentialité."
+        "content": "La société [Société], SAS au capital de 85 000 euros, immatriculée au RCS de Lille Métropole sous le numéro SIREN 992 172 866 (SIRET : 992 172 866 00012), dont le siège social est situé au 87 Rue du Fontenoy, 59100 Roubaix (ci-après « Jay Assistant », « nous », « notre », « nos »), est responsable du traitement de vos données personnelles.\n\nNous nous engageons à protéger votre vie privée. Cette politique de confidentialité explique comment nous collectons, utilisons, stockons et protégeons vos informations personnelles lorsque vous utilisez notre service d'assistant IA. En utilisant Jay Assistant, vous acceptez les pratiques décrites dans cette politique de confidentialité."
       },
       "dataCollection": {
         "title": "2. Informations que nous collectons",
@@ -1957,7 +1957,7 @@
   },
   "testimonials": {
     "adrien": {
-      "name": "Adrien De Clercq",
+      "name": "[Représentant]",
       "role": "Fondateur & CEO",
       "company": "Recap Immo",
       "quote": "Jay me fait gagner mes soirées consacrées à mon CRM. Je me concentre désormais entièrement sur mes clients et mes ventes ont augmenté."

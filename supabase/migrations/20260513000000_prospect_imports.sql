@@ -105,9 +105,9 @@ ALTER TABLE prospect_imports ENABLE ROW LEVEL SECURITY;
 DO $$
 DECLARE
   admin_uuids UUID[] := ARRAY[
-    'aa853541-4146-47b4-bd64-b035f28a41b3'::UUID,  -- Alexandre De Clercq
-    'c4b3c69b-a862-431c-a9f8-00c2fead350a'::UUID,  -- Jean-Baptiste Renart
-    'f2db7bdb-1067-412d-a3ee-f0d101fd3b99'::UUID   -- Jay service
+    '00000000-0000-0000-0000-0000000000a1'::UUID,  -- admin (policies héritées, remplacées par les RLS workspace plus loin)
+    '00000000-0000-0000-0000-0000000000a2'::UUID,
+    '00000000-0000-0000-0000-0000000000a3'::UUID
   ];
 BEGIN
   EXECUTE format('

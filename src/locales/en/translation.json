@@ -1525,7 +1525,7 @@
     "sections": {
       "introduction": {
         "title": "1. Introduction",
-        "content": "HEY JAY, a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (SIRET: 992 172 866 00012), with its registered office at 87 Rue du Fontenoy, 59100 Roubaix, France (hereinafter \"Jay Assistant\", \"we\", \"our\", \"us\"), is the data controller for your personal data.\n\nWe are committed to protecting your privacy. This policy explains how we collect, use, store and protect your personal information when you use our AI assistant service. By using Jay Assistant, you agree to the practices described in this privacy policy."
+        "content": "[Société], a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (SIRET: 992 172 866 00012), with its registered office at 87 Rue du Fontenoy, 59100 Roubaix, France (hereinafter \"Jay Assistant\", \"we\", \"our\", \"us\"), is the data controller for your personal data.\n\nWe are committed to protecting your privacy. This policy explains how we collect, use, store and protect your personal information when you use our AI assistant service. By using Jay Assistant, you agree to the practices described in this privacy policy."
       },
       "dataCollection": {
         "title": "2. Information We Collect",
@@ -1578,11 +1578,11 @@
     "sections": {
       "legalInfo": {
         "title": "1. Legal Information",
-        "content": "HEY JAY is a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (head office SIRET: 992 172 866 00012).\n\nIntra-community VAT number: FR84 992 172 866\nAPE code: 62.01Z – Computer programming\nDate of incorporation: September 30, 2025\n\nRegistered office: 87 Rue du Fontenoy, 59100 Roubaix, France."
+        "content": "[Société] is a SAS (Simplified Joint-Stock Company) with a share capital of 85,000 euros, registered with the Lille Métropole Trade and Companies Register under SIREN number 992 172 866 (head office SIRET: 992 172 866 00012).\n\nIntra-community VAT number: FR84 992 172 866\nAPE code: 62.01Z – Computer programming\nDate of incorporation: September 30, 2025\n\nRegistered office: 87 Rue du Fontenoy, 59100 Roubaix, France."
       },
       "director": {
         "title": "2. Publication Director",
-        "content": "Alexandre De Clercq, acting as President of HEY JAY."
+        "content": "[Legal Representative], acting as President of [Société]."
       },
       "hosting": {
         "title": "3. Hosting",
@@ -1949,7 +1949,7 @@
   },
   "testimonials": {
     "adrien": {
-      "name": "Adrien De Clercq",
+      "name": "[Representative]",
       "role": "Founder & CEO",
       "company": "Recap Immo",
       "quote": "Jay saves me from spending my evenings on my CRM. I can now focus entirely on my clients and my sales have increased."

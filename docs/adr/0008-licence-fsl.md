@@ -78,7 +78,7 @@ Notice
    
    This Software is licensed under the terms below.
    
-   Licensor: Jay Team (Alexandre De Clercq, Jean-Baptiste Renart, et al.)
+   Licensor: Alexandre De Clercq
 
 Terms
    Jay Team grants you the right to use, copy, modify, create derivative

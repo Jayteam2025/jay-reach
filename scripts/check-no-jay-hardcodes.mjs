@@ -33,6 +33,12 @@ const FORBIDDEN = [
   { re: /\w+@(?:gmail|hotmail|yahoo|outlook)\.com/, label: 'email personnel', except: ['_shared/internal-users.ts', '_shared/internal-users.test.ts'] },
   // Internal workspace UUID (if any)
   { re: /00000000-0000-0000-0000-000000000001/, label: 'hardcoded workspace UUID pattern' },
+  // Jay-specific internal UUIDs (must not reappear)
+  { re: /aa853541-4146-47b4-bd64-b035f28a41b3/, label: 'UUID utilisateur Jay interne' },
+  { re: /c4b3c69b-a862-431c-a9f8-00c2fead350a/, label: 'UUID utilisateur Jay interne' },
+  { re: /f2db7bdb-1067-412d-a3ee-f0d101fd3b99/, label: 'UUID utilisateur Jay interne' },
+  // Jay company name (must not appear outside placeholder context)
+  { re: /HEY JAY/, label: 'nom de société Jay' },
   // Jay-specific client domain names (if any were in the source code)
   // — add here if needed when porting from main
 ];

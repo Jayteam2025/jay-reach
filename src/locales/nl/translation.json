@@ -1524,7 +1524,7 @@
     "sections": {
       "introduction": {
         "title": "1. Inleiding",
-        "content": "HEY JAY, een SAS (vereenvoudigde naamloze vennootschap) met een kapitaal van 85.000 euro, ingeschreven in het Handels- en Vennootschapsregister van Lille Métropole onder SIREN-nummer 992 172 866 (SIRET: 992 172 866 00012), met maatschappelijke zetel te 87 Rue du Fontenoy, 59100 Roubaix, Frankrijk (hierna \"Jay Assistant\", \"wij\", \"ons\", \"onze\"), is de verwerkingsverantwoordelijke voor uw persoonsgegevens.\n\nWij zetten ons in voor het beschermen van uw privacy. Dit beleid legt uit hoe wij uw persoonsgegevens verzamelen, gebruiken, opslaan en beschermen wanneer u onze AI-assistent gebruikt. Door Jay Assistant te gebruiken, gaat u akkoord met de praktijken in dit privacybeleid."
+        "content": "[Société], een SAS (vereenvoudigde naamloze vennootschap) met een kapitaal van 85.000 euro, ingeschreven in het Handels- en Vennootschapsregister van Lille Métropole onder SIREN-nummer 992 172 866 (SIRET: 992 172 866 00012), met maatschappelijke zetel te 87 Rue du Fontenoy, 59100 Roubaix, Frankrijk (hierna \"Jay Assistant\", \"wij\", \"ons\", \"onze\"), is de verwerkingsverantwoordelijke voor uw persoonsgegevens.\n\nWij zetten ons in voor het beschermen van uw privacy. Dit beleid legt uit hoe wij uw persoonsgegevens verzamelen, gebruiken, opslaan en beschermen wanneer u onze AI-assistent gebruikt. Door Jay Assistant te gebruiken, gaat u akkoord met de praktijken in dit privacybeleid."
       },
       "dataCollection": {
         "title": "2. Gegevens die wij verzamelen",
@@ -1577,11 +1577,11 @@
     "sections": {
       "legalInfo": {
         "title": "1. Juridische Informatie",
-        "content": "HEY JAY is een SAS (vereenvoudigde naamloze vennootschap) met een kapitaal van 85.000 euro, ingeschreven in het Handels- en Vennootschapsregister van Lille Métropole onder SIREN-nummer 992 172 866 (SIRET hoofdkantoor: 992 172 866 00012).\n\nIntracommunautair btw-nummer: FR84 992 172 866\nAPE-code: 62.01Z – Computerprogrammering\nOprichtingsdatum: 30 september 2025\n\nMaatschappelijke zetel: 87 Rue du Fontenoy, 59100 Roubaix, Frankrijk."
+        "content": "[Société] is een SAS (vereenvoudigde naamloze vennootschap) met een kapitaal van 85.000 euro, ingeschreven in het Handels- en Vennootschapsregister van Lille Métropole onder SIREN-nummer 992 172 866 (SIRET hoofdkantoor: 992 172 866 00012).\n\nIntracommunautair btw-nummer: FR84 992 172 866\nAPE-code: 62.01Z – Computerprogrammering\nOprichtingsdatum: 30 september 2025\n\nMaatschappelijke zetel: 87 Rue du Fontenoy, 59100 Roubaix, Frankrijk."
       },
       "director": {
         "title": "2. Publicatiedirecteur",
-        "content": "Alexandre De Clercq, in de hoedanigheid van Voorzitter van HEY JAY."
+        "content": "[Wettelijke vertegenwoordiger], in de hoedanigheid van Voorzitter van [Société]."
       },
       "hosting": {
         "title": "3. Hosting",
@@ -1948,7 +1948,7 @@
   },
   "testimonials": {
     "adrien": {
-      "name": "Adrien De Clercq",
+      "name": "[Vertegenwoordiger]",
       "role": "Oprichter & CEO",
       "company": "Recap Immo",
       "quote": "Jay bespaart me mijn avonden die ik aan mijn CRM besteedde. Ik kan me nu volledig concentreren op mijn klanten en mijn verkoop is toegenomen."

@@ -337,7 +337,7 @@ export function ProspectionBranding() {
               id="founder_name"
               value={founderName}
               onChange={(e) => setFounderName(e.target.value)}
-              placeholder="Alexandre De Clercq"
+              placeholder="Jean Dupont"
             />
           </div>
         </div>
@@ -377,7 +377,7 @@ export function ProspectionBranding() {
           id="signature"
           value={signature}
           onChange={(e) => setSignature(e.target.value)}
-          placeholder={'Alexandre De Clercq\nFondateur, Jay'}
+          placeholder={'Jean Dupont\nFondateur'}
           rows={4}
         />
         <div className="space-y-2">
@@ -476,7 +476,7 @@ export function ProspectionBranding() {
               <Input
                 value={newAlt}
                 onChange={(e) => setNewAlt(e.target.value)}
-                placeholder="CV Alexandre De Clercq"
+                placeholder="CV de votre commercial"
                 className="h-8 text-xs"
               />
             </div>

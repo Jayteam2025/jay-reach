@@ -113,8 +113,8 @@ RETURNING id INTO jay_workspace_id;
 
 -- Add existing admins as members
 INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
-  (jay_workspace_id, 'aa853541-...', 'owner'),  -- Alexandre
-  (jay_workspace_id, 'c4b3c69b-...', 'owner');  -- Jean-Baptiste
+  (jay_workspace_id, '00000000-0000-0000-0000-0000000000a1', 'owner'),  -- membre 1
+  (jay_workspace_id, '00000000-0000-0000-0000-0000000000a2', 'owner');  -- membre 2
 
 -- Backfill workspace_id on all existing rows
 UPDATE prospect_profiles SET workspace_id = jay_workspace_id;

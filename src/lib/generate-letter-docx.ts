@@ -95,7 +95,7 @@ export async function generateLetterDocx(data: LetterData): Promise<Blob> {
     companyCity,
     companyCountry,
     body,
-    senderName = 'Alexandre De Clercq',
+    senderName = '',
     senderCompany = 'Jay',
     senderStreet = '87 Rue du Fontenoy',
     senderZipCity = '59100 Roubaix',
