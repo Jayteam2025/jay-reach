@@ -1,21 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
+export interface PersonaPushCount {
+  persona_id: string;
+  /** Profils deliverability_status=valid pas encore poussés vers Smartlead. */
+  pushable: number;
+  /** Profils déjà poussés (smartlead_push_decision='push'). */
+  sent: number;
+}
+
 export interface ProspectionStats {
   scored: number;
   enriched: number;
   scrape_count: number;
   import_count: number;
-  push_counts: {
-    hr: number;
-    director: number;
-    field_sales: number;
-  };
-  push_sent_counts: {
-    hr: number;
-    director: number;
-    field_sales: number;
-  };
+  /** Compteurs de push groupés par persona_id (dé-hardcoding : plus de hr/director/field_sales). */
+  push_by_persona: PersonaPushCount[];
 }
 
 /**

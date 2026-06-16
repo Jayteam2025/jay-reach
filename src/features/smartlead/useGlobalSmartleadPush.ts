@@ -3,14 +3,16 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 
-export type GlobalPushKind = 'hr' | 'director' | 'field_sales';
-
 /**
  * Push Smartlead global (Jay Reach 1.5.5).
  *
- * Pousse tous les leads d'une categorie avec deliverability_status='valid' (toutes
+ * Pousse tous les leads d'un persona avec deliverability_status='valid' (toutes
  * entreprises enrichies confondues) sur Smartlead via manual_override. Le gate
  * backend revalide chaque envoi.
+ *
+ * Dé-hardcoding : ciblage par persona_id (et non plus par la target_category
+ * legacy hr/director/field_sales). La campagne Smartlead est résolue côté
+ * backend depuis smartlead_campaigns par persona_id.
  *
  * Extrait de ProspectionEntreprises.tsx pour sortir le fetch direct du composant.
  * Retourne l'objet useMutation (mutate / isPending / variables) tel quel.
@@ -20,9 +22,9 @@ export function useGlobalSmartleadPush(companies: EnrichedCompany[]) {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (kind: GlobalPushKind) => {
+    mutationFn: async (personaId: string) => {
       const validProspects = companies.flatMap(c => c.profiles).filter(
-        p => p.target_category === kind
+        p => p.persona_id === personaId
           && p.deliverability_status === 'valid'
           && p.email
           && p.smartlead_push_decision !== 'push',

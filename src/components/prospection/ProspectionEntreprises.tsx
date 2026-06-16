@@ -210,7 +210,7 @@ export function ProspectionEntreprises() {
   // profils sans enrichment_data.linkedin. Coute ~0.004$/profil.
   // Bulk push global : pousse tous les leads d'une categorie avec deliverability_status='valid'
   // (toutes entreprises enrichies confondues) sur Smartlead. Le gate revalide chaque envoi.
-  const [bulkPushKind, setBulkPushKind] = useState<'hr' | 'director' | 'field_sales' | null>(null);
+  const [bulkPushPersonaId, setBulkPushPersonaId] = useState<string | null>(null);
   const bulkPushMutation = useGlobalSmartleadPush(companies);
 
   // Compte les valid PAS encore pousses sur Smartlead (pour le badge "RH 18").
@@ -219,29 +219,22 @@ export function ProspectionEntreprises() {
   // anciens calculs JS sur `companies` qui plantaient silencieusement a >1000
   // profils (limite implicite Supabase JS).
   const { data: prospectionStats } = useProspectionStats();
-  const validCounts = useMemo(
-    () => prospectionStats?.push_counts ?? { hr: 0, director: 0, field_sales: 0 },
+  const pushCountByPersona = useMemo(
+    () => Object.fromEntries(
+      (prospectionStats?.push_by_persona ?? []).map((r) => [r.persona_id, r.pushable]),
+    ) as Record<string, number>,
     [prospectionStats],
   );
 
   // Lignes Push Smartlead derivees dynamiquement des personas actifs du workspace.
+  // Dé-hardcoding : ciblage par persona_id (plus de mapping slug->target_category Jay).
   const { data: personasData } = useIcpPersonas();
   const personaPushRows = useMemo(() => {
-    const PERSONA_SLUG_TO_KIND: Record<string, 'hr' | 'director' | 'field_sales'> = {
-      'hr-decision-maker': 'hr',
-      'director': 'director',
-      'field-sales': 'field_sales',
-    };
     if (!personasData) return [];
     return personasData
       .filter((p) => p.is_active)
-      .map((p) => {
-        const kind = PERSONA_SLUG_TO_KIND[p.slug];
-        if (!kind) return null;
-        return { kind, label: p.label, count: validCounts[kind] };
-      })
-      .filter((r): r is { kind: 'hr' | 'director' | 'field_sales'; label: string; count: number } => r !== null);
-  }, [personasData, validCounts]);
+      .map((p) => ({ personaId: p.id, label: p.label, count: pushCountByPersona[p.id] ?? 0 }));
+  }, [personasData, pushCountByPersona]);
 
   const refreshLinkedInMutation = useMutation({
     mutationFn: async () => {
@@ -632,13 +625,13 @@ export function ProspectionEntreprises() {
               ) : (
                 personaPushRows.map((row) => (
                   <ToolsRow
-                    key={row.kind}
+                    key={row.personaId}
                     icon={<Mail className="w-3.5 h-3.5 text-emerald-500" />}
                     label={row.label}
                     count={row.count}
-                    onSelect={() => setBulkPushKind(row.kind)}
+                    onSelect={() => setBulkPushPersonaId(row.personaId)}
                     disabled={bulkPushMutation.isPending || row.count === 0}
-                    loading={bulkPushMutation.isPending && bulkPushMutation.variables === row.kind}
+                    loading={bulkPushMutation.isPending && bulkPushMutation.variables === row.personaId}
                   />
                 ))
               )}
@@ -976,7 +969,7 @@ export function ProspectionEntreprises() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={bulkPushKind !== null} onOpenChange={(open) => !open && setBulkPushKind(null)}>
+      <AlertDialog open={bulkPushPersonaId !== null} onOpenChange={(open) => !open && setBulkPushPersonaId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -984,20 +977,17 @@ export function ProspectionEntreprises() {
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-[13px]">
-                {bulkPushKind && (() => {
-                  const count = validCounts[bulkPushKind];
-                  const label = bulkPushKind === 'hr'
-                    ? 'RH'
-                    : bulkPushKind === 'director'
-                      ? (count > 1 ? 'directeurs commerciaux' : 'directeur commercial')
-                      : (count > 1 ? 'commerciaux' : 'commercial');
+                {bulkPushPersonaId && (() => {
+                  const row = personaPushRows.find((r) => r.personaId === bulkPushPersonaId);
+                  const count = row?.count ?? 0;
+                  const label = row?.label ?? 'contacts';
                   return (
                     <>
                       <p>
-                        <strong>{count}</strong> {label} avec <strong>deliverability_status=valid</strong> répartis sur toutes les entreprises enrichies seront poussés dans la campagne Smartlead correspondante.
+                        <strong>{count}</strong> contact{count > 1 ? 's' : ''} « {label} » avec <strong>deliverability_status=valid</strong> répartis sur toutes les entreprises enrichies seront poussés dans la campagne Smartlead du persona.
                       </p>
                       <p className="text-muted-foreground text-[12px]">
-                        Le gate backend re-valide chaque envoi. Les emails non validés Bouncer ne seront pas envoyés.
+                        Le gate backend re-valide chaque envoi. Les emails non validés ne seront pas envoyés.
                       </p>
                     </>
                   );
@@ -1009,9 +999,9 @@ export function ProspectionEntreprises() {
             <AlertDialogCancel>Annuler</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                const kind = bulkPushKind;
-                setBulkPushKind(null);
-                if (kind) bulkPushMutation.mutate(kind);
+                const personaId = bulkPushPersonaId;
+                setBulkPushPersonaId(null);
+                if (personaId) bulkPushMutation.mutate(personaId);
               }}
             >
               Pousser sur Smartlead
