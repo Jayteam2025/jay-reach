@@ -2,7 +2,7 @@
 
 Merci de contribuer à Jay Reach. Avant que vos contributions puissent être intégrées,
 vous devez accepter le présent accord. Il clarifie les droits accordés au Titulaire des
-droits (Alexandre De Clercq et Jean-Baptiste Renart, « le Titulaire ») sur vos
+droits (Alexandre De Clercq, « le Titulaire ») sur vos
 contributions.
 
 > Ce document est un modèle et devrait être validé par un conseil juridique avant toute
