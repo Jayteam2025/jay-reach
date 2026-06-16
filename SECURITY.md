@@ -1,3 +1,5 @@
+> **Français** | [English](SECURITY.en.md)
+
 # Politique de sécurité
 
 ## Signalement des vulnérabilités
@@ -11,7 +13,7 @@ La sécurité est une priorité pour Jay Reach. Si vous découvrez une vulnérab
 - Cliquez sur **Report a vulnerability**
 - Décrivez la vulnérabilité de manière détaillée
 
-**Alternative** : Envoyez un email à `[CONTACT — à compléter]` avec :
+**Alternative** : Envoyez un email à **hey@jay-assistant.fr** avec :
 - Description de la vulnérabilité
 - Étapes pour la reproduire
 - Impact potentiel

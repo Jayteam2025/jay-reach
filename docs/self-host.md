@@ -77,7 +77,7 @@ Ouvrez `.env` avec votre éditeur et complétez :
 VITE_SUPABASE_URL=https://VOTRE-REF-PROJET.supabase.co
 VITE_SUPABASE_ANON_KEY=VOTRE_CLE_ANON_PUBLIQUE
 
-# Back-end (utilisé par pnpm setup seulement)
+# Back-end (utilisé par pnpm run setup seulement)
 SUPABASE_ACCESS_TOKEN=VOTRE_TOKEN_CLI
 SUPABASE_PROJECT_REF=VOTRE-REF-PROJET
 SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
@@ -109,7 +109,7 @@ SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
 ## Étape 4 : Vérification de Santé
 
 ```bash
-pnpm doctor
+pnpm run doctor
 ```
 
 Cela vérifie :
@@ -132,7 +132,7 @@ Cela vérifie :
 ## Étape 5 : Setup Initial
 
 ```bash
-pnpm setup
+pnpm run setup
 ```
 
 Cela :
@@ -326,7 +326,7 @@ Supabase Dashboard offre :
 
 ## Troubleshooting
 
-### `pnpm setup` échoue
+### `pnpm run setup` échoue
 
 **Problème :** "Migrations appliquées : 0/17"
 

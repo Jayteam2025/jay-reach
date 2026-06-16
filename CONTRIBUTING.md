@@ -1,3 +1,5 @@
+> **Français** | [English](CONTRIBUTING.en.md)
+
 # Contribuer à Jay Reach
 
 Merci de votre intérêt pour Jay Reach ! Ce document explique comment contribuer au projet et les règles que nous suivons.
@@ -21,15 +23,11 @@ Cette approche garantit la qualité et la traçabilité de tous les changements.
 
 Le dépôt est public. **Forkez-le, créez une branche, et ouvrez une Pull Request.**
 
-Pour nous présenter vos intentions et signer le CLA avant votre première PR, vous pouvez remplir notre **formulaire de contribution** :
-
-[https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform](https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform)
-
-Ce formulaire nous aide à mieux vous connaître et à accélérer le processus de review, mais ce n'est pas obligatoire pour proposer une PR.
+Le CLA (Contributor License Agreement) est accepté directement via une case à cocher dans le modèle de PR — aucun formulaire séparé n'est nécessaire. Cochez simplement la case lors de la soumission de votre PR.
 
 ## Accords de licence
 
-En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [LICENSE](LICENSE). Un **Contributor License Agreement (CLA)** doit être signé électroniquement avant la fusion de votre première PR — voir [CLA.md](CLA.md).
+En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [LICENSE](LICENSE). Une case à cocher du **Contributor License Agreement (CLA)** dans le modèle de PR confirme votre accord — aucune signature séparée n'est requise.
 
 Le CLA nous permet de relicencier le projet à l'avenir si nécessaire, tout en vous garantissant que votre contribution sera créditée et protégée.
 
@@ -51,7 +49,7 @@ pnpm install
 ### Vérification de la santé du projet
 
 ```bash
-pnpm doctor
+pnpm run doctor
 ```
 
 ### Variables d'environnement

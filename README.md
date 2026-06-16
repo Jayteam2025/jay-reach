@@ -1,3 +1,5 @@
+> **Français** | [English](README.en.md)
+
 # Jay Reach — Moteur de Prospection Self-Hosted
 
 **Jay Reach** est un moteur de prospection open-source (self-hosted) conçu pour les opérateurs commerciaux et les équipes RH. Il combine le scraping d'annonces d'emploi, la notation des signaux commerciaux, l'enrichissement de profils LinkedIn, la vérification de délivrabilité d'emails et la campagne d'outreach multi-canal.
@@ -46,7 +48,7 @@ SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
 ### 3. Vérification de santé
 
 ```bash
-pnpm doctor
+pnpm run doctor
 ```
 
 Cela vérifie : Node.js, pnpm, Supabase CLI, accès DB, variables d'environnement.
@@ -54,7 +56,7 @@ Cela vérifie : Node.js, pnpm, Supabase CLI, accès DB, variables d'environnemen
 ### 4. Setup initial (migrations + edge functions)
 
 ```bash
-pnpm setup
+pnpm run setup
 ```
 
 Cela :
@@ -189,5 +191,4 @@ Signalez les vulnérabilités en privé : [SECURITY.md](SECURITY.md).
 ## Contact
 
 - **Mainteneur principal** : @Jeeiib
-- **Formulaire de contribution** : [Google Form](https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform)
 - **Code of Conduct** : [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

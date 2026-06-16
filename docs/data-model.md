@@ -478,7 +478,7 @@ Appliquer avec :
 supabase migration up --project-ref <ref>
 ```
 
-Ou au `pnpm setup` (local) :
+Ou au `pnpm run setup` (local) :
 
 ```bash
 supabase db push

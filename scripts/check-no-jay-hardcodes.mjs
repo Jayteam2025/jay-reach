@@ -24,8 +24,8 @@ const STRICT = process.argv.includes('--strict');
 // Forbidden patterns — real leaks (secrets, personal emails, workspace UUIDs)
 // "Jay" branding in product name / text is allowed
 const FORBIDDEN = [
-  // Jay-specific domain
-  { re: /jay-assistant\.fr/, label: 'domaine Jay-assistant.fr hardcodé' },
+  // Jay-specific domain (except mainteiner contact hey@jay-assistant.fr)
+  { re: /(?<!hey@)jay-assistant\.fr/, label: 'domaine Jay-assistant.fr hardcodé' },
   // Personal emails (real leaks)
   { re: /renartjeanbaptiste@gmail\.com/, label: 'email personnel Jean-Baptiste' },
   { re: /alexdeclercq@hotmail\.com/, label: 'email personnel Alexandre' },
@@ -58,6 +58,13 @@ const ALLOWLIST = {
   ],
   'ProspectionTriggers.tsx': [
     "INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'",
+  ],
+  // Maintainer contact email (authorized in docs / config)
+  'SECURITY': [
+    'hey@jay-assistant.fr',
+  ],
+  'README': [
+    'hey@jay-assistant.fr',
   ],
 };
 
