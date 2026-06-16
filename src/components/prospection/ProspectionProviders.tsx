@@ -49,7 +49,7 @@ const CATEGORY_META: Record<
 > = {
   outreach: {
     label: 'Envoi',
-    description: "Providers d'envoi de messages (Smartlead, Resend, Microsoft Graph).",
+    description: "Provider d'envoi de messages (Smartlead).",
     icon: Plug,
   },
   validator: {
@@ -89,7 +89,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const PROVIDER_OPTIONS: Record<ProviderCategory, string[]> = {
-  outreach: ['smartlead', 'resend', 'microsoft_graph', 'demo'],
+  outreach: ['smartlead', 'demo'],
   validator: ['bouncer', 'reoon', 'demo'],
   enricher: ['fullenrich', 'demo'],
   source: ['adzuna', 'france_travail', 'demo'],
@@ -495,15 +495,16 @@ function AddProviderRow({
   const create = useCreateProvider();
   const options = PROVIDER_OPTIONS[category];
   const [providerType, setProviderType] = useState<string>(options[0] ?? 'demo');
-  const [channel, setChannel] = useState<'email' | 'linkedin' | ''>('');
 
   async function handleCreate() {
     try {
       await create.mutateAsync({
         workspace_id: workspaceId,
         category,
+        // Envoi = email pour l'instant (seul Smartlead). Un canal LinkedIn
+        // viendra avec un provider dédié ; pas de sélecteur tant qu'il n'existe pas.
         provider_type: providerType,
-        channel: category === 'outreach' && channel ? channel : null,
+        channel: category === 'outreach' ? 'email' : null,
       });
       toast.success('Provider créé');
       onClose();
@@ -514,36 +515,20 @@ function AddProviderRow({
 
   return (
     <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Provider</Label>
-          <Select value={providerType} onValueChange={setProviderType}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((opt) => (
-                <SelectItem key={opt} value={opt} className="text-xs">
-                  {PROVIDER_LABELS[opt] ?? opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {category === 'outreach' && (
-          <div className="space-y-1">
-            <Label className="text-xs">Canal</Label>
-            <Select value={channel} onValueChange={(v) => setChannel(v as 'email' | 'linkedin')}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Choisir…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="email" className="text-xs">Email</SelectItem>
-                <SelectItem value="linkedin" className="text-xs">LinkedIn</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+      <div className="space-y-1">
+        <Label className="text-xs">Provider</Label>
+        <Select value={providerType} onValueChange={setProviderType}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((opt) => (
+              <SelectItem key={opt} value={opt} className="text-xs">
+                {PROVIDER_LABELS[opt] ?? opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={handleCreate} disabled={create.isPending}>
