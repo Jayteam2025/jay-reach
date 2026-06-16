@@ -32,7 +32,7 @@ git --version           # 2.x.x ou plus
 4. **Notez :**
    - URL du projet (Settings → API → Project URL)
    - Anon key (Settings → API → anon key / public key)
-   - Project Ref (l'ID dans l'URL, ex. `xaysbsoccvkkduwxymqj`)
+   - Project Ref (l'ID dans l'URL, ex. `VOTRE-REF-PROJET`)
    - Database password (visible lors de la création)
 
 > **Conseil :** Si vous explorez localement d'abord, utilisez `supabase start` (Docker local). Pour la prod, utilisez Supabase Cloud.
@@ -74,13 +74,13 @@ Ouvrez `.env` avec votre éditeur et complétez :
 
 ```bash
 # Front-end (visibles dans le navigateur, publiques)
-VITE_SUPABASE_URL=https://xaysbsoccvkkduwxymqj.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://VOTRE-REF-PROJET.supabase.co
+VITE_SUPABASE_ANON_KEY=VOTRE_CLE_ANON_PUBLIQUE
 
 # Back-end (utilisé par pnpm setup seulement)
-SUPABASE_ACCESS_TOKEN=sbp_1234567890abcdef...
-SUPABASE_PROJECT_REF=xaysbsoccvkkduwxymqj
-SUPABASE_DB_PASSWORD=your_database_password
+SUPABASE_ACCESS_TOKEN=VOTRE_TOKEN_CLI
+SUPABASE_PROJECT_REF=VOTRE-REF-PROJET
+SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
 ```
 
 **Où obtenir chaque clé :**
@@ -95,7 +95,7 @@ SUPABASE_DB_PASSWORD=your_database_password
    - Copier le token complet (commence par `sbp_`)
 
 3. **SUPABASE_PROJECT_REF**
-   - C'est l'ID dans l'URL du dashboard (ex. `xaysbsoccvkkduwxymqj`)
+   - C'est l'ID dans l'URL du dashboard (ex. `abc123defg45hijkl`)
    - Ou allez à Settings → General → Project Reference ID
 
 4. **SUPABASE_DB_PASSWORD**

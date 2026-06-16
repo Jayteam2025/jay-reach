@@ -4,7 +4,7 @@ Merci de votre intérêt pour Jay Reach ! Ce document explique comment contribue
 
 ## À propos de Jay Reach
 
-Jay Reach est un moteur de prospection conçu pour fonctionner en self-hosted. Ce dépôt est actuellement privé sur invitation. Nous accueillons les contributions des personnes invitées pour améliorer le produit, corriger des bugs et enrichir la documentation.
+Jay Reach est un moteur de prospection conçu pour fonctionner en self-hosted. Ce dépôt est public et accueille les contributions de tous pour améliorer le produit, corriger des bugs et enrichir la documentation.
 
 ## Processus de contribution
 
@@ -17,17 +17,19 @@ Toute modification du code doit passer par une **Pull Request** :
 
 Cette approche garantit la qualité et la traçabilité de tous les changements.
 
-## Candidature pour contribuer
+## Contribuer
 
-Si vous n'êtes pas encore invité au dépôt, vous pouvez candidater via notre **formulaire de contribution** :
+Le dépôt est public. **Forkez-le, créez une branche, et ouvrez une Pull Request.**
+
+Pour nous présenter vos intentions et signer le CLA avant votre première PR, vous pouvez remplir notre **formulaire de contribution** :
 
 [https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform](https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform)
 
-Nous évaluons chaque candidature et nous contactons les contributeurs potentiels pour discuter de votre intérêt.
+Ce formulaire nous aide à mieux vous connaître et à accélérer le processus de review, mais ce n'est pas obligatoire pour proposer une PR.
 
 ## Accords de licence
 
-En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [CLA.md](CLA.md). Ce document doit être signé électroniquement avant la fusion de votre première PR.
+En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [LICENSE](LICENSE). Un **Contributor License Agreement (CLA)** doit être signé électroniquement avant la fusion de votre première PR — voir [CLA.md](CLA.md).
 
 Le CLA nous permet de relicencier le projet à l'avenir si nécessaire, tout en vous garantissant que votre contribution sera créditée et protégée.
 
@@ -149,7 +151,7 @@ Quand vous ajoutez une feature ou corriger un bug, **ajoutez des tests** corresp
 
 ## Licences et attributions
 
-Tout le code du dépôt est sous Functional Source License (FSL-1.1-MIT). Consultez [LICENSE-FSL.md](LICENSE-FSL.md) pour les détails complets et la définition de "Competing Use".
+Tout le code du dépôt est sous Functional Source License (FSL-1.1-MIT). Consultez [LICENSE](LICENSE) pour les détails complets et la définition de "Competing Use".
 
 Merci de contribuer !
 

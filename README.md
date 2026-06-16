@@ -2,7 +2,7 @@
 
 **Jay Reach** est un moteur de prospection open-source (self-hosted) conçu pour les opérateurs commerciaux et les équipes RH. Il combine le scraping d'annonces d'emploi, la notation des signaux commerciaux, l'enrichissement de profils LinkedIn, la vérification de délivrabilité d'emails et la campagne d'outreach multi-canal.
 
-> **Status :** Dépôt privé sur invitation. Licence propriétaire (FSL-1.1-MIT à terme). [Candidatez pour contribuer](https://docs.google.com/forms/d/e/1FAIpQLSdkcrqy0ARxDwF9_bPQndiV1UkiK4fWwqlVcURV4vkQpz40kw/viewform).
+> **Status :** Dépôt public. Licence **FSL-1.1-MIT** (source-available, conversion automatique en MIT après 2 ans). [Prêt à contribuer ?](CONTRIBUTING.md)
 
 ---
 
@@ -28,7 +28,7 @@ pnpm install
 Créez un projet Supabase (ou utilisez un existant) et récupérez :
 - **URL** : Settings → API → Project URL
 - **Anon Key** : Settings → API → Anon key
-- **Project Ref** : l'ID dans l'URL (ex. `xaysbsoccvkkduwxymqj`)
+- **Project Ref** : l'ID dans l'URL (ex. `VOTRE-REF-PROJET`)
 - **Access Token** : Account Settings → Tokens
 
 Créez un fichier `.env` à la racine :
@@ -36,11 +36,11 @@ Créez un fichier `.env` à la racine :
 ```bash
 cp .env.example .env
 # Puis remplissez :
-VITE_SUPABASE_URL=https://[project-ref].supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_ACCESS_TOKEN=sbp_...
-SUPABASE_PROJECT_REF=xaysbsoccvkkduwxymqj
-SUPABASE_DB_PASSWORD=[visible dans le dashboard Supabase]
+VITE_SUPABASE_URL=https://VOTRE-REF-PROJET.supabase.co
+VITE_SUPABASE_ANON_KEY=VOTRE_CLE_ANON_PUBLIQUE
+SUPABASE_ACCESS_TOKEN=VOTRE_TOKEN_CLI
+SUPABASE_PROJECT_REF=VOTRE-REF-PROJET
+SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
 ```
 
 ### 3. Vérification de santé
@@ -176,7 +176,7 @@ Merci de votre intérêt !
 
 ## Licence
 
-Jay Reach est sous **Functional Source License (FSL-1.1-MIT)** actuellement, avec une dégradation prévisible en MIT. Voir [LICENSE-FSL.md](LICENSE-FSL.md) pour les détails et la définition de "Competing Use".
+Jay Reach est sous **Functional Source License (FSL-1.1-MIT)**, avec conversion automatique en MIT 2 ans après la première version publique. Voir [LICENSE](LICENSE) pour les détails et la définition de "Competing Use".
 
 ---
 

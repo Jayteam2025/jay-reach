@@ -15,10 +15,9 @@
 function createContributorForm() {
   var form = FormApp.create('Jay Reach — Candidature contributeur')
     .setDescription(
-      'Jay Reach est un moteur de prospection self-host, en dépôt privé sur invitation. ' +
-      'Ce formulaire sert à candidater pour devenir contributeur. ' +
-      'L\'accès au code est réservé aux personnes invitées et soumis à la signature ' +
-      'du Contributor License Agreement (CLA) et d\'un accord de confidentialité.'
+      'Jay Reach est un moteur de prospection self-host, en dépôt public sous licence FSL-1.1-MIT. ' +
+      'Ce formulaire vous permet de nous présenter votre intention de contribuer et de signer le CLA avant votre première PR. ' +
+      'Vous pouvez aussi directement proposer une Pull Request sans remplir ce formulaire.'
     )
     .setCollectEmail(true)        // email du candidat (compte Google)
     .setLimitOneResponsePerUser(false)
@@ -75,8 +74,8 @@ function createContributorForm() {
   var engagements = form.addCheckboxItem();
   engagements.setTitle('Engagements (obligatoires)');
   var c1 = engagements.createChoice('J\'accepte de signer le Contributor License Agreement (CLA) avant tout merge.');
-  var c2 = engagements.createChoice('J\'accepte de respecter la confidentialité du code (dépôt privé) tant qu\'il n\'est pas rendu public.');
-  var c3 = engagements.createChoice('J\'ai compris que je ne pourrai pas pousser directement : tout passe par une Pull Request validée par l\'admin.');
+  var c2 = engagements.createChoice('J\'ai compris que toute contribution passe par une Pull Request review par un mainteneur.');
+  var c3 = engagements.createChoice('J\'accepte les termes de la licence FSL-1.1-MIT et la conversion future en MIT.');
   engagements.setChoices([c1, c2, c3])
     .setRequired(true);
 

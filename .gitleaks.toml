@@ -1,0 +1,19 @@
+# Gitleaks configuration for Jay Reach
+# Extends default rules and allowlists false positives
+
+[extend]
+useDefault = true
+
+[allowlist]
+regexes = [
+  "VOTRE_CLE_ANON_PUBLIQUE",
+  "VOTRE_TOKEN_CLI",
+  "VOTRE-REF-PROJET",
+  "VOTRE_MOT_DE_PASSE_DB",
+  "linkedinSnapshot"
+]
+paths = [
+  "docs/self-host.md",
+  "supabase/functions/generate-prospect-messages-bulk/index.ts",
+  "supabase/functions/regenerate-prospect-messages-from-template/index.ts"
+]
