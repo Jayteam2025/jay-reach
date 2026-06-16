@@ -41,6 +41,7 @@ import {
   type WorkspaceProvider,
   type ProviderTestResult,
 } from '@/hooks/useWorkspaceProviders';
+import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 
 const CATEGORY_META: Record<
   ProviderCategory,
@@ -127,6 +128,7 @@ const OPENAI_COMPAT_PRESETS: Array<{ label: string; values: Record<string, strin
 export function ProspectionProviders() {
   const { data: providers, isLoading } = useWorkspaceProviders();
   const toggle = useToggleWorkspaceProvider();
+  const { data: currentWorkspaceId } = useCurrentWorkspaceId();
   const [addingCategory, setAddingCategory] = useState<ProviderCategory | null>(null);
 
   const grouped = useMemo(() => {
@@ -160,7 +162,10 @@ export function ProspectionProviders() {
     }
   }
 
-  const firstWorkspaceId = providers?.[0]?.workspace_id ?? null;
+  // Le bouton « Ajouter » doit s'afficher même sans provider seedé : on prend le
+  // workspace de l'user courant, pas celui d'un provider existant (sinon catch-22
+  // sur une instance vierge où la liste est vide).
+  const firstWorkspaceId = currentWorkspaceId ?? providers?.[0]?.workspace_id ?? null;
 
   return (
     <div className="max-w-2xl space-y-10">

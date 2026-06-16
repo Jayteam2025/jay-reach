@@ -241,23 +241,31 @@ export function useEnrichCompany() {
 }
 
 // =====================================================
-// Stubs for unused functions (referenced but not implemented)
+// Mutation: Generate outreach messages for an enriched company group
 // =====================================================
 
-export function useDeleteUnselectedSignals() {
-  return useMutation({
-    mutationFn: async ({ selectedIds }: { selectedIds: string[] }) => {
-      logger.info('[DELETE_UNSELECTED] Not implemented in OSS', { count: selectedIds.length });
-      return {};
-    },
-  });
-}
-
+/**
+ * Lance la generation des messages d'outreach pour un company_group enrichi via
+ * generate-prospect-messages-bulk (batch LLM). Appelee apres l'enrichissement dans
+ * « Enrichir la selection ». Meme invocation que useCompanyMessages.regenerate.
+ */
 export function useGenerateCompanyMessages() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ companyGroupId }: { companyGroupId: string }) => {
-      logger.info('[GENERATE_MESSAGES] Not implemented in OSS', { companyGroupId });
+      const { error } = await supabase.functions.invoke('generate-prospect-messages-bulk', {
+        body: { mode: 'submit-batch', company_group_id: companyGroupId },
+      });
+      if (error) {
+        logger.error('[GENERATE_MESSAGES] invoke failed', error);
+        throw new Error(error.message || 'Erreur lors de la generation des messages');
+      }
       return {};
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-prospect-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['prospect-messages'] });
     },
   });
 }

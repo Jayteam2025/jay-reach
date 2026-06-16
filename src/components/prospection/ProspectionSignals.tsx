@@ -13,7 +13,7 @@ import { JobPostingPanel } from './JobPostingPanel';
 import {
   useScoreSignals,
   useEnrichCompany,
-  useDeleteUnselectedSignals,
+  useArchiveUnselectedSignals,
   useGenerateCompanyMessages
 } from '@/hooks/useScoreSignals';
 
@@ -39,7 +39,7 @@ export function ProspectionSignals() {
   const { data: signals = [], isLoading } = useProspectSignals();
 
   const scoreSignals = useScoreSignals();
-  const deleteUnselected = useDeleteUnselectedSignals();
+  const archiveUnselected = useArchiveUnselectedSignals();
   const enrichCompany = useEnrichCompany();
   const generateMessages = useGenerateCompanyMessages();
 
@@ -87,7 +87,7 @@ export function ProspectionSignals() {
     if (selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
 
-    await deleteUnselected.mutateAsync({ selectedIds: ids });
+    await archiveUnselected.mutateAsync({ selectedIds: ids });
 
     setEnrichmentProgress({ current: 0, total: ids.length });
     const companyGroupIds: string[] = [];
