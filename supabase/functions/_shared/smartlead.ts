@@ -43,6 +43,44 @@ export interface AddLeadsResponse {
  * L'appelant doit l'avoir resolu via resolveOutreachProvider() pour respecter
  * le multi-tenant.
  */
+export interface SmartleadCampaignSummary {
+  id: number;
+  name: string;
+  status: string;
+}
+
+/**
+ * Liste les campagnes du compte Smartlead (pour le mapping persona -> campagne).
+ * Lecture seule. Ne JAMAIS inclure l'URL (qui contient ?api_key=...) dans une
+ * erreur renvoyee au client : fuite de cle.
+ */
+export async function listCampaigns(apiKey: string): Promise<SmartleadCampaignSummary[]> {
+  const url = `${SMARTLEAD_BASE}/campaigns?api_key=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url, { headers: { "Accept": "application/json" } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Smartlead listCampaigns failed (${res.status})`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Smartlead listCampaigns: invalid JSON response");
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed.map((c) => {
+    const row = c as { id?: number; name?: string; status?: string };
+    return {
+      id: row.id ?? 0,
+      name: row.name ?? "",
+      status: row.status ?? "",
+    };
+  });
+}
+
 export async function addLeadsToCampaign(
   campaignId: number | string,
   leads: SmartleadLead[],

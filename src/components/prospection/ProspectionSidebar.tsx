@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BarChart3, Building2, Key, Palette, FileText, Radar, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, Building2, Key, Palette, FileText, Radar, Users, Megaphone } from 'lucide-react';
 import { ThemeSwitch } from '@/components/ThemeSwitch';
 import { ProspectionTab } from './ProspectionLayout';
 
@@ -21,6 +21,7 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
     { id: 'personas' as const, label: 'Personas', icon: Users },
     { id: 'config' as const, label: 'Templates', icon: FileText },
     { id: 'branding' as const, label: 'Branding', icon: Palette },
+    { id: 'campaigns' as const, label: 'Campagnes', icon: Megaphone },
     { id: 'providers' as const, label: 'Providers', icon: Key },
   ];
 

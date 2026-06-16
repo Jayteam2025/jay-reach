@@ -23,6 +23,8 @@ const ProspectionBranding = lazy(() =>
   import('./ProspectionBranding').then((m) => ({ default: m.ProspectionBranding })));
 const ProspectionProviders = lazy(() =>
   import('./ProspectionProviders').then((m) => ({ default: m.ProspectionProviders })));
+const ProspectionCampaigns = lazy(() =>
+  import('./ProspectionCampaigns').then((m) => ({ default: m.ProspectionCampaigns })));
 
 export type ProspectionTab =
   | 'dashboard'
@@ -32,6 +34,7 @@ export type ProspectionTab =
   | 'personas'
   | 'config'
   | 'branding'
+  | 'campaigns'
   | 'providers';
 
 const VALID_TABS: ProspectionTab[] = [
@@ -42,6 +45,7 @@ const VALID_TABS: ProspectionTab[] = [
   'personas',
   'config',
   'branding',
+  'campaigns',
   'providers',
 ];
 
@@ -70,6 +74,8 @@ export function ProspectionLayout() {
         return <ProspectionConfig />;
       case 'branding':
         return <ProspectionBranding />;
+      case 'campaigns':
+        return <ProspectionCampaigns />;
       case 'providers':
         return <ProspectionProviders />;
       default:
