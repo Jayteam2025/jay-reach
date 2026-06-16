@@ -87,10 +87,11 @@ function CompanyRow({
   const { data: progress } = useCompanyProgress(company.company_group_id);
   const { detection } = useCrmDetection(company.company_group_id);
   const percent = progress?.percent || 0;
-  const counts: string[] = [];
-  if (company.hr) counts.push('RH');
-  if (company.director) counts.push('Dir Co');
-  if (company.sales.length > 0) counts.push(`${company.sales.length} com.`);
+  // Comptage par persona réel (plus de hr/director/sales en dur) : un libellé par
+  // persona présent, ex. "2 Responsable maintenance".
+  const counts: string[] = Object.values(company.personaGroups)
+    .filter((profiles) => profiles.length > 0)
+    .map((profiles) => `${profiles.length} ${profiles[0]?.persona?.label ?? 'contact'}`);
 
   const detectedCrm = detection?.detection_status === 'completed' ? detection.crm_name : null;
   const isNative = isJayNativeCrm(detectedCrm);

@@ -48,14 +48,17 @@ export function normalizeJobTitle(raw: string, companyName?: string): string {
   s = s.replace(/\bB\s*to\s*B\b/gi, '');
   s = s.replace(/\bB2B\b/gi, '');
   s = s.replace(/\b[hfm]\s*[/.-]\s*[hfm]\b/gi, '');
+  // Type de contrat / temps de travail : bruit ("technicien de maintenance CDI"),
+  // donne un ton automatique dans les messages.
+  s = s.replace(/\b(cdi|cdd|cdii|stage|stagiaire|alternance|alternant|apprenti|apprentissage|int[ée]rim|freelance|temps\s+(?:plein|partiel)|mi-temps)\b/gi, '');
   if (companyName && companyName.trim()) {
     const escaped = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     s = s.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '');
   }
   const slashIdx = s.indexOf(' / ');
   if (slashIdx > 0) s = s.slice(0, slashIdx);
-  s = s.replace(/\s+-\s+/g, ' ');
-  s = s.replace(/\s*-\s*$/g, '');
+  s = s.replace(/\s+[-–—]\s+/g, ' ');
+  s = s.replace(/^\s*[-–—]\s*|\s*[-–—]\s*$/g, '');
   s = s.replace(/\s+/g, ' ').trim();
   return s.toLowerCase();
 }
