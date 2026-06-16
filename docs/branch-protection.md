@@ -1,3 +1,5 @@
+> **Français** | [English](branch-protection.en.md)
+
 # Protection de la branche `main`
 
 ## Modèle actif (dépôt public)

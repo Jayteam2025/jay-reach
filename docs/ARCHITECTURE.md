@@ -1,3 +1,5 @@
+> **Français** | [English](ARCHITECTURE.en.md)
+
 # Architecture de Jay Reach
 
 ## Vue d'ensemble

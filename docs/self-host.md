@@ -1,3 +1,5 @@
+> **Français** | [English](self-host.en.md)
+
 # Guide Complet Self-Host — Jay Reach
 
 Ce guide vous guide pas à pas pour déployer votre propre instance Jay Reach, de la configuration locale à la production.
