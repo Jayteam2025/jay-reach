@@ -74,7 +74,18 @@ function buildUserMessage(signals: BatchSignal[]): string {
     return parts.join('\n');
   });
 
-  return `Évalue ces ${signals.length} prospects:\n\n${signalLines.join('\n\n---\n\n')}`;
+  // Le format de sortie est imposé par le CODE (pas par le prompt de l'opérateur,
+  // qui ne décrit que les critères de qualification). Sans ça, le modèle répond
+  // en prose ("Voici l'évaluation...") et le parsing échoue.
+  return (
+    `Évalue ces ${signals.length} prospects selon les critères définis dans les instructions système.\n\n` +
+    `${signalLines.join('\n\n---\n\n')}\n\n` +
+    `Réponds UNIQUEMENT avec un tableau JSON valide, un objet par prospect ci-dessus, ` +
+    `dans ce format exact :\n` +
+    `[{"id": "<recopie l'ID fourni à l'identique>", "score": <entier de 0 à 100>, "reason": "<une phrase courte de justification>"}]\n\n` +
+    `Règles strictes : aucun texte avant ou après le tableau, pas de balises de code (\`\`\`), ` +
+    `un objet pour CHAQUE prospect, "id" recopié exactement. Un score élevé = correspond fortement aux critères.`
+  );
 }
 
 function extractSignalData(signal: ProspectSignal): BatchSignal {
