@@ -15,5 +15,8 @@ regexes = [
 paths = [
   "docs/self-host.md",
   "supabase/functions/generate-prospect-messages-bulk/index.ts",
-  "supabase/functions/regenerate-prospect-messages-from-template/index.ts"
+  "supabase/functions/regenerate-prospect-messages-from-template/index.ts",
+  # Lockfiles : hashes d'integrite de dependances (faux positifs generic-api-key)
+  "deno.lock",
+  "pnpm-lock.yaml"
 ]
