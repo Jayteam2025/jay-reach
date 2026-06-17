@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import { TemplatePreview } from './TemplatePreview';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Image as ImageIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 import type {
   ProspectChannel,
   ProspectMessageTemplate,
@@ -18,6 +20,8 @@ interface TemplateEditorProps {
   inlineImageAlt?: string | null;
   onInlineImageChange?: (url: string | null, alt: string | null) => void;
   isSavingAttachment?: boolean;
+  workspaceId?: string | null;
+  personaId?: string | null;
 }
 
 export interface TemplateDraft {
@@ -48,9 +52,13 @@ export function TemplateEditor({
   inlineImageAlt,
   onInlineImageChange,
   isSavingAttachment,
+  workspaceId,
+  personaId,
 }: TemplateEditorProps) {
   const supportsSubject = CHANNEL_SUPPORTS_SUBJECT[channel] ?? false;
   const supportsInlineImage = channel === 'email';
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const previewTemplate: MessageTemplate = useMemo(
     () => ({
@@ -61,6 +69,53 @@ export function TemplateEditor({
     }),
     [draft, channel],
   );
+
+  async function handleFileUpload(file: File) {
+    if (!workspaceId || !personaId) {
+      toast.error('Workspace ou persona manquant');
+      return;
+    }
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    if (!validTypes.includes(file.type)) {
+      toast.error('Format non supporté. Utilisez PNG, JPEG, WebP ou GIF.');
+      return;
+    }
+
+    const maxSize = 5 * 1024 * 1024; // 5 MB
+    if (file.size > maxSize) {
+      toast.error('Fichier trop volumineux (max 5 MB)');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
+      const cleanName = file.name
+        .replace(/[^a-z0-9.-]+/gi, '-')
+        .toLowerCase()
+        .slice(0, 80);
+      const path = `${workspaceId}/${personaId}-email-${Date.now()}${ext && !cleanName.endsWith(`.${ext}`) ? `.${ext}` : ''}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('brand-assets')
+        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
+      if (uploadErr) throw uploadErr;
+
+      const { data: pub } = supabase.storage
+        .from('brand-assets')
+        .getPublicUrl(path);
+
+      onInlineImageChange?.(pub.publicUrl, null);
+      toast.success('Image téléchargée');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erreur inconnue';
+      toast.error(`Erreur upload: ${message}`);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
@@ -125,49 +180,109 @@ export function TemplateEditor({
                 Optionnel. Apparaît en bas du corps du message.
               </span>
             </h4>
-            <div className="space-y-2">
-              <Label htmlFor="inline_image_url" className="text-xs">URL de l'image</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="inline_image_url"
-                  type="url"
-                  value={inlineImageUrl ?? ''}
-                  onChange={(e) => onInlineImageChange?.(e.target.value || null, inlineImageAlt ?? null)}
-                  placeholder="https://..."
-                  className="text-sm"
-                />
-                {inlineImageUrl && (
+
+            {inlineImageUrl ? (
+              <div className="space-y-3">
+                <div className="relative w-full bg-card border border-border rounded-md p-3 flex items-start gap-3">
+                  <img
+                    src={inlineImageUrl}
+                    alt={inlineImageAlt || 'Image inline'}
+                    className="w-16 h-16 object-cover rounded border border-border/50 shrink-0"
+                    onError={() => toast.error('Image non chargeable')}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground truncate">
+                      {inlineImageAlt || 'Image intégrée'}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {inlineImageUrl.split('/').pop()}
+                    </p>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     className="shrink-0"
                     onClick={() => onInlineImageChange?.(null, null)}
-                    disabled={isSavingAttachment}
+                    disabled={isSavingAttachment || isUploading}
                   >
                     <X className="w-4 h-4" />
                   </Button>
-                )}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="inline_image_alt" className="text-xs">Texte alternatif (optionnel)</Label>
+                  <Input
+                    id="inline_image_alt"
+                    type="text"
+                    value={inlineImageAlt ?? ''}
+                    onChange={(e) => onInlineImageChange?.(inlineImageUrl, e.target.value || null)}
+                    placeholder="Description de l'image"
+                    className="text-sm"
+                    disabled={isSavingAttachment || isUploading}
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSavingAttachment || isUploading}
+                  className="w-full"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Téléchargement...
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="w-4 h-4 mr-2" />
+                      Remplacer l'image
+                    </>
+                  )}
+                </Button>
               </div>
-            </div>
-            {inlineImageUrl && (
-              <div className="space-y-2">
-                <Label htmlFor="inline_image_alt" className="text-xs">Texte alternatif (optionnel)</Label>
-                <Input
-                  id="inline_image_alt"
-                  type="text"
-                  value={inlineImageAlt ?? ''}
-                  onChange={(e) => onInlineImageChange?.(inlineImageUrl, e.target.value || null)}
-                  placeholder="Description de l'image"
-                  className="text-sm"
-                  disabled={isSavingAttachment}
-                />
+            ) : (
+              <div
+                className="border-2 border-dashed border-border rounded-md p-6 text-center cursor-pointer hover:border-violet-500 hover:bg-violet-500/5 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('border-violet-500', 'bg-violet-500/5');
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('border-violet-500', 'bg-violet-500/5');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-violet-500', 'bg-violet-500/5');
+                  const file = e.dataTransfer.files[0];
+                  if (file) void handleFileUpload(file);
+                }}
+              >
+                <ImageIcon className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm font-medium text-foreground">Cliquez ou glissez une image ici</p>
+                <p className="text-xs text-muted-foreground mt-1">PNG, JPEG, WebP ou GIF (max 5 MB)</p>
               </div>
             )}
-            {isSavingAttachment && (
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFileUpload(file);
+              }}
+              className="hidden"
+            />
+
+            {(isSavingAttachment || isUploading) && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Enregistrement...
+                {isUploading ? 'Téléchargement en cours...' : 'Enregistrement...'}
               </div>
             )}
           </div>

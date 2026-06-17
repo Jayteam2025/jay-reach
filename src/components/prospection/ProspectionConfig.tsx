@@ -287,6 +287,8 @@ function TemplateSlot({
         inlineImageAlt={currentAttachment?.alt}
         onInlineImageChange={handleInlineImageChange}
         isSavingAttachment={isSavingAttachment}
+        workspaceId={workspaceId ?? undefined}
+        personaId={persona.id}
       />
 
       <RegenerateConfirmDialog
