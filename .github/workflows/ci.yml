@@ -106,7 +106,8 @@ jobs:
 
       - name: Detect secrets with gitleaks
         run: |
-          # Install and run gitleaks in basic (no-license) mode
-          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks-linux-x64 -o gitleaks
+          # Install gitleaks (tarball release) puis scan de tout l'historique.
+          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
           chmod +x gitleaks
           ./gitleaks detect --no-banner --redact
