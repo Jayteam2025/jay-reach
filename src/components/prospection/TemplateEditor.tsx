@@ -7,7 +7,6 @@ import { Loader2, X } from 'lucide-react';
 import type {
   ProspectChannel,
   ProspectMessageTemplate,
-  ProspectTargetCategory,
 } from '@/hooks/useProspectMessageTemplates';
 import type { MessageTemplate } from '@/lib/prospect-template-renderer';
 
@@ -20,10 +19,6 @@ interface TemplateEditorProps {
   onInlineImageChange?: (url: string | null, alt: string | null) => void;
   isSavingAttachment?: boolean;
 }
-
-// Catégorie d'aperçu générique : sert uniquement à choisir le profil de démo pour
-// visualiser la substitution des variables. Les données restent persona-based.
-const PREVIEW_CATEGORY: ProspectTargetCategory = 'hr';
 
 export interface TemplateDraft {
   subject: string | null;
@@ -59,7 +54,6 @@ export function TemplateEditor({
 
   const previewTemplate: MessageTemplate = useMemo(
     () => ({
-      target_category: PREVIEW_CATEGORY,
       channel,
       subject: draft.subject?.trim() ? draft.subject : null,
       body: draft.body,
@@ -183,7 +177,6 @@ export function TemplateEditor({
       <div className="lg:sticky lg:top-4 lg:self-start">
         <TemplatePreview
           template={previewTemplate}
-          category={PREVIEW_CATEGORY}
           channel={channel}
         />
       </div>
@@ -241,4 +234,4 @@ export function templateToDraft(t: ProspectMessageTemplate): TemplateDraft {
   };
 }
 
-export type { ProspectChannel, ProspectTargetCategory };
+export type { ProspectChannel };

@@ -22,9 +22,7 @@ export interface Prospect {
   company_size: string | null;
   company_sector: string | null;
   company_city: string | null;
-  /** Legacy enum Jay-only. Maintenu pour retro-compat ; preferer `persona` quand disponible. */
-  target_category: "director" | "field_sales" | "hr";
-  /** FK vers icp_personas (Jay Reach 1.2.2+). NULL pour les rows pre-migration. */
+  /** FK vers icp_personas. Toujours present apres migration. */
   persona_id: string | null;
   /** Persona resolu (denormalise via join icp_personas). Null si pas de persona_id. */
   persona: ProspectPersonaInline | null;
@@ -57,15 +55,9 @@ function denormalizePersona(raw: RawProspect): Prospect {
   return { ...rest, persona: icp_personas ?? null };
 }
 
-/** Resout le label affichable d'un prospect : persona.label en priorite, fallback legacy. */
+/** Resout le label affichable d'un prospect depuis le persona. */
 export function getProspectLabel(p: Prospect): string {
-  if (p.persona) return p.persona.label;
-  const legacy: Record<Prospect["target_category"], string> = {
-    hr: "Ressources humaines",
-    director: "Directeur commercial",
-    field_sales: "Commercial terrain",
-  };
-  return legacy[p.target_category];
+  return p.persona?.label ?? "Contact";
 }
 
 // =====================================================

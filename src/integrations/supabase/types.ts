@@ -883,7 +883,6 @@ export type Database = {
           persona_id: string
           subject: string | null
           subject_variants: string[]
-          target_category: string | null
           updated_at: string
           updated_by: string | null
           version: number
@@ -899,7 +898,6 @@ export type Database = {
           persona_id: string
           subject?: string | null
           subject_variants?: string[]
-          target_category?: string | null
           updated_at?: string
           updated_by?: string | null
           version?: number
@@ -915,7 +913,6 @@ export type Database = {
           persona_id?: string
           subject?: string | null
           subject_variants?: string[]
-          target_category?: string | null
           updated_at?: string
           updated_by?: string | null
           version?: number
@@ -1079,7 +1076,6 @@ export type Database = {
           smartlead_push_reason: string | null
           source_signal_id: string | null
           status: string
-          target_category: string | null
           tiktok_url: string | null
           twitter_url: string | null
           updated_at: string | null
@@ -1120,7 +1116,6 @@ export type Database = {
           smartlead_push_reason?: string | null
           source_signal_id?: string | null
           status?: string
-          target_category?: string | null
           tiktok_url?: string | null
           twitter_url?: string | null
           updated_at?: string | null
@@ -1161,7 +1156,6 @@ export type Database = {
           smartlead_push_reason?: string | null
           source_signal_id?: string | null
           status?: string
-          target_category?: string | null
           tiktok_url?: string | null
           twitter_url?: string | null
           updated_at?: string | null
@@ -1248,7 +1242,6 @@ export type Database = {
           name: string
           persona_id: string | null
           steps: Json
-          target_category: string
           updated_at: string | null
           workspace_id: string | null
         }
@@ -1261,7 +1254,6 @@ export type Database = {
           name: string
           persona_id?: string | null
           steps: Json
-          target_category: string
           updated_at?: string | null
           workspace_id?: string | null
         }
@@ -1274,7 +1266,6 @@ export type Database = {
           name?: string
           persona_id?: string | null
           steps?: Json
-          target_category?: string
           updated_at?: string | null
           workspace_id?: string | null
         }
@@ -1558,7 +1549,6 @@ export type Database = {
           enabled: boolean
           id: string
           persona_id: string
-          target_category: string | null
           updated_at: string
           workspace_id: string
         }
@@ -1569,7 +1559,6 @@ export type Database = {
           enabled?: boolean
           id?: string
           persona_id: string
-          target_category?: string | null
           updated_at?: string
           workspace_id: string
         }
@@ -1580,7 +1569,6 @@ export type Database = {
           enabled?: boolean
           id?: string
           persona_id?: string
-          target_category?: string | null
           updated_at?: string
           workspace_id?: string
         }

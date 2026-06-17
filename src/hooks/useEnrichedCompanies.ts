@@ -28,9 +28,7 @@ export interface EnrichedProfile {
   company_size: string | null;
   company_sector: string | null;
   company_city: string | null;
-  /** Legacy enum Jay-only. Maintenu pour retro-compat ; preferer `persona` quand disponible. */
-  target_category: 'director' | 'field_sales' | 'hr';
-  /** FK vers icp_personas (Jay Reach 1.2.2+). NULL pour les rows pre-migration. */
+  /** FK vers icp_personas. Toujours present apres migration. */
   persona_id: string | null;
   /** Persona resolu (denormalise au fetch). Null si persona_id NULL ou persona introuvable. */
   persona: ProspectPersona | null;

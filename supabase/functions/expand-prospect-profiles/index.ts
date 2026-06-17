@@ -4,7 +4,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractUserId } from "../_shared/subscription-access.ts";
 import { resolveEnricherForDefaultWorkspace } from "../_shared/providers/registry.ts";
 import { loadActivePersonas } from "../_shared/workspace-config.ts";
-import { buildPersonaSearch, matchesPersonaTitle, legacyTargetCategory } from "../_shared/persona-enrichment-core.ts";
+import { buildPersonaSearch, matchesPersonaTitle } from "../_shared/persona-enrichment-core.ts";
 import type { PersonaConfig } from "../_shared/workspace-config-core.ts";
 import {
   searchContactsAtCompanyCascade,
@@ -37,18 +37,14 @@ import { z } from "npm:zod@3.24.1";
  * Output : { inserted: number, more_available_counts: {...}, credits_used }
  */
 
-// Validation Zod de la request (Jay Reach dé-hardcoding PR3). Support transition :
-// company_group_id non vide + (persona_id OU category) requis.
-// count reste optionnel et clampe 1..50 cote handler (default 10).
+// Validation Zod de la request (persona_id-based uniquement).
+// company_group_id non vide + persona_id requis.
+// count optionnel et clampe 1..50 (default 10).
 const ExpandRequestSchema = z.object({
   company_group_id: z.string().min(1),
-  persona_id: z.string().optional(),
-  category: z.enum(["hr", "director", "field_sales"]).optional(),
+  persona_id: z.string().min(1),
   count: z.number().optional(),
-}).refine(
-  (data) => data.persona_id || data.category,
-  { message: "Either persona_id or category must be provided" }
-);
+});
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req.headers.get("origin"));
@@ -89,11 +85,11 @@ Deno.serve(async (req: Request) => {
   const parsed = ExpandRequestSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return new Response(
-      JSON.stringify({ error: "company_group_id and (persona_id or category) required", details: parsed.error.flatten() }),
+      JSON.stringify({ error: "company_group_id and persona_id required", details: parsed.error.flatten() }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
-  const { company_group_id, persona_id, category } = parsed.data;
+  const { company_group_id, persona_id } = parsed.data;
   const count = Math.min(Math.max(parsed.data.count ?? 10, 1), 50);
 
   let fullenrichKey: string;
@@ -143,17 +139,10 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  let persona: PersonaConfig | undefined;
-  if (persona_id) {
-    persona = personas.find(p => p.id === persona_id);
-  } else if (category) {
-    // Compat transition : le frontend envoie encore la catégorie legacy.
-    persona = personas.find(p => legacyTargetCategory(p.slug) === category);
-  }
-
+  const persona = personas.find(p => p.id === persona_id);
   if (!persona) {
     return new Response(
-      JSON.stringify({ error: `Persona not found (persona_id=${persona_id}, category=${category})` }),
+      JSON.stringify({ error: `Persona not found (persona_id=${persona_id})` }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -313,7 +302,6 @@ Deno.serve(async (req: Request) => {
       phone: null,
       job_title: profileTitle || persona.label,
       company_name: companyName,
-      target_category: legacyTargetCategory(persona.slug),
       persona_id: persona.id,
       workspace_id: workspaceId,
       linkedin_url: p.social_profiles?.professional_network?.url || null,

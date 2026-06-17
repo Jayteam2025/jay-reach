@@ -52,7 +52,6 @@ interface ProspectProfile {
   job_title: string | null;
   company_name: string;
   company_sector: string | null;
-  target_category: "hr" | "director" | "field_sales";
   /** FK vers icp_personas (Jay Reach 1.2.2+). Null pour rows pre-migration. */
   persona_id: string | null;
   workspace_id: string;
@@ -147,7 +146,7 @@ Deno.serve(async (req: Request) => {
     let query = supabase
       .from("prospect_profiles")
       .select(
-        "id, first_name, last_name, email, job_title, company_name, company_sector, target_category, persona_id, workspace_id, linkedin_url, instagram_url, tiktok_url, source_signal_id, enrichment_data, company_group_id",
+        "id, first_name, last_name, email, job_title, company_name, company_sector, persona_id, workspace_id, linkedin_url, instagram_url, tiktok_url, source_signal_id, enrichment_data, company_group_id",
       );
 
     if (body.company_group_id) {
@@ -183,7 +182,7 @@ Deno.serve(async (req: Request) => {
     const { data: templates, error: tplErr } = await supabase
       .from("prospect_message_templates")
       .select(
-        "id, target_category, persona_id, channel, subject, body, icebreaker_template, version",
+        "id, persona_id, channel, subject, body, icebreaker_template, version",
       )
       .eq("is_active", true);
     if (tplErr) throw tplErr;
@@ -368,10 +367,6 @@ Deno.serve(async (req: Request) => {
             job_title: p.job_title,
             company_name: p.company_name,
             company_sector: p.company_sector,
-            target_category: p.target_category as
-              | "hr"
-              | "director"
-              | "field_sales",
             persona_id: p.persona_id,
           },
           signal: signal

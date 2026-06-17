@@ -14,7 +14,7 @@ import { type PersonaConfig } from "../_shared/workspace-config.ts";
  * regenerate-prospect-messages-from-template
  *
  * Admin-only. Re-render tous les prospect_messages "non envoyes" qui
- * correspondent au couple (target_category, channel) du template fourni.
+ * correspondent au couple (persona_id, channel) du template fourni.
  *
  * "Non envoye" = status NOT IN ('sent', 'replied', 'bounced').
  * Couvre uniformement email (Smartlead), linkedin (extension), postal_letter.
@@ -46,7 +46,6 @@ interface ProspectRow {
   job_title: string | null;
   company_name: string;
   company_sector: string | null;
-  target_category: "hr" | "director" | "field_sales";
   persona_id: string | null;
   source_signal_id: string | null;
   enrichment_data: Record<string, unknown> | null;
@@ -131,7 +130,7 @@ Deno.serve(async (req: Request) => {
     const { data: template, error: tplErr } = await supabase
       .from("prospect_message_templates")
       .select(
-        "id, target_category, persona_id, workspace_id, channel, subject, body, icebreaker_template, version, is_active",
+        "id, persona_id, workspace_id, channel, subject, body, icebreaker_template, version, is_active",
       )
       .eq("id", body.template_id)
       .maybeSingle();
@@ -160,7 +159,7 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(
-      `[regenerate] start template=${t.id} ${t.target_category || "no-category"}:${t.channel} v${t.version}`,
+      `[regenerate] start template=${t.id} ${t.channel} v${t.version}`,
     );
 
     // Charge tous les messages candidats (non envoyes)
@@ -215,7 +214,7 @@ Deno.serve(async (req: Request) => {
       const chunkQuery = supabase
         .from("prospect_profiles")
         .select(
-          "id, first_name, last_name, job_title, company_name, company_sector, target_category, persona_id, source_signal_id, enrichment_data",
+          "id, first_name, last_name, job_title, company_name, company_sector, persona_id, source_signal_id, enrichment_data",
         )
         .in("id", chunkIds)
         .is("deleted_at", null)
@@ -301,7 +300,6 @@ Deno.serve(async (req: Request) => {
           job_title: profile.job_title,
           company_name: profile.company_name,
           company_sector: profile.company_sector,
-          target_category: profile.target_category,
           persona_id: profile.persona_id ?? null,
         },
         signal: signal

@@ -5,12 +5,10 @@ import {
   DEMO_CONTEXTS,
   type MessageTemplate,
   renderTemplate,
-  type TargetCategory,
 } from '@/lib/prospect-template-renderer';
 
 interface TemplatePreviewProps {
   template: MessageTemplate;
-  category: TargetCategory;
   channel: string;
 }
 
@@ -20,12 +18,13 @@ const CHANNEL_LABELS: Record<string, { label: string; icon: typeof Mail }> = {
   social_dm: { label: 'Social DM', icon: Send },
 };
 
-export function TemplatePreview({ template, category, channel }: TemplatePreviewProps) {
+export function TemplatePreview({ template, channel }: TemplatePreviewProps) {
+  const demoContext = DEMO_CONTEXTS['default']!;
   const result = useMemo(() => {
-    return renderTemplate(template, DEMO_CONTEXTS[category]);
-  }, [template, category]);
+    return renderTemplate(template, demoContext);
+  }, [template, demoContext]);
 
-  const profile = DEMO_CONTEXTS[category].profile;
+  const profile = demoContext.profile;
   const channelMeta = CHANNEL_LABELS[channel] ?? { label: channel, icon: Send };
   const ChannelIcon = channelMeta.icon;
 

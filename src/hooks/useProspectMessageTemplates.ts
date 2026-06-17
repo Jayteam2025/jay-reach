@@ -1,12 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
-export type ProspectTargetCategory = 'hr' | 'director' | 'field_sales';
 export type ProspectChannel = 'email' | 'postal_letter' | 'social_dm';
 
 export interface ProspectMessageTemplate {
   id: string;
-  target_category: ProspectTargetCategory | null;
   persona_id: string | null;
   channel: ProspectChannel;
   subject: string | null;
@@ -32,7 +30,7 @@ export function useProspectMessageTemplates() {
       const { data, error } = await supabase
         .from('prospect_message_templates')
         .select(
-          'id, target_category, persona_id, channel, subject, body, icebreaker_template, is_active, version, updated_at, updated_by',
+          'id, persona_id, channel, subject, body, icebreaker_template, is_active, version, updated_at, updated_by',
         )
         .order('channel');
 

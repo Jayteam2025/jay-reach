@@ -17,9 +17,8 @@ interface Prospect {
   email: string | null;
   phone: string | null;
   job_title: string | null;
-  target_category: 'director' | 'field_sales' | 'hr';
   persona_id: string | null;
-  /** Persona resolu via join icp_personas (Jay Reach 1.2.2+). */
+  /** Persona resolu via join icp_personas. */
   persona: { id: string; slug: string; label: string; channels_priority: string[] } | null;
   linkedin_url: string | null;
   instagram_url: string | null;

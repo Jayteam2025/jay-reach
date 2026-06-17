@@ -6,7 +6,7 @@ import { validateOrRespond, z } from "../_shared/validation.ts";
 import { resolveEnricherForDefaultWorkspace, resolveLLM } from "../_shared/providers/registry.ts";
 import type { LLMHandle } from "../_shared/providers/types.ts";
 import { loadActivePersonas } from "../_shared/workspace-config.ts";
-import { buildPersonaSearch, buildRoleDefinition, matchesPersonaTitle, legacyTargetCategory } from "../_shared/persona-enrichment-core.ts";
+import { buildPersonaSearch, buildRoleDefinition, matchesPersonaTitle } from "../_shared/persona-enrichment-core.ts";
 import type { PersonaConfig } from "../_shared/workspace-config-core.ts";
 import {
   enrichContactsViaFullEnrich,
@@ -102,7 +102,6 @@ interface ProfileQueueItem {
     company_size: string | null;
     company_sector: string | null;
     company_city: string | null;
-    target_category: "director" | "field_sales" | "hr" | null;
     persona_id: string;
     linkedin_url: string | null;
     instagram_url: string | null;
@@ -613,12 +612,13 @@ async function processSignal(
       return;
     }
     if (nameKey) usedFullNames.add(nameKey);
+    const seedEmailSource = (seed?.email_source as EmailSource | undefined) ?? null;
     profileQueue.push({
       profile_data: {
         first_name: firstName,
         last_name: lastName,
         email: seed?.email ?? null,
-        email_source: seed?.email_source ?? null,
+        email_source: seedEmailSource,
         phone: seed?.phone ?? null,
         job_title: jobTitle,
         company_name: companyName,
@@ -626,7 +626,6 @@ async function processSignal(
         company_size: null,
         company_sector: null,
         company_city: null,
-        target_category: legacyTargetCategory(persona.slug),
         persona_id: persona.id,
         linkedin_url: linkedinUrl,
         instagram_url: null,
@@ -1171,13 +1170,12 @@ async function processSignal(
 
   // Adoption des candidats par persona. On derive aussi more_available_counts
   // (combien de contacts restent disponibles au-dela de ce qu'on garde), pour le
-  // bouton "voir plus" de l'UI. Cle = target_category legacy du persona (compat UI
-  // Jay), fallback slug pour un workspace tiers ; bascule sur persona_id en PR4.
+  // bouton "voir plus" de l'UI. Cle = persona.id.
   const moreAvailable: Record<string, number> = {};
   for (const { persona, people, r } of filteredByPersona) {
     if (r.status === "fulfilled") {
       const totalAvailable = r.value.totalAvailable;
-      moreAvailable[legacyTargetCategory(persona.slug) ?? persona.slug] =
+      moreAvailable[persona.id] =
         Math.max(0, (totalAvailable || 0) - people.length);
       console.log(
         `[enrich-company] FullEnrich ${persona.slug}: ${r.value.people.length}/${totalAvailable} found, ${people.length} kept`

@@ -20,7 +20,6 @@ export interface ProspectTemplate {
   id: string;
   name: string;
   channel: string;
-  target_category: string;
   system_prompt: string;
   user_prompt_template: string;
   is_active: boolean;
@@ -29,7 +28,6 @@ export interface ProspectTemplate {
 export interface ProspectSequence {
   id: string;
   name: string;
-  target_category: string;
   steps?: Array<{
     channel: string;
     delay_days?: number;

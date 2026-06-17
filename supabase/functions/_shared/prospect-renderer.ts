@@ -2,8 +2,6 @@
 // Source de vérité : table `prospect_message_templates` (DB).
 // Mirror : keep in sync with src/lib/prospect-template-renderer.ts
 
-export type TargetCategory = "hr" | "director" | "field_sales";
-
 export interface ProspectProfileForRender {
   id: string;
   first_name: string | null;
@@ -11,7 +9,6 @@ export interface ProspectProfileForRender {
   job_title: string | null;
   company_name: string;
   company_sector: string | null;
-  target_category?: TargetCategory;
   persona_id?: string | null;
 }
 
@@ -52,7 +49,6 @@ export interface RenderResult {
 }
 
 export interface MessageTemplate {
-  target_category?: TargetCategory;
   persona_id?: string | null;
   channel: string;
   subject: string | null;

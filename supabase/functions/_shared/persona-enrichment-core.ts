@@ -91,18 +91,3 @@ export function matchesPersonaTitle(title: string | null | undefined, persona: P
   return needles.some((kw) => kw && t.includes(normalize(kw)));
 }
 
-const JAY_SLUG_TO_CATEGORY: Record<string, string> = {
-  'director': 'director',
-  'field-sales': 'field_sales',
-  'hr-decision-maker': 'hr',
-};
-
-/**
- * TRANSITION (retiré en PR4) : dérive le target_category legacy depuis le slug
- * du persona, pour les personas Jay connus. NULL pour tout autre slug.
- * Sert uniquement à ne pas casser les consommateurs de target_category (messages)
- * tant que PR4 ne les a pas basculés sur persona_id.
- */
-export function legacyTargetCategory(slug: string): string | null {
-  return JAY_SLUG_TO_CATEGORY[slug] ?? null;
-}
