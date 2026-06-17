@@ -1,21 +1,20 @@
 > **Français** | [English](README.en.md)
 
-# Jay Reach — Moteur de Prospection Self-Hosted
+# Jay Reach — Moteur de Prospection B2B Self-Hosted
 
-**Jay Reach** est un moteur de prospection open-source (self-hosted) conçu pour les opérateurs commerciaux et les équipes RH. Il combine le scraping d'annonces d'emploi, la notation des signaux commerciaux, l'enrichissement de profils LinkedIn, la vérification de délivrabilité d'emails et la campagne d'outreach multi-canal.
+**Jay Reach** est un moteur de prospection open-source (self-hosted) configurable par workspace. Chaque opérateur définit ses déclencheurs de signaux, personas, templates et pousse ses campagnes via email. Pipeline complet : scraping d'annonces → scoring IA → enrichissement de profils → audit de délivrabilité → outreach Smartlead.
 
-> **Status :** Dépôt public. Licence **FSL-1.1-MIT** (source-available, conversion automatique en MIT après 2 ans). [Prêt à contribuer ?](CONTRIBUTING.md)
+[![License: FSL-1.1-MIT](https://img.shields.io/badge/License-FSL--1.1--MIT-blue.svg)](LICENSE) [![CI](https://github.com/Jayteam2025/jay-reach/actions/workflows/ci.yml/badge.svg)](https://github.com/Jayteam2025/jay-reach/actions)
 
 ---
 
-## Quickstart — Lancer une instance en 10 minutes
+## Quickstart — 6 étapes, 10 minutes
 
 ### Prérequis
 
-- **Node.js** ≥ 22.12
-- **pnpm** ≥ 10.0.0
-- **Supabase CLI** (pour la gestion locale / déploiement)
-- Un compte **Supabase** (gratuit ou payant)
+- **Node.js** ≥ 22.12, **pnpm** ≥ 10.0.0
+- **Supabase CLI** (local + déploiement)
+- Un compte **Supabase** (gratuit)
 
 ### 1. Cloner et installer
 
@@ -27,43 +26,43 @@ pnpm install
 
 ### 2. Configuration Supabase
 
-Créez un projet Supabase (ou utilisez un existant) et récupérez :
-- **URL** : Settings → API → Project URL
-- **Anon Key** : Settings → API → Anon key
-- **Project Ref** : l'ID dans l'URL (ex. `VOTRE-REF-PROJET`)
-- **Access Token** : Account Settings → Tokens
+Créez un projet Supabase et récupérez (Settings → API) :
+- **URL** : `https://VOTRE-REF.supabase.co`
+- **Anon Key** : clé publique  
+- **Project Ref** : ID du projet
+- **Access Token** : depuis Account Settings → Tokens
 
-Créez un fichier `.env` à la racine :
+Créez `.env` :
 
 ```bash
 cp .env.example .env
-# Puis remplissez :
-VITE_SUPABASE_URL=https://VOTRE-REF-PROJET.supabase.co
-VITE_SUPABASE_ANON_KEY=VOTRE_CLE_ANON_PUBLIQUE
-SUPABASE_ACCESS_TOKEN=VOTRE_TOKEN_CLI
-SUPABASE_PROJECT_REF=VOTRE-REF-PROJET
-SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
 ```
 
-### 3. Vérification de santé
+Remplissez les variables :
+
+```env
+VITE_SUPABASE_URL=https://VOTRE-REF.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_ACCESS_TOKEN=your_token
+SUPABASE_PROJECT_REF=your-ref
+SUPABASE_DB_PASSWORD=your_password
+```
+
+### 3. Vérification santé
 
 ```bash
 pnpm run doctor
 ```
 
-Cela vérifie : Node.js, pnpm, Supabase CLI, accès DB, variables d'environnement.
+Vérifie Node.js, pnpm, Supabase CLI, accès DB, variables d'environnement.
 
-### 4. Setup initial (migrations + edge functions)
+### 4. Setup initial
 
 ```bash
 pnpm run setup
 ```
 
-Cela :
-- Applique les migrations SQL (socle, tables de prospection, RLS)
-- Génère la clé de chiffrement (TOKEN_ENCRYPTION_KEY)
-- Déploie les 38 edge functions
-- Crée le workspace initial et l'user admin
+Applique migrations SQL, déploie 30 edge functions, crée workspace + user admin.
 
 ### 5. Lancer l'app
 
@@ -71,124 +70,130 @@ Cela :
 pnpm dev
 ```
 
-Ouvrez [http://localhost:8080](http://localhost:8080).
+Ouvrez [http://localhost:8080](http://localhost:8080) → inscrivez-vous (1er user = admin).
 
-### 6. Configuration des fournisseurs
+### 6. Configurer les providers
 
-Une fois inscrit, accédez à l'onglet **Config** pour brancher les providers :
-- **LLM** : Anthropic Claude (Haiku/Sonnet) — clé [ici](https://console.anthropic.com)
-- **Enrichissement** : FullEnrich — clé [ici](https://app.fullenrich.com)
-- **Vérif email** : Bouncer ou Reoon — clé [ici](https://usebouncer.com) ou [ici](https://reoon.com)
-- **Outreach** : Smartlead — clé [ici](https://smartlead.ai)
-- **Sourcing** : Adzuna, France Travail (gratuit)
+Allez à l'onglet **Providers** et branchez vos clés API (chiffrées en DB) :
+- **LLM** : Anthropic Claude (Haiku/Sonnet pour la notation)
+- **Enrichissement** : FullEnrich (données B2B)
+- **Vérif email** : Bouncer ou Reoon
+- **Outreach** : Smartlead (cold email)
+- **Sourcing** : Adzuna + France Travail (gratuit)
 
-Les clés sont **chiffrées en base de données** — jamais en `.env` ou logs.
-
-### 7. Première campagne
-
-1. Créez un **Trigger** (détecteur de signaux : annonces d'emploi RH, directeurs commerciaux, etc.)
-2. Créez une **Persona** (critères de ciblage : secteur, géographie, taille d'entreprise)
-3. Lancez le **Sourcing** pour scraper les candidatures
-4. Passez à la **Notation** et **Enrichissement**
-5. Validez via **Audit Emails** et poussez vers **Smartlead**
+📖 **[Guide complet](docs/self-host.md)** pour la mise en prod.
 
 ---
 
-## Architecture
+## 7 Onglets Principaux
 
-Jay Reach suit un pipeline multi-étapes :
+| Onglet | Rôle |
+|--------|------|
+| **Entreprises** | Prospect list, scoring, enrichissement |
+| **Déclencheurs** | Définir les signaux à scraper (annonces RH, taille, etc.) |
+| **Personas** | Créer des profils cibles (secteur, géographie) |
+| **Templates** | Rédiger les messages email campagnes |
+| **Branding** | Signature, domaine, sender |
+| **Providers** | Connecter les API externes |
+| **Campagnes** | Mapper personas → campagnes Smartlead |
+
+---
+
+## Pipeline Funnel
 
 ```
-Sourcing (Adzuna, France Travail)
-         ↓
-Scoring (LLM + signaux commerciaux)
-         ↓
-Archivage (prospects low-score vs top-15)
-         ↓
-Enrichissement (FullEnrich, LinkedIn)
-         ↓
-Audit Patterns (déduction emails)
-         ↓
-Vérif Délivrabilité (Bouncer, Reoon)
-         ↓
-Gate de Délivrabilité (règles go/no-go)
-         ↓
+Sourcing     (Adzuna + France Travail)
+    ↓
+Scoring      (LLM : déclencheurs activés ?)
+    ↓
+Enrichissement (FullEnrich : données B2B)
+    ↓
+Gate Email   (Bouncer/Reoon : délivrable ?)
+    ↓
 Push Smartlead (campagne cold email)
 ```
 
-Voir **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** pour un détail complet : schéma des données, table des edge functions, flux événements.
+Détail complet : **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** (tables, RPC, 30 edge functions).
 
 ---
 
-## Dossier `docs/`
+## Stack Technique
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Pipeline, modèle des données, edge functions
-- **[data-model.md](docs/data-model.md)** — Tables Supabase, RLS, chiffrement des secrets
-- **[providers.md](docs/providers.md)** — Brancher des fournisseurs (LLM, enrichissement, email)
-- **[self-host.md](docs/self-host.md)** — Guide détaillé pour deployer en production
+- **Frontend** : React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui + TanStack Query
+- **Backend** : Supabase (PostgreSQL 17) + Auth native + Edge Functions (Deno)
+- **Tests** : Vitest (front) + Deno test (back)
+- **Déploiement** : Supabase edge functions + RLS + chiffrement AES-GCM pour secrets
+
+---
+
+## Documentation
+
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Pipeline, schéma DB, 30 edge functions
+- **[data-model.md](docs/data-model.md)** — Tables Supabase, RLS, token encryption
+- **[providers.md](docs/providers.md)** — Intégrer des providers (LLM, enrichissement)
+- **[self-host.md](docs/self-host.md)** — Déployer en production (étapes détaillées)
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — Contribuer au projet
+- **[SECURITY.md](SECURITY.md)** — Signaler les vulnérabilités en privé
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — Code de conduite
+- **[LICENSE](LICENSE)** — Licence FSL-1.1-MIT
 - **[adr/](docs/adr/)** — Architecture Decision Records
 
 ---
 
-## Développement
+## Développement Local
 
-### Checks avant un commit
+### Checks obligatoires avant commit
 
 ```bash
-pnpm lint          # ESLint
-pnpm typecheck     # TypeScript strict
-pnpm build         # Vite build
-pnpm test:run      # Vitest
-pnpm check:hardcodes  # Pas de clés hardcodées
+pnpm lint                # ESLint
+pnpm typecheck          # TypeScript strict
+pnpm build              # Build prod
+pnpm test:run           # Tests Vitest
+node scripts/check-no-jay-hardcodes.mjs --strict  # 0 hardcodes
 ```
 
 ### Tests
 
-**Front** : Vitest + Testing Library
-
 ```bash
+# Frontend
 pnpm test:run
+
+# Backend (Edge Functions)
+cd supabase/functions/_shared && deno test
 ```
 
-**Back** : Deno test (edge functions)
+### Branches et PR
 
-```bash
-cd supabase/functions/_shared
-deno test
-```
-
-### Branches
-
-- **`main`** : branche protégée, push interdit, PR + review requis
+- **`main`** : protégée, PR + review requis
 - **`feat/*` / `fix/*`** : vos branches de travail
-- Voir [branch-protection.md](docs/branch-protection.md) pour les règles
+
+Voir **[branch-protection.md](docs/branch-protection.md)** pour les règles détaillées.
 
 ---
 
-## Contribution
+## Signaler un bug ou idée
 
-1. **Lisez [CONTRIBUTING.md](CONTRIBUTING.md)** — processus et conventions
-2. **Signez le CLA** (une fois pour votre première PR)
-3. **Ouvrez une PR** pour review
-4. **Un admin reviendra** votre code et mergera
-
-Merci de votre intérêt !
+- **Bug** : [Ouvrir une Issue GitHub](https://github.com/Jayteam2025/jay-reach/issues/new?template=bug_report.md)
+- **Feature** : [Ouvrir une Issue GitHub](https://github.com/Jayteam2025/jay-reach/issues/new?template=feature_request.md)
+- **Sécurité** : **Jamais d'issue publique.** Voir **[SECURITY.md](SECURITY.md)** pour signaler en privé.
 
 ---
 
 ## Licence
 
-Jay Reach est sous **Functional Source License (FSL-1.1-MIT)**, avec conversion automatique en MIT 2 ans après la première version publique. Voir [LICENSE](LICENSE) pour les détails et la définition de "Competing Use".
+Jay Reach est sous **Functional Source License (FSL-1.1-MIT)** avec conversion automatique en MIT 2 ans après la version publique initiale. Voir **[LICENSE](LICENSE)** pour les détails complets et la définition de « Competing Use ».
 
 ---
 
-## Sécurité
+## Contribution
 
-Signalez les vulnérabilités en privé : [SECURITY.md](SECURITY.md).
+1. **Lire [CONTRIBUTING.md](CONTRIBUTING.md)** — processus de contribution
+2. **Signer le CLA** via case à cocher en PR (aucun document séparé)
+3. **Pousser une PR** avec description claire
+4. **Review + merge** par un mainteneur
+
+Merci de votre intérêt ! 🙌
 
 ---
 
-## Contact
-
-- **Mainteneur principal** : @Jeeiib
-- **Code of Conduct** : [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+**Mainteneur principal** : [@Jeeiib](https://github.com/Jeeiib)

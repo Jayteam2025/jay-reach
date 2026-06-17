@@ -1,21 +1,20 @@
 > [Français](README.md) | **English**
 
-# Jay Reach — Self-Hosted Prospecting Engine
+# Jay Reach — Self-Hosted B2B Prospecting Engine
 
-**Jay Reach** is an open-source prospecting engine (self-hosted) designed for commercial operators and HR teams. It combines job posting scraping, commercial signal scoring, LinkedIn profile enrichment, email deliverability verification, and multi-channel outreach campaigns.
+**Jay Reach** is an open-source prospecting engine (self-hosted) configurable per workspace. Each operator defines their signal triggers, personas, templates, and pushes campaigns via email. Complete pipeline: job posting scraping → AI scoring → profile enrichment → deliverability audit → Smartlead outreach.
 
-> **Status:** Public repository. License **FSL-1.1-MIT** (source-available, automatic conversion to MIT after 2 years). [Ready to contribute?](CONTRIBUTING.en.md)
+[![License: FSL-1.1-MIT](https://img.shields.io/badge/License-FSL--1.1--MIT-blue.svg)](LICENSE) [![CI](https://github.com/Jayteam2025/jay-reach/actions/workflows/ci.yml/badge.svg)](https://github.com/Jayteam2025/jay-reach/actions)
 
 ---
 
-## Quickstart — Launch an instance in 10 minutes
+## Quickstart — 6 steps, 10 minutes
 
 ### Prerequisites
 
-- **Node.js** ≥ 22.12
-- **pnpm** ≥ 10.0.0
-- **Supabase CLI** (for local management / deployment)
-- A **Supabase** account (free or paid)
+- **Node.js** ≥ 22.12, **pnpm** ≥ 10.0.0
+- **Supabase CLI** (local + deployment)
+- A **Supabase** account (free)
 
 ### 1. Clone and install
 
@@ -27,22 +26,26 @@ pnpm install
 
 ### 2. Supabase Configuration
 
-Create a Supabase project (or use an existing one) and retrieve:
-- **URL**: Settings → API → Project URL
-- **Anon Key**: Settings → API → Anon key
-- **Project Ref**: the ID in the URL (e.g., `YOUR-PROJECT-REF`)
-- **Access Token**: Account Settings → Tokens
+Create a Supabase project and retrieve (Settings → API):
+- **URL**: `https://YOUR-REF.supabase.co`
+- **Anon Key**: public key
+- **Project Ref**: project ID
+- **Access Token**: from Account Settings → Tokens
 
-Create a `.env` file in the root:
+Create `.env`:
 
 ```bash
 cp .env.example .env
-# Then fill in:
-VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
-SUPABASE_ACCESS_TOKEN=YOUR_CLI_TOKEN
-SUPABASE_PROJECT_REF=YOUR-PROJECT-REF
-SUPABASE_DB_PASSWORD=YOUR_DB_PASSWORD
+```
+
+Fill in the variables:
+
+```env
+VITE_SUPABASE_URL=https://YOUR-REF.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_ACCESS_TOKEN=your_token
+SUPABASE_PROJECT_REF=your-ref
+SUPABASE_DB_PASSWORD=your_password
 ```
 
 ### 3. Health check
@@ -51,19 +54,15 @@ SUPABASE_DB_PASSWORD=YOUR_DB_PASSWORD
 pnpm run doctor
 ```
 
-This verifies: Node.js, pnpm, Supabase CLI, DB access, environment variables.
+Verifies Node.js, pnpm, Supabase CLI, DB access, environment variables.
 
-### 4. Initial setup (migrations + edge functions)
+### 4. Initial setup
 
 ```bash
 pnpm run setup
 ```
 
-This:
-- Applies SQL migrations (foundation, prospecting tables, RLS)
-- Generates encryption key (TOKEN_ENCRYPTION_KEY)
-- Deploys 38 edge functions
-- Creates initial workspace and admin user
+Applies SQL migrations, deploys 30 edge functions, creates workspace + admin user.
 
 ### 5. Launch the app
 
@@ -71,124 +70,130 @@ This:
 pnpm dev
 ```
 
-Open [http://localhost:8080](http://localhost:8080).
+Open [http://localhost:8080](http://localhost:8080) → sign up (first user = admin).
 
 ### 6. Configure providers
 
-Once logged in, go to the **Config** tab to connect providers:
-- **LLM**: Anthropic Claude (Haiku/Sonnet) — key [here](https://console.anthropic.com)
-- **Enrichment**: FullEnrich — key [here](https://app.fullenrich.com)
-- **Email verification**: Bouncer or Reoon — key [here](https://usebouncer.com) or [here](https://reoon.com)
-- **Outreach**: Smartlead — key [here](https://smartlead.ai)
-- **Sourcing**: Adzuna, France Travail (free)
+Go to the **Providers** tab and connect your API keys (encrypted in DB):
+- **LLM**: Anthropic Claude (Haiku/Sonnet for scoring)
+- **Enrichment**: FullEnrich (B2B data)
+- **Email verification**: Bouncer or Reoon
+- **Outreach**: Smartlead (cold email)
+- **Sourcing**: Adzuna + France Travail (free)
 
-Keys are **encrypted in the database** — never in `.env` or logs.
-
-### 7. First campaign
-
-1. Create a **Trigger** (signal detector: job postings for HR, sales directors, etc.)
-2. Create a **Persona** (targeting criteria: industry, geography, company size)
-3. Launch **Sourcing** to scrape applications
-4. Move to **Scoring** and **Enrichment**
-5. Validate via **Email Audit** and push to **Smartlead**
+📖 **[Full guide](docs/self-host.en.md)** for production deployment.
 
 ---
 
-## Architecture
+## 7 Main Tabs
 
-Jay Reach follows a multi-stage pipeline:
-
-```
-Sourcing (Adzuna, France Travail)
-         ↓
-Scoring (LLM + commercial signals)
-         ↓
-Archiving (low-score prospects vs top-15)
-         ↓
-Enrichment (FullEnrich, LinkedIn)
-         ↓
-Pattern Audit (email deduction)
-         ↓
-Deliverability Check (Bouncer, Reoon)
-         ↓
-Deliverability Gate (go/no-go rules)
-         ↓
-Smartlead Push (cold email campaign)
-```
-
-See **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** for full details: data schema, edge function table, event flow.
+| Tab | Role |
+|-----|------|
+| **Companies** | Prospect list, scoring, enrichment |
+| **Triggers** | Define signals to scrape (job postings, size, etc.) |
+| **Personas** | Create target profiles (industry, geography) |
+| **Templates** | Write campaign email messages |
+| **Branding** | Signature, domain, sender |
+| **Providers** | Connect external APIs |
+| **Campaigns** | Map personas → Smartlead campaigns |
 
 ---
 
-## `docs/` folder
+## Pipeline Funnel
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Pipeline, data model, edge functions
-- **[data-model.md](docs/data-model.md)** — Supabase tables, RLS, secret encryption
-- **[providers.md](docs/providers.md)** — Connecting providers (LLM, enrichment, email)
-- **[self-host.md](docs/self-host.md)** — Detailed production deployment guide
+```
+Sourcing     (Adzuna + France Travail)
+    ↓
+Scoring      (LLM: triggers activated ?)
+    ↓
+Enrichment   (FullEnrich: B2B data)
+    ↓
+Email Gate   (Bouncer/Reoon: deliverable ?)
+    ↓
+Push Smartlead (cold email campaign)
+```
+
+Full details: **[ARCHITECTURE.md](docs/ARCHITECTURE.en.md)** (tables, RPC, 30 edge functions).
+
+---
+
+## Tech Stack
+
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui + TanStack Query
+- **Backend**: Supabase (PostgreSQL 17) + native Auth + Edge Functions (Deno)
+- **Tests**: Vitest (front) + Deno test (back)
+- **Deployment**: Supabase edge functions + RLS + AES-GCM encryption for secrets
+
+---
+
+## Documentation
+
+- **[ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md)** — Pipeline, DB schema, 30 edge functions
+- **[data-model.en.md](docs/data-model.en.md)** — Supabase tables, RLS, token encryption
+- **[providers.en.md](docs/providers.en.md)** — Integrating providers (LLM, enrichment)
+- **[self-host.en.md](docs/self-host.en.md)** — Production deployment (detailed steps)
+- **[CONTRIBUTING.en.md](CONTRIBUTING.en.md)** — Contributing to the project
+- **[SECURITY.en.md](SECURITY.en.md)** — Report vulnerabilities privately
+- **[CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md)** — Code of Conduct
+- **[LICENSE](LICENSE)** — FSL-1.1-MIT License
 - **[adr/](docs/adr/)** — Architecture Decision Records
 
 ---
 
-## Development
+## Local Development
 
-### Checks before a commit
+### Required checks before commit
 
 ```bash
-pnpm lint          # ESLint
-pnpm typecheck     # TypeScript strict
-pnpm build         # Vite build
-pnpm test:run      # Vitest
-pnpm check:hardcodes  # No hardcoded keys
+pnpm lint                # ESLint
+pnpm typecheck          # TypeScript strict
+pnpm build              # Build prod
+pnpm test:run           # Vitest tests
+node scripts/check-no-jay-hardcodes.mjs --strict  # 0 hardcodes
 ```
 
 ### Tests
 
-**Front**: Vitest + Testing Library
-
 ```bash
+# Frontend
 pnpm test:run
+
+# Backend (Edge Functions)
+cd supabase/functions/_shared && deno test
 ```
 
-**Back**: Deno test (edge functions)
+### Branches and PR
 
-```bash
-cd supabase/functions/_shared
-deno test
-```
-
-### Branches
-
-- **`main`**: protected branch, direct push forbidden, PR + review required
+- **`main`**: protected, PR + review required
 - **`feat/*` / `fix/*`**: your working branches
-- See [branch-protection.md](docs/branch-protection.md) for rules
+
+See **[branch-protection.en.md](docs/branch-protection.en.md)** for detailed rules.
 
 ---
 
-## Contributing
+## Report a bug or feature idea
 
-1. **Read [CONTRIBUTING.en.md](CONTRIBUTING.en.md)** — process and conventions
-2. **Sign the CLA** (once for your first PR)
-3. **Open a PR** for review
-4. **An admin will review** your code and merge
-
-Thank you for your interest!
+- **Bug**: [Open a GitHub Issue](https://github.com/Jayteam2025/jay-reach/issues/new?template=bug_report.md)
+- **Feature**: [Open a GitHub Issue](https://github.com/Jayteam2025/jay-reach/issues/new?template=feature_request.md)
+- **Security**: **Never open a public issue.** See **[SECURITY.en.md](SECURITY.en.md)** to report privately.
 
 ---
 
 ## License
 
-Jay Reach is under **Functional Source License (FSL-1.1-MIT)**, with automatic conversion to MIT 2 years after the first public version. See [LICENSE](LICENSE) for details and the definition of "Competing Use".
+Jay Reach is under **Functional Source License (FSL-1.1-MIT)** with automatic conversion to MIT 2 years after initial public release. See **[LICENSE](LICENSE)** for full details and definition of « Competing Use ».
 
 ---
 
-## Security
+## Contributing
 
-Report vulnerabilities privately: [SECURITY.en.md](SECURITY.en.md).
+1. **Read [CONTRIBUTING.en.md](CONTRIBUTING.en.md)** — contribution process
+2. **Sign the CLA** via checkbox in PR (no separate document)
+3. **Push a PR** with clear description
+4. **Review + merge** by a maintainer
+
+Thank you for your interest! 🙌
 
 ---
 
-## Contact
-
-- **Main maintainer**: @Jeeiib
-- **Code of Conduct**: [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md)
+**Main maintainer**: [@Jeeiib](https://github.com/Jeeiib)
