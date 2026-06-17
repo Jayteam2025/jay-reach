@@ -119,28 +119,8 @@ BEGIN
   END LOOP;
 END $$;
 
--- ---------------------------------------------------------------------------
--- 4. Backfill trigger_id sur prospect_signals existants (workspace Jay)
---    Tous les signaux du workspace Jay viennent du trigger "recrutement-commerciaux"
--- ---------------------------------------------------------------------------
-
-DO $$
-DECLARE
-  jay_trigger_id UUID;
-BEGIN
-  SELECT id INTO jay_trigger_id
-  FROM public.signal_triggers
-  WHERE workspace_id = '00000000-0000-0000-0000-000000000001'
-    AND slug = 'recrutement-commerciaux'
-  LIMIT 1;
-
-  IF jay_trigger_id IS NOT NULL THEN
-    UPDATE public.prospect_signals
-    SET trigger_id = jay_trigger_id
-    WHERE workspace_id = '00000000-0000-0000-0000-000000000001'
-      AND trigger_id IS NULL;
-  END IF;
-END $$;
+-- (Pas de backfill de donnees ici : sur une instance neuve, prospect_signals
+--  est vide et trigger_id est renseigne a l'insertion par scrape-job-signals.)
 
 -- ---------------------------------------------------------------------------
 -- 5. Indexes composites pour les queries chaudes

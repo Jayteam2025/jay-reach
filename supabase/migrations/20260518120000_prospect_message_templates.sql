@@ -3,7 +3,7 @@
 --
 -- Source de vérité pour les templates de messages prospection.
 -- Remplace les 8 fonctions hardcodées dans prospect-renderer.ts.
--- Édition admin-only via whitelist (jay-assistant.fr + emails perso).
+-- Édition admin-only via appartenance au workspace (rôle admin/owner).
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS prospect_message_templates (

@@ -73,39 +73,6 @@ COMMENT ON COLUMN public.icp_personas.seniority_levels IS 'Niveaux hierarchiques
 COMMENT ON COLUMN public.icp_personas.department_patterns IS 'Departements ou roles fonctionnels (Sales, HR, Engineering, etc.).';
 
 -- ---------------------------------------------------------------------------
--- 4. Update du seed Jay (COMMENTED OUT for OSS - Jay-specific)
--- ---------------------------------------------------------------------------
--- These UPDATEs reference the hardcoded Jay workspace which doesn't exist in OSS.
--- Uncomment if migrating an existing Jay instance.
-
--- UPDATE public.icp_personas
--- SET
---   job_title_keywords = ARRAY['directeur commercial', 'directrice commerciale', 'head of sales', 'vp sales', 'sales director', 'directeur des ventes', 'chief sales officer', 'cso'],
---   seniority_levels = ARRAY['director', 'c_level'],
---   department_patterns = ARRAY['Sales', 'Commercial'],
---   exclude_titles = ARRAY['assistant', 'stagiaire']
--- WHERE workspace_id = '00000000-0000-0000-0000-000000000001' AND slug = 'director';
-
--- UPDATE public.icp_personas
--- SET
---   job_title_keywords = ARRAY['commercial terrain', 'sales rep', 'sales representative', 'business developer', 'account executive', 'technico-commercial', 'commercial itinerant', 'attache commercial'],
---   seniority_levels = ARRAY['individual_contributor', 'manager'],
---   department_patterns = ARRAY['Sales', 'Commercial'],
---   exclude_titles = ARRAY['directeur', 'head of', 'vp', 'cso', 'stagiaire']
--- WHERE workspace_id = '00000000-0000-0000-0000-000000000001' AND slug = 'field-sales';
-
--- UPDATE public.icp_personas
--- SET
---   slug = 'hr-decision-maker',
---   label = 'RH decideur (DRH, Responsable RH)',
---   description = 'Le decideur RH dans la boite ciblee. Pas un cabinet de recrutement externe.',
---   job_title_keywords = ARRAY['drh', 'directeur des ressources humaines', 'directrice des ressources humaines', 'responsable rh', 'responsable ressources humaines', 'talent acquisition manager', 'people manager', 'chief people officer', 'chief human resources officer', 'chro'],
---   seniority_levels = ARRAY['director', 'manager', 'c_level'],
---   department_patterns = ARRAY['HR', 'Human Resources', 'People', 'Talent'],
---   exclude_titles = ARRAY['cabinet', 'consultant', 'freelance', 'stagiaire']
--- WHERE workspace_id = '00000000-0000-0000-0000-000000000001' AND slug = 'hr';
-
--- ---------------------------------------------------------------------------
 -- 5. Table signal_triggers
 -- ---------------------------------------------------------------------------
 
@@ -186,30 +153,3 @@ CREATE POLICY "admins delete" ON public.signal_triggers
   FOR DELETE TO authenticated
   USING (workspace_id IN (SELECT public.user_workspaces('admin')));
 
--- ---------------------------------------------------------------------------
--- 6. Seed du trigger Jay (COMMENTED OUT for OSS - Jay-specific)
--- ---------------------------------------------------------------------------
--- This INSERT references the hardcoded Jay workspace which doesn't exist in OSS.
--- Uncomment if migrating an existing Jay instance.
-
--- INSERT INTO public.signal_triggers (
---   workspace_id, slug, label, description,
---   search_keywords, exclude_keywords, source_types,
---   company_size_min, company_size_max,
---   signal_scoring_prompt, signal_match_threshold,
---   is_default
--- ) VALUES (
---   '00000000-0000-0000-0000-000000000001',
---   'recrutement-commerciaux',
---   'Boite qui recrute des commerciaux',
---   'Detecte les boites en croissance commerciale via leurs annonces de recrutement de commerciaux. Ces boites sont les cibles ideales pour vendre un outil d''aide a la prospection.',
---   ARRAY['commercial', 'commerciaux', 'vendeur', 'vendeuse', 'sales', 'business developer', 'account executive', 'technico-commercial', 'attache commercial', 'commercial terrain', 'sales representative', 'sales rep'],
---   ARRAY['cabinet', 'recrutement', 'consultant', 'consulting', 'freelance', 'mission', 'stage', 'alternance', 'apprentissage'],
---   ARRAY['adzuna', 'france_travail', 'brave'],
---   50,
---   5000,
---   E'Tu evalues si cette annonce de recrutement correspond a une boite qui recrute reellement des commerciaux internes (pas un cabinet de recrutement externe).\n\nAxes de scoring :\n- VRAIE OFFRE INTERNE (0-50) : l''entreprise recrute pour son propre compte, pas pour un client\n- TAILLE ENTREPRISE (0-30) : PME/ETI entre 50 et 5000 employes (cible Jay)\n- INTENT (0-20) : multiplicite des postes ouverts, offres recentes, croissance visible\n\nElimine immediatement (score = 0) :\n- Cabinets de recrutement / consultants RH\n- Stages, alternances, freelances\n- Entreprises < 50 ou > 5000 employes\n- Postes non-commerciaux deguises (admin des ventes, support client, etc.)\n\nRetourne un JSON {"score": 0-100, "rationale": "...", "axes": {...}}.',
---   60,
---   TRUE
--- )
--- ON CONFLICT (workspace_id, slug) DO NOTHING;
