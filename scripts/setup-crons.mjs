@@ -72,6 +72,12 @@ const jobs = [
     "cleanup-stuck-crm-detections",
     "Nettoyage détections CRM bloquées (02h UTC)",
   ],
+  [
+    "jr-weekly-cron",
+    "0 6 * * 1",
+    "weekly-prospect-cron",
+    "Cron hebdomadaire prospects lundi 06h UTC",
+  ],
 ];
 
 // Construire le SQL
