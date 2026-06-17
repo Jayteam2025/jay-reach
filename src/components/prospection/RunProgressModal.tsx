@@ -41,27 +41,22 @@ export function RunProgressModal({
   const scrapeFailed = scrape.status === 'failed';
   const sourcesLabel = (scrape.sources ?? []).map((s) => SOURCE_LABELS[s] ?? s).join(' · ');
 
-  // Chrono pour afficher le temps écoulé
+  // Chrono : démarre quand le scoring passe en in_progress (l'effet ne se relance
+  // que sur le changement de statut, pas à chaque processed → le start reste fixe).
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [scoringStartTime] = useState<number | null>(() => {
-    // Si on recharge avec un scoring en_progress, on commence le chrono à 0
-    // (on ne connaît pas l'heure exacte de démarrage)
-    if (scoring?.status === 'in_progress') return Date.now();
-    return null;
-  });
 
   useEffect(() => {
-    if (scoring?.status !== 'in_progress' || !scoringStartTime) {
+    if (scoring?.status !== 'in_progress') {
       setElapsedSeconds(0);
       return;
     }
-
+    const start = Date.now();
+    setElapsedSeconds(0);
     const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - scoringStartTime) / 1000));
+      setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
     }, 1000);
-
     return () => clearInterval(interval);
-  }, [scoring?.status, scoringStartTime]);
+  }, [scoring?.status]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -126,7 +121,7 @@ export function RunProgressModal({
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
                             <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full w-16 bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-shimmer origin-left" />
+                              <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-shimmer" />
                             </div>
                             <div className="text-sm tabular-nums text-muted-foreground min-w-[60px] text-right">
                               0/{scoring.total}
