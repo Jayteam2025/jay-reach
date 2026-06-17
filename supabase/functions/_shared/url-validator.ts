@@ -47,7 +47,7 @@ export interface ValidateUrlOptions {
  * Lève une erreur si l'URL cible un réseau privé/interne ou un endpoint de métadonnées.
  * Retourne l'URL parsée si elle est sûre.
  *
- * ⚠️ Limite connue : ne résout pas le DNS, donc un domaine public pointant vers une
+ * Note : Limite connue — ne résout pas le DNS, donc un domaine public pointant vers une
  * IP privée (DNS rebinding) n'est pas détecté ici. Pour les fetch suivant des
  * redirections, revalider CHAQUE saut (voir followSafeRedirects).
  */

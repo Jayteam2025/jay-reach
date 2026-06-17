@@ -147,11 +147,11 @@ for (const scanDir of SCAN_DIRS) {
 }
 
 if (violations.length === 0) {
-  console.log('✓ check-no-jay-hardcodes: aucun secret ou domaine Jay détecté.');
+  console.log('[OK] check-no-jay-hardcodes: aucun secret ou domaine Jay détecté.');
   process.exit(0);
 }
 
-console.log(`✗ check-no-jay-hardcodes: ${violations.length} occurrence(s) détectée(s)${STRICT ? '' : ' (warn-only)'}\n`);
+console.log(`[ERROR] check-no-jay-hardcodes: ${violations.length} occurrence(s) détectée(s)${STRICT ? '' : ' (warn-only)'}\n`);
 for (const v of violations) {
   console.log(`  ${v.rel}:${v.line}  [${v.label}]`);
   console.log(`    ${v.text}`);

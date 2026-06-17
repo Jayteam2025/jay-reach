@@ -40,7 +40,7 @@ Deno.test("encryptToken - handles empty string", async () => {
 });
 
 Deno.test("encryptToken - handles unicode characters", async () => {
-  const unicodeText = "Token avec caractères spéciaux: émojis 🔐 et accents éèà";
+  const unicodeText = "Token avec caractères spéciaux: émojis et accents éèà";
   const encrypted = await encryptToken(unicodeText);
   const decrypted = await decryptToken(encrypted);
 

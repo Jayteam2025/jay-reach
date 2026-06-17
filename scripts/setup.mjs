@@ -23,7 +23,7 @@ console.log("\n=== Lien au projet Supabase ===\n");
 const linkCmd = `SUPABASE_ACCESS_TOKEN=${token} pnpm exec supabase link --project-ref ${ref}`;
 try {
   runSilent(linkCmd);
-  console.log("✓ Projet lié");
+  console.log("[OK] Projet lié");
 } catch (e) {
   console.error("Erreur lors du lien au projet:", e.message);
   process.exit(1);
@@ -44,10 +44,10 @@ const existingSecretsCmd = `SUPABASE_ACCESS_TOKEN=${token} pnpm exec supabase se
 try {
   const existing = runSilent(existingSecretsCmd);
   if (existing.includes(SECRET)) {
-    console.log(`✓ ${SECRET} déjà défini, on le conserve.`);
+    console.log(`[OK] ${SECRET} déjà défini, on le conserve.`);
   } else {
     const key = randomBytes(32).toString("base64");
-    console.log(`✓ Génération d'une nouvelle clé de chiffrement (32 bytes, base64)`);
+    console.log(`[OK] Génération d'une nouvelle clé de chiffrement (32 bytes, base64)`);
     const setCmd = `SUPABASE_ACCESS_TOKEN=${token} pnpm exec supabase secrets set ${SECRET}=${key}`;
     run(setCmd);
   }

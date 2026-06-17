@@ -41,7 +41,7 @@ async function logValidationError(
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.warn("⚠️ Cannot log validation error: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      console.warn("Warning: Cannot log validation error: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
       return;
     }
 
@@ -55,7 +55,7 @@ async function logValidationError(
     });
   } catch (err) {
     // Ne jamais faire planter la requête à cause du logging
-    console.error("❌ Failed to log validation error to database:", err);
+    console.error("[ERROR] Failed to log validation error to database:", err);
   }
 }
 
@@ -93,7 +93,7 @@ export function validateRequest<T>(
 
   // Mode "warn" : log l'erreur mais laisse passer (migration progressive)
   if (mode === "warn") {
-    console.warn("⚠️ [VALIDATION WARNING] Non-blocking validation error:", {
+    console.warn("[VALIDATION WARNING] Non-blocking validation error:", {
       functionName: context?.functionName || "unknown",
       errors: formattedErrors,
       receivedData: receivedDataStr,
@@ -124,7 +124,7 @@ export function validationErrorResponse(
     message: issue.message,
   }));
 
-  console.error("❌ [VALIDATION ERROR]", { details });
+  console.error("[VALIDATION ERROR]", { details });
 
   return new Response(
     JSON.stringify({

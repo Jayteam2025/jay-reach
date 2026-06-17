@@ -269,7 +269,7 @@ Chaque **persona** (RH, Director, Field Sales, etc.) doit être lié à une **ca
 
 ---
 
-> **ℹ️ Note sur Resend**
+> Note sur Resend
 >
 > **Resend** est utilisé **uniquement pour les notifications internes** (recap hebdomadaire, alertes crédits FullEnrich) via la clé secret Edge Function `RESEND_API_KEY`. **Ce n'est PAS un provider d'outreach** et ne se configure pas dans l'interface Providers. L'envoi de campagnes se fait exclusivement via Smartlead.
 

@@ -81,7 +81,7 @@ Go to the **Providers** tab and connect your API keys (encrypted in DB):
 - **Outreach**: Smartlead (cold email)
 - **Sourcing**: Adzuna + France Travail (free)
 
-📖 **[Full guide](docs/self-host.en.md)** for production deployment.
+**[Full guide](docs/self-host.en.md)** for production deployment.
 
 ---
 
@@ -192,7 +192,7 @@ Jay Reach is under **Functional Source License (FSL-1.1-MIT)** with automatic co
 3. **Push a PR** with clear description
 4. **Review + merge** by a maintainer
 
-Thank you for your interest! 🙌
+Thank you for your interest!
 
 ---
 

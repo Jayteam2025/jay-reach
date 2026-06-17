@@ -23,7 +23,7 @@ const BOUNCER_BASE_URL = "https://api.usebouncer.com/v1.1";
  * et selon les cas des `results` inline. On accepte aussi `id` par tolérance, et on
  * exige qu'au moins l'un des deux soit présent (aligné sur parseWebhookPayload).
  *
- * ⚠️ Ne PAS rendre `id`/`batchId` requis seul : le schéma d'origine exigeait `id`,
+ * Note : Ne PAS rendre `id`/`batchId` requis seul : le schéma d'origine exigeait `id`,
  * ce qui rejetait le vrai payload Bouncer (qui envoie `batchId`) en 400 → les jobs
  * restaient `pending` et bouncer_status n'était jamais écrit (bug #410).
  */

@@ -51,7 +51,7 @@ RÈGLES IMPORTANTES :
 - "Groupe", "Entreprise", "Société", "Boîte", "Raison sociale" → raison_sociale
 - "Contact à cibler", "Contact clé", "Contact" en cellule libre → contact_full
 - "Prénom" séparé, "Nom" séparé → contact_first_name / contact_last_name
-- "Tier", "Priorité", "🔥 TIER 1" → tier (normalise "🔥 TIER 1" en "1")
+- "Tier", "Priorité", "TIER 1" → tier (normalise "TIER 1" en "1")
 - "Statut", "État" → pipeline_status (garde la valeur brute, le smart-skip se fera en aval)
 - "Adresse postale" → address
 - "URL LinkedIn", "LinkedIn" → linkedin_url

@@ -45,7 +45,7 @@ async function getFullEnrichCredits(apiKey: string): Promise<number | null> {
 }
 
 function buildAlertEmail(balance: number): { subject: string; html: string; text: string } {
-  const subject = `⚠️ FullEnrich : solde critique (${balance} credits)`;
+  const subject = `FullEnrich : solde critique (${balance} credits)`;
   const text = [
     `Le solde FullEnrich est passe sous le seuil d'alerte.`,
     ``,

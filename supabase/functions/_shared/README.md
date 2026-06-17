@@ -92,9 +92,9 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 This extraction includes **prospection-only modules** — no CRM integration, meeting prep, voice notes, or assistant-specific logic. The extracted surface is intentionally lean to maintain OSS portability.
 
 ### Module Resolution Status
-✅ `deno check supabase/functions/_shared/**/*.ts` — **GREEN**  
-✅ No forbidden/assistant imports  
-✅ All _shared files resolved correctly
+[OK] `deno check supabase/functions/_shared/**/*.ts` — **GREEN**  
+[OK] No forbidden/assistant imports  
+[OK] All _shared files resolved correctly
 
 ---
 

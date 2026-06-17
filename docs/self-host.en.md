@@ -97,7 +97,7 @@ SUPABASE_DB_PASSWORD=YOUR_DATABASE_PASSWORD
 - Source: https://supabase.com/dashboard/account/tokens
 - Click "Generate new token"
 - Copy the full token (starts with `sbp_`)
-- ⚠️ **Required permissions:** "Functions: Deploy + Manage", "Database"
+- Required permissions: "Functions: Deploy + Manage", "Database"
 
 **4. SUPABASE_PROJECT_REF**
 - The project ID (e.g., `abc123defghijklmnopq`)
@@ -121,11 +121,11 @@ pnpm run doctor
 ```
 
 This verifies:
-- ✓ Node.js ≥ 22.12
-- ✓ pnpm ≥ 10.0.0
-- ✓ Supabase CLI available
-- ✓ Access to your Supabase project (from `.env`)
-- ✓ Internet connectivity
+- Node.js ≥ 22.12
+- pnpm ≥ 10.0.0
+- Supabase CLI available
+- Access to your Supabase project (from `.env`)
+- Internet connectivity
 
 **Common errors and solutions:**
 
@@ -149,18 +149,18 @@ This script **automatically** performs:
 1. **Supabase project linking** — links your `.env` to the cloud project
 2. **SQL migrations** — creates tables, RLS schema, stored functions
 3. **Encryption secret generation** — `TOKEN_ENCRYPTION_KEY` deployed to Edge Functions (encrypts provider keys in database)
-4. **31 edge functions deployment** — reactive Deno functions for the pipeline (takes 3–5 min)
+4. **30 edge functions deployment** — reactive Deno functions for the pipeline (takes 3–5 min)
 5. **Workspace initialization** — creates the default multi-tenant "workspace" (a workspace = your instance)
 
 **Duration:** 3–5 minutes (first time)
 
 **Expected output:**
 ```
-✓ Migrations applied
-✓ Edge Functions deployed (31/31)
-✓ Encryption secret generated
-✓ Workspace created
-✓ Ready to go
+[OK] Migrations applied
+[OK] Edge Functions deployed (30/30)
+[OK] Encryption secret generated
+[OK] Workspace created
+[OK] Ready to go
 ```
 
 **Common errors:**
@@ -251,7 +251,7 @@ The app works **entirely in demo mode** without any keys configured. Realistic m
 8. Save
 
 **Available models:**
-- `claude-3-5-sonnet-20241022` ⭐ recommended (cost/quality balance)
+- `claude-3-5-sonnet-20241022` (recommended: cost/quality balance)
 - `claude-3-5-haiku-20241022` (fast, budget)
 - `claude-3-opus-20250219` (powerful, expensive)
 
@@ -396,7 +396,7 @@ This configures (via **pg_cron** Supabase) automated jobs:
 | **recap_weekly** | Monday 08h UTC | Weekly recap email (via Resend) |
 | **cleanup_retention** | Daily 02h UTC | Delete archived prospects > 60 days |
 
-> ℹ️ You can also trigger these manually via UI or API.
+> You can also trigger these manually via UI or API.
 
 ### Alternative: Manual Crons (supabase CLI)
 

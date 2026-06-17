@@ -181,7 +181,7 @@ export async function decryptTokenSafe(
     return decrypted;
   } catch (newFormatError) {
     const errorMsg = newFormatError instanceof Error ? newFormatError.message : String(newFormatError);
-    console.warn(`⚠️ AES-GCM decryption failed for ${fieldName}: ${errorMsg}`);
+    console.warn(`Warning: AES-GCM decryption failed for ${fieldName}: ${errorMsg}`);
 
     // Fall back to old base64 "encryption"
     try {
@@ -193,7 +193,7 @@ export async function decryptTokenSafe(
       const isDecodedPlaintext = /^[\x20-\x7E]+$/.test(decoded);
       if (isDecodedPlaintext) {
         console.warn(
-          `⚠️ ${fieldName} using legacy base64 encoding. Should be migrated to AES-256-GCM.`
+          `Warning: ${fieldName} using legacy base64 encoding. Should be migrated to AES-256-GCM.`
         );
         return decoded;
       }
@@ -203,13 +203,13 @@ export async function decryptTokenSafe(
       const isOriginalPlaintext = /^[\x20-\x7E]+$/.test(encryptedData);
       if (isOriginalPlaintext) {
         console.warn(
-          `⚠️ ${fieldName} stored as plaintext (not encrypted). Should be migrated to AES-256-GCM.`
+          `Warning: ${fieldName} stored as plaintext (not encrypted). Should be migrated to AES-256-GCM.`
         );
         return encryptedData;
       }
 
       console.error(
-        `❌ ${fieldName}: AES-GCM decryption failed (${errorMsg}) and data is not valid base64 or plaintext. ` +
+        `[ERROR] ${fieldName}: AES-GCM decryption failed (${errorMsg}) and data is not valid base64 or plaintext. ` +
         `Check TOKEN_ENCRYPTION_KEY.`
       );
       throw new Error(
@@ -220,7 +220,7 @@ export async function decryptTokenSafe(
       const isOriginalPlaintext = /^[\x20-\x7E]+$/.test(encryptedData);
       if (isOriginalPlaintext) {
         console.warn(
-          `⚠️ ${fieldName} stored as plaintext (not base64, not encrypted). Should be migrated to AES-256-GCM.`
+          `Warning: ${fieldName} stored as plaintext (not base64, not encrypted). Should be migrated to AES-256-GCM.`
         );
         return encryptedData;
       }

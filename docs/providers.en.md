@@ -269,7 +269,7 @@ Each **persona** (HR, Director, Field Sales, etc.) must be linked to a **Smartle
 
 ---
 
-> **ℹ️ Note on Resend**
+> Note on Resend
 >
 > **Resend** is used **only for internal notifications** (weekly recap, FullEnrich credit alerts) via the `RESEND_API_KEY` secret in Edge Functions. **It is NOT an outreach provider** and does not configure in the Providers interface. Campaign sending is exclusively via Smartlead.
 

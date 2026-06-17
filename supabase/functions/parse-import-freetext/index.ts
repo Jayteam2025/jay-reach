@@ -67,7 +67,7 @@ CHAQUE LIGNE doit suivre EXACTEMENT cette forme :
 
 RÈGLES :
 - Une entreprise avec PLUSIEURS contacts → produis PLUSIEURS rows (1 par contact) avec la même raison_sociale.
-- Tier : si tu vois "🔥 TIER 1" ou "Priorité haute" → "1". "⭐ TIER 2" → "2". Sinon laisse brut.
+- Tier : si tu vois "TIER 1" ou "Priorité haute" → "1". "TIER 2" → "2". Sinon laisse brut.
 - Ne pas inventer d'emails. Si non présent dans le texte, omet le champ.
 - Si tu détectes "Invitation LinkedIn envoyée" ou similaire → mets-le dans pipeline_status BRUT, le smart-skip se fera en aval.
 - imported_metadata est utile pour : "Angle d'approche", "Fit Jay", "Spécialité", "Notes" si non standard.

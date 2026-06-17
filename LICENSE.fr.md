@@ -1,6 +1,6 @@
 # Licence — Traduction française
 
-**⚠️ Traduction de courtoisie**
+**Note : Traduction de courtoisie**
 
 Ce document est une traduction française de courtoisie fournie pour faciliter la compréhension. Seule la version anglaise du fichier `LICENSE` a valeur juridique. En cas de divergence, la version anglaise prévaut.
 

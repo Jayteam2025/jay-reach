@@ -29,7 +29,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("🧹 Nettoyage GDPR des prospects expirés...");
+    console.log("Nettoyage GDPR des prospects expirés...");
 
     const now = new Date().toISOString();
     let softDeletedCount = 0;
@@ -58,7 +58,7 @@ serve(async (req) => {
       const deletedInStatus = data?.length || 0;
       softDeletedCount += deletedInStatus;
       console.log(
-        `✅ ${deletedInStatus} prospect(s) '${status}' soft-supprimé(s) (>= ${days} jours)`
+        `[OK] ${deletedInStatus} prospect(s) '${status}' soft-supprimé(s) (>= ${days} jours)`
       );
     }
 
@@ -76,7 +76,7 @@ serve(async (req) => {
       );
       // Continue - don't fail the entire cleanup
     } else {
-      console.log(`🗑️ ${logsPurged || 0} log(s) de scraping supprimé(s)`);
+      console.log(`[OK] ${logsPurged || 0} log(s) de scraping supprimé(s)`);
     }
 
     return new Response(
@@ -97,7 +97,7 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("❌ Erreur lors du nettoyage GDPR:", error);
+    console.error("[ERROR] Erreur lors du nettoyage GDPR:", error);
     return new Response(
       JSON.stringify({
         success: false,

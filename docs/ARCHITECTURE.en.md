@@ -147,7 +147,7 @@ Each function is:
 - SSRF check via `validateUrlOrThrow()` on all user URLs
 - CORS headers via `getCorsHeaders()` (never `*`)
 
-⚠️ **Note for self-host**: CRONs are NOT scheduled by default. See [self-host.md](self-host.md) §scheduling for `pnpm run setup:crons`.
+Note: CRONs are NOT scheduled by default. See [self-host.md](self-host.md) §scheduling for `pnpm run setup:crons`.
 
 #### Sourcing (Adzuna + France Travail)
 
@@ -349,7 +349,7 @@ Each provider is:
 
 ### Enrichment
 
-- **`fullenrich`** — ✅ only provider (work_email, linkedin_url, company metadata)
+- **`fullenrich`** — only provider (work_email, linkedin_url, company metadata)
 
 ### Email Validation
 
@@ -358,7 +358,7 @@ Each provider is:
 
 ### Outreach
 
-- **`smartlead`** — ✅ only outreach provider (cold email)
+- **`smartlead`** — only outreach provider (cold email)
 
 ### Optional CRM Detection
 

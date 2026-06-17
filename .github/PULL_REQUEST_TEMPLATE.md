@@ -14,11 +14,11 @@ Décrivez brièvement ce que cette PR change et pourquoi.
 
 - [ ] J'ai testé cette PR localement
 - [ ] J'ai ajouté ou mis à jour les tests (si applicable)
-- [ ] `pnpm lint` ✓
-- [ ] `pnpm typecheck` ✓
-- [ ] `pnpm build` ✓
-- [ ] `pnpm test:run` ✓
-- [ ] `node scripts/check-no-jay-hardcodes.mjs --strict` ✓ (0 violations)
+- [ ] `pnpm lint`
+- [ ] `pnpm typecheck`
+- [ ] `pnpm build`
+- [ ] `pnpm test:run`
+- [ ] `node scripts/check-no-jay-hardcodes.mjs --strict` (0 violations)
 - [ ] J'ai mis à jour la documentation (si applicable)
 - [ ] Aucun secret n'est commité
 - [ ] J'accepte le CLA (voir [CLA.md](../CLA.md))

@@ -67,7 +67,7 @@ export async function checkRateLimit(
 
     if (selectError) {
       // H2: En cas d'erreur DB, refuser la requete (fail closed) pour eviter les abus
-      console.error("❌ [RATE-LIMIT] DB error, failing closed:", selectError);
+      console.error("[RATE-LIMIT] DB error, failing closed:", selectError);
       return { allowed: false, remaining: 0, resetAt, limit: config.maxRequests };
     }
 
@@ -76,7 +76,7 @@ export async function checkRateLimit(
 
     // 3. Si limite dépassée, refuser
     if (currentCount >= config.maxRequests) {
-      console.log(`⛔ [RATE-LIMIT] Limit exceeded for ${identifierType}:${identifier} on ${category} (${currentCount}/${config.maxRequests})`);
+      console.log(`[RATE-LIMIT] Limit exceeded for ${identifierType}:${identifier} on ${category} (${currentCount}/${config.maxRequests})`);
       return { allowed: false, remaining: 0, resetAt, limit: config.maxRequests };
     }
 
@@ -89,7 +89,7 @@ export async function checkRateLimit(
         .eq("id", existingRecords[0].id);
 
       if (updateError) {
-        console.error("❌ [RATE-LIMIT] Error updating rate limit:", updateError);
+        console.error("[RATE-LIMIT] Error updating rate limit:", updateError);
       }
     } else {
       // Insert new record
@@ -104,16 +104,16 @@ export async function checkRateLimit(
         });
 
       if (insertError) {
-        console.error("❌ [RATE-LIMIT] Error inserting rate limit:", insertError);
+        console.error("[RATE-LIMIT] Error inserting rate limit:", insertError);
       }
     }
 
-    console.log(`✅ [RATE-LIMIT] ${identifierType}:${identifier} on ${category}: ${currentCount + 1}/${config.maxRequests}`);
+    console.log(`[RATE-LIMIT] ${identifierType}:${identifier} on ${category}: ${currentCount + 1}/${config.maxRequests}`);
     return { allowed: true, remaining, resetAt, limit: config.maxRequests };
 
   } catch (error) {
     // H2: En cas d'erreur inattendue, refuser la requete (fail closed) pour eviter les abus
-    console.error("❌ [RATE-LIMIT] Unexpected error, failing closed:", error);
+    console.error("[RATE-LIMIT] Unexpected error, failing closed:", error);
     return { allowed: false, remaining: 0, resetAt, limit: config.maxRequests };
   }
 }
