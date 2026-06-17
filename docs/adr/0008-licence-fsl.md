@@ -1,10 +1,16 @@
 # ADR 0008 : Licence FSL-1.1-MIT (Functional Source License)
 
-- **Statut** : Accepted (a activer lors du bascule public)
+- **Statut** : Accepted (FSL-1.1-MIT pour Phase 2 public, propriétaire en Phase 1 privée)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
 - **Decideurs** : Alexandre De Clercq, Jean-Baptiste Renart
-- **Supersede** : version precedente proposait MIT pure, retire au profit de FSL.
-- **Note importante 2026-05-19** : le repo Jay Reach **commence en prive** sur GitHub (invite-only, 13 personnes). En repo prive, **aucune licence OSS n'est active** : les terms GitHub + un accord collaborateur (NDA leger ou contrat) regissent les usages. La licence **FSL-1.1-MIT s'active uniquement au moment ou on bascule le repo en public**, ce qui est differe a une date non figee.
+
+## Phase actuelle (Phase 1 - Repo privé)
+
+Le repo est **actuellement privé** sur GitHub. **Aucune licence OSS n'est active** :
+- Terms GitHub standard pour repos privés
+- CLA.md obligatoire pour les contributeurs (voir `/CLA.md`)
+- Propriétaire : Jay Team (copyright notice dans les fichiers)
 
 ## Contexte
 
@@ -302,9 +308,16 @@ Quand le repo deviendra public (Phase 2), on prepare :
 - Adoption tracker FSL : Sentry, Keygen, GitButler, ConvertKit, et autres en 2024+
 - HackerNews discussion FSL launch : feedback communaute mixte mais majoritairement positif
 
+## Phase future (Phase 2+ - Repo public OSS)
+
+À la transition vers le public (Phase 2), **FSL-1.1-MIT s'active automatiquement** :
+- Le fichier `LICENSE` devient le texte FSL-1.1-MIT
+- Tous les contributeurs passés et futurs sont couverts par FSL-1.1-MIT
+- Conversion automatique en MIT license à partir de 2 ans après publication publique (par version)
+
 ---
 
-## Addendum - Clarification Phase Privée vs. Phase Publique (2026-06-15)
+## Addendum - Clarification Phase Privée vs. Phase Publique (2026-06-16)
 
 En phase **privée actuelle** du dépôt (invite-only sur GitHub) :
 

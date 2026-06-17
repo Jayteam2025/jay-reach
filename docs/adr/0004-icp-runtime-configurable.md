@@ -1,19 +1,17 @@
 # ADR 0004 : ICP runtime configurable (table `icp_profiles`)
 
-- **Statut** : Propose
+- **Statut** : Accepted (implémenté Phase 1)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
 
 ## Contexte
 
-L'outil actuel cible **3 categories hardcodees** : `director`, `field_sales`, `hr`. Ce choix vient du business Jay (vendre Jay a des directeurs commerciaux, commerciaux terrain, equipes RH). Aucun autre utilisateur ne peut creer ses propres categories sans :
+Pour servir **tous les domaines** (recrutement, immobilier, retail, edutech, vente SaaS, etc.), le système doit être **entièrement configurable par l'utilisateur** à runtime.
 
-- Modifier le CHECK constraint sur `prospect_profiles.target_category`
-- Modifier le CHECK sur `prospect_sequences`, `prospect_messages`, `prospect_message_templates`
-- Modifier les prompts LLM dans `score-prospect-signals`
-- Modifier les templates seedes
-- Modifier l'UI
-
-Pour servir tous les domaines (recrutement, immobilier, retail, edutech, etc.), il faut que **chaque utilisateur definisse ses propres ICP a l'UI**.
+Chaque workspace définit ses propres ICP (Ideal Customer Profiles) : 
+- Sourcing : mots-clés de recherche, titres, tailles d'entreprise, secteurs
+- Scoring : prompt LLM + axes de scoring personnalisés
+- Routing : canaux de contact et timing
 
 ## Decision
 

@@ -1,9 +1,10 @@
 # ADR 0009 : Phasing Standalone-first (Phase 1 en plat, intégration multi-tenant différée)
 
-- **Statut** : Accepted
+- **Statut** : Accepted (Source of Truth pour phasing)
 - **Date** : 2026-06-16
+- **Dernière mise à jour** : 2026-06-16
 - **Decideurs** : Alexandre De Clercq, Jean-Baptiste Renart
-- **Supersedes** : Affine ADR 0001 (dual-distribution) et ADR 0002 (monorepo) pour la Phase 1
+- **Supersedes** : ADR 0001 et 0002 pour la Phase 1 (remplacés par flat layout)
 
 ## Contexte
 

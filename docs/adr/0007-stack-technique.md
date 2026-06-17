@@ -1,11 +1,15 @@
 # ADR 0007 : Stack technique
 
-- **Statut** : Propose
+- **Statut** : Accepted (implémenté Phase 1)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
 
 ## Contexte
 
-Le stack actuel Jay est React 18 + Vite + TS + Tailwind + Supabase + Deno edge functions. On veut continuer sur cette base pour minimiser le risque, mais on doit ajouter ou expliciter quelques outils.
+Jay Reach est un **repo OSS indépendant** (pas une extension de Jay). Le stack doit être :
+- **Autonome** : marche standalone sans dépendre de l'infrastructure Jay
+- **Standard 2026** : technologies éprouvées, bonnes docs, communauté active
+- **LLM pluggable** : supporté multi-LLM (Anthropic par défaut, Mistral optionnel, OpenAI futur, Ollama local)
 
 ## Decision
 
@@ -83,16 +87,20 @@ Le stack actuel Jay est React 18 + Vite + TS + Tailwind + Supabase + Deno edge f
 
 Les observability tools sont **optionnels** en OSS (pour ne pas forcer un Sentry inscription). En Cloud, on les active.
 
-### LLM
+### LLM (pluggable)
 
 | Usage | Choix |
 |---|---|
-| Defaut | **Anthropic Claude Sonnet 4.6** (continuite) |
-| Alternatif | **Mistral Large** (continuite) |
-| Fallback futur | **OpenAI GPT-4o** (a ajouter via provider abstraction) |
-| Local (futur) | **Ollama** (a ajouter via provider abstraction) |
+| Défaut | **Anthropic Claude Sonnet 4.6** (haute qualité, stable) |
+| Alternatif | **Mistral Large** (alternatif performant) |
+| Fallback futur | **OpenAI GPT-4o** (à ajouter via provider abstraction) |
+| Local (futur) | **Ollama** (à ajouter via provider abstraction) |
 
-Tous via l'interface `LLMProvider` (voir ADR 0005).
+**Important** : tous les LLMs sont **pluggables** via l'interface `LLMProvider` (ADR 0005). 
+- Configuration au runtime (UI ou env var)
+- Mode démo utilise un mock
+- Pas de vendor lock-in
+- Coûts transparents par LLM
 
 ### Email infra
 

@@ -1,32 +1,25 @@
 # ADR 0005 : Abstraction providers + BYOK + mode demo
 
-- **Statut** : Propose
+- **Statut** : Accepted (implémenté Phase 1)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
 
 ## Contexte
 
-L'outil actuel est hard-couple a 9 APIs externes payantes :
+Jay Reach dépend de **multiples services externes payants** :
+- Email validation : Bouncer, Reoon, ZeroBounce, etc.
+- Email sending : Smartlead, Instantly, Lemlist, etc.
+- Enrichment : FullEnrich, Hunter.io, etc.
+- Scraping : Apify, LinkedIn APIs
+- Search : Brave, Google Search, etc.
+- Registries : INSEE Sirene, France Travail, etc.
+- LLM : Anthropic Claude, Mistral, OpenAI (futur), Ollama (local, futur)
 
-- FullEnrich (enrichissement)
-- Bouncer (validation email)
-- Smartlead (campagnes emailing)
-- Apify (scraping LinkedIn)
-- Brave Search
-- France Travail
-- Adzuna
-- INSEE Sirene
-- Anthropic Claude + Mistral (LLM)
-
-Pour la version OSS :
-- Un dev qui clone ne va pas tout brancher pour tester
-- Certains utilisent Instantly au lieu de Smartlead, ZeroBounce au lieu de Bouncer
-- On veut pouvoir tester sans depenser
-
-Pour la version SaaS Jay-managed :
-- Pareil mais les cles sont gerees par nous, mutualisees
-
-Pour les deux :
-- Si demain Smartlead disparait, on switch sans tout casser
+**Défi** : 
+- **OSS self-host** : chaque user peut avoir des préférences différentes (budget, performance, intégrations existantes)
+- **Mode démo** : il faut pouvoir tester sans configurer les clés (mocks)
+- **Risque vendor lock-in** : si un fournisseur disparaît, on doit pouvoir switcher
+- **Opérations SaaS** : les clés doivent être centralisées, chiffrées, par workspace
 
 ## Decision
 

@@ -1,17 +1,15 @@
 # ADR 0003 : Multi-tenant via `workspace_id`
 
-- **Statut** : Propose
+- **Statut** : Accepted (implémenté Phase 1)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
 
 ## Contexte
 
-L'outil actuel est single-tenant Jay-only :
-- RLS hardcodes sur 3 UUIDs admins
-- Aucune notion d'organisation/equipe
-- Toutes les donnees prospect_* sont accessibles uniquement par les 3 admins
-
-Pour la version SaaS, plusieurs clients doivent coexister sans se voir.
-Pour la version OSS self-host, un dev peut vouloir avoir plusieurs "espaces" (perso, son agence, ses clients).
+**Phase 1** : Jay Reach est une application OSS standalone. Plusieurs modèles d'usage existent :
+1. **SaaS Jay** : plusieurs clients commerciaux, chacun avec ses propres données
+2. **OSS self-host** : un développeur peut avoir plusieurs "espaces" (personnel, agence, clients)
+3. **Mono-opérateur** : une seule organisation par instance
 
 ## Decision
 
@@ -103,26 +101,29 @@ Certaines tables partagent les donnees cross-workspace (caches, learnings) :
 | `bouncer_jobs` | Per workspace |
 | Toutes les tables prospect_* | Per workspace |
 
-### Migration des donnees existantes Jay
+### Création du workspace initial
+
+À la première exécution (migration Supabase), une workspace par défaut est créée :
 
 ```sql
--- Create the Jay workspace
+-- Create default workspace for first user/instance
 INSERT INTO workspaces (id, name, slug, settings)
-VALUES (gen_random_uuid(), 'Jay', 'jay', '{"is_legacy_jay": true}'::jsonb)
-RETURNING id INTO jay_workspace_id;
+VALUES (gen_random_uuid(), 'Default', 'default', '{}'::jsonb)
+RETURNING id INTO default_workspace_id;
 
--- Add existing admins as members
-INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
-  (jay_workspace_id, '00000000-0000-0000-0000-0000000000a1', 'owner'),  -- membre 1
-  (jay_workspace_id, '00000000-0000-0000-0000-0000000000a2', 'owner');  -- membre 2
+-- All new records reference this workspace
+-- RLS ensures users only see their assigned workspace(s)
+```
 
--- Backfill workspace_id on all existing rows
-UPDATE prospect_profiles SET workspace_id = jay_workspace_id;
-UPDATE prospect_signals SET workspace_id = jay_workspace_id;
--- etc.
+### Migration des données OSS existantes
 
--- Then enforce NOT NULL
+Si migration depuis une instance Phase 1 monotenante :
+
+```sql
+-- Tous les enregistrements existants → workspace par défaut
+UPDATE prospect_profiles SET workspace_id = default_workspace_id WHERE workspace_id IS NULL;
 ALTER TABLE prospect_profiles ALTER COLUMN workspace_id SET NOT NULL;
+-- etc. pour les 15+ autres tables
 ```
 
 ## Consequences

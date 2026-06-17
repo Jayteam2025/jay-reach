@@ -1,20 +1,23 @@
-# ADR 0002 : Monorepo pnpm + Turborepo
+# ADR 0002 : Monorepo pnpm + Turborepo (Phase 2)
 
-- **Statut** : Propose
+- **Statut** : Accepted (Phase 2, actuellement différée)
 - **Date** : 2026-05-19
+- **Dernière mise à jour** : 2026-06-16
+- **Note** : Structure cible pour **Phase 2** uniquement. Phase 1 = layout plat. Voir ADR 0009.
 
 ## Contexte
 
-Jay Reach contient au minimum :
-- Une app frontend React (UI)
-- Une app backend Deno (edge functions, workers)
-- Du code partage entre les deux (types, schemas Zod, domain logic, providers, ui components)
+En **Phase 2**, Jay Reach devra contenir :
+- Une app frontend React (UI) 
+- Une app backend Deno (edge functions)
+- Du code partagé (types, schemas Zod, domain logic, providers, composants UI)
+- Des packages npm publiables (`@jay-reach/core`, `@jay-reach/providers`, etc.)
 
-Question : monorepo ou polyrepos ?
+**Phase 1 (actuelle)** utilise un layout plat. Cette ADR décrit la structure **cible Phase 2** seulement.
 
 ## Decision
 
-**Monorepo** gere par **pnpm workspaces + Turborepo**.
+**Phase 2 : Monorepo** géré par **pnpm workspaces + Turborepo**.
 
 Structure :
 
@@ -92,9 +95,31 @@ Rejete. Divergence des versions, refactors cross-repo penibles, CI orchestration
 
 Rejete. Old school, moins maintenu, remplace par Turborepo/pnpm dans l'ecosystem moderne.
 
-## Migration depuis Jay
+## Phase 1 : Layout plat (transition vers monorepo)
 
-Pendant la Phase 1 (refactor in-place dans Jay), on **n'a pas encore le monorepo**. On structure le code dans `src/features/prospection/` et `supabase/functions/prospect/_packages/` en singeant la structure cible pour rendre l'extraction Phase 2 mecanique.
+**Phase 1 (actuelle, ~6 semaines)** déploie un layout **plat** pour livraison rapide :
+```
+jay-reach/
+├── src/                    # App Vite + React
+├── supabase/               # Edge Functions Deno
+├── docs/
+└── scripts/
+```
+
+Le code est **structuré modulairement** pour faciliter l'extraction Phase 2 :
+- `src/features/` isolent les domaines (prospection, enrichment, messaging)
+- `src/lib/` regroupe la logique réutilisable
+- `supabase/functions/_shared/` = code partagé entre edge functions (sans module/import structuré)
+
+## Phase 2 : Migration vers monorepo
+
+Après Phase 1 stable (~4-6 semaines), la Phase 2 refactore vers le monorepo :
+1. Copier `src/` → `apps/web/src/`
+2. Copier `supabase/functions/` → `apps/worker/`
+3. Extraire `src/lib/` et domaines → `packages/core/`, `packages/providers/`, `packages/ui/`
+4. Setup Turborepo + pnpm workspaces
+5. Publier packages npm (`@jay-reach/*`)
+6. Migration Jay SaaS vers imports npm (Phase 2 item)
 
 ## References
 
