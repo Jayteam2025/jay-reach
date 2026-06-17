@@ -18,6 +18,7 @@
     "test:run": "vitest run --passWithNoTests",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "setup:crons": "node scripts/setup-crons.mjs",
     "check:hardcodes": "node scripts/check-no-jay-hardcodes.mjs --strict"
   },
   "dependencies": {
