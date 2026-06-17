@@ -28,7 +28,7 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 
 ### Email & Outreach
 - **email-gate.ts** — Email deliverability gate (Bouncer verifications → Smartlead push decision)
-- **email-pattern.ts, email-templates.ts** — Email pattern deduction + templates
+- **email-pattern.ts** — Email pattern deduction
 - **smartlead.ts** — Smartlead API client
 - **resend.ts** — Resend email relay (transactional, not prospection)
 - **outreach/** — Outreach provider registry (currently Smartlead only)

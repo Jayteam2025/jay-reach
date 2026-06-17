@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProspectMessages, useApproveMessage, useMarkMessageSent } from '@/hooks/useProspectMessages';
 import { Button } from '@/components/ui/button';
@@ -76,19 +75,11 @@ export function ProspectionMessages() {
     }
   };
 
-  const handleMarkSent = async (messageId: string, channel: string) => {
+  const handleMarkSent = async (messageId: string) => {
     setSendingId(messageId);
     try {
-      if (channel === 'email') {
-        const { error } = await supabase.functions.invoke('send-prospect-email', {
-          body: { message_id: messageId },
-        });
-        if (error) throw error;
-        toast({ description: 'Email envoyé avec succès' });
-      } else {
-        await markSentMutation.mutateAsync({ id: messageId });
-        toast({ description: 'Message marqué comme envoyé' });
-      }
+      await markSentMutation.mutateAsync({ id: messageId });
+      toast({ description: 'Message marqué comme envoyé' });
       queryClient.invalidateQueries({ queryKey: ['prospect-messages'] });
     } catch (error) {
       toast({
@@ -278,7 +269,7 @@ export function ProspectionMessages() {
                         <Button
                           size="sm"
                           variant="default"
-                          onClick={() => handleMarkSent(message.id, message.channel)}
+                          onClick={() => handleMarkSent(message.id)}
                           disabled={sendingId === message.id || markSentMutation.isPending}
                         >
                           {sendingId === message.id || markSentMutation.isPending ? (
@@ -286,7 +277,7 @@ export function ProspectionMessages() {
                           ) : (
                             <Send className="h-3 w-3 mr-1" />
                           )}
-                          {message.channel === 'email' ? 'Envoyer' : 'Marquer envoyé'}
+                          Marquer envoyé
                         </Button>
                       </>
                     )}

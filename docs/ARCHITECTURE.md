@@ -201,14 +201,11 @@ Chaque fonction est :
 | `generate-prospect-messages-bulk` | HTTP POST | Génère messages (email, SMS, LinkedIn) pour un batch |
 | `regenerate-prospect-messages-from-template` | HTTP POST | Régénère depuis un template |
 
-#### Outreach (Smartlead & SMTP)
+#### Outreach (Smartlead)
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `send-via-smartlead` | HTTP POST | Push prospects → campagne Smartlead |
-| `send-prospect-email` | HTTP POST | Envoi direct SMTP (optionnel) |
-| `send-contact-email` | HTTP POST | Envoi email depuis l'app |
-| `smtp-send-email` | HTTP POST | SMTP generic (Resend, transactionnel) |
+| `send-via-smartlead` | HTTP POST | Push prospects → campagne Smartlead (seule voie d'envoi) |
 
 #### Extension Chrome (LinkedIn Scraping)
 

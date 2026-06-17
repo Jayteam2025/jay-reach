@@ -22,7 +22,7 @@ export const AttachmentSchema = z.object({
   contentType: z.string().optional(),
 });
 
-// === Envoyer email (gmail-send-email, microsoft-send-email, outlook-send-email, smtp-send-email) ===
+// === Envoyer email (gmail-send-email, microsoft-send-email, outlook-send-email) ===
 export const SendEmailSchema = z.object({
   to: z.array(EmailAddressSchema).min(1).max(50),
   cc: z.array(EmailAddressSchema).max(50).optional(),
