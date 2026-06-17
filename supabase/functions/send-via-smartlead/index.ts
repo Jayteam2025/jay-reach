@@ -243,7 +243,7 @@ Deno.serve(async (req: Request) => {
     interface BrandAttachment {
       persona_id?: string | null;
       channel?: string | null;
-      type: "inline_image" | "pdf";
+      type: "inline_image";
       url: string;
       alt?: string;
     }

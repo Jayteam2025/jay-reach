@@ -5,7 +5,6 @@ import {
   Paperclip,
   Plus,
   Trash2,
-  FileText,
   Image as ImageIcon,
   Mail,
   X,
@@ -35,9 +34,9 @@ const CHANNELS: Array<{ value: string; label: string }> = [
   { value: 'postal_letter', label: 'Lettre postale' },
 ];
 
-function inferType(mime: string): BrandAttachment['type'] {
-  if (mime.startsWith('image/')) return 'inline_image';
-  return 'pdf';
+// Retourne toujours 'inline_image' : seules les images intégrées au mail sont supportées
+function inferType(): BrandAttachment['type'] {
+  return 'inline_image';
 }
 
 function basename(url: string): string {
@@ -285,7 +284,7 @@ export function ProspectionBranding() {
       const newAttachment: BrandAttachment = {
         persona_id: newPersonaId || null,
         channel: newChannel || null,
-        type: inferType(file.type),
+        type: inferType(),
         url: pub.publicUrl,
         alt: newAlt.trim() || null,
       };
@@ -466,7 +465,7 @@ export function ProspectionBranding() {
           )}
         </div>
         <p className="text-xs text-muted-foreground -mt-2">
-          Les pieces jointes inline_image apparaissent en bas du body. Filtrees par persona + canal (vide = applique a tous).
+          Les images sont intégrées directement dans le corps du mail. Filtrables par persona + canal (vide = appliquées à tous).
         </p>
 
         {adding && (
@@ -508,7 +507,7 @@ export function ProspectionBranding() {
               <Input
                 value={newAlt}
                 onChange={(e) => setNewAlt(e.target.value)}
-                placeholder="CV de votre commercial"
+                placeholder="Description de l'image"
                 className="h-8 text-xs"
               />
             </div>
@@ -516,7 +515,7 @@ export function ProspectionBranding() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,image/png,image/jpeg"
+                accept="image/png,image/jpeg,image/webp,image/gif"
                 disabled={uploading}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -545,13 +544,12 @@ export function ProspectionBranding() {
         ) : (
           <div className="space-y-2">
             {(brand.attachments ?? []).map((a, idx) => {
-              const Icon = a.type === 'inline_image' ? ImageIcon : FileText;
               return (
                 <div
                   key={`${a.url}-${idx}`}
                   className="flex items-center gap-3 rounded-md border border-border/60 bg-card px-3 py-2"
                 >
-                  <Icon className="w-4 h-4 text-violet-500 shrink-0" />
+                  <ImageIcon className="w-4 h-4 text-violet-500 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <a
                       href={a.url}
@@ -565,8 +563,6 @@ export function ProspectionBranding() {
                       <span>{a.persona_id ? personaLabelById.get(a.persona_id) ?? 'Persona inconnu' : 'Toutes personas'}</span>
                       <span>.</span>
                       <span>{a.channel || 'Tous canaux'}</span>
-                      <span>.</span>
-                      <span>{a.type === 'inline_image' ? 'Image inline' : 'PDF'}</span>
                     </div>
                   </div>
                   <Button

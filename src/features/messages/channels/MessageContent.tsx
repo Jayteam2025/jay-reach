@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Loader2, Send, Eye, Mail, Copy, Paperclip, Download } from 'lucide-react';
+import { Pencil, Loader2, Send, Eye, Mail, Copy, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { useTrackAction } from '@/hooks/useProspectActions';
-import { useCvSignedUrl } from '@/hooks/useCvSignedUrl';
 import type { EnrichedCompany, EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import type { ProspectMessage } from '../useCompanyMessages';
 
@@ -28,7 +27,6 @@ export function MessageContent({
   const trackAction = useTrackAction();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: cvUrl } = useCvSignedUrl();
 
   useEffect(() => {
     setEditedBody(message.body);
@@ -248,14 +246,6 @@ export function MessageContent({
                   <Copy className="w-3 h-3" />
                   Copier
                 </Button>
-                {profile.target_category === 'hr' && cvUrl && (
-                  <a href={cvUrl} target="_blank" rel="noopener noreferrer">
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5">
-                      <Paperclip className="w-3 h-3" />
-                      CV
-                    </Button>
-                  </a>
-                )}
               </>
             )}
 
