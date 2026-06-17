@@ -224,7 +224,7 @@ export async function submitBulkEnrichment(
 
   // Applique enrich_fields par defaut = work_emails SEULEMENT.
   // Les phones coutent ~10x plus cher que les emails chez FullEnrich et
-  // Alex ne souhaite pas contacter les prospects par telephone → on vire.
+  // par choix produit, pas de contact telephone → on vire.
   // "contact.emails" a ete renomme "contact.work_emails" le 2026-04-23.
   const normalized = contacts.map(c => ({
     ...c,
@@ -623,7 +623,7 @@ function classifySource(status: string | undefined): EmailSource {
 
 // pickBestPhone supprime (2026-04-24) : on ne requete jamais les phones
 // chez FullEnrich (contact.phones coute ~10x plus cher que work_emails et
-// Alex ne contacte pas par telephone). Si besoin un jour, reintroduire
+// par choix produit, pas de contact telephone). Si besoin un jour, reintroduire
 // enrich_fields + helper ensemble.
 
 // =============================================================================

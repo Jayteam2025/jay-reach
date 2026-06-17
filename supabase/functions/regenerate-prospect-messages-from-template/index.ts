@@ -19,7 +19,7 @@ import { type PersonaConfig } from "../_shared/workspace-config.ts";
  * "Non envoye" = status NOT IN ('sent', 'replied', 'bounced').
  * Couvre uniformement email (Smartlead), linkedin (extension), postal_letter.
  *
- * Auth : JWT + isInternalEmail(jwt.email).
+ * Auth : JWT + owner/admin of workspace.
  *
  * Input : { template_id: uuid }
  * Output : { regenerated_count, template_version, skipped }
@@ -96,8 +96,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // OSS : l'opérateur est admin de son propre workspace (plus de gate Jay-staff
-    // isInternalEmail). On exige juste d'être owner/admin d'un workspace.
+    // OSS : l'opérateur est admin de son propre workspace. On exige d'être owner/admin.
     const { data: adminMembership } = await supabase
       .from("workspace_members")
       .select("workspace_id")

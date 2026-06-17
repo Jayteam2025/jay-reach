@@ -139,7 +139,7 @@ Deno.serve(async (req: Request) => {
     });
     // @ts-ignore -- EdgeRuntime global fourni par Supabase
     if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
-      // @ts-ignore
+      // @ts-ignore -- EdgeRuntime global fourni par le runtime Supabase
       EdgeRuntime.waitUntil(selfInvoke);
     }
 

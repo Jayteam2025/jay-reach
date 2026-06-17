@@ -14,7 +14,6 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 ### Generic Utilities (No Business Logic)
 - **validation.ts** — Input validation (URLs, emails, names)
 - **cors.ts** — CORS header helpers for edge functions
-- **app-url.ts** — App URL resolution (getAppUrl)
 - **audit-events.ts** — Audit logging (pattern_audit_events)
 - **rate-limiter.ts** — Rate limiting via Postgres
 - **token-encryption.ts** — AES-GCM encryption for secrets in workspace_providers
@@ -23,7 +22,6 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 - **workspace.ts, workspace-config.ts, workspace-config-core.ts** — Workspace + config management (profiles, plans, branding)
 - **workspace-brand.ts** — Branding overrides per workspace
 - **subscription-access.ts** — Subscription tier gating (plans: free/growth/business)
-- **internal-users.ts** — Hard-coded internal user list (detection, filtering)
 - **ai-role-validator.ts** — AI role classification (IA/DevOps/Data/etc.)
 
 ### Email & Outreach
@@ -89,27 +87,14 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 
 ---
 
-## Coupling: Assistant Modules Removed
+## Module Scope
 
-The following modules from Jay's meeting assistant were **NOT copied** because prospection does not depend on them:
-
-- `meeting-prep-types`, `meeting-context`, `meeting-context-enrich`
-- `meeting-detectors`, `email-inbox-reader`, `email-recap-message`
-- `email-system-filter`, `email-sender-filter`, `email-signature`
-- `email-contact-search`, `email-duplicate-detection`
-- `email-crm-context`, `email-crm-context-render`, `email-crm-beta`
-- `email-whatsapp-message`, `crm-enrichers`, `crm-contact-lookup`
-- `crm-error-collector`, `crm-logger`, `crm-note-formatter`
-- `pipedrive-persons`, `action-normalizer`, `company-change-note`
-- `stage-resolver`, `stt-corrections`, `whatsapp-templates`
-- `onboarding-messages`, `onboarding-trigger`, `assistant-reply`
-- `watchlist-notifier`, `credits`, `google-token`, `microsoft-token`
-- `hubspot-token`, `odoo-client`, `zoho-*` (all Zoho modules)
+This extraction includes **prospection-only modules** — no CRM integration, meeting prep, voice notes, or assistant-specific logic. The extracted surface is intentionally lean to maintain OSS portability.
 
 ### Module Resolution Status
 ✅ `deno check supabase/functions/_shared/**/*.ts` — **GREEN**  
 ✅ No forbidden/assistant imports  
-✅ All 61 _shared files resolved correctly
+✅ All _shared files resolved correctly
 
 ---
 

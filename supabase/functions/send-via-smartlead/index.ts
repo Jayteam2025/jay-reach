@@ -14,7 +14,7 @@ import { validateOrRespond, z } from "../_shared/validation.ts";
  * Le subject + body persos sont passes via custom_fields : {{subject}} et {{body}}
  * dans le template Smartlead liront ces custom fields.
  *
- * Alex doit avoir cree au prealable sa campagne dans Smartlead avec :
+ * L'operateur doit avoir cree au prealable sa campagne dans Smartlead avec :
  * - Une sequence dont le step 1 utilise {{subject}} et {{body}} comme variables
  * - Le CV en piece jointe (upload manuel une fois)
  *

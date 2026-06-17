@@ -11,6 +11,7 @@ import {
   matchNonCrm,
   type CrmName,
 } from "./signatures.ts";
+import { safeFetch } from "../url-validator.ts";
 
 const PATHS_TO_SCAN = [
   "/",
@@ -33,14 +34,20 @@ export type HtmlScanResult = {
 
 async function fetchPage(url: string): Promise<{ html: string; status: number } | null> {
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    // safeFetch valide l'URL (anti-SSRF) et revalide chaque redirection :
+    // un domaine public peut renvoyer un 30x vers une IP interne/métadonnées.
+    const res = await safeFetch(
+      url,
+      {
+        headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      },
+      { allowHttp: true, context: "Scan CRM homepage" },
+    );
     const html = await res.text();
     return { html, status: res.status };
   } catch {
+    // URL bloquée (SSRF), timeout ou erreur réseau → on ignore ce domaine.
     return null;
   }
 }

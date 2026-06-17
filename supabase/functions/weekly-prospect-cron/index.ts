@@ -19,11 +19,11 @@ import { extractUserId } from "../_shared/subscription-access.ts";
  * deja le besoin via les offres d'emploi). Les profils LinkedIn sont desormais
  * recuperes uniquement a l'enrichissement (enrich-company → Apify profile).
  *
- * Pas de wipe automatique de la DB : Alex peut ne pas avoir fini de traiter
+ * Pas de wipe automatique de la DB : l'operateur peut ne pas avoir fini de traiter
  * les boites de la semaine d'avant. Le wipe total est disponible
  * manuellement via le menu "..." dans l'UI admin (appelle wipe-prospection-db).
  *
- * Apres le run, Alex voit la liste scoree (max 15) dans l'UI, selectionne
+ * Apres le run, l'operateur voit la liste scoree (max 15) dans l'UI, selectionne
  * les boites a contacter et lance l'enrichissement + generation de messages
  * via la queue front. Plus de generation automatique de messages LinkedIn
  * dans le cron.

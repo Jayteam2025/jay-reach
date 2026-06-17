@@ -340,7 +340,7 @@ export async function processSignals(
 
   // Dedup cross-semaine : charge les noms d'entreprises deja en DB (profils
   // enrichis + signaux non dismiss) et skip les candidats qui matchent.
-  // Alex peut ne pas avoir fini de traiter les boites de la semaine d'avant :
+  // L'operateur peut ne pas avoir fini de traiter les boites de la semaine d'avant :
   // on ne doit pas les lui reproposer cette semaine comme des nouveautes.
   const existingCompanyNames = await loadExistingCompanyNames();
   console.log(`[processSignals] Dedup cross-semaine : ${existingCompanyNames.size} boites deja en DB`);

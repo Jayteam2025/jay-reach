@@ -210,13 +210,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    function findTemplate(
+    const findTemplate = (
       personaId: string | null | undefined,
       channel: string,
-    ): TemplateRow | undefined {
+    ): TemplateRow | undefined => {
       if (!personaId) return undefined;
       return tplByPersonaChannel.get(`${personaId}:${channel}`);
-    }
+    };
 
     // Pre-load workspace_brand et personas actifs pour tous les workspaces presents dans la batch
     const workspaceIds = Array.from(

@@ -57,8 +57,8 @@ export const smartleadProvider: OutreachProvider = {
     }
 
     return {
-      added: result.added_count,
-      skipped: result.skipped_count,
+      added: result.added_count ?? 0,
+      skipped: result.skipped_count ?? 0,
       provider_ref: campaign.campaign_id,
       meta: { campaign_name: campaign.campaign_name },
     };

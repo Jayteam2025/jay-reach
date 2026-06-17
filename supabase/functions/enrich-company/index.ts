@@ -641,7 +641,7 @@ async function processSignal(
   // Si le signal vient d'un import fichier (acquisition_method='file_upload'),
   // les contacts identifies manuellement par l'admin sont dans extracted_data.
   // On les injecte AVANT FullEnrich pour :
-  //   1) Conserver les contacts qu'Alex a curés (FullEnrich peut les manquer)
+  //   1) Conserver les contacts que l'operateur a curés (FullEnrich peut les manquer)
   //   2) Garder le rôle exact mappé depuis le fichier
   //   3) Permettre au dedup downstream (LinkedIn URL / nom) de skip si
   //      FullEnrich retrouve la même personne
@@ -654,9 +654,9 @@ async function processSignal(
     // Normalise les sous-domaines pays (fr.linkedin.com -> www.linkedin.com)
     // pour passer la CHECK constraint prospect_profiles_linkedin_url_check.
     const rawLinkedin = extractedData.linkedin_url as string | null;
-    let importedLinkedin = normalizeLinkedinUrl(rawLinkedin);
+    const importedLinkedin = normalizeLinkedinUrl(rawLinkedin);
 
-    // Alex met souvent dans le fichier des URLs de RECHERCHE LinkedIn comme
+    // L'operateur met souvent dans le fichier des URLs de RECHERCHE LinkedIn comme
     //   https://www.linkedin.com/search/results/people/?keywords=stephane%20vergnes%20equans
     // Notre validator les rejette (search URL != profile direct). Les keywords
     // sont riches (nom + prenom + entreprise) mais ne peuvent plus etre resolus
@@ -1223,7 +1223,7 @@ async function processSignal(
 
   let emailsFound = 0;
   // On ne demande que contact.work_emails a FullEnrich (cf fullenrich.ts) —
-  // les phones coutent ~10x plus cher et Alex ne contacte pas par telephone.
+  // les phones coutent ~10x plus cher et par choix produit, pas de contact telephone.
   // → pas de champ `phone` dans le delta.
   const deltas = new Map<number, {
     email?: string;

@@ -25,7 +25,7 @@ import { z } from "npm:zod@3.24.1";
 /**
  * expand-prospect-profiles
  *
- * Appelee depuis la fiche entreprise quand Alex clique "Voir 10 de plus" sur
+ * Appelee depuis la fiche entreprise quand l'operateur clique "Voir 10 de plus" sur
  * un persona (RH / Dir Co / Commerciaux). Relance un search FullEnrich
  * sur le meme persona, skip les LinkedIn URL deja en DB, insere les nouveaux
  * profils et lance leur enrichment bulk (work_email uniquement, pas de phone).
