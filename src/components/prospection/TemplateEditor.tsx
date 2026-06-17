@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
 import { TemplatePreview } from './TemplatePreview';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Loader2, X } from 'lucide-react';
 import type {
   ProspectChannel,
   ProspectMessageTemplate,
@@ -11,6 +15,10 @@ interface TemplateEditorProps {
   channel: ProspectChannel;
   draft: TemplateDraft;
   onDraftChange: (next: TemplateDraft) => void;
+  inlineImageUrl?: string | null;
+  inlineImageAlt?: string | null;
+  onInlineImageChange?: (url: string | null, alt: string | null) => void;
+  isSavingAttachment?: boolean;
 }
 
 // Catégorie d'aperçu générique : sert uniquement à choisir le profil de démo pour
@@ -37,8 +45,17 @@ const CHANNEL_SUPPORTS_SUBJECT: Record<string, boolean> = {
   social_dm: false,
 };
 
-export function TemplateEditor({ channel, draft, onDraftChange }: TemplateEditorProps) {
+export function TemplateEditor({
+  channel,
+  draft,
+  onDraftChange,
+  inlineImageUrl,
+  inlineImageAlt,
+  onInlineImageChange,
+  isSavingAttachment,
+}: TemplateEditorProps) {
   const supportsSubject = CHANNEL_SUPPORTS_SUBJECT[channel] ?? false;
+  const supportsInlineImage = channel === 'email';
 
   const previewTemplate: MessageTemplate = useMemo(
     () => ({
@@ -105,6 +122,62 @@ export function TemplateEditor({ channel, draft, onDraftChange }: TemplateEditor
             placeholder="{company} recrute un {job_title}"
           />
         </div>
+
+        {supportsInlineImage && (
+          <div className="space-y-2 pt-4 border-t border-border/40">
+            <h4 className="text-sm font-medium text-foreground">
+              Image intégrée au mail
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                Optionnel. Apparaît en bas du corps du message.
+              </span>
+            </h4>
+            <div className="space-y-2">
+              <Label htmlFor="inline_image_url" className="text-xs">URL de l'image</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="inline_image_url"
+                  type="url"
+                  value={inlineImageUrl ?? ''}
+                  onChange={(e) => onInlineImageChange?.(e.target.value || null, inlineImageAlt ?? null)}
+                  placeholder="https://..."
+                  className="text-sm"
+                />
+                {inlineImageUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => onInlineImageChange?.(null, null)}
+                    disabled={isSavingAttachment}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            {inlineImageUrl && (
+              <div className="space-y-2">
+                <Label htmlFor="inline_image_alt" className="text-xs">Texte alternatif (optionnel)</Label>
+                <Input
+                  id="inline_image_alt"
+                  type="text"
+                  value={inlineImageAlt ?? ''}
+                  onChange={(e) => onInlineImageChange?.(inlineImageUrl, e.target.value || null)}
+                  placeholder="Description de l'image"
+                  className="text-sm"
+                  disabled={isSavingAttachment}
+                />
+              </div>
+            )}
+            {isSavingAttachment && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Enregistrement...
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="lg:sticky lg:top-4 lg:self-start">

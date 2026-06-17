@@ -23,6 +23,11 @@ import {
 } from '@/hooks/useProspectMessageTemplates';
 import { useIcpPersonas, type IcpPersona } from '@/hooks/useIcpPersonas';
 import {
+  useWorkspaceBrand,
+  useUpdateWorkspaceBrand,
+} from '@/hooks/useWorkspaceBrand';
+import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
+import {
   TemplateEditor,
   deepEqualDraft,
   templateToDraft,
@@ -181,9 +186,26 @@ function TemplateSlot({
   channel: ProspectChannel;
   template: ProspectMessageTemplate | null;
 }) {
+  const { data: workspaceId } = useCurrentWorkspaceId();
+  const { data: brand } = useWorkspaceBrand();
+  const updateBrand = useUpdateWorkspaceBrand();
+  const { toast } = useToast();
+
   const baseDraft = template ? templateToDraft(template) : EMPTY_DRAFT;
   const [draft, setDraft] = useState<TemplateDraft>(baseDraft);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [isSavingAttachment, setIsSavingAttachment] = useState(false);
+
+  // Fetch l'attachment inline_image pour ce persona + email channel
+  const currentAttachment = useMemo(() => {
+    const found = (brand?.attachments ?? []).find(
+      (a) =>
+        a.type === 'inline_image' &&
+        a.persona_id === persona.id &&
+        a.channel === 'email',
+    );
+    return found ?? null;
+  }, [brand?.attachments, persona.id]);
 
   // Re-sync quand le template (re)charge ou change de version (= save réussi).
   useEffect(() => {
@@ -193,6 +215,40 @@ function TemplateSlot({
   const isNew = !template;
   const isDirty = useMemo(() => !deepEqualDraft(draft, baseDraft), [draft, baseDraft]);
   const canSave = isDirty && draft.body.trim().length > 0;
+
+  async function handleInlineImageChange(url: string | null, alt: string | null) {
+    if (!brand || !workspaceId) return;
+    setIsSavingAttachment(true);
+    try {
+      const nextAttachments = (brand.attachments ?? []).filter(
+        (a) => !(a.type === 'inline_image' && a.persona_id === persona.id && a.channel === 'email'),
+      );
+      if (url) {
+        nextAttachments.push({
+          type: 'inline_image',
+          persona_id: persona.id,
+          channel: 'email',
+          url,
+          alt: alt || null,
+        });
+      }
+      await updateBrand.mutateAsync({
+        workspace_id: workspaceId,
+        attachments: nextAttachments,
+      });
+      toast({
+        description: url ? 'Image intégrée enregistrée' : 'Image supprimée',
+      });
+    } catch (err) {
+      logger.error('Failed to update attachment', err);
+      toast({
+        description: `Erreur : ${(err as Error).message}`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingAttachment(false);
+    }
+  }
 
   function reset() {
     setDraft(template ? templateToDraft(template) : EMPTY_DRAFT);
@@ -223,7 +279,15 @@ function TemplateSlot({
         </div>
       </div>
 
-      <TemplateEditor channel={channel} draft={draft} onDraftChange={setDraft} />
+      <TemplateEditor
+        channel={channel}
+        draft={draft}
+        onDraftChange={setDraft}
+        inlineImageUrl={currentAttachment?.url}
+        inlineImageAlt={currentAttachment?.alt}
+        onInlineImageChange={handleInlineImageChange}
+        isSavingAttachment={isSavingAttachment}
+      />
 
       <RegenerateConfirmDialog
         open={confirmOpen}

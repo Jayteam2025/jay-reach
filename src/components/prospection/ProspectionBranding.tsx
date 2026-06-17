@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import {
   Loader2,
   Palette,
-  Paperclip,
-  Plus,
-  Trash2,
-  Image as ImageIcon,
   Mail,
   X,
   Sparkles,
@@ -16,36 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
 import {
   useWorkspaceBrand,
   useUpdateWorkspaceBrand,
-  type BrandAttachment,
 } from '@/hooks/useWorkspaceBrand';
-import { useIcpPersonas } from '@/hooks/useIcpPersonas';
 import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 
-const BUCKET = 'prospection-assets';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const CHANNELS: Array<{ value: string; label: string }> = [
-  { value: 'email', label: 'Email' },
-  { value: 'postal_letter', label: 'Lettre postale' },
-];
-
-// Retourne toujours 'inline_image' : seules les images intégrées au mail sont supportées
-function inferType(): BrandAttachment['type'] {
-  return 'inline_image';
-}
-
-function basename(url: string): string {
-  try {
-    return decodeURIComponent(new URL(url).pathname.split('/').pop() ?? url);
-  } catch {
-    return url.split('/').pop() ?? url;
-  }
-}
 
 interface RecipientsInputProps {
   values: string[];
@@ -143,7 +117,6 @@ function SectionHeader({ icon: Icon, title, hint }: SectionHeaderProps) {
 
 export function ProspectionBranding() {
   const { data: brand, isLoading } = useWorkspaceBrand();
-  const { data: personas } = useIcpPersonas();
   const { data: workspaceId } = useCurrentWorkspaceId();
   const mutation = useUpdateWorkspaceBrand();
 
@@ -154,19 +127,6 @@ export function ProspectionBranding() {
   const [heroImageUrl, setHeroImageUrl] = useState('');
   const [appUrl, setAppUrl] = useState('');
   const [recipients, setRecipients] = useState<string[]>([]);
-
-  const [adding, setAdding] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [newPersonaId, setNewPersonaId] = useState<string>('');
-  const [newChannel, setNewChannel] = useState<string>('email');
-  const [newAlt, setNewAlt] = useState('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const personaLabelById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of personas ?? []) map.set(p.id, p.label);
-    return map;
-  }, [personas]);
 
   useEffect(() => {
     if (!brand) return;
@@ -264,79 +224,6 @@ export function ProspectionBranding() {
     }
   }
 
-  async function handleUpload(file: File) {
-    if (!brand) return;
-    setUploading(true);
-    try {
-      const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
-      const cleanName = file.name
-        .replace(/[^a-z0-9.-]+/gi, '-')
-        .toLowerCase()
-        .slice(0, 80);
-      const path = `${brand.workspace_id}/${Date.now()}-${cleanName}${ext && !cleanName.endsWith(`.${ext}`) ? `.${ext}` : ''}`;
-
-      const { error: uploadErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
-      if (uploadErr) throw uploadErr;
-
-      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      const newAttachment: BrandAttachment = {
-        persona_id: newPersonaId || null,
-        channel: newChannel || null,
-        type: inferType(),
-        url: pub.publicUrl,
-        alt: newAlt.trim() || null,
-      };
-
-      const nextAttachments = [...(brand.attachments ?? []), newAttachment];
-      await mutation.mutateAsync({
-        workspace_id: brand.workspace_id,
-        attachments: nextAttachments,
-      });
-
-      toast.success('Piece jointe ajoutee');
-      setAdding(false);
-      setNewPersonaId('');
-      setNewChannel('email');
-      setNewAlt('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erreur inconnue';
-      toast.error('Échec upload', { description: message });
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleDeleteAttachment(idx: number) {
-    if (!brand) return;
-    const target = brand.attachments?.[idx];
-    if (!target) return;
-    try {
-      try {
-        const u = new URL(target.url);
-        const marker = `/storage/v1/object/public/${BUCKET}/`;
-        const pos = u.pathname.indexOf(marker);
-        if (pos >= 0) {
-          const objectPath = u.pathname.slice(pos + marker.length);
-          await supabase.storage.from(BUCKET).remove([objectPath]);
-        }
-      } catch {
-        // URL externe ou mal formee
-      }
-
-      const nextAttachments = (brand.attachments ?? []).filter((_, i) => i !== idx);
-      await mutation.mutateAsync({
-        workspace_id: brand.workspace_id,
-        attachments: nextAttachments,
-      });
-      toast.success('Pièce jointe supprimée');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erreur inconnue';
-      toast.error('Échec suppression', { description: message });
-    }
-  }
 
   return (
     <div className="max-w-2xl space-y-10">
@@ -450,136 +337,6 @@ export function ProspectionBranding() {
           Enregistrer
         </Button>
       </div>
-
-      <section className="space-y-4 pt-6 border-t border-border/60">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Paperclip className="w-4 h-4 text-violet-500" />
-            <h3 className="font-medium text-foreground">Pieces jointes</h3>
-          </div>
-          {!adding && (
-            <Button variant="outline" size="sm" onClick={() => setAdding(true)} className="gap-1.5">
-              <Plus className="w-3.5 h-3.5" />
-              Ajouter
-            </Button>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground -mt-2">
-          Les images sont intégrées directement dans le corps du mail. Filtrables par persona + canal (vide = appliquées à tous).
-        </p>
-
-        {adding && (
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Persona</Label>
-                <Select value={newPersonaId} onValueChange={setNewPersonaId}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Toutes les personas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(personas ?? []).map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Canal</Label>
-                <Select value={newChannel} onValueChange={setNewChannel}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CHANNELS.map((c) => (
-                      <SelectItem key={c.value} value={c.value} className="text-xs">
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Texte alternatif (optionnel)</Label>
-              <Input
-                value={newAlt}
-                onChange={(e) => setNewAlt(e.target.value)}
-                placeholder="Description de l'image"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                disabled={uploading}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handleUpload(file);
-                }}
-                className="text-xs file:mr-3 file:rounded-md file:border-0 file:bg-violet-500 file:px-3 file:py-1.5 file:text-white file:cursor-pointer hover:file:bg-violet-600 cursor-pointer"
-              />
-              {uploading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setAdding(false);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
-                disabled={uploading}
-              >
-                Annuler
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {(brand.attachments?.length ?? 0) === 0 && !adding ? (
-          <div className="text-sm text-muted-foreground italic">Aucune pièce jointe configurée.</div>
-        ) : (
-          <div className="space-y-2">
-            {(brand.attachments ?? []).map((a, idx) => {
-              return (
-                <div
-                  key={`${a.url}-${idx}`}
-                  className="flex items-center gap-3 rounded-md border border-border/60 bg-card px-3 py-2"
-                >
-                  <ImageIcon className="w-4 h-4 text-violet-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <a
-                      href={a.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-foreground hover:underline truncate block"
-                    >
-                      {a.alt || basename(a.url)}
-                    </a>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      <span>{a.persona_id ? personaLabelById.get(a.persona_id) ?? 'Persona inconnu' : 'Toutes personas'}</span>
-                      <span>.</span>
-                      <span>{a.channel || 'Tous canaux'}</span>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-red-500"
-                    onClick={() => handleDeleteAttachment(idx)}
-                    disabled={mutation.isPending}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
     </div>
   );
 }
