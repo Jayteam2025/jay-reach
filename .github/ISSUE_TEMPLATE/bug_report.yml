@@ -1,66 +1,67 @@
-name: Rapport de bug
-description: Signalez un bug pour nous aider à améliorer Jay Reach
+name: Bug report / Rapport de bug
+description: Report a bug / Signalez un bug pour nous aider à améliorer Jay Reach
 title: "[BUG] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Merci de signaler un bug ! Remplissez les détails ci-dessous pour nous aider à le reproduire et le corriger.
+        Thank you for reporting a bug! / Merci de signaler un bug !
+        Please fill in the details below to help us reproduce and fix it. / Remplissez les détails ci-dessous pour nous aider à le reproduire et le corriger.
   - type: textarea
     attributes:
-      label: Description
-      description: Décrivez le bug de manière claire et concise.
-      placeholder: "Exemple: Quand je fais X, il se passe Y au lieu de Z."
+      label: Description / Description
+      description: Describe the bug clearly and concisely. / Décrivez le bug de manière claire et concise.
+      placeholder: "Example / Exemple: When I do X, it shows Y instead of Z. / Quand je fais X, il se passe Y au lieu de Z."
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Étapes pour reproduire
-      description: Comment reproduire le bug ?
+      label: Steps to reproduce / Étapes pour reproduire
+      description: How to reproduce the bug? / Comment reproduire le bug ?
       placeholder: |
-        1. Allez à...
-        2. Cliquez sur...
-        3. Observez...
+        1. Go to... / Allez à...
+        2. Click on... / Cliquez sur...
+        3. Observe... / Observez...
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Comportement attendu
-      description: Quel devrait être le comportement correct ?
-      placeholder: "Exemple: Le formulaire devrait valider les emails et afficher un message de succès."
+      label: Expected behavior / Comportement attendu
+      description: What should the correct behavior be? / Quel devrait être le comportement correct ?
+      placeholder: "Example / Exemple: The form should validate emails and show a success message. / Le formulaire devrait valider les emails et afficher un message de succès."
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Comportement observé
-      description: Qu'observez-vous au lieu du comportement attendu ?
-      placeholder: "Exemple: Aucun message ne s'affiche, la page reste vide."
+      label: Actual behavior / Comportement observé
+      description: What do you observe instead of the expected behavior? / Qu'observez-vous au lieu du comportement attendu ?
+      placeholder: "Example / Exemple: No message appears, the page stays blank. / Aucun message ne s'affiche, la page reste vide."
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Environnement
+      label: Environment / Environnement
       description: |
-        Partagez votre environnement (navigateur, OS, version Node.js, etc.)
+        Share your environment (browser, OS, Node.js version, etc.) / Partagez votre environnement (navigateur, OS, version Node.js, etc.)
       placeholder: |
-        - Navigateur: Chrome 125
+        - Browser / Navigateur: Chrome 125
         - OS: macOS 14
         - Node.js: 22.12
-        - Version du projet: main (commit XYZ)
+        - Project version / Version du projet: main (commit XYZ)
     validations:
       required: false
   - type: textarea
     attributes:
-      label: Logs ou screenshots
-      description: Si applicable, attachez des logs, des erreurs console, ou des screenshots.
+      label: Logs or screenshots / Logs ou screenshots
+      description: If applicable, attach logs, console errors, or screenshots. / Si applicable, attachez des logs, des erreurs console, ou des screenshots.
     validations:
       required: false
   - type: checkboxes
     attributes:
-      label: Avant de soumettre
+      label: Before submitting / Avant de soumettre
       options:
-        - label: J'ai cherché les issues existantes pour ce bug
+        - label: I searched for existing issues for this bug / J'ai cherché les issues existantes pour ce bug
           required: true
-        - label: Ce bug peut être reproduit sur la branche `main`
+        - label: This bug can be reproduced on the `main` branch / Ce bug peut être reproduit sur la branche `main`
           required: true

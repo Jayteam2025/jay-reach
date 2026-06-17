@@ -1,47 +1,51 @@
-name: Demande de feature
-description: Suggérez une nouvelle fonctionnalité pour Jay Reach
+name: Feature request / Demande de feature
+description: Suggest a new feature for Jay Reach / Suggérez une nouvelle fonctionnalité pour Jay Reach
 title: "[FEATURE] "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Merci de suggérer une amélioration ! Décrivez votre idée en détail ci-dessous.
+        Thank you for suggesting an improvement! / Merci de suggérer une amélioration !
+        Please describe your idea in detail below. / Décrivez votre idée en détail ci-dessous.
   - type: textarea
     attributes:
-      label: Quel problème faut-il résoudre ?
-      description: Décrivez le problème ou le cas d'usage non satisfait actuellement.
-      placeholder: "Exemple: Je veux pouvoir exporter les prospects en CSV, mais actuellement c'est impossible."
+      label: What problem should be solved? / Quel problème faut-il résoudre ?
+      description: Describe the problem or the currently unsatisfied use case. / Décrivez le problème ou le cas d'usage non satisfait actuellement.
+      placeholder: "Example / Exemple: I want to export prospects as CSV, but it's currently impossible. / Je veux pouvoir exporter les prospects en CSV, mais actuellement c'est impossible."
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Solution proposée
-      description: Décrivez comment vous aimeriez que la feature fonctionne.
+      label: Proposed solution / Solution proposée
+      description: Describe how you would like the feature to work. / Décrivez comment vous aimeriez que la feature fonctionne.
       placeholder: |
-        Exemple: Ajouter un bouton « Exporter en CSV » dans la page des prospects.
+        Example / Exemple: Add an "Export as CSV" button on the prospects page.
+        When clicked, a dialog appears to choose which columns to export.
+        The file downloads automatically.
+        / Ajouter un bouton « Exporter en CSV » dans la page des prospects.
         Quand on clique, un dialogue apparaît pour choisir les colonnes à exporter.
         Le fichier est téléchargé automatiquement.
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Alternatives considérées
-      description: Avez-vous pensé à d'autres approches ?
-      placeholder: "Exemple: - Export en JSON\n- Export en Excel\n- Intégration avec une API de stockage cloud"
+      label: Alternatives considered / Alternatives considérées
+      description: Have you thought of other approaches? / Avez-vous pensé à d'autres approches ?
+      placeholder: "Example / Exemple: - Export as JSON\n- Export as Excel\n- Cloud storage API integration / - Export en JSON\n- Export en Excel\n- Intégration avec une API de stockage cloud"
     validations:
       required: false
   - type: textarea
     attributes:
-      label: Contexte supplémentaire
-      description: Toute autre information qui serait utile ?
+      label: Additional context / Contexte supplémentaire
+      description: Any other information that would be helpful? / Toute autre information qui serait utile ?
     validations:
       required: false
   - type: checkboxes
     attributes:
-      label: Avant de soumettre
+      label: Before submitting / Avant de soumettre
       options:
-        - label: J'ai cherché les features existantes ou en cours pour cette demande
+        - label: I searched for existing or ongoing features for this request / J'ai cherché les features existantes ou en cours pour cette demande
           required: true
-        - label: Cette feature est alignée avec la vision de Jay Reach
+        - label: This feature aligns with the vision of Jay Reach / Cette feature est alignée avec la vision de Jay Reach
           required: false
