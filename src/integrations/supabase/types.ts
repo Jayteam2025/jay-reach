@@ -12,33 +12,38 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
+      api_rate_limits: {
+        Row: {
+          created_at: string | null
+          endpoint_category: string
+          id: string
+          identifier: string
+          identifier_type: string
+          request_count: number | null
+          window_start: string
+        }
+        Insert: {
+          created_at?: string | null
+          endpoint_category: string
+          id?: string
+          identifier: string
+          identifier_type: string
+          request_count?: number | null
+          window_start?: string
+        }
+        Update: {
+          created_at?: string | null
+          endpoint_category?: string
+          id?: string
+          identifier?: string
+          identifier_type?: string
+          request_count?: number | null
+          window_start?: string
+        }
+        Relationships: []
+      }
       bouncer_jobs: {
         Row: {
           job_id: string
@@ -159,6 +164,44 @@ export type Database = {
         }
         Relationships: []
       }
+      edge_function_logs: {
+        Row: {
+          created_at: string | null
+          function_name: string
+          id: string
+          message: string | null
+          metadata: Json | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          function_name: string
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          status: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          function_name?: string
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "edge_function_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_verification_cache: {
         Row: {
           checked_at: string
@@ -183,36 +226,30 @@ export type Database = {
         }
         Relationships: []
       }
-      extension_tokens: {
+      enrichment_cache: {
         Row: {
-          created_at: string
+          cache_key: string
+          cache_type: string
+          created_at: string | null
+          data: Json
+          expires_at: string
           id: string
-          is_active: boolean
-          last_used_at: string | null
-          name: string | null
-          token: string
-          updated_at: string
-          user_id: string
         }
         Insert: {
-          created_at?: string
+          cache_key: string
+          cache_type: string
+          created_at?: string | null
+          data?: Json
+          expires_at: string
           id?: string
-          is_active?: boolean
-          last_used_at?: string | null
-          name?: string | null
-          token: string
-          updated_at?: string
-          user_id: string
         }
         Update: {
-          created_at?: string
+          cache_key?: string
+          cache_type?: string
+          created_at?: string | null
+          data?: Json
+          expires_at?: string
           id?: string
-          is_active?: boolean
-          last_used_at?: string | null
-          name?: string | null
-          token?: string
-          updated_at?: string
-          user_id?: string
         }
         Relationships: []
       }
@@ -224,6 +261,7 @@ export type Database = {
           created_by: string | null
           department_patterns: string[]
           description: string | null
+          enrichment_caps: Json
           exclude_titles: string[]
           icon: string | null
           id: string
@@ -233,7 +271,7 @@ export type Database = {
           label: string
           persona_match_threshold: number
           persona_scoring_prompt: string
-          scoring_axes: Json
+          search_strategy: string
           seniority_levels: string[]
           slug: string
           updated_at: string
@@ -246,6 +284,7 @@ export type Database = {
           created_by?: string | null
           department_patterns?: string[]
           description?: string | null
+          enrichment_caps?: Json
           exclude_titles?: string[]
           icon?: string | null
           id?: string
@@ -255,7 +294,7 @@ export type Database = {
           label: string
           persona_match_threshold?: number
           persona_scoring_prompt: string
-          scoring_axes?: Json
+          search_strategy?: string
           seniority_levels?: string[]
           slug: string
           updated_at?: string
@@ -268,6 +307,7 @@ export type Database = {
           created_by?: string | null
           department_patterns?: string[]
           description?: string | null
+          enrichment_caps?: Json
           exclude_titles?: string[]
           icon?: string | null
           id?: string
@@ -277,7 +317,7 @@ export type Database = {
           label?: string
           persona_match_threshold?: number
           persona_scoring_prompt?: string
-          scoring_axes?: Json
+          search_strategy?: string
           seniority_levels?: string[]
           slug?: string
           updated_at?: string
@@ -343,6 +383,27 @@ export type Database = {
           },
         ]
       }
+      pending_fullenrich_bulks: {
+        Row: {
+          created_at: string
+          enrichment_id: string
+          received_at: string | null
+          webhook_payload: Json | null
+        }
+        Insert: {
+          created_at?: string
+          enrichment_id: string
+          received_at?: string | null
+          webhook_payload?: Json | null
+        }
+        Update: {
+          created_at?: string
+          enrichment_id?: string
+          received_at?: string | null
+          webhook_payload?: Json | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -352,6 +413,8 @@ export type Database = {
           id: string
           last_name: string | null
           role: string
+          trial_started_at: string | null
+          trial_used: boolean | null
         }
         Insert: {
           created_at?: string
@@ -361,6 +424,8 @@ export type Database = {
           id: string
           last_name?: string | null
           role?: string
+          trial_started_at?: string | null
+          trial_used?: boolean | null
         }
         Update: {
           created_at?: string
@@ -370,6 +435,8 @@ export type Database = {
           id?: string
           last_name?: string | null
           role?: string
+          trial_started_at?: string | null
+          trial_used?: boolean | null
         }
         Relationships: []
       }
@@ -814,8 +881,9 @@ export type Database = {
           is_active: boolean
           opener_variants: string[]
           persona_id: string
+          subject: string | null
           subject_variants: string[]
-          target_category: string
+          target_category: string | null
           updated_at: string
           updated_by: string | null
           version: number
@@ -829,8 +897,9 @@ export type Database = {
           is_active?: boolean
           opener_variants?: string[]
           persona_id: string
+          subject?: string | null
           subject_variants?: string[]
-          target_category: string
+          target_category?: string | null
           updated_at?: string
           updated_by?: string | null
           version?: number
@@ -844,8 +913,9 @@ export type Database = {
           is_active?: boolean
           opener_variants?: string[]
           persona_id?: string
+          subject?: string | null
           subject_variants?: string[]
-          target_category?: string
+          target_category?: string | null
           updated_at?: string
           updated_by?: string | null
           version?: number
@@ -986,7 +1056,12 @@ export type Database = {
           company_size: string | null
           created_at: string | null
           deleted_at: string | null
+          deliverability_checked_at: string | null
+          deliverability_provider: string | null
+          deliverability_reason: string | null
+          deliverability_status: string | null
           email: string | null
+          email_source: string | null
           email_validation_status: string | null
           enrichment_data: Json | null
           first_name: string
@@ -995,6 +1070,7 @@ export type Database = {
           job_title: string | null
           last_name: string
           linkedin_url: string | null
+          more_available_counts: Json | null
           notes: string | null
           persona_id: string
           phone: string | null
@@ -1021,7 +1097,12 @@ export type Database = {
           company_size?: string | null
           created_at?: string | null
           deleted_at?: string | null
+          deliverability_checked_at?: string | null
+          deliverability_provider?: string | null
+          deliverability_reason?: string | null
+          deliverability_status?: string | null
           email?: string | null
+          email_source?: string | null
           email_validation_status?: string | null
           enrichment_data?: Json | null
           first_name: string
@@ -1030,6 +1111,7 @@ export type Database = {
           job_title?: string | null
           last_name: string
           linkedin_url?: string | null
+          more_available_counts?: Json | null
           notes?: string | null
           persona_id: string
           phone?: string | null
@@ -1056,7 +1138,12 @@ export type Database = {
           company_size?: string | null
           created_at?: string | null
           deleted_at?: string | null
+          deliverability_checked_at?: string | null
+          deliverability_provider?: string | null
+          deliverability_reason?: string | null
+          deliverability_status?: string | null
           email?: string | null
+          email_source?: string | null
           email_validation_status?: string | null
           enrichment_data?: Json | null
           first_name?: string
@@ -1065,6 +1152,7 @@ export type Database = {
           job_title?: string | null
           last_name?: string
           linkedin_url?: string | null
+          more_available_counts?: Json | null
           notes?: string | null
           persona_id?: string
           phone?: string | null
@@ -1391,6 +1479,7 @@ export type Database = {
           created_by: string | null
           description: string | null
           elimination_rules: Json
+          exclude_intermediaries: boolean
           exclude_keywords: string[]
           geo_filters: Json
           icon: string | null
@@ -1412,6 +1501,7 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           elimination_rules?: Json
+          exclude_intermediaries?: boolean
           exclude_keywords?: string[]
           geo_filters?: Json
           icon?: string | null
@@ -1433,6 +1523,7 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           elimination_rules?: Json
+          exclude_intermediaries?: boolean
           exclude_keywords?: string[]
           geo_filters?: Json
           icon?: string | null
@@ -1454,6 +1545,181 @@ export type Database = {
             foreignKeyName: "signal_triggers_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      smartlead_campaigns: {
+        Row: {
+          campaign_id: string
+          campaign_name: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          persona_id: string
+          target_category: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          campaign_id: string
+          campaign_name?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          persona_id: string
+          target_category?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          campaign_id?: string
+          campaign_name?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          persona_id?: string
+          target_category?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "smartlead_campaigns_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "icp_personas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "smartlead_campaigns_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      smartlead_events: {
+        Row: {
+          campaign_id: number | null
+          created_at: string
+          email_account: string | null
+          event_type: string
+          id: string
+          lead_email: string | null
+          message: string | null
+          prospect_id: string | null
+          raw_payload: Json | null
+          subject: string | null
+        }
+        Insert: {
+          campaign_id?: number | null
+          created_at?: string
+          email_account?: string | null
+          event_type: string
+          id?: string
+          lead_email?: string | null
+          message?: string | null
+          prospect_id?: string | null
+          raw_payload?: Json | null
+          subject?: string | null
+        }
+        Update: {
+          campaign_id?: number | null
+          created_at?: string
+          email_account?: string | null
+          event_type?: string
+          id?: string
+          lead_email?: string | null
+          message?: string | null
+          prospect_id?: string | null
+          raw_payload?: Json | null
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "smartlead_events_prospect_id_fkey"
+            columns: ["prospect_id"]
+            isOneToOne: false
+            referencedRelation: "prospect_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      validation_errors: {
+        Row: {
+          created_at: string
+          errors: Json
+          function_name: string
+          id: string
+          received_data: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          errors: Json
+          function_name: string
+          id?: string
+          received_data?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          errors?: Json
+          function_name?: string
+          id?: string
+          received_data?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      workspace_brand: {
+        Row: {
+          app_url: string | null
+          attachments: Json
+          brand_name: string | null
+          created_at: string
+          founder_name: string | null
+          hero_image_url: string | null
+          notification_recipients: string[]
+          product_pitch: string | null
+          signature: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          app_url?: string | null
+          attachments?: Json
+          brand_name?: string | null
+          created_at?: string
+          founder_name?: string | null
+          hero_image_url?: string | null
+          notification_recipients?: string[]
+          product_pitch?: string | null
+          signature?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          app_url?: string | null
+          attachments?: Json
+          brand_name?: string | null
+          created_at?: string
+          founder_name?: string | null
+          hero_image_url?: string | null
+          notification_recipients?: string[]
+          product_pitch?: string | null
+          signature?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_brand_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
@@ -1638,11 +1904,13 @@ export type Database = {
       claim_next_enrichment_item: {
         Args: { p_job_id: string }
         Returns: {
-          attempts: number
-          item_id: string
-          signal_id: string
+          out_attempts: number
+          out_item_id: string
+          out_signal_id: string
         }[]
       }
+      cleanup_old_rate_limits: { Args: never; Returns: undefined }
+      cleanup_old_validation_errors: { Args: never; Returns: undefined }
       cleanup_prospect_retention: {
         Args: never
         Returns: {
@@ -1655,19 +1923,71 @@ export type Database = {
       complete_enrichment_item: {
         Args: { p_error?: string; p_item_id: string; p_success: boolean }
         Returns: {
-          job_id: string
-          remaining: number
+          out_job_id: string
+          out_remaining: number
+        }[]
+      }
+      compute_pattern_empirical: {
+        Args: { window_days?: number }
+        Returns: {
+          bouncer_invalids: number
+          bouncer_total: number
+          bounces: number
+          domain: string
+          pattern_id: string
+          replies: number
+          sends: number
         }[]
       }
       consume_reoon_credit: { Args: { p_count?: number }; Returns: boolean }
+      count_non_sent_messages: {
+        Args: { p_channel: string; p_persona_id: string }
+        Returns: number
+      }
+      get_all_companies_progress: { Args: never; Returns: Json }
       get_archived_signals: {
         Args: { p_limit?: number; p_offset?: number }
         Returns: Json
       }
+      get_company_name_map: { Args: never; Returns: Json }
       get_effective_tier: { Args: { domain_param: string }; Returns: string }
+      get_last_enrichment_run_company_ids: {
+        Args: never
+        Returns: {
+          company_group_id: string
+        }[]
+      }
+      get_prospection_dashboard_stats: { Args: never; Returns: Json }
+      increment_crm_detection_attempts: {
+        Args: { p_company_group_id: string }
+        Returns: undefined
+      }
+      kill_enrichment_job: {
+        Args: { p_job_id: string; p_reason: string }
+        Returns: {
+          killed_items: number
+        }[]
+      }
       normalize_agency_name: { Args: { input: string }; Returns: string }
+      normalize_company_name_sql: { Args: { p_name: string }; Returns: string }
+      search_prospect_companies: {
+        Args: { p_limit?: number; p_query: string }
+        Returns: Json
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      spawn_bouncer_sweep: {
+        Args: { p_functions_url: string; p_service_role_key: string }
+        Returns: number
+      }
+      spawn_enrichment_worker: {
+        Args: {
+          p_functions_url: string
+          p_job_id: string
+          p_service_role_key: string
+        }
+        Returns: number
+      }
       trigger_poll_prospect_batches_manual: { Args: never; Returns: string }
       trigger_prospect_weekly_recap_manual: { Args: never; Returns: string }
       user_workspaces: { Args: { min_role?: string }; Returns: string[] }
@@ -1799,9 +2119,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
