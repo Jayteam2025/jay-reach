@@ -141,7 +141,7 @@ Signaux bruts détectés (annonces d'emploi, activité LinkedIn, etc.).
 |---------|------|-------------|
 | `id` | uuid (PK) | `gen_random_uuid()` |
 | `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
-| `signal_type` | text | `job_posting`, `linkedin_activity`, `google_alert`, etc. |
+| `signal_type` | text | `job_posting` |
 | `source` | text | Source du signal (ex: "Adzuna", "France Travail") |
 | `source_url` | text | URL source |
 | `raw_content` | text | Contenu brut du signal (texte annonce, etc.) |
@@ -194,7 +194,7 @@ Comment trouver les bonnes sociétés (filtres de scrape/sourcing). Distinct des
 | `icon` | text | Icône (emoji ou class) |
 | `search_keywords` | text[] | Mots-clés de scrape (ex: ["commercial", "sales director"]) |
 | `exclude_keywords` | text[] | Exclusions (ex: ["freelance", "agence"]) |
-| `source_types` | text[] | Sources activées : `adzuna`, `france_travail`, `brave`, `linkedin_jobs`, etc. |
+| `source_types` | text[] | Sources activées : `adzuna`, `france_travail` |
 | `company_size_min` | int | Taille min (0-10, 11-50, etc.) |
 | `company_size_max` | int | Taille max |
 | `industry_filters` | text[] | Secteurs cibles (ex: ["Tech", "Finance"]) |
@@ -238,14 +238,14 @@ Qui contacter dans les sociétés trouvées par les signal_triggers.
 **Indices clés** : `workspace_id, is_active`, `workspace_id, slug`.
 
 #### `prospect_message_templates`
-Templates de messages prospection (email, LinkedIn, courrier, DM social).
+Templates de messages prospection (email uniquement).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
 | `id` | uuid (PK) | `gen_random_uuid()` |
 | `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
 | `persona_id` | uuid (FK) | Référence `icp_personas(id)` (peut être NULL pour templates legacy) |
-| `channel` | text | `email`, `linkedin`, `postal_letter`, `social_dm` |
+| `channel` | text | `email` |
 | `subject_variants` | text[] | Variantes du sujet (email) |
 | `opener_variants` | text[] | Ouvertures du message |
 | `body` | text | Corps du message (template avec `{{variables}}`) |
@@ -272,7 +272,7 @@ Enregistrement des fournisseurs actifs (Smartlead, FullEnrich, Bouncer, etc.).
 | `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
 | `category` | text | `outreach` (Smartlead), `validator` (Bouncer), `enricher` (FullEnrich) |
 | `provider_type` | text | Type du provider (ex: "smartlead", "bouncer", "fullenrich") |
-| `channel` | text | Canal (outreach uniquement) : `email`, `linkedin`, NULL pour validator/enricher |
+| `channel` | text | Canal (outreach) : `email` ; NULL pour validator/enricher |
 | `is_active` | bool | `true` si actif |
 | `config` | jsonb | Configuration (schema spécifique au provider) |
 | `credential_last4` | text | Derniers 4 caractères de la clé (affichage UI) |
@@ -357,7 +357,7 @@ Messages prospection générés pour chaque prospect.
 | `prospect_id` | uuid (FK) | Référence `prospect_profiles(id)`, cascade DELETE |
 | `batch_id` | uuid (FK) | Batch d'appartenance (ref `prospect_batches(id)`) |
 | `persona_id` | uuid (FK) | Persona visé (ref `icp_personas(id)`) |
-| `channel` | text | `email`, `linkedin`, `postal_letter`, `social_dm` |
+| `channel` | text | `email` |
 | `subject` | text | Sujet (email) |
 | `body` | text | Corps du message |
 | `icebreaker` | text | Crochet initial |
@@ -385,7 +385,7 @@ Actions de suivi (sent, opened, replied, clicked, downloaded).
 | `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
 | `prospect_id` | uuid (FK) | Référence `prospect_profiles(id)`, cascade DELETE |
 | `action_type` | text | `copy`, `open`, `sent`, `download` |
-| `channel` | text | `email`, `linkedin`, `instagram`, `tiktok`, `letter`, `postal_letter`, `social_dm` |
+| `channel` | text | `email` |
 | `metadata` | jsonb | Contexte (campaign_id, timestamp, provider, etc.) |
 | `created_at` | timestamptz | Timestamp action |
 
@@ -756,7 +756,7 @@ const subscription = supabase
 
 ## Ressources
 
-- [ARCHITECTURE.md](../docs/ARCHITECTURE.md) — Pipeline complet, edge functions
-- [ADR 0003 — Multi-tenant Workspace](../docs/ADR.md#adr-0003-multi-tenant-workspace-id) — Décisions architecturales
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Pipeline complet, edge functions
+- [ADR 0003 — Multi-tenant Workspace](adr/0003-multi-tenant-workspace-id.md) — Décisions architecturales
 - [Supabase RLS](https://supabase.com/docs/guides/auth/row-level-security) — Sécurité au niveau ligne
 - [Supabase Edge Functions](https://supabase.com/docs/guides/functions) — Functions Deno

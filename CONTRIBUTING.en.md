@@ -152,13 +152,13 @@ When you add a feature or fix a bug, **add corresponding tests**. A PR without t
 
 Any bug discovery, feature request, or improvement must be submitted via a **GitHub Issue**:
 
-1. Check [existing issues](../../issues) to avoid duplicates
+1. Check [existing issues](https://github.com/Jayteam2025/jay-reach/issues) to avoid duplicates
 2. Describe the problem or request clearly (context, steps, expected outcome)
 3. A maintainer will respond and assign labels
 
 ## Questions and support
 
-- **Bugs or feature ideas**: [open an Issue](../../issues/new)
+- **Bugs or feature ideas**: [open an Issue](https://github.com/Jayteam2025/jay-reach/issues/new)
 - **Design or architecture questions**: discuss in a PR or Discussion
 - **Security issues**: see [SECURITY.en.md](SECURITY.en.md) and report privately
 

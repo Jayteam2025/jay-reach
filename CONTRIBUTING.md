@@ -152,13 +152,13 @@ Quand vous ajoutez une feature ou corriger un bug, **ajoutez des tests** corresp
 
 Toute découverte de bug, demande de feature ou amélioration doit passer par une **Issue GitHub** :
 
-1. Consultez les [issues existantes](../../issues) pour éviter les doublons
+1. Consultez les [issues existantes](https://github.com/Jayteam2025/jay-reach/issues) pour éviter les doublons
 2. Décrivez le problème ou la demande de manière claire (contexte, étapes, résultat attendu)
 3. Un mainteneur vous répondra et assignera des labels
 
 ## Questions et support
 
-- **Bugs ou idées de features** : [ouvrez une Issue](../../issues/new)
+- **Bugs ou idées de features** : [ouvrez une Issue](https://github.com/Jayteam2025/jay-reach/issues/new)
 - **Questions de design ou architecture** : discutez dans une PR ou une Discussion
 - **Problèmes de sécurité** : consultez [SECURITY.md](SECURITY.md) et reportez en privé
 
