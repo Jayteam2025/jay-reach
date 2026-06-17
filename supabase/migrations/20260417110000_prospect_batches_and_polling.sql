@@ -81,7 +81,7 @@ BEGIN
     END IF;
 
     SELECT net.http_post(
-        url := 'https://kaysiemagfaqmvusyfav.supabase.co/functions/v1/poll-prospect-batches',
+        url := 'https://<your-project-ref>.supabase.co/functions/v1/poll-prospect-batches',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
             'Authorization', 'Bearer ' || v_cron_secret
@@ -139,7 +139,7 @@ BEGIN
     END IF;
 
     SELECT net.http_post(
-        url := 'https://kaysiemagfaqmvusyfav.supabase.co/functions/v1/prospect-weekly-recap',
+        url := 'https://<your-project-ref>.supabase.co/functions/v1/prospect-weekly-recap',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
             'Authorization', 'Bearer ' || v_cron_secret
