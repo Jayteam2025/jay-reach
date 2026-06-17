@@ -75,7 +75,7 @@ Ouvrez `.env` avec un éditeur de texte et remplissez les champs suivants. Les *
 ```bash
 # === FRONT-END (publiques, visibles dans le navigateur) ===
 VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_ANON_KEY=votre-cle-anon-publique
 
 # === BACK-END (utilisé uniquement par `pnpm run setup` et `pnpm run doctor`) ===
 SUPABASE_ACCESS_TOKEN=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

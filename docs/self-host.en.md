@@ -75,7 +75,7 @@ Open `.env` in a text editor and fill in the fields below. **Provider keys do NO
 ```bash
 # === FRONT-END (public, visible in browser) ===
 VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
 
 # === BACK-END (used only by `pnpm run setup` and `pnpm run doctor`) ===
 SUPABASE_ACCESS_TOKEN=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

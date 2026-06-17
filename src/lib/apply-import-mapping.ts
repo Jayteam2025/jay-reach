@@ -74,7 +74,7 @@ function trimToString(v: unknown): string {
 
 function normalizeTier(raw: string): string | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[]/gu, "").trim().toUpperCase();
+  const cleaned = raw.replace(/\p{Extended_Pictographic}/gu, "").trim().toUpperCase();
   const match = cleaned.match(/TIER\s*([1-3])/);
   if (match) return match[1];
   // "Priorité haute" → 1, "Priorité moyenne" → 2
