@@ -2,7 +2,7 @@
 
 # Guide Complet Self-Host — Jay Reach
 
-Ce guide vous guide pas à pas pour déployer votre propre instance Jay Reach, de la configuration locale à la production.
+Déployez votre propre instance Jay Reach de zéro : clone, configuration, lancement local, intégration des providers, automatisation des tâches.
 
 ---
 
@@ -26,22 +26,22 @@ supabase --version      # 2.x.x ou plus
 git --version           # 2.x.x ou plus
 ```
 
-### Compte Supabase
+### Compte Supabase Cloud
 
 1. Allez à https://supabase.com
 2. Créez un compte (gratuit)
-3. Créez un nouveau projet
-4. **Notez :**
-   - URL du projet (Settings → API → Project URL)
-   - Anon key (Settings → API → anon key / public key)
-   - Project Ref (l'ID dans l'URL, ex. `VOTRE-REF-PROJET`)
-   - Database password (visible lors de la création)
+3. Créez un **nouveau projet**
+4. **Conservez ces informations :**
+   - **URL du projet** : `https://VOTRE-REF.supabase.co` (Settings → API → Project URL)
+   - **Anon key** : clé publique (Settings → API → Anon key)
+   - **Project Ref** : l'ID dans l'URL (ex. `abc123defghijklmnopq`)
+   - **Database password** : défini lors de la création
 
-> **Conseil :** Si vous explorez localement d'abord, utilisez `supabase start` (Docker local). Pour la prod, utilisez Supabase Cloud.
+> **Note :** Supabase Cloud est obligatoire (pas de local pour self-host). Pour explorer en local d'abord, utilisez `supabase start` (Docker) sur une branche de test.
 
 ---
 
-## Étape 1 : Cloner le Repo
+## Étape 1 : Cloner le Repository
 
 ```bash
 git clone https://github.com/Jayteam2025/jay-reach.git
@@ -56,59 +56,65 @@ cd jay-reach
 pnpm install
 ```
 
-Cela installe tous les packages (React, Vite, Supabase, Deno, etc.). Pnpm utilise un store partagé, donc les installs suivantes sont rapides.
-
-> **Problème courant :** Évitez `npm install` (legacy) ou `yarn`. Utilisez **toujours pnpm**.
+**pnpm** utilise un store partagé, donc les installations ultérieures sont très rapides. Ne pas utiliser `npm install` ou `yarn`.
 
 ---
 
 ## Étape 3 : Configuration Environnement
 
-### Copier le template `.env`
+### Créer le fichier `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-### Remplir les variables
+### Compléter les variables
 
-Ouvrez `.env` avec votre éditeur et complétez :
+Ouvrez `.env` avec un éditeur de texte et remplissez les champs suivants. Les **clés providers** ne vont **PAS** ici (voir §Secrets Edge Functions).
 
 ```bash
-# Front-end (visibles dans le navigateur, publiques)
-VITE_SUPABASE_URL=https://VOTRE-REF-PROJET.supabase.co
-VITE_SUPABASE_ANON_KEY=VOTRE_CLE_ANON_PUBLIQUE
+# === FRONT-END (publiques, visibles dans le navigateur) ===
+VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Back-end (utilisé par pnpm run setup seulement)
-SUPABASE_ACCESS_TOKEN=VOTRE_TOKEN_CLI
-SUPABASE_PROJECT_REF=VOTRE-REF-PROJET
-SUPABASE_DB_PASSWORD=VOTRE_MOT_DE_PASSE_DB
+# === BACK-END (utilisé uniquement par `pnpm run setup` et `pnpm run doctor`) ===
+SUPABASE_ACCESS_TOKEN=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+SUPABASE_PROJECT_REF=YOUR-PROJECT-REF
+SUPABASE_DB_PASSWORD=YOUR_DATABASE_PASSWORD
 ```
 
-**Où obtenir chaque clé :**
+#### Détail de chaque variable
 
-1. **VITE_SUPABASE_URL** et **VITE_SUPABASE_ANON_KEY**
-   - Dashboard Supabase → Votre projet → Settings → API
-   - Copiez "Project URL" et "Anon key (public)"
+**1. VITE_SUPABASE_URL**
+- Source : Dashboard Supabase → Votre projet → Settings → API → "Project URL"
+- Format : `https://abc123xyz.supabase.co`
 
-2. **SUPABASE_ACCESS_TOKEN**
-   - https://supabase.com/dashboard/account/tokens
-   - Créez un nouveau token d'accès
-   - Copier le token complet (commence par `sbp_`)
+**2. VITE_SUPABASE_ANON_KEY**
+- Source : Dashboard Supabase → Settings → API → "Anon key (public)"
+- C'est la clé **publique**, **pas** la clé service_role
 
-3. **SUPABASE_PROJECT_REF**
-   - C'est l'ID dans l'URL du dashboard (ex. `abc123defg45hijkl`)
-   - Ou allez à Settings → General → Project Reference ID
+**3. SUPABASE_ACCESS_TOKEN**
+- Source : https://supabase.com/dashboard/account/tokens
+- Cliquez "Generate new token"
+- Copiez le token complet (commence par `sbp_`)
+- ⚠️ **Permissions requises :** "Functions: Deploy + Manage", "Database"
 
-4. **SUPABASE_DB_PASSWORD**
-   - Visible lors de la création du projet
-   - Ou réinitialisez-le via Database Settings → Reset Database Password
+**4. SUPABASE_PROJECT_REF**
+- L'ID du projet (ex. `abc123defghijklmnopq`)
+- Visible dans l'URL du dashboard : `https://app.supabase.com/project/{REF}`
+- Ou Settings → General → Project Reference ID
 
-> **Sécurité :** `.env` est dans `.gitignore` — jamais commité.
+**5. SUPABASE_DB_PASSWORD**
+- Fourni lors de la création du projet
+- Ou réinitialisé via Supabase Dashboard → Settings → Database → Reset Password
+
+> **Sécurité :** `.env` est **gitignoré**. Ne jamais le commiter.
 
 ---
 
 ## Étape 4 : Vérification de Santé
+
+Avant de configurer, vérifiez que tout est en place :
 
 ```bash
 pnpm run doctor
@@ -117,161 +123,372 @@ pnpm run doctor
 Cela vérifie :
 - ✓ Node.js ≥ 22.12
 - ✓ pnpm ≥ 10.0.0
-- ✓ Supabase CLI
-- ✓ Accès à votre projet Supabase
+- ✓ Supabase CLI disponible
+- ✓ Accès à votre projet Supabase (via `.env`)
 - ✓ Connectivité Internet
 
-**Erreurs courantes :**
+**Erreurs courantes et solutions :**
 
-| Erreur | Solution |
-|--------|----------|
-| `Supabase CLI not found` | `npm install -g supabase` |
-| `Invalid SUPABASE_ACCESS_TOKEN` | Régénérez à https://supabase.com/dashboard/account/tokens |
-| `Database connection failed` | Vérifiez `SUPABASE_DB_PASSWORD` + IP whitelist |
+| Erreur | Cause | Solution |
+|--------|-------|----------|
+| `Supabase CLI not found` | CLI non installée | `npm install -g supabase` |
+| `VITE_SUPABASE_URL undefined` | `.env` incomplet | Relire §Compléter les variables ci-dessus |
+| `Invalid SUPABASE_ACCESS_TOKEN` | Token périmé ou mauvais | Régénérez à https://supabase.com/dashboard/account/tokens |
+| `Database connection failed` | Password incorrect ou IP bloquée | Vérifiez `SUPABASE_DB_PASSWORD`, et que votre IP n'est pas bloquée |
 
 ---
 
-## Étape 5 : Setup Initial
+## Étape 5 : Setup Initial — Base & Edge Functions
 
 ```bash
 pnpm run setup
 ```
 
-Cela :
-1. **Applique les migrations SQL** — crée tables, RLS, fonctions
-2. **Génère la clé de chiffrement** — `TOKEN_ENCRYPTION_KEY` (secrets providers)
-3. **Déploie les 38 edge functions** — (peuvent prendre 2-3 min)
-4. **Crée le workspace initial** — tenant multi-tenant
-5. **Prépare l'authentification** — auth.users + profiles
+Ce script effectue **automatiquement** :
 
-**Durée estimée :** 3-5 minutes (première fois)
+1. **Lien au projet Supabase** — lie votre `.env` au projet cloud
+2. **Migrations SQL** — crée tables, schéma RLS, fonctions stockées
+3. **Génération du secret de chiffrement** — `TOKEN_ENCRYPTION_KEY` déployé en Edge Functions (pour chiffrer les clés providers en BDD)
+4. **Déploiement des 31 edge functions** — Deno functions réactives du pipeline (peut prendre 3-5 min)
+5. **Initialisation du workspace** — créé le "workspace" multi-tenant par défaut (tenant = votre instance)
 
-**Après succès, vous verrez :**
+**Durée :** 3–5 minutes (première fois)
+
+**Sortie attendue :**
 ```
-✓ Migrations appliquées (17 fichiers)
-✓ Edge Functions déployées (38/38)
-✓ Clé de chiffrement générée
-✓ Workspace créé : "Mon Instance"
-✓ Prêt pour pnpm dev
+✓ Migrations appliquées
+✓ Edge Functions déployées (31/31)
+✓ Secret de chiffrement généré
+✓ Workspace créé
+✓ Prêt à démarrer
 ```
+
+**Erreurs fréquentes :**
+
+| Erreur | Solution |
+|--------|----------|
+| "Migrations appliquées : 0/17" | Vérifiez `SUPABASE_DB_PASSWORD`, puis relancez |
+| "Failed to deploy function X" | Redéployez : `supabase functions deploy <fn-name> --no-verify-jwt` |
 
 ---
 
-## Étape 6 : Lancer Localement
+## Étape 6 : Lancer le Serveur de Développement
 
 ```bash
 pnpm dev
 ```
 
-Ouvre le serveur de dev Vite sur `http://localhost:8080`.
+Démarre Vite sur `http://localhost:8080`.
 
-Dans votre navigateur, visitez **http://localhost:8080**.
-
----
-
-## Étape 7 : S'Inscrire
-
-1. Cliquez **"S'inscrire"**
-2. Entrez un email (ex. `test@example.com`) et un mot de passe
-3. Vous êtes redirigé vers l'onglet **Prospection** (vide au début)
-4. Ouvrez l'onglet **Configuration** (icône roue) pour brancher les providers
+Ouvrez votre navigateur et allez à **http://localhost:8080**.
 
 ---
 
-## Étape 8 : Configuration des Providers
+## Étape 7 : Créer Votre Premier Utilisateur (Admin)
 
-Pour prospérer, vous avez besoin de clés API pour les services tiers. **Toutes les clés se saisissent dans l'app, onglet Config** (jamais dans `.env`).
+1. Cliquez **"S'inscrire"** (ou Sign Up)
+2. Entrez un email (ex. `admin@example.com`) et un mot de passe
+3. Confirmez
+4. Vous êtes connecté et redirigé vers l'onglet **Prospection**
 
-### LLM (Obligatoire pour évaluer les signaux)
+> **Important :** Le premier utilisateur est automatiquement **admin** du workspace. Tous les utilisateurs créés ensuite sont dans le même workspace.
+
+---
+
+## Étape 8 : Secrets Edge Functions
+
+Certains services optionnels nécessitent des secrets qui ne vont **pas** dans `.env` (ils ne doivent pas être en local). Ils se déploient directement sur Supabase via Supabase CLI.
+
+### TOKEN_ENCRYPTION_KEY (automatique)
+
+Généré et déployé par `pnpm run setup`. Ne rien faire.
+
+### Optionnels : Notifications & Webhooks
+
+#### A. Resend (notifications internes — hebdo + alerte crédits)
+
+Si vous souhaitez recevoir des emails de recap hebdo ou d'alerte sur les crédits FullEnrich :
+
+```bash
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxxxxxxxxx --project-ref <votre-ref>
+supabase secrets set RESEND_FROM=noreply@yourdomain.com --project-ref <votre-ref>
+supabase secrets set ALERT_RECIPIENTS=admin@example.com,ops@example.com --project-ref <votre-ref>
+```
+
+(Obtener clé : https://resend.com/api-keys)
+
+#### B. Smartlead Webhook (optionnel — suivi des réponses)
+
+Si vous voulez que Smartlead mette à jour vos statuts de campagne automatiquement :
+
+```bash
+supabase secrets set SMARTLEAD_WEBHOOK_SECRET=your_webhook_secret --project-ref <votre-ref>
+```
+
+> Ces secrets sont **chiffrés** en transit et en stockage Supabase.
+
+---
+
+## Étape 9 : Configurer les Providers
+
+Toutes les clés API se saisissent **dans l'app**, onglet **Configuration** → **Providers**. Jamais dans `.env`.
+
+### Mode Démo (sans clés)
+
+L'app fonctionne **entièrement en mode démo** sans aucune clé configurée. Des données fictives réalistes sont générées pour explorer. C'est parfait pour apprendre.
+
+### LLM (Obligatoire — évaluation des signaux)
 
 **Anthropic Claude (par défaut) :**
 
 1. Allez à https://console.anthropic.com/account/api-keys
-2. Créez une clé API
-3. Dans l'app, onglet **Configuration** → **LLM** → **Anthropic Claude**
-4. Collez votre clé
-5. Sélectionnez le modèle (par défaut : `claude-3-5-sonnet-20241022`)
+2. Cliquez "Create Key"
+3. Copiez la clé complète
+4. Dans l'app : **Configuration** → **LLM** → **Anthropic Claude**
+5. Collez votre clé
+6. Sélectionnez le modèle (défaut : `claude-3-5-sonnet-20241022`) — bon balance coût/qualité
+7. Cliquez **Tester** pour vérifier
+8. Sauvegardez
 
-### Enrichissement (FullEnrich — email deduction + LinkedIn)
+**Modèles disponibles :**
+- `claude-3-5-sonnet-20241022` ⭐ recommandé (équilibre coût/qualité)
+- `claude-3-5-haiku-20241022` (rapide, budget)
+- `claude-3-opus-20250219` (puissant, coûteux)
+
+**Alternative :** OpenAI-compatible (Mistral, etc.) — voir [providers.md](providers.md)
+
+**Coûts :** Environ $0.003 par signal évalué
+
+### Sourcing (Adzuna + France Travail)
+
+Intégrés nativement. Ils recherchent des offres d'emploi publiques **gratuitement**.
+
+- **Adzuna** : https://developer.adzuna.com
+  - Dans l'app : **Configuration** → **Sources** → **Adzuna**
+  - Vous aurez un `app_id` et `app_key`
+  - (Gratuit pour débuter)
+
+- **France Travail** : https://francetravail.io
+  - Dans l'app : **Configuration** → **Sources** → **France Travail**
+  - Vous aurez `client_id` et `client_secret`
+  - (Gratuit)
+
+### Enrichissement (FullEnrich — emails & LinkedIn)
+
+Enrichit chaque prospect avec adresse email, profil LinkedIn, données entreprise.
 
 1. Allez à https://app.fullenrich.com/settings/api
 2. Copiez votre clé API
-3. App **Configuration** → **Enrichissement** → **FullEnrich**
+3. App : **Configuration** → **Enrichissement** → **FullEnrich**
 4. Collez la clé
+5. Testez
+6. Sauvegardez
 
-**Coûts :** $0.01–0.02 par prospect (gratuit les 100 premiers)
+**Coûts :** $0.01–$0.02 par prospect (gratuit les 100 premiers)
 
 ### Validation Email (Bouncer — délivrabilité)
 
+Prédit les bounces avant d'envoyer, économise les crédits Smartlead.
+
 1. Allez à https://usebouncer.com/dashboard
 2. Copiez votre clé API
-3. App **Configuration** → **Validation Email** → **Bouncer**
+3. App : **Configuration** → **Validation Email** → **Bouncer**
 4. Collez la clé
+5. Testez
+6. Sauvegardez
 
-**Coûts :** $0.005 par email (gratuit les 100 premiers)
+**Coûts :** $0.005 par email vérifié (gratuit les 100 premiers)
 
-### Outreach (Smartlead — campagnes cold email)
+### Outreach (Smartlead — envoi campagnes froides)
+
+Seul canal d'envoi pour les campagnes email.
 
 1. Allez à https://smartlead.ai/settings/api
 2. Copiez votre clé API
-3. App **Configuration** → **Outreach** → **Smartlead**
+3. App : **Configuration** → **Outreach** → **Smartlead**
 4. Collez la clé
+5. Testez
+6. Sauvegardez
 
-**Coûts :** À partir de $59/mois pour warm-up + envois
+**Coûts :** À partir de $59/mois (warm-up + envois)
+
+**Mapping Persona → Campagne Smartlead :**
+Après configuration, allez à **Configuration** → **Campagnes** et mappez chaque persona (RH, Directeur, Commercial, etc.) à une campagne Smartlead.
 
 ---
 
-## Étape 9 : Première Campagne (Test)
+## Étape 10 : Lancer Votre Première Campagne
 
-### Créer un Trigger (Détecteur de Signaux)
+### 1. Créer un Trigger (détecteur de signaux)
 
-1. Onglet **Prospection** → sous-onglet **Triggers**
-2. Cliquez **+ Ajouter un trigger**
-3. Nom : `Test RH CDI`
-4. Type : `job_posting`
-5. Filtres :
-   - Titre : `Responsable RH|Chef RH|Directeur RH`
-   - Contrat : `CDI`
-6. Score multiplicateur : `1.0`
-7. Sauvegardez
+1. **Prospection** → **Triggers**
+2. **+ Ajouter un trigger**
+3. Remplissez :
+   - **Nom** : `Test RH CDI`
+   - **Type** : `job_posting`
+   - **Filtres** :
+     - Titre : `Responsable RH|Chef RH|Directeur RH`
+     - Contrat : `CDI`
+   - **Multiplicateur score** : `1.0`
+4. Sauvegardez
 
-### Créer une Persona (Critères de Ciblage)
+### 2. Créer une Persona (profil cible)
 
-1. Onglet **Prospection** → sous-onglet **Personas**
-2. Cliquez **+ Ajouter une persona**
-3. Nom : `Test RH France`
-4. Titres : `Directeur RH|Chef RH|Responsable Talents`
-5. Secteurs : `Tech|Finance|Retail` (optionnel)
-6. Géographies : `France`
-7. Sauvegardez
+1. **Prospection** → **Personas**
+2. **+ Ajouter une persona**
+3. Remplissez :
+   - **Nom** : `Test RH France`
+   - **Titres** : `Directeur RH|Chef RH|Responsable Talents`
+   - **Secteurs** : `Tech|Finance|Retail` (optionnel)
+   - **Pays** : `France`
+4. Sauvegardez
 
-### Lancer le Sourcing
+### 3. Lancer le sourcing
 
-1. Onglet **Prospection** → sous-onglet **Sourcing**
-2. Sélectionnez votre trigger + persona
-3. Cliquez **Démarrer sourcing**
-4. Attendez 2-3 minutes (scrape Adzuna + France Travail)
-5. Vous verrez les prospects détectés
+1. **Prospection** → **Sourcing**
+2. Sélectionnez votre **Trigger** + **Persona**
+3. **Démarrer sourcing**
+4. Attendez 2–3 minutes (scrape Adzuna + France Travail)
+5. Vérifiez l'onglet **Prospects** pour voir les résultats
 
-### Évaluation & Enrichissement
+### 4. Enrichir les prospects
 
-1. Onglet **Enrichissement**
-2. Sélectionnez un batch
-3. Cliquez **Enrichir** (FullEnrich + LinkedIn)
-4. Attendez le webhook (2-5 min par prospect)
+1. **Enrichissement**
+2. Sélectionnez votre batch
+3. **Enrichir** (appelle FullEnrich)
+4. Attendez le webhook (2–5 min par prospect)
+5. Vérifiez **Enrichissement** → votre batch pour voir emails + LinkedIn
 
-### Validation Email
+### 5. Valider les emails
 
-1. Onglet **Audit Emails**
-2. Cliquez **Vérifier délivrabilité** (Bouncer batch)
-3. Voir les résultats (valide/risky/invalide)
+1. **Audit Emails**
+2. **Vérifier délivrabilité** (appelle Bouncer)
+3. Attendez les résultats (valid / risky / invalid)
+4. Filtrez par "valid" pour garder les meilleurs
 
-### Push Smartlead
+### 6. Envoyer via Smartlead
 
-1. Onglet **Campagnes**
-2. Sélectionnez les prospects validés
-3. Cliquez **Envoyer vers Smartlead**
-4. Suivi des réponses en temps réel
+1. **Campagnes**
+2. Sélectionnez les prospects "valid"
+3. **Envoyer vers Smartlead**
+4. Suivi en temps réel (réponses, bounces, clics)
+
+---
+
+## Étape 11 : Planification des Tâches (Crons) — Optionnel
+
+Par défaut, le pipeline cœur fonctionne **sans aucun cron** (scrape déclenché manuellement, enrichissement asynchrone via webhooks). Mais pour automatiser les tâches récurrentes, activez les crons :
+
+### Script de Planification
+
+```bash
+pnpm run setup:crons
+```
+
+Cela configure (via **pg_cron** Supabase) les jobs automatiques :
+
+| Job | Fréquence | Rôle |
+|-----|-----------|------|
+| **enrichment_poll** | Toutes les 15 min | Poll les webhooks FullEnrich en suspens |
+| **bouncer_batch** | 07h + 13h UTC | Batch Bouncer des emails en attente |
+| **bounce_learning** | 04h UTC | Met à jour patterns bounce empiriques |
+| **credit_alerts** | 06h UTC | Alerte si crédits FullEnrich < 20% |
+| **recap_weekly** | Lundi 08h UTC | Email récap hebdo (via Resend) |
+| **cleanup_retention** | Quotidien 02h UTC | Supprime prospects archivés > 60 jours |
+
+> ℹ️ Vous pouvez aussi déclencher ces jobs manuellement via l'UI ou l'API.
+
+### Alternative : Crons Manuels (supabase CLI)
+
+Si vous préférez contrôler les crons vous-même :
+
+```bash
+# Vérifier les crons existants
+supabase functions list
+
+# Déclencher un job manuellement (exemple)
+supabase functions invoke bouncer-batch --project-ref <ref> \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+```
+
+> **Note :** `setup:crons` et son alternative manuelle ne sont qu'un commodity. Le funnel **marche sans** — sourcing + enrichissement + validation se font à la demande via l'UI.
+
+---
+
+## Durcissement & Sécurité Post-Deployment
+
+### Activer la Détection de Mot de Passe Compromis
+
+Supabase peut vérifier si un mot de passe est sur **Have I Been Pwned** (HIBP) :
+
+1. Dashboard Supabase → **Authentication** → **Password compromised detection**
+2. Activez
+
+### Checklist
+
+- [ ] `.env` est **gitignoré** (vérifiez `.gitignore`)
+- [ ] Pas de secret hardcodé dans le code (`pnpm run check:hardcodes`)
+- [ ] RLS activées sur **toutes** les tables (Dashboard → SQL Editor → run default RLS creation)
+- [ ] **Domaine personnalisé configuré** (DNS CNAME vers Vercel/Netlify/Docker)
+- [ ] **Sauvegarde Supabase** activée (Dashboard → Backups)
+- [ ] **Monitoring** configuré (Sentry, CloudWatch, etc.)
+
+---
+
+## Dépannage
+
+### `pnpm run setup` échoue
+
+**Symptôme :** "Migrations applied: 0/17" ou "Connection refused"
+
+**Solutions :**
+1. Vérifiez `.env` :
+   ```bash
+   grep "SUPABASE_" .env
+   ```
+2. Testez la connexion manuellement :
+   ```bash
+   supabase status --project-ref <ref>
+   ```
+3. Vérifiez permissions du token (doit avoir "Functions Deploy" + "Database")
+4. Réinitialisez le password DB via Supabase Dashboard → Settings → Reset Password
+
+### `pnpm dev` ne démarre pas
+
+**Symptôme :** "Port 8080 already in use" ou "VITE_* undefined"
+
+**Solutions :**
+1. Vérifiez `.env` complet (toutes les `VITE_*` variables)
+2. Tuez le port :
+   ```bash
+   lsof -i :8080 | grep LISTEN | awk '{print $2}' | xargs kill -9
+   ```
+3. Relancez `pnpm dev`
+
+### Signup échoue
+
+**Symptôme :** "Email already exists" ou "JWT invalid"
+
+**Solutions :**
+1. Vérifiez que Supabase Auth est activée (Dashboard → Authentication → Providers → Email)
+2. Vérifiez `VITE_SUPABASE_ANON_KEY` est la **public key** (pas service_role)
+3. Pour tester local : `supabase db reset --project-ref <ref>` (destructif)
+
+### Edge Functions ne déploient pas
+
+**Symptôme :** "Failed to deploy function X"
+
+**Solutions :**
+1. Vérifiez le quota Edge Functions (Dashboard → Edge Functions → Quotas)
+2. Vérifiez permissions du token
+3. Redéployez individuellement :
+   ```bash
+   supabase functions deploy webhook-enrichment --no-verify-jwt --project-ref <ref>
+   ```
+4. Vérifiez la syntaxe Deno :
+   ```bash
+   deno check supabase/functions/webhook-enrichment/index.ts
+   ```
 
 ---
 
@@ -286,7 +503,7 @@ npm install -g vercel
 vercel
 ```
 
-Suivez les prompts. Vercel configure automatiquement la CI/CD.
+Suivez les prompts. Vercel configure automatiquement les variables `VITE_*`.
 
 **Option 2 : Netlify**
 
@@ -299,120 +516,40 @@ netlify deploy
 
 ```bash
 docker build -t jay-reach .
-docker run -p 80:8080 -e VITE_SUPABASE_URL=... jay-reach
+docker run -p 80:8080 -e VITE_SUPABASE_URL=... -e VITE_SUPABASE_ANON_KEY=... jay-reach
 ```
 
 ### Supabase Production
 
-1. Utilisez **Supabase Cloud** (https://supabase.com) — pas de "local"
-2. Mettez à jour `.env` avec les clés du projet de prod
-3. Redéployez les edge functions :
-
-```bash
-supabase functions deploy --project-ref <prod-ref>
-```
+1. Créez un **nouveau projet Supabase** pour la prod (pas de re-partage du dev)
+2. Mettez à jour `.env` avec les clés du projet prod
+3. Lancez `pnpm run setup` (le liera au nouveau projet)
+4. Déployez les edge functions : `supabase functions deploy --project-ref <prod-ref>`
 
 ### SSL/HTTPS
 
-- **Vercel/Netlify** : HTTPS automatique
-- **Docker** : Configurez un reverse proxy Nginx + Let's Encrypt
-
-### Monitoring
-
-Supabase Dashboard offre :
-- Logs des edge functions
-- Monitoring de la DB
-- Real-time activity
-
----
-
-## Troubleshooting
-
-### `pnpm run setup` échoue
-
-**Problème :** "Migrations appliquées : 0/17"
-
-**Solutions :**
-1. Vérifiez `SUPABASE_ACCESS_TOKEN` (valide et permissions allouées)
-2. Vérifiez `SUPABASE_PROJECT_REF` (matches l'ID du projet)
-3. Réinitialisez le mot de passe DB (Supabase Dashboard → Settings → Reset Password)
-4. Testez la connection :
-   ```bash
-   supabase status --project-ref <ref>
-   ```
-
-### `pnpm dev` ne lance pas
-
-**Problème :** "Port 8080 already in use" ou "VITE_SUPABASE_URL undefined"
-
-**Solutions :**
-1. Vérifiez que `.env` est bien rempli (`VITE_*` variables)
-2. Tuez le processus sur le port 8080 :
-   ```bash
-   lsof -i :8080 | grep LISTEN | awk '{print $2}' | xargs kill -9
-   ```
-3. Relancez `pnpm dev`
-
-### Signup échoue
-
-**Problème :** "Email already exists" ou JWT invalid
-
-**Solutions :**
-1. Supabase Auth doit être activé (Settings → Authentication → Enable)
-2. Vérifiez que `VITE_SUPABASE_ANON_KEY` est la **public key** (pas service_role)
-3. Réinitialisez la base : `supabase db reset --project-ref <ref>` (destructif, dev seulement)
-
-### Edge Functions ne déploient pas
-
-**Problème :** "Failed to deploy function X"
-
-**Solutions :**
-1. Vérifiez que `SUPABASE_ACCESS_TOKEN` a permission "Functions Deploy"
-2. Vérifiez le quota d'edge functions du projet (Supabase Dashboard)
-3. Redéployez individuellement :
-   ```bash
-   supabase functions deploy score-prospect-signals --project-ref <ref> --no-verify-jwt
-   ```
-
----
-
-## Améliorations Recommandées
-
-### Post-Déploiement
-
-- [ ] Activez **2FA** (Settings → Authentication → 2FA)
-- [ ] Configurez un **domaine personnalisé** (Vercel/Netlify settings)
-- [ ] Mettez en place **monitoring** (Sentry, Logrocket, etc.)
-- [ ] Sauvegarde **automatique** (Supabase backups)
-- [ ] CDN **image** (Cloudinary, AWS S3, etc.)
-
-### Optionnel
-
-- Extension Chrome pour LinkedIn scraping (voir [ARCHITECTURE.md](ARCHITECTURE.md))
-- Webhooks sortants (pour CRM externe)
-- Notifications email (via Resend, SendGrid)
+- **Vercel/Netlify** : automatique
+- **Docker** : configurez un proxy Nginx + Let's Encrypt
 
 ---
 
 ## Ressources
 
-- **[README.md](../README.md)** — Quickstart rapide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Pipeline, edge functions
+- **[README.md](../README.md)** — Démarrage rapide
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Pipeline de prospection, edge functions
 - **[data-model.md](data-model.md)** — Schéma DB, RLS
-- **[providers.md](providers.md)** — Intégrer nouveaux fournisseurs
-- **Supabase Docs** : https://supabase.com/docs
+- **[providers.md](providers.md)** — Détails techniques des intégrations
+- **[Supabase Docs](https://supabase.com/docs)** :
   - [Edge Functions](https://supabase.com/docs/guides/functions)
   - [Database](https://supabase.com/docs/guides/database)
   - [Auth](https://supabase.com/docs/guides/auth)
-- **Vite Docs** : https://vitejs.dev
-- **React Docs** : https://react.dev
 
 ---
 
 ## Support
 
-- **Bug ou Question :** Ouvrez une [Issue](https://github.com/Jayteam2025/jay-reach/issues)
+- **Bug ou Idée :** Ouvrez une [Issue](https://github.com/Jayteam2025/jay-reach/issues)
 - **Sécurité :** [SECURITY.md](../SECURITY.md)
 - **Contribution :** [CONTRIBUTING.md](../CONTRIBUTING.md)
 
-Bonne prospection ! 🚀
+Bonne prospection !
