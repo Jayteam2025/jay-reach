@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  Settings,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +43,11 @@ import {
   type ProviderTestResult,
 } from '@/hooks/useWorkspaceProviders';
 import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
+import {
+  useWorkspaceSettings,
+  useUpdateWorkspaceSetting,
+  type WorkspaceSettings,
+} from '@/hooks/useWorkspaceSettings';
 
 const CATEGORY_META: Record<
   ProviderCategory,
@@ -129,6 +135,8 @@ export function ProspectionProviders() {
   const { data: providers, isLoading } = useWorkspaceProviders();
   const toggle = useToggleWorkspaceProvider();
   const { data: currentWorkspaceId } = useCurrentWorkspaceId();
+  const { data: settings } = useWorkspaceSettings();
+  const updateSetting = useUpdateWorkspaceSetting();
   const [addingCategory, setAddingCategory] = useState<ProviderCategory | null>(null);
 
   const grouped = useMemo(() => {
@@ -178,6 +186,9 @@ export function ProspectionProviders() {
           </p>
         </div>
       </header>
+
+      {/* Section : Options du workspace */}
+      <WorkspaceSettingsSection settings={settings} updateSetting={updateSetting} />
 
       {(Object.entries(grouped) as Array<[ProviderCategory, WorkspaceProvider[]]>).map(([category, rows]) => {
         const meta = CATEGORY_META[category];
@@ -540,5 +551,65 @@ function AddProviderRow({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Section : Options du workspace
+ * Affiche les toggles pour activer/désactiver les fonctionnalités optionnelles
+ * comme la détection automatique des CRMs.
+ */
+function WorkspaceSettingsSection({
+  settings,
+  updateSetting,
+}: {
+  settings: WorkspaceSettings | undefined;
+  updateSetting: ReturnType<typeof useUpdateWorkspaceSetting>;
+}) {
+  const crmDetectionEnabled = (settings?.crm_detection_enabled as boolean) ?? false;
+
+  const handleToggleCrmDetection = async (next: boolean) => {
+    try {
+      await updateSetting.mutateAsync({
+        key: 'crm_detection_enabled',
+        value: next,
+      });
+      toast.success(next ? 'Détection CRM activée' : 'Détection CRM désactivée');
+    } catch (err) {
+      toast.error('Échec', { description: err instanceof Error ? err.message : 'Erreur inconnue' });
+    }
+  };
+
+  return (
+    <section className="space-y-3 border-t border-border pt-8">
+      <div className="flex items-start gap-2.5">
+        <Settings className="w-4 h-4 text-violet-500 mt-1 shrink-0" />
+        <div className="space-y-1 flex-1">
+          <h3 className="font-medium text-foreground leading-none">Options du workspace</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Fonctionnalités optionnelles qui peuvent être activées ou désactivées selon vos besoins.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2 ml-6">
+        <div className="flex items-center justify-between p-3 rounded-md border border-border/50 bg-muted/20">
+          <div className="space-y-1 flex-1">
+            <Label className="text-sm font-medium text-foreground cursor-pointer">
+              Détection automatique des CRMs
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Analyse le site web et les offres d'emploi pour détecter les CRMs utilisés par les prospects.
+            </p>
+          </div>
+          <Switch
+            checked={crmDetectionEnabled}
+            onCheckedChange={handleToggleCrmDetection}
+            disabled={updateSetting.isPending}
+            className="ml-4 shrink-0"
+          />
+        </div>
+      </div>
+    </section>
   );
 }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useWorkspaceBooleanSetting } from "@/hooks/useWorkspaceSettings";
 
 export type CrmDetection = {
   company_group_id: string;
@@ -16,12 +17,13 @@ export type CrmDetection = {
 
 export function useCrmDetection(companyGroupId: string | undefined) {
   const queryClient = useQueryClient();
+  const crmDetectionEnabled = useWorkspaceBooleanSetting("crm_detection_enabled");
 
   const query = useQuery({
     queryKey: ["crm-detection", companyGroupId],
-    enabled: !!companyGroupId,
+    enabled: !!companyGroupId && crmDetectionEnabled,
     queryFn: async (): Promise<CrmDetection | null> => {
-      if (!companyGroupId) return null;
+      if (!companyGroupId || !crmDetectionEnabled) return null;
       const { data, error } = await supabase
         .from("prospect_crm_detections")
         .select("*")
@@ -40,6 +42,9 @@ export function useCrmDetection(companyGroupId: string | undefined) {
   const redetect = useMutation({
     mutationFn: async () => {
       if (!companyGroupId) throw new Error("missing company_group_id");
+      if (!crmDetectionEnabled) {
+        throw new Error("CRM detection is disabled for this workspace");
+      }
       const { data, error } = await supabase.functions.invoke("detect-crm", {
         body: { company_group_id: companyGroupId, force: true },
       });

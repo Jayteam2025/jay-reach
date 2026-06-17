@@ -1,9 +1,8 @@
-import { Sparkles, ArrowUp, ArrowDown } from 'lucide-react';
+import { Database, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 import { useCompanyProgress } from '@/hooks/useProspectActions';
 import { useCrmDetection } from '@/features/crm-detection/useCrmDetection';
-import { isJayNativeCrm } from '@/lib/crm-detection/native';
 
 interface EntrepriseInboxListProps {
   companies: EnrichedCompany[];
@@ -72,14 +71,12 @@ function CompanyRow({
     .map((profiles) => `${profiles.length} ${profiles[0]?.persona?.label ?? 'contact'}`);
 
   const detectedCrm = detection?.detection_status === 'completed' ? detection.crm_name : null;
-  const isNative = isJayNativeCrm(detectedCrm);
 
   return (
     <div
       className={cn(
         'w-full px-6 py-3 border-b border-border/40 transition-colors block relative',
         isSelected ? 'bg-muted/60 hover:bg-muted/70' : 'hover:bg-muted/30',
-        isNative && 'bg-primary/5 hover:bg-primary/10 border-l-2 border-l-primary'
       )}
     >
       <button
@@ -105,15 +102,9 @@ function CompanyRow({
 
         {detectedCrm && (
           <div className="flex items-center gap-1.5 mt-1.5">
-            {isNative && <Sparkles className="h-3 w-3 text-primary shrink-0" />}
-            <span
-              className={cn(
-                'text-[11px] font-medium truncate',
-                isNative ? 'text-primary' : 'text-muted-foreground'
-              )}
-            >
+            <Database className="h-3 w-3 text-muted-foreground shrink-0" />
+            <span className="text-[11px] font-medium truncate text-muted-foreground">
               {detectedCrm}
-              {isNative && <span className="ml-1 opacity-70">· natif</span>}
             </span>
           </div>
         )}
