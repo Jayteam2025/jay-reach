@@ -9,6 +9,29 @@ import { useTrackAction } from '@/hooks/useProspectActions';
 import type { EnrichedCompany, EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import type { ProspectMessage } from '../useCompanyMessages';
 
+/**
+ * Extrait le message d'erreur réel d'un appel edge function. Sur une réponse
+ * non-2xx, supabase-js met un FunctionsHttpError générique dans `error` et le
+ * vrai body `{ error }` est porté par `error.context` (la Response). Sans ça, le
+ * toast afficherait « Edge Function returned a non-2xx status code ».
+ */
+async function fnErrorMessage(
+  error: unknown,
+  data: { error?: string } | null,
+): Promise<string> {
+  if (data?.error) return data.error;
+  const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } } | null)?.context;
+  if (ctx?.json) {
+    try {
+      const body = await ctx.json();
+      if (body?.error) return body.error;
+    } catch {
+      /* body non-JSON : on retombe sur error.message */
+    }
+  }
+  return error instanceof Error ? error.message : 'Erreur inconnue';
+}
+
 export function MessageContent({
   message,
   profile,
@@ -38,8 +61,7 @@ export function MessageContent({
       const { data, error } = await supabase.functions.invoke('send-via-smartlead', {
         body: { prospect_id: profile.id, channel: 'email', dry_run: true },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error || data?.error) throw new Error(await fnErrorMessage(error, data));
       return data as { ok: boolean; body_html: string; subject: string };
     },
     onSuccess: (data) => {
@@ -61,8 +83,7 @@ export function MessageContent({
       const { data, error } = await supabase.functions.invoke('send-via-smartlead', {
         body: { prospect_id: profile.id, channel: 'email', manual_override: true },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error || data?.error) throw new Error(await fnErrorMessage(error, data));
       return data as { ok: boolean; added?: number; skipped?: number };
     },
     onSuccess: (data) => {

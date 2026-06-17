@@ -12,7 +12,7 @@ export const smartleadProvider: OutreachProvider = {
   async push(lead: OutreachLead, ctx: OutreachProviderConfig, supabase: SupabaseClient): Promise<OutreachPushResult> {
     // 1. Resolve campaign : persona_id uniquement (fail-fast si null ou pas de campagne enabled)
     if (!lead.persona_id) {
-      throw new Error(`No persona_id provided for prospect. Cannot resolve Smartlead campaign.`);
+      throw new Error(`Ce contact n'a pas de persona : impossible de résoudre la campagne Smartlead.`);
     }
 
     const { data: campaign } = await supabase
@@ -23,7 +23,9 @@ export const smartleadProvider: OutreachProvider = {
       .maybeSingle();
 
     if (!campaign || !campaign.enabled) {
-      throw new Error(`No active Smartlead campaign configured for persona=${lead.persona_id}.`);
+      throw new Error(
+        `Aucune campagne Smartlead reliée à ce persona. Relie-le à une campagne dans l'onglet Campagnes.`,
+      );
     }
 
     // 2. Build le SmartleadLead

@@ -356,10 +356,14 @@ Deno.serve(async (req: Request) => {
       { status: 200, headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("[send-via-smartlead] Error:", err);
+    const msg = err instanceof Error ? err.message : "Internal server error";
+    // Erreurs de configuration actionnables par l'utilisateur (campagne non reliée /
+    // persona absent) -> 412, pas 500 : ce n'est pas un crash. Le front affiche le message.
+    const isConfigError = /campagne smartlead|persona/i.test(msg);
+    if (!isConfigError) console.error("[send-via-smartlead] Error:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Internal server error" }),
-      { status: 500, headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" } }
+      JSON.stringify({ error: msg }),
+      { status: isConfigError ? 412 : 500, headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" } }
     );
   }
 });
