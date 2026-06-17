@@ -39,8 +39,15 @@ const FORBIDDEN = [
   { re: /f2db7bdb-1067-412d-a3ee-f0d101fd3b99/, label: 'UUID utilisateur Jay interne' },
   // Jay company name (must not appear outside placeholder context)
   { re: /HEY JAY/, label: 'nom de société Jay' },
-  // Jay-specific client domain names (if any were in the source code)
-  // — add here if needed when porting from main
+  // Jay Supabase project ref (prod/staging — must not hardcode)
+  { re: /kaysiemagfaqmvusyfav/, label: 'UUID projet Supabase Jay prod' },
+  { re: /xaysbsoccvkkduwxymqj/, label: 'UUID projet Supabase Jay staging' },
+  // Jardipro integration (Jay-internal ERP)
+  { re: /jardipro/, label: 'intégration ERP Jardipro (Jay-interne)' },
+  // CV Jay asset
+  { re: /cv-jay-assistant/, label: 'CV Jay Reach (asset Jay-interne)' },
+  // Jay-internal CRM detection flag
+  { re: /isJayNativeCrm/, label: 'isJayNativeCrm (fonction Jay-interne)' },
 ];
 
 // Files where certain patterns are legitimate (tests, comments, docs)
@@ -65,6 +72,14 @@ const ALLOWLIST = {
   ],
   'README': [
     'hey@jay-assistant.fr',
+  ],
+  // Generated types from Supabase (project ref in comments/exports)
+  'src/integrations/supabase/types.ts': [
+    'kaysiemagfaqmvusyfav',
+  ],
+  // Product name "Jay Reach" is authorized everywhere (not a hardcode leak)
+  '*': [
+    'Jay Reach',
   ],
 };
 
