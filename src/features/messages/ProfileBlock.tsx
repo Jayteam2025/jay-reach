@@ -1,3 +1,4 @@
+import { Linkedin } from 'lucide-react';
 import type { EnrichedCompany, EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import { EmailChannel } from './channels/EmailChannel';
 import { PostalChannel } from './channels/PostalChannel';
@@ -48,6 +49,17 @@ export function ProfileBlock({
         </h3>
         {profile.job_title && (
           <p className="text-[14px] text-muted-foreground mt-1">{profile.job_title}</p>
+        )}
+        {profile.linkedin_url && (
+          <a
+            href={profile.linkedin_url.startsWith('http') ? profile.linkedin_url : `https://${profile.linkedin_url}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 mt-2 text-[13px] text-sky-600 dark:text-sky-400 hover:underline"
+          >
+            <Linkedin className="w-3.5 h-3.5" />
+            Profil LinkedIn
+          </a>
         )}
       </div>
 
