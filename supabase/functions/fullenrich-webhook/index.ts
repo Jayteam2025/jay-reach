@@ -11,7 +11,7 @@ import { FullenrichWebhookRequestSchema } from "../_shared/fullenrich.ts";
  * partage en query string : `?token=$FULLENRICH_WEBHOOK_TOKEN`.
  *
  * URL configuree dans submitBulkEnrichment :
- *   https://kaysiemagfaqmvusyfav.supabase.co/functions/v1/fullenrich-webhook?token=XXX
+ *   https://<your-project-ref>.supabase.co/functions/v1/fullenrich-webhook?token=XXX
  *
  * FullEnrich POST le meme payload que GET /contact/enrich/bulk/{id} :
  *   { id, name, status, cost, data: [...] }
