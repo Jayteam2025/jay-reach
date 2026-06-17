@@ -48,9 +48,7 @@ export interface EnrichedProfile {
 }
 
 export interface MoreAvailableCounts {
-  hr: number;
-  director: number;
-  field_sales: number;
+  [key: string]: number;
 }
 
 export interface EnrichedCompany {
@@ -78,13 +76,6 @@ export interface EnrichedCompany {
   /** Nombre de contacts additionnels dispo dans FullEnrich par categorie. */
   moreAvailable: MoreAvailableCounts | null;
 }
-
-/** Mapping legacy target_category -> persona slug (utile pour retro-compat) */
-const TARGET_CATEGORY_TO_PERSONA_SLUG: Record<EnrichedProfile['target_category'], string> = {
-  hr: 'hr-decision-maker',
-  director: 'director',
-  field_sales: 'field-sales',
-};
 
 export type RawProspectProfile = Omit<EnrichedProfile, 'persona'> & {
   icp_personas:
@@ -127,14 +118,11 @@ export function denormalizeProfilesToCompanies(
     return (a.last_name || '').localeCompare(b.last_name || '');
   };
 
-  const effectivePersonaSlug = (p: EnrichedProfile): string =>
-    p.persona?.slug ?? TARGET_CATEGORY_TO_PERSONA_SLUG[p.target_category];
-
   const companies: EnrichedCompany[] = [];
   for (const [groupId, groupProfiles] of groupMap) {
     const personaGroups: Record<string, EnrichedProfile[]> = {};
     for (const p of groupProfiles) {
-      const slug = effectivePersonaSlug(p);
+      const slug = p.persona?.slug || 'unknown';
       (personaGroups[slug] ||= []).push(p);
     }
     for (const slug of Object.keys(personaGroups)) {
@@ -144,12 +132,13 @@ export function denormalizeProfilesToCompanies(
       }
     }
 
-    const hrList = groupProfiles.filter((p) => p.target_category === 'hr').sort(sortByBouncer);
+    // Groupes legacy (pour retro-compat)
+    const hrList = groupProfiles.filter((p) => p.persona?.slug === 'hr-decision-maker').sort(sortByBouncer);
     const directorList = groupProfiles
-      .filter((p) => p.target_category === 'director')
+      .filter((p) => p.persona?.slug === 'director')
       .sort(sortByBouncer);
     const sales = groupProfiles
-      .filter((p) => p.target_category === 'field_sales')
+      .filter((p) => p.persona?.slug === 'field-sales')
       .sort(sortByBouncer);
 
     const moreAvailable =

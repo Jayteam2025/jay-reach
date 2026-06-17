@@ -24,12 +24,8 @@ interface ProspectSidePanelProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// Couleurs par target_category (legacy). Le label vient de persona.label.
-const CATEGORY_COLORS = {
-  director: { bg: 'bg-violet-100 dark:bg-violet-900/30', text: 'text-violet-700 dark:text-violet-400' },
-  field_sales: { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-700 dark:text-cyan-400' },
-  hr: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-400' },
-};
+// Couleur stable neutre pour tous les personas
+const PERSONA_COLOR = { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-400' };
 
 const STAGES = [
   { key: 'new', label: 'Signal détecté' },
@@ -56,7 +52,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
   };
 
 
-  const categoryColors = prospect ? CATEGORY_COLORS[prospect.target_category] : null;
+  const categoryColors = prospect ? PERSONA_COLOR : null;
   const categoryLabel = prospect ? getProspectLabel(prospect) : null;
 
   const getStatusLabel = (status: string) => {

@@ -48,11 +48,7 @@ export function TemplatePreview({ template, category, channel }: TemplatePreview
             {profile.first_name} {profile.last_name}
           </p>
           <p className="text-xs text-muted-foreground">
-            {profile.target_category === 'hr'
-              ? 'Responsable RH'
-              : profile.target_category === 'director'
-                ? 'Directeur Commercial'
-                : 'Technico-commercial'}{' '}
+            {profile.job_title || 'Contact'}{' '}
             · {profile.company_name}
           </p>
         </div>

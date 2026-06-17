@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   X, Mail, Phone, Linkedin, Instagram, Music, FileText,
-  Copy, Check, Building2, Users, User, MapPin, Loader2, ChevronDown, ChevronRight,
+  Copy, Check, Users, MapPin, Loader2, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
@@ -18,6 +18,7 @@ interface Prospect {
   phone: string | null;
   job_title: string | null;
   target_category: 'director' | 'field_sales' | 'hr';
+  persona_id: string | null;
   /** Persona resolu via join icp_personas (Jay Reach 1.2.2+). */
   persona: { id: string; slug: string; label: string; channels_priority: string[] } | null;
   linkedin_url: string | null;
@@ -46,12 +47,6 @@ interface Props {
   companyName: string;
   onClose: () => void;
 }
-
-const CATEGORY_LABELS = {
-  hr: { label: 'RH', icon: Users },
-  director: { label: 'Directeur Commercial', icon: Building2 },
-  field_sales: { label: 'Commercial terrain', icon: User },
-};
 
 const CHANNEL_ICONS = {
   email: Mail,
@@ -296,26 +291,22 @@ function ProfileCard({
   );
 }
 
-function CategorySection({
-  category,
+function PersonaSection({
   profiles,
   messagesMap,
 }: {
-  category: 'hr' | 'director' | 'field_sales';
   profiles: Prospect[];
   messagesMap: Record<string, ProspectMessage[]>;
 }) {
   if (profiles.length === 0) return null;
 
-  const config = CATEGORY_LABELS[category];
-  const Icon = config.icon;
-  // Label dynamique = persona.label du 1er profile (fallback config.label legacy).
-  const heading = profiles[0] ? getProspectLabel(profiles[0], config.label) : config.label;
+  // Label = persona.label du 1er profile
+  const heading = profiles[0] ? getProspectLabel(profiles[0], 'Contacts') : 'Contacts';
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 px-1">
-        <Icon className="h-4 w-4 text-violet-500" />
+        <Users className="h-4 w-4 text-violet-500" />
         <h3 className="text-sm font-semibold text-foreground">
           {heading}
         </h3>
@@ -351,7 +342,7 @@ export function CompanyEnrichedView({
         .select('*, icp_personas:persona_id(id, slug, label, channels_priority)')
         .eq('company_group_id', companyGroupId)
         .is('deleted_at', null)
-        .order('target_category');
+        .order('created_at', { ascending: false });
 
       if (profileError) throw profileError;
 
@@ -397,12 +388,18 @@ export function CompanyEnrichedView({
     {} as Record<string, ProspectMessage[]>,
   );
 
-  // Group profiles by category
-  const categorized = {
-    hr: profiles.filter(p => p.target_category === 'hr'),
-    director: profiles.filter(p => p.target_category === 'director'),
-    field_sales: profiles.filter(p => p.target_category === 'field_sales'),
-  };
+  // Group profiles by persona_id dynamically
+  const personaGroups = profiles.reduce(
+    (acc, p) => {
+      const personaId = p.persona_id || 'unknown';
+      if (!acc[personaId]) {
+        acc[personaId] = [];
+      }
+      acc[personaId].push(p);
+      return acc;
+    },
+    {} as Record<string, Prospect[]>,
+  );
 
   return (
     <div className="fixed inset-y-0 right-0 w-[600px] max-w-[100%] bg-background border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
@@ -448,21 +445,13 @@ export function CompanyEnrichedView({
 
         {!isLoading && profiles.length > 0 && (
           <div className="space-y-6">
-            <CategorySection
-              category="hr"
-              profiles={categorized.hr}
-              messagesMap={messagesMap}
-            />
-            <CategorySection
-              category="director"
-              profiles={categorized.director}
-              messagesMap={messagesMap}
-            />
-            <CategorySection
-              category="field_sales"
-              profiles={categorized.field_sales}
-              messagesMap={messagesMap}
-            />
+            {Object.entries(personaGroups).map(([personaId, groupProfiles]) => (
+              <PersonaSection
+                key={personaId}
+                profiles={groupProfiles}
+                messagesMap={messagesMap}
+              />
+            ))}
           </div>
         )}
       </div>

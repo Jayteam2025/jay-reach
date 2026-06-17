@@ -1,22 +1,22 @@
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
 import type { EnrichedCompany } from '@/hooks/useEnrichedCompanies';
-import { useExpandCategory, type ExpandCategory } from './useCompanyEnrichment';
+import { useExpandCategory, type ExpandPersonaSlug } from './useCompanyEnrichment';
 
 /**
- * ExpandCategoryButton — si FullEnrich a encore X contacts dispo dans cette
- * categorie, affiche un bouton "En scraper N de plus" (Jay Reach 1.5.3).
+ * ExpandPersonaButton — si FullEnrich a encore X contacts dispo dans ce
+ * persona, affiche un bouton "En scraper N de plus" (Jay Reach 1.5.3).
  */
-export function ExpandCategoryButton({
+export function ExpandPersonaButton({
   company,
-  category,
+  personaSlug,
   label,
 }: {
   company: EnrichedCompany;
-  category: ExpandCategory;
+  personaSlug: ExpandPersonaSlug;
   label: string;
 }) {
-  const { moreAvailable, expand, isExpanding } = useExpandCategory(company, category, label);
+  const { moreAvailable, expand, isExpanding } = useExpandCategory(company, personaSlug, label);
 
   if (moreAvailable <= 0) return null;
 

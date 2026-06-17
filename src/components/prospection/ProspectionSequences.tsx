@@ -8,18 +8,6 @@ const CHANNEL_ICONS: Record<string, React.ComponentType<{ className?: string }>>
   letter: FileText,
 };
 
-const TARGET_CATEGORY_COLORS: Record<string, string> = {
-  director: 'bg-violet-500/10 text-violet-700 dark:text-violet-200',
-  field_sales: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-200',
-  hr: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
-};
-
-const TARGET_CATEGORY_LABELS: Record<string, string> = {
-  director: 'Directeur',
-  field_sales: 'Commercial',
-  hr: 'RH',
-};
-
 export function ProspectionSequences() {
   const { data: sequences = [], isLoading } = useProspectSequences();
 
@@ -54,21 +42,14 @@ export function ProspectionSequences() {
                 className="rounded-lg border border-border bg-card p-4 hover:bg-card/80 transition-colors hover:shadow-md"
               >
                 <div className="space-y-3">
-                  {/* Header: Name + Target Category Badge + Active Badge */}
+                  {/* Header: Name + Active Badge */}
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-semibold text-foreground">{sequence.name}</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {sequence.target_category && (
-                        <Badge className={TARGET_CATEGORY_COLORS[sequence.target_category] || ''}>
-                          {TARGET_CATEGORY_LABELS[sequence.target_category] || sequence.target_category}
-                        </Badge>
-                      )}
-                      <Badge variant={sequence.is_active ? 'default' : 'secondary'}>
-                        {sequence.is_active ? 'Actif' : 'Inactif'}
-                      </Badge>
-                    </div>
+                    <Badge variant={sequence.is_active ? 'default' : 'secondary'}>
+                      {sequence.is_active ? 'Actif' : 'Inactif'}
+                    </Badge>
                   </div>
 
                   {/* Steps visualization */}

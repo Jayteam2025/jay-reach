@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import type { EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 
-export type ExpandCategory = 'hr' | 'director' | 'field_sales';
+/** Persona slug pour expansion FullEnrich (utilise par la edge function) */
+export type ExpandPersonaSlug = string;
 
 /**
  * Hook : verification Bouncer des emails d'une entreprise (Jay Reach 1.5.3).
@@ -74,7 +75,7 @@ export function useCompanyEnrichment(company: EnrichedCompany) {
   };
 }
 
-export interface ExpandCategoryResult {
+export interface ExpandPersonaResult {
   inserted: number;
   more_available_counts: Record<string, number> | null;
   credits_used: number;
@@ -91,22 +92,22 @@ export interface ExpandCategoryResult {
  * - expand() : declenche le scraping de 10 contacts en plus
  * - isExpanding : true pendant le scraping
  */
-export function useExpandCategory(company: EnrichedCompany, category: ExpandCategory, label: string) {
+export function useExpandCategory(company: EnrichedCompany, personaSlug: ExpandPersonaSlug, label: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const moreAvailable = company.moreAvailable?.[category] ?? 0;
+  const moreAvailable = company.moreAvailable?.[personaSlug] ?? 0;
 
   const expandMutation = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('expand-prospect-profiles', {
         body: {
           company_group_id: company.company_group_id,
-          category,
+          persona_slug: personaSlug,
           count: 10,
         },
       });
       if (error) throw error;
-      return data as ExpandCategoryResult;
+      return data as ExpandPersonaResult;
     },
     onSuccess: (data) => {
       if (data.inserted === 0) {

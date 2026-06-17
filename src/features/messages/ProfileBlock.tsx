@@ -34,6 +34,7 @@ export function ProfileBlock({
     : baseLabel;
 
   const showFallbackHint = !hasApplicableChannel(profile) && messages.length === 0;
+  const hasPostalChannel = profile.persona?.channels_priority.includes('postal_letter') ?? false;
 
   return (
     <article>
@@ -53,7 +54,7 @@ export function ProfileBlock({
       <div className="space-y-3">
         <EmailChannel profile={profile} company={company} message={emailMessage} />
 
-        {profile.target_category === 'director' && (
+        {hasPostalChannel && (
           <PostalChannel profile={profile} company={company} message={postalMessage} />
         )}
 
