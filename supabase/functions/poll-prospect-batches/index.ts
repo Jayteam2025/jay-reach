@@ -151,9 +151,21 @@ Deno.serve(async (req: Request) => {
       }
 
       if (!isEnded) {
+        // Mettre à jour la progression même si le batch n'est pas fini
+        let interim_processed: number = 0;
+        let interim_failed: number = 0;
+        if (batch.batch_type === "scoring" && data.request_counts) {
+          interim_processed = data.request_counts.succeeded ?? 0;
+          interim_failed = (data.request_counts.errored ?? 0) + (data.request_counts.canceled ?? 0) + (data.request_counts.expired ?? 0);
+        }
+
         await supabase
           .from("prospect_batches")
-          .update({ last_polled_at: new Date().toISOString() })
+          .update({
+            last_polled_at: new Date().toISOString(),
+            processed_count: interim_processed > 0 ? interim_processed : undefined,
+            failed_count: interim_failed > 0 ? interim_failed : undefined,
+          })
           .eq("id", batch.id);
 
         results.push({

@@ -74,6 +74,9 @@ export default {
       backdropBlur: {
         'lg': '8px',
       },
+      animation: {
+        shimmer: 'progress-shimmer 2s ease-in-out infinite',
+      },
     },
   },
   plugins: [

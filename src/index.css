@@ -171,6 +171,12 @@
   to { left: 100%; }
 }
 
+/* Progress bar indeterminate shimmer */
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 .cta-glow:hover {
   transform: scale(1.04) translateY(-1px);
   box-shadow: 0 8px 30px rgba(139, 92, 246, 0.3);

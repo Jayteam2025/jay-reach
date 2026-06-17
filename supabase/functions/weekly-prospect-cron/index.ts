@@ -118,7 +118,7 @@ Deno.serve(async (req: Request) => {
     results.push({
       step: "scrape-job-signals",
       success: res.ok,
-      details: { total_inserted: data.total_inserted, scrapers: Object.keys(data.results || {}) },
+      details: { total_inserted: data.total_inserted, scrapers: Array.from(new Set((data.results || []).flatMap((r: { scrapers?: Record<string, unknown> }) => Object.keys(r?.scrapers || {})))) },
       error: res.ok ? undefined : JSON.stringify(data),
     });
   } catch (err) {
