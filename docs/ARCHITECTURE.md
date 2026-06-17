@@ -4,13 +4,9 @@
 
 ## Vue d'ensemble
 
-Jay Reach est une plateforme multi-tenant de prospection conçue autour de trois piliers :
+Jay Reach est un **moteur de prospection B2B configurable** pour scraper, scorer et enrichir les prospects via cold email. Plateforme multi-tenant où chaque opérateur définit ses propres **déclencheurs** (annonces d'emploi à monitorer), **personas** (critères de ciblage), **templates** (messages) et **fournisseurs** (LLM, enrichissement, validation email, outreach).
 
-1. **Sourceur** — Scrape les annonces d'emploi (Adzuna, France Travail)
-2. **Moteur de scoring** — Note les prospects selon des signaux commerciaux (LLM + règles)
-3. **Outreach** — Enrichit les profils, vérifie les emails, envoie des campagnes cold email
-
-Toute la logique est **agnostique à l'utilisateur** : chaque opérateur configure ses propres triggers, personas, templates et fournisseurs (LLM, enrichissement, outreach) via l'interface web.
+Logique entièrement **agnostique** : aucune trace de produit spécifique. Chaque instance standalone configure ses clés API via l'interface web (onglet **Providers**).
 
 ---
 
@@ -30,47 +26,34 @@ Toute la logique est **agnostique à l'utilisateur** : chaque opérateur configu
                        ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ 3. ENRICHISSEMENT                                               │
-│    FullEnrich → contact.linkedin_url, emails déduites           │
-│    Brave Search + Apify → LinkedIn profile                      │
-│    insee-sirene → company légales                               │
+│    FullEnrich : work_email, URL LinkedIn, métadonnées société   │
+│    (Validation par pattern deduction locale)                    │
 └──────────────────────┬──────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ 4. AUDIT PATTERNS EMAIL                                         │
-│    Pattern deduction : [first.last@company.fr](mailto:first.last@company.fr)           │
-│    Double-check : FullEnrich vs patterns                        │
+│ 4. VÉRIFICATION DÉLIVRABILITÉ                                   │
+│    Bouncer (+ Reoon arbitrage) : valid/invalid/risky/disposable │
+│    Apprentissage bounce_rate empirique                          │
 └──────────────────────┬──────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ 5. VÉRIFICATION DÉLIVRABILITÉ                                   │
-│    Bouncer / Reoon : valid / invalid / risky / disposable       │
-│    Caching en email_verification_cache                          │
-└──────────────────────┬──────────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 6. GATE DE DÉLIVRABILITÉ                                        │
-│    Règles : bouncer=valid → push                                │
-│             bouncer=risky + pattern high → push (optionnel)     │
-│             bounce_rate empirique > 0.15 → skip                 │
-└──────────────────────┬──────────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 7. OUTREACH / SMARTLEAD                                         │
-│    Push prospect + email → Smartlead campaign                   │
-│    Webhook : status updates (sent, bounced, replied, opened)    │
+│ 5. GATE EMAIL & OUTREACH                                        │
+│    Filtrage règles (_shared/email-gate.ts)                      │
+│    Push vers Smartlead (campagne résolue par persona_id)        │
+│    Webhook : statuts envoi (sent, bounced, replied, opened)     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Structure Front-End
+## Architecture Front-End
 
 ### Routing
 
-L'app est une **SPA React** avec un seul route principal :
+L'app est une **SPA React 18** avec un seul route principal :
 
 - **`/`** → Page `Prospection.tsx`
-  - Onglets gérés par query param `?tab=triggers|personas|messages|campaigns|settings`
+  - Onglets (query param `?tab=`) : **Entreprises**, **Déclencheurs**, **Personas**, **Templates**, **Branding**, **Providers**, **Campagnes**
   - `AuthGate` wrapper global (redirection login si non authentifié)
 
 ### Composants Clés
@@ -82,162 +65,156 @@ src/
 │   └── Prospection.tsx      — Layout principal, onglets
 ├── components/
 │   ├── auth/                — AuthGate, formulaires login/register
-│   ├── prospection/         — Triggers, Personas, Messages, Campaigns
+│   ├── prospection/         — triggers, personas, templates, campaigns, providers
 │   └── ui/                  — Radix UI + shadcn/ui (button, input, form, etc.)
 ├── hooks/
-│   └── useProspectionData() — TanStack Query, mutation edge functions
+│   └── useProspectionData() — TanStack Query, mutations edge functions
 ├── lib/
-│   └── supabase.ts          — Supabase client (SupabaseClient + real-time)
+│   └── supabase.ts          — Supabase client + real-time listeners
 └── locales/                 — i18n FR/EN/NL
 ```
 
-### États Globaux
+### État Global & Librairies
 
-- **TanStack Query** : cache requêtes, mutations edge functions
-- **Supabase Auth** : session utilisateur, JWT token
+- **TanStack Query (v5)** : cache requêtes, mutations edge functions
+- **Supabase Auth native** : session utilisateur, JWT token
 - **Next Themes** : dark/light mode
-- **React i18next** : traductions
+- **React Hook Form + Zod** : formulaires + validation
+- **React i18next** : traductions multilingues
+- **Tailwind CSS** : styling
+- **shadcn/ui (Radix primitives)** : composants accessibles
 
 ---
 
-## Structure Back-End
+## Architecture Back-End
 
-### Authentification
+### Authentification & Multi-Tenancy
 
-1. **`auth.users`** (géré par Supabase Auth) — email + password
-2. **`profiles`** — extension auth.users (prénom, nom, plan courant)
-3. **`workspaces`** — organisation (multi-tenant)
+1. **`auth.users`** (Supabase Auth natif) — email + password (signup/login)
+2. **`profiles`** — extension (prénom, nom, plan courant)
+3. **`workspaces`** — organisation multi-tenant
 4. **`workspace_members`** — appartenance workspace + rôle (owner/admin/member/viewer)
 
 **Fonction RLS helper :** `user_workspaces(min_role)` SECURITY DEFINER
 
 ```sql
--- Retourne les workspace_id où l'utilisateur a >= min_role
+-- Retourne workspace_id où l'utilisateur a >= min_role
 select workspace_id from public.workspace_members
 where user_id = auth.uid()
-  and role in ('owner', 'admin', ...);
+  and role in ('owner', 'admin', 'member', 'viewer');
 ```
 
 ### Tables de Prospection
 
 **Prospects & Signaux :**
-- `prospects` — identité (prénom, nom, email déduction)
-- `prospect_signals` — signaux détectés (job_posting, company_growth, etc.)
-- `prospect_profiles` — données enrichies (LinkedIn, taille entreprise, bouncer_status)
-- `prospect_imports` — batches d'import (CSV, manuels)
+- `prospects` — identité prospect (prénom, nom, email)
+- `prospect_signals` — signaux détectés (job_posting, etc.)
+- `prospect_profiles` — données enrichies (work_email déduced, linkedin_url, deliverability_status)
+- `prospect_imports` — batches d'import (CSV, paste libre)
 
-**Entreprises & Patterns :**
-- `companies` — enregistrement SIRENE (INSEE)
-- `domain_email_patterns` — déduction [first.last@domain.fr](mailto:first.last@domain.fr) (ex. Acme Inc → acme.fr)
-- `email_verification_cache` — résultats Bouncer/Reoon en cache
+**Entreprises & Patterns Email :**
+- `companies` — métadonnées entreprise (secteur, taille, site web)
+- `domain_email_patterns` — déduction locale de patterns (first.last@domain.fr)
+- `email_verification_cache` — résultats Bouncer/Reoon (valid/invalid/risky/disposable)
 
-**Triggers, Personas, Templates :**
-- `prospect_signal_triggers` — définition des signaux (RH en CDI → score 90+)
-- `prospect_icp_personas` — critères de ciblage (secteur, géographie, taille)
-- `prospect_message_templates` — templates de message (email, SMS, LinkedIn)
+**Configuration Prospection :**
+- `prospect_signal_triggers` — déclencheurs (« Annonces RH », prompt LLM, seuil score)
+- `prospect_icp_personas` — personas ciblés (nom, description, score boost)
+- `prospect_message_templates` — templates email (variables, contenu)
+- `smartlead_campaigns` — mapping persona_id → campagne Smartlead (clé **persona_id**)
 
-**Campagnes & Actions :**
-- `prospect_batches` — batch de sourcing (une campagne = un batch)
-- `prospect_enrichment_jobs` — queue d'enrichissement FullEnrich
-- `prospect_actions` — actions (email envoyé, appel, etc.)
-- `extension_tokens` — tokens pour l'extension Chrome (LinkedIn scraping)
+**Campagnes & Queues :**
+- `prospect_batches` — batch de sourcing (état : pending/processing/completed)
+- `prospect_enrichment_jobs` — queue enrichissement FullEnrich
+- `prospect_actions` — log actions (email envoyé, bounced, replied, etc.)
 
-**Configuration & Boîte à Outils :**
-- `workspace_provider_credentials` — clés chiffrées (LLM, FullEnrich, Bouncer, Smartlead)
-- `workspace_config` — JSON (modèles LLM, seuils scoring, etc.)
-- `smartlead_campaigns` — mappings workspace → campagne Smartlead
-- `recruitment_agencies_blacklist` — agences à exclure du scraping
+**Configuration & Credentials :**
+- `workspace_provider_credentials` — **clés chiffrées** (Anthropic, FullEnrich, Bouncer, Smartlead)
+- `workspace_config` — JSON config (LLM model, seuils, rétention archivage, etc.)
+- `recruitment_agencies_blacklist` — agences exclus du scraping
 
-### Edge Functions (38 total)
+**Détection CRM optionnelle :**
+- `crm_detections` — signaux détectés (DNS CNAME, TXT, body homepage)
+- `crm_detection_providers` — liste providers (Zoho, HubSpot, etc.)
+- Toggle workspace `crm_detection_enabled` → active/désactive
+
+### Edge Functions (30 total)
 
 Chaque fonction est :
-- Endpoint **HTTP** (POST, GET) ou **CRON** (job récurrent)
-- Validation **Zod** sur inputs
-- Auth **JWT** via `extractUserId()` (_shared)
-- SSRF check via `validateUrlOrThrow()`
-- CORS headers via `getCorsHeaders()`
+- Endpoint **HTTP** (POST, GET) OU **CRON** (job récurrent, schedulé en env Supabase)
+- Validation **Zod** stricte sur inputs
+- Auth **JWT** via `extractUserId()` (_shared) pour HTTP ; `service_role` Bearer token pour CRON
+- SSRF check via `validateUrlOrThrow()` sur toute URL utilisateur
+- CORS headers via `getCorsHeaders()` (jamais `*`)
 
-#### Sourcing
+⚠️ **Note self-host** : les CRON ne sont PAS planifiés par défaut. Voir [self-host.md](self-host.md) §planification pour `pnpm run setup:crons`.
+
+#### Sourcing (Adzuna + France Travail)
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `scrape-job-signals` | HTTP POST | Déclenche le scrape Adzuna / France Travail |
+| `scrape-job-signals` | HTTP POST | Déclenche scrape Adzuna / France Travail |
 | `poll-batch-reactive` | HTTP POST | Poll réactif batch (short-lived) |
-| `poll-prospect-batches` | CRON (15 min) | Poll régulier des batches actifs |
+| `poll-prospect-batches` | **CRON** | Poll régulier des batches actifs (15 min) |
 
-#### Classification & Archivage
+#### Scoring & Classification
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `score-prospect-signals` | HTTP POST | LLM scoring + archivage top-15 |
-| `detect-crm` | HTTP POST | Détecte le CRM de l'entreprise (signaux DNS/web) |
+| `score-prospect-signals` | HTTP POST | LLM scoring (prompt du trigger) + top-15 archivage |
+| `detect-crm` | HTTP POST | Détecte CRM entreprise (DNS CNAME + fetch homepage + FullEnrich) |
 | `detect-import-mapping` | HTTP POST | Auto-détecte colonnes CSV lors d'import |
 
-#### Enrichissement
+#### Enrichissement (FullEnrich)
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `enqueue-enrichment` | HTTP POST | File d'attente enrichissement FullEnrich |
-| `fullenrich-webhook` | HTTP POST | Webhook FullEnrich (résultats) |
-| `enrich-company` | HTTP POST | Enrichir company (INSEE, taille, secteur) |
-| `enrich-deduced-emails` | HTTP POST | Deduire emails depuis patterns |
-| `expand-prospect-profiles` | HTTP POST | Étendre profiles avec LinkedIn + Brave |
-| `refresh-prospect-linkedin-snapshots` | HTTP POST | Mettre à jour snapshot LinkedIn |
+| `enqueue-enrichment` | HTTP POST | Enfile prospects vers FullEnrich |
+| `fullenrich-webhook` | HTTP POST | Webhook FullEnrich (peuple prospect_profiles : work_email, linkedin_url) |
+| `enrich-company` | HTTP POST | Enrichir company (taille, secteur) |
+| `enrich-deduced-emails` | HTTP POST | Deduire emails depuis patterns locaux |
+| `expand-prospect-profiles` | HTTP POST | Étendre profiles (utilisé pour non-FullEnrich) |
 | `reenrich-companies` | HTTP POST | Ré-enrichir companies (batch) |
 
-#### Validation Email & Bouncer
+#### Validation Email (Bouncer + Reoon)
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `bouncer-batch` | CRON (07h, 13h UTC) | Vérifie batch emails via Bouncer |
-| `bouncer-webhook` | HTTP POST | Webhook Bouncer (résultats) |
-| `bounce-learning` | CRON (04h UTC) | Apprentissage bounce_rate (améliore gate) |
-| `fullenrich-credits-monitor` | CRON (06h UTC) | Alerte crédits FullEnrich bas |
+| `bouncer-batch` | **CRON** | Vérifie emails Bouncer (07h, 13h UTC) |
+| `bouncer-webhook` | HTTP POST | Webhook Bouncer (peuple email_verification_cache, prospect_profiles.bouncer_status) |
+| `bounce-learning` | **CRON** | Apprentissage bounce_rate empirique (04h UTC) |
+| `fullenrich-credits-monitor` | **CRON** | Alerte crédits FullEnrich bas (06h UTC) |
 
-#### Message Generation
+#### Génération de Messages
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `generate-prospect-messages-bulk` | HTTP POST | Génère messages (email, SMS, LinkedIn) pour un batch |
-| `regenerate-prospect-messages-from-template` | HTTP POST | Régénère depuis un template |
+| `generate-prospect-messages-bulk` | HTTP POST | Génère messages email pour batch (LLM ou template) |
+| `regenerate-prospect-messages-from-template` | HTTP POST | Régénère depuis template |
 
 #### Outreach (Smartlead)
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `send-via-smartlead` | HTTP POST | Push prospects → campagne Smartlead (seule voie d'envoi) |
+| `send-via-smartlead` | HTTP POST | Push prospects → campagne Smartlead (résolue par **persona_id** dans `smartlead_campaigns`) |
+| `smartlead-webhook` | HTTP POST | Webhook Smartlead (statuts : sent, bounced, replied, opened) |
+| `list-smartlead-campaigns` | HTTP POST | Liste campagnes Smartlead (UI) |
 
-#### Extension Chrome (LinkedIn Scraping)
-
-| Fonction | Type | Rôle |
-|----------|------|------|
-| `extension-get-status` | HTTP POST | Récupère statut extension + list triggers actifs |
-| `extension-linkedin-next` | HTTP POST | Récupère prochaine action LinkedIn (invite, message) |
-| `extension-linkedin-update` | HTTP POST | Met à jour statut action (invité, erreur) |
-| `extension-get-pending-actions` | HTTP POST | Liste actions en attente |
-| `extension-update-action-status` | HTTP POST | Marque action comme done/failed |
-| `extension-disconnect` | HTTP POST | Révoque l'extension |
-
-#### Maintenance & Crons
+#### Admin & Maintenance
 
 | Fonction | Type | Rôle |
 |----------|------|------|
-| `cleanup-expired-prospects` | CRON (minuit UTC) | Archive prospects hors scope après 90j |
-| `cleanup-expired-trials` | CRON (01h UTC) | Désactive workspaces essai expirés |
-| `cleanup-stuck-crm-detections` | CRON (02h UTC) | Nettoie détections CRM orphelines |
-| `linkedin-invitation-enqueue` | HTTP POST | File d'attente invitations LinkedIn |
-| `weekly-prospect-recap` | CRON (lundi 08h UTC) | Email recap hebdomadaire |
-| `prospect-weekly-recap` | CRON (variation) | Alias pour recap |
-| `wipe-prospection-db` | HTTP POST | RESET DB (dev/test seulement) |
-
-#### Admin
-
-| Fonction | Type | Rôle |
-|----------|------|------|
+| `cleanup-expired-prospects` | **CRON** | Archive prospects hors scope après 90j (minuit UTC) |
+| `cleanup-stuck-crm-detections` | **CRON** | Nettoie détections CRM orphelines (02h UTC) |
+| `weekly-prospect-recap` | **CRON** | Email recap hebdomadaire (lundi 08h UTC) |
+| `prospect-weekly-recap` | **CRON** | Alias pour recap |
 | `enqueue-prospect-import` | HTTP POST | File d'attente import CSV/JSON |
 | `parse-import-freetext` | HTTP POST | Parse texte libre (copier-coller noms) |
+| `set-provider-credential` | HTTP POST | Sauvegarde clé API provider (chiffrement AES-GCM) |
+| `test-provider-connection` | HTTP POST | Teste connexion provider (Smartlead, FullEnrich, etc.) |
+| `wipe-prospection-db` | HTTP POST | RESET DB (dev/test uniquement) |
 
-**Module `_shared/` :** 53 fichiers Deno (TS). Voir [_shared/README.md](../supabase/functions/_shared/README.md) pour détail complet.
+**Module `_shared/` (Deno/TS)** : helpers partagés (auth, CORS, SSRF, email-gate, providers, encryption). Voir [_shared/README.md](../supabase/functions/_shared/README.md).
 
 ---
 
@@ -254,100 +231,154 @@ workspaces (1+ par utilisateur)
     ↓
 workspace_members (rôle : owner/admin/member/viewer)
     ↓
-prospects, prospect_signals, companies (RLS filtrées par workspace_id)
+prospects, prospect_signals, companies, signals_triggers, icp_personas, message_templates
+(RLS filtrées par workspace_id)
 ```
+
+### Modèle Persona_ID (Cœur du Système)
+
+L'architecture est centrée sur **persona_id** : chaque prospect est ciblé selon un **persona** particulier (ex. « Responsable RH », « Directeur Commercial »).
+
+```
+prospect_signal_triggers (déclencheurs)
+  ├─ trigger_id, workspace_id, name, source (Adzuna / France Travail)
+  ├─ scoring_prompt (LLM)
+  └─ score_threshold
+
+prospect_icp_personas (personas)
+  ├─ persona_id, workspace_id, name, description
+  └─ used in message templates + Smartlead campaigns
+
+prospect_message_templates (templates)
+  ├─ template_id, workspace_id, persona_id, subject, body
+  └─ une template = un (persona_id, trigger_id) unique
+
+smartlead_campaigns (mapping persistent)
+  ├─ workspace_id, persona_id, smartlead_campaign_id
+  └─ Une persona = une campagne Smartlead
+```
+
+**Flow :**
+1. Trigger génère prospects + score LLM
+2. User assigne prospects à un persona (onglet Campagnes)
+3. `send-via-smartlead` résout la campagne Smartlead **par persona_id** dans `smartlead_campaigns`
+4. Prospect est envoyé + webhook Smartlead met à jour statut
 
 ### RLS (Row-Level Security)
 
-Toute table `prospect_*` ou `company_*` a une policy :
+Toute table prospect chiffrée par workspace :
 
 ```sql
-create policy "workspace read"
+create policy "workspace_read"
   on prospects for select to authenticated
   using (workspace_id in (select public.user_workspaces('viewer')));
 ```
 
-Fonction helper SECURITY DEFINER `user_workspaces(min_role)` court-circuite la RLS de `workspace_members` pour éviter une recursion infinie.
+Fonction helper SECURITY DEFINER `user_workspaces(min_role)` court-circuite la RLS de `workspace_members` pour éviter récursion infinie.
 
-### Chiffrement des Secrets
+### Chiffrement des Secrets (Token Encryption)
 
-Clés API fournisseurs (Anthropic, FullEnrich, Bouncer, Smartlead) :
+Clés API fournisseurs :
 - **Table :** `workspace_provider_credentials`
-- **Format :** `{ provider_id, workspace_id, encrypted_key }`
-- **Chiffrage :** AES-GCM avec clé `TOKEN_ENCRYPTION_KEY` (secret Supabase)
-- **Jamais en env** : chiffrement/déchiffrement côté edge function
+- **Colonnes :** `workspace_id, provider_id (anthropic/openai_compatible/bouncer/fullenrich/smartlead/reoon), encrypted_key`
+- **Chiffrage :** AES-256-GCM avec `TOKEN_ENCRYPTION_KEY` (secret Supabase)
+- **Jamais en env** : déchiffrement côté edge function via `resolveCredential(workspace_id, provider_id)`
 
-Voir **[data-model.md](data-model.md)** pour le schéma complet.
+**Fallback env :** Si pas de clé en DB, essaie env vars (`ANTHROPIC_API_KEY`, `SMARTLEAD_API_KEY`, etc.).
+
+Voir **[data-model.md](data-model.md)** pour le schéma SQL détaillé.
 
 ---
 
 ## Flux Événements (Exemples)
 
-### Sourcing → Scoring → Push
+### Sourcing → Scoring
 
-1. User clique « Lancer sourcing » (UI, onglet Triggers)
-2. Appelle `scrape-job-signals` (HTTP) → crée `prospect_signals` (job_posting)
-3. LLM score chaque signal → `prospect_signals.score`
-4. Top-15 prospects gardés, autres archivés
-5. User valide → archivage se finalize
+1. User configure **Déclencheur** (onglet Déclencheurs) : nom, source (Adzuna/France Travail), prompt LLM, seuil
+2. User clique « Lancer sourcing »
+3. `scrape-job-signals` → scrape Adzuna/France Travail
+4. `score-prospect-signals` → LLM évalue chaque annonce (prompt du déclencheur)
+5. Top-15 prospects conservés ; autres archivés (récupérables plus tard)
 
 ### Enrichissement
 
-1. User clique « Enrichir batch » (onglet Campaigns)
-2. Appelle `enqueue-enrichment` → crée `prospect_enrichment_jobs`
-3. CRON `poll-prospect-batches` vérifie toutes les 15 min
-4. `fullenrich-webhook` peuple `prospect_profiles` (email_deduced, linkedin_url)
-5. `expand-prospect-profiles` étend avec LinkedIn scrape (Apify)
+1. User clique « Enrichir » (onglet Campagnes)
+2. `enqueue-enrichment` → crée `prospect_enrichment_jobs` (FullEnrich)
+3. CRON `poll-prospect-batches` poll toutes les 15 min
+4. FullEnrich résout work_email + linkedin_url → `fullenrich-webhook` peuple `prospect_profiles`
+5. Patterns locaux complètent si nécessaire
 
-### Email Gate → Smartlead
+### Vérification Email & Gate
 
-1. User clique « Vérifier délivrabilité »
-2. CRON `bouncer-batch` (07h/13h) → appelle Bouncer API
-3. `bouncer-webhook` peuple `prospect_profiles.bouncer_status`
-4. `email-gate.ts` décide : valid → push, risky + pattern high → push optional, invalide → skip
-5. User confirme → `send-via-smartlead` pousse vers campagne Smartlead
+1. `bouncer-batch` (CRON 07h/13h) → appelle Bouncer API
+2. `bouncer-webhook` peuple `email_verification_cache` + `prospect_profiles.bouncer_status` (valid/invalid/risky/disposable)
+3. `bounce-learning` (CRON 04h) améliore empirical bounce_rate par domaine
+4. `email-gate.ts` filtre :
+   - `bouncer_status=valid` → **push**
+   - `bouncer_status=risky` + pattern high conf (≥0.85-0.90) → **push optionnel**
+   - empirical bounce_rate > 0.15 sur domaine → **skip**
+
+### Outreach Smartlead (persona_id-based)
+
+1. User assigne prospects à un **persona** (ex. « Responsable RH »)
+2. User configure mapping persona → campagne Smartlead (onglet Campagnes)
+3. User confirme → `send-via-smartlead` pousse vers campagne (résolue **par persona_id**)
+4. `smartlead-webhook` reçoit statuts : sent, bounced, replied, opened → peuple `prospect_actions`
+
+### Détection CRM (Optionnel)
+
+Si `crm_detection_enabled` en workspace :
+1. User déclenche « Détecter CRM » (onglet Entreprises)
+2. `detect-crm` scanne DNS (CNAME, TXT), fetch homepage (SSRF-safe), interroge FullEnrich
+3. Détecte signaux CRM (Zoho, HubSpot, Pipedrive, etc.)
+4. Peuple `crm_detections` (aide décision, pas de blocage)
 
 ---
 
-## Providers (Pluggable)
+## Providers (Pluggables)
 
-### LLM
+Chaque provider est :
+- Configuré **par workspace** (clés chiffrées en `workspace_provider_credentials`)
+- Résolu via `resolveCredential(workspace_id, provider_id)` → déchiffre + fallback env
+- **Demo** provider pour tests sans clés (env `DEMO_MODE=true`)
 
-- **Anthropic Claude** (Haiku, Sonnet) — par défaut
-- **OpenAI compatible** (Mistral, etc.)
-- **Demo** (test sans clé API)
+### LLM (Scoring)
 
-Resolve : `resolveProvider(workspace_id, 'llm')` → LLMProvider instance
+- **`anthropic`** (défaut) — Haiku, Sonnet (Claude 3.5)
+- **`openai_compatible`** — Mistral, autres
 
-### Enrichement
+### Enrichissement
 
-- **FullEnrich** — entreprise + contact (email deduced, LinkedIn)
-- **Brave Search** + **Apify** — LinkedIn profile scraping
-- **INSEE SIRENE** — données légales françaises
+- **`fullenrich`** — ✅ seul fournisseur (work_email, linkedin_url, company metadata)
 
-### Email Validation
+### Validation Email
 
-- **Bouncer** — vérification délivrabilité + apprentissage bounce_rate
-- **Reoon** — arbitre des Bouncer unknown/risky
+- **`bouncer`** — délivrabilité + apprentissage bounce_rate
+- **`reoon`** — arbitre Bouncer unknown/risky (optionnel)
 
 ### Outreach
 
-- **Smartlead** — campagne cold email, webhook statuts
-- **SMTP direct** (Resend, etc.)
+- **`smartlead`** — ✅ seul fournisseur outreach (cold email)
 
-Voir **[providers.md](providers.md)** pour intégrer un nouveau provider.
+### Détection CRM (Optionnel)
+
+- **DNS scanning** : CNAME, TXT (Zoho, HubSpot, Pipedrive, etc.)
+- **Web scraping SSRF-safe** : fetch homepage, parse signaux
+- **FullEnrich** : signaux supplémentaires
+
+Voir **[providers.md](providers.md)** pour ajouter un nouveau provider.
 
 ---
 
 ## Configuration Multi-Tenant
 
-### Plan Tiers
+### Plans (Substrat Paywall)
 
-- **OSS** (gratuit) — 100 prospects/mois, sourcing limité, pas LLM payant
-- **Growth** (payant) — 5k prospects/mois, tous providers
-- **Business** (payant) — illimité, support
+La plateforme supporte des plans (gratuit/payant). En **OSS self-host**, le paywall est **no-op** (pas de subscription actifs). Structure présente pour compat future :
 
-Gating via `subscription-access.ts`.
+- Gating via `subscription-access.ts` (vérifie plan workspace)
+- En self-host : tous les plans = accès complet
+- Endpoints publics (signup, webhooks) gérés strictement
 
 ### Configuration Workspace
 
@@ -356,12 +387,16 @@ Stockée en `workspace_config` (JSONB) :
 ```json
 {
   "llm_model": "claude-3-5-sonnet-20241022",
+  "llm_provider": "anthropic",
   "scoring_threshold": 0.7,
   "email_deduction_confidence": 0.85,
   "bounce_rate_threshold": 0.15,
-  "archive_retention_days": 60
+  "archive_retention_days": 60,
+  "crm_detection_enabled": false
 }
 ```
+
+**Onglets Branding** : logo, couleurs, domaine email, footer custom (pour outreach perso).
 
 ---
 
