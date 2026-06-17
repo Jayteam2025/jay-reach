@@ -25,7 +25,7 @@ export default function App() {
                   </Routes>
                 </Suspense>
               </AuthGate>
-              <Toaster richColors position="top-right" />
+              <Toaster richColors position="bottom-right" />
             </BrowserRouter>
           </TooltipProvider>
         </QueryClientProvider>
