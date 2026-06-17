@@ -17,6 +17,7 @@ const ROOT = join(import.meta.dirname, '..');
 const SCAN_DIRS = [
   join(ROOT, 'src'),
   join(ROOT, 'supabase', 'functions'),
+  join(ROOT, 'supabase', 'migrations'),
   join(ROOT, 'scripts'),
 ];
 const STRICT = process.argv.includes('--strict');
@@ -26,11 +27,8 @@ const STRICT = process.argv.includes('--strict');
 const FORBIDDEN = [
   // Jay-specific domain (except mainteiner contact hey@jay-assistant.fr)
   { re: /(?<!hey@)jay-assistant\.fr/, label: 'domaine Jay-assistant.fr hardcodé' },
-  // Personal emails (real leaks)
-  { re: /renartjeanbaptiste@gmail\.com/, label: 'email personnel Jean-Baptiste' },
-  { re: /alexdeclercq@hotmail\.com/, label: 'email personnel Alexandre' },
-  // Generic personal email patterns (fallback)
-  { re: /\w+@(?:gmail|hotmail|yahoo|outlook)\.com/, label: 'email personnel', except: ['_shared/internal-users.ts', '_shared/internal-users.test.ts'] },
+  // Personal emails (real leaks) — gmail/hotmail/yahoo/outlook hors fichiers de test
+  { re: /\w+@(?:gmail|hotmail|yahoo|outlook)\.com/, label: 'email personnel' },
   // Internal workspace UUID (if any)
   { re: /00000000-0000-0000-0000-000000000001/, label: 'hardcoded workspace UUID pattern' },
   // Jay-specific internal UUIDs (must not reappear)
@@ -55,10 +53,6 @@ const IGNORED_PATH_PARTS = ['__tests__', '.test.', 'node_modules', 'check-no-jay
 
 // Allowlist: specific exceptions for patterns that are legit
 const ALLOWLIST = {
-  // internal-users test fixtures may contain test emails
-  '_shared/internal-users.test.ts': [
-    'test@example.com',
-  ],
   // Personas and Triggers use placeholder UUIDs for multi-workspace filtering
   'ProspectionPersonas.tsx': [
     "INTERNAL_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'",
@@ -89,7 +83,10 @@ function* walk(dir) {
     try {
       if (statSync(full).isDirectory()) {
         yield* walk(full);
-      } else if (full.endsWith('.ts') || full.endsWith('.tsx') || full.endsWith('.mjs')) {
+      } else if (
+        full.endsWith('.ts') || full.endsWith('.tsx') ||
+        full.endsWith('.mjs') || full.endsWith('.sql')
+      ) {
         yield full;
       }
     } catch {

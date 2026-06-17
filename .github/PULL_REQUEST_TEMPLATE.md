@@ -21,7 +21,7 @@ Décrivez brièvement ce que cette PR change et pourquoi.
 - [ ] `node scripts/check-no-jay-hardcodes.mjs --strict` ✓ (0 violations)
 - [ ] J'ai mis à jour la documentation (si applicable)
 - [ ] Aucun secret n'est commité
-- [ ] J'accepte le CLA (voir [CLA.md](../../CLA.md))
+- [ ] J'accepte le CLA (voir [CLA.md](../CLA.md))
 
 ## Détails supplémentaires
 

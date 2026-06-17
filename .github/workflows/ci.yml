@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -66,18 +69,15 @@ jobs:
       - name: Deno lint
         run: |
           env DENO_NO_PACKAGE_JSON=1 deno lint supabase/functions/
-        continue-on-error: true
 
       - name: Deno test (core unit tests)
         run: |
           # Run pure unit tests that don't require external services or env config.
           # Excluded: token-encryption (needs TOKEN_ENCRYPTION_KEY env),
-          # internal-users (repo-specific allowlist setup),
           # confidence (4 tests with unresolved business logic assertions).
           env DENO_NO_PACKAGE_JSON=1 deno test \
             --allow-all \
             --no-check \
-            supabase/functions/_shared/apify-linkedin-profile.test.ts \
             supabase/functions/_shared/bouncer.test.ts \
             supabase/functions/_shared/crm-detection/domain-resolver.test.ts \
             supabase/functions/_shared/crm-detection/jobs-analyzer.test.ts \
@@ -109,4 +109,4 @@ jobs:
           # Install and run gitleaks in basic (no-license) mode
           curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks-linux-x64 -o gitleaks
           chmod +x gitleaks
-          ./gitleaks detect --no-banner --verbose || echo "Gitleaks check completed"
+          ./gitleaks detect --no-banner --redact

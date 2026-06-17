@@ -5,7 +5,9 @@
         "no-unversioned-import",
         "no-import-prefix",
         "no-explicit-any",
-        "no-unused-vars"
+        "no-unused-vars",
+        "require-await",
+        "no-control-regex"
       ]
     }
   }
