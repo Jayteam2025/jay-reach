@@ -12,8 +12,7 @@ import { extractUserId } from "../_shared/subscription-access.ts";
  *   - prospect_batches (Anthropic runs en cours ou termines)
  *   - prospect_scraping_logs (historique scraping)
  *
- * Conserve : prospect_templates, prospect_icp_filters, prospect_sequences,
- *            prospect_data_access_logs (audit).
+ * Conserve : prospect_data_access_logs (audit).
  *
  * Utilise avant chaque nouveau run pour repartir propre. Appele par
  * weekly-prospect-cron au debut du run hebdomadaire, et par le bouton

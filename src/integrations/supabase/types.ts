@@ -750,44 +750,6 @@ export type Database = {
           },
         ]
       }
-      prospect_icp_filters: {
-        Row: {
-          created_at: string | null
-          criteria: Json
-          id: string
-          is_active: boolean | null
-          name: string
-          updated_at: string | null
-          workspace_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          criteria: Json
-          id?: string
-          is_active?: boolean | null
-          name: string
-          updated_at?: string | null
-          workspace_id: string
-        }
-        Update: {
-          created_at?: string | null
-          criteria?: Json
-          id?: string
-          is_active?: boolean | null
-          name?: string
-          updated_at?: string | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prospect_icp_filters_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       prospect_imports: {
         Row: {
           committed_at: string | null
@@ -1012,13 +974,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "prospect_messages_sequence_id_fkey"
-            columns: ["sequence_id"]
-            isOneToOne: false
-            referencedRelation: "prospect_sequences"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "prospect_messages_template_id_fkey"
             columns: ["template_id"]
             isOneToOne: false
@@ -1226,60 +1181,6 @@ export type Database = {
           },
         ]
       }
-      prospect_sequences: {
-        Row: {
-          auto_send: boolean | null
-          created_at: string | null
-          description: string | null
-          id: string
-          is_active: boolean | null
-          name: string
-          persona_id: string | null
-          steps: Json
-          updated_at: string | null
-          workspace_id: string | null
-        }
-        Insert: {
-          auto_send?: boolean | null
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          is_active?: boolean | null
-          name: string
-          persona_id?: string | null
-          steps: Json
-          updated_at?: string | null
-          workspace_id?: string | null
-        }
-        Update: {
-          auto_send?: boolean | null
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          is_active?: boolean | null
-          name?: string
-          persona_id?: string | null
-          steps?: Json
-          updated_at?: string | null
-          workspace_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prospect_sequences_persona_id_fkey"
-            columns: ["persona_id"]
-            isOneToOne: false
-            referencedRelation: "icp_personas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "prospect_sequences_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       prospect_signals: {
         Row: {
           acquisition_method: string
@@ -1365,59 +1266,6 @@ export type Database = {
           },
           {
             foreignKeyName: "prospect_signals_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      prospect_templates: {
-        Row: {
-          available_variables: Json | null
-          channel: string | null
-          created_at: string | null
-          id: string
-          is_active: boolean | null
-          name: string
-          system_prompt: string
-          target_category: string | null
-          updated_at: string | null
-          user_prompt_template: string
-          version: number | null
-          workspace_id: string
-        }
-        Insert: {
-          available_variables?: Json | null
-          channel?: string | null
-          created_at?: string | null
-          id?: string
-          is_active?: boolean | null
-          name: string
-          system_prompt: string
-          target_category?: string | null
-          updated_at?: string | null
-          user_prompt_template: string
-          version?: number | null
-          workspace_id: string
-        }
-        Update: {
-          available_variables?: Json | null
-          channel?: string | null
-          created_at?: string | null
-          id?: string
-          is_active?: boolean | null
-          name?: string
-          system_prompt?: string
-          target_category?: string | null
-          updated_at?: string | null
-          user_prompt_template?: string
-          version?: number | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prospect_templates_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
