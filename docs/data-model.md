@@ -1,16 +1,18 @@
 > **Français** | [English](data-model.en.md)
 
-# Modèle de Données — Jay Reach
+# Modèle de Données — Jay Reach OSS
 
 ## Vue d'ensemble
 
-Jay Reach est multi-tenant. Chaque organisation (workspace) a ses propres prospects, triggers, personas et configurations. L'accès est protégé par **Row-Level Security (RLS)** Postgres.
+Jay Reach est **multi-tenant workspace-based**. Chaque organisation (workspace) exploite ses propres prospects, déclencheurs (signal triggers), personas et configurations. Tous les accès sont protégés par **Row-Level Security (RLS)** Postgres via la fonction `user_workspaces(min_role)`, qui valide l'appartenance de l'utilisateur au workspace et son rôle.
+
+**Tonalité générique** : zéro trace Jay-specific. Prospection B2B configurable, sourcing → scoring → enrichissement → validation email → push Smartlead (ou tout outreach générique).
 
 ---
 
-## Tables Principales
+## Architecture Multi-tenant
 
-### Authentification & Tenancy
+### Socle d'authentification & tenancy
 
 #### `auth.users` (Supabase Auth)
 - Gérée par Supabase — email + password hash
@@ -18,51 +20,51 @@ Jay Reach est multi-tenant. Chaque organisation (workspace) a ses propres prospe
 - Authentification JWT
 
 #### `profiles`
-Profil utilisateur (extension auth.users).
+Profil utilisateur (extension `auth.users`).
 
-```sql
-create table profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  first_name text,
-  last_name text,
-  role text default 'admin',                    -- admin|member
-  current_plan text default 'oss',              -- oss|growth|business
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Référence `auth.users(id)`, cascade DELETE |
+| `email` | text | Email utilisateur |
+| `first_name` | text | Prénom |
+| `last_name` | text | Nom |
+| `role` | text | `admin` ou `member` (profile-level, non workspace) |
+| `current_plan` | text | `oss` (par défaut), ou plan commercial |
+| `created_at` | timestamptz | Timestamp création |
+
+**RLS** : `self read` (SELECT si `id = auth.uid()`) + `self update` (UPDATE/CHECK si `id = auth.uid()`).
 
 #### `workspaces`
-Organisation (SaaS tenant).
+Organisation/instance multi-tenant (SaaS tenant).
 
-```sql
-create table workspaces (
-  id uuid primary key,
-  name text not null,
-  slug text unique,
-  settings jsonb default '{}'::jsonb,           -- branding, LLM model, seuils
-  created_by uuid references auth.users(id),
-  is_active boolean default true,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `name` | text | Nom du workspace (ex: "Mon workspace") |
+| `slug` | text | Slug unique (ex: "ws-abc12345") |
+| `settings` | jsonb | Configuration générale (branding, seuils LLM, modèles) |
+| `created_by` | uuid (FK) | Référence `auth.users(id)` |
+| `is_active` | bool | `true` par défaut |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : `members read ws` (SELECT si workspace dans `user_workspaces('viewer')`) + `members update ws` (UPDATE/CHECK si workspace dans `user_workspaces('admin')`).
 
 #### `workspace_members`
 Appartenance user → workspace + rôle.
 
-```sql
-create table workspace_members (
-  workspace_id uuid not null references workspaces(id),
-  user_id uuid not null references auth.users(id),
-  role text default 'owner',                    -- owner|admin|member|viewer
-  invited_by uuid references auth.users(id),
-  joined_at timestamptz default now(),
-  primary key (workspace_id, user_id)
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `user_id` | uuid (FK) | Référence `auth.users(id)`, cascade DELETE |
+| `role` | text | `owner`, `admin`, `member`, ou `viewer` |
+| `invited_by` | uuid (FK) | Qui a invité l'utilisateur (ref `auth.users(id)`) |
+| `joined_at` | timestamptz | Date d'adhésion au workspace |
+| **PK** | | `(workspace_id, user_id)` |
 
-**Fonction RLS helper :**
+**RLS** : `members read wm` (SELECT si workspace dans `user_workspaces('viewer')`).
+
+#### Fonction RLS backbone : `user_workspaces(min_role DEFAULT 'viewer')`
 
 ```sql
 create or replace function public.user_workspaces(min_role text default 'viewer')
@@ -78,440 +80,683 @@ returns setof uuid language sql stable security definer set search_path = 'publi
 $$;
 ```
 
-Utilisée par toutes les RLS policies workspace-based pour éviter les boucles infinies (SECURITY DEFINER).
+**Utilisation** : toutes les RLS policies workspace-based l'utilisent. Retourne un `SETOF uuid` (list des workspace_ids accessibles). **SECURITY DEFINER** pour bypassez la RLS de `workspace_members` lui-même (évite les boucles infinies).
+
+#### Trigger de bootstrap : `handle_new_user()`
+
+Trigger déclenché à chaque `INSERT` sur `auth.users` :
+1. Crée un profil `admin` dans `profiles`
+2. Crée un workspace par défaut (`'Mon workspace'`)
+3. Ajoute l'utilisateur comme `owner` du workspace dans `workspace_members`
+
+**Tous les users signup deviennent admin et reçoivent leur propre workspace OSS.** Pas de domaine whitelist.
 
 ---
 
-### Prospects & Signaux
-
-#### `prospects`
-Identité d'une personne prospectée.
-
-```sql
-create table prospects (
-  id uuid primary key,
-  workspace_id uuid not null references workspaces(id),
-  first_name text not null,
-  last_name text,
-  email text,                                    -- déductible ou enrichi
-  company_id uuid references companies(id),
-  created_at timestamptz default now()
-);
--- RLS: workspace_id in (select user_workspaces('viewer'))
-```
-
-#### `prospect_signals`
-Signaux détectés pour un prospect (ex: annonce d'emploi).
-
-```sql
-create table prospect_signals (
-  id uuid primary key,
-  workspace_id uuid not null,
-  prospect_id uuid not null references prospects(id),
-  signal_type text not null,                    -- job_posting|company_growth|crm_adoption
-  signal_trigger_id uuid references prospect_signal_triggers(id),
-  score numeric,                                -- 0-100 (LLM evaluated)
-  is_archived boolean default false,
-  metadata jsonb,                               -- source, job title, date, etc.
-  created_at timestamptz default now()
-);
-```
+### Signaux & Prospection
 
 #### `prospect_profiles`
-Données enrichies (FullEnrich, LinkedIn, Bouncer).
+Identité enrichie d'une personne prospectée (contact).
 
-```sql
-create table prospect_profiles (
-  id uuid primary key,
-  workspace_id uuid not null,
-  prospect_id uuid not null references prospects(id) unique,
-  linkedin_url text,
-  linkedin_data jsonb,                          -- snapshot Apify
-  email_verified text,                          -- deduced|enriched|api
-  bouncer_status text,                          -- valid|invalid|risky|disposable|unknown
-  bouncer_result jsonb,                         -- full Bouncer response
-  company_sector text,
-  company_size text,                            -- 1-10|11-50|51-250|etc
-  enriched_at timestamptz,
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `first_name` | text | Prénom (ex: "Jean") |
+| `last_name` | text | Nom (ex: "Dupont") |
+| `email` | text | Email principal |
+| `job_title` | text | Titre de poste |
+| `company_name` | text | Nom société |
+| `company_siren` | text | SIREN INSEE (unique) |
+| `company_size` | text | Taille (ex: "50-250", "250+") |
+| `company_sector` | text | Secteur/NAF |
+| `company_city` | text | Ville siège |
+| `company_group_id` | uuid | Groupement logique des contacts de même société |
+| `linkedin_url` | text | URL LinkedIn |
+| `status` | text | `new`, `qualified`, `in_sequence`, `replied`, `meeting_booked`, `converted`, `lost` |
+| `persona_id` | uuid (FK) | Référence `icp_personas(id)`, persona cible pour ce contact |
+| `source_signal_id` | uuid (FK) | Signal ayant déclenché la détection (ref `prospect_signals(id)`) |
+| `email_source` | text | Origine email : `deduced`, `fullenrich`, `crm`, `manual`, `imported`, `unknown` |
+| `deliverability_status` | text | Verdict validateur : `valid`, `invalid`, `risky`, `disposable`, `role`, `unknown` |
+| `deliverability_reason` | text | Raison du verdict (ex: "mailbox does not exist") |
+| `deliverability_checked_at` | timestamptz | Quand le verdict a été obtenu |
+| `deliverability_provider` | text | Validateur utilisé : `bouncer`, `reoon`, `demo` |
+| `bouncer_status` | text | **Legacy** : remplacé par `deliverability_status` |
+| `bouncer_checked_at` | timestamptz | **Legacy** |
+| `smartlead_push_decision` | text | Décision gate : `push`, `skip` |
+| `smartlead_push_reason` | text | Raison du gate (ex: "bouncer_invalid", "pattern_unknown") |
+| `more_available_counts` | jsonb | Compteurs FullEnrich (pour pagination contacts d'une société) |
+| `deleted_at` | timestamptz | Soft delete (NULL = actif) |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : `members read` (SELECT si workspace dans `user_workspaces('viewer')`) / `members insert/update` (si workspace dans `user_workspaces('member')`) / `admins delete` (si workspace dans `user_workspaces('admin')`).
+
+**Indices clés** : `workspace_id`, `persona_id`, `deliverability_status`, `status`, `email_source`, `deleted_at`.
+
+#### `prospect_signals`
+Signaux bruts détectés (annonces d'emploi, activité LinkedIn, etc.).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
+| `signal_type` | text | `job_posting`, `linkedin_activity`, `google_alert`, etc. |
+| `source` | text | Source du signal (ex: "Adzuna", "France Travail") |
+| `source_url` | text | URL source |
+| `raw_content` | text | Contenu brut du signal (texte annonce, etc.) |
+| `extracted_data` | jsonb | Données structurées extraites (JSON job details) |
+| `company_name` | text | Nom société détecté du signal |
+| `matched_prospect_id` | uuid (FK) | Contact appairé (ref `prospect_profiles(id)`) |
+| `status` | text | `raw`, `matched`, `dismissed` |
+| `is_archived` | bool | `false` par défaut ; archivé si hors top-15 après scoring |
+| `detected_at` | timestamptz | Quand le signal a été trouvé |
+| `created_at` | timestamptz | Timestamp création |
+
+**RLS** : workspace-based (même pattern que `prospect_profiles`).
+
+**Indices clés** : `workspace_id`, `status`, `detected_at`, `source`.
 
 #### `prospect_imports`
 Batches d'import CSV/manuels.
 
-```sql
-create table prospect_imports (
-  id uuid primary key,
-  workspace_id uuid not null,
-  import_name text,
-  import_type text,                             -- csv|manual|api
-  status text default 'pending',                -- pending|processing|completed|failed
-  total_rows int,
-  successful_rows int,
-  mapping jsonb,                                -- colonnes mappées
-  created_at timestamptz default now(),
-  completed_at timestamptz
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
+| `user_id` | uuid (FK) | Qui a lancé l'import |
+| `import_name` | text | Nom du batch (ex: "Import Q2 2026") |
+| `import_type` | text | `csv`, `manual`, `api` |
+| `status` | text | `pending`, `processing`, `completed`, `failed` |
+| `total_rows` | int | Nombre de lignes en entrée |
+| `successful_rows` | int | Nombre de contacts créés |
+| `mapping` | jsonb | Colonnes mappées (CSV → prospect_profiles) |
+| `error_log` | jsonb | Erreurs détaillées par ligne |
+| `created_at` | timestamptz | Timestamp création |
+| `completed_at` | timestamptz | Quand l'import a terminé |
+
+**RLS** : `members` (lecture du workspace) / `members insert/update` (sa propre ligne) / `admin delete`.
 
 ---
 
-### Entreprises
+### Déclencheurs & Personas
 
-#### `companies`
-Données légales & enrichies (INSEE SIRENE, FullEnrich).
+#### `signal_triggers`
+Comment trouver les bonnes sociétés (filtres de scrape/sourcing). Distinct des personas (qui contacter).
 
-```sql
-create table companies (
-  id uuid primary key,
-  workspace_id uuid not null,
-  name text not null,
-  sirene text unique,                           -- INSEE SIREN/SIRET
-  website text,
-  sector text,                                  -- NAF code
-  size_category text,                           -- micro|pme|eti|large
-  employees_count int,
-  founded_year int,
-  location text,
-  crm_detected text,                            -- Salesforce|HubSpot|Pipedrive|etc
-  crm_detection_metadata jsonb,                 -- signaux détection
-  enriched_at timestamptz,
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `slug` | text | Identifiant unique par workspace (ex: "recrutement-commerciaux") |
+| `label` | text | Libellé lisible (ex: "Recrutement Commerciaux") |
+| `description` | text | Description détaillée |
+| `icon` | text | Icône (emoji ou class) |
+| `search_keywords` | text[] | Mots-clés de scrape (ex: ["commercial", "sales director"]) |
+| `exclude_keywords` | text[] | Exclusions (ex: ["freelance", "agence"]) |
+| `source_types` | text[] | Sources activées : `adzuna`, `france_travail`, `brave`, `linkedin_jobs`, etc. |
+| `company_size_min` | int | Taille min (0-10, 11-50, etc.) |
+| `company_size_max` | int | Taille max |
+| `industry_filters` | text[] | Secteurs cibles (ex: ["Tech", "Finance"]) |
+| `geo_filters` | jsonb | Filtres géographiques (pays, régions) |
+| `signal_scoring_prompt` | text | Prompt LLM pour qualifier le signal (la boite est intéressante ?) |
+| `signal_match_threshold` | int | Seuil de confiance (0-100) pour garder le signal |
+| `elimination_rules` | jsonb | Règles d'élimination supplémentaires |
+| `is_active` | bool | `true` par défaut |
+| `is_default` | bool | Un seul `true` par workspace |
+| `created_by` | uuid (FK) | Ref `auth.users(id)` |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
 
-#### `domain_email_patterns`
-Patterns d'email déduction ([first.last@domain](mailto:first.last@domain)).
+**RLS** : `members read` (viewer) / `admins insert/update/delete`.
 
-```sql
-create table domain_email_patterns (
-  id uuid primary key,
-  workspace_id uuid not null,
-  domain text not null,                         -- company.fr
-  pattern text not null,                        -- {f}.{l}@{d} = f.l@company.fr
-  confidence numeric,                           -- 0-1 (empirique)
-  samples int,                                  -- nb emails observés
-  bounce_rate numeric,                          -- pour apprentissage
-  downgraded_at timestamptz,                    -- si bounce_rate > seuil
-  downgrade_reason text,
-  unique(workspace_id, domain)
-);
-```
+**Indices clés** : `workspace_id, is_active`, `workspace_id, slug`, `workspace_id, is_default`.
 
-#### `email_verification_cache`
-Cache des résultats Bouncer/Reoon.
+#### `icp_personas`
+Qui contacter dans les sociétés trouvées par les signal_triggers.
 
-```sql
-create table email_verification_cache (
-  email text primary key,
-  workspace_id uuid not null,
-  provider text,                                -- bouncer|reoon
-  status text,                                  -- valid|invalid|risky|disposable|unknown
-  verified_at timestamptz,
-  expires_at timestamptz
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `slug` | text | Identifiant unique (ex: "drh-grand-groupe") |
+| `name` | text | Libellé (ex: "Directeur RH") |
+| `description` | text | Description détaillée du persona |
+| `job_title_keywords` | text[] | Mots-clés titres de poste (ex: ["Director", "VP", "Head"]) |
+| `seniority_levels` | text[] | Niveaux hiérarchiques (ex: ["c_level", "director", "manager"]) |
+| `department_patterns` | text[] | Rôles fonctionnels (ex: ["Sales", "HR", "Operations"]) |
+| `exclude_titles` | text[] | Titres à exclure |
+| `persona_scoring_prompt` | text | Prompt LLM pour évaluer si contact = persona (0-100) |
+| `persona_match_threshold` | int | Score min pour retenir le contact (0-100) |
+| `is_active` | bool | `true` par défaut |
+| `is_default` | bool | Un seul `true` par workspace |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
 
----
+**RLS** : workspace-based (viewer read, admin insert/update/delete).
 
-### Triggers, Personas, Templates
-
-#### `prospect_signal_triggers`
-Définition des signaux à détecter.
-
-```sql
-create table prospect_signal_triggers (
-  id uuid primary key,
-  workspace_id uuid not null,
-  name text not null,                           -- "RH en CDI"
-  signal_type text not null,                    -- job_posting|company_growth
-  filter_rules jsonb,                           -- {job_title: "RH", contract: "CDI"}
-  score_multiplier numeric default 1,           -- 1.0 = neutre, 1.5 = bonus
-  is_active boolean default true,
-  created_at timestamptz default now()
-);
-```
-
-#### `prospect_icp_personas`
-Critères de ciblage (Ideal Customer Profile).
-
-```sql
-create table prospect_icp_personas (
-  id uuid primary key,
-  workspace_id uuid not null,
-  name text not null,                           -- "Directeur Commercial"
-  description text,
-  job_titles text[],                            -- ex: ["Directeur Commercial", "VP Sales"]
-  sectors text[],                               -- ex: ["Tech", "Finance"]
-  company_sizes text[],                         -- ex: ["50-250", "250+"]
-  geographies text[],                           -- ex: ["France", "Belgique"]
-  signal_triggers uuid[],                       -- references prospect_signal_triggers
-  is_active boolean default true,
-  created_at timestamptz default now()
-);
-```
+**Indices clés** : `workspace_id, is_active`, `workspace_id, slug`.
 
 #### `prospect_message_templates`
-Templates de message personnalisable (email, SMS, LinkedIn).
+Templates de messages prospection (email, LinkedIn, courrier, DM social).
 
-```sql
-create table prospect_message_templates (
-  id uuid primary key,
-  workspace_id uuid not null,
-  name text not null,
-  channel text not null,                        -- email|sms|linkedin|whatsapp
-  subject text,                                 -- si email
-  body text not null,                           -- template avec {{variables}}
-  persona_id uuid references prospect_icp_personas(id),
-  variables text[],                             -- ex: [{{first_name}}, {{company}}]
-  is_default boolean default false,
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
+| `persona_id` | uuid (FK) | Référence `icp_personas(id)` (peut être NULL pour templates legacy) |
+| `channel` | text | `email`, `linkedin`, `postal_letter`, `social_dm` |
+| `subject_variants` | text[] | Variantes du sujet (email) |
+| `opener_variants` | text[] | Ouvertures du message |
+| `body` | text | Corps du message (template avec `{{variables}}`) |
+| `icebreaker_template` | text | Crochet initial |
+| `is_active` | bool | `true` par défaut |
+| `version` | int | Versioning (auto-incrémenté sur UPDATE) |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+| `updated_by` | uuid (FK) | Qui a modifié |
 
----
+**RLS** : workspace-based (viewer read, admin insert/update/delete).
 
-### Batches, Jobs, Actions
-
-#### `prospect_batches`
-Un batch = une campagne de sourcing.
-
-```sql
-create table prospect_batches (
-  id uuid primary key,
-  workspace_id uuid not null,
-  name text,                                    -- "Sourcing RH 2026-06"
-  status text default 'draft',                  -- draft|sourcing|scoring|enriching|ready|sent
-  trigger_id uuid references prospect_signal_triggers(id),
-  persona_id uuid references prospect_icp_personas(id),
-  total_prospects int,
-  prospects_sourced int,
-  prospects_scored int,
-  prospects_enriched int,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-```
-
-#### `prospect_enrichment_jobs`
-Queue d'enrichissement FullEnrich.
-
-```sql
-create table prospect_enrichment_jobs (
-  id uuid primary key,
-  workspace_id uuid not null,
-  batch_id uuid references prospect_batches(id),
-  prospect_id uuid references prospects(id),
-  status text default 'pending',                -- pending|processing|completed|failed
-  fullenrich_request_id text,                   -- ID API FullEnrich
-  result jsonb,                                 -- réponse FullEnrich
-  created_at timestamptz default now(),
-  completed_at timestamptz
-);
-```
-
-#### `prospect_actions`
-Actions liées à un prospect (email sent, appel, etc).
-
-```sql
-create table prospect_actions (
-  id uuid primary key,
-  workspace_id uuid not null,
-  prospect_id uuid references prospects(id),
-  action_type text not null,                    -- email_sent|message_sent|opened|replied|call
-  channel text,                                 -- email|sms|linkedin|whatsapp
-  metadata jsonb,                               -- campaign_id, provider, timestamp
-  created_at timestamptz default now()
-);
-```
+**Unique** : `(workspace_id, persona_id, channel)` (1 template par persona et canal).
 
 ---
 
-### Configuration & Sécurité
+### Fournisseurs & Configurations
+
+#### `workspace_providers`
+Enregistrement des fournisseurs actifs (Smartlead, FullEnrich, Bouncer, etc.).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `category` | text | `outreach` (Smartlead), `validator` (Bouncer), `enricher` (FullEnrich) |
+| `provider_type` | text | Type du provider (ex: "smartlead", "bouncer", "fullenrich") |
+| `channel` | text | Canal (outreach uniquement) : `email`, `linkedin`, NULL pour validator/enricher |
+| `is_active` | bool | `true` si actif |
+| `config` | jsonb | Configuration (schema spécifique au provider) |
+| `credential_last4` | text | Derniers 4 caractères de la clé (affichage UI) |
+| `credential_set_at` | timestamptz | Quand la clé a été rentrée |
+| `last_test_status` | text | Résultat du dernier test (`success`, `failed`) |
+| `last_test_at` | timestamptz | Quand le dernier test a eu lieu |
+| `last_test_detail` | text | Détail du test (message d'erreur si failed) |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : workspace-based (viewer read, admin insert/update/delete).
+
+**Unique** : `(workspace_id, category, channel, is_active)` (1 seul provider actif par catégorie/canal).
 
 #### `workspace_provider_credentials`
-Clés API chiffrées (LLM, enrichement, outreach).
+Stockage chiffré des clés API (AES-256-GCM via `token-encryption.ts`).
 
-```sql
-create table workspace_provider_credentials (
-  id uuid primary key,
-  workspace_id uuid not null references workspaces(id),
-  provider_id text not null,                    -- anthropic|fullenrich|bouncer|smartlead
-  encrypted_key text not null,                  -- AES-GCM chiffré avec TOKEN_ENCRYPTION_KEY
-  created_at timestamptz default now(),
-  unique(workspace_id, provider_id)
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `provider_id` | uuid (PK, FK) | Référence `workspace_providers(id)`, cascade DELETE |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `encrypted_key` | text | Base64 (IV + ciphertext + auth tag) |
+| `last4` | text | Derniers 4 chars (affichage UI safe) |
+| `set_by` | uuid (FK) | Qui a rentrée la clé |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
 
-**Chiffrement** : côté edge function avec `token-encryption.ts`
+**RLS** : RLS activée mais **sans policy = service_role uniquement** (les clés ne doivent JAMAIS transiter par PostgREST client).
 
-```typescript
-import { encryptToken, decryptToken } from './_shared/token-encryption.ts';
+#### `workspace_brand`
+Branding et configuration par workspace.
 
-const encrypted = encryptToken(apiKey, encryptionKey);  // stock encrypted_key
-const decrypted = decryptToken(encrypted, encryptionKey); // déchiffre at runtime
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `workspace_id` | uuid (PK, FK) | Référence `workspaces(id)`, 1-1 avec workspaces |
+| `brand_name` | text | Nom de la marque |
+| `signature` | text | Signature email |
+| `hero_image_url` | text | Image en-tête |
+| `founder_name` | text | Nom du fondateur/auteur (substitue `{{founder_name}}` dans les prompts) |
+| `product_pitch` | text | Court pitch du produit (substitue `{{product_pitch}}`) |
+| `app_url` | text | URL de l'app (pour liens dans emails recap) |
+| `notification_recipients` | text[] | Emails destinataires des notifications (liste vide = pas d'envoi) |
+| `attachments` | jsonb | Pièces jointes (CV inline, etc.) : `[{persona_id?, channel?, type, url, alt?}, ...]` |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
 
-#### `workspace_config`
-Configuration globale workspace (JSON).
+**RLS** : workspace-based (viewer read, admin insert/update/delete).
 
-```sql
-create table workspace_config (
-  id uuid primary key,
-  workspace_id uuid not null references workspaces(id) unique,
-  llm_model text default 'claude-3-5-sonnet-20241022',
-  llm_temperature numeric default 0.7,
-  scoring_threshold numeric default 0.7,       -- top-15 vs archivés
-  email_deduction_confidence numeric default 0.85,
-  bounce_rate_threshold numeric default 0.15,
-  archive_retention_days int default 60,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-```
+---
+
+### Campagnes & Messages
+
+#### `prospect_batches`
+Campagne de sourcing (un batch de prospects à traiter ensemble).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `name` | text | Nom camp (ex: "Sourcing RH Q2 2026") |
+| `status` | text | `draft`, `sourcing`, `scoring`, `enriching`, `ready`, `sent` |
+| `trigger_id` | uuid (FK) | Signal trigger utilisé (ref `signal_triggers(id)`) |
+| `persona_id` | uuid (FK) | Persona cible (ref `icp_personas(id)`) |
+| `total_prospects` | int | Nombre de prospects dans le batch |
+| `prospects_sourced` | int | Trouvés |
+| `prospects_scored` | int | Qualifiés |
+| `prospects_enriched` | int | Enrichis |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : workspace-based (member read/insert/update, admin delete).
+
+**Indices clés** : `workspace_id, status`, `workspace_id, persona_id`.
+
+#### `prospect_messages`
+Messages prospection générés pour chaque prospect.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
+| `prospect_id` | uuid (FK) | Référence `prospect_profiles(id)`, cascade DELETE |
+| `batch_id` | uuid (FK) | Batch d'appartenance (ref `prospect_batches(id)`) |
+| `persona_id` | uuid (FK) | Persona visé (ref `icp_personas(id)`) |
+| `channel` | text | `email`, `linkedin`, `postal_letter`, `social_dm` |
+| `subject` | text | Sujet (email) |
+| `body` | text | Corps du message |
+| `icebreaker` | text | Crochet initial |
+| `status` | text | `draft`, `approved`, `sent`, `replied`, `bounced` |
+| `template_id` | uuid (FK) | Template utilisé (ref `prospect_message_templates(id)`) |
+| `template_version` | int | Version du template à la génération |
+| `scheduled_at` | timestamptz | Date d'envoi programmée |
+| `sent_at` | timestamptz | Date envoi réel |
+| `replied_at` | timestamptz | Date première réponse |
+| `llm_model` | text | Modèle LLM utilisé (ex: "mistral-medium-3-5") |
+| `llm_prompt_hash` | text | Hash du prompt (traçabilité) |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : workspace-based.
+
+**Indices clés** : `workspace_id, prospect_id`, `workspace_id, status`, `workspace_id, channel`.
+
+#### `prospect_actions`
+Actions de suivi (sent, opened, replied, clicked, downloaded).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)` |
+| `prospect_id` | uuid (FK) | Référence `prospect_profiles(id)`, cascade DELETE |
+| `action_type` | text | `copy`, `open`, `sent`, `download` |
+| `channel` | text | `email`, `linkedin`, `instagram`, `tiktok`, `letter`, `postal_letter`, `social_dm` |
+| `metadata` | jsonb | Contexte (campaign_id, timestamp, provider, etc.) |
+| `created_at` | timestamptz | Timestamp action |
+
+**RLS** : workspace-based (member insert, admin delete).
+
+---
+
+### Enrichissement & Validation
+
+#### `prospect_enrichment_jobs`
+Queue d'enrichissement FullEnrich par prospect.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `user_id` | uuid (FK) | Qui a lancé l'enrichissement (ref `auth.users(id)`) |
+| `batch_id` | uuid (FK) | Batch associé (ref `prospect_batches(id)`, peut être NULL) |
+| `prospect_id` | uuid (FK) | Contact principal (ref `prospect_profiles(id)`) |
+| `status` | text | `pending`, `processing`, `completed`, `failed` |
+| `fullenrich_request_id` | text | ID API FullEnrich |
+| `result` | jsonb | Réponse FullEnrich (contacts trouvés) |
+| `error` | text | Message d'erreur si failed |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+| `completed_at` | timestamptz | Quand le job a terminé |
+
+**RLS** : workspace-based (member insert/update/read own jobs, admin read all).
+
+#### `prospect_enrichment_job_items`
+Contacts trouvés par un job d'enrichissement (N contacts par job).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `job_id` | uuid (FK) | Référence `prospect_enrichment_jobs(id)`, cascade DELETE |
+| `prospect_id` | uuid (FK) | Contact trouvé (ref `prospect_profiles(id)`) |
+| `email` | text | Email trouvé |
+| `job_title` | text | Titre de poste |
+| `status` | text | `pending`, `processing`, `completed`, `failed` |
+| `error` | text | Erreur si failed |
+| `created_at` | timestamptz | Timestamp création |
+| `completed_at` | timestamptz | Timestamp completion |
+
+**RLS** : access via le job parent (même user/admin).
+
+#### `bouncer_jobs`
+Tracking des batchs de vérification email Bouncer.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `job_id` | text (PK) | ID fourni par Bouncer |
+| `profile_ids` | uuid[] | Contacts vérifiés dans ce batch |
+| `sent_at` | timestamptz | Quand le batch a été envoyé |
+| `received_at` | timestamptz | Quand le webhook Bouncer a répondu |
+| `status` | text | `pending`, `completed`, `failed`, `timeout` |
+| `webhook_payload` | jsonb | Réponse webhook Bouncer |
+
+**RLS** : service_role uniquement (pas de policy = pas d'accès client).
+
+#### `pattern_audit_events`
+Audit des patterns d'email et apprentissage rebond.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `prospect_id` | uuid (FK) | Référence `prospect_profiles(id)`, cascade DELETE |
+| `email` | text | Email testé |
+| `domain` | text | Domaine extracted |
+| `email_source` | text | Provenance email : `deduced`, `fullenrich`, `crm`, `manual`, `unknown` |
+| `pattern_id` | text | ID du pattern d'email utilisé |
+| `pattern_confidence` | numeric | Confiance du pattern (0-1) |
+| `fullenrich_status` | text | Statut FullEnrich |
+| `event_type` | text | `generated`, `bouncer_verdict`, `sent`, `bounced`, `replied`, `opened` |
+| `event_value` | text | Valeur event (ex: "invalid" pour bouncer_verdict) |
+| `occurred_at` | timestamptz | Timestamp event |
+
+**RLS** : service_role (bounce-learning backend).
+
+**Indices clés** : `prospect_id`, `domain, pattern_id`, `event_type`.
 
 #### `smartlead_campaigns`
-Mapping workspace → campagne Smartlead.
+Mapping persona → campagne Smartlead.
 
-```sql
-create table smartlead_campaigns (
-  id uuid primary key,
-  workspace_id uuid not null references workspaces(id),
-  persona_id uuid references prospect_icp_personas(id),
-  smartlead_campaign_id text not null,          -- ID Smartlead
-  smartlead_campaign_name text,
-  synced_at timestamptz,
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `persona_id` | uuid (FK) | Référence `icp_personas(id)`, cascade DELETE |
+| `campaign_id` | text | ID Smartlead (string) |
+| `campaign_name` | text | Nom Smartlead |
+| `enabled` | bool | `true` par défaut |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : workspace-based (viewer read, admin insert/update/delete).
+
+**Unique** : `(workspace_id, persona_id)` (1 campagne Smartlead par persona).
+
+#### `smartlead_events`
+Webhook brut des événements Smartlead (sent, opened, replied, bounced, clicked).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `prospect_id` | uuid (FK) | Contact appairé (ref `prospect_profiles(id)`, peut être NULL) |
+| `lead_email` | text | Email du lead (Smartlead) |
+| `campaign_id` | bigint | ID campagne Smartlead |
+| `event_type` | text | Event type (sent, opened, replied, bounced, clicked) |
+| `subject` | text | Sujet du message |
+| `message` | text | Contenu |
+| `email_account` | text | Compte email utilisé |
+| `raw_payload` | jsonb | Payload webhook complet |
+| `created_at` | timestamptz | Timestamp reçu |
+
+**RLS** : service_role uniquement (webhook Smartlead).
+
+**Indices clés** : `prospect_id`, `event_type`, `created_at DESC`.
+
+---
+
+### Détection CRM & Utilitaires
+
+#### `prospect_crm_detections`
+Détection des CRM utilisés par les sociétés (signaux d'adoption CRM).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `company_group_id` | uuid | Groupement logique société |
+| `prospect_id` | uuid (FK) | Contact source (ref `prospect_profiles(id)`, peut être NULL) |
+| `crm_type` | text | CRM détecté : `salesforce`, `hubspot`, `pipedrive`, `zoho`, etc. |
+| `confidence` | numeric | Confiance de la détection (0-1) |
+| `signals` | jsonb | Signaux détectés (ex: `{email_domain: "company.salesforce.com"}`) |
+| `attempts` | int | Nombre de tentatives de détection |
+| `detected_at` | timestamptz | Quand la détection s'est produite |
+| `created_at` | timestamptz | Timestamp création |
+| `updated_at` | timestamptz | Timestamp mise à jour |
+
+**RLS** : workspace-based (member read/insert/update, admin delete).
 
 #### `recruitment_agencies_blacklist`
 Agences RH à exclure du sourcing (Heidrick, Korn Ferry, etc).
 
-```sql
-create table recruitment_agencies_blacklist (
-  id uuid primary key,
-  workspace_id uuid not null,
-  agency_name text not null,
-  domain_patterns text[],                       -- ex: ["recruiter.fr", "korn*.com"]
-  created_at timestamptz default now()
-);
-```
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `workspace_id` | uuid (FK) | Référence `workspaces(id)`, cascade DELETE |
+| `agency_name` | text | Nom agence (ex: "Heidrick & Struggles") |
+| `domain_patterns` | text[] | Patterns de domaine (ex: `["recruiter.fr", "korn*.com"]`) |
+| `created_at` | timestamptz | Timestamp création |
 
-#### `extension_tokens`
-Tokens pour l'extension Chrome (LinkedIn scraping).
+**RLS** : workspace-based.
 
-```sql
-create table extension_tokens (
-  id uuid primary key,
-  workspace_id uuid not null,
-  user_id uuid references auth.users(id),
-  token text unique not null,                   -- JWT pour auth extension
-  browser_id text,
-  status text default 'active',                 -- active|revoked|expired
-  created_at timestamptz default now(),
-  expires_at timestamptz
-);
-```
+---
+
+### Utilitaires Backend
+
+#### `enrichment_cache`
+Cache des résultats API coûteux (résolution entreprise, etc.).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `cache_type` | text | Type de cache (ex: "company_lookup") |
+| `cache_key` | text | Clé de lookup (ex: SIREN) |
+| `data` | jsonb | Valeur en cache |
+| `created_at` | timestamptz | Timestamp création |
+| `expires_at` | timestamptz | Expiration TTL |
+
+**Unique** : `(cache_type, cache_key)`.
+
+**RLS** : service_role uniquement.
+
+#### `pending_fullenrich_bulks`
+Cache webhook FullEnrich (anti rate-limit).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `enrichment_id` | text (PK) | ID FullEnrich |
+| `webhook_payload` | jsonb | Payload webhook reçu |
+| `received_at` | timestamptz | Quand la réponse a été reçue |
+| `created_at` | timestamptz | Timestamp création |
+
+**RLS** : service_role uniquement.
+
+#### `api_rate_limits`
+Rate limiting des edge functions (imports, webhooks publics).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `identifier` | text | IP ou user_id |
+| `identifier_type` | text | `ip`, `user` |
+| `endpoint_category` | text | `oauth`, `webhook`, `admin`, `api`, `public` |
+| `request_count` | int | Compteur req |
+| `window_start` | timestamptz | Début de la fenêtre |
+| `created_at` | timestamptz | Timestamp création |
+
+**RLS** : admin read, service_role write.
+
+#### `edge_function_logs`
+Logs applicatifs des edge functions.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `user_id` | uuid (FK) | Qui a déclenché (ref `profiles(id)`) |
+| `function_name` | text | Nom fonction |
+| `status` | text | `success`, `error`, `warning` |
+| `message` | text | Message log |
+| `metadata` | jsonb | Contexte additionnel |
+| `created_at` | timestamptz | Timestamp log |
+
+**RLS** : users read own logs, admins read all.
+
+#### `validation_errors`
+Logs des erreurs de validation Zod (mode warn, non bloquant).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | `gen_random_uuid()` |
+| `function_name` | text | Fonction qui a loggé |
+| `errors` | jsonb | Erreurs Zod structurées |
+| `received_data` | text | Données problématiques |
+| `user_id` | uuid (FK) | User_id concerné |
+| `created_at` | timestamptz | Timestamp log |
+
+**RLS** : admin read.
+
 
 ---
 
 ## Patterns & Bonnes Pratiques
 
-### RLS Template
+### RLS Backbone : `user_workspaces(min_role)`
 
-Toute table prospect-related suit ce pattern :
+Toutes les tables prospect-related utilisent ce pattern uniforme :
 
 ```sql
 alter table <table_name> enable row level security;
 
-create policy "workspace_access"
-  on <table_name> for all to authenticated
-  using (workspace_id in (select public.user_workspaces('viewer')))
-  with check (workspace_id in (select public.user_workspaces('admin')));
+-- Lecture (viewer ou plus)
+create policy "members read" on <table_name> for select to authenticated
+  using (workspace_id in (select public.user_workspaces('viewer')));
+
+-- Modification (member ou plus)
+create policy "members insert" on <table_name> for insert to authenticated
+  with check (workspace_id in (select public.user_workspaces('member')));
+
+create policy "members update" on <table_name> for update to authenticated
+  using (workspace_id in (select public.user_workspaces('member')))
+  with check (workspace_id in (select public.user_workspaces('member')));
+
+-- Suppression (admin/owner uniquement)
+create policy "admins delete" on <table_name> for delete to authenticated
+  using (workspace_id in (select public.user_workspaces('admin')));
 ```
 
-### Types & Schemas Zod
-
-Validations d'input dans les edge functions :
-
-```typescript
-// supabase/functions/_shared/schemas/common.ts
-import { z } from 'https://deno.land/x/zod/mod.ts';
-
-export const ProspectInput = z.object({
-  first_name: z.string().min(1),
-  last_name: z.string().optional(),
-  email: z.string().email().optional(),
-  company_id: z.string().uuid().optional(),
-});
-```
+**Cas particuliers** :
+- `prospect_data_access_logs` : audit RGPD, DELETE = owner uniquement
+- `prospect_message_templates` : SELECT/INSERT/UPDATE = admin uniquement (après workspace_id ajout)
+- `smartlead_events`, `bouncer_jobs`, `enrichment_cache` : service_role uniquement, pas de policy
 
 ### Chiffrement des Secrets
 
+Les clés API stockées dans `workspace_provider_credentials.encrypted_key` :
+
 ```typescript
-// Dans une edge function
-import { decryptToken } from './_shared/token-encryption.ts';
+// Chiffrement (edge function, avant storage)
+import { encryptToken } from './_shared/token-encryption.ts';
 
 const encryptionKey = Deno.env.get('TOKEN_ENCRYPTION_KEY');
-const encrypted = await getWorkspaceCredential(workspace_id, 'anthropic');
-const api_key = decryptToken(encrypted, encryptionKey);
+const encrypted = encryptToken(apiKey, encryptionKey);  // base64 (IV + ciphertext + tag)
+// INSERT: encrypted_key = encrypted
 
-// Utilise api_key pour appel API
+// Déchiffrement (edge function, at runtime)
+import { decryptToken } from './_shared/token-encryption.ts';
+
+const encrypted = await getWorkspaceCredential(workspace_id, 'smartlead');
+const apiKey = decryptToken(encrypted, encryptionKey);
+// Use apiKey pour appel Smartlead API
 ```
+
+**IMPORTANT** : les credentials ne DOIVENT JAMAIS transiter par le client PostgREST. Les edge functions accèdent les secrets via service_role (bypass RLS).
 
 ---
 
 ## Migrations & Versioning
 
-Migrations SQL sont dans `supabase/migrations/` avec timestamp :
+Migrations SQL dans `supabase/migrations/` avec timestamp ISO (YYYYMMDDHHMMSS) :
 
 ```
-20260414120000_create_prospect_tables.sql
-20260520110000_workspace_rls_prospect_tables.sql
-20260521100000_smartlead_campaigns_workspace_and_persona.sql
-...
+00000000000000_socle.sql                                   — Fondations multi-tenant
+20260414120000_create_prospect_tables.sql                  — Prospects, signaux (legacy)
+20260520100000_workspace_jay_and_backfill_prospect_tables.sql
+20260520110000_workspace_rls_prospect_tables.sql           — RLS workspace-based
+20260520130000_split_icp_into_triggers_and_personas.sql    — signal_triggers + icp_personas
+20260525090000_workspace_providers_generic.sql             — workspace_providers
+20260603120000_workspace_provider_credentials.sql          — Stockage chiffré clés
+20260616120000_complete_oss_schema.sql                     — workspace_brand, smartlead_campaigns
+20260616230000_drop_dead_tables.sql                        — Cleanup extension_tokens, linkedin_invitation_queue
+20260617010000_drop_target_category_legacy.sql             — Drop legacy target_category
 ```
 
 Appliquer avec :
 
 ```bash
-supabase migration up --project-ref <ref>
-```
-
-Ou au `pnpm run setup` (local) :
-
-```bash
-supabase db push
+supabase db push                           # local (linked project)
+supabase migration up --project-ref <ref>  # remote
 ```
 
 ---
 
 ## Monitoring & Performance
 
-### Index Clés
+### Indices Critiques
 
 ```sql
-create index idx_prospects_workspace on prospects(workspace_id);
-create index idx_prospect_signals_workspace on prospect_signals(workspace_id, signal_type);
-create index idx_companies_workspace on companies(workspace_id, sirene);
-create index idx_domain_patterns_domain on domain_email_patterns(domain);
+-- Lookups workspace-based
+create index idx_prospect_profiles_workspace on prospect_profiles(workspace_id);
+create index idx_prospect_profiles_persona on prospect_profiles(persona_id) where deleted_at is null;
+create index idx_prospect_profiles_deliverability on prospect_profiles(deliverability_status) 
+  where deliverability_status = 'valid';
+
+-- Signal processing
+create index idx_prospect_signals_workspace_status on prospect_signals(workspace_id, status, detected_at);
+
+-- Email deduction (bounce learning)
+create index idx_pattern_audit_events_domain_pattern on pattern_audit_events(domain, pattern_id);
+
+-- Enrichment jobs
+create index idx_prospect_enrichment_jobs_status on prospect_enrichment_jobs(workspace_id, status);
+
+-- Search fuzzy (pg_trgm)
+create index idx_prospect_profiles_company_trgm on prospect_profiles using gin (company_name gin_trgm_ops);
 ```
 
-### Cache & Real-Time
+### Real-Time (Supabase)
 
-Supabase real-time peut être activé sur les tables clés (prospects, signals) pour sync UI live.
+Real-time peut être activé sur :
+- `prospect_profiles` (détection changements deliverability, persona_id)
+- `prospect_signals` (nouvelles détections)
+- `prospect_messages` (envois, réponses)
 
-### Logs & Audit
+```typescript
+// Exemple React
+const subscription = supabase
+  .channel('prospect_profiles')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'prospect_profiles', 
+      filter: `workspace_id=eq.${workspaceId}` },
+    (payload) => { /* handle change */ }
+  )
+  .subscribe();
+```
 
-`audit_events` table (optionnel, non implémentée ici) pour tracer modifications.
+### Sécurité
+
+- **RLS obligatoire** sur toutes les tables prospect-related. Pas d'accès sans `user_workspaces()`.
+- **Secrets chiffrés** : credentials jamais en clair. Déchiffrer côté edge function (service_role bypass).
+- **Rate limiting** : `api_rate_limits` pour protéger webhooks/imports.
+- **Audit** : `pattern_audit_events` pour tracer email decisions, `edge_function_logs` pour debug.
 
 ---
 
 ## Ressources
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — Pipeline, edge functions
-- [providers.md](providers.md) — Intégrer nouveaux fournisseurs
-- [self-host.md](self-host.md) — Déployer en production
-- Supabase Docs : [RLS](https://supabase.com/docs/guides/auth/row-level-security), [Edge Functions](https://supabase.com/docs/guides/functions)
+- [ARCHITECTURE.md](../docs/ARCHITECTURE.md) — Pipeline complet, edge functions
+- [ADR 0003 — Multi-tenant Workspace](../docs/ADR.md#adr-0003-multi-tenant-workspace-id) — Décisions architecturales
+- [Supabase RLS](https://supabase.com/docs/guides/auth/row-level-security) — Sécurité au niveau ligne
+- [Supabase Edge Functions](https://supabase.com/docs/guides/functions) — Functions Deno
