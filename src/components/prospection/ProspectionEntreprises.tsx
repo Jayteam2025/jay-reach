@@ -159,7 +159,7 @@ export function ProspectionEntreprises() {
 
   // Mutation enqueue : React Query gere le loading state pour qu'un double-clic
   // pendant la creation du job (~1-2s) soit ignore. Avant ce changement, le
-  // bouton restait cliquable pendant l'await → Alex a cree 2 jobs par erreur
+  // bouton restait cliquable pendant l'await → l'operateur creait 2 jobs par erreur
   // qui ont enrichi les memes 146 boites deux fois (cramage credits FullEnrich).
   const enqueueMutation = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -234,7 +234,7 @@ export function ProspectionEntreprises() {
 
   // Bouton admin "Vider la DB prospection" : reset total (profils + signaux
   // + batches + logs scraping). Conserve les templates et les filtres ICP.
-  // Alex l'utilise quand il a fini de traiter toutes ses boites et veut
+  // L'operateur l'utilise quand il a fini de traiter toutes ses boites et veut
   // repartir propre avant le prochain run.
   const wipeMutation = useMutation({
     mutationFn: async () => {

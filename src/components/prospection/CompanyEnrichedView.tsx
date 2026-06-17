@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  X, Mail, Phone, Linkedin, Instagram, Music, FileText,
+  X, Mail, Phone, Linkedin, Instagram, Music,
   Copy, Check, Users, MapPin, Loader2, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -51,7 +51,6 @@ const CHANNEL_ICONS = {
   email: Mail,
   instagram: Instagram,
   tiktok: Music,
-  letter: FileText,
 };
 
 function CopyButton({ value, id }: { value: string; id: string }) {

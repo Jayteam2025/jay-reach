@@ -11,7 +11,6 @@ import {
   Mail,
   Instagram,
   Music,
-  FileText,
   Loader2,
   Sparkles,
 } from 'lucide-react';
@@ -23,7 +22,6 @@ const CHANNEL_CONFIG = {
   email: { icon: Mail, label: 'Email', badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-200' },
   instagram: { icon: Instagram, label: 'Instagram', badgeClass: 'bg-pink-500/20 text-pink-700 dark:text-pink-200' },
   tiktok: { icon: Music, label: 'TikTok', badgeClass: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-200' },
-  letter: { icon: FileText, label: 'Courrier', badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-200' },
 };
 
 const STATUS_LABEL = {

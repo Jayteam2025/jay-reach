@@ -36,11 +36,10 @@ import {
 
 const CHANNEL_META: Record<ProspectChannel, { label: string; icon: typeof Mail }> = {
   email: { label: 'Email', icon: Mail },
-  postal_letter: { label: 'Lettre postale', icon: Send },
   social_dm: { label: 'Social DM', icon: Send },
 };
 
-const KNOWN_CHANNELS: ProspectChannel[] = ['email', 'postal_letter', 'social_dm'];
+const KNOWN_CHANNELS: ProspectChannel[] = ['email', 'social_dm'];
 
 const EMPTY_DRAFT: TemplateDraft = { subject: '', body: '', icebreaker_template: '' };
 

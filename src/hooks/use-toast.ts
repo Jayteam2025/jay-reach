@@ -17,7 +17,7 @@ export interface ToastInput {
 }
 
 function showToast({ title, description, variant, duration }: ToastInput = {}) {
-  const hasBoth = title != null && description != null;
+  const hasBoth = (title ?? null) !== null && (description ?? null) !== null;
   const message = (title ?? description ?? '') as ReactNode;
   const opts = { duration, description: hasBoth ? description : undefined };
   const id = variant === 'destructive'

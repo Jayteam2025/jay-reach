@@ -30,7 +30,7 @@ export function useSmartleadCampaignMappings() {
         .from('smartlead_campaigns')
         .select('id, workspace_id, persona_id, campaign_id, campaign_name, enabled');
       if (error) throw error;
-      return (data ?? []) as SmartleadCampaignMapping[];
+      return data ?? [];
     },
   });
 }

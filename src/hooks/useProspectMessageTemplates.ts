@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
-export type ProspectChannel = 'email' | 'postal_letter' | 'social_dm';
+export type ProspectChannel = 'email' | 'social_dm';
 
 export interface ProspectMessageTemplate {
   id: string;

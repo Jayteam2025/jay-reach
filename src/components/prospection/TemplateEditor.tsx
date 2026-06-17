@@ -40,7 +40,6 @@ const VARIABLES = [
 
 const CHANNEL_SUPPORTS_SUBJECT: Record<string, boolean> = {
   email: true,
-  postal_letter: false,
   social_dm: false,
 };
 

@@ -5,7 +5,7 @@ import { useWorkspaceBooleanSetting } from "@/hooks/useWorkspaceSettings";
 export type CrmDetection = {
   company_group_id: string;
   domain: string | null;
-  domain_source: "fullenrich" | "brave" | "manual" | null;
+  domain_source: "fullenrich" | "manual" | null;
   crm_name: string | null;
   crm_confidence: "high" | "medium" | "low" | "none" | "pending";
   detection_status: "pending" | "completed" | "failed";

@@ -14,12 +14,11 @@ interface TemplatePreviewProps {
 
 const CHANNEL_LABELS: Record<string, { label: string; icon: typeof Mail }> = {
   email: { label: 'Email', icon: Mail },
-  postal_letter: { label: 'Lettre postale', icon: Send },
   social_dm: { label: 'Social DM', icon: Send },
 };
 
 export function TemplatePreview({ template, channel }: TemplatePreviewProps) {
-  const demoContext = DEMO_CONTEXTS['default']!;
+  const demoContext = DEMO_CONTEXTS.default!;
   const result = useMemo(() => {
     return renderTemplate(template, demoContext);
   }, [template, demoContext]);

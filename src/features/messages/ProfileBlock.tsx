@@ -1,13 +1,12 @@
 import { Linkedin } from 'lucide-react';
 import type { EnrichedCompany, EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import { EmailChannel } from './channels/EmailChannel';
-import { PostalChannel } from './channels/PostalChannel';
 import { PhoneChannel } from './channels/PhoneChannel';
 import { getProfileLabel, hasApplicableChannel } from './profile-helpers';
 import type { ProspectMessage } from './useCompanyMessages';
 
 /**
- * Bloc detail d'un contact : nom, titre, channels (email/postal/phone).
+ * Bloc detail d'un contact : nom, titre, channels (email/phone).
  * Utilise dans MessagesPanel sous chaque tab catégorie.
  */
 export function ProfileBlock({
@@ -27,7 +26,6 @@ export function ProfileBlock({
 }) {
   const fullName = `${profile.first_name} ${profile.last_name}`;
   const emailMessage = messages.find((m) => m.channel === 'email');
-  const postalMessage = messages.find((m) => m.channel === 'postal_letter');
 
   const baseLabel = getProfileLabel(profile);
   const categoryLabel = total && total > 1 && index
@@ -35,7 +33,6 @@ export function ProfileBlock({
     : baseLabel;
 
   const showFallbackHint = !hasApplicableChannel(profile) && messages.length === 0;
-  const hasPostalChannel = profile.persona?.channels_priority.includes('postal_letter') ?? false;
 
   return (
     <article>
@@ -65,10 +62,6 @@ export function ProfileBlock({
 
       <div className="space-y-3">
         <EmailChannel profile={profile} company={company} message={emailMessage} />
-
-        {hasPostalChannel && (
-          <PostalChannel profile={profile} company={company} message={postalMessage} />
-        )}
 
         {profile.phone && <PhoneChannel phone={profile.phone} />}
       </div>

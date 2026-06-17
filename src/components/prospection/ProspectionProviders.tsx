@@ -566,7 +566,7 @@ function WorkspaceSettingsSection({
   settings: WorkspaceSettings | undefined;
   updateSetting: ReturnType<typeof useUpdateWorkspaceSetting>;
 }) {
-  const crmDetectionEnabled = (settings?.crm_detection_enabled as boolean) ?? false;
+  const crmDetectionEnabled = settings?.crm_detection_enabled ?? false;
 
   const handleToggleCrmDetection = async (next: boolean) => {
     try {

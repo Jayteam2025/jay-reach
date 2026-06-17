@@ -232,7 +232,7 @@ export function ProspectionBranding() {
         <div>
           <h2 className="text-lg font-semibold text-foreground">Branding & notifications</h2>
           <p className="text-sm text-muted-foreground">
-            Les variables ci-dessous alimentent les prompts LinkedIn, les emails récap et les signatures. Chaque org configure les siennes.
+            Ces variables alimentent vos emails de prospection, les récapitulatifs et les signatures. Chaque org configure les siennes.
           </p>
         </div>
       </header>

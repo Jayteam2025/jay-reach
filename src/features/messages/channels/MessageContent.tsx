@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Loader2, Send, Eye, Mail, Copy, Download } from 'lucide-react';
+import { Pencil, Loader2, Send, Eye, Mail, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabase';
@@ -41,7 +41,7 @@ export function MessageContent({
   message: ProspectMessage;
   profile: EnrichedProfile;
   company: EnrichedCompany;
-  channel: 'email' | 'postal_letter' | 'social_dm';
+  channel: 'email' | 'social_dm';
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedBody, setEditedBody] = useState(message.body);
@@ -132,11 +132,8 @@ export function MessageContent({
     toast({ description: 'Message copié dans le presse-papiers' });
   };
 
-  const enrichment = profile.enrichment_data || {};
-
   const primaryBtnClass =
     channel === 'email' ? 'bg-violet-500 hover:bg-violet-600 text-white' :
-    channel === 'postal_letter' ? 'bg-amber-500 hover:bg-amber-600 text-white' :
     'bg-emerald-500 hover:bg-emerald-600 text-white';
 
   return (
@@ -180,14 +177,14 @@ export function MessageContent({
       </div>
 
       <div className="px-3 pb-3">
-        {(channel === 'email' || channel === 'postal_letter') && (
+        {channel === 'email' && (
           isEditing ? (
             <input
               type="text"
               value={editedSubject}
               onChange={(e) => setEditedSubject(e.target.value)}
               className="w-full text-[13px] font-medium text-foreground mb-2 px-2 py-1 bg-background rounded border border-border focus:outline-none focus:border-violet-500"
-              placeholder={channel === 'email' ? 'Objet du mail' : 'En-tête lettre'}
+              placeholder="Objet du mail"
             />
           ) : (
             message.subject && (
@@ -258,50 +255,6 @@ export function MessageContent({
                     </a>
                   </>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-[11px] gap-1.5"
-                  onClick={handleCopyBody}
-                >
-                  <Copy className="w-3 h-3" />
-                  Copier
-                </Button>
-              </>
-            )}
-
-            {channel === 'postal_letter' && (
-              <>
-                <Button
-                  size="sm"
-                  className={cn('h-7 text-[11px] gap-1.5', primaryBtnClass)}
-                  onClick={async () => {
-                    // Import dynamique : docx (~500 KB) n'est charge qu'au clic
-                    // de telechargement, pas au montage de l'onglet (Jay Reach 1.5.6).
-                    const { downloadLetterDocx } = await import('@/lib/generate-letter-docx');
-                    await downloadLetterDocx({
-                      recipientFirstName: profile.first_name,
-                      recipientLastName: profile.last_name,
-                      recipientTitle: profile.job_title || 'Directeur Commercial',
-                      companyName: company.company_name,
-                      companyAddress: (enrichment.company_address as string) || null,
-                      companyZip: (enrichment.company_zip as string) || null,
-                      companyCity: (enrichment.company_city as string) || null,
-                      companyCountry: (enrichment.company_country as string) || 'France',
-                      body: editedBody || message.body,
-                    });
-                    trackAction.mutate({
-                      prospectId: profile.id,
-                      companyGroupId: company.company_group_id,
-                      actionType: 'download',
-                      channel: 'postal_letter',
-                    });
-                    toast({ description: 'Lettre .docx téléchargée' });
-                  }}
-                >
-                  <Download className="w-3 h-3" />
-                  Télécharger .docx
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"

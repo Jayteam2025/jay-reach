@@ -10,8 +10,8 @@ import { useCurrentWorkspaceId } from '@/hooks/useCurrentWorkspaceId';
 interface TrackActionPayload {
   prospectId: string;
   companyGroupId: string;
-  actionType: 'copy' | 'open' | 'sent' | 'download';
-  channel: 'email' | 'instagram' | 'tiktok' | 'letter' | 'postal_letter' | 'social_dm';
+  actionType: 'copy' | 'open' | 'sent';
+  channel: 'email' | 'instagram' | 'tiktok' | 'social_dm';
 }
 
 export function useTrackAction() {
@@ -97,7 +97,7 @@ export function useCompanyProgress(companyGroupId: string | null) {
         .eq('company_group_id', companyGroupId);
 
       // Count expected actions per profile selon le persona slug.
-      //  - 1 action principale (email pour RH, letter pour director)
+      //  - 1 action principale (email pour tous les personas)
       //  - 1 action LinkedIn (auto-invite) si linkedin_url present
       //  - +1 par autre reseau social (field-sales uniquement)
       let total = 0;
