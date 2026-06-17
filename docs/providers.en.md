@@ -1,33 +1,39 @@
 > [Français](providers.md) | **English**
 
-# Providers — Integrating Vendors
+# Providers — Integrating External Vendors
 
-Jay Reach uses a **database-first** model for API keys: they are **entered in the interface**, stored **encrypted in the database**, and **never in `.env`**.
+Jay Reach is built on a **database-first, BYOK** (Bring Your Own Keys) model for API keys: they are **entered in the interface**, stored **encrypted in the database**, and **never in plain-text `.env`** files.
 
 ---
 
 ## Overview
 
-### Types of Providers
+### Provider Categories
 
-| Type | Role | Examples |
-|------|------|----------|
-| **LLM** | Evaluates signals, generates messages | Anthropic Claude, OpenAI-compatible (Mistral, etc.) |
-| **Enrichment** | Completes profiles (emails, LinkedIn, data) | FullEnrich, Brave Search, Apify LinkedIn, INSEE SIRENE |
-| **Email Validation** | Verifies deliverability | Bouncer, Reoon |
-| **Outreach** | Sends campaigns | Smartlead, SMTP (Resend) |
+| Category | Role | Examples |
+|----------|------|----------|
+| **LLM** | Evaluates signals, scores prospects | Anthropic Claude (default), OpenAI-compatible (Mistral, etc.) |
+| **Source** | Fetches job offers | Adzuna, France Travail |
+| **Enricher** | Enriches contacts with emails, LinkedIn, data | FullEnrich |
+| **Email Validation** | Verifies email deliverability | Bouncer, Reoon (optional) |
+| **Outreach** | Sends cold campaigns | Smartlead |
+| **Demo** | Exploration without keys (internal stubs) | Demo (free, built-in) |
 
-### Storage Model
+### Storage Model (Encrypted)
 
 **Schema:**
 - Table `workspace_provider_credentials` — stores encrypted keys per workspace
-- Column `encrypted_key` — AES-GCM encrypted with Supabase secret `TOKEN_ENCRYPTION_KEY`
+- Column `encrypted_secret` — encrypted with AES-GCM using Supabase secret `TOKEN_ENCRYPTION_KEY`
 - Module `_shared/token-encryption.ts` — encrypts/decrypts at runtime
 
 **UI Entry:**
-- **Config** tab of the app
-- Forms per provider
-- Local + server validation
+- Tab **Config** → **Providers**
+- One form per vendor
+- Built-in connection test: `test-provider-connection` (edge function)
+
+**Development Fallback:**
+- If key not configured in database, fallback to local env variables (see `.env.example` per provider)
+- In production OSS, each user brings their own keys (BYOK model)
 
 ---
 
@@ -35,384 +41,268 @@ Jay Reach uses a **database-first** model for API keys: they are **entered in th
 
 ### Anthropic Claude (Default)
 
+Claude scores signals to determine if a job offer matches your outreach strategy.
+
 **Supported models:**
-- `claude-3-5-sonnet-20241022` (default) — balance cost/quality
-- `claude-3-5-haiku-20241022` — fast, small
-- `claude-3-opus-20250219` — powerful but expensive
+- `claude-3-5-sonnet-20241022` (default) — cost/quality balance, recommended
+- `claude-3-5-haiku-20241022` — fast, good for lightweight tasks
+- `claude-3-opus-20250219` — powerful but expensive, for complex analysis
 
-**Activation:**
+**Get your key:**
+1. Go to https://console.anthropic.com/account/api-keys
+2. Click "Create Key"
+3. Copy the key
 
-1. Get your API key: https://console.anthropic.com/account/api-keys
-2. Config tab → **LLM** → **Anthropic Claude**
-3. Paste your key
-4. Configure preferred model in workspace settings
+**Configuration:**
+1. Tab **Config** → **Providers** → **LLM**
+2. Select **Anthropic (Claude)**
+3. Paste your API key
+4. Test the connection with **Test** button
 
-**Usage:**
+**Costs:** Approximately $0.003 per scoring (see https://www.anthropic.com/pricing)
 
-```typescript
-// In an edge function
-import { resolveProvider } from './_shared/providers/registry.ts';
+### OpenAI-Compatible (Mistral, OpenAI, others)
 
-const llm = await resolveProvider(workspace_id, 'llm');
-const response = await llm.generateScore({
-  prospect: { first_name: 'Jean', last_name: 'Dupont', ... },
-  signal: { type: 'job_posting', ... },
-});
-```
+Support for OpenAI-compatible APIs (Mistral, OpenAI, etc.) with custom endpoint.
 
-### OpenAI-Compatible (Mistral, etc.)
+**Required parameters:**
+- **Base URL**: API endpoint (e.g., `https://api.mistral.ai/v1` for Mistral)
+- **API Key**: authentication token
+- **Fast model**: for lightweight tasks (initial enrichment)
+- **Smart model**: for scoring (complex analysis)
 
-**Parameters:**
-- Endpoint URL (e.g., `https://api.mistral.ai/v1`)
-- API key
-- Model (e.g., `mistral-medium-3.5`)
+**Configuration:**
+1. Tab **Config** → **Providers** → **LLM**
+2. Select **OpenAI-compatible**
+3. Fill in:
+   - Base URL (e.g., `https://api.mistral.ai/v1`)
+   - API Key
+   - Fast model (e.g., `mistral-small`)
+   - Smart model (e.g., `mistral-medium`)
+4. Test the connection
 
-**Activation:**
+**Examples:**
 
-1. Configure endpoint (for Mistral): https://console.mistral.ai/api-keys/
-2. Config tab → **LLM** → **OpenAI Compatible**
-3. URL + API Key
-4. Select model
-
-**Registry:**
-
-```typescript
-// supabase/functions/_shared/providers/registry.ts
-if (provider_id === 'anthropic') {
-  return new AnthropicProvider(api_key, model);
-} else if (provider_id === 'openai_compatible') {
-  return new OpenAICompatibleProvider(endpoint_url, api_key, model);
-}
-```
+| Provider | Base URL | Key | Models |
+|----------|----------|-----|--------|
+| **Mistral** | `https://api.mistral.ai/v1` | https://console.mistral.ai/api-keys/ | `mistral-small`, `mistral-medium` |
+| **OpenAI** | `https://api.openai.com/v1` | https://platform.openai.com/api-keys | `gpt-4o-mini`, `gpt-4o` |
 
 ---
 
-## Enrichment
+## Job Sources (Scraping)
+
+Jay Reach fetches job offers from two main sources. You **must activate at least one source** to scrape offers.
+
+### Adzuna
+
+Aggregator of French and international job offers (structured REST API, high quality).
+
+**Get your credentials:**
+1. Go to https://developer.adzuna.com
+2. Sign up or log in
+3. Create an application (dashboard → API Accounts)
+4. Note **App ID** and **App Key**
+
+**Configuration:**
+1. Tab **Config** → **Providers** → **Job Sources**
+2. Select **Adzuna**
+3. Fill in:
+   - App ID
+   - App Key
+4. Test the connection
+
+**Coverage:** France, UK, Germany, Switzerland, and 25+ countries
+**Costs:** Free (5000 requests/month by default, extensible)
+**Updated:** Daily
+
+### France Travail (formerly Pôle Emploi)
+
+Official French public employment service (GraphQL API, public data).
+
+**Get your credentials:**
+1. Go to https://francetravail.io
+2. Request API access (section "Partners")
+3. Accept terms
+4. You will receive **Client ID** and **Client Secret** by email
+
+**Configuration:**
+1. Tab **Config** → **Providers** → **Job Sources**
+2. Select **France Travail**
+3. Fill in:
+   - Client ID
+   - Client Secret
+4. Test the connection
+
+**Coverage:** France only (public service data)
+**Costs:** Free
+**Updated:** Daily
+
+---
+
+## Enricher (Contacts & Emails)
 
 ### FullEnrich
 
-Enriches prospects with deducible emails, LinkedIn URLs, company data.
+Enriches prospects with **deductible emails**, LinkedIn URLs, company data.
 
-**Get your key:** https://app.fullenrich.com/settings/api
+**What it does:**
+- Find prospect's professional email (e.g., jean.dupont → jean.dupont@acme.fr)
+- Retrieve LinkedIn profile
+- Complete domain, sector, company size
 
-**Activation:**
+**Get your key:**
+1. Go to https://app.fullenrich.com
+2. Sign up or log in
+3. Tab **Settings** → **API** → copy your **API Key**
 
-1. FullEnrich API key
-2. Config tab → **Enrichment** → **FullEnrich**
-3. Paste your key
+**Configuration:**
+1. Tab **Config** → **Providers** → **Enricher**
+2. Select **FullEnrich**
+3. Paste your API key
+4. Test the connection
 
-**Costs:** $0.01 per email, $0.02 per person
-
-**Usage:**
-
-```typescript
-import { fullenrich } from './_shared/fullenrich.ts';
-
-const result = await fullenrich.enrich({
-  company_domain: 'acme.fr',
-  first_name: 'Jean',
-  last_name: 'Dupont',
-}, api_key);
-
-// result: { email: 'jean.dupont@acme.fr', linkedin_url: '...', ... }
-```
-
-**Webhook:** `fullenrich-webhook` — processes results, populates `prospect_profiles`
-
-### Brave Search + Apify LinkedIn
-
-**Brave Search** = private search engine → LinkedIn results.
-
-**Apify LinkedIn Profile** = RPA scraper → LinkedIn profile snapshot (experience, education).
-
-**Activation:**
-
-- Brave API: https://api.search.brave.com/ (free up to 2k requests/month)
-- Apify: https://console.apify.com (free, requires credit for actors)
-
-**Usage:**
-
-```typescript
-import { braveLinkdediSearch } from './_shared/brave-linkedin-search.ts';
-import { apifyLinkedInProfile } from './_shared/apify-linkedin-profile.ts';
-
-// Find LinkedIn URL via Brave
-const linkedinUrl = await braveLinkdediSearch(name, company);
-
-// Scrape profile
-const profile = await apifyLinkedInProfile(linkedinUrl, apify_token);
-```
-
-### INSEE SIRENE
-
-French legal data (SIREN/SIRET, NAF sector, size, location).
-
-**API:** Free, French government (https://api.insee.com/)
-
-**Activation:** Automatic (no key required)
-
-**Usage:**
-
-```typescript
-import { sirenejQuery } from './_shared/insee-sirene.ts';
-
-const company = await sirenejQuery('acme.fr'); // or SIREN
-// company: { siren: '123456789', name: 'Acme Inc', sector: '5829C', employees: 150, ... }
-```
+**Costs:** $0.01 per deductible email, $0.02 per person enrichment
+**Quota limit:** Available in Settings → Billing on FullEnrich
 
 ---
 
-## Email Validation
+## Email Validation (Deliverability)
 
-### Bouncer
+Before sending a campaign, validate that emails are **active** (typos, disposable, role addresses, etc.).
 
-Verifies email deliverability with bounce_rate learning.
+### Bouncer (Primary)
 
-**Get your key:** https://usebouncer.com/dashboard
+Verifies deliverability with **automatic learning** of bounce rates per domain.
 
-**Activation:**
+**What it does:**
+- Detect typos (google.com vs googel.com)
+- Exclude role addresses (info@, contact@, noreply@)
+- Identify disposable/temporary emails
+- Predict bounces before sending (saves Smartlead credits)
 
-1. Bouncer API key
-2. Config tab → **Email Validation** → **Bouncer**
-3. Paste the key
+**Get your key:**
+1. Go to https://usebouncer.com
+2. Sign up → Dashboard
+3. Tab **Settings** → **API** → copy your key
 
-**Statuses:** `valid | invalid | risky | disposable | unknown`
+**Configuration:**
+1. Tab **Config** → **Providers** → **Email Validation**
+2. Select **Bouncer**
+3. Paste your API key
+4. Test the connection
 
-**Costs:** $0.005 per email
+**Returned statuses:** `valid` | `invalid` | `risky` | `disposable` | `role` | `unknown`
 
-**Usage:**
+**Costs:** $0.005 per email verified
 
-```typescript
-import { bouncer } from './_shared/bouncer.ts';
+**Automation:**
+- Automatic verification during enrichment
+- Daily batch cron (07h, 13h UTC) to re-verify cached emails
+- Automatic learning (04h UTC): updates `domain_email_patterns.bounce_rate`
 
-const result = await bouncer.verify('jean@acme.fr', api_key);
-// result: { status: 'valid', is_deliverable: true, risk: 0.02, ... }
-```
+### Reoon (Optional — Arbitration)
 
-**Deliverability gate:**
+Second opinion for Bouncer's **unknown** or **risky** cases.
 
-```typescript
-// In email-gate.ts
-if (bouncer_status === 'valid') {
-  // Push to Smartlead
-} else if (bouncer_status === 'risky' && pattern_confidence >= 0.9) {
-  // Optional push (user decides)
-} else {
-  // Skip
-}
-```
+**What it does:**
+- Arbitrate uncertain emails
+- Improve deliverability rate when Bouncer hesitates
+- Decision-making in case of doubt
 
-**Batch CRON:** `bouncer-batch` (07h, 13h UTC) — verifies new emails
+**Get your key:**
+1. Go to https://reoon.com
+2. Sign up
+3. Tab **API** → copy your key
 
-**Learning:** `bounce-learning` (04h UTC) — updates `domain_email_patterns.bounce_rate`
+**Configuration:**
+1. Tab **Config** → **Providers** → **Email Validation**
+2. Select **Reoon** (optional)
+3. Paste your API key
+4. Test the connection
 
-### Reoon
+**Returned statuses:** `safe` | `risky` | `invalid`
 
-Arbitrates Bouncer `unknown` or `risky` cases (second opinion).
-
-**Get your key:** https://reoon.com/
-
-**Activation:**
-
-1. Reoon API key
-2. Config tab → **Email Validation** → **Reoon** (optional)
-
-**Usage:**
-
-```typescript
-import { reoon } from './_shared/reoon.ts';
-
-const result = await reoon.verify('jean@acme.fr', api_key);
-// result: { status: 'safe|risky|invalid' }
-```
+**Recommendation:** Use Bouncer alone to start, add Reoon if you manage high volume.
 
 ---
 
-## Outreach (Campaigns)
+## Outreach (Campaign Sending)
+
+Smartlead is your only sending channel. It's a cold email platform with automatic warm-up, response tracking, and integrated webhooks.
 
 ### Smartlead
 
-Cold email platform with warm-up, response tracking, webhooks.
+**What it does:**
+- Send your cold campaigns
+- Automatic IP warm-up (reputation)
+- Track opens, clicks, replies
+- Real-time webhook status updates
+- Manage bounces/unsubscribe
 
-**Get your key:** https://smartlead.ai/settings/api
+**Get your key:**
+1. Go to https://smartlead.ai
+2. Log in or create an account
+3. Tab **Settings** → **API** → copy your key
 
-**Activation:**
+**Configuration:**
+1. Tab **Config** → **Providers** → **Outreach**
+2. Select **Smartlead**
+3. Paste your API key
+4. Test the connection
 
-1. Smartlead API key
-2. Smartlead Workspace ID (optional for multi-workspace)
-3. Config tab → **Outreach** → **Smartlead**
-4. Paste your key
+**Persona → Campaign Mapping:**
 
-**Usage:**
+Each **persona** (HR, Director, Field Sales, etc.) must be linked to a **Smartlead campaign**. Configure this mapping in tab **Config** → **Campaigns**:
 
-```typescript
-import { smartlead } from './_shared/smartlead.ts';
+| Persona | Smartlead Campaign | Email Template |
+|---------|-------------------|----------------|
+| HR | `hr-2026-06` | Recruitment |
+| Director | `director-2026-06` | Commercial Expansion |
+| Field Sales | `sales-2026-06` | Partnership |
 
-// Create or update campaign
-const campaign = await smartlead.createOrUpdateCampaign({
-  campaign_id: 'campaign-123',
-  campaign_name: 'HR 2026-06',
-  prospects: [
-    { email: 'jean@acme.fr', first_name: 'Jean', last_name: 'Dupont', ... }
-  ]
-}, api_key);
-```
+> Each prospect is assigned to a campaign based on their detected role. Sent emails maintain a unique subject/signature per campaign.
 
-**Webhook:** `send-via-smartlead` — processes responses, updates `prospect_actions`
+**Tracking statuses:** `sent | bounced | opened | replied | unsubscribed`
 
-**Webhook statuses:** `sent | bounced | opened | replied | unsubscribed`
-
-### SMTP Direct (Resend, SendGrid, etc.)
-
-Alternative to Smartlead for transactional emails.
-
-**Activation:**
-
-- Resend: https://resend.com/dashboard (free up to 100 emails/day)
-- SendGrid: https://app.sendgrid.com/
-
-**Integrated Resend module:** `_shared/resend.ts`
-
-```typescript
-import { resend } from './_shared/resend.ts';
-
-await resend.send({
-  from: 'contact@yourapp.fr',
-  to: 'prospect@acme.fr',
-  subject: 'Business Opportunity',
-  html: '<p>Hello Jean...</p>'
-});
-```
+**Costs:** Based on number of emails sent (see https://smartlead.ai/pricing)
 
 ---
 
-## Adding a New Provider
-
-### Example: New Enricher "CompanyDB"
-
-#### 1. Create the provider file
-
-**File:** `supabase/functions/_shared/providers/companydb.ts`
-
-```typescript
-import type { EnricherProvider } from './types.ts';
-
-export interface CompanyDBConfig {
-  api_key: string;
-  api_url: string;
-}
-
-export const companydbProvider: EnricherProvider = {
-  name: 'companydb',
-  
-  async enrich(contact, company, config: CompanyDBConfig) {
-    const response = await fetch(
-      `${config.api_url}/search?domain=${company.domain}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${config.api_key}`,
-        },
-      }
-    );
-    
-    const data = await response.json();
-    
-    return {
-      company_size: data.employees,
-      founded_year: data.founded,
-      sector: data.industry,
-      ...
-    };
-  },
-};
-```
-
-#### 2. Register in the catalog
-
-**File:** `supabase/functions/_shared/providers/catalog.ts`
-
-```typescript
-export const PROVIDER_CATALOG = {
-  // ... other providers
-  companydb: {
-    name: 'CompanyDB',
-    type: 'enricher',
-    tier: 'growth', // or 'business'
-    cost_per_request: 0.005,
-  },
-};
-```
-
-#### 3. Update the registry
-
-**File:** `supabase/functions/_shared/providers/registry.ts`
-
-```typescript
-import { companydbProvider } from './companydb.ts';
-
-export async function resolveProvider(
-  workspace_id: string,
-  type: 'llm' | 'enricher' | 'validator',
-  provider_id?: string
-): Promise<any> {
-  // ...
-  if (provider_id === 'companydb' || (type === 'enricher' && !provider_id && fallback === 'companydb')) {
-    const config = await getWorkspaceProviderConfig(workspace_id, 'companydb');
-    return companydbProvider.enrich(contact, company, config);
-  }
-  // ...
-}
-```
-
-#### 4. Add secret management
-
-**Storage:** Table `workspace_provider_credentials` (encrypted)
-
-```typescript
-// When activating in UI
-import { encryptToken } from './_shared/token-encryption.ts';
-
-const encrypted = encryptToken(api_key, encryption_key);
-await db.insert('workspace_provider_credentials', {
-  workspace_id,
-  provider_id: 'companydb',
-  encrypted_key: encrypted,
-});
-```
-
-**Retrieval in an edge function:**
-
-```typescript
-import { decryptToken } from './_shared/token-encryption.ts';
-
-const encrypted = await db.selectOne('workspace_provider_credentials', {
-  workspace_id, provider_id: 'companydb'
-});
-const api_key = decryptToken(encrypted.encrypted_key, encryption_key);
-```
-
-#### 5. Test
-
-```bash
-deno test supabase/functions/_shared/providers/companydb.test.ts
-```
+> **ℹ️ Note on Resend**
+>
+> **Resend** is used **only for internal notifications** (weekly recap, FullEnrich credit alerts) via the `RESEND_API_KEY` secret in Edge Functions. **It is NOT an outreach provider** and does not configure in the Providers interface. Campaign sending is exclusively via Smartlead.
 
 ---
 
-## Workspace Configuration
+## Demo Mode (without keys)
 
-LLM keys and preferences stored in `workspace_config`:
+Explore Jay Reach without configuring keys using **Demo mode**. It generates realistic data (prospects, emails, Bouncer verdicts) and works entirely offline.
 
-```json
-{
-  "llm_model": "claude-3-5-sonnet-20241022",
-  "llm_temperature": 0.7,
-  "scoring_threshold": 0.7,
-  "email_deduction_confidence": 0.85,
-  "bounce_rate_threshold": 0.15,
-  "archive_retention_days": 60
-}
-```
+**Use cases:**
+- First hands-on (30 min)
+- Commercial demo
+- Local testing without credits
+
+**Activation:**
+1. Tab **Config** → **Providers** → **LLM**
+2. Select **Demo**
+3. No key to fill in
+4. Test — you can scrape, score, enrich with fake data
+
+> Demo mode always returns consistent decisions (same prospect = same verdict), perfect for testing the entire workflow.
+
+---
+
+## Connection Test
+
+Each provider has a **Test** button in its configuration card. Click it to verify:
+- Valid and non-expired key
+- Correct permissions
+- Network API connectivity
+- Quota limit not reached
+
+If error occurs, see **Troubleshooting** section below.
 
 ---
 
@@ -420,29 +310,45 @@ LLM keys and preferences stored in `workspace_config`:
 
 ### "API key invalid"
 
-- Verify the key has not expired
-- Test the key directly (e.g., `curl -H "Authorization: Bearer KEY" https://api.fullenrich.com/status`)
-- Check API key permissions (some services restrict by IP)
+**Possible causes:**
+- Key expired
+- Key partially copied
+- Wrong key for the service (Adzuna app_id ≠ Bouncer api_key)
+- Insufficient permissions (some services restrict by IP)
+
+**Solution:**
+1. Check the provider's dashboard (e.g., https://usebouncer.com/dashboard → Settings → API)
+2. Generate a new key if needed
+3. Paste the complete key (no partial copies)
+4. Test again
 
 ### "Provider not found"
 
-- Ensure provider_id is registered in `registry.ts`
-- Verify the key is stored in `workspace_provider_credentials`
+- Verify the provider is in the list (see Overview above)
+- Reload page: `Ctrl+R` or `Cmd+R`
+- Clear cache: `Ctrl+Shift+Delete`
 
-### "Quota exceeded"
+### "Quota exceeded / Rate limit"
 
-- Check provider credits
-- Optional: set up an alert (e.g., `fullenrich-credits-monitor` CRON)
+- Check provider dashboard (remaining credits)
+- Upgrade your plan with the provider if needed
+- For Adzuna: default limit 5000/month, request increase via developer.adzuna.com
+- For FullEnrich: limit per subscription tier, check Settings → Billing
+
+### I want to test without keys (local mode)
+
+Activate **Demo mode** (see section above). Zero credentials required.
 
 ---
 
 ## Resources
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Pipeline, edge functions
-- [_shared/README.md](../supabase/functions/_shared/README.md) — Deno modules
 - [data-model.md](data-model.md) — Encrypted storage `workspace_provider_credentials`
-- API Docs:
+- Official API documentation:
   - Anthropic: https://docs.anthropic.com
   - FullEnrich: https://docs.fullenrich.com
   - Bouncer: https://usebouncer.com/docs
   - Smartlead: https://docs.smartlead.ai
+  - Adzuna: https://developer.adzuna.com/documentation
+  - France Travail: https://francetravail.io/developer
