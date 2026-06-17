@@ -133,7 +133,7 @@ Enriched identity of a prospected person (contact).
 **Key indices**: `workspace_id`, `persona_id`, `deliverability_status`, `status`, `email_source`, `deleted_at`.
 
 #### `prospect_signals`
-Raw signals detected (job postings, LinkedIn activity, Google alerts, etc.).
+Raw signals detected (job postings).
 
 | Column | Type | Description |
 |--------|------|-------------|

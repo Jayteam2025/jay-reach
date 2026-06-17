@@ -135,7 +135,7 @@ Identité enrichie d'une personne prospectée (contact).
 **Indices clés** : `workspace_id`, `persona_id`, `deliverability_status`, `status`, `email_source`, `deleted_at`.
 
 #### `prospect_signals`
-Signaux bruts détectés (annonces d'emploi, activité LinkedIn, etc.).
+Signaux bruts détectés (annonces d'emploi).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
