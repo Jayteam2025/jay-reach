@@ -6,16 +6,10 @@ export const ENABLE_SUBSCRIPTION_RESTRICTIONS = false;
 
 // Types pour les fonctionnalités
 export type PlanFeature =
-  | "ocr"
-  | "email-generation"
-  | "analytics-dashboard"
   | "teams"
   | "priority-support"
-  | "onboarding-formation"
   | "hide-badge"
-  | "structured-fields"
-  | "multi-crm"
-  | "meeting-brief";
+  | "multi-crm";
 
 // Configuration des plans selon la matrice de features
 interface PlanConfig {
@@ -31,46 +25,46 @@ const PLAN_CONFIGS: Record<string, PlanConfig> = {
     monthlyQuota: null,
     dailyLimit: null,
     crmLimit: null,
-    features: ["ocr", "email-generation", "analytics-dashboard", "teams", "priority-support", "onboarding-formation", "hide-badge", "structured-fields", "multi-crm", "meeting-brief"],
+    features: ["teams", "priority-support", "hide-badge", "multi-crm"],
   },
 
   Trial: {
     monthlyQuota: null,
     dailyLimit: null,
     crmLimit: null,
-    features: ["ocr", "email-generation", "analytics-dashboard", "teams", "priority-support", "hide-badge", "structured-fields", "multi-crm"],
+    features: ["teams", "priority-support", "hide-badge", "multi-crm"],
   },
 
-  // Free: 30/mois, 5/jour, 1 CRM, OCR inclus
+  // Free: 30/mois, 5/jour, 1 CRM
   Free: {
     monthlyQuota: 30,
     dailyLimit: 5,
     crmLimit: 1,
-    features: ["ocr"],
+    features: [],
   },
 
-  // Pro: 100/mois, pas de limite quotidienne, 1 CRM, OCR + Email + Support prioritaire
+  // Pro: 100/mois, pas de limite quotidienne, 1 CRM, support prioritaire
   Pro: {
     monthlyQuota: 100,
     dailyLimit: null,
     crmLimit: 1,
-    features: ["ocr", "email-generation", "priority-support", "hide-badge"],
+    features: ["priority-support", "hide-badge"],
   },
 
-  // Business: Illimité, Multi-CRM, toutes les features sauf onboarding dédié
+  // Business: Illimité, Multi-CRM, support prioritaire
   Business: {
     monthlyQuota: null,
     dailyLimit: null,
     crmLimit: null,
-    features: ["ocr", "email-generation", "analytics-dashboard", "teams", "priority-support", "hide-badge", "structured-fields", "multi-crm", "meeting-brief"],
+    features: ["teams", "priority-support", "hide-badge", "multi-crm"],
   },
 
-  // Entreprise: Tout + Onboarding personnalisé + Support dédié
+  // Entreprise: Tout + support prioritaire
   Entreprise: {
     monthlyQuota: null,
     dailyLimit: null,
     crmLimit: null,
-    features: ["ocr", "email-generation", "analytics-dashboard", "teams", "priority-support", "onboarding-formation", "hide-badge", "structured-fields", "multi-crm", "meeting-brief"],
+    features: ["teams", "priority-support", "hide-badge", "multi-crm"],
   },
 };
 
@@ -142,19 +136,7 @@ export function getCRMLimit(plan: string): number | null {
   return config.crmLimit;
 }
 
-// Vérifications spécifiques par feature
-export function canUseOCR(plan: string): boolean {
-  return canAccessFeature(plan, "ocr");
-}
-
-export function canUseEmailGeneration(plan: string): boolean {
-  return canAccessFeature(plan, "email-generation");
-}
-
-export function canUseAnalyticsDashboard(plan: string): boolean {
-  return canAccessFeature(plan, "analytics-dashboard");
-}
-
+// Vérifications spécifiques par feature (generic helpers)
 export function canUseTeams(plan: string): boolean {
   return canAccessFeature(plan, "teams");
 }
