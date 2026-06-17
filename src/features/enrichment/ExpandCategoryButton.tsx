@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
 import type { EnrichedCompany } from '@/hooks/useEnrichedCompanies';
-import { useExpandCategory, type ExpandPersonaSlug } from './useCompanyEnrichment';
+import { useExpandPersona, type ExpandPersonaId } from './useCompanyEnrichment';
 
 /**
  * ExpandPersonaButton — si FullEnrich a encore X contacts dispo dans ce
@@ -9,14 +9,14 @@ import { useExpandCategory, type ExpandPersonaSlug } from './useCompanyEnrichmen
  */
 export function ExpandPersonaButton({
   company,
-  personaSlug,
+  personaId,
   label,
 }: {
   company: EnrichedCompany;
-  personaSlug: ExpandPersonaSlug;
+  personaId: ExpandPersonaId;
   label: string;
 }) {
-  const { moreAvailable, expand, isExpanding } = useExpandCategory(company, personaSlug, label);
+  const { moreAvailable, expand, isExpanding } = useExpandPersona(company, personaId, label);
 
   if (moreAvailable <= 0) return null;
 

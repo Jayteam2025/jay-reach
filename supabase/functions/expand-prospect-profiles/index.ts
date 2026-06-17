@@ -365,8 +365,7 @@ Deno.serve(async (req: Request) => {
   //    Le nouveau total "autres dispo" = totalAvailable_FE - (existant + newlyInserted)
   const newMoreAvailable = Math.max(0, (totalAvailable || 0) - existingProfiles.length - rowsToInsert.length);
   // On fetch un profil pour merger ses counts existants (on ne change que la
-  // categorie ciblee). Clés legacy pour compat UI (hr/director/field_sales) ;
-  // fallback slug pour workspaces tiers.
+  // persona ciblee). Clés = persona.id (100% persona_id-based).
   const { data: oneProfile } = await supabase
     .from("prospect_profiles")
     .select("more_available_counts")
@@ -374,9 +373,8 @@ Deno.serve(async (req: Request) => {
     .limit(1)
     .maybeSingle();
   const existingCounts =
-    (oneProfile?.more_available_counts as Record<string, number> | null) || { hr: 0, director: 0, field_sales: 0 };
-  const countKey = legacyTargetCategory(persona.slug) ?? persona.slug;
-  const updatedCounts = { ...existingCounts, [countKey]: newMoreAvailable };
+    (oneProfile?.more_available_counts as Record<string, number> | null) || {};
+  const updatedCounts = { ...existingCounts, [persona.id]: newMoreAvailable };
 
   await supabase
     .from("prospect_profiles")

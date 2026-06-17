@@ -55,25 +55,14 @@ export interface EnrichedCompany {
   company_group_id: string;
   company_name: string;
   profiles: EnrichedProfile[];
-  /** Premier RH trouve (legacy, pour compat). Voir hrList pour tous les RH. */
-  hr: EnrichedProfile | null;
-  /** Premier Dir Co trouve (legacy, pour compat). Voir directorList pour tous. */
-  director: EnrichedProfile | null;
-  /** Tous les RH de la boite (>= 1 depuis FullEnrich search). */
-  hrList: EnrichedProfile[];
-  /** Tous les Dir Co de la boite. */
-  directorList: EnrichedProfile[];
-  /** Tous les commerciaux terrain. */
-  sales: EnrichedProfile[];
   /**
-   * Groupes dynamiques par persona slug (Jay Reach 1.2.2+). Permet aux futurs
-   * composants de filtrer par n'importe quel persona du workspace, pas
-   * uniquement les 3 legacy (hr/director/field_sales).
+   * Groupes dynamiques par persona ID (keyset = persona.id du profile).
+   * Permet aux composants de filtrer par n'importe quel persona du workspace.
    */
   personaGroups: Record<string, EnrichedProfile[]>;
   hasEmail: boolean;
   hasLinkedIn: boolean;
-  /** Nombre de contacts additionnels dispo dans FullEnrich par categorie. */
+  /** Nombre de contacts additionnels dispo dans FullEnrich par persona ID. */
   moreAvailable: MoreAvailableCounts | null;
 }
 
@@ -122,24 +111,15 @@ export function denormalizeProfilesToCompanies(
   for (const [groupId, groupProfiles] of groupMap) {
     const personaGroups: Record<string, EnrichedProfile[]> = {};
     for (const p of groupProfiles) {
-      const slug = p.persona?.slug || 'unknown';
-      (personaGroups[slug] ||= []).push(p);
+      const personaId = p.persona_id || 'unknown';
+      (personaGroups[personaId] ||= []).push(p);
     }
-    for (const slug of Object.keys(personaGroups)) {
-      const group = personaGroups[slug];
+    for (const personaId of Object.keys(personaGroups)) {
+      const group = personaGroups[personaId];
       if (group) {
         group.sort(sortByBouncer);
       }
     }
-
-    // Groupes legacy (pour retro-compat)
-    const hrList = groupProfiles.filter((p) => p.persona?.slug === 'hr-decision-maker').sort(sortByBouncer);
-    const directorList = groupProfiles
-      .filter((p) => p.persona?.slug === 'director')
-      .sort(sortByBouncer);
-    const sales = groupProfiles
-      .filter((p) => p.persona?.slug === 'field-sales')
-      .sort(sortByBouncer);
 
     const moreAvailable =
       (groupProfiles[0] as unknown as { more_available_counts?: MoreAvailableCounts | null })
@@ -149,11 +129,6 @@ export function denormalizeProfilesToCompanies(
       company_group_id: groupId,
       company_name: groupProfiles[0]?.company_name ?? "",
       profiles: groupProfiles,
-      hr: hrList[0] || null,
-      director: directorList[0] || null,
-      hrList,
-      directorList,
-      sales,
       personaGroups,
       hasEmail: groupProfiles.some((p) => p.email),
       hasLinkedIn: groupProfiles.some((p) => p.linkedin_url),

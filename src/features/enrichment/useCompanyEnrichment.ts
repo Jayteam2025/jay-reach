@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import type { EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 
-/** Persona slug pour expansion FullEnrich (utilise par la edge function) */
-export type ExpandPersonaSlug = string;
+/** Persona ID pour expansion FullEnrich (utilise par la edge function) */
+export type ExpandPersonaId = string;
 
 /**
  * Hook : verification Bouncer des emails d'une entreprise (Jay Reach 1.5.3).
@@ -82,27 +82,27 @@ export interface ExpandPersonaResult {
 }
 
 /**
- * Hook : expansion FullEnrich d'une categorie de contacts (Jay Reach 1.5.3).
+ * Hook : expansion FullEnrich d'une persona de contacts (Jay Reach 1.5.3).
  *
- * Si FullEnrich a encore des contacts dispo dans cette categorie, permet d'en
+ * Si FullEnrich a encore des contacts dispo pour cette persona, permet d'en
  * scraper 10 de plus via expand-prospect-profiles.
  *
  * Retourne :
- * - moreAvailable : nombre de contacts encore dispo dans FullEnrich pour cette categorie
+ * - moreAvailable : nombre de contacts encore dispo dans FullEnrich pour cette persona
  * - expand() : declenche le scraping de 10 contacts en plus
  * - isExpanding : true pendant le scraping
  */
-export function useExpandCategory(company: EnrichedCompany, personaSlug: ExpandPersonaSlug, label: string) {
+export function useExpandPersona(company: EnrichedCompany, personaId: ExpandPersonaId, label: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const moreAvailable = company.moreAvailable?.[personaSlug] ?? 0;
+  const moreAvailable = company.moreAvailable?.[personaId] ?? 0;
 
   const expandMutation = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('expand-prospect-profiles', {
         body: {
           company_group_id: company.company_group_id,
-          persona_slug: personaSlug,
+          persona_id: personaId,
           count: 10,
         },
       });
