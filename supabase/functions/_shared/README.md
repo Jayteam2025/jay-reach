@@ -52,7 +52,6 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 ### Job/Company Enrichment
 - **fullenrich.ts, fullenrich-company-resolve.ts, fullenrich-webhook-helpers.ts** — FullEnrich API client + company deduplication
 - **fullenrich-company-resolve.ts** — Match prospects to companies (dedup logic)
-- **brave-linkedin-search.ts** — Brave Search + LinkedIn profile scraper for enrichment
 - **person-enrichment-core.ts** — Person enrichment logic (email deduction, company resolution)
 - **crm-detection/** — Detect company's CRM from web signals
   - `types.ts` — CRM detection types

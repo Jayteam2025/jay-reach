@@ -124,57 +124,7 @@ export async function resolveDomain(
     if (domain) return { domain, source: "fullenrich" };
   }
 
-  // 2. Brave search (queries restreintes au site officiel FR)
-  const fromBrave = await searchDomainViaBrave(company.name, company.siren);
-  if (fromBrave) return { domain: fromBrave, source: "brave" };
-
   return null;
-}
-
-async function searchDomainViaBrave(name: string, siren?: string): Promise<string | null> {
-  const apiKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
-  if (!apiKey) {
-    console.warn("[crm-detection/domain-resolver] BRAVE_SEARCH_API_KEY not set, skipping");
-    return null;
-  }
-
-  // Cascade de queries du plus precis au plus large. Le SIREN desambigue tout
-  // (boites homonymes internationales, mauvais TLD, etc.).
-  const queries: string[] = [];
-  if (siren) {
-    queries.push(`"${name}" ${siren}`);
-    queries.push(`"${name}" SIREN ${siren}`);
-  }
-  queries.push(`"${name}" site officiel France`);
-  queries.push(`"${name}" entreprise France`);
-
-  const domains: string[] = [];
-  for (const query of queries) {
-    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=10&country=FR&search_lang=fr`;
-    const res = await fetch(url, {
-      headers: { "X-Subscription-Token": apiKey, "Accept": "application/json" },
-    });
-    if (!res.ok) {
-      console.warn("[crm-detection/domain-resolver] Brave search failed:", res.status);
-      continue;
-    }
-    const data = await res.json();
-    const results = data.web?.results ?? [];
-    for (const r of results) {
-      const domain = extractDomain(r.url ?? "");
-      if (domain) domains.push(domain);
-    }
-  }
-
-  if (domains.length === 0) return null;
-
-  const best = pickBestDomain(name, domains);
-  if (best) {
-    console.log(`[crm-detection/domain-resolver] Brave -> ${best} (parmi ${new Set(domains).size} candidats)`);
-  } else {
-    console.warn(`[crm-detection/domain-resolver] No matching domain for "${name}" — rejected: ${[...new Set(domains)].slice(0, 5).join(", ")}`);
-  }
-  return best;
 }
 
 // Segments de domaine indiquant une section/microsite (catalogue, shop, jobs...)

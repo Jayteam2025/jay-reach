@@ -8,7 +8,6 @@ import type { LLMHandle } from "../_shared/providers/types.ts";
 import { loadActivePersonas } from "../_shared/workspace-config.ts";
 import { buildPersonaSearch, buildRoleDefinition, matchesPersonaTitle, legacyTargetCategory } from "../_shared/persona-enrichment-core.ts";
 import type { PersonaConfig } from "../_shared/workspace-config-core.ts";
-import { searchBrave } from "../_shared/brave-linkedin-search.ts";
 import {
   enrichContactsViaFullEnrich,
   pickBestEmailWithSource,
@@ -444,7 +443,6 @@ async function processSignal(
   signalId: string,
   ctx: { functionsUrl: string; serviceRoleKey: string },
 ): Promise<EnrichCompanyResponse> {
-  const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
 
   // Resout l'enricher ACTIF via le registry de providers (dispatch).
   // V1 : workspace par defaut (la resolution se fait avant le chargement du signal).
@@ -661,40 +659,19 @@ async function processSignal(
 
     // Alex met souvent dans le fichier des URLs de RECHERCHE LinkedIn comme
     //   https://www.linkedin.com/search/results/people/?keywords=stephane%20vergnes%20equans
-    // Notre validator les rejette (search URL != profile direct). Mais les
-    // keywords sont riches : nom + prenom + entreprise. On les resout via
-    // Brave pour trouver le profil reel correspondant.
-    // Inutile si on a deja un LinkedIn valide.
-    if (!importedLinkedin && rawLinkedin && /linkedin\.com\/search/i.test(rawLinkedin) && braveKey) {
+    // Notre validator les rejette (search URL != profile direct). Les keywords
+    // sont riches (nom + prenom + entreprise) mais ne peuvent plus etre resolus
+    // sans Brave. Le profil reste sur l'URL de recherche (pas de resolution).
+    if (!importedLinkedin && rawLinkedin && /linkedin\.com\/search/i.test(rawLinkedin)) {
       try {
         const u = new URL(rawLinkedin);
         const kw = u.searchParams.get("keywords");
         if (kw) {
           const decoded = decodeURIComponent(kw);
-          const query = `"${decoded}" site:linkedin.com/in/`;
-          // Timeout 8s sur Brave : evite que le pre-seed hang si Brave est
-          // lent / down (cas reel observe : worker bloque 12min sans logs).
-          // Si timeout, importedLinkedin reste null → on garde le pre-seed
-          // sans LinkedIn (degradation gracieuse).
-          const braveResults = await Promise.race([
-            searchBrave(query, braveKey, 5),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("Brave timeout 8s")), 8_000)
-            ),
-          ]);
-          const firstProfile = braveResults.find(r => /linkedin\.com\/in\//.test(r.url));
-          if (firstProfile) {
-            const cleaned = firstProfile.url.split("?")[0];
-            importedLinkedin = normalizeLinkedinUrl(cleaned);
-            console.log(
-              `[enrich-company] FILE IMPORT search-URL resolved via Brave: "${decoded}" -> ${importedLinkedin}`
-            );
-          } else {
-            console.log(`[enrich-company] FILE IMPORT search-URL no Brave match: "${decoded}"`);
-          }
+          console.log(`[enrich-company] FILE IMPORT search-URL (keywords: "${decoded}") – no resolution available`);
         }
       } catch (err) {
-        console.warn(`[enrich-company] FILE IMPORT search-URL Brave resolve failed: ${(err as Error).message}`);
+        console.warn(`[enrich-company] FILE IMPORT search-URL parsing failed: ${(err as Error).message}`);
       }
     }
 

@@ -6,7 +6,6 @@ import { extractUserId } from "../_shared/subscription-access.ts";
 import { resolveDomain } from "../_shared/crm-detection/domain-resolver.ts";
 import { scanDnsForCrm } from "../_shared/crm-detection/dns-resolver.ts";
 import { scanHomepageForCrm } from "../_shared/crm-detection/homepage-scraper.ts";
-import { searchWebForCrmCustomerStory } from "../_shared/crm-detection/web-search-crm.ts";
 import { analyzeJobsForCrm } from "../_shared/crm-detection/jobs-analyzer.ts";
 import { scanLinkedInSkillsForCrm } from "../_shared/crm-detection/linkedin-skills-analyzer.ts";
 import { aggregateMultiSource } from "../_shared/crm-detection/confidence.ts";
@@ -101,16 +100,15 @@ Deno.serve(async (req: Request) => {
     // 4. Résolution domaine
     const domainResult = await resolveDomain(company, supabase);
 
-    // 5. Lance les 5 sources de signaux en parallele (allSettled = tolerance partielle)
+    // 5. Lance les 4 sources de signaux en parallele (allSettled = tolerance partielle)
     //    A. DNS (SPF/MX/CNAME sub-domains) — signal le plus fort
     //    B. HTML home + pages legales — trackers/forms/scripts
-    //    C. Brave search "Nom" + CRMNom -> customer-story domain ou job posting
-    //    D. Jobs analyzer — texte des annonces dans prospect_signals
-    //    E. LinkedIn skills — mentions CRM dans titres/skills des profils enrichis
-    const [dnsSettled, htmlSettled, webSettled, jobsSettled, linkedinSettled] = await Promise.allSettled([
+    //    C. Jobs analyzer — texte des annonces dans prospect_signals
+    //    D. LinkedIn skills — mentions CRM dans titres/skills des profils enrichis
+    // NOTE: Brave web search removed (hardcoded, non-configurable provider)
+    const [dnsSettled, htmlSettled, jobsSettled, linkedinSettled] = await Promise.allSettled([
       domainResult ? scanDnsForCrm(domainResult.domain) : Promise.resolve(null),
       domainResult ? scanHomepageForCrm(domainResult.domain) : Promise.resolve(null),
-      searchWebForCrmCustomerStory(company.name, domainResult?.domain ?? null),
       analyzeJobsForCrm(company_group_id, company.name, supabase),
       scanLinkedInSkillsForCrm(company_group_id, supabase),
     ]);
@@ -134,14 +132,6 @@ Deno.serve(async (req: Request) => {
         allSignals.push({ crm: m.crm, source: m.source, evidence: `${m.path}: ${m.evidence}` });
       }
       allMarketingTools.push(...html.marketing_tools);
-    }
-
-    if (webSettled.status === "fulfilled" && webSettled.value) {
-      const web = webSettled.value;
-      console.log(`[detect-crm] Web search ${company.name}: ${web.queries_performed} queries, ${web.matched_crms.length} customer stories`);
-      for (const m of web.matched_crms) {
-        allSignals.push({ crm: m.crm, source: m.source, evidence: m.evidence });
-      }
     }
 
     if (jobsSettled.status === "fulfilled" && jobsSettled.value) {
