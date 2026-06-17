@@ -23,11 +23,18 @@ Cette approche garantit la qualité et la traçabilité de tous les changements.
 
 Le dépôt est public. **Forkez-le, créez une branche, et ouvrez une Pull Request.**
 
-Le CLA (Contributor License Agreement) est accepté directement via une case à cocher dans le modèle de PR — aucun formulaire séparé n'est nécessaire. Cochez simplement la case lors de la soumission de votre PR.
+### Signer le CLA
+
+Le CLA (Contributor License Agreement) se signe automatiquement via un bot GitHub :
+
+1. À la soumission de votre première PR, un bot commente automatiquement avec un lien vers [CLA.md](CLA.md).
+2. Lisez le document CLA.
+3. Postez un commentaire sur votre PR contenant exactement : `I have read the CLA Document and I hereby sign the CLA`
+4. Le check passe au vert et votre PR peut être examinée. Les PR suivantes sont automatiquement reconnues.
 
 ## Accords de licence
 
-En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [LICENSE](LICENSE). Une case à cocher du **Contributor License Agreement (CLA)** dans le modèle de PR confirme votre accord — aucune signature séparée n'est requise.
+En contribuant à Jay Reach, vous acceptez que votre contribution soit utilisée sous la **Functional Source License (FSL-1.1-MIT)** décrite dans le fichier [LICENSE](LICENSE).
 
 Le CLA nous permet de relicencier le projet à l'avenir si nécessaire, tout en vous garantissant que votre contribution sera créditée et protégée.
 
@@ -36,7 +43,7 @@ Le CLA nous permet de relicencier le projet à l'avenir si nécessaire, tout en 
 ### Prérequis
 
 - Node.js >= 22.12
-- pnpm >= 9
+- pnpm >= 10
 
 ### Installation
 
@@ -141,11 +148,19 @@ Quand vous ajoutez une feature ou corriger un bug, **ajoutez des tests** corresp
 - **HTTPS obligatoire** pour les redirections externes
 - Signalez les vulnérabilités en privé (voir [SECURITY.md](SECURITY.md))
 
+## Signaler un bug ou proposer une feature
+
+Toute découverte de bug, demande de feature ou amélioration doit passer par une **Issue GitHub** :
+
+1. Consultez les [issues existantes](../../issues) pour éviter les doublons
+2. Décrivez le problème ou la demande de manière claire (contexte, étapes, résultat attendu)
+3. Un mainteneur vous répondra et assignera des labels
+
 ## Questions et support
 
-- **Bugs ou idées de features** : ouvrez une Issue
+- **Bugs ou idées de features** : [ouvrez une Issue](../../issues/new)
 - **Questions de design ou architecture** : discutez dans une PR ou une Discussion
-- **Problèmes de sécurité** : [SECURITY.md](SECURITY.md)
+- **Problèmes de sécurité** : consultez [SECURITY.md](SECURITY.md) et reportez en privé
 
 ## Licences et attributions
 

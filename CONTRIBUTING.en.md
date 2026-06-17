@@ -23,11 +23,18 @@ This approach ensures quality and traceability of all changes.
 
 The repository is public. **Fork it, create a branch, and open a Pull Request.**
 
-The CLA (Contributor License Agreement) is accepted directly via a checkbox in the PR template — no separate form needed. Simply check the box when submitting your PR.
+### Signing the CLA
+
+The CLA (Contributor License Agreement) is automatically signed via a GitHub bot:
+
+1. When you submit your first PR, a bot automatically comments with a link to [CLA.md](CLA.md).
+2. Read the CLA document.
+3. Post a comment on your PR containing exactly: `I have read the CLA Document and I hereby sign the CLA`
+4. The check will pass and your PR can be reviewed. Subsequent PRs are automatically recognized.
 
 ## License Agreements
 
-By contributing to Jay Reach, you agree that your contribution may be used under the **Functional Source License (FSL-1.1-MIT)** described in the [LICENSE](LICENSE) file. A **Contributor License Agreement (CLA)** checkbox in the PR template confirms your agreement — no separate signing required.
+By contributing to Jay Reach, you agree that your contribution may be used under the **Functional Source License (FSL-1.1-MIT)** described in the [LICENSE](LICENSE) file.
 
 The CLA allows us to relicense the project in the future if needed, while guaranteeing that your contribution will be credited and protected.
 
@@ -36,7 +43,7 @@ The CLA allows us to relicense the project in the future if needed, while guaran
 ### Prerequisites
 
 - Node.js >= 22.12
-- pnpm >= 9
+- pnpm >= 10
 
 ### Installation
 
@@ -141,11 +148,19 @@ When you add a feature or fix a bug, **add corresponding tests**. A PR without t
 - **HTTPS required** for external redirects
 - Report vulnerabilities privately (see [SECURITY.en.md](SECURITY.en.md))
 
+## Reporting a bug or suggesting a feature
+
+Any bug discovery, feature request, or improvement must be submitted via a **GitHub Issue**:
+
+1. Check [existing issues](../../issues) to avoid duplicates
+2. Describe the problem or request clearly (context, steps, expected outcome)
+3. A maintainer will respond and assign labels
+
 ## Questions and support
 
-- **Bugs or feature ideas**: open an Issue
+- **Bugs or feature ideas**: [open an Issue](../../issues/new)
 - **Design or architecture questions**: discuss in a PR or Discussion
-- **Security issues**: [SECURITY.en.md](SECURITY.en.md)
+- **Security issues**: see [SECURITY.en.md](SECURITY.en.md) and report privately
 
 ## Licenses and attributions
 
