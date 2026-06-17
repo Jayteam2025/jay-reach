@@ -10,7 +10,6 @@ import { useCrmDetection } from '@/features/crm-detection/useCrmDetection';
 import { useCompanyMessages, type ProspectMessage } from '@/features/messages/useCompanyMessages';
 import { ProfileBlock } from '@/features/messages/ProfileBlock';
 import { BulkSendValidEmailsPanel } from '@/features/smartlead/BulkSendValidEmailsPanel';
-import { BulkLinkedInInvitePanel } from '@/features/smartlead/BulkLinkedInInvitePanel';
 import { getProfileLabel } from '@/features/messages/profile-helpers';
 import { EnrichmentStatusPanel } from '@/features/enrichment/EnrichmentStatusPanel';
 
@@ -213,10 +212,7 @@ function CategoryTabs({
 
       {tabs.map(tab => (
         <TabsContent key={tab.slug} value={tab.slug} className="mt-8 focus-visible:ring-0 space-y-10">
-          <div className="space-y-3">
-            <BulkLinkedInInvitePanel profiles={tab.profiles} categoryLabel={tab.label} />
-            <BulkSendValidEmailsPanel profiles={tab.profiles} label={tab.label} />
-          </div>
+          <BulkSendValidEmailsPanel profiles={tab.profiles} label={tab.label} />
           {tab.profiles.map((profile, idx) => (
             <ProfileBlock
               key={profile.id}

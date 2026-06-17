@@ -31,11 +31,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Building2, Loader2, ArrowUpDown, Play, Linkedin,
-  RefreshCw, Trash2, Upload, UserPlus, X, Wrench, Sparkles, Mail, Archive,
+  Building2, Loader2, ArrowUpDown, Play,
+  RefreshCw, Trash2, Upload, X, Wrench, Sparkles, Mail, Archive,
   CheckSquare, Square,
 } from 'lucide-react';
-import { useEnqueueLinkedInInvitations, useLinkedInQueueMap } from '@/hooks/useLinkedInInvitation';
 import { useToast } from '@/hooks/use-toast';
 import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { EntrepriseInboxList } from './EntrepriseInboxList';
@@ -90,7 +89,6 @@ export function ProspectionEntreprises() {
   const [archivedSelectedIds, setArchivedSelectedIds] = useState<Set<string>>(new Set());
   const [archivedSort, setArchivedSort] = useState<'expiration' | 'score'>('expiration');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [bulkSelectedCompanies, setBulkSelectedCompanies] = useState<Set<string>>(new Set());
   const [detailSignalId, setDetailSignalId] = useState<string | null>(null);
   // Action en attente de confirmation (AlertDialog shadcn au lieu de
   // window.confirm natif qui se comporte mal avec Radix DropdownMenu).
@@ -206,8 +204,6 @@ export function ProspectionEntreprises() {
     }
   };
 
-  // Bouton admin : rafraichit les snapshots LinkedIn Apify sur tous les
-  // profils sans enrichment_data.linkedin. Coute ~0.004$/profil.
   // Bulk push global : pousse tous les leads d'une categorie avec deliverability_status='valid'
   // (toutes entreprises enrichies confondues) sur Smartlead. Le gate revalide chaque envoi.
   const [bulkPushPersonaId, setBulkPushPersonaId] = useState<string | null>(null);
@@ -236,28 +232,6 @@ export function ProspectionEntreprises() {
       .map((p) => ({ personaId: p.id, label: p.label, count: pushCountByPersona[p.id] ?? 0 }));
   }, [personasData, pushCountByPersona]);
 
-  const refreshLinkedInMutation = useMutation({
-    mutationFn: async () => {
-      return invokeEdgeFunction<{ total_candidates: number; updated: number; failed: number; emails_found: number }>(
-        'refresh-prospect-linkedin-snapshots',
-        {}
-      );
-    },
-    onSuccess: (data) => {
-      const emailPart = data.emails_found ? ` · ${data.emails_found} emails trouvés` : '';
-      toast({
-        description: `LinkedIn rafraichi : ${data.updated}/${data.total_candidates} profils${emailPart}${data.failed ? ` (${data.failed} echecs)` : ''}`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['enriched-companies'] });
-    },
-    onError: (err) => {
-      toast({
-        variant: 'destructive',
-        description: err instanceof Error ? err.message : 'Erreur refresh LinkedIn',
-      });
-    },
-  });
-
   // Bouton admin "Vider la DB prospection" : reset total (profils + signaux
   // + batches + logs scraping). Conserve les templates et les filtres ICP.
   // Alex l'utilise quand il a fini de traiter toutes ses boites et veut
@@ -285,7 +259,7 @@ export function ProspectionEntreprises() {
 
   // Bouton admin : supprime les profils + messages des entreprises actuellement
   // enrichies puis relance le pipeline complet (FullEnrich search + bulk +
-  // INSEE + Apify + generation messages). Utile apres deploiement d'un nouveau
+  // INSEE + generation messages). Utile apres deploiement d'un nouveau
   // prompt ou d'un nouveau provider d'enrichissement.
   const reenrichAllMutation = useMutation({
     mutationFn: async (opts: { force?: boolean } = {}) => {
@@ -378,63 +352,6 @@ export function ProspectionEntreprises() {
   const detailSignal = scoredSignals.find(s => s.id === detailSignalId) || null;
 
   const selectedCompany = companies.find(c => c.company_group_id === selectedCompanyId) || null;
-
-  // Enqueue + queue map pour multi-select Inviter LinkedIn
-  const inviteEnqueueMutation = useEnqueueLinkedInInvitations();
-  const { data: queueMaps } = useLinkedInQueueMap();
-
-  const eligibleProspectIdsForInvite = useMemo(() => {
-    if (bulkSelectedCompanies.size === 0) return [];
-    const ids: string[] = [];
-    for (const company of companies) {
-      if (!bulkSelectedCompanies.has(company.company_group_id)) continue;
-      for (const profile of company.profiles) {
-        if (!profile.linkedin_url) continue;
-        if (profile.linkedin_invited_at) continue;
-        const q = queueMaps?.byProspect.get(profile.id);
-        if (q && (q.status === 'pending' || q.status === 'processing' || q.status === 'sent')) continue;
-        ids.push(profile.id);
-      }
-    }
-    return ids;
-  }, [bulkSelectedCompanies, companies, queueMaps]);
-
-  const toggleBulkCompany = (companyId: string, checked: boolean) => {
-    setBulkSelectedCompanies(prev => {
-      const next = new Set(prev);
-      if (checked) next.add(companyId);
-      else next.delete(companyId);
-      return next;
-    });
-  };
-
-  const toggleAllBulkCompanies = (checked: boolean) => {
-    if (checked) {
-      setBulkSelectedCompanies(new Set(companies.map(c => c.company_group_id)));
-    } else {
-      setBulkSelectedCompanies(new Set());
-    }
-  };
-
-  const handleBulkInvite = async () => {
-    if (eligibleProspectIdsForInvite.length === 0) return;
-    try {
-      const result = await inviteEnqueueMutation.mutateAsync({
-        prospect_ids: eligibleProspectIdsForInvite,
-        method: 'extension_auto',
-      });
-      const parts = [`${result.enqueued} ajoute${result.enqueued > 1 ? 's' : ''} a la file`];
-      if (result.skipped.already_in_queue) parts.push(`${result.skipped.already_in_queue} deja en file`);
-      if (result.skipped.no_linkedin_url) parts.push(`${result.skipped.no_linkedin_url} sans URL`);
-      toast({ description: parts.join(' · ') });
-      setBulkSelectedCompanies(new Set());
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        description: err instanceof Error ? err.message : 'Erreur ajout file',
-      });
-    }
-  };
 
   if (isLoading) {
     return (
@@ -644,13 +561,6 @@ export function ProspectionEntreprises() {
               </div>
 
               <ToolsRow
-                icon={<Linkedin className="w-3.5 h-3.5 text-sky-500" />}
-                label="Rafraichir LinkedIn"
-                onSelect={() => refreshLinkedInMutation.mutate()}
-                disabled={refreshLinkedInMutation.isPending || companies.length === 0}
-                loading={refreshLinkedInMutation.isPending}
-              />
-              <ToolsRow
                 icon={<RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />}
                 label="Tout re-enrichir"
                 onSelect={() => setPendingAction('reenrich')}
@@ -753,9 +663,6 @@ export function ProspectionEntreprises() {
             companies={filteredCompanies}
             selectedId={selectedCompanyId}
             onSelect={setSelectedCompanyId}
-            bulkSelectedIds={bulkSelectedCompanies}
-            onToggleBulk={toggleBulkCompany}
-            onToggleAllBulk={toggleAllBulkCompanies}
             sortDir={sortDir}
             onToggleSort={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
           />
@@ -891,43 +798,6 @@ export function ProspectionEntreprises() {
             </div>
           )}
         </>
-      )}
-
-      {bulkSelectedCompanies.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40">
-          <div className="flex items-center gap-3 rounded-full border border-border bg-card/95 backdrop-blur shadow-lg pl-5 pr-2 py-2">
-            <div className="flex items-center gap-2 text-[13px]">
-              <span className="font-medium text-foreground">
-                {bulkSelectedCompanies.size} entreprise{bulkSelectedCompanies.size > 1 ? 's' : ''}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {eligibleProspectIdsForInvite.length} profil{eligibleProspectIdsForInvite.length > 1 ? 's' : ''} LinkedIn eligible{eligibleProspectIdsForInvite.length > 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="h-5 w-px bg-border" />
-            <Button
-              size="sm"
-              variant="default"
-              className="gap-1.5 h-8 bg-sky-500 hover:bg-sky-600 text-white"
-              disabled={eligibleProspectIdsForInvite.length === 0 || inviteEnqueueMutation.isPending}
-              onClick={handleBulkInvite}
-            >
-              {inviteEnqueueMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <UserPlus className="w-3.5 h-3.5" />
-              )}
-              Inviter {eligibleProspectIdsForInvite.length} profil{eligibleProspectIdsForInvite.length > 1 ? 's' : ''}
-            </Button>
-            <button
-              onClick={() => setBulkSelectedCompanies(new Set())}
-              className="p-1.5 rounded-full hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-              aria-label="Annuler la selection"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       )}
 
       <AlertDialog open={pendingAction !== null} onOpenChange={(open) => !open && setPendingAction(null)}>

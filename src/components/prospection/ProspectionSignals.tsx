@@ -3,11 +3,10 @@ import { useProspectSignals, type ProspectSignal } from '@/hooks/useProspectSign
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Radio, ExternalLink, MapPin, Loader2, Linkedin, Briefcase, Mail, Check, Sparkles, CheckSquare, Square, ArrowUpDown } from 'lucide-react';
+import { Radio, ExternalLink, MapPin, Loader2, Briefcase, Sparkles, CheckSquare, Square, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
 import { ScrapingDashboard } from './ScrapingDashboard';
-import { LinkedInContactPanel } from './LinkedInContactPanel';
 import { CompanyEnrichedView } from './CompanyEnrichedView';
 import { JobPostingPanel } from './JobPostingPanel';
 import {
@@ -20,7 +19,6 @@ import {
 const TABS = [
   { key: 'all', label: 'Tout', icon: Radio },
   { key: 'jobs', label: 'Offres d\'emploi', icon: Briefcase },
-  { key: 'linkedin', label: 'LinkedIn', icon: Linkedin },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -28,7 +26,6 @@ type TabKey = typeof TABS[number]['key'];
 export function ProspectionSignals() {
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [isScrapingOpen, setIsScrapingOpen] = useState(false);
-  const [selectedSignal, setSelectedSignal] = useState<ProspectSignal | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null);
   const [enrichedCompany, setEnrichedCompany] = useState<{ groupId: string; name: string } | null>(null);
@@ -46,7 +43,6 @@ export function ProspectionSignals() {
   const filteredSignals = useMemo(() => {
     let result = signals;
     if (activeTab === 'jobs') result = signals.filter(s => s.signal_type === 'job_posting');
-    else if (activeTab === 'linkedin') result = signals.filter(s => s.source === 'linkedin');
 
     // Sort jobs by ai_score descending
     if (activeTab === 'jobs' || activeTab === 'all') {
@@ -129,8 +125,6 @@ export function ProspectionSignals() {
     setSelectedIds(new Set());
     toast({ description: `${companyGroupIds.length} entreprises enrichies et messages générés` });
   };
-
-  const isLinkedInTab = activeTab === 'linkedin';
 
   return (
     <div className="space-y-4">
@@ -230,27 +224,17 @@ export function ProspectionSignals() {
       {/* Signal table */}
       {!isLoading && filteredSignals.length > 0 && (
         <div className="border border-border rounded-lg overflow-hidden bg-card">
-          {/* Table header - different for LinkedIn vs Jobs */}
-          {isLinkedInTab ? (
-            <div className="grid grid-cols-[1fr_160px_130px_80px_40px] gap-3 px-4 py-2.5 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground">
-              <div>Contact</div>
-              <div>Poste</div>
-              <div>Lieu</div>
-              <div className="text-center">Email</div>
-              <div></div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-[40px_60px_100px_1fr_200px_120px_80px_40px] gap-3 px-4 py-2.5 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground">
-              <div></div>
-              <div>Score</div>
-              <div>Source</div>
-              <div>Entreprise</div>
-              <div>Poste</div>
-              <div>Localisation</div>
-              <div>Date</div>
-              <div></div>
-            </div>
-          )}
+          {/* Table header */}
+          <div className="grid grid-cols-[40px_60px_100px_1fr_200px_120px_80px_40px] gap-3 px-4 py-2.5 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground">
+            <div></div>
+            <div>Score</div>
+            <div>Source</div>
+            <div>Entreprise</div>
+            <div>Poste</div>
+            <div>Localisation</div>
+            <div>Date</div>
+            <div></div>
+          </div>
 
           {/* Table body */}
           <div className="max-h-[calc(100vh-340px)] overflow-y-auto">
@@ -259,71 +243,9 @@ export function ProspectionSignals() {
               const companyName = (extracted?.company_name as string) || signal.company_name;
               const jobTitle = (extracted?.job_title as string) || '';
               const location = (extracted?.location as string) || '';
-              const contactName = (extracted?.contact_name as string) || '';
-              const contactEmail = (extracted?.contact_email as string) || '';
-              const linkedinHeadline = (extracted?.linkedin_headline as string) || '';
               const detectedDate = new Date(signal.detected_at).toLocaleDateString('fr-FR');
-              const isEnriched = extracted?.enriched === true;
 
               const rowBg = index % 2 === 0 ? 'bg-card' : 'bg-muted/10';
-
-              if (isLinkedInTab) {
-                return (
-                  <div
-                    key={signal.id}
-                    onClick={() => setSelectedSignal(signal)}
-                    className={`grid grid-cols-[1fr_160px_130px_80px_40px] gap-3 px-4 py-2 items-center border-b border-border/30 cursor-pointer transition-colors ${
-                      selectedSignal?.id === signal.id ? 'bg-violet-500/10' : `${rowBg} hover:bg-muted/20`
-                    }`}
-                  >
-                    {/* Contact name + company */}
-                    <div className="min-w-0">
-                      <p className="font-semibold text-foreground text-sm truncate">{contactName || '—'}</p>
-                      <p className="text-xs text-muted-foreground truncate">{companyName || '—'}</p>
-                    </div>
-
-                    {/* Title (compact) */}
-                    <div>
-                      <p className="text-xs text-muted-foreground truncate">{linkedinHeadline ? linkedinHeadline.split('|')[0]?.trim().substring(0, 40) : jobTitle}</p>
-                    </div>
-
-                    {/* Location */}
-                    <div>
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        {location ? (
-                          <>
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            <span>{location.split(',')[0]}</span>
-                          </>
-                        ) : '—'}
-                      </p>
-                    </div>
-
-                    {/* Email status */}
-                    <div className="flex justify-center">
-                      {contactEmail ? (
-                        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                          <Mail className="h-3.5 w-3.5" />
-                          <Check className="h-3 w-3" />
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">{isEnriched ? '—' : '...'}</span>
-                      )}
-                    </div>
-
-                    {/* LinkedIn link */}
-                    <div className="flex justify-end">
-                      {signal.source_url && (
-                        <a href={signal.source_url} target="_blank" rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-muted-foreground hover:text-foreground transition-colors p-1">
-                          <Linkedin className="h-4 w-4" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
 
               // Jobs view
               const sourceLabels: Record<string, { label: string; color: string }> = {
@@ -427,14 +349,6 @@ export function ProspectionSignals() {
         onClose={() => setIsScrapingOpen(false)}
         onComplete={handleScrapeComplete}
       />
-
-      {/* LinkedIn Contact Panel */}
-      {selectedSignal && (
-        <>
-          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedSignal(null)} />
-          <LinkedInContactPanel signal={selectedSignal} onClose={() => setSelectedSignal(null)} />
-        </>
-      )}
 
       {/* Job Posting Panel */}
       {selectedJobSignal && (

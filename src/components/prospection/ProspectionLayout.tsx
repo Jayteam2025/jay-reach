@@ -9,8 +9,6 @@ import { ProspectionSidebar } from './ProspectionSidebar';
 // remap .then(m => ({ default: m.X })).
 const ProspectionEntreprises = lazy(() =>
   import('./ProspectionEntreprises').then((m) => ({ default: m.ProspectionEntreprises })));
-const ProspectionContactsLinkedIn = lazy(() =>
-  import('./ProspectionContactsLinkedIn').then((m) => ({ default: m.ProspectionContactsLinkedIn })));
 const ProspectionConfig = lazy(() =>
   import('./ProspectionConfig').then((m) => ({ default: m.ProspectionConfig })));
 const ProspectionTriggers = lazy(() =>
@@ -26,7 +24,6 @@ const ProspectionCampaigns = lazy(() =>
 
 export type ProspectionTab =
   | 'entreprises'
-  | 'linkedin'
   | 'triggers'
   | 'personas'
   | 'config'
@@ -36,7 +33,6 @@ export type ProspectionTab =
 
 const VALID_TABS: ProspectionTab[] = [
   'entreprises',
-  'linkedin',
   'triggers',
   'personas',
   'config',
@@ -58,8 +54,6 @@ export function ProspectionLayout() {
     switch (activeTab) {
       case 'entreprises':
         return <ProspectionEntreprises />;
-      case 'linkedin':
-        return <ProspectionContactsLinkedIn />;
       case 'triggers':
         return <ProspectionTriggers />;
       case 'personas':

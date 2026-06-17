@@ -5,8 +5,7 @@
 This directory contains the **vendoré** (vendored) _shared modules extracted from Jay's prospection edge functions. These modules are generic utilities and business logic for prospecting, enrichment, and outreach — with **NO coupling to Jay's meeting assistant**.
 
 **Extraction Date:** 2026-06-15 (Task 8)  
-**Source Closure:** 60 files + 1 additional (anthropic-client.ts) from 38 prospection functions  
-**Coupling Cut:** `apify-linkedin-profile.ts` now vendoré `LinkedInData` type (was meeting-prep-types)
+**Source Closure:** 60 files + 1 additional (anthropic-client.ts) from 38 prospection functions
 
 ---
 
@@ -54,7 +53,6 @@ This directory contains the **vendoré** (vendored) _shared modules extracted fr
 - **fullenrich.ts, fullenrich-company-resolve.ts, fullenrich-webhook-helpers.ts** — FullEnrich API client + company deduplication
 - **fullenrich-company-resolve.ts** — Match prospects to companies (dedup logic)
 - **brave-linkedin-search.ts** — Brave Search + LinkedIn profile scraper for enrichment
-- **apify-linkedin-profile.ts** — Apify actor for LinkedIn profile scraping (vendoré LinkedInData type)
 - **person-enrichment-core.ts** — Person enrichment logic (email deduction, company resolution)
 - **crm-detection/** — Detect company's CRM from web signals
   - `types.ts` — CRM detection types
@@ -108,11 +106,6 @@ The following modules from Jay's meeting assistant were **NOT copied** because p
 - `onboarding-messages`, `onboarding-trigger`, `assistant-reply`
 - `watchlist-notifier`, `credits`, `google-token`, `microsoft-token`
 - `hubspot-token`, `odoo-client`, `zoho-*` (all Zoho modules)
-
-### Coupling Cut: apify-linkedin-profile.ts
-- **Issue:** Imported `LinkedInData` from `meeting-prep-types.ts` (assistant module)
-- **Solution:** Vendoré the `LinkedInData` interface + `LinkedInPost`, `LinkedInActivity` types directly into `apify-linkedin-profile.ts`
-- **Impact:** Zero — `LinkedInData` is a generic data structure not tied to meeting prep
 
 ### Module Resolution Status
 ✅ `deno check supabase/functions/_shared/**/*.ts` — **GREEN**  

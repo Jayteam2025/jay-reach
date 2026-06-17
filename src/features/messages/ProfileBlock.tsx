@@ -1,7 +1,6 @@
 import type { EnrichedCompany, EnrichedProfile } from '@/hooks/useEnrichedCompanies';
 import { EmailChannel } from './channels/EmailChannel';
 import { PostalChannel } from './channels/PostalChannel';
-import { LinkedInChannel } from './channels/LinkedInChannel';
 import { PhoneChannel } from './channels/PhoneChannel';
 import { getProfileLabel, hasApplicableChannel } from './profile-helpers';
 import type { ProspectMessage } from './useCompanyMessages';
@@ -57,8 +56,6 @@ export function ProfileBlock({
         {profile.target_category === 'director' && (
           <PostalChannel profile={profile} company={company} message={postalMessage} />
         )}
-
-        <LinkedInChannel profile={profile} />
 
         {profile.phone && <PhoneChannel phone={profile.phone} />}
       </div>

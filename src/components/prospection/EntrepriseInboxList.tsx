@@ -4,15 +4,11 @@ import { type EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 import { useCompanyProgress } from '@/hooks/useProspectActions';
 import { useCrmDetection } from '@/features/crm-detection/useCrmDetection';
 import { isJayNativeCrm } from '@/lib/crm-detection/native';
-import { Checkbox } from '@/components/ui/checkbox';
 
 interface EntrepriseInboxListProps {
   companies: EnrichedCompany[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  bulkSelectedIds: Set<string>;
-  onToggleBulk: (companyId: string, checked: boolean) => void;
-  onToggleAllBulk: (checked: boolean) => void;
   /** Sens du tri par avancement + bascule (fleche icone dans le header). */
   sortDir?: 'desc' | 'asc';
   onToggleSort?: () => void;
@@ -22,24 +18,12 @@ export function EntrepriseInboxList({
   companies,
   selectedId,
   onSelect,
-  bulkSelectedIds,
-  onToggleBulk,
-  onToggleAllBulk,
   sortDir = 'desc',
   onToggleSort,
 }: EntrepriseInboxListProps) {
-  const allChecked = companies.length > 0 && companies.every(c => bulkSelectedIds.has(c.company_group_id));
-  const someChecked = !allChecked && companies.some(c => bulkSelectedIds.has(c.company_group_id));
-  const headerState: boolean | 'indeterminate' = allChecked ? true : someChecked ? 'indeterminate' : false;
-
   return (
     <div className="w-72 shrink-0 border-r border-border overflow-y-auto">
       <div className="px-6 py-4 border-b border-border sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center gap-3">
-        <Checkbox
-          checked={headerState}
-          onCheckedChange={(v) => onToggleAllBulk(v === true)}
-          aria-label="Tout selectionner"
-        />
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
           {companies.length} entreprises
         </span>
@@ -61,9 +45,7 @@ export function EntrepriseInboxList({
             key={company.company_group_id}
             company={company}
             isSelected={selectedId === company.company_group_id}
-            isBulkChecked={bulkSelectedIds.has(company.company_group_id)}
             onSelect={() => onSelect(company.company_group_id)}
-            onToggleBulk={(checked) => onToggleBulk(company.company_group_id, checked)}
           />
         ))}
       </div>
@@ -74,15 +56,11 @@ export function EntrepriseInboxList({
 function CompanyRow({
   company,
   isSelected,
-  isBulkChecked,
   onSelect,
-  onToggleBulk,
 }: {
   company: EnrichedCompany;
   isSelected: boolean;
-  isBulkChecked: boolean;
   onSelect: () => void;
-  onToggleBulk: (checked: boolean) => void;
 }) {
   const { data: progress } = useCompanyProgress(company.company_group_id);
   const { detection } = useCrmDetection(company.company_group_id);
@@ -99,21 +77,14 @@ function CompanyRow({
   return (
     <div
       className={cn(
-        'w-full px-6 py-3 border-b border-border/40 transition-colors block relative flex items-start gap-3',
-        isSelected ? 'bg-muted/60' : isBulkChecked ? 'bg-violet-500/5 hover:bg-violet-500/10' : 'hover:bg-muted/30',
-        isNative && !isBulkChecked && 'bg-primary/5 hover:bg-primary/10 border-l-2 border-l-primary'
+        'w-full px-6 py-3 border-b border-border/40 transition-colors block relative',
+        isSelected ? 'bg-muted/60 hover:bg-muted/70' : 'hover:bg-muted/30',
+        isNative && 'bg-primary/5 hover:bg-primary/10 border-l-2 border-l-primary'
       )}
     >
-      <div className="pt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-        <Checkbox
-          checked={isBulkChecked}
-          onCheckedChange={(v) => onToggleBulk(v === true)}
-          aria-label={`Selectionner ${company.company_name}`}
-        />
-      </div>
       <button
         onClick={onSelect}
-        className="flex-1 min-w-0 text-left"
+        className="w-full min-w-0 text-left"
       >
         <div className="flex items-baseline justify-between gap-2">
           <p className="font-medium text-foreground text-[14px] leading-tight truncate">
