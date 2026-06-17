@@ -190,17 +190,6 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 40px rgba(139, 92, 246, 0.08);
 }
 
-/* WhatsApp mockup bubbles */
-.bubble-in {
-  background: #1A1A2E;
-  border-radius: 16px 16px 16px 4px;
-}
-
-.bubble-out {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-  border-radius: 16px 16px 4px 16px;
-}
-
 /* ─── Blog — Shimmer skeleton ────────────────────── */
 @keyframes blog-shimmer {
   0% { background-position: -200% 0; }

@@ -413,8 +413,6 @@ export type Database = {
           id: string
           last_name: string | null
           role: string
-          trial_started_at: string | null
-          trial_used: boolean | null
         }
         Insert: {
           created_at?: string
@@ -424,8 +422,6 @@ export type Database = {
           id: string
           last_name?: string | null
           role?: string
-          trial_started_at?: string | null
-          trial_used?: boolean | null
         }
         Update: {
           created_at?: string
@@ -435,8 +431,6 @@ export type Database = {
           id?: string
           last_name?: string | null
           role?: string
-          trial_started_at?: string | null
-          trial_used?: boolean | null
         }
         Relationships: []
       }

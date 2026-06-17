@@ -10,10 +10,10 @@ export function useSubscriptionAccess() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      // Récupérer le profil
+      // Récupérer le profil (sans trial_started_at/trial_used - colonnes supprimées en OSS)
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("id, email, role, current_plan, created_at, trial_started_at, trial_used")
+        .select("id, email, role, current_plan, created_at")
         .eq("id", user.id)
         .single();
 
@@ -22,14 +22,7 @@ export function useSubscriptionAccess() {
         throw profileError;
       }
 
-
-      // Pour cette structure, current_plan contient déjà le nom du plan
-      const data = {
-        ...profile,
-        plans: profile.current_plan ? { name: profile.current_plan } : null
-      };
-
-      return data;
+      return profile;
     },
   });
 
@@ -40,22 +33,8 @@ export function useSubscriptionAccess() {
     // Admin a tous les droits
     if (profile.role === "admin") return "Admin";
 
-    // Vérifier la période d'essai (7 jours affichés, 15 jours réels)
-    // const createdAt = new Date(profile.created_at); // Unused
-    // const now = new Date(); // Unused
-    // const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)); // Unused
-
-    // Si current_plan est explicitement 'trial' -> Trial Business
-    if (profile.current_plan === 'trial') {
-      return "Trial Business";
-    }
-
-    // Si abonnement payant actif
-    if (profile.current_plan) {
-      return profile.current_plan;
-    }
-
-    // Par défaut, Free après la période d'essai
+    // En OSS, current_plan est neutre (valeur 'oss' ou équivalent)
+    // Tous les utilisateurs ont accès complet
     return "Free";
   };
 
@@ -73,6 +52,6 @@ export function useSubscriptionAccess() {
     canUseUnlimitedVoice: () => true, // OSS: always allow
     canConnectMultipleCRMs: () => true, // OSS: always allow
     isInTrialPeriod: () => false, // OSS: no trial period
-    isAdmin: () => false, // OSS: no admin concept
+    isAdmin: () => profile?.role === "admin", // Based on profiles.role
   };
 }
