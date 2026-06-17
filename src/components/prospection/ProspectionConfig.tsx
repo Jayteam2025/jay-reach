@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
-import { Loader2, Mail, Linkedin, Send, Users } from 'lucide-react';
+import { Loader2, Mail, Send, Users } from 'lucide-react';
 import {
   useProspectMessageTemplates,
   useUpsertProspectMessageTemplate,
@@ -31,22 +31,20 @@ import {
 
 const CHANNEL_META: Record<ProspectChannel, { label: string; icon: typeof Mail }> = {
   email: { label: 'Email', icon: Mail },
-  linkedin: { label: 'LinkedIn', icon: Linkedin },
   postal_letter: { label: 'Lettre postale', icon: Send },
   social_dm: { label: 'Social DM', icon: Send },
 };
 
-const KNOWN_CHANNELS: ProspectChannel[] = ['email', 'linkedin', 'postal_letter', 'social_dm'];
+const KNOWN_CHANNELS: ProspectChannel[] = ['email', 'postal_letter', 'social_dm'];
 
 const EMPTY_DRAFT: TemplateDraft = { subject: '', body: '', icebreaker_template: '' };
 
-// Canaux d'un persona = sa channels_priority filtrée aux canaux connus, fallback
-// email + linkedin si le persona n'en déclare aucun.
+// Canaux d'un persona = sa channels_priority filtrée aux canaux connus, fallback email si aucun.
 function personaChannels(persona: IcpPersona): ProspectChannel[] {
   const filtered = (persona.channels_priority ?? []).filter(
     (c): c is ProspectChannel => (KNOWN_CHANNELS as string[]).includes(c),
   );
-  return filtered.length ? filtered : ['email', 'linkedin'];
+  return filtered.length ? filtered : ['email'];
 }
 
 export function ProspectionConfig() {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Mail, Linkedin, Send } from 'lucide-react';
+import { Mail, Send } from 'lucide-react';
 import {
   DEMO_CONTEXTS,
   type MessageTemplate,
@@ -16,7 +16,6 @@ interface TemplatePreviewProps {
 
 const CHANNEL_LABELS: Record<string, { label: string; icon: typeof Mail }> = {
   email: { label: 'Email', icon: Mail },
-  linkedin: { label: 'LinkedIn', icon: Linkedin },
   postal_letter: { label: 'Lettre postale', icon: Send },
   social_dm: { label: 'Social DM', icon: Send },
 };

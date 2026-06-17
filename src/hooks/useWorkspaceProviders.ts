@@ -8,7 +8,7 @@ export interface WorkspaceProvider {
   workspace_id: string;
   category: ProviderCategory;
   provider_type: string;
-  channel: 'email' | 'linkedin' | null;
+  channel: 'email' | null;
   is_active: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -97,7 +97,7 @@ export interface CreateProviderInput {
   workspace_id: string;
   category: ProviderCategory;
   provider_type: string;
-  channel?: 'email' | 'linkedin' | null;
+  channel?: 'email' | null;
 }
 
 export function useCreateProvider() {

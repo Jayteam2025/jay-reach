@@ -101,11 +101,10 @@ export function useDeleteIcpPersona() {
   });
 }
 
-// Seuls les canaux d'outreach réellement gérés par le code (Smartlead = email,
-// extension = linkedin). instagram / tiktok / postal_letter non implémentés → retirés.
+// Seuls les canaux d'outreach réellement gérés par le code (Smartlead = email).
+// linkedin (extension), instagram, tiktok, postal_letter non implémentés → retirés.
 export const KNOWN_CHANNELS = [
   'email',
-  'linkedin',
 ] as const;
 
 export const KNOWN_SENIORITY_LEVELS = [

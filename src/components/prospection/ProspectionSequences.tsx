@@ -1,10 +1,9 @@
 import { useProspectSequences, ProspectSequence } from '@/hooks/useProspectConfig';
 import { Badge } from '@/components/ui/badge';
-import { Mail, Linkedin, Instagram, FileText, Loader2 } from 'lucide-react';
+import { Mail, Instagram, FileText, Loader2 } from 'lucide-react';
 
 const CHANNEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   email: Mail,
-  linkedin: Linkedin,
   instagram: Instagram,
   letter: FileText,
 };

@@ -15,7 +15,6 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
 
   const tabs = [
     { id: 'entreprises' as const, label: 'Entreprises', icon: Building2 },
-    // 'linkedin' (Contacts LinkedIn) masque temporairement - feature WIP
     { id: 'triggers' as const, label: 'Declencheurs', icon: Radar },
     { id: 'personas' as const, label: 'Personas', icon: Users },
     { id: 'config' as const, label: 'Templates', icon: FileText },

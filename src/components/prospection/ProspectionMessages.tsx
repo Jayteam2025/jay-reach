@@ -10,7 +10,6 @@ import {
   Check,
   Send,
   Mail,
-  Linkedin,
   Instagram,
   Music,
   FileText,
@@ -23,7 +22,6 @@ type FilterStatus = 'all' | 'draft' | 'approved' | 'sent';
 
 const CHANNEL_CONFIG = {
   email: { icon: Mail, label: 'Email', badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-200' },
-  linkedin: { icon: Linkedin, label: 'LinkedIn', badgeClass: 'bg-sky-500/20 text-sky-700 dark:text-sky-200' },
   instagram: { icon: Instagram, label: 'Instagram', badgeClass: 'bg-pink-500/20 text-pink-700 dark:text-pink-200' },
   tiktok: { icon: Music, label: 'TikTok', badgeClass: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-200' },
   letter: { icon: FileText, label: 'Courrier', badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-200' },
@@ -116,7 +114,7 @@ export function ProspectionMessages() {
     }
   };
 
-  const manualChannels = ['linkedin', 'instagram', 'tiktok'];
+  const manualChannels = ['instagram', 'tiktok'];
 
   return (
     <div className="flex flex-col gap-6">

@@ -32,7 +32,6 @@ const BUCKET = 'prospection-assets';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CHANNELS: Array<{ value: string; label: string }> = [
   { value: 'email', label: 'Email' },
-  { value: 'linkedin', label: 'LinkedIn' },
   { value: 'postal_letter', label: 'Lettre postale' },
 ];
 

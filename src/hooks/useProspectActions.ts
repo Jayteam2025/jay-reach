@@ -11,7 +11,7 @@ interface TrackActionPayload {
   prospectId: string;
   companyGroupId: string;
   actionType: 'copy' | 'open' | 'sent' | 'download';
-  channel: 'email' | 'linkedin' | 'instagram' | 'tiktok' | 'letter' | 'postal_letter' | 'social_dm';
+  channel: 'email' | 'instagram' | 'tiktok' | 'letter' | 'postal_letter' | 'social_dm';
 }
 
 export function useTrackAction() {

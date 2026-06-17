@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 export type ProspectTargetCategory = 'hr' | 'director' | 'field_sales';
-export type ProspectChannel = 'email' | 'linkedin' | 'postal_letter' | 'social_dm';
+export type ProspectChannel = 'email' | 'postal_letter' | 'social_dm';
 
 export interface ProspectMessageTemplate {
   id: string;

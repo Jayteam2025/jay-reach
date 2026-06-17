@@ -55,7 +55,6 @@ const CATEGORY_LABELS = {
 
 const CHANNEL_ICONS = {
   email: Mail,
-  linkedin: Linkedin,
   instagram: Instagram,
   tiktok: Music,
   letter: FileText,

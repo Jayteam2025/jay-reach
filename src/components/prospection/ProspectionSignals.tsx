@@ -59,7 +59,6 @@ export function ProspectionSignals() {
   const counts = useMemo(() => ({
     all: signals.length,
     jobs: signals.filter(s => s.signal_type === 'job_posting').length,
-    linkedin: signals.filter(s => s.source === 'linkedin').length,
   }), [signals]);
 
   const handleScrapeComplete = () => {
@@ -253,7 +252,6 @@ export function ProspectionSignals() {
                 hellowork: { label: 'HelloWork', color: 'bg-orange-500' },
                 indeed: { label: 'Indeed', color: 'bg-violet-500' },
                 welcometothejungle: { label: 'WTTJ', color: 'bg-yellow-500' },
-                linkedin: { label: 'LinkedIn', color: 'bg-sky-600' },
               };
               const sourceInfo = sourceLabels[signal.source] || { label: signal.source, color: 'bg-gray-500' };
 

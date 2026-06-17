@@ -14,7 +14,6 @@ const CATEGORY_COLORS = {
 };
 
 const CHANNEL_ICON_COLORS = {
-  linkedin: 'text-sky-400',
   instagram: 'text-pink-400',
   tiktok: 'text-cyan-400',
 };
@@ -81,7 +80,7 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
             />
           )}
           {prospect.linkedin_url && (
-            <Linkedin className={`w-3.5 h-3.5 ${CHANNEL_ICON_COLORS.linkedin}`} />
+            <Linkedin className="w-3.5 h-3.5 text-sky-400" />
           )}
           {prospect.instagram_url && (
             <Instagram className={`w-3.5 h-3.5 ${CHANNEL_ICON_COLORS.instagram}`} />

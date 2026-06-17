@@ -6,7 +6,7 @@ import { getProfileLabel, hasApplicableChannel } from './profile-helpers';
 import type { ProspectMessage } from './useCompanyMessages';
 
 /**
- * Bloc detail d'un contact : nom, titre, channels (email/postal/linkedin/phone).
+ * Bloc detail d'un contact : nom, titre, channels (email/postal/phone).
  * Utilise dans MessagesPanel sous chaque tab catégorie.
  */
 export function ProfileBlock({
