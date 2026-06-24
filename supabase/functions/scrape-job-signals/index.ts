@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { adzunaScraper } from '../_shared/scrapers/adzuna.ts';
 import { franceTravailScraper } from '../_shared/scrapers/france-travail.ts';
+import { apifyScraper } from '../_shared/scrapers/apify.ts';
 import { processSignals } from '../_shared/scrapers/signal-processor.ts';
 import type { Scraper, IcpCriteria } from '../_shared/scrapers/types.ts';
 import { resolveCredential } from '../_shared/providers/registry.ts';
@@ -19,6 +20,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 const SCRAPER_BY_SOURCE: Record<string, Scraper> = {
   adzuna: adzunaScraper,
   france_travail: franceTravailScraper,
+  apify_linkedin: apifyScraper,
 };
 
 interface SignalTrigger {
