@@ -48,6 +48,13 @@ function slugify(label: string): string {
     .slice(0, 60);
 }
 
+// Libellés lisibles des sources (sinon on affiche la clé brute type "apify_linkedin").
+const SOURCE_LABELS: Record<string, string> = {
+  adzuna: 'Adzuna',
+  france_travail: 'France Travail',
+  apify_linkedin: 'Apify (LinkedIn Jobs)',
+};
+
 const DEFAULT_DRAFT: SignalTriggerDraft = {
   slug: '',
   label: '',
@@ -356,7 +363,7 @@ export function ProspectionTriggers() {
                           : 'border-gray-300 dark:border-border text-gray-500 hover:border-gray-400'
                       }`}
                     >
-                      {source}
+                      {SOURCE_LABELS[source] ?? source}
                     </button>
                   );
                 })}

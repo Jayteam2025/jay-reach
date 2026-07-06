@@ -28,6 +28,7 @@ export function JobPostingPanel({ signal, onClose }: Props) {
   const sourceLabels: Record<string, string> = {
     france_travail: 'France Travail',
     adzuna: 'Adzuna',
+    apify_linkedin: 'Apify (LinkedIn)',
     hellowork: 'HelloWork',
     indeed: 'Indeed',
     welcometothejungle: 'WTTJ',

@@ -1,28 +1,40 @@
 /**
  * Apify LinkedIn Jobs Scraper
- * Utilise un actor Apify pour scraper des offres d'emploi LinkedIn comme déclencheurs d'achat.
- * Inspiré du client Apify de jay/supabase/functions/_shared/apify-linkedin-profile.ts
+ * Scrape des offres d'emploi LinkedIn comme déclencheurs d'achat (comme Adzuna /
+ * France Travail), via un actor Apify. Actor par défaut : valig/linkedin-jobs-scraper
+ * — cookie-free, pay-per-event, tourne avec le seul token (pas d'approbation console).
+ * Le mapping accepte aussi des noms de champs alternatifs (company/jobUrl/postedAt)
+ * pour rester compatible si on bascule sur un autre actor via APIFY_JOBS_ACTOR_ID.
  */
 
 import type { Scraper, ScraperResult, ScrapedSignal } from './types.ts';
 import { sanitizeScrapedContent } from './types.ts';
 
 const APIFY_API = 'https://api.apify.com/v2';
-// Actor par défaut : LinkedIn Jobs Search (harvestapi, $1 per 1k results)
-const DEFAULT_ACTOR_ID = Deno.env.get('APIFY_JOBS_ACTOR_ID') || 'harvestapi~linkedin-jobs-search';
+// Actor par défaut : valig/linkedin-jobs-scraper. Override possible via env.
+const DEFAULT_ACTOR_ID = Deno.env.get('APIFY_JOBS_ACTOR_ID') || 'valig~linkedin-jobs-scraper';
+// Plafond de résultats par mot-clé pour maîtriser le coût du run.
+const MAX_ITEMS = Number(Deno.env.get('APIFY_JOBS_MAX_ITEMS') || '25');
 const TIMEOUT_MS = 120_000;
 
 interface ApifyJobPosting {
-  id?: string;
+  id?: string | number;
   title?: string;
   company?: string;
   companyName?: string;
+  companyUrl?: string;
   location?: string;
   description?: string;
   jobUrl?: string;
   url?: string;
+  applyUrl?: string;
   postedAt?: string;
   publishedAt?: string;
+  postedDate?: string;
+  contractType?: string;
+  experienceLevel?: string;
+  salary?: string;
+  recruiterName?: string;
 }
 
 function mapApifyJobToSignal(job: ApifyJobPosting): ScrapedSignal | null {
@@ -31,7 +43,7 @@ function mapApifyJobToSignal(job: ApifyJobPosting): ScrapedSignal | null {
 
   const title = job.title || '';
   const location = job.location || null;
-  const url = job.jobUrl || job.url || '';
+  const url = job.url || job.jobUrl || job.applyUrl || '';
   const description = job.description ? sanitizeScrapedContent(job.description) : null;
 
   const rawContent = sanitizeScrapedContent(
@@ -39,16 +51,21 @@ function mapApifyJobToSignal(job: ApifyJobPosting): ScrapedSignal | null {
   );
 
   return {
-    signal_type: 'linkedin_activity',
+    signal_type: 'job_posting',
     source: 'apify_linkedin',
     source_url: url,
     raw_content: rawContent,
     extracted_data: {
       job_title: title || null,
       company_name: companyName,
+      company_url: job.companyUrl || null,
       location,
       description,
-      posted_date: job.postedAt || job.publishedAt || null,
+      posted_date: job.postedDate || job.postedAt || job.publishedAt || null,
+      contract_type: job.contractType || null,
+      experience_level: job.experienceLevel || null,
+      salary: job.salary || null,
+      recruiter_name: job.recruiterName || null,
     },
   };
 }
@@ -73,7 +90,10 @@ export const apifyScraper: Scraper = {
 
     for (const keyword of keywords) {
       try {
-        const body: Record<string, unknown> = { queries: [keyword] };
+        // Schéma d'entrée de valig/linkedin-jobs-scraper : title (string) +
+        // location (string) + limit (int). `rows`/`maxItems` selon les actors ;
+        // on envoie les deux clés courantes pour rester tolérant.
+        const body: Record<string, unknown> = { title: keyword, limit: MAX_ITEMS, rows: MAX_ITEMS };
         if (opts.location) body.location = opts.location;
 
         const response = await fetch(`${endpoint}?${params}`, {
@@ -95,7 +115,7 @@ export const apifyScraper: Scraper = {
         console.log(`[apify_linkedin] "${keyword}": ${items.length} results`);
 
         for (const item of items) {
-          const id = item.id || item.jobUrl || item.url || '';
+          const id = String(item.id || item.url || item.jobUrl || '');
           if (id && seenIds.has(id)) continue;
           if (id) seenIds.add(id);
 

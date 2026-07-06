@@ -36,6 +36,14 @@ export const PROVIDER_CATALOG: ProviderDescriptor[] = [
       { name: "client_id", label: "Client ID", secret: false },
       { name: "client_secret", label: "Client Secret", secret: true }],
     fallbackEnv: { client_id: "FRANCE_TRAVAIL_CLIENT_ID", client_secret: "FRANCE_TRAVAIL_CLIENT_SECRET" } },
+  { category: "source", providerType: "apify_linkedin", label: "Apify (LinkedIn Jobs)",
+    // actor_id est optionnel : le scraper retombe sur APIFY_JOBS_ACTOR_ID puis
+    // sur l'actor harvestapi par defaut. Ne PAS le mettre dans fallbackEnv, sinon
+    // credentialFromEnv renverrait null quand seul le token est configure.
+    credentialSchema: [
+      { name: "api_token", label: "Token API Apify", secret: true },
+      { name: "actor_id", label: "Actor ID (optionnel)", secret: false }],
+    fallbackEnv: { api_token: "APIFY_API_TOKEN" } },
   { category: "enricher", providerType: "fullenrich", label: "FullEnrich",
     credentialSchema: [{ name: "api_key", label: "Clé API", secret: true }],
     fallbackEnv: { api_key: "FULLENRICH_API_KEY" } },
