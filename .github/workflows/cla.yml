@@ -24,8 +24,8 @@ jobs:
         with:
           path-to-signatures: 'signatures/cla.json'
           path-to-document: 'https://github.com/Jayteam2025/jay-reach/blob/main/CLA.md'
-          branch: 'main'
+          branch: 'cla-signatures'
           allowlist: 'Jeeiib,dependabot[bot]'
-          custom-notsigned-prologue: 'Merci pour ta contribution. Avant le merge, merci de signer le CLA (voir CLA.md). / Thanks for your contribution. Please sign the CLA before we can merge (see CLA.md).'
+          custom-notsigned-prcomment: 'Merci pour ta contribution. Avant le merge, merci de signer le CLA (voir CLA.md). / Thanks for your contribution. Please sign the CLA before we can merge (see CLA.md).'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
-          custom-allsigned-prologue: 'Tous les contributeurs ont signe le CLA. / All contributors have signed the CLA.'
+          custom-allsigned-prcomment: 'Tous les contributeurs ont signe le CLA. / All contributors have signed the CLA.'
