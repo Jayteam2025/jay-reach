@@ -16,6 +16,17 @@ const DEFAULT_ACTOR_ID = Deno.env.get('APIFY_JOBS_ACTOR_ID') || 'valig~linkedin-
 // Plafond de résultats par mot-clé pour maîtriser le coût du run.
 const MAX_ITEMS = Number(Deno.env.get('APIFY_JOBS_MAX_ITEMS') || '25');
 const TIMEOUT_MS = 120_000;
+// Plafond de caractères pour la description stockée. Une offre LinkedIn remonte
+// ~4 000 caractères, dupliqués dans extracted_data.description ET raw_content :
+// sur du volume ça gonfle la table et les embeddings pour rien. On tronque.
+const MAX_DESC = 2000;
+// Budget wall-clock global du run. Chaque mot-clé lance un run d'actor séquentiel
+// (jusqu'à TIMEOUT_MS) + 500 ms de délai ; avec plusieurs keywords on peut
+// approcher la limite de l'edge function et se faire tuer en plein insert
+// (signaux partiels, aucune erreur loguée). On préfère un budget global — qui
+// s'adapte à la latence réelle des runs — plutôt qu'un plafond fixe de keywords.
+// Surchargeable via APIFY_JOBS_BUDGET_MS (lu à l'invocation).
+const DEFAULT_BUDGET_MS = 90_000;
 
 interface ApifyJobPosting {
   id?: string | number;
@@ -44,7 +55,11 @@ function mapApifyJobToSignal(job: ApifyJobPosting): ScrapedSignal | null {
   const title = job.title || '';
   const location = job.location || null;
   const url = job.url || job.jobUrl || job.applyUrl || '';
-  const description = job.description ? sanitizeScrapedContent(job.description) : null;
+  // Tronqué au plafond : raw_content est construit à partir de cette description
+  // déjà bornée, donc les deux champs stockés restent maîtrisés.
+  const description = job.description
+    ? sanitizeScrapedContent(job.description).slice(0, MAX_DESC)
+    : null;
 
   const rawContent = sanitizeScrapedContent(
     [title, companyName, location, description].filter(Boolean).join(' ')
@@ -87,8 +102,22 @@ export const apifyScraper: Scraper = {
     const actorId = opts.credentials.actor_id || DEFAULT_ACTOR_ID;
     const endpoint = `${APIFY_API}/acts/${actorId}/run-sync-get-dataset-items`;
     const params = new URLSearchParams({ token: apiToken, timeout: '120', format: 'json' });
+    const budgetMs = Number(Deno.env.get('APIFY_JOBS_BUDGET_MS') || DEFAULT_BUDGET_MS);
 
-    for (const keyword of keywords) {
+    for (let i = 0; i < keywords.length; i++) {
+      const keyword = keywords[i];
+
+      // Garde-fou wall-clock : si le budget est dépassé, on arrête proprement
+      // et on loggue les mots-clés non traités plutôt que de risquer un kill
+      // en plein insert.
+      if (Date.now() - start > budgetMs) {
+        const skipped = keywords.slice(i);
+        const msg = `budget de ${budgetMs}ms dépassé, ${skipped.length} mot(s)-clé(s) non traité(s): ${skipped.join(', ')}`;
+        console.warn(`[apify_linkedin] ${msg}`);
+        errors.push(`apify_linkedin: ${msg}`);
+        break;
+      }
+
       try {
         // Schéma d'entrée de valig/linkedin-jobs-scraper : title (string) +
         // location (string) + limit (int). `rows`/`maxItems` selon les actors ;

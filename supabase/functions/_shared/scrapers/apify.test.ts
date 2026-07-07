@@ -128,3 +128,40 @@ Deno.test('accepte api_key en fallback du champ api_token', async () => {
     restore();
   }
 });
+
+Deno.test('tronque la description au plafond (extracted_data et raw_content)', async () => {
+  const longDesc = 'a'.repeat(5000);
+  const { restore } = stubFetch([
+    { id: '1', title: 'T', company: 'Corp', jobUrl: 'u', description: longDesc },
+  ]);
+  try {
+    const res = await apifyScraper.fetch(['k'], CREDS);
+    assertEquals(res.signals.length, 1);
+    const s = res.signals[0];
+    // description bornée a MAX_DESC (2000)
+    assertEquals(s.extracted_data.description?.length, 2000);
+    // raw_content construit a partir de la description deja tronquee : reste borne
+    assertEquals(s.raw_content.length <= 2100, true);
+  } finally {
+    restore();
+  }
+});
+
+Deno.test('borne le run au budget et loggue les mots-cles non traites', async () => {
+  const { calls, restore } = stubFetch([{ id: '1', title: 'T', company: 'Corp', jobUrl: 'u' }]);
+  Deno.env.set('APIFY_JOBS_BUDGET_MS', '10');
+  try {
+    // Le 1er mot-cle passe (budget non atteint), puis le delai de 500 ms entre
+    // requetes fait depasser le budget : les suivants sont sautes, pas fetchs.
+    const res = await apifyScraper.fetch(['k1', 'k2', 'k3'], CREDS);
+    assertEquals(calls.length, 1);
+    assertEquals(res.signals.length, 1);
+    const budgetErr = res.errors.find((e) => e.includes('budget'));
+    assertEquals(budgetErr !== undefined, true);
+    assertEquals(budgetErr?.includes('k2'), true);
+    assertEquals(budgetErr?.includes('k3'), true);
+  } finally {
+    Deno.env.delete('APIFY_JOBS_BUDGET_MS');
+    restore();
+  }
+});
