@@ -92,6 +92,7 @@ jobs:
             supabase/functions/_shared/providers/registry.test.ts \
             supabase/functions/_shared/reoon.test.ts \
             supabase/functions/_shared/schemas/prospect-import.test.ts \
+            supabase/functions/_shared/scrapers/apify.test.ts \
             supabase/functions/_shared/subscription-access.test.ts
 
   gitleaks:

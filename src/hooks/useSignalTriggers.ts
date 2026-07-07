@@ -104,6 +104,7 @@ export function useDeleteSignalTrigger() {
 export const KNOWN_SOURCE_TYPES = [
   'adzuna',
   'france_travail',
+  'apify_linkedin',
 ] as const;
 
 export type SourceType = (typeof KNOWN_SOURCE_TYPES)[number];

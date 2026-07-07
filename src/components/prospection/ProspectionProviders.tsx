@@ -70,7 +70,7 @@ const CATEGORY_META: Record<
   },
   source: {
     label: 'Sources',
-    description: "Sources d'offres et signaux scrappés (Adzuna, France Travail...).",
+    description: "Sources d'offres et signaux scrappés (Adzuna, France Travail, Apify LinkedIn...).",
     icon: Briefcase,
   },
   llm: {
@@ -91,6 +91,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai_compatible: 'OpenAI-compatible (OpenAI, Mistral)',
   adzuna: 'Adzuna',
   france_travail: 'France Travail',
+  apify_linkedin: 'Apify (LinkedIn Jobs)',
   demo: 'Mode demo (fake data)',
 };
 
@@ -98,7 +99,7 @@ const PROVIDER_OPTIONS: Record<ProviderCategory, string[]> = {
   outreach: ['smartlead', 'demo'],
   validator: ['bouncer', 'reoon', 'demo'],
   enricher: ['fullenrich', 'demo'],
-  source: ['adzuna', 'france_travail', 'demo'],
+  source: ['adzuna', 'france_travail', 'apify_linkedin', 'demo'],
   llm: ['anthropic', 'openai_compatible', 'demo'],
 };
 
@@ -114,6 +115,10 @@ const CREDENTIAL_FIELDS: Record<string, CredentialField[]> = {
   france_travail: [
     { key: 'client_id', label: 'Identifiant client', secret: false },
     { key: 'client_secret', label: 'Clé secrète' },
+  ],
+  apify_linkedin: [
+    { key: 'api_token', label: 'Token API Apify' },
+    { key: 'actor_id', label: 'Actor ID (optionnel)', secret: false, placeholder: 'valig~linkedin-jobs-scraper' },
   ],
   openai_compatible: [
     { key: 'api_key', label: 'Clé API' },

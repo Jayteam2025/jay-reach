@@ -249,6 +249,8 @@ export function ProspectionSignals() {
               // Jobs view
               const sourceLabels: Record<string, { label: string; color: string }> = {
                 france_travail: { label: 'France Travail', color: 'bg-blue-500' },
+                adzuna: { label: 'Adzuna', color: 'bg-emerald-500' },
+                apify_linkedin: { label: 'Apify (LinkedIn)', color: 'bg-sky-500' },
                 hellowork: { label: 'HelloWork', color: 'bg-orange-500' },
                 indeed: { label: 'Indeed', color: 'bg-violet-500' },
                 welcometothejungle: { label: 'WTTJ', color: 'bg-yellow-500' },
