@@ -1,5 +1,7 @@
 import { Database, ArrowUp, ArrowDown } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { fadeUp, staggerContainer } from '@/lib/motion';
 import { type EnrichedCompany } from '@/hooks/useEnrichedCompanies';
 import { useCompanyProgress } from '@/hooks/useProspectActions';
 import { useCrmDetection } from '@/features/crm-detection/useCrmDetection';
@@ -38,7 +40,7 @@ export function EntrepriseInboxList({
           </button>
         )}
       </div>
-      <div>
+      <motion.div initial="hidden" animate="show" variants={staggerContainer}>
         {companies.map(company => (
           <CompanyRow
             key={company.company_group_id}
@@ -47,7 +49,7 @@ export function EntrepriseInboxList({
             onSelect={() => onSelect(company.company_group_id)}
           />
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -73,7 +75,8 @@ function CompanyRow({
   const detectedCrm = detection?.detection_status === 'completed' ? detection.crm_name : null;
 
   return (
-    <div
+    <motion.div
+      variants={fadeUp}
       className={cn(
         'w-full px-6 py-3 border-b border-border/40 transition-colors block relative',
         isSelected ? 'bg-muted/60 hover:bg-muted/70' : 'hover:bg-muted/30',
@@ -121,6 +124,6 @@ function CompanyRow({
           </div>
         )}
       </button>
-    </div>
+    </motion.div>
   );
 }
