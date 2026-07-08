@@ -264,7 +264,7 @@ function ProviderRow({
   const status = providerDisplayStatus(provider);
 
   return (
-    <div className="rounded-md border border-border/60 bg-card overflow-hidden">
+    <div className="glass rounded-md overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -598,7 +598,7 @@ function WorkspaceSettingsSection({
       </div>
 
       <div className="space-y-2 ml-6">
-        <div className="flex items-center justify-between p-3 rounded-md border border-border/50 bg-muted/20">
+        <div className="flex items-center justify-between p-3 rounded-md glass">
           <div className="space-y-1 flex-1">
             <Label className="text-sm font-medium text-foreground cursor-pointer">
               Détection automatique des CRMs

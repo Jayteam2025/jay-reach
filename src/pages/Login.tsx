@@ -66,8 +66,8 @@ export default function Login() {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-jay-dark px-4 text-white">
       {/* Atmosphère : halos sobres aux couleurs de la marque */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-32 -top-32 h-[30rem] w-[30rem] rounded-full bg-jay-purple/20 blur-[130px]" />
-        <div className="absolute -bottom-32 -right-32 h-[30rem] w-[30rem] rounded-full bg-jay-blue/15 blur-[130px]" />
+        <div className="aurora-orb absolute -left-32 -top-32 h-[30rem] w-[30rem] rounded-full bg-jay-purple/20 blur-[130px]" />
+        <div className="aurora-orb aurora-orb--slow absolute -bottom-32 -right-32 h-[30rem] w-[30rem] rounded-full bg-jay-blue/15 blur-[130px]" />
       </div>
 
       <motion.div
@@ -88,7 +88,7 @@ export default function Login() {
         </div>
 
         {/* Carte */}
-        <div className="rounded-2xl border border-white/10 bg-jay-card p-8 shadow-2xl shadow-black/50">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-2xl p-8 shadow-2xl shadow-black/50">
           {/* Sélecteur connexion / inscription */}
           <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1 text-sm font-medium">
             {(["signin", "signup"] as const).map((m) => (

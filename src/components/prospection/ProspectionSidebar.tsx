@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ArrowLeft, Building2, Key, Palette, FileText, Radar, Users, Megaphone } from 'lucide-react';
 import { ThemeSwitch } from '@/components/ThemeSwitch';
+import { PaletteSwitch } from '@/components/PaletteSwitch';
 import { ProspectionTab } from './ProspectionLayout';
 
 interface ProspectionSidebarProps {
@@ -24,7 +25,7 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
   ];
 
   return (
-    <div className="w-64 h-screen bg-white dark:bg-background border-r border-gray-200 dark:border-border flex flex-col fixed">
+    <div className="w-64 h-screen bg-[rgb(var(--glass-bg))] backdrop-blur-xl border-r border-[rgb(var(--glass-border))] flex flex-col fixed z-20">
       {/* Back button + Theme toggle */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <Button
@@ -36,7 +37,10 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
           <ArrowLeft className="w-4 h-4" />
           Retour
         </Button>
-        <ThemeSwitch />
+        <div className="flex items-center gap-2.5">
+          <PaletteSwitch />
+          <ThemeSwitch />
+        </div>
       </div>
 
       {/* Title */}
@@ -54,10 +58,10 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
               key={tab.id}
               onClick={() => onNavigate(tab.id)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium border-l-[3px]',
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium border-l-[3px]',
                 isActive
-                  ? 'border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                  : 'border-transparent text-gray-500 dark:text-white/60 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
+                  ? 'border-primary bg-primary/15 text-primary dark:text-white shadow-[0_0_20px_hsl(var(--a1)/0.18)]'
+                  : 'border-transparent text-gray-500 dark:text-white/60 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'
               )}
             >
               <Icon className="w-4 h-4" />

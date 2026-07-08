@@ -195,7 +195,7 @@ export function ProspectionPersonas() {
           {personas.map((p) => (
             <div
               key={p.id}
-              className="border border-gray-200 dark:border-border rounded-lg p-4 bg-white dark:bg-card"
+              className="glass rounded-lg p-4"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">

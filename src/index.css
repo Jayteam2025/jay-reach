@@ -13,6 +13,14 @@
 }
 
 @layer base {
+  /* Palette d'accent — teinte + saturation par accent ; la lightness est geree
+     par l'echelle (violet/blue en decoulent). Bascule via data-palette sur <html>. */
+  :root                        { --a1h:262; --a1s:83%; --a2h:217; --a2s:91%; }  /* Marque (defaut) */
+  :root[data-palette="neon"]   { --a1h:331; --a1s:92%; --a2h:187; --a2s:82%; }  /* Neon   */
+  :root[data-palette="sunset"] { --a1h:12;  --a1s:100%; --a2h:331; --a2s:100%; } /* Sunset */
+  :root[data-palette="lime"]   { --a1h:82;  --a1s:72%; --a2h:189; --a2s:94%; }  /* Lime   */
+  :root { --a1: var(--a1h) var(--a1s) 58%; --a2: var(--a2h) var(--a2s) 60%; }
+
   :root,
   .dark {
     --background: 240 6% 3.9%;
@@ -21,17 +29,28 @@
     --card-foreground: 0 0% 98%;
     --popover: 240 5% 6%;
     --popover-foreground: 0 0% 98%;
-    --primary: 262 83% 58%;
+    --primary: var(--a1);
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 91% 60%;
+    --secondary: var(--a2);
     --secondary-foreground: 0 0% 100%;
     --accent: 199 89% 48%;
     --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
     --border: 240 4% 16%;
     --input: 240 4% 16%;
-    --ring: 262 83% 58%;
+    --ring: var(--a1);
     --muted: 240 4% 16%;
     --muted-foreground: 0 0% 56%;
+    --radius: 0.5rem;
+
+    /* Tokens verre (dark) — surfaces translucides floutees */
+    --glass-bg: 255 255 255 / 0.07;
+    --glass-strong-bg: 255 255 255 / 0.11;
+    --glass-border: 255 255 255 / 0.18;
+    --glass-highlight: 255 255 255 / 0.22;
+    --glass-shadow: 0 0 0 / 0.5;
+    --glass-blur: 18px;
   }
 
   .light {
@@ -41,9 +60,9 @@
     --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
-    --primary: 262 83% 58%;
+    --primary: var(--a1);
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 91% 60%;
+    --secondary: var(--a2);
     --secondary-foreground: 0 0% 100%;
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
@@ -53,7 +72,18 @@
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
-    --ring: 262 83% 58%;
+    --ring: var(--a1);
+    --radius: 0.5rem;
+
+    /* Tokens verre (light) — verre blanc depoli, lisible sur fond clair.
+       Bordure teintee ardoise (et non blanche) : sur fond clair un liseré blanc
+       est invisible, d'ou une mauvaise démarcation des cartes. */
+    --glass-bg: 255 255 255 / 0.55;
+    --glass-strong-bg: 255 255 255 / 0.72;
+    --glass-border: 30 41 59 / 0.14;
+    --glass-highlight: 255 255 255 / 0.9;
+    --glass-shadow: 30 41 59 / 0.18;
+    --glass-blur: 18px;
   }
 
   body {
@@ -69,10 +99,39 @@
   }
 }
 
+/* ─── Glassmorphism — surfaces verre mode-aware (dark + light) ─── */
+.glass,
 .glass-morphism {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgb(var(--glass-bg));
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgb(var(--glass-border));
+  box-shadow:
+    0 8px 32px rgb(var(--glass-shadow)),
+    inset 0 1px 0 rgb(var(--glass-highlight));
+}
+
+/* Variante plus opaque, pour les surfaces de contenu dense (modales, popovers) */
+.glass-strong {
+  background: rgb(var(--glass-strong-bg));
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgb(var(--glass-border));
+  box-shadow:
+    0 16px 48px rgb(var(--glass-shadow)),
+    inset 0 1px 0 rgb(var(--glass-highlight));
+}
+
+/* Glass global : toute surface `bg-card` (le token de surface le plus utilise
+   dans l'app) devient verre depoli, sans toucher chaque composant. */
+@layer components {
+  .bg-card,
+  .dark\:bg-card {
+    background-color: rgb(var(--glass-bg)) !important;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-color: rgb(var(--glass-border));
+  }
 }
 
 .neo-blur {
@@ -109,20 +168,45 @@
 /* Landing page — Gradient orb backgrounds */
 .orb-purple {
   position: absolute;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  width: 640px;
+  height: 640px;
+  background: radial-gradient(circle, hsl(var(--a1) / 0.38) 0%, transparent 68%);
   border-radius: 50%;
   pointer-events: none;
 }
 
 .orb-blue {
   position: absolute;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(96, 165, 250, 0.10) 0%, transparent 70%);
+  width: 560px;
+  height: 560px;
+  background: radial-gradient(circle, hsl(var(--a2) / 0.30) 0%, transparent 68%);
   border-radius: 50%;
   pointer-events: none;
+}
+
+/* Mode clair : orbs plus soutenus pour rester perceptibles sur fond blanc */
+.light .orb-purple {
+  background: radial-gradient(circle, hsl(var(--a1) / 0.28) 0%, transparent 68%);
+}
+.light .orb-blue {
+  background: radial-gradient(circle, hsl(var(--a2) / 0.22) 0%, transparent 68%);
+}
+
+/* ─── Fond d'ambiance — halos derriere le verre, derive tres lente ─── */
+@keyframes aurora-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  33%  { transform: translate3d(6%, -4%, 0) scale(1.08); }
+  66%  { transform: translate3d(-5%, 5%, 0) scale(0.96); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.aurora-orb {
+  will-change: transform;
+  animation: aurora-drift 38s ease-in-out infinite;
+}
+.aurora-orb--slow {
+  animation-duration: 52s;
+  animation-direction: reverse;
 }
 
 /* Section divider */
@@ -694,4 +778,26 @@
   height: 100%; width: 0%;
   background: linear-gradient(90deg, var(--ha-crm-accent), var(--ha-crm-accent2));
   border-radius: 2px;
+}
+
+/* ─── Accessibilite — respect de prefers-reduced-motion ─────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .aurora-orb,
+  .marquee-track,
+  .blog-cover-guides,
+  .blog-cover-integrations,
+  .blog-cover-productivite,
+  .blog-cover-actualites,
+  .blog-cover-general {
+    animation: none !important;
+  }
 }
