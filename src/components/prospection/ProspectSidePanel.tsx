@@ -97,7 +97,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        className="w-[400px] p-0 flex flex-col dark:bg-card dark:border-border"
+        className="w-[400px] p-0 flex flex-col"
         side="right"
       >
         {isLoading ? (
@@ -293,7 +293,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
                   <h3 className="text-xs font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
                     Notes
                   </h3>
-                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-border">
+                  <div className="p-3 rounded-lg bg-foreground/5 border border-border">
                     <p className="text-sm text-gray-900 dark:text-white">
                       {prospect.notes || (
                         <span className="text-gray-400 dark:text-white/40 italic">Aucune note</span>
@@ -309,7 +309,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
               <div className="relative">
                 <button
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                  className="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-white/25 bg-white dark:bg-white/10 text-gray-900 dark:text-white text-sm font-medium flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  className="w-full h-9 px-3 rounded-md border border-border dark:border-white/25 bg-foreground/5 dark:bg-white/10 text-gray-900 dark:text-white text-sm font-medium flex items-center justify-between hover:bg-foreground/10 dark:hover:bg-white/10 transition-colors"
                 >
                   <span>Changer statut</span>
                   <ChevronDown
@@ -321,7 +321,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
                 </button>
 
                 {isStatusDropdownOpen && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 rounded-md border border-border bg-white dark:bg-card shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="absolute bottom-full left-0 right-0 mb-2 rounded-md glass z-50 max-h-60 overflow-y-auto">
                     {STAGES.map((stage) => (
                       <button
                         key={stage.key}
@@ -330,7 +330,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
                         className={`w-full text-left px-4 py-2 text-sm transition-colors ${
                           prospect.status === stage.key
                             ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-400 font-medium'
-                            : 'text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5'
+                            : 'text-gray-900 dark:text-white hover:bg-foreground/5 dark:hover:bg-white/5'
                         } ${updateStatusMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {stage.label}
@@ -343,7 +343,7 @@ export function ProspectSidePanel({ prospectId, open, onOpenChange }: ProspectSi
               {prospect.source_signal_id && (
                 <a
                   href={`/prospection/signals/${prospect.source_signal_id}`}
-                  className="w-full h-9 rounded-md border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  className="w-full h-9 rounded-md border border-border dark:border-white/20 text-gray-900 dark:text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-foreground/5 dark:hover:bg-white/5 transition-colors"
                 >
                   <FileText className="w-4 h-4" />
                   Voir signal

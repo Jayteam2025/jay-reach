@@ -186,7 +186,7 @@ function PersonaCampaignRow({
   }
 
   return (
-    <div className="flex items-center gap-4 rounded-md border border-border/60 bg-card px-4 py-3">
+    <div className="flex items-center gap-4 rounded-md glass px-4 py-3">
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-foreground truncate">{personaLabel}</div>
         <div className="text-xs text-muted-foreground">
@@ -231,7 +231,7 @@ function PersonaCampaignRow({
 
 function EmptyState({ title, hint }: { title: string; hint: string }) {
   return (
-    <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-4 py-8 text-center">
+    <div className="rounded-md glass px-4 py-8 text-center">
       <p className="text-sm text-foreground">{title}</p>
       <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">{hint}</p>
     </div>

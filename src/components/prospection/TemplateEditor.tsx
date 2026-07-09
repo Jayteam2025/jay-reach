@@ -131,7 +131,7 @@ export function TemplateEditor({
                 onDraftChange({ ...draft, subject: e.target.value })
               }
               placeholder="ex: ton CRM et la pression en ce moment"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
+              className="w-full rounded-md border border-border bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
           </div>
         ) : null}
@@ -148,7 +148,7 @@ export function TemplateEditor({
             onChange={(e) => onDraftChange({ ...draft, body: e.target.value })}
             rows={16}
             spellCheck
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 font-mono leading-relaxed"
+            className="w-full rounded-md border border-border bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 font-mono leading-relaxed"
             placeholder="Hello {first_name},&#10;&#10;J'ai vu que {company} recrute un {job_title}…"
           />
         </div>
@@ -166,7 +166,7 @@ export function TemplateEditor({
             onChange={(e) =>
               onDraftChange({ ...draft, icebreaker_template: e.target.value })
             }
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
+            className="w-full rounded-md border border-border bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             placeholder="{company} recrute un {job_title}"
           />
         </div>
@@ -182,7 +182,7 @@ export function TemplateEditor({
 
             {inlineImageUrl ? (
               <div className="space-y-3">
-                <div className="relative w-full bg-card border border-border rounded-md p-3 flex items-start gap-3">
+                <div className="relative w-full glass rounded-md p-3 flex items-start gap-3">
                   <img
                     src={inlineImageUrl}
                     alt={inlineImageAlt || 'Image inline'}
@@ -312,7 +312,7 @@ function VariableHints() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card p-3 space-y-2">
+    <div className="rounded-md glass p-3 space-y-2">
       <h4 className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
         Variables disponibles
       </h4>

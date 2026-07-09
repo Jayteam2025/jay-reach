@@ -57,7 +57,7 @@ function RecipientsInput({ values, onChange }: RecipientsInputProps) {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-foreground/5 px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring">
         {values.map((email) => (
           <span
             key={email}
@@ -149,7 +149,7 @@ export function ProspectionBranding() {
 
   if (!brand) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center space-y-3 max-w-md">
+      <div className="rounded-lg glass p-8 text-center space-y-3 max-w-md">
         <Palette className="size-8 text-muted-foreground mx-auto" />
         <div className="space-y-1">
           <p className="text-foreground font-medium">Aucune identité de marque</p>
@@ -237,7 +237,7 @@ export function ProspectionBranding() {
         </div>
       </header>
 
-      <section className="space-y-4">
+      <section className="glass rounded-xl p-5 space-y-4">
         <SectionHeader icon={Sparkles} title="Identite" hint="Substitue {{brand_name}} et {{founder_name}} dans les prompts." />
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -261,7 +261,7 @@ export function ProspectionBranding() {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="glass rounded-xl p-5 space-y-3">
         <SectionHeader
           icon={PenLine}
           title="Pitch produit"
@@ -285,7 +285,7 @@ export function ProspectionBranding() {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="glass rounded-xl p-5 space-y-3">
         <SectionHeader
           icon={Mail}
           title="Signature email"
@@ -309,7 +309,7 @@ export function ProspectionBranding() {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="glass rounded-xl p-5 space-y-4">
         <SectionHeader
           icon={Bell}
           title="Notifications hebdomadaires"

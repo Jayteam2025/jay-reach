@@ -77,7 +77,7 @@ function SourceRow({
       </div>
 
       {/* Progress bar */}
-      <div className="w-full h-2 bg-card rounded-full overflow-hidden border border-border/50">
+      <div className="w-full h-2 bg-foreground/5 rounded-full overflow-hidden border border-border/50">
         <div
           className={`h-full rounded-full transition-all duration-300 ${state.accentColor}`}
           style={{ width: `${state.progress}%` }}
@@ -244,7 +244,7 @@ export function ScrapingDashboard({
 
           {/* Summary */}
           {isCompleted && (
-            <div className="rounded-lg bg-card border border-border p-4 space-y-2">
+            <div className="rounded-lg glass p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Check className="h-4 w-4 text-green-500" />
                 <span className="text-sm font-medium text-foreground">

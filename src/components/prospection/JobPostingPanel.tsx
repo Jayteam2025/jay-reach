@@ -35,7 +35,7 @@ export function JobPostingPanel({ signal, onClose }: Props) {
   };
 
   return (
-    <div className="fixed right-0 top-0 h-full w-[420px] bg-background border-l border-border z-50 flex flex-col">
+    <div className="fixed right-0 top-0 h-full w-[420px] glass-strong z-50 flex flex-col">
       {/* Header */}
       <div className="flex items-start justify-between p-5 border-b border-border">
         <div className="min-w-0 flex-1 mr-3">

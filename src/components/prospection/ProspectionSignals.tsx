@@ -214,7 +214,7 @@ export function ProspectionSignals() {
 
       {/* Empty state */}
       {!isLoading && filteredSignals.length === 0 && (
-        <div className="rounded-lg border border-border bg-card p-12 text-center">
+        <div className="glass rounded-lg p-12 text-center">
           <Radio className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
           <p className="text-muted-foreground">Aucun signal détecté</p>
         </div>
@@ -222,7 +222,7 @@ export function ProspectionSignals() {
 
       {/* Signal table */}
       {!isLoading && filteredSignals.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden bg-card">
+        <div className="glass rounded-lg overflow-hidden">
           {/* Table header */}
           <div className="grid grid-cols-[40px_60px_100px_1fr_200px_120px_80px_40px] gap-3 px-4 py-2.5 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground">
             <div></div>
@@ -244,7 +244,7 @@ export function ProspectionSignals() {
               const location = (extracted?.location as string) || '';
               const detectedDate = new Date(signal.detected_at).toLocaleDateString('fr-FR');
 
-              const rowBg = index % 2 === 0 ? 'bg-card' : 'bg-muted/10';
+              const rowBg = index % 2 === 0 ? 'bg-foreground/5' : 'bg-muted/10';
 
               // Jobs view
               const sourceLabels: Record<string, { label: string; color: string }> = {

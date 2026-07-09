@@ -50,7 +50,7 @@ export function ScoredSignalDetailSheet({ signal, open, onOpenChange, onEnrich, 
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl overflow-y-auto bg-card border-l-0 shadow-2xl shadow-black/60"
+        className="w-full sm:max-w-xl overflow-y-auto glass-strong border-l-0"
       >
         <SheetHeader className="space-y-3 pr-8">
           <div className="flex items-start gap-3">

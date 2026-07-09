@@ -155,7 +155,7 @@ export function ScoredSignalsTable({
   onRowClick: (id: string) => void;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="glass rounded-lg overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="border-b border-border bg-muted/30">

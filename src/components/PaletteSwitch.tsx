@@ -12,6 +12,7 @@ const PALETTES = [
   { id: "neon", label: "Néon", from: "#F72585", to: "#22D3EE" },
   { id: "sunset", label: "Sunset", from: "#FF5E3A", to: "#FF2D95" },
   { id: "lime", label: "Lime", from: "#A3E635", to: "#06B6D4" },
+  { id: "rouge", label: "Rouge", from: "#EF4444", to: "#7F1D1D" },
 ] as const;
 
 const STORAGE_KEY = "jay-palette";

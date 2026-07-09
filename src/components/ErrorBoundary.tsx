@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { logger } from "@/lib/logger";
 
 interface Props { children: ReactNode }
 interface State { error: Error | null; info: ErrorInfo | null }
@@ -16,8 +17,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.setState({ error, info });
-    // Visible aussi dans la console
-    console.error("[ErrorBoundary]", error, info);
+    // Visible aussi dans la console (via logger — no-console interdit console.* direct)
+    logger.error("[ErrorBoundary] render crash", error, { componentStack: info.componentStack });
   }
 
   render() {

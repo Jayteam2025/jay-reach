@@ -60,7 +60,7 @@ export function RunProgressModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg p-0 gap-0 bg-card border-border/40 dark:border-border/30 shadow-2xl">
+      <DialogContent className="max-w-lg p-0 gap-0">
         <DialogHeader className="p-6 pb-4 border-b border-border">
           <DialogTitle className="flex items-center gap-2 text-foreground">
             <Rocket className="h-5 w-5 text-violet-500" />
@@ -120,7 +120,7 @@ export function RunProgressModal({
                         // Barre indéterminée avec shimmer
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                            <div className="flex-1 h-2 bg-foreground/5 rounded-full overflow-hidden">
                               <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-shimmer" />
                             </div>
                             <div className="text-sm tabular-nums text-muted-foreground min-w-[60px] text-right">
@@ -133,7 +133,7 @@ export function RunProgressModal({
                         // Barre déterminée avec animation douce
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
-                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div className="h-2 bg-foreground/5 rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-violet-500 rounded-full transition-[width] duration-700 ease-out"
                                 style={{

@@ -87,7 +87,7 @@ export function ProspectionConfig() {
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : activePersonas.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center space-y-2">
+        <div className="glass rounded-lg p-8 text-center space-y-2">
           <Users className="size-8 text-muted-foreground mx-auto" />
           <p className="text-foreground font-medium">Aucun persona actif</p>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
