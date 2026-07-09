@@ -36,7 +36,7 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
   return (
     <div
       onClick={onClick}
-      className="border border-l-[3px] border-border hover:border-gray-300 dark:hover:border-white/20 rounded-lg p-3 bg-white dark:bg-card cursor-pointer transition-colors shadow-sm dark:shadow-none"
+      className="glass border-l-[3px] hover:border-border dark:hover:border-white/20 rounded-lg p-3 cursor-pointer transition-colors"
       style={{ borderLeftColor: colors.border }}
     >
       {/* Top row: Name + Category badge */}

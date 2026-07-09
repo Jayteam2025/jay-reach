@@ -199,7 +199,7 @@ export function ProspectionProviders() {
         const meta = CATEGORY_META[category];
         const Icon = meta.icon;
         return (
-          <section key={category} className="space-y-3">
+          <section key={category} className="glass rounded-xl p-5 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2.5">
                 <Icon className="w-4 h-4 text-violet-500 mt-1 shrink-0" />
@@ -230,7 +230,7 @@ export function ProspectionProviders() {
             )}
 
             {rows.length === 0 && addingCategory !== category ? (
-              <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center">
+              <div className="rounded-md border border-dashed border-border/60 bg-foreground/5 px-4 py-6 text-center">
                 <p className="text-sm text-muted-foreground">Aucun provider configuré.</p>
                 <p className="text-xs text-muted-foreground/80 mt-1">
                   Clique sur Ajouter pour en créer un.
@@ -264,7 +264,7 @@ function ProviderRow({
   const status = providerDisplayStatus(provider);
 
   return (
-    <div className="glass rounded-md overflow-hidden">
+    <div className="bg-foreground/5 border border-border/50 rounded-md overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -586,7 +586,7 @@ function WorkspaceSettingsSection({
   };
 
   return (
-    <section className="space-y-3 border-t border-border pt-8">
+    <section className="glass rounded-xl p-5 space-y-3">
       <div className="flex items-start gap-2.5">
         <Settings className="w-4 h-4 text-violet-500 mt-1 shrink-0" />
         <div className="space-y-1 flex-1">
@@ -598,7 +598,7 @@ function WorkspaceSettingsSection({
       </div>
 
       <div className="space-y-2 ml-6">
-        <div className="flex items-center justify-between p-3 rounded-md glass">
+        <div className="flex items-center justify-between p-3 rounded-md bg-foreground/5">
           <div className="space-y-1 flex-1">
             <Label className="text-sm font-medium text-foreground cursor-pointer">
               Détection automatique des CRMs

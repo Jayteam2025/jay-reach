@@ -116,7 +116,7 @@ function ProfileCard({
   const hasLinkedIn = !!prospect.linkedin_url;
 
   return (
-    <div className="border border-border/50 rounded-lg overflow-hidden bg-muted/20">
+    <div className="glass rounded-lg overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -159,7 +159,7 @@ function ProfileCard({
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="border-t border-border/30 bg-background/40 p-3 space-y-3">
+        <div className="border-t border-border/30 bg-foreground/5 p-3 space-y-3">
           {/* Contact Info */}
           <div className="space-y-2 text-xs">
             {prospect.email && (
@@ -225,7 +225,7 @@ function ProfileCard({
                   return (
                     <div
                       key={msg.id}
-                      className="bg-background border border-border/30 rounded p-2 space-y-1"
+                      className="bg-foreground/5 border border-border/30 rounded p-2 space-y-1"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
@@ -400,7 +400,7 @@ export function CompanyEnrichedView({
   );
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[600px] max-w-[100%] bg-background border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+    <div className="fixed inset-y-0 right-0 w-[600px] max-w-[100%] glass-strong z-50 flex flex-col animate-in slide-in-from-right duration-200">
       {/* Header */}
       <div className="flex items-start justify-between p-5 border-b border-border shrink-0">
         <div className="min-w-0 flex-1">

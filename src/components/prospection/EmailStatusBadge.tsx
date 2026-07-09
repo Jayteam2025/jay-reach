@@ -45,7 +45,7 @@ const DELIVERABILITY_CONFIG = {
     icon: HelpCircle,
     label: "Indéterminé",
     description: "Vérification : statut indéterminé",
-    classes: "bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/50",
+    classes: "bg-foreground/5 text-gray-600 dark:text-white/50",
   },
 } as const;
 
@@ -72,7 +72,7 @@ const STATUS_CONFIG = {
     icon: HelpCircle,
     label: "Non vérifié",
     description: "Statut par défaut, aucune vérification effectuée",
-    classes: "bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/50",
+    classes: "bg-foreground/5 text-gray-600 dark:text-white/50",
   },
 } as const;
 

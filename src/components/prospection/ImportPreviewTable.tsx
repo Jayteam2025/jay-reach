@@ -230,7 +230,7 @@ export function ImportPreviewTable({ rows, onCommit, onCancel, isCommitting }: I
       </div>
 
       {/* Tableau scrollable */}
-      <div className="flex-1 overflow-auto border border-border rounded-md mt-3">
+      <div className="flex-1 overflow-auto glass rounded-md mt-3">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-background/95 backdrop-blur z-10 border-b border-border">
             <tr className="text-left">

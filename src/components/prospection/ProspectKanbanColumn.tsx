@@ -49,7 +49,7 @@ export function ProspectKanbanColumn({
       <div className="px-3 py-3 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
         <span className="text-[13px] font-semibold text-gray-800 dark:text-white/80 truncate">{label}</span>
-        <span className="flex-shrink-0 min-w-[20px] h-5 rounded-md bg-gray-100 dark:bg-white/5 px-1.5 flex items-center justify-center text-[11px] text-gray-500 dark:text-white/60 font-medium tabular-nums">
+        <span className="flex-shrink-0 min-w-[20px] h-5 rounded-md bg-foreground/5 px-1.5 flex items-center justify-center text-[11px] text-gray-500 dark:text-white/60 font-medium tabular-nums">
           {prospects.length}
         </span>
       </div>

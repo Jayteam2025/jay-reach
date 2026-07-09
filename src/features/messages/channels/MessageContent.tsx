@@ -183,7 +183,7 @@ export function MessageContent({
               type="text"
               value={editedSubject}
               onChange={(e) => setEditedSubject(e.target.value)}
-              className="w-full text-[13px] font-medium text-foreground mb-2 px-2 py-1 bg-background rounded border border-border focus:outline-none focus:border-violet-500"
+              className="w-full text-[13px] font-medium text-foreground mb-2 px-2 py-1 bg-foreground/5 rounded border border-border focus:outline-none focus:border-violet-500"
               placeholder="Objet du mail"
             />
           ) : (
@@ -200,7 +200,7 @@ export function MessageContent({
             value={editedBody}
             onChange={(e) => setEditedBody(e.target.value)}
             rows={Math.max(6, editedBody.split('\n').length + 1)}
-            className="w-full text-[13px] text-foreground leading-relaxed px-2 py-1.5 bg-background rounded border border-border focus:outline-none focus:border-violet-500 resize-y font-mono"
+            className="w-full text-[13px] text-foreground leading-relaxed px-2 py-1.5 bg-foreground/5 rounded border border-border focus:outline-none focus:border-violet-500 resize-y font-mono"
           />
         ) : (
           <p className="text-[13px] text-foreground/90 whitespace-pre-line leading-relaxed">

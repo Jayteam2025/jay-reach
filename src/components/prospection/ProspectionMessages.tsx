@@ -183,7 +183,7 @@ export function ProspectionMessages() {
             return (
               <div
                 key={message.id}
-                className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-card/80 hover:shadow-md"
+                className="flex flex-col gap-3 rounded-lg glass p-4 transition-colors hover:shadow-md"
               >
                 {/* Row 1: Prospect + Channel Badge + Status */}
                 <div className="flex items-start justify-between gap-3">

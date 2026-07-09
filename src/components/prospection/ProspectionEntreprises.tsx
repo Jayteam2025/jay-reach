@@ -620,7 +620,7 @@ export function ProspectionEntreprises() {
 
       {/* State 1: Raw — aucun run lance ou scoring Claude encore en cours */}
       {viewState === 'raw' && (
-        <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <div className="glass rounded-lg p-8 text-center">
           <Building2 className="w-12 h-12 mx-auto text-muted-foreground/40 mb-4" />
           <p className="text-lg text-muted-foreground mb-2">
             {jobSignals.length > 0
@@ -680,12 +680,12 @@ export function ProspectionEntreprises() {
       {viewState === 'archived' && (
         <>
           {archived.isLoading ? (
-            <div className="rounded-lg border border-border bg-card p-8 text-center">
+            <div className="glass rounded-lg p-8 text-center">
               <Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">Chargement des archivés…</p>
             </div>
           ) : !archived.data || archived.data.length === 0 ? (
-            <div className="rounded-lg border border-border bg-card p-8 text-center">
+            <div className="glass rounded-lg p-8 text-center">
               <Archive className="w-12 h-12 mx-auto text-muted-foreground/40 mb-4" />
               <p className="text-lg text-muted-foreground mb-2">
                 Aucune entreprise archivée.
@@ -695,7 +695,7 @@ export function ProspectionEntreprises() {
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <div className="glass rounded-lg overflow-hidden">
               {/* En-tête : tout sélectionner · tri · ré-enrichir la sélection */}
               <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
                 <button
@@ -714,7 +714,7 @@ export function ProspectionEntreprises() {
                 </button>
                 <div className="flex items-center gap-2">
                   <div
-                    className="inline-flex items-center rounded-md border border-border bg-background p-0.5 text-xs"
+                    className="inline-flex items-center rounded-md border border-border bg-foreground/5 p-0.5 text-xs"
                     role="tablist"
                     aria-label="Tri des archivés"
                   >

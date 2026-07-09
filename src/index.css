@@ -13,13 +13,16 @@
 }
 
 @layer base {
-  /* Palette d'accent — teinte + saturation par accent ; la lightness est geree
-     par l'echelle (violet/blue en decoulent). Bascule via data-palette sur <html>. */
-  :root                        { --a1h:262; --a1s:83%; --a2h:217; --a2s:91%; }  /* Marque (defaut) */
-  :root[data-palette="neon"]   { --a1h:331; --a1s:92%; --a2h:187; --a2s:82%; }  /* Neon   */
-  :root[data-palette="sunset"] { --a1h:12;  --a1s:100%; --a2h:331; --a2s:100%; } /* Sunset */
-  :root[data-palette="lime"]   { --a1h:82;  --a1s:72%; --a2h:189; --a2s:94%; }  /* Lime   */
-  :root { --a1: var(--a1h) var(--a1s) 58%; --a2: var(--a2h) var(--a2s) 60%; }
+  /* Palette d'accent — h/s/l EXACTS des hexes de la maquette (a1l/a2l inclus)
+     pour que le dégradé, les halos et --primary tombent pile sur les couleurs
+     validées. La teinte+saturation (a1h/a1s) alimentent aussi l'échelle
+     violet/blue (Tailwind, lightness par nuance). Bascule via data-palette. */
+  :root                        { --a1h:258; --a1s:90%;  --a1l:66%; --a2h:213; --a2s:94%;  --a2l:68%; } /* Marque #8B5CF6→#60A5FA */
+  :root[data-palette="neon"]   { --a1h:333; --a1s:93%;  --a1l:56%; --a2h:188; --a2s:86%;  --a2l:53%; } /* Néon   #F72585→#22D3EE */
+  :root[data-palette="sunset"] { --a1h:11;  --a1s:100%; --a1l:61%; --a2h:330; --a2s:100%; --a2l:59%; } /* Sunset #FF5E3A→#FF2D95 */
+  :root[data-palette="lime"]   { --a1h:83;  --a1s:78%;  --a1l:55%; --a2h:189; --a2s:94%;  --a2l:43%; } /* Lime   #A3E635→#06B6D4 */
+  :root[data-palette="rouge"]  { --a1h:0;   --a1s:84%;  --a1l:60%; --a2h:0;   --a2s:63%;  --a2l:31%; } /* Rouge  #EF4444→#7F1D1D (rouge vif → rouge sombre) */
+  :root { --a1: var(--a1h) var(--a1s) var(--a1l); --a2: var(--a2h) var(--a2s) var(--a2l); }
 
   :root,
   .dark {
@@ -44,13 +47,14 @@
     --muted-foreground: 0 0% 56%;
     --radius: 0.5rem;
 
-    /* Tokens verre (dark) — surfaces translucides floutees */
-    --glass-bg: 255 255 255 / 0.07;
-    --glass-strong-bg: 255 255 255 / 0.11;
-    --glass-border: 255 255 255 / 0.18;
-    --glass-highlight: 255 255 255 / 0.22;
-    --glass-shadow: 0 0 0 / 0.5;
-    --glass-blur: 18px;
+    /* Tokens verre (dark) — valeurs EXACTES de la maquette glassmorphism :
+       verre dépoli subtil, bordure et reflet légers (pas de liseré marqué). */
+    --glass-bg: 255 255 255 / 0.05;
+    --glass-strong-bg: 255 255 255 / 0.08;
+    --glass-border: 255 255 255 / 0.10;
+    --glass-highlight: 255 255 255 / 0.14;
+    --glass-shadow: 0 0 0 / 0.45;
+    --glass-blur: 16px;
   }
 
   .light {
@@ -75,15 +79,15 @@
     --ring: var(--a1);
     --radius: 0.5rem;
 
-    /* Tokens verre (light) — verre blanc depoli, lisible sur fond clair.
-       Bordure teintee ardoise (et non blanche) : sur fond clair un liseré blanc
-       est invisible, d'ou une mauvaise démarcation des cartes. */
-    --glass-bg: 255 255 255 / 0.55;
-    --glass-strong-bg: 255 255 255 / 0.72;
-    --glass-border: 30 41 59 / 0.14;
+    /* Tokens verre (light) — valeurs EXACTES de la maquette : verre blanc dépoli
+       .62/.78, bordure ET reflet blancs (.7/.9), ombre ardoise .14. La démarcation
+       des cartes est portée par l'ombre portée (comme dans la maquette). */
+    --glass-bg: 255 255 255 / 0.62;
+    --glass-strong-bg: 255 255 255 / 0.78;
+    --glass-border: 255 255 255 / 0.7;
     --glass-highlight: 255 255 255 / 0.9;
-    --glass-shadow: 30 41 59 / 0.18;
-    --glass-blur: 18px;
+    --glass-shadow: 30 41 59 / 0.14;
+    --glass-blur: 16px;
   }
 
   body {

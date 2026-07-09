@@ -55,7 +55,7 @@ export function VariantList({
       </div>
 
       {value.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic px-3 py-2 rounded-md border border-dashed border-border bg-card">
+        <p className="text-xs text-muted-foreground italic px-3 py-2 rounded-md glass">
           Aucune variante. Ajoute-en au moins une.
         </p>
       ) : (
@@ -63,7 +63,7 @@ export function VariantList({
           {value.map((variant, idx) => (
             <li
               key={idx}
-              className="group flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 transition-colors hover:border-violet-500/40 focus-within:border-violet-500"
+              className="group flex items-start gap-2 rounded-md glass px-3 py-2 transition-colors hover:border-violet-500/40 focus-within:border-violet-500"
             >
               <textarea
                 value={variant}
@@ -97,7 +97,7 @@ export function VariantList({
             }
           }}
           placeholder="Nouvelle variante… (Entrée pour ajouter)"
-          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
+          className="flex-1 rounded-md border border-border bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
         />
         <Button
           type="button"

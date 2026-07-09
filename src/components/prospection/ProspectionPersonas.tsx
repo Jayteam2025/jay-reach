@@ -187,7 +187,7 @@ export function ProspectionPersonas() {
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : !personas || personas.length === 0 ? (
-        <div className="text-center py-12 border border-dashed rounded-lg text-gray-500 dark:text-white/60">
+        <div className="text-center py-12 glass rounded-lg text-gray-500 dark:text-white/60">
           Aucun persona defini. Cree-en un pour demarrer.
         </div>
       ) : (
@@ -363,7 +363,7 @@ export function ProspectionPersonas() {
                       className={`px-3 py-1 rounded-full text-xs border transition-colors ${
                         active
                           ? 'border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                          : 'border-gray-300 dark:border-border text-gray-500 hover:border-gray-400'
+                          : 'border-border text-muted-foreground hover:border-foreground/30'
                       }`}
                     >
                       {seniority}
@@ -423,7 +423,7 @@ export function ProspectionPersonas() {
                       className={`px-3 py-1 rounded-full text-xs border transition-colors ${
                         active
                           ? 'border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                          : 'border-gray-300 dark:border-border text-gray-500 hover:border-gray-400'
+                          : 'border-border text-muted-foreground hover:border-foreground/30'
                       }`}
                     >
                       {channel}

@@ -37,7 +37,7 @@ export function EnrichmentJobModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl p-0 gap-0 bg-card border-border/40 dark:border-border/30 shadow-2xl">
+      <DialogContent className="max-w-2xl p-0 gap-0">
         {/* Header */}
         <DialogHeader className="p-6 pb-4 border-b border-border">
           <DialogTitle className="flex items-center gap-2 text-foreground">

@@ -193,7 +193,7 @@ export function ProspectionTriggers() {
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : !triggers || triggers.length === 0 ? (
-        <div className="text-center py-12 border border-dashed rounded-lg text-gray-500 dark:text-white/60">
+        <div className="glass text-center py-12 rounded-lg text-gray-500 dark:text-white/60">
           Aucun declencheur defini. Cree-en un pour commencer a detecter des boites.
         </div>
       ) : (
@@ -201,7 +201,7 @@ export function ProspectionTriggers() {
           {triggers.map((t) => (
             <div
               key={t.id}
-              className="border border-gray-200 dark:border-border rounded-lg p-4 bg-white dark:bg-card"
+              className="glass rounded-lg p-4"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -360,7 +360,7 @@ export function ProspectionTriggers() {
                       className={`px-3 py-1 rounded-full text-xs border transition-colors ${
                         active
                           ? 'border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                          : 'border-gray-300 dark:border-border text-gray-500 hover:border-gray-400'
+                          : 'border-border text-gray-500 hover:border-border'
                       }`}
                     >
                       {SOURCE_LABELS[source] ?? source}

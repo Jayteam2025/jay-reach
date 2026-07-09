@@ -214,7 +214,7 @@ export function ImportProspectsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={`${sizeClass} flex flex-col gap-6 border-border/40 dark:border-border/30 shadow-2xl`}>
+      <DialogContent className={`${sizeClass} flex flex-col gap-6 glass-strong`}>
         <DialogHeader className="space-y-1.5">
           <DialogTitle className="font-display text-xl font-medium tracking-tight">
             Importer un fichier de prospects
