@@ -43,7 +43,7 @@ export function EntrepriseFiche({ company }: Props) {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className="flex-1 overflow-y-auto bg-background">
+    <div className="glass rounded-xl flex-1 overflow-y-auto">
       <div className="max-w-3xl px-8 py-10">
         {/* Company header — editorial style */}
         <header className="mb-10">

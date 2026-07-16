@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import { glassPop, staggerProps } from '@/lib/motion';
+import { AnimatedNumber } from './AnimatedNumber';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -167,103 +171,108 @@ export function ProspectionPersonas() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3 pt-2">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Personas
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-white/60 mt-1">
-            Qui contacter dans les entreprises detectees par tes declencheurs. Tu peux definir plusieurs personas (ex : decideur, utilisateur final, prescripteur) pour couvrir tous les contacts d'une meme entreprise.
+          <h1 className="text-2xl font-semibold text-foreground title-glow">Personas</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Qui contacter dans les entreprises détectées par tes déclencheurs. Définis plusieurs personas (décideur,
+            utilisateur final, prescripteur) pour couvrir tous les contacts d'une même entreprise.
           </p>
         </div>
         <Button onClick={openCreate} className="gap-2">
-          <Plus className="w-4 h-4" /> Nouveau persona
+          <Plus className="h-4 w-4" /> Nouveau persona
         </Button>
       </div>
 
+      {!isLoading && personas && personas.length > 0 && (
+        <motion.div {...staggerProps} className="grid grid-cols-2 gap-4 sm:max-w-sm">
+          <motion.div variants={glassPop} className="glass rounded-2xl p-4">
+            <p className="text-[13px] font-medium text-muted-foreground">Personas</p>
+            <p className="mt-1.5 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+              <AnimatedNumber value={personas.length} />
+            </p>
+          </motion.div>
+          <motion.div variants={glassPop} className="glass rounded-2xl p-4">
+            <p className="text-[13px] font-medium text-muted-foreground">Actifs</p>
+            <p className="mt-1.5 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+              <AnimatedNumber value={personas.filter((p) => p.is_active).length} />
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
+
       {isLoading ? (
-        <div className="flex items-center justify-center py-12 text-gray-500">
-          <Loader2 className="w-6 h-6 animate-spin" />
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--a1))]" />
         </div>
       ) : !personas || personas.length === 0 ? (
-        <div className="text-center py-12 glass rounded-lg text-gray-500 dark:text-white/60">
-          Aucun persona defini. Cree-en un pour demarrer.
+        <div className="glass rounded-2xl py-12 text-center text-sm text-muted-foreground">
+          Aucun persona défini. Crée-en un pour démarrer.
         </div>
       ) : (
-        <div className="grid gap-3">
+        <motion.div {...staggerProps} className="grid gap-4">
           {personas.map((p) => (
-            <div
+            <motion.div
               key={p.id}
-              className="glass rounded-lg p-4"
+              variants={glassPop}
+              className={cn(
+                'glass rounded-2xl p-5 transition-transform duration-300 hover:-translate-y-0.5',
+                !p.is_active && 'opacity-70',
+              )}
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                      {p.label}
-                    </h3>
-                    <Badge variant="outline" className="text-xs">
-                      {p.slug}
-                    </Badge>
-                    {!p.is_active && (
-                      <Badge variant="outline" className="text-xs text-gray-500">
-                        Inactif
-                      </Badge>
-                    )}
-                  </div>
-                  {p.description && (
-                    <p className="text-sm text-gray-500 dark:text-white/60 mt-1">
-                      {p.description}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {p.channels_priority.map((c) => (
-                      <Badge key={c} variant="secondary" className="text-xs">
-                        {c}
-                      </Badge>
-                    ))}
-                  </div>
-                  {p.job_title_keywords.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-2 truncate">
-                      Titres : {p.job_title_keywords.slice(0, 5).join(', ')}
-                      {p.job_title_keywords.length > 5 ? '...' : ''}
-                    </p>
-                  )}
-                  {p.seniority_levels.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
+                <div className="flex min-w-0 flex-1 gap-3.5">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--a1)/0.14)] text-[hsl(var(--a1))]">
+                    <Users className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-foreground">{p.label}</h3>
+                      <Badge variant="outline" className="text-[10px] font-mono">{p.slug}</Badge>
+                      {!p.is_active && <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactif</Badge>}
+                    </div>
+                    {p.description && <p className="mt-1 text-sm text-muted-foreground">{p.description}</p>}
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {p.channels_priority.map((c) => (
+                        <span key={c} className="rounded-full bg-[hsl(var(--a1)/0.12)] px-2.5 py-0.5 text-[11px] font-medium text-[hsl(var(--a1))]">
+                          {c}
+                        </span>
+                      ))}
                       {p.seniority_levels.map((s) => (
-                        <Badge key={s} variant="outline" className="text-xs">
+                        <span key={s} className="rounded-full bg-foreground/8 px-2.5 py-0.5 text-[11px] text-muted-foreground">
                           {s}
-                        </Badge>
+                        </span>
                       ))}
                     </div>
-                  )}
+                    {p.job_title_keywords.length > 0 && (
+                      <p className="mt-2 truncate text-xs text-muted-foreground/70">
+                        Titres : {p.job_title_keywords.slice(0, 5).join(', ')}
+                        {p.job_title_keywords.length > 5 ? '…' : ''}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                    <Edit2 className="w-4 h-4" />
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}>
+                    <Edit2 className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-rose-500">
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>Supprimer ce persona ?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Cette action est irreversible. Les contacts deja lies a ce persona gardent leur
-                          historique mais ne pourront plus etre re-traites avec ces regles.
+                          Cette action est irréversible. Les contacts déjà liés à ce persona gardent leur historique
+                          mais ne pourront plus être re-traités avec ces règles.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Annuler</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDelete(p.id)}
-                          className="bg-red-600 hover:bg-red-700"
-                        >
+                        <AlertDialogAction onClick={() => void handleDelete(p.id)} className="bg-rose-600 hover:bg-rose-700">
                           Supprimer
                         </AlertDialogAction>
                       </AlertDialogFooter>
@@ -271,9 +280,9 @@ export function ProspectionPersonas() {
                   </AlertDialog>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       <Sheet open={open} onOpenChange={setOpen}>
@@ -447,7 +456,7 @@ export function ProspectionPersonas() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Annuler
             </Button>
-            <Button onClick={handleSave} disabled={upsert.isPending}>
+            <Button onClick={() => void handleSave()} disabled={upsert.isPending}>
               {upsert.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {draft.id ? 'Mettre a jour' : 'Creer'}
             </Button>

@@ -23,8 +23,8 @@ export function EntrepriseInboxList({
   onToggleSort,
 }: EntrepriseInboxListProps) {
   return (
-    <div className="w-72 shrink-0 border-r border-border overflow-y-auto">
-      <div className="px-6 py-4 border-b border-border sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center gap-3">
+    <div className="glass rounded-xl w-72 shrink-0 overflow-y-auto">
+      <div className="px-6 py-4 border-b border-border/50 sticky top-0 bg-foreground/5 backdrop-blur-md z-10 flex items-center gap-3">
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
           {companies.length} entreprises
         </span>
@@ -113,11 +113,11 @@ function CompanyRow({
         )}
 
         {progress && progress.total > 0 && (
-          <div className="mt-2 h-[2px] rounded-full bg-muted overflow-hidden">
+          <div className="mt-2 h-[3px] rounded-full bg-foreground/10 overflow-hidden">
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-500 ease-out',
-                percent === 100 ? 'bg-emerald-500' : 'bg-foreground'
+                percent === 100 ? 'bg-emerald-500' : 'bg-gradient-primary'
               )}
               style={{ width: `${percent}%` }}
             />

@@ -130,7 +130,7 @@ export function ScoredSignalDetailSheet({ signal, open, onOpenChange, onEnrich, 
           {/* Action */}
           <div className="pt-2 border-t border-border">
             <Button
-              className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              className="w-full gap-2"
               onClick={() => onEnrich(signal.id)}
               disabled={isEnriching}
             >

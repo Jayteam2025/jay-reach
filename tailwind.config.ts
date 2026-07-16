@@ -91,7 +91,7 @@ export default {
       },
       backgroundImage: {
         // Suit la palette d'accent active (--a1/--a2, cf. src/index.css)
-        'gradient-primary': 'linear-gradient(90deg, hsl(var(--a1)) 0%, hsl(var(--a2)) 100%)',
+        'gradient-primary': 'linear-gradient(90deg, hsl(var(--a1)) 0%, hsl(var(--a1)) 100%)',
       },
       backdropBlur: {
         'xs': '4px',

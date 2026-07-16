@@ -230,7 +230,7 @@ export function ProspectionBranding() {
       <header className="flex items-center gap-3">
         <Palette className="w-5 h-5 text-violet-500" />
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Branding & notifications</h2>
+          <h2 className="text-2xl font-semibold text-foreground title-glow">Branding & notifications</h2>
           <p className="text-sm text-muted-foreground">
             Ces variables alimentent vos emails de prospection, les récapitulatifs et les signatures. Chaque org configure les siennes.
           </p>

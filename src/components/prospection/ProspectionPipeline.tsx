@@ -27,7 +27,7 @@ export function ProspectionPipeline() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-bold text-foreground">Pipeline</h2>
+          <h2 className="text-2xl font-semibold text-foreground title-glow">Pipeline</h2>
           <p className="text-sm text-muted-foreground">{prospects?.length || 0} prospects</p>
         </div>
         <Button size="sm" variant="default" className="gap-2">
