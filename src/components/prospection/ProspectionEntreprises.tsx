@@ -390,76 +390,17 @@ export function ProspectionEntreprises() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <Building2 className="h-6 w-6" />
-            Entreprises
-          </h1>
-          {/* Dès qu'on a quitté l'état brut (scorées OU enrichies présentes, ou
-              consultation des archives), on affiche le groupe d'onglets. L'onglet
-              « Archivés » est TOUJOURS présent ici → reste atteignable même une fois
-              toutes les offres enrichies/archivées (sinon il disparaissait). */}
-          {(scoredSignals.length > 0 || companies.length > 0 || viewState === 'archived') ? (
-            <div
-              className="inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
-              role="tablist"
-              aria-label="Vue prospection"
-            >
-              {scoredSignals.length > 0 && (
-                <ViewToggleButton
-                  active={viewState === 'scored'}
-                  onClick={() => setManualView('scored')}
-                  label="Scorées"
-                  count={scoredSignals.length}
-                />
-              )}
-              {companies.length > 0 && (
-                <ViewToggleButton
-                  active={viewState === 'enriched'}
-                  onClick={() => setManualView('enriched')}
-                  label="Enrichies"
-                  count={companies.length}
-                />
-              )}
-              <ViewToggleButton
-                active={viewState === 'archived'}
-                onClick={() => setManualView('archived')}
-                label="Archivés"
-                count={archivedCount.data}
-              />
-            </div>
-          ) : (
-            <Badge variant="outline" className="text-base px-3 py-1 font-normal">
-              {jobSignals.length} offres
-            </Badge>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground title-glow">
+          <Building2 className="h-6 w-6" />
+          Entreprises
+        </h1>
 
-          {isAdminUser && (
-            <div
-              className="ml-3 inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
-              role="tablist"
-              aria-label="Source des entreprises"
-            >
-              <SourceToggleButton
-                active={acquisitionFilter === 'scrape'}
-                onClick={() => setAcquisitionFilter('scrape')}
-                label="Scrapées"
-              />
-              <SourceToggleButton
-                active={acquisitionFilter === 'file_upload'}
-                onClick={() => setAcquisitionFilter('file_upload')}
-                label="Importées"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
           {enrichmentJob.running && (
             <Button
               size="sm"
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              className="gap-2"
               onClick={() => setModalOpen(true)}
               title="Voir le detail de l'enrichissement"
             >
@@ -478,7 +419,7 @@ export function ProspectionEntreprises() {
           {viewState === 'scored' && selectedIds.size > 0 && !enrichmentJob.running && (
             <Button
               size="sm"
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-70"
+              className="gap-2 disabled:opacity-70"
               onClick={handleEnrichSelection}
               disabled={enqueueMutation.isPending}
             >
@@ -506,7 +447,7 @@ export function ProspectionEntreprises() {
 
           <Button
             size="sm"
-            className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+            className="gap-2"
             onClick={() => setPendingAction('run')}
             disabled={triggerCron.isPending}
             title="Scrape les nouvelles offres (dedup des boites deja traitees) + soumet le scoring Claude. ~30-60 min avant que la liste scoree soit prete."
@@ -583,40 +524,85 @@ export function ProspectionEntreprises() {
         </div>
       </div>
 
-      {/* Barre de recherche — visible sur scored et enriched (la vue raw n'a pas de table) */}
-      {(viewState === 'scored' || viewState === 'enriched') && (
-        <ProspectSearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          resultCount={
-            viewState === 'scored' ? filteredScoredSignals.length : filteredCompanies.length
-          }
-          totalCount={viewState === 'scored' ? scoredSignals.length : companies.length}
-        />
-      )}
-
-      {/* Vue Enrichies : filtre Toutes/Dernier run. Le tri par avancement est une
-          petite fleche icone dans le header de la liste (EntrepriseInboxList). */}
-      {viewState === 'enriched' && (
-        <div
-          className="inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
-          role="tablist"
-          aria-label="Filtre par run d'enrichissement"
-        >
-          <ViewToggleButton
-            active={runFilter === 'all'}
-            onClick={() => setRunFilter('all')}
-            label="Toutes"
-            count={enrichedBaseCount}
-          />
-          <ViewToggleButton
-            active={runFilter === 'last'}
-            onClick={() => setRunFilter('last')}
-            label="Dernier run"
-            count={lastRunCount}
-          />
+      {/* Rangée de KPI (DA maquette) — cartes verre récapitulant l'état du workspace */}
+      {prospectionStats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { k: 'Entreprises enrichies', v: prospectionStats.enriched, d: 'boîtes prêtes à contacter' },
+            { k: 'Offres scorées', v: prospectionStats.scored, d: 'en attente d’enrichissement' },
+            { k: 'Scrapées', v: prospectionStats.scrape_count, d: 'via sources d’offres' },
+            { k: 'Importées', v: prospectionStats.import_count, d: 'depuis un fichier' },
+          ].map((kpi) => (
+            <div key={kpi.k} className="glass rounded-xl p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{kpi.k}</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{kpi.v ?? 0}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">{kpi.d}</p>
+            </div>
+          ))}
         </div>
       )}
+
+      {/* Barre de filtres & vues (regroupée : vues + source + run + recherche) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Vues : Scorées / Enrichies / Archivés (ou compteur d'offres en état brut) */}
+          {(scoredSignals.length > 0 || companies.length > 0 || viewState === 'archived') ? (
+            <div
+              className="inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
+              role="tablist"
+              aria-label="Vue prospection"
+            >
+              {scoredSignals.length > 0 && (
+                <ViewToggleButton active={viewState === 'scored'} onClick={() => setManualView('scored')} label="Scorées" count={scoredSignals.length} />
+              )}
+              {companies.length > 0 && (
+                <ViewToggleButton active={viewState === 'enriched'} onClick={() => setManualView('enriched')} label="Enrichies" count={companies.length} />
+              )}
+              <ViewToggleButton active={viewState === 'archived'} onClick={() => setManualView('archived')} label="Archivés" count={archivedCount.data} />
+            </div>
+          ) : (
+            <Badge variant="outline" className="px-3 py-1 text-sm font-normal">
+              {jobSignals.length} offres
+            </Badge>
+          )}
+
+          {/* Source (admin) */}
+          {isAdminUser && (
+            <div
+              className="inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
+              role="tablist"
+              aria-label="Source des entreprises"
+            >
+              <SourceToggleButton active={acquisitionFilter === 'scrape'} onClick={() => setAcquisitionFilter('scrape')} label="Scrapées" />
+              <SourceToggleButton active={acquisitionFilter === 'file_upload'} onClick={() => setAcquisitionFilter('file_upload')} label="Importées" />
+            </div>
+          )}
+
+          {/* Filtre run (vue enrichies) */}
+          {viewState === 'enriched' && (
+            <div
+              className="inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5"
+              role="tablist"
+              aria-label="Filtre par run d'enrichissement"
+            >
+              <ViewToggleButton active={runFilter === 'all'} onClick={() => setRunFilter('all')} label="Toutes" count={enrichedBaseCount} />
+              <ViewToggleButton active={runFilter === 'last'} onClick={() => setRunFilter('last')} label="Dernier run" count={lastRunCount} />
+            </div>
+          )}
+        </div>
+
+        {/* Recherche (vues scored / enriched) */}
+        {(viewState === 'scored' || viewState === 'enriched') && (
+          <div className="w-full sm:w-auto sm:min-w-[260px]">
+            <ProspectSearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              resultCount={viewState === 'scored' ? filteredScoredSignals.length : filteredCompanies.length}
+              totalCount={viewState === 'scored' ? scoredSignals.length : companies.length}
+            />
+          </div>
+        )}
+      </div>
 
       {/* State 1: Raw — aucun run lance ou scoring Claude encore en cours */}
       {viewState === 'raw' && (
@@ -658,7 +644,7 @@ export function ProspectionEntreprises() {
 
       {/* State 3: Enriched — inbox left + fiche right */}
       {viewState === 'enriched' && (
-        <div className="flex -mx-6 -mb-6 h-[calc(100vh-140px)]">
+        <div className="flex gap-4 h-[calc(100vh-300px)] min-h-[440px]">
           <EntrepriseInboxList
             companies={filteredCompanies}
             selectedId={selectedCompanyId}
@@ -669,7 +655,7 @@ export function ProspectionEntreprises() {
           {selectedCompany ? (
             <EntrepriseFiche company={selectedCompany} />
           ) : (
-            <div className="flex-1 flex items-center justify-center text-[13px] text-muted-foreground">
+            <div className="glass rounded-xl flex-1 flex items-center justify-center text-[13px] text-muted-foreground">
               Sélectionnez une entreprise
             </div>
           )}

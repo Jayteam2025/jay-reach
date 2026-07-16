@@ -14,24 +14,23 @@ export function ThemeSwitch({ className }: ThemeSwitchProps) {
     <button
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className={cn(
-        "relative flex items-center w-14 h-7 rounded-full p-0.5 transition-colors duration-300",
-        isDark ? "bg-gray-700" : "bg-gray-300",
+        "relative flex items-center w-14 h-7 rounded-full p-0.5 border border-border bg-foreground/10 backdrop-blur-md transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
         className
       )}
       aria-label={isDark ? "Passer en mode clair" : "Passer en mode sombre"}
     >
-      <Sun className={cn(
-        "absolute left-1.5 h-3.5 w-3.5 transition-opacity duration-300",
-        isDark ? "opacity-30 text-gray-400" : "opacity-100 text-amber-500"
-      )} />
-      <Moon className={cn(
-        "absolute right-1.5 h-3.5 w-3.5 transition-opacity duration-300",
-        isDark ? "opacity-100 text-blue-300" : "opacity-30 text-gray-500"
-      )} />
+      {/* Icônes de repère estompées sur la piste */}
+      <Sun className="absolute left-1.5 h-3.5 w-3.5 text-amber-400/50" />
+      <Moon className="absolute right-1.5 h-3.5 w-3.5 text-foreground/30" />
+      {/* Pastille qui porte l'icône active */}
       <div className={cn(
-        "h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-300",
+        "relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-primary text-white shadow-md shadow-primary/30 transition-transform duration-300",
         isDark ? "translate-x-7" : "translate-x-0"
-      )} />
+      )}>
+        {isDark
+          ? <Moon className="h-3.5 w-3.5" />
+          : <Sun className="h-3.5 w-3.5" />}
+      </div>
     </button>
   );
 }

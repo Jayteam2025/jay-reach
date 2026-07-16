@@ -154,7 +154,7 @@ export function ProspectionSignals() {
           {selectedIds.size > 0 && (
             <Button
               size="sm"
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              className="gap-2"
               onClick={handleEnrichSelection}
               disabled={enrichmentProgress !== null}
             >

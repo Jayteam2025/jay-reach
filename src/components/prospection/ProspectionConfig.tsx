@@ -75,7 +75,7 @@ export function ProspectionConfig() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Templates de messages</h2>
+        <h2 className="text-2xl font-semibold text-foreground title-glow">Templates de messages</h2>
         <p className="text-muted-foreground mt-1">
           Un template par persona et par canal. Modifier un template régénère les
           messages non encore envoyés.

@@ -9,6 +9,12 @@ import { tabTransition } from '@/lib/motion';
 // actif (et ses dependances lourdes : xlsx/mammoth pour l'import, dnd-kit pour
 // le kanban) est telecharge. Les composants sont des exports nommes, d'ou le
 // remap .then(m => ({ default: m.X })).
+const ProspectionDashboard = lazy(() =>
+  import('./ProspectionDashboard').then((m) => ({ default: m.ProspectionDashboard })));
+const ProspectionSignaux = lazy(() =>
+  import('./ProspectionSignaux').then((m) => ({ default: m.ProspectionSignaux })));
+const ProspectionProspects = lazy(() =>
+  import('./ProspectionProspects').then((m) => ({ default: m.ProspectionProspects })));
 const ProspectionEntreprises = lazy(() =>
   import('./ProspectionEntreprises').then((m) => ({ default: m.ProspectionEntreprises })));
 const ProspectionConfig = lazy(() =>
@@ -21,10 +27,13 @@ const ProspectionBranding = lazy(() =>
   import('./ProspectionBranding').then((m) => ({ default: m.ProspectionBranding })));
 const ProspectionProviders = lazy(() =>
   import('./ProspectionProviders').then((m) => ({ default: m.ProspectionProviders })));
-const ProspectionCampaigns = lazy(() =>
-  import('./ProspectionCampaigns').then((m) => ({ default: m.ProspectionCampaigns })));
+const ProspectionCampagnes = lazy(() =>
+  import('./ProspectionCampagnes').then((m) => ({ default: m.ProspectionCampagnes })));
 
 export type ProspectionTab =
+  | 'dashboard'
+  | 'signaux'
+  | 'prospects'
   | 'entreprises'
   | 'triggers'
   | 'personas'
@@ -34,6 +43,9 @@ export type ProspectionTab =
   | 'providers';
 
 const VALID_TABS: ProspectionTab[] = [
+  'dashboard',
+  'signaux',
+  'prospects',
   'entreprises',
   'triggers',
   'personas',
@@ -46,14 +58,20 @@ const VALID_TABS: ProspectionTab[] = [
 export function ProspectionLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as ProspectionTab | null;
-  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'entreprises';
+  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'dashboard';
 
   const setActiveTab = (tab: ProspectionTab) => {
-    setSearchParams(tab === 'entreprises' ? {} : { tab });
+    setSearchParams(tab === 'dashboard' ? {} : { tab });
   };
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'dashboard':
+        return <ProspectionDashboard />;
+      case 'signaux':
+        return <ProspectionSignaux />;
+      case 'prospects':
+        return <ProspectionProspects />;
       case 'entreprises':
         return <ProspectionEntreprises />;
       case 'triggers':
@@ -65,7 +83,7 @@ export function ProspectionLayout() {
       case 'branding':
         return <ProspectionBranding />;
       case 'campaigns':
-        return <ProspectionCampaigns />;
+        return <ProspectionCampagnes />;
       case 'providers':
         return <ProspectionProviders />;
       default:
@@ -75,14 +93,6 @@ export function ProspectionLayout() {
 
   return (
     <div className="relative flex min-h-screen bg-background overflow-hidden">
-      {/* Fond d'ambiance : halos animés derrière le verre. z-0 (pas -z-10) pour
-          passer devant le bg-background opaque ; le contenu repasse au-dessus (z-10). */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-        <div className="orb-purple aurora-orb -top-40 left-40" />
-        <div className="orb-blue aurora-orb aurora-orb--slow top-1/4 right-10" />
-        <div className="orb-purple aurora-orb bottom-[-14rem] left-1/2 opacity-80" />
-      </div>
-
       <ProspectionSidebar activeTab={activeTab} onNavigate={setActiveTab} />
       <main className="relative z-10 flex-1 ml-64 p-6 overflow-x-hidden">
         <Suspense

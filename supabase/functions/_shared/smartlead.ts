@@ -177,3 +177,93 @@ export async function upsertCampaignWebhook(
     return { raw: text };
   }
 }
+
+function toNum(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export interface SmartleadCampaignAnalytics {
+  sent: number;
+  opened: number;
+  replied: number;
+  bounced: number;
+  /** Taux en % (1 décimale), null si aucun envoi. */
+  open_rate: number | null;
+  reply_rate: number | null;
+}
+
+/**
+ * Analytics d'une campagne Smartlead (lecture seule). Parsing défensif : les
+ * champs varient selon la version d'API. Ne jamais renvoyer l'URL (contient la clé).
+ */
+export async function getCampaignAnalytics(
+  campaignId: number | string,
+  apiKey: string,
+): Promise<SmartleadCampaignAnalytics> {
+  const url = `${SMARTLEAD_BASE}/campaigns/${campaignId}/analytics?api_key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Smartlead getCampaignAnalytics failed (${res.status})`);
+  }
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error("Smartlead getCampaignAnalytics: invalid JSON response");
+  }
+
+  const sent = toNum(raw.sent_count ?? raw.sent ?? raw.total_sent);
+  const opened = toNum(raw.unique_open_count ?? raw.open_count ?? raw.opened);
+  const replied = toNum(raw.reply_count ?? raw.replied);
+  const bounced = toNum(raw.bounce_count ?? raw.bounced);
+
+  return {
+    sent,
+    opened,
+    replied,
+    bounced,
+    open_rate: sent > 0 ? Math.round((1000 * opened) / sent) / 10 : null,
+    reply_rate: sent > 0 ? Math.round((1000 * replied) / sent) / 10 : null,
+  };
+}
+
+export interface SmartleadSequenceStep {
+  seq_number: number;
+  delay_days: number;
+  subject: string;
+}
+
+/** Étapes de séquence d'une campagne Smartlead (email uniquement côté Smartlead). */
+export async function getCampaignSequences(
+  campaignId: number | string,
+  apiKey: string,
+): Promise<SmartleadSequenceStep[]> {
+  const url = `${SMARTLEAD_BASE}/campaigns/${campaignId}/sequences?api_key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Smartlead getCampaignSequences failed (${res.status})`);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("Smartlead getCampaignSequences: invalid JSON response");
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s) => {
+    const row = s as {
+      seq_number?: number;
+      seq_delay_details?: { delay_in_days?: number; delayInDays?: number };
+      subject?: string;
+      sequence_variants?: { subject?: string }[];
+    };
+    return {
+      seq_number: toNum(row.seq_number),
+      delay_days: toNum(row.seq_delay_details?.delay_in_days ?? row.seq_delay_details?.delayInDays),
+      subject: row.subject ?? row.sequence_variants?.[0]?.subject ?? "",
+    };
+  });
+}

@@ -185,7 +185,7 @@ export function ProspectionProviders() {
       <header className="flex items-center gap-3">
         <Key className="w-5 h-5 text-violet-500" />
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Providers</h2>
+          <h2 className="text-2xl font-semibold text-foreground title-glow">Providers</h2>
           <p className="text-sm text-muted-foreground">
             Services externes utilisés par la prospection. Les clés sont chiffrées et stockées côté workspace.
           </p>

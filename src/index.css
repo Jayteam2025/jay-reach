@@ -13,15 +13,10 @@
 }
 
 @layer base {
-  /* Palette d'accent — h/s/l EXACTS des hexes de la maquette (a1l/a2l inclus)
-     pour que le dégradé, les halos et --primary tombent pile sur les couleurs
-     validées. La teinte+saturation (a1h/a1s) alimentent aussi l'échelle
-     violet/blue (Tailwind, lightness par nuance). Bascule via data-palette. */
-  :root                        { --a1h:258; --a1s:90%;  --a1l:66%; --a2h:213; --a2s:94%;  --a2l:68%; } /* Marque #8B5CF6→#60A5FA */
-  :root[data-palette="neon"]   { --a1h:333; --a1s:93%;  --a1l:56%; --a2h:188; --a2s:86%;  --a2l:53%; } /* Néon   #F72585→#22D3EE */
-  :root[data-palette="sunset"] { --a1h:11;  --a1s:100%; --a1l:61%; --a2h:330; --a2s:100%; --a2l:59%; } /* Sunset #FF5E3A→#FF2D95 */
-  :root[data-palette="lime"]   { --a1h:83;  --a1s:78%;  --a1l:55%; --a2h:189; --a2s:94%;  --a2l:43%; } /* Lime   #A3E635→#06B6D4 */
-  :root[data-palette="rouge"]  { --a1h:0;   --a1s:84%;  --a1l:60%; --a2h:0;   --a2s:63%;  --a2l:31%; } /* Rouge  #EF4444→#7F1D1D (rouge vif → rouge sombre) */
+  /* Couleurs de marque Jay — violet → bleu (#8B5CF6 → #60A5FA). Pilotent le
+     dégradé, les halos, --primary et l'échelle violet/blue (Tailwind). Palette
+     unique (le sélecteur multi-palettes a été retiré). */
+  :root { --a1h:258; --a1s:90%; --a1l:66%; --a2h:213; --a2s:94%; --a2l:68%; }
   :root { --a1: var(--a1h) var(--a1s) var(--a1l); --a2: var(--a2h) var(--a2s) var(--a2l); }
 
   :root,
@@ -106,13 +101,49 @@
 /* ─── Glassmorphism — surfaces verre mode-aware (dark + light) ─── */
 .glass,
 .glass-morphism {
-  background: rgb(var(--glass-bg));
+  position: relative;
+  /* Sheen : léger reflet en haut de la surface, superposé au verre dépoli */
+  background:
+    linear-gradient(180deg, rgb(var(--glass-highlight)) 0%, transparent 40%),
+    rgb(var(--glass-bg));
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid rgb(var(--glass-border));
+  /* Ombre teintée violet Jay sur chaque carte */
   box-shadow:
-    0 8px 32px rgb(var(--glass-shadow)),
+    0 10px 30px -6px hsl(var(--a1) / 0.28),
     inset 0 1px 0 rgb(var(--glass-highlight));
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+/* Réveil au survol : bordure teintée Jay + halo doux (sans décalage de layout) */
+.glass:hover,
+.glass-morphism:hover {
+  border-color: hsl(var(--a1) / 0.3);
+  box-shadow:
+    0 14px 44px rgb(var(--glass-shadow)),
+    0 0 0 1px hsl(var(--a1) / 0.12),
+    0 0 28px hsl(var(--a1) / 0.1),
+    inset 0 1px 0 rgb(var(--glass-highlight));
+}
+
+/* Halo doux sur la courbe d'aire d'un graphe (effet « lit up ») — ciblé, ne
+   touche pas les lignes ni le texte du graphe. */
+.chart-glow .recharts-area-curve {
+  filter: drop-shadow(0 2px 7px hsl(var(--a1) / 0.55));
+}
+
+/* Titres de page : blanc lumineux (halo blanc doux) */
+.title-glow {
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.38), 0 0 30px rgba(255, 255, 255, 0.14);
+}
+
+/* Texte en dégradé de marque Jay (violet → bleu) — titres et chiffres clés */
+.text-gradient-jay {
+  background: linear-gradient(90deg, hsl(var(--a1)), hsl(var(--a2)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* Variante plus opaque, pour les surfaces de contenu dense (modales, popovers) */
@@ -122,7 +153,7 @@
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid rgb(var(--glass-border));
   box-shadow:
-    0 16px 48px rgb(var(--glass-shadow)),
+    0 18px 50px -8px hsl(var(--a1) / 0.34),
     inset 0 1px 0 rgb(var(--glass-highlight));
 }
 
@@ -204,13 +235,21 @@
   100% { transform: translate3d(0, 0, 0) scale(1); }
 }
 
+@keyframes aurora-pulse {
+  0%, 100% { opacity: 0.82; }
+  50%      { opacity: 1; }
+}
+
 .aurora-orb {
-  will-change: transform;
-  animation: aurora-drift 38s ease-in-out infinite;
+  will-change: transform, opacity;
+  animation:
+    aurora-drift 38s ease-in-out infinite,
+    aurora-pulse 14s ease-in-out infinite;
 }
 .aurora-orb--slow {
-  animation-duration: 52s;
-  animation-direction: reverse;
+  animation:
+    aurora-drift 52s ease-in-out infinite reverse,
+    aurora-pulse 18s ease-in-out infinite;
 }
 
 /* Section divider */
