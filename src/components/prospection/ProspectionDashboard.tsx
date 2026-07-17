@@ -120,7 +120,8 @@ interface ChartDatum extends DashboardActivityBucket {
 
 function ActivityTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartDatum }[] }) {
   if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
+  const d = payload[0]?.payload;
+  if (!d) return null;
   const rate = d.total > 0 ? ((100 * d.replies) / d.total).toFixed(1) : '0.0';
   return (
     <div className="glass-strong rounded-lg px-3 py-2 text-xs">
@@ -200,21 +201,21 @@ export function ProspectionDashboard() {
 
   // Répartition des signaux par score (données réelles useSignaux)
   const scoreDist = useMemo(() => {
-    const buckets = [
-      { label: '<40', n: 0, hot: false },
-      { label: '40–59', n: 0, hot: false },
-      { label: '60–79', n: 0, hot: false },
-      { label: '80+', n: 0, hot: true },
-    ];
+    const c = { low: 0, mid: 0, high: 0, top: 0 };
     (signals ?? []).forEach((s) => {
       const sc = Number(s.extracted_data?.ai_score ?? 0) || 0;
       if (sc <= 0) return;
-      if (sc < 40) buckets[0].n++;
-      else if (sc < 60) buckets[1].n++;
-      else if (sc < 80) buckets[2].n++;
-      else buckets[3].n++;
+      if (sc < 40) c.low++;
+      else if (sc < 60) c.mid++;
+      else if (sc < 80) c.high++;
+      else c.top++;
     });
-    return buckets;
+    return [
+      { label: '<40', n: c.low, hot: false },
+      { label: '40–59', n: c.mid, hot: false },
+      { label: '60–79', n: c.high, hot: false },
+      { label: '80+', n: c.top, hot: true },
+    ];
   }, [signals]);
 
   const topSignals = useMemo(() => {
