@@ -24,8 +24,11 @@ export function Sparkline({ values, color, className }: SparklineProps) {
     return [x, y] as const;
   });
 
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (!first || !last) return null;
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${h} L${pts[0][0].toFixed(1)},${h} Z`;
+  const area = `${line} L${last[0].toFixed(1)},${h} L${first[0].toFixed(1)},${h} Z`;
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={className} aria-hidden>

@@ -35,7 +35,7 @@ function initials(p: Prospect): string {
 function tintFor(key: string): string {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return AVATAR_TINTS[h % AVATAR_TINTS.length];
+  return AVATAR_TINTS[h % AVATAR_TINTS.length] ?? 'bg-foreground/10 text-muted-foreground';
 }
 
 function relativeTime(iso: string): string {
