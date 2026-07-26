@@ -18,11 +18,11 @@ export function ProspectionSidebar({ activeTab, onNavigate }: ProspectionSidebar
     { id: 'signaux' as const, label: 'Signaux', icon: Radar },
     { id: 'prospects' as const, label: 'Prospects', icon: UserSquare2 },
     { id: 'entreprises' as const, label: 'Entreprises', icon: Building2 },
+    { id: 'campaigns' as const, label: 'Campagnes', icon: Send },
     { id: 'triggers' as const, label: 'Déclencheurs', icon: Target },
     { id: 'personas' as const, label: 'Personas', icon: Users },
     { id: 'config' as const, label: 'Templates', icon: FileText },
     { id: 'branding' as const, label: 'Branding', icon: Palette },
-    { id: 'campaigns' as const, label: 'Campagnes', icon: Send },
     { id: 'providers' as const, label: 'Providers', icon: Key },
   ];
 
