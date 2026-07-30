@@ -39,7 +39,7 @@ import {
   useUpsertCampaign,
 } from '@/hooks/useCampaigns';
 import { AnimatedNumber } from './AnimatedNumber';
-import { ProspectionCampaigns } from './ProspectionCampaigns';
+import { SmartleadCampaignMapping } from './SmartleadCampaignMapping';
 
 const CHANNEL_META: Record<StepChannel, { icon: typeof Mail; ring: string; color: string; label: string }> = {
   email: { icon: Mail, ring: 'border-[hsl(var(--a1)/0.4)]', color: 'text-[hsl(var(--a1))]', label: 'Email' },
@@ -140,7 +140,7 @@ export function ProspectionCampagnes() {
       )}
 
       <div className="mt-8 border-t border-border/50 pt-6">
-        <ProspectionCampaigns />
+        <SmartleadCampaignMapping />
       </div>
     </div>
   );

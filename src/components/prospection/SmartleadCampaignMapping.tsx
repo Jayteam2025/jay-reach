@@ -23,7 +23,7 @@ import {
 
 const NONE = '__none__';
 
-export function ProspectionCampaigns() {
+export function SmartleadCampaignMapping() {
   const { data: personas, isLoading: personasLoading } = useIcpPersonas();
   const { data: workspaceId } = useCurrentWorkspaceId();
   const { data: mappings } = useSmartleadCampaignMappings();

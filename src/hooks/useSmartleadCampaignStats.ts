@@ -29,11 +29,14 @@ export interface SmartleadStatsResult {
 }
 
 export function useSmartleadCampaignStats(campaignId: string | null) {
+  // Pas de refetchInterval : chaque carte montait sa propre query, soit 2 appels
+  // Smartlead (analytics + séquence) par campagne toutes les 60 s en continu, écran
+  // ouvert (20 appels/min pour 10 campagnes). On s'en remet au refetch au focus
+  // (défaut React Query) avec un staleTime large.
   return useQuery({
     queryKey: ['smartlead-campaign-stats', campaignId],
     enabled: !!campaignId,
-    staleTime: 60_000,
-    refetchInterval: campaignId ? 60_000 : false,
+    staleTime: 5 * 60_000,
     retry: false,
     queryFn: async (): Promise<SmartleadStatsResult> =>
       invokeEdgeFunction<SmartleadStatsResult>(
