@@ -29,7 +29,7 @@ DECLARE
 BEGIN
   v_uid := auth.uid();
   IF v_uid IS NULL THEN RAISE EXCEPTION 'unauthenticated'; END IF;
-  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid LIMIT 1;
+  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid ORDER BY joined_at, workspace_id LIMIT 1;
   IF v_ws IS NULL THEN RAISE EXCEPTION 'no workspace for user %', v_uid; END IF;
 
   v_days := CASE p_period WHEN '7d' THEN 7 WHEN '3m' THEN 90 ELSE 30 END;
@@ -80,7 +80,7 @@ DECLARE
 BEGIN
   v_uid := auth.uid();
   IF v_uid IS NULL THEN RAISE EXCEPTION 'unauthenticated'; END IF;
-  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid LIMIT 1;
+  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid ORDER BY joined_at, workspace_id LIMIT 1;
   IF v_ws IS NULL THEN RAISE EXCEPTION 'no workspace for user %', v_uid; END IF;
 
   v_days := CASE p_period WHEN '7d' THEN 7 WHEN '3m' THEN 90 ELSE 30 END;
@@ -147,7 +147,7 @@ DECLARE
 BEGIN
   v_uid := auth.uid();
   IF v_uid IS NULL THEN RAISE EXCEPTION 'unauthenticated'; END IF;
-  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid LIMIT 1;
+  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid ORDER BY joined_at, workspace_id LIMIT 1;
   IF v_ws IS NULL THEN RAISE EXCEPTION 'no workspace for user %', v_uid; END IF;
 
   SELECT count(*) INTO v_today_replies FROM public.prospect_messages
@@ -172,8 +172,16 @@ DECLARE v_uid uuid; v_ws uuid;
 BEGIN
   v_uid := auth.uid();
   IF v_uid IS NULL THEN RAISE EXCEPTION 'unauthenticated'; END IF;
-  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid LIMIT 1;
+  SELECT workspace_id INTO v_ws FROM public.workspace_members WHERE user_id = v_uid ORDER BY joined_at, workspace_id LIMIT 1;
   IF v_ws IS NULL THEN RAISE EXCEPTION 'no workspace for user %', v_uid; END IF;
+
+  -- Le panier moyen est un réglage workspace : réservé aux owner/admin.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.workspace_members
+    WHERE workspace_id = v_ws AND user_id = v_uid AND role IN ('owner','admin')
+  ) THEN
+    RAISE EXCEPTION 'insufficient privileges: owner/admin required';
+  END IF;
 
   IF p_value IS NULL OR p_value <= 0 THEN
     UPDATE public.workspaces SET settings = (COALESCE(settings, '{}'::jsonb) - 'average_deal_value') WHERE id = v_ws;
@@ -183,6 +191,13 @@ BEGIN
 
   RETURN jsonb_build_object('deal_size', p_value);
 END; $$;
+
+-- SECURITY DEFINER : on retire l'EXECUTE par défaut de PUBLIC avant de le
+-- donner explicitement aux seuls utilisateurs authentifiés.
+REVOKE ALL ON FUNCTION public.get_dashboard_kpis(text) FROM public;
+REVOKE ALL ON FUNCTION public.get_dashboard_activity(text) FROM public;
+REVOKE ALL ON FUNCTION public.get_dashboard_alerts(text) FROM public;
+REVOKE ALL ON FUNCTION public.set_workspace_deal_size(numeric) FROM public;
 
 GRANT EXECUTE ON FUNCTION public.get_dashboard_kpis(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_dashboard_activity(text) TO authenticated;
