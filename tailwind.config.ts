@@ -33,7 +33,7 @@ export default {
         },
         // Accent principal de l'app (utilise en dur comme "violet-*"/"blue-*"),
         // repique sur la palette active (--a1h/--a1s / --a2h/--a2s, cf. index.css)
-        // pour que tout suive le selecteur de palette. Lightness par nuance.
+        // pour suivre l'accent du theme. Lightness par nuance.
         violet: {
           50:  "hsl(var(--a1h) var(--a1s) 97% / <alpha-value>)",
           100: "hsl(var(--a1h) var(--a1s) 94% / <alpha-value>)",
