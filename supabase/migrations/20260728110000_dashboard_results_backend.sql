@@ -92,25 +92,23 @@ BEGIN
     SELECT generate_series(v_start, date_trunc(v_trunc, now()), v_step) AS b
   ),
   events AS (
+    -- Source de vérité des volumes d'envoi : prospect_messages (1 ligne = 1 envoi).
+    -- On NE lit PAS prospect_actions pour email/li_msg : send-via-smartlead écrit à la
+    -- fois prospect_messages.status='sent' ET une action ('sent'), et le webhook insère
+    -- une action par step de séquence -> l'UNION comptait chaque envoi 2 à 3 fois.
+    -- (L'écriture dans prospect_actions n'est pas touchée : get_companies_progress s'en sert.)
     SELECT date_trunc(v_trunc, sent_at) AS b, 'email'::text AS ch
       FROM public.prospect_messages
       WHERE workspace_id = v_ws AND channel = 'email' AND status IN ('sent','replied') AND sent_at >= v_start
-    UNION ALL
-    SELECT date_trunc(v_trunc, created_at), 'email'
-      FROM public.prospect_actions
-      WHERE workspace_id = v_ws AND channel = 'email' AND action_type = 'sent' AND created_at >= v_start
     UNION ALL
     SELECT date_trunc(v_trunc, sent_at), 'li_msg'
       FROM public.prospect_messages
       WHERE workspace_id = v_ws AND channel = 'linkedin' AND status IN ('sent','replied') AND sent_at >= v_start
     UNION ALL
-    SELECT date_trunc(v_trunc, created_at), 'li_msg'
-      FROM public.prospect_actions
-      WHERE workspace_id = v_ws AND channel = 'linkedin' AND action_type = 'sent' AND created_at >= v_start
-    UNION ALL
+    -- Invitations LinkedIn : action_type = 'sent' (open/copy ne sont pas des envois).
     SELECT date_trunc(v_trunc, created_at), 'li_inv'
       FROM public.prospect_actions
-      WHERE workspace_id = v_ws AND channel = 'linkedin' AND action_type IN ('open','copy') AND created_at >= v_start
+      WHERE workspace_id = v_ws AND channel = 'linkedin' AND action_type = 'sent' AND created_at >= v_start
   ),
   replies AS (
     SELECT date_trunc(v_trunc, replied_at) AS b, count(*)::int AS n
