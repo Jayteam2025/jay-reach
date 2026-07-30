@@ -197,6 +197,25 @@ export interface SmartleadCampaignAnalytics {
  * Analytics d'une campagne Smartlead (lecture seule). Parsing défensif : les
  * champs varient selon la version d'API. Ne jamais renvoyer l'URL (contient la clé).
  */
+/**
+ * Parse la réponse analytics Smartlead. Les clés varient selon les versions de
+ * l'API (sent_count / sent / total_sent, etc.) — parser pur, isolé pour les tests.
+ */
+export function parseCampaignAnalytics(raw: Record<string, unknown>): SmartleadCampaignAnalytics {
+  const sent = toNum(raw.sent_count ?? raw.sent ?? raw.total_sent);
+  const opened = toNum(raw.unique_open_count ?? raw.open_count ?? raw.opened);
+  const replied = toNum(raw.reply_count ?? raw.replied);
+  const bounced = toNum(raw.bounce_count ?? raw.bounced);
+  return {
+    sent,
+    opened,
+    replied,
+    bounced,
+    open_rate: sent > 0 ? Math.round((1000 * opened) / sent) / 10 : null,
+    reply_rate: sent > 0 ? Math.round((1000 * replied) / sent) / 10 : null,
+  };
+}
+
 export async function getCampaignAnalytics(
   campaignId: number | string,
   apiKey: string,
@@ -214,25 +233,34 @@ export async function getCampaignAnalytics(
     throw new Error("Smartlead getCampaignAnalytics: invalid JSON response");
   }
 
-  const sent = toNum(raw.sent_count ?? raw.sent ?? raw.total_sent);
-  const opened = toNum(raw.unique_open_count ?? raw.open_count ?? raw.opened);
-  const replied = toNum(raw.reply_count ?? raw.replied);
-  const bounced = toNum(raw.bounce_count ?? raw.bounced);
-
-  return {
-    sent,
-    opened,
-    replied,
-    bounced,
-    open_rate: sent > 0 ? Math.round((1000 * opened) / sent) / 10 : null,
-    reply_rate: sent > 0 ? Math.round((1000 * replied) / sent) / 10 : null,
-  };
+  return parseCampaignAnalytics(raw);
 }
 
 export interface SmartleadSequenceStep {
   seq_number: number;
   delay_days: number;
   subject: string;
+}
+
+/**
+ * Parse les étapes de séquence Smartlead. Le délai arrive tantôt en snake_case
+ * (delay_in_days) tantôt en camelCase (delayInDays) ; parser pur, isolé pour les tests.
+ */
+export function parseSequenceSteps(raw: unknown): SmartleadSequenceStep[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s) => {
+    const row = s as {
+      seq_number?: number;
+      seq_delay_details?: { delay_in_days?: number; delayInDays?: number };
+      subject?: string;
+      sequence_variants?: { subject?: string }[];
+    };
+    return {
+      seq_number: toNum(row.seq_number),
+      delay_days: toNum(row.seq_delay_details?.delay_in_days ?? row.seq_delay_details?.delayInDays),
+      subject: row.subject ?? row.sequence_variants?.[0]?.subject ?? "",
+    };
+  });
 }
 
 /** Étapes de séquence d'une campagne Smartlead (email uniquement côté Smartlead). */
@@ -252,18 +280,5 @@ export async function getCampaignSequences(
   } catch {
     throw new Error("Smartlead getCampaignSequences: invalid JSON response");
   }
-  if (!Array.isArray(raw)) return [];
-  return raw.map((s) => {
-    const row = s as {
-      seq_number?: number;
-      seq_delay_details?: { delay_in_days?: number; delayInDays?: number };
-      subject?: string;
-      sequence_variants?: { subject?: string }[];
-    };
-    return {
-      seq_number: toNum(row.seq_number),
-      delay_days: toNum(row.seq_delay_details?.delay_in_days ?? row.seq_delay_details?.delayInDays),
-      subject: row.subject ?? row.sequence_variants?.[0]?.subject ?? "",
-    };
-  });
+  return parseSequenceSteps(raw);
 }
