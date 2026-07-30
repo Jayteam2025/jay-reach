@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { decryptTokenSafe } from "../_shared/token-encryption.ts";
+import { extractUserId } from "../_shared/subscription-access.ts";
+import { resolveCredentialForProviderId } from "../_shared/providers/registry.ts";
 import { getCampaignAnalytics, getCampaignSequences } from "../_shared/smartlead.ts";
 
 /**
@@ -31,15 +32,9 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const anon = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
-  );
 
-  const { data: userData } = await anon.auth.getUser();
-  const userId = userData?.user?.id;
-  if (!userId) return json(401, { ok: false, error: "Unauthorized" }, cors);
+  const { userId, error: authError } = await extractUserId(admin, req);
+  if (authError || !userId) return json(401, { ok: false, error: "Unauthorized" }, cors);
 
   let body: Payload = {};
   try {
@@ -88,29 +83,14 @@ Deno.serve(async (req: Request) => {
     return json(200, { ok: false, error: "Aucun provider Smartlead actif. Configure ta cle dans l'onglet Providers." }, cors);
   }
 
-  // Clé API (déchiffrée)
-  const { data: cred } = await admin
-    .from("workspace_provider_credentials")
-    .select("encrypted_key")
-    .eq("provider_id", (provider as { id: string }).id)
-    .maybeSingle();
-  const encrypted = (cred as { encrypted_key?: string } | null)?.encrypted_key;
-  if (!encrypted) {
+  // Clé API : resolveCredentialForProviderId gère le déchiffrement ET le fallback
+  // env (workspace passant par la variable d'environnement), contrairement à la
+  // résolution manuelle qui renvoyait "Cle Smartlead absente" dans ce cas.
+  const resolved = await resolveCredentialForProviderId(admin, (provider as { id: string }).id);
+  const apiKey = resolved?.credentials?.api_key;
+  if (!apiKey) {
     return json(200, { ok: false, error: "Cle Smartlead absente. Renseigne-la dans l'onglet Providers." }, cors);
   }
-
-  let apiKey = "";
-  try {
-    const secret = await decryptTokenSafe(encrypted, "smartlead");
-    try {
-      apiKey = (JSON.parse(secret) as { api_key?: string }).api_key ?? secret;
-    } catch {
-      apiKey = secret;
-    }
-  } catch {
-    return json(200, { ok: false, error: "Cle Smartlead illisible." }, cors);
-  }
-  if (!apiKey) return json(200, { ok: false, error: "Cle Smartlead vide." }, cors);
 
   // Analytics + séquence (best effort, indépendants)
   let analytics: unknown = null;
