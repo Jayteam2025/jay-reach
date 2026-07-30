@@ -199,10 +199,13 @@ export function ProspectionDashboard() {
   );
   const donutTotal = totals.em + totals.inv + totals.ms;
 
-  // Répartition des signaux par score (données réelles useSignaux)
+  // Répartition par score des signaux À TRAITER (status 'raw'), même population
+  // que topSignals ci-dessous — évite de compter les validés/enrichis/rejetés
+  // (dismissed, archived, matched) qui faussaient le total.
   const scoreDist = useMemo(() => {
     const c = { low: 0, mid: 0, high: 0, top: 0 };
     (signals ?? []).forEach((s) => {
+      if (s.status !== 'raw') return;
       const sc = Number(s.extracted_data?.ai_score ?? 0) || 0;
       if (sc <= 0) return;
       if (sc < 40) c.low++;

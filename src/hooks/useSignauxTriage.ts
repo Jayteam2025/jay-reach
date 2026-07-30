@@ -18,11 +18,14 @@ export function useSignaux() {
     queryKey: ['signaux-triage'],
     staleTime: 15_000,
     queryFn: async (): Promise<ProspectSignal[]> => {
+      // Plafond volontairement large : à 500 les compteurs du Dashboard étaient
+      // tronqués en silence (workspaces > 500 signaux). 5000 couvre les volumes
+      // réels par workspace ; au-delà, passer sur une agrégation server-side.
       const { data, error } = await supabase
         .from('prospect_signals')
         .select('*')
         .order('detected_at', { ascending: false })
-        .limit(500);
+        .limit(5000);
       if (error) throw error;
       return (data ?? []) as ProspectSignal[];
     },
