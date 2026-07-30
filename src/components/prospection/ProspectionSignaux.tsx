@@ -117,7 +117,7 @@ export function ProspectionSignaux() {
     [signals],
   );
 
-  const validate = (id: string) => setStatus.mutate({ id, status: 'matched' });
+  const validate = (id: string) => setStatus.mutate({ id, status: 'validated' });
   const reject = (id: string) => setStatus.mutate({ id, status: 'dismissed' });
   const reset = (id: string) => setStatus.mutate({ id, status: 'raw' });
 

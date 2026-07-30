@@ -61,12 +61,13 @@ export function useProspectionView() {
     [signals]
   );
 
-  // Signals scorés mais pas encore enrichis (status='raw'). Les matched
-  // deviennent des entreprises dans la vue Enrichies et doivent disparaitre
-  // du backlog Scorées.
+  // Signals scorés mais pas encore enrichis (status='raw' ou 'validated'). Un signal
+  // validé dans le triage reste dans le backlog Scorées (il n'est pas encore enrichi) ;
+  // seuls les 'matched' (enrichis par enrich-company) deviennent des entreprises dans
+  // la vue Enrichies et quittent le backlog.
   const scoredSignals = useMemo(() =>
     jobSignals
-      .filter(s => s.status === 'raw')
+      .filter(s => s.status === 'raw' || s.status === 'validated')
       .filter(s => (s.extracted_data)?.ai_score !== null && (s.extracted_data)?.ai_score !== undefined)
       .sort((a, b) => {
         const scoreA = (a.extracted_data)?.ai_score as number || 0;

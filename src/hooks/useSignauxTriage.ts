@@ -5,8 +5,11 @@ import type { ProspectSignal } from '@/hooks/useProspectSignals';
 /**
  * Données de l'écran Signaux (file de tri façon inbox, spec §4).
  * Réutilise la table prospect_signals. Mapping des onglets sur les statuts
- * existants (contrainte status ∈ raw/matched/dismissed/archived) :
- *   À traiter = 'raw' · Validées = 'matched' · Rejetées = 'dismissed'|'archived'.
+ * (contrainte status ∈ raw/validated/matched/dismissed/archived) :
+ *   À traiter = 'raw' · Validées = 'validated' (+ 'matched' déjà enrichis) ·
+ *   Rejetées = 'dismissed'|'archived'.
+ * Valider pose 'validated' (pas 'matched') : le signal reste dans le backlog
+ * d'enrichissement (scoredSignals) au lieu d'en sortir sans être enrichi.
  */
 export type TriageBucket = 'todo' | 'validated' | 'rejected';
 
@@ -26,11 +29,11 @@ export function useSignaux() {
   });
 }
 
-/** Valider (raw→matched) ou rejeter (raw→dismissed) un signal, ou le remettre à traiter. */
+/** Valider (raw→validated) ou rejeter (raw→dismissed) un signal, ou le remettre à traiter. */
 export function useSetSignalStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: 'matched' | 'dismissed' | 'raw' }) => {
+    mutationFn: async ({ id, status }: { id: string; status: 'validated' | 'matched' | 'dismissed' | 'raw' }) => {
       const { error } = await supabase.from('prospect_signals').update({ status }).eq('id', id);
       if (error) throw error;
     },
@@ -41,13 +44,13 @@ export function useSetSignalStatus() {
   });
 }
 
-/** Valider en masse tous les signaux passés (raw→matched). */
+/** Valider en masse tous les signaux passés (raw→validated). */
 export function useBulkValidateSignals() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (ids: string[]) => {
       if (ids.length === 0) return;
-      const { error } = await supabase.from('prospect_signals').update({ status: 'matched' }).in('id', ids);
+      const { error } = await supabase.from('prospect_signals').update({ status: 'validated' }).in('id', ids);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -58,7 +61,9 @@ export function useBulkValidateSignals() {
 }
 
 export function bucketOf(status: string): TriageBucket {
-  if (status === 'matched') return 'validated';
+  // 'validated' = validé par l'utilisateur ; 'matched' = déjà enrichi. Les deux
+  // s'affichent dans l'onglet « Validées ».
+  if (status === 'validated' || status === 'matched') return 'validated';
   if (status === 'dismissed' || status === 'archived') return 'rejected';
   return 'todo';
 }
