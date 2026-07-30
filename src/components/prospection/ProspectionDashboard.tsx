@@ -286,19 +286,12 @@ export function ProspectionDashboard() {
           <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--a1))]" />
         </div>
       ) : kpis ? (
-        <motion.div {...staggerProps} className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <motion.div {...staggerProps} className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          {/* "Réponses positives" masquée tant que reply_classification n'est pas
+              renseignée (aucun classifieur ne l'écrit encore, cf. get_dashboard_kpis).
+              À réintroduire quand la classification des réponses sera en place. */}
           <KpiCard label="Réponses" icon={KPI_ICON.replies} foot={<><Delta cur={kpis.replies} prev={kpis.replies_prev} /> vs préc.</>}>
             <AnimatedNumber value={kpis.replies} />
-          </KpiCard>
-          <KpiCard
-            label="Réponses positives"
-            icon={KPI_ICON.positive}
-            foot={<>
-              <span className="rounded-full bg-[hsl(var(--a1)/0.14)] px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--a1))]">{kpis.positive_pct} %</span>
-              des réponses
-            </>}
-          >
-            <AnimatedNumber value={kpis.positive_replies} />
           </KpiCard>
           <KpiCard label="Réunions obtenues" icon={KPI_ICON.meetings} foot={<><Delta cur={kpis.meetings} prev={kpis.meetings_prev} /> RDV confirmés</>}>
             <AnimatedNumber value={kpis.meetings} />
