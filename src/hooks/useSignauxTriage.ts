@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { ProspectSignal } from '@/hooks/useProspectSignals';
 
@@ -44,6 +45,9 @@ export function useSetSignalStatus() {
       void qc.invalidateQueries({ queryKey: ['signaux-triage'] });
       void qc.invalidateQueries({ queryKey: ['prospect-signals'] });
     },
+    onError: () => {
+      toast.error('Impossible de mettre à jour le signal.');
+    },
   });
 }
 
@@ -59,6 +63,9 @@ export function useBulkValidateSignals() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['signaux-triage'] });
       void qc.invalidateQueries({ queryKey: ['prospect-signals'] });
+    },
+    onError: () => {
+      toast.error('Impossible de valider les signaux.');
     },
   });
 }

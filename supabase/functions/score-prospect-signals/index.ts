@@ -297,7 +297,7 @@ async function handleSubmitBatch(corsHeaders: HeadersInit) {
   const { data: signals, error: fetchError } = await supabase
     .from('prospect_signals')
     .select('id, extracted_data, trigger_id')
-    .eq('status', 'raw')
+    .in('status', ['raw', 'validated']) // valider = approuver, pas retirer du scoring : les validés non scorés restent à scorer
     .eq('signal_type', 'job_posting')
     .order('detected_at', { ascending: true });
 
@@ -440,7 +440,7 @@ async function scoreSynchronously(llm: LLMHandle, items: LLMBatchRequestItem[]):
   const { data: allSignals } = await supabase
     .from('prospect_signals')
     .select('id')
-    .eq('status', 'raw')
+    .in('status', ['raw', 'validated']) // valider = approuver, pas retirer du scoring : les validés non scorés restent à scorer
     .eq('signal_type', 'job_posting');
   const validIds = new Set((allSignals || []).map((s) => s.id));
 
@@ -500,7 +500,7 @@ async function handleCheckBatch(batchId: string, corsHeaders: HeadersInit) {
   const { data: allSignals } = await supabase
     .from('prospect_signals')
     .select('id')
-    .eq('status', 'raw')
+    .in('status', ['raw', 'validated']) // valider = approuver, pas retirer du scoring : les validés non scorés restent à scorer
     .eq('signal_type', 'job_posting');
 
   const validIds = new Set((allSignals || []).map((s) => s.id));
