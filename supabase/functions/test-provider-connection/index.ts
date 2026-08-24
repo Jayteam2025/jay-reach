@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractUserId } from "../_shared/subscription-access.ts";
 import { resolveCredentialForProviderId } from "../_shared/providers/registry.ts";
+import { applyRateLimit } from "../_shared/rate-limiter.ts";
 
 /**
  * test-provider-connection (Jay Reach 1.4.3)
@@ -10,7 +11,9 @@ import { resolveCredentialForProviderId } from "../_shared/providers/registry.ts
  * Ping l'API du provider configure pour valider la cle.
  *
  * Body : { provider_id: string }
- * Auth : membre du workspace (verifie via RLS sur workspace_providers).
+ * Auth : membre du workspace, verifie explicitement contre workspace_members.
+ * Le client tourne en service_role : la RLS est bypassee, elle ne protege rien ici.
+ * Throttle : 10 req/min par utilisateur.
  *
  * Retourne :
  *   { ok: true, provider_type, latency_ms, info?: { balance, ... } }
@@ -51,6 +54,13 @@ Deno.serve(async (req: Request) => {
       headers: { ...cors, "Content-Type": "application/json" },
     });
   }
+
+  // Endpoint sensible : il valide un secret provider et consomme du quota chez lui.
+  // Sans throttle il sert d'oracle, aussi bien pour eprouver des cles en rafale que
+  // pour enumerer les provider_id existants (404 contre 403). Categorie stricte, et
+  // pose avant toute lecture en base pour que le refus ne revele rien.
+  const limited = await applyRateLimit(supabase, req, "oauth", cors, userId);
+  if (limited) return limited;
 
   let body: Payload;
   try {
