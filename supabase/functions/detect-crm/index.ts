@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractUserId } from "../_shared/subscription-access.ts";
+import { isWorkspaceMember } from "../_shared/workspace.ts";
 import { resolveDomain } from "../_shared/crm-detection/domain-resolver.ts";
 import { scanDnsForCrm } from "../_shared/crm-detection/dns-resolver.ts";
 import { scanHomepageForCrm } from "../_shared/crm-detection/homepage-scraper.ts";
@@ -36,13 +37,16 @@ Deno.serve(async (req: Request) => {
     serviceRoleKey,
   );
 
+  let callerUserId: string | null = null;
   if (!isServiceRole) {
     const { userId, error: authError } = await extractUserId(supabase, req);
     if (!userId) {
       return jsonResponse({ error: authError ?? "unauthorized" }, 401, corsHeaders);
     }
-    // (admin check skipped here — RLS on prospect_crm_detections enforces admin-only writes
-    // via service_role bypass, but reads via user JWT are RLS-protected by the existing policy)
+    // Le client est cree avec la service_role : il bypasse la RLS. Le controle
+    // d'appartenance au workspace vise est donc fait explicitement plus bas,
+    // une fois le company_group_id resolu en workspace_id.
+    callerUserId = userId;
   }
 
   const body = await req.json().catch(() => ({}));
@@ -50,6 +54,26 @@ Deno.serve(async (req: Request) => {
   if (_validation.response) return _validation.response;
 
   const { company_group_id, force = false } = _validation.data;
+
+  // Resolve workspace_id pour multi-tenant (NOT NULL sur prospect_crm_detections).
+  // Resolu AVANT le cache : il sert aussi au controle d'acces ci-dessous, sans quoi
+  // un appelant non autorise pourrait lire la detection en cache d'un autre workspace.
+  const { data: wsRow } = await supabase
+    .from("prospect_profiles")
+    .select("workspace_id")
+    .eq("company_group_id", company_group_id)
+    .not("workspace_id", "is", null)
+    .limit(1)
+    .maybeSingle();
+  const workspaceId = (wsRow?.workspace_id as string) ?? null;
+  if (!workspaceId) {
+    return jsonResponse({ error: "workspace_id not resolvable for company_group_id" }, 422, corsHeaders);
+  }
+
+  // Appel par JWT user : interdire de viser un company_group_id d'un autre workspace.
+  if (callerUserId && !(await isWorkspaceMember(supabase, callerUserId, workspaceId))) {
+    return jsonResponse({ error: "forbidden" }, 403, corsHeaders);
+  }
 
   // 1. Cache hit ?
   if (!force) {
@@ -61,19 +85,6 @@ Deno.serve(async (req: Request) => {
     if (existing?.detection_status === "completed") {
       return jsonResponse({ cached: true, detection: existing }, 200, corsHeaders);
     }
-  }
-
-  // Resolve workspace_id pour multi-tenant (NOT NULL sur prospect_crm_detections)
-  const { data: wsRow } = await supabase
-    .from("prospect_profiles")
-    .select("workspace_id")
-    .eq("company_group_id", company_group_id)
-    .not("workspace_id", "is", null)
-    .limit(1)
-    .maybeSingle();
-  const workspaceId = (wsRow?.workspace_id as string) ?? null;
-  if (!workspaceId) {
-    return jsonResponse({ error: "workspace_id not resolvable for company_group_id" }, 422, corsHeaders);
   }
 
   // 2. UPSERT pending

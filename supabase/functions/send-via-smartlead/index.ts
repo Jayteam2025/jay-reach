@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractUserId } from "../_shared/subscription-access.ts";
+import { isWorkspaceMember } from "../_shared/workspace.ts";
 import { shouldPushToSmartlead, type GateInput } from "../_shared/email-gate.ts";
 import { resolveOutreachProvider } from "../_shared/outreach/registry.ts";
 import type { OutreachLead } from "../_shared/outreach/types.ts";
@@ -115,14 +116,26 @@ Deno.serve(async (req: Request) => {
     const { data: prospect, error: pErr } = await supabase
       .from("prospect_profiles")
       .select(
-        "id, first_name, last_name, email, job_title, company_name, linkedin_url, persona_id, workspace_id, enrichment_data, " +
-        "email_source, email_validation_status, deliverability_status, deliverability_reason, company_group_id"
+        // Chaine en un seul litteral : la concatenation empechait postgrest-js
+        // d'inferer les colonnes, et typait la ligne en GenericStringError.
+        "id, first_name, last_name, email, job_title, company_name, linkedin_url, persona_id, workspace_id, enrichment_data, email_source, email_validation_status, deliverability_status, deliverability_reason, company_group_id",
       )
       .eq("id", body.prospect_id)
       .single();
     if (pErr || !prospect) {
       return new Response(JSON.stringify({ error: "Prospect not found" }), {
         status: 404,
+        headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" },
+      });
+    }
+
+    // Le role admin controle plus haut est GLOBAL : il ne dit rien du workspace.
+    // Le client tourne en service_role (RLS bypassee), donc l'appartenance au
+    // workspace du prospect est verifiee ici, sinon un admin d'un workspace
+    // pourrait pousser les prospects d'un autre.
+    if (!prospect.workspace_id || !(await isWorkspaceMember(supabase, userId, prospect.workspace_id))) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
         headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" },
       });
     }
