@@ -26,3 +26,33 @@ export async function resolveUserWorkspace(
   cache.set(userId, workspaceId);
   return workspaceId;
 }
+
+// Contrôle d'appartenance : l'utilisateur est-il membre de CE workspace ?
+// A ne pas confondre avec resolveUserWorkspace ci-dessus, qui renvoie le premier
+// workspace trouvé et ne convient donc pas à une décision d'autorisation.
+// Pas de cache : un contrôle d'accès ne doit pas servir une réponse périmée.
+// Fail-closed : toute erreur de lecture refuse l'accès.
+const ROLE_RANK: Record<string, number> = { viewer: 1, member: 2, admin: 3, owner: 4 };
+
+export type WorkspaceRole = "viewer" | "member" | "admin" | "owner";
+
+export async function isWorkspaceMember(
+  supabase: SupabaseClient,
+  userId: string,
+  workspaceId: string,
+  minRole: WorkspaceRole = "viewer",
+): Promise<boolean> {
+  if (!userId || !workspaceId) return false;
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    console.warn(`[workspace] isWorkspaceMember failed for user=${userId}: ${error.message}`);
+    return false;
+  }
+  if (!data) return false;
+  return (ROLE_RANK[data.role as string] ?? 0) >= ROLE_RANK[minRole];
+}
