@@ -37,6 +37,26 @@ create table if not exists public.recruitment_agencies_blacklist (
   notes text
 );
 
+-- IMPORTANT (collision de nom avec le schéma actuel) : cette table existe DÉJÀ,
+-- avec une AUTRE structure (sans organization_id), sur toute instance au schéma
+-- v1. Le `create table if not exists` ci-dessus est alors un no-op — il faut donc
+-- ajouter explicitement la colonne manquante, sinon les index/RLS/seed ci-dessous
+-- échouent (« column organization_id does not exist »). `add column if not exists`
+-- est un no-op sur une base v2 fraîche (colonne déjà présente). La table
+-- `organizations` est créée par init_schema, migration antérieure.
+alter table public.recruitment_agencies_blacklist
+  add column if not exists organization_id uuid references public.organizations(id) on delete cascade;
+
+-- Meme cause, autre effet : le schema actuel porte une contrainte d'unicite
+-- GLOBALE sur le nom (`recruitment_agencies_blacklist_name_normalized_key`,
+-- heritee du modele mono-organisation). Elle contredit le modele cible, qui
+-- autorise une entree globale ET une entree par organisation pour un meme nom :
+-- laissee en place, la deuxieme organisation qui blackliste un cabinet deja
+-- present serait rejetee. On la retire avant de creer les index partiels
+-- ci-dessous. `if exists` : no-op sur une base fraiche, ou elle n'a jamais existe.
+alter table public.recruitment_agencies_blacklist
+  drop constraint if exists recruitment_agencies_blacklist_name_normalized_key;
+
 -- Unicité : une entrée globale par nom ; une entrée par (org, nom).
 create unique index if not exists uq_recruitment_blacklist_global
   on public.recruitment_agencies_blacklist (name_normalized) where organization_id is null;
@@ -49,11 +69,14 @@ alter table public.recruitment_agencies_blacklist enable row level security;
 alter table public.recruitment_agencies_blacklist force row level security;
 
 -- Lecture : le global (org NULL) + les entrées de ses organisations.
+-- (drop ... if exists : rend la migration ré-exécutable sans erreur.)
+drop policy if exists recruitment_blacklist_read on public.recruitment_agencies_blacklist;
 create policy recruitment_blacklist_read on public.recruitment_agencies_blacklist
   for select to authenticated
   using (organization_id is null or organization_id in (select app.user_orgs('viewer')));
 
 -- Écriture : operator+ sur ses organisations (jamais le global côté client).
+drop policy if exists recruitment_blacklist_write on public.recruitment_agencies_blacklist;
 create policy recruitment_blacklist_write on public.recruitment_agencies_blacklist
   for all to authenticated
   using (organization_id in (select app.user_orgs('operator')))
