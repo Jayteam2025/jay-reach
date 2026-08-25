@@ -428,7 +428,8 @@
       "close": "Close",
       "approval": "Approval",
       "chars": "{n} chars max"
-    }
+    },
+    "activate": "Activate"
   },
   "linkedin": {
     "eyebrow": "Channel",
@@ -593,5 +594,30 @@
     "noVersionYet": "No version for this language.",
     "cancel": "Cancel",
     "saveVersion": "Save (new version)"
+  },
+  "campaignNew": {
+    "back": "← Campaigns",
+    "eyebrow": "New campaign",
+    "title": "Create a campaign",
+    "lead": "Where prospects come from, who to target, and at what pace. The sequence is built next.",
+    "demoNotice": "Connect Supabase to create a campaign.",
+    "name": "Name",
+    "namePlaceholder": "Field sales follow-up",
+    "entryKind": "Entry point",
+    "kind": {
+      "source": "Signal source",
+      "list": "Imported list"
+    },
+    "pickSource": "Source",
+    "pickList": "List",
+    "choose": "Choose…",
+    "noneAvailable": "No option available.",
+    "personas": "Target personas",
+    "noPersona": "No active persona.",
+    "minScore": "Minimum score",
+    "dailyCap": "Daily cap",
+    "dailyCapPlaceholder": "e.g. 50",
+    "cancel": "Cancel",
+    "create": "Create campaign"
   }
 }

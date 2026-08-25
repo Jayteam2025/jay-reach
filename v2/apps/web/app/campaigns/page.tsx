@@ -50,7 +50,7 @@ export default async function CampaignsPage() {
             </p>
           </div>
           <div className="rs-head-actions">
-            <a className="rs-btn" data-primary="true" href="/import">
+            <a className="rs-btn" data-primary="true" href="/campaigns/new">
               {t('campaigns.newCampaign')}
             </a>
           </div>

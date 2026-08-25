@@ -428,7 +428,8 @@
       "close": "Sluiten",
       "approval": "Goedkeuring",
       "chars": "max. {n} tekens"
-    }
+    },
+    "activate": "Activeren"
   },
   "linkedin": {
     "eyebrow": "Kanaal",
@@ -593,5 +594,30 @@
     "noVersionYet": "Geen versie voor deze taal.",
     "cancel": "Annuleren",
     "saveVersion": "Opslaan (nieuwe versie)"
+  },
+  "campaignNew": {
+    "back": "← Campagnes",
+    "eyebrow": "Nieuwe campagne",
+    "title": "Campagne aanmaken",
+    "lead": "Waar prospects vandaan komen, wie te benaderen en in welk tempo. De sequentie bouw je daarna.",
+    "demoNotice": "Verbind Supabase om een campagne aan te maken.",
+    "name": "Naam",
+    "namePlaceholder": "Opvolging buitendienst",
+    "entryKind": "Ingang",
+    "kind": {
+      "source": "Signaalbron",
+      "list": "Geïmporteerde lijst"
+    },
+    "pickSource": "Bron",
+    "pickList": "Lijst",
+    "choose": "Kiezen…",
+    "noneAvailable": "Geen optie beschikbaar.",
+    "personas": "Doelpersona's",
+    "noPersona": "Geen actieve persona.",
+    "minScore": "Minimumscore",
+    "dailyCap": "Daglimiet",
+    "dailyCapPlaceholder": "bv. 50",
+    "cancel": "Annuleren",
+    "create": "Campagne aanmaken"
   }
 }
