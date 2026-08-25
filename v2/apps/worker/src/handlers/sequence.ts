@@ -8,7 +8,7 @@
  * qui les enfile dans `linkedin_action_queue` (exécutée par l'extension, pacing serveur).
  */
 import type { Pool } from 'pg';
-import { composeTick, type TickChannel, type TickStep } from '@jay-reach/core';
+import { composeTick, renderTemplate, type TickChannel, type TickStep } from '@jay-reach/core';
 import type { DispatchJob } from './dispatch.js';
 
 export interface EnrollJob {
@@ -56,6 +56,79 @@ interface DueRow {
   readonly last_name: string | null;
   readonly company_name: string | null;
   readonly domain: string | null;
+  // Résolution des variables du message (T19) : langue du contact + données
+  // source pour substituer {{prenom}}, {{entreprise}}, {{signal_titre}}, etc.
+  readonly locale: string | null;
+  readonly job_title: string | null;
+  readonly city: string | null;
+  readonly headcount: number | null;
+  readonly persona_angle: string | null;
+  readonly signal_title: string | null;
+  readonly signal_occurred_at: string | null;
+  readonly signal_location: string | null;
+  readonly context_note: string | null;
+}
+
+/**
+ * Table des valeurs pour le rendu des variables d'un message, assemblée depuis le
+ * contact, son compte, sa persona, le signal et la liste. Une valeur absente reste
+ * `undefined` → `renderTemplate` la remonte dans `missing` (→ blocage, jamais un
+ * champ vide envoyé). Dates via `Intl` (spec §90).
+ */
+function buildMessageValues(row: DueRow): Record<string, string | undefined> {
+  const values: Record<string, string | undefined> = {
+    prenom: row.first_name ?? undefined,
+    nom: row.last_name ?? undefined,
+    poste: row.job_title ?? undefined,
+    entreprise: row.company_name ?? undefined,
+    ville: row.city ?? undefined,
+    effectif: row.headcount != null ? String(row.headcount) : undefined,
+    persona_angle: row.persona_angle ?? undefined,
+    signal_titre: row.signal_title ?? undefined,
+    signal_zone: row.signal_location ?? undefined,
+    contexte: row.context_note ?? undefined,
+  };
+  if (row.signal_occurred_at) {
+    const d = new Date(row.signal_occurred_at);
+    values.signal_date = d.toLocaleDateString('fr-FR');
+    values.signal_mois = d.toLocaleDateString('fr-FR', { month: 'long' });
+  }
+  return values;
+}
+
+/**
+ * Résout la variante de template pour la langue du contact (T19). Choisit la
+ * dernière version de la famille pour cette `locale`. Si la langue est connue mais
+ * qu'aucune variante n'existe alors que la famille en a d'autres → `missingLocale`
+ * (spec §84-88 : bloqué `missing_locale`). Sans locale connue, on prend la dernière
+ * version (repli, pas de blocage de langue).
+ */
+async function resolveTemplate(
+  pool: Pool,
+  familyId: string,
+  locale: string | null,
+): Promise<{ id: string | null; body: string | null; missingLocale: boolean }> {
+  if (locale) {
+    const byLocale = await pool.query<{ id: string; body: string }>(
+      `select id, body from message_templates
+        where (id = $1 or parent_id = $1) and locale = $2
+        order by version desc limit 1`,
+      [familyId, locale],
+    );
+    const found = byLocale.rows[0];
+    if (found) return { id: found.id, body: found.body, missingLocale: false };
+    const any = await pool.query(
+      `select 1 from message_templates where id = $1 or parent_id = $1 limit 1`,
+      [familyId],
+    );
+    return { id: null, body: null, missingLocale: (any.rowCount ?? 0) > 0 };
+  }
+  const latest = await pool.query<{ id: string; body: string }>(
+    `select id, body from message_templates where id = $1 or parent_id = $1 order by version desc limit 1`,
+    [familyId],
+  );
+  const found = latest.rows[0];
+  return { id: found?.id ?? null, body: found?.body ?? null, missingLocale: false };
 }
 
 interface StepRow {
@@ -88,14 +161,21 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   const due = await pool.query<DueRow>(
     `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
             c.linkedin_url, c.email, c.account_id, c.first_name, c.last_name,
+            c.locale, c.job_title,
             camp.approval_policy,
             sc.campaign_id as smartlead_campaign_id,
-            a.name as company_name, a.domain,
+            a.name as company_name, a.domain, a.city, a.headcount,
+            p.angle as persona_angle,
+            sig.title as signal_title, sig.occurred_at as signal_occurred_at, sig.location as signal_location,
+            lst.context_note,
             ls.mode as lk_mode
        from enrollments e
        join contacts c on c.id = e.contact_id
        join campaigns camp on camp.id = e.campaign_id
        left join accounts a on a.id = c.account_id
+       left join personas p on p.id = c.persona_id
+       left join signals sig on sig.id = e.signal_id
+       left join lists lst on lst.id = camp.list_id
        left join smartlead_campaigns sc
               on sc.organization_id = e.organization_id
              and sc.persona_id = c.persona_id
@@ -122,6 +202,9 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     let sendable = true;
     let requiresApproval = false;
     let messageBody: string | null = null;
+    let templateId: string | null = null;
+    let unresolvedVariables: string[] = [];
+    let missingLocale = false;
     if (step) {
       const ch = step.channel;
       requiresApproval =
@@ -130,12 +213,18 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         policyRequiresApproval(row.approval_policy, ch);
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);
-      if (ch === 'linkedin_message' && step.template_parent_id) {
-        const tpl = await pool.query<{ body: string }>(
-          `select body from message_templates where id = $1 or parent_id = $1 order by version desc limit 1`,
-          [step.template_parent_id],
-        );
-        messageBody = tpl.rows[0]?.body ?? null;
+      // Rendu local des variables pour les canaux dont Jay Reach possède le corps
+      // (message LinkedIn, courrier). L'email est rendu par Smartlead (leads).
+      if ((ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
+        const resolved = await resolveTemplate(pool, step.template_parent_id, row.locale);
+        if (resolved.missingLocale) {
+          missingLocale = true;
+        } else if (resolved.body !== null) {
+          templateId = resolved.id;
+          const rendered = renderTemplate(resolved.body, buildMessageValues(row));
+          messageBody = rendered.text;
+          unresolvedVariables = rendered.missing;
+        }
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);
@@ -148,6 +237,8 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       suppressed,
       requiresApproval,
       sendable,
+      unresolvedVariables,
+      missingLocale,
     });
 
     // Insertion idempotente de l'action (si présente). L'avancement de
@@ -155,13 +246,17 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     let inserted = true;
     if (result.action) {
       const a = result.action;
-      const payload = isLinkedIn(a.channel)
+      const payload: Record<string, unknown> = isLinkedIn(a.channel)
         ? { linkedinUrl: row.linkedin_url, messageBody }
-        : { email: row.email };
+        : a.channel === 'email'
+          ? { email: row.email }
+          : { messageBody }; // courrier : corps rendu localement
+      // Blocage variable : on nomme les champs manquants (UI : regroupement).
+      if (a.blockReason === 'missing_variable') payload.missingVariables = unresolvedVariables;
       const ins = await pool.query<{ id: string }>(
         `insert into actions
-           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, payload, idempotency_key)
-         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, payload, idempotency_key, template_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
          on conflict (idempotency_key) do nothing
          returning id`,
         [
@@ -174,6 +269,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           new Date(a.scheduledForMs).toISOString(),
           JSON.stringify(payload),
           a.idempotencyKey,
+          templateId,
         ],
       );
       inserted = (ins.rowCount ?? 0) > 0;

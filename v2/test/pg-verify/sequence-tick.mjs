@@ -65,7 +65,7 @@ async function main() {
   await q(`delete from message_templates where organization_id=$1`, [ORG]);
   await q(`delete from smartlead_campaigns where organization_id=$1`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
-  await q(`delete from contacts where organization_id=$1 and email like 'seqmail-%'`, [ORG]);
+  await q(`delete from contacts where organization_id=$1 and email like '%@example.test'`, [ORG]);
   await q(`delete from personas where organization_id=$1 and name like 'SEQ %'`, [ORG]);
   await q(`delete from accounts where organization_id=$1 and name like 'SEQ %'`, [ORG]);
 
@@ -174,6 +174,62 @@ async function main() {
     await q(`select campaign_id from smartlead_campaigns where organization_id=$1 and persona_id=$2`, [ORG, persona])
   ).rows[0];
   check('identifiant Smartlead conservé malgré la suspension', stillMapped?.campaign_id === 'SL-EMAIL-77');
+
+  // --- Étape 8 : rendu des variables + blocage missing_variable/missing_locale (T19) -
+  console.log('\n[seq] 8. Variables de message : rendu, blocage variable/langue');
+  // Campagne message LinkedIn avec un corps à variables (template locale fr créé
+  // par seedCampaign). {{prenom}} et {{entreprise}} sont « always ».
+  const varCamp = await seedCampaign('SEQ variables', [
+    { channel: 'linkedin_message', delay_hours: 0, body: 'Bonjour {{prenom}} chez {{entreprise}}' },
+  ]);
+  const mkVarContact = async (v, { locale, firstName }) =>
+    (
+      await q(
+        `insert into contacts (organization_id, persona_id, account_id, linkedin_url, email, first_name, last_name, locale)
+         values ($1,$2,$3,$4,$5,$6,'Test',$7) returning id`,
+        [ORG, persona, account, `https://www.linkedin.com/in/${v}`, `seqmail-${v}@example.test`, firstName, locale],
+      )
+    ).rows[0].id;
+
+  // (a) fr + prénom présent → rendu substitué, dispatché.
+  const cvOk = await mkVarContact('var-ok', { locale: 'fr', firstName: 'Marie' });
+  const enrOk = await enrollContact(pool, { organizationId: ORG, campaignId: varCamp, contactId: cvOk });
+  const jOk = (await tickDueEnrollments(pool, new Date(Date.now() + 20000))).filter(
+    (j) => j.channel === 'linkedin_message' && j.linkedin?.contactId === cvOk,
+  );
+  check(
+    'variables substituées dans le corps dispatché',
+    jOk.length === 1 && jOk[0].linkedin.messageBody === 'Bonjour Marie chez SEQ Usine Nord',
+    JSON.stringify(jOk[0]?.linkedin?.messageBody),
+  );
+  const aOk = (await q(`select template_id from actions where enrollment_id=$1`, [enrOk])).rows[0];
+  check('version de template tracée (actions.template_id)', aOk?.template_id != null);
+
+  // (b) fr + prénom manquant → bloqué missing_variable, pas de dispatch.
+  const cvMiss = await mkVarContact('var-miss', { locale: 'fr', firstName: null });
+  const enrMiss = await enrollContact(pool, { organizationId: ORG, campaignId: varCamp, contactId: cvMiss });
+  const jMiss = (await tickDueEnrollments(pool, new Date(Date.now() + 21000))).filter(
+    (j) => j.channel === 'linkedin_message' && j.linkedin?.contactId === cvMiss,
+  );
+  check('variable manquante → aucun dispatch', jMiss.length === 0);
+  const aMiss = (await q(`select status, block_reason, payload from actions where enrollment_id=$1`, [enrMiss])).rows[0];
+  check(
+    'action bloquée missing_variable, champ nommé (prenom)',
+    aMiss?.status === 'blocked' && aMiss?.block_reason === 'missing_variable' && JSON.stringify(aMiss?.payload?.missingVariables) === '["prenom"]',
+    `${aMiss?.status}/${aMiss?.block_reason}/${JSON.stringify(aMiss?.payload?.missingVariables)}`,
+  );
+  const eMiss = (await q(`select status from enrollments where id=$1`, [enrMiss])).rows[0];
+  check('inscription non arrêtée (récupérable)', eMiss?.status === 'active');
+
+  // (c) langue sans variante (nl) → bloqué missing_locale.
+  const cvLoc = await mkVarContact('var-loc', { locale: 'nl', firstName: 'Jan' });
+  const enrLoc = await enrollContact(pool, { organizationId: ORG, campaignId: varCamp, contactId: cvLoc });
+  const jLoc = (await tickDueEnrollments(pool, new Date(Date.now() + 22000))).filter(
+    (j) => j.channel === 'linkedin_message' && j.linkedin?.contactId === cvLoc,
+  );
+  check('langue absente → aucun dispatch', jLoc.length === 0);
+  const aLoc = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrLoc])).rows[0];
+  check('action bloquée missing_locale', aLoc?.status === 'blocked' && aLoc?.block_reason === 'missing_locale', `${aLoc?.status}/${aLoc?.block_reason}`);
 
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();

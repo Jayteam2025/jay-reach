@@ -67,6 +67,34 @@ describe('composeTick', () => {
     expect(r.nextActionAtMs).toBeNull();
   });
 
+  it('variable non résolue → bloqué missing_variable, pas d’arrêt (récupérable)', () => {
+    const r = composeTick({ ...base, unresolvedVariables: ['prenom'] });
+    expect(r.action?.status).toBe('blocked');
+    expect(r.action?.blockReason).toBe('missing_variable');
+    expect(r.dispatch).toBe(false);
+    expect(r.nextStep).toBe(0); // n'avance pas
+    expect(r.nextStatus).toBe('active'); // pas arrêtée : le contact peut être complété
+    expect(r.nextActionAtMs).toBeNull();
+  });
+
+  it('variante de langue absente → bloqué missing_locale', () => {
+    const r = composeTick({ ...base, missingLocale: true });
+    expect(r.action?.blockReason).toBe('missing_locale');
+    expect(r.nextStatus).toBe('active');
+    expect(r.dispatch).toBe(false);
+  });
+
+  it('missing_variable prime sur l’approbation', () => {
+    const r = composeTick({ ...base, requiresApproval: true, unresolvedVariables: ['entreprise'] });
+    expect(r.action?.blockReason).toBe('missing_variable');
+  });
+
+  it('la suppression prime sur une variable manquante (arrêt)', () => {
+    const r = composeTick({ ...base, suppressed: true, unresolvedVariables: ['prenom'] });
+    expect(r.action?.blockReason).toBe('suppression');
+    expect(r.nextStatus).toBe('stopped');
+  });
+
   it('rejeu : même clé d’idempotence pour la même (inscription, étape)', () => {
     const a = composeTick(base).action?.idempotencyKey;
     const b = composeTick(base).action?.idempotencyKey;
