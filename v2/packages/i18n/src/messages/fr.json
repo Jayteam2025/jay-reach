@@ -429,7 +429,34 @@
       "approval": "Approbation",
       "chars": "{n} car. max"
     },
-    "activate": "Activer"
+    "activate": "Activer",
+    "stepEd": {
+      "new": "Nouvelle étape",
+      "edit": "Modifier l'étape",
+      "channel": "Canal",
+      "template": "Message (modèle)",
+      "noTemplate": "Aucun message relié",
+      "noneForChannel": "Aucun modèle pour ce canal — créez-en un dans Messages.",
+      "editInLibrary": "Éditer dans Messages ↗",
+      "delayDays": "Délai (jours) depuis l'étape précédente",
+      "condition": "Condition de déclenchement",
+      "cond": {
+        "none": "Toujours",
+        "previous_opened": "Si l'email précédent est ouvert",
+        "previous_accepted": "Si l'invitation est acceptée",
+        "no_reply": "Si pas de réponse"
+      },
+      "save": "Enregistrer l'étape",
+      "del": "Supprimer l'étape",
+      "delConfirm": "Supprimer cette étape ?",
+      "up": "Monter",
+      "down": "Descendre",
+      "noMessageYet": "Relier un message",
+      "empty": "Aucune étape — ajoutez-en une.",
+      "noRule": "Aucune règle d'entrée.",
+      "callNote": "Le canal Appel crée une tâche datée, sans envoi ni message.",
+      "letterNote": "Le courrier passe toujours par la file de validation."
+    }
   },
   "linkedin": {
     "eyebrow": "Canal",

@@ -429,7 +429,34 @@
       "approval": "Approval",
       "chars": "{n} chars max"
     },
-    "activate": "Activate"
+    "activate": "Activate",
+    "stepEd": {
+      "new": "New step",
+      "edit": "Edit step",
+      "channel": "Channel",
+      "template": "Message (template)",
+      "noTemplate": "No message linked",
+      "noneForChannel": "No template for this channel — create one in Messages.",
+      "editInLibrary": "Edit in Messages ↗",
+      "delayDays": "Delay (days) from previous step",
+      "condition": "Trigger condition",
+      "cond": {
+        "none": "Always",
+        "previous_opened": "If previous email opened",
+        "previous_accepted": "If invite accepted",
+        "no_reply": "If no reply"
+      },
+      "save": "Save step",
+      "del": "Delete step",
+      "delConfirm": "Delete this step?",
+      "up": "Move up",
+      "down": "Move down",
+      "noMessageYet": "Link a message",
+      "empty": "No step yet — add one.",
+      "noRule": "No entry rule.",
+      "callNote": "The Call channel creates a dated task, no send or message.",
+      "letterNote": "Letters always go through the approval queue."
+    }
   },
   "linkedin": {
     "eyebrow": "Channel",

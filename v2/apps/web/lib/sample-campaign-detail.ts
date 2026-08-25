@@ -4,17 +4,26 @@ import { SAMPLE_CAMPAIGNS } from './sample-campaigns';
 export type Channel = 'email' | 'linkedin_invite' | 'linkedin_message' | 'letter' | 'call';
 export type Sentiment = 'positive' | 'later' | 'negative';
 
+/** Conditions d'entrée d'étape éditables (jsonb `conditions.requires`). */
+export type StepConditionKind = 'previous_opened' | 'previous_accepted' | 'no_reply';
+
 export interface SeqStepDetail {
   readonly n: number;
+  /** Id réel de l'étape (`sequence_steps.id`) — absent pour la maquette. */
+  readonly id?: string;
   readonly channel: Channel;
   readonly title: string;
   readonly subject?: string;
   readonly preview: string;
   readonly body: string;
+  /** Lignée de template reliée à l'étape (`sequence_steps.template_parent_id`). */
+  readonly templateParentId?: string | null;
   /** Délai (en jours) depuis l'étape précédente. */
   readonly delayDays: number;
   /** Condition de déclenchement (branchement en lime), si l'étape en dépend. */
   readonly condition?: string;
+  /** Valeur éditable de la condition (jsonb). */
+  readonly conditionKind?: StepConditionKind | null;
   readonly variables: readonly string[];
   readonly maxLength?: number;
   /** Courrier = approbation humaine obligatoire. */
@@ -58,6 +67,15 @@ export interface CampaignDetail {
   readonly steps: readonly SeqStepDetail[];
   readonly repliedContacts: readonly ReplyItem[];
   readonly avatarOverflow: number;
+  /** Lignées de templates de l'org, pour relier une étape à un message. */
+  readonly templateFamilies?: readonly TemplateFamilyOption[];
+}
+
+/** Une lignée de template proposable dans l'éditeur d'étape. */
+export interface TemplateFamilyOption {
+  readonly familyId: string;
+  readonly name: string;
+  readonly channel: Channel;
 }
 
 export function campaignId(name: string): string {

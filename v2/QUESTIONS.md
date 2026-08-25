@@ -249,6 +249,21 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Éditeur de séquence dans l'écran campagne (T24, partie éditeur) [2026-08-25]
+
+Suite de T24-a : brancher l'édition de séquence dans l'écran détail, jusque-là 100 % maquette (état local, aucune persistance).
+
+**`page.tsx`** expose désormais l'**id réel** des étapes, `template_parent_id`, `conditions.requires` (→ `conditionKind`), et la liste des **lignées de templates** de l'org (`templateFamilies` : id de lignée + nom + canal). L'aperçu d'une étape vient de la **version active** du template lié (`is_active`, fr en priorité) — plus le lien approximatif `template_parent_id === message_templates.id` de la maquette.
+
+**`detail-view.tsx`** (réécrit) : l'onglet Séquence est éditable — ajouter/modifier/supprimer une étape, la **déplacer** (↑↓ via `moveStep`), et une **modale d'étape** : canal, **message = sélection d'une lignée de template** (filtrée par canal, avec lien « Éditer dans Messages »), délai (jours), condition de déclenchement. Tout passe par les server actions de T24-a + `useTransition`/`router.refresh()`. Le bouton pause/activer reste câblé.
+
+**Décisions / périmètre** :
+- **Le message ne s'édite plus ici** : une étape **relie** une lignée de template ; le contenu (versions, langues, variables) se règle dans `/settings/templates` (T19). La modale message « à saisie libre » de la maquette est retirée — elle ne persistait rien et doublonnait l'éditeur de messages.
+- **Rappels métier** intégrés à l'UI : canal **Appel** = tâche datée sans envoi ni message (CLAUDE.md #8) ; **Courrier** = validation obligatoire (#1).
+- **Évaluation des conditions par le tick** : `conditions.requires` est **persisté et éditable**, mais `composeTick` ne l'évalue pas encore (→ `skipped` si non satisfaite) — raffinement séquenceur (T17/T18) laissé pour plus tard. De même, l'édition inline du délai a été déplacée dans la modale (persistée) ; le stepper « live » de la maquette est retiré.
+
+**Vérifié** : typecheck / lint / build web (`/campaigns/[id]`), 159 tests. Les mutations (add/update/delete/move d'étapes) sont prouvées côté base par `test/pg-verify/campaigns.sh` (T24-a).
+
 ## Résolu — Création de campagne + backbone d'édition (T24, partie création) [2026-08-25]
 
 L'écran de campagne existait mais **100 % maquette** : la modale d'étape et les délais n'étaient qu'en état local (`useState`), aucune server action, et « Nouvelle campagne » renvoyait vers `/import`. Aucun moyen de **créer** une campagne. T24 est découpé (comme T19) : cette partie livre la **création** + tout le **backbone d'actions**, la suivante branchera l'éditeur de séquence dans l'écran détail.
