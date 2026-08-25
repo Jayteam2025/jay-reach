@@ -249,6 +249,18 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Enfilage email depuis le tick vers Smartlead (T20) [2026-08-25]
+
+Le tick du séquenceur émettait bien l'action email mais **n'enfilait pas de job Smartlead** (le `dispatch → Smartlead` existait, mais rien ne l'alimentait pour l'email). Comblé.
+
+- **Mapping PAR PERSONA [révisé 2026-08-25 après review #20]** : première version = `campaigns.smartlead_campaign_id` (une campagne Smartlead par campagne Jay Reach). Review JB : mauvaise granularité. Le socle v1 mappe **par persona** (`smartlead_campaigns (workspace, persona) → campagne`, avec `enabled`) — on n'écrit pas la même chose à un Directeur de site et à un Responsable RH, donc pas la même séquence Smartlead ; et un même couple ne peut pas exprimer deux personas vers une même campagne ni le toggle d'activation. Migration `20260825130000_smartlead_campaigns.sql` : table `smartlead_campaigns (organization_id, persona_id, campaign_id, campaign_name, enabled)`, unicité `(org, persona)`, RLS (lecture viewer+, écriture admin+). La colonne `campaigns.smartlead_campaign_id` est retirée (drop if exists). Plusieurs personas peuvent partager une campagne ; `enabled=false` suspend l'envoi **sans perdre l'identifiant**.
+- **Tick** (`tickDueEnrollments`) : la requête résout la campagne Smartlead via **la persona du contact** (`left join smartlead_campaigns sc on sc.persona_id = c.persona_id and sc.enabled`), + les champs du lead (contact + compte). Quand un envoi email est autorisé, un job `actions.dispatch` (channel `email`, `campaignId` = id Smartlead de la persona, `leads` = [contact assemblé : email, prénom, nom, entreprise, site, LinkedIn]) est produit. **Sans mapping activé pour la persona** : action planifiée mais **non dispatchée** (log), jamais d'envoi vers une campagne inconnue.
+- **Dédup** : correction de `runTick` — la réf de dédup de `actions.dispatch` retombait sur `'x'` pour l'email (tous les emails auraient partagé un id) ; elle utilise désormais l'adresse.
+
+**Vérifié hermétiquement** (`bash test/pg-verify/sequence-tick.sh`, étape 7) : persona → campagne `SL-EMAIL-77` **activée** → 1 job email + lead assemblé (société depuis le compte) ; mapping **désactivé** (`enabled=false`) → 0 job dispatché mais identifiant conservé.
+
+**Reste (raffinements)** : régler ces mappings **dans l'app** = onglet Campagnes (**T24**, relie chaque persona active à sa campagne Smartlead avec le toggle) ; pour l'instant via SQL.
+
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 
 **Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.

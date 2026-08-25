@@ -63,7 +63,11 @@ async function main() {
   await q(`delete from linkedin_action_queue where organization_id=$1`, [ORG]);
   await q(`delete from suppressions where organization_id=$1`, [ORG]);
   await q(`delete from message_templates where organization_id=$1`, [ORG]);
+  await q(`delete from smartlead_campaigns where organization_id=$1`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
+  await q(`delete from contacts where organization_id=$1 and email like 'seqmail-%'`, [ORG]);
+  await q(`delete from personas where organization_id=$1 and name like 'SEQ %'`, [ORG]);
+  await q(`delete from accounts where organization_id=$1 and name like 'SEQ %'`, [ORG]);
 
   const camp = await seedCampaign('LK fictive', [
     { channel: 'linkedin_invite', delay_hours: 0 },
@@ -116,6 +120,60 @@ async function main() {
   check('action bloquée (suppression)', blocked?.status === 'blocked' && blocked?.block_reason === 'suppression');
   const e3 = (await q(`select status, stop_reason from enrollments where id=$1`, [enr2])).rows[0];
   check('inscription arrêtée', e3.status === 'stopped' && e3.stop_reason === 'suppression');
+
+  // --- Étape 7 : canal email → Smartlead, mapping PAR PERSONA (review #20) ------
+  console.log('\n[seq] 7. Canal email : campagne Smartlead résolue par persona');
+  const persona = (
+    await q(`insert into personas (organization_id, name) values ($1,'SEQ Directeur de site') returning id`, [ORG])
+  ).rows[0].id;
+  const account = (
+    await q(`insert into accounts (organization_id, name, domain) values ($1,'SEQ Usine Nord','usine-nord.fr') returning id`, [ORG])
+  ).rows[0].id;
+  const mkMailContact = async (v) =>
+    (
+      await q(
+        `insert into contacts (organization_id, persona_id, account_id, email, first_name, last_name)
+         values ($1,$2,$3,$4,'Jean','Test') returning id`,
+        [ORG, persona, account, `seqmail-${v}@example.test`],
+      )
+    ).rows[0].id;
+
+  const mailCamp = await seedCampaign('SEQ email', [{ channel: 'email', delay_hours: 0 }]);
+
+  // Mapping activé (persona → campagne Smartlead SL-EMAIL-77).
+  await q(
+    `insert into smartlead_campaigns (organization_id, persona_id, campaign_id, campaign_name, enabled)
+     values ($1,$2,'SL-EMAIL-77','Prospection Directeurs',true)`,
+    [ORG, persona],
+  );
+  const cm1 = await mkMailContact('on');
+  const enrM1 = await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cm1 });
+  const jobsM1 = (await tickDueEnrollments(pool, new Date(Date.now() + 10000))).filter((j) => j.channel === 'email');
+  check(
+    '1 job email vers la campagne Smartlead de la persona (SL-EMAIL-77)',
+    jobsM1.length === 1 && jobsM1[0].campaignId === 'SL-EMAIL-77',
+    JSON.stringify(jobsM1.map((j) => j.campaignId)),
+  );
+  check(
+    'lead assemblé (email + société depuis le compte)',
+    jobsM1[0]?.leads?.[0]?.email === 'seqmail-on@example.test' && jobsM1[0]?.leads?.[0]?.company_name === 'SEQ Usine Nord',
+    JSON.stringify(jobsM1[0]?.leads?.[0]),
+  );
+  const aM1 = (await q(`select channel, status from actions where enrollment_id=$1`, [enrM1])).rows[0];
+  check('action email enregistrée', aM1?.channel === 'email');
+
+  // Mapping désactivé (enabled=false) : suspension sans perte d'identifiant.
+  await q(`update smartlead_campaigns set enabled=false where organization_id=$1 and persona_id=$2`, [ORG, persona]);
+  const cm2 = await mkMailContact('off');
+  await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cm2 });
+  const jobsM2 = (await tickDueEnrollments(pool, new Date(Date.now() + 11000))).filter(
+    (j) => j.channel === 'email' && j.leads?.[0]?.email === 'seqmail-off@example.test',
+  );
+  check('mapping désactivé → aucun envoi dispatché (action planifiée)', jobsM2.length === 0);
+  const stillMapped = (
+    await q(`select campaign_id from smartlead_campaigns where organization_id=$1 and persona_id=$2`, [ORG, persona])
+  ).rows[0];
+  check('identifiant Smartlead conservé malgré la suspension', stillMapped?.campaign_id === 'SL-EMAIL-77');
 
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();
