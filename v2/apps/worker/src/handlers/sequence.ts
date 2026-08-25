@@ -49,7 +49,8 @@ interface DueRow {
   readonly account_id: string | null;
   readonly approval_policy: unknown;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
-  // Canal email (Smartlead) : mapping + champs du lead.
+  // Canal email (Smartlead) : id de campagne résolu PAR PERSONA (mapping activé),
+  // + champs du lead.
   readonly smartlead_campaign_id: string | null;
   readonly first_name: string | null;
   readonly last_name: string | null;
@@ -87,13 +88,18 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   const due = await pool.query<DueRow>(
     `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
             c.linkedin_url, c.email, c.account_id, c.first_name, c.last_name,
-            camp.approval_policy, camp.smartlead_campaign_id,
+            camp.approval_policy,
+            sc.campaign_id as smartlead_campaign_id,
             a.name as company_name, a.domain,
             ls.mode as lk_mode
        from enrollments e
        join contacts c on c.id = e.contact_id
        join campaigns camp on camp.id = e.campaign_id
        left join accounts a on a.id = c.account_id
+       left join smartlead_campaigns sc
+              on sc.organization_id = e.organization_id
+             and sc.persona_id = c.persona_id
+             and sc.enabled
        left join linkedin_settings ls on ls.organization_id = e.organization_id
       where e.status = 'active' and e.next_action_at is not null and e.next_action_at <= $1
       order by e.next_action_at asc
@@ -213,9 +219,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       });
     }
 
-    // Envoi email autorisé → job de dispatch Smartlead (mapping campagne requis).
-    // Sans mapping (`smartlead_campaign_id`), l'action reste planifiée mais n'est
-    // pas dispatchée : on ne pousse jamais vers une campagne inconnue.
+    // Envoi email autorisé → job de dispatch Smartlead. La campagne est résolue
+    // PAR PERSONA du contact (mapping `smartlead_campaigns` activé). Sans mapping
+    // activé pour la persona, l'action reste planifiée mais n'est pas dispatchée :
+    // on ne pousse jamais vers une campagne inconnue.
     if (result.dispatch && result.action && result.action.channel === 'email') {
       if (row.smartlead_campaign_id && row.email) {
         jobs.push({
@@ -235,7 +242,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         });
       } else if (!row.smartlead_campaign_id) {
         console.warn(
-          `[tick] étape email de la campagne ${row.campaign_id} sans smartlead_campaign_id — action planifiée mais non dispatchée`,
+          `[tick] étape email du contact ${row.contact_id} sans mapping Smartlead activé pour sa persona — action planifiée mais non dispatchée`,
         );
       }
     }
