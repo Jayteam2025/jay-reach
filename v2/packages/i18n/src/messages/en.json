@@ -167,7 +167,8 @@
     "linkedin": "LinkedIn",
     "annuaire": "Directory",
     "approvals": "Approvals",
-    "customers": "Customers"
+    "customers": "Customers",
+    "templates": "Messages"
   },
   "branding": {
     "eyebrow": "Identity",
@@ -552,5 +553,45 @@
     "done": "{n} customer(s) imported — exclusions created ✓",
     "listsTitle": "Customer lists",
     "entries": "{n} entr(y/ies)"
+  },
+  "templates": {
+    "eyebrow": "Library",
+    "title": "Messages",
+    "lead": "Your message templates, versioned and multilingual. A missing variable blocks sending.",
+    "new": "New message",
+    "demoNotice": "Connect Supabase to edit.",
+    "empty": "No messages yet.",
+    "edit": "Edit",
+    "versionsCount": "{n} version(s)",
+    "editTitle": "Edit message",
+    "newTitle": "New message",
+    "close": "Close",
+    "name": "Name",
+    "namePlaceholder": "Sales follow-up",
+    "channel": {
+      "label": "Channel",
+      "email": "Email",
+      "linkedin_invite": "LinkedIn invite",
+      "linkedin_message": "LinkedIn message",
+      "letter": "Letter"
+    },
+    "nature": {
+      "label": "Campaign type",
+      "signal": "Signal",
+      "list": "List"
+    },
+    "subject": "Subject",
+    "message": "Message",
+    "messagePlaceholder": "Hi {{prenom}}, …",
+    "wordCount": "{n} / {max} words",
+    "insertVar": "Insert:",
+    "fixVariables": "Fix the variables before saving.",
+    "versionHistory": "Version history",
+    "active": "Active",
+    "reactivate": "Reactivate",
+    "sentCount": "{n} sent",
+    "noVersionYet": "No version for this language.",
+    "cancel": "Cancel",
+    "saveVersion": "Save (new version)"
   }
 }

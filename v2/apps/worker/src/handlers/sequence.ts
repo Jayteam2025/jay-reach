@@ -109,9 +109,11 @@ async function resolveTemplate(
   locale: string | null,
 ): Promise<{ id: string | null; body: string | null; missingLocale: boolean }> {
   if (locale) {
+    // Version EN VIGUEUR (`is_active`) pour cette langue — permet le retour arrière
+    // (une version antérieure réactivée prime sur une plus récente désactivée).
     const byLocale = await pool.query<{ id: string; body: string }>(
       `select id, body from message_templates
-        where (id = $1 or parent_id = $1) and locale = $2
+        where (id = $1 or parent_id = $1) and locale = $2 and is_active
         order by version desc limit 1`,
       [familyId, locale],
     );
@@ -124,7 +126,8 @@ async function resolveTemplate(
     return { id: null, body: null, missingLocale: (any.rowCount ?? 0) > 0 };
   }
   const latest = await pool.query<{ id: string; body: string }>(
-    `select id, body from message_templates where id = $1 or parent_id = $1 order by version desc limit 1`,
+    `select id, body from message_templates
+      where (id = $1 or parent_id = $1) and is_active order by version desc limit 1`,
     [familyId],
   );
   const found = latest.rows[0];

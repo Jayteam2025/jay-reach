@@ -9,6 +9,7 @@ const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/prospects', key: 'prospects', icon: 'prospects' },
   { href: '/annuaire', key: 'annuaire', icon: 'sources' },
   { href: '/campaigns', key: 'campaigns', icon: 'campaigns' },
+  { href: '/settings/templates', key: 'templates', icon: 'mail' },
   { href: '/inbox', key: 'inbox', icon: 'inbox' },
   { href: '/settings/linkedin', key: 'linkedin', icon: 'linkedin' },
   { href: '/settings/sources', key: 'sources', icon: 'sources' },
