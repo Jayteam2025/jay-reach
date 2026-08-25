@@ -34,6 +34,17 @@ export interface ComposeTickInput {
   readonly requiresApproval: boolean;
   /** Le canal est envoyable (ex. URL LinkedIn présente). Sinon → bloqué. */
   readonly sendable: boolean;
+  /**
+   * Variables du message non résolues (vides et sans repli). Non vide → action
+   * bloquée `missing_variable` (CLAUDE.md #2 : jamais un `{{champ}}` littéral).
+   * L'inscription n'est PAS arrêtée : elle attend que le contact soit complété.
+   */
+  readonly unresolvedVariables?: readonly string[];
+  /**
+   * La variante de langue du message (locale du contact) est absente de la
+   * famille de templates → action bloquée `missing_locale` (spec §84-88).
+   */
+  readonly missingLocale?: boolean;
 }
 
 export interface EmittedAction {
@@ -95,6 +106,32 @@ export function composeTick(input: ComposeTickInput): ComposeTickResult {
       nextStep: currentStep,
       nextActionAtMs: null,
       stopReason: 'not_sendable',
+      dispatch: false,
+    };
+  }
+
+  // Variante de langue absente → bloqué, on N'AVANCE PAS (attend l'ajout de la
+  // variante). L'inscription reste active (récupérable), pas arrêtée.
+  if (input.missingLocale) {
+    return {
+      action: { ...base, status: 'blocked', blockReason: 'missing_locale' },
+      nextStatus: 'active',
+      nextStep: currentStep,
+      nextActionAtMs: null,
+      stopReason: null,
+      dispatch: false,
+    };
+  }
+
+  // Variable(s) non résolue(s) → bloqué, en attente de complétion du contact.
+  // Jamais d'envoi avec un champ vide (CLAUDE.md #2).
+  if (input.unresolvedVariables && input.unresolvedVariables.length > 0) {
+    return {
+      action: { ...base, status: 'blocked', blockReason: 'missing_variable' },
+      nextStatus: 'active',
+      nextStep: currentStep,
+      nextActionAtMs: null,
+      stopReason: null,
       dispatch: false,
     };
   }

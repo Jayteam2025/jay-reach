@@ -249,6 +249,25 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Moteur de variables des messages + blocage (T19, partie moteur) [2026-08-25]
+
+Le schéma `message_templates` était versionné/multilingue, mais **aucune logique de variables** n'existait : ni extraction, ni validation, ni rendu. Le garde-fou `unresolvedVariables` (guards.ts) existait mais **n'était branché nulle part**, et le worker chargeait le corps LinkedIn sans filtrer la langue ni substituer les `{{champ}}` (un `{{prenom}}` serait parti littéral — violation de la règle CLAUDE.md #2).
+
+**Construit** : module pur `@jay-reach/core/messages/variables.ts`.
+- **Extraction** : `parseTemplateTokens` / `extractVariableNames`, syntaxe de repli `{{x|défaut}}`.
+- **Validation statique à l'enregistrement** (`validateTemplateVariables(body, nature)`) : matrice signal/liste (`STANDARD_VARIABLES`), refus explicite d'une variable inconnue, d'une variable réservée à l'autre nature (« {{signal_date}} n'existe pas pour une campagne alimentée par une liste »), ou d'un repli sur `{{prenom}}`.
+- **Rendu** (`renderTemplate(body, values)`) : substitution + valeurs de repli ; une variable vide sans repli est remontée dans `missing` (jamais un `{{champ}}` littéral ni un blanc envoyé).
+- **Longueurs par canal** (`CHANNEL_WORD_LIMITS`, `exceedsWordLimit`) : 90 (email ouverture) / 70 (relance) / 45 (note LinkedIn) / 60 (message LinkedIn) / 120 (courrier).
+
+**Application dans le séquenceur** (règle #2) : `composeTick` gère deux nouveaux blocages — `missing_variable` (variable non résolue) et `missing_locale` (variante de langue absente). Les deux **bloquent l'action mais N'ARRÊTENT PAS l'inscription** (statut `active`, `next_action_at` null) : c'est récupérable, l'opérateur complète le contact ou ajoute la variante, un re-tick réévalue. Le worker charge le corps **par la langue du contact** (`contacts.locale`), assemble les valeurs (contact/compte/persona/signal/liste), rend, et trace la version exacte (`actions.template_id`). Les champs manquants sont nommés dans `actions.payload.missingVariables` (pour le regroupement UI).
+
+**Décisions / périmètre** :
+- **Rendu local réservé aux canaux dont Jay Reach possède le corps** (message LinkedIn, courrier). L'email est rendu par Smartlead (variables = champs du lead) ; son blocage variable relève de T20/Smartlead, pas d'ici.
+- Sans `contacts.locale` connue, on prend la dernière version (repli, pas de `missing_locale`) plutôt que de bloquer.
+- **Non fait dans cette partie** (partie « éditeur » à suivre) : l'écran d'édition versionné avec onglets fr/en/nl et indicateur de manque, le panneau d'historique de versions + taux de réponse, la traduction assistée relue, le retour arrière de version (nécessite une colonne `is_active`/`status` — absente, non ajoutée ici), et l'UI de regroupement des actions bloquées par champ manquant. Le `guards.ts` porte encore une logique `unresolvedVariables` parallèle (non branchée) ; à unifier avec `composeTick` lors de cette partie.
+
+**Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 8 (base locale, zéro envoi réel) → fr + prénom présent = corps substitué dispatché (« Bonjour Marie chez … ») + `template_id` tracé ; fr + prénom manquant = **bloqué `missing_variable`**, champ `prenom` nommé, inscription non arrêtée ; langue `nl` sans variante = **bloqué `missing_locale`**. + 21 tests unitaires (extraction, validation par nature, rendu/repli, longueurs, `composeTick`).
+
 ## Résolu — Enfilage email depuis le tick vers Smartlead (T20) [2026-08-25]
 
 Le tick du séquenceur émettait bien l'action email mais **n'enfilait pas de job Smartlead** (le `dispatch → Smartlead` existait, mais rien ne l'alimentait pour l'email). Comblé.

@@ -14,6 +14,7 @@ export * from './sequencer/index.js';
 export * from './import/index.js';
 export * from './linkedin/index.js';
 export * from './inbox/index.js';
+export * from './messages/index.js';
 
 /** Version du paquet cœur — sert de sonde de santé au worker/web. */
 export const CORE_VERSION = '0.0.0';
