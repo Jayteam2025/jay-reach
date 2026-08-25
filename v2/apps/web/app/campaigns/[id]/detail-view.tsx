@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { CampaignDetail, SeqStepDetail, Sentiment, Channel } from '../../../lib/sample-campaign-detail';
 import { Icon, type IconName } from '../../icons';
 import { ApprovalList, type ApprovalRow } from '../../approvals/approval-list';
+import { setCampaignStatus } from '../../actions/campaigns';
 
 const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost' };
 const SENTIMENT_TONE: Record<Sentiment, string | undefined> = { positive: 'live', later: 'neutral', negative: 'flare' };
@@ -53,6 +55,9 @@ export function CampaignDetailView({
   orgId: string;
 }) {
   const t = useTranslations('campaigns');
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('sequence');
   const [openStep, setOpenStep] = useState<SeqStepDetail | null>(null);
   const [delays, setDelays] = useState<number[]>(detail.steps.map((s) => s.delayDays));
@@ -61,6 +66,15 @@ export function CampaignDetailView({
   const [newVar, setNewVar] = useState('');
 
   const exitedPct = detail.contacted > 0 ? Math.round((detail.replies / detail.contacted) * 100) : 0;
+
+  const toggleStatus = (): void => {
+    const next = detail.status === 'active' ? 'paused' : 'active';
+    startTransition(async () => {
+      const res = await setCampaignStatus(orgId, detail.id, next);
+      if (res.ok) router.refresh();
+      else setStatusError(res.error);
+    });
+  };
 
   const bump = (i: number, delta: number): void =>
     setDelays((d) => d.map((v, idx) => (idx === i ? Math.max(0, (v ?? 0) + delta) : v)));
@@ -102,9 +116,16 @@ export function CampaignDetailView({
           <a className="rs-btn" href="/import">
             {t('addContacts')}
           </a>
-          <button className="rs-btn">{t('pause')}</button>
+          <button className="rs-btn" onClick={toggleStatus} disabled={pending}>
+            {detail.status === 'active' ? t('pause') : t('activate')}
+          </button>
         </div>
       </div>
+      {statusError ? (
+        <p role="status" className="rs-row-sub" style={{ color: 'var(--flare)' }}>
+          {statusError}
+        </p>
+      ) : null}
 
       {/* Onglets */}
       <div className="rs-tabs" style={{ marginTop: 16 }}>

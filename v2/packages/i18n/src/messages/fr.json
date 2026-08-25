@@ -428,7 +428,8 @@
       "close": "Fermer",
       "approval": "Approbation",
       "chars": "{n} car. max"
-    }
+    },
+    "activate": "Activer"
   },
   "linkedin": {
     "eyebrow": "Canal",
@@ -593,5 +594,30 @@
     "noVersionYet": "Aucune version pour cette langue.",
     "cancel": "Annuler",
     "saveVersion": "Enregistrer (nouvelle version)"
+  },
+  "campaignNew": {
+    "back": "← Campagnes",
+    "eyebrow": "Nouvelle campagne",
+    "title": "Créer une campagne",
+    "lead": "D'où viennent les prospects, qui viser, et à quel rythme. La séquence se construit ensuite.",
+    "demoNotice": "Connectez Supabase pour créer une campagne.",
+    "name": "Nom",
+    "namePlaceholder": "Relance commerciaux terrain",
+    "entryKind": "Point d'entrée",
+    "kind": {
+      "source": "Source de signaux",
+      "list": "Liste importée"
+    },
+    "pickSource": "Source",
+    "pickList": "Liste",
+    "choose": "Choisir…",
+    "noneAvailable": "Aucune option disponible.",
+    "personas": "Personas ciblés",
+    "noPersona": "Aucun persona actif.",
+    "minScore": "Score minimum",
+    "dailyCap": "Plafond quotidien",
+    "dailyCapPlaceholder": "ex. 50",
+    "cancel": "Annuler",
+    "create": "Créer la campagne"
   }
 }

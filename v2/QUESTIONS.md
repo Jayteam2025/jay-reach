@@ -249,6 +249,23 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Création de campagne + backbone d'édition (T24, partie création) [2026-08-25]
+
+L'écran de campagne existait mais **100 % maquette** : la modale d'étape et les délais n'étaient qu'en état local (`useState`), aucune server action, et « Nouvelle campagne » renvoyait vers `/import`. Aucun moyen de **créer** une campagne. T24 est découpé (comme T19) : cette partie livre la **création** + tout le **backbone d'actions**, la suivante branchera l'éditeur de séquence dans l'écran détail.
+
+**Validation** : dans `@jay-reach/core/campaigns/validation.ts` (Zod, règle CLAUDE.md #6 — pas de précédent Zod dans `actions/`, on le centralise dans le cœur, testable) : `parseCampaignCreate` (nom + `entryKind` source|list + `entryId` uuid + minScore 0-100 + personaIds + dailyCap, `.strict()`), `parseCampaignSettings`, `parseStep` (canal, delayHours, templateParentId, condition, stopOn, callBrief), et les projections jsonb `toEntryRules` (`{min_score, personas}`) / `toStepConditions` (`{requires}`).
+
+**Server actions** `apps/web/app/actions/campaigns.ts` (toutes `requireRole('admin')`, RLS) : `createCampaign` (source XOR liste, statut `draft`), `updateCampaignSettings`, `setCampaignStatus`, `addStep` (position = max+1), `updateStep`, `deleteStep`, `moveStep`. Le **réordonnancement** passe par une **RPC atomique** `move_sequence_step` (migration `20260825150000`) : la contrainte `unique(campaign_id, position)` n'est pas déférable → le swap se fait dans une fonction (transaction) via une position temporaire.
+
+**Écran de création** `/campaigns/new` (RSC charge sources/listes/personas actifs + client) : nom, toggle source/liste + sélecteur, personas (toggles), score minimum, plafond quotidien → `createCampaign` → redirection vers le détail. Bouton « Nouvelle campagne » recâblé. Bouton **pause/activer** de l'écran détail câblé sur `setCampaignStatus`.
+
+**Décisions / périmètre** :
+- **`entry_rules.personas`** n'existait pas (seul `min_score` circulait) : on définit `entry_rules = { min_score?, personas?: uuid[] }`. La **consommation** de `entry_rules.personas` par l'enrôlement/scoring reste à câbler (aujourd'hui seul `min_score` est lu).
+- **Conditions d'étape** : schéma `conditions = { requires: 'previous_opened' | 'previous_accepted' | 'no_reply' }`. Persistées ici ; leur **évaluation par le tick** (`composeTick` → `skipped` si non satisfaite) n'est pas encore branchée (raffinement séquenceur).
+- **Non fait** (partie « éditeur de séquence » à suivre) : brancher dans l'écran détail l'ajout/màj/suppression/réordonnancement d'étapes, l'édition des délais et conditions, et le **remplacement de la modale message par un lien vers un template** (le contenu se règle désormais dans `/settings/templates`, T19) ; lire `conditions`/`stop_on` et résoudre la version active du template dans `page.tsx`. Les actions sont prêtes et vérifiées.
+
+**Vérifié** : `bash test/pg-verify/campaigns.sh` (contexte auth réel, zéro envoi) → **source ET liste rejeté** + **ni l'un ni l'autre rejeté** (`campaigns_one_source`), `entry_rules` persistées, positions (dont **doublon rejeté**), condition persistée, **réordonnancement atomique** (swap sans doublon), update/delete. + 11 tests unitaires Zod, build web (`/campaigns/new`), typecheck, lint, 159 tests.
+
 ## Résolu — Éditeur de messages versionné et multilingue (T19, partie éditeur) [2026-08-25]
 
 Suite de la partie moteur : l'écran d'édition. La partie moteur avait laissé de côté l'UI, le retour arrière de version (colonne absente) et l'unification avec `guards.ts`.
