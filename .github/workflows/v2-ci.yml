@@ -6,6 +6,11 @@ name: CI v2
 #
 # Ne se declenche que sur les chemins du v2. Une PR qui ne touche pas v2/ ne
 # lance pas ce workflow.
+#
+# Volontairement, le workflow ne se declenche pas sur son propre fichier : tant
+# que v2/ n'est pas sur main, le job echouerait faute de v2/pnpm-lock.yaml a
+# mettre en cache. Une modification de ce fichier se verifie donc avec une PR
+# qui touche aussi v2/.
 
 on:
   push:
@@ -13,13 +18,11 @@ on:
       - main
     paths:
       - 'v2/**'
-      - '.github/workflows/v2-ci.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'v2/**'
-      - '.github/workflows/v2-ci.yml'
 
 permissions:
   contents: read
