@@ -15,6 +15,9 @@ export default tseslint.config(
       "backups/**",
       "archive/**",
       ".worktrees/**",
+      // Le monorepo v2 a sa propre chaine de lint (v2/eslint.config.mjs) et son
+      // propre tsconfig : le scanner ici produit 153 erreurs de parsing.
+      "v2/**",
       "**/* [0-9].ts",
       "**/* [0-9].tsx",
       "**/* [0-9].js",

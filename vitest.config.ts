@@ -16,6 +16,7 @@ export default defineConfig({
       'node_modules',
       'dist',
       'supabase/functions/**/*.test.ts', // Exclude Deno tests
+      'v2/**', // Le monorepo v2 a sa propre suite (v2/vitest.config.ts)
     ],
   },
 });
