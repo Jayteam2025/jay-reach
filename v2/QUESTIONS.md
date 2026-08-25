@@ -197,6 +197,23 @@ Un **projet Supabase hébergé dédié au v2** est en place (`ywlvazimwuoiykhnha
 
 **Reste à câbler (parité T12).** L'INSERT d'auto-apprentissage doit être appelé par le scoring quand le modèle juge une entreprise cabinet/intermédiaire (score 0 + motif). Le point d'appel est prêt (`learnRecruitmentAgency`) ; il sera invoqué au moment où le worker persiste le scoring (complétion de T12), qui n'est pas encore branché.
 
+**Correction (2026-08-25) — collision de nom avec le schéma v1 [retour de JB].** La table `recruitment_agencies_blacklist` existe DÉJÀ dans le schéma actuel, avec une AUTRE structure (sans `organization_id`). Sur une base vierge on ne le voyait pas ; sur toute instance existante, `create table if not exists` était un no-op et le reste de la migration référençait une colonne absente → **échec**. Corrigé : ajout explicite `alter table … add column if not exists organization_id …` (no-op sur base v2 fraîche, ajoute la colonne sur base v1) + policies `drop … if exists` pour l'idempotence. **Vérifié en réel** : migration rejouée sur une table de structure v1 (transaction annulée sur la base hébergée) → OK, idempotente, lignes v1 conservées (org NULL), déduplication correcte.
+
+## À trancher — Clé de déduplication des entreprises (scission `prospect_profiles` → `accounts` + `contacts`) [demandé par JB, 2026-08-25]
+
+**Contexte.** Le v1 fusionne entreprise + contact sur une seule ligne (`prospect_profiles`). La cible sépare `accounts` (entreprise) et `contacts` (personne). Il faut donc regrouper les lignes v1 par entreprise. Sur l'instance de référence de JB : **55 lignes ≈ 20 comptes réels**. Trois clés possibles : SIREN, domaine, `company_group_id`.
+
+**Ce que révèlent les deux schémas :**
+- **v1** `prospect_profiles` porte déjà : `company_group_id` (uuid), `company_siren`, `domain` (+ `domain_source`), `company_name`. Le v1 a une logique de « companies virtuelles » : **`company_group_id` regroupe déjà les profils en entreprises** — c'est ce regroupement que l'opérateur voit (les ~20 comptes). `prospect_actions` est même clé par `company_group_id`.
+- **v2** `accounts` : `siren` et `domain` sont des attributs avec index UNIQUE par organisation (`(org, siren) where siren not null`, `(org, domain) where domain not null`) + recherche trigram sur `name`.
+
+**Recommandation (à valider par le boss).** Clé primaire de regroupement = **`company_group_id`**, pas SIREN ni domaine.
+- *Pourquoi* : c'est la **déduplication déjà accumulée à l'usage** (CLAUDE.md #3 : « toute connaissance encodée dans l'existant est un actif »). Elle reproduit exactement le nombre de comptes que l'opérateur connaît (~20), au lieu d'en re-dériver un autre. SIREN est souvent NULL (prospects non résolus/étrangers) → regrouperait différemment ; le domaine est partagé entre entités ou absent → moins fiable.
+- *SIREN et domaine deviennent des attributs du compte* (et alimentent les index UNIQUE v2). Si deux `company_group_id` résolvent le même SIREN → conflit à réconcilier (à **logger**, pas fusionner silencieusement).
+- *Repli* pour les lignes sans `company_group_id` : SIREN, puis domaine, puis **ligne isolée** (conservateur — ne jamais sur-fusionner).
+
+**Impact si le boss tranche autrement** : si SIREN imposé comme clé primaire, le nombre de comptes changera (les NULL SIREN éclatent) et il faudra une stratégie explicite pour les non-résolus. La décision est notée ici ; le code de migration vient plus tard (après parité, cf. issue #17).
+
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 
 **Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.
