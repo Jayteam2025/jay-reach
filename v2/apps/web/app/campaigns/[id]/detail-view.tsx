@@ -3,7 +3,7 @@
 import { useState, useTransition, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { CampaignDetail, SeqStepDetail, Channel, StepConditionKind } from '../../../lib/sample-campaign-detail';
+import type { CampaignDetail, SeqStepDetail, Channel } from '../../../lib/sample-campaign-detail';
 import { Icon, type IconName } from '../../icons';
 import { ApprovalList, type ApprovalRow } from '../../approvals/approval-list';
 import { setCampaignStatus, addStep, updateStep, deleteStep, moveStep } from '../../actions/campaigns';
@@ -14,7 +14,6 @@ const TABS = ['overview', 'contacts', 'queue', 'sourcesPersonas', 'sequence', 'a
 type Tab = (typeof TABS)[number];
 const FUNCTIONAL: Tab[] = ['overview', 'sequence', 'queue'];
 const CHANNELS: Channel[] = ['email', 'linkedin_invite', 'linkedin_message', 'letter', 'call'];
-const CONDITIONS: StepConditionKind[] = ['previous_opened', 'previous_accepted', 'no_reply'];
 
 function channelIcon(channel: Channel): IconName {
   if (channel === 'linkedin_invite' || channel === 'linkedin_message') return 'linkedin';
@@ -35,7 +34,6 @@ interface StepDraft {
   channel: Channel;
   templateParentId: string | null;
   delayDays: number;
-  condition: StepConditionKind | null;
 }
 
 export function CampaignDetailView({
@@ -77,15 +75,13 @@ export function CampaignDetailView({
     run(() => setCampaignStatus(orgId, detail.id, next));
   };
 
-  const openNew = (): void =>
-    setDraft({ id: null, channel: 'email', templateParentId: null, delayDays: 0, condition: null });
+  const openNew = (): void => setDraft({ id: null, channel: 'email', templateParentId: null, delayDays: 0 });
   const openEdit = (step: SeqStepDetail): void =>
     setDraft({
       id: step.id ?? null,
       channel: step.channel,
       templateParentId: step.templateParentId ?? null,
       delayDays: step.delayDays,
-      condition: step.conditionKind ?? null,
     });
 
   const saveDraft = (): void => {
@@ -94,7 +90,6 @@ export function CampaignDetailView({
       channel: draft.channel,
       delayHours: Math.max(0, Math.round(draft.delayDays)) * 24,
       templateParentId: draft.templateParentId,
-      condition: draft.condition,
     };
     run(() => (draft.id ? updateStep(orgId, detail.id, draft.id, payload) : addStep(orgId, detail.id, payload)));
   };
@@ -203,9 +198,6 @@ export function CampaignDetailView({
                     <div className="rs-delay-row">
                       <span>{t('wait')}</span>
                       <span className="mono">{t('dayUnit', { n: step.delayDays })}</span>
-                      <span className={step.conditionKind ? 'rs-cond' : undefined}>
-                        · {step.conditionKind ? te(`cond.${step.conditionKind}`) : t('noCondition')}
-                      </span>
                     </div>
                   ) : null}
 
@@ -369,22 +361,6 @@ export function CampaignDetailView({
                 value={String(draft.delayDays)}
                 onChange={(e) => setDraft({ ...draft, delayDays: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })}
               />
-            </label>
-
-            <label className="rs-label">
-              {te('condition')}
-              <select
-                className="rs-input"
-                value={draft.condition ?? ''}
-                onChange={(e) => setDraft({ ...draft, condition: (e.target.value || null) as StepConditionKind | null })}
-              >
-                <option value="">{te('cond.none')}</option>
-                {CONDITIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {te(`cond.${c}`)}
-                  </option>
-                ))}
-              </select>
             </label>
 
             {draft.channel === 'letter' ? (
