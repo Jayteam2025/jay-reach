@@ -55,6 +55,13 @@ export default tseslint.config(
     },
   },
   {
+    // Service worker (Web Push) : `self` est la globale du contexte worker.
+    files: ['apps/web/public/sw.js'],
+    languageOptions: {
+      globals: { self: 'readonly' },
+    },
+  },
+  {
     // Règle CLAUDE.md : aucune chaîne d'interface en dur. Tout texte affiché
     // passe par next-intl. La règle interdit le texte JSX littéral côté web.
     files: ['apps/web/**/*.tsx'],
