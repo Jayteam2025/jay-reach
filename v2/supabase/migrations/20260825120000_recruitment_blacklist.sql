@@ -47,6 +47,16 @@ create table if not exists public.recruitment_agencies_blacklist (
 alter table public.recruitment_agencies_blacklist
   add column if not exists organization_id uuid references public.organizations(id) on delete cascade;
 
+-- Meme cause, autre effet : le schema actuel porte une contrainte d'unicite
+-- GLOBALE sur le nom (`recruitment_agencies_blacklist_name_normalized_key`,
+-- heritee du modele mono-organisation). Elle contredit le modele cible, qui
+-- autorise une entree globale ET une entree par organisation pour un meme nom :
+-- laissee en place, la deuxieme organisation qui blackliste un cabinet deja
+-- present serait rejetee. On la retire avant de creer les index partiels
+-- ci-dessous. `if exists` : no-op sur une base fraiche, ou elle n'a jamais existe.
+alter table public.recruitment_agencies_blacklist
+  drop constraint if exists recruitment_agencies_blacklist_name_normalized_key;
+
 -- Unicité : une entrée globale par nom ; une entrée par (org, nom).
 create unique index if not exists uq_recruitment_blacklist_global
   on public.recruitment_agencies_blacklist (name_normalized) where organization_id is null;
