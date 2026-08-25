@@ -52,6 +52,14 @@ describe('decideAccess — garde d’authentification du middleware', () => {
     expect(decideAccess({ pathname: '/api/health', configured: false, authenticated: false, allowUnconfigured: false })).toBe('allow');
   });
 
+  it('un webhook entrant reste joignable en production (Supabase configuré, non authentifié)', () => {
+    // Scénario réel : Smartlead POST sans session. Sans /api/webhooks en public,
+    // le middleware redirigerait vers /login et le handler ne serait jamais appelé.
+    expect(
+      decideAccess({ pathname: '/api/webhooks/smartlead', configured: true, authenticated: false, allowUnconfigured: false }),
+    ).toBe('allow');
+  });
+
   it('les chemins publics restent accessibles sans session quand Supabase est configuré', () => {
     const publicPaths = [
       '/login',
@@ -78,6 +86,6 @@ describe('decideAccess — garde d’authentification du middleware', () => {
   });
 
   it('la liste des préfixes publics est minimale et explicite', () => {
-    expect(PUBLIC_PREFIXES).toEqual(['/login', '/api/extension', '/api/health', '/extension/auth']);
+    expect(PUBLIC_PREFIXES).toEqual(['/login', '/api/extension', '/api/webhooks', '/api/health', '/extension/auth']);
   });
 });
