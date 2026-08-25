@@ -1,6 +1,6 @@
 /**
- * Les douze files de fond (docs/01-architecture.md). Nom + clé i18n + politique
- * de reprise. Partagé par le worker (qui les crée) et l'écran d'admin (qui les liste).
+ * Les files de fond (docs/01-architecture.md). Nom + clé i18n + politique de
+ * reprise. Partagé par le worker (qui les crée) et l'écran d'admin (qui les liste).
  */
 
 export interface QueueRetryPolicy {
@@ -21,6 +21,7 @@ const DEFAULT_RETRY: QueueRetryPolicy = { retryLimit: 5, retryBackoff: true };
 export const QUEUES: readonly QueueDef[] = [
   { name: 'sources.discover', descriptionKey: 'jobs.q.sourcesDiscover', retry: DEFAULT_RETRY },
   { name: 'signals.qualify', descriptionKey: 'jobs.q.signalsQualify', retry: DEFAULT_RETRY },
+  { name: 'signals.score', descriptionKey: 'jobs.q.signalsScore', retry: DEFAULT_RETRY },
   { name: 'imports.process', descriptionKey: 'jobs.q.importsProcess', retry: DEFAULT_RETRY },
   { name: 'enrichment.company', descriptionKey: 'jobs.q.enrichmentCompany', retry: DEFAULT_RETRY },
   { name: 'enrichment.contacts', descriptionKey: 'jobs.q.enrichmentContacts', retry: DEFAULT_RETRY },

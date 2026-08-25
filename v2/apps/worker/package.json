@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "@jay-reach/core": "workspace:*",
     "@jay-reach/db": "workspace:*",
     "@jay-reach/providers": "workspace:*",

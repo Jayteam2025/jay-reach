@@ -59,6 +59,7 @@
     "q": {
       "sourcesDiscover": "Collecte des sources",
       "signalsQualify": "Qualification des signaux",
+      "signalsScore": "Scoring des signaux",
       "importsProcess": "Traitement des imports",
       "enrichmentCompany": "Enrichissement entreprise",
       "enrichmentContacts": "Enrichissement contacts",

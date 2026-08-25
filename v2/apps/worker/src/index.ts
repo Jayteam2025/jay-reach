@@ -4,6 +4,8 @@ import { QUEUES } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
+import { runScore } from './handlers/score.js';
+import { createAnthropicScorer } from './scorer-anthropic.js';
 import {
   runDispatch,
   runLinkedInDispatch,
@@ -21,12 +23,13 @@ import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/se
 import { createPool, insertSignals, upsertResolvedAccount, startSourceRun, finishSourceRun } from './db.js';
 import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
-import { enqueueDiscoverForActiveSources } from './producer.js';
+import { enqueueDiscoverForActiveSources, enqueueScoringForOrgs } from './producer.js';
 import { deterministicUuid, currentBucket } from './ids.js';
 
 const WIRED = new Set([
   'sources.discover',
   'signals.qualify',
+  'signals.score',
   'actions.dispatch',
   'enrichment.company',
   'enrichment.contacts',
@@ -35,6 +38,7 @@ const WIRED = new Set([
 ]);
 const SMARTLEAD_PROVIDER = 'smartlead';
 const FULLENRICH_PROVIDER = 'fullenrich';
+const ANTHROPIC_PROVIDER = 'anthropic';
 // Fréquence du producteur (met les sources actives en file). Défaut : 15 min.
 const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 15 * 60 * 1000);
 // Fréquence du tick de séquence (avance les inscriptions dues). Défaut : 1 min.
@@ -119,6 +123,29 @@ async function main(): Promise<void> {
       trusted: resolved?.trusted ?? false,
     });
     console.log(`[qualify] compte=${accountId ?? '—'} SIREN=${resolved?.siren ?? '—'} (${resolved?.name_match ?? 'n/a'})`);
+  });
+
+  // Scoring des signaux : pré-filtre cabinets (blacklist + NAF) + fraîcheur, puis
+  // scoring LLM par persona, persistance et auto-apprentissage de la blacklist.
+  // Le modèle passe par le provider `anthropic` (coffre + repli env). Sans clé,
+  // le job est ignoré (aucun scoring, pas d'erreur).
+  await boss.work('signals.score', async ([job]) => {
+    const { organizationId } = job.data as { organizationId: string };
+    const credentials = await resolveProviderCredentials(pool, organizationId, ANTHROPIC_PROVIDER, { encryptionKey });
+    const apiKey = credentials?.api_key;
+    if (!apiKey) {
+      console.warn(`[score] Anthropic non configuré pour l’org ${organizationId} — job ignoré`);
+      return;
+    }
+    const summary = await runScore({ pool, organizationId, scorer: createAnthropicScorer(apiKey) });
+    if (summary.skippedNoPrompt) {
+      console.log(`[score] org ${organizationId} : aucune persona active avec prompt de scoring — ignoré`);
+      return;
+    }
+    console.log(
+      `[score] org ${organizationId} : ${summary.considered} examinés, ${summary.prefiltered} pré-filtrés, ` +
+        `${summary.qualified} qualifiés, ${summary.discarded} écartés, ${summary.learned} appris`,
+    );
   });
 
   await boss.work('actions.dispatch', async ([job]) => {
@@ -237,6 +264,11 @@ async function main(): Promise<void> {
       const n = await enqueueDiscoverForActiveSources(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
       if (n > 0) {
         console.log(`[producer] ${n} source(s) active(s) mise(s) en file`);
+      }
+      // Enfile le scoring des organisations ayant des signaux non scorés.
+      const s = await enqueueScoringForOrgs(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
+      if (s > 0) {
+        console.log(`[producer] scoring enfilé pour ${s} organisation(s)`);
       }
     } catch (err) {
       console.error('[producer] échec', err);

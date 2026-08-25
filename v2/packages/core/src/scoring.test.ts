@@ -2,9 +2,33 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScoringUserMessage,
   estimateScoringCostEur,
+  isCabinetVerdict,
+  meetsScoreThreshold,
   parseScoringResponse,
   passesRules,
 } from './scoring.js';
+
+describe('isCabinetVerdict', () => {
+  it('détecte un motif de cabinet / intermédiaire', () => {
+    expect(isCabinetVerdict('Cabinet de recrutement, recrute pour un client')).toBe(true);
+    expect(isCabinetVerdict("Agence d'intérim")).toBe(true);
+    expect(isCabinetVerdict('Recrute pour le compte de tiers')).toBe(true);
+    expect(isCabinetVerdict('Intermédiaire de placement')).toBe(true);
+  });
+  it("ne se déclenche pas sur une vraie entreprise", () => {
+    expect(isCabinetVerdict('PME industrielle qui recrute un directeur commercial')).toBe(false);
+    expect(isCabinetVerdict(null)).toBe(false);
+    expect(isCabinetVerdict('')).toBe(false);
+  });
+});
+
+describe('meetsScoreThreshold', () => {
+  it('compare au seuil (inclusif)', () => {
+    expect(meetsScoreThreshold(60, 60)).toBe(true);
+    expect(meetsScoreThreshold(59, 60)).toBe(false);
+    expect(meetsScoreThreshold(100, 0)).toBe(true);
+  });
+});
 
 describe('parseScoringResponse', () => {
   it('parse un JSON avec fences et préambule, et clampe le score', () => {

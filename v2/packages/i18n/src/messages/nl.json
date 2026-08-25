@@ -59,6 +59,7 @@
     "q": {
       "sourcesDiscover": "Bronnen ontdekken",
       "signalsQualify": "Signalen kwalificeren",
+      "signalsScore": "Signalen scoren",
       "importsProcess": "Imports verwerken",
       "enrichmentCompany": "Bedrijfsverrijking",
       "enrichmentContacts": "Contactverrijking",

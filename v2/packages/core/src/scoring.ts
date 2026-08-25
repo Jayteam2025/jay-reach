@@ -96,3 +96,22 @@ export function buildScoringUserMessage(prospects: readonly ScoringProspect[]): 
 export function estimateScoringCostEur(prospectCount: number, pricePerProspectEur: number): number {
   return Math.round(prospectCount * pricePerProspectEur * 10000) / 10000;
 }
+
+// Le modèle signale un cabinet de recrutement / intermédiaire quand son motif le
+// dit (« recrute pour un client », « cabinet », « intérim »…). On s'en sert pour
+// l'auto-apprentissage de la blacklist (source auto_score), fidèle au v1.
+const CABINET_VERDICT_RE =
+  /\b(cabinet|agence)\s+de\s+recrutement|recrute\s+pour|pour\s+(le\s+compte|un\s+client)|int[eé]rim|interim|staffing|portage|prestataire\s+de\s+recrutement|soci[eé]t[eé]\s+de\s+placement|intermédiaire|intermediaire\b/i;
+
+/**
+ * Le motif de scoring désigne-t-il un cabinet/intermédiaire ? Utilisé pour
+ * déclencher l'apprentissage de la blacklist quand le modèle met un score bas.
+ */
+export function isCabinetVerdict(reason: string | null | undefined): boolean {
+  return Boolean(reason && CABINET_VERDICT_RE.test(reason));
+}
+
+/** Un signal atteint-il le seuil de qualification (score ≥ minScore) ? */
+export function meetsScoreThreshold(score: number, minScore: number): boolean {
+  return score >= minScore;
+}

@@ -222,6 +222,20 @@ Périmètre minimal pour que le v2 remplace le v1 = **Jalons 0 + 1 + 2, + T19, +
 
 Et deux compléments **dans** la plage, cadrés mais pas finis : l'**auto-apprentissage de la blacklist** (T12) et le **mapping campagne→Smartlead + enfilage depuis le tick** (T20). Le reste (LinkedIn, courrier, téléphone, boîte de réception complète, API publique) reste hors critère de bascule.
 
+## Résolu — Scoring LLM des signaux + auto-apprentissage blacklist (T12) [2026-08-25]
+
+Le pipeline avait `discover → qualify (INSEE)` mais **aucun scoring LLM** ni consommation de la blacklist. Comblé : nouvelle file `signals.score` + handler `apps/worker/src/handlers/score.ts` (`runScore`).
+
+**Étapes** : (1) pré-filtre bon marché — cabinets (blacklist DB + NAF division 78) → `discarded/recruitment_agency`, signaux périmés (fenêtre 30 j) → `discarded/stale` ; (2) scoring LLM des survivants par persona ; (3) persistance `signals.score/score_reason/scored_at/status` (≥ seuil → `qualified`, sinon `discarded/low_score`) ; (4) **auto-apprentissage** : score 0 + motif « cabinet » (`isCabinetVerdict`) → `learnRecruitmentAgency` (blacklist de l'org) + `discarded/recruitment_agency`.
+
+**Décisions conservatrices (à affiner par ticket dédié)** :
+- **Prompt de scoring** = celui de la **première persona active** avec un `scoring_prompt` exploitable (≥ 200 car., comme `signal-scoring-core`). Sans prompt → org ignorée (aucun scoring, pas de repli). *Raffinement* : scorer chaque signal contre chaque persona et garder le meilleur — non fait.
+- **Seuil de qualification** = 60 (défaut, configurable). **Fenêtre de fraîcheur** = 30 j. **Lot** = 50 signaux/job.
+- **Modèle derrière une interface** (`SignalScorer`) : l'adaptateur réel `scorer-anthropic.ts` (provider `anthropic`, coffre + repli env `ANTHROPIC_API_KEY`, modèle `claude-opus-5`) ; sans clé, le job est ignoré. **Tests hermétiques** avec un scorer déterministe (zéro appel réseau).
+- **Chaînage** : producteur périodique `enqueueScoringForOrgs` (un `signals.score` par org ayant des signaux `new`/non scorés, idempotent par fenêtre). Le déclenchement fin (juste après qualify, par signal) reste un raffinement.
+
+**Vérifié en réel** : `runScore` exécuté contre la base hébergée avec un scorer déterministe, en transaction annulée → 4 signaux : Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82), Cabinet Louche (score 0 + verdict) **auto-appris** dans la blacklist de l'org + écarté. + 4 tests unitaires (`isCabinetVerdict`, `meetsScoreThreshold`).
+
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 
 **Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.
