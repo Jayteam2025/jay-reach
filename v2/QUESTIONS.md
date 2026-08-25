@@ -249,6 +249,18 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Enfilage email depuis le tick vers Smartlead (T20) [2026-08-25]
+
+Le tick du séquenceur émettait bien l'action email mais **n'enfilait pas de job Smartlead** (le `dispatch → Smartlead` existait, mais rien ne l'alimentait pour l'email). Comblé.
+
+- **Mapping** : migration `20260825130000` ajoute `campaigns.smartlead_campaign_id text`. L'opérateur y met l'id de sa campagne Smartlead. Le canal email pousse les leads vers cette campagne (Smartlead exécute sa propre séquence — on ne rend pas les variables côté v2 pour l'email, comme le v1).
+- **Tick** (`tickDueEnrollments`) : la requête charge le mapping + les champs du lead (contact + compte). Quand un envoi email est autorisé, un job `actions.dispatch` (channel `email`, `campaignId` = id Smartlead, `leads` = [contact assemblé : email, prénom, nom, entreprise, site, LinkedIn]) est produit. **Sans `smartlead_campaign_id`** : action planifiée mais **non dispatchée** (log), jamais d'envoi vers une campagne inconnue.
+- **Dédup** : correction de `runTick` — la réf de dédup de `actions.dispatch` retombait sur `'x'` pour l'email (tous les emails auraient partagé un id) ; elle utilise désormais l'adresse.
+
+**Vérifié en réel** (transaction annulée) : avec mapping → 1 job email vers `SL-12345` + lead assemblé ; sans mapping → 0 job.
+
+**Reste (raffinements)** : régler `smartlead_campaign_id` **dans l'app** = éditeur de campagne (**T24**) ; pour l'instant via config/SQL. Le « par persona » (plusieurs campagnes Smartlead selon la persona) est une extension du mapping (aujourd'hui : une campagne Jay Reach → une campagne Smartlead).
+
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 
 **Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.

@@ -52,7 +52,8 @@ const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 async function runTick(pool: Pool, boss: PgBoss): Promise<number> {
   const jobs = await tickDueEnrollments(pool);
   for (const job of jobs) {
-    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? 'x';
+    // Réf de dédup par contact/lead : LinkedIn via contactId/url, email via l'adresse.
+    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? job.leads?.[0]?.email ?? 'x';
     await boss.insert([
       { name: 'actions.dispatch', id: deterministicUuid('dispatch', ref, job.channel ?? 'email'), data: job },
     ]);

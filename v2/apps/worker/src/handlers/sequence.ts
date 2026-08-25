@@ -49,6 +49,12 @@ interface DueRow {
   readonly account_id: string | null;
   readonly approval_policy: unknown;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
+  // Canal email (Smartlead) : mapping + champs du lead.
+  readonly smartlead_campaign_id: string | null;
+  readonly first_name: string | null;
+  readonly last_name: string | null;
+  readonly company_name: string | null;
+  readonly domain: string | null;
 }
 
 interface StepRow {
@@ -80,12 +86,14 @@ function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean 
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
   const due = await pool.query<DueRow>(
     `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
-            c.linkedin_url, c.email, c.account_id,
-            camp.approval_policy,
+            c.linkedin_url, c.email, c.account_id, c.first_name, c.last_name,
+            camp.approval_policy, camp.smartlead_campaign_id,
+            a.name as company_name, a.domain,
             ls.mode as lk_mode
        from enrollments e
        join contacts c on c.id = e.contact_id
        join campaigns camp on camp.id = e.campaign_id
+       left join accounts a on a.id = c.account_id
        left join linkedin_settings ls on ls.organization_id = e.organization_id
       where e.status = 'active' and e.next_action_at is not null and e.next_action_at <= $1
       order by e.next_action_at asc
@@ -203,6 +211,33 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           method: 'extension_auto',
         },
       });
+    }
+
+    // Envoi email autorisé → job de dispatch Smartlead (mapping campagne requis).
+    // Sans mapping (`smartlead_campaign_id`), l'action reste planifiée mais n'est
+    // pas dispatchée : on ne pousse jamais vers une campagne inconnue.
+    if (result.dispatch && result.action && result.action.channel === 'email') {
+      if (row.smartlead_campaign_id && row.email) {
+        jobs.push({
+          organizationId: row.organization_id,
+          channel: 'email',
+          campaignId: row.smartlead_campaign_id,
+          leads: [
+            {
+              email: row.email,
+              ...(row.first_name ? { first_name: row.first_name } : {}),
+              ...(row.last_name ? { last_name: row.last_name } : {}),
+              ...(row.company_name ? { company_name: row.company_name } : {}),
+              ...(row.domain ? { website: row.domain } : {}),
+              ...(row.linkedin_url ? { linkedin_profile: row.linkedin_url } : {}),
+            },
+          ],
+        });
+      } else if (!row.smartlead_campaign_id) {
+        console.warn(
+          `[tick] étape email de la campagne ${row.campaign_id} sans smartlead_campaign_id — action planifiée mais non dispatchée`,
+        );
+      }
     }
   }
 
