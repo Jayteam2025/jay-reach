@@ -429,7 +429,34 @@
       "approval": "Goedkeuring",
       "chars": "max. {n} tekens"
     },
-    "activate": "Activeren"
+    "activate": "Activeren",
+    "stepEd": {
+      "new": "Nieuwe stap",
+      "edit": "Stap bewerken",
+      "channel": "Kanaal",
+      "template": "Bericht (sjabloon)",
+      "noTemplate": "Geen bericht gekoppeld",
+      "noneForChannel": "Geen sjabloon voor dit kanaal — maak er een in Berichten.",
+      "editInLibrary": "Bewerken in Berichten ↗",
+      "delayDays": "Vertraging (dagen) vanaf vorige stap",
+      "condition": "Triggervoorwaarde",
+      "cond": {
+        "none": "Altijd",
+        "previous_opened": "Als vorige e-mail geopend",
+        "previous_accepted": "Als uitnodiging geaccepteerd",
+        "no_reply": "Als geen antwoord"
+      },
+      "save": "Stap opslaan",
+      "del": "Stap verwijderen",
+      "delConfirm": "Deze stap verwijderen?",
+      "up": "Omhoog",
+      "down": "Omlaag",
+      "noMessageYet": "Bericht koppelen",
+      "empty": "Nog geen stap — voeg er een toe.",
+      "noRule": "Geen ingangsregel.",
+      "callNote": "Het kanaal Bellen maakt een gedateerde taak, zonder verzending of bericht.",
+      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij."
+    }
   },
   "linkedin": {
     "eyebrow": "Kanaal",
