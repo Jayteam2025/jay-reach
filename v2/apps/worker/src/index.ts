@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES } from '@jay-reach/core';
+import { QUEUES, resolveScoringModel } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
@@ -137,10 +137,10 @@ async function main(): Promise<void> {
       console.warn(`[score] Anthropic non configuré pour l’org ${organizationId} — job ignoré`);
       return;
     }
-    // Modèle pilotable par env (`SCORING_MODEL`), repli sur le défaut du scorer.
-    const scoringModel = process.env.SCORING_MODEL?.trim() || undefined;
-    console.log(`[score] org ${organizationId} : modèle ${scoringModel ?? 'défaut (claude-sonnet-5)'}`);
-    const summary = await runScore({ pool, organizationId, scorer: createAnthropicScorer(apiKey, scoringModel) });
+    // Niveau `smart` (Sonnet par défaut), surchargeable par org via la config du
+    // provider (`model_smart`) — jamais par variable d'env.
+    console.log(`[score] org ${organizationId} : modèle ${resolveScoringModel('smart', credentials)}`);
+    const summary = await runScore({ pool, organizationId, scorer: createAnthropicScorer(apiKey, credentials) });
     if (summary.skippedNoPrompt) {
       console.log(`[score] org ${organizationId} : aucune source configurée avec prompt de scoring — ignoré`);
       return;

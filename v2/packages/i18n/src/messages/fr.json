@@ -48,7 +48,9 @@
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
-      "appKey": "App key"
+      "appKey": "App key",
+      "modelSmart": "Modèle (scoring) — défaut Sonnet",
+      "modelFast": "Modèle (tâches légères) — défaut Haiku"
     }
   },
   "jobs": {

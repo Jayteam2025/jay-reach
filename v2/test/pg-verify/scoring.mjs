@@ -110,6 +110,22 @@ async function main() {
   check('résumé : 2 qualifiés+écartés scorés attendus (3 scorés sur source A)', summary.scored === 3, `scored=${summary.scored}`);
   check('résumé : source sans prompt ne bloque pas (skippedNoPrompt=false)', summary.skippedNoPrompt === false);
 
+  // --- Lot à taille réelle : le point bloquant #19 (max_tokens figé) n'apparaît
+  //     qu'à partir d'une trentaine de signaux. On en score 45 d'un coup pour
+  //     prouver que le pipeline traite un lot plein (le budget de sortie réel est
+  //     garanti côté adaptateur par `scoringMaxTokens`, testé en unitaire).
+  console.log('\n[score] lot plein (45 signaux) :');
+  const srcC = await mkSource('VERIF Source C', { scoring_prompt: PROMPT, match_threshold: 60 });
+  const N = 45;
+  for (let i = 0; i < N; i++) await mkSignal(srcC, `VERIF-bulk-${i}`, `Super PME ${i}`);
+  const bulk = await runScore({ pool, organizationId: ORG, scorer });
+  check(`45 signaux scorés en un lot (scored=${bulk.scored})`, bulk.scored === N, `scored=${bulk.scored}`);
+  check(`45 qualifiés (qualified=${bulk.qualified})`, bulk.qualified === N, `qualified=${bulk.qualified}`);
+  const leftNew = (
+    await q(`select count(*)::int n from signals where source_id=$1 and status='new'`, [srcC])
+  ).rows[0].n;
+  check('aucun signal du lot perdu / laissé new', leftNew === 0, `new=${leftNew}`);
+
   // Nettoyage.
   await q(`delete from signals where organization_id=$1 and external_id like 'VERIF-%'`, [ORG]);
   await q(`delete from sources where organization_id=$1 and name like 'VERIF %'`, [ORG]);

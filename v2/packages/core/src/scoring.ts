@@ -115,3 +115,41 @@ export function isCabinetVerdict(reason: string | null | undefined): boolean {
 export function meetsScoreThreshold(score: number, minScore: number): boolean {
   return score >= minScore;
 }
+
+/**
+ * Système de niveaux repris du socle actuel : `fast` (classification légère) et
+ * `smart` (le scoring). Le modèle par défaut est réglé au niveau, PAS en dur au
+ * point d'appel. Un opérateur le surcharge par organisation via la config du
+ * provider Anthropic (`model_fast` / `model_smart`), éditable dans l'écran
+ * Providers — jamais par variable d'environnement (qui serait globale au worker).
+ *
+ * Seul changement vs le socle : `claude-sonnet-4-6` → `claude-sonnet-5`. Le
+ * scoring tourne en `smart` → Sonnet. (Fable est le plus cher du catalogue et
+ * n'a rien à faire ici ; Haiku reste le niveau `fast`.)
+ */
+export type LlmTier = 'fast' | 'smart';
+export const SCORING_MODELS: Record<LlmTier, string> = {
+  fast: 'claude-haiku-4-5-20251001',
+  smart: 'claude-sonnet-5',
+};
+
+/** Résout le modèle d'un niveau : override de la config provider, sinon défaut. */
+export function resolveScoringModel(
+  tier: LlmTier,
+  config?: Record<string, string | undefined> | null,
+): string {
+  const override = config?.[tier === 'fast' ? 'model_fast' : 'model_smart'];
+  return typeof override === 'string' && override.trim() ? override.trim() : SCORING_MODELS[tier];
+}
+
+/**
+ * Budget de sortie dimensionné sur la taille du lot. Chaque objet
+ * `{id, score, reason}` pèse ~50-80 tokens (UUID + score + phrase + ponctuation) ;
+ * un `max_tokens` figé (2000) tronque dès ~30 signaux → JSON invalide → lot perdu.
+ * On alloue ~200 tokens/signal + une marge de base. `thinking` étant désactivé
+ * sur l'appel, ce budget sert entièrement au JSON.
+ */
+export function scoringMaxTokens(prospectCount: number): number {
+  const n = Math.max(0, Math.trunc(prospectCount));
+  return Math.max(2048, n * 200 + 512);
+}
