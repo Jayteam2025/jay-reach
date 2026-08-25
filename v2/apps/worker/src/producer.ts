@@ -51,3 +51,28 @@ export async function enqueueDiscoverForActiveSources(
   }
   return enqueued;
 }
+
+/**
+ * Enfile un `signals.score` par organisation ayant des signaux à scorer
+ * (`status='new'` et `score is null`). Idempotent par fenêtre : un seul job par
+ * (organisation, fenêtre). Le scoring lui-même lit un lot et s'arrête ; le
+ * producteur périodique reprogramme tant qu'il reste des signaux.
+ */
+export async function enqueueScoringForOrgs(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { bucket?: string } = {},
+): Promise<number> {
+  const bucket = opts.bucket ?? 'once';
+  const res = await pool.query<{ organization_id: string }>(
+    `select distinct organization_id
+       from signals where status = 'new' and score is null`,
+  );
+  let enqueued = 0;
+  for (const row of res.rows) {
+    const id = deterministicUuid('score', row.organization_id, bucket);
+    await boss.insert([{ name: 'signals.score', id, data: { organizationId: row.organization_id } }]);
+    enqueued += 1;
+  }
+  return enqueued;
+}

@@ -48,7 +48,9 @@
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
-      "appKey": "App key"
+      "appKey": "App key",
+      "modelSmart": "Model (scoring) — default Sonnet",
+      "modelFast": "Model (light tasks) — default Haiku"
     }
   },
   "jobs": {
@@ -59,6 +61,7 @@
     "q": {
       "sourcesDiscover": "Source discovery",
       "signalsQualify": "Signal qualification",
+      "signalsScore": "Signal scoring",
       "importsProcess": "Import processing",
       "enrichmentCompany": "Company enrichment",
       "enrichmentContacts": "Contact enrichment",

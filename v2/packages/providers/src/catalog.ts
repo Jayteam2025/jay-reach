@@ -35,7 +35,11 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
     id: 'anthropic',
     category: 'ai',
     labelKey: 'providers.anthropic',
-    fields: [{ name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'ANTHROPIC_API_KEY' }],
+    fields: [
+      { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'ANTHROPIC_API_KEY' },
+      { name: 'model_smart', labelKey: 'providers.field.modelSmart', type: 'text', secret: false, required: false },
+      { name: 'model_fast', labelKey: 'providers.field.modelFast', type: 'text', secret: false, required: false },
+    ],
   },
   {
     id: 'francetravail',

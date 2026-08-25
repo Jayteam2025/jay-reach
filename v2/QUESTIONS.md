@@ -222,6 +222,33 @@ Périmètre minimal pour que le v2 remplace le v1 = **Jalons 0 + 1 + 2, + T19, +
 
 Et deux compléments **dans** la plage, cadrés mais pas finis : l'**auto-apprentissage de la blacklist** (T12) et le **mapping campagne→Smartlead + enfilage depuis le tick** (T20). Le reste (LinkedIn, courrier, téléphone, boîte de réception complète, API publique) reste hors critère de bascule.
 
+## Résolu — Scoring LLM des signaux + auto-apprentissage blacklist (T12) [2026-08-25]
+
+Le pipeline avait `discover → qualify (INSEE)` mais **aucun scoring LLM** ni consommation de la blacklist. Comblé : nouvelle file `signals.score` + handler `apps/worker/src/handlers/score.ts` (`runScore`).
+
+**Étapes** : (1) pré-filtre bon marché — cabinets (blacklist DB + NAF division 78) → `discarded/recruitment_agency`, signaux périmés (fenêtre 30 j) → `discarded/stale` ; (2) scoring LLM des survivants **groupés par source** (chaque source impose son prompt et son seuil) ; (3) persistance `signals.score/score_reason/scored_at/status` (≥ seuil → `qualified`, sinon `discarded/low_score`) ; (4) **auto-apprentissage** : score 0 + motif « cabinet » (`isCabinetVerdict`) → `learnRecruitmentAgency` (blacklist de l'org) + `discarded/recruitment_agency`.
+
+**Arbitrage — où vivent le prompt et le seuil de scoring ? [révisé 2026-08-25 après review #19]**
+
+Première version : prompt = première persona active (`personas.scoring_prompt`), seuil = 60 en dur. Review JB : erreur de parité. Le socle actuel scorait **par déclencheur** (`signal_triggers.signal_scoring_prompt` + `signal_match_threshold`) — le prompt qualifie **le signal** (« cette boîte m'intéresse-t-elle ? »), pas la persona (« qui contacter ? »). Et `order by created_at asc` faisait qu'une seule persona imposait son prompt à tous.
+
+Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `signal_triggers` (artefact v1) mais **a** `sources.config` (jsonb). **Décision (option A, validée)** : ranger `scoring_prompt` + `match_threshold` dans **`sources.config`**. Le handler charge la source de chaque signal (`signals.source_id`) et score groupé par source, chacune avec son prompt et son seuil. Pas de nouvelle table. Une source sans prompt exploitable (≥ 200 car.) n'est pas scorée : ses signaux restent `new`. Le seuil de la source prime ; à défaut, repli sur le défaut org (60).
+
+**Nuance actée [2e review #19]** : « un déclencheur v1 = une source v2 » est **inexact** — un déclencheur v1 porte `source_types text[]` (relation un-vers-plusieurs : un prompt/seuil pour Adzuna ET France Travail). Le choix reste viable (`sources` n'a pas d'unicité `(org, provider)`, on peut créer 2 sources Adzuna avec des prompts distincts), **au prix d'une duplication** : le même prompt/seuil doit être copié dans chaque `sources.config`, sans garde-fou contre la divergence, et l'opérateur perd le regroupement « même besoin métier ». La migration v1→v2 (#17) devra éclater chaque déclencheur en N sources en dupliquant sa config. **Arbitrage assumé** : on garde l'option A (conforme à la spec, pas de table hors-modèle) ; à rouvrir si le besoin de regroupement/factorisation se confirme.
+
+**Modèle — reprise fidèle du socle [2e review #19]** :
+- **Système de niveaux `fast` / `smart`** (`SCORING_MODELS` dans `@jay-reach/core`), pas un modèle unique en dur. Le scoring tourne en **`smart` → `claude-sonnet-5`** (seul changement vs socle : `sonnet-4-6` → `sonnet-5`). `fast` = `claude-haiku-4-5`. Ni Opus ni Fable (Fable 5 est le **plus cher** du catalogue, 5× Sonnet).
+- **Override par organisation, en base** : `resolveScoringModel('smart', config)` lit `config.model_smart` / `config.model_fast` de la **config du provider Anthropic** (champs ajoutés au catalogue, éditables dans l'écran Providers). **Pas de variable d'env** (`SCORING_MODEL` retiré) : elle serait globale au worker, non réglable par instance.
+- **`thinking: { type: 'disabled' }`** explicite : sur Sonnet 5, omettre `thinking` active le raisonnement adaptatif (nouveau défaut) — tokens facturés, latence, et surtout ponction du budget `max_tokens`. On garde le comportement du socle (pas de raisonnement pour de la classification).
+
+**Budget de sortie (point BLOQUANT #19, corrigé)** : `max_tokens` était figé à 2000 → un lot de 50 objets `{id,score,reason}` (~2500 tokens) tronquait le JSON → `JSON.parse` échoue → **lot entier perdu**. Corrigé : `scoringMaxTokens(n)` (`@jay-reach/core`) = `max(2048, n*200 + 512)`, dimensionné sur le lot. Testé en unitaire (le harnais à 6 signaux ne pouvait pas le voir).
+
+**Autres décisions** :
+- **Fenêtre de fraîcheur** = 30 j. **Lot** = 50 signaux/job.
+- **Chaînage** : producteur périodique `enqueueScoringForOrgs` (un `signals.score` par org ayant des signaux `new`/non scorés, idempotent par fenêtre). Le déclenchement fin (juste après qualify, par signal) reste un raffinement.
+
+**Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
+
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 
 **Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.

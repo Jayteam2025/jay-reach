@@ -2,9 +2,36 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScoringUserMessage,
   estimateScoringCostEur,
+  isCabinetVerdict,
+  meetsScoreThreshold,
   parseScoringResponse,
   passesRules,
+  resolveScoringModel,
+  scoringMaxTokens,
+  SCORING_MODELS,
 } from './scoring.js';
+
+describe('isCabinetVerdict', () => {
+  it('détecte un motif de cabinet / intermédiaire', () => {
+    expect(isCabinetVerdict('Cabinet de recrutement, recrute pour un client')).toBe(true);
+    expect(isCabinetVerdict("Agence d'intérim")).toBe(true);
+    expect(isCabinetVerdict('Recrute pour le compte de tiers')).toBe(true);
+    expect(isCabinetVerdict('Intermédiaire de placement')).toBe(true);
+  });
+  it("ne se déclenche pas sur une vraie entreprise", () => {
+    expect(isCabinetVerdict('PME industrielle qui recrute un directeur commercial')).toBe(false);
+    expect(isCabinetVerdict(null)).toBe(false);
+    expect(isCabinetVerdict('')).toBe(false);
+  });
+});
+
+describe('meetsScoreThreshold', () => {
+  it('compare au seuil (inclusif)', () => {
+    expect(meetsScoreThreshold(60, 60)).toBe(true);
+    expect(meetsScoreThreshold(59, 60)).toBe(false);
+    expect(meetsScoreThreshold(100, 0)).toBe(true);
+  });
+});
 
 describe('parseScoringResponse', () => {
   it('parse un JSON avec fences et préambule, et clampe le score', () => {
@@ -58,5 +85,32 @@ describe('coût & message', () => {
     const msg = buildScoringUserMessage([{ id: 'a', company: 'X', title: 'Commercial' }]);
     expect(msg).toContain('ID: a');
     expect(msg).toContain('tableau JSON');
+  });
+});
+
+describe('modèle & budget de sortie', () => {
+  it('résout le niveau smart sur Sonnet par défaut', () => {
+    expect(resolveScoringModel('smart')).toBe('claude-sonnet-5');
+    expect(resolveScoringModel('fast')).toBe(SCORING_MODELS.fast);
+  });
+
+  it('respecte l’override de la config provider (par organisation)', () => {
+    expect(resolveScoringModel('smart', { model_smart: 'claude-opus-5' })).toBe('claude-opus-5');
+    expect(resolveScoringModel('fast', { model_fast: 'claude-haiku-4-5' })).toBe('claude-haiku-4-5');
+    // Override vide ou absent → défaut du niveau.
+    expect(resolveScoringModel('smart', { model_smart: '  ' })).toBe('claude-sonnet-5');
+    expect(resolveScoringModel('smart', {})).toBe('claude-sonnet-5');
+  });
+
+  it('dimensionne max_tokens sur la taille du lot (pas de troncature à 50)', () => {
+    // Point bloquant #19 : un lot de 50 objets {id,score,reason} ≈ 2500 tokens.
+    // Le budget doit dépasser ce besoin, là où 2000 figé tronquait.
+    expect(scoringMaxTokens(50)).toBeGreaterThan(2500);
+    expect(scoringMaxTokens(50)).toBe(10512);
+    // Plancher pour les petits lots.
+    expect(scoringMaxTokens(1)).toBe(2048);
+    expect(scoringMaxTokens(0)).toBe(2048);
+    // Croît avec le lot.
+    expect(scoringMaxTokens(100)).toBeGreaterThan(scoringMaxTokens(50));
   });
 });
