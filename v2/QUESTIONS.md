@@ -249,6 +249,29 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Éditeur de messages versionné et multilingue (T19, partie éditeur) [2026-08-25]
+
+Suite de la partie moteur : l'écran d'édition. La partie moteur avait laissé de côté l'UI, le retour arrière de version (colonne absente) et l'unification avec `guards.ts`.
+
+**Schéma** : migration `message_templates.is_active` — au plus une version active par (lignée, langue), via un index d'unicité partiel sur `(coalesce(parent_id,id), locale) where is_active`. Rétro-compatible (défaut `true` + dédup de sécurité avant l'index). La lignée = `parent_id`, ou l'`id` de la racine.
+
+**RPC atomiques** (schéma `app` + wrappers `public` appelés par les server actions) :
+- `save_message_template_version(org, family, name, channel, locale, subject, body)` : crée une nouvelle lignée (family null) ou ajoute une version à la (lignée, langue) — numérote, **désactive l'active courante, insère la nouvelle active**. Contrôle `admin` explicite (SECURITY DEFINER).
+- `activate_message_template_version(id)` : **retour arrière** — réactive une version antérieure, désactive l'autre active.
+
+**Server actions** `apps/web/app/actions/templates.ts` : `saveTemplateVersion` valide d'abord les variables (`validateTemplateVariables`, refus à l'enregistrement) puis appelle la RPC ; `activateTemplateVersion` pour le retour arrière. Pattern du repo (`requireRole('admin')`, retour `{ok}`/`{error}`, `revalidatePath`).
+
+**Écran** `/settings/templates` (+ entrée de nav « Messages ») : liste des lignées (canal, langues, nb versions) ; éditeur en modale avec onglets FR/EN/NL (indicateur ●/○), toggles canal + nature, validation des variables **en direct**, compteur de mots vs plafond du canal, chips de variables insérables (filtrées par nature), et **historique des versions** avec bouton **Réactiver**. Réutilise le design `rs-*` (aucune nouvelle classe CSS) et le pattern `useTransition` + `router.refresh()`. i18n FR/EN/NL.
+
+**Effet sur l'envoi** : le tick résout maintenant la **version active** (`resolveTemplate` filtre `is_active`) — le retour arrière prend donc effet au prochain envoi. Rétro-compatible : sur les lignées existantes, la plus récente est active.
+
+**Décisions / périmètre** :
+- **Nature de campagne** (signal/liste) choisie dans l'éditeur pour piloter la validation — non persistée sur le template (un template reste réutilisable ; sa nature effective dépend de la campagne qui l'emploie).
+- **Enregistrement par langue** : « Enregistrer » crée une version pour la **langue de l'onglet courant** (une version = une (lignée, langue)). L'opérateur bascule d'onglet et enregistre chaque langue.
+- **Non fait** (raffinements) : le `sent_count` remis à zéro à la création de version (spec §11 — le rodage repart) n'est pas encore câblé côté RPC ; le **taux de réponse par version** dans l'historique (données pas encore agrégées) ; la **traduction assistée relue** ; l'UI de **regroupement des actions bloquées par champ manquant** (les données sont là : `actions.block_reason='missing_variable'` + `payload.missingVariables`). Le `guards.ts` porte toujours une logique `unresolvedVariables` parallèle non branchée — à retirer/unifier.
+
+**Vérifié** : `bash test/pg-verify/templates.sh` (contexte auth réel, zéro envoi) → création de lignée + versions (seule la dernière active), **retour arrière** (réactive la v1), **indépendance des langues** (une active par langue), **unicité** (deux actives même lignée+langue → 23505). + build web (`/settings/templates`), typecheck, lint, 148 tests unitaires.
+
 ## Résolu — Moteur de variables des messages + blocage (T19, partie moteur) [2026-08-25]
 
 Le schéma `message_templates` était versionné/multilingue, mais **aucune logique de variables** n'existait : ni extraction, ni validation, ni rendu. Le garde-fou `unresolvedVariables` (guards.ts) existait mais **n'était branché nulle part**, et le worker chargeait le corps LinkedIn sans filtrer la langue ni substituer les `{{champ}}` (un `{{prenom}}` serait parti littéral — violation de la règle CLAUDE.md #2).

@@ -167,7 +167,8 @@
     "linkedin": "LinkedIn",
     "annuaire": "Annuaire",
     "approvals": "Approbations",
-    "customers": "Clients"
+    "customers": "Clients",
+    "templates": "Messages"
   },
   "branding": {
     "eyebrow": "Identité",
@@ -552,5 +553,45 @@
     "done": "{n} client(s) importé(s) — exclusions créées ✓",
     "listsTitle": "Listes de clients",
     "entries": "{n} entrée(s)"
+  },
+  "templates": {
+    "eyebrow": "Bibliothèque",
+    "title": "Messages",
+    "lead": "Vos modèles de messages, versionnés et multilingues. Une variable manquante bloque l'envoi.",
+    "new": "Nouveau message",
+    "demoNotice": "Connectez Supabase pour éditer.",
+    "empty": "Aucun message pour l'instant.",
+    "edit": "Éditer",
+    "versionsCount": "{n} version(s)",
+    "editTitle": "Éditer le message",
+    "newTitle": "Nouveau message",
+    "close": "Fermer",
+    "name": "Nom",
+    "namePlaceholder": "Relance commerciale",
+    "channel": {
+      "label": "Canal",
+      "email": "Email",
+      "linkedin_invite": "Invitation LinkedIn",
+      "linkedin_message": "Message LinkedIn",
+      "letter": "Courrier"
+    },
+    "nature": {
+      "label": "Type de campagne",
+      "signal": "Signal",
+      "list": "Liste"
+    },
+    "subject": "Objet",
+    "message": "Message",
+    "messagePlaceholder": "Bonjour {{prenom}}, …",
+    "wordCount": "{n} / {max} mots",
+    "insertVar": "Insérer :",
+    "fixVariables": "Corrigez les variables avant d'enregistrer.",
+    "versionHistory": "Historique des versions",
+    "active": "Active",
+    "reactivate": "Réactiver",
+    "sentCount": "{n} envoi(s)",
+    "noVersionYet": "Aucune version pour cette langue.",
+    "cancel": "Annuler",
+    "saveVersion": "Enregistrer (nouvelle version)"
   }
 }

@@ -167,7 +167,8 @@
     "linkedin": "LinkedIn",
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
-    "customers": "Klanten"
+    "customers": "Klanten",
+    "templates": "Berichten"
   },
   "branding": {
     "eyebrow": "Identiteit",
@@ -552,5 +553,45 @@
     "done": "{n} klant(en) geïmporteerd — uitsluitingen aangemaakt ✓",
     "listsTitle": "Klantenlijsten",
     "entries": "{n} vermelding(en)"
+  },
+  "templates": {
+    "eyebrow": "Bibliotheek",
+    "title": "Berichten",
+    "lead": "Je berichtsjablonen, met versies en meertalig. Een ontbrekende variabele blokkeert verzending.",
+    "new": "Nieuw bericht",
+    "demoNotice": "Verbind Supabase om te bewerken.",
+    "empty": "Nog geen berichten.",
+    "edit": "Bewerken",
+    "versionsCount": "{n} versie(s)",
+    "editTitle": "Bericht bewerken",
+    "newTitle": "Nieuw bericht",
+    "close": "Sluiten",
+    "name": "Naam",
+    "namePlaceholder": "Commerciële opvolging",
+    "channel": {
+      "label": "Kanaal",
+      "email": "E-mail",
+      "linkedin_invite": "LinkedIn-uitnodiging",
+      "linkedin_message": "LinkedIn-bericht",
+      "letter": "Brief"
+    },
+    "nature": {
+      "label": "Campagnetype",
+      "signal": "Signaal",
+      "list": "Lijst"
+    },
+    "subject": "Onderwerp",
+    "message": "Bericht",
+    "messagePlaceholder": "Hallo {{prenom}}, …",
+    "wordCount": "{n} / {max} woorden",
+    "insertVar": "Invoegen:",
+    "fixVariables": "Corrigeer de variabelen voor het opslaan.",
+    "versionHistory": "Versiegeschiedenis",
+    "active": "Actief",
+    "reactivate": "Heractiveren",
+    "sentCount": "{n} verzonden",
+    "noVersionYet": "Geen versie voor deze taal.",
+    "cancel": "Annuleren",
+    "saveVersion": "Opslaan (nieuwe versie)"
   }
 }
