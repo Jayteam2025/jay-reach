@@ -24,10 +24,17 @@ export interface RulePrecheckInput {
   readonly occurredAt: string;
   readonly freshnessWindowDays: number;
   readonly now: number;
+  /**
+   * Blacklist des cabinets/intermédiaires (noms normalisés via
+   * `normalizeAgencyName`), chargée depuis `recruitment_agencies_blacklist`
+   * (global + organisation). Optionnelle : hors-DB, seuls le NAF + le repli
+   * intégré s'appliquent.
+   */
+  readonly recruitmentBlacklist?: ReadonlySet<string>;
 }
 
 export function passesRules(input: RulePrecheckInput): boolean {
-  if (isRecruitmentAgency({ name: input.company, naf: input.naf })) {
+  if (isRecruitmentAgency({ name: input.company, naf: input.naf }, input.recruitmentBlacklist)) {
     return false;
   }
   const occurred = Date.parse(input.occurredAt);

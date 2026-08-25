@@ -39,11 +39,19 @@ async function getSelfProfileUrn(csrf) {
     throw Object.assign(new Error('invalid_json_response'), { code: 'me_error' });
   }
   // Le profil courant est référencé sous *miniProfile (urn:li:fsd_profile:…),
-  // avec un fallback sur included[].
+  // avec un fallback sur included[]. Le vanity de /me identifie notre profil.
+  const selfVanity = data?.data?.miniProfile?.publicIdentifier || data?.data?.publicIdentifier;
   let urn = data?.data?.['*miniProfile'] || data?.data?.miniProfile;
   if ((!urn || !String(urn).includes('fsd_profile')) && Array.isArray(data?.included)) {
-    const self = data.included.find((i) => i?.entityUrn?.startsWith('urn:li:fsd_profile:'));
-    urn = self?.entityUrn || urn;
+    // Durcissement (retour JB) : ne retenir un profil de included[] que si son
+    // publicIdentifier correspond au nôtre, sinon on risque de prendre un autre
+    // profil embarqué dans la réponse. À défaut de vanity connu, on garde
+    // l'ancien comportement (premier fsd_profile) pour ne pas casser /me.
+    const profiles = data.included.filter((i) => i?.entityUrn?.startsWith('urn:li:fsd_profile:'));
+    const self = selfVanity
+      ? profiles.find((i) => i?.publicIdentifier === selfVanity)
+      : undefined;
+    urn = (self ?? profiles[0])?.entityUrn || urn;
   }
   if (!urn) {
     throw Object.assign(new Error('self_urn_not_found'), { code: 'me_error' });
@@ -52,14 +60,25 @@ async function getSelfProfileUrn(csrf) {
   return String(urn).replace('urn:li:fs_miniProfile:', 'urn:li:fsd_profile:');
 }
 
+// trackingId attendu par Voyager : 16 octets bruts (pas du base64). Retour
+// terrain de JB : un trackingId vide fait échouer l'envoi en HTTP 400 muet.
+function makeTrackingId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let out = '';
+  for (const b of bytes) out += String.fromCharCode(b);
+  return out;
+}
+
 async function createMessage(senderUrn, recipientUrn, text, csrf) {
   const body = {
     message: {
       body: { text, attributes: [] },
       renderContentUnions: [],
+      // originToken va DANS message (pas à la racine du corps, sinon HTTP 400).
+      originToken: crypto.randomUUID(),
     },
     mailboxUrn: senderUrn,
-    trackingId: '',
+    trackingId: makeTrackingId(),
     dedupeByClientGeneratedToken: false,
     hostRecipientUrns: [recipientUrn],
   };

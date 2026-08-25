@@ -7,7 +7,13 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+- **Canal LinkedIn — messages (retour terrain de JB, vrai compte)** : `apps/extension/linkedin-message.js` échouait en HTTP 400 muet. Ajout de `originToken` (UUID) **dans** `message` et d'un `trackingId` de 16 octets bruts → HTTP 200, message délivré. Prospection à froid (1er contact) confirmée. Les invitations, elles, fonctionnaient déjà. Durcissement de `getSelfProfileUrn()` : sélection du profil par `publicIdentifier` plutôt que le premier `fsd_profile` venu.
+- **Garde d'authentification (retour de JB)** : le middleware était un no-op, laissant les écrans applicatifs accessibles sans session (les server actions restaient protégées). Middleware rebranché — dès que Supabase est configuré (données réelles), toute route applicative non publique exige une session (redirection `/login?next=…`) ; transparent en mode démo. Politique isolée en fonction pure `decideAccess` (`apps/web/lib/auth-guard.ts`) avec test de non-régression (`auth-guard.test.ts`) qui échoue si une route applicative répond sans session.
+
 ### Ajouté
+- **Blacklist complète des cabinets de recrutement (parité v1, demande de JB)** : migration `recruitment_agencies_blacklist` (table org-aware + fonction `normalize_agency_name` + RLS) semée des **200 noms** repris du v1. Filtre de signaux (`signal-filters.ts`) branché sur la liste DB via `isRecruitmentByName(name, blacklist?)` + `normalizeAgencyName` (identique à la fonction SQL) ; l'exclusion NAF (division 78) est conservée. Auto-apprentissage câblé côté worker (`loadRecruitmentBlacklist`, `learnRecruitmentAgency` avec incrément `detected_count`), testé en réel contre la base hébergée.
+- **Projet Supabase hébergé pour le v2** : 11 migrations appliquées (35 tables), types régénérés depuis le schéma réel, seed appliqué, **auth + RLS vérifiés en conditions réelles** (membre voit son org, anon voit 0). Distinct de la base v1 en prod.
 - Spécification initiale du projet et maquettes des écrans principaux.
 - **Branchement du moteur sur le worker (début)** — le code moteur repris est rendu importable (`@jay-reach/providers/signals`, `/enrichment`) ; la file `sources.discover` du worker est câblée sur les vrais connecteurs de signaux (Adzuna, France Travail). Le worker construit démarre contre un vrai Postgres avec le moteur branché (vérifié).
 - **Reprise du code legacy (décision de l'éditeur : réutiliser ce qui fonctionne)** — portage de tout le moteur réel depuis les Edge Functions Deno vers `@jay-reach/providers`, plutôt que réécriture :
