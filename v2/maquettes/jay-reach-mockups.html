@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jay Reach — maquettes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0A130E; --slate:#18271F; --slate2:#243629; --slate3:#31473A;
+  --chalk:#EEF3E9; --moss:#8B9C91; --moss2:#65766B;
+  --lime:#C6FF3D; --volt:#EDFF66; --lime2:#8FCB2E; --lime3:#4E7A1C;
+  --limeghost:rgba(198,255,61,.12); --limeline:rgba(198,255,61,.32);
+  --flare:#FF5A1F;
+  --r:6px; --rc:10px;
+  --sans:'Geist',system-ui,-apple-system,sans-serif;
+  --mono:'Geist Mono',ui-monospace,monospace;
+  --display:'Archivo',var(--sans);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ink);color:var(--chalk);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.disp{font-family:var(--display);font-variation-settings:'wdth' 118,'wght' 600;letter-spacing:-.01em}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;text-align:left}
+a{color:inherit;text-decoration:none}
+input,textarea,select{font:inherit;color:var(--chalk);background:var(--ink);border:1px solid var(--slate2);border-radius:var(--r);padding:8px 10px;width:100%}
+textarea{resize:vertical;line-height:1.65}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--lime)}
+.ico{width:14px;height:14px;fill:var(--lime2);flex-shrink:0;vertical-align:-2px}
+.ico:hover{fill:var(--lime)}
+
+.app{display:grid;grid-template-columns:214px 1fr;min-height:100vh}
+.side{background:var(--slate);border-right:1px solid var(--slate2);padding:20px 12px;display:flex;flex-direction:column;gap:22px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:baseline;gap:7px;padding:0 8px 2px}
+.brand b{font-family:var(--display);font-variation-settings:'wdth' 122,'wght' 700;font-size:19px;color:var(--lime);letter-spacing:-.02em}
+.brand span{font-size:11px;color:var(--moss2)}
+.navgrp{display:flex;flex-direction:column;gap:1px}
+.navlbl{font-size:10px;letter-spacing:.09em;color:var(--moss2);padding:0 8px 7px;font-family:var(--mono)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:var(--r);color:var(--moss);width:100%}
+.nav:hover{background:var(--slate2);color:var(--chalk)}
+.nav.on{background:var(--limeghost);color:var(--lime);box-shadow:inset 2px 0 0 var(--lime)}
+.pill{font-family:var(--mono);font-size:11px;background:var(--lime);color:var(--ink);border-radius:20px;padding:1px 7px;font-weight:500}
+.pillq{font-family:var(--mono);font-size:11px;border:1px solid var(--limeline);color:var(--lime);border-radius:20px;padding:0 7px}
+.side footer{margin-top:auto;padding:0 8px;font-size:11px;color:var(--moss2);font-family:var(--mono)}
+
+.main{padding:26px 30px 60px;max-width:1220px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}
+h1{font-family:var(--display);font-variation-settings:'wdth' 118,'wght' 600;font-size:26px;letter-spacing:-.015em;line-height:1.15}
+.sub{color:var(--moss);font-size:13px;margin-top:3px}
+.btn{border:1px solid var(--slate3);border-radius:var(--r);padding:7px 13px;color:var(--chalk);white-space:nowrap}
+.btn:hover{background:var(--slate2);border-color:var(--lime2)}
+.btn.pri{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:500}
+.btn.pri:hover{background:var(--volt);border-color:var(--volt)}
+.btn.gho{border-color:var(--limeline);color:var(--lime)}
+.btn.gho:hover{background:var(--limeghost);border-color:var(--lime)}
+.btn.sm{padding:4px 9px;font-size:12px}
+
+.card{background:var(--slate);border:1px solid var(--slate2);border-radius:var(--rc);padding:16px 18px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g21{display:grid;grid-template-columns:1.55fr 1fr;gap:14px}
+.sect{margin-top:22px}
+.secthead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:11px}
+h2{font-family:var(--display);font-variation-settings:'wdth' 112,'wght' 600;font-size:15px}
+.hint{font-size:11px;color:var(--moss2);font-family:var(--mono);letter-spacing:.04em}
+
+.metric .k{font-size:11px;color:var(--moss);font-family:var(--mono);letter-spacing:.05em}
+.metric .v{font-family:var(--display);font-variation-settings:'wdth' 118,'wght' 600;font-size:32px;line-height:1.1;margin-top:5px;font-variant-numeric:tabular-nums;color:var(--lime)}
+.metric .d{font-size:12px;color:var(--moss);margin-top:2px}
+.delta{font-family:var(--mono);font-size:11px;background:var(--limeghost);color:var(--lime);border-radius:4px;padding:1px 6px;margin-right:6px}
+
+.row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--slate2)}
+.row:last-child{border-bottom:none}
+.row:hover{background:var(--slate2)}
+.list{background:var(--slate);border:1px solid var(--slate2);border-radius:var(--rc);overflow:hidden}
+.grow{flex:1;min-width:0}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{font-size:12px;color:var(--moss);margin-top:1px}
+.nm{display:inline-flex;align-items:center;gap:6px}
+.nm a.n{border-bottom:1px solid transparent}
+.nm a.n:hover{color:var(--lime);border-bottom-color:var(--limeline)}
+
+.score{font-family:var(--mono);font-size:13px;font-weight:500;width:36px;height:30px;display:grid;place-items:center;border-radius:var(--r);background:var(--slate2);color:var(--moss);flex-shrink:0}
+.score.hi{background:var(--lime);color:var(--ink)}
+.score.mid{background:var(--limeghost);color:var(--lime);border:1px solid var(--limeline)}
+.score.hot{background:var(--flare);color:#fff}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:2px 6px;border-radius:3px;border:1px solid var(--slate3);color:var(--moss);white-space:nowrap}
+.tag.lime{border-color:var(--limeline);color:var(--lime);background:var(--limeghost)}
+.tag.solid{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:500}
+.tag.flare{border-color:var(--flare);color:var(--flare)}
+.split{font-family:var(--mono);font-size:12px;color:var(--moss);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* avatars — photo with initials fallback */
+.av{width:30px;height:30px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--slate3);border:1px solid var(--slate2);display:block}
+.av.ini{display:grid;place-items:center;font-size:11px;font-family:var(--mono);color:var(--lime);background:var(--limeghost);border-color:var(--limeline)}
+.avs{display:flex;align-items:center}
+.avs .av{width:26px;height:26px;margin-right:-8px;border-color:var(--slate)}
+.avs .more{width:26px;height:26px;border-radius:50%;background:var(--lime);color:var(--ink);display:grid;place-items:center;font-size:10px;font-family:var(--mono);font-weight:500;border:1px solid var(--slate)}
+
+.cc{background:var(--slate);border:1px solid var(--slate2);border-radius:var(--rc);overflow:hidden}
+.cc:hover{border-color:var(--lime2)}
+.cctop{padding:16px 18px 14px}
+.ccname{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.ccname h3{font-family:var(--display);font-variation-settings:'wdth' 112,'wght' 600;font-size:15px}
+.st{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;background:var(--limeghost);color:var(--lime);border:1px solid var(--limeline)}
+.st.off{background:none;color:var(--moss2);border-color:var(--slate3)}
+.ccstats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.ccstats .k{font-family:var(--mono);font-size:10px;letter-spacing:.07em;color:var(--moss2)}
+.ccstats .v{font-family:var(--display);font-variation-settings:'wdth' 115,'wght' 600;font-size:23px;margin-top:2px;font-variant-numeric:tabular-nums}
+.ccstats .v.acc{color:var(--lime)}
+.ccstats .d{font-size:11px;color:var(--moss);margin-top:1px}
+.ccfoot{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-top:1px solid var(--slate2);background:rgba(0,0,0,.16)}
+.bar{height:3px;background:var(--slate2);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--lime)}
+
+.tabs{display:flex;gap:3px;border-bottom:1px solid var(--slate2);margin-bottom:18px;overflow-x:auto}
+.tab{padding:9px 14px;color:var(--moss);white-space:nowrap;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px}
+.tab:hover{color:var(--chalk)}
+.tab.on{color:var(--lime);border-bottom-color:var(--lime)}
+.tab .b{font-family:var(--mono);font-size:10.5px;background:var(--limeghost);border:1px solid var(--limeline);color:var(--lime);border-radius:20px;padding:0 6px}
+
+/* étapes */
+.step{background:var(--slate);border:1px solid var(--slate2);border-radius:var(--rc);display:flex;align-items:center;gap:13px;padding:13px 16px;width:100%}
+.step:hover{border-color:var(--limeline);background:var(--slate2)}
+.num{font-family:var(--mono);font-size:12px;width:25px;height:25px;border-radius:50%;border:1px solid var(--slate3);display:grid;place-items:center;color:var(--moss);flex-shrink:0}
+.preview{font-size:12.5px;color:var(--moss);font-style:italic;margin-top:2px}
+.delay{display:flex;align-items:center;gap:8px;padding:9px 0 9px 30px;color:var(--moss);font-size:12px;font-family:var(--mono)}
+.delay .ln{width:1px;height:18px;background:var(--limeline);margin-left:-18px}
+.cond{color:var(--lime)}
+.stat{font-family:var(--mono);font-size:11.5px;color:var(--moss);white-space:nowrap}
+.stat b{color:var(--chalk);font-weight:500}
+.stat em{color:var(--lime);font-style:normal;font-weight:500}
+.vars{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.var{font-family:var(--mono);font-size:11px;background:var(--slate2);border-radius:3px;padding:2px 6px;color:var(--moss);cursor:pointer}
+.var:hover{background:var(--limeghost);color:var(--lime)}
+
+.resp{background:var(--limeghost);border:1px solid var(--limeline);border-radius:var(--rc);padding:15px 17px}
+.resp .n{font-family:var(--display);font-variation-settings:'wdth' 118,'wght' 600;font-size:30px;color:var(--lime);line-height:1.1}
+
+/* modal */
+.ovl{position:fixed;inset:0;background:rgba(4,9,6,.72);display:none;align-items:center;justify-content:center;padding:24px;z-index:50}
+.ovl.on{display:flex}
+.modal{background:var(--slate);border:1px solid var(--slate3);border-radius:14px;width:100%;max-width:640px;max-height:88vh;overflow:auto}
+.modal.wide{max-width:720px}
+.mhead{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--slate2);position:sticky;top:0;background:var(--slate)}
+.mbody{padding:16px 20px}
+.mfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-top:1px solid var(--slate2);position:sticky;bottom:0;background:var(--slate)}
+.x{width:28px;height:28px;border-radius:var(--r);display:grid;place-items:center;color:var(--moss);font-size:17px;flex-shrink:0}
+.x:hover{background:var(--slate2);color:var(--chalk)}
+.drop{border:1.5px dashed var(--limeline);border-radius:var(--rc);background:var(--limeghost);padding:28px;text-align:center}
+.drop b{display:block;font-weight:500;margin-bottom:3px}
+.opt{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--slate2);border-radius:var(--rc);padding:13px 15px;margin-top:9px;cursor:pointer}
+.opt:hover{border-color:var(--lime2)}
+.opt.on{border-color:var(--lime);background:var(--limeghost)}
+.rad{width:15px;height:15px;border-radius:50%;border:1px solid var(--slate3);margin-top:2px;flex-shrink:0}
+.opt.on .rad{border-color:var(--lime);background:var(--lime);box-shadow:inset 0 0 0 3px var(--slate)}
+table.map{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+table.map th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--moss2);padding:6px 8px;border-bottom:1px solid var(--slate2);font-weight:400}
+table.map td{padding:6px 8px;border-bottom:1px solid var(--slate2);color:var(--moss)}
+table.map td.ok{color:var(--lime);font-family:var(--mono);font-size:11.5px}
+
+.screen{display:none}.screen.on{display:block}
+.pane{display:none}.pane.on{display:block}
+.note{font-size:12px;color:var(--moss2);border-top:1px dashed var(--slate2);margin-top:26px;padding-top:12px;font-style:italic}
+svg.chart{display:block;width:100%;height:auto}
+@media(max-width:940px){.app{grid-template-columns:1fr}.side{position:static;height:auto}.grid4,.grid2,.g21{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+<symbol id="li" viewBox="0 0 24 24"><path d="M20.4 2H3.6A1.6 1.6 0 0 0 2 3.6v16.8A1.6 1.6 0 0 0 3.6 22h16.8a1.6 1.6 0 0 0 1.6-1.6V3.6A1.6 1.6 0 0 0 20.4 2zM8.3 18.7H5.4V9.7h2.9v9zM6.9 8.4a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm11.8 10.3h-2.9v-4.4c0-1 0-2.4-1.5-2.4s-1.7 1.2-1.7 2.4v4.4h-2.9V9.7h2.8v1.2h.1a3 3 0 0 1 2.7-1.5c2.9 0 3.4 1.9 3.4 4.4v4.9z"/></symbol>
+</svg>
+
+<div class="app">
+<aside class="side">
+  <div class="brand"><b>Jay</b><span style="font-family:var(--display);font-variation-settings:'wdth' 122,'wght' 700;font-size:19px;color:var(--chalk);letter-spacing:-.02em">Reach</span></div>
+  <div class="navgrp">
+    <div class="navlbl">PROSPECTION</div>
+    <button class="nav on" data-go="dash">Dashboard</button>
+    <button class="nav" data-go="camps"><span>Campagnes</span><span class="pill">3</span></button>
+    <button class="nav" data-go="signaux"><span>Signaux</span><span class="pillq">34</span></button>
+    <button class="nav" data-go="fiche">Prospects</button>
+    <button class="nav">Boîte de réception</button>
+  </div>
+  <div class="navgrp">
+    <div class="navlbl">CONFIGURATION</div>
+    <button class="nav">Sources</button>
+    <button class="nav">Providers</button>
+    <button class="nav">Paramètres</button>
+  </div>
+  <footer>alexandre@get-jay.fr<br>HEY JAY · 3 membres</footer>
+</aside>
+
+<main class="main">
+
+<!-- ================= DASHBOARD ================= -->
+<section class="screen on" id="dash">
+  <div class="head">
+    <div><h1>Est-ce que votre prospection fonctionne&nbsp;?</h1>
+      <div class="sub">3 campagnes · 34 signaux cette semaine · 2 courriers à valider</div></div>
+    <div class="inline" style="display:flex;gap:10px"><button class="btn">30 derniers jours</button><button class="btn pri" data-modal="import">Importer un fichier</button></div>
+  </div>
+
+  <div class="grid4">
+    <div class="card metric"><div class="k">RÉPONSES</div><div class="v">92</div>
+      <div class="d"><span class="delta">↗ +89</span>vs période préc.</div></div>
+    <div class="card metric"><div class="k">RÉPONSES POSITIVES</div><div class="v">58</div>
+      <div class="d"><span class="delta">63 %</span>des réponses</div></div>
+    <div class="card metric"><div class="k">SIGNAUX QUALIFIÉS</div><div class="v">34</div>
+      <div class="d"><span class="delta">↗ +12</span>21 emploi · 6 nomination · 7 salon</div></div>
+    <div class="card metric"><div class="k">DÉLAI SIGNAL → CONTACT</div><div class="v">7 h</div>
+      <div class="d"><span class="delta">↘ −4 h</span>médiane</div></div>
+  </div>
+
+  <div class="sect g21">
+    <div class="card">
+      <div class="secthead"><h2>Activité &amp; résultats</h2><span class="hint">AGRÉGÉ PAR SEMAINE</span></div>
+      <div style="display:flex;gap:16px;margin-bottom:10px">
+        <span class="split"><span style="display:inline-block;width:9px;height:9px;background:var(--lime);border-radius:2px;margin-right:6px"></span>Envois multicanaux</span>
+        <span class="split"><span style="display:inline-block;width:9px;height:9px;background:var(--lime3);border-radius:2px;margin-right:6px"></span>Réponses reçues</span>
+      </div>
+      <svg class="chart" viewBox="0 0 620 200" style="height:200px">
+        <line x1="34" y1="20" x2="612" y2="20" stroke="#243629"/>
+        <line x1="34" y1="70" x2="612" y2="70" stroke="#243629"/>
+        <line x1="34" y1="120" x2="612" y2="120" stroke="#243629"/>
+        <line x1="34" y1="170" x2="612" y2="170" stroke="#31473A"/>
+        <g fill="#65766B" font-size="10" font-family="ui-monospace,monospace">
+          <text x="0" y="24">105</text><text x="0" y="74">70</text><text x="0" y="124">35</text><text x="0" y="174">0</text></g>
+        <path d="M60 108 C130 92 180 74 250 70 C320 66 360 74 430 46 C500 18 540 96 596 128 L596 170 L60 170 Z" fill="rgba(198,255,61,.13)"/>
+        <path d="M60 108 C130 92 180 74 250 70 C320 66 360 74 430 46 C500 18 540 96 596 128" fill="none" stroke="#C6FF3D" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M60 156 C130 152 180 155 250 150 C320 145 360 148 430 152 C500 156 540 140 596 128" fill="none" stroke="#4E7A1C" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="430" cy="46" r="4.5" fill="#C6FF3D"/><circle cx="596" cy="128" r="4.5" fill="#C6FF3D"/>
+        <g fill="#65766B" font-size="10" font-family="ui-monospace,monospace">
+          <text x="52" y="192">15 juin</text><text x="228" y="192">29 juin</text><text x="404" y="192">13 juil.</text><text x="556" y="192">27 juil.</text></g>
+      </svg>
+    </div>
+
+    <div class="card">
+      <div class="secthead"><h2>Répartition par canal</h2><span class="hint">332 ENVOIS</span></div>
+      <svg class="chart" viewBox="0 0 200 176" style="max-width:230px;margin:4px auto 12px">
+        <circle cx="100" cy="86" r="58" fill="none" stroke="#243629" stroke-width="22"/>
+        <circle cx="100" cy="86" r="58" fill="none" stroke="#C6FF3D" stroke-width="22" stroke-dasharray="175 190" transform="rotate(-90 100 86)"/>
+        <circle cx="100" cy="86" r="58" fill="none" stroke="#8FCB2E" stroke-width="22" stroke-dasharray="135 230" stroke-dashoffset="-177" transform="rotate(-90 100 86)"/>
+        <circle cx="100" cy="86" r="58" fill="none" stroke="#4E7A1C" stroke-width="22" stroke-dasharray="53 312" stroke-dashoffset="-314" transform="rotate(-90 100 86)"/>
+        <text x="100" y="88" text-anchor="middle" fill="#EEF3E9" font-size="27" font-family="Archivo,sans-serif" font-weight="600">332</text>
+        <text x="100" y="105" text-anchor="middle" fill="#8B9C91" font-size="11">envois</text>
+      </svg>
+      <div class="row" style="padding:7px 0;border-color:var(--slate2)">
+        <span style="width:9px;height:9px;background:var(--lime);border-radius:2px"></span><span class="grow">Emails</span><span class="split">48 %</span></div>
+      <div class="row" style="padding:7px 0;border-color:var(--slate2)">
+        <span style="width:9px;height:9px;background:var(--lime2);border-radius:2px"></span><span class="grow">Messages LinkedIn</span><span class="split">37 %</span></div>
+      <div class="row" style="padding:7px 0">
+        <span style="width:9px;height:9px;background:var(--lime3);border-radius:2px"></span><span class="grow">Invitations LinkedIn</span><span class="split">15 %</span></div>
+    </div>
+  </div>
+
+  <div class="sect grid2">
+    <div class="card">
+      <div class="secthead"><h2>Signaux par score</h2><span class="hint">34 DÉTECTÉS · 7 JOURS</span></div>
+      <svg class="chart" viewBox="0 0 560 150" style="height:150px">
+        <g font-family="ui-monospace,monospace" font-size="10" fill="#65766B">
+          <text x="0" y="34">90+</text><text x="0" y="62">70–89</text><text x="0" y="90">50–69</text><text x="0" y="118">&lt; 50</text></g>
+        <rect x="52" y="22" width="96" height="16" rx="3" fill="#C6FF3D"/>
+        <rect x="52" y="50" width="212" height="16" rx="3" fill="#8FCB2E"/>
+        <rect x="52" y="78" width="150" height="16" rx="3" fill="#4E7A1C"/>
+        <rect x="52" y="106" width="74" height="16" rx="3" fill="#31473A"/>
+        <g font-family="ui-monospace,monospace" font-size="11" fill="#EEF3E9">
+          <text x="158" y="34">4</text><text x="274" y="62">11</text><text x="212" y="90">8</text><text x="136" y="118">11 écartés</text></g>
+      </svg>
+    </div>
+    <div>
+      <div class="secthead"><h2>Signaux à traiter</h2><span class="hint">MEILLEURS SCORES</span></div>
+      <div class="list">
+        <div class="row"><span class="score hi">92</span>
+          <div class="grow"><div class="trunc">Commercial itinérant B2B — Normandie</div><div class="meta">Norlim Distribution · 210 salariés</div></div>
+          <span class="split">6 h</span><button class="btn sm gho">Inscrire</button></div>
+        <div class="row"><span class="score hi">88</span>
+          <div class="grow"><div class="trunc">Nomination — Directeur commercial</div><div class="meta">Aubrac Technologies · 74 salariés</div></div>
+          <span class="split">11 h</span><button class="btn sm gho">Inscrire</button></div>
+        <div class="row"><span class="score mid">71</span>
+          <div class="grow"><div class="trunc">Exposant — Salon Produrable 2026</div><div class="meta">Groupe Vantel · stand D14</div></div>
+          <span class="split">dans 59 j</span><button class="btn sm gho">Inscrire</button></div>
+        <div class="row"><span class="tag flare">ARBITRAGE</span>
+          <div class="grow"><div class="trunc">Groupe M.D.C. — entreprise non résolue</div><div class="meta">3 correspondances possibles</div></div>
+          <button class="btn sm">Résoudre</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAMPAGNES ================= -->
+<section class="screen" id="camps">
+  <div class="head">
+    <div><h1>Campagnes</h1><div class="sub">Une campagne relie une source de contacts, des personas et une séquence multicanale.</div></div>
+    <div style="display:flex;gap:10px"><button class="btn gho" data-modal="import">Importer un fichier</button><button class="btn pri">Nouvelle campagne</button></div>
+  </div>
+
+  <div class="grid2">
+    <div class="cc">
+      <div class="cctop">
+        <div class="ccname"><h3>Recrutement terrain · DRH</h3><span class="st">● Active</span></div>
+        <div class="ccstats">
+          <div><div class="k">CONTACTÉS</div><div class="v">197 <span style="font-size:13px;color:var(--moss2)">/ 658</span></div><div class="d">30 % traités</div></div>
+          <div><div class="k">ENVOYÉS</div><div class="v">197</div><div class="d">3 canaux</div></div>
+          <div><div class="k">ACCEPTÉS</div><div class="v acc">26,9 %</div><div class="d">invitations LinkedIn</div></div>
+          <div><div class="k">RÉPONSES</div><div class="v acc">21</div><div class="d">10,6 % de réponse</div></div>
+        </div>
+        <div class="bar" style="margin-top:13px"><i style="width:30%"></i></div>
+      </div>
+      <div class="ccfoot"><span class="split">Source · offres d'emploi France Travail</span>
+        <button class="btn sm pri" data-go="camp1">Ouvrir →</button></div>
+    </div>
+
+    <div class="cc">
+      <div class="cctop">
+        <div class="ccname"><h3>Nominations · Directeurs commerciaux</h3><span class="st">● Active</span></div>
+        <div class="ccstats">
+          <div><div class="k">CONTACTÉS</div><div class="v">195 <span style="font-size:13px;color:var(--moss2)">/ 485</span></div><div class="d">40 % traités</div></div>
+          <div><div class="k">ENVOYÉS</div><div class="v">195</div><div class="d">2 canaux</div></div>
+          <div><div class="k">ACCEPTÉS</div><div class="v acc">34,4 %</div><div class="d">invitations LinkedIn</div></div>
+          <div><div class="k">RÉPONSES</div><div class="v acc">6</div><div class="d">3,1 % de réponse</div></div>
+        </div>
+        <div class="bar" style="margin-top:13px"><i style="width:40%"></i></div>
+      </div>
+      <div class="ccfoot"><span class="split">Source · nominations presse pro</span>
+        <button class="btn sm gho">Ouvrir →</button></div>
+    </div>
+
+    <div class="cc">
+      <div class="cctop">
+        <div class="ccname"><h3>Salons · Exposants FR</h3><span class="st off">‖ En pause</span></div>
+        <div class="ccstats">
+          <div><div class="k">CONTACTÉS</div><div class="v">194 <span style="font-size:13px;color:var(--moss2)">/ 502</span></div><div class="d">39 % traités</div></div>
+          <div><div class="k">ENVOYÉS</div><div class="v">194</div><div class="d">3 canaux</div></div>
+          <div><div class="k">ACCEPTÉS</div><div class="v">23,2 %</div><div class="d">invitations LinkedIn</div></div>
+          <div><div class="k">RÉPONSES</div><div class="v">4</div><div class="d">2,1 % de réponse</div></div>
+        </div>
+        <div class="bar" style="margin-top:13px"><i style="width:39%;background:var(--slate3)"></i></div>
+      </div>
+      <div class="ccfoot"><span class="split">En pause depuis le 4 août · clé Apify expirée</span>
+        <button class="btn sm">Ouvrir →</button></div>
+    </div>
+
+    <button class="cc" data-modal="import" style="display:grid;place-items:center;min-height:150px;border-style:dashed;border-color:var(--slate3);text-align:center;padding:20px">
+      <div><div class="disp" style="font-size:15px;color:var(--lime)">Importer un fichier</div>
+        <div class="meta" style="max-width:280px;margin-top:4px">CSV ou XLSX. Nouvelle campagne, ou ajout à une campagne existante.</div></div>
+    </button>
+  </div>
+</section>
+
+<!-- ================= CAMPAGNE — DÉTAIL ================= -->
+<section class="screen" id="camp1">
+  <div class="head">
+    <div>
+      <div style="display:flex;align-items:center;gap:9px"><h1>Recrutement terrain · DRH</h1><span class="st">● Active</span></div>
+      <div class="sub">Créée il y a 22 jours · prochain envoi dans 3 h · 658 contacts · 5 étapes</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center"><span class="tag lime">18 / JOUR</span>
+      <button class="btn gho" data-modal="import">Ajouter des contacts</button><button class="btn">Mettre en pause</button></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab" data-tab="ov">Vue d'ensemble</button>
+    <button class="tab" data-tab="lead">Contacts <span class="b">658</span></button>
+    <button class="tab" data-tab="q">File d'attente <span class="b">2</span></button>
+    <button class="tab" data-tab="src">Sources &amp; personas</button>
+    <button class="tab on" data-tab="seq">Séquence</button>
+    <button class="tab" data-tab="act">Activité</button>
+    <button class="tab" data-tab="set">Paramètres</button>
+  </div>
+
+  <!-- SÉQUENCE -->
+  <div class="pane on" id="seq">
+    <div class="g21">
+      <div>
+        <div class="card" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:14px">
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <span class="tag lime">SIGNAL = OFFRE D'EMPLOI</span><span class="tag">SCORE ≥ 60</span>
+            <span class="tag">PERSONA = DRH</span><span class="tag">50–500 SALARIÉS</span></div>
+          <button class="btn sm">Modifier</button>
+        </div>
+
+        <button class="step" data-step
+          data-num="1" data-ch="EMAIL" data-title="Email d'ouverture"
+          data-subject="Votre recrutement d'un commercial itinérant"
+          data-stats="197 envoyés · 128 ouverts · 12 réponses"
+          data-cond="Immédiat à l'entrée dans la campagne · envoi automatique"
+          data-limit="90 MOTS MAX · UNE SEULE QUESTION"
+          data-body="Bonjour {{prenom}},
+
+Vous avez publié le {{signal_date}} une offre pour un commercial itinérant sur le secteur {{signal_zone}}. En général, la question de l'outillage terrain se pose dans les trois mois qui suivent l'arrivée.
+
+Comment suivez-vous aujourd'hui ce que remontent vos commerciaux depuis le terrain ?
+
+Alexandre">
+          <span class="num">1</span>
+          <span class="grow"><span class="trunc" style="display:block">Email d'ouverture</span>
+            <span class="preview trunc">« Bonjour {{prenom}}, vous avez publié le {{signal_date}} une offre pour un commercial… »</span></span>
+          <span class="stat"><b>197</b> envoyés · <em>12</em> réponses</span>
+          <span class="tag">EMAIL</span>
+        </button>
+
+        <div class="delay"><span class="ln"></span>attendre <input class="mono" value="1" style="width:50px;padding:3px 7px;text-align:center"> jour · aucune condition</div>
+
+        <button class="step" data-step
+          data-num="2" data-ch="LINKEDIN" data-title="Invitation LinkedIn"
+          data-stats="190 envoyées · 53 acceptées · 27,9 %"
+          data-cond="1 jour après l'étape 1 · plafond 20 invitations par jour et par compte"
+          data-limit="NOTE : 45 MOTS MAX — OU AUCUNE NOTE"
+          data-body="(aucune note)
+
+Les invitations sans note obtiennent un meilleur taux d'acceptation sur les profils de direction. Écrivez ici pour ajouter une note.">
+          <span class="num">2</span>
+          <span class="grow"><span class="trunc" style="display:block">Invitation LinkedIn</span>
+            <span class="preview trunc">Invitation sans note</span></span>
+          <span class="stat"><b>190</b> envoyées · <em>53</em> acceptées</span>
+          <span class="tag">LINKEDIN</span>
+        </button>
+
+        <div class="delay"><span class="ln"></span>attendre <input class="mono" value="2" style="width:50px;padding:3px 7px;text-align:center"> jours · <span class="cond">si l'invitation a été acceptée</span></div>
+
+        <button class="step" data-step
+          data-num="3" data-ch="LINKEDIN" data-title="Message LinkedIn"
+          data-stats="53 envoyés · 7 réponses · 13,2 %"
+          data-cond="2 jours après acceptation de l'invitation · envoi automatique"
+          data-limit="60 MOTS MAX · TUTOIEMENT · ANGLE DIFFÉRENT DE L'EMAIL"
+          data-body="Salut {{prenom}},
+
+Je t'ai vu recruter un commercial terrain sur {{signal_zone}}. Le sujet me parle : la plupart des équipes que je croise perdent la moitié des comptes rendus de visite en route.
+
+Comment tu récupères les tiens aujourd'hui ?">
+          <span class="num">3</span>
+          <span class="grow"><span class="trunc" style="display:block">Message LinkedIn</span>
+            <span class="preview trunc">« Salut {{prenom}}, je t'ai vu recruter un commercial terrain sur {{signal_zone}}… »</span></span>
+          <span class="stat"><b>53</b> envoyés · <em>7</em> réponses</span>
+          <span class="tag">LINKEDIN</span>
+        </button>
+
+        <div class="delay"><span class="ln"></span>attendre <input class="mono" value="4" style="width:50px;padding:3px 7px;text-align:center"> jours · <span class="cond">si aucune réponse aux étapes 1 à 3</span></div>
+
+        <button class="step" data-step
+          data-num="4" data-ch="COURRIER" data-title="Courrier manuscrit"
+          data-stats="6 expédiés · 102 € ce mois sur 300 €"
+          data-cond="Validation obligatoire · expédition 3 jours avant la date visée · 4,80 € pièce"
+          data-limit="120 MOTS MAX · UNE PAGE · ADRESSE PROFESSIONNELLE UNIQUEMENT"
+          data-body="{{prenom}},
+
+Vous recrutiez un commercial itinérant en {{signal_mois}}. Je vous ai écrit deux fois sans réponse, ce qui veut souvent dire que le sujet n'est pas prioritaire — ou que mes emails sont mal tombés.
+
+Une question simple : combien de comptes rendus de visite vous remontent réellement chaque semaine ?
+
+Alexandre De Clercq">
+          <span class="num">4</span>
+          <span class="grow"><span class="trunc" style="display:block">Courrier manuscrit</span>
+            <span class="preview trunc">« {{prenom}}, vous recrutiez un commercial itinérant en {{signal_mois}}… » · 4,80 € pièce</span></span>
+          <span class="stat"><b>6</b> expédiés · <b>102 €</b></span>
+          <span class="tag solid">VALIDATION</span>
+        </button>
+
+        <div class="delay"><span class="ln"></span>attendre <input class="mono" value="5" style="width:50px;padding:3px 7px;text-align:center"> jours · <span class="cond">si aucune réponse</span></div>
+
+        <button class="step" data-step
+          data-num="5" data-ch="EMAIL" data-title="Email de clôture"
+          data-subject="Je clos le sujet"
+          data-stats="planifié · aucun envoi pour l'instant"
+          data-cond="5 jours après l'étape 4 · dernière étape, sortie de campagne"
+          data-limit="60 MOTS MAX · AUCUNE RELANCE APRÈS"
+          data-body="{{prenom}},
+
+Je clos le sujet de mon côté, sans rancune — le timing n'est visiblement pas le bon.
+
+Si vos commerciaux terrain finissent par vous poser problème sur les comptes rendus, vous savez où me trouver.
+
+Alexandre">
+          <span class="num">5</span>
+          <span class="grow"><span class="trunc" style="display:block">Email de clôture</span>
+            <span class="preview trunc">« {{prenom}}, je clos le sujet de mon côté — dites-moi si le timing revient. »</span></span>
+          <span class="stat">planifié</span>
+          <span class="tag">EMAIL</span>
+        </button>
+
+        <div style="margin-top:14px;display:flex;gap:12px;align-items:center">
+          <button class="btn gho">+ Ajouter une étape</button>
+          <span class="hint">TOUTE RÉPONSE ARRÊTE LA SÉQUENCE, QUEL QUE SOIT LE CANAL</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="resp" style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+            <span class="disp" style="font-size:14px;color:var(--lime)">Ont répondu</span>
+            <span class="avs">
+              <img class="av" data-ini="SM" src="https://api.dicebear.com/9.x/notionists/svg?seed=Sylvain&backgroundColor=31473A" alt="">
+              <img class="av" data-ini="NB" src="https://api.dicebear.com/9.x/notionists/svg?seed=Nadia&backgroundColor=31473A" alt="">
+              <img class="av" data-ini="KD" src="https://api.dicebear.com/9.x/notionists/svg?seed=Karim&backgroundColor=31473A" alt="">
+              <span class="more">+18</span></span>
+          </div>
+          <div class="n">21</div>
+          <div class="meta" style="margin-bottom:11px">Sortis de la campagne · 10,6 % des contactés</div>
+          <button class="btn sm gho">Voir les contacts →</button>
+        </div>
+
+        <div class="card" style="margin-bottom:14px">
+          <div class="secthead"><h2>Dernières réponses</h2></div>
+          <div class="row" style="padding:9px 0;border-color:var(--slate2)">
+            <img class="av" data-ini="SM" src="https://api.dicebear.com/9.x/notionists/svg?seed=Sylvain&backgroundColor=31473A" alt="">
+            <div class="grow"><div class="nm"><a class="n" href="#">Sylvain Mercier</a>
+              <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn de Sylvain Mercier"><svg class="ico"><use href="#li"/></svg></a></div>
+              <div class="meta">Groupe Vantel · étape 3 · il y a 2 h</div></div>
+            <span class="tag lime">POSITIVE</span></div>
+          <div class="row" style="padding:9px 0;border-color:var(--slate2)">
+            <img class="av" data-ini="NB" src="https://api.dicebear.com/9.x/notionists/svg?seed=Nadia&backgroundColor=31473A" alt="">
+            <div class="grow"><div class="nm"><a class="n" href="#">Nadia Berthier</a>
+              <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn de Nadia Berthier"><svg class="ico"><use href="#li"/></svg></a></div>
+              <div class="meta">Ordelis · étape 1 · hier</div></div>
+            <span class="tag">À RECONTACTER</span></div>
+          <div class="row" style="padding:9px 0">
+            <img class="av" data-ini="KD" src="https://api.dicebear.com/9.x/notionists/svg?seed=Karim&backgroundColor=31473A" alt="">
+            <div class="grow"><div class="nm"><a class="n" href="#">Karim Delaunay</a>
+              <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn de Karim Delaunay"><svg class="ico"><use href="#li"/></svg></a></div>
+              <div class="meta">Cerbat Industries · étape 3 · hier</div></div>
+            <span class="tag lime">POSITIVE</span></div>
+        </div>
+
+        <div class="card">
+          <div class="secthead"><h2>Entonnoir</h2><span class="hint">PAR ÉTAPE</span></div>
+          <div style="display:flex;flex-direction:column;gap:9px;margin-top:4px">
+            <div><div style="display:flex;justify-content:space-between"><span class="split">Étape 1 · email</span><span class="split">197</span></div><div class="bar" style="margin-top:4px"><i style="width:100%"></i></div></div>
+            <div><div style="display:flex;justify-content:space-between"><span class="split">Étape 2 · invitation</span><span class="split">190</span></div><div class="bar" style="margin-top:4px"><i style="width:96%"></i></div></div>
+            <div><div style="display:flex;justify-content:space-between"><span class="split">Étape 3 · message</span><span class="split">53</span></div><div class="bar" style="margin-top:4px"><i style="width:27%"></i></div></div>
+            <div><div style="display:flex;justify-content:space-between"><span class="split">Étape 4 · courrier</span><span class="split">6</span></div><div class="bar" style="margin-top:4px"><i style="width:3%"></i></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Chaque étape est une ligne : titre, première ligne du message, chiffres. Le clic ouvre le message en grand, modifiable. Le délai et la condition se règlent entre deux étapes, jamais dans un formulaire caché.</p>
+  </div>
+
+  <!-- FILE D'ATTENTE -->
+  <div class="pane" id="q">
+    <div class="card" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:14px">
+      <div><b style="font-weight:500">Deux actions attendent votre feu vert.</b>
+        <div class="meta">Email et LinkedIn partent tout seuls. Seuls le courrier et les nouveaux messages passent ici — un courrier parti ne revient pas.</div></div>
+      <button class="btn sm">Régler par canal</button>
+    </div>
+    <div class="list">
+      <div class="row"><span class="tag solid">COURRIER</span>
+        <img class="av" data-ini="SM" src="https://api.dicebear.com/9.x/notionists/svg?seed=Sylvain&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Sylvain Mercier</a>
+          <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn"><svg class="ico"><use href="#li"/></svg></a></div>
+          <div class="meta">Directeur commercial · Groupe Vantel · 4,80 € · expédition ce soir 18:00</div></div>
+        <button class="btn sm">Modifier</button><button class="btn sm pri">Approuver</button></div>
+      <div class="row"><span class="tag solid">COURRIER</span>
+        <img class="av" data-ini="BA" src="https://api.dicebear.com/9.x/notionists/svg?seed=Bruno&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Bruno Aillet</a>
+          <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn"><svg class="ico"><use href="#li"/></svg></a></div>
+          <div class="meta">Directeur des ventes · Norlim Distribution · 4,80 € · expédition demain</div></div>
+        <button class="btn sm">Modifier</button><button class="btn sm pri">Approuver</button></div>
+    </div>
+  </div>
+
+  <!-- CONTACTS -->
+  <div class="pane" id="lead">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn sm gho">Tous · 658</button><button class="btn sm">En séquence · 197</button>
+      <button class="btn sm">Ont répondu · 21</button><button class="btn sm">En attente · 461</button>
+      <button class="btn sm">Email manquant · 34</button>
+      <button class="btn sm" data-modal="import" style="margin-left:auto">+ Importer</button>
+    </div>
+    <div class="list">
+      <div class="row">
+        <img class="av" data-ini="SM" src="https://api.dicebear.com/9.x/notionists/svg?seed=Sylvain&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Sylvain Mercier</a>
+          <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn"><svg class="ico"><use href="#li"/></svg></a></div>
+          <div class="meta">Directeur commercial · Groupe Vantel · s.mercier@vantel.fr</div></div>
+        <span class="score hi">92</span><span class="split">étape 4 / 5</span><span class="tag lime">A RÉPONDU</span></div>
+      <div class="row">
+        <img class="av" data-ini="NB" src="https://api.dicebear.com/9.x/notionists/svg?seed=Nadia&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Nadia Berthier</a>
+          <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn"><svg class="ico"><use href="#li"/></svg></a></div>
+          <div class="meta">DRH · Ordelis · n.berthier@ordelis.fr</div></div>
+        <span class="score mid">64</span><span class="split">étape 2 / 5</span><span class="tag">EN COURS</span></div>
+      <div class="row">
+        <img class="av" data-ini="KD" src="https://api.dicebear.com/9.x/notionists/svg?seed=Karim&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Karim Delaunay</a>
+          <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn"><svg class="ico"><use href="#li"/></svg></a></div>
+          <div class="meta">Directeur des ventes · Cerbat Industries · k.delaunay@cerbat.com</div></div>
+        <span class="score hi">88</span><span class="split">étape 3 / 5</span><span class="tag lime">A RÉPONDU</span></div>
+      <div class="row">
+        <img class="av" data-ini="PE" src="https://api.dicebear.com/9.x/notionists/svg?seed=Paul&backgroundColor=31473A" alt="">
+        <div class="grow"><div class="nm"><a class="n" href="#">Paul Estrade</a>
+          <span class="split" style="font-size:11px">pas de profil</span></div>
+          <div class="meta">Commercial terrain · Groupe Vantel · email incertain</div></div>
+        <span class="score mid">71</span><span class="split">—</span><span class="tag flare">À ENRICHIR</span></div>
+    </div>
+  </div>
+
+  <div class="pane" id="ov"><div class="card"><p>Vue d'ensemble : les quatre chiffres de la carte, la courbe d'activité de cette campagne, l'entonnoir par étape.</p></div></div>
+  <div class="pane" id="src"><div class="card"><p>Source du signal ou fichier importé, filtres de qualification, personas ciblés et leur aiguillage vers les étapes.</p></div></div>
+  <div class="pane" id="act"><div class="card"><p>Journal chronologique : chaque envoi, chaque ouverture, chaque réponse, chaque erreur provider.</p></div></div>
+  <div class="pane" id="set"><div class="card"><p>Cadence par jour, fenêtre horaire, comptes expéditeurs, validation par canal, plafond de dépense courrier.</p></div></div>
+</section>
+
+<!-- ================= SIGNAUX ================= -->
+<section class="screen" id="signaux">
+  <div class="head">
+    <div><h1>Signaux</h1><div class="sub">Le flux brut de détection, toutes campagnes confondues. C'est ici qu'on voit ce que les campagnes ne prennent pas.</div></div>
+    <button class="btn pri">Inscrire la sélection</button>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:13px">
+    <button class="btn sm gho">Tous · 34</button><button class="btn sm">Emploi · 21</button>
+    <button class="btn sm">Nomination · 6</button><button class="btn sm">Salon · 7</button>
+    <button class="btn sm">Sans campagne · 5</button><button class="btn sm">Écartés · 11</button>
+    <button class="btn sm">À arbitrer · 3</button>
+  </div>
+  <div class="list">
+    <div class="row"><span class="score hi">92</span>
+      <div class="grow"><div class="trunc">Commercial itinérant B2B — secteur Normandie</div>
+        <div class="meta">Norlim Distribution · 210 salariés · Rouen · SIREN 812 445 099</div></div>
+      <span class="tag">EMPLOI</span><span class="split">il y a 6 h</span><button class="btn sm gho">Inscrire</button></div>
+    <div class="row"><span class="score hi">88</span>
+      <div class="grow"><div class="trunc">Nomination — Directeur commercial groupe</div>
+        <div class="meta">Aubrac Technologies · aucune campagne ne correspond à ce persona</div></div>
+      <span class="tag flare">SANS CAMPAGNE</span><span class="split">il y a 11 h</span><button class="btn sm gho">Créer</button></div>
+    <div class="row"><span class="score mid">71</span>
+      <div class="grow"><div class="trunc">Exposant — Salon Produrable 2026, stand D14</div>
+        <div class="meta">Groupe Vantel · contact pré-salon recommandé à J-30</div></div>
+      <span class="tag">SALON</span><span class="split">dans 59 j</span><button class="btn sm gho">Inscrire</button></div>
+    <div class="row"><span class="score mid">64</span>
+      <div class="grow"><div class="trunc">2 postes commerciaux terrain — Rhône</div>
+        <div class="meta">Ordelis · déjà dans « Recrutement terrain · DRH »</div></div>
+      <span class="tag">EMPLOI</span><span class="split">il y a 2 j</span><span class="tag lime">INSCRIT</span></div>
+    <div class="row"><span class="score">38</span>
+      <div class="grow"><div class="trunc">Attaché commercial itinérant — Île-de-France</div>
+        <div class="meta">Écarté · cabinet de recrutement détecté (NAF 7830Z)</div></div>
+      <span class="tag">EMPLOI</span><span class="split">il y a 2 j</span><button class="btn sm">Rétablir</button></div>
+    <div class="row"><span class="score hot">—</span>
+      <div class="grow"><div class="trunc">Responsable des ventes régionales — Grand Est</div>
+        <div class="meta">« Groupe M.D.C. » — 3 correspondances SIREN possibles</div></div>
+      <span class="tag flare">ARBITRAGE</span><span class="split">il y a 3 j</span><button class="btn sm">Résoudre</button></div>
+  </div>
+  <p class="note">Trois états n'existent que sur cet écran, et c'est ce qui le justifie : le signal écarté par un filtre (trop agressif ?), le signal dont l'entreprise n'a pas pu être résolue, et le signal orphelin qu'aucune campagne ne prend. Sans lui, une source qui se dégrade reste invisible jusqu'à ce que le flux se tarisse.</p>
+</section>
+
+<!-- ================= PROSPECTS ================= -->
+<section class="screen" id="fiche">
+  <div class="head">
+    <div><h1>Groupe Vantel</h1><div class="sub">340 salariés · Le Havre · SIREN 402 118 763 · distribution B2B</div></div>
+    <div style="display:flex;gap:10px"><button class="btn">Ne plus contacter</button><button class="btn pri">Inscrire un contact</button></div>
+  </div>
+
+  <div class="g21">
+    <div class="card">
+      <div class="secthead"><h2>Séquence en cours — Sylvain Mercier</h2><span class="hint">ÉTAPE 4 / 5</span></div>
+      <div class="mono" style="font-size:12.5px;position:relative;margin-top:4px">
+        <div style="position:absolute;left:3.5px;top:12px;bottom:14px;width:1px;background:var(--slate2)"></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--lime3)"></span>
+          <span>signal détecté</span><span style="text-align:right;color:var(--moss)">00:00:00</span>
+          <span style="color:var(--moss2);font-size:11.5px">offre publiée le 12/08 · score 92</span></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--lime3)"></span>
+          <span>email d'ouverture</span><span style="text-align:right;color:var(--moss)">04:12:06</span>
+          <span style="color:var(--moss2);font-size:11.5px">ouvert · sans réponse</span></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--lime3)"></span>
+          <span>invitation linkedin</span><span style="text-align:right;color:var(--moss)">1j 02:40</span>
+          <span style="color:var(--moss2);font-size:11.5px">acceptée</span></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--lime3)"></span>
+          <span>message linkedin</span><span style="text-align:right;color:var(--moss)">3j 06:15</span>
+          <span style="color:var(--moss2);font-size:11.5px">lu · sans réponse</span></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0;color:var(--lime)">
+          <span style="width:9px;height:9px;border-radius:50%;background:var(--lime);margin-left:-1px"></span>
+          <span>courrier manuscrit</span><span style="text-align:right">5j 09:40</span>
+          <span style="font-size:11.5px">à approuver avant 18:00</span></div>
+        <div style="display:grid;grid-template-columns:14px 1fr 78px 150px;align-items:center;gap:10px;padding:8px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--slate3)"></span>
+          <span style="color:var(--moss)">email de clôture</span><span style="text-align:right;color:var(--moss2)">10j —</span>
+          <span style="color:var(--moss2);font-size:11.5px">planifié</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="secthead"><h2>Contacts</h2><span class="hint">3</span></div>
+        <div class="row" style="padding:9px 0;border-color:var(--slate2)">
+          <img class="av" data-ini="SM" src="https://api.dicebear.com/9.x/notionists/svg?seed=Sylvain&backgroundColor=31473A" alt="">
+          <div class="grow"><div class="nm"><a class="n" href="#">Sylvain Mercier</a>
+            <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn de Sylvain Mercier"><svg class="ico"><use href="#li"/></svg></a></div>
+            <div class="meta">Directeur commercial · email vérifié</div></div>
+          <span class="tag lime">EN SÉQUENCE</span></div>
+        <div class="row" style="padding:9px 0;border-color:var(--slate2)">
+          <img class="av" data-ini="NB" src="https://api.dicebear.com/9.x/notionists/svg?seed=Nadia&backgroundColor=31473A" alt="">
+          <div class="grow"><div class="nm"><a class="n" href="#">Nadia Berthier</a>
+            <a href="https://www.linkedin.com" target="_blank" aria-label="Profil LinkedIn de Nadia Berthier"><svg class="ico"><use href="#li"/></svg></a></div>
+            <div class="meta">DRH · email vérifié</div></div>
+          <span class="tag">DISPONIBLE</span></div>
+        <div class="row" style="padding:9px 0">
+          <img class="av" data-ini="PE" src="https://api.dicebear.com/9.x/notionists/svg?seed=Paul&backgroundColor=31473A" alt="">
+          <div class="grow"><div class="nm"><a class="n" href="#">Paul Estrade</a>
+            <span class="split" style="font-size:11px">pas de profil</span></div>
+            <div class="meta">Commercial terrain · email incertain</div></div>
+          <span class="tag flare">À ENRICHIR</span></div>
+      </div>
+
+      <div class="card">
+        <div class="secthead"><h2>Signaux</h2><span class="hint">2</span></div>
+        <div class="row" style="padding:9px 0;border-color:var(--slate2)"><span class="score hi">92</span>
+          <div class="grow"><div class="trunc">Commercial itinérant B2B</div><div class="meta">12 août · France Travail</div></div></div>
+        <div class="row" style="padding:9px 0"><span class="score mid">71</span>
+          <div class="grow"><div class="trunc">Exposant Produrable 2026</div><div class="meta">stand D14 · dans 59 jours</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<!-- ============ MODALE — MESSAGE ============ -->
+<div class="ovl" id="ovl-msg">
+  <div class="modal">
+    <div class="mhead">
+      <span class="num" id="m-num">1</span>
+      <div class="grow">
+        <div class="disp" style="font-size:16px" id="m-title">Email d'ouverture</div>
+        <div class="meta" id="m-cond">Immédiat · envoi automatique</div>
+      </div>
+      <span class="tag" id="m-ch">EMAIL</span>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="mbody">
+      <div id="m-subwrap" style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-family:var(--mono);letter-spacing:.05em;color:var(--moss2);margin-bottom:5px">OBJET</label>
+        <input id="m-subject" value="">
+      </div>
+      <label style="display:block;font-size:11px;font-family:var(--mono);letter-spacing:.05em;color:var(--moss2);margin-bottom:5px">MESSAGE</label>
+      <textarea id="m-body" rows="11"></textarea>
+      <div class="vars">
+        <span class="var">{{prenom}}</span><span class="var">{{nom}}</span><span class="var">{{entreprise}}</span>
+        <span class="var">{{poste}}</span><span class="var">{{signal_date}}</span>
+        <span class="var">{{signal_mois}}</span><span class="var">{{signal_zone}}</span><span class="var">{{signal_titre}}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--slate2)">
+        <span class="hint" id="m-limit">90 MOTS MAX</span>
+        <span class="stat" id="m-stats">197 envoyés · 12 réponses</span>
+      </div>
+    </div>
+    <div class="mfoot">
+      <div style="display:flex;gap:9px">
+        <button class="btn sm gho">Générer une variante</button>
+        <button class="btn sm">Aperçu sur un contact réel</button>
+      </div>
+      <div style="display:flex;gap:9px">
+        <button class="btn sm" data-close>Annuler</button>
+        <button class="btn sm pri" data-close>Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODALE — IMPORT ============ -->
+<div class="ovl" id="ovl-import">
+  <div class="modal wide">
+    <div class="mhead">
+      <div class="grow"><div class="disp" style="font-size:16px">Importer des contacts</div>
+        <div class="meta">CSV ou XLSX · 5 000 lignes maximum par fichier</div></div>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="mbody">
+      <div class="drop">
+        <b>Déposez votre fichier ici</b>
+        <span class="meta">ou <span style="color:var(--lime)">parcourez vos fichiers</span></span>
+      </div>
+
+      <div style="margin-top:16px;display:flex;align-items:center;justify-content:space-between">
+        <span class="split">contacts-salon-produrable.csv · 412 lignes</span>
+        <span class="tag lime">COLONNES RECONNUES</span>
+      </div>
+      <table class="map">
+        <tr><th>COLONNE DU FICHIER</th><th>CHAMP JAY REACH</th><th>EXEMPLE</th></tr>
+        <tr><td>Prénom</td><td class="ok">first_name</td><td>Sylvain</td></tr>
+        <tr><td>Nom</td><td class="ok">last_name</td><td>Mercier</td></tr>
+        <tr><td>Société</td><td class="ok">company</td><td>Groupe Vantel</td></tr>
+        <tr><td>Fonction</td><td class="ok">job_title</td><td>Directeur commercial</td></tr>
+        <tr><td>Mail pro</td><td class="ok">email</td><td>s.mercier@vantel.fr</td></tr>
+        <tr><td>Profil LinkedIn</td><td class="ok">linkedin_url</td><td>/in/sylvain-mercier</td></tr>
+        <tr><td>Note interne</td><td style="color:var(--moss2)">ignorée</td><td>—</td></tr>
+      </table>
+
+      <div style="margin-top:18px">
+        <label style="display:block;font-size:11px;font-family:var(--mono);letter-spacing:.05em;color:var(--moss2);margin-bottom:5px">QUE FAIRE DE CES CONTACTS</label>
+        <button class="opt on" data-opt><span class="rad"></span>
+          <span><b style="font-weight:500">Créer une nouvelle campagne</b>
+            <div class="meta">Vous choisirez la séquence à l'étape suivante, ou vous partirez d'un modèle.</div></span></button>
+        <button class="opt" data-opt><span class="rad"></span>
+          <span><b style="font-weight:500">Ajouter à une campagne existante</b>
+            <div class="meta">Recrutement terrain · DRH — 658 contacts, 5 étapes</div></span></button>
+        <button class="opt" data-opt><span class="rad"></span>
+          <span><b style="font-weight:500">Importer sans inscrire</b>
+            <div class="meta">Les contacts rejoignent la base. Vous les inscrirez plus tard.</div></span></button>
+      </div>
+
+      <div class="card" style="margin-top:16px;background:var(--ink);border-color:var(--slate2)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="split">Enrichissement à l'import</span>
+          <span class="tag lime">34 EMAILS MANQUANTS</span>
+        </div>
+        <div class="meta" style="margin-top:6px">Jay Reach peut chercher les emails absents et rattacher chaque société à son SIREN. Coût estimé : 2,40 €. Les doublons avec la base existante sont fusionnés, jamais dupliqués.</div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <span class="hint">412 LIGNES · 398 UNIQUES · 14 DOUBLONS FUSIONNÉS</span>
+      <div style="display:flex;gap:9px">
+        <button class="btn sm" data-close>Annuler</button>
+        <button class="btn sm pri" data-close>Importer et continuer →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('[data-go]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var id=b.getAttribute('data-go');
+    document.querySelectorAll('.screen').forEach(function(s){s.classList.toggle('on',s.id===id)});
+    if(b.classList.contains('nav')){
+      document.querySelectorAll('.nav').forEach(function(n){n.classList.remove('on')});
+      b.classList.add('on');
+    }
+    window.scrollTo(0,0);
+  });
+});
+document.querySelectorAll('[data-tab]').forEach(function(t){
+  t.addEventListener('click',function(){
+    document.querySelectorAll('[data-tab]').forEach(function(x){x.classList.remove('on')});
+    t.classList.add('on');
+    var id=t.getAttribute('data-tab');
+    document.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on',p.id===id)});
+  });
+});
+
+function openM(el){el.classList.add('on')}
+function closeAll(){document.querySelectorAll('.ovl').forEach(function(o){o.classList.remove('on')})}
+
+document.querySelectorAll('[data-step]').forEach(function(s){
+  s.addEventListener('click',function(){
+    var d=s.dataset;
+    document.getElementById('m-num').textContent=d.num;
+    document.getElementById('m-title').textContent=d.title;
+    document.getElementById('m-cond').textContent=d.cond;
+    document.getElementById('m-ch').textContent=d.ch;
+    document.getElementById('m-ch').className='tag'+(d.ch==='COURRIER'?' solid':'');
+    document.getElementById('m-body').value=d.body;
+    document.getElementById('m-limit').textContent=d.limit;
+    document.getElementById('m-stats').textContent=d.stats;
+    var sw=document.getElementById('m-subwrap');
+    if(d.subject){sw.style.display='block';document.getElementById('m-subject').value=d.subject}
+    else{sw.style.display='none'}
+    openM(document.getElementById('ovl-msg'));
+  });
+});
+document.querySelectorAll('[data-modal="import"]').forEach(function(b){
+  b.addEventListener('click',function(){openM(document.getElementById('ovl-import'))});
+});
+document.querySelectorAll('[data-close]').forEach(function(b){b.addEventListener('click',closeAll)});
+document.querySelectorAll('.ovl').forEach(function(o){
+  o.addEventListener('click',function(e){if(e.target===o)closeAll()});
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeAll()});
+document.querySelectorAll('[data-opt]').forEach(function(o){
+  o.addEventListener('click',function(){
+    o.parentElement.querySelectorAll('[data-opt]').forEach(function(x){x.classList.remove('on')});
+    o.classList.add('on');
+  });
+});
+document.querySelectorAll('img.av').forEach(function(img){
+  img.addEventListener('error',function(){
+    var s=document.createElement('span');
+    s.className=img.className+' ini';
+    s.textContent=img.dataset.ini||'';
+    img.replaceWith(s);
+  });
+});
+</script>
+</body>
+</html>

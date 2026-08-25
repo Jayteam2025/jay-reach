@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jay Reach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0A130E; --slate:#18271F; --slate2:#243629; --slate3:#31473A;
+  --chalk:#EEF3E9; --moss:#8B9C91; --moss2:#65766B;
+  --lime:#C6FF3D; --volt:#EDFF66; --lime2:#8FCB2E; --lime3:#4E7A1C;
+  --limeghost:rgba(198,255,61,.10); --limeline:rgba(198,255,61,.30);
+  --flare:#FF5A1F;
+  --sans:'Geist',system-ui,-apple-system,sans-serif;
+  --mono:'Geist Mono',ui-monospace,monospace;
+  --display:'Archivo',var(--sans);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--chalk);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+section{padding:70px 0;border-top:1px solid var(--slate2)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--lime);margin-bottom:14px}
+h1{font-family:var(--display);font-variation-settings:'wdth' 116,'wght' 620;font-size:clamp(32px,5vw,54px);line-height:1.06;letter-spacing:-.025em}
+h2{font-family:var(--display);font-variation-settings:'wdth' 114,'wght' 600;font-size:clamp(24px,3.3vw,33px);line-height:1.16;letter-spacing:-.018em}
+h3{font-family:var(--display);font-variation-settings:'wdth' 110,'wght' 600;font-size:17px;letter-spacing:-.008em}
+p.lead{font-size:18px;color:var(--moss);max-width:670px;margin-top:18px}
+p{color:var(--moss)}
+strong{color:var(--chalk);font-weight:500}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--slate3);border-radius:6px;padding:11px 19px;color:var(--chalk);font-size:15px;transition:.15s}
+.btn:hover{border-color:var(--lime2);background:var(--slate)}
+.btn.pri{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:500}
+.btn.pri:hover{background:var(--volt);border-color:var(--volt)}
+.btn.gho{border-color:var(--limeline);color:var(--lime)}
+.btn.gho:hover{background:var(--limeghost);border-color:var(--lime)}
+.btn.sm{padding:7px 13px;font-size:14px}
+.todo{color:var(--flare);font-family:var(--mono);font-size:11.5px}
+
+.promo{background:var(--lime);color:var(--ink);text-align:center;padding:9px 24px;font-size:14px;font-weight:500}
+.promo span{font-family:var(--mono);font-size:12.5px;letter-spacing:.03em;opacity:.72;font-weight:400}
+
+nav{position:sticky;top:0;z-index:30;background:rgba(10,19,14,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--slate2)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;gap:14px}
+.brand{display:flex;align-items:baseline;gap:5px;font-family:var(--display);font-variation-settings:'wdth' 122,'wght' 700;font-size:19px;letter-spacing:-.02em}
+.brand b{color:var(--lime);font-weight:inherit}
+.seg{display:flex;background:var(--slate);border:1px solid var(--slate2);border-radius:8px;padding:3px;gap:3px}
+.seg button{padding:7px 15px;border-radius:5px;font-size:13.5px;color:var(--moss);white-space:nowrap}
+.seg button:hover{color:var(--chalk)}
+.seg button.on{background:var(--lime);color:var(--ink);font-weight:500}
+.seg .sm2{font-family:var(--mono);font-size:10px;letter-spacing:.06em;display:block;opacity:.75;margin-top:1px}
+.lang{display:flex;border:1px solid var(--slate2);border-radius:6px;overflow:hidden}
+.lang button{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;padding:6px 9px;color:var(--moss2);border-right:1px solid var(--slate2)}
+.lang button:last-child{border-right:none}
+.lang button:hover{color:var(--chalk);background:var(--slate)}
+.lang button.on{background:var(--limeghost);color:var(--lime)}
+
+.viewB{display:none}
+body.b .viewA{display:none}
+body.b .viewB{display:block}
+
+.hero{border-top:none;padding:60px 0 54px}
+.herogrid{display:grid;grid-template-columns:1.06fr .94fr;gap:46px;align-items:center}
+.tagrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px}
+.tag{font-family:var(--mono);font-size:11px;letter-spacing:.05em;border:1px solid var(--slate3);color:var(--moss);border-radius:3px;padding:3px 8px}
+.tag.lime{border-color:var(--limeline);color:var(--lime);background:var(--limeghost)}
+.cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.microcopy{font-size:13.5px;color:var(--moss2);margin-top:13px}
+
+.board{background:var(--slate);border:1px solid var(--slate2);border-radius:12px;overflow:hidden}
+.boardhead{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--slate2)}
+.boardhead .t{font-family:var(--mono);font-size:11.5px;color:var(--moss2);letter-spacing:.05em}
+.boardbody{padding:8px 17px 15px;font-family:var(--mono);font-size:12.5px;position:relative}
+.rail{position:absolute;left:20.5px;top:18px;bottom:22px;width:1px;background:var(--slate2)}
+.leg{display:grid;grid-template-columns:14px 1fr auto;align-items:center;gap:12px;padding:8px 0}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--lime3);margin-left:1px}
+.leg.now .dot{width:9px;height:9px;background:var(--lime);margin-left:0}
+.leg.todo .dot{background:var(--slate3)}
+.leg .lbl{color:var(--chalk)}
+.leg.todo .lbl{color:var(--moss2)}
+.leg .sp{color:var(--moss);text-align:right;white-space:nowrap}
+.leg.now .lbl,.leg.now .sp{color:var(--lime)}
+.leg .sub{color:var(--moss2);font-size:11.5px;display:block}
+
+.proof{padding:36px 0;border-top:1px solid var(--slate2);border-bottom:1px solid var(--slate2);background:#0C150F}
+.logos{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:16px}
+.logo{border:1px dashed var(--slate3);border-radius:6px;padding:11px 22px;font-family:var(--display);font-variation-settings:'wdth' 110,'wght' 600;font-size:14px;color:var(--moss2)}
+.testi{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}
+.tcard{background:var(--slate);border:1px solid var(--slate2);border-radius:12px;padding:20px 22px;display:flex;flex-direction:column}
+.tcard .q{font-size:15px;color:var(--chalk);flex:1}
+.tcard .who{display:flex;align-items:center;gap:11px;margin-top:16px;padding-top:14px;border-top:1px solid var(--slate2)}
+.tcard .av{width:32px;height:32px;border-radius:50%;background:var(--limeghost);border:1px solid var(--limeline);color:var(--lime);display:grid;place-items:center;font-family:var(--mono);font-size:11px}
+.tcard .nm{font-size:14px;color:var(--chalk)}
+.tcard .ro{font-size:12.5px;color:var(--moss2)}
+
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--slate);border:1px solid var(--slate2);border-radius:12px;padding:22px 24px}
+.card p{font-size:14.5px;margin-top:8px}
+.card .n{font-family:var(--mono);font-size:11px;color:var(--lime);letter-spacing:.1em;margin-bottom:10px;display:block}
+.card.hi{border-color:var(--limeline);background:linear-gradient(0deg,var(--limeghost),var(--limeghost)),var(--slate)}
+
+.strip{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--slate2);border-radius:12px;overflow:hidden;margin-top:32px}
+.strip div{padding:18px 16px;border-right:1px solid var(--slate2)}
+.strip div:last-child{border-right:none}
+.strip .k{font-family:var(--mono);font-size:10.5px;color:var(--lime);letter-spacing:.1em}
+.strip h3{font-size:15px;margin:7px 0 5px}
+.strip p{font-size:13px;line-height:1.5}
+
+.shot{background:var(--slate);border:1px solid var(--slate2);border-radius:12px;overflow:hidden}
+.shotbar{display:flex;align-items:center;gap:7px;padding:10px 14px;border-bottom:1px solid var(--slate2);background:#141F19}
+.shotbar i{width:9px;height:9px;border-radius:50%;background:var(--slate3);display:block}
+.shotbar span{font-family:var(--mono);font-size:11px;color:var(--moss2);margin-left:8px}
+.srow{display:flex;align-items:center;gap:11px;padding:11px 15px;border-bottom:1px solid var(--slate2);font-size:13.5px}
+.srow:last-child{border-bottom:none}
+.stag{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;border:1px solid var(--slate3);color:var(--moss);border-radius:3px;padding:2px 6px;white-space:nowrap}
+.stag.solid{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:500}
+.stag.lime{border-color:var(--limeline);color:var(--lime);background:var(--limeghost)}
+.sgrow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smeta{font-size:11.5px;color:var(--moss2)}
+.sbtn{font-family:var(--sans);font-size:12px;border:1px solid var(--slate3);border-radius:4px;padding:3px 9px;color:var(--moss);white-space:nowrap}
+.sbtn.p{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:500}
+.sav{width:26px;height:26px;border-radius:50%;background:var(--slate3);flex-shrink:0}
+.sdelay{font-family:var(--mono);font-size:11px;color:var(--moss2);padding:7px 15px 7px 42px}
+.sdelay b{color:var(--lime);font-weight:400}
+.snum{font-family:var(--mono);font-size:11px;width:21px;height:21px;border-radius:50%;border:1px solid var(--slate3);display:grid;place-items:center;color:var(--moss);flex-shrink:0}
+
+.price{background:var(--slate);border:1px solid var(--slate2);border-radius:14px;padding:28px 30px;display:flex;flex-direction:column}
+.price.hi{border-color:var(--lime)}
+.amtrow{display:flex;align-items:baseline;gap:12px;margin:14px 0 2px;flex-wrap:wrap}
+.price .amt{font-family:var(--display);font-variation-settings:'wdth' 118,'wght' 620;font-size:48px;line-height:1;letter-spacing:-.02em;color:var(--lime)}
+.price .old{font-family:var(--display);font-variation-settings:'wdth' 114,'wght' 600;font-size:24px;color:var(--moss2);text-decoration:line-through}
+.price .per{font-size:13.5px;color:var(--moss2);font-family:var(--mono);letter-spacing:.04em}
+ul.feat{list-style:none;margin:20px 0 24px;display:flex;flex-direction:column;gap:10px}
+ul.feat li{font-size:14.5px;color:var(--moss);padding-left:20px;position:relative}
+ul.feat li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:2px;background:var(--lime)}
+.price .btn{margin-top:auto;justify-content:center}
+.badge{align-self:flex-start;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;background:var(--lime);color:var(--ink);border-radius:20px;padding:3px 10px;font-weight:500}
+
+table.cmp{width:100%;border-collapse:collapse;margin-top:26px;font-size:14.5px}
+table.cmp th,table.cmp td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--slate2);vertical-align:top}
+table.cmp th{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;color:var(--moss2);font-weight:400}
+table.cmp th.on{color:var(--lime)}
+table.cmp td{color:var(--moss)}
+table.cmp td:first-child{color:var(--chalk)}
+
+details{border-bottom:1px solid var(--slate2);padding:17px 0}
+details summary{cursor:pointer;list-style:none;font-size:16.5px;color:var(--chalk);display:flex;justify-content:space-between;gap:16px;font-weight:500}
+details summary::-webkit-details-marker{display:none}
+details summary::after{content:"+";color:var(--lime);font-family:var(--mono);font-size:19px;line-height:1}
+details[open] summary::after{content:"–"}
+details p{margin-top:11px;font-size:15px;max-width:780px}
+
+.codebox{background:#060C08;border:1px solid var(--slate2);border-radius:10px;padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.62;color:var(--moss);overflow-x:auto;white-space:pre}
+.codebox .c{color:var(--moss2)}
+.codebox .g{color:var(--lime)}
+.codebox .k{color:var(--lime2)}
+
+.jay{background:#0D1811;border-top:1px solid var(--slate2)}
+.jaygrid{display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:start}
+.mod{display:flex;gap:13px;padding:13px 0;border-bottom:1px solid var(--slate2)}
+.mod:last-child{border-bottom:none}
+.mod .nm{font-family:var(--display);font-variation-settings:'wdth' 110,'wght' 600;font-size:14.5px;min-width:96px;color:var(--lime)}
+.mod p{font-size:14px;margin:0}
+
+footer{border-top:1px solid var(--slate2);padding:48px 0 40px;background:#070E0A}
+.fgrid{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:34px;margin-bottom:34px}
+footer h4{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;color:var(--moss2);margin-bottom:13px}
+footer ul{list-style:none;display:flex;flex-direction:column;gap:8px;font-size:14px;color:var(--moss)}
+footer ul a:hover{color:var(--lime)}
+.legal{border-top:1px solid var(--slate2);padding-top:22px;font-size:12.5px;color:var(--moss2)}
+.legal a{border-bottom:1px solid var(--slate3)}
+.legal a:hover{color:var(--lime)}
+.parent{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:22px;padding-top:20px;border-top:1px solid var(--slate2);font-size:14px;color:var(--moss)}
+@media(max-width:980px){
+  .herogrid,.g3,.g2,.g4,.fgrid,.jaygrid,.testi{grid-template-columns:1fr}
+  .strip{grid-template-columns:1fr}
+  .strip div{border-right:none;border-bottom:1px solid var(--slate2)}
+  section{padding:52px 0}
+  nav .wrap{height:auto;padding-top:10px;padding-bottom:10px;flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+
+<div class="promo viewA" data-t="promo"></div>
+
+<nav><div class="wrap">
+  <a href="#" class="brand"><b>Jay</b>Reach</a>
+  <div class="seg">
+    <button class="on" data-view="a"><span data-t="nav_a"></span><span class="sm2" data-t="nav_a_sub"></span></button>
+    <button data-view="b"><span data-t="nav_b"></span><span class="sm2" data-t="nav_b_sub"></span></button>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <div class="lang">
+      <button class="on" data-lang="fr">FR</button>
+      <button data-lang="en">EN</button>
+      <button data-lang="nl">NL</button>
+    </div>
+    <a class="btn sm pri viewA" href="#tarifs-a" data-t="nav_cta"></a>
+    <a class="btn sm gho viewB" href="https://github.com/heyjay/jay-reach">GitHub</a>
+  </div>
+</div></nav>
+
+<!-- ══════════ VUE A ══════════ -->
+
+<section class="hero viewA"><div class="wrap">
+  <div class="herogrid">
+    <div>
+      <div class="eyebrow" data-t="a_eyebrow"></div>
+      <h1 data-t="a_h1"></h1>
+      <p class="lead" data-t="a_lead"></p>
+      <div class="cta">
+        <a class="btn pri" href="#tarifs-a" data-t="a_cta1"></a>
+        <a class="btn" href="#produit-a" data-t="a_cta2"></a>
+      </div>
+      <div class="microcopy" data-t="a_micro"></div>
+      <div class="tagrow">
+        <span class="tag lime" data-t="a_tag1"></span>
+        <span class="tag" data-t="a_tag2"></span>
+        <span class="tag" data-t="a_tag3"></span>
+        <span class="tag" data-t="a_tag4"></span>
+      </div>
+    </div>
+    <div class="board">
+      <div class="boardhead">
+        <span style="font-family:var(--display);font-variation-settings:'wdth' 112,'wght' 600;font-size:14px">Sylvain Mercier — Groupe Vantel</span>
+        <span class="t" data-t="a_board_step"></span>
+      </div>
+      <div class="boardbody">
+        <div class="rail"></div>
+        <div class="leg"><span class="dot"></span><span class="lbl" data-t="a_leg1"></span><span class="sp" data-t="a_d0"></span></div>
+        <div class="leg"><span class="dot"></span><span class="lbl" data-t="a_leg2"></span><span class="sp" data-t="a_d4h"></span></div>
+        <div class="leg"><span class="dot"></span><span class="lbl" data-t="a_leg3"></span><span class="sp" data-t="a_d1"></span></div>
+        <div class="leg now"><span class="dot"></span><span class="lbl" data-t="a_leg4"></span><span class="sp" data-t="a_d5"></span></div>
+        <div class="leg todo"><span class="dot"></span><span class="lbl" data-t="a_leg5"></span><span class="sp" data-t="a_d8"></span></div>
+        <div class="leg todo"><span class="dot"></span><span class="lbl" data-t="a_leg6"></span><span class="sp" data-t="a_d12"></span></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<div class="proof viewA"><div class="wrap">
+  <p style="text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--moss2)" data-t="a_proof"></p>
+  <div class="logos">
+    <span class="logo">Recap Real Estate</span>
+    <span class="logo">AP Gustin</span>
+    <span class="logo">F&amp;F Invest</span>
+    <span class="logo" style="color:var(--flare);border-color:var(--flare)" data-t="a_logos_todo"></span>
+  </div>
+  <div class="testi">
+    <div class="tcard"><p class="q" data-t="a_t1"></p>
+      <div class="who"><span class="av">RR</span><div><div class="nm todo">[Prénom Nom]</div><div class="ro">Recap Real Estate</div></div></div></div>
+    <div class="tcard"><p class="q" data-t="a_t2"></p>
+      <div class="who"><span class="av">AG</span><div><div class="nm todo">[Prénom Nom]</div><div class="ro">AP Gustin</div></div></div></div>
+    <div class="tcard"><p class="q" data-t="a_t3"></p>
+      <div class="who"><span class="av">FF</span><div><div class="nm todo">[Prénom Nom]</div><div class="ro">F&amp;F Invest</div></div></div></div>
+  </div>
+</div></div>
+
+<section class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_p_eyebrow"></div>
+  <h2 data-t="a_p_h2"></h2>
+  <p class="lead" data-t="a_p_lead"></p>
+  <div class="strip">
+    <div><span class="k">01</span><h3 data-t="a_s1h"></h3><p data-t="a_s1p"></p></div>
+    <div><span class="k">02</span><h3 data-t="a_s2h"></h3><p data-t="a_s2p"></p></div>
+    <div><span class="k">03</span><h3 data-t="a_s3h"></h3><p data-t="a_s3p"></p></div>
+    <div><span class="k">04</span><h3 data-t="a_s4h"></h3><p data-t="a_s4p"></p></div>
+    <div><span class="k">05</span><h3 data-t="a_s5h"></h3><p data-t="a_s5p"></p></div>
+  </div>
+</div></section>
+
+<section class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_c_eyebrow"></div>
+  <h2 data-t="a_c_h2"></h2>
+  <p class="lead" data-t="a_c_lead"></p>
+  <div class="g4" style="margin-top:30px">
+    <div class="card hi"><span class="n" data-t="a_c1n"></span><h3 data-t="a_c1h"></h3><p data-t="a_c1p"></p></div>
+    <div class="card"><span class="n" data-t="a_c2n"></span><h3 data-t="a_c2h"></h3><p data-t="a_c2p"></p></div>
+    <div class="card"><span class="n" data-t="a_c3n"></span><h3 data-t="a_c3h"></h3><p data-t="a_c3p"></p></div>
+    <div class="card"><span class="n" data-t="a_c4n"></span><h3 data-t="a_c4h"></h3><p data-t="a_c4p"></p></div>
+  </div>
+</div></section>
+
+<section id="produit-a" class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_sc_eyebrow"></div>
+  <h2 data-t="a_sc_h2"></h2>
+  <div class="g2" style="margin-top:30px;align-items:start">
+    <div>
+      <div class="shot">
+        <div class="shotbar"><i></i><i></i><i></i><span data-t="a_sc_w1"></span></div>
+        <div>
+          <div class="srow"><span class="snum">1</span><span class="sgrow"><span data-t="a_sc_st1"></span><div class="smeta" data-t="a_sc_sm1"></div></span><span class="stag" data-t="a_ch_email"></span></div>
+          <div class="sdelay" data-t="a_sc_d1"></div>
+          <div class="srow"><span class="snum">2</span><span class="sgrow"><span data-t="a_sc_st2"></span><div class="smeta" data-t="a_sc_sm2"></div></span><span class="stag" data-t="a_ch_li"></span></div>
+          <div class="sdelay" data-t="a_sc_d2"></div>
+          <div class="srow"><span class="snum">3</span><span class="sgrow"><span data-t="a_sc_st3"></span><div class="smeta" data-t="a_sc_sm3"></div></span><span class="stag" data-t="a_ch_li"></span></div>
+          <div class="sdelay" data-t="a_sc_d3"></div>
+          <div class="srow"><span class="snum">4</span><span class="sgrow"><span data-t="a_sc_st4"></span><div class="smeta" data-t="a_sc_sm4"></div></span><span class="stag solid" data-t="a_ch_mail"></span></div>
+          <div class="sdelay" data-t="a_sc_d4"></div>
+          <div class="srow"><span class="snum">5</span><span class="sgrow"><span data-t="a_sc_st5"></span><div class="smeta" data-t="a_sc_sm5"></div></span><span class="stag lime" data-t="a_ch_call"></span></div>
+        </div>
+      </div>
+      <p style="font-size:14px;margin-top:14px" data-t="a_sc_cap1"></p>
+    </div>
+    <div>
+      <div class="shot">
+        <div class="shotbar"><i></i><i></i><i></i><span data-t="a_sc_w2"></span></div>
+        <div>
+          <div class="srow"><span class="stag solid" data-t="a_ch_mail"></span><span class="sav"></span><span class="sgrow">Sylvain Mercier<div class="smeta" data-t="a_sc_q1"></div></span><span class="sbtn" data-t="a_sc_edit"></span><span class="sbtn p" data-t="a_sc_ok"></span></div>
+          <div class="srow"><span class="stag solid" data-t="a_ch_mail"></span><span class="sav"></span><span class="sgrow">Bruno Aillet<div class="smeta" data-t="a_sc_q2"></div></span><span class="sbtn" data-t="a_sc_edit"></span><span class="sbtn p" data-t="a_sc_ok"></span></div>
+        </div>
+      </div>
+      <div class="shot" style="margin-top:16px">
+        <div class="shotbar"><i></i><i></i><i></i><span data-t="a_sc_w3"></span></div>
+        <div>
+          <div class="srow"><span class="sav"></span><span class="sgrow">Sylvain Mercier<div class="smeta" data-t="a_sc_r1"></div></span><span class="stag lime" data-t="a_sc_pos"></span></div>
+          <div class="srow"><span class="sav"></span><span class="sgrow">Nadia Berthier<div class="smeta" data-t="a_sc_r2"></div></span><span class="stag" data-t="a_sc_pause"></span></div>
+          <div class="srow"><span class="sav"></span><span class="sgrow">Karim Delaunay<div class="smeta" data-t="a_sc_r3"></div></span><span class="stag lime" data-t="a_sc_pos"></span></div>
+        </div>
+      </div>
+      <p style="font-size:14px;margin-top:14px" data-t="a_sc_cap2"></p>
+    </div>
+  </div>
+</div></section>
+
+<section class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_g_eyebrow"></div>
+  <h2 data-t="a_g_h2"></h2>
+  <div class="g2" style="margin-top:28px">
+    <div class="card"><h3 data-t="a_g1h"></h3><p data-t="a_g1p"></p></div>
+    <div class="card"><h3 data-t="a_g2h"></h3><p data-t="a_g2p"></p></div>
+    <div class="card"><h3 data-t="a_g3h"></h3><p data-t="a_g3p"></p></div>
+    <div class="card"><h3 data-t="a_g4h"></h3><p data-t="a_g4p"></p></div>
+  </div>
+</div></section>
+
+<section id="tarifs-a" class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_pr_eyebrow"></div>
+  <h2 data-t="a_pr_h2"></h2>
+  <p class="lead" data-t="a_pr_lead"></p>
+  <div class="g2" style="margin-top:28px;align-items:stretch">
+    <div class="price hi">
+      <span class="badge" data-t="a_pr_badge"></span>
+      <h3 style="margin-top:14px">Jay Reach</h3>
+      <div class="amtrow"><span class="amt">49,50 €</span><span class="old">99 €</span></div>
+      <div class="per" data-t="a_pr_per"></div>
+      <ul class="feat">
+        <li data-t="a_pr_f1"></li><li data-t="a_pr_f2"></li><li data-t="a_pr_f3"></li>
+        <li data-t="a_pr_f4"></li><li data-t="a_pr_f5"></li><li data-t="a_pr_f6"></li>
+        <li data-t="a_pr_f7"></li><li data-t="a_pr_f8"></li><li data-t="a_pr_f9"></li>
+        <li data-t="a_pr_f10"></li>
+      </ul>
+      <a class="btn pri" href="#" data-t="a_pr_cta"></a>
+      <p style="font-size:12.5px;margin-top:12px;text-align:center" data-t="a_pr_extra"></p>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px"><h3 data-t="a_pr_b1h"></h3><p data-t="a_pr_b1p"></p></div>
+      <div class="card" style="margin-bottom:16px"><h3 data-t="a_pr_b2h"></h3><p data-t="a_pr_b2p"></p></div>
+      <div class="card"><h3 data-t="a_pr_b3h"></h3><p style="margin-bottom:14px" data-t="a_pr_b3p"></p>
+        <button class="btn gho" data-view="b" data-t="a_pr_b3c"></button></div>
+    </div>
+  </div>
+</div></section>
+
+<section class="viewA"><div class="wrap">
+  <div class="eyebrow" data-t="a_f_eyebrow"></div>
+  <h2 data-t="a_f_h2"></h2>
+  <div style="margin-top:26px">
+    <details open><summary data-t="a_q1"></summary><p data-t="a_a1"></p></details>
+    <details><summary data-t="a_q2"></summary><p data-t="a_a2"></p></details>
+    <details><summary data-t="a_q3"></summary><p data-t="a_a3"></p></details>
+    <details><summary data-t="a_q4"></summary><p data-t="a_a4"></p></details>
+    <details><summary data-t="a_q5"></summary><p data-t="a_a5"></p></details>
+    <details><summary data-t="a_q6"></summary><p data-t="a_a6"></p></details>
+    <details><summary data-t="a_q7"></summary><p data-t="a_a7"></p></details>
+  </div>
+</div></section>
+
+<section class="viewA" style="text-align:center"><div class="wrap">
+  <h2 data-t="a_end_h2"></h2>
+  <p class="lead" style="margin:18px auto 0" data-t="a_end_lead"></p>
+  <div class="cta" style="justify-content:center"><a class="btn pri" href="#tarifs-a" data-t="a_cta1"></a></div>
+  <div class="microcopy" data-t="a_end_micro"></div>
+</div></section>
+
+<!-- ══════════ VUE B ══════════ -->
+
+<section class="hero viewB"><div class="wrap">
+  <div class="herogrid">
+    <div>
+      <div class="eyebrow" data-t="b_eyebrow"></div>
+      <h1 data-t="b_h1"></h1>
+      <p class="lead" data-t="b_lead"></p>
+      <div class="cta">
+        <a class="btn pri" href="https://github.com/heyjay/jay-reach" data-t="b_cta1"></a>
+        <a class="btn" href="#archi-b" data-t="b_cta2"></a>
+      </div>
+      <div class="microcopy" data-t="b_micro"></div>
+      <div class="tagrow">
+        <span class="tag lime">Next.js 15 · RSC</span><span class="tag">Postgres + RLS</span>
+        <span class="tag">pg-boss</span><span class="tag">Docker Compose</span><span class="tag" data-t="b_tag5"></span>
+      </div>
+    </div>
+    <div><div class="codebox"><span class="c"># full instance, one command</span>
+git clone <span class="g">github.com/heyjay/jay-reach</span>
+cd jay-reach &amp;&amp; cp .env.example .env
+docker compose up
+
+<span class="c">#   web      Next.js 15, App Router, RSC</span>
+<span class="c">#   worker   pg-boss, 12 job queues</span>
+<span class="c">#   db       Postgres 16 + RLS + pgcrypto</span>
+<span class="c">#   auth     Supabase self-hosted</span></div></div>
+  </div>
+</div></section>
+
+<section id="archi-b" class="viewB"><div class="wrap">
+  <div class="eyebrow" data-t="b_ar_eyebrow"></div>
+  <h2 data-t="b_ar_h2"></h2>
+  <p class="lead" data-t="b_ar_lead"></p>
+  <div class="codebox" style="margin-top:24px"><span class="k">interface</span> SignalProvider {
+  id: <span class="k">string</span>;                          <span class="c">// "jobboard.francetravail"</span>
+  freshnessWindowDays: <span class="k">number</span>;
+  configSchema: ZodSchema;
+  discover(ctx: RunContext): <span class="k">AsyncIterable</span>&lt;RawSignal&gt;;   <span class="c">// streams, paginates, cursor</span>
+  normalize(raw: RawSignal): Signal;                  <span class="c">// pure, no I/O, fixture-tested</span>
+}
+
+<span class="k">interface</span> ChannelProvider&lt;T <span class="k">extends</span> ChannelKind&gt; {
+  kind: T;                        <span class="c">// email | linkedin | call | mail</span>
+  leadTimeHours: <span class="k">number</span>;         <span class="c">// 0 email, 72 letter → dispatch_after</span>
+  unitCostEur: <span class="k">number</span>;
+  dispatch(a: OutboundAction): <span class="k">Promise</span>&lt;DispatchResult&gt;;
+  handleWebhook?(p: <span class="k">unknown</span>): Outcome[];
+}</div>
+  <div class="g2" style="margin-top:24px">
+    <div class="card"><h3 data-t="b_ar1h"></h3><p data-t="b_ar1p"></p></div>
+    <div class="card"><h3 data-t="b_ar2h"></h3><p data-t="b_ar2p"></p></div>
+    <div class="card"><h3 data-t="b_ar3h"></h3><p data-t="b_ar3p"></p></div>
+    <div class="card"><h3 data-t="b_ar4h"></h3><p data-t="b_ar4p"></p></div>
+  </div>
+</div></section>
+
+<section class="viewB"><div class="wrap">
+  <div class="eyebrow" data-t="b_sq_eyebrow"></div>
+  <h2 data-t="b_sq_h2"></h2>
+  <p class="lead" data-t="b_sq_lead"></p>
+  <div class="codebox" style="margin-top:22px"><span class="c">// partial index: the strongest guard against double sends</span>
+<span class="k">create unique index</span> one_active_enrollment
+  <span class="k">on</span> enrollments (contact_id)
+  <span class="k">where</span> status <span class="k">in</span> (<span class="g">'active'</span>, <span class="g">'paused'</span>, <span class="g">'paused_absence'</span>);
+
+<span class="c">// 9 guards, explicit decisions — never a boolean</span>
+<span class="k">type</span> GuardDecision =
+  | { kind: <span class="g">'allow'</span> }
+  | { kind: <span class="g">'defer'</span>; until: <span class="k">Date</span>; reason: GuardReason }
+  | { kind: <span class="g">'block'</span>; reason: GuardReason };</div>
+  <div class="g3" style="margin-top:22px">
+    <div class="card"><span class="n" data-t="b_sq1n"></span><h3 data-t="b_sq1h"></h3><p data-t="b_sq1p"></p></div>
+    <div class="card"><span class="n" data-t="b_sq2n"></span><h3 data-t="b_sq2h"></h3><p data-t="b_sq2p"></p></div>
+    <div class="card"><span class="n" data-t="b_sq3n"></span><h3 data-t="b_sq3h"></h3><p data-t="b_sq3p"></p></div>
+  </div>
+</div></section>
+
+<section class="viewB"><div class="wrap">
+  <div class="eyebrow" data-t="b_co_eyebrow"></div>
+  <h2 data-t="b_co_h2"></h2>
+  <div class="codebox" style="margin-top:20px">pnpm reach:scaffold signal <span class="g">funding-rounds</span>
+
+packages/providers/signals/funding-rounds/
+├── index.ts        <span class="c">// discover() + normalize()</span>
+├── manifest.ts     <span class="c">// id, i18n keys, configSchema, freshnessWindowDays</span>
+├── normalize.ts    <span class="c">// pure → fixture-tested</span>
+├── fixtures/       <span class="c">// 3 minimum, anonymised</span>
+└── README.md       <span class="c">// source, rate limits, cost, known fragility</span>
+
+<span class="c"># register in registry.ts, and that's it.</span>
+<span class="c"># if you need to touch packages/core, open an issue:</span>
+<span class="c"># our interface is wrong, not your connector.</span></div>
+  <div class="cta">
+    <a class="btn gho" href="https://github.com/heyjay/jay-reach/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
+    <a class="btn" href="https://github.com/heyjay/jay-reach/issues" data-t="b_co_issues"></a>
+  </div>
+</div></section>
+
+<section class="viewB"><div class="wrap">
+  <div class="eyebrow" data-t="b_li_eyebrow"></div>
+  <h2 data-t="b_li_h2"></h2>
+  <p class="lead" data-t="b_li_lead"></p>
+  <table class="cmp">
+    <tr><th data-t="b_li_ok"></th><th data-t="b_li_no"></th></tr>
+    <tr><td data-t="b_li_r1a"></td><td data-t="b_li_r1b"></td></tr>
+    <tr><td data-t="b_li_r2a"></td><td data-t="b_li_r2b"></td></tr>
+    <tr><td data-t="b_li_r3a"></td><td data-t="b_li_r3b"></td></tr>
+    <tr><td data-t="b_li_r4a"></td><td data-t="b_li_r4b"></td></tr>
+  </table>
+  <p style="margin-top:16px;font-size:14.5px" data-t="b_li_note"></p>
+</div></section>
+
+<section class="viewB"><div class="wrap">
+  <div class="eyebrow" data-t="b_cp_eyebrow"></div>
+  <h2 data-t="b_cp_h2"></h2>
+  <table class="cmp">
+    <tr><th></th><th class="on" data-t="b_cp_self"></th><th data-t="b_cp_host"></th></tr>
+    <tr><td data-t="b_cp_price"></td><td data-t="b_cp_free"></td><td data-t="b_cp_99"></td></tr>
+    <tr><td data-t="b_cp_feat"></td><td data-t="b_cp_all"></td><td data-t="b_cp_same"></td></tr>
+    <tr><td data-t="b_cp_prov"></td><td data-t="b_cp_prov_s"></td><td data-t="b_cp_prov_h"></td></tr>
+    <tr><td data-t="b_cp_conn"></td><td data-t="b_cp_conn_s"></td><td data-t="b_cp_conn_h"></td></tr>
+    <tr><td data-t="b_cp_ops"></td><td data-t="b_cp_ops_s"></td><td data-t="b_cp_ops_h"></td></tr>
+    <tr><td data-t="b_cp_data"></td><td data-t="b_cp_data_s"></td><td data-t="b_cp_data_h"></td></tr>
+    <tr><td data-t="b_cp_sup"></td><td>GitHub</td><td data-t="b_cp_sup_h"></td></tr>
+    <tr><td data-t="b_cp_req"></td><td data-t="b_cp_req_s"></td><td data-t="b_cp_req_h"></td></tr>
+  </table>
+  <div class="cta" style="margin-top:24px">
+    <a class="btn pri" href="https://github.com/heyjay/jay-reach" data-t="b_cta1"></a>
+    <button class="btn gho" data-view="a" data-t="b_cp_switch"></button>
+  </div>
+</div></section>
+
+<!-- ══════════ JAY ══════════ -->
+
+<section class="jay"><div class="wrap">
+  <div class="jaygrid">
+    <div>
+      <div class="eyebrow" data-t="j_eyebrow"></div>
+      <h2 data-t="j_h2"></h2>
+      <p class="lead" data-t="j_lead"></p>
+      <p style="margin-top:16px;font-size:15px" data-t="j_p2"></p>
+      <div class="cta"><a class="btn pri" href="https://jay-assistant.fr" data-t="j_cta"></a></div>
+    </div>
+    <div>
+      <div class="mod"><span class="nm">Jay Prep</span><p data-t="j_m1"></p></div>
+      <div class="mod"><span class="nm" data-t="j_m2n"></span><p data-t="j_m2"></p></div>
+      <div class="mod"><span class="nm">Jay CRM</span><p data-t="j_m3"></p></div>
+      <div class="mod"><span class="nm">Jay Coach</span><p data-t="j_m4"></p></div>
+      <div class="mod"><span class="nm">Jay Pilot</span><p data-t="j_m5"></p></div>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <div class="fgrid">
+    <div>
+      <a href="#" class="brand" style="font-size:20px"><b>Jay</b>Reach</a>
+      <p style="font-size:14px;margin-top:12px;max-width:330px" data-t="f_desc"></p>
+      <p style="font-size:12.5px;margin-top:10px;color:var(--moss2)" data-t="f_eu"></p>
+    </div>
+    <div>
+      <h4 data-t="f_product"></h4>
+      <ul>
+        <li><a href="#" data-view="a" data-t="f_hosted"></a></li>
+        <li><a href="#" data-view="b" data-t="f_oss"></a></li>
+        <li><a href="#tarifs-a" data-view="a" data-t="f_pricing"></a></li>
+        <li><a href="https://github.com/heyjay/jay-reach" data-t="f_repo"></a></li>
+        <li><a href="https://jay-assistant.fr" data-t="f_jay"></a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 data-t="f_legal"></h4>
+      <ul>
+        <li><a href="legal/mentions-legales.html" data-t="f_l1"></a></li>
+        <li><a href="legal/conditions.html" data-t="f_l2"></a></li>
+        <li><a href="legal/confidentialite.html" data-t="f_l3"></a></li>
+        <li><a href="https://github.com/heyjay/jay-reach" data-t="f_l4"></a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="legal">
+    <p>HEY JAY — 87 rue du Fontenoy, 59100 Roubaix, France — SIREN 992 172 866 —
+      <a href="legal/mentions-legales.html" data-t="f_l1"></a> ·
+      <a href="legal/confidentialite.html" data-t="f_l3"></a> ·
+      <a href="legal/conditions.html" data-t="f_l2"></a></p>
+  </div>
+  <div class="parent">
+    <span data-t="f_parent"></span>
+    <a class="btn sm gho" href="https://jay-assistant.fr">jay-assistant.fr →</a>
+  </div>
+  <p style="margin-top:22px;font-size:12.5px;color:var(--moss2)">© 2026 HEY JAY. <span data-t="f_rights"></span></p>
+</div></footer>
+
+<script>
+const T = {
+fr:{
+title:"Jay Reach — email, LinkedIn, téléphone et lettre manuscrite, au bon moment",
+promo:"Offre de lancement : 50 % de remise sur vos trois premiers mois <span>· 15 jours gratuits, sans carte bancaire</span>",
+nav_a:"Prospecter",nav_a_sub:"CLÉ EN MAIN",nav_b:"Héberger",nav_b_sub:"CODE OUVERT",nav_cta:"Essayer 15 jours",
+a_eyebrow:"PROSPECTION MULTICANALE DÉCLENCHÉE PAR LE BON MOMENT",
+a_h1:"Tout le monde envoie des emails. Vous finirez par une lettre écrite à la main.",
+a_lead:"Jay Reach repère les entreprises qui ont une raison de vous répondre aujourd'hui — un recrutement, une nomination, un salon — puis déroule la séquence complète : email, LinkedIn, appel téléphonique, et courrier manuscrit posté à votre place.",
+a_cta1:"Créer ma première campagne",a_cta2:"Voir le produit",
+a_micro:"15 jours gratuits, sans carte bancaire · Première campagne prête en dix minutes",
+a_tag1:"4 canaux dans une seule séquence",a_tag2:"Français · Anglais · Néerlandais",a_tag3:"Envois compris",a_tag4:"Conçu et hébergé en Europe",
+a_board_step:"ÉTAPE 4 / 6",
+a_leg1:"l'entreprise recrute<span class='sub'>offre « commercial itinérant » du 12/08</span>",
+a_leg2:"premier email<span class='sub'>ouvert, sans réponse</span>",
+a_leg3:"invitation LinkedIn<span class='sub'>acceptée</span>",
+a_leg4:"courrier manuscrit<span class='sub'>à valider avant 18 h</span>",
+a_leg5:"appel téléphonique<span class='sub'>tâche créée dans votre CRM</span>",
+a_leg6:"dernière relance<span class='sub'>prévue</span>",
+a_d0:"jour 0",a_d4h:"4 h",a_d1:"jour 1",a_d5:"jour 5",a_d8:"jour 8",a_d12:"jour 12",
+a_proof:"ILS PROSPECTENT AVEC JAY REACH",a_logos_todo:"+ logos à intégrer",
+a_t1:"« <span class='todo'>[citation à recueillir — avec un chiffre concret : rendez-vous obtenus, taux de réponse, temps gagné]</span> »",
+a_t2:"« <span class='todo'>[citation à recueillir — idéalement sur le courrier manuscrit, c'est ce qui vous différencie]</span> »",
+a_t3:"« <span class='todo'>[citation à recueillir — sur la pertinence du moment : « il venait de recruter »]</span> »",
+a_p_eyebrow:"LE PRINCIPE",a_p_h2:"Le bon message au mauvais moment reste un mauvais message.",
+a_p_lead:"Vous avez déjà les outils pour envoyer. Ce qui manque, c'est la raison d'écrire aujourd'hui plutôt que dans six mois. Jay Reach part de là, et tout le reste en découle.",
+a_s1h:"On repère",a_s1p:"Recrutements, nominations, salons. Ou vos propres fichiers, importés et nettoyés.",
+a_s2h:"On trie",a_s2p:"Cabinets de recrutement écartés, doublons fusionnés, entreprises vérifiées une à une.",
+a_s3h:"On trouve",a_s3p:"Les bons interlocuteurs, avec leur email vérifié et leur profil LinkedIn.",
+a_s4h:"On enchaîne",a_s4p:"Email, LinkedIn, appel, courrier. Chaque message cite le fait qui le justifie.",
+a_s5h:"Vous répondez",a_s5p:"Toutes les réponses au même endroit. Les relances s'arrêtent dès que quelqu'un répond.",
+a_c_eyebrow:"QUATRE CANAUX, UNE SEULE SÉQUENCE",
+a_c_h2:"Un directeur commercial reçoit quatre-vingts emails par jour et une enveloppe manuscrite par trimestre.",
+a_c_lead:"Devinez laquelle il ouvre. C'est la raison d'être de Jay Reach : quand l'écran ne suffit plus, la séquence continue ailleurs.",
+a_c1n:"COURRIER",a_c1h:"Écrit à la main, posté pour vous",a_c1p:"Une page, adressée nominativement au bureau du décideur. Vous validez chaque courrier avant qu'il parte, et vous voyez son coût. Personne d'autre ne fait ça dans une séquence automatisée.",
+a_c2n:"TÉLÉPHONE",a_c2h:"La tâche arrive le bon jour",a_c2p:"Une étape d'appel crée une tâche datée, dans Jay Reach ou directement dans votre CRM, avec le contexte du prospect et ce qui lui a déjà été envoyé. Vous notez le résultat, la séquence s'adapte.",
+a_c3n:"EMAIL",a_c3h:"Depuis votre adresse",a_c3p:"Vos emails partent de votre boîte, dans une conversation qui se poursuit. Les relances repartent dans le même fil, jamais en doublon.",
+a_c4n:"LINKEDIN",a_c4h:"Au rythme d'un humain",a_c4p:"Visite du profil, invitation, message une fois acceptée. Volumes limités et délais irréguliers, comme si vous le faisiez vous-même.",
+a_sc_eyebrow:"À QUOI ÇA RESSEMBLE",a_sc_h2:"Deux écrans, et vous avez tout compris.",
+a_sc_w1:"Recrutement terrain · Séquence",a_sc_w2:"À valider avant envoi · 2",a_sc_w3:"Réponses reçues",
+a_sc_st1:"Email d'ouverture",a_sc_sm1:"« Bonjour {prénom}, vous avez publié le 12/08 une offre… »",
+a_sc_st2:"Invitation LinkedIn",a_sc_sm2:"Sans note · 53 acceptées sur 190",
+a_sc_st3:"Message LinkedIn",a_sc_sm3:"« Salut {prénom}, je t'ai vu recruter un commercial… »",
+a_sc_st4:"Courrier manuscrit",a_sc_sm4:"4,80 € · validation obligatoire",
+a_sc_st5:"Appel téléphonique",a_sc_sm5:"Tâche créée dans votre CRM le jour prévu",
+a_sc_d1:"attendre 1 jour",a_sc_d2:"attendre 2 jours · <b>si l'invitation est acceptée</b>",
+a_sc_d3:"attendre 4 jours · <b>si aucune réponse</b>",a_sc_d4:"attendre 3 jours · <b>si aucune réponse</b>",
+a_ch_email:"EMAIL",a_ch_li:"LINKEDIN",a_ch_mail:"COURRIER",a_ch_call:"TÉLÉPHONE",
+a_sc_q1:"Groupe Vantel · 4,80 € · part ce soir",a_sc_q2:"Norlim Distribution · 4,80 € · demain",
+a_sc_edit:"Modifier",a_sc_ok:"Valider",
+a_sc_r1:"Groupe Vantel · étape 4 · il y a 2 h",a_sc_r2:"Ordelis · absente jusqu'au 25/08",a_sc_r3:"Cerbat Industries · étape 3 · hier",
+a_sc_pos:"POSITIVE",a_sc_pause:"EN PAUSE",
+a_sc_cap1:"Vous glissez les étapes, vous changez les délais, vous cliquez sur un message pour le réécrire. Les conditions en vert disent quand une étape se déclenche — ou pas.",
+a_sc_cap2:"Seuls les courriers passent par une validation — un email raté se rattrape, un courrier parti ne revient pas. Les réponses arrivent au même endroit, déjà triées.",
+a_g_eyebrow:"CE QUI VOUS ÉVITERA DES ENNUIS",a_g_h2:"Un outil de prospection sérieux sait aussi quand s'arrêter.",
+a_g1h:"Vous avez répondu depuis votre téléphone ? On s'arrête.",a_g1p:"Jay Reach lit vos conversations et coupe la relance dès que vous avez repris la main. Fini le « je me permets de relancer » envoyé trois jours après votre réponse.",
+a_g2h:"Une absence n'est pas une réponse",a_g2p:"Un message automatique d'absence ne clôt pas la séquence : elle se met en pause et reprend au retour de la personne, à la bonne date.",
+a_g3h:"Jamais de « Bonjour , »",a_g3p:"Si une information manque pour un contact, son message ne part pas. Il vous est signalé, avec le champ à compléter.",
+a_g4h:"Une seule personne par entreprise et par jour",a_g4p:"Vos prospects ne verront jamais trois de leurs collègues recevoir le même message le même matin.",
+a_pr_eyebrow:"TARIF",a_pr_h2:"Un prix. Toute l'équipe. Envois compris.",
+a_pr_lead:"Pas de facturation par utilisateur, pas de crédits à racheter en cours de mois, pas de palier qui débloque des fonctionnalités.",
+a_pr_badge:"OFFRE DE LANCEMENT",a_pr_per:"PAR MOIS, HT · LES 3 PREMIERS MOIS · JUSQU'À 3 UTILISATEURS",
+a_pr_f1:"Jusqu'à <strong>1 500 contacts engagés par mois</strong>",a_pr_f2:"Détection automatique des entreprises à contacter",
+a_pr_f3:"Import et nettoyage de vos propres fichiers",a_pr_f4:"Recherche des interlocuteurs et de leurs coordonnées, <strong>comprise</strong>",
+a_pr_f5:"Envoi des emails depuis votre adresse, <strong>compris</strong>",a_pr_f6:"LinkedIn, tâches d'appel et courrier manuscrit",
+a_pr_f7:"Rédaction assistée en français, anglais et néerlandais",a_pr_f8:"Toutes les réponses dans une seule boîte",
+a_pr_f9:"Envoi automatique vers votre CRM",a_pr_f10:"Support par email, réponse sous un jour ouvré",
+a_pr_cta:"Commencer — 15 jours gratuits",a_pr_extra:"Utilisateur supplémentaire : 29 € / mois. Sans engagement.",
+a_pr_b1h:"L'essai, concrètement",a_pr_b1p:"Quinze jours, toutes les fonctionnalités, aucune carte bancaire. À la fin, si vous ne faites rien, l'essai s'arrête — on ne vous prélève pas par surprise.",
+a_pr_b2h:"Le courrier manuscrit",a_pr_b2p:"Facturé <strong>4,80 € par courrier</strong>, uniquement quand vous en envoyez. C'est un objet physique, écrit, affranchi et posté : nous le facturons à prix coûtant. Vous fixez un plafond mensuel et vous validez chaque envoi.",
+a_pr_b3h:"Vous êtes une équipe technique ?",a_pr_b3p:"Le moteur est publié en source ouverte. Installez-le sur vos serveurs, gratuitement.",a_pr_b3c:"Voir la version open source →",
+a_f_eyebrow:"QUESTIONS FRÉQUENTES",a_f_h2:"Ce qu'on nous demande avant de commencer.",
+a_q1:"Qu'est-ce qui est compris dans le prix ?",a_a1:"Tout, sauf les courriers papier. L'envoi des emails, la recherche des coordonnées, la rédaction assistée, LinkedIn, les tâches d'appel, la boîte de réception, l'envoi vers votre CRM. Aucun autre abonnement à prendre à côté, aucun crédit à racheter en cours de mois.",
+a_q2:"En quoi c'est différent des outils que j'utilise déjà ?",a_a2:"Les outils de séquences vous font envoyer plus vite à une liste que vous avez constituée. Jay Reach décide <em>qui</em> contacter et <em>quand</em>, à partir de ce qui vient de se passer chez vos prospects — et il continue là où les autres s'arrêtent : l'appel téléphonique et la lettre écrite à la main, dans la même séquence.",
+a_q3:"Comment marche l'étape téléphone ?",a_a3:"Au jour prévu, une tâche apparaît dans Jay Reach et dans votre CRM, avec le contexte : pourquoi ce contact, ce qui lui a déjà été envoyé, ce qu'il a ouvert. Vous appelez, vous notez le résultat en un clic. Si vous convenez d'un rappel, la suite de la séquence se décale.",
+a_q4:"Faut-il être technique pour s'en servir ?",a_a4:"Non. Vous connectez votre boîte mail et votre compte LinkedIn en deux clics, et votre première campagne est prête en dix minutes. Si vous savez utiliser un outil de séquences, vous saurez utiliser Jay Reach.",
+a_q5:"Et si mon déclencheur d'achat n'existe pas encore chez vous ?",a_a5:"Dites-nous ce qui déclenche un besoin chez vos clients : une levée de fonds, l'ouverture d'un entrepôt, une certification, un appel d'offres. Nous le mettons en place pour vous, sans supplément.",
+a_q6:"Est-ce que mon compte LinkedIn risque quelque chose ?",a_a6:"L'automatisation de LinkedIn n'est pas officiellement autorisée par la plateforme — c'est vrai pour Jay Reach comme pour tous les outils du marché, et nous préférons vous le dire. Nous appliquons des volumes prudents et des délais irréguliers. Si vous préférez ne prendre aucun risque, un mode manuel prépare vos messages et vous les envoyez vous-même en un clic.",
+a_q7:"Où sont mes données ?",a_a7:"Sur nos serveurs, en Europe, avec des sauvegardes chiffrées. Vous pouvez tout exporter à tout moment. Si vous partez, vos données sont supprimées.",
+a_end_h2:"Votre prochain client vient de publier une offre d'emploi.",
+a_end_lead:"Vous avez environ soixante-douze heures avant que quinze concurrents ne le remarquent aussi.",
+a_end_micro:"15 jours gratuits · Sans carte bancaire · Prêt en dix minutes",
+b_eyebrow:"MOTEUR DE PROSPECTION SELF-HOSTED",b_h1:"Le moteur est à vous. Clonez, étendez, hébergez.",
+b_lead:"Next.js 15, Postgres, TypeScript strict, jobs adossés à la base. Sept interfaces de providers remplaçables, un séquenceur multicanal à state machine testée, et des garde-fous appliqués au niveau du schéma. Aucun SaaS propriétaire n'est requis pour faire tourner le socle.",
+b_cta1:"Voir le dépôt",b_cta2:"Architecture",b_micro:"FSL-1.1-ALv2 → Apache 2.0 après 2 ans. Aucune fonctionnalité bridée par rapport à l'offre hébergée.",b_tag5:"LLM local possible",
+b_ar_eyebrow:"ARCHITECTURE",b_ar_h2:"Le cœur ne connaît que des interfaces.",
+b_ar_lead:"Monorepo pnpm. <span class='mono'>apps/*</span> dépend de <span class='mono'>packages/providers/*</span> qui dépend de <span class='mono'>packages/core</span>. Jamais l'inverse, et <span class='mono'>core</span> n'importe aucun SDK. Ajouter une source ou un canal ne touche pas au moteur.",
+b_ar1h:"Sept familles de providers",b_ar1p:"<span class='mono'>signals</span> · <span class='mono'>enrichment</span> · <span class='mono'>channels</span> · <span class='mono'>inbox</span> · <span class='mono'>ai</span> · <span class='mono'>import</span> · <span class='mono'>crm</span>. Chacune expose un manifest avec son schéma Zod et ses clés i18n, ce qui génère l'écran de configuration sans écrire de formulaire.",
+b_ar2h:"Jobs adossés à Postgres",b_ar2p:"pg-boss, douze files, idempotence par clé d'unicité, reprise avec backoff exponentiel. Pas de Redis, pas de service de queue externe.",
+b_ar3h:"Isolation au niveau de la base",b_ar3p:"RLS sur toutes les tables, policies indexées sur l'appartenance à l'organisation. Le worker tourne en service role et doit donc filtrer explicitement — un test le vérifie.",
+b_ar4h:"LLM interchangeable",b_ar4p:"Scoring, classification des réponses et rédaction passent par une seule interface. Anthropic, OpenAI ou Ollama en local. En mode local, aucun contenu ne quitte votre infrastructure.",
+b_sq_eyebrow:"LE SÉQUENCEUR",b_sq_h2:"La partie où un bug se voit chez le prospect, pas à l'écran.",
+b_sq_lead:"State machine explicite, états terminaux définitifs, aucune réouverture — une reprise crée une nouvelle inscription. Boucle de cinq minutes avec <span class='mono'>FOR UPDATE SKIP LOCKED</span>.",
+b_sq1n:"ORDONNANCEMENT",b_sq1h:"Le délai n'est pas l'heure d'envoi",b_sq1p:"Fenêtre horaire du fuseau du contact, lead time du canal, quota du sender, jitter ±20 %, une action par compte et par jour. Un quota atteint reporte, ne supprime jamais.",
+b_sq2n:"RENDU",b_sq2h:"Variable non résolue = action bloquée",b_sq2p:"Validation statique à l'enregistrement selon la nature de la campagne, valeurs de repli optionnelles, blocage au rendu avec regroupement par champ manquant.",
+b_sq3n:"TEMPLATES",b_sq3h:"Versionnés, jamais modifiés en place",b_sq3p:"Éditer crée une version, remet <span class='mono'>sent_count</span> à zéro et redéclenche le rodage. Taux de réponse mesuré par version, rollback possible.",
+b_co_eyebrow:"ÉCRIRE UN CONNECTEUR",b_co_h2:"Deux fonctions, trois fixtures, une PR.",b_co_issues:"Issues ouvertes",
+b_li_eyebrow:"LICENCE",b_li_h2:"Fair source, et nous l'écrivons nous-mêmes.",
+b_li_lead:"FSL-1.1-ALv2. Ce n'est pas open source au sens OSI — autant le dire avant que vous ne le découvriez dans un fil de commentaires.",
+b_li_ok:"AUTORISÉ",b_li_no:"INTERDIT",
+b_li_r1a:"Lire, forker, modifier, redistribuer",b_li_r1b:"Commercialiser un produit concurrent",
+b_li_r2a:"Usage commercial pour votre propre prospection",b_li_r2b:"Revendre en marque blanche",
+b_li_r3a:"Héberger pour votre groupe et vos filiales",b_li_r3b:"Exploiter en SaaS pour des tiers",
+b_li_r4a:"Publier vos connecteurs sous la licence de votre choix",b_li_r4b:"Retirer les garde-fous et redistribuer",
+b_li_note:"Deux ans après publication, chaque version bascule en Apache 2.0. C'est inscrit dans la licence, pas dans une promesse commerciale.",
+b_cp_eyebrow:"LEQUEL CHOISIR",b_cp_h2:"Deux chemins, le même moteur.",
+b_cp_self:"SELF-HOSTED",b_cp_host:"HÉBERGÉ",b_cp_price:"Prix",b_cp_free:"Gratuit",b_cp_99:"99 € / mois, jusqu'à 3 utilisateurs",
+b_cp_feat:"Fonctionnalités",b_cp_all:"Toutes",b_cp_same:"Identiques",
+b_cp_prov:"Comptes providers",b_cp_prov_s:"Les vôtres, à ouvrir et payer",b_cp_prov_h:"Compris dans l'abonnement",
+b_cp_conn:"Nouveau connecteur",b_cp_conn_s:"Vous l'écrivez",b_cp_conn_h:"Nous le construisons",
+b_cp_ops:"Infra, updates, backups",b_cp_ops_s:"À votre charge",b_cp_ops_h:"Compris",
+b_cp_data:"Données",b_cp_data_s:"Chez vous, nous ne voyons rien",b_cp_data_h:"Hébergées en Europe",
+b_cp_sup:"Support",b_cp_sup_h:"Email, 1 jour ouvré",
+b_cp_req:"Prérequis",b_cp_req_s:"Docker · TypeScript pour étendre",b_cp_req_h:"Aucun",b_cp_switch:"Voir l'offre hébergée →",
+j_eyebrow:"L'AUTRE MOITIÉ DU MÉTIER",j_h2:"Jay Reach ouvre les portes. Jay s'occupe de ce qui se passe derrière.",
+j_lead:"Jay est le copilote des commerciaux terrain. Né d'un constat simple après quinze ans de terrain : personne ne remplit son CRM le soir, dans sa voiture, après six rendez-vous. Alors Jay le fait à leur place.",
+j_p2:"Le commercial parle, photographie une carte de visite ou un bon de commande, ou laisse simplement l'application enregistrer son rendez-vous. Le compte rendu s'écrit tout seul, le CRM se met à jour, et le manager voit enfin ce qui remonte du terrain.",
+j_cta:"Découvrir Jay →",j_m2n:"Application",
+j_m1:"Le briefing avant le rendez-vous : qui vous allez voir, son profil de communication, les angles qui fonctionnent avec ce type d'interlocuteur.",
+j_m2:"iOS et Android. Enregistrement du rendez-vous, capture vocale, lecture automatique des documents photographiés. Utilisable dans la voiture, entre deux visites.",
+j_m3:"Un CRM qui se remplit tout seul, pour ceux qui n'en ont pas — ou qui ont renoncé au leur.",
+j_m4:"Le suivi des compétences rendez-vous après rendez-vous : préparation, cadrage, découverte, objections, prochaine étape.",
+j_m5:"Le récapitulatif hebdomadaire du manager. Ce qui a bougé, ce qui bloque, qui a besoin d'aide — sans réunion de pipe.",
+f_desc:"Prospection multicanale déclenchée par ce qui change chez vos prospects. Édité par HEY JAY, Roubaix.",
+f_eu:"Conçu et hébergé en Europe 🇪🇺",f_product:"PRODUIT",f_hosted:"Offre hébergée",f_oss:"Version open source",f_pricing:"Tarifs",f_repo:"Dépôt GitHub",f_jay:"Jay, pour les commerciaux",
+f_legal:"LÉGAL",f_l1:"Mentions légales",f_l2:"Conditions de service",f_l3:"Politique de confidentialité",f_l4:"Licence FSL-1.1-ALv2",
+f_parent:"Jay Reach est un produit <strong>Jay</strong>, le copilote des équipes commerciales terrain.",f_rights:"Tous droits réservés."
+},
+
+en:{
+title:"Jay Reach — email, LinkedIn, phone and a handwritten letter, at the right moment",
+promo:"Launch offer: 50% off your first three months <span>· 15 days free, no credit card</span>",
+nav_a:"Prospect",nav_a_sub:"DONE FOR YOU",nav_b:"Self-host",nav_b_sub:"OPEN CODE",nav_cta:"Try 15 days",
+a_eyebrow:"MULTICHANNEL OUTREACH TRIGGERED BY THE RIGHT MOMENT",
+a_h1:"Everyone sends emails. You'll finish with a handwritten letter.",
+a_lead:"Jay Reach spots the companies that have a reason to reply today — a new hire, an appointment, a trade show — then runs the whole sequence: email, LinkedIn, phone call, and a handwritten letter posted on your behalf.",
+a_cta1:"Build my first campaign",a_cta2:"See the product",
+a_micro:"15 days free, no credit card · First campaign ready in ten minutes",
+a_tag1:"4 channels, one sequence",a_tag2:"French · English · Dutch",a_tag3:"Sending included",a_tag4:"Built and hosted in Europe",
+a_board_step:"STEP 4 / 6",
+a_leg1:"the company is hiring<span class='sub'>« field sales rep » posted on 12/08</span>",
+a_leg2:"first email<span class='sub'>opened, no reply</span>",
+a_leg3:"LinkedIn invite<span class='sub'>accepted</span>",
+a_leg4:"handwritten letter<span class='sub'>approve before 6 pm</span>",
+a_leg5:"phone call<span class='sub'>task created in your CRM</span>",
+a_leg6:"final follow-up<span class='sub'>scheduled</span>",
+a_d0:"day 0",a_d4h:"4 h",a_d1:"day 1",a_d5:"day 5",a_d8:"day 8",a_d12:"day 12",
+a_proof:"THEY PROSPECT WITH JAY REACH",a_logos_todo:"+ logos to add",
+a_t1:"« <span class='todo'>[quote to collect — with a concrete number: meetings booked, reply rate, time saved]</span> »",
+a_t2:"« <span class='todo'>[quote to collect — ideally about the handwritten letter, your real differentiator]</span> »",
+a_t3:"« <span class='todo'>[quote to collect — about timing: « he had just posted a job »]</span> »",
+a_p_eyebrow:"THE PRINCIPLE",a_p_h2:"The right message at the wrong time is still a bad message.",
+a_p_lead:"You already have tools to send. What you're missing is a reason to write today rather than in six months. Jay Reach starts there, and everything else follows.",
+a_s1h:"We spot",a_s1p:"Hires, appointments, trade shows. Or your own files, imported and cleaned.",
+a_s2h:"We filter",a_s2p:"Recruitment agencies removed, duplicates merged, companies verified one by one.",
+a_s3h:"We find",a_s3p:"The right people, with verified email and LinkedIn profile.",
+a_s4h:"We run it",a_s4p:"Email, LinkedIn, call, letter. Every message cites the fact that justifies it.",
+a_s5h:"You reply",a_s5p:"All replies in one place. Follow-ups stop the moment someone answers.",
+a_c_eyebrow:"FOUR CHANNELS, ONE SEQUENCE",
+a_c_h2:"A sales director gets eighty emails a day and one handwritten envelope a quarter.",
+a_c_lead:"Guess which one gets opened. That's the point of Jay Reach: when the screen isn't enough, the sequence continues elsewhere.",
+a_c1n:"LETTER",a_c1h:"Handwritten, posted for you",a_c1p:"One page, addressed by name to the decision maker's desk. You approve every letter before it leaves, and you see its cost. Nobody else does this inside an automated sequence.",
+a_c2n:"PHONE",a_c2h:"The task lands on the right day",a_c2p:"A call step creates a dated task, in Jay Reach or straight into your CRM, with the prospect's context and everything already sent. You log the outcome, the sequence adapts.",
+a_c3n:"EMAIL",a_c3h:"From your own address",a_c3p:"Emails leave from your mailbox, inside a conversation that continues. Follow-ups stay in the same thread, never duplicated.",
+a_c4n:"LINKEDIN",a_c4h:"At human pace",a_c4p:"Profile visit, invite, message once accepted. Capped volumes and irregular delays, as if you were doing it yourself.",
+a_sc_eyebrow:"WHAT IT LOOKS LIKE",a_sc_h2:"Two screens and you've got it.",
+a_sc_w1:"Field hiring · Sequence",a_sc_w2:"To approve before sending · 2",a_sc_w3:"Replies received",
+a_sc_st1:"Opening email",a_sc_sm1:"« Hello {first_name}, on 12/08 you posted a role… »",
+a_sc_st2:"LinkedIn invite",a_sc_sm2:"No note · 53 accepted out of 190",
+a_sc_st3:"LinkedIn message",a_sc_sm3:"« Hi {first_name}, saw you're hiring a field rep… »",
+a_sc_st4:"Handwritten letter",a_sc_sm4:"€4.80 · approval required",
+a_sc_st5:"Phone call",a_sc_sm5:"Task created in your CRM on the day",
+a_sc_d1:"wait 1 day",a_sc_d2:"wait 2 days · <b>if the invite was accepted</b>",
+a_sc_d3:"wait 4 days · <b>if no reply</b>",a_sc_d4:"wait 3 days · <b>if no reply</b>",
+a_ch_email:"EMAIL",a_ch_li:"LINKEDIN",a_ch_mail:"LETTER",a_ch_call:"PHONE",
+a_sc_q1:"Groupe Vantel · €4.80 · leaves tonight",a_sc_q2:"Norlim Distribution · €4.80 · tomorrow",
+a_sc_edit:"Edit",a_sc_ok:"Approve",
+a_sc_r1:"Groupe Vantel · step 4 · 2 h ago",a_sc_r2:"Ordelis · away until 25/08",a_sc_r3:"Cerbat Industries · step 3 · yesterday",
+a_sc_pos:"POSITIVE",a_sc_pause:"PAUSED",
+a_sc_cap1:"Drag the steps, change the delays, click a message to rewrite it. The green conditions say when a step fires — or doesn't.",
+a_sc_cap2:"Only letters need approval — a bad email can be fixed, a posted letter can't. Replies land in one place, already sorted.",
+a_g_eyebrow:"WHAT KEEPS YOU OUT OF TROUBLE",a_g_h2:"A serious outreach tool also knows when to stop.",
+a_g1h:"Replied from your phone? We stop.",a_g1p:"Jay Reach reads your conversations and cuts the follow-up the moment you've taken over. No more « just following up » sent three days after your own reply.",
+a_g2h:"An out-of-office is not a reply",a_g2p:"An automatic absence doesn't close the sequence: it pauses and resumes when the person is back, on the right date.",
+a_g3h:"Never a « Hello , »",a_g3p:"If a field is missing for a contact, their message doesn't go out. It's flagged to you, with the field to fill.",
+a_g4h:"One person per company per day",a_g4p:"Your prospects will never see three colleagues get the same message the same morning.",
+a_pr_eyebrow:"PRICING",a_pr_h2:"One price. The whole team. Sending included.",
+a_pr_lead:"No per-user billing, no credits to top up mid-month, no tier that unlocks features.",
+a_pr_badge:"LAUNCH OFFER",a_pr_per:"PER MONTH, EXCL. VAT · FIRST 3 MONTHS · UP TO 3 USERS",
+a_pr_f1:"Up to <strong>1,500 contacts engaged per month</strong>",a_pr_f2:"Automatic detection of companies worth contacting",
+a_pr_f3:"Import and cleaning of your own files",a_pr_f4:"Finding contacts and their details, <strong>included</strong>",
+a_pr_f5:"Email sending from your own address, <strong>included</strong>",a_pr_f6:"LinkedIn, call tasks and handwritten letters",
+a_pr_f7:"Assisted writing in French, English and Dutch",a_pr_f8:"Every reply in a single inbox",
+a_pr_f9:"Automatic push to your CRM",a_pr_f10:"Email support, first reply within one business day",
+a_pr_cta:"Start — 15 days free",a_pr_extra:"Extra user: €29 / month. No commitment.",
+a_pr_b1h:"The trial, plainly",a_pr_b1p:"Fifteen days, every feature, no credit card. At the end, if you do nothing, the trial simply stops — we don't charge you by surprise.",
+a_pr_b2h:"The handwritten letter",a_pr_b2p:"Charged at <strong>€4.80 per letter</strong>, only when you send one. It's a physical object, written, stamped and posted: we bill it at cost. You set a monthly cap and approve every send.",
+a_pr_b3h:"You're a technical team?",a_pr_b3p:"The engine is published as open code. Install it on your own servers, for free.",a_pr_b3c:"See the open source version →",
+a_f_eyebrow:"FAQ",a_f_h2:"What people ask before starting.",
+a_q1:"What's included in the price?",a_a1:"Everything except paper letters. Email sending, contact lookup, assisted writing, LinkedIn, call tasks, the shared inbox, the push to your CRM. No other subscription on the side, no credits to top up mid-month.",
+a_q2:"How is this different from the tools I already use?",a_a2:"Sequence tools help you send faster to a list you built yourself. Jay Reach decides <em>who</em> to contact and <em>when</em>, based on what just happened at your prospects — and it continues where the others stop: the phone call and the handwritten letter, inside the same sequence.",
+a_q3:"How does the phone step work?",a_a3:"On the planned day, a task appears in Jay Reach and in your CRM, with the context: why this contact, what was already sent, what they opened. You call, you log the outcome in one click. If you agree on a callback, the rest of the sequence shifts.",
+a_q4:"Do I need to be technical?",a_a4:"No. You connect your mailbox and your LinkedIn account in two clicks, and your first campaign is ready in ten minutes. If you can use a sequence tool, you can use Jay Reach.",
+a_q5:"What if my buying trigger doesn't exist yet?",a_a5:"Tell us what creates a need at your customers: a funding round, a new warehouse, a certification, a public tender. We build it for you, at no extra cost.",
+a_q6:"Is my LinkedIn account at risk?",a_a6:"LinkedIn automation isn't officially permitted by the platform — that's true of Jay Reach and of every tool on the market, and we'd rather tell you. We use cautious volumes and irregular delays. If you'd rather take no risk at all, a manual mode prepares your messages and you send them yourself in one click.",
+a_q7:"Where is my data?",a_a7:"On our servers, in Europe, with encrypted backups. You can export everything at any time. If you leave, your data is deleted.",
+a_end_h2:"Your next customer just posted a job ad.",
+a_end_lead:"You have roughly seventy-two hours before fifteen competitors notice it too.",
+a_end_micro:"15 days free · No credit card · Ready in ten minutes",
+b_eyebrow:"SELF-HOSTED OUTREACH ENGINE",b_h1:"The engine is yours. Clone it, extend it, host it.",
+b_lead:"Next.js 15, Postgres, strict TypeScript, Postgres-backed jobs. Seven swappable provider interfaces, a multichannel sequencer with a tested state machine, and guards enforced at the schema level. No proprietary SaaS is required to run the core.",
+b_cta1:"View the repo",b_cta2:"Architecture",b_micro:"FSL-1.1-ALv2 → Apache 2.0 after 2 years. Nothing is feature-gated versus the hosted plan.",b_tag5:"Local LLM supported",
+b_ar_eyebrow:"ARCHITECTURE",b_ar_h2:"The core only knows interfaces.",
+b_ar_lead:"pnpm monorepo. <span class='mono'>apps/*</span> depends on <span class='mono'>packages/providers/*</span> which depends on <span class='mono'>packages/core</span>. Never the reverse, and <span class='mono'>core</span> imports no SDK. Adding a source or a channel never touches the engine.",
+b_ar1h:"Seven provider families",b_ar1p:"<span class='mono'>signals</span> · <span class='mono'>enrichment</span> · <span class='mono'>channels</span> · <span class='mono'>inbox</span> · <span class='mono'>ai</span> · <span class='mono'>import</span> · <span class='mono'>crm</span>. Each ships a manifest with its Zod schema and i18n keys, which generates the config screen without writing a form.",
+b_ar2h:"Postgres-backed jobs",b_ar2p:"pg-boss, twelve queues, idempotency by unique key, retries with exponential backoff. No Redis, no external queue service.",
+b_ar3h:"Isolation at the database level",b_ar3p:"RLS on every table, policies indexed on organisation membership. The worker runs as service role and must therefore filter explicitly — a test enforces it.",
+b_ar4h:"Swappable LLM",b_ar4p:"Scoring, reply classification and drafting go through a single interface. Anthropic, OpenAI or Ollama locally. In local mode, no content leaves your infrastructure.",
+b_sq_eyebrow:"THE SEQUENCER",b_sq_h2:"The part where a bug shows up at the prospect's, not on screen.",
+b_sq_lead:"Explicit state machine, terminal states are final, no reopening — resuming creates a new enrollment. Five-minute loop with <span class='mono'>FOR UPDATE SKIP LOCKED</span>.",
+b_sq1n:"SCHEDULING",b_sq1h:"The delay is not the send time",b_sq1p:"Business hours in the contact's timezone, channel lead time, sender quota, ±20% jitter, one action per company per day. A hit quota defers, never drops.",
+b_sq2n:"RENDERING",b_sq2h:"Unresolved variable = action blocked",b_sq2p:"Static validation on save based on the campaign's nature, optional fallbacks, and a render-time block grouped by missing field.",
+b_sq3n:"TEMPLATES",b_sq3h:"Versioned, never edited in place",b_sq3p:"Editing creates a version, resets <span class='mono'>sent_count</span> and re-triggers the break-in period. Reply rate measured per version, rollback possible.",
+b_co_eyebrow:"WRITING A CONNECTOR",b_co_h2:"Two functions, three fixtures, one PR.",b_co_issues:"Open issues",
+b_li_eyebrow:"LICENCE",b_li_h2:"Fair source, and we say so ourselves.",
+b_li_lead:"FSL-1.1-ALv2. This is not open source under the OSI definition — better we say it than you find it in a comment thread.",
+b_li_ok:"ALLOWED",b_li_no:"NOT ALLOWED",
+b_li_r1a:"Read, fork, modify, redistribute",b_li_r1b:"Commercialise a competing product",
+b_li_r2a:"Commercial use for your own outreach",b_li_r2b:"Resell it white-label",
+b_li_r3a:"Host it for your group and subsidiaries",b_li_r3b:"Run it as SaaS for third parties",
+b_li_r4a:"Publish your connectors under the licence you choose",b_li_r4b:"Strip the guards and redistribute",
+b_li_note:"Two years after publication, each version becomes Apache 2.0. That's written into the licence, not into a marketing promise.",
+b_cp_eyebrow:"WHICH ONE",b_cp_h2:"Two paths, the same engine.",
+b_cp_self:"SELF-HOSTED",b_cp_host:"HOSTED",b_cp_price:"Price",b_cp_free:"Free",b_cp_99:"€99 / month, up to 3 users",
+b_cp_feat:"Features",b_cp_all:"All of them",b_cp_same:"Identical",
+b_cp_prov:"Provider accounts",b_cp_prov_s:"Yours, to open and pay for",b_cp_prov_h:"Included in the plan",
+b_cp_conn:"New connector",b_cp_conn_s:"You write it",b_cp_conn_h:"We build it",
+b_cp_ops:"Infra, updates, backups",b_cp_ops_s:"On you",b_cp_ops_h:"Included",
+b_cp_data:"Data",b_cp_data_s:"With you, we see nothing",b_cp_data_h:"Hosted in Europe",
+b_cp_sup:"Support",b_cp_sup_h:"Email, 1 business day",
+b_cp_req:"Requirements",b_cp_req_s:"Docker · TypeScript to extend",b_cp_req_h:"None",b_cp_switch:"See the hosted plan →",
+j_eyebrow:"THE OTHER HALF OF THE JOB",j_h2:"Jay Reach opens the doors. Jay handles what happens behind them.",
+j_lead:"Jay is the copilot for field sales reps. Born from a simple observation after fifteen years on the road: nobody fills in their CRM at night, in the car, after six meetings. So Jay does it for them.",
+j_p2:"The rep speaks, photographs a business card or an order form, or simply lets the app record the meeting. The write-up produces itself, the CRM updates, and the manager finally sees what's coming back from the field.",
+j_cta:"Discover Jay →",j_m2n:"Mobile app",
+j_m1:"The pre-meeting briefing: who you're about to meet, their communication style, the angles that work with that kind of person.",
+j_m2:"iOS and Android. Meeting recording, voice capture, automatic reading of photographed documents. Usable in the car, between two visits.",
+j_m3:"A CRM that fills itself in, for those who don't have one — or who gave up on theirs.",
+j_m4:"Skill tracking meeting after meeting: preparation, framing, discovery, objections, next step.",
+j_m5:"The manager's weekly digest. What moved, what's stuck, who needs help — without a pipeline meeting.",
+f_desc:"Multichannel outreach triggered by what changes at your prospects. Published by HEY JAY, Roubaix, France.",
+f_eu:"Built and hosted in Europe 🇪🇺",f_product:"PRODUCT",f_hosted:"Hosted plan",f_oss:"Open source version",f_pricing:"Pricing",f_repo:"GitHub repo",f_jay:"Jay, for sales reps",
+f_legal:"LEGAL",f_l1:"Legal notice",f_l2:"Terms of service",f_l3:"Privacy policy",f_l4:"FSL-1.1-ALv2 licence",
+f_parent:"Jay Reach is a <strong>Jay</strong> product, the copilot for field sales teams.",f_rights:"All rights reserved."
+},
+
+nl:{
+title:"Jay Reach — e-mail, LinkedIn, telefoon en een handgeschreven brief, op het juiste moment",
+promo:"Lanceeraanbieding: 50% korting op je eerste drie maanden <span>· 15 dagen gratis, zonder creditcard</span>",
+nav_a:"Prospecteren",nav_a_sub:"KANT-EN-KLAAR",nav_b:"Zelf hosten",nav_b_sub:"OPEN CODE",nav_cta:"15 dagen proberen",
+a_eyebrow:"MULTICHANNEL PROSPECTIE OP HET JUISTE MOMENT",
+a_h1:"Iedereen stuurt e-mails. Jij eindigt met een handgeschreven brief.",
+a_lead:"Jay Reach spot de bedrijven die vandaag een reden hebben om te antwoorden — een aanwerving, een benoeming, een vakbeurs — en doorloopt daarna de volledige reeks: e-mail, LinkedIn, telefoongesprek en een handgeschreven brief die wij voor jou posten.",
+a_cta1:"Mijn eerste campagne maken",a_cta2:"Bekijk het product",
+a_micro:"15 dagen gratis, zonder creditcard · Eerste campagne klaar in tien minuten",
+a_tag1:"4 kanalen, één reeks",a_tag2:"Frans · Engels · Nederlands",a_tag3:"Verzending inbegrepen",a_tag4:"Gebouwd en gehost in Europa",
+a_board_step:"STAP 4 / 6",
+a_leg1:"het bedrijf werft aan<span class='sub'>vacature « vertegenwoordiger » van 12/08</span>",
+a_leg2:"eerste e-mail<span class='sub'>geopend, geen antwoord</span>",
+a_leg3:"LinkedIn-uitnodiging<span class='sub'>aanvaard</span>",
+a_leg4:"handgeschreven brief<span class='sub'>goedkeuren vóór 18 u</span>",
+a_leg5:"telefoongesprek<span class='sub'>taak aangemaakt in je CRM</span>",
+a_leg6:"laatste opvolging<span class='sub'>gepland</span>",
+a_d0:"dag 0",a_d4h:"4 u",a_d1:"dag 1",a_d5:"dag 5",a_d8:"dag 8",a_d12:"dag 12",
+a_proof:"ZIJ PROSPECTEREN MET JAY REACH",a_logos_todo:"+ logo's toe te voegen",
+a_t1:"« <span class='todo'>[citaat te verzamelen — met een concreet cijfer: afspraken, antwoordpercentage, gewonnen tijd]</span> »",
+a_t2:"« <span class='todo'>[citaat te verzamelen — bij voorkeur over de handgeschreven brief, jullie onderscheid]</span> »",
+a_t3:"« <span class='todo'>[citaat te verzamelen — over de timing: « hij had net aangeworven »]</span> »",
+a_p_eyebrow:"HET PRINCIPE",a_p_h2:"De juiste boodschap op het verkeerde moment blijft een slechte boodschap.",
+a_p_lead:"Je hebt al tools om te versturen. Wat ontbreekt, is een reden om vandaag te schrijven in plaats van over zes maanden. Daar begint Jay Reach, en de rest volgt daaruit.",
+a_s1h:"Wij spotten",a_s1p:"Aanwervingen, benoemingen, vakbeurzen. Of je eigen bestanden, geïmporteerd en opgeschoond.",
+a_s2h:"Wij filteren",a_s2p:"Wervingsbureaus weggefilterd, dubbels samengevoegd, bedrijven één voor één geverifieerd.",
+a_s3h:"Wij vinden",a_s3p:"De juiste gesprekspartners, met geverifieerd e-mailadres en LinkedIn-profiel.",
+a_s4h:"Wij voeren uit",a_s4p:"E-mail, LinkedIn, telefoon, brief. Elk bericht vermeldt het feit dat het rechtvaardigt.",
+a_s5h:"Jij antwoordt",a_s5p:"Alle antwoorden op één plek. De opvolging stopt zodra iemand antwoordt.",
+a_c_eyebrow:"VIER KANALEN, ÉÉN REEKS",
+a_c_h2:"Een salesdirecteur krijgt tachtig e-mails per dag en één handgeschreven envelop per kwartaal.",
+a_c_lead:"Raad eens welke hij opent. Dat is waar Jay Reach om draait: als het scherm niet volstaat, gaat de reeks elders verder.",
+a_c1n:"BRIEF",a_c1h:"Met de hand geschreven, door ons gepost",a_c1p:"Eén pagina, persoonlijk geadresseerd aan het bureau van de beslisser. Je keurt elke brief goed voordat hij vertrekt, en je ziet de kost. Niemand anders doet dit binnen een geautomatiseerde reeks.",
+a_c2n:"TELEFOON",a_c2h:"De taak komt op de juiste dag",a_c2p:"Een belstap maakt een taak met datum aan, in Jay Reach of rechtstreeks in je CRM, met de context van de prospect en alles wat al verstuurd is. Je noteert het resultaat, de reeks past zich aan.",
+a_c3n:"E-MAIL",a_c3h:"Vanaf je eigen adres",a_c3p:"Je e-mails vertrekken uit je eigen mailbox, binnen een gesprek dat doorloopt. Opvolgingen blijven in dezelfde thread, nooit dubbel.",
+a_c4n:"LINKEDIN",a_c4h:"Op menselijk tempo",a_c4p:"Profielbezoek, uitnodiging, bericht na aanvaarding. Beperkte volumes en onregelmatige vertragingen, alsof je het zelf deed.",
+a_sc_eyebrow:"HOE HET ERUITZIET",a_sc_h2:"Twee schermen en je snapt het.",
+a_sc_w1:"Aanwerving buitendienst · Reeks",a_sc_w2:"Goed te keuren · 2",a_sc_w3:"Ontvangen antwoorden",
+a_sc_st1:"Openingsmail",a_sc_sm1:"« Hallo {voornaam}, op 12/08 plaatste je een vacature… »",
+a_sc_st2:"LinkedIn-uitnodiging",a_sc_sm2:"Zonder nota · 53 aanvaard op 190",
+a_sc_st3:"LinkedIn-bericht",a_sc_sm3:"« Dag {voornaam}, ik zag dat je een vertegenwoordiger zoekt… »",
+a_sc_st4:"Handgeschreven brief",a_sc_sm4:"€ 4,80 · goedkeuring verplicht",
+a_sc_st5:"Telefoongesprek",a_sc_sm5:"Taak aangemaakt in je CRM op de dag zelf",
+a_sc_d1:"1 dag wachten",a_sc_d2:"2 dagen wachten · <b>als de uitnodiging aanvaard is</b>",
+a_sc_d3:"4 dagen wachten · <b>als er geen antwoord is</b>",a_sc_d4:"3 dagen wachten · <b>als er geen antwoord is</b>",
+a_ch_email:"E-MAIL",a_ch_li:"LINKEDIN",a_ch_mail:"BRIEF",a_ch_call:"TELEFOON",
+a_sc_q1:"Groupe Vantel · € 4,80 · vertrekt vanavond",a_sc_q2:"Norlim Distribution · € 4,80 · morgen",
+a_sc_edit:"Bewerken",a_sc_ok:"Goedkeuren",
+a_sc_r1:"Groupe Vantel · stap 4 · 2 u geleden",a_sc_r2:"Ordelis · afwezig tot 25/08",a_sc_r3:"Cerbat Industries · stap 3 · gisteren",
+a_sc_pos:"POSITIEF",a_sc_pause:"GEPAUZEERD",
+a_sc_cap1:"Je versleept de stappen, wijzigt de wachttijden en klikt op een bericht om het te herschrijven. De groene voorwaarden zeggen wanneer een stap vertrekt — of niet.",
+a_sc_cap2:"Alleen brieven vragen goedkeuring — een mislukte e-mail herstel je, een verstuurde brief niet. Antwoorden komen op één plek toe, al gesorteerd.",
+a_g_eyebrow:"WAT JE PROBLEMEN BESPAART",a_g_h2:"Een ernstige prospectietool weet ook wanneer te stoppen.",
+a_g1h:"Al geantwoord vanaf je gsm? Dan stoppen we.",a_g1p:"Jay Reach leest je gesprekken en stopt de opvolging zodra jij het hebt overgenomen. Geen « even opvolgen » meer, drie dagen na je eigen antwoord.",
+a_g2h:"Een afwezigheidsbericht is geen antwoord",a_g2p:"Een automatisch afwezigheidsbericht sluit de reeks niet af: die pauzeert en hervat wanneer de persoon terug is, op de juiste datum.",
+a_g3h:"Nooit een « Hallo , »",a_g3p:"Ontbreekt er informatie voor een contact, dan vertrekt zijn bericht niet. Je krijgt het gemeld, met het ontbrekende veld.",
+a_g4h:"Eén persoon per bedrijf per dag",a_g4p:"Je prospects zien nooit drie collega's dezelfde ochtend hetzelfde bericht krijgen.",
+a_pr_eyebrow:"TARIEF",a_pr_h2:"Eén prijs. Het hele team. Verzending inbegrepen.",
+a_pr_lead:"Geen facturatie per gebruiker, geen credits die je halverwege de maand moet bijkopen, geen niveau dat functies ontgrendelt.",
+a_pr_badge:"LANCEERAANBIEDING",a_pr_per:"PER MAAND, EXCL. BTW · EERSTE 3 MAANDEN · TOT 3 GEBRUIKERS",
+a_pr_f1:"Tot <strong>1 500 gecontacteerde contacten per maand</strong>",a_pr_f2:"Automatische detectie van te contacteren bedrijven",
+a_pr_f3:"Import en opschoning van je eigen bestanden",a_pr_f4:"Opzoeken van gesprekspartners en hun gegevens, <strong>inbegrepen</strong>",
+a_pr_f5:"Verzending van e-mails vanaf je eigen adres, <strong>inbegrepen</strong>",a_pr_f6:"LinkedIn, beltaken en handgeschreven brieven",
+a_pr_f7:"Ondersteunde redactie in het Frans, Engels en Nederlands",a_pr_f8:"Alle antwoorden in één inbox",
+a_pr_f9:"Automatische doorstroom naar je CRM",a_pr_f10:"Ondersteuning via e-mail, antwoord binnen één werkdag",
+a_pr_cta:"Starten — 15 dagen gratis",a_pr_extra:"Extra gebruiker: € 29 / maand. Zonder verbintenis.",
+a_pr_b1h:"De proefperiode, concreet",a_pr_b1p:"Vijftien dagen, alle functies, geen creditcard. Doe je op het einde niets, dan stopt de proefperiode gewoon — we schrijven niets af zonder je medeweten.",
+a_pr_b2h:"De handgeschreven brief",a_pr_b2p:"Aangerekend aan <strong>€ 4,80 per brief</strong>, enkel wanneer je er een verstuurt. Het is een fysiek voorwerp, geschreven, gefrankeerd en gepost: wij rekenen het aan kostprijs aan. Je stelt een maandplafond in en keurt elke verzending goed.",
+a_pr_b3h:"Ben je een technisch team?",a_pr_b3p:"De motor is als open code gepubliceerd. Installeer hem gratis op je eigen servers.",a_pr_b3c:"Bekijk de opensourceversie →",
+a_f_eyebrow:"VEELGESTELDE VRAGEN",a_f_h2:"Wat men ons vraagt vóór de start.",
+a_q1:"Wat zit er in de prijs?",a_a1:"Alles, behalve de papieren brieven. Het versturen van e-mails, het opzoeken van gegevens, de ondersteunde redactie, LinkedIn, de beltaken, de gedeelde inbox en de doorstroom naar je CRM. Geen enkel ander abonnement ernaast, geen credits bij te kopen.",
+a_q2:"Waarin verschilt dit van de tools die ik al gebruik?",a_a2:"Sequentietools laten je sneller versturen naar een lijst die je zelf hebt samengesteld. Jay Reach bepaalt <em>wie</em> je contacteert en <em>wanneer</em>, op basis van wat er net bij je prospects gebeurde — en het gaat verder waar de anderen stoppen: het telefoongesprek en de handgeschreven brief, binnen dezelfde reeks.",
+a_q3:"Hoe werkt de telefoonstap?",a_a3:"Op de geplande dag verschijnt er een taak in Jay Reach en in je CRM, met de context: waarom dit contact, wat al verstuurd werd, wat hij opende. Je belt, je noteert het resultaat met één klik. Spreek je een nieuw belmoment af, dan schuift de rest van de reeks mee op.",
+a_q4:"Moet ik technisch zijn?",a_a4:"Nee. Je koppelt je mailbox en je LinkedIn-account in twee klikken, en je eerste campagne is klaar in tien minuten. Wie een sequentietool kan gebruiken, kan Jay Reach gebruiken.",
+a_q5:"En als mijn koopsignaal nog niet bestaat?",a_a5:"Vertel ons wat bij jouw klanten een behoefte creëert: een kapitaalronde, een nieuw magazijn, een certificering, een overheidsopdracht. Wij bouwen het voor je, zonder meerkost.",
+a_q6:"Loopt mijn LinkedIn-account risico?",a_a6:"LinkedIn-automatisering is niet officieel toegestaan door het platform — dat geldt voor Jay Reach zoals voor elke tool op de markt, en we zeggen het liever zelf. We hanteren voorzichtige volumes en onregelmatige vertragingen. Wil je geen enkel risico lopen, dan bereidt een manuele modus je berichten voor en verstuur je ze zelf met één klik.",
+a_q7:"Waar staan mijn gegevens?",a_a7:"Op onze servers, in Europa, met versleutelde back-ups. Je kunt alles op elk moment exporteren. Vertrek je, dan worden je gegevens verwijderd.",
+a_end_h2:"Je volgende klant plaatste net een vacature.",
+a_end_lead:"Je hebt ongeveer tweeënzeventig uur voordat vijftien concurrenten het ook opmerken.",
+a_end_micro:"15 dagen gratis · Zonder creditcard · Klaar in tien minuten",
+b_eyebrow:"SELF-HOSTED PROSPECTIEMOTOR",b_h1:"De motor is van jou. Clone, breid uit, host zelf.",
+b_lead:"Next.js 15, Postgres, strikte TypeScript, jobs op Postgres. Zeven vervangbare providerinterfaces, een multichannel sequencer met geteste state machine, en waarborgen afgedwongen op schemaniveau. Geen enkele propriëtaire SaaS is nodig voor de kern.",
+b_cta1:"Bekijk de repo",b_cta2:"Architectuur",b_micro:"FSL-1.1-ALv2 → Apache 2.0 na 2 jaar. Niets is afgeschermd ten opzichte van het gehoste aanbod.",b_tag5:"Lokale LLM mogelijk",
+b_ar_eyebrow:"ARCHITECTUUR",b_ar_h2:"De kern kent enkel interfaces.",
+b_ar_lead:"pnpm-monorepo. <span class='mono'>apps/*</span> hangt af van <span class='mono'>packages/providers/*</span>, dat afhangt van <span class='mono'>packages/core</span>. Nooit omgekeerd, en <span class='mono'>core</span> importeert geen enkele SDK. Een bron of kanaal toevoegen raakt de motor niet aan.",
+b_ar1h:"Zeven providerfamilies",b_ar1p:"<span class='mono'>signals</span> · <span class='mono'>enrichment</span> · <span class='mono'>channels</span> · <span class='mono'>inbox</span> · <span class='mono'>ai</span> · <span class='mono'>import</span> · <span class='mono'>crm</span>. Elke familie levert een manifest met Zod-schema en i18n-sleutels, waarmee het configuratiescherm zichzelf genereert.",
+b_ar2h:"Jobs op Postgres",b_ar2p:"pg-boss, twaalf wachtrijen, idempotentie via unieke sleutel, herstel met exponentiële backoff. Geen Redis, geen externe queue-dienst.",
+b_ar3h:"Isolatie op databaseniveau",b_ar3p:"RLS op alle tabellen, policies op basis van organisatielidmaatschap. De worker draait als service role en moet dus expliciet filteren — een test controleert dat.",
+b_ar4h:"Verwisselbare LLM",b_ar4p:"Scoring, classificatie van antwoorden en redactie lopen via één interface. Anthropic, OpenAI of Ollama lokaal. In lokale modus verlaat geen enkele inhoud je infrastructuur.",
+b_sq_eyebrow:"DE SEQUENCER",b_sq_h2:"Het deel waar een bug zichtbaar wordt bij de prospect, niet op het scherm.",
+b_sq_lead:"Expliciete state machine, eindtoestanden zijn definitief, geen heropening — hervatten maakt een nieuwe inschrijving. Lus van vijf minuten met <span class='mono'>FOR UPDATE SKIP LOCKED</span>.",
+b_sq1n:"PLANNING",b_sq1h:"De wachttijd is niet het verzenduur",b_sq1p:"Kantooruren in de tijdzone van het contact, lead time van het kanaal, quotum van de afzender, jitter ±20%, één actie per bedrijf per dag. Een bereikt quotum stelt uit, verwijdert nooit.",
+b_sq2n:"RENDERING",b_sq2h:"Onopgeloste variabele = actie geblokkeerd",b_sq2p:"Statische validatie bij het opslaan volgens de aard van de campagne, optionele terugvalwaarden, en blokkering bij rendering gegroepeerd per ontbrekend veld.",
+b_sq3n:"TEMPLATES",b_sq3h:"Geversioneerd, nooit ter plaatse gewijzigd",b_sq3p:"Bewerken maakt een versie, zet <span class='mono'>sent_count</span> op nul en herstart de inloopperiode. Antwoordpercentage per versie gemeten, rollback mogelijk.",
+b_co_eyebrow:"EEN CONNECTOR SCHRIJVEN",b_co_h2:"Twee functies, drie fixtures, één PR.",b_co_issues:"Open issues",
+b_li_eyebrow:"LICENTIE",b_li_h2:"Fair source, en we schrijven het zelf.",
+b_li_lead:"FSL-1.1-ALv2. Dit is geen opensource volgens de OSI-definitie — beter dat wij het zeggen dan dat je het in een commentaarsectie ontdekt.",
+b_li_ok:"TOEGESTAAN",b_li_no:"NIET TOEGESTAAN",
+b_li_r1a:"Lezen, forken, wijzigen, herverdelen",b_li_r1b:"Een concurrerend product commercialiseren",
+b_li_r2a:"Commercieel gebruik voor je eigen prospectie",b_li_r2b:"Doorverkopen als white label",
+b_li_r3a:"Hosten voor je groep en dochterondernemingen",b_li_r3b:"Als SaaS uitbaten voor derden",
+b_li_r4a:"Je connectors publiceren onder de licentie van je keuze",b_li_r4b:"De waarborgen verwijderen en herverdelen",
+b_li_note:"Twee jaar na publicatie wordt elke versie Apache 2.0. Dat staat in de licentie, niet in een commerciële belofte.",
+b_cp_eyebrow:"WELKE KIEZEN",b_cp_h2:"Twee wegen, dezelfde motor.",
+b_cp_self:"SELF-HOSTED",b_cp_host:"GEHOST",b_cp_price:"Prijs",b_cp_free:"Gratis",b_cp_99:"€ 99 / maand, tot 3 gebruikers",
+b_cp_feat:"Functies",b_cp_all:"Alle",b_cp_same:"Identiek",
+b_cp_prov:"Provideraccounts",b_cp_prov_s:"De jouwe, zelf te openen en betalen",b_cp_prov_h:"Inbegrepen in het abonnement",
+b_cp_conn:"Nieuwe connector",b_cp_conn_s:"Jij schrijft hem",b_cp_conn_h:"Wij bouwen hem",
+b_cp_ops:"Infra, updates, back-ups",b_cp_ops_s:"Voor jouw rekening",b_cp_ops_h:"Inbegrepen",
+b_cp_data:"Gegevens",b_cp_data_s:"Bij jou, wij zien niets",b_cp_data_h:"Gehost in Europa",
+b_cp_sup:"Ondersteuning",b_cp_sup_h:"E-mail, 1 werkdag",
+b_cp_req:"Vereisten",b_cp_req_s:"Docker · TypeScript om uit te breiden",b_cp_req_h:"Geen",b_cp_switch:"Bekijk het gehoste aanbod →",
+j_eyebrow:"DE ANDERE HELFT VAN HET VAK",j_h2:"Jay Reach opent de deuren. Jay regelt wat erachter gebeurt.",
+j_lead:"Jay is de copiloot van vertegenwoordigers in de buitendienst. Ontstaan uit een eenvoudige vaststelling na vijftien jaar op de baan: niemand vult 's avonds in zijn auto het CRM in, na zes afspraken. Dus doet Jay het in hun plaats.",
+j_p2:"De vertegenwoordiger spreekt, fotografeert een visitekaartje of een bestelbon, of laat de app gewoon de afspraak opnemen. Het verslag schrijft zichzelf, het CRM wordt bijgewerkt, en de manager ziet eindelijk wat er van het terrein komt.",
+j_cta:"Ontdek Jay →",j_m2n:"Mobiele app",
+j_m1:"De briefing vóór de afspraak: wie je gaat zien, zijn communicatiestijl, de invalshoeken die bij dat type gesprekspartner werken.",
+j_m2:"iOS en Android. Opname van de afspraak, spraakopname, automatische lezing van gefotografeerde documenten. Bruikbaar in de auto, tussen twee bezoeken.",
+j_m3:"Een CRM dat zichzelf invult, voor wie er geen heeft — of die het zijne heeft opgegeven.",
+j_m4:"Opvolging van de vaardigheden, afspraak na afspraak: voorbereiding, kadering, ontdekking, bezwaren, volgende stap.",
+j_m5:"Het wekelijkse overzicht voor de manager. Wat bewoog, wat vastzit, wie hulp nodig heeft — zonder pipelinevergadering.",
+f_desc:"Multichannel prospectie, aangestuurd door wat er verandert bij je prospects. Uitgegeven door HEY JAY, Roubaix, Frankrijk.",
+f_eu:"Gebouwd en gehost in Europa 🇪🇺",f_product:"PRODUCT",f_hosted:"Gehost aanbod",f_oss:"Opensourceversie",f_pricing:"Tarieven",f_repo:"GitHub-repo",f_jay:"Jay, voor vertegenwoordigers",
+f_legal:"JURIDISCH",f_l1:"Wettelijke vermeldingen",f_l2:"Dienstvoorwaarden",f_l3:"Privacybeleid",f_l4:"FSL-1.1-ALv2-licentie",
+f_parent:"Jay Reach is een <strong>Jay</strong>-product, de copiloot van buitendienstteams.",f_rights:"Alle rechten voorbehouden."
+}
+};
+
+function setLang(l){
+  const d = T[l];
+  document.documentElement.lang = l;
+  document.title = d.title;
+  document.querySelectorAll('[data-t]').forEach(function(el){
+    const v = d[el.getAttribute('data-t')];
+    if(v !== undefined) el.innerHTML = v;
+  });
+  document.querySelectorAll('.lang button').forEach(function(b){
+    b.classList.toggle('on', b.getAttribute('data-lang')===l);
+  });
+}
+document.querySelectorAll('.lang button').forEach(function(b){
+  b.addEventListener('click', function(){ setLang(b.getAttribute('data-lang')); });
+});
+
+function setView(v){
+  document.body.classList.toggle('b', v==='b');
+  document.querySelectorAll('.seg button').forEach(function(b){
+    b.classList.toggle('on', b.getAttribute('data-view')===v);
+  });
+  window.scrollTo({top:0,behavior:'instant'});
+}
+document.querySelectorAll('[data-view]').forEach(function(el){
+  el.addEventListener('click', function(e){
+    if(el.tagName==='A' && el.getAttribute('href')==='#') e.preventDefault();
+    setView(el.getAttribute('data-view'));
+  });
+});
+
+setLang('fr');
+</script>
+</body>
+</html>

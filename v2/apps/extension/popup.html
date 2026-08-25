@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jay Reach — LinkedIn</title>
+    <style>
+      :root {
+        --ink: #0a130e;
+        --slate: #12201a;
+        --lime: #c6ff3d;
+        --chalk: #eef3ec;
+        --moss: #6f8378;
+        --flare: #ff6b57;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        width: 320px;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--ink);
+        color: var(--chalk);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid rgba(198, 255, 61, 0.14);
+      }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--moss); }
+      .dot.on { background: var(--lime); }
+      h1 { font-size: 14px; margin: 0; font-weight: 650; letter-spacing: 0.2px; }
+      .sub { font-size: 11px; color: var(--moss); margin-left: auto; }
+      .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+      .row { display: flex; justify-content: space-between; font-size: 12px; }
+      .row span:last-child { font-variant-numeric: tabular-nums; color: var(--chalk); }
+      .muted { color: var(--moss); }
+      .warn {
+        font-size: 11px;
+        line-height: 1.5;
+        color: #f0d9a0;
+        background: rgba(255, 160, 40, 0.08);
+        border: 1px solid rgba(255, 160, 40, 0.25);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .paused {
+        font-size: 11px;
+        color: var(--flare);
+        border: 1px solid rgba(255, 107, 87, 0.3);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: none;
+      }
+      button {
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid rgba(198, 255, 61, 0.35);
+        background: transparent;
+        color: var(--lime);
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      button.primary { background: var(--lime); color: var(--ink); border-color: var(--lime); }
+      button:active { transform: translateY(1px); }
+      .actions { display: flex; gap: 8px; }
+      .actions button { flex: 1; }
+      code { color: var(--lime); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="dot"></span>
+      <h1>Jay Reach — LinkedIn</h1>
+      <span class="sub" id="conn">…</span>
+    </header>
+    <div class="body">
+      <div class="row"><span class="muted">Application</span><span id="base">—</span></div>
+      <div class="row"><span class="muted">État</span><span id="state">—</span></div>
+
+      <div class="paused" id="pausedBox">
+        En pause (compte LinkedIn restreint ou déconnecté). Reprise automatique sous 24 h.
+      </div>
+
+      <div class="warn">
+        L'automatisation LinkedIn est contraire aux CGU de LinkedIn et peut entraîner une
+        restriction de votre compte. L'envoi se fait avec <b>votre propre session</b>, dans des
+        limites prudentes. Utilisez un seul outil d'automatisation à la fois.
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="pollBtn">Vérifier maintenant</button>
+        <button id="resetBtn">Reprendre</button>
+      </div>
+      <div class="row muted" id="hint" style="font-size: 11px">
+        Connectez l'extension depuis <code>/settings/linkedin</code> dans Jay Reach.
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

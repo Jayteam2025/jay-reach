@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Jay Reach — LinkedIn",
+  "version": "0.1.0",
+  "description": "Envoi des invitations et messages LinkedIn de Jay Reach via votre propre session. Usage interne — ne pas distribuer.",
+  "permissions": ["storage", "alarms", "cookies"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://www.linkedin.com http://localhost:3000 https://app.jay-reach.fr"
+  },
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "http://localhost:3000/*",
+    "https://app.jay-reach.fr/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/settings/linkedin*", "https://app.jay-reach.fr/settings/linkedin*"],
+      "js": ["content-oauth.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Jay Reach — LinkedIn",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "externally_connectable": {
+    "matches": ["http://localhost:3000/*", "https://app.jay-reach.fr/*"]
+  }
+}

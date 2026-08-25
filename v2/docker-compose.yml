@@ -1,0 +1,49 @@
+# Environnement de développement local.
+# `docker compose up` lève Postgres + l'app web + le worker.
+# La pile Supabase complète (Auth/Storage/Realtime) se lance à part via la CLI :
+#   supabase start
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jayreach
+    ports:
+      - '5432:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @jay-reach/web dev"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/jayreach
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @jay-reach/worker dev"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/jayreach
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

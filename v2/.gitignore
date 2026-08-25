@@ -1,0 +1,20 @@
+node_modules
+dist
+.next
+out
+coverage
+*.tsbuildinfo
+
+# Env — jamais de secret commité
+.env
+.env.*
+!.env.example
+
+# Supabase
+supabase/.temp
+supabase/.branches
+
+.DS_Store
+*.local
+.turbo
+/apps/web/public/jay-reach-linkedin-extension.zip

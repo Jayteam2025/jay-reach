@@ -1,0 +1,553 @@
+{
+  "app": {
+    "name": "Jay Reach",
+    "tagline": "Multichannel outbound engine"
+  },
+  "common": {
+    "loading": "Loading…",
+    "language": "Language"
+  },
+  "home": {
+    "title": "Jay Reach",
+    "subtitle": "Multichannel outbound engine, self-hosted.",
+    "coreVersion": "core v{version}"
+  },
+  "login": {
+    "title": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "pending": "Signing in…"
+  },
+  "providers": {
+    "eyebrow": "Integrations",
+    "lead": "Your API keys, encrypted and scoped to your organization. One service per row.",
+    "category": {
+      "email": "Outreach",
+      "enrichment": "Enrichment",
+      "ai": "AI model",
+      "signals": "Signal sources"
+    },
+    "title": "Providers",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "secretHidden": "key ending in {last4}",
+    "save": "Save",
+    "saved": "Saved",
+    "smartlead": "Smartlead (email)",
+    "fullenrich": "FullEnrich (enrichment)",
+    "dropcontact": "Dropcontact (enrichment)",
+    "bouncer": "Bouncer (email verification)",
+    "anthropic": "Anthropic (AI)",
+    "francetravail": "France Travail (job postings)",
+    "adzuna": "Adzuna (job postings)",
+    "apify": "Apify (LinkedIn jobs)",
+    "field": {
+      "apiKey": "API key",
+      "apiToken": "API token",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "appId": "App ID",
+      "appKey": "App key"
+    }
+  },
+  "jobs": {
+    "title": "Background queues",
+    "queue": "Queue",
+    "description": "Role",
+    "retries": "Retries",
+    "q": {
+      "sourcesDiscover": "Source discovery",
+      "signalsQualify": "Signal qualification",
+      "importsProcess": "Import processing",
+      "enrichmentCompany": "Company enrichment",
+      "enrichmentContacts": "Contact enrichment",
+      "sequenceEnroll": "Sequence enrollment",
+      "sequenceTick": "Sequence advancement",
+      "actionsDispatch": "Action dispatch",
+      "outcomesPoll": "Outcome polling",
+      "inboxSync": "Inbox sync",
+      "crmPush": "CRM push",
+      "retentionPurge": "Retention purge"
+    }
+  },
+  "personas": {
+    "eyebrow": "Who to contact",
+    "title": "Personas",
+    "lead": "Who to target in detected companies: job titles, seniority, channels.",
+    "name": "Name",
+    "description": "Description",
+    "patterns": "Trigger titles (comma-separated)",
+    "excludeTitles": "Titles to exclude (comma-separated)",
+    "seniority": "Seniority",
+    "channels": "Outreach channels",
+    "scoringPrompt": "Scoring prompt (AI)",
+    "scoringPromptHint": "Describe precisely who qualifies — used by the AI to score contacts.",
+    "titlesLabel": "Titles:",
+    "seniorityLevel": {
+      "executive": "Executive",
+      "director": "Director",
+      "manager": "Manager",
+      "individual": "Individual"
+    },
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "letter": "Letter",
+      "call": "Call"
+    },
+    "statsTotal": "Personas",
+    "statsActive": "Active",
+    "newPersona": "New persona",
+    "editTitle": "Edit persona",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this persona?",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "active": "Persona active",
+    "inactive": "Inactive",
+    "cancel": "Cancel",
+    "create": "Create",
+    "update": "Update",
+    "created": "Persona created",
+    "empty": "No persona defined. Create one to start.",
+    "demoNote": "Demo data — your changes stay local (not saved).",
+    "patternsCount": "{n} titles"
+  },
+  "signals": {
+    "nav": {
+      "signals": "Signals",
+      "personas": "Personas",
+      "providers": "Providers"
+    },
+    "eyebrow": "Raw feed",
+    "title": "Signals",
+    "lead": "All campaigns, including discarded, without a campaign, and to arbitrate.",
+    "empty": "No signal yet. Add a source to start detection.",
+    "state": {
+      "todo": "To handle",
+      "validated": "Validated",
+      "discarded": "Discarded",
+      "arbitrate": "To arbitrate"
+    },
+    "daysAgo": "{n}d ago",
+    "detail": {
+      "source": "Source",
+      "siren": "SIREN",
+      "noSiren": "unresolved",
+      "location": "Location",
+      "score": "Score",
+      "age": "Detected",
+      "reason": "Reason"
+    },
+    "validate": "Validate the signal",
+    "discard": "Discard",
+    "reason": {
+      "recruiter": "Recruitment agency",
+      "customer": "Customer in your list",
+      "manual": "Manually discarded",
+      "opposition": "Opted out of prospecting (legal registry)"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "signals": "Signals",
+    "prospects": "Prospects",
+    "campaigns": "Campaigns",
+    "inbox": "Inbox",
+    "import": "Import",
+    "sources": "Sources",
+    "personas": "Personas",
+    "providers": "Providers",
+    "branding": "Branding",
+    "linkedin": "LinkedIn",
+    "annuaire": "Directory",
+    "approvals": "Approvals",
+    "customers": "Customers"
+  },
+  "branding": {
+    "eyebrow": "Identity",
+    "title": "Brand identity",
+    "lead": "What represents you in emails and letters: sender, signature, logo.",
+    "senderName": "Sender name",
+    "replyTo": "Reply-to email",
+    "emailSignature": "Email signature",
+    "letterSignature": "Handwritten signature (letter)",
+    "accent": "Accent color",
+    "logo": "Logo",
+    "logoHint": "PNG or SVG, transparent background.",
+    "upload": "Choose a file",
+    "save": "Save",
+    "note": "Preview — saving activates when Supabase is connected."
+  },
+  "sources": {
+    "eyebrow": "Detection",
+    "title": "Signal sources",
+    "lead": "Where postings come from — and the run history to spot a source that degrades.",
+    "provider": "Provider",
+    "keywords": "Keywords",
+    "location": "Area",
+    "active": "Active",
+    "paused": "Paused",
+    "history": "Run history",
+    "found": "found",
+    "new": "new",
+    "status": {
+      "success": "OK",
+      "error": "Failed",
+      "running": "Running"
+    },
+    "empty": "No source configured."
+  },
+  "inbox": {
+    "eyebrow": "Replies",
+    "title": "Inbox",
+    "lead": "Reply at the right moment — and know whether you already replied elsewhere.",
+    "filter": {
+      "all": "All",
+      "todo": "To do",
+      "in_progress": "In progress",
+      "done": "Done",
+      "later": "Later"
+    },
+    "class": {
+      "human_reply": "Human reply",
+      "auto_absence": "Auto absence",
+      "auto_left_company": "Left company",
+      "auto_other": "Auto",
+      "unclassified": "Unclassified"
+    },
+    "treatment": {
+      "todo": "To do",
+      "in_progress": "In progress",
+      "done": "Done",
+      "later": "Later"
+    },
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn"
+    },
+    "via": "via {sender}",
+    "you": "You",
+    "reply": "Reply",
+    "replyPlaceholder": "Your reply…",
+    "replyNote": "Sending always goes through the sender bound to the contact — never another. (Send wiring after validation.)",
+    "buySignal": "Buy signal: departure detected → the account resurfaces to find the successor.",
+    "state": "Thread state",
+    "empty": "Choose a thread to read it.",
+    "emptyList": "Nothing in this view.",
+    "sortAuto": "Auto-sort",
+    "sorting": "Sorting…",
+    "sorted": "{n} repl(y/ies) sorted",
+    "suggest": "Suggest a reply",
+    "suggesting": "Drafting…"
+  },
+  "import": {
+    "eyebrow": "File",
+    "title": "Import contacts",
+    "lead": "The report and cost are shown BEFORE you validate — never a surprise afterwards.",
+    "drop": "Drop a CSV file here, or click to choose",
+    "dropHint": "CSV — comma, semicolon or tab separator, auto-detected",
+    "change": "Change file",
+    "mapping": "Column mapping",
+    "mappingHint": "An unrecognized column is ignored, never guessed.",
+    "column": "File column",
+    "sampleValue": "Sample",
+    "mapTo": "Jay Reach field",
+    "ignore": "— ignore —",
+    "field": {
+      "first_name": "First name",
+      "last_name": "Last name",
+      "email": "Email",
+      "job_title": "Job title",
+      "company": "Company",
+      "linkedin_url": "LinkedIn",
+      "phone": "Phone",
+      "city": "City",
+      "postal_code": "Postal code",
+      "country": "Country",
+      "siren": "SIREN",
+      "website": "Website"
+    },
+    "report": "Report — before validation",
+    "rowsTotal": "Rows read",
+    "rowsUnique": "Unique contacts",
+    "rowsMerged": "Duplicates merged",
+    "rowsRejected": "Rows rejected",
+    "emailsMissing": "Without email (to enrich)",
+    "cost": "Estimated enrichment cost",
+    "costValue": "≈ {n} contacts to enrich",
+    "costHint": "Only contacts without an email consume credits.",
+    "destination": "Destination",
+    "dest": {
+      "list": "New list",
+      "existing": "Existing list",
+      "campaign": "Campaign"
+    },
+    "validate": "Validate import of {n} contacts",
+    "ready": "{n} contacts ready to import into \"{dest}\".",
+    "empty": "Choose a file to start.",
+    "imported": "{n} contact(s) imported ✓",
+    "importing": "Importing…",
+    "listName": "List name",
+    "contextNote": "Context note (required)",
+    "pickList": "Pick a list…",
+    "pickCampaign": "Pick a campaign…"
+  },
+  "dashboard": {
+    "eyebrow": "Overview",
+    "title": "Dashboard",
+    "lead": "The only metric that matters: the delay between the signal and the first contact.",
+    "period": "Last 30 days",
+    "kpi": {
+      "replies": "Replies",
+      "positives": "Positive replies",
+      "qualified": "Qualified signals",
+      "median": "Median delay signal → 1st contact"
+    },
+    "days": "{n} d",
+    "trend": "{delta} vs previous period",
+    "activity": "Activity",
+    "legend": {
+      "signals": "Qualified signals",
+      "replies": "Replies"
+    },
+    "byChannel": "By channel",
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "courrier": "Mail"
+    },
+    "noCampaign": "Signals without a campaign",
+    "noCampaignSub": "Well-scored, no campaign has picked them up yet.",
+    "replied": "Replied",
+    "repliedSub": "Latest qualified replies.",
+    "atStep": "step {n}"
+  },
+  "prospects": {
+    "eyebrow": "Company profile",
+    "headcount": "{n} employees",
+    "signals": "Related signals",
+    "sequence": "Sequence table",
+    "contacts": "Contacts",
+    "linkedin": "in ↗",
+    "noProfile": "no profile",
+    "noSequence": "Not in a sequence yet."
+  },
+  "campaigns": {
+    "eyebrow": "Overview",
+    "title": "Campaigns",
+    "subtitle": "A campaign links a contact source, personas and a multichannel sequence.",
+    "lead": "One card per campaign: pool, contacted, replies.",
+    "newCampaign": "New campaign",
+    "importFile": "Import a file",
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "draft": "Draft"
+    },
+    "fig": {
+      "vivier": "Pool",
+      "contacted": "Contacted",
+      "sent": "Sent",
+      "accepted": "Accepted",
+      "replies": "Replies",
+      "positives": "Positive"
+    },
+    "treated": "{pct}% processed",
+    "channelsN": "{n} channels",
+    "linkedinInvites": "LinkedIn invites",
+    "replyRateSub": "{pct}% reply rate",
+    "source": "Source",
+    "open": "Open →",
+    "importCard": {
+      "title": "Import a file",
+      "desc": "CSV or XLSX. New campaign, or add to an existing one."
+    },
+    "progress": "{pct}% of pool contacted",
+    "back": "← Campaigns",
+    "detailSub": "Created {days}d ago · next send in {next} · {contacts} contacts · {steps} steps",
+    "perDay": "{n} / day",
+    "addContacts": "Add contacts",
+    "pause": "Pause",
+    "tabs": {
+      "overview": "Overview",
+      "contacts": "Contacts",
+      "queue": "Queue",
+      "sourcesPersonas": "Sources & personas",
+      "sequence": "Sequence",
+      "activity": "Activity",
+      "settings": "Settings"
+    },
+    "soon": "Coming soon.",
+    "channel": {
+      "email": "Email",
+      "linkedin_invite": "LinkedIn invite",
+      "linkedin_message": "LinkedIn message",
+      "letter": "Letter",
+      "call": "Call"
+    },
+    "wait": "wait",
+    "dayUnit": "{n, plural, one {day} other {days}}",
+    "noCondition": "no condition",
+    "validation": "Approval",
+    "editRule": "Edit",
+    "addStep": "+ Add a step",
+    "stopNote": "Any reply stops the sequence, on any channel.",
+    "showPhone": "Show phone",
+    "viaFullenrich": "via FullEnrich",
+    "replied": "Replied",
+    "exited": "Left the campaign · {pct}% of contacted",
+    "viewContacts": "View contacts →",
+    "lastReplies": "Latest replies",
+    "sentiment": {
+      "positive": "Positive",
+      "later": "Follow up later",
+      "negative": "Negative"
+    },
+    "funnel": "Funnel by step",
+    "eligible": "{n} eligible",
+    "step": "Step {n}",
+    "overviewLead": "The two figures that say whether it works: reply rate and positive replies.",
+    "rate": "Reply rate",
+    "modal": {
+      "subject": "Subject",
+      "message": "Message",
+      "variables": "Variables",
+      "condition": "Trigger condition",
+      "maxLength": "Max length",
+      "stats": "Step statistics",
+      "sent": "Sent",
+      "opened": "Opened",
+      "replied": "Replies",
+      "close": "Close",
+      "approval": "Approval",
+      "chars": "{n} chars max"
+    }
+  },
+  "linkedin": {
+    "eyebrow": "Channel",
+    "title": "LinkedIn",
+    "lead": "LinkedIn invitations and messages sent from your own session via the extension. Sending limits are enforced automatically.",
+    "connect": {
+      "title": "Install and connect the extension",
+      "intro": "One time, about 2 minutes. Do it in Google Chrome.",
+      "download": "Download the extension (.zip)",
+      "step1": "Download the package above, then unzip it (double-click the .zip).",
+      "step2": "In Chrome, open the extensions page: type chrome://extensions in the address bar.",
+      "step3": "Turn on “Developer mode” with the switch at the top right.",
+      "step4": "Click “Load unpacked”, then pick the folder you just unzipped.",
+      "step5": "Sign in to LinkedIn in Chrome, come back to this page and click “Connect the extension”.",
+      "button": "Connect the extension",
+      "connected": "Extension connected ✓",
+      "notDetected": "Extension not detected yet — install it first (steps above).",
+      "regenerate": "Reconnect the extension"
+    },
+    "cursor": {
+      "title": "Sending cursor",
+      "auto": "Automatic",
+      "autoHint": "Jay Reach sends everything automatically.",
+      "hybrid": "Hybrid",
+      "hybridHint": "Part automatic, part sent by hand.",
+      "manual": "Manual",
+      "manualHint": "Nothing is sent without your action.",
+      "volume": "Volume per day",
+      "perDay": "{count} / day",
+      "save": "Save",
+      "saved": "Saved"
+    },
+    "rules": {
+      "title": "Sending rules",
+      "window": "Sending between 8am and 9pm (Europe/Paris)",
+      "weekly": "Max 200 invitations per rolling 7 days",
+      "interval": "1 to 20 minutes between two actions",
+      "pause": "Automatic 24h pause if the account is restricted",
+      "single": "Only one automation tool per LinkedIn account",
+      "cgu": "LinkedIn automation is against LinkedIn’s terms of service and may lead to account restriction."
+    },
+    "stats": {
+      "title": "Activity",
+      "pending": "Pending",
+      "sent7d": "Sent (7d)",
+      "today": "Today"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "accountRestricted": "LinkedIn account restricted or signed out: sending is paused. Sign back in to LinkedIn — it resumes automatically.",
+      "weeklyCapNear": "Weekly limit almost reached ({sent}/{cap} over 7 days).",
+      "manyFailures": "{count} sends failed in the last 24h. Check your LinkedIn connection."
+    }
+  },
+  "directory": {
+    "eyebrow": "Search",
+    "title": "Company directory",
+    "lead": "Search French companies by activity, department and headcount. Ceased companies are excluded.",
+    "search": "Search",
+    "count": "{n} compan(y/ies) found",
+    "showingFirst": "first {n} shown",
+    "none": "No company for these criteria.",
+    "hint": "Fill at least one criterion then run the search.",
+    "add": "Add to my base",
+    "added": "Added ✓",
+    "headcount": "headcount",
+    "field": {
+      "q": "Keyword / name",
+      "qPlaceholder": "e.g. software, transport…",
+      "naf": "Activity code (NAF)",
+      "department": "Department",
+      "effectif": "Headcount"
+    },
+    "bucket": {
+      "all": "All",
+      "small": "1 to 9",
+      "mid": "10 to 49",
+      "large": "50 to 499",
+      "xl": "500+"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAll": "Mark all read",
+    "empty": "No notifications.",
+    "pushEnable": "Enable desktop notifications",
+    "pushTest": "Send a test",
+    "pushEnabled": "Desktop notifications enabled ✓",
+    "pushSent": "Test sent ({n})",
+    "pushDenied": "Permission denied",
+    "pushUnsupported": "Not supported by this browser"
+  },
+  "approvals": {
+    "eyebrow": "Validation",
+    "title": "Approval queue",
+    "lead": "Sends that need human validation (letter, budget overrun, manual mode). Nothing goes out without your approval.",
+    "empty": "No send awaiting approval.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "channel": {
+      "email": "Email",
+      "linkedin_invite": "LinkedIn invite",
+      "linkedin_message": "LinkedIn message",
+      "letter": "Letter",
+      "call": "Call"
+    },
+    "reason": {
+      "letter": "Letter — verification required",
+      "budget": "Budget exceeded",
+      "manual": "Manual mode"
+    }
+  },
+  "customers": {
+    "eyebrow": "Exclusion",
+    "title": "Current customers",
+    "lead": "Import your current customers: they are excluded from prospecting at the company level (SIREN, domain or name). Real unsubscribes are untouched.",
+    "drop": "Choose a file (CSV / Excel)",
+    "detected": "{n} compan(y/ies) detected",
+    "listName": "List name (e.g. CRM customers 2026)",
+    "import": "Import and exclude",
+    "importing": "Importing…",
+    "done": "{n} customer(s) imported — exclusions created ✓",
+    "listsTitle": "Customer lists",
+    "entries": "{n} entr(y/ies)"
+  }
+}

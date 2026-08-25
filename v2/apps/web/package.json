@@ -1,0 +1,37 @@
+{
+  "name": "@jay-reach/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "prebuild": "node ../../scripts/package-extension.mjs",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@jay-reach/core": "workspace:*",
+    "@jay-reach/i18n": "workspace:*",
+    "@jay-reach/ui": "workspace:*",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.47.10",
+    "next": "^15.1.3",
+    "next-intl": "^3.26.3",
+    "pg": "^8.13.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "web-push": "^3.6.7",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/web-push": "^3.6.4",
+    "typescript": "^5.7.2"
+  }
+}
