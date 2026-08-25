@@ -3,16 +3,26 @@ import type { CookieOptions } from '@supabase/ssr';
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
+export interface SessionResult {
+  response: NextResponse;
+  /** true si Supabase est configuré (donc l'auth peut être exigée). */
+  configured: boolean;
+  /** true si une session valide est présente. */
+  authenticated: boolean;
+}
+
 /**
- * Rafraîchit la session Supabase à chaque requête (cookies). Tant que Supabase
- * n'est pas configuré, ne fait rien — et surtout ne charge pas le SDK (évite
- * une incompatibilité de runtime au démarrage à vide).
+ * Rafraîchit la session Supabase à chaque requête (cookies) et indique si une
+ * session est présente. Tant que Supabase n'est pas configuré, ne fait rien —
+ * et surtout ne charge pas le SDK (évite une incompatibilité de runtime au
+ * démarrage à vide) ; `configured: false` signale à l'appelant de ne pas
+ * exiger d'authentification (mode démo).
  */
-export async function updateSession(request: NextRequest): Promise<NextResponse> {
+export async function updateSession(request: NextRequest): Promise<SessionResult> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    return NextResponse.next({ request });
+    return { response: NextResponse.next({ request }), configured: false, authenticated: false };
   }
 
   const { createServerClient } = await import('@supabase/ssr');
@@ -34,6 +44,6 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     },
   });
 
-  await supabase.auth.getUser();
-  return response;
+  const { data } = await supabase.auth.getUser();
+  return { response, configured: true, authenticated: data.user !== null };
 }

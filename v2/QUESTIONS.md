@@ -148,6 +148,11 @@ Format :
 
 **Mise à jour (2026-08-20) — accord boss obtenu.** Le STOP est levé pour LinkedIn. Phase 4 câblée : `actions.dispatch` route le canal LinkedIn vers `linkedin_action_queue` (au lieu d'un appel API). **Dépendance restante** : la file `sequence.tick` qui PRODUIT les jobs `actions.dispatch` est encore un no-op (ticket séquenceur T17/T18) ; tant qu'elle n'émet pas de jobs LinkedIn, l'auto-envoi de bout en bout n'a pas lieu. Un envoi effectif requiert aussi une **extension connectée à un vrai compte**. La chaîne dispatch→file→extension est prouvée hermétiquement (données fictives).
 
+**Mise à jour (2026-08-24) — validé en conditions réelles par JB (retour PR).** JB a testé les deux canaux avec un vrai compte :
+- **Invitations** : `linkedin-invite.js` fonctionne tel quel (`verifyQuotaAndCreateV2` → HTTP 200 + `invitationUrn`). Rien à changer.
+- **Messages** : le module échouait en **HTTP 400 muet** (`originToken` absent, `trackingId` vide). **Corrigé** dans `apps/extension/linkedin-message.js` : `originToken: crypto.randomUUID()` ajouté **dans** `message` (pas à la racine, sinon 400) et `trackingId` = 16 octets bruts (pas base64). Avec ça : HTTP 200, message délivré. La prospection à froid (1er contact sans fil préalable, via `hostRecipientUrns`) est confirmée : LinkedIn crée le thread à partir du destinataire.
+- **Durcissement** (aussi appliqué) : `getSelfProfileUrn()` ne retient plus le premier `fsd_profile` de `included[]` mais celui dont le `publicIdentifier` correspond au nôtre (fallback conservé si vanity inconnu, pour ne pas casser `/me`).
+
 ## Séquenceur — câblage `sequence.enroll` / `sequence.tick` (T17/T18, MVP)
 
 **Contexte.** Le cœur du séquenceur (machine à états, quotas, gardes, planification, liaison expéditeur) existait en fonctions **pures** mais n'était branché à rien (files no-op). Câblé pour rendre l'auto-envoi LinkedIn effectif de bout en bout : `sequence.enroll` (inscription + dédup une active/contact), `sequence.tick` (avance les inscriptions dues, émet des actions idempotentes, enfile les envois LinkedIn autorisés vers `actions.dispatch`). Décision par étape isolée dans une fonction pure testée (`composeTick`).
@@ -175,3 +180,30 @@ Spécifié dans `docs/13-notifications.md` et le ticket T23c.
 Le boss (via l'utilisateur) demande un onglet **Branding** (repris de la sidebar legacy). Aucune fonctionnalité de branding n'est définie dans le backlog ni les docs (`grep branding` = 0). CLAUDE.md : « Ne pas inventer de fonctionnalité absente du backlog ».
 
 **Décision (conservatrice)** : écran ajouté en **aperçu local uniquement** (`apps/web/app/settings/branding/`), aucun schéma, aucune écriture, aucun secret. Champs : nom d'expéditeur, email de réponse, signature email, signature manuscrite (courrier), couleur d'accent, logo. À spécifier (contenu réel, persistance) et rattacher à un ticket avant toute mise en base.
+
+## Résolu — Projet Supabase hébergé [demande #1 de JB, 2026-08-25]
+
+Un **projet Supabase hébergé dédié au v2** est en place (`ywlvazimwuoiykhnhatl`, org `Jay-Reach`, région eu-west-3), **distinct de la base v1 en prod** (`jstcgfgwaeesrqztsvhe`, schéma `workspaces/prospect_*` — jamais touchée). Les 11 migrations sont appliquées, les **types régénérés** (`packages/db/src/database.types.ts`), le seed appliqué (org « Atelier Démo SAS », user `demo@atelier-demo.test`). **Auth + RLS vérifiés pour de vrai** : un membre voit les données de son org (5 signaux), l'anon en voit 0. Les trois « pas vérifiable sans Supabase » du présent fichier sont donc **levés**. Secrets uniquement dans `apps/web/.env.local` (gitignoré). Connexion via le pooler `aws-1-eu-west-3.pooler.supabase.com` (l'hôte direct `db.<ref>` ne résout pas partout).
+
+## Résolu — Blacklist complète des cabinets [demande #3 de JB, 2026-08-25]
+
+**Constat de JB.** `signal-filters.ts` n'avait que 35 noms « extraits de la blacklist legacy », alors que le v1 en a 200+ en base, auto-apprises.
+
+**Décision prise.** Reprise **fidèle au v1**, qui avait précisément SORTI la liste du code (« remplace la liste hardcodee ») pour une table auto-apprenante — on ne ré-inscrit donc pas 200 noms en dur.
+- **Migration** `20260825120000_recruitment_blacklist.sql` : table `recruitment_agencies_blacklist` + fonction `normalize_agency_name` + RLS + **seed des 200 noms** (201 uniques par affichage, 200 après normalisation — une paire fusionne, comme la contrainte unique du v1).
+- **Multi-tenant (choix conservateur, règle CLAUDE.md #5)** : `organization_id` NULLABLE. **NULL = seed global partagé** (comme le v1) ; **non-NULL = entrée apprise/ajoutée par une org**. La RLS laisse tout membre lire le global + ses entrées. Divergence assumée avec le v1 (table globale sans tenant) : imposée par la RLS multi-tenant du v2.
+- **Filtre** (`signal-filters.ts`, pur) : `isRecruitmentByName(name, blacklist?)` combine le motif générique + la blacklist DB (noms normalisés) + un repli intégré hors-DB. `normalizeAgencyName` reproduit à l'identique la fonction SQL (vérifié : `adecco`, `mercatodelemploi`, `orientaction`). **L'exclusion par code NAF (division 78) reste** — la liste la complète.
+- **Auto-apprentissage** (`apps/worker/src/blacklist.ts`) : `loadRecruitmentBlacklist(org)` (global+org) et `learnRecruitmentAgency(org, nom)` (INSERT `source='auto_score'`, incrément `detected_count` sur ré-occurrence). Testé en réel contre la base (chargement 200, apprentissage org-scoped, incrément à 2, nettoyé).
+
+**Reste à câbler (parité T12).** L'INSERT d'auto-apprentissage doit être appelé par le scoring quand le modèle juge une entreprise cabinet/intermédiaire (score 0 + motif). Le point d'appel est prêt (`learnRecruitmentAgency`) ; il sera invoqué au moment où le worker persiste le scoring (complétion de T12), qui n'est pas encore branché.
+
+## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
+
+**Constat de JB.** Le `middleware.ts` était un no-op (`matcher: ['/__middleware_disabled__']`, neutralisé après une `EvalError` du runtime edge au démarrage à vide). Résultat : aucun des écrans applicatifs n'avait de garde d'authentification (les server actions, elles, restent protégées par `requireUser`/`requireRole`). Risque faible tant que les écrans affichent des données de démo, sérieux dès qu'ils sont branchés sur de vraies données.
+
+**Décision prise (2026-08-24).** Middleware rebranché avec une garde conditionnée à la présence de Supabase :
+- **Supabase non configuré (mode démo)** : aucune donnée réelle, on ne verrouille pas (sinon `/login` serait inaccessible).
+- **Supabase configuré (données réelles — exactement le scénario que JB pointe)** : toute route applicative non publique exige une session, sinon redirection vers `/login?next=…`.
+- **Chemins publics** : `/login`, `/api/extension/*` (auth par token, pas par session), `/api/health`, `/extension/auth`.
+- La `EvalError` d'origine venait du chargement du SDK Supabase au démarrage à vide ; `updateSession` ne l'importe que si l'URL + la clé anon sont présentes, ce qui évite le problème.
+- **Test de non-régression** demandé par JB : `apps/web/lib/auth-guard.ts` isole la politique en fonction pure `decideAccess`, testée par `apps/web/lib/auth-guard.test.ts` (les 15 routes applicatives redirigent sans session quand Supabase est configuré). Le test échoue si une route applicative devient accessible sans session.
