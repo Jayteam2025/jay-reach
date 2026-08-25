@@ -1,0 +1,37 @@
+{
+  "name": "@jay-reach/providers",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./signals": {
+      "types": "./dist/signals/index.d.ts",
+      "default": "./dist/signals/index.js"
+    },
+    "./enrichment": {
+      "types": "./dist/enrichment/index.d.ts",
+      "default": "./dist/enrichment/index.js"
+    },
+    "./outreach": {
+      "types": "./dist/outreach/index.d.ts",
+      "default": "./dist/outreach/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@jay-reach/core": "workspace:*",
+    "@supabase/supabase-js": "^2.47.10",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2"
+  }
+}

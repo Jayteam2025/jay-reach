@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@jay-reach/core": ["packages/core/src/index.ts"],
+      "@jay-reach/db": ["packages/db/src/index.ts"],
+      "@jay-reach/i18n": ["packages/i18n/src/index.ts"],
+      "@jay-reach/providers": ["packages/providers/src/index.ts"],
+      "@jay-reach/providers/signals": ["packages/providers/src/signals/index.ts"],
+      "@jay-reach/providers/enrichment": ["packages/providers/src/enrichment/index.ts"],
+      "@jay-reach/providers/outreach": ["packages/providers/src/outreach/index.ts"],
+      "@jay-reach/ui": ["packages/ui/src/index.ts"]
+    }
+  }
+}

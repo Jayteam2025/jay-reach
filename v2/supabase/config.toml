@@ -1,0 +1,28 @@
+# Config Supabase locale (self-hosted dev). Voir https://supabase.com/docs/guides/cli/config
+project_id = "jay-reach"
+
+[db]
+port = 54322
+major_version = 17
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+
+[studio]
+enabled = true
+port = 54323
+
+# Services optionnels désactivés en local (non requis par l'app, et sources de
+# démarrages « unhealthy » : analytics/logflare, vector, storage).
+[analytics]
+enabled = false
+
+[storage]
+enabled = false

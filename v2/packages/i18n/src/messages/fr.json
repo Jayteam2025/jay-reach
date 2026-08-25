@@ -1,0 +1,553 @@
+{
+  "app": {
+    "name": "Jay Reach",
+    "tagline": "Moteur de prospection multicanale"
+  },
+  "common": {
+    "loading": "Chargement…",
+    "language": "Langue"
+  },
+  "home": {
+    "title": "Jay Reach",
+    "subtitle": "Moteur de prospection multicanale, self-hosted.",
+    "coreVersion": "core v{version}"
+  },
+  "login": {
+    "title": "Connexion",
+    "email": "Email",
+    "password": "Mot de passe",
+    "submit": "Se connecter",
+    "pending": "Connexion…"
+  },
+  "providers": {
+    "eyebrow": "Intégrations",
+    "lead": "Vos clés d'API, chiffrées et propres à votre organisation. Un service par ligne.",
+    "category": {
+      "email": "Envoi",
+      "enrichment": "Enrichissement",
+      "ai": "Modèle IA",
+      "signals": "Sources de signaux"
+    },
+    "title": "Fournisseurs",
+    "configured": "Configuré",
+    "notConfigured": "Non configuré",
+    "secretHidden": "clé se terminant par {last4}",
+    "save": "Enregistrer",
+    "saved": "Enregistré",
+    "smartlead": "Smartlead (email)",
+    "fullenrich": "FullEnrich (enrichissement)",
+    "dropcontact": "Dropcontact (enrichissement)",
+    "bouncer": "Bouncer (vérification email)",
+    "anthropic": "Anthropic (IA)",
+    "francetravail": "France Travail (offres d'emploi)",
+    "adzuna": "Adzuna (offres d'emploi)",
+    "apify": "Apify (offres LinkedIn)",
+    "field": {
+      "apiKey": "Clé d'API",
+      "apiToken": "Jeton d'API",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "appId": "App ID",
+      "appKey": "App key"
+    }
+  },
+  "jobs": {
+    "title": "Files de fond",
+    "queue": "File",
+    "description": "Rôle",
+    "retries": "Reprises",
+    "q": {
+      "sourcesDiscover": "Collecte des sources",
+      "signalsQualify": "Qualification des signaux",
+      "importsProcess": "Traitement des imports",
+      "enrichmentCompany": "Enrichissement entreprise",
+      "enrichmentContacts": "Enrichissement contacts",
+      "sequenceEnroll": "Inscription en séquence",
+      "sequenceTick": "Avancement des séquences",
+      "actionsDispatch": "Envoi des actions",
+      "outcomesPoll": "Récupération des résultats",
+      "inboxSync": "Synchronisation de la boîte de réception",
+      "crmPush": "Remontée CRM",
+      "retentionPurge": "Purge de rétention"
+    }
+  },
+  "personas": {
+    "eyebrow": "Qui contacter",
+    "title": "Personas",
+    "lead": "Qui viser dans les entreprises détectées : intitulés de poste, séniorité, canaux.",
+    "name": "Nom",
+    "description": "Description",
+    "patterns": "Intitulés déclencheurs (séparés par des virgules)",
+    "excludeTitles": "Titres à exclure (séparés par des virgules)",
+    "seniority": "Séniorité",
+    "channels": "Canaux d'outreach",
+    "scoringPrompt": "Prompt de scoring (IA)",
+    "scoringPromptHint": "Décris précisément qui qualifier — sert à l'IA pour noter les contacts.",
+    "titlesLabel": "Titres :",
+    "seniorityLevel": {
+      "executive": "Direction",
+      "director": "Directeur",
+      "manager": "Manager",
+      "individual": "Contributeur"
+    },
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "letter": "Courrier",
+      "call": "Appel"
+    },
+    "statsTotal": "Personas",
+    "statsActive": "Actifs",
+    "newPersona": "Nouveau persona",
+    "editTitle": "Modifier le persona",
+    "edit": "Éditer",
+    "delete": "Supprimer",
+    "deleteConfirm": "Supprimer ce persona ?",
+    "activate": "Activer",
+    "deactivate": "Désactiver",
+    "active": "Persona actif",
+    "inactive": "Inactif",
+    "cancel": "Annuler",
+    "create": "Créer",
+    "update": "Mettre à jour",
+    "created": "Persona créé",
+    "empty": "Aucun persona défini. Crée-en un pour démarrer.",
+    "demoNote": "Données de démonstration — vos modifications restent locales (non enregistrées).",
+    "patternsCount": "{n} intitulés"
+  },
+  "signals": {
+    "nav": {
+      "signals": "Signaux",
+      "personas": "Personas",
+      "providers": "Fournisseurs"
+    },
+    "eyebrow": "Flux brut",
+    "title": "Signaux",
+    "lead": "Toutes campagnes, y compris écartés, sans campagne et à arbitrer.",
+    "empty": "Aucun signal pour l'instant. Ajoutez une source pour lancer la détection.",
+    "state": {
+      "todo": "À traiter",
+      "validated": "Validés",
+      "discarded": "Écartés",
+      "arbitrate": "À arbitrer"
+    },
+    "daysAgo": "il y a {n} j",
+    "detail": {
+      "source": "Source",
+      "siren": "SIREN",
+      "noSiren": "non résolu",
+      "location": "Lieu",
+      "score": "Score",
+      "age": "Détecté",
+      "reason": "Motif"
+    },
+    "validate": "Valider le signal",
+    "discard": "Écarter",
+    "reason": {
+      "recruiter": "Cabinet de recrutement",
+      "customer": "Client présent dans votre liste",
+      "manual": "Écarté manuellement",
+      "opposition": "Opposition au démarchage (registre légal)"
+    }
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "signals": "Signaux",
+    "prospects": "Prospects",
+    "campaigns": "Campagnes",
+    "inbox": "Réception",
+    "import": "Import",
+    "sources": "Sources",
+    "personas": "Personas",
+    "providers": "Fournisseurs",
+    "branding": "Identité",
+    "linkedin": "LinkedIn",
+    "annuaire": "Annuaire",
+    "approvals": "Approbations",
+    "customers": "Clients"
+  },
+  "branding": {
+    "eyebrow": "Identité",
+    "title": "Identité de marque",
+    "lead": "Ce qui vous représente dans les emails et les courriers : expéditeur, signature, logo.",
+    "senderName": "Nom d'expéditeur",
+    "replyTo": "Email de réponse",
+    "emailSignature": "Signature email",
+    "letterSignature": "Signature manuscrite (courrier)",
+    "accent": "Couleur d'accent",
+    "logo": "Logo",
+    "logoHint": "PNG ou SVG, fond transparent.",
+    "upload": "Choisir un fichier",
+    "save": "Enregistrer",
+    "note": "Aperçu — l'enregistrement s'active quand Supabase est branché."
+  },
+  "sources": {
+    "eyebrow": "Détection",
+    "title": "Sources de signaux",
+    "lead": "D'où viennent les offres — et l'historique d'exécution pour repérer une source qui se dégrade.",
+    "provider": "Fournisseur",
+    "keywords": "Mots-clés",
+    "location": "Zone",
+    "active": "Active",
+    "paused": "En pause",
+    "history": "Historique d'exécution",
+    "found": "trouvés",
+    "new": "nouveaux",
+    "status": {
+      "success": "OK",
+      "error": "Échec",
+      "running": "En cours"
+    },
+    "empty": "Aucune source configurée."
+  },
+  "inbox": {
+    "eyebrow": "Réponses",
+    "title": "Boîte de réception",
+    "lead": "Répondre au bon moment — et savoir si vous avez déjà répondu ailleurs.",
+    "filter": {
+      "all": "Tout",
+      "todo": "À traiter",
+      "in_progress": "En cours",
+      "done": "Traité",
+      "later": "À recontacter"
+    },
+    "class": {
+      "human_reply": "Réponse humaine",
+      "auto_absence": "Absence auto",
+      "auto_left_company": "A quitté l'entreprise",
+      "auto_other": "Auto",
+      "unclassified": "Non classé"
+    },
+    "treatment": {
+      "todo": "À traiter",
+      "in_progress": "En cours",
+      "done": "Traité",
+      "later": "À recontacter"
+    },
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn"
+    },
+    "via": "via {sender}",
+    "you": "Vous",
+    "reply": "Répondre",
+    "replyPlaceholder": "Votre réponse…",
+    "replyNote": "L'envoi part toujours par le sender lié au contact — jamais un autre. (Branchement de l'envoi après validation.)",
+    "buySignal": "Signal d'achat : départ détecté → le compte remonte pour identifier le successeur.",
+    "state": "État du fil",
+    "empty": "Choisissez un fil pour le lire.",
+    "emptyList": "Rien dans cette vue.",
+    "sortAuto": "Trier automatiquement",
+    "sorting": "Tri en cours…",
+    "sorted": "{n} réponse(s) triée(s)",
+    "suggest": "Suggérer une réponse",
+    "suggesting": "Rédaction…"
+  },
+  "import": {
+    "eyebrow": "Fichier",
+    "title": "Import de contacts",
+    "lead": "Le compte rendu et le coût s'affichent AVANT de valider — jamais de surprise après.",
+    "drop": "Glissez un fichier CSV ici, ou cliquez pour choisir",
+    "dropHint": "CSV — séparateur virgule, point-virgule ou tabulation, détecté automatiquement",
+    "change": "Changer de fichier",
+    "mapping": "Correspondance des colonnes",
+    "mappingHint": "Une colonne non reconnue est ignorée, jamais devinée.",
+    "column": "Colonne du fichier",
+    "sampleValue": "Exemple",
+    "mapTo": "Champ Jay Reach",
+    "ignore": "— ignorer —",
+    "field": {
+      "first_name": "Prénom",
+      "last_name": "Nom",
+      "email": "Email",
+      "job_title": "Poste",
+      "company": "Entreprise",
+      "linkedin_url": "LinkedIn",
+      "phone": "Téléphone",
+      "city": "Ville",
+      "postal_code": "Code postal",
+      "country": "Pays",
+      "siren": "SIREN",
+      "website": "Site web"
+    },
+    "report": "Compte rendu — avant validation",
+    "rowsTotal": "Lignes lues",
+    "rowsUnique": "Contacts uniques",
+    "rowsMerged": "Doublons fusionnés",
+    "rowsRejected": "Lignes rejetées",
+    "emailsMissing": "Sans email (à enrichir)",
+    "cost": "Coût d'enrichissement estimé",
+    "costValue": "≈ {n} contacts à enrichir",
+    "costHint": "Seuls les contacts sans email consomment des crédits.",
+    "destination": "Destination",
+    "dest": {
+      "list": "Nouvelle liste",
+      "existing": "Liste existante",
+      "campaign": "Campagne"
+    },
+    "validate": "Valider l'import de {n} contacts",
+    "ready": "{n} contacts prêts à importer vers « {dest} ».",
+    "empty": "Choisissez un fichier pour commencer.",
+    "imported": "{n} contact(s) importé(s) ✓",
+    "importing": "Import en cours…",
+    "listName": "Nom de la liste",
+    "contextNote": "Note de contexte (obligatoire)",
+    "pickList": "Choisir une liste…",
+    "pickCampaign": "Choisir une campagne…"
+  },
+  "dashboard": {
+    "eyebrow": "Vue d'ensemble",
+    "title": "Tableau de bord",
+    "lead": "La seule mesure qui compte : le délai entre le signal et le premier contact.",
+    "period": "30 derniers jours",
+    "kpi": {
+      "replies": "Réponses",
+      "positives": "Réponses positives",
+      "qualified": "Signaux qualifiés",
+      "median": "Délai médian signal → 1er contact"
+    },
+    "days": "{n} j",
+    "trend": "{delta} vs période précédente",
+    "activity": "Activité",
+    "legend": {
+      "signals": "Signaux qualifiés",
+      "replies": "Réponses"
+    },
+    "byChannel": "Répartition par canal",
+    "channel": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "courrier": "Courrier"
+    },
+    "noCampaign": "Signaux sans campagne",
+    "noCampaignSub": "Bien notés, aucune campagne ne les prend encore.",
+    "replied": "Ont répondu",
+    "repliedSub": "Dernières réponses qualifiées.",
+    "atStep": "étape {n}"
+  },
+  "prospects": {
+    "eyebrow": "Fiche entreprise",
+    "headcount": "{n} salariés",
+    "signals": "Signaux liés",
+    "sequence": "Tableau de séquence",
+    "contacts": "Contacts",
+    "linkedin": "in ↗",
+    "noProfile": "pas de profil",
+    "noSequence": "Pas encore en séquence."
+  },
+  "campaigns": {
+    "eyebrow": "Vue d'ensemble",
+    "title": "Campagnes",
+    "subtitle": "Une campagne relie une source de contacts, des personas et une séquence multicanale.",
+    "lead": "Une carte par campagne : le vivier, les contactés, les réponses.",
+    "newCampaign": "Nouvelle campagne",
+    "importFile": "Importer un fichier",
+    "status": {
+      "active": "Active",
+      "paused": "En pause",
+      "draft": "Brouillon"
+    },
+    "fig": {
+      "vivier": "Vivier",
+      "contacted": "Contactés",
+      "sent": "Envoyés",
+      "accepted": "Acceptés",
+      "replies": "Réponses",
+      "positives": "Positives"
+    },
+    "treated": "{pct} % traités",
+    "channelsN": "{n} canaux",
+    "linkedinInvites": "invitations LinkedIn",
+    "replyRateSub": "{pct} % de réponse",
+    "source": "Source",
+    "open": "Ouvrir →",
+    "importCard": {
+      "title": "Importer un fichier",
+      "desc": "CSV ou XLSX. Nouvelle campagne, ou ajout à une campagne existante."
+    },
+    "progress": "{pct}% du vivier contacté",
+    "back": "← Campagnes",
+    "detailSub": "Créée il y a {days} j · prochain envoi dans {next} · {contacts} contacts · {steps} étapes",
+    "perDay": "{n} / jour",
+    "addContacts": "Ajouter des contacts",
+    "pause": "Mettre en pause",
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "contacts": "Contacts",
+      "queue": "File d'attente",
+      "sourcesPersonas": "Sources & personas",
+      "sequence": "Séquence",
+      "activity": "Activité",
+      "settings": "Paramètres"
+    },
+    "soon": "Bientôt disponible.",
+    "channel": {
+      "email": "Email",
+      "linkedin_invite": "Invitation LinkedIn",
+      "linkedin_message": "Message LinkedIn",
+      "letter": "Courrier",
+      "call": "Appel"
+    },
+    "wait": "attendre",
+    "dayUnit": "{n, plural, one {jour} other {jours}}",
+    "noCondition": "aucune condition",
+    "validation": "Validation",
+    "editRule": "Modifier",
+    "addStep": "+ Ajouter une étape",
+    "stopNote": "Toute réponse arrête la séquence, quel que soit le canal.",
+    "showPhone": "Afficher le téléphone",
+    "viaFullenrich": "via FullEnrich",
+    "replied": "Ont répondu",
+    "exited": "Sortis de la campagne · {pct} % des contactés",
+    "viewContacts": "Voir les contacts →",
+    "lastReplies": "Dernières réponses",
+    "sentiment": {
+      "positive": "Positive",
+      "later": "À recontacter",
+      "negative": "Négative"
+    },
+    "funnel": "Entonnoir par étape",
+    "eligible": "{n} éligibles",
+    "step": "Étape {n}",
+    "overviewLead": "Les deux chiffres qui disent si ça marche : le taux de réponse et les réponses positives.",
+    "rate": "Taux de réponse",
+    "modal": {
+      "subject": "Objet",
+      "message": "Message",
+      "variables": "Variables",
+      "condition": "Condition de déclenchement",
+      "maxLength": "Longueur max",
+      "stats": "Statistiques de l'étape",
+      "sent": "Envoyés",
+      "opened": "Ouverts",
+      "replied": "Réponses",
+      "close": "Fermer",
+      "approval": "Approbation",
+      "chars": "{n} car. max"
+    }
+  },
+  "linkedin": {
+    "eyebrow": "Canal",
+    "title": "LinkedIn",
+    "lead": "Invitations et messages LinkedIn envoyés depuis votre propre session via l'extension. Les limites d'envoi sont appliquées automatiquement.",
+    "connect": {
+      "title": "Installer et connecter l’extension",
+      "intro": "Une seule fois, environ 2 minutes. À faire dans Google Chrome.",
+      "download": "Télécharger l’extension (.zip)",
+      "step1": "Télécharge le paquet ci-dessus, puis décompresse-le (double-clic sur le .zip).",
+      "step2": "Dans Chrome, ouvre la page des extensions : tape chrome://extensions dans la barre d’adresse.",
+      "step3": "Active le « Mode développeur » avec l’interrupteur en haut à droite.",
+      "step4": "Clique « Charger l’extension non empaquetée », puis choisis le dossier que tu viens de décompresser.",
+      "step5": "Connecte-toi à LinkedIn dans Chrome, reviens sur cette page et clique « Connecter l’extension ».",
+      "button": "Connecter l’extension",
+      "connected": "Extension connectée ✓",
+      "notDetected": "Extension pas encore détectée — installe-la d’abord (étapes ci-dessus).",
+      "regenerate": "Reconnecter l’extension"
+    },
+    "cursor": {
+      "title": "Curseur d'envoi",
+      "auto": "Automatique",
+      "autoHint": "Jay Reach envoie tout automatiquement.",
+      "hybrid": "Hybride",
+      "hybridHint": "Une partie automatique, une partie à valider à la main.",
+      "manual": "Manuel",
+      "manualHint": "Rien n'est envoyé sans votre action.",
+      "volume": "Volume par jour",
+      "perDay": "{count} / jour",
+      "save": "Enregistrer",
+      "saved": "Enregistré"
+    },
+    "rules": {
+      "title": "Règles d'envoi",
+      "window": "Envois entre 8 h et 21 h (Europe/Paris)",
+      "weekly": "200 invitations maximum sur 7 jours glissants",
+      "interval": "1 à 20 minutes entre deux actions",
+      "pause": "Pause automatique de 24 h si le compte est restreint",
+      "single": "Un seul outil d’automatisation par compte LinkedIn",
+      "cgu": "L'automatisation LinkedIn est contraire aux CGU de LinkedIn et peut entraîner une restriction du compte."
+    },
+    "stats": {
+      "title": "Activité",
+      "pending": "En attente",
+      "sent7d": "Envoyés (7 j)",
+      "today": "Aujourd'hui"
+    },
+    "alerts": {
+      "title": "Alertes",
+      "accountRestricted": "Compte LinkedIn restreint ou déconnecté : les envois sont en pause. Reconnecte-toi à LinkedIn, la reprise est automatique.",
+      "weeklyCapNear": "Limite hebdomadaire bientôt atteinte ({sent}/{cap} sur 7 jours).",
+      "manyFailures": "{count} envois ont échoué ces dernières 24 h. Vérifie ta connexion LinkedIn."
+    }
+  },
+  "directory": {
+    "eyebrow": "Recherche",
+    "title": "Annuaire d’entreprises",
+    "lead": "Cherchez des entreprises françaises par activité, département et effectif. Les entreprises cessées sont exclues.",
+    "search": "Rechercher",
+    "count": "{n} entreprise(s) trouvée(s)",
+    "showingFirst": "{n} premières affichées",
+    "none": "Aucune entreprise pour ces critères.",
+    "hint": "Renseignez au moins un critère puis lancez la recherche.",
+    "add": "Ajouter à ma base",
+    "added": "Ajouté ✓",
+    "headcount": "effectif",
+    "field": {
+      "q": "Mot-clé / nom",
+      "qPlaceholder": "ex. logiciel, transport…",
+      "naf": "Code d’activité (NAF)",
+      "department": "Département",
+      "effectif": "Effectif"
+    },
+    "bucket": {
+      "all": "Tous",
+      "small": "1 à 9",
+      "mid": "10 à 49",
+      "large": "50 à 499",
+      "xl": "500 et plus"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAll": "Tout marquer lu",
+    "empty": "Aucune notification.",
+    "pushEnable": "Activer les notifications bureau",
+    "pushTest": "Envoyer un test",
+    "pushEnabled": "Notifications bureau activées ✓",
+    "pushSent": "Test envoyé ({n})",
+    "pushDenied": "Autorisation refusée",
+    "pushUnsupported": "Non supporté par ce navigateur"
+  },
+  "approvals": {
+    "eyebrow": "Validation",
+    "title": "File d’approbation",
+    "lead": "Les envois qui demandent une validation humaine (courrier, budget dépassé, mode manuel). Rien ne part sans votre accord.",
+    "empty": "Aucun envoi en attente de validation.",
+    "approve": "Valider",
+    "reject": "Rejeter",
+    "channel": {
+      "email": "Email",
+      "linkedin_invite": "Invitation LinkedIn",
+      "linkedin_message": "Message LinkedIn",
+      "letter": "Courrier",
+      "call": "Appel"
+    },
+    "reason": {
+      "letter": "Courrier — vérification requise",
+      "budget": "Budget dépassé",
+      "manual": "Mode manuel"
+    }
+  },
+  "customers": {
+    "eyebrow": "Exclusion",
+    "title": "Clients actuels",
+    "lead": "Importez vos clients actuels : ils sont exclus de la prospection au niveau de l’entreprise (SIREN, domaine ou nom). Les désinscriptions réelles ne sont pas touchées.",
+    "drop": "Choisir un fichier (CSV / Excel)",
+    "detected": "{n} entreprise(s) détectée(s)",
+    "listName": "Nom de la liste (ex. Clients CRM 2026)",
+    "import": "Importer et exclure",
+    "importing": "Import en cours…",
+    "done": "{n} client(s) importé(s) — exclusions créées ✓",
+    "listsTitle": "Listes de clients",
+    "entries": "{n} entrée(s)"
+  }
+}

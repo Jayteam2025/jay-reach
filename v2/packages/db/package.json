@@ -1,0 +1,21 @@
+{
+  "name": "@jay-reach/db",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:types": "supabase gen types typescript --local > src/database.types.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10"
+  }
+}
