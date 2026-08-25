@@ -226,15 +226,20 @@ Et deux compléments **dans** la plage, cadrés mais pas finis : l'**auto-appren
 
 Le pipeline avait `discover → qualify (INSEE)` mais **aucun scoring LLM** ni consommation de la blacklist. Comblé : nouvelle file `signals.score` + handler `apps/worker/src/handlers/score.ts` (`runScore`).
 
-**Étapes** : (1) pré-filtre bon marché — cabinets (blacklist DB + NAF division 78) → `discarded/recruitment_agency`, signaux périmés (fenêtre 30 j) → `discarded/stale` ; (2) scoring LLM des survivants par persona ; (3) persistance `signals.score/score_reason/scored_at/status` (≥ seuil → `qualified`, sinon `discarded/low_score`) ; (4) **auto-apprentissage** : score 0 + motif « cabinet » (`isCabinetVerdict`) → `learnRecruitmentAgency` (blacklist de l'org) + `discarded/recruitment_agency`.
+**Étapes** : (1) pré-filtre bon marché — cabinets (blacklist DB + NAF division 78) → `discarded/recruitment_agency`, signaux périmés (fenêtre 30 j) → `discarded/stale` ; (2) scoring LLM des survivants **groupés par source** (chaque source impose son prompt et son seuil) ; (3) persistance `signals.score/score_reason/scored_at/status` (≥ seuil → `qualified`, sinon `discarded/low_score`) ; (4) **auto-apprentissage** : score 0 + motif « cabinet » (`isCabinetVerdict`) → `learnRecruitmentAgency` (blacklist de l'org) + `discarded/recruitment_agency`.
 
-**Décisions conservatrices (à affiner par ticket dédié)** :
-- **Prompt de scoring** = celui de la **première persona active** avec un `scoring_prompt` exploitable (≥ 200 car., comme `signal-scoring-core`). Sans prompt → org ignorée (aucun scoring, pas de repli). *Raffinement* : scorer chaque signal contre chaque persona et garder le meilleur — non fait.
-- **Seuil de qualification** = 60 (défaut, configurable). **Fenêtre de fraîcheur** = 30 j. **Lot** = 50 signaux/job.
-- **Modèle derrière une interface** (`SignalScorer`) : l'adaptateur réel `scorer-anthropic.ts` (provider `anthropic`, coffre + repli env `ANTHROPIC_API_KEY`, modèle `claude-opus-5`) ; sans clé, le job est ignoré. **Tests hermétiques** avec un scorer déterministe (zéro appel réseau).
+**Arbitrage — où vivent le prompt et le seuil de scoring ? [révisé 2026-08-25 après review #19]**
+
+Première version : prompt = première persona active (`personas.scoring_prompt`), seuil = 60 en dur. Review JB : erreur de parité. Le socle actuel scorait **par déclencheur** (`signal_triggers.signal_scoring_prompt` + `signal_match_threshold`) — le prompt qualifie **le signal** (« cette boîte m'intéresse-t-elle ? »), pas la persona (« qui contacter ? »). Et `order by created_at asc` faisait qu'une seule persona imposait son prompt à tous.
+
+Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `signal_triggers` (artefact v1) mais **a** `sources.config` (jsonb). **Décision (option A, validée)** : ranger `scoring_prompt` + `match_threshold` dans **`sources.config`**. Un « déclencheur v1 » = une **source v2** (un provider + une requête + un rythme). Le handler charge la source de chaque signal (`signals.source_id`) et score groupé par source, chacune avec son prompt et son seuil. Pas de nouvelle table. Une source sans prompt exploitable (≥ 200 car.) n'est pas scorée : ses signaux restent `new`. Le seuil de la source prime ; à défaut, repli sur le défaut org (60).
+
+**Autres décisions** :
+- **Fenêtre de fraîcheur** = 30 j. **Lot** = 50 signaux/job.
+- **Modèle derrière une interface** (`SignalScorer`) : adaptateur réel `scorer-anthropic.ts` (provider `anthropic`, coffre + repli env `ANTHROPIC_API_KEY`). **Modèle par défaut `claude-sonnet-5`** (classification en volume : ~225 signaux/run — Opus était surdimensionné, point 3 de la review), **pilotable par env `SCORING_MODEL`**. Sans clé, le job est ignoré. **Tests hermétiques** avec scorer déterministe (zéro réseau).
 - **Chaînage** : producteur périodique `enqueueScoringForOrgs` (un `signals.score` par org ayant des signaux `new`/non scorés, idempotent par fenêtre). Le déclenchement fin (juste après qualify, par signal) reste un raffinement.
 
-**Vérifié en réel** : `runScore` exécuté contre la base hébergée avec un scorer déterministe, en transaction annulée → 4 signaux : Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82), Cabinet Louche (score 0 + verdict) **auto-appris** dans la blacklist de l'org + écarté. + 4 tests unitaires (`isCabinetVerdict`, `meetsScoreThreshold`).
+**Vérifié en réel** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → 6 signaux sur 2 sources : Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70, prouve que le seuil vient bien de la source), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`. + 4 tests unitaires (`isCabinetVerdict`, `meetsScoreThreshold`).
 
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 

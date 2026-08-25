@@ -1,8 +1,12 @@
 /**
  * Handler de scoring des signaux (T12) : pré-filtre blacklist/NAF/fraîcheur, puis
- * scoring LLM par persona, persistance (score/statut) et auto-apprentissage de la
- * blacklist. Le modèle est injecté (`SignalScorer`) : le worker branche
- * l'adaptateur Anthropic réel, les tests un scorer déterministe (zéro réseau).
+ * scoring LLM par SOURCE (le « déclencheur »), persistance (score/statut) et
+ * auto-apprentissage de la blacklist. Le modèle est injecté (`SignalScorer`) : le
+ * worker branche l'adaptateur Anthropic réel, les tests un scorer déterministe.
+ *
+ * Le prompt de scoring et le seuil vivent dans `sources.config` (jsonb) : le
+ * scoring qualifie le signal via sa source, pas via une persona (arbitrage
+ * option A, cf. QUESTIONS.md). Chaque source impose son prompt et son seuil.
  *
  * Le worker utilise la clé de service (bypass RLS) → filtre par organisation.
  */
@@ -19,7 +23,7 @@ import {
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
 
 /**
- * Injection du modèle. Reçoit les prospects et le prompt système (de la persona),
+ * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
  * renvoie un score par prospect. L'implémentation réelle appelle Anthropic ;
  * les tests fournissent une fonction pure.
  */
@@ -29,7 +33,7 @@ export type SignalScorer = (
 ) => Promise<Score[]>;
 
 // Longueur minimale d'un prompt de scoring exploitable (repris de
-// signal-scoring-core : en-dessous, la persona est considérée non configurée).
+// signal-scoring-core : en-dessous, la source est considérée non configurée).
 const MIN_SCORING_PROMPT_LENGTH = 200;
 const DEFAULT_MIN_SCORE = 60;
 const DEFAULT_FRESHNESS_DAYS = 30;
@@ -63,6 +67,10 @@ interface CandidateRow {
   description: string | null;
   occurred_at: string;
   naf_code: string | null;
+  // Config de scoring portée par la source du signal (sources.config).
+  source_id: string | null;
+  scoring_prompt: string | null;
+  match_threshold: number | null;
 }
 
 async function markDiscarded(pool: Pool, id: string, reason: string): Promise<void> {
@@ -103,41 +111,33 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
   const pool = input.pool;
   const org = input.organizationId;
 
-  // Prompt de scoring : première persona active avec un prompt exploitable.
-  // (Raffinement possible : scorer chaque signal contre chaque persona et garder
-  // le meilleur — noté dans QUESTIONS.md. Pour l'instant : un prompt par org.)
-  const personaRes = await pool.query<{ scoring_prompt: string | null }>(
-    `select scoring_prompt from public.personas
-      where organization_id = $1 and is_active = true and scoring_prompt is not null
-      order by created_at asc`,
-    [org],
-  );
-  const prompt = personaRes.rows
-    .map((r) => r.scoring_prompt)
-    .find((p): p is string => Boolean(p && p.trim().length >= MIN_SCORING_PROMPT_LENGTH));
-
-  const empty: ScoreSummary = {
-    considered: 0, prefiltered: 0, scored: 0, qualified: 0, discarded: 0, learned: 0, skippedNoPrompt: !prompt,
-  };
-  if (!prompt) return empty;
-
   const blacklist = await loadRecruitmentBlacklist(pool, org);
 
+  // Candidats : signaux « new » non scorés, accompagnés de la config de scoring
+  // de leur SOURCE (le « déclencheur »). Le prompt et le seuil vivent dans
+  // `sources.config` (option A) : le scoring qualifie le signal via sa source.
   const candRes = await pool.query<CandidateRow>(
     `select s.id,
             coalesce(a.name, s.company_hint) as company,
             s.title, s.location,
             s.raw ->> 'description' as description,
-            s.occurred_at, a.naf_code
+            s.occurred_at, a.naf_code,
+            s.source_id,
+            so.config ->> 'scoring_prompt' as scoring_prompt,
+            nullif(so.config ->> 'match_threshold', '')::double precision as match_threshold
        from public.signals s
        left join public.accounts a on a.id = s.account_id
+       left join public.sources so on so.id = s.source_id
       where s.organization_id = $1 and s.status = 'new' and s.score is null
       order by s.occurred_at desc
       limit $2`,
     [org, batchSize],
   );
   const candidates = candRes.rows;
-  if (candidates.length === 0) return { ...empty, skippedNoPrompt: false };
+  const empty: ScoreSummary = {
+    considered: 0, prefiltered: 0, scored: 0, qualified: 0, discarded: 0, learned: 0, skippedNoPrompt: false,
+  };
+  if (candidates.length === 0) return empty;
 
   let prefiltered = 0;
   let qualified = 0;
@@ -172,9 +172,29 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
     survivors.push(c);
   }
 
-  // 2) Scoring LLM des survivants.
-  if (survivors.length > 0) {
-    const prospects: ScoringProspect[] = survivors.map((c) => ({
+  // 2) Scoring LLM, groupé par SOURCE : chaque source impose SON prompt et SON
+  //    seuil. Une source sans prompt exploitable (< MIN) n'est pas scorée : ses
+  //    signaux restent « new » (déclencheur non configuré). Le seuil de la source
+  //    (`match_threshold`) prime ; à défaut, on retombe sur `minScore`.
+  const bySource = new Map<string, CandidateRow[]>();
+  for (const c of survivors) {
+    const key = c.source_id ?? '__none__';
+    const arr = bySource.get(key);
+    if (arr) arr.push(c);
+    else bySource.set(key, [c]);
+  }
+
+  let scored = 0;
+  for (const group of bySource.values()) {
+    const first = group[0];
+    if (!first) continue;
+    const prompt = first.scoring_prompt;
+    if (!prompt || prompt.trim().length < MIN_SCORING_PROMPT_LENGTH) {
+      continue; // source non configurée pour le scoring → signaux laissés « new »
+    }
+    const threshold = first.match_threshold ?? minScore;
+
+    const prospects: ScoringProspect[] = group.map((c) => ({
       id: c.id,
       company: c.company ?? '',
       title: c.title ?? '',
@@ -183,8 +203,9 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
     }));
     const scores = await input.scorer(prospects, prompt);
     const byId = new Map(scores.map((s) => [s.id, s]));
+    scored += group.length;
 
-    for (const c of survivors) {
+    for (const c of group) {
       const s = byId.get(c.id);
       if (!s) {
         // Le modèle n'a pas renvoyé ce prospect : on le laisse « new » (retry).
@@ -198,7 +219,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
         discarded++;
         continue;
       }
-      if (meetsScoreThreshold(s.score, minScore)) {
+      if (meetsScoreThreshold(s.score, threshold)) {
         await persistScore(pool, c.id, s.score, s.reason, 'qualified', null);
         qualified++;
       } else {
@@ -211,11 +232,13 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
   return {
     considered: candidates.length,
     prefiltered,
-    scored: survivors.length,
+    scored,
     qualified,
     discarded,
     learned,
-    skippedNoPrompt: false,
+    // Des signaux ont survécu au pré-filtre mais aucun n'a été scoré = aucune
+    // source configurée avec un prompt exploitable.
+    skippedNoPrompt: survivors.length > 0 && scored === 0,
   };
 }
 

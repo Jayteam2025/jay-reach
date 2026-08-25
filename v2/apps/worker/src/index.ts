@@ -137,9 +137,12 @@ async function main(): Promise<void> {
       console.warn(`[score] Anthropic non configuré pour l’org ${organizationId} — job ignoré`);
       return;
     }
-    const summary = await runScore({ pool, organizationId, scorer: createAnthropicScorer(apiKey) });
+    // Modèle pilotable par env (`SCORING_MODEL`), repli sur le défaut du scorer.
+    const scoringModel = process.env.SCORING_MODEL?.trim() || undefined;
+    console.log(`[score] org ${organizationId} : modèle ${scoringModel ?? 'défaut (claude-sonnet-5)'}`);
+    const summary = await runScore({ pool, organizationId, scorer: createAnthropicScorer(apiKey, scoringModel) });
     if (summary.skippedNoPrompt) {
-      console.log(`[score] org ${organizationId} : aucune persona active avec prompt de scoring — ignoré`);
+      console.log(`[score] org ${organizationId} : aucune source configurée avec prompt de scoring — ignoré`);
       return;
     }
     console.log(

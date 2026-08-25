@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { buildScoringUserMessage, parseScoringResponse } from '@jay-reach/core';
 import type { SignalScorer } from './handlers/score.js';
 
-const DEFAULT_MODEL = 'claude-opus-5';
+const DEFAULT_MODEL = 'claude-sonnet-5';
 
 /**
  * Construit un scorer branché sur Anthropic. `apiKey` vient du coffre à
