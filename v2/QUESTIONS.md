@@ -249,6 +249,14 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Coffre credentials : pgcrypto introuvable sur Supabase hébergé [2026-08-26]
+
+Découvert pendant la config des clés du run réel : l'écran Fournisseurs renvoyait `function pgp_sym_encrypt(text, text) does not exist` à chaque enregistrement.
+
+**Cause** : sur Supabase hébergé, `pgcrypto` est installé dans le schéma `extensions`, pas `public`. Les fonctions du coffre (`app.set_credential`/`get_credential`, migration `20260817120300`) avaient `set search_path = public, app` — donc `pgp_sym_encrypt`/`pgp_sym_decrypt` (schéma `extensions`) n'étaient pas résolues. Invisible en local (pgcrypto dans `public`, sur le path).
+
+**Correctif** (migration `20260826120000`) : `create extension if not exists pgcrypto with schema extensions` + `alter function … set search_path = public, app, extensions` sur les deux fonctions. Idempotent, sans effet là où pgcrypto est déjà dans `public`. Vérifié : aller-retour set/get credential (last4 + déchiffrement corrects) sur jr_dev.
+
 ## Résolu — Gate de délivrabilité email branché (T14/T20, avant recette) [2026-08-26]
 
 Retour de JB : le module `email-validation` (`bouncer.ts`, `reoon.ts`, `email-gate.ts`, `email-pattern.ts`) était porté mais **aucun handler ne l'appelait** → un email non vérifié pouvait partir vers Smartlead (risque réputation, non rattrapable).
