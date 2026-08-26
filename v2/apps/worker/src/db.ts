@@ -175,21 +175,25 @@ export interface ResolvedAccount {
   readonly nafCode: string | null;
   /** Rapprochement fiable ? (sinon on ne pose pas la firmographie — cf. legacy). */
   readonly trusted: boolean;
+  /** Opposition au démarchage (statut de diffusion Sirene). */
+  readonly opposition?: boolean;
 }
 
 /**
  * Enregistre le compte résolu. Sur un rapprochement fiable : SIREN + NAF et
- * statut `resolved`. Sinon : compte `unresolved` (file d'arbitrage humain).
+ * statut `resolved`, plus `prospecting_opposition` (filtre non désactivable).
+ * Sinon : compte `unresolved` (file d'arbitrage humain).
  */
 export async function upsertResolvedAccount(pool: Pool, acc: ResolvedAccount): Promise<string | null> {
   if (acc.trusted && acc.siren) {
     const res = await pool.query<{ id: string }>(
-      `insert into accounts (organization_id, name, siren, naf_code, resolution_status)
-       values ($1, $2, $3, $4, 'resolved')
+      `insert into accounts (organization_id, name, siren, naf_code, prospecting_opposition, resolution_status)
+       values ($1, $2, $3, $4, $5, 'resolved')
        on conflict (organization_id, siren) where siren is not null
-       do update set naf_code = excluded.naf_code, name = excluded.name
+       do update set naf_code = excluded.naf_code, name = excluded.name,
+                     prospecting_opposition = excluded.prospecting_opposition
        returning id`,
-      [acc.organizationId, acc.name, acc.siren, acc.nafCode],
+      [acc.organizationId, acc.name, acc.siren, acc.nafCode, acc.opposition ?? false],
     );
     return res.rows[0]?.id ?? null;
   }

@@ -249,6 +249,19 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Opposition au démarchage appliquée (T8/T12, avant recette) [2026-08-26]
+
+Retour de JB sur le worker réel : `prospecting_opposition` n'était posé nulle part → le filtre d'opposition au démarchage (non désactivable, spec) n'était pas appliqué.
+
+**Constat vérifié** : la résolution SIREN/NAF **était** branchée (`qualify.ts → resolveCompanyNaf → recherche-entreprises.api.gouv.fr`, fichier mal nommé `insee-sirene.ts`), persistée (`upsertResolvedAccount → accounts.naf_code/siren`) et **utilisée** par le pré-filtre cabinets (`score.ts` lit `a.naf_code`). Donc l'exclusion NAF n'était pas inerte. Seul l'**opposition** manquait.
+
+**Correctif** :
+- `resolveCompanyNaf` capte désormais `statut_diffusion` de la réponse Sirene → `opposition: boolean` (helper pur exporté `isProspectingOpposition` : statut ≠ 'O'/'diffusible' → opposition ; absence de statut → pas d'opposition, on ne bloque pas sur l'inconnu).
+- `upsertResolvedAccount` écrit `accounts.prospecting_opposition` (insert + on-conflict update). Posé uniquement sur un rapprochement fiable (SIREN présent) — cohérent avec le reste.
+- Le pré-filtre de scoring (`score.ts`) lit `a.prospecting_opposition` et **écarte** le signal (`discard_reason = 'prospecting_opposition'`) avant tout appel modèle.
+
+**Vérifié** : `test/pg-verify/scoring.sh` (compte `prospecting_opposition=true` → signal écarté ; `prefiltered` +1) + test unitaire `isProspectingOpposition`. Pas de migration (la colonne `accounts.prospecting_opposition` existe déjà).
+
 ## Résolu — Réception des webhooks Smartlead (T27, volet réception email) [2026-08-25]
 
 Rien ne recevait les retours email : la boucle email n'était pas fermée (pas de réponses en boîte de réception, pas de bounces/désinscriptions en suppression). Volet parité de T27 (recoupe le T20 « webhooks signés, bounces et désinscriptions »).

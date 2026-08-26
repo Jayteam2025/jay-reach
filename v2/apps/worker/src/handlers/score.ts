@@ -67,6 +67,7 @@ interface CandidateRow {
   description: string | null;
   occurred_at: string;
   naf_code: string | null;
+  opposition: boolean | null;
   // Config de scoring portée par la source du signal (sources.config).
   source_id: string | null;
   scoring_prompt: string | null;
@@ -121,7 +122,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
             coalesce(a.name, s.company_hint) as company,
             s.title, s.location,
             s.raw ->> 'description' as description,
-            s.occurred_at, a.naf_code,
+            s.occurred_at, a.naf_code, a.prospecting_opposition as opposition,
             s.source_id,
             so.config ->> 'scoring_prompt' as scoring_prompt,
             nullif(so.config ->> 'match_threshold', '')::double precision as match_threshold
@@ -148,6 +149,14 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
   const survivors: CandidateRow[] = [];
   for (const c of candidates) {
     const company = c.company ?? '';
+    // Opposition au démarchage (Sirene) : filtre NON désactivable — l'entreprise a
+    // refusé la diffusion publique, on ne la prospecte jamais.
+    if (c.opposition === true) {
+      await markDiscarded(pool, c.id, 'prospecting_opposition');
+      prefiltered++;
+      discarded++;
+      continue;
+    }
     const isAgency = isRecruitmentAgency({ name: company, naf: c.naf_code }, blacklist);
     if (isAgency) {
       await markDiscarded(pool, c.id, 'recruitment_agency');

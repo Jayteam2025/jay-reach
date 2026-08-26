@@ -63,6 +63,8 @@ export interface SireneCompany {
   /** Nom tel que renvoye par l'API (permet de tracer un mauvais rapprochement). */
   matched_name: string | null;
   name_match: SireneNameMatch;
+  /** Opposition au démarchage (statut de diffusion Sirene ≠ 'O'). */
+  opposition: boolean;
 }
 
 interface SireneApiResponse {
@@ -73,6 +75,8 @@ interface SireneApiResponse {
     activite_principale?: string;
     activite_principale_naf25?: string;
     tranche_effectif_salarie?: string;
+    /** Statut de diffusion Sirene : 'O' = diffusible, sinon opposition/protégé. */
+    statut_diffusion?: string;
     siege?: {
       siret?: string;
       adresse?: string;
@@ -80,6 +84,19 @@ interface SireneApiResponse {
       libelle_commune?: string;
     };
   }>;
+}
+
+/**
+ * Opposition au démarchage : le `statut_diffusion` Sirene vaut 'O' quand
+ * l'entreprise est librement diffusible ; toute autre valeur ('P' partiellement
+ * diffusible, 'protected', 'N'…) signale une opposition à la diffusion publique,
+ * qu'on assimile à une opposition au démarchage (filtre non désactivable, spec).
+ * Absence de statut = pas d'opposition connue (on ne bloque pas sur l'inconnu).
+ */
+export function isProspectingOpposition(statutDiffusion: string | null | undefined): boolean {
+  if (statutDiffusion == null || statutDiffusion === "") return false;
+  const v = statutDiffusion.trim().toLowerCase();
+  return v !== "o" && v !== "diffusible";
 }
 
 /** Normalisation dediee au rapprochement de noms : accents, formes juridiques, ponctuation. */
@@ -155,6 +172,7 @@ export async function findCompanyByName(companyName: string): Promise<SireneComp
       employees_range: (trancheCode && EMPLOYEES_RANGE[trancheCode]) || null,
       matched_name: matchedName,
       name_match: scoreNameMatch(cleaned, matchedName),
+      opposition: isProspectingOpposition(first.statut_diffusion),
     };
   } catch (err) {
     console.error(`[sirene] fetch error for "${cleaned}":`, err instanceof Error ? err.message : err);
@@ -191,6 +209,8 @@ export interface CompanyNafResolution {
   employees_range: string | null;
   matched_name: string | null;
   name_match: SireneNameMatch;
+  /** Opposition au démarchage (statut de diffusion Sirene ≠ 'O'). */
+  opposition: boolean;
   /**
    * true si le rapprochement est assez fiable pour trancher dessus (nom
    * concordant ET code d'activite present). Sinon, l'appelant doit traiter
@@ -215,6 +235,7 @@ export async function resolveCompanyNaf(companyName: string): Promise<CompanyNaf
     employees_range: company.employees_range,
     matched_name: company.matched_name,
     name_match: company.name_match,
+    opposition: company.opposition,
     trusted: company.name_match !== "weak" && !!company.naf_code,
   };
 }
