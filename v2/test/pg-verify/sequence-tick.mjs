@@ -129,12 +129,13 @@ async function main() {
   const account = (
     await q(`insert into accounts (organization_id, name, domain) values ($1,'SEQ Usine Nord','usine-nord.fr') returning id`, [ORG])
   ).rows[0].id;
-  const mkMailContact = async (v) =>
+  // email_status pilote le gate de délivrabilité : seul 'valid' passe vers Smartlead.
+  const mkMailContact = async (v, emailStatus = 'valid') =>
     (
       await q(
-        `insert into contacts (organization_id, persona_id, account_id, email, first_name, last_name)
-         values ($1,$2,$3,$4,'Jean','Test') returning id`,
-        [ORG, persona, account, `seqmail-${v}@example.test`],
+        `insert into contacts (organization_id, persona_id, account_id, email, email_status, first_name, last_name)
+         values ($1,$2,$3,$4,$5::email_status,'Jean','Test') returning id`,
+        [ORG, persona, account, `seqmail-${v}@example.test`, emailStatus],
       )
     ).rows[0].id;
 
@@ -161,6 +162,20 @@ async function main() {
   );
   const aM1 = (await q(`select channel, status from actions where enrollment_id=$1`, [enrM1])).rows[0];
   check('action email enregistrée', aM1?.channel === 'email');
+
+  // Gate de délivrabilité : un email NON `valid` (ici invalid) ne part jamais.
+  const cmBad = await mkMailContact('bad', 'invalid');
+  const enrBad = await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cmBad });
+  const jobsBad = (await tickDueEnrollments(pool, new Date(Date.now() + 10500))).filter(
+    (j) => j.channel === 'email' && j.leads?.[0]?.email === 'seqmail-bad@example.test',
+  );
+  check('email invalide → aucun push Smartlead', jobsBad.length === 0);
+  const aBad = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrBad])).rows[0];
+  check(
+    'action bloquée par le gate (email_gate)',
+    aBad?.status === 'blocked' && String(aBad?.block_reason).startsWith('email_gate:'),
+    `${aBad?.status}/${aBad?.block_reason}`,
+  );
 
   // Mapping désactivé (enabled=false) : suspension sans perte d'identifiant.
   await q(`update smartlead_campaigns set enabled=false where organization_id=$1 and persona_id=$2`, [ORG, persona]);

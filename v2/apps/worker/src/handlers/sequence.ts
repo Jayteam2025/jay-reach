@@ -9,7 +9,11 @@
  */
 import type { Pool } from 'pg';
 import { composeTick, renderTemplate, type TickChannel, type TickStep } from '@jay-reach/core';
+import { shouldPushToSmartlead } from '@jay-reach/providers/email-validation';
 import type { DispatchJob } from './dispatch.js';
+
+/** Statut de délivrabilité stocké sur le contact (enum `email_status`). */
+type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid';
 
 export interface EnrollJob {
   readonly organizationId: string;
@@ -46,6 +50,7 @@ interface DueRow {
   readonly current_step: number;
   readonly linkedin_url: string | null;
   readonly email: string | null;
+  readonly email_status: EmailStatus | null;
   readonly account_id: string | null;
   readonly approval_policy: unknown;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
@@ -163,7 +168,7 @@ function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean 
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
   const due = await pool.query<DueRow>(
     `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
-            c.linkedin_url, c.email, c.account_id, c.first_name, c.last_name,
+            c.linkedin_url, c.email, c.email_status, c.account_id, c.first_name, c.last_name,
             c.locale, c.job_title,
             camp.approval_policy,
             sc.campaign_id as smartlead_campaign_id,
@@ -324,21 +329,43 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     // on ne pousse jamais vers une campagne inconnue.
     if (result.dispatch && result.action && result.action.channel === 'email') {
       if (row.smartlead_campaign_id && row.email) {
-        jobs.push({
-          organizationId: row.organization_id,
-          channel: 'email',
-          campaignId: row.smartlead_campaign_id,
-          leads: [
-            {
-              email: row.email,
-              ...(row.first_name ? { first_name: row.first_name } : {}),
-              ...(row.last_name ? { last_name: row.last_name } : {}),
-              ...(row.company_name ? { company_name: row.company_name } : {}),
-              ...(row.domain ? { website: row.domain } : {}),
-              ...(row.linkedin_url ? { linkedin_profile: row.linkedin_url } : {}),
-            },
-          ],
+        // Gate de délivrabilité : un email non vérifié `valid` n'est JAMAIS poussé
+        // vers Smartlead (protection de la réputation du domaine). Le gate refuse
+        // par défaut tout ce qui n'est pas explicitement délivrable.
+        const gate = shouldPushToSmartlead({
+          email: row.email,
+          email_source: 'fullenrich',
+          email_validation_status: row.email_status,
+          deliverability_status: row.email_status ?? null,
+          deliverability_reason: null,
+          first_name: row.first_name ?? '',
+          last_name: row.last_name ?? '',
+          domain_pattern: null,
         });
+        if (gate.allow) {
+          jobs.push({
+            organizationId: row.organization_id,
+            channel: 'email',
+            campaignId: row.smartlead_campaign_id,
+            leads: [
+              {
+                email: row.email,
+                ...(row.first_name ? { first_name: row.first_name } : {}),
+                ...(row.last_name ? { last_name: row.last_name } : {}),
+                ...(row.company_name ? { company_name: row.company_name } : {}),
+                ...(row.domain ? { website: row.domain } : {}),
+                ...(row.linkedin_url ? { linkedin_profile: row.linkedin_url } : {}),
+              },
+            ],
+          });
+        } else {
+          // Email non délivrable → action bloquée, rien ne part vers Smartlead.
+          await pool.query(
+            `update actions set status = 'blocked', block_reason = $2 where idempotency_key = $1`,
+            [result.action.idempotencyKey, `email_gate:${gate.reason}`],
+          );
+          console.warn(`[tick] email du contact ${row.contact_id} NON poussé (gate: ${gate.reason})`);
+        }
       } else if (!row.smartlead_campaign_id) {
         console.warn(
           `[tick] étape email du contact ${row.contact_id} sans mapping Smartlead activé pour sa persona — action planifiée mais non dispatchée`,

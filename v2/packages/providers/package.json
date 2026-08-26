@@ -20,6 +20,10 @@
     "./outreach": {
       "types": "./dist/outreach/index.d.ts",
       "default": "./dist/outreach/index.js"
+    },
+    "./email-validation": {
+      "types": "./dist/email-validation/index.d.ts",
+      "default": "./dist/email-validation/index.js"
     }
   },
   "scripts": {
