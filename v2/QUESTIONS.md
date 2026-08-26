@@ -261,6 +261,18 @@ Retour de JB : le module `email-validation` (`bouncer.ts`, `reoon.ts`, `email-ga
 - **Blocage de l'action** (pas d'arrêt d'inscription) : l'étape email est bloquée, la séquence peut continuer sur d'autres canaux.
 
 **Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 7 — contact `email_status='valid'` → 1 job Smartlead ; contact `email_status='invalid'` → **aucun push**, action `blocked / email_gate:bouncer_invalid`. + typecheck/lint/build, 165 tests.
+## Résolu — Opposition au démarchage appliquée (T8/T12, avant recette) [2026-08-26]
+
+Retour de JB sur le worker réel : `prospecting_opposition` n'était posé nulle part → le filtre d'opposition au démarchage (non désactivable, spec) n'était pas appliqué.
+
+**Constat vérifié** : la résolution SIREN/NAF **était** branchée (`qualify.ts → resolveCompanyNaf → recherche-entreprises.api.gouv.fr`, fichier mal nommé `insee-sirene.ts`), persistée (`upsertResolvedAccount → accounts.naf_code/siren`) et **utilisée** par le pré-filtre cabinets (`score.ts` lit `a.naf_code`). Donc l'exclusion NAF n'était pas inerte. Seul l'**opposition** manquait.
+
+**Correctif** :
+- `resolveCompanyNaf` capte désormais `statut_diffusion` de la réponse Sirene → `opposition: boolean` (helper pur exporté `isProspectingOpposition` : statut ≠ 'O'/'diffusible' → opposition ; absence de statut → pas d'opposition, on ne bloque pas sur l'inconnu).
+- `upsertResolvedAccount` écrit `accounts.prospecting_opposition` (insert + on-conflict update). Posé uniquement sur un rapprochement fiable (SIREN présent) — cohérent avec le reste.
+- Le pré-filtre de scoring (`score.ts`) lit `a.prospecting_opposition` et **écarte** le signal (`discard_reason = 'prospecting_opposition'`) avant tout appel modèle.
+
+**Vérifié** : `test/pg-verify/scoring.sh` (compte `prospecting_opposition=true` → signal écarté ; `prefiltered` +1) + test unitaire `isProspectingOpposition`. Pas de migration (la colonne `accounts.prospecting_opposition` existe déjà).
 
 ## Résolu — Réception des webhooks Smartlead (T27, volet réception email) [2026-08-25]
 
