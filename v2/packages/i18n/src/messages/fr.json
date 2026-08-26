@@ -168,7 +168,8 @@
     "annuaire": "Annuaire",
     "approvals": "Approbations",
     "customers": "Clients",
-    "templates": "Messages"
+    "templates": "Messages",
+    "smartlead": "Webhooks Smartlead"
   },
   "branding": {
     "eyebrow": "Identité",
@@ -646,5 +647,24 @@
     "dailyCapPlaceholder": "ex. 50",
     "cancel": "Annuler",
     "create": "Créer la campagne"
+  },
+  "smartleadWh": {
+    "eyebrow": "Réception email",
+    "title": "Webhooks Smartlead",
+    "lead": "Recevez les réponses, bounces et désinscriptions de Smartlead pour fermer la boucle email.",
+    "demoNotice": "Connectez Supabase pour configurer le webhook.",
+    "urlTitle": "URL du webhook",
+    "copy": "Copier l'URL",
+    "copied": "Copié ✓",
+    "noSecret": "Générez d'abord un secret pour obtenir l'URL.",
+    "howTitle": "Comment brancher",
+    "step1": "Dans Smartlead, ouvrez la campagne → Webhooks → Ajouter, et collez l'URL ci-dessus.",
+    "step2": "Activez les événements :",
+    "step3": "Enregistrez. Les réponses arriveront dans la boîte de réception, les bounces et désinscriptions iront en exclusion.",
+    "generate": "Générer le secret",
+    "regenerate": "Régénérer le secret",
+    "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
+    "yourDomain": "https://votre-instance",
+    "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
   }
 }

@@ -168,7 +168,8 @@
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
     "customers": "Klanten",
-    "templates": "Berichten"
+    "templates": "Berichten",
+    "smartlead": "Smartlead-webhooks"
   },
   "branding": {
     "eyebrow": "Identiteit",
@@ -646,5 +647,24 @@
     "dailyCapPlaceholder": "bv. 50",
     "cancel": "Annuleren",
     "create": "Campagne aanmaken"
+  },
+  "smartleadWh": {
+    "eyebrow": "E-mailontvangst",
+    "title": "Smartlead-webhooks",
+    "lead": "Ontvang antwoorden, bounces en uitschrijvingen van Smartlead om de e-maillus te sluiten.",
+    "demoNotice": "Verbind Supabase om de webhook te configureren.",
+    "urlTitle": "Webhook-URL",
+    "copy": "URL kopiëren",
+    "copied": "Gekopieerd ✓",
+    "noSecret": "Genereer eerst een secret om de URL te krijgen.",
+    "howTitle": "Hoe koppelen",
+    "step1": "Open in Smartlead de campagne → Webhooks → Toevoegen en plak de bovenstaande URL.",
+    "step2": "Activeer de events:",
+    "step3": "Opslaan. Antwoorden komen in de inbox; bounces en uitschrijvingen gaan naar uitsluiting.",
+    "generate": "Secret genereren",
+    "regenerate": "Secret opnieuw genereren",
+    "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
+    "yourDomain": "https://uw-instantie",
+    "adminOnly": "Alleen beheerders kunnen de webhook configureren."
   }
 }

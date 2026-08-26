@@ -271,6 +271,24 @@ Rien ne recevait les retours email : la boucle email n'était pas fermée (pas d
 
 **Vérifié** : `bash test/pg-verify/smartlead-webhook.sh` (jr_dev, zéro API) → réponse humaine (arrêt + fil + message + notif), auto-absence (`paused_absence`+`resume_at`), bounce (suppression+`bounced`), désinscription (suppression+`stopped`), **contact inconnu → aucune écriture**. + tests unitaires du parseur, typecheck/lint/build web, 164 tests.
 
+## Résolu — Configuration du webhook Smartlead (T27, volet config) [2026-08-25]
+
+Complète la réception (#25) : de quoi **brancher** le webhook côté opérateur.
+
+**RPC `merge_provider_config(org, provider, config)`** (migration `20260825160000`) : met à jour la **config jsonb** d'un provider **sans toucher au secret chiffré**. Nécessaire parce que `set_credential` ré-écrit `secret = pgp_sym_encrypt(p_secret, …)` — impossible de poser juste `config.webhook_secret` sans re-fournir la clé API (indisponible en clair côté web). Upsert (config-only possible, `credentials.secret` étant nullable), merge `config || excluded.config`. Réservé `service_role` (comme `set_provider_credential`) ; la server action fait le `requireRole('admin')`.
+
+**Server action** `regenerateSmartleadWebhookSecret(org)` : génère un secret aléatoire (`randomBytes(24).hex`), le range dans `credentials.config.webhook_secret`, le renvoie pour affichage.
+
+**Écran** `/settings/smartlead` (+ nav) : affiche l'**URL du webhook** (`${APP_URL}/api/webhooks/smartlead?org=…&token=…`), les événements à activer (`LEAD_REPLIED`, `EMAIL_BOUNCED`, `LEAD_UNSUBSCRIBED`), un bouton **copier**, et **générer/régénérer** le secret. i18n FR/EN/NL.
+
+**Contrôle de LECTURE du secret [fix review #26]** : le secret est un identifiant d'authentification → sa lecture exige `admin`, comme sa régénération. `page.tsx` lit le secret via le client `service_role` (la RLS ne l'expose pas) **seulement après `requireRole(orgId, 'admin')`** — sinon un `viewer` verrait le token + l'org id (tous deux dans l'URL affichée) et pourrait **forger des événements** (marquer des contacts répondus/désinscrits/bounce) : élévation de privilège. Non-admin → l'écran affiche « admin requis », sans secret ni URL. (Applique la règle T5 : « ne jamais lire le secret côté client sans contrôle ».)
+
+**Décisions / périmètre** :
+- **Collage manuel de l'URL** dans Smartlead (campagne → Webhooks) plutôt qu'un provisionnement automatique via l'API Smartlead (`upsertCampaignWebhook`). Motif : l'appel API exige la **clé API déchiffrée**, disponible **uniquement côté worker** (`app.get_credential`), pas dans une server action web ; l'automatiser proprement suppose un job worker déclenché depuis le web (pas de bus pg-boss côté web aujourd'hui). Le collage manuel est fiable, self-hosted-friendly, et suffit à activer la réception. Provisionnement auto = raffinement ultérieur.
+- **URL de base** via l'env `APP_URL` (déjà présent dans `.env.example`) ; sans elle, l'écran affiche un placeholder de domaine.
+
+**Vérifié** : merge de config prouvé (upsert config-only, puis merge qui **préserve** `webhook_secret` et ajoute les autres clés) ; typecheck/lint/build web (`/settings/smartlead`), 164 tests.
+
 ## Résolu — Éditeur de séquence dans l'écran campagne (T24, partie éditeur) [2026-08-25]
 
 Suite de T24-a : brancher l'édition de séquence dans l'écran détail, jusque-là 100 % maquette (état local, aucune persistance).
