@@ -27,6 +27,7 @@
       "@jay-reach/providers/signals": ["packages/providers/src/signals/index.ts"],
       "@jay-reach/providers/enrichment": ["packages/providers/src/enrichment/index.ts"],
       "@jay-reach/providers/outreach": ["packages/providers/src/outreach/index.ts"],
+      "@jay-reach/providers/email-validation": ["packages/providers/src/email-validation/index.ts"],
       "@jay-reach/ui": ["packages/ui/src/index.ts"]
     }
   }

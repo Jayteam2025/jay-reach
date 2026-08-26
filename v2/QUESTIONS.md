@@ -249,6 +249,19 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Gate de délivrabilité email branché (T14/T20, avant recette) [2026-08-26]
+
+Retour de JB : le module `email-validation` (`bouncer.ts`, `reoon.ts`, `email-gate.ts`, `email-pattern.ts`) était porté mais **aucun handler ne l'appelait** → un email non vérifié pouvait partir vers Smartlead (risque réputation, non rattrapable).
+
+**Correctif** : le gate `shouldPushToSmartlead` est branché au **point d'envoi email du tick** (`sequence.ts`). Avant de produire le job de dispatch Smartlead, on construit un `GateInput` depuis le contact (`email`, `email_status → deliverability_status`, prénom/nom) et on interroge le gate. S'il **refuse**, l'action passe à `blocked` avec `block_reason = 'email_gate:<raison>'` et **aucun lead n'est poussé**. Module exposé en sous-chemin `@jay-reach/providers/email-validation` (barrel + export package.json + path tsconfig).
+
+**Décisions / périmètre** :
+- **Gate conservateur** : la logique existante refuse par défaut tout ce qui n'est pas explicitement délivrable. Avec `domain_pattern` null (non câblé), seul `email_status = 'valid'` passe ; `unknown`/`risky`/`invalid` sont bloqués. **Conséquence assumée** (validée avec l'utilisateur) : rien ne part sans vérification — c'est l'intention (protection domaine), mais la **vérification email doit tourner** (FullEnrich pose déjà `email_status` ; Reoon en complément).
+- **Vérification Reoon en direct** (calcul du `deliverability_status` à l'enrichissement, `verifyEmail`) **pas encore câblée** : c'est ce qui alimentera le gate pour les emails que FullEnrich laisse `unknown`. À brancher derrière le pont credentials (clé Reoon), testable au run réel. Le `domain_pattern` (statistiques d'envoi/bounce) reste `null` (tables legacy non portées).
+- **Blocage de l'action** (pas d'arrêt d'inscription) : l'étape email est bloquée, la séquence peut continuer sur d'autres canaux.
+
+**Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 7 — contact `email_status='valid'` → 1 job Smartlead ; contact `email_status='invalid'` → **aucun push**, action `blocked / email_gate:bouncer_invalid`. + typecheck/lint/build, 165 tests.
+
 ## Résolu — Réception des webhooks Smartlead (T27, volet réception email) [2026-08-25]
 
 Rien ne recevait les retours email : la boucle email n'était pas fermée (pas de réponses en boîte de réception, pas de bounces/désinscriptions en suppression). Volet parité de T27 (recoupe le T20 « webhooks signés, bounces et désinscriptions »).
