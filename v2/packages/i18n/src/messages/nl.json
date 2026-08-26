@@ -664,6 +664,7 @@
     "generate": "Secret genereren",
     "regenerate": "Secret opnieuw genereren",
     "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
-    "yourDomain": "https://uw-instantie"
+    "yourDomain": "https://uw-instantie",
+    "adminOnly": "Alleen beheerders kunnen de webhook configureren."
   }
 }

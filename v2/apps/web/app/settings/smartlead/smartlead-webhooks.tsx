@@ -9,11 +9,13 @@ const EVENTS = ['LEAD_REPLIED', 'EMAIL_BOUNCED', 'LEAD_UNSUBSCRIBED'] as const;
 export function SmartleadWebhooks({
   orgId,
   demo,
+  canManage,
   appUrl,
   initialSecret,
 }: {
   orgId: string;
   demo: boolean;
+  canManage: boolean;
   appUrl: string;
   initialSecret: string | null;
 }) {
@@ -60,6 +62,9 @@ export function SmartleadWebhooks({
 
       {demo ? <p className="rs-row-sub" style={{ marginTop: 12 }}>{t('demoNotice')}</p> : null}
 
+      {!demo && !canManage ? <p className="rs-empty">{t('adminOnly')}</p> : null}
+
+      {demo || canManage ? (
       <div className="rs-card" style={{ marginTop: 16, display: 'grid', gap: 14, maxWidth: 720 }}>
         <div>
           <h3 className="rs-section-title">{t('urlTitle')}</h3>
@@ -121,6 +126,7 @@ export function SmartleadWebhooks({
           {secret ? <span className="rs-row-sub">{t('regenWarn')}</span> : null}
         </div>
       </div>
+      ) : null}
     </>
   );
 }

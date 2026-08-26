@@ -664,6 +664,7 @@
     "generate": "Générer le secret",
     "regenerate": "Régénérer le secret",
     "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
-    "yourDomain": "https://votre-instance"
+    "yourDomain": "https://votre-instance",
+    "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
   }
 }

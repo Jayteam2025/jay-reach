@@ -281,6 +281,8 @@ Complète la réception (#25) : de quoi **brancher** le webhook côté opérateu
 
 **Écran** `/settings/smartlead` (+ nav) : affiche l'**URL du webhook** (`${APP_URL}/api/webhooks/smartlead?org=…&token=…`), les événements à activer (`LEAD_REPLIED`, `EMAIL_BOUNCED`, `LEAD_UNSUBSCRIBED`), un bouton **copier**, et **générer/régénérer** le secret. i18n FR/EN/NL.
 
+**Contrôle de LECTURE du secret [fix review #26]** : le secret est un identifiant d'authentification → sa lecture exige `admin`, comme sa régénération. `page.tsx` lit le secret via le client `service_role` (la RLS ne l'expose pas) **seulement après `requireRole(orgId, 'admin')`** — sinon un `viewer` verrait le token + l'org id (tous deux dans l'URL affichée) et pourrait **forger des événements** (marquer des contacts répondus/désinscrits/bounce) : élévation de privilège. Non-admin → l'écran affiche « admin requis », sans secret ni URL. (Applique la règle T5 : « ne jamais lire le secret côté client sans contrôle ».)
+
 **Décisions / périmètre** :
 - **Collage manuel de l'URL** dans Smartlead (campagne → Webhooks) plutôt qu'un provisionnement automatique via l'API Smartlead (`upsertCampaignWebhook`). Motif : l'appel API exige la **clé API déchiffrée**, disponible **uniquement côté worker** (`app.get_credential`), pas dans une server action web ; l'automatiser proprement suppose un job worker déclenché depuis le web (pas de bus pg-boss côté web aujourd'hui). Le collage manuel est fiable, self-hosted-friendly, et suffit à activer la réception. Provisionnement auto = raffinement ultérieur.
 - **URL de base** via l'env `APP_URL` (déjà présent dans `.env.example`) ; sans elle, l'écran affiche un placeholder de domaine.
