@@ -249,6 +249,28 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Réception des webhooks Smartlead (T27, volet réception email) [2026-08-25]
+
+Rien ne recevait les retours email : la boucle email n'était pas fermée (pas de réponses en boîte de réception, pas de bounces/désinscriptions en suppression). Volet parité de T27 (recoupe le T20 « webhooks signés, bounces et désinscriptions »).
+
+**Parseur** `@jay-reach/core/inbox/smartlead-events.ts` (Zod, défensif) : `parseSmartleadEvent` normalise les payloads Smartlead (noms de champs variables) vers `{ type, email, campaignId, replyText, headers, messageId, raw }` ; `type` ∈ replied/bounced/unsubscribed/opened/clicked/sent/unknown. Testé unitairement.
+
+**Endpoint** `apps/web/app/api/webhooks/smartlead/route.ts` : POST, `runtime nodejs`. Auth par **`?org=&token=`** — token comparé en **temps constant** (`timingSafeEqual`) au secret `credentials.config.webhook_secret` du provider Smartlead de l'org. (Choix : Smartlead ne permet de configurer qu'une **URL** de webhook, pas d'en-tête personnalisé → le secret vit dans l'URL, comme le pattern `extension/linkedin/update`.) Body parsé (Zod) → `processSmartleadEvent`. **Middleware [fix review #25]** : `/api/webhooks` ajouté à `PUBLIC_PREFIXES` (`auth-guard.ts`) — sinon en production (Supabase configuré → fail-closed), le POST de Smartlead serait redirigé vers `/login` et le handler jamais appelé (panne silencieuse et durable). Ces routes ne sont pas « ouvertes » : elles portent leur propre auth par token, comme `/api/extension`. Test de non-régression ajouté (`auth-guard.test.ts` : webhook `allow` en prod non authentifiée).
+
+**Traitement** `apps/web/lib/webhooks/smartlead.ts` (`pg`, donc testable hermétiquement — comme les handlers worker) :
+- **Contact inconnu → RIEN stocké** (docs/06 + CLAUDE.md) : résolution par `(org, lower(email))`, sinon on sort sans écrire.
+- **Réponse** : `classifyReply` (réutilisé) ; **défaut `human_reply`** si la détection auto ne matche pas (l'événement EST une réponse → jamais continuer à écrire à quelqu'un qui a répondu). Fil (`threads`) + message entrant (`thread_messages` direction `in`) + effet inscription (human_reply→`replied` ; auto_absence→`paused_absence`+`resume_at` ; auto_left_company→`stopped/contact_left`) + **notification** à tous les membres de l'org.
+- **Bounce / désinscription** : `suppressions` (origin `bounce`/`unsubscribe`, dédup par (org, scope, value)) + inscription `bounced`/`stopped`.
+
+**Créé au passage** : le **helper de notification** (règle #9) — la table `notifications` n'était alimentée par rien jusqu'ici.
+
+**Décisions / périmètre** :
+- **Ouvertures / clics** non traités ici : un `outcome` exige une `action_id` (FK) et le dispatch n'écrit pas encore `actions.provider_ref` pour corréler → laissé à un raffinement (c'est aussi ce qui rebranchera les conditions d'étape retirées en #24).
+- **Auth par token d'URL** plutôt que signature HMAC de Smartlead (schéma de signature non documenté de façon fiable côté provisioning). À revoir si Smartlead expose une signature stable.
+- **Provisionnement** (appeler `upsertCampaignWebhook` pour abonner les campagnes + écran de config du secret) = **volet suivant** (T27-b). Ici on reçoit ; brancher l'émission côté Smartlead vient après.
+
+**Vérifié** : `bash test/pg-verify/smartlead-webhook.sh` (jr_dev, zéro API) → réponse humaine (arrêt + fil + message + notif), auto-absence (`paused_absence`+`resume_at`), bounce (suppression+`bounced`), désinscription (suppression+`stopped`), **contact inconnu → aucune écriture**. + tests unitaires du parseur, typecheck/lint/build web, 164 tests.
+
 ## Résolu — Éditeur de séquence dans l'écran campagne (T24, partie éditeur) [2026-08-25]
 
 Suite de T24-a : brancher l'édition de séquence dans l'écran détail, jusque-là 100 % maquette (état local, aucune persistance).

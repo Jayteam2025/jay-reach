@@ -4,9 +4,10 @@
 // Chemins accessibles sans session :
 //  - /login          : la page de connexion elle-même
 //  - /api/extension  : endpoints de l'extension (auth par token, pas par session)
+//  - /api/webhooks   : webhooks entrants (Smartlead…) — auth par token dans l'URL
 //  - /api/health     : sonde de disponibilité
 //  - /extension/auth : handshake OAuth du token d'extension
-export const PUBLIC_PREFIXES = ['/login', '/api/extension', '/api/health', '/extension/auth'];
+export const PUBLIC_PREFIXES = ['/login', '/api/extension', '/api/webhooks', '/api/health', '/extension/auth'];
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
