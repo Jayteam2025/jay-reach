@@ -66,6 +66,7 @@ async function main() {
   // Nettoyage d'un run précédent.
   await q(`delete from signals where organization_id=$1 and external_id like 'VERIF-%'`, [ORG]);
   await q(`delete from sources where organization_id=$1 and name like 'VERIF %'`, [ORG]);
+  await q(`delete from accounts where organization_id=$1 and name='VERIF Opposition SA'`, [ORG]);
   await q(`delete from recruitment_agencies_blacklist where organization_id=$1 and source='auto_score'`, [ORG]);
 
   // Source A : configurée pour le scoring (prompt + seuil 70).
@@ -80,6 +81,23 @@ async function main() {
   const idCabinet = await mkSignal(srcA, 'VERIF-cabinet', 'Cabinet Louche'); // 0 + verdict
   const idNoPrompt = await mkSignal(srcB, 'VERIF-noprompt', 'Sans Prompt SARL');
 
+  // Opposition au démarchage : un signal rattaché à un compte dont
+  // `prospecting_opposition = true` doit être écarté (filtre non désactivable).
+  const oppAccount = (
+    await q(
+      `insert into accounts (organization_id, name, siren, prospecting_opposition, resolution_status)
+       values ($1,'VERIF Opposition SA','999888777',true,'resolved') returning id`,
+      [ORG],
+    )
+  ).rows[0].id;
+  const idOpp = (
+    await q(
+      `insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, status, company_hint, title, account_id)
+       values ($1,$2,'francetravail','VERIF-opp','job_posting', now(), 'new','VERIF Opposition SA','Commercial itinérant',$3) returning id`,
+      [ORG, srcA, oppAccount],
+    )
+  ).rows[0].id;
+
   console.log('[score] exécution runScore…\n');
   const summary = await runScore({ pool, organizationId: ORG, scorer });
 
@@ -90,6 +108,8 @@ async function main() {
   const cabinet = await statusOf(idCabinet);
   const noPrompt = await statusOf(idNoPrompt);
 
+  const opp = await statusOf(idOpp);
+  check('opposition au démarchage → écarté (prospecting_opposition)', opp.status === 'discarded' && opp.discard_reason === 'prospecting_opposition', `${opp.status}/${opp.discard_reason}`);
   check('cabinet blacklisté pré-filtré (Adecco)', agency.status === 'discarded' && agency.discard_reason === 'recruitment_agency', agency.status);
   check('signal périmé écarté (60 j)', stale.status === 'discarded' && stale.discard_reason === 'stale', stale.status);
   check('bonne PME qualifiée (82 ≥ seuil source 70)', good.status === 'qualified' && Number(good.score) === 82, `${good.status}/${good.score}`);
@@ -129,6 +149,7 @@ async function main() {
   // Nettoyage.
   await q(`delete from signals where organization_id=$1 and external_id like 'VERIF-%'`, [ORG]);
   await q(`delete from sources where organization_id=$1 and name like 'VERIF %'`, [ORG]);
+  await q(`delete from accounts where organization_id=$1 and name='VERIF Opposition SA'`, [ORG]);
   await q(`delete from recruitment_agencies_blacklist where organization_id=$1 and source='auto_score'`, [ORG]);
 
   await pool.end();

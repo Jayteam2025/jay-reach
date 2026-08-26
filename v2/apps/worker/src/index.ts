@@ -122,8 +122,12 @@ async function main(): Promise<void> {
       siren: resolved?.siren ?? null,
       nafCode: resolved?.naf_code ?? null,
       trusted: resolved?.trusted ?? false,
+      opposition: resolved?.opposition ?? false,
     });
-    console.log(`[qualify] compte=${accountId ?? '—'} SIREN=${resolved?.siren ?? '—'} (${resolved?.name_match ?? 'n/a'})`);
+    console.log(
+      `[qualify] compte=${accountId ?? '—'} SIREN=${resolved?.siren ?? '—'} (${resolved?.name_match ?? 'n/a'})` +
+        `${resolved?.opposition ? ' [opposition démarchage]' : ''}`,
+    );
   });
 
   // Scoring des signaux : pré-filtre cabinets (blacklist + NAF) + fraîcheur, puis
