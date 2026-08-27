@@ -3,6 +3,7 @@
 // Données fictives ; aucun envoi réel (les lignes restent en pending dans la file).
 import pg from 'pg';
 import { enrollContact, tickDueEnrollments } from './_seq.mjs';
+import { refreshDomainPatterns } from './_patterns.mjs';
 import { runLinkedInDispatch } from './_lkd.mjs';
 
 const { Pool } = pg;
@@ -27,8 +28,18 @@ async function syncClock() {
   const r = await q('select now() as n');
   clockSkew = new Date(r.rows[0].n).getTime() - Date.now();
 }
-/** Instant, dans le temps de la base, décalé de `ms`. */
-const at = (ms = 0) => new Date(Date.now() + clockSkew + ms);
+/**
+ * Instant POSTÉRIEUR à maintenant, dans le temps de la base, décalé de `ms`.
+ *
+ * La marge n'est pas de la superstition : le harnais inscrit un contact puis
+ * demande le tick dans la foulée, alors qu'en production le tick passe toutes
+ * les cinq minutes. Sans elle, une inscription créée à la milliseconde près
+ * n'est pas encore « due » et l'étape échoue pour une raison qui n'a rien à
+ * voir avec ce qu'elle teste. La marge s'applique uniformément : l'ordre relatif
+ * des étapes, qui passent leur propre décalage, est préservé.
+ */
+const MARGE_MS = 2_000;
+const at = (ms = 0) => new Date(Date.now() + clockSkew + MARGE_MS + ms);
 
 async function seedCampaign(name, steps) {
   const camp = (
@@ -79,6 +90,7 @@ async function main() {
   await q(`delete from message_templates where organization_id=$1`, [ORG]);
   await q(`delete from smartlead_campaign_mappings where organization_id=$1`, [ORG]);
   await q(`delete from contact_sender_bindings where contact_id in (select id from contacts where organization_id=$1)`, [ORG]);
+  await q(`delete from domain_patterns where organization_id=$1`, [ORG]);
   await q(`delete from senders where organization_id=$1 and identity like 'SEQ %'`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
   await q(`delete from contacts where organization_id=$1 and email like '%@example.test'`, [ORG]);
@@ -333,6 +345,68 @@ async function main() {
   check('expéditeur désactivé → inscription en pause', sndEtat?.status === 'paused', `${sndEtat?.status}`);
   check('motif de pause lisible', String(sndEtat?.stop_reason ?? '').startsWith('sender_unavailable'), `${sndEtat?.stop_reason}`);
   check('aucune action émise sans expéditeur', sndApres === sndAvant, `${sndAvant} → ${sndApres}`);
+
+
+  console.log('\n[seq] 10. Pattern de domaine : un email risky passe si la convention est connue');
+  // Cinq contacts du même domaine suivant tous prenom.nom@ : la convention est
+  // nette, la détection doit sortir un tier `high`.
+  const dom = 'convention-nette.test';
+  const persoPat = (await q(
+    `insert into personas (organization_id, name) values ($1,'SEQ Pattern') returning id`, [ORG],
+  )).rows[0].id;
+  const cptPat = (await q(
+    `insert into accounts (organization_id, name, domain) values ($1,'SEQ Convention',$2) returning id`, [ORG, dom],
+  )).rows[0].id;
+  const echantillons = [['marie','durand'],['paul','bernard'],['sophie','martin'],['luc','petit'],['anne','moreau']];
+  for (const [f, l] of echantillons) {
+    await q(
+      `insert into contacts (organization_id, account_id, first_name, last_name, email, email_status)
+       values ($1,$2,$3,$4,$5,'valid')`,
+      [ORG, cptPat, f, l, `${f}.${l}@${dom}`],
+    );
+  }
+  const nPat = await refreshDomainPatterns(pool, ORG, [dom]);
+  check('pattern détecté et rangé', nPat === 1, `${nPat} pattern(s)`);
+  const pat = (await q(`select pattern, tier, confidence::float8 as confidence, sample_count
+                          from domain_patterns where organization_id=$1 and domain=$2`, [ORG, dom])).rows[0];
+  check('convention reconnue en tier high', pat?.tier === 'high' && pat?.confidence >= 0.85,
+    `${pat?.pattern} ${pat?.tier} ${pat?.confidence}`);
+
+  // Le contact à pousser : email CATCH_ALL, donc `risky`. Avant, le gate le
+  // bloquait faute de pattern ; il doit maintenant passer.
+  const campPat = await seedCampaign('Email pattern', [{ channel: 'email', delay_hours: 0 }]);
+  await q(
+    `insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
+     values ($1,$2,'SL-PATTERN',true)`, [ORG, persoPat],
+  );
+  const cRisky = (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+     values ($1,$2,$3,'Jean','Nouveau',$4,'risky') returning id`,
+    [ORG, cptPat, persoPat, `jean.nouveau@${dom}`],
+  )).rows[0].id;
+  const enrRisky = await enrollContact(pool, { organizationId: ORG, campaignId: campPat, contactId: cRisky });
+  const jRisky = (await tickDueEnrollments(pool, at(150000))).filter((j) => j.campaignId === 'SL-PATTERN');
+  check('risky + pattern high → poussé vers Smartlead', jRisky.length === 1, JSON.stringify(jRisky.map((j) => j.campaignId)));
+  const aRisky = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrRisky])).rows[0];
+  check('action non bloquée', aRisky?.status !== 'blocked', `${aRisky?.status}/${aRisky?.block_reason}`);
+
+  // Contre-épreuve : même statut risky, mais sur un domaine dont on ne sait rien.
+  const cptInconnu = (await q(
+    `insert into accounts (organization_id, name, domain) values ($1,'SEQ Inconnu','domaine-inconnu.test') returning id`, [ORG],
+  )).rows[0].id;
+  const cInconnu = (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+     values ($1,$2,$3,'Alice','Inconnue','alice.inconnue@domaine-inconnu.test','risky') returning id`,
+    [ORG, cptInconnu, persoPat],
+  )).rows[0].id;
+  const enrInconnu = await enrollContact(pool, { organizationId: ORG, campaignId: campPat, contactId: cInconnu });
+  const jInconnu = (await tickDueEnrollments(pool, at(180000))).filter(
+    (j) => j.campaignId === 'SL-PATTERN' && j.leads?.[0]?.email === 'alice.inconnue@domaine-inconnu.test',
+  );
+  check('risky sans pattern → toujours bloqué', jInconnu.length === 0);
+  const aInconnu = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrInconnu])).rows[0];
+  check('motif de blocage explicite', String(aInconnu?.block_reason ?? '').includes('fullenrich_risky_no_pattern'),
+    `${aInconnu?.status}/${aInconnu?.block_reason}`);
 
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();

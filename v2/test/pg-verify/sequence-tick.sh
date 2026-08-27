@@ -26,6 +26,8 @@ ESB="$DIR/apps/worker/node_modules/.bin/esbuild"
   --outfile="$DIR/apps/worker/_seq.mjs" >/dev/null 2>&1 || { echo "[seq] BUNDLE_FAIL(seq)"; exit 5; }
 "$ESB" "$DIR/apps/worker/src/handlers/dispatch.ts" --bundle --platform=node --format=esm --packages=external \
   --outfile="$DIR/apps/worker/_lkd.mjs" >/dev/null 2>&1 || { echo "[seq] BUNDLE_FAIL(lkd)"; exit 5; }
+"$ESB" "$DIR/apps/worker/src/domain-patterns.ts" --bundle --platform=node --format=esm --packages=external \
+  --outfile="$DIR/apps/worker/_patterns.mjs" >/dev/null 2>&1 || { echo "[seq] BUNDLE_FAIL(patterns)"; exit 5; }
 cp "$DIR/test/pg-verify/sequence-tick.mjs" "$DIR/apps/worker/_seq-runner.mjs"
 
 echo "[seq] exécution…"
@@ -34,5 +36,5 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" TEST_ORG=
   node "$DIR/apps/worker/_seq-runner.mjs"
 RC=$?
 
-rm -f "$DIR/apps/worker/_seq.mjs" "$DIR/apps/worker/_lkd.mjs" "$DIR/apps/worker/_seq-runner.mjs"
+rm -f "$DIR/apps/worker/_seq.mjs" "$DIR/apps/worker/_lkd.mjs" "$DIR/apps/worker/_patterns.mjs" "$DIR/apps/worker/_seq-runner.mjs"
 exit "$RC"
