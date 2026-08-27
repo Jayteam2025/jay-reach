@@ -46,6 +46,7 @@ echo "[verify] test liaison expéditeur…"; psql < "$DIR/test/pg-verify/sender-
 echo "[verify] test résolution d'entreprise…"; psql < "$DIR/test/pg-verify/company-resolution.sql" || { echo "[verify] RESOLUTION_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 12; }
 echo "[verify] test exclusion clients…"; psql < "$DIR/test/pg-verify/customer-exclusion.sql" || { echo "[verify] CUSTOMER_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 13; }
 
+echo "[verify] test quota providers…"; psql < "$DIR/test/pg-verify/provider-quota.sql" || { echo "[verify] PROVIDER_QUOTA_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 16; }
 echo "[verify] test cache providers…"; bash "$DIR/test/pg-verify/provider-cache.sh" || { echo "[verify] PROVIDER_CACHE_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 15; }
 
 echo "[verify] comptage des tables + policies…"

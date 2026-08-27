@@ -32,6 +32,19 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
     fields: [{ name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'BOUNCER_API_KEY' }],
   },
   {
+    // Vérification de délivrabilité. Sans elle, `contacts.email_status` ne peut
+    // venir que du statut FullEnrich, et le gate — qui n'accepte qu'un `valid`
+    // explicite — bloque tout le reste. `daily_cap` est ajustable : l'offre
+    // gratuite plafonne à 20 vérifications par jour, une offre payante non.
+    id: 'reoon',
+    category: 'enrichment',
+    labelKey: 'providers.reoon',
+    fields: [
+      { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'REOON_API_KEY' },
+      { name: 'daily_cap', labelKey: 'providers.field.dailyCap', type: 'text', secret: false, required: false },
+    ],
+  },
+  {
     id: 'anthropic',
     category: 'ai',
     labelKey: 'providers.anthropic',

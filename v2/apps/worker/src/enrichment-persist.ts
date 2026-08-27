@@ -7,7 +7,7 @@
  */
 import type { Pool } from 'pg';
 
-type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid';
+type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid' | 'disposable' | 'role';
 
 /** Statut brut FullEnrich → enum email_status du schéma + confiance numérique. */
 const STATUS_MAP: Record<string, EmailStatus> = {
@@ -25,6 +25,8 @@ const STATUS_MAP: Record<string, EmailStatus> = {
 const CONFIDENCE: Record<EmailStatus, number> = {
   valid: 0.9,
   risky: 0.5,
+  role: 0.3,
+  disposable: 0.1,
   invalid: 0.1,
   unknown: 0.2,
 };
@@ -115,11 +117,15 @@ export async function persistEnrichedContact(
   organizationId: string,
   accountId: string,
   c: EnrichedContact,
+  verified?: { status: EmailStatus; confidence: number } | null,
 ): Promise<string | null> {
   if (!c.email) {
     return null;
   }
-  const { status, confidence } = mapEmailStatus(c.emailStatusRaw);
+  // Une vérification directe (Reoon) prime sur le statut déclaratif de
+  // FullEnrich : le premier a interrogé le serveur de messagerie, le second
+  // rapporte ce qu'il croit savoir.
+  const { status, confidence } = verified ?? mapEmailStatus(c.emailStatusRaw);
   const res = await pool.query<{ id: string }>(
     `insert into contacts
        (organization_id, account_id, persona_id, first_name, last_name, job_title,
