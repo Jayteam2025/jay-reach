@@ -303,11 +303,23 @@ create table senders (
   created_at timestamptz not null default now()
 );
 
+-- Cible d'une clé étrangère composite depuis `contact_sender_bindings`, pour que
+-- le type stocké dans la liaison soit forcément celui de l'expéditeur pointé.
+alter table senders add constraint senders_id_kind_key unique (id, kind);
+
+-- Liaison contact ↔ expéditeur, à vie POUR UN CANAL (docs/04, « Attribution des
+-- expéditeurs »). La clé primaire porte sur (contact, type) et non sur
+-- (contact, expéditeur) : une séquence multicanale touche le même contact par
+-- email puis par LinkedIn, il lui faut donc un expéditeur par canal, et un seul.
+-- Avec (contact, expéditeur), rien n'empêchait deux liaisons email pour un même
+-- contact, et la résolution en prenait une au hasard.
 create table contact_sender_bindings (
   contact_id uuid not null references contacts(id) on delete cascade,
-  sender_id uuid not null references senders(id) on delete cascade,
+  sender_id uuid not null,
+  sender_kind sender_kind not null,
   bound_at timestamptz not null default now(),
-  primary key (contact_id, sender_id)
+  primary key (contact_id, sender_kind),
+  foreign key (sender_id, sender_kind) references senders(id, kind) on delete cascade
 );
 
 -- ---------------------------------------------------------------------------

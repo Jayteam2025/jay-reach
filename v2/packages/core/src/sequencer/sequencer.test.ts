@@ -91,15 +91,62 @@ describe('attribution des expéditeurs', () => {
   });
 
   it('un contact reçoit toujours du même expéditeur (lien à vie)', () => {
-    const bindings = [{ contactId: 'c1', senderId: 'sA' }];
+    const bindings = [{ contactId: 'c1', senderId: 'sA', kind: 'email' }];
     const r = resolveSender('c1', 'email', senders, bindings);
     expect(r).toMatchObject({ senderId: 'sA', newBinding: false });
   });
 
   it('sender lié devenu inactif → pause, jamais de réattribution silencieuse', () => {
     const inactive: SenderInfo[] = [{ id: 'sA', kind: 'email', isActive: false, usedToday: 0 }, senders[1]!];
-    const r = resolveSender('c1', 'email', inactive, [{ contactId: 'c1', senderId: 'sA' }]);
+    const r = resolveSender('c1', 'email', inactive, [{ contactId: 'c1', senderId: 'sA', kind: 'email' }]);
     expect(r).toMatchObject({ senderId: null, paused: true });
+  });
+
+  // Le lien est à vie POUR UN TYPE d'expéditeur. Une séquence multicanale touche le
+  // même contact par email puis par LinkedIn : le lien email ne doit pas servir de
+  // réponse à une étape LinkedIn, sinon l'action part avec un expéditeur du mauvais
+  // canal. Cas non couvert jusqu'ici — les tests ne prenaient qu'un seul canal.
+  const multicanal: SenderInfo[] = [
+    { id: 'sMail', kind: 'email', isActive: true, usedToday: 10 },
+    { id: 'sLi', kind: 'linkedin', isActive: true, usedToday: 2 },
+  ];
+
+  it('un lien email ne répond pas pour une étape LinkedIn', () => {
+    const r = resolveSender('c1', 'linkedin', multicanal, [
+      { contactId: 'c1', senderId: 'sMail', kind: 'email' },
+    ]);
+    expect(r).toMatchObject({ senderId: 'sLi', newBinding: true, paused: false });
+  });
+
+  it('chaque canal garde son propre lien à vie', () => {
+    const bindings = [
+      { contactId: 'c1', senderId: 'sMail', kind: 'email' },
+      { contactId: 'c1', senderId: 'sLi', kind: 'linkedin' },
+    ];
+    expect(resolveSender('c1', 'email', multicanal, bindings)).toMatchObject({
+      senderId: 'sMail',
+      newBinding: false,
+    });
+    expect(resolveSender('c1', 'linkedin', multicanal, bindings)).toMatchObject({
+      senderId: 'sLi',
+      newBinding: false,
+    });
+  });
+
+  it('un lien LinkedIn inactif ne met en pause que LinkedIn, pas l’email', () => {
+    const liInactif: SenderInfo[] = [
+      { id: 'sMail', kind: 'email', isActive: true, usedToday: 10 },
+      { id: 'sLi', kind: 'linkedin', isActive: false, usedToday: 2 },
+    ];
+    const bindings = [
+      { contactId: 'c1', senderId: 'sMail', kind: 'email' },
+      { contactId: 'c1', senderId: 'sLi', kind: 'linkedin' },
+    ];
+    expect(resolveSender('c1', 'linkedin', liInactif, bindings)).toMatchObject({ paused: true });
+    expect(resolveSender('c1', 'email', liInactif, bindings)).toMatchObject({
+      senderId: 'sMail',
+      paused: false,
+    });
   });
 });
 

@@ -2,7 +2,10 @@
 # Vérifie le schéma T2 sur un vrai Postgres 16 (docker) avec un shim `auth`,
 # puis exécute le test d'isolation inter-organisations.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop l'installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin. Le chemin en dur rendait ce harnais
+# inutilisable pour qui n'a pas Docker Desktop.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_pg_verify
 
@@ -39,6 +42,7 @@ echo "[verify] grants…"; psql < "$DIR/test/pg-verify/grants.sql" >/dev/null ||
 echo "[verify] test d'isolation…"; psql < "$DIR/test/pg-verify/rls-isolation.sql" || { echo "[verify] ISOLATION_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 9; }
 echo "[verify] test invitations…"; psql < "$DIR/test/pg-verify/invitations.sql" || { echo "[verify] INVITATIONS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 10; }
 echo "[verify] test coffre credentials…"; psql < "$DIR/test/pg-verify/credentials.sql" || { echo "[verify] CREDENTIALS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 11; }
+echo "[verify] test liaison expéditeur…"; psql < "$DIR/test/pg-verify/sender-binding.sql" || { echo "[verify] SENDER_BINDING_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 14; }
 echo "[verify] test résolution d'entreprise…"; psql < "$DIR/test/pg-verify/company-resolution.sql" || { echo "[verify] RESOLUTION_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 12; }
 echo "[verify] test exclusion clients…"; psql < "$DIR/test/pg-verify/customer-exclusion.sql" || { echo "[verify] CUSTOMER_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 13; }
 
