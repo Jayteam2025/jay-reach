@@ -4,9 +4,10 @@
  * d'entreprise, recherche + enrichissement de contacts, filtrage recruteurs) ;
  * seule la persistance est réécrite sur le nouveau schéma (cf. enrichment-persist).
  *
- * Le cache legacy (enrichment_cache) pointe sur l'ancien schéma : on branche un
- * adaptateur « no-cache » (toujours un miss) — resolveCompany fait alors l'appel
- * réel sans jamais planter. La dédup (dedupContext) est volontairement omise.
+ * Le cache est adossé à `provider_cache` via l'adaptateur `providerCache`, qui
+ * traduit l'interface Supabase attendue par le moteur en requêtes `pg` et
+ * cloisonne par organisation. Sans lui, chaque entreprise résolue deux fois était
+ * payée deux fois. La dédup (dedupContext) est volontairement omise.
  */
 import {
   resolveCompany,
@@ -15,31 +16,13 @@ import {
   enrichContactsViaFullEnrich,
   pickBestEmailWithSource,
   type ResolvedCompany,
-  type SupabaseLike,
   type FullEnrichContactInput,
   type FullEnrichContactResult,
 } from '@jay-reach/providers/enrichment';
+import type { Pool } from 'pg';
+import { providerCache } from '../provider-cache.js';
 import type { CompanyEnrichment, EnrichedContact } from '../enrichment-persist.js';
 
-/** Adaptateur cache inerte : satisfait SupabaseLike, renvoie toujours un miss. */
-const NO_CACHE: SupabaseLike = {
-  from() {
-    return {
-      select() {
-        return {
-          eq() {
-            return {
-              eq() {
-                return { maybeSingle: async () => ({ data: null, error: null }) };
-              },
-            };
-          },
-        };
-      },
-      upsert: async () => ({ error: null }),
-    };
-  },
-};
 
 export interface EnrichCompanyJob {
   readonly organizationId: string;
@@ -51,8 +34,14 @@ export interface EnrichCompanyJob {
 }
 
 /** Résout l'identité canonique FullEnrich d'une entreprise (domaine, effectif…). */
-export async function runResolveCompany(apiKey: string, job: EnrichCompanyJob): Promise<ResolvedCompany | null> {
-  return resolveCompany(NO_CACHE, apiKey, job.companyName, {
+export async function runResolveCompany(
+  pool: Pool,
+  apiKey: string,
+  job: EnrichCompanyJob,
+): Promise<ResolvedCompany | null> {
+  // Cache lié à l'organisation du job : une organisation ne lit jamais ce qu'une
+  // autre a mis en cache, et n'économise donc que ses propres appels.
+  return resolveCompany(providerCache(pool, job.organizationId), apiKey, job.companyName, {
     ...(job.domain ? { domain: job.domain } : {}),
     ...(job.linkedinUrl ? { linkedin_url: job.linkedinUrl } : {}),
     ...(job.countryCode ? { country_code: job.countryCode } : {}),

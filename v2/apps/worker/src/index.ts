@@ -24,6 +24,7 @@ import { createPool, insertSignals, upsertResolvedAccount, startSourceRun, finis
 import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
 import { enqueueDiscoverForActiveSources, enqueueScoringForOrgs } from './producer.js';
+import { purgeExpiredCache } from './provider-cache.js';
 import { deterministicUuid, currentBucket } from './ids.js';
 
 const WIRED = new Set([
@@ -209,7 +210,7 @@ async function main(): Promise<void> {
       console.warn(`[enrich-company] FullEnrich non configuré pour l’org ${data.organizationId} — job ignoré`);
       return;
     }
-    const resolved = await runResolveCompany(apiKey, data);
+    const resolved = await runResolveCompany(pool, apiKey, data);
     if (!resolved) {
       console.warn(`[enrich-company] entreprise non résolue : ${data.companyName}`);
       return;
@@ -277,6 +278,12 @@ async function main(): Promise<void> {
       const s = await enqueueScoringForOrgs(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
       if (s > 0) {
         console.log(`[producer] scoring enfilé pour ${s} organisation(s)`);
+      }
+      // Le cache provider n'a pas d'éviction propre : sans purge, la table
+      // grossit indéfiniment de lignes que le moteur écarte déjà comme périmées.
+      const purgees = await purgeExpiredCache(pool);
+      if (purgees > 0) {
+        console.log(`[producer] ${purgees} entrée(s) de cache périmée(s) purgée(s)`);
       }
     } catch (err) {
       console.error('[producer] échec', err);
