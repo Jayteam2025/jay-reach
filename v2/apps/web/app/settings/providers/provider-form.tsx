@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { setProviderCredential } from '../../actions/providers';
 import { Icon } from '../../icons';
@@ -22,6 +23,7 @@ export function ProviderForm(props: {
   last4: string | null;
 }) {
   const t = useTranslations();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -44,7 +46,8 @@ export function ProviderForm(props: {
           className="rs-prov-detail"
           onSubmit={(event) => {
             event.preventDefault();
-            const fd = new FormData(event.currentTarget);
+            const form = event.currentTarget;
+            const fd = new FormData(form);
             const secretField = props.fields.find((f) => f.secret);
             const secret = secretField ? String(fd.get(secretField.name) ?? '') : '';
             const config: Record<string, string> = {};
@@ -56,6 +59,10 @@ export function ProviderForm(props: {
             startTransition(async () => {
               const res = await setProviderCredential(props.orgId, props.providerId, secret, config);
               setMessage(res.ok ? t('providers.saved') : res.error);
+              if (res.ok) {
+                form.reset();
+                router.refresh();
+              }
             });
           }}
         >
