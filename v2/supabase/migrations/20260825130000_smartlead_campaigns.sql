@@ -10,6 +10,17 @@
 --
 -- Plusieurs personas peuvent pointer vers la MÊME campagne Smartlead (unicité par
 -- (org, persona), pas par campagne). Multi-tenant (règle CLAUDE.md #5).
+--
+-- POURQUOI `smartlead_campaign_mappings` ET NON `smartlead_campaigns` : le socle
+-- actuel porte déjà une table `public.smartlead_campaigns`, et jusqu'à la bascule
+-- les deux schémas cohabitent sur la même base. La table en place est incompatible
+-- avec celle-ci sur trois points — `workspace_id` NOT NULL référençant `workspaces`,
+-- `persona_id` référençant `icp_personas` (pas `personas`), et une unicité sur
+-- (workspace_id, persona_id). L'y plier aurait demandé de rendre `workspace_id`
+-- nullable et de retirer une clé étrangère, c'est-à-dire d'affaiblir un schéma qui
+-- tourne en production pour arranger celui qui ne tourne pas encore. On prend donc
+-- un nom distinct. Le jour de la bascule, l'ancienne table disparaît avec le reste
+-- du socle et ce nom peut être raccourci dans le commit dédié.
 -- ============================================================================
 
 -- Nettoyage de la première approche (colonne au niveau campagne) : un mapping par
@@ -18,7 +29,7 @@
 alter table public.campaigns
   drop column if exists smartlead_campaign_id;
 
-create table if not exists public.smartlead_campaigns (
+create table if not exists public.smartlead_campaign_mappings (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   persona_id uuid not null references public.personas(id) on delete cascade,
@@ -31,28 +42,28 @@ create table if not exists public.smartlead_campaigns (
 
 -- Un mapping par (organisation, persona) : une persona → une campagne Smartlead.
 -- Deux personas peuvent partager une campagne (aucune contrainte sur campaign_id).
-create unique index if not exists uq_smartlead_campaigns_org_persona
-  on public.smartlead_campaigns (organization_id, persona_id);
-create index if not exists idx_smartlead_campaigns_lookup
-  on public.smartlead_campaigns (organization_id, persona_id) where enabled;
+create unique index if not exists uq_smartlead_campaign_mappings_org_persona
+  on public.smartlead_campaign_mappings (organization_id, persona_id);
+create index if not exists idx_smartlead_campaign_mappings_lookup
+  on public.smartlead_campaign_mappings (organization_id, persona_id) where enabled;
 
-alter table public.smartlead_campaigns enable row level security;
-alter table public.smartlead_campaigns force row level security;
+alter table public.smartlead_campaign_mappings enable row level security;
+alter table public.smartlead_campaign_mappings force row level security;
 
 -- Lecture : tout membre de l'organisation (viewer+).
-drop policy if exists smartlead_campaigns_read on public.smartlead_campaigns;
-create policy smartlead_campaigns_read on public.smartlead_campaigns
+drop policy if exists smartlead_campaign_mappings_read on public.smartlead_campaign_mappings;
+create policy smartlead_campaign_mappings_read on public.smartlead_campaign_mappings
   for select to authenticated
   using (organization_id in (select app.user_orgs('viewer')));
 
 -- Écriture : admin+ (configuration des campagnes, cf. matrice des rôles).
-drop policy if exists smartlead_campaigns_write on public.smartlead_campaigns;
-create policy smartlead_campaigns_write on public.smartlead_campaigns
+drop policy if exists smartlead_campaign_mappings_write on public.smartlead_campaign_mappings;
+create policy smartlead_campaign_mappings_write on public.smartlead_campaign_mappings
   for all to authenticated
   using (organization_id in (select app.user_orgs('admin')))
   with check (organization_id in (select app.user_orgs('admin')));
 
-grant select, insert, update, delete on public.smartlead_campaigns to authenticated, service_role;
+grant select, insert, update, delete on public.smartlead_campaign_mappings to authenticated, service_role;
 
-comment on table public.smartlead_campaigns is
+comment on table public.smartlead_campaign_mappings is
   'Mapping (organisation, persona) → campagne Smartlead pour le canal email. enabled = false suspend l''envoi sans perdre l''identifiant. Plusieurs personas peuvent partager une campagne.';
