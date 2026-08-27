@@ -77,8 +77,8 @@ values (
   'd0000000-0000-4000-8000-0000000000f1',
   'd0000000-0000-4000-8000-000000000001',
   'Ouverture — offre commerciale', 'email', 'fr', 1,
-  'Votre recrutement de {{job_title}}',
-  'Bonjour {{first_name}}, j''ai vu que {{company}} recrute…'
+  'Votre recrutement de {{poste}}',
+  'Bonjour {{prenom}}, j''ai vu que {{entreprise}} recrute…'
 ) on conflict (id) do nothing;
 
 -- Campagne rattachée à la source + une étape email.
