@@ -23,6 +23,10 @@ export function looksLikeJobTitleFragment(name: string | null | undefined): bool
   // Type de contrat n'importe ou (temps plein/partiel)
   if (/\b(temps plein|temps partiel|mi-temps)\b/i.test(lower)) return true;
 
+  // En-tetes de section / phrases de benefices d'offre (jamais un nom d'entreprise).
+  // Cas reel : "Rémunération attractive", "Avantages", "Poste à pourvoir".
+  if (/^(r[ée]mun[ée]ration|salaire|avantages?|package|primes?|mutuelle|t[ée]l[ée]travail|profil\s+recherch[ée]|poste\s+[àa]\s+pourvoir|[àa]\s+pourvoir|description\s+du\s+poste|environnement\s+de\s+travail|comp[ée]tences?\s+(requises?|attendues?)|conditions?\s+(de\s+travail|d['e]emploi)|ce\s+que\s+nous)(?=\s|$|[-.,;:!?])/i.test(s)) return true;
+
   // Debut de paragraphe d'offre type "Vos missions...", "Notre client...", "Vos taches..."
   if (/^(vos|votre|nos|notre|mes)\s+(missions?|tâches|taches|responsabilités|responsabilites|objectifs?|enjeux|defis|défis)\b/i.test(s)) return true;
   // "Notre client" / "Notre partenaire" en debut
