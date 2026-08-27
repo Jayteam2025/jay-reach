@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Vérif hermétique de l'éditeur de campagne (T24) contre jr_dev. Zéro envoi.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_dev; PORT=54329
 if ! "$DOCKER" ps --format '{{.Names}}' 2>/dev/null | grep -q "^$CT$"; then

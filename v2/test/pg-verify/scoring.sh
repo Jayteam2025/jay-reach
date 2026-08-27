@@ -3,7 +3,9 @@
 # PAR SOURCE (sources.config), pré-filtres, auto-apprentissage. Scorer déterministe
 # injecté — aucun appel LLM, aucune donnée réelle.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_dev
 PORT=54329

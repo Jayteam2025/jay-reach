@@ -178,6 +178,11 @@ begin
   if not exists (select 1 from public.senders where organization_id=v_org and identity='elise@atelier-demo.test') then
     insert into public.senders (organization_id, kind, identity, display_name, is_active)
     values (v_org, 'email', 'elise@atelier-demo.test', 'Élise', true);
+    -- Un expéditeur par canal démontré : le tick exige un expéditeur actif du bon
+    -- type pour émettre un envoi, sinon l'inscription part en pause. Sans celui-ci,
+    -- toute étape LinkedIn de la démo se bloquerait sur une base fraîche.
+    insert into public.senders (organization_id, kind, identity, display_name, is_active)
+    values (v_org, 'linkedin', 'elise-demo', 'Élise (LinkedIn)', true);
   end if;
 
   select id into c_alex from public.contacts where organization_id=v_org and email='alex.martin@societe-temoin.test';

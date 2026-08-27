@@ -2,7 +2,9 @@
 # Vérifie la persistance de l'enrichissement (accounts/contacts, nouveau schéma)
 # sur un vrai Postgres 16 (docker), sans toucher l'API FullEnrich.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_enrich_verify
 PORT=55432

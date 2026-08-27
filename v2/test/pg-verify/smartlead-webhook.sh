@@ -2,7 +2,9 @@
 # Vérif hermétique du traitement des webhooks Smartlead (T27) contre jr_dev.
 # Aucune API. Bundle de la logique d'écriture (esbuild) + runner pg.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_dev; PORT=54329
 if ! "$DOCKER" ps --format '{{.Names}}' 2>/dev/null | grep -q "^$CT$"; then

@@ -2,7 +2,9 @@
 # Vérifie que l'écriture en base (résolution d'entreprise) fonctionne contre le
 # nouveau schéma réel : applique les migrations puis exécute le test tsx.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 CT=jr_persist
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
