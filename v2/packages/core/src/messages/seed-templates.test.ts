@@ -15,6 +15,8 @@ describe('seed.sql — les templates n’utilisent que des variables standard', 
   it('aucun jeton {{...}} inconnu (sinon la campagne de démo bloque au rendu)', () => {
     const seed = readFileSync(seedPath, 'utf8');
     const names = [...new Set(parseTemplateTokens(seed).map((t) => t.name))];
+    // Sans ça, un seed sans template rendrait le test vert en ne vérifiant rien.
+    expect(names.length, 'aucun jeton trouvé dans seed.sql : le test ne vérifie plus rien').toBeGreaterThan(0);
     const unknown = names.filter((n) => STANDARD_VARIABLES[n] === undefined);
     expect(unknown, `jetons inconnus dans seed.sql : ${unknown.join(', ')}`).toEqual([]);
   });
