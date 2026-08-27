@@ -18,6 +18,7 @@ import {
   type TickStep,
 } from '@jay-reach/core';
 import { shouldPushToSmartlead } from '@jay-reach/providers/email-validation';
+import { loadDomainPatterns, domainOf, type DomainPattern } from '../domain-patterns.js';
 import type { DispatchJob } from './dispatch.js';
 
 /** Statut de délivrabilité stocké sur le contact (enum `email_status`). */
@@ -265,6 +266,18 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   const sendersParOrg = await loadSenders(pool, [...new Set(due.rows.map((r) => r.organization_id))]);
   const bindings = await loadBindings(pool, [...new Set(due.rows.map((r) => r.contact_id))]);
 
+  // Patterns de domaine, pour que le gate puisse juger un email non explicitement
+  // délivrable. Chargés par organisation : un pattern déduit chez l'une ne dit
+  // rien des envois de l'autre.
+  const patternsParOrg = new Map<string, Map<string, DomainPattern>>();
+  for (const org of new Set(due.rows.map((r) => r.organization_id))) {
+    const domaines = due.rows
+      .filter((r) => r.organization_id === org)
+      .map((r) => domainOf(r.email))
+      .filter((d): d is string => d !== null);
+    patternsParOrg.set(org, await loadDomainPatterns(pool, org, domaines));
+  }
+
   for (const row of due.rows) {
     const stepsRes = await pool.query<StepRow>(
       `select id, channel, delay_hours, template_parent_id
@@ -455,7 +468,11 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           deliverability_reason: null,
           first_name: row.first_name ?? '',
           last_name: row.last_name ?? '',
-          domain_pattern: null,
+          // Le pattern du domaine, quand on en a un. C'est lui qui permet au gate
+          // de laisser passer un email `risky` — un CATCH_ALL, par exemple — sur
+          // un domaine dont on connaît la convention d'adresse. Codé à `null`
+          // jusqu'ici, ce qui condamnait ces contacts sans les compter.
+          domain_pattern: patternsParOrg.get(row.organization_id)?.get(domainOf(row.email) ?? '') ?? null,
         });
         if (gate.allow) {
           jobs.push({

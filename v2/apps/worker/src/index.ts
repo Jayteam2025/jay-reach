@@ -26,6 +26,7 @@ import { resolveProviderCredentials } from './credentials.js';
 import { enqueueDiscoverForActiveSources, enqueueScoringForOrgs } from './producer.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
+import { refreshDomainPatterns, domainOf } from './domain-patterns.js';
 import { deterministicUuid, currentBucket } from './ids.js';
 
 const WIRED = new Set([
@@ -269,6 +270,15 @@ async function main(): Promise<void> {
       if (id) {
         saved += 1;
       }
+    }
+
+    // De nouvelles adresses viennent d'arriver : le pattern de leur domaine a pu
+    // changer de tier. Sans ce recalcul, le gate n'a rien à lire et bloque tout
+    // email qui n'est pas explicitement délivrable.
+    const domaines = contacts.map((c) => domainOf(c.email));
+    const patterns = await refreshDomainPatterns(pool, data.organizationId, domaines);
+    if (patterns > 0) {
+      console.log(`[enrich-contacts] ${patterns} pattern(s) de domaine recalculé(s)`);
     }
     console.log(`[enrich-contacts] ${data.companyName} → ${saved} contact(s) avec email persisté(s)`);
   });
