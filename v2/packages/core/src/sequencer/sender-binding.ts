@@ -13,6 +13,12 @@ export interface SenderInfo {
 export interface Binding {
   readonly contactId: string;
   readonly senderId: string;
+  /**
+   * Type de l'expéditeur lié. Le lien vaut POUR UN CANAL : une séquence
+   * multicanale touche le même contact par email puis par LinkedIn, et le lien
+   * email ne doit pas répondre pour une étape LinkedIn.
+   */
+  readonly kind: string;
 }
 
 export interface SenderResolution {
@@ -28,7 +34,9 @@ export function resolveSender(
   senders: readonly SenderInfo[],
   bindings: readonly Binding[],
 ): SenderResolution {
-  const existing = bindings.find((b) => b.contactId === contactId);
+  // Le lien recherché est celui de CE canal : un contact peut être lié à un
+  // expéditeur email et à un expéditeur LinkedIn, chacun à vie de son côté.
+  const existing = bindings.find((b) => b.contactId === contactId && b.kind === kind);
   if (existing) {
     const bound = senders.find((s) => s.id === existing.senderId);
     if (bound && bound.isActive) {

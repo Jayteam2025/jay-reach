@@ -249,6 +249,33 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Liaison expéditeur : un lien par contact ou un lien par canal ? [2026-08-27]
+
+**Question.** Deux endroits de la documentation se contredisent. `docs/04-sequenceur.md` §
+« Attribution des expéditeurs » dit que l'attribution retient « le sender actif **du bon type** »,
+donc raisonne par canal. `docs/02-data-model.md` décrivait `contact_sender_bindings` avec une clé
+`(contact_id, sender_id)`, qui autorise plusieurs liens par contact sans dire lequel vaut. Le code
+tranchait implicitement : `resolveSender` prenait le premier lien du contact, sans regarder le type.
+
+Conséquence concrète, démontrée par un test avant correction : un contact lié à un expéditeur email,
+puis atteint par une étape LinkedIn, se voyait attribuer l'expéditeur **email** pour son action
+LinkedIn. Le v2 étant multicanal par construction, ce cas est certain.
+
+**Décision prise.** Le lien vaut à vie **pour un canal**. `contact_sender_bindings` porte désormais
+`sender_kind`, sa clé primaire devient `(contact_id, sender_kind)`, et une clé étrangère composite
+vers `senders(id, kind)` empêche d'enregistrer un type qui ne serait pas celui de l'expéditeur
+pointé. `resolveSender` cherche le lien de ce canal. C'est l'option conservatrice : elle respecte le
+« du bon type » de la spec du séquenceur, et elle rend impossible ce que l'ancienne clé permettait —
+deux liens email pour un même contact, départagés au hasard.
+
+**Impact si l'arbitrage humain diffère.** Si la cible est bien un seul expéditeur par contact tous
+canaux confondus, il faut revenir à une clé sur `contact_id` seul et retirer le filtre par type dans
+`resolveSender` — mais alors la phrase « du bon type » de `docs/04` n'a plus de sens, puisqu'un
+contact lié à un expéditeur email n'aurait aucun moyen d'être touché sur LinkedIn.
+
+**Documentation.** `docs/02-data-model.md` est corrigé pour refléter la clé retenue. Aucune donnée à
+reprendre : la table est vide, aucune migration du v2 n'a encore été appliquée nulle part.
+
 ## Résolu — Collision de schéma `smartlead_campaigns` avec le socle actuel [2026-08-27]
 
 **Question.** Les migrations du v2 s'appliquent désormais sur la même base Postgres que le socle

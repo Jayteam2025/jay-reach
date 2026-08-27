@@ -174,7 +174,7 @@ Les ouvertures sont enregistrées mais **ne déclenchent jamais de branchement**
 
 **senders** — `organization_id`, `kind` (`email`|`linkedin`|`postal`), `provider_id`, `identity`, `display_name`, `daily_quota`, `hourly_quota`, `warmup_stage`, `timezone`, `business_hours` (jsonb), `is_active`
 
-**contact_sender_bindings** — `contact_id`, `sender_id`, `bound_at`
+**contact_sender_bindings** — `contact_id`, `sender_id`, `sender_kind`, `bound_at`. Clé primaire `(contact_id, sender_kind)` : le lien à vie vaut par canal, une séquence multicanale attribuant un expéditeur email ET un expéditeur LinkedIn au même contact.
 
 Un contact reste attaché au même expéditeur pour toute sa vie. Changer d'expéditeur en cours de séquence casse le fil de discussion et fait arriver la relance d'un inconnu.
 

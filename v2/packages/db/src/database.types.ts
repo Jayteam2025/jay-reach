@@ -321,16 +321,19 @@ export type Database = {
           bound_at: string
           contact_id: string
           sender_id: string
+          sender_kind: Database["public"]["Enums"]["sender_kind"]
         }
         Insert: {
           bound_at?: string
           contact_id: string
           sender_id: string
+          sender_kind: Database["public"]["Enums"]["sender_kind"]
         }
         Update: {
           bound_at?: string
           contact_id?: string
           sender_id?: string
+          sender_kind?: Database["public"]["Enums"]["sender_kind"]
         }
         Relationships: [
           {
@@ -341,11 +344,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "contact_sender_bindings_sender_id_fkey"
-            columns: ["sender_id"]
+            foreignKeyName: "contact_sender_bindings_sender_id_sender_kind_fkey"
+            columns: ["sender_id", "sender_kind"]
             isOneToOne: false
             referencedRelation: "senders"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "kind"]
           },
         ]
       }
