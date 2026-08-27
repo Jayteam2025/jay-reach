@@ -184,7 +184,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
        left join personas p on p.id = c.persona_id
        left join signals sig on sig.id = e.signal_id
        left join lists lst on lst.id = camp.list_id
-       left join smartlead_campaigns sc
+       left join smartlead_campaign_mappings sc
               on sc.organization_id = e.organization_id
              and sc.persona_id = c.persona_id
              and sc.enabled
@@ -324,7 +324,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     }
 
     // Envoi email autorisé → job de dispatch Smartlead. La campagne est résolue
-    // PAR PERSONA du contact (mapping `smartlead_campaigns` activé). Sans mapping
+    // PAR PERSONA du contact (mapping `smartlead_campaign_mappings` activé). Sans mapping
     // activé pour la persona, l'action reste planifiée mais n'est pas dispatchée :
     // on ne pousse jamais vers une campagne inconnue.
     if (result.dispatch && result.action && result.action.channel === 'email') {

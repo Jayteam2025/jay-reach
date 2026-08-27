@@ -249,6 +249,33 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Résolu — Collision de schéma `smartlead_campaigns` avec le socle actuel [2026-08-27]
+
+**Question.** Les migrations du v2 s'appliquent désormais sur la même base Postgres que le socle
+actuel, jusqu'à la bascule. Or `public.smartlead_campaigns` existe déjà des deux côtés, avec des
+formes incompatibles : côté socle, `workspace_id` NOT NULL référençant `workspaces`, `persona_id`
+référençant `icp_personas` et non `personas`, et une unicité sur `(workspace_id, persona_id)`. Le
+`create table if not exists` du v2 devient alors un no-op silencieux, et la suite de la migration
+casse sur une colonne `organization_id` absente.
+
+**Décision prise.** La table du v2 s'appelle `smartlead_campaign_mappings`. L'alternative —
+rendre `workspace_id` nullable et retirer la clé étrangère vers `icp_personas` — revenait à
+affaiblir un schéma qui tourne en production pour arranger celui qui ne tourne pas encore, et
+aurait laissé le v2 insérer des lignes que le socle actuel considère comme invalides. Le coût du
+renommage est faible : la migration, deux lignes dans `sequence.ts` et le harnais `sequence-tick`.
+
+**Impact si l'arbitrage humain diffère.** Le nom peut être raccourci en `smartlead_campaigns`
+dans le commit de bascule, quand l'ancien socle disparaît. Aucune donnée à reprendre : la table
+du v2 est vide jusqu'au premier mapping.
+
+**Garde posée.** `packages/db/src/schema-collisions.test.ts` croise les objets `public` créés par
+les deux jeux de migrations et échoue sur toute collision non déclarée. Deux collisions restent,
+assumées et documentées dans le test : `recruitment_agencies_blacklist` (le v2 ajoute
+`organization_id` en place, les entrées du socle deviennent globales) et `normalize_agency_name`
+(`create or replace` sur un corps équivalent). Le test tient compte des suppressions — une table
+créée par le socle puis retirée, comme `extension_tokens`, n'entre en collision avec rien — et se
+met en sommeil le jour où le dossier legacy disparaît.
+
 ## Résolu — Coffre credentials : pgcrypto introuvable sur Supabase hébergé [2026-08-26]
 
 Découvert pendant la config des clés du run réel : l'écran Fournisseurs renvoyait `function pgp_sym_encrypt(text, text) does not exist` à chaque enregistrement.

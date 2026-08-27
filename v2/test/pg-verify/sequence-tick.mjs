@@ -63,7 +63,7 @@ async function main() {
   await q(`delete from linkedin_action_queue where organization_id=$1`, [ORG]);
   await q(`delete from suppressions where organization_id=$1`, [ORG]);
   await q(`delete from message_templates where organization_id=$1`, [ORG]);
-  await q(`delete from smartlead_campaigns where organization_id=$1`, [ORG]);
+  await q(`delete from smartlead_campaign_mappings where organization_id=$1`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
   await q(`delete from contacts where organization_id=$1 and email like '%@example.test'`, [ORG]);
   await q(`delete from personas where organization_id=$1 and name like 'SEQ %'`, [ORG]);
@@ -143,7 +143,7 @@ async function main() {
 
   // Mapping activé (persona → campagne Smartlead SL-EMAIL-77).
   await q(
-    `insert into smartlead_campaigns (organization_id, persona_id, campaign_id, campaign_name, enabled)
+    `insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, campaign_name, enabled)
      values ($1,$2,'SL-EMAIL-77','Prospection Directeurs',true)`,
     [ORG, persona],
   );
@@ -178,7 +178,7 @@ async function main() {
   );
 
   // Mapping désactivé (enabled=false) : suspension sans perte d'identifiant.
-  await q(`update smartlead_campaigns set enabled=false where organization_id=$1 and persona_id=$2`, [ORG, persona]);
+  await q(`update smartlead_campaign_mappings set enabled=false where organization_id=$1 and persona_id=$2`, [ORG, persona]);
   const cm2 = await mkMailContact('off');
   await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cm2 });
   const jobsM2 = (await tickDueEnrollments(pool, new Date(Date.now() + 11000))).filter(
@@ -186,7 +186,7 @@ async function main() {
   );
   check('mapping désactivé → aucun envoi dispatché (action planifiée)', jobsM2.length === 0);
   const stillMapped = (
-    await q(`select campaign_id from smartlead_campaigns where organization_id=$1 and persona_id=$2`, [ORG, persona])
+    await q(`select campaign_id from smartlead_campaign_mappings where organization_id=$1 and persona_id=$2`, [ORG, persona])
   ).rows[0];
   check('identifiant Smartlead conservé malgré la suspension', stillMapped?.campaign_id === 'SL-EMAIL-77');
 
