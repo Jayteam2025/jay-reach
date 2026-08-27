@@ -2,7 +2,9 @@
 # Vérifie le pont de résolution des credentials du worker (coffre + config +
 # repli env) sur un vrai Postgres 16 (docker), port publié pour un client node.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_cred_bridge
 PORT=55432

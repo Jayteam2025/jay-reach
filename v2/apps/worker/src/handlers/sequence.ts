@@ -8,7 +8,15 @@
  * qui les enfile dans `linkedin_action_queue` (exécutée par l'extension, pacing serveur).
  */
 import type { Pool } from 'pg';
-import { composeTick, renderTemplate, type TickChannel, type TickStep } from '@jay-reach/core';
+import {
+  composeTick,
+  renderTemplate,
+  resolveSender,
+  type Binding,
+  type SenderInfo,
+  type TickChannel,
+  type TickStep,
+} from '@jay-reach/core';
 import { shouldPushToSmartlead } from '@jay-reach/providers/email-validation';
 import type { DispatchJob } from './dispatch.js';
 
@@ -150,6 +158,62 @@ function isLinkedIn(channel: TickChannel): boolean {
   return channel === 'linkedin_invite' || channel === 'linkedin_message';
 }
 
+/**
+ * Type d'expéditeur requis par un canal, ou null quand le canal n'en consomme
+ * aucun. Une étape `call` n'envoie rien (CLAUDE.md #8) : ni expéditeur, ni quota.
+ */
+function senderKindFor(channel: TickChannel): 'email' | 'linkedin' | 'postal' | null {
+  if (channel === 'email') return 'email';
+  if (isLinkedIn(channel)) return 'linkedin';
+  if (channel === 'letter') return 'postal';
+  return null;
+}
+
+/**
+ * Expéditeurs actifs d'un ensemble d'organisations, avec leur consommation du
+ * jour — celle qui départage à la première attribution (docs/04 : « le sender
+ * actif du bon type ayant la plus faible consommation de quota du jour »).
+ *
+ * Chargé en une requête pour tout le lot : le tick traite jusqu'à 200
+ * inscriptions, une requête par inscription serait 200 allers-retours.
+ */
+async function loadSenders(pool: Pool, organizationIds: string[]): Promise<Map<string, SenderInfo[]>> {
+  const parOrg = new Map<string, SenderInfo[]>();
+  if (organizationIds.length === 0) return parOrg;
+  const res = await pool.query<{
+    organization_id: string;
+    id: string;
+    kind: string;
+    is_active: boolean;
+    used_today: number;
+  }>(
+    `select s.id, s.organization_id, s.kind, s.is_active,
+            (select count(*)::int from actions act
+              where act.sender_id = s.id
+                and act.created_at >= date_trunc('day', now())) as used_today
+       from senders s
+      where s.organization_id = any($1::uuid[])`,
+    [organizationIds],
+  );
+  for (const r of res.rows) {
+    const liste = parOrg.get(r.organization_id) ?? [];
+    liste.push({ id: r.id, kind: r.kind, isActive: r.is_active, usedToday: r.used_today });
+    parOrg.set(r.organization_id, liste);
+  }
+  return parOrg;
+}
+
+/** Liens contact ↔ expéditeur déjà établis, pour les contacts de ce lot. */
+async function loadBindings(pool: Pool, contactIds: string[]): Promise<Binding[]> {
+  if (contactIds.length === 0) return [];
+  const res = await pool.query<{ contact_id: string; sender_id: string; sender_kind: string }>(
+    `select contact_id, sender_id, sender_kind
+       from contact_sender_bindings where contact_id = any($1::uuid[])`,
+    [contactIds],
+  );
+  return res.rows.map((r) => ({ contactId: r.contact_id, senderId: r.sender_id, kind: r.sender_kind }));
+}
+
 /** La politique d'approbation de la campagne exige-t-elle ce canal ? */
 function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean {
   if (!policy || typeof policy !== 'object') return false;
@@ -196,6 +260,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   );
 
   const jobs: DispatchJob[] = [];
+
+  // Expéditeurs et liens déjà établis, chargés une fois pour tout le lot.
+  const sendersParOrg = await loadSenders(pool, [...new Set(due.rows.map((r) => r.organization_id))]);
+  const bindings = await loadBindings(pool, [...new Set(due.rows.map((r) => r.contact_id))]);
 
   for (const row of due.rows) {
     const stepsRes = await pool.query<StepRow>(
@@ -249,6 +317,39 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       missingLocale,
     });
 
+    // Attribution de l'expéditeur (docs/04), UNIQUEMENT quand un envoi va vraiment
+    // avoir lieu. Une action bloquée (suppression, variable manquante) ou en attente
+    // d'approbation ne consomme pas d'expéditeur : exiger un expéditeur pour elle
+    // mettrait l'inscription en pause au lieu de produire le blocage attendu.
+    // Le lien est à vie par canal — sinon la relance arrive d'un inconnu et le fil
+    // de discussion est cassé.
+    let senderId: string | null = null;
+    let nouveauLien = false;
+    const kind = result.dispatch && result.action ? senderKindFor(result.action.channel) : null;
+    if (kind) {
+      const resolution = resolveSender(
+        row.contact_id,
+        kind,
+        sendersParOrg.get(row.organization_id) ?? [],
+        bindings,
+      );
+      if (resolution.paused) {
+        // Expéditeur lié devenu inactif, ou aucun disponible : pause avec un motif
+        // lisible, jamais de réattribution silencieuse. L'inscription reprendra
+        // quand un expéditeur du bon type sera de nouveau actif.
+        await pool.query(
+          `update enrollments set status = 'paused', next_action_at = null,
+                                  stop_reason = coalesce(stop_reason, $2)
+            where id = $1 and status = 'active'`,
+          [row.id, `sender_unavailable:${kind}`],
+        );
+        console.warn(`[tick] inscription ${row.id} en pause : aucun expéditeur ${kind} disponible`);
+        continue;
+      }
+      senderId = resolution.senderId;
+      nouveauLien = resolution.newBinding;
+    }
+
     // Insertion idempotente de l'action (si présente). L'avancement de
     // l'inscription n'a lieu QUE si l'action est réellement insérée (rejeu sûr).
     let inserted = true;
@@ -263,8 +364,8 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (a.blockReason === 'missing_variable') payload.missingVariables = unresolvedVariables;
       const ins = await pool.query<{ id: string }>(
         `insert into actions
-           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, payload, idempotency_key, template_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, payload, idempotency_key, template_id, sender_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
          on conflict (idempotency_key) do nothing
          returning id`,
         [
@@ -278,9 +379,23 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           JSON.stringify(payload),
           a.idempotencyKey,
           templateId,
+          senderId,
         ],
       );
       inserted = (ins.rowCount ?? 0) > 0;
+
+      // Le lien n'est écrit qu'une fois l'action réellement insérée : sur un rejeu,
+      // l'action existe déjà et il ne faut surtout pas relier le contact à un autre
+      // expéditeur. `on conflict do nothing` rend l'écriture idempotente et laisse
+      // gagner le premier lien en cas de tick concurrent.
+      if (inserted && nouveauLien && senderId && kind) {
+        await pool.query(
+          `insert into contact_sender_bindings (contact_id, sender_id, sender_kind)
+           values ($1, $2, $3)
+           on conflict (contact_id, sender_kind) do nothing`,
+          [row.contact_id, senderId, kind],
+        );
+      }
     }
 
     if (!inserted) {

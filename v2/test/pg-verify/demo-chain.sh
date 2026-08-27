@@ -2,7 +2,9 @@
 # Démo : applique le schéma sur un vrai Postgres, exécute la mini-chaîne
 # (résolution réelle + écriture) et affiche les lignes écrites.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 CT=jr_demo
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 

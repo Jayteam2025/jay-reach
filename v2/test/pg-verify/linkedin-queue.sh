@@ -3,7 +3,9 @@
 # locale (jr_dev). Bundle le module de file (apps/web/lib/linkedin/queue.ts) puis
 # exécute le scénario de pacing sur des données fictives. Aucun envoi réel.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_dev
 PORT=54329

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Vérifie le runtime pg-boss contre un vrai Postgres 16 (docker, port publié).
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 CT=jr_pgboss_verify
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 

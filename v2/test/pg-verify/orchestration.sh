@@ -2,7 +2,9 @@
 # Vérifie l'orchestration du worker (producteur + chaînage + source_runs) sur un
 # vrai Postgres 16 (docker), de façon hermétique (aucune API externe).
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_orch_verify
 PORT=55432

@@ -3,7 +3,9 @@
 # la base locale (jr_dev). Bundle le handler de dispatch puis vérifie qu'un job
 # de canal LinkedIn enfile l'action (sans aucun envoi). Données fictives.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_dev
 PORT=54329

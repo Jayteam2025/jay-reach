@@ -2,7 +2,9 @@
 # Démarre le worker construit (moteur branché) contre un vrai Postgres et
 # vérifie qu'il boot (déclare ses files) puis s'arrête proprement.
 set -uo pipefail
-DOCKER=/usr/local/bin/docker
+# Chemin résolu, pas figé : Docker Desktop installe dans /usr/local/bin, Colima
+# et Homebrew dans /opt/homebrew/bin.
+DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 CT=jr_worker_boot
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
