@@ -23,9 +23,16 @@ export function looksLikeJobTitleFragment(name: string | null | undefined): bool
   // Type de contrat n'importe ou (temps plein/partiel)
   if (/\b(temps plein|temps partiel|mi-temps)\b/i.test(lower)) return true;
 
-  // En-tetes de section / phrases de benefices d'offre (jamais un nom d'entreprise).
-  // Cas reel : "Rémunération attractive", "Avantages", "Poste à pourvoir".
-  if (/^(r[ée]mun[ée]ration|salaire|avantages?|package|primes?|mutuelle|t[ée]l[ée]travail|profil\s+recherch[ée]|poste\s+[àa]\s+pourvoir|[àa]\s+pourvoir|description\s+du\s+poste|environnement\s+de\s+travail|comp[ée]tences?\s+(requises?|attendues?)|conditions?\s+(de\s+travail|d['e]emploi)|ce\s+que\s+nous)(?=\s|$|[-.,;:!?])/i.test(s)) return true;
+  // En-tetes de section / phrases de benefices d'offre : termes qui ne sont
+  // JAMAIS un debut de raison sociale, ancres en debut de chaine.
+  // Cas reel : "Rémunération attractive", "Salaire selon profil", "Poste à pourvoir".
+  // (l'apostrophe couvre droite ' ET typographique ’ — France Travail utilise la 2e)
+  if (/^(r[ée]mun[ée]ration|salaire|profil\s+recherch[ée]|poste\s+[àa]\s+pourvoir|[àa]\s+pourvoir|description\s+du\s+poste|environnement\s+de\s+travail|comp[ée]tences?\s+(requises?|attendues?)|conditions?\s+(de\s+travail|d['’]emploi)|ce\s+que\s+nous)(?=\s|$|[-.,;:!?])/i.test(s)) return true;
+
+  // Termes generiques qui commencent de VRAIES raisons sociales ("Mutuelle
+  // Générale", "Avantages Services", "Package Solutions", "Prime Immobilier") :
+  // on ne rejette que lorsqu'ils constituent le nom ENTIER (en-tete d'offre seul).
+  if (/^(mutuelles?|avantages?|packages?|primes?|t[ée]l[ée]travail)\s*[:.,;!?]*$/i.test(s)) return true;
 
   // Debut de paragraphe d'offre type "Vos missions...", "Notre client...", "Vos taches..."
   if (/^(vos|votre|nos|notre|mes)\s+(missions?|tâches|taches|responsabilités|responsabilites|objectifs?|enjeux|defis|défis)\b/i.test(s)) return true;
