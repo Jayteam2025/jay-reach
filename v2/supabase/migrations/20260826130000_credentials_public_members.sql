@@ -14,8 +14,13 @@
 -- secret pour l'accès direct).
 -- ============================================================================
 
+-- `security_barrier = true` : la vue étant en definer (elle contourne la RLS de
+-- `credentials`), le filtre `where organization_id in (app.user_orgs())` est la
+-- seule protection. Sans barrière, le planificateur pourrait pousser un prédicat
+-- appelant (opérateur « leaky ») sous ce filtre et exposer des lignes d'autres
+-- organisations. La barrière l'interdit.
 create or replace view public.credentials_public
-  with (security_invoker = false) as
+  with (security_invoker = false, security_barrier = true) as
   select id, organization_id, provider_id, config, status, last4, last_checked_at, updated_at
   from public.credentials
   where organization_id in (select app.user_orgs());

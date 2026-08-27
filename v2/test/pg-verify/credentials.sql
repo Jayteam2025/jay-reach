@@ -40,7 +40,7 @@ end $$;
 do $$
 begin
   if (select last4 from public.credentials
-      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') <> 'ABCD' then
+      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') is distinct from 'ABCD' then
     raise exception 'FAIL vault-last4';
   end if;
   if (select position('sk-secret-ABCD'::bytea in secret) <> 0 from public.credentials
@@ -76,10 +76,29 @@ end $$;
 do $$
 begin
   if (select last4 from public.credentials_public
-      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') <> 'ABCD' then
+      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') is distinct from 'ABCD' then
     raise exception 'FAIL vault-view : le viewer ne voit pas la vue publique';
   end if;
   raise notice 'OK vault-public-view (viewer voit last4/statut, jamais le secret)';
+end $$;
+
+-- ASSERT 6 : cloisonnement — un membre d'une AUTRE organisation ne voit RIEN
+-- dans la vue publique pour org-vault (nouveau contrat de la vue definer).
+reset role;
+insert into auth.users(id, email) values
+  ('88888888-8888-8888-8888-888888888888', 'other@vault.test')
+on conflict do nothing;
+set role authenticated;
+select set_config('test.user_id', '88888888-8888-8888-8888-888888888888', false);
+-- ce user devient owner de org-other, et n'est membre QUE de org-other
+select app.create_organization('Org Other', 'org-other');
+do $$
+begin
+  if (select count(*) from public.credentials_public
+      where organization_id = current_setting('test.orgv')::uuid) <> 0 then
+    raise exception 'FAIL vault-view-tenant : un membre d''une autre org voit les credentials de org-vault';
+  end if;
+  raise notice 'OK vault-view-tenant (cloisonnement multi-org respecté)';
 end $$;
 
 reset role;
