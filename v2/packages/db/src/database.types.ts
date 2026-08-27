@@ -2110,7 +2110,7 @@ export const Constants = {
       ],
       contact_status: ["active", "left_company", "do_not_contact"],
       customer_list_source: ["csv", "crm_sync"],
-      email_status: ["unknown", "valid", "risky", "invalid"],
+      email_status: ["unknown", "valid", "risky", "invalid", "disposable", "role"],
       enrollment_status: [
         "active",
         "paused",

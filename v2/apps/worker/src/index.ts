@@ -25,6 +25,7 @@ import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-p
 import { resolveProviderCredentials } from './credentials.js';
 import { enqueueDiscoverForActiveSources, enqueueScoringForOrgs } from './producer.js';
 import { purgeExpiredCache } from './provider-cache.js';
+import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
 import { deterministicUuid, currentBucket } from './ids.js';
 
 const WIRED = new Set([
@@ -39,6 +40,7 @@ const WIRED = new Set([
 ]);
 const SMARTLEAD_PROVIDER = 'smartlead';
 const FULLENRICH_PROVIDER = 'fullenrich';
+const REOON_PROVIDER = 'reoon';
 const ANTHROPIC_PROVIDER = 'anthropic';
 // Fréquence du producteur (met les sources actives en file). Défaut : 15 min.
 const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 15 * 60 * 1000);
@@ -245,9 +247,25 @@ async function main(): Promise<void> {
       return;
     }
     const contacts = await runFindContacts(apiKey, data);
+
+    // Vérification de délivrabilité : sans elle, `email_status` ne vient que du
+    // statut déclaré par FullEnrich, et le gate — qui n'accepte qu'un `valid`
+    // explicite — bloque tout le reste. Absence de clé, plafond atteint ou panne
+    // donnent `unknown`, jamais une exception.
+    const reoon = await resolveProviderCredentials(pool, data.organizationId, REOON_PROVIDER, { encryptionKey });
+    const reoonKey = reoon?.api_key ?? null;
+    const capConfigure = Number(reoon?.daily_cap);
+    const plafond = Number.isFinite(capConfigure) && capConfigure > 0 ? capConfigure : PLAFOND_REOON_PAR_DEFAUT;
+    if (!reoonKey) {
+      console.warn(`[enrich-contacts] Reoon non configuré pour l’org ${data.organizationId} — emails non vérifiés`);
+    }
+
     let saved = 0;
     for (const c of contacts) {
-      const id = await persistEnrichedContact(pool, data.organizationId, data.accountId, c);
+      const verifie = c.email
+        ? await verifyDeliverability(pool, data.organizationId, c.email, reoonKey, plafond)
+        : null;
+      const id = await persistEnrichedContact(pool, data.organizationId, data.accountId, c, verifie);
       if (id) {
         saved += 1;
       }
