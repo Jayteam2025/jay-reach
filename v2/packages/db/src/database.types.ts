@@ -685,7 +685,7 @@ export type Database = {
           label: string | null
           last_used_at: string | null
           organization_id: string
-          token: string
+          token_hash: string
           user_id: string
         }
         Insert: {
@@ -694,7 +694,7 @@ export type Database = {
           label?: string | null
           last_used_at?: string | null
           organization_id: string
-          token: string
+          token_hash: string
           user_id: string
         }
         Update: {
@@ -703,7 +703,7 @@ export type Database = {
           label?: string | null
           last_used_at?: string | null
           organization_id?: string
-          token?: string
+          token_hash?: string
           user_id?: string
         }
         Relationships: [
