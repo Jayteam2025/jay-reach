@@ -28,6 +28,7 @@ import {
   attachSignalsToAccount,
   startSourceRun,
   finishSourceRun,
+  closeStaleSourceRuns,
 } from './db.js';
 import {
   persistCompanyEnrichment,
@@ -384,6 +385,13 @@ async function main(): Promise<void> {
       const purgees = await purgeExpiredCache(pool);
       if (purgees > 0) {
         console.log(`[producer] ${purgees} entrée(s) de cache périmée(s) purgée(s)`);
+      }
+      // Une exécution laissée `running` par un worker arrêté en plein travail ne
+      // se referme jamais toute seule : l'écran Sources afficherait « en cours »
+      // indéfiniment sur une collecte qui n'existe plus.
+      const orphelines = await closeStaleSourceRuns(pool);
+      if (orphelines > 0) {
+        console.warn(`[producer] ${orphelines} collecte(s) interrompue(s) refermée(s)`);
       }
     } catch (err) {
       console.error('[producer] échec', err);
