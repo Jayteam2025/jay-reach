@@ -598,6 +598,9 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     // Insertion idempotente de l'action (si présente). L'avancement de
     // l'inscription n'a lieu QUE si l'action est réellement insérée (rejeu sûr).
     let inserted = true;
+    // Identifiant de l'action emise, transmis au dispatch pour qu'il puisse la
+    // marquer partie et enregistrer son resultat.
+    let actionId: string | null = null;
     if (result.action) {
       const a = result.action;
       const payload: Record<string, unknown> = isLinkedIn(a.channel)
@@ -632,6 +635,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         ],
       );
       inserted = (ins.rowCount ?? 0) > 0;
+      actionId = ins.rows[0]?.id ?? null;
 
       // Le lien n'est écrit qu'une fois l'action réellement insérée : sur un rejeu,
       // l'action existe déjà et il ne faut surtout pas relier le contact à un autre
@@ -686,8 +690,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       jobs.push({
         organizationId: row.organization_id,
         channel,
+        actionId,
         linkedin: {
           linkedinUrl: row.linkedin_url as string,
+          actionId,
           contactId: row.contact_id,
           signalId: row.signal_id,
           messageBody,

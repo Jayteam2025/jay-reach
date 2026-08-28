@@ -170,6 +170,8 @@ export interface LinkedInActionJob {
   readonly signalId?: string | null;
   readonly messageBody?: string | null;
   readonly method?: 'extension_auto' | 'manual';
+  /** Action du sequenceur a l'origine : sert a la marquer partie une fois envoyee. */
+  readonly actionId?: string | null;
 }
 
 /**
@@ -182,8 +184,8 @@ export interface LinkedInActionJob {
 export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob): Promise<string | null> {
   const res = await pool.query<{ id: string }>(
     `insert into linkedin_action_queue
-       (organization_id, contact_id, signal_id, linkedin_url, kind, message_body, method)
-     select $1, $2, $3, $4, $5, $6, $7
+       (organization_id, contact_id, signal_id, linkedin_url, kind, message_body, method, action_id)
+     select $1, $2, $3, $4, $5, $6, $7, $8
      where not exists (
        select 1 from linkedin_action_queue q
        where q.contact_id = $2 and q.kind = $5
@@ -199,6 +201,7 @@ export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob):
       job.kind,
       job.messageBody ?? null,
       job.method ?? 'extension_auto',
+      job.actionId ?? null,
     ],
   );
   return res.rows[0]?.id ?? null;
