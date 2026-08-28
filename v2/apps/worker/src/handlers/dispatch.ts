@@ -25,12 +25,20 @@ export type DispatchChannel = 'email' | 'linkedin_invite' | 'linkedin_message';
 export interface DispatchJob {
   readonly organizationId: string;
   readonly channel?: DispatchChannel;
+  /**
+   * Action du séquenceur a l'origine de l'envoi. Sans elle, rien ne permet de
+   * marquer l'action comme partie ni d'enregistrer son résultat : la mesure
+   * (actions `dispatched`, table `outcomes`, vue `campaign_stats`) restait
+   * entièrement vide.
+   */
+  readonly actionId?: string | null;
   // Canal email (Smartlead).
   readonly campaignId?: number | string;
   readonly leads?: SmartleadLead[];
   // Canal LinkedIn.
   readonly linkedin?: {
     readonly linkedinUrl: string;
+    readonly actionId?: string | null;
     readonly contactId?: string | null;
     readonly signalId?: string | null;
     readonly messageBody?: string | null;
@@ -64,6 +72,7 @@ export async function runLinkedInDispatch(pool: Pool, job: DispatchJob): Promise
     signalId: job.linkedin.signalId ?? null,
     messageBody: job.linkedin.messageBody ?? null,
     method: job.linkedin.method ?? 'extension_auto',
+    actionId: job.linkedin.actionId ?? job.actionId ?? null,
   };
   return enqueueLinkedInAction(pool, action);
 }

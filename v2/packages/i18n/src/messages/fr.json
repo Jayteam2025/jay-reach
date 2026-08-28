@@ -333,7 +333,7 @@
     "period": "30 derniers jours",
     "kpi": {
       "replies": "Réponses",
-      "positives": "Réponses positives",
+      "positives": "Invitations acceptées",
       "qualified": "Signaux qualifiés",
       "median": "Délai médian signal → 1er contact"
     },

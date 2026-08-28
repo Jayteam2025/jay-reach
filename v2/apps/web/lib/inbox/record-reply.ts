@@ -119,6 +119,44 @@ async function applyToEnrollment(
 }
 
 /**
+ * Rattache le résultat au dernier envoi reçu par le contact.
+ *
+ * `campaign_stats` compte les réponses depuis `outcomes`, pas depuis les fils :
+ * sans cet enregistrement, le tableau de bord affichait « Réponses : 0 » tout en
+ * listant les réponses juste en dessous, et les statistiques de campagne
+ * restaient à zéro sur des échanges bien réels.
+ *
+ * On vise la dernière action partie, quel que soit son canal : une réponse
+ * répond à ce qu'on a envoyé en dernier, et rien ne permet de dire mieux. Sans
+ * action partie — un contact importé qui écrit de lui-même, une file alimentée
+ * à la main — il n'y a rien à rattacher, et on ne fabrique pas.
+ */
+async function recordOutcome(
+  pool: Pool,
+  org: string,
+  contactId: string,
+  classification: string,
+): Promise<void> {
+  // Une auto-réponse n'est pas une réponse : la compter fausserait le seul
+  // chiffre qui dit si la prospection marche.
+  if (classification !== 'human_reply') return;
+
+  await pool.query(
+    `insert into outcomes (action_id, type)
+     select a.id, 'replied'
+       from actions a
+       join enrollments e on e.id = a.enrollment_id
+      where e.contact_id = $2
+        and a.organization_id = $1
+        and a.dispatched_at is not null
+      order by a.dispatched_at desc
+      limit 1
+       on conflict (action_id, type) do nothing`,
+    [org, contactId],
+  );
+}
+
+/**
  * Enregistre une réponse entrante et en tire toutes les conséquences.
  *
  * Renvoie `isNew: false` si le message était déjà connu. La relève LinkedIn
@@ -158,6 +196,7 @@ export async function recordInboundReply(pool: Pool, org: string, reply: Inbound
   );
 
   await applyToEnrollment(pool, org, reply.contactId, cls.classification, cls.resumeInDays);
+  await recordOutcome(pool, org, reply.contactId, cls.classification);
 
   return { threadId, classification: cls.classification, isNew: true };
 }

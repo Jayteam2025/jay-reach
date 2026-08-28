@@ -238,6 +238,11 @@ async function main(): Promise<void> {
     if (result.is_lead_limit_exhausted) {
       console.warn('[dispatch] plafond de leads Smartlead atteint — les prochains envois seront refusés');
     }
+    // Le lead est chez Smartlead : l'action est partie. Sans ce marquage, elle
+    // restait au statut d'émission et n'apparaissait dans aucune statistique.
+    if (ajoutes > 0 && data.actionId) {
+      await pool.query('select app.mark_action_dispatched($1)', [data.actionId]);
+    }
   });
 
   // Inscription d'un contact dans une campagne (dédup : une inscription active

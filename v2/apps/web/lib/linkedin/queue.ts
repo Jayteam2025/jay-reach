@@ -216,10 +216,11 @@ export interface RecordInput {
 export async function recordResult(pool: Pool, input: RecordInput): Promise<boolean> {
   const now = input.now ?? new Date();
   const sentAt = input.status === 'sent' ? now.toISOString() : null;
-  const r = await pool.query(
+  const r = await pool.query<{ action_id: string | null }>(
     `update linkedin_action_queue
        set status = $3, sent_at = $4, error_code = $5, error_message = $6, updated_at = now()
-     where id = $1 and organization_id = $2 and status = 'processing'`,
+     where id = $1 and organization_id = $2 and status = 'processing'
+     returning action_id`,
     [
       input.queueId,
       input.organizationId,
@@ -229,5 +230,16 @@ export async function recordResult(pool: Pool, input: RecordInput): Promise<bool
       input.errorMessage ?? null,
     ],
   );
-  return (r.rowCount ?? 0) > 0;
+  const transitionFaite = (r.rowCount ?? 0) > 0;
+
+  // Referme la boucle vers le séquenceur : sans cet appel, l'action restait à son
+  // statut d'émission et la table `outcomes` vide, donc toute la mesure — actions
+  // envoyées, statistiques de campagne, tableau de bord — affichait zéro sur des
+  // messages pourtant réellement partis.
+  const actionId = r.rows[0]?.action_id;
+  if (transitionFaite && input.status === 'sent' && actionId) {
+    await pool.query('select app.mark_action_dispatched($1)', [actionId]);
+  }
+
+  return transitionFaite;
 }

@@ -333,7 +333,7 @@
     "period": "Laatste 30 dagen",
     "kpi": {
       "replies": "Antwoorden",
-      "positives": "Positieve antwoorden",
+      "positives": "Uitnodigingen geaccepteerd",
       "qualified": "Gekwalificeerde signalen",
       "median": "Mediane vertraging signaal → 1e contact"
     },

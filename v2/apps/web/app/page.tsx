@@ -187,6 +187,11 @@ async function loadDashboard(orgId: string): Promise<DashData> {
   return {
     kpi: {
       replies: sumReplies,
+      // `campaign_stats.accepted` compte les invitations acceptées, pas des
+      // réponses positives : rien ne mesure aujourd'hui la tonalité d'une
+      // réponse, et afficher un chiffre pour une notion qu'on ne mesure pas
+      // est précisément ce que la règle du projet interdit. L'indicateur porte
+      // donc le nom de ce qu'il compte réellement.
       positives: sumAccepted,
       qualified: qualified.length,
       medianDays,
