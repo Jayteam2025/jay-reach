@@ -1,6 +1,6 @@
 'use server';
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { requireRole, getUser } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -24,7 +24,10 @@ export async function generateExtensionToken(organizationId: string): Promise<To
     return { ok: false, error: 'Non authentifié.' };
   }
 
+  // Le clair ne quitte cette fonction que pour l'extension : la base ne recoit
+  // que son empreinte, et ne pourra donc jamais le redonner a personne.
   const token = `lkx_${randomBytes(24).toString('base64url')}`;
+  const tokenHash = createHash('sha256').update(token).digest('hex');
   const service = createServiceClient();
 
   await service
@@ -34,7 +37,7 @@ export async function generateExtensionToken(organizationId: string): Promise<To
     .eq('user_id', user.id);
 
   const { error } = await service.from('extension_tokens').insert({
-    token,
+    token_hash: tokenHash,
     organization_id: organizationId,
     user_id: user.id,
     label: 'Extension LinkedIn',
