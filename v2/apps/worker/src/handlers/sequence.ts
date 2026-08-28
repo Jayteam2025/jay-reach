@@ -15,6 +15,8 @@ import {
   renderTemplate,
   resolveSender,
   shiftIntoBusinessHours,
+  applyLeadTime,
+  jitterMs,
   type BusinessHours,
   type Binding,
   type SenderInfo,
@@ -337,6 +339,32 @@ async function loadAccountsContactedToday(
 }
 
 /**
+ * Délai entre la remise au provider et l'arrivée chez le destinataire, en
+ * heures. Le courrier manuscrit doit partir plusieurs jours avant la date
+ * voulue ; l'email et LinkedIn arrivent dans la seconde.
+ *
+ * La valeur du courrier vient de la spec (72 h). Elle appartiendra au
+ * `ChannelProvider` quand le canal sera implémenté (T23) ; en attendant, la
+ * poser ici vaut mieux que d'écrire un `dispatch_after` égal au `scheduled_for`,
+ * qui ferait partir un courrier le jour où il devrait arriver.
+ */
+const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
+
+/** Espacement toléré autour de la date prévue : ±20 % (docs/04). */
+const RATIO_JITTER = 0.2;
+
+/**
+ * Graine déterministe tirée d'un identifiant. Le jitter doit disperser les
+ * envois sans être imprévisible : rejouer un tick doit redonner la même date,
+ * sinon une reprise après incident déplacerait toutes les échéances.
+ */
+function graine(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return h;
+}
+
+/**
  * Traite les inscriptions actives dont `next_action_at <= now`. Pour chacune :
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
  * met à jour l'inscription, et — pour les envois LinkedIn autorisés — prépare un
@@ -581,8 +609,8 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (a.blockReason === 'missing_variable') payload.missingVariables = unresolvedVariables;
       const ins = await pool.query<{ id: string }>(
         `insert into actions
-           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, payload, idempotency_key, template_id, sender_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+           (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, dispatch_after, payload, idempotency_key, template_id, sender_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
          on conflict (idempotency_key) do nothing
          returning id`,
         [
@@ -593,6 +621,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           a.status,
           a.blockReason ?? null,
           new Date(a.scheduledForMs).toISOString(),
+          // `dispatch_after` recule la remise au provider sans toucher à
+          // `scheduled_for` : un courrier qui doit arriver mardi part vendredi,
+          // mais la date promise au destinataire reste mardi.
+          new Date(applyLeadTime(a.scheduledForMs, LEAD_TIME_HEURES[a.channel] ?? 0)).toISOString(),
           JSON.stringify(payload),
           a.idempotencyKey,
           templateId,
@@ -619,6 +651,15 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       continue; // déjà traité par un tick précédent
     }
 
+    // Jitter sur la prochaine échéance : sans lui, les relances d'une même
+    // campagne tombent toutes à la même minute, ce qui se voit. Déterministe,
+    // pour qu'un rejeu ne déplace pas les échéances déjà calculées.
+    const prochaineEcheance =
+      result.nextActionAtMs !== null
+        ? result.nextActionAtMs +
+          jitterMs(Math.max(0, result.nextActionAtMs - now.getTime()), RATIO_JITTER, graine(row.id))
+        : null;
+
     // Avancement de l'inscription.
     const terminal = result.nextStatus === 'completed' || result.nextStatus === 'stopped';
     await pool.query(
@@ -633,7 +674,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         row.id,
         result.nextStep,
         result.nextStatus,
-        result.nextActionAtMs ? new Date(result.nextActionAtMs).toISOString() : null,
+        prochaineEcheance !== null ? new Date(prochaineEcheance).toISOString() : null,
         result.stopReason,
         terminal,
       ],

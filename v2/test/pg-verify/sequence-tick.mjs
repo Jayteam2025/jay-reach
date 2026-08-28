@@ -530,6 +530,51 @@ async function main() {
   const eQuota = (await q(`select status from enrollments where id=$1`, [enrQuota])).rows[0];
   check('inscription reportée, pas arrêtée', eQuota?.status === 'active', `${eQuota?.status}`);
 
+
+  console.log('\n[seq] 13. Jitter et lead time');
+  // On rouvre la fenêtre horaire et le quota, fermés par l'étape précédente.
+  await q(`update senders set is_active=true, business_hours=null, daily_quota=null, hourly_quota=null
+             where organization_id=$1 and kind='email'`, [ORG]);
+
+  const persoJit = (await q(
+    `insert into personas (organization_id, name) values ($1,'SEQ Jitter') returning id`, [ORG])).rows[0].id;
+  // Deux étapes espacées de 24 h : la seconde échéance porte le jitter.
+  const campJit = await seedCampaign('Jitter', [
+    { channel: 'email', delay_hours: 0 },
+    { channel: 'email', delay_hours: 24 },
+  ]);
+  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
+           values ($1,$2,'SL-JIT',true)`, [ORG, persoJit]);
+
+  const echeances = [];
+  for (const nom of ['Alpha', 'Beta', 'Gamma']) {
+    const cpt = (await q(
+      `insert into accounts (organization_id, name) values ($1,'SEQ Jit ' || $2) returning id`, [ORG, nom])).rows[0].id;
+    const ct = (await q(
+      `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+       values ($1,$2,$3,$4,'Jit',$5,'valid') returning id`,
+      [ORG, cpt, persoJit, nom, `${nom.toLowerCase()}@jitter.test`])).rows[0].id;
+    const e = await enrollContact(pool, { organizationId: ORG, campaignId: campJit, contactId: ct });
+    await tickDueEnrollments(pool, at(400000 + echeances.length * 1000));
+    const r = (await q(`select next_action_at from enrollments where id=$1`, [e])).rows[0];
+    if (r?.next_action_at) echeances.push({ id: e, quand: new Date(r.next_action_at).getTime() });
+  }
+  check('trois échéances calculées', echeances.length === 3, `${echeances.length}`);
+  const distinctes = new Set(echeances.map((e) => e.quand)).size;
+  check('le jitter disperse les échéances', distinctes === 3, `${distinctes} valeur(s) distincte(s)`);
+  // ±20 % de 24 h = au plus 4 h 48 d'écart avec l'échéance nominale.
+  const ecarts = echeances.map((e) => Math.abs(e.quand - (at(400000).getTime() + 24 * 3600000)));
+  check('écart contenu dans ±20 %', Math.max(...ecarts) <= 24 * 3600000 * 0.2 + 60000,
+    `max ${Math.round(Math.max(...ecarts) / 60000)} min`);
+
+  // Lead time : nul pour l'email, la remise part quand l'action est prévue.
+  const actJit = (await q(
+    `select scheduled_for, dispatch_after from actions where enrollment_id=$1 order by created_at limit 1`,
+    [echeances[0].id])).rows[0];
+  check('email : remise à la date prévue (lead time nul)',
+    new Date(actJit.dispatch_after).getTime() === new Date(actJit.scheduled_for).getTime(),
+    `${actJit?.dispatch_after}`);
+
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
