@@ -10,7 +10,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request): Promise<Response> {
-  let body: { token?: unknown; queue_id?: unknown; status?: unknown; error_code?: unknown; error_message?: unknown };
+  let body: {
+    token?: unknown;
+    queue_id?: unknown;
+    status?: unknown;
+    error_code?: unknown;
+    error_message?: unknown;
+    profile_urn?: unknown;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -28,6 +35,20 @@ export async function POST(req: Request): Promise<Response> {
   const orgId = await validateToken(pool, token);
   if (!orgId) {
     return Response.json({ error: 'Invalid token' }, { status: 401 });
+  }
+
+  // L'extension a résolu l'URN du destinataire pour envoyer : on le retient.
+  // C'est le seul identifiant que porte un message reçu, donc sans lui une
+  // réponse de ce contact ne pourrait jamais lui être rattachée.
+  if (typeof body.profile_urn === 'string' && body.profile_urn.startsWith('urn:li:fsd_profile:')) {
+    await pool.query(
+      `update contacts c set linkedin_provider_id = $3
+         from linkedin_action_queue q
+        where q.id = $1 and q.organization_id = $2 and c.id = q.contact_id
+          and c.organization_id = $2
+          and (c.linkedin_provider_id is null or c.linkedin_provider_id <> $3)`,
+      [queue_id, orgId, body.profile_urn],
+    );
   }
 
   const ok = await recordResult(pool, {
