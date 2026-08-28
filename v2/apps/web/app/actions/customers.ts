@@ -2,7 +2,7 @@
 
 import { requireRole } from '../../lib/auth';
 import { getPool } from '../../lib/db';
-import { processImport, type ParsedRows, type ColumnMapping } from '@jay-reach/core';
+import { applyMapping, type ParsedRows, type ColumnMapping } from '@jay-reach/core';
 
 export type CustomerImportResult = { ok: true; count: number; excluded: number } | { ok: false; error: string };
 
@@ -36,7 +36,12 @@ export async function importCustomers(
   }
   if (!input.listName.trim()) return { ok: false, error: 'Nom de liste obligatoire.' };
 
-  const rows = processImport(input.parsed, input.mapping).rows;
+  // `processImport` valide des CONTACTS : il rejette toute ligne sans nom de
+  // personne ni email. Une liste de clients ne contient que des entreprises,
+  // donc il rejetait la totalité du fichier — l'import ne pouvait pas
+  // fonctionner pour son unique cas d'usage. On applique la correspondance des
+  // colonnes sans cette validation, qui n'a pas de sens ici.
+  const rows = applyMapping(input.parsed, input.mapping);
   const entries = rows
     .map((r) => {
       const name = typeof r.company === 'string' ? r.company.trim() : '';

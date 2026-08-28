@@ -104,11 +104,34 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
         );
         accountId = a.rows[0]?.id ?? null;
       } else if (company) {
-        const a = await client.query<{ id: string }>(
-          `insert into accounts (organization_id, name, resolution_status) values ($1, $2, 'unresolved') returning id`,
+        // Sans SIREN ni domaine, il reste le nom — et c'est le cas le plus
+        // courant d'un fichier constitué à la main. Insérer directement créait
+        // un compte PAR LIGNE : deux personnes de la même société se
+        // retrouvaient sur deux entreprises distinctes, ce qui rend le garde-fou
+        // « un contact par compte et par jour » inopérant et remplit l'annuaire
+        // de doublons.
+        //
+        // La comparaison se fait sur le nom mis à plat (casse et espaces), pas
+        // par rapprochement approximatif : à l'import, mieux vaut deux comptes
+        // qu'on fusionnera qu'un rapprochement hasardeux entre deux sociétés
+        // qui portent des noms voisins.
+        const existant = await client.query<{ id: string }>(
+          `select id from accounts
+            where organization_id = $1
+              and lower(btrim(name)) = lower(btrim($2))
+            order by created_at
+            limit 1`,
           [organizationId, company],
         );
-        accountId = a.rows[0]?.id ?? null;
+        if (existant.rows[0]) {
+          accountId = existant.rows[0].id;
+        } else {
+          const a = await client.query<{ id: string }>(
+            `insert into accounts (organization_id, name, resolution_status) values ($1, $2, 'unresolved') returning id`,
+            [organizationId, company],
+          );
+          accountId = a.rows[0]?.id ?? null;
+        }
       }
 
       // 3. Contact (dédup par email si présent, sinon insertion simple).
