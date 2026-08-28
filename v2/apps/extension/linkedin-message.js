@@ -91,7 +91,7 @@ async function createMessage(senderUrn, recipientUrn, text, csrf) {
   });
 
   if (res.status === 200 || res.status === 201) {
-    return { ok: true, code: 'sent' };
+    return { ok: true, code: 'sent', profileUrn: recipientUrn };
   }
 
   let code = 'unknown';
@@ -130,3 +130,6 @@ async function sendLinkedInMessage(linkedinUrl, text) {
 }
 
 self.sendLinkedInMessage = sendLinkedInMessage;
+// La releve des reponses a besoin du meme URN de boite : c'est le `mailboxUrn`
+// des conversations. L'exposer evite d'en tenir une seconde version.
+self.linkedinGetSelfProfileUrn = getSelfProfileUrn;

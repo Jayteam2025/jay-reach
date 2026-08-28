@@ -41,7 +41,7 @@ function vanityDe(url: string): string | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  let body: { token?: unknown; replies?: unknown };
+  let body: { token?: unknown; replies?: unknown; resolvedProfiles?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -62,6 +62,25 @@ export async function POST(req: Request): Promise<Response> {
   const orgId = await validateToken(pool, token);
   if (!orgId) {
     return Response.json({ error: 'Invalid token' }, { status: 401 });
+  }
+
+  // L'extension remonte les URN qu'elle a résolus pour des contacts qui n'en
+  // avaient pas. Sans eux, une réponse de ces contacts ne serait jamais
+  // rattachée : un message reçu ne porte que l'URN de son auteur.
+  let profilsResolus = 0;
+  if (Array.isArray(body.resolvedProfiles)) {
+    for (const p of body.resolvedProfiles.slice(0, MAX_PAR_APPEL) as { vanity?: unknown; urn?: unknown }[]) {
+      if (typeof p.vanity !== 'string' || typeof p.urn !== 'string') continue;
+      if (!p.urn.startsWith('urn:li:fsd_profile:')) continue;
+      const maj = await pool.query(
+        `update contacts set linkedin_provider_id = $3
+          where organization_id = $1
+            and lower(linkedin_url) like '%/in/' || $2 || '%'
+            and linkedin_provider_id is null`,
+        [orgId, p.vanity.toLowerCase(), p.urn],
+      );
+      profilsResolus += maj.rowCount ?? 0;
+    }
   }
 
   let enregistrees = 0;
@@ -120,5 +139,5 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  return Response.json({ ok: true, enregistrees, deja, inconnues }, { status: 200 });
+  return Response.json({ ok: true, enregistrees, deja, inconnues, profilsResolus }, { status: 200 });
 }

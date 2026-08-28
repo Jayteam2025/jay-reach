@@ -109,7 +109,7 @@ async function sendInvitation(urn, csrf) {
   });
 
   if (res.status === 200 || res.status === 201) {
-    return { ok: true, code: 'sent' };
+    return { ok: true, code: 'sent', profileUrn: urn };
   }
 
   let code = 'unknown';

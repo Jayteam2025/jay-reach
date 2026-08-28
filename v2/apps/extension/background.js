@@ -4,18 +4,25 @@
 // (fenêtre, plafonds, intervalle) : ici on ne fait que demander la prochaine
 // action prête et remonter le résultat.
 
-importScripts('linkedin-invite.js', 'linkedin-message.js');
+importScripts('linkedin-invite.js', 'linkedin-message.js', 'linkedin-inbox.js');
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const POLL_MINUTES = 2;
+// La relève des réponses est plus espacée que l'envoi : elle lit la messagerie,
+// et rien ne justifie de le faire toutes les deux minutes. Un quart d'heure
+// borne le risque — le temps maximal pendant lequel une relance peut partir
+// vers quelqu'un qui vient de répondre — sans multiplier les requêtes.
+const RELEVE_MINUTES = 15;
 const PAUSE_MS = 24 * 60 * 60 * 1000; // pause 24 h sur compte restreint / déconnecté
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create('pollLinkedIn', { periodInMinutes: POLL_MINUTES });
+  chrome.alarms.create('releverReponses', { periodInMinutes: RELEVE_MINUTES });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'pollLinkedIn') pollLinkedInQueue();
+  if (alarm.name === 'releverReponses') releverReponses();
 });
 
 function getStored(keys) {
@@ -77,6 +84,12 @@ async function pollLinkedInQueue() {
       return;
     }
 
+    // Une relève juste avant d'envoyer : on est déjà en train de parler à
+    // LinkedIn, et c'est le dernier moment où une réponse reçue peut encore
+    // annuler l'envoi. Si elle échoue, on envoie quand même — le pire serait
+    // qu'une messagerie momentanément indisponible bloque toute la séquence.
+    await releverReponses();
+
     const { id: queueId, kind, linkedinUrl, messageBody } = data.action;
     console.log(`📨 Action LinkedIn ${kind} → ${linkedinUrl}`);
 
@@ -94,6 +107,11 @@ async function pollLinkedInQueue() {
       token,
       queue_id: queueId,
       status: result.ok ? 'sent' : 'failed',
+      // L'URN résolu à l'envoi est remonté : c'est le SEUL moyen de reconnaître
+      // l'auteur d'une réponse plus tard. Mesuré sur l'API : les messages reçus
+      // ne portent jamais l'identifiant public de leur expéditeur, seulement son
+      // URN — un contact qu'on ne connaît que par son URL resterait donc muet.
+      ...(result.profileUrn ? { profile_urn: result.profileUrn } : {}),
       ...(result.ok ? {} : { error_code: result.code, error_message: result.message }),
     });
 
@@ -105,6 +123,73 @@ async function pollLinkedInQueue() {
   }
 }
 
+/**
+ * Relève les réponses reçues sur LinkedIn et les remonte à l'application.
+ *
+ * Le tri se fait ici : l'app dit quels profils elle suit, et seules les réponses
+ * de ces personnes quittent le navigateur. La messagerie personnelle de
+ * l'utilisateur n'est jamais transmise.
+ */
+async function releverReponses() {
+  try {
+    const token = await getToken();
+    if (!token) return;
+    if (await getPausedUntil()) return;
+
+    const base = await getBaseUrl();
+    const resListe = await postJson(base, '/api/extension/linkedin/watchlist', { token });
+    if (!resListe.ok) return;
+    const { profils } = await resListe.json();
+    if (!Array.isArray(profils) || profils.length === 0) return;
+
+    const { derniereReleve } = await getStored(['derniereReleve']);
+    // Premier passage : on ne remonte que les douze dernières heures. Sans cette
+    // borne, l'installation de l'extension ferait remonter d'anciennes
+    // conversations comme si elles venaient d'arriver.
+    const depuis = derniereReleve || Date.now() - 12 * 60 * 60 * 1000;
+
+    // Rattrapage : les contacts contactés avant cette version n'ont pas d'URN,
+    // et sans lui leurs réponses resteraient invisibles. Quelques-uns par tour.
+    const resolus = await self.resoudreUrnManquants(profils);
+    for (const r of resolus) {
+      const cible = profils.find((p) => p.vanity === r.vanity);
+      if (cible) cible.urn = r.urn;
+    }
+
+    const releve = await self.releverReponsesLinkedIn(profils, depuis);
+    if (!releve.ok) {
+      console.warn('⚠️ Relève des réponses impossible :', releve.code);
+      if (releve.code === 'not_logged_in') await pause(releve.code);
+      return;
+    }
+
+    if (releve.reponses.length > 0) {
+      const res = await postJson(base, '/api/extension/linkedin/replies', {
+        token,
+        replies: releve.reponses,
+        resolvedProfiles: resolus,
+      });
+      if (!res.ok) {
+        // On ne déplace pas le curseur : ces réponses seront reproposées.
+        console.error('❌ Remontée des réponses refusée :', res.status);
+        return;
+      }
+      const bilan = await res.json();
+      console.log(`💬 ${bilan.enregistrees} réponse(s) LinkedIn enregistrée(s), ${bilan.deja} déjà connue(s)`);
+    }
+
+    // Les URN résolus sont remontés même sans réponse à signaler : ils servent
+    // aux relèves suivantes.
+    if (releve.reponses.length === 0 && resolus.length > 0) {
+      await postJson(base, '/api/extension/linkedin/replies', { token, replies: [], resolvedProfiles: resolus });
+    }
+
+    await chrome.storage.local.set({ derniereReleve: Date.now() });
+  } catch (err) {
+    console.error('❌ releverReponses :', err);
+  }
+}
+
 // Messages du popup (statut, poll manuel, reset pause).
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'GET_STATUS') {
@@ -113,6 +198,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message.type === 'POLL_NOW') {
     pollLinkedInQueue().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message.type === 'RELEVER_NOW') {
+    releverReponses().then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message.type === 'RESET_PAUSE') {
