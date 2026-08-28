@@ -16,9 +16,10 @@
 import type { Pool } from 'pg';
 import { verifyEmail, reoonToVerdict, type ReoonVerifyResponse } from '@jay-reach/providers/email-validation';
 import { providerCache } from './provider-cache.js';
+import type { EmailStatus } from './enrichment-persist.js';
 
 /** Verdict provider-agnostique, tel que le lit le gate et l'enum `email_status`. */
-export type Deliverability = 'valid' | 'invalid' | 'risky' | 'disposable' | 'role' | 'unknown';
+export type Deliverability = EmailStatus;
 
 /** Confiance associée, écrite dans `contacts.email_confidence`. */
 const CONFIANCE: Record<Deliverability, number> = {

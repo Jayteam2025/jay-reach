@@ -20,10 +20,21 @@ import {
   type EnrichContactsJob,
 } from './handlers/enrich.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
-import { createPool, insertSignals, upsertResolvedAccount, startSourceRun, finishSourceRun } from './db.js';
+import {
+  createPool,
+  insertSignals,
+  upsertResolvedAccount,
+  attachSignalsToAccount,
+  startSourceRun,
+  finishSourceRun,
+} from './db.js';
 import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
-import { enqueueDiscoverForActiveSources, enqueueScoringForOrgs } from './producer.js';
+import {
+  enqueueDiscoverForActiveSources,
+  enqueueScoringForOrgs,
+  enqueueEnrichmentForQualified,
+} from './producer.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
 import { refreshDomainPatterns, domainOf } from './domain-patterns.js';
@@ -102,7 +113,11 @@ async function main(): Promise<void> {
         if (!sig.companyName) {
           continue;
         }
-        const qualifyJob: QualifyJob = { organizationId: sig.organizationId, companyName: sig.companyName };
+        const qualifyJob: QualifyJob = {
+          organizationId: sig.organizationId,
+          companyName: sig.companyName,
+          signalId: sig.signalId,
+        };
         await boss.insert([
           { name: 'signals.qualify', id: deterministicUuid('qualify', sig.signalId), data: qualifyJob },
         ]);
@@ -128,10 +143,23 @@ async function main(): Promise<void> {
       trusted: resolved?.trusted ?? false,
       opposition: resolved?.opposition ?? false,
     });
-    console.log(
-      `[qualify] compte=${accountId ?? '—'} SIREN=${resolved?.siren ?? '—'} (${resolved?.name_match ?? 'n/a'})` +
-        `${resolved?.opposition ? ' [opposition démarchage]' : ''}`,
-    );
+    // Rattachement du signal au compte. C'est ce lien qui rend effectifs le
+    // pré-filtre des cabinets par code NAF et le filtre d'opposition au
+    // démarchage : le scoring les lit via `signals.account_id`. Sans lui, les
+    // deux garde-fous existent dans le code mais ne s'appliquent jamais.
+    //
+    // On rattache aussi les autres signaux de la MÊME entreprise encore sans
+    // compte : une entreprise qui publie dix offres n'a pas à être résolue dix
+    // fois auprès de l'annuaire, et les signaux déjà collectés se rattrapent.
+    if (accountId) {
+      const lies = await attachSignalsToAccount(pool, data.organizationId, data.companyName, accountId);
+      console.log(
+        `[qualify] compte=${accountId} SIREN=${resolved?.siren ?? '—'} (${resolved?.name_match ?? 'n/a'})` +
+          `${resolved?.opposition ? ' [opposition démarchage]' : ''} — ${lies} signal(aux) rattaché(s)`,
+      );
+    } else {
+      console.warn(`[qualify] ${data.companyName} : aucun compte résolu, signal non rattaché`);
+    }
   });
 
   // Scoring des signaux : pré-filtre cabinets (blacklist + NAF) + fraîcheur, puis
@@ -306,6 +334,12 @@ async function main(): Promise<void> {
       const s = await enqueueScoringForOrgs(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
       if (s > 0) {
         console.log(`[producer] scoring enfilé pour ${s} organisation(s)`);
+      }
+      // Enrichissement des comptes qualifiés : le maillon entre le scoring et
+      // FullEnrich. Sans lui, un signal qualifié n'a aucune suite.
+      const e = await enqueueEnrichmentForQualified(boss, pool);
+      if (e > 0) {
+        console.log(`[producer] enrichissement enfilé pour ${e} couple(s) compte/persona`);
       }
       // Le cache provider n'a pas d'éviction propre : sans purge, la table
       // grossit indéfiniment de lignes que le moteur écarte déjà comme périmées.

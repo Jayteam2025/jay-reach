@@ -8,6 +8,7 @@
 //   5. une source SANS prompt exploitable ne score pas : signaux laissés « new ».
 import pg from 'pg';
 import { runScore } from './_score.mjs';
+import { attachSignalsToAccount } from './_db.mjs';
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -98,6 +99,23 @@ async function main() {
     )
   ).rows[0].id;
 
+  // Cas de la CHAÎNE RÉELLE : le scraper insère un signal SANS account_id, et
+  // c'est la qualification qui doit le rattacher. Le harnais posait le lien
+  // lui-même, ce qui masquait un chaînage manquant : le compte était résolu mais
+  // jamais écrit sur le signal, donc le pré-filtre NAF et le filtre d'opposition
+  // — qui lisent le compte à travers le signal — ne s'appliquaient à rien.
+  const idDetache = (
+    await q(
+      `insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, status, company_hint, title)
+       values ($1,$2,'francetravail','VERIF-detache','job_posting', now(), 'new','VERIF Opposition SA','Technicien de maintenance') returning id`,
+      [ORG, srcA],
+    )
+  ).rows[0].id;
+  const rattaches = await attachSignalsToAccount(pool, ORG, 'VERIF Opposition SA', oppAccount);
+  check('la qualification rattache les signaux orphelins', rattaches >= 1, `${rattaches} rattaché(s)`);
+  const lien = (await q(`select account_id from signals where id=$1`, [idDetache])).rows[0];
+  check('le signal porte désormais son compte', lien?.account_id === oppAccount);
+
   console.log('[score] exécution runScore…\n');
   const summary = await runScore({ pool, organizationId: ORG, scorer });
 
@@ -106,10 +124,18 @@ async function main() {
   const good = await statusOf(idGood);
   const mid = await statusOf(idMid);
   const cabinet = await statusOf(idCabinet);
+  const detache = await statusOf(idDetache);
   const noPrompt = await statusOf(idNoPrompt);
 
   const opp = await statusOf(idOpp);
   check('opposition au démarchage → écarté (prospecting_opposition)', opp.status === 'discarded' && opp.discard_reason === 'prospecting_opposition', `${opp.status}/${opp.discard_reason}`);
+  // Le signal rattaché par la qualification doit subir le même filtre : c'est ce
+  // que la chaîne réelle produit, et c'était le cas non couvert.
+  check(
+    'signal rattaché par la qualification → opposition appliquée aussi',
+    detache.status === 'discarded' && detache.discard_reason === 'prospecting_opposition',
+    `${detache.status}/${detache.discard_reason}`,
+  );
   check('cabinet blacklisté pré-filtré (Adecco)', agency.status === 'discarded' && agency.discard_reason === 'recruitment_agency', agency.status);
   check('signal périmé écarté (60 j)', stale.status === 'discarded' && stale.discard_reason === 'stale', stale.status);
   check('bonne PME qualifiée (82 ≥ seuil source 70)', good.status === 'qualified' && Number(good.score) === 82, `${good.status}/${good.score}`);

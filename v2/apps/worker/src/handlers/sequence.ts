@@ -19,10 +19,10 @@ import {
 } from '@jay-reach/core';
 import { shouldPushToSmartlead } from '@jay-reach/providers/email-validation';
 import { loadDomainPatterns, domainOf, type DomainPattern } from '../domain-patterns.js';
+import type { EmailStatus } from '../enrichment-persist.js';
 import type { DispatchJob } from './dispatch.js';
 
-/** Statut de délivrabilité stocké sur le contact (enum `email_status`). */
-type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid';
+
 
 export interface EnrollJob {
   readonly organizationId: string;

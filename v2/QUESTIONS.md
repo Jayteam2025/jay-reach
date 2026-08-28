@@ -249,6 +249,27 @@ Le schéma cible (`docs/02-data-model.md`, qui fait foi) **n'a pas** de table `s
 
 **Vérifié** : `bash test/pg-verify/scoring.sh` (base locale jr_dev, scorer déterministe, zéro appel LLM) → Adecco (blacklist) écarté, PME périmée écartée, Super PME qualifiée (82 ≥ **seuil source 70**), Moyenne PME écartée par **le seuil de la source** (65 < 70), Cabinet Louche (score 0 + verdict) **auto-appris** + écarté, signal d'une **source sans prompt** laissé `new`, et **lot plein de 45 signaux** tous scorés/qualifiés (aucun perdu). + tests unitaires `resolveScoringModel`, `scoringMaxTokens`, `isCabinetVerdict`, `meetsScoreThreshold`.
 
+## Ouvert — Aucun moyen de créer une source depuis l'interface [2026-08-28]
+
+**Constat.** L'écran Sources affichait des exécutions entièrement inventées (`SAMPLE_SOURCES`, sans
+aucune lecture de base) — un échec « quota Adzuna atteint » qui n'avait jamais eu lieu, des compteurs
+fabriqués. Contraire à la règle « ne jamais afficher un chiffre que Jay Reach ne mesure pas
+réellement ». Corrigé : l'écran lit `sources` et `source_runs`.
+
+**Ce qui reste ouvert.** L'écran est en lecture seule et le backlog ne prévoit pas d'écran de
+création (T10 couvre le connecteur, pas son interface de configuration). Conséquence : sur une
+instance neuve, **aucune source ne peut être créée sans passer par SQL**, donc rien ne se déclenche.
+C'est le premier geste d'un opérateur qui installe Jay Reach.
+
+**Décision prise pour ne pas bloquer.** Les sources de la recette ont été créées directement en
+base. Aucune fonctionnalité inventée hors backlog.
+
+**Ce qu'il faudrait trancher.** Soit un ticket d'écran de configuration des sources (formulaire
+provider + mots-clés + zone + prompt de scoring + seuil), soit une commande d'amorçage documentée.
+La configuration du scoring vit dans `sources.config` (`scoring_prompt`, `match_threshold`), ce qui
+rend l'absence d'interface d'autant plus gênante : le prompt qui décide de la qualification n'est
+éditable nulle part.
+
 ## Résolu — Liaison expéditeur : un lien par contact ou un lien par canal ? [2026-08-27]
 
 **Question.** Deux endroits de la documentation se contredisent. `docs/04-sequenceur.md` §

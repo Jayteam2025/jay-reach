@@ -198,6 +198,8 @@
     "active": "Active",
     "paused": "En pause",
     "history": "Historique d'exécution",
+    "empty": "Aucune source configurée pour le moment.",
+    "neverRan": "Jamais exécutée.",
     "found": "trouvés",
     "new": "nouveaux",
     "status": {

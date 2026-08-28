@@ -76,3 +76,70 @@ export async function enqueueScoringForOrgs(
   }
   return enqueued;
 }
+
+/**
+ * Enfile un `enrichment.company` par (compte qualifié, persona) pour les comptes
+ * qu'un signal a qualifiés et qui n'ont pas encore été enrichis.
+ *
+ * C'est le maillon qui manquait entre le scoring et l'enrichissement : les
+ * handlers existaient et écoutaient leurs files, mais personne n'y déposait de
+ * job. Un signal qualifié restait donc sans suite.
+ *
+ * FullEnrich est facturé à l'appel, d'où trois précautions :
+ *  - seuls les comptes JAMAIS enrichis (`enriched_at is null`) sont candidats ;
+ *  - l'identifiant de job est déterministe par (compte, persona), donc un
+ *    passage répété du producteur ne redemande pas le même enrichissement ;
+ *  - le lot est plafonné, pour qu'une grosse collecte ne déclenche pas des
+ *    centaines d'appels d'un coup.
+ *
+ * Le persona fournit les intitulés de poste recherchés : sans eux, le handler
+ * résout l'entreprise mais ne cherche aucun contact.
+ */
+export async function enqueueEnrichmentForQualified(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? 25;
+  const res = await pool.query<{
+    organization_id: string;
+    account_id: string;
+    company_name: string;
+    domain: string | null;
+    country: string | null;
+    persona_id: string;
+    title_patterns: string[];
+  }>(
+    `select distinct a.organization_id, a.id as account_id, a.name as company_name,
+            a.domain, a.country, p.id as persona_id, p.title_patterns
+       from signals s
+       join accounts a on a.id = s.account_id
+       join personas p on p.organization_id = a.organization_id
+      where s.status = 'qualified'
+        and a.enriched_at is null
+        and array_length(p.title_patterns, 1) > 0
+      limit $1`,
+    [limit],
+  );
+
+  let enqueued = 0;
+  for (const row of res.rows) {
+    await boss.insert([
+      {
+        name: 'enrichment.company',
+        id: deterministicUuid('enrich-company', row.account_id, row.persona_id),
+        data: {
+          organizationId: row.organization_id,
+          accountId: row.account_id,
+          companyName: row.company_name,
+          ...(row.domain ? { domain: row.domain } : {}),
+          ...(row.country ? { countryCode: row.country } : {}),
+          personaId: row.persona_id,
+          positionTitles: row.title_patterns,
+        },
+      },
+    ]);
+    enqueued += 1;
+  }
+  return enqueued;
+}

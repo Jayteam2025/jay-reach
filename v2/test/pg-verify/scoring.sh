@@ -23,6 +23,8 @@ echo "[score] bundle du handler (esbuild)…"
 ESB="$DIR/apps/worker/node_modules/.bin/esbuild"
 "$ESB" "$DIR/apps/worker/src/handlers/score.ts" --bundle --platform=node --format=esm --packages=external \
   --outfile="$DIR/apps/worker/_score.mjs" >/dev/null 2>&1 || { echo "[score] BUNDLE_FAIL"; exit 5; }
+"$ESB" "$DIR/apps/worker/src/db.ts" --bundle --platform=node --format=esm --packages=external \
+  --outfile="$DIR/apps/worker/_db.mjs" >/dev/null 2>&1 || { echo "[score] BUNDLE_FAIL(db)"; exit 5; }
 cp "$DIR/test/pg-verify/scoring.mjs" "$DIR/apps/worker/_score-runner.mjs"
 
 echo "[score] exécution…"
@@ -31,5 +33,5 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" TEST_ORG=
   node "$DIR/apps/worker/_score-runner.mjs"
 RC=$?
 
-rm -f "$DIR/apps/worker/_score.mjs" "$DIR/apps/worker/_score-runner.mjs"
+rm -f "$DIR/apps/worker/_score.mjs" "$DIR/apps/worker/_db.mjs" "$DIR/apps/worker/_score-runner.mjs"
 exit "$RC"
