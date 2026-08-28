@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import { QUEUES, resolveScoringModel } from '@jay-reach/core';
+import { countRejected } from '@jay-reach/providers/outreach';
 import { createRuntime, registerQueues } from './runtime.js';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
@@ -214,7 +215,28 @@ async function main(): Promise<void> {
       return;
     }
     const result = await runDispatch(data, apiKey);
-    console.log(`[dispatch] ${result.added_count ?? 0} lead(s) poussé(s) vers Smartlead`);
+    // Le chiffre qui interesse l'operateur est le nombre de leads AJOUTES, que
+    // Smartlead nomme `total_leads`. `upload_count` compte les lignes traitees,
+    // deja-presents compris : l'annoncer comme un ajout gonflait le compte rendu.
+    const ajoutes = result.total_leads ?? 0;
+    const dejaLa = result.already_added_to_campaign ?? 0;
+    const refuses = countRejected(result);
+    console.log(
+      `[dispatch] ${ajoutes} lead(s) ajouté(s) à la campagne Smartlead` +
+        (dejaLa > 0 ? `, ${dejaLa} déjà présent(s)` : '') +
+        (refuses > 0 ? `, ${refuses} refusé(s)` : ''),
+    );
+    if (refuses > 0) {
+      // Le detail vaut d'etre visible : un lead refuse parce qu'il est desinscrit
+      // n'appelle pas la meme reaction qu'une adresse mal formee.
+      console.warn(
+        `[dispatch] refus — doublons ${result.duplicate_count ?? 0}, emails invalides ${result.invalid_email_count ?? 0}, ` +
+          `désinscrits ${result.unsubscribed_leads?.length ?? 0}, bloqués ${result.block_count ?? 0}`,
+      );
+    }
+    if (result.is_lead_limit_exhausted) {
+      console.warn('[dispatch] plafond de leads Smartlead atteint — les prochains envois seront refusés');
+    }
   });
 
   // Inscription d'un contact dans une campagne (dédup : une inscription active

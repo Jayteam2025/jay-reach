@@ -24,15 +24,62 @@ export interface SmartleadLead {
   linkedin_profile?: string;
 }
 
+/**
+ * Reponse de POST /campaigns/{id}/leads, relevee sur l'API reelle le 2026-08-28.
+ * Le champ qui porte le nombre ajoute est `upload_count` : il n'existe pas de
+ * `added_count`, et le lire renvoyait donc toujours zero, y compris sur un
+ * import reussi.
+ *
+ * Les compteurs de rejet comptent autant que le succes : un lead desinscrit ou
+ * invalide est refuse silencieusement par Smartlead, et sans eux on croit avoir
+ * pousse ce qui a ete jete.
+ */
 export interface AddLeadsResponse {
   ok?: boolean;
-  added_count?: number;
-  skipped_count?: number;
+  /**
+   * Lignes TRAITEES par Smartlead = leads crees + leads deja presents. Ce n'est
+   * pas le nombre d'ajouts, et il n'existe pas de champ `added_count` : le lire
+   * renvoyait toujours zero.
+   */
+  upload_count?: number;
+  /**
+   * Leads reellement CREES par la requete, malgre son nom. Verifie le
+   * 2026-08-28 sur l'API reelle : deux leads soumis dont un deja present
+   * donnent `upload_count: 2`, `total_leads: 1`, `already_added_to_campaign: 1`,
+   * et la campagne gagne bien un seul lead.
+   */
   total_leads?: number;
-  bulk_upload_id?: string;
+  duplicate_count?: number;
+  invalid_email_count?: number;
+  invalid_emails?: string[];
+  block_count?: number;
+  already_added_to_campaign?: number;
+  unsubscribed_leads?: unknown[];
+  skipped_in_other_campaign_count?: number;
+  lead_import_stopped_count?: number;
+  bounce_count?: number;
+  /** Le compte a atteint son plafond de leads : les suivants seront refuses. */
+  is_lead_limit_exhausted?: boolean;
   error?: string;
   message?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Compte les leads que Smartlead a REFUSES. `already_added_to_campaign` n'en
+ * fait pas partie : un lead deja dans la campagne n'est pas une erreur, et le
+ * compter comme tel donnait des comptes rendus incoherents — « 2 pousses,
+ * 1 refuse » sur deux leads soumis.
+ */
+export function countRejected(r: AddLeadsResponse): number {
+  return (
+    (r.duplicate_count ?? 0) +
+    (r.invalid_email_count ?? 0) +
+    (r.block_count ?? 0) +
+    (r.unsubscribed_leads?.length ?? 0) +
+    (r.skipped_in_other_campaign_count ?? 0) +
+    (r.lead_import_stopped_count ?? 0)
+  );
 }
 
 /**
