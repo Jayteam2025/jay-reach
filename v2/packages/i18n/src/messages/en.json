@@ -554,7 +554,7 @@
       "q": "Keyword / name",
       "qPlaceholder": "e.g. software, transport…",
       "naf": "Activity code (NAF)",
-      "department": "Department",
+      "department": "Department of operation",
       "effectif": "Headcount"
     },
     "bucket": {

@@ -554,7 +554,7 @@
       "q": "Trefwoord / naam",
       "qPlaceholder": "bv. software, transport…",
       "naf": "Activiteitscode (NAF)",
-      "department": "Departement",
+      "department": "Departement van vestiging",
       "effectif": "Personeel"
     },
     "bucket": {

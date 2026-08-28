@@ -541,7 +541,7 @@
   "directory": {
     "eyebrow": "Recherche",
     "title": "Annuaire d’entreprises",
-    "lead": "Cherchez des entreprises françaises par activité, département et effectif. Les entreprises cessées sont exclues.",
+    "lead": "Cherchez des entreprises françaises par activité, département et effectif. Le département retient les entreprises qui y sont implantées : leur siège peut se trouver ailleurs. Les entreprises cessées sont exclues.",
     "search": "Rechercher",
     "count": "{n, plural, one {# entreprise trouvée} other {# entreprises trouvées}}",
     "showingFirst": "{n} premières affichées",
@@ -554,7 +554,7 @@
       "q": "Mot-clé / nom",
       "qPlaceholder": "ex. logiciel, transport…",
       "naf": "Code d’activité (NAF)",
-      "department": "Département",
+      "department": "Département d’implantation",
       "effectif": "Effectif"
     },
     "bucket": {

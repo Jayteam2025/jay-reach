@@ -66,7 +66,14 @@ export async function searchCompanies(p: DirectoryParams): Promise<DirectoryResu
   const url = new URL('https://recherche-entreprises.api.gouv.fr/search');
   if (p.q) url.searchParams.set('q', p.q);
   if (p.naf) url.searchParams.set('activite_principale', p.naf);
-  if (p.department) url.searchParams.set('code_departement', p.department);
+  // Le paramètre s'appelle `departement`, pas `code_departement` : l'API ignore
+  // silencieusement les paramètres qu'elle ne connaît pas, si bien que le filtre
+  // n'avait aucun effet. Mesuré sur la recherche 28.29B : 806 résultats avec
+  // `code_departement=69`, exactement comme sans filtre, contre 65 avec le bon nom.
+  //
+  // Il retient les entreprises IMPLANTÉES dans le département ; le siège affiché
+  // peut donc se trouver ailleurs, et l'interface le dit.
+  if (p.department) url.searchParams.set('departement', p.department);
   const bucket = p.effectif ? EFFECTIF_BUCKETS[p.effectif] : undefined;
   if (bucket) url.searchParams.set('tranche_effectif_salarie', bucket);
   url.searchParams.set('etat_administratif', 'A'); // actives uniquement (exclut les cessées)
