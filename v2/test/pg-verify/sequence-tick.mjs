@@ -483,6 +483,53 @@ async function main() {
   check('inscription toujours vivante (récupérable)', enrStopEtat?.status === 'active', `${enrStopEtat?.status}`);
   await q(`update organizations set sending_paused_at = null, sending_paused_reason = null where id=$1`, [ORG]);
 
+
+  console.log('\n[seq] 12. Ordonnancement : fenêtre horaire et quota d’expéditeur');
+  // Expéditeur dont les heures ouvrées sont déjà passées : l'envoi doit glisser
+  // au prochain créneau, pas partir en pleine nuit.
+  const cptOrd = (await q(
+    `insert into accounts (organization_id, name) values ($1,'SEQ Ordonnancement') returning id`, [ORG])).rows[0].id;
+  const persoOrd = (await q(
+    `insert into personas (organization_id, name) values ($1,'SEQ Ord') returning id`, [ORG])).rows[0].id;
+  const campOrd = await seedCampaign('Ordonnancement', [{ channel: 'email', delay_hours: 0 }]);
+  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
+           values ($1,$2,'SL-ORD',true)`, [ORG, persoOrd]);
+  // On neutralise les autres expéditeurs email pour que celui-ci soit retenu.
+  await q(`update senders set is_active=false where organization_id=$1 and kind='email'`, [ORG]);
+  const sndOrd = (await q(
+    `insert into senders (organization_id, kind, identity, is_active, timezone, business_hours, daily_quota)
+     values ($1,'email','SEQ ord-mail',true,'UTC','{"startHour":0,"endHour":1,"days":[1,2,3,4,5,6,7]}'::jsonb, 100)
+     returning id`, [ORG])).rows[0].id;
+
+  const cOrd = (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+     values ($1,$2,$3,'Hors','Creneau','hors@ordonnancement.test','valid') returning id`,
+    [ORG, cptOrd, persoOrd])).rows[0].id;
+  const enrOrd = await enrollContact(pool, { organizationId: ORG, campaignId: campOrd, contactId: cOrd });
+  await tickDueEnrollments(pool, at(300000));
+  const nOrd = (await q(`select count(*)::int as n from actions where enrollment_id=$1`, [enrOrd])).rows[0].n;
+  check('hors fenêtre horaire → aucune action', nOrd === 0, `${nOrd} action(s)`);
+  const eOrd = (await q(`select status, next_action_at from enrollments where id=$1`, [enrOrd])).rows[0];
+  check('reportée au prochain créneau ouvré', eOrd?.status === 'active' && new Date(eOrd.next_action_at) > at(0),
+    `${eOrd?.next_action_at}`);
+
+  // Quota journalier épuisé : même dans la fenêtre, l'envoi est reporté.
+  await q(`update senders set business_hours='{"startHour":0,"endHour":24,"days":[1,2,3,4,5,6,7]}'::jsonb,
+             daily_quota=1 where id=$1`, [sndOrd]);
+  await q(`insert into actions (organization_id, enrollment_id, channel, status, idempotency_key, sender_id)
+           select $1, id, 'email', 'dispatched', 'seq-quota-'||id, $2 from enrollments where id=$3`,
+          [ORG, sndOrd, enrOrd]);
+  const cQuota = (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+     values ($1,$2,$3,'Quota','Plein','quota@ordonnancement.test','valid') returning id`,
+    [ORG, (await q(`insert into accounts (organization_id, name) values ($1,'SEQ Quota') returning id`, [ORG])).rows[0].id, persoOrd])).rows[0].id;
+  const enrQuota = await enrollContact(pool, { organizationId: ORG, campaignId: campOrd, contactId: cQuota });
+  await tickDueEnrollments(pool, at(310000));
+  const nQuota = (await q(`select count(*)::int as n from actions where enrollment_id=$1`, [enrQuota])).rows[0].n;
+  check('quota d’expéditeur atteint → aucune action', nQuota === 0, `${nQuota} action(s)`);
+  const eQuota = (await q(`select status from enrollments where id=$1`, [enrQuota])).rows[0];
+  check('inscription reportée, pas arrêtée', eQuota?.status === 'active', `${eQuota?.status}`);
+
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

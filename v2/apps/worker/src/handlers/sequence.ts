@@ -14,6 +14,8 @@ import {
   runGuards,
   renderTemplate,
   resolveSender,
+  shiftIntoBusinessHours,
+  type BusinessHours,
   type Binding,
   type SenderInfo,
   type TickChannel,
@@ -182,30 +184,98 @@ function senderKindFor(channel: TickChannel): 'email' | 'linkedin' | 'postal' | 
  * Chargé en une requête pour tout le lot : le tick traite jusqu'à 200
  * inscriptions, une requête par inscription serait 200 allers-retours.
  */
-async function loadSenders(pool: Pool, organizationIds: string[]): Promise<Map<string, SenderInfo[]>> {
+async function loadSenders(
+  pool: Pool,
+  organizationIds: string[],
+): Promise<{ parOrg: Map<string, SenderInfo[]>; contraintes: Map<string, ContraintesSender> }> {
   const parOrg = new Map<string, SenderInfo[]>();
-  if (organizationIds.length === 0) return parOrg;
+  const contraintes = new Map<string, ContraintesSender>();
+  if (organizationIds.length === 0) return { parOrg, contraintes };
   const res = await pool.query<{
     organization_id: string;
     id: string;
     kind: string;
     is_active: boolean;
     used_today: number;
+    used_this_hour: number;
+    daily_quota: number | null;
+    hourly_quota: number | null;
+    timezone: string | null;
+    business_hours: unknown;
   }>(
     `select s.id, s.organization_id, s.kind, s.is_active,
+            s.daily_quota, s.hourly_quota, s.timezone, s.business_hours,
             (select count(*)::int from actions act
               where act.sender_id = s.id
-                and act.created_at >= date_trunc('day', now())) as used_today
+                and act.created_at >= date_trunc('day', now())) as used_today,
+            (select count(*)::int from actions act
+              where act.sender_id = s.id
+                and act.created_at >= date_trunc('hour', now())) as used_this_hour
        from senders s
       where s.organization_id = any($1::uuid[])`,
     [organizationIds],
   );
   for (const r of res.rows) {
     const liste = parOrg.get(r.organization_id) ?? [];
+    // `SenderInfo` reste le contrat minimal de l'attribution ; les contraintes
+    // d'envoi vivent à côté plutôt que d'alourdir un type que `resolveSender`
+    // n'a aucune raison de connaître.
     liste.push({ id: r.id, kind: r.kind, isActive: r.is_active, usedToday: r.used_today });
     parOrg.set(r.organization_id, liste);
+    contraintes.set(r.id, {
+      usedThisHour: r.used_this_hour,
+      dailyQuota: r.daily_quota,
+      hourlyQuota: r.hourly_quota,
+      timezone: r.timezone,
+      businessHours: r.business_hours,
+      usedToday: r.used_today,
+    });
   }
-  return parOrg;
+  return { parOrg, contraintes };
+}
+
+/**
+ * Contraintes d'envoi portées par l'expéditeur, au-delà de ce que
+ * `SenderInfo` transporte pour l'attribution.
+ */
+interface ContraintesSender {
+  readonly usedToday: number;
+  readonly usedThisHour: number;
+  readonly dailyQuota: number | null;
+  readonly hourlyQuota: number | null;
+  readonly timezone: string | null;
+  readonly businessHours: unknown;
+}
+
+/**
+ * Décalage du fuseau d'un expéditeur, en minutes, à l'instant considéré.
+ *
+ * Calculé pour CET instant et non une fois pour toutes : l'écart change avec
+ * l'heure d'été, et une fenêtre « 9 h - 18 h » figée sur l'hiver enverrait une
+ * heure trop tôt tout l'été.
+ */
+function decalageFuseau(timezone: string | null, instant: Date): number {
+  if (!timezone) return 0;
+  try {
+    const local = new Date(instant.toLocaleString('en-US', { timeZone: timezone }));
+    const utc = new Date(instant.toLocaleString('en-US', { timeZone: 'UTC' }));
+    return Math.round((local.getTime() - utc.getTime()) / 60000);
+  } catch {
+    // Fuseau inconnu : on reste en UTC plutôt que d'inventer un décalage.
+    console.warn(`[tick] fuseau inconnu « ${timezone} » — UTC utilisé`);
+    return 0;
+  }
+}
+
+/** Heures ouvrées de l'expéditeur, ou la valeur par défaut de la spec (9-18, lun-ven). */
+function heuresOuvrees(brut: unknown): BusinessHours {
+  const h = brut as { startHour?: unknown; endHour?: unknown; days?: unknown } | null;
+  const start = typeof h?.startHour === 'number' ? h.startHour : 9;
+  const end = typeof h?.endHour === 'number' ? h.endHour : 18;
+  const days = Array.isArray(h?.days) && h.days.length > 0
+    ? (h.days as unknown[]).map(Number).filter((d) => d >= 1 && d <= 7)
+    : [1, 2, 3, 4, 5];
+  return { startHour: start, endHour: end, days };
 }
 
 /** Liens contact ↔ expéditeur déjà établis, pour les contacts de ce lot. */
@@ -307,7 +377,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   const jobs: DispatchJob[] = [];
 
   // Expéditeurs et liens déjà établis, chargés une fois pour tout le lot.
-  const sendersParOrg = await loadSenders(pool, [...new Set(due.rows.map((r) => r.organization_id))]);
+  const { parOrg: sendersParOrg, contraintes: contraintesSender } = await loadSenders(
+    pool,
+    [...new Set(due.rows.map((r) => r.organization_id))],
+  );
   const bindings = await loadBindings(pool, [...new Set(due.rows.map((r) => r.contact_id))]);
   const comptesTouches = await loadAccountsContactedToday(
     pool,
@@ -370,12 +443,51 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     // doit pas faire avancer l'inscription, alors que composer l'avance.
     if (step) {
       const prochainCreneauCompte = row.account_id ? comptesTouches.get(row.account_id) : undefined;
+
+      // Contraintes portées par l'expéditeur qui sera retenu : fenêtre horaire et
+      // quotas. On résout ici — avant d'émettre — parce que ce sont ses horaires
+      // et son quota qui décident si l'envoi peut avoir lieu maintenant.
+      const kindPrevu = senderKindFor(step.channel);
+      const senderPrevu = kindPrevu
+        ? resolveSender(row.contact_id, kindPrevu, sendersParOrg.get(row.organization_id) ?? [], bindings)
+        : null;
+      const c = senderPrevu?.senderId ? contraintesSender.get(senderPrevu.senderId) : undefined;
+
+      let creneauOuvre: number | null = null;
+      let quotaRestant: number | undefined;
+      let quotaResetAt: number | undefined;
+      if (c) {
+        const decale = shiftIntoBusinessHours(
+          now.getTime(),
+          heuresOuvrees(c.businessHours),
+          decalageFuseau(c.timezone, now),
+        );
+        // `shiftIntoBusinessHours` rend l'instant inchangé quand il est déjà dans
+        // la fenêtre : une différence signifie donc « hors créneau ».
+        if (decale > now.getTime()) creneauOuvre = decale;
+
+        const restantJour = c.dailyQuota !== null ? Math.max(0, c.dailyQuota - c.usedToday) : Infinity;
+        const restantHeure = c.hourlyQuota !== null ? Math.max(0, c.hourlyQuota - c.usedThisHour) : Infinity;
+        const restant = Math.min(restantJour, restantHeure);
+        if (Number.isFinite(restant)) {
+          quotaRestant = restant;
+          // Le quota horaire se libère à l'heure suivante, le journalier demain.
+          quotaResetAt =
+            restantHeure <= restantJour
+              ? new Date(now).setMinutes(60, 0, 0)
+              : new Date(now).setHours(24, 0, 0, 0);
+        }
+      }
+
       const decision = runGuards({
         channel: step.channel,
         now: now.getTime(),
         killSwitch: row.sending_paused_at !== null,
         accountContactedToday: prochainCreneauCompte !== undefined,
         ...(prochainCreneauCompte !== undefined ? { nextAccountSlot: prochainCreneauCompte } : {}),
+        ...(quotaRestant !== undefined ? { quotaRemaining: quotaRestant } : {}),
+        ...(quotaResetAt !== undefined ? { quotaResetAt } : {}),
+        businessHoursNextSlot: creneauOuvre,
       });
 
       if (decision.kind === 'defer') {
