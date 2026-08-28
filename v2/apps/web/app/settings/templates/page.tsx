@@ -1,6 +1,7 @@
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
-import { TemplatesBoard, groupFamilies, type TemplateRow } from './templates-board';
+import { TemplatesBoard } from './templates-board';
+import { groupFamilies, type TemplateRow } from './families';
 
 const COLS = 'id, parent_id, name, channel, locale, version, subject, body, sent_count, is_active';
 
