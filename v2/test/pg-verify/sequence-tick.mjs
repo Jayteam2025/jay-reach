@@ -91,6 +91,7 @@ async function main() {
   await q(`delete from smartlead_campaign_mappings where organization_id=$1`, [ORG]);
   await q(`delete from contact_sender_bindings where contact_id in (select id from contacts where organization_id=$1)`, [ORG]);
   await q(`delete from domain_patterns where organization_id=$1`, [ORG]);
+  await q(`update organizations set sending_paused_at=null, sending_paused_reason=null where id=$1`, [ORG]);
   await q(`delete from senders where organization_id=$1 and identity like 'SEQ %'`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
   await q(`delete from contacts where organization_id=$1 and email like '%@example.test'`, [ORG]);
@@ -166,14 +167,27 @@ async function main() {
     await q(`insert into accounts (organization_id, name, domain) values ($1,'SEQ Usine Nord','usine-nord.fr') returning id`, [ORG])
   ).rows[0].id;
   // email_status pilote le gate de délivrabilité : seul 'valid' passe vers Smartlead.
-  const mkMailContact = async (v, emailStatus = 'valid') =>
-    (
+  const mkMailContact = async (v, emailStatus = 'valid') => {
+    // Un compte par contact : la règle « un contact par compte et par jour »
+    // reporterait le second contact d'une même entreprise, et ces cas éprouvent
+    // le gate, pas cette règle. Le premier garde le domaine, vérifié plus bas.
+    // Le cas « on » réutilise le compte déjà créé plus haut : c'est lui qui
+    // porte le domaine que l'assertion sur le lead vérifie, et l'unicité
+    // (organisation, domaine) interdit de le recréer.
+    const cpt =
+      v === 'on'
+        ? account
+        : (
+            await q(`insert into accounts (organization_id, name) values ($1,'SEQ Usine Nord') returning id`, [ORG])
+          ).rows[0].id;
+    return (
       await q(
         `insert into contacts (organization_id, persona_id, account_id, email, email_status, first_name, last_name)
          values ($1,$2,$3,$4,$5::email_status,'Jean','Test') returning id`,
-        [ORG, persona, account, `seqmail-${v}@example.test`, emailStatus],
+        [ORG, persona, cpt, `seqmail-${v}@example.test`, emailStatus],
       )
     ).rows[0].id;
+  };
 
   const mailCamp = await seedCampaign('SEQ email', [{ channel: 'email', delay_hours: 0 }]);
 
@@ -233,14 +247,20 @@ async function main() {
   const varCamp = await seedCampaign('SEQ variables', [
     { channel: 'linkedin_message', delay_hours: 0, body: 'Bonjour {{prenom}} chez {{entreprise}}' },
   ]);
-  const mkVarContact = async (v, { locale, firstName }) =>
-    (
+  const mkVarContact = async (v, { locale, firstName }) => {
+    // Même raison : un compte par contact. Le nom reste « SEQ Usine Nord », que
+    // les assertions sur le rendu des variables vérifient dans le message.
+    const cpt = (
+      await q(`insert into accounts (organization_id, name) values ($1,'SEQ Usine Nord') returning id`, [ORG])
+    ).rows[0].id;
+    return (
       await q(
         `insert into contacts (organization_id, persona_id, account_id, linkedin_url, email, first_name, last_name, locale)
          values ($1,$2,$3,$4,$5,$6,'Test',$7) returning id`,
-        [ORG, persona, account, `https://www.linkedin.com/in/${v}`, `seqmail-${v}@example.test`, firstName, locale],
+        [ORG, persona, cpt, `https://www.linkedin.com/in/${v}`, `seqmail-${v}@example.test`, firstName, locale],
       )
     ).rows[0].id;
+  };
 
   // (a) fr + prénom présent → rendu substitué, dispatché.
   const cvOk = await mkVarContact('var-ok', { locale: 'fr', firstName: 'Marie' });
@@ -407,6 +427,61 @@ async function main() {
   const aInconnu = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrInconnu])).rows[0];
   check('motif de blocage explicite', String(aInconnu?.block_reason ?? '').includes('fullenrich_risky_no_pattern'),
     `${aInconnu?.status}/${aInconnu?.block_reason}`);
+
+
+  console.log('\n[seq] 11. Garde-fous : un contact par compte et par jour, arrêt global');
+  // Deux contacts de la MÊME entreprise : le second doit être reporté au
+  // lendemain, pas envoyé. Sans cette règle, une entreprise qui publie huit
+  // offres reçoit huit messages le même jour.
+  const cptGarde = (await q(
+    `insert into accounts (organization_id, name, domain) values ($1,'SEQ Meme Compte','meme-compte.test') returning id`, [ORG],
+  )).rows[0].id;
+  const persoGarde = (await q(
+    `insert into personas (organization_id, name) values ($1,'SEQ Garde') returning id`, [ORG],
+  )).rows[0].id;
+  const campGarde = await seedCampaign('Garde-fous', [{ channel: 'email', delay_hours: 0 }]);
+  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
+           values ($1,$2,'SL-GARDE',true)`, [ORG, persoGarde]);
+
+  const duo = [];
+  for (const [f, l] of [['Premier','Contact'],['Second','Contact']]) {
+    duo.push((await q(
+      `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+       values ($1,$2,$3,$4,$5,$6,'valid') returning id`,
+      [ORG, cptGarde, persoGarde, f, l, `${f.toLowerCase()}@meme-compte.test`],
+    )).rows[0].id);
+  }
+  const enrA = await enrollContact(pool, { organizationId: ORG, campaignId: campGarde, contactId: duo[0] });
+  await tickDueEnrollments(pool, at(200000));
+  const actA = (await q(`select status from actions where enrollment_id=$1`, [enrA])).rows[0];
+  check('premier contact du compte : action émise', actA?.status === 'scheduled', `${actA?.status}`);
+
+  const enrB = await enrollContact(pool, { organizationId: ORG, campaignId: campGarde, contactId: duo[1] });
+  await tickDueEnrollments(pool, at(210000));
+  const actB = (await q(`select count(*)::int as n from actions where enrollment_id=$1`, [enrB])).rows[0];
+  check('second contact du même compte : aucune action', actB.n === 0, `${actB.n} action(s)`);
+  const enrBEtat = (await q(`select status, next_action_at from enrollments where id=$1`, [enrB])).rows[0];
+  check('inscription reportée, pas arrêtée', enrBEtat?.status === 'active' && enrBEtat?.next_action_at !== null,
+    `${enrBEtat?.status}`);
+  const demain = new Date(enrBEtat.next_action_at) > at(0);
+  check('reportée à un créneau futur (demain)', demain, `${enrBEtat?.next_action_at}`);
+
+  // Arrêt global : plus rien ne part, quel que soit le canal.
+  await q(`update organizations set sending_paused_at = now(), sending_paused_reason = 'recette' where id=$1`, [ORG]);
+  const cptStop = (await q(
+    `insert into accounts (organization_id, name) values ($1,'SEQ Arret') returning id`, [ORG])).rows[0].id;
+  const cStop = (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
+     values ($1,$2,$3,'Arret','Global','arret@meme-compte.test','valid') returning id`,
+    [ORG, cptStop, persoGarde])).rows[0].id;
+  const enrStop = await enrollContact(pool, { organizationId: ORG, campaignId: campGarde, contactId: cStop });
+  await tickDueEnrollments(pool, at(220000));
+  const actStop = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrStop])).rows[0];
+  check('arrêt global → action bloquée', actStop?.status === 'blocked', `${actStop?.status}`);
+  check('motif explicite', String(actStop?.block_reason ?? '').includes('Arrêt global'), `${actStop?.block_reason}`);
+  const enrStopEtat = (await q(`select status from enrollments where id=$1`, [enrStop])).rows[0];
+  check('inscription toujours vivante (récupérable)', enrStopEtat?.status === 'active', `${enrStopEtat?.status}`);
+  await q(`update organizations set sending_paused_at = null, sending_paused_reason = null where id=$1`, [ORG]);
 
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();
