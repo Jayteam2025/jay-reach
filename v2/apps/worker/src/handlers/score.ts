@@ -130,7 +130,17 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
        left join public.accounts a on a.id = s.account_id
        left join public.sources so on so.id = s.source_id
       where s.organization_id = $1 and s.status = 'new' and s.score is null
-      order by s.occurred_at desc
+      -- Ordre d'ARRIVEE, pas de fraicheur. Trier par occurred_at desc faisait
+      -- passer les signaux récents devant les anciens à chaque cycle : les plus
+      -- vieux n'étaient jamais atteints tant que la collecte tournait, et
+      -- restaient « à traiter » indéfiniment. Mesuré sur cette base : 91 signaux
+      -- en attente depuis plus de deux heures alors que le scoring traitait 182
+      -- signaux par heure pour une file de 100.
+      --
+      -- La fraîcheur reste prise en compte, mais là où c'est sa place : le
+      -- pré-filtre écarte gratuitement les signaux périmés avant tout appel au
+      -- modèle.
+      order by s.created_at asc
       limit $2`,
     [org, batchSize],
   );
