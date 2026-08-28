@@ -21,6 +21,24 @@ export default async function LinkedInSettingsPage() {
     : null;
   const settings = (settingsRow as { mode: Mode; daily_cap: number } | null) ?? { mode: 'auto' as Mode, daily_cap: 25 };
 
+  // Un jeton actif signifie que l'extension a deja ete connectee au moins une
+  // fois. C'est ce qui decide laquelle des deux actions de la page merite le
+  // lime : connecter tant que ce n'est pas fait, enregistrer les reglages ensuite.
+  // On lit une ligne plutot qu'un `count: 'exact', head: true` : cette forme
+  // renvoie `count: null` sans erreur sur cette table, et un drapeau faux se
+  // serait traduit par du lime sur le mauvais bouton, sans rien pour l'expliquer.
+  const jetonActif = supabase && orgId
+    ? (
+        await supabase
+          .from('extension_tokens')
+          .select('organization_id')
+          .eq('organization_id', orgId)
+          .eq('is_active', true)
+          .limit(1)
+      )
+    : null;
+  const alreadyConnected = (jetonActif?.data ?? []).length > 0;
+
   // Compteurs d'activité.
   const now = Date.now();
   const iso7 = new Date(now - 7 * 24 * 3600_000).toISOString();
@@ -100,6 +118,7 @@ export default async function LinkedInSettingsPage() {
           mode={settings.mode}
           dailyCap={settings.daily_cap}
           stats={{ pending, sent7d, today }}
+          alreadyConnected={alreadyConnected}
           alerts={alerts}
         />
       </main>

@@ -16,6 +16,8 @@ export function LinkedInPanel(props: {
   dailyCap: number;
   stats: Stats;
   alerts: Alert[];
+  /** Un jeton actif existe deja : l'extension a ete connectee au moins une fois. */
+  alreadyConnected: boolean;
 }) {
   const t = useTranslations();
   const [mode, setMode] = useState<LinkedInMode>(props.mode);
@@ -25,7 +27,7 @@ export function LinkedInPanel(props: {
   const [connectPending, startConnect] = useTransition();
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
   const [extPresent, setExtPresent] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(props.alreadyConnected);
   // Mise à vrai par le content script quand il a bien stocké le jeton. Une ref
   // et non un state : `onConnect` lit la valeur depuis une closure, qui ne
   // verrait jamais une mise à jour de state postérieure à son rendu.
@@ -154,7 +156,7 @@ export function LinkedInPanel(props: {
         </div>
 
         <div className="rs-lk-actions">
-          <button type="button" className="rs-btn" data-primary="true" onClick={onSave} disabled={savePending}>
+          <button type="button" className="rs-btn" data-primary={connected ? 'true' : undefined} onClick={onSave} disabled={savePending}>
             {t('linkedin.cursor.save')}
           </button>
           {savedMsg ? <span className="rs-lk-msg">{savedMsg}</span> : null}
@@ -177,7 +179,7 @@ export function LinkedInPanel(props: {
           <li>{t('linkedin.connect.step5')}</li>
         </ol>
         <div className="rs-lk-actions">
-          <button type="button" className="rs-btn" data-primary="true" onClick={onConnect} disabled={connectPending}>
+          <button type="button" className="rs-btn" data-primary={connected ? undefined : 'true'} onClick={onConnect} disabled={connectPending}>
             {connected ? t('linkedin.connect.regenerate') : t('linkedin.connect.button')}
           </button>
           <span className="rs-lk-msg" data-ok={connected ? 'true' : undefined}>
