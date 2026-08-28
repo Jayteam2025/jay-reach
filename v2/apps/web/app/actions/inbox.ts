@@ -3,7 +3,7 @@
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 import { classifyReply, type ReplyClassification } from '@jay-reach/core';
-import { classifyReplyWithModel, generateSuggestedReply, hasAnthropicKey } from '../../lib/anthropic';
+import { classifyReplyWithModel, generateSuggestedReply, resolveAnthropicKey } from '../../lib/anthropic';
 
 export type ClassifyResult = { ok: true; count: number } | { ok: false; error: string };
 export type SuggestResult = { ok: true; draft: string } | { ok: false; error: string };
@@ -18,7 +18,8 @@ export async function suggestReply(organizationId: string, threadId: string): Pr
   } catch {
     return { ok: false, error: 'Droit opérateur requis.' };
   }
-  if (!hasAnthropicKey()) {
+  const apiKey = await resolveAnthropicKey(organizationId);
+  if (!apiKey) {
     return { ok: false, error: 'Clé IA (Anthropic) requise — ajoutez-la pour activer les réponses suggérées.' };
   }
   const svc = createServiceClient();
@@ -60,7 +61,7 @@ export async function suggestReply(organizationId: string, threadId: string): Pr
       .slice(-4)
       .map((m) => `${m.direction === 'in' ? 'Reçu' : 'Envoyé'} : ${m.body}`)
       .join(' | '),
-  });
+  }, apiKey);
   if (!draft) return { ok: false, error: 'Génération indisponible.' };
   return { ok: true, draft };
 }
@@ -87,6 +88,10 @@ export async function classifyInbox(organizationId: string): Promise<ClassifyRes
   } catch {
     return { ok: false, error: 'Droit opérateur requis.' };
   }
+
+  // Resolue une fois pour tout le lot : le tri peut porter sur des dizaines de
+  // fils, et rien ne justifie d'interroger le coffre a chaque message.
+  const cleIa = await resolveAnthropicKey(organizationId);
 
   const svc = createServiceClient();
   const threads =
@@ -116,7 +121,7 @@ export async function classifyInbox(organizationId: string): Promise<ClassifyRes
       resumeInDays = rules.resumeInDays;
     } else {
       // Passe 3 : modèle (ou défaut « réponse humaine » sans clé).
-      classification = (await classifyReplyWithModel(msg.body)) ?? 'human_reply';
+      classification = (await classifyReplyWithModel(msg.body, cleIa)) ?? 'human_reply';
     }
 
     const resumeAt =

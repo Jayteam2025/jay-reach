@@ -185,7 +185,10 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
                 >
                   {suggesting ? t('suggesting') : t('suggest')}
                 </button>
-                <button className="rs-btn" data-primary="true" disabled title={t('replyNote')}>
+                {/* Pas de lime sur une action indisponible : le design system reserve
+                    l'action primaire a ce qu'on peut reellement faire, et il n'y en a
+                    qu'une par vue — c'est « Trier automatiquement » ici. */}
+                <button className="rs-btn" disabled title={t('replyNote')}>
                   {t('reply')}
                 </button>
                 <span className="rs-row-sub mono">{t('via', { sender: selected.sender })}</span>

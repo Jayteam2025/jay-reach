@@ -5,11 +5,44 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { ReplyClassification } from '@jay-reach/core';
+import { getPool } from './db';
 
 const LABELS: ReplyClassification[] = ['human_reply', 'auto_absence', 'auto_left_company', 'auto_other'];
 
-export function hasAnthropicKey(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+/**
+ * Resout la cle Anthropic de l'organisation : le coffre chiffre d'abord, la
+ * variable d'environnement en repli. C'est le meme ordre que le worker.
+ *
+ * L'app web ne lisait que `process.env`, alors que la cle se saisit dans
+ * l'onglet Fournisseurs et vit chiffree en base. Resultat : chez un operateur
+ * qui a suivi l'interface, le tri par modele et les reponses suggerees etaient
+ * morts sans que rien ne l'explique.
+ */
+export async function resolveAnthropicKey(organizationId: string): Promise<string | null> {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (encryptionKey) {
+    try {
+      const res = await getPool().query<{ secret: string | null }>(
+        'select app.get_credential($1, $2, $3) as secret',
+        [organizationId, 'anthropic', encryptionKey],
+      );
+      const brut = res.rows[0]?.secret;
+      if (brut) {
+        // Le coffre peut porter la cle brute ou un objet JSON (heritage du socle v1).
+        try {
+          const o = JSON.parse(brut) as Record<string, unknown>;
+          const v = o.api_key ?? o.apiKey ?? o.key;
+          if (typeof v === 'string' && v !== '') return v;
+        } catch {
+          /* cle brute */
+        }
+        return brut;
+      }
+    } catch {
+      // Coffre injoignable : on retombe sur l'environnement plutot que d'echouer.
+    }
+  }
+  return process.env.ANTHROPIC_API_KEY ?? null;
 }
 
 export interface ReplyContext {
@@ -24,9 +57,7 @@ export interface ReplyContext {
  * Génère une PROPOSITION de réponse à un message reçu (T26b). Jamais envoyée
  * automatiquement : l'humain relit et envoie. Renvoie null sans clé configurée.
  */
-export async function generateSuggestedReply(ctx: ReplyContext): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
+export async function generateSuggestedReply(ctx: ReplyContext, apiKey: string): Promise<string | null> {
   try {
     const client = new Anthropic({ apiKey });
     const res = await client.messages.create({
@@ -54,8 +85,10 @@ export async function generateSuggestedReply(ctx: ReplyContext): Promise<string 
   }
 }
 
-export async function classifyReplyWithModel(body: string): Promise<ReplyClassification | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+export async function classifyReplyWithModel(
+  body: string,
+  apiKey: string | null,
+): Promise<ReplyClassification | null> {
   if (!apiKey) return null;
   try {
     const client = new Anthropic({ apiKey });
