@@ -7,6 +7,12 @@ import { resolveCompanyNaf, type CompanyNafResolution } from '@jay-reach/provide
 export interface QualifyJob {
   readonly organizationId: string;
   readonly companyName: string;
+  /**
+   * Signal à l'origine de la qualification. Sans lui, le compte résolu ne peut
+   * être rattaché à rien : le pré-filtre des cabinets par code NAF et le filtre
+   * d'opposition au démarchage lisent tous deux le compte À TRAVERS le signal.
+   */
+  readonly signalId: string;
 }
 
 export async function runQualify(job: QualifyJob): Promise<CompanyNafResolution | null> {

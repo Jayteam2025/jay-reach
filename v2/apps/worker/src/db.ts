@@ -205,3 +205,32 @@ export async function upsertResolvedAccount(pool: Pool, acc: ResolvedAccount): P
   );
   return res.rows[0]?.id ?? null;
 }
+
+/**
+ * Rattache au compte résolu les signaux de cette entreprise qui n'en ont pas.
+ *
+ * Ce lien n'est pas cosmétique : le scoring lit `accounts.naf_code` et
+ * `accounts.prospecting_opposition` À TRAVERS `signals.account_id`. Sans lui, le
+ * pré-filtre des cabinets par code NAF et le filtre d'opposition au démarchage
+ * existent dans le code mais ne s'appliquent jamais — la jointure ne ramène rien.
+ *
+ * On rattache par nom d'entreprise plutôt que signal par signal : une entreprise
+ * qui publie dix offres n'a pas à être résolue dix fois auprès de l'annuaire, et
+ * les signaux déjà collectés se rattrapent au passage.
+ *
+ * Retourne le nombre de signaux rattachés.
+ */
+export async function attachSignalsToAccount(
+  pool: Pool,
+  organizationId: string,
+  companyName: string,
+  accountId: string,
+): Promise<number> {
+  const res = await pool.query(
+    `update public.signals
+        set account_id = $1
+      where organization_id = $2 and account_id is null and company_hint = $3`,
+    [accountId, organizationId, companyName],
+  );
+  return res.rowCount ?? 0;
+}
