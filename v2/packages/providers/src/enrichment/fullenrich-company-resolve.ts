@@ -653,6 +653,18 @@ export async function resolveCompany(
 
   let resolved: ResolvedCompany | null = null;
   let matchedVia = "";
+  /**
+   * Le provider a-t-il echoue (credits epuises, cle revoquee, panne) plutot que
+   * de repondre « rien trouve » ? Les deux se ressemblaient : chaque erreur etait
+   * transformee en tableau vide, puis memorisee comme une absence pendant 24 h.
+   * Une entreprise devenait ainsi « introuvable » a cause d'un compte a sec.
+   */
+  let echecProvider: string | null = null;
+  const noterEchec = (err: unknown): [] => {
+    const e = err as { code?: string; status?: number; message?: string };
+    echecProvider = e.code ?? (e.status ? `HTTP ${e.status}` : e.message ?? "erreur inconnue");
+    return [];
+  };
 
   // Helper local : prend le 1er candidat acceptable d'une liste
   const firstOrNull = <T extends ResolvedCompany>(arr: T[]): T | null => arr[0] ?? null;
@@ -714,8 +726,8 @@ export async function resolveCompany(
       const fuzzyAny: CompanySearchBody = { names: namesPayload };
 
       const [r1, r2] = await Promise.all([
-        callCompanySearch(apiKey, fuzzyFr, countryCode, trimmedName).catch(() => []),
-        callCompanySearch(apiKey, fuzzyAny, countryCode, trimmedName).catch(() => []),
+        callCompanySearch(apiKey, fuzzyFr, countryCode, trimmedName).catch(noterEchec),
+        callCompanySearch(apiKey, fuzzyAny, countryCode, trimmedName).catch(noterEchec),
       ]);
 
       // Aggregation : dedupe sur ID + tri par score combine (sim+country+hc-domain)
@@ -789,9 +801,9 @@ export async function resolveCompany(
           // tri ensuite. On lance aussi avec FR en parallele au cas ou l'entite
           // est bien indexee FR (pour gagner sur le tiebreaker pays).
           const [aiCandsAny, aiCandsFr] = await Promise.all([
-            callCompanySearch(apiKey, { names: aiPayload }, countryCode, aiInputs).catch(() => []),
+            callCompanySearch(apiKey, { names: aiPayload }, countryCode, aiInputs).catch(noterEchec),
             countryCode
-              ? callCompanySearch(apiKey, { names: aiPayload, headquarters_locations: [{ value: countryCode }] }, countryCode, aiInputs).catch(() => [])
+              ? callCompanySearch(apiKey, { names: aiPayload, headquarters_locations: [{ value: countryCode }] }, countryCode, aiInputs).catch(noterEchec)
               : Promise.resolve([]),
           ]);
           const allAi = [...aiCandsAny, ...aiCandsFr];
@@ -836,6 +848,13 @@ export async function resolveCompany(
   if (resolved) {
     console.log(`[fullenrich-resolve] matched via ${matchedVia}: "${trimmedName}" -> ${resolved.name}`);
     await setCached(supabase, key, resolved);
+  } else if (echecProvider) {
+    // Echec du provider : on ne sait RIEN de cette entreprise. La marquer comme
+    // introuvable la ferait ignorer pendant 24 h, y compris apres rechargement
+    // des credits — sans que rien ne l'explique.
+    console.warn(
+      `[fullenrich-resolve] "${trimmedName}" non resolue : le provider a echoue (${echecProvider}) — aucune mise en cache`,
+    );
   } else {
     console.log(`[fullenrich-resolve] no match: "${trimmedName}"`);
     await setNegativeCached(supabase, key);
