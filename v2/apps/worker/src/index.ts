@@ -28,7 +28,11 @@ import {
   startSourceRun,
   finishSourceRun,
 } from './db.js';
-import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-persist.js';
+import {
+  persistCompanyEnrichment,
+  persistEnrichedContact,
+  alignAccountDomainOnContacts,
+} from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
 import {
   enqueueDiscoverForActiveSources,
@@ -303,6 +307,13 @@ async function main(): Promise<void> {
     // De nouvelles adresses viennent d'arriver : le pattern de leur domaine a pu
     // changer de tier. Sans ce recalcul, le gate n'a rien à lire et bloque tout
     // email qui n'est pas explicitement délivrable.
+    // Le domaine du provider n'est pas toujours celui des courriels : on aligne
+    // le compte sur ce qui a été réellement observé avant d'en déduire un pattern.
+    const aligne = await alignAccountDomainOnContacts(pool, data.organizationId, data.accountId);
+    if (aligne) {
+      console.log(`[enrich-contacts] domaine du compte aligné sur les courriels : ${aligne}`);
+    }
+
     const domaines = contacts.map((c) => domainOf(c.email));
     const patterns = await refreshDomainPatterns(pool, data.organizationId, domaines);
     if (patterns > 0) {
