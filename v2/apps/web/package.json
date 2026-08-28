@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../../scripts/package-extension.mjs",
     "dev": "next dev --port 3000",
     "prebuild": "node ../../scripts/package-extension.mjs",
     "build": "next build",

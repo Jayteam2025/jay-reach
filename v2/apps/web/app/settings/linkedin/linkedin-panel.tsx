@@ -26,7 +26,10 @@ export function LinkedInPanel(props: {
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
   const [extPresent, setExtPresent] = useState(false);
   const [connected, setConnected] = useState(false);
-  const savedTokenRef = useRef<string | null>(null);
+  // Mise à vrai par le content script quand il a bien stocké le jeton. Une ref
+  // et non un state : `onConnect` lit la valeur depuis une closure, qui ne
+  // verrait jamais une mise à jour de state postérieure à son rendu.
+  const confirmedRef = useRef(false);
 
   // Détecte l'extension et confirme l'enregistrement du jeton (postMessage).
   useEffect(() => {
@@ -35,11 +38,16 @@ export function LinkedInPanel(props: {
       const data = event.data as { type?: string; success?: boolean };
       if (data?.type === 'JAY_REACH_EXTENSION_PRESENT') setExtPresent(true);
       if (data?.type === 'JAY_REACH_LINKEDIN_TOKEN_SAVED' && data.success) {
+        confirmedRef.current = true;
         setConnected(true);
         setConnectMsg(t('linkedin.connect.connected'));
       }
     }
     window.addEventListener('message', onMessage);
+    // Le content script annonce sa présence à `document_start`, avant que cet
+    // écouteur existe : son annonce spontanée arrive toujours trop tôt. On la
+    // redemande maintenant qu'on est prêt à l'entendre.
+    window.postMessage({ type: 'JAY_REACH_EXTENSION_PING' }, window.location.origin);
     return () => window.removeEventListener('message', onMessage);
   }, [t]);
 
@@ -59,10 +67,14 @@ export function LinkedInPanel(props: {
         setConnectMsg(res.error);
         return;
       }
-      savedTokenRef.current = res.token;
+      confirmedRef.current = false;
       // Transmet le jeton à l'extension (le content script le stocke).
       window.postMessage({ type: 'JAY_REACH_LINKEDIN_TOKEN', token: res.token }, window.location.origin);
-      if (!extPresent) {
+      // On conclut sur la confirmation du content script, pas sur `extPresent` :
+      // ce drapeau vaut ce que vaut une annonce qui a pu se perdre, et l'écran
+      // annonçait « extension pas détectée » sur une connexion réussie.
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (!confirmedRef.current) {
         setConnectMsg(t('linkedin.connect.notDetected'));
       }
     });

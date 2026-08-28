@@ -86,12 +86,15 @@ async function pollLinkedInQueue() {
         : await self.sendLinkedInInvitation(linkedinUrl);
     console.log('📊 Résultat :', result);
 
+    // En cas de succès on n'envoie ni code ni message : `result.code` vaut alors
+    // 'sent', et le remonter renseignait `error_code` sur une ligne réussie —
+    // une colonne d'erreur non nulle sur un envoi qui s'est bien passé rend
+    // toute lecture de la file trompeuse.
     await postJson(base, '/api/extension/linkedin/update', {
       token,
       queue_id: queueId,
       status: result.ok ? 'sent' : 'failed',
-      error_code: result.code,
-      error_message: result.message,
+      ...(result.ok ? {} : { error_code: result.code, error_message: result.message }),
     });
 
     if (!result.ok && (result.code === 'restricted' || result.code === 'not_logged_in')) {

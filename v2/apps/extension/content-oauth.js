@@ -18,5 +18,14 @@
   });
 
   // Signale à la page que l'extension est présente (pour l'UI de connexion).
+  // L'annonce spontanée ne suffit pas : ce script tourne à `document_start`,
+  // donc avant que React ait monté son écouteur — le message se perdait, et
+  // l'écran affichait « extension pas détectée » alors qu'elle l'était. La page
+  // redemande donc quand elle est prête, et on lui répond.
+  window.addEventListener('message', (event) => {
+    if (!ALLOWED.includes(event.origin)) return;
+    if (event.data?.type !== 'JAY_REACH_EXTENSION_PING') return;
+    window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT' }, event.origin);
+  });
   window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT' }, '*');
 })();
