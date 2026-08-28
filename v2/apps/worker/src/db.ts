@@ -126,6 +126,42 @@ export async function finishSourceRun(pool: Pool, runId: string, result: SourceR
   );
 }
 
+/**
+ * Delai au-dela duquel une execution encore marquee `running` est tenue pour
+ * interrompue. Une collecte dure quelques secondes ; une demi-heure laisse une
+ * marge confortable meme sur une source lente.
+ */
+export const SOURCE_RUN_TIMEOUT_MIN = 30;
+
+/**
+ * Referme les executions restees `running` alors que plus rien ne tourne.
+ *
+ * Un worker qui s'arrete en plein travail — crash, redemarrage, machine
+ * eteinte — laisse sa ligne ouverte pour toujours : `finishSourceRun` n'est
+ * jamais atteint. L'ecran Sources affiche alors « en cours » indefiniment, sur
+ * une collecte qui n'existe plus. C'est le bug #7 du socle precedent, que le
+ * nouveau reproduisait a l'identique.
+ *
+ * On se base sur l'anciennete plutot que sur le demarrage du worker : plusieurs
+ * workers peuvent tourner en parallele, et l'un qui demarre n'a aucun droit de
+ * declarer mortes les executions d'un autre.
+ */
+export async function closeStaleSourceRuns(
+  pool: Pool,
+  timeoutMinutes: number = SOURCE_RUN_TIMEOUT_MIN,
+): Promise<number> {
+  const res = await pool.query(
+    `update source_runs
+        set status = 'error',
+            finished_at = now(),
+            error = coalesce(error, 'Collecte interrompue : le worker s''est arrêté avant la fin.')
+      where status = 'running'
+        and started_at < now() - make_interval(mins => $1)`,
+    [timeoutMinutes],
+  );
+  return res.rowCount ?? 0;
+}
+
 export interface LinkedInActionJob {
   readonly organizationId: string;
   readonly kind: 'invite' | 'message';
