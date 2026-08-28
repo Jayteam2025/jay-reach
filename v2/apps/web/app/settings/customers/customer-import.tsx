@@ -51,7 +51,7 @@ export function CustomerImport({ orgId }: { orgId: string }) {
         ref={inputRef}
         type="file"
         accept=".csv,text/csv,.xlsx,.xls"
-        style={{ display: 'none' }}
+        className="rs-file-input"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void ingest(f);
