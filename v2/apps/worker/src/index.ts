@@ -28,12 +28,17 @@ import {
   startSourceRun,
   finishSourceRun,
 } from './db.js';
-import { persistCompanyEnrichment, persistEnrichedContact } from './enrichment-persist.js';
+import {
+  persistCompanyEnrichment,
+  persistEnrichedContact,
+  alignAccountDomainOnContacts,
+} from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
 import {
   enqueueDiscoverForActiveSources,
   enqueueScoringForOrgs,
   enqueueEnrichmentForQualified,
+  enqueueRequestedRuns,
 } from './producer.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
@@ -56,6 +61,10 @@ const REOON_PROVIDER = 'reoon';
 const ANTHROPIC_PROVIDER = 'anthropic';
 // Fréquence du producteur (met les sources actives en file). Défaut : 15 min.
 const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 15 * 60 * 1000);
+// Relève des collectes demandées à la main. Court exprès : c'est le délai que
+// ressent l'opérateur entre son clic et le départ de la collecte. La requête est
+// un SELECT sur un index partiel, donc négligeable même à cette fréquence.
+const REQUESTED_RUN_POLL_MS = Number(process.env.REQUESTED_RUN_POLL_MS ?? 10_000);
 // Fréquence du tick de séquence (avance les inscriptions dues). Défaut : 1 min.
 const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 
@@ -303,6 +312,13 @@ async function main(): Promise<void> {
     // De nouvelles adresses viennent d'arriver : le pattern de leur domaine a pu
     // changer de tier. Sans ce recalcul, le gate n'a rien à lire et bloque tout
     // email qui n'est pas explicitement délivrable.
+    // Le domaine du provider n'est pas toujours celui des courriels : on aligne
+    // le compte sur ce qui a été réellement observé avant d'en déduire un pattern.
+    const aligne = await alignAccountDomainOnContacts(pool, data.organizationId, data.accountId);
+    if (aligne) {
+      console.log(`[enrich-contacts] domaine du compte aligné sur les courriels : ${aligne}`);
+    }
+
     const domaines = contacts.map((c) => domainOf(c.email));
     const patterns = await refreshDomainPatterns(pool, data.organizationId, domaines);
     if (patterns > 0) {
@@ -354,6 +370,23 @@ async function main(): Promise<void> {
   await produce();
   const producer = setInterval(() => void produce(), DISCOVER_INTERVAL_MS);
   producer.unref();
+
+  // Collectes demandées à la main : boucle courte et légère (un SELECT sur un
+  // index partiel), pour que le bouton « lancer maintenant » de l'écran Sources
+  // réagisse en quelques secondes plutôt qu'au prochain cycle du producteur.
+  const releverDemandes = async (): Promise<void> => {
+    try {
+      const n = await enqueueRequestedRuns(boss, pool);
+      if (n > 0) {
+        console.log(`[producer] ${n} collecte(s) demandée(s) à la main enfilée(s)`);
+      }
+    } catch (err) {
+      console.error('[producer] relève des demandes échouée', err);
+    }
+  };
+  await releverDemandes();
+  const demandes = setInterval(() => void releverDemandes(), REQUESTED_RUN_POLL_MS);
+  demandes.unref();
 
   // Producteur de ticks : enfile un `sequence.tick` périodique (dédup par
   // fenêtre) pour avancer les inscriptions dues même sans événement déclencheur.

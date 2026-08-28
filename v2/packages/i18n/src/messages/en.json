@@ -198,7 +198,7 @@
     "active": "Active",
     "paused": "Paused",
     "history": "Run history",
-    "empty": "No source configured yet.",
+    "empty": "No source yet. Add one to start detecting.",
     "neverRan": "Never ran.",
     "found": "found",
     "new": "new",
@@ -207,7 +207,29 @@
       "error": "Failed",
       "running": "Running"
     },
-    "empty": "No source configured."
+    "runNow": "Run collection",
+    "runRequested": "Collection requested. It starts in a few seconds.",
+    "pause": "Pause",
+    "resume": "Resume",
+    "form": {
+      "add": "Add a source",
+      "create": "Create source",
+      "save": "Save",
+      "edit": "Edit",
+      "cancel": "Cancel",
+      "saved": "Saved",
+      "name": "Name",
+      "namePlaceholder": "France Travail — industrial maintenance",
+      "provider": "Provider",
+      "keywordsPlaceholder": "maintenance technician, maintenance manager",
+      "locationPlaceholder": "Lyon (69) — leave empty for all of France",
+      "qualification": "QUALIFICATION",
+      "qualificationHelp": "What decides a signal is worth working. Without a brief, collected signals stay pending.",
+      "scoringPrompt": "Qualification brief",
+      "scoringPromptPlaceholder": "Assess whether the company is an industrial SME strengthening its maintenance. Rule out recruitment agencies and temp work.",
+      "threshold": "Minimum score",
+      "active": "Active source"
+    }
   },
   "inbox": {
     "eyebrow": "Replies",

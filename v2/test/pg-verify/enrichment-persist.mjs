@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import {
   persistCompanyEnrichment,
   persistEnrichedContact,
+  alignAccountDomainOnContacts,
   mapEmailStatus,
 } from './_enrich-persist.mjs';
 
@@ -70,6 +71,16 @@ const before = (await pool.query(`select count(*)::int n from contacts where org
 const idNull = await persistEnrichedContact(pool, ORG, accA, { firstName: 'Sans', lastName: 'Email', email: null });
 const after = (await pool.query(`select count(*)::int n from contacts where organization_id=$1`, [ORG])).rows[0].n;
 check('contact-no-email-null', idNull === null && before === after);
+
+// Le domaine du provider n'est pas toujours celui des courriels : Lea Nature
+// ressortait en « recrutement-leanature.com » alors que ses adresses sont en
+// « @leanature.com ». On aligne le compte sur ce qui a ete observe.
+await pool.query(`update accounts set domain='recrutement-exemple.test' where id=$1`, [accA]);
+const aligne = await alignAccountDomainOnContacts(pool, ORG, accA);
+const dom = (await pool.query(`select domain from accounts where id=$1`, [accA])).rows[0];
+check('domaine aligne sur les courriels des contacts', aligne !== null && dom.domain !== 'recrutement-exemple.test');
+const rejeu = await alignAccountDomainOnContacts(pool, ORG, accA);
+check('rejeu sans effet (idempotent)', rejeu === null);
 
 await pool.end();
 if (failures > 0) {

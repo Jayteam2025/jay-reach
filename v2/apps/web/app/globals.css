@@ -1687,3 +1687,21 @@ button.rs-pill.rs-pill-lime:hover {
 .rs-appr-name { font-size: 14px; font-weight: 600; color: var(--chalk); }
 .rs-appr-sub { font-size: 12px; color: var(--moss2); margin-top: 2px; }
 .rs-appr-actions { display: flex; gap: 8px; flex: none; }
+
+/* Case à cocher : libellé sur la même ligne, teinte de la palette plutôt que le
+   bleu système. La case est un contrôle, pas un état — elle ne prend le lime que
+   sur sa coche, via accent-color. */
+.rs-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--chalk);
+  cursor: pointer;
+}
+.rs-check input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--lime);
+  cursor: pointer;
+}

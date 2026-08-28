@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
+import { SourceActions, AddSource } from './source-actions';
 
 const RUN_COLOR: Record<string, string> = {
   success: 'var(--lime2)',
@@ -16,7 +17,7 @@ interface SourceRow {
   readonly name: string;
   readonly provider_id: string;
   readonly is_active: boolean;
-  readonly config: { keywords?: unknown; location?: unknown } | null;
+  readonly config: { keywords?: unknown; location?: unknown; scoring_prompt?: unknown; match_threshold?: unknown } | null;
 }
 
 interface RunRow {
@@ -46,6 +47,11 @@ export default async function SourcesPage() {
   // plutôt qu'une jointure imbriquée : PostgREST ne détecte pas toujours la
   // relation, et un `null` silencieux afficherait une source sans historique
   // comme une source qui n'a jamais tourné — deux choses différentes.
+  const memberships = supabase
+    ? (await supabase.from('memberships').select('organization_id').limit(1)).data
+    : null;
+  const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
+
   const sources = supabase
     ? (((await supabase
         .from('sources')
@@ -72,12 +78,17 @@ export default async function SourcesPage() {
     <div className="rs-shell">
       <AppTopBar active="sources" />
       <main className="rs-main">
-        <p className="rs-eyebrow">{t('sources.eyebrow')}</p>
-        <h1>{t('sources.title')}</h1>
-        <p className="rs-lead">{t('sources.lead')}</p>
+        <div className="rs-page-head">
+          <div>
+            <p className="rs-eyebrow">{t('sources.eyebrow')}</p>
+            <h1>{t('sources.title')}</h1>
+            <p className="rs-lead">{t('sources.lead')}</p>
+          </div>
+          <AddSource orgId={orgId} />
+        </div>
 
         {sources.length === 0 ? (
-          <p className="rs-row-sub">{t('sources.empty')}</p>
+          <p className="rs-empty">{t('sources.empty')}</p>
         ) : (
           <div style={{ display: 'grid', gap: 14 }}>
             {sources.map((source) => {
@@ -166,6 +177,20 @@ export default async function SourcesPage() {
                       ))}
                     </div>
                   )}
+
+                  <SourceActions
+                    orgId={orgId}
+                    source={{
+                      id: source.id,
+                      name: source.name,
+                      providerId: source.provider_id,
+                      keywords,
+                      location: location ?? '',
+                      scoringPrompt: typeof source.config?.scoring_prompt === 'string' ? source.config.scoring_prompt : '',
+                      matchThreshold: Number(source.config?.match_threshold ?? 60),
+                      isActive: source.is_active,
+                    }}
+                  />
                 </section>
               );
             })}

@@ -168,3 +168,51 @@ export async function persistEnrichedContact(
   );
   return res.rows[0]?.id ?? null;
 }
+
+/**
+ * Aligne le domaine du compte sur celui des adresses réellement trouvées.
+ *
+ * Le domaine renvoyé par le provider n'est pas toujours celui des courriels :
+ * Léa Nature ressort en `recrutement-leanature.com`, son site de recrutement,
+ * alors que ses adresses sont en `@leanature.com`. Constaté en recette le
+ * 2026-08-28 — la recherche de contacts par domaine échouait, et le champ
+ * `website` envoyé à Smartlead pointait au mauvais endroit.
+ *
+ * On retient le domaine MAJORITAIRE des contacts du compte : une adresse
+ * personnelle isolée (gmail, yahoo) ne doit pas emporter la décision. Les
+ * courriels sont une observation, le domaine du provider une supposition.
+ *
+ * Retourne le domaine retenu, ou null si rien n'a changé.
+ */
+export async function alignAccountDomainOnContacts(
+  pool: Pool,
+  organizationId: string,
+  accountId: string,
+): Promise<string | null> {
+  const res = await pool.query<{ domaine: string; n: number }>(
+    `select lower(split_part(email, '@', 2)) as domaine, count(*)::int as n
+       from contacts
+      where organization_id = $1 and account_id = $2 and email is not null
+      group by 1 order by n desc, domaine asc limit 1`,
+    [organizationId, accountId],
+  );
+  const majoritaire = res.rows[0]?.domaine;
+  if (!majoritaire || !majoritaire.includes('.')) return null;
+
+  try {
+    const maj = await pool.query(
+      `update accounts set domain = $3
+        where id = $1 and organization_id = $2 and domain is distinct from $3`,
+      [accountId, organizationId, majoritaire],
+    );
+    return (maj.rowCount ?? 0) > 0 ? majoritaire : null;
+  } catch (err) {
+    // 23505 : un autre compte de l'organisation porte déjà ce domaine. On garde
+    // celui du provider plutôt que d'écraser une correspondance existante.
+    if ((err as { code?: string }).code === '23505') {
+      console.warn(`[enrich] domaine ${majoritaire} déjà pris par un autre compte — inchangé`);
+      return null;
+    }
+    throw err;
+  }
+}
