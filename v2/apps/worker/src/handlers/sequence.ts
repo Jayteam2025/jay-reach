@@ -9,7 +9,9 @@
  */
 import type { Pool } from 'pg';
 import {
+  actionIdempotencyKey,
   composeTick,
+  runGuards,
   renderTemplate,
   resolveSender,
   type Binding,
@@ -62,6 +64,8 @@ interface DueRow {
   readonly email_status: EmailStatus | null;
   readonly account_id: string | null;
   readonly approval_policy: unknown;
+  /** Arrêt global des envois de l'organisation (garde-fou prioritaire). */
+  readonly sending_paused_at: string | null;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
   // Canal email (Smartlead) : id de campagne résolu PAR PERSONA (mapping activé),
   // + champs du lead.
@@ -225,6 +229,44 @@ function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean 
 }
 
 /**
+ * Comptes déjà touchés aujourd'hui, avec l'instant où ils redeviennent
+ * joignables.
+ *
+ * La spec l'énonce ainsi : deux personnes de la même entreprise ne reçoivent
+ * jamais quelque chose le même jour. Sans cette règle, une entreprise qui publie
+ * huit offres reçoit huit messages — sur les données réelles de JB, un seul
+ * groupe représentait huit des dix signaux qualifiés.
+ *
+ * On mesure sur les actions RÉELLEMENT parties ou planifiées du jour, pas sur
+ * les actions bloquées : un contact qu'on n'a pas touché ne consomme pas la
+ * place de son entreprise.
+ */
+async function loadAccountsContactedToday(
+  pool: Pool,
+  organizationIds: string[],
+): Promise<Map<string, number>> {
+  const parCompte = new Map<string, number>();
+  if (organizationIds.length === 0) return parCompte;
+  const res = await pool.query<{ account_id: string; prochain_creneau: string }>(
+    `select c.account_id,
+            (date_trunc('day', min(a.created_at)) + interval '1 day') as prochain_creneau
+       from actions a
+       join enrollments e on e.id = a.enrollment_id
+       join contacts c on c.id = e.contact_id
+      where a.organization_id = any($1::uuid[])
+        and c.account_id is not null
+        and a.status <> 'blocked'
+        and a.created_at >= date_trunc('day', now())
+      group by c.account_id`,
+    [organizationIds],
+  );
+  for (const row of res.rows) {
+    parCompte.set(row.account_id, new Date(row.prochain_creneau).getTime());
+  }
+  return parCompte;
+}
+
+/**
  * Traite les inscriptions actives dont `next_action_at <= now`. Pour chacune :
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
  * met à jour l'inscription, et — pour les envois LinkedIn autorisés — prépare un
@@ -236,6 +278,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
             c.linkedin_url, c.email, c.email_status, c.account_id, c.first_name, c.last_name,
             c.locale, c.job_title,
             camp.approval_policy,
+            org.sending_paused_at,
             sc.campaign_id as smartlead_campaign_id,
             a.name as company_name, a.domain, a.city, a.headcount,
             p.angle as persona_angle,
@@ -245,6 +288,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
        from enrollments e
        join contacts c on c.id = e.contact_id
        join campaigns camp on camp.id = e.campaign_id
+       join organizations org on org.id = e.organization_id
        left join accounts a on a.id = c.account_id
        left join personas p on p.id = c.persona_id
        left join signals sig on sig.id = e.signal_id
@@ -265,6 +309,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
   // Expéditeurs et liens déjà établis, chargés une fois pour tout le lot.
   const sendersParOrg = await loadSenders(pool, [...new Set(due.rows.map((r) => r.organization_id))]);
   const bindings = await loadBindings(pool, [...new Set(due.rows.map((r) => r.contact_id))]);
+  const comptesTouches = await loadAccountsContactedToday(
+    pool,
+    [...new Set(due.rows.map((r) => r.organization_id))],
+  );
 
   // Patterns de domaine, pour que le gate puisse juger un email non explicitement
   // délivrable. Chargés par organisation : un pattern déduit chez l'une ne dit
@@ -317,6 +365,50 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);
+
+    // Garde-fous d'envoi (T18). Interrogés AVANT `composeTick` : un report ne
+    // doit pas faire avancer l'inscription, alors que composer l'avance.
+    if (step) {
+      const prochainCreneauCompte = row.account_id ? comptesTouches.get(row.account_id) : undefined;
+      const decision = runGuards({
+        channel: step.channel,
+        now: now.getTime(),
+        killSwitch: row.sending_paused_at !== null,
+        accountContactedToday: prochainCreneauCompte !== undefined,
+        ...(prochainCreneauCompte !== undefined ? { nextAccountSlot: prochainCreneauCompte } : {}),
+      });
+
+      if (decision.kind === 'defer') {
+        // Rien n'est émis : on repousse la date due. L'inscription reprendra
+        // d'elle-même au créneau indiqué, sans perdre son étape.
+        await pool.query(`update enrollments set next_action_at = $2 where id = $1`, [
+          row.id,
+          new Date(decision.until).toISOString(),
+        ]);
+        console.log(`[tick] inscription ${row.id} reportée — ${decision.reason}`);
+        continue;
+      }
+
+      if (decision.kind === 'block') {
+        // L'action est bloquée mais l'inscription reste vivante : lever l'arrêt
+        // global ou corriger la cause suffit à la voir repartir.
+        await pool.query(
+          `insert into actions (organization_id, enrollment_id, step_id, channel, status, block_reason, idempotency_key)
+           values ($1, $2, $3, $4, 'blocked', $5, $6)
+           on conflict (idempotency_key) do nothing`,
+          [
+            row.organization_id,
+            row.id,
+            step.id,
+            step.channel,
+            decision.reason,
+            actionIdempotencyKey(row.id, step.id),
+          ],
+        );
+        console.warn(`[tick] inscription ${row.id} bloquée — ${decision.reason}`);
+        continue;
+      }
+    }
 
     const result = composeTick({
       now: now.getTime(),
