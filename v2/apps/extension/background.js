@@ -15,10 +15,21 @@ const POLL_MINUTES = 2;
 const RELEVE_MINUTES = 15;
 const PAUSE_MS = 24 * 60 * 60 * 1000; // pause 24 h sur compte restreint / déconnecté
 
-chrome.runtime.onInstalled.addListener(() => {
+/**
+ * Pose les deux alarmes. Appelé à l'installation ET au démarrage du service
+ * worker : `onInstalled` ne se déclenche pas quand Chrome redémarre, et une
+ * extension mise à jour depuis une version qui ne connaissait pas la relève
+ * n'aurait jamais eu son alarme. `chrome.alarms.create` sur un nom existant
+ * remplace l'alarme sans en créer une seconde, l'appel est donc sans risque.
+ */
+function poserLesAlarmes() {
   chrome.alarms.create('pollLinkedIn', { periodInMinutes: POLL_MINUTES });
   chrome.alarms.create('releverReponses', { periodInMinutes: RELEVE_MINUTES });
-});
+}
+
+chrome.runtime.onInstalled.addListener(poserLesAlarmes);
+chrome.runtime.onStartup.addListener(poserLesAlarmes);
+poserLesAlarmes();
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'pollLinkedIn') pollLinkedInQueue();
@@ -237,6 +248,10 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
   }
   if (message?.type === 'TRIGGER_LINKEDIN_POLL') {
     pollLinkedInQueue().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'TRIGGER_LINKEDIN_RELEVE') {
+    releverReponses().then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;
