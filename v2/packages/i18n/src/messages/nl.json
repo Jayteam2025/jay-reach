@@ -198,6 +198,8 @@
     "active": "Actief",
     "paused": "Gepauzeerd",
     "history": "Uitvoeringsgeschiedenis",
+    "empty": "Nog geen bron geconfigureerd.",
+    "neverRan": "Nooit uitgevoerd.",
     "found": "gevonden",
     "new": "nieuw",
     "status": {

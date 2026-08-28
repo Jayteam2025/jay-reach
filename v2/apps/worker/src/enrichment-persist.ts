@@ -7,7 +7,12 @@
  */
 import type { Pool } from 'pg';
 
-type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid' | 'disposable' | 'role';
+/**
+ * Verdict de délivrabilité stocké dans `contacts.email_status`, et lu par le gate.
+ * Défini une seule fois : la même liste vivait en double dans le tick, où elle a
+ * divergé de l'enum en base après l'ajout de `disposable` et `role`.
+ */
+export type EmailStatus = 'unknown' | 'valid' | 'risky' | 'invalid' | 'disposable' | 'role';
 
 /** Statut brut FullEnrich → enum email_status du schéma + confiance numérique. */
 const STATUS_MAP: Record<string, EmailStatus> = {

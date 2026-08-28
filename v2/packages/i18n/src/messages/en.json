@@ -198,6 +198,8 @@
     "active": "Active",
     "paused": "Paused",
     "history": "Run history",
+    "empty": "No source configured yet.",
+    "neverRan": "Never ran.",
     "found": "found",
     "new": "new",
     "status": {
