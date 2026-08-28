@@ -198,7 +198,7 @@
     "active": "Active",
     "paused": "En pause",
     "history": "Historique d'exécution",
-    "empty": "Aucune source configurée pour le moment.",
+    "empty": "Aucune source pour l'instant. Ajoutez-en une pour lancer la détection.",
     "neverRan": "Jamais exécutée.",
     "found": "trouvés",
     "new": "nouveaux",
@@ -207,7 +207,29 @@
       "error": "Échec",
       "running": "En cours"
     },
-    "empty": "Aucune source configurée."
+    "runNow": "Lancer la collecte",
+    "runRequested": "Collecte demandée. Elle part dans quelques secondes.",
+    "pause": "Mettre en pause",
+    "resume": "Reprendre",
+    "form": {
+      "add": "Ajouter une source",
+      "create": "Créer la source",
+      "save": "Enregistrer",
+      "edit": "Modifier",
+      "cancel": "Annuler",
+      "saved": "Enregistré",
+      "name": "Nom",
+      "namePlaceholder": "France Travail — maintenance industrielle",
+      "provider": "Provider",
+      "keywordsPlaceholder": "technicien de maintenance, responsable maintenance",
+      "locationPlaceholder": "Lyon (69) — laisser vide pour toute la France",
+      "qualification": "QUALIFICATION",
+      "qualificationHelp": "Ce qui décide qu'un signal mérite d'être travaillé. Sans consigne, les signaux collectés restent en attente.",
+      "scoringPrompt": "Consigne de qualification",
+      "scoringPromptPlaceholder": "Évalue si l'entreprise est une PME ou ETI industrielle qui renforce sa maintenance. Écarte les cabinets de recrutement et l'intérim.",
+      "threshold": "Score minimum",
+      "active": "Source active"
+    }
   },
   "inbox": {
     "eyebrow": "Réponses",

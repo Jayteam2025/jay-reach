@@ -143,3 +143,47 @@ export async function enqueueEnrichmentForQualified(
   }
   return enqueued;
 }
+
+/**
+ * Enfile les collectes demandées à la main depuis l'écran Sources.
+ *
+ * Le bouton « lancer maintenant » pose un horodatage sur la source ; c'est ici
+ * qu'il devient un job. Deux différences avec la planification :
+ *  - l'identifiant du job n'est PAS déterministe par fenêtre : demander deux
+ *    fois de suite, c'est vouloir deux collectes, pas une seule dédupliquée ;
+ *  - la demande est effacée avant d'enfiler, pour qu'un worker qui redémarre
+ *    au mauvais moment ne relance pas une collecte déjà partie.
+ *
+ * Une source sans mots-clés voit sa demande effacée sans job : elle n'a rien à
+ * chercher, et laisser la demande en place la ferait relever à chaque cycle.
+ */
+export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<number> {
+  // `returning` sous le UPDATE : la demande est consommée et lue d'un seul geste,
+  // donc deux workers ne peuvent pas enfiler la même collecte.
+  const res = await pool.query<SourceRow>(
+    `update sources
+        set run_requested_at = null
+      where run_requested_at is not null
+      returning id, organization_id, provider_id, config`,
+  );
+
+  let enqueued = 0;
+  for (const src of res.rows) {
+    const config = src.config ?? {};
+    const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
+    if (keywords.length === 0) {
+      console.warn(`[producer] collecte demandée pour la source ${src.id} sans mots-clés — ignorée`);
+      continue;
+    }
+    const job: DiscoverJob = {
+      organizationId: src.organization_id,
+      sourceId: src.id,
+      provider: src.provider_id,
+      keywords,
+      ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+    };
+    await boss.send('sources.discover', job);
+    enqueued += 1;
+  }
+  return enqueued;
+}

@@ -198,7 +198,7 @@
     "active": "Actief",
     "paused": "Gepauzeerd",
     "history": "Uitvoeringsgeschiedenis",
-    "empty": "Nog geen bron geconfigureerd.",
+    "empty": "Nog geen bron. Voeg er een toe om detectie te starten.",
     "neverRan": "Nooit uitgevoerd.",
     "found": "gevonden",
     "new": "nieuw",
@@ -207,7 +207,29 @@
       "error": "Mislukt",
       "running": "Bezig"
     },
-    "empty": "Geen bron geconfigureerd."
+    "runNow": "Verzameling starten",
+    "runRequested": "Verzameling aangevraagd. Start over enkele seconden.",
+    "pause": "Pauzeren",
+    "resume": "Hervatten",
+    "form": {
+      "add": "Bron toevoegen",
+      "create": "Bron aanmaken",
+      "save": "Opslaan",
+      "edit": "Bewerken",
+      "cancel": "Annuleren",
+      "saved": "Opgeslagen",
+      "name": "Naam",
+      "namePlaceholder": "France Travail — industrieel onderhoud",
+      "provider": "Provider",
+      "keywordsPlaceholder": "onderhoudstechnicus, onderhoudsmanager",
+      "locationPlaceholder": "Lyon (69) — leeg laten voor heel Frankrijk",
+      "qualification": "KWALIFICATIE",
+      "qualificationHelp": "Wat bepaalt of een signaal de moeite waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
+      "scoringPrompt": "Kwalificatie-instructie",
+      "scoringPromptPlaceholder": "Beoordeel of het bedrijf een industriële mkb'er is die zijn onderhoud versterkt. Sluit wervingsbureaus en uitzendwerk uit.",
+      "threshold": "Minimumscore",
+      "active": "Actieve bron"
+    }
   },
   "inbox": {
     "eyebrow": "Antwoorden",
