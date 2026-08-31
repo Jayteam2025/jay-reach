@@ -38,9 +38,19 @@ function daysAgo(iso: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 }
 
-async function loadCompany(orgId: string): Promise<Company | null> {
-  const supabase = await createClientOrNull();
-  if (!supabase || !orgId) return null;
+/**
+ * Fiche du compte le plus récent, avec ses contacts, ses signaux et sa séquence.
+ *
+ * Les lectures d'un même palier partent ENSEMBLE. La cascade est réelle — le
+ * compte détermine ses contacts, qui déterminent l'inscription — mais dans
+ * chaque palier rien n'oblige à attendre l'une pour lancer l'autre. Six appels
+ * en file d'attente devenaient six fois 140 ms d'écran blanc.
+ */
+async function loadCompany(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClientOrNull>>>,
+  orgId: string,
+): Promise<Company | null> {
+  if (!orgId) return null;
 
   const account = (
     await supabase
@@ -53,22 +63,27 @@ async function loadCompany(orgId: string): Promise<Company | null> {
   ).data as { id: string; name: string; siren: string | null; naf_code: string | null; city: string | null; headcount: number | null } | null;
   if (!account) return null;
 
-  const contactsRows =
-    ((
-      await supabase
-        .from('contacts')
-        .select('id,first_name,last_name,job_title,linkedin_url')
-        .eq('account_id', account.id)
-    ).data as { id: string; first_name: string | null; last_name: string | null; job_title: string | null; linkedin_url: string | null }[] | null) ?? [];
-
-  const signalsRows =
-    ((
-      await supabase
-        .from('signals')
-        .select('title,provider_id,score,occurred_at')
-        .eq('account_id', account.id)
-        .order('occurred_at', { ascending: false })
-    ).data as { title: string | null; provider_id: string | null; score: number | null; occurred_at: string }[] | null) ?? [];
+  // Contacts et signaux ne dépendent que du compte : rien ne justifie de les
+  // enchaîner.
+  const [contactsRows, signalsRows] = await Promise.all([
+    supabase
+      .from('contacts')
+      .select('id,first_name,last_name,job_title,linkedin_url')
+      .eq('account_id', account.id)
+      .then(
+        (r) =>
+          (r.data as { id: string; first_name: string | null; last_name: string | null; job_title: string | null; linkedin_url: string | null }[] | null) ??
+          [],
+      ),
+    supabase
+      .from('signals')
+      .select('title,provider_id,score,occurred_at')
+      .eq('account_id', account.id)
+      .order('occurred_at', { ascending: false })
+      .then(
+        (r) => (r.data as { title: string | null; provider_id: string | null; score: number | null; occurred_at: string }[] | null) ?? [],
+      ),
+  ]);
 
   // Séquence : première inscription d'un contact de ce compte.
   let sequence: SeqStep[] = [];
@@ -84,18 +99,23 @@ async function loadCompany(orgId: string): Promise<Company | null> {
         .maybeSingle()
     ).data as { current_step: number; campaign_id: string } | null;
     if (enr) {
-      const steps =
-        ((
-          await supabase
-            .from('sequence_steps')
-            .select('position,channel,delay_hours,template_parent_id')
-            .eq('campaign_id', enr.campaign_id)
-            .order('position', { ascending: true })
-        ).data as { position: number; channel: string; delay_hours: number; template_parent_id: string | null }[] | null) ?? [];
-      const templates =
-        ((await supabase.from('message_templates').select('id,name').eq('organization_id', orgId)).data as
-          | { id: string; name: string }[]
-          | null) ?? [];
+      // Les étapes et les modèles se lisent en même temps : les modèles ne
+      // dépendent pas des étapes, seulement de l'organisation.
+      const [steps, templates] = await Promise.all([
+        supabase
+          .from('sequence_steps')
+          .select('position,channel,delay_hours,template_parent_id')
+          .eq('campaign_id', enr.campaign_id)
+          .order('position', { ascending: true })
+          .then(
+            (r) => (r.data as { position: number; channel: string; delay_hours: number; template_parent_id: string | null }[] | null) ?? [],
+          ),
+        supabase
+          .from('message_templates')
+          .select('id,name')
+          .eq('organization_id', orgId)
+          .then((r) => (r.data as { id: string; name: string }[] | null) ?? []),
+      ]);
       const nameById = new Map(templates.map((tpl) => [tpl.id, tpl.name]));
       let cumHours = 0;
       sequence = steps.map((s, idx) => {
@@ -138,7 +158,9 @@ export default async function ProspectsPage() {
   const supabase = await createClientOrNull();
   const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
-  const company = await loadCompany(orgId);
+  // Le client est passé plutôt que réouvert : `createClientOrNull` relit les
+  // cookies de session à chaque appel.
+  const company = supabase ? await loadCompany(supabase, orgId) : null;
 
   if (!company) {
     return (

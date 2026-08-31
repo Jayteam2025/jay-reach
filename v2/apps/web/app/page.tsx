@@ -105,42 +105,60 @@ function dayKey(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
 }
 
-async function loadDashboard(orgId: string): Promise<DashData> {
-  const supabase = await createClientOrNull();
-  if (!supabase || !orgId) return EMPTY;
+/**
+ * Les quatre jeux de données du tableau de bord.
+ *
+ * Aucun ne dépend d'un autre : ils partent donc ENSEMBLE. Enchaînés, ils
+ * coûtaient quatre fois 140 ms d'attente avant que la page n'envoie son premier
+ * octet — sur l'écran d'accueil, celui qu'on ouvre le plus souvent.
+ */
+async function loadDashboard(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClientOrNull>>>,
+  orgId: string,
+): Promise<DashData> {
+  if (!orgId) return EMPTY;
 
-  const stats = (((await supabase.from('campaign_stats').select('sent,accepted,replies').eq('organization_id', orgId)).data as
-    | { sent: number; accepted: number; replies: number }[]
-    | null) ?? []);
+  const [stats, qualified, threads, actions] = await Promise.all([
+    supabase
+      .from('campaign_stats')
+      .select('sent,accepted,replies')
+      .eq('organization_id', orgId)
+      .then((r) => (r.data as { sent: number; accepted: number; replies: number }[] | null) ?? []),
+
+    supabase
+      .from('signals')
+      .select('occurred_at,title,provider_id,company_hint,score,accounts(name)')
+      .eq('organization_id', orgId)
+      .eq('status', 'qualified')
+      .order('occurred_at', { ascending: false })
+      .then(
+        (r) =>
+          (r.data as { occurred_at: string; title: string | null; provider_id: string | null; company_hint: string | null; score: number | null; accounts: { name: string | null } | null }[] | null) ??
+          [],
+      ),
+
+    supabase
+      .from('threads')
+      .select('classification,last_message_at,contacts(first_name,last_name,accounts(name))')
+      .eq('organization_id', orgId)
+      .then(
+        (r) =>
+          (r.data as { classification: string; last_message_at: string | null; contacts: { first_name: string | null; last_name: string | null; accounts: { name: string | null } | null } | null }[] | null) ??
+          [],
+      ),
+
+    supabase
+      .from('actions')
+      .select('channel,dispatched_at,enrollments(started_at)')
+      .eq('organization_id', orgId)
+      .in('status', ['dispatched', 'delivered'])
+      .then(
+        (r) => (r.data as { channel: string; dispatched_at: string | null; enrollments: { started_at: string } | null }[] | null) ?? [],
+      ),
+  ]);
+
   const sumReplies = stats.reduce((a, s) => a + (s.replies ?? 0), 0);
   const sumAccepted = stats.reduce((a, s) => a + (s.accepted ?? 0), 0);
-
-  const qualified =
-    ((
-      await supabase
-        .from('signals')
-        .select('occurred_at,title,provider_id,company_hint,score,accounts(name)')
-        .eq('organization_id', orgId)
-        .eq('status', 'qualified')
-        .order('occurred_at', { ascending: false })
-    ).data as { occurred_at: string; title: string | null; provider_id: string | null; company_hint: string | null; score: number | null; accounts: { name: string | null } | null }[] | null) ?? [];
-
-  const threads =
-    ((
-      await supabase
-        .from('threads')
-        .select('classification,last_message_at,contacts(first_name,last_name,accounts(name))')
-        .eq('organization_id', orgId)
-    ).data as { classification: string; last_message_at: string | null; contacts: { first_name: string | null; last_name: string | null; accounts: { name: string | null } | null } | null }[] | null) ?? [];
-
-  const actions =
-    ((
-      await supabase
-        .from('actions')
-        .select('channel,dispatched_at,enrollments(started_at)')
-        .eq('organization_id', orgId)
-        .in('status', ['dispatched', 'delivered'])
-    ).data as { channel: string; dispatched_at: string | null; enrollments: { started_at: string } | null }[] | null) ?? [];
 
   // Répartition par canal.
   const group = (ch: string): ChannelShare['key'] => (ch === 'email' ? 'email' : ch === 'letter' ? 'courrier' : 'linkedin');
@@ -209,7 +227,9 @@ export default async function DashboardPage() {
   const supabase = await createClientOrNull();
   const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
-  const data = await loadDashboard(orgId);
+  // Le client est passé plutôt que réouvert : createClientOrNull relit les
+  // cookies de session à chaque appel.
+  const data = supabase ? await loadDashboard(supabase, orgId) : EMPTY;
   const k = data.kpi;
   const nf = new Intl.NumberFormat('fr-FR');
   const pct = (n: number) => `${n > 0 ? '+' : ''}${n} %`;

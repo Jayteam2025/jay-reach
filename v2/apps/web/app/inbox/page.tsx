@@ -39,25 +39,29 @@ export default async function InboxPage() {
   const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
 
-  const sender =
-    supabase && orgId
-      ? (((await supabase.from('senders').select('identity').eq('organization_id', orgId).eq('kind', 'email').limit(1).maybeSingle()).data as
-          | { identity: string }
-          | null)?.identity ?? '—')
-      : '—';
-
-  const rows: DbThread[] =
-    supabase && orgId
-      ? (((
-          await supabase
-            .from('threads')
-            .select(
-              'id,channel,classification,is_read,resume_at,last_message_at,contacts(first_name,last_name,job_title,accounts(name)),thread_messages(direction,body,sent_at)',
-            )
-            .eq('organization_id', orgId)
-            .order('last_message_at', { ascending: false })
-        ).data as DbThread[] | null) ?? [])
-      : [];
+  // L'expéditeur affiché et les fils ne dépendent pas l'un de l'autre : la
+  // liste des conversations est le gros de la page, rien ne justifie de la
+  // faire attendre derrière une lecture d'une ligne.
+  const [sender, rows] = supabase && orgId
+    ? await Promise.all([
+        supabase
+          .from('senders')
+          .select('identity')
+          .eq('organization_id', orgId)
+          .eq('kind', 'email')
+          .limit(1)
+          .maybeSingle()
+          .then((r) => (r.data as { identity: string } | null)?.identity ?? '—'),
+        supabase
+          .from('threads')
+          .select(
+            'id,channel,classification,is_read,resume_at,last_message_at,contacts(first_name,last_name,job_title,accounts(name)),thread_messages(direction,body,sent_at)',
+          )
+          .eq('organization_id', orgId)
+          .order('last_message_at', { ascending: false })
+          .then((r) => (r.data as DbThread[] | null) ?? []),
+      ])
+    : ['—', [] as DbThread[]];
 
   const threads: InboxThread[] = rows.map((th) => {
     const msgs = [...(th.thread_messages ?? [])].sort((a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime());
