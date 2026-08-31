@@ -38,6 +38,17 @@ interface TokenResponse {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
+/**
+ * Delai maximal d'un appel sortant.
+ *
+ * Sans lui, un appel qui ne repond pas bloque la collecte entiere : le budget
+ * de temps ne se verifie qu'entre deux mots-cles, donc il ne peut rien contre
+ * un appel qui ne rend jamais la main. En fonction serverless, c'est
+ * l'invocation qui meurt, la collecte est perdue et son execution reste
+ * ouverte.
+ */
+const TIMEOUT_MS = 10_000;
+
 async function getAccessToken(clientId: string, clientSecret: string): Promise<string> {
   // Check if we have a cached token that hasn't expired
   if (cachedToken && cachedToken.expiresAt > Date.now()) {
@@ -62,6 +73,7 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: params.toString(),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     }
   );
 
@@ -102,6 +114,7 @@ async function searchOffers(
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     }
   );
 
