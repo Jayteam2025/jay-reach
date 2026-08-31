@@ -1,6 +1,6 @@
-import { SqueletteEcran } from '../../squelette';
+import { SqueletteListe } from '../../squelette';
 
-/** Bibliothèque de modèles. */
+/** Un modèle par carte, avec le bouton d'ajout en tête. */
 export default function Chargement() {
-  return <SqueletteEcran active="templates" cartes={3} />;
+  return <SqueletteListe active="templates" cartes={3} entete />;
 }

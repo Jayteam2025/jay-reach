@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createCampaign } from '../../actions/campaigns';
+import Link from 'next/link';
 
 export interface EntryOption {
   id: string;
@@ -76,9 +77,9 @@ export function NewCampaign({
 
   return (
     <>
-      <a href="/campaigns" className="rs-crumb">
+      <Link href="/campaigns" className="rs-crumb">
         {t('back')}
-      </a>
+      </Link>
       <div className="rs-page-head" style={{ marginTop: 8 }}>
         <p className="rs-eyebrow">{t('eyebrow')}</p>
         <h1>{t('title')}</h1>
@@ -175,7 +176,7 @@ export function NewCampaign({
               vers les personas est là parce que c'est leur consigne qui produit
               ce score : les deux ne se comprennent que l'un par l'autre. */}
           <span className="rs-row-sub">
-            {t('minScoreHelp')} <a href="/settings/personas">{t('minScoreLink')}</a>
+            {t('minScoreHelp')} <Link href="/settings/personas">{t('minScoreLink')}</Link>
           </span>
         </label>
 
@@ -186,7 +187,7 @@ export function NewCampaign({
               LinkedIn. Le plus contraignant l'emporte — c'est ce que fait le
               séquenceur, et le taire laissait croire à un réglage sans effet. */}
           <span className="rs-row-sub">
-            {t('dailyCapHelp')} <a href="/settings/linkedin">{t('dailyCapLink')}</a>
+            {t('dailyCapHelp')} <Link href="/settings/linkedin">{t('dailyCapLink')}</Link>
           </span>
         </label>
 
@@ -197,9 +198,9 @@ export function NewCampaign({
         ) : null}
 
         <div className="rs-actions">
-          <a className="rs-btn" href="/campaigns">
+          <Link className="rs-btn" href="/campaigns">
             {t('cancel')}
-          </a>
+          </Link>
           <button className="rs-btn" data-primary="true" disabled={!canSubmit} onClick={submit}>
             {t('create')}
           </button>

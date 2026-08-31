@@ -4,6 +4,7 @@ import { createClientOrNull } from '../../lib/supabase/server';
 import { searchCompanies, PER_PAGE, PAGES_MAX } from '../../lib/directory';
 import { DirectoryResults } from './directory-results';
 import { BulkAdd } from './bulk-add';
+import Link from 'next/link';
 
 const BUCKETS = ['small', 'mid', 'large', 'xl'] as const;
 
@@ -144,11 +145,11 @@ function Pagination({
 
   return (
     <nav className="rs-dir-pager">
-      {page > 1 ? <a className="rs-btn" href={lien(page - 1)}>&larr;</a> : <span />}
+      {page > 1 ? <Link className="rs-btn" href={lien(page - 1)}>&larr;</Link> : <span />}
       <span className="rs-row-sub mono">
         {page} / {dernierePage}
       </span>
-      {page < dernierePage ? <a className="rs-btn" href={lien(page + 1)}>&rarr;</a> : <span />}
+      {page < dernierePage ? <Link className="rs-btn" href={lien(page + 1)}>&rarr;</Link> : <span />}
     </nav>
   );
 }

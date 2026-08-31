@@ -1,6 +1,5 @@
-import { SqueletteEcran } from '../squelette';
+import { SqueletteAnnuaire } from '../squelette';
 
-/** Formulaire de recherche, puis les résultats. */
 export default function Chargement() {
-  return <SqueletteEcran active="annuaire" cartes={3} />;
+  return <SqueletteAnnuaire />;
 }
