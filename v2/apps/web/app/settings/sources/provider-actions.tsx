@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition, useState } from 'react';
+import { useOptimistic, useTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toggleSourceProvider } from '../../actions/sources';
@@ -26,6 +26,15 @@ export function ProviderActions({
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // Le libellé bascule à l'instant du clic, pas au retour du serveur.
+  //
+  // L'écriture et le rechargement de la page prennent ensemble près d'une
+  // seconde, pendant laquelle le bouton affichait encore « Mettre en pause »
+  // alors qu'on venait de le presser : on croyait le clic perdu et on
+  // recommençait. Si l'écriture échoue, la transition se termine sans que la
+  // valeur du serveur ait changé, et le libellé revient de lui-même.
+  const [actifAffiche, poserActif] = useOptimistic(isActive);
+
   return (
     <>
       <button
@@ -34,13 +43,14 @@ export function ProviderActions({
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
+            poserActif(!isActive);
             const res = await toggleSourceProvider(orgId, sourceProviderId, !isActive);
             if (!res.ok) setErreur(res.error);
             router.refresh();
           })
         }
       >
-        {isActive ? t('providerPause') : t('providerResume')}
+        {actifAffiche ? t('providerPause') : t('providerResume')}
       </button>
       {erreur ? (
         <span role="alert" className="rs-row-sub" style={{ color: 'var(--flare)' }}>
