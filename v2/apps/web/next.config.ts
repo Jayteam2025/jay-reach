@@ -24,7 +24,7 @@ const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 const config: NextConfig = {
   reactStrictMode: true,
   // Les packages internes du monorepo sont transpilés par Next.
-  transpilePackages: ['@jay-reach/core', '@jay-reach/i18n', '@jay-reach/ui'],
+  transpilePackages: ['@jay-reach/core', '@jay-reach/i18n', '@jay-reach/ui', '@jay-reach/worker'],
   webpack: (webpackConfig) => {
     // Les sources TS des packages internes utilisent des imports ESM explicites
     // (`./x.js`). On laisse webpack les résoudre vers les fichiers `.ts`.

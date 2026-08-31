@@ -164,7 +164,7 @@ function extractCompanyFromDescription(description: string | undefined): string 
   function isValid(name: string): boolean {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (clean.length < 3 || clean.length > 50) return false;
-    const firstWord = clean.split(' ')[0].toLowerCase();
+    const firstWord = (clean.split(' ')[0] ?? '').toLowerCase();
     if (blacklist.includes(firstWord)) return false;
     if (cities.includes(clean.toLowerCase())) return false;
     // Must start with uppercase or be all caps (company names)
@@ -257,14 +257,17 @@ function mapOfferToSignal(offer: FranceTravailOffer): ScrapedSignal {
     companyName = companyName.replace(/^Rejoindre\s+(?:le |la |l')/i, '');
     // "L'agence POINT.P de Viuz" → "POINT.P"
     const agencyMatch = companyName.match(/^L'(?:agence|équipe)\s+([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.&-]+)/);
-    if (agencyMatch) companyName = agencyMatch[1];
+    if (agencyMatch?.[1]) companyName = agencyMatch[1];
     // "Salade 2 Fruits voit le jour" → "Salade 2 Fruits"
     companyName = companyName.replace(/\s+(?:voit le jour|est |qui |a été).*$/i, '');
     // Remove trailing garbage words
     companyName = companyName.replace(/\s+(?:de|du|des|le|la|les|et|en|au|afin|dans)$/i, '').trim();
     // Deduplicate "Rothelec Rothelec" → "Rothelec"
     const words = companyName.split(/\s+/);
-    if (words.length === 2 && words[0].toLowerCase() === words[1].toLowerCase()) companyName = words[0];
+    const [premier, second] = words;
+    if (words.length === 2 && premier && second && premier.toLowerCase() === second.toLowerCase()) {
+      companyName = premier;
+    }
     // Final validation
     if (companyName.length < 2) companyName = null;
   }

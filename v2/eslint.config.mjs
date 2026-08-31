@@ -49,8 +49,18 @@ export default tseslint.config(
         console: 'readonly',
         process: 'readonly',
         URL: 'readonly',
+        URLSearchParams: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
+        // Globales du runtime Node depuis la version 18. La liste etait
+        // incomplete : un script d'outillage qui appelle une API HTTP echouait
+        // au lint sur « fetch is not defined ».
+        fetch: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        Buffer: 'readonly',
+        crypto: 'readonly',
       },
     },
   },

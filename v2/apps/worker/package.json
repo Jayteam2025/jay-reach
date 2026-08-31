@@ -24,5 +24,17 @@
     "esbuild": "^0.24.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "exports": {
+    "./credentials": "./src/credentials.ts",
+    "./db": "./src/db.ts",
+    "./domain-patterns": "./src/domain-patterns.ts",
+    "./enrichment-persist": "./src/enrichment-persist.ts",
+    "./handlers/*": "./src/handlers/*.ts",
+    "./producer": "./src/producer.ts",
+    "./provider-cache": "./src/provider-cache.ts",
+    "./runtime": "./src/runtime.ts",
+    "./scorer-anthropic": "./src/scorer-anthropic.ts",
+    "./traitements": "./src/traitements.ts"
   }
 }

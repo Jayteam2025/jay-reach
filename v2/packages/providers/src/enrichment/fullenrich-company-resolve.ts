@@ -740,13 +740,15 @@ export async function resolveCompany(
         }
       }
 
-      if (allCandidates.length > 0) {
-        // Re-score globalement (on a deja un _score mais il faut le re-calculer
-        // avec le contexte trimmedName cross-cascade pour homogeneite)
-        const ranked = allCandidates
-          .map(c => ({ ...c, _score: scoreCandidate(c, trimmedName, countryCode) }))
-          .sort((a, b) => b._score - a._score);
-        const best = ranked[0];
+      // Re-score globalement (on a deja un _score mais il faut le re-calculer
+      // avec le contexte trimmedName cross-cascade pour homogeneite)
+      const ranked = allCandidates
+        .map(c => ({ ...c, _score: scoreCandidate(c, trimmedName, countryCode) }))
+        .sort((a, b) => b._score - a._score);
+      // On teste le premier element plutot que la longueur : c'est le meme
+      // invariant, mais celui-la se lit aussi par le compilateur.
+      const best = ranked[0];
+      if (best) {
         resolved = {
           id: best.id, name: best.name, domain: best.domain,
           hq_city: best.hq_city, hq_country_code: best.hq_country_code,
@@ -819,6 +821,11 @@ export async function resolveCompany(
               .map(c => ({ ...c, _score: scoreCandidate(c, aiInputs, countryCode) }))
               .sort((a, b) => b._score - a._score);
             const aiBest = scored[0];
+            if (!aiBest) {
+              // `uniqueAi` n'est pas vide (garde ci-dessus) : ce chemin ne peut
+              // pas se produire, mais il vaut mieux le nommer que l'ignorer.
+              return resolved;
+            }
             console.log(`[fullenrich-resolve] AI variants returned ${uniqueAi.length} candidates, best: "${aiBest.name}" score=${aiBest._score.toFixed(2)}`);
             // On garde le meilleur entre AI et cascade nominale
             if (!resolved || aiBest._score > bestScore) {

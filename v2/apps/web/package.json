@@ -17,6 +17,7 @@
     "@jay-reach/core": "workspace:*",
     "@jay-reach/i18n": "workspace:*",
     "@jay-reach/ui": "workspace:*",
+    "@jay-reach/worker": "workspace:*",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.47.10",
     "next": "^15.1.3",

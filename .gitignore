@@ -6,3 +6,4 @@ dist
 supabase/.temp
 .DS_Store
 *.local
+.vercel
