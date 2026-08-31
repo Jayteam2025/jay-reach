@@ -31,19 +31,12 @@ export default async function LinkedInSettingsPage() {
     : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
 
-  const now = Date.now();
-  const iso7 = new Date(now - 7 * 24 * 3600_000).toISOString();
-  const iso1 = new Date(now - 24 * 3600_000).toISOString();
   const peutLire = Boolean(supabase && orgId);
 
-  // Un compteur qui ne peut pas être lu vaut zéro, pas « inconnu » : l'écran
-  // n'a rien d'autre à afficher, et une exception ici priverait l'opérateur de
-  // ses réglages pour un chiffre d'activité.
-  const compter = async (
-    construire: (client: NonNullable<typeof supabase>) => PromiseLike<{ count: number | null }>,
-  ): Promise<number> => (peutLire ? ((await construire(supabase!)).count ?? 0) : 0);
+  /** Compteurs à zéro quand la lecture est impossible : l'écran n'a rien d'autre à afficher. */
+  const AUCUNE_ACTIVITE = { en_attente: 0, envoyes_7j: 0, envoyes_24h: 0, restreint: 0, echecs_24h: 0 };
 
-  const [reglages, jetons, enAttente, envoyes7j, aujourdhui, restreint, echecs24h] = await Promise.all([
+  const [reglages, jetons, activite] = await Promise.all([
     peutLire
       ? supabase!
           .from('linkedin_settings')
@@ -69,27 +62,13 @@ export default async function LinkedInSettingsPage() {
           .then((r) => (r.data ?? []) as { linkedin_profile_name: string | null }[])
       : Promise.resolve([] as { linkedin_profile_name: string | null }[]),
 
-    compter((c) =>
-      c.from('linkedin_action_queue').select('id', { count: 'exact', head: true })
-        .eq('organization_id', orgId).eq('status', 'pending'),
-    ),
-    compter((c) =>
-      c.from('linkedin_action_queue').select('id', { count: 'exact', head: true })
-        .eq('organization_id', orgId).eq('status', 'sent').gte('sent_at', iso7),
-    ),
-    compter((c) =>
-      c.from('linkedin_action_queue').select('id', { count: 'exact', head: true })
-        .eq('organization_id', orgId).eq('status', 'sent').gte('sent_at', iso1),
-    ),
-    compter((c) =>
-      c.from('linkedin_action_queue').select('id', { count: 'exact', head: true })
-        .eq('organization_id', orgId).eq('status', 'failed')
-        .in('error_code', ['restricted', 'not_logged_in']).gte('updated_at', iso1),
-    ),
-    compter((c) =>
-      c.from('linkedin_action_queue').select('id', { count: 'exact', head: true })
-        .eq('organization_id', orgId).eq('status', 'failed').gte('updated_at', iso1),
-    ),
+    // Les cinq compteurs en une lecture. Séparés, ils portaient les mêmes
+    // filtres sur la même table et coûtaient cinq allers-retours.
+    peutLire
+      ? supabase!
+          .rpc('linkedin_activite', { p_org: orgId })
+          .then((r) => (r.data as (typeof AUCUNE_ACTIVITE)[] | null)?.[0] ?? AUCUNE_ACTIVITE)
+      : Promise.resolve(AUCUNE_ACTIVITE),
   ]);
 
   const settings = (reglages as typeof REGLAGES_PAR_DEFAUT | null) ?? REGLAGES_PAR_DEFAUT;
@@ -97,11 +76,13 @@ export default async function LinkedInSettingsPage() {
   const profileName = jetons[0]?.linkedin_profile_name ?? null;
 
   const alerts: { level: 'danger' | 'warn'; key: string; params?: Record<string, number> }[] = [];
-  if (restreint > 0) alerts.push({ level: 'danger', key: 'accountRestricted' });
-  if (envoyes7j >= WEEKLY_CAP - 20) {
-    alerts.push({ level: 'warn', key: 'weeklyCapNear', params: { sent: envoyes7j, cap: WEEKLY_CAP } });
+  if (activite.restreint > 0) alerts.push({ level: 'danger', key: 'accountRestricted' });
+  if (activite.envoyes_7j >= WEEKLY_CAP - 20) {
+    alerts.push({ level: 'warn', key: 'weeklyCapNear', params: { sent: activite.envoyes_7j, cap: WEEKLY_CAP } });
   }
-  if (echecs24h >= 5) alerts.push({ level: 'warn', key: 'manyFailures', params: { count: echecs24h } });
+  if (activite.echecs_24h >= 5) {
+    alerts.push({ level: 'warn', key: 'manyFailures', params: { count: activite.echecs_24h } });
+  }
 
   return (
     <div className="rs-shell">
@@ -118,7 +99,7 @@ export default async function LinkedInSettingsPage() {
           sendFromHour={settings.send_from_hour}
           sendToHour={settings.send_to_hour}
           timezone={settings.timezone}
-          stats={{ pending: enAttente, sent7d: envoyes7j, today: aujourdhui }}
+          stats={{ pending: activite.en_attente, sent7d: activite.envoyes_7j, today: activite.envoyes_24h }}
           alreadyConnected={alreadyConnected}
           profileName={profileName}
           storeUrl={process.env.NEXT_PUBLIC_EXTENSION_STORE_URL ?? null}
