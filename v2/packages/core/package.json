@@ -10,8 +10,8 @@
       "default": "./dist/index.js"
     },
     "./*.js": {
-      "types": "./dist/*.d.ts",
-      "default": "./dist/*.js"
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
     }
   },
   "scripts": {
