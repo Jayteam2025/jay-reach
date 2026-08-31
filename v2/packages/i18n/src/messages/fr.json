@@ -476,7 +476,7 @@
       "subject": "Objet",
       "subjectPlaceholder": "Ce que le destinataire lit avant d'ouvrir",
       "body": "Message",
-      "bodyPlaceholder": "Bonjour {{prenom}},",
+      "bodyPlaceholder": "Bonjour '{{'prenom'}}',",
       "variables": "Variables disponibles",
       "variablesHelp": "Cliquez pour insérer. Une variable sans valeur bloque l'envoi plutôt que de partir vide.",
       "insert": "Insérer",
@@ -490,7 +490,8 @@
       "generate": "Proposer un premier jet",
       "generating": "Rédaction…",
       "generateHint": "Une consigne, si vous en avez une (facultatif)",
-      "useThis": "Utiliser cette proposition"
+      "useThis": "Utiliser cette proposition",
+      "inviteNoMessage": "Une invitation LinkedIn part sans note : rien à rédiger ici. Pour accompagner d'un texte, ajoutez une étape « Message LinkedIn » après l'acceptation."
     },
     "watchThemes": "Thèmes de veille"
   },
@@ -661,7 +662,7 @@
     },
     "subject": "Objet",
     "message": "Message",
-    "messagePlaceholder": "Bonjour {{prenom}}, …",
+    "messagePlaceholder": "Bonjour '{{'prenom'}}', …",
     "wordCount": "{n} / {max} mots",
     "insertVar": "Insérer :",
     "fixVariables": "Corrigez les variables avant d'enregistrer.",

@@ -476,7 +476,7 @@
       "subject": "Onderwerp",
       "subjectPlaceholder": "Wat de ontvanger leest voor het openen",
       "body": "Bericht",
-      "bodyPlaceholder": "Hallo {{prenom}},",
+      "bodyPlaceholder": "Hallo '{{'prenom'}}',",
       "variables": "Beschikbare variabelen",
       "variablesHelp": "Klik om in te voegen. Een variabele zonder waarde blokkeert de verzending in plaats van leeg te vertrekken.",
       "insert": "Invoegen",
@@ -490,7 +490,8 @@
       "generate": "Een eerste versie voorstellen",
       "generating": "Schrijven…",
       "generateHint": "Een instructie, als u er een hebt (optioneel)",
-      "useThis": "Deze gebruiken"
+      "useThis": "Deze gebruiken",
+      "inviteNoMessage": "Een LinkedIn-uitnodiging vertrekt zonder notitie: hier valt niets te schrijven. Wilt u toch tekst sturen, voeg dan na aanvaarding een stap “LinkedIn-bericht” toe."
     },
     "watchThemes": "Monitoringthema's"
   },
@@ -661,7 +662,7 @@
     },
     "subject": "Onderwerp",
     "message": "Bericht",
-    "messagePlaceholder": "Hallo {{prenom}}, …",
+    "messagePlaceholder": "Hallo '{{'prenom'}}', …",
     "wordCount": "{n} / {max} woorden",
     "insertVar": "Invoegen:",
     "fixVariables": "Corrigeer de variabelen voor het opslaan.",

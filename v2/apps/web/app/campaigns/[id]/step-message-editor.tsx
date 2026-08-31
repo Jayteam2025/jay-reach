@@ -39,6 +39,12 @@ export function StepMessageEditor({
   onSaved: (templateParentId: string) => void;
 }) {
   const t = useTranslations('campaigns.stepEd');
+  /**
+   * Une invitation LinkedIn part sans note : l'extension n'envoie que le profil
+   * à inviter, jamais de texte. Écrire un message pour cette étape n'aurait
+   * donc aucun effet — on ne le propose pas.
+   */
+  const sansMessage = channel === 'linkedin_invite';
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
   const [pending, startTransition] = useTransition();
@@ -139,6 +145,14 @@ export function StepMessageEditor({
         setErreur(res.error);
       }
     });
+  }
+
+  if (sansMessage) {
+    return (
+      <div className="rs-step-msg">
+        <p className="rs-row-sub">{t('inviteNoMessage')}</p>
+      </div>
+    );
   }
 
   return (

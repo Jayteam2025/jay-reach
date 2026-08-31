@@ -476,7 +476,7 @@
       "subject": "Subject",
       "subjectPlaceholder": "What the recipient reads before opening",
       "body": "Message",
-      "bodyPlaceholder": "Hi {{prenom}},",
+      "bodyPlaceholder": "Hi '{{'prenom'}}',",
       "variables": "Available variables",
       "variablesHelp": "Click to insert. A variable with no value blocks the send rather than going out empty.",
       "insert": "Insert",
@@ -490,7 +490,8 @@
       "generate": "Draft a first version",
       "generating": "Writing…",
       "generateHint": "A brief, if you have one (optional)",
-      "useThis": "Use this one"
+      "useThis": "Use this one",
+      "inviteNoMessage": "A LinkedIn invitation goes out without a note: nothing to write here. To send text as well, add a “LinkedIn message” step after acceptance."
     },
     "watchThemes": "Watch themes"
   },
@@ -661,7 +662,7 @@
     },
     "subject": "Subject",
     "message": "Message",
-    "messagePlaceholder": "Hi {{prenom}}, …",
+    "messagePlaceholder": "Hi '{{'prenom'}}', …",
     "wordCount": "{n} / {max} words",
     "insertVar": "Insert:",
     "fixVariables": "Fix the variables before saving.",

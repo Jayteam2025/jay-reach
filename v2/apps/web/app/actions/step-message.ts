@@ -48,6 +48,9 @@ export async function saveStepMessage(
 
   const corps = input.body.trim();
   if (!corps) {
+    // Une invitation LinkedIn part sans note : c'est ce que fait l'extension,
+    // qui n'envoie que le profil à inviter. Exiger un message ici obligeait à
+    // en écrire un qui n'était jamais envoyé.
     return { ok: false, error: 'Le message est vide.' };
   }
   if (input.channel === 'email' && !input.subject.trim()) {

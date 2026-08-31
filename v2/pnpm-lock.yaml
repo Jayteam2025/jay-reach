@@ -96,6 +96,9 @@ importers:
       '@types/web-push':
         specifier: ^3.6.4
         version: 3.6.4
+      intl-messageformat:
+        specifier: 10.7.18
+        version: 10.7.18
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
