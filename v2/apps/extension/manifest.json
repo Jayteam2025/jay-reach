@@ -9,7 +9,7 @@
     "cookies"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://www.linkedin.com http://localhost:3000 https://app.jay-reach.fr"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://www.linkedin.com http://localhost:3000 https://jay-reach.vercel.app https://app.jay-reach.fr"
   },
   "host_permissions": [
     "https://www.linkedin.com/*",
