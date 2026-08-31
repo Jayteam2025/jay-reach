@@ -23,13 +23,6 @@ const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 const config: NextConfig = {
   reactStrictMode: true,
-  // Sans cette racine explicite, Next la devine — et se trompe dès qu'il existe
-  // un autre lockfile au-dessus du monorepo. Il le dit lui-même au démarrage
-  // (« inferred your workspace root, but it may not be correct »), et la
-  // conséquence n'apparaît qu'au déploiement : le tracing des fichiers embarque
-  // le mauvais périmètre, donc une image qui pèse trop ou à qui il manque un
-  // paquet interne.
-  outputFileTracingRoot: racineMonorepo,
   // Les packages internes du monorepo sont transpilés par Next.
   transpilePackages: ['@jay-reach/core', '@jay-reach/i18n', '@jay-reach/ui'],
   webpack: (webpackConfig) => {
