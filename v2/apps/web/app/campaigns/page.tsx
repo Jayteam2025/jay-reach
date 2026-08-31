@@ -26,15 +26,21 @@ export default async function CampaignsPage() {
   const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
 
-  const stats: Stat[] =
-    supabase && orgId
-      ? (((await supabase.from('campaign_stats').select('*').eq('organization_id', orgId)).data as Stat[] | null) ?? [])
-      : [];
-
-  const sources =
-    supabase && orgId
-      ? (((await supabase.from('sources').select('id,name').eq('organization_id', orgId)).data as { id: string; name: string }[] | null) ?? [])
-      : [];
+  // Deux lectures indépendantes : elles partent ensemble.
+  const [stats, sources] = supabase && orgId
+    ? await Promise.all([
+        supabase
+          .from('campaign_stats')
+          .select('*')
+          .eq('organization_id', orgId)
+          .then((r) => (r.data as Stat[] | null) ?? []),
+        supabase
+          .from('sources')
+          .select('id,name')
+          .eq('organization_id', orgId)
+          .then((r) => (r.data as { id: string; name: string }[] | null) ?? []),
+      ])
+    : [[] as Stat[], [] as { id: string; name: string }[]];
   const sourceName = new Map(sources.map((s) => [s.id, s.name]));
 
   return (

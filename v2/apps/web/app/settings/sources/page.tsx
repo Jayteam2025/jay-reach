@@ -68,26 +68,30 @@ export default async function SourcesPage() {
         .order('created_at', { ascending: true })).data ?? []) as SourceRow[])
     : [];
 
-  const rattachements = supabase && sources.length > 0
-    ? (((await supabase
-        .from('source_providers')
-        .select('id, source_id, provider_id, is_active')
-        .in('source_id', sources.map((s) => s.id))
-        .order('created_at', { ascending: true })).data ?? []) as SourceProviderRow[])
-    : [];
+  // Rattachements et exécutions dépendent tous deux des thèmes, mais pas l'un
+  // de l'autre : ils partent ensemble.
+  const idsThemes = sources.map((s) => s.id);
+  const [rattachements, runs] = supabase && idsThemes.length > 0
+    ? await Promise.all([
+        supabase
+          .from('source_providers')
+          .select('id, source_id, provider_id, is_active')
+          .in('source_id', idsThemes)
+          .order('created_at', { ascending: true })
+          .then((r) => (r.data ?? []) as SourceProviderRow[]),
+        supabase
+          .from('source_runs')
+          .select('source_id, source_provider_id, status, started_at, items_found, items_new, error')
+          .in('source_id', idsThemes)
+          .order('started_at', { ascending: false })
+          .then((r) => (r.data ?? []) as RunRow[]),
+      ])
+    : [[] as SourceProviderRow[], [] as RunRow[]];
 
   const fournisseursParTheme = new Map<string, SourceProviderRow[]>();
   for (const r of rattachements) {
     fournisseursParTheme.set(r.source_id, [...(fournisseursParTheme.get(r.source_id) ?? []), r]);
   }
-
-  const runs = supabase && sources.length > 0
-    ? (((await supabase
-        .from('source_runs')
-        .select('source_id, source_provider_id, status, started_at, items_found, items_new, error')
-        .in('source_id', sources.map((s) => s.id))
-        .order('started_at', { ascending: false })).data ?? []) as RunRow[])
-    : [];
 
   // L'historique s'affiche PAR FOURNISSEUR : c'est ce qui permet de repérer
   // celui qui se dégrade. Regroupé par thème, une panne chez l'un se noyait
