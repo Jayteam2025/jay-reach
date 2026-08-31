@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole, getUser } from '../../lib/auth';
 import { getPool } from '../../lib/db';
 import { processImport, type ParsedRows, type ColumnMapping, type MappedRow } from '@jay-reach/core';
@@ -197,6 +199,8 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
     );
 
     await client.query('commit');
+    revalidatePath('/campaigns');
+    revalidatePath('/prospects');
     return { ok: true, imported, listId };
   } catch (e) {
     await client.query('rollback').catch(() => {});

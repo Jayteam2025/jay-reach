@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -33,5 +35,7 @@ export async function setActionApproval(
     .eq('organization_id', organizationId)
     .eq('status', 'pending_approval');
   if (error) return { ok: false, error: error.message };
+  revalidatePath('/approvals');
+  revalidatePath('/campaigns');
   return { ok: true };
 }

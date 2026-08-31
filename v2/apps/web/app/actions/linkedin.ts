@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { createHash, randomBytes } from 'node:crypto';
 import { requireRole, getUser } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
@@ -60,6 +62,7 @@ export async function generateExtensionToken(organizationId: string): Promise<To
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/settings/linkedin');
   return { ok: true, token };
 }
 
@@ -106,6 +109,7 @@ export async function saveLinkedInSettings(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/settings/linkedin');
   return { ok: true };
 }
 

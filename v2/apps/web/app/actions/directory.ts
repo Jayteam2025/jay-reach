@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -34,6 +36,8 @@ export async function addAccountFromDirectory(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/annuaire');
+  revalidatePath('/prospects');
   return { ok: true };
 }
 
@@ -89,6 +93,7 @@ export async function startBulkImport(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/annuaire');
   return { ok: true, id: (data as { id: string }).id };
 }
 
@@ -109,6 +114,7 @@ export async function cancelBulkImport(organizationId: string, id: string): Prom
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/annuaire');
   return { ok: true };
 }
 

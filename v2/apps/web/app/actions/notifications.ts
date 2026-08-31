@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { getUser } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -20,5 +22,6 @@ export async function markNotificationsRead(): Promise<MarkResult> {
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/');
   return { ok: true };
 }

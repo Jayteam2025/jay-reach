@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { getProviderEntry } from '@jay-reach/providers';
 import { requireEnv } from '../../lib/env';
 import { requireRole } from '../../lib/auth';
@@ -38,6 +40,7 @@ export async function setProviderCredential(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/settings/providers');
   return { ok: true };
 }
 

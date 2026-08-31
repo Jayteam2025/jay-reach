@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -35,5 +37,7 @@ export async function setSignalStatus(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/signals');
+  revalidatePath('/');
   return { ok: true };
 }
