@@ -34,6 +34,7 @@ import {
   attachSignalsToAccount,
   startSourceRun,
   finishSourceRun,
+  cloreExecutionsInterrompues,
   closeStaleSourceRuns,
 } from './db.js';
 import {
@@ -399,6 +400,17 @@ export async function releverDemandes(ctx: Contexte): Promise<void> {
     }
   } catch (err) {
     console.error('[producer] relève des demandes échouée', err);
+  }
+
+  // Ménage des exécutions coupées au tour précédent. Sans lui, une collecte
+  // interrompue reste « en cours » à l'écran indéfiniment.
+  try {
+    const closes = await cloreExecutionsInterrompues(ctx.pool);
+    if (closes > 0) {
+      console.log(`[producer] ${closes} exécution(s) interrompue(s) refermée(s)`);
+    }
+  } catch (err) {
+    console.error('[producer] ménage des exécutions échoué', err);
   }
 
   // Ajouts en masse depuis l'annuaire. Traités ici plutôt que par une file :
