@@ -486,7 +486,11 @@
       "promoteName": "Template name",
       "promoteNamePlaceholder": "Post-trade-show follow-up",
       "promoteConfirm": "Add to library",
-      "promoted": "Added to the library"
+      "promoted": "Added to the library",
+      "generate": "Draft a first version",
+      "generating": "Writing…",
+      "generateHint": "A brief, if you have one (optional)",
+      "useThis": "Use this one"
     },
     "watchThemes": "Watch themes",
     "pickSource": "Watch themes",

@@ -486,7 +486,11 @@
       "promoteName": "Sjabloonnaam",
       "promoteNamePlaceholder": "Opvolging na beurs",
       "promoteConfirm": "Aan bibliotheek toevoegen",
-      "promoted": "Toegevoegd aan de bibliotheek"
+      "promoted": "Toegevoegd aan de bibliotheek",
+      "generate": "Een eerste versie voorstellen",
+      "generating": "Schrijven…",
+      "generateHint": "Een instructie, als u er een hebt (optioneel)",
+      "useThis": "Deze gebruiken"
     },
     "watchThemes": "Monitoringthema's",
     "pickSource": "Monitoringthema's",

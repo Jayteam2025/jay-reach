@@ -486,7 +486,11 @@
       "promoteName": "Nom du modèle",
       "promoteNamePlaceholder": "Relance après salon",
       "promoteConfirm": "Verser dans la bibliothèque",
-      "promoted": "Versé dans la bibliothèque"
+      "promoted": "Versé dans la bibliothèque",
+      "generate": "Proposer un premier jet",
+      "generating": "Rédaction…",
+      "generateHint": "Une consigne, si vous en avez une (facultatif)",
+      "useThis": "Utiliser cette proposition"
     },
     "watchThemes": "Thèmes de veille",
     "pickSource": "Thèmes de veille",

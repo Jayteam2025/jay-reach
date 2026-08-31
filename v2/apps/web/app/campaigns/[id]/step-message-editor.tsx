@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core';
 import { saveStepMessage, promoteStepMessage } from '../../actions/step-message';
+import { generateStepMessage } from '../../actions/generate-message';
 
 /**
  * Écriture du message directement dans l'étape (retours 9.1, 9.3 et 9.4).
@@ -22,6 +23,7 @@ export function StepMessageEditor({
   templateParentId,
   initialSubject,
   initialBody,
+  estPremiereEtape,
   onSaved,
 }: {
   orgId: string;
@@ -32,6 +34,8 @@ export function StepMessageEditor({
   templateParentId: string | null;
   initialSubject: string;
   initialBody: string;
+  /** Un premier message ne se rédige pas comme une relance. */
+  estPremiereEtape: boolean;
   onSaved: (templateParentId: string) => void;
 }) {
   const t = useTranslations('campaigns.stepEd');
@@ -43,6 +47,9 @@ export function StepMessageEditor({
   const [nomModele, setNomModele] = useState('');
   const [versement, setVersement] = useState(false);
   const zone = useRef<HTMLTextAreaElement>(null);
+  const [consigne, setConsigne] = useState('');
+  const [propositions, setPropositions] = useState<{ subject: string | null; body: string }[]>([]);
+  const [generation, setGeneration] = useState(false);
 
   // 9.4 : les variables disponibles dépendent de la nature de la campagne — une
   // campagne alimentée par une liste n'a pas de signal daté à citer.
@@ -69,6 +76,34 @@ export function StepMessageEditor({
       const p = debut + jeton.length;
       el.setSelectionRange(p, p);
     });
+  }
+
+  /**
+   * Premier jet proposé par le modèle. Rien n'est envoyé et rien n'est
+   * enregistré : les propositions atterrissent dans le champ, où elles se
+   * relisent et se modifient comme un texte écrit à la main.
+   */
+  function proposer() {
+    setGeneration(true);
+    setErreur(null);
+    setPropositions([]);
+    startTransition(async () => {
+      const res = await generateStepMessage(orgId, campaignId, {
+        channel,
+        nature,
+        estPremiereEtape,
+        consigne,
+      });
+      setGeneration(false);
+      if (res.ok) setPropositions(res.variantes);
+      else setErreur(res.error);
+    });
+  }
+
+  function retenir(v: { subject: string | null; body: string }) {
+    if (v.subject) setSubject(v.subject);
+    setBody(v.body);
+    setPropositions([]);
   }
 
   function enregistrer() {
@@ -108,6 +143,33 @@ export function StepMessageEditor({
 
   return (
     <div className="rs-step-msg">
+      {/* Premier jet : une aide au démarrage, jamais un envoi. Le texte proposé
+          se relit et se modifie comme n'importe quel autre. */}
+      <div className="rs-gen">
+        <div className="rs-gen-head">
+          <input
+            className="rs-input"
+            value={consigne}
+            onChange={(e) => setConsigne(e.target.value)}
+            placeholder={t('generateHint')}
+          />
+          <button type="button" className="rs-btn" onClick={proposer} disabled={pending}>
+            {generation ? t('generating') : t('generate')}
+          </button>
+        </div>
+        {propositions.length > 0 ? (
+          <div className="rs-gen-list">
+            {propositions.map((v, i) => (
+              <button key={i} type="button" className="rs-gen-item" onClick={() => retenir(v)}>
+                {v.subject ? <span className="rs-gen-subject">{v.subject}</span> : null}
+                <span className="rs-gen-body">{v.body}</span>
+                <span className="rs-row-sub">{t('useThis')}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       {channel === 'email' ? (
         <label className="rs-label">
           {t('subject')}

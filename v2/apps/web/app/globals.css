@@ -1837,3 +1837,46 @@ button.rs-pill.rs-pill-lime:hover {
   padding: 3px 8px;
   font-size: 12px;
 }
+
+/* Premier jet proposé : une bande discrète au-dessus du champ. Elle ne doit pas
+   ressembler à l'action principale — écrire soi-même reste le geste par défaut. */
+.rs-gen {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rs-gen-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.rs-gen-head .rs-input {
+  flex: 1;
+}
+.rs-gen-list {
+  display: grid;
+  gap: 8px;
+}
+.rs-gen-item {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--limeghost);
+  border: 1px solid var(--limeline);
+  border-radius: var(--r-ctl);
+  color: var(--chalk);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.rs-gen-item:hover {
+  border-color: var(--lime);
+}
+.rs-gen-subject {
+  font-weight: 600;
+}
+.rs-gen-body {
+  white-space: pre-wrap;
+}

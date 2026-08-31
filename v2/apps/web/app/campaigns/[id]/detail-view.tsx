@@ -351,6 +351,7 @@ export function CampaignDetailView({
                   templateParentId={draft.templateParentId}
                   initialSubject={draft.subject}
                   initialBody={draft.body}
+                  estPremiereEtape={detail.steps.findIndex((st) => st.id === draft.id) <= 0}
                   onSaved={(id) => setDraft((d) => (d ? { ...d, templateParentId: id } : d))}
                 />
 
