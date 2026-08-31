@@ -34,7 +34,6 @@ import {
   attachSignalsToAccount,
   startSourceRun,
   finishSourceRun,
-  cloreExecutionsInterrompues,
   closeStaleSourceRuns,
 } from './db.js';
 import {
@@ -60,6 +59,12 @@ export interface Contexte {
   readonly pool: Pool;
   /** Clé du coffre. Absente : repli sur les variables d'environnement. */
   readonly encryptionKey?: string | undefined;
+  /**
+   * Temps qu'une collecte a le droit de prendre. Absent en mode permanent, où
+   * rien ne coupe le worker ; renseigné par la route planifiée, dont la
+   * fonction est tuée au plafond d'exécution — et la collecte perdue avec.
+   */
+  readonly budgetCollecteMs?: number | undefined;
 }
 
 /** Files qui ont un traitement. Les autres sont déclarées mais inertes. */
@@ -108,7 +113,10 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
   }
   const runId = await startSourceRun(pool, data.sourceId, data.sourceProviderId);
   try {
-    const result = await runDiscover(data, credentials);
+    const result = await runDiscover(
+    ctx.budgetCollecteMs !== undefined ? { ...data, budgetMs: ctx.budgetCollecteMs } : data,
+    credentials,
+  );
     const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);
     // Chaînage : chaque NOUVEAU signal (avec une entreprise) part en qualification.
     // Id déterministe par signal => un signal ne se qualifie qu'une fois.
@@ -400,17 +408,6 @@ export async function releverDemandes(ctx: Contexte): Promise<void> {
     }
   } catch (err) {
     console.error('[producer] relève des demandes échouée', err);
-  }
-
-  // Ménage des exécutions coupées au tour précédent. Sans lui, une collecte
-  // interrompue reste « en cours » à l'écran indéfiniment.
-  try {
-    const closes = await cloreExecutionsInterrompues(ctx.pool);
-    if (closes > 0) {
-      console.log(`[producer] ${closes} exécution(s) interrompue(s) refermée(s)`);
-    }
-  } catch (err) {
-    console.error('[producer] ménage des exécutions échoué', err);
   }
 
   // Ajouts en masse depuis l'annuaire. Traités ici plutôt que par une file :

@@ -33,6 +33,12 @@ export interface DiscoverJob {
   readonly sourceProviderId?: string;
   readonly keywords: string[];
   readonly location?: string;
+  /**
+   * Temps que la collecte a le droit de prendre. Posé par l'appelant qui
+   * connaît son propre plafond — une fonction serverless en a un, un worker
+   * permanent n'en a pas.
+   */
+  readonly budgetMs?: number;
 }
 
 export async function runDiscover(
@@ -43,5 +49,9 @@ export async function runDiscover(
   if (!scraper) {
     throw new Error(`Connecteur de signal inconnu : ${job.provider}`);
   }
-  return scraper.fetch(job.keywords, { location: job.location, credentials });
+  return scraper.fetch(job.keywords, {
+    location: job.location,
+    credentials,
+    ...(job.budgetMs !== undefined ? { budgetMs: job.budgetMs } : {}),
+  });
 }

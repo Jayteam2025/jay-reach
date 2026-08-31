@@ -30,7 +30,23 @@ export interface ScraperResult {
 
 export interface Scraper {
   name: string;
-  fetch(keywords: string[], opts: { location?: string; credentials: Record<string, string> }): Promise<ScraperResult>;
+  fetch(
+    keywords: string[],
+    opts: {
+      location?: string;
+      credentials: Record<string, string>;
+      /**
+       * Temps que la collecte a le droit de prendre. Au-delà, le connecteur
+       * rend ce qu'il a déjà trouvé plutôt que de se faire couper.
+       *
+       * Un connecteur qui interroge ses mots-clés en série peut dépasser le
+       * plafond d'exécution d'une fonction serverless : elle est tuée au
+       * milieu, la collecte est perdue en entier, et l'exécution reste ouverte.
+       * Mieux vaut une collecte partielle qu'aucune collecte.
+       */
+      budgetMs?: number;
+    },
+  ): Promise<ScraperResult>;
 }
 
 export interface IcpCriteria {

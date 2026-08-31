@@ -348,7 +348,7 @@
   },
   "prospects": {
     "eyebrow": "Company profile",
-    "headcount": "{n} employees",
+    "headcount": "{n, number} employees",
     "signals": "Related signals",
     "sequence": "Sequence table",
     "contacts": "Contacts",
@@ -579,11 +579,11 @@
     "countTruncated": "More than {n, number} companies found",
     "bulk": {
       "addPage": "Add this page ({count})",
-      "addAll": "Add all {count} results",
-      "addAllTruncated": "Add the results ({count} max)",
-      "confirm": "Add {count} companies to your base?",
+      "addAll": "Add all {count, number} results",
+      "addAllTruncated": "Add the results ({count, number} max)",
+      "confirm": "Add {count, number} companies to your base?",
       "starting": "Starting…",
-      "progress": "{done} / {total}",
+      "progress": "{done, number} / {total, number}",
       "cancel": "Cancel",
       "cancelled": "Cancelled — {added} company(ies) added before stopping.",
       "done": "{added} added, {existing} already there."

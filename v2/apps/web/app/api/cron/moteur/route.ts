@@ -37,6 +37,20 @@ export const maxDuration = 60;
 
 const BUDGET_MS = 45_000;
 
+/**
+ * Temps qu'une collecte a le droit de prendre.
+ *
+ * France Travail interroge ses mots-clés un par un — quinze appels d'environ
+ * cinq secondes. En série, elle dépassait les soixante secondes de la fonction,
+ * qui la tuait au milieu : la collecte entière était perdue, et son exécution
+ * restait ouverte. Bornée, elle rend ce qu'elle a trouvé et reprend les
+ * mots-clés suivants au tour d'après.
+ *
+ * Plus court que le budget global : la collecte n'est qu'une partie du tour, et
+ * il faut garder de quoi enregistrer ses signaux et refermer proprement.
+ */
+const BUDGET_COLLECTE_MS = 25_000;
+
 export async function GET(req: Request): Promise<Response> {
   const garde = verifierCron(req);
   if (!garde.autorise) {
@@ -46,7 +60,12 @@ export async function GET(req: Request): Promise<Response> {
   const debut = Date.now();
   const boss = createRuntime(requireEnv('DATABASE_URL'), { ephemere: true });
   const pool = createPool(requireEnv('DATABASE_URL'));
-  const ctx: Contexte = { boss, pool, encryptionKey: process.env.ENCRYPTION_KEY };
+  const ctx: Contexte = {
+    boss,
+    pool,
+    encryptionKey: process.env.ENCRYPTION_KEY,
+    budgetCollecteMs: BUDGET_COLLECTE_MS,
+  };
 
   try {
     await boss.start();

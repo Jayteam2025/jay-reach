@@ -348,7 +348,7 @@
   },
   "prospects": {
     "eyebrow": "Bedrijfsprofiel",
-    "headcount": "{n} medewerkers",
+    "headcount": "{n, number} medewerkers",
     "signals": "Gerelateerde signalen",
     "sequence": "Sequentietabel",
     "contacts": "Contacten",
@@ -579,11 +579,11 @@
     "countTruncated": "Meer dan {n, number} bedrijven gevonden",
     "bulk": {
       "addPage": "Deze pagina toevoegen ({count})",
-      "addAll": "Alle {count} resultaten toevoegen",
-      "addAllTruncated": "De resultaten toevoegen (max. {count})",
-      "confirm": "{count} bedrijven aan uw bestand toevoegen?",
+      "addAll": "Alle {count, number} resultaten toevoegen",
+      "addAllTruncated": "De resultaten toevoegen (max. {count, number})",
+      "confirm": "{count, number} bedrijven aan uw bestand toevoegen?",
       "starting": "Starten…",
-      "progress": "{done} / {total}",
+      "progress": "{done, number} / {total, number}",
       "cancel": "Annuleren",
       "cancelled": "Geannuleerd — {added} bedrijf(ven) toegevoegd voor de stop.",
       "done": "{added} toegevoegd, {existing} al aanwezig."

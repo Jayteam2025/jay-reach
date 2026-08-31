@@ -140,36 +140,6 @@ export async function insertSignals(
   return inserted;
 }
 
-/**
- * Referme les exécutions restées ouvertes.
- *
- * Une collecte marque son exécution `running` au départ, puis `success` ou
- * `error` à l'arrivée. Sur Vercel, la fonction qui la porte peut être coupée
- * entre les deux — au plafond de soixante secondes — et personne n'écrit alors
- * la fin : la trace reste `running` pour toujours, et l'écran des thèmes
- * affiche une collecte « en cours » qui ne s'achèvera jamais.
- *
- * Le worker permanent n'avait pas ce problème : rien ne l'interrompait au
- * milieu d'un job. C'est le mode éphémère qui l'introduit, donc c'est à chaque
- * tour de faire le ménage du précédent.
- *
- * Le seuil est large devant la durée d'une collecte (quelques secondes) et
- * devant le plafond d'exécution : on ne referme jamais une collecte encore
- * vivante.
- */
-export async function cloreExecutionsInterrompues(pool: Pool, seuilMinutes = 10): Promise<number> {
-  const res = await pool.query(
-    `update source_runs
-        set status = 'error',
-            finished_at = now(),
-            error = coalesce(error, 'interrompu : exécution coupée avant la fin')
-      where status = 'running'
-        and started_at < now() - make_interval(mins => $1)`,
-    [seuilMinutes],
-  );
-  return res.rowCount ?? 0;
-}
-
 /** Ouvre un enregistrement d'exécution de source (`source_runs`, statut `running`). */
 export async function startSourceRun(
   pool: Pool,
