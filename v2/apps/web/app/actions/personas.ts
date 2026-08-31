@@ -12,7 +12,6 @@ export interface PersonaInput {
   readonly titlePatterns: string[];
   readonly titleExclusions: string[];
   readonly seniority: string | null;
-  readonly channels: string[];
   readonly scoringPrompt: string;
   readonly isActive: boolean;
 }
@@ -24,7 +23,6 @@ function toRow(input: PersonaInput) {
     title_patterns: input.titlePatterns.filter((p) => p.trim().length > 0),
     title_exclusions: input.titleExclusions.filter((p) => p.trim().length > 0),
     seniority: input.seniority && input.seniority.length > 0 ? input.seniority : null,
-    channels_priority: input.channels.length > 0 ? input.channels : ['email'],
     scoring_prompt: input.scoringPrompt.trim() || null,
     is_active: input.isActive,
   };

@@ -19,7 +19,7 @@ const APP_ROUTES = [
   '/settings/personas',
   '/settings/customers',
   '/settings/providers',
-  '/settings/branding',
+  '/settings/senders',
 ];
 
 describe('decideAccess — garde d’authentification du middleware', () => {

@@ -7,6 +7,7 @@ import type { CampaignDetail, SeqStepDetail, Channel } from '../../../lib/sample
 import { Icon, type IconName } from '../../icons';
 import { ApprovalList, type ApprovalRow } from '../../approvals/approval-list';
 import { setCampaignStatus, addStep, updateStep, deleteStep, moveStep } from '../../actions/campaigns';
+import { StepMessageEditor } from './step-message-editor';
 
 const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost' };
 
@@ -34,7 +35,10 @@ interface StepDraft {
   channel: Channel;
   templateParentId: string | null;
   delayDays: number;
+  subject: string;
+  body: string;
 }
+
 
 export function CampaignDetailView({
   detail,
@@ -75,13 +79,15 @@ export function CampaignDetailView({
     run(() => setCampaignStatus(orgId, detail.id, next));
   };
 
-  const openNew = (): void => setDraft({ id: null, channel: 'email', templateParentId: null, delayDays: 0 });
+  const openNew = (): void => setDraft({ id: null, channel: 'email', templateParentId: null, delayDays: 0, subject: '', body: '' });
   const openEdit = (step: SeqStepDetail): void =>
     setDraft({
       id: step.id ?? null,
       channel: step.channel,
       templateParentId: step.templateParentId ?? null,
       delayDays: step.delayDays,
+      subject: step.subject ?? '',
+      body: step.body ?? '',
     });
 
   const saveDraft = (): void => {
@@ -332,25 +338,43 @@ export function CampaignDetailView({
                 {te('callNote')}
               </p>
             ) : (
-              <label className="rs-label">
-                {te('template')}
-                <select
-                  className="rs-input"
-                  value={draft.templateParentId ?? ''}
-                  onChange={(e) => setDraft({ ...draft, templateParentId: e.target.value || null })}
-                >
-                  <option value="">{te('noTemplate')}</option>
-                  {familiesForDraft.map((f) => (
-                    <option key={f.familyId} value={f.familyId}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
-                {familiesForDraft.length === 0 ? <span className="rs-row-sub">{te('noneForChannel')}</span> : null}
-                <a className="rs-row-sub" href="/settings/templates" style={{ marginTop: 4 }}>
-                  {te('editInLibrary')}
-                </a>
-              </label>
+              <>
+                {/* On écrit ici. Le sélecteur reste dessous : il sert quand on a
+                    déjà un message qui marche, mais il n'est plus le seul
+                    chemin — c'est ce qui obligeait à sortir de la campagne. */}
+                <StepMessageEditor
+                  orgId={orgId}
+                  campaignId={detail.id}
+                  channel={draft.channel}
+                  nature={detail.nature ?? 'signal'}
+                  locale={detail.locale ?? 'fr'}
+                  templateParentId={draft.templateParentId}
+                  initialSubject={draft.subject}
+                  initialBody={draft.body}
+                  estPremiereEtape={detail.steps.findIndex((st) => st.id === draft.id) <= 0}
+                  onSaved={(id) => setDraft((d) => (d ? { ...d, templateParentId: id } : d))}
+                />
+
+                <label className="rs-label">
+                  {te('template')}
+                  <select
+                    className="rs-input"
+                    value={draft.templateParentId ?? ''}
+                    onChange={(e) => setDraft({ ...draft, templateParentId: e.target.value || null })}
+                  >
+                    <option value="">{te('noTemplate')}</option>
+                    {familiesForDraft.map((f) => (
+                      <option key={f.familyId} value={f.familyId}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                  {familiesForDraft.length === 0 ? <span className="rs-row-sub">{te('noneForChannel')}</span> : null}
+                  <a className="rs-row-sub" href="/settings/templates" style={{ marginTop: 4 }}>
+                    {te('editInLibrary')}
+                  </a>
+                </label>
+              </>
             )}
 
             <label className="rs-label">

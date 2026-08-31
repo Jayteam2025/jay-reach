@@ -4,6 +4,7 @@
  */
 import { Pool } from 'pg';
 import type { ScrapedSignal } from '@jay-reach/providers/signals';
+import { signalFingerprint } from '@jay-reach/core';
 
 export function createPool(connectionString: string): Pool {
   return new Pool({ connectionString });
@@ -53,6 +54,18 @@ export interface InsertedSignal {
  * unique). Ne garde que les `job_posting`. Retourne les NOUVEAUX signaux
  * (ceux réellement insérés) pour permettre le chaînage vers la qualification.
  */
+/**
+ * Code postal français lu dans un libellé de lieu, quand il s'y trouve.
+ *
+ * Les sources ne le donnent pas séparément : Adzuna renvoie un libellé libre,
+ * France Travail un « 75 - PARIS 01 » qui ne contient pas de code postal. Il
+ * est donc souvent absent, et l'empreinte repose alors sur l'entreprise et
+ * l'intitulé seuls — ce que `signalFingerprint` accepte.
+ */
+function codePostalDe(location: string | null): string | undefined {
+  return location?.match(/\b(\d{5})\b/)?.[1];
+}
+
 export async function insertSignals(
   pool: Pool,
   organizationId: string,
@@ -61,18 +74,45 @@ export async function insertSignals(
   signals: readonly ScrapedSignal[],
 ): Promise<InsertedSignal[]> {
   const inserted: InsertedSignal[] = [];
+  // Empreintes déjà posées pendant ce lot : une même offre remontée deux fois
+  // par le même appel n'a pas encore été écrite en base, donc la vérification
+  // SQL ne la verrait pas.
+  const vuesDansLeLot = new Set<string>();
+
   for (const signal of signals) {
     if (signal.signal_type !== 'job_posting') {
       continue;
     }
     const data = signal.extracted_data;
     const companyName = (data.company_name as string | null | undefined) ?? null;
+    const title = (data.job_title as string | null | undefined) ?? null;
+    const location = (data.location as string | null | undefined) ?? null;
+
+    // L'empreinte n'a de sens qu'avec une entreprise et un intitulé. Sans eux,
+    // on insère sans dédupliquer plutôt que de regrouper des offres sans
+    // rapport sous une empreinte vide.
+    const fingerprint =
+      companyName && title
+        ? signalFingerprint({ company: companyName, title, postalCode: codePostalDe(location) })
+        : null;
+
+    if (fingerprint && vuesDansLeLot.has(fingerprint)) {
+      continue;
+    }
+
     const res = await pool.query<{ id: string }>(
       `insert into signals
          (organization_id, source_id, provider_id, external_id, kind, occurred_at,
-          raw, title, url, company_hint, location, status)
-       values ($1, $2, $3, $4, 'job_posting', coalesce($5::timestamptz, now()),
-          $6::jsonb, $7, $8, $9, $10, 'new')
+          raw, title, url, company_hint, location, status, fingerprint)
+       select $1, $2, $3, $4, 'job_posting', coalesce($5::timestamptz, now()),
+          $6::jsonb, $7, $8, $9, $10, 'new', $11
+       where $11::text is null
+          or not exists (
+            select 1 from signals
+             where organization_id = $1
+               and fingerprint = $11
+               and occurred_at > now() - interval '30 days'
+          )
        on conflict (source_id, external_id) do nothing
        returning id`,
       [
@@ -82,14 +122,18 @@ export async function insertSignals(
         signal.source_url,
         (data.posted_date as string | null | undefined) ?? null,
         JSON.stringify(data),
-        (data.job_title as string | null | undefined) ?? null,
+        title,
         signal.source_url,
         companyName,
-        (data.location as string | null | undefined) ?? null,
+        location,
+        fingerprint,
       ],
     );
     const id = res.rows[0]?.id;
     if (id) {
+      if (fingerprint) {
+        vuesDansLeLot.add(fingerprint);
+      }
       inserted.push({ signalId: id, organizationId, companyName });
     }
   }
@@ -97,10 +141,14 @@ export async function insertSignals(
 }
 
 /** Ouvre un enregistrement d'exécution de source (`source_runs`, statut `running`). */
-export async function startSourceRun(pool: Pool, sourceId: string): Promise<string> {
+export async function startSourceRun(
+  pool: Pool,
+  sourceId: string,
+  sourceProviderId?: string,
+): Promise<string> {
   const res = await pool.query<{ id: string }>(
-    `insert into source_runs (source_id, status) values ($1, 'running') returning id`,
-    [sourceId],
+    `insert into source_runs (source_id, source_provider_id, status) values ($1, $2, 'running') returning id`,
+    [sourceId, sourceProviderId ?? null],
   );
   const id = res.rows[0]?.id;
   if (!id) {

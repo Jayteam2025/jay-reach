@@ -9,7 +9,8 @@ import { SOURCE_PROVIDERS, type SourceInput } from '../../../lib/sources';
 export interface SourceFormValues {
   readonly id?: string;
   readonly name: string;
-  readonly providerId: string;
+  readonly description: string;
+  readonly providerIds: string[];
   readonly keywords: string[];
   readonly location: string;
   readonly scoringPrompt: string;
@@ -19,7 +20,8 @@ export interface SourceFormValues {
 
 const VIDE: SourceFormValues = {
   name: '',
-  providerId: 'francetravail',
+  description: '',
+  providerIds: ['francetravail'],
   keywords: [],
   location: '',
   scoringPrompt: '',
@@ -28,10 +30,16 @@ const VIDE: SourceFormValues = {
 };
 
 /**
- * Création et modification d'une source.
+ * Création et modification d'un thème de veille.
+ *
+ * Les mots-clés sont saisis une seule fois, au niveau du thème, et valent pour
+ * tous les fournisseurs rattachés. C'est la raison d'être de cet écran : quand
+ * chaque fournisseur portait ses propres mots-clés, deux connecteurs censés
+ * couvrir la même veille finissaient par chercher des choses différentes sans
+ * que rien ne le signale.
  *
  * La qualification est dans le même formulaire que la collecte, en seconde
- * section : le prompt et le seuil vivent dans `sources.config`, et une source
+ * section : le prompt et le seuil vivent dans `sources.config`, et un thème
  * sans prompt collecte sans jamais rien qualifier. Les séparer laisserait
  * l'opérateur devant un écran qui se remplit et un autre qui reste vide, sans
  * rien pour relier les deux.
@@ -85,19 +93,40 @@ export function SourceForm(props: { orgId: string; initial?: SourceFormValues; o
       </label>
 
       <label className="rs-label">
-        {t('sources.form.provider')}
-        <select
+        {t('sources.form.description')}
+        <input
           className="rs-input"
-          value={values.providerId}
-          onChange={(e) => modifier('providerId', e.target.value)}
-        >
-          {SOURCE_PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {t(`providers.${p}`)}
-            </option>
-          ))}
-        </select>
+          value={values.description}
+          onChange={(e) => modifier('description', e.target.value)}
+          placeholder={t('sources.form.descriptionPlaceholder')}
+        />
       </label>
+
+      <div className="rs-label">
+        {t('sources.form.providers')}
+        <p className="rs-row-sub" style={{ marginTop: 2, marginBottom: 6 }}>
+          {t('sources.form.providersHelp')}
+        </p>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {SOURCE_PROVIDERS.map((p) => (
+            <label key={p} className="rs-check">
+              <input
+                type="checkbox"
+                checked={values.providerIds.includes(p)}
+                onChange={(e) =>
+                  modifier(
+                    'providerIds',
+                    e.target.checked
+                      ? [...values.providerIds, p]
+                      : values.providerIds.filter((x) => x !== p),
+                  )
+                }
+              />
+              <span>{t(`providers.${p}`)}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
       <label className="rs-label">
         {t('sources.keywords')}
@@ -161,6 +190,12 @@ export function SourceForm(props: { orgId: string; initial?: SourceFormValues; o
         />
         <span>{t('sources.form.active')}</span>
       </label>
+
+      {values.providerIds.length === 0 ? (
+        <p className="rs-row-sub" style={{ color: 'var(--flare)' }}>
+          {t('sources.form.noProviderWarning')}
+        </p>
+      ) : null}
 
       <div className="rs-actions">
         <button

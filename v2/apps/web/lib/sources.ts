@@ -17,7 +17,14 @@ export type SourceProvider = (typeof SOURCE_PROVIDERS)[number];
 
 export interface SourceInput {
   readonly name: string;
-  readonly providerId: string;
+  /** À quoi sert cette veille, en une phrase. Sert de rappel, pas de réglage. */
+  readonly description: string;
+  /**
+   * Fournisseurs interrogés pour ce thème. Les mots-clés appartiennent au
+   * thème et valent pour tous : c'est ce qui empêche deux fournisseurs censés
+   * couvrir la même veille de dériver l'un de l'autre.
+   */
+  readonly providerIds: string[];
   readonly keywords: string[];
   readonly location: string;
   /** Consigne de qualification. Sans elle, le scoring laisse les signaux en attente. */

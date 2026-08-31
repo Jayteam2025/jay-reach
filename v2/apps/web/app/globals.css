@@ -383,6 +383,18 @@ button.rs-pill.rs-pill-lime:hover {
 .rs-btn:hover {
   border-color: var(--lime);
 }
+/* Un bouton hors d'usage doit se voir comme tel : sans cette règle, il garde
+   l'aspect d'un bouton actif et son clic ne produit rien, ce qu'on lit comme
+   une panne. Le survol est neutralisé pour la même raison. */
+.rs-btn:disabled,
+.rs-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rs-btn:disabled:hover,
+.rs-btn[aria-disabled='true']:hover {
+  border-color: var(--slate2);
+}
 .rs-actions {
   display: flex;
   gap: 8px;
@@ -1315,40 +1327,6 @@ button.rs-pill.rs-pill-lime:hover {
   font-size: 12px;
   color: var(--moss2);
 }
-.rs-lk-modes {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.rs-lk-mode {
-  text-align: left;
-  appearance: none;
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--slate2);
-  border-radius: var(--r-ctl);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--chalk);
-}
-.rs-lk-mode:hover {
-  border-color: var(--limeline);
-}
-.rs-lk-mode[data-active='true'] {
-  border-color: var(--lime);
-  background: var(--limeghost);
-}
-.rs-lk-mode-name {
-  font-size: 13px;
-  font-weight: 600;
-}
-.rs-lk-mode-hint {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--moss2);
-}
 .rs-lk-volume {
   margin-top: 14px;
 }
@@ -1381,8 +1359,7 @@ button.rs-pill.rs-pill-lime:hover {
 .rs-lk-msg[data-ok='true'] {
   color: var(--lime);
 }
-.rs-lk-steps,
-.rs-lk-rules {
+.rs-lk-steps {
   margin: 0;
   padding-left: 18px;
   display: flex;
@@ -1391,19 +1368,8 @@ button.rs-pill.rs-pill-lime:hover {
   font-size: 13px;
   color: var(--chalk);
 }
-.rs-lk-steps li,
-.rs-lk-rules li {
+.rs-lk-steps li {
   line-height: 1.4;
-}
-.rs-lk-cgu {
-  margin: 12px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #f0d9a0;
-  background: rgba(255, 160, 40, 0.07);
-  border: 1px solid rgba(255, 160, 40, 0.22);
-  border-radius: var(--r-ctl);
-  padding: 10px 12px;
 }
 
 /* Alertes LinkedIn */
@@ -1722,4 +1688,195 @@ button.rs-pill.rs-pill-lime:hover {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* État de l'extension : le point porte l'information, la couleur la confirme —
+   un daltonien lit le libellé, qui dit la même chose en toutes lettres. */
+.rs-lk-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--chalk);
+  margin-bottom: 12px;
+}
+.rs-lk-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--moss2);
+}
+.rs-lk-state[data-state='installee'] .rs-lk-state-dot {
+  background: #f0d9a0;
+}
+.rs-lk-state[data-state='connectee'] .rs-lk-state-dot {
+  background: var(--lime);
+}
+
+/* Jours d'envoi : sept cibles de même largeur, alignées sur la grille de 4 px. */
+.rs-lk-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.rs-lk-day {
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--slate2);
+  border-radius: var(--r-ctl);
+  padding: 6px 10px;
+  min-width: 48px;
+  font-size: 12px;
+  color: var(--moss2);
+}
+.rs-lk-day:hover {
+  border-color: var(--limeline);
+}
+.rs-lk-day[data-active='true'] {
+  border-color: var(--lime);
+  background: var(--limeghost);
+  color: var(--chalk);
+}
+
+/* Repli d'installation manuelle : présent tant que l'extension n'est pas
+   publiée, mais replié — ce n'est pas le parcours qu'on recommande. */
+.rs-lk-fallback {
+  margin-top: 10px;
+  font-size: 13px;
+}
+.rs-lk-fallback summary {
+  cursor: pointer;
+  color: var(--moss2);
+  margin-bottom: 10px;
+}
+
+/* Ajout en masse depuis l'annuaire : la barre et ses commandes tiennent sur une
+   ligne au-dessus des résultats, à hauteur du compteur. */
+.rs-dir-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rs-dir-progress {
+  flex: 1 1 160px;
+  height: 6px;
+  min-width: 120px;
+  border-radius: 999px;
+  background: var(--slate2);
+  overflow: hidden;
+}
+.rs-dir-progress-bar {
+  height: 100%;
+  background: var(--lime);
+  transition: width 240ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rs-dir-progress-bar {
+    transition: none;
+  }
+}
+.rs-dir-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* Écriture du message dans l'étape de séquence. */
+.rs-step-msg {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--slate2);
+}
+/* Variables insérables : des jetons, pas des boutons d'action — ils ne doivent
+   pas concurrencer l'action primaire de la modale. */
+.rs-var-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rs-var {
+  appearance: none;
+  cursor: pointer;
+  background: var(--limeghost);
+  border: 1px solid var(--limeline);
+  border-radius: var(--r-ctl);
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--lime2);
+}
+.rs-var:hover {
+  border-color: var(--lime);
+  color: var(--chalk);
+}
+
+/* Historique par fournisseur, à l'intérieur de la carte du thème : chacun a son
+   bloc, pour qu'une panne chez l'un ne se noie pas dans les succès de l'autre. */
+.rs-src-provider {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.rs-src-provider + .rs-src-provider {
+  border-top: 1px solid var(--slate2);
+}
+.rs-src-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rs-btn-mini {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* Premier jet proposé : une bande discrète au-dessus du champ. Elle ne doit pas
+   ressembler à l'action principale — écrire soi-même reste le geste par défaut. */
+.rs-gen {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rs-gen-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.rs-gen-head .rs-input {
+  flex: 1;
+}
+.rs-gen-list {
+  display: grid;
+  gap: 8px;
+}
+.rs-gen-item {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--limeghost);
+  border: 1px solid var(--limeline);
+  border-radius: var(--r-ctl);
+  color: var(--chalk);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.rs-gen-item:hover {
+  border-color: var(--lime);
+}
+.rs-gen-subject {
+  font-weight: 600;
+}
+.rs-gen-body {
+  white-space: pre-wrap;
 }

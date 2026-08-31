@@ -13,6 +13,7 @@ import {
   type SmartleadLead,
 } from '@jay-reach/providers/outreach';
 import { enqueueLinkedInAction, type LinkedInActionJob } from '../db.js';
+import { assurerWebhookSmartlead } from './webhook-smartlead.js';
 
 /** Canaux d'envoi routés par le dispatch. */
 export type DispatchChannel = 'email' | 'linkedin_invite' | 'linkedin_message';
@@ -50,10 +51,24 @@ export function isLinkedInChannel(channel: DispatchChannel | undefined): boolean
   return channel === 'linkedin_invite' || channel === 'linkedin_message';
 }
 
-/** Envoi email : pousse les leads vers la campagne Smartlead. */
-export async function runDispatch(job: DispatchJob, apiKey: string): Promise<AddLeadsResponse> {
+/**
+ * Envoi email : pousse les leads vers la campagne Smartlead.
+ *
+ * Le webhook de la campagne est branché au passage, une seule fois. C'est le
+ * moment où on sait que la campagne existe et que la clé est valide — et sans
+ * lui, les réponses de ces leads ne remonteraient jamais.
+ */
+export async function runDispatch(
+  job: DispatchJob,
+  apiKey: string,
+  pool?: Pool,
+  appUrl?: string,
+): Promise<AddLeadsResponse> {
   if (job.campaignId === undefined || !job.leads) {
     throw new Error('dispatch email : campaignId/leads manquants');
+  }
+  if (pool) {
+    await assurerWebhookSmartlead(pool, job.organizationId, job.campaignId, apiKey, appUrl);
   }
   return addLeadsToCampaign(job.campaignId, job.leads, apiKey);
 }

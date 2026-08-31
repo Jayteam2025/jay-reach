@@ -10,7 +10,7 @@ export type IconName =
   | 'sources'
   | 'personas'
   | 'providers'
-  | 'branding'
+  | 'senders'
   | 'mail'
   | 'linkedin'
   | 'phone'
@@ -84,13 +84,13 @@ export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGEle
           <path d="M14.5 8.5l3 3" />
         </svg>
       );
-    case 'branding':
+    case 'senders':
       return (
         <svg {...S} {...props}>
-          <path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.5 1.6-1.5H16a5 5 0 0 0 5-5c0-4.4-4-7.5-9-7.5Z" />
-          <circle cx="7.5" cy="11" r="1" fill="currentColor" stroke="none" />
-          <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
-          <circle cx="16.5" cy="11" r="1" fill="currentColor" stroke="none" />
+          <circle cx="9" cy="8" r="3.2" />
+          <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+          <path d="M16 12h5" />
+          <path d="m18.5 9.5 2.5 2.5-2.5 2.5" />
         </svg>
       );
     case 'mail':

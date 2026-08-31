@@ -97,7 +97,7 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
         const a = await client.query<{ id: string }>(
           `insert into accounts (organization_id, name, domain, city, postal_code, country, resolution_status)
            values ($1, $2, $3, $4, $5, $6, 'resolved')
-           on conflict (organization_id, domain) where domain is not null
+           on conflict (organization_id, domain)
            do update set name = coalesce(accounts.name, excluded.name)
            returning id`,
           [organizationId, company ?? domain, domain, val(row, 'city'), val(row, 'postal_code'), val(row, 'country')],

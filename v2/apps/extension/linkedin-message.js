@@ -129,6 +129,34 @@ async function sendLinkedInMessage(linkedinUrl, text) {
   }
 }
 
+// Identite du compte LinkedIn courant : le nom affiche et l'identifiant public.
+// Sert a l'ecran de reglages, qui disait « extension connectee » sans dire
+// connectee a quel compte. Sur un poste ou plusieurs sessions se succedent,
+// c'est la seule facon de voir qu'on s'apprete a ecrire depuis le mauvais
+// profil. Ni l'un ni l'autre n'est secret : LinkedIn les montre a tout visiteur.
+async function getSelfIdentity(csrf) {
+  const res = await fetch(VOYAGER_ME_URL, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { ...MESSAGE_HEADERS, 'csrf-token': csrf },
+  });
+  if (!res.ok) {
+    throw Object.assign(new Error(`me_${res.status}`), { code: 'me_error' });
+  }
+  const data = await res.json();
+  const mini = data?.data?.miniProfile ?? data?.data ?? {};
+  const publicIdentifier = mini.publicIdentifier || null;
+  let nom = [mini.firstName, mini.lastName].filter(Boolean).join(' ').trim();
+  if (!nom && Array.isArray(data?.included) && publicIdentifier) {
+    // Selon la forme de la reponse, le nom vit dans included[] plutot que sous
+    // data. On ne retient que le profil dont l'identifiant est le notre.
+    const moi = data.included.find((i) => i?.publicIdentifier === publicIdentifier);
+    nom = [moi?.firstName, moi?.lastName].filter(Boolean).join(' ').trim();
+  }
+  return { name: nom || null, publicIdentifier };
+}
+
+self.linkedinGetSelfIdentity = getSelfIdentity;
 self.sendLinkedInMessage = sendLinkedInMessage;
 // La releve des reponses a besoin du meme URN de boite : c'est le `mailboxUrn`
 // des conversations. L'exposer evite d'en tenir une seconde version.
