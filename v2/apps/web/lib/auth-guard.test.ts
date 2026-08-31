@@ -67,6 +67,10 @@ describe('decideAccess — garde d’authentification du middleware', () => {
       '/api/extension/linkedin/next',
       '/api/extension/linkedin/update',
       '/api/health',
+      // La tache planifiee n'a pas de session : sans cette exclusion, le
+      // middleware la renvoyait vers la page de connexion et le moteur ne
+      // tournait pas du tout en production.
+      '/api/cron/moteur',
       '/extension/auth',
     ];
     for (const pathname of publicPaths) {
@@ -80,12 +84,23 @@ describe('decideAccess — garde d’authentification du middleware', () => {
     // /loginfake ne doit pas être traité comme /login.
     expect(isPublicPath('/loginfake')).toBe(false);
     expect(isPublicPath('/api/extensionery')).toBe(false);
+    expect(isPublicPath('/api/cronjob')).toBe(false);
     // mais le préfixe exact et ses sous-chemins, oui.
     expect(isPublicPath('/login')).toBe(true);
     expect(isPublicPath('/api/extension/linkedin/next')).toBe(true);
   });
 
   it('la liste des préfixes publics est minimale et explicite', () => {
-    expect(PUBLIC_PREFIXES).toEqual(['/login', '/api/extension', '/api/webhooks', '/api/health', '/extension/auth']);
+    // Ce test échoue volontairement dès qu'on ajoute un préfixe : élargir la
+    // surface non protégée par session doit être une décision, jamais un effet
+    // de bord. Chaque entrée porte sa propre authentification.
+    expect(PUBLIC_PREFIXES).toEqual([
+      '/login',
+      '/api/extension',
+      '/api/webhooks',
+      '/api/health',
+      '/api/cron',
+      '/extension/auth',
+    ]);
   });
 });

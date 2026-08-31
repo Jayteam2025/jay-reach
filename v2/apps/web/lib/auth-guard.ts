@@ -6,8 +6,20 @@
 //  - /api/extension  : endpoints de l'extension (auth par token, pas par session)
 //  - /api/webhooks   : webhooks entrants (Smartlead…) — auth par token dans l'URL
 //  - /api/health     : sonde de disponibilité
+//  - /api/cron       : tâches planifiées — auth par CRON_SECRET, jamais par session
 //  - /extension/auth : handshake OAuth du token d'extension
-export const PUBLIC_PREFIXES = ['/login', '/api/extension', '/api/webhooks', '/api/health', '/extension/auth'];
+//
+// Ces chemins ne sont pas « ouverts » : chacun porte sa propre authentification.
+// Ce qu'ils ont en commun, c'est qu'aucun appelant n'a de session de navigateur —
+// une redirection vers la page de connexion n'aurait donc aucun sens.
+export const PUBLIC_PREFIXES = [
+  '/login',
+  '/api/extension',
+  '/api/webhooks',
+  '/api/health',
+  '/api/cron',
+  '/extension/auth',
+];
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
