@@ -3,6 +3,7 @@ import { PROVIDER_CATALOG } from '@jay-reach/providers';
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { ProviderForm } from './provider-form';
+import Link from 'next/link';
 
 const CATEGORY_ORDER = ['email', 'enrichment', 'signals', 'ai'] as const;
 
@@ -66,7 +67,7 @@ export default async function ProvidersPage() {
           </section>
         ))}
         <p className="rs-row-sub" style={{ marginTop: 24 }}>
-          <a href="/settings/smartlead">{t('providers.advancedWebhook')}</a>
+          <Link href="/settings/smartlead">{t('providers.advancedWebhook')}</Link>
         </p>
       </main>
     </div>

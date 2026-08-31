@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { createClientOrNull } from '../lib/supabase/server';
 import { EN_TETE_UTILISATEUR } from '../lib/supabase/middleware';
 import { NotificationsBell, type NotifItem } from './notifications-bell';
+import Link from 'next/link';
 
 /**
  * Navigation principale.
@@ -90,23 +91,23 @@ export async function AppTopBar({ active }: { active: string }) {
   return (
     <aside className="rs-sidebar">
       <div className="rs-sidetop">
-        <a href="/" className="rs-sidebrand">
+        <Link href="/" className="rs-sidebrand">
           <span className="rs-mark" aria-hidden="true">
             <i />
             <i />
           </span>
           <span className="rs-brand">{t('app.name')}</span>
-        </a>
+        </Link>
         <Suspense fallback={<NotificationsBell items={[]} />}>
           <Cloche />
         </Suspense>
       </div>
       <nav className="rs-sidenav">
         {NAV.map((item) => (
-          <a key={item.key} href={item.href} data-active={active === item.key}>
+          <Link key={item.key} href={item.href} data-active={active === item.key}>
             <Icon name={item.icon} className="rs-nav-ico" aria-hidden="true" />
             <span>{t(`nav.${item.key}`)}</span>
-          </a>
+          </Link>
         ))}
       </nav>
     </aside>

@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
 import { createClientOrNull } from '../../lib/supabase/server';
+import Link from 'next/link';
 
 const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost', archived: 'neutral' };
 const nf = (n: number): string => n.toLocaleString('fr-FR');
@@ -59,12 +60,12 @@ export default async function CampaignsPage() {
             {/* Les thèmes de veille ont quitté le menu principal : on configure
                 d'où viennent les prospects là où on construit la campagne qu'ils
                 alimentent, pas dans une entrée de navigation séparée. */}
-            <a className="rs-btn" href="/settings/sources">
+            <Link className="rs-btn" href="/settings/sources">
               {t('campaigns.watchThemes')}
-            </a>
-            <a className="rs-btn" data-primary="true" href="/campaigns/new">
+            </Link>
+            <Link className="rs-btn" data-primary="true" href="/campaigns/new">
               {t('campaigns.newCampaign')}
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -75,7 +76,7 @@ export default async function CampaignsPage() {
             const replyRate = pct(c.replies, c.sent);
             const live = c.status === 'active';
             return (
-              <a key={c.id} href={`/campaigns/${c.id}`} className="rs-camp-card" style={{ display: 'block', color: 'inherit' }}>
+              <Link key={c.id} href={`/campaigns/${c.id}`} className="rs-camp-card" style={{ display: 'block', color: 'inherit' }}>
                 <div className="rs-camp-head">
                   <h3 style={{ fontSize: 15 }}>{c.name}</h3>
                   <span className="rs-pill" data-tone={STATUS_TONE[c.status] ?? 'ghost'}>
@@ -98,19 +99,19 @@ export default async function CampaignsPage() {
                   <span className="rs-row-sub">{(c.source_id && sourceName.get(c.source_id)) || t('campaigns.eyebrow')}</span>
                   <span className="rs-open">{t('campaigns.open')}</span>
                 </div>
-              </a>
+              </Link>
             );
           })}
 
           {/* Carte pointillée « Importer un fichier » */}
-          <a href="/import" className="rs-camp-card rs-import-card">
+          <Link href="/import" className="rs-camp-card rs-import-card">
             <div>
               <div className="rs-import-title">{t('campaigns.importCard.title')}</div>
               <div className="rs-row-sub" style={{ maxWidth: 280, marginTop: 4 }}>
                 {t('campaigns.importCard.desc')}
               </div>
             </div>
-          </a>
+          </Link>
         </div>
       </main>
     </div>

@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../../icons';
 import { ApprovalList, type ApprovalRow } from '../../approvals/approval-list';
 import { setCampaignStatus, addStep, updateStep, deleteStep, moveStep } from '../../actions/campaigns';
 import { StepMessageEditor } from './step-message-editor';
+import Link from 'next/link';
 
 const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost' };
 
@@ -123,9 +124,9 @@ export function CampaignDetailView({
 
   return (
     <>
-      <a href="/campaigns" className="rs-crumb">
+      <Link href="/campaigns" className="rs-crumb">
         {t('back')}
-      </a>
+      </Link>
       <div className="rs-page-head" style={{ marginTop: 8 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -142,9 +143,9 @@ export function CampaignDetailView({
           <span className="rs-pill" data-tone="live">
             {t('perDay', { n: detail.cadencePerDay })}
           </span>
-          <a className="rs-btn" href="/import">
+          <Link className="rs-btn" href="/import">
             {t('addContacts')}
-          </a>
+          </Link>
           <button className="rs-btn" onClick={toggleStatus} disabled={pending}>
             {detail.status === 'active' ? t('pause') : t('activate')}
           </button>
@@ -370,9 +371,9 @@ export function CampaignDetailView({
                     ))}
                   </select>
                   {familiesForDraft.length === 0 ? <span className="rs-row-sub">{te('noneForChannel')}</span> : null}
-                  <a className="rs-row-sub" href="/settings/templates" style={{ marginTop: 4 }}>
+                  <Link className="rs-row-sub" href="/settings/templates" style={{ marginTop: 4 }}>
                     {te('editInLibrary')}
-                  </a>
+                  </Link>
                 </label>
               </>
             )}
