@@ -6,7 +6,11 @@
 
 importScripts('linkedin-invite.js', 'linkedin-message.js', 'linkedin-inbox.js');
 
-const DEFAULT_BASE_URL = 'http://localhost:3000';
+// Repli quand l'extension n'a pas encore vu d'application : c'est le cas d'une
+// installation fraiche, avant la premiere connexion. La production est le cas
+// courant ; un developpeur qui travaille en local recoit l'origine reelle au
+// moment ou il connecte l'extension, et elle est alors memorisee.
+const DEFAULT_BASE_URL = 'https://jay-reach.vercel.app';
 const POLL_MINUTES = 2;
 // La relève des réponses est plus espacée que l'envoi : elle lit la messagerie,
 // et rien ne justifie de le faire toutes les deux minutes. Un quart d'heure

@@ -4,7 +4,16 @@
 // en production, externally_connectable prend le relais côté background.
 
 (function () {
-  const ALLOWED = ['http://localhost:3000', 'https://app.jay-reach.fr'];
+  // Origines autorisees a dialoguer avec l'extension. Elles doivent rester
+  // alignees sur `externally_connectable` et sur les `matches` du manifeste :
+  // une origine ajoutee ici mais absente la-bas ne verrait jamais ce script
+  // s'injecter, et l'ecran afficherait « l'extension n'a pas repondu » sans
+  // que rien n'explique pourquoi.
+  const ALLOWED = [
+    'http://localhost:3000',
+    'https://jay-reach.vercel.app',
+    'https://app.jay-reach.fr',
+  ];
 
   window.addEventListener('message', (event) => {
     if (!ALLOWED.includes(event.origin)) return;
