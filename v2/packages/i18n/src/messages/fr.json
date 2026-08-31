@@ -492,12 +492,7 @@
       "generateHint": "Une consigne, si vous en avez une (facultatif)",
       "useThis": "Utiliser cette proposition"
     },
-    "watchThemes": "Thèmes de veille",
-    "pickSource": "Thèmes de veille",
-    "minScoreHelp": "Note attribuée par l'IA à chaque contact, de 0 à 100, selon la consigne de notation de son persona. En dessous de ce seuil, le contact n'entre pas.",
-    "minScoreLink": "Régler les consignes de notation",
-    "dailyCapHelp": "Tous canaux confondus. Si les réglages LinkedIn sont plus stricts, ce sont eux qui s'appliquent : c'est toujours le plus contraignant qui gagne.",
-    "dailyCapLink": "Voir les réglages LinkedIn"
+    "watchThemes": "Thèmes de veille"
   },
   "linkedin": {
     "eyebrow": "Canal",
@@ -581,7 +576,7 @@
       "large": "50 à 499",
       "xl": "500 et plus"
     },
-    "countTruncated": "Plus de {n} entreprises trouvées",
+    "countTruncated": "Plus de {n, number} entreprises trouvées",
     "bulk": {
       "addPage": "Ajouter la page ({count})",
       "addAll": "Ajouter les {count} résultats",
@@ -691,7 +686,7 @@
       "source": "Source de signaux",
       "list": "Liste importée"
     },
-    "pickSource": "Source",
+    "pickSource": "Thèmes de veille",
     "pickList": "Liste",
     "choose": "Choisir…",
     "noneAvailable": "Aucune option disponible.",
@@ -701,7 +696,11 @@
     "dailyCap": "Plafond quotidien",
     "dailyCapPlaceholder": "ex. 50",
     "cancel": "Annuler",
-    "create": "Créer la campagne"
+    "create": "Créer la campagne",
+    "minScoreHelp": "Note attribuée par l'IA à chaque contact, de 0 à 100, selon la consigne de notation de son persona. En dessous de ce seuil, le contact n'entre pas.",
+    "dailyCapHelp": "Tous canaux confondus. Si les réglages LinkedIn sont plus stricts, ce sont eux qui s'appliquent : c'est toujours le plus contraignant qui gagne.",
+    "dailyCapLink": "Voir les réglages LinkedIn",
+    "minScoreLink": "Régler les consignes de notation"
   },
   "smartleadWh": {
     "eyebrow": "Réception email",

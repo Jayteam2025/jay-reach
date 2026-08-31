@@ -492,12 +492,7 @@
       "generateHint": "A brief, if you have one (optional)",
       "useThis": "Use this one"
     },
-    "watchThemes": "Watch themes",
-    "pickSource": "Watch themes",
-    "minScoreHelp": "Score the AI gives each contact, 0 to 100, following their persona’s scoring brief. Below this threshold, the contact does not enter.",
-    "minScoreLink": "Set the scoring briefs",
-    "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
-    "dailyCapLink": "See the LinkedIn settings"
+    "watchThemes": "Watch themes"
   },
   "linkedin": {
     "eyebrow": "Channel",
@@ -581,7 +576,7 @@
       "large": "50 to 499",
       "xl": "500+"
     },
-    "countTruncated": "More than {n} companies found",
+    "countTruncated": "More than {n, number} companies found",
     "bulk": {
       "addPage": "Add this page ({count})",
       "addAll": "Add all {count} results",
@@ -691,7 +686,7 @@
       "source": "Signal source",
       "list": "Imported list"
     },
-    "pickSource": "Source",
+    "pickSource": "Watch themes",
     "pickList": "List",
     "choose": "Choose…",
     "noneAvailable": "No option available.",
@@ -701,7 +696,11 @@
     "dailyCap": "Daily cap",
     "dailyCapPlaceholder": "e.g. 50",
     "cancel": "Cancel",
-    "create": "Create campaign"
+    "create": "Create campaign",
+    "minScoreHelp": "Score the AI gives each contact, 0 to 100, following their persona’s scoring brief. Below this threshold, the contact does not enter.",
+    "minScoreLink": "Set the scoring briefs",
+    "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
+    "dailyCapLink": "See the LinkedIn settings"
   },
   "smartleadWh": {
     "eyebrow": "Email reception",
