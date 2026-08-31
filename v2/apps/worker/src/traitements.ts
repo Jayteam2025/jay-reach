@@ -48,6 +48,7 @@ import {
   enqueueEnrichmentForQualified,
   enqueueRequestedRuns,
 } from './producer.js';
+import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
 import { refreshDomainPatterns, domainOf } from './domain-patterns.js';
@@ -82,6 +83,19 @@ export const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 1
 /** Fréquence du tick de séquence. Même rôle de fenêtre. */
 export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 
+/**
+ * URL publique de l'instance, telle qu'un provider doit la joindre.
+ *
+ * `APP_URL` d'abord, la variable documentée. À défaut, l'URL de production
+ * Vercel — jamais `VERCEL_URL`, qui désigne le déploiement courant et change à
+ * chaque envoi : un webhook branché avec elle cesserait de recevoir au
+ * déploiement suivant, sans que rien ne le signale.
+ */
+function deduireUrlPublique(): string | undefined {
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  return production ? `https://${production}` : undefined;
+}
+
 // ---------------------------------------------------------------- collecte
 
 export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise<void> {
@@ -91,7 +105,7 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
     console.warn(`[discover] provider ${data.provider} non configuré pour l’org ${data.organizationId} — job ignoré`);
     return;
   }
-  const runId = await startSourceRun(pool, data.sourceId);
+  const runId = await startSourceRun(pool, data.sourceId, data.sourceProviderId);
   try {
     const result = await runDiscover(data, credentials);
     const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);
@@ -191,7 +205,7 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
     console.warn(`[dispatch] Smartlead non configuré pour l’org ${data.organizationId} — job ignoré`);
     return;
   }
-  const result = await runDispatch(data, apiKey);
+  const result = await runDispatch(data, apiKey, pool, process.env.APP_URL ?? deduireUrlPublique());
   // Le chiffre qui interesse l'operateur est le nombre de leads AJOUTES, que
   // Smartlead nomme `total_leads`. `upload_count` compte les lignes traitees,
   // deja-presents compris : l'annoncer comme un ajout gonflait le compte rendu.
@@ -385,6 +399,15 @@ export async function releverDemandes(ctx: Contexte): Promise<void> {
     }
   } catch (err) {
     console.error('[producer] relève des demandes échouée', err);
+  }
+
+  // Ajouts en masse depuis l'annuaire. Traités ici plutôt que par une file :
+  // ce sont des appels à une API publique, pas un travail à répartir, et
+  // l'écran suit leur avancement en relisant la ligne.
+  try {
+    await traiterImportsAnnuaire(ctx.pool);
+  } catch (err) {
+    console.error('[annuaire] relève des ajouts en masse échouée', err);
   }
 }
 

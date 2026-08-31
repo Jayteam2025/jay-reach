@@ -69,6 +69,13 @@ export interface CampaignDetail {
   readonly avatarOverflow: number;
   /** Lignées de templates de l'org, pour relier une étape à un message. */
   readonly templateFamilies?: readonly TemplateFamilyOption[];
+  /**
+   * Nature de la campagne : alimentée par un signal daté ou par une liste.
+   * C'est elle qui décide des variables disponibles dans un message.
+   */
+  readonly nature?: 'signal' | 'list';
+  /** Langue des messages écrits pour cette campagne. */
+  readonly locale?: string;
 }
 
 /** Une lignée de template proposable dans l'éditeur d'étape. */

@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Model (scoring) — default Sonnet",
       "modelFast": "Model (light tasks) — default Haiku"
-    }
+    },
+    "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand"
   },
   "jobs": {
     "title": "Background queues",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Who to contact",
     "title": "Personas",
-    "lead": "Who to target in detected companies: job titles, seniority, channels.",
+    "lead": "Who to target inside detected companies: job titles, seniority, and the brief used to score contacts.",
     "name": "Name",
     "description": "Description",
-    "patterns": "Trigger titles (comma-separated)",
-    "excludeTitles": "Titles to exclude (comma-separated)",
+    "patterns": "Target job titles (comma separated)",
+    "excludeTitles": "Titles to exclude (comma separated)",
     "seniority": "Seniority",
-    "channels": "Outreach channels",
-    "scoringPrompt": "Scoring prompt (AI)",
-    "scoringPromptHint": "Describe precisely who qualifies — used by the AI to score contacts.",
+    "scoringPrompt": "Scoring brief (AI)",
     "titlesLabel": "Titles:",
     "seniorityLevel": {
       "executive": "Executive",
       "director": "Director",
       "manager": "Manager",
       "individual": "Individual"
-    },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "letter": "Letter",
-      "call": "Call"
     },
     "statsTotal": "Personas",
     "statsActive": "Active",
@@ -118,7 +111,11 @@
     "created": "Persona created",
     "empty": "No persona defined. Create one to start.",
     "demoNote": "Demo data — your changes stay local (not saved).",
-    "patternsCount": "{n} titles"
+    "patternsCount": "{n} titles",
+    "patternsPlaceholder": "purchasing manager, store manager, head teacher",
+    "exclusionsPlaceholder": "intern, trainee, assistant",
+    "scoringPromptPlaceholder": "E.g. score high purchasing managers at companies over 50 staff running several sites. Score low support roles and companies under 10 staff.",
+    "scoringPromptHelp": "The AI reads the contact and their company, then gives a score from 0 to 100 against this brief. That score is what a campaign’s “minimum score” compares against: without a brief, nothing gets qualified."
   },
   "signals": {
     "nav": {
@@ -162,10 +159,10 @@
     "campaigns": "Campaigns",
     "inbox": "Inbox",
     "import": "Import",
-    "sources": "Sources",
+    "sources": "Watch themes",
     "personas": "Personas",
     "providers": "Providers",
-    "branding": "Branding",
+    "senders": "Senders",
     "linkedin": "LinkedIn",
     "annuaire": "Directory",
     "approvals": "Approvals",
@@ -173,32 +170,17 @@
     "templates": "Messages",
     "smartlead": "Smartlead webhooks"
   },
-  "branding": {
-    "eyebrow": "Identity",
-    "title": "Brand identity",
-    "lead": "What represents you in emails and letters: sender, signature, logo.",
-    "senderName": "Sender name",
-    "replyTo": "Reply-to email",
-    "emailSignature": "Email signature",
-    "letterSignature": "Handwritten signature (letter)",
-    "accent": "Accent color",
-    "logo": "Logo",
-    "logoHint": "PNG or SVG, transparent background.",
-    "upload": "Choose a file",
-    "save": "Save",
-    "note": "Preview — saving activates when Supabase is connected."
-  },
   "sources": {
     "eyebrow": "Detection",
-    "title": "Signal sources",
-    "lead": "Where postings come from — and the run history to spot a source that degrades.",
+    "title": "Watch themes",
+    "lead": "What you watch, and where. Keywords are entered once per theme and apply to all its providers.",
     "provider": "Provider",
     "keywords": "Keywords",
     "location": "Area",
     "active": "Active",
     "paused": "Paused",
     "history": "Run history",
-    "empty": "No source yet. Add one to start detecting.",
+    "empty": "No watch theme yet. Create one to start detecting signals.",
     "neverRan": "Never ran.",
     "found": "found",
     "new": "new",
@@ -212,24 +194,32 @@
     "pause": "Pause",
     "resume": "Resume",
     "form": {
-      "add": "Add a source",
-      "create": "Create source",
+      "add": "Add a theme",
+      "create": "Create theme",
       "save": "Save",
       "edit": "Edit",
       "cancel": "Cancel",
       "saved": "Saved",
       "name": "Name",
-      "namePlaceholder": "France Travail — industrial maintenance",
-      "provider": "Provider",
-      "keywordsPlaceholder": "maintenance technician, maintenance manager",
+      "namePlaceholder": "France Travail — sales roles",
+      "keywordsPlaceholder": "sales manager, account executive",
       "locationPlaceholder": "Lyon (69) — leave empty for all of France",
       "qualification": "QUALIFICATION",
       "qualificationHelp": "What decides a signal is worth working. Without a brief, collected signals stay pending.",
       "scoringPrompt": "Qualification brief",
-      "scoringPromptPlaceholder": "Assess whether the company is an industrial SME strengthening its maintenance. Rule out recruitment agencies and temp work.",
+      "scoringPromptPlaceholder": "Assess whether the company matches what you look for, and why. E.g. SMEs over 50 staff, running several sites. Rule out intermediaries and companies under 10 staff.",
       "threshold": "Minimum score",
-      "active": "Active source"
-    }
+      "active": "Active theme",
+      "description": "Description",
+      "descriptionPlaceholder": "What this watch is for, in one sentence",
+      "providers": "Providers queried",
+      "providersHelp": "The keywords below apply to every provider you tick.",
+      "noProviderWarning": "Without a provider, this theme will collect nothing."
+    },
+    "noProvider": "no provider",
+    "providerPause": "Pause",
+    "providerResume": "Resume",
+    "beforeProviders": "Earlier runs (provider not tracked)"
   },
   "inbox": {
     "eyebrow": "Replies",
@@ -420,7 +410,7 @@
       "call": "Call"
     },
     "wait": "wait",
-    "dayUnit": "{n, plural, one {day} other {days}}",
+    "dayUnit": "{n} {n, plural, one {day} other {days}}",
     "noCondition": "no condition",
     "validation": "Approval",
     "editRule": "Edit",
@@ -482,48 +472,55 @@
       "empty": "No step yet — add one.",
       "noRule": "No entry rule.",
       "callNote": "The Call channel creates a dated task, no send or message.",
-      "letterNote": "Letters always go through the approval queue."
-    }
+      "letterNote": "Letters always go through the approval queue.",
+      "subject": "Subject",
+      "subjectPlaceholder": "What the recipient reads before opening",
+      "body": "Message",
+      "bodyPlaceholder": "Hi {{prenom}},",
+      "variables": "Available variables",
+      "variablesHelp": "Click to insert. A variable with no value blocks the send rather than going out empty.",
+      "insert": "Insert",
+      "saveMessage": "Save message",
+      "messageSaved": "Message saved",
+      "promote": "Save as template",
+      "promoteName": "Template name",
+      "promoteNamePlaceholder": "Post-trade-show follow-up",
+      "promoteConfirm": "Add to library",
+      "promoted": "Added to the library",
+      "generate": "Draft a first version",
+      "generating": "Writing…",
+      "generateHint": "A brief, if you have one (optional)",
+      "useThis": "Use this one"
+    },
+    "watchThemes": "Watch themes",
+    "pickSource": "Watch themes",
+    "minScoreHelp": "Score the AI gives each contact, 0 to 100, following their persona’s scoring brief. Below this threshold, the contact does not enter.",
+    "minScoreLink": "Set the scoring briefs",
+    "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
+    "dailyCapLink": "See the LinkedIn settings"
   },
   "linkedin": {
     "eyebrow": "Channel",
     "title": "LinkedIn",
-    "lead": "LinkedIn invitations and messages sent from your own session via the extension. Sending limits are enforced automatically.",
+    "lead": "Invitations and messages sent from your own LinkedIn session, through the Chrome extension.",
     "connect": {
-      "title": "Install and connect the extension",
-      "intro": "One time, about 2 minutes. Do it in Google Chrome.",
+      "title": "The Chrome extension",
+      "install": "Install the extension",
+      "installHint": "Opens the Chrome Web Store. This page updates on its own afterwards.",
+      "notPublished": "The extension is not on the Chrome Web Store yet. In the meantime, it installs by hand.",
+      "manualTitle": "Manual install (temporary)",
       "download": "Download the extension (.zip)",
-      "step1": "Download the package above, then unzip it (double-click the .zip).",
-      "step2": "In Chrome, open the extensions page: type chrome://extensions in the address bar.",
-      "step3": "Turn on “Developer mode” with the switch at the top right.",
-      "step4": "Click “Load unpacked”, then pick the folder you just unzipped.",
-      "step5": "Sign in to LinkedIn in Chrome, come back to this page and click “Connect the extension”.",
+      "step1": "Download the package, then unzip it.",
+      "step2": "In Chrome, open chrome://extensions.",
+      "step3": "Turn on “Developer mode”, top right.",
+      "step4": "Click “Load unpacked” and pick the unzipped folder.",
       "button": "Connect the extension",
-      "connected": "Extension connected ✓",
-      "notDetected": "Extension not detected yet — install it first (steps above).",
-      "regenerate": "Reconnect the extension"
-    },
-    "cursor": {
-      "title": "Sending cursor",
-      "auto": "Automatic",
-      "autoHint": "Jay Reach sends everything automatically.",
-      "hybrid": "Hybrid",
-      "hybridHint": "Part automatic, part sent by hand.",
-      "manual": "Manual",
-      "manualHint": "Nothing is sent without your action.",
-      "volume": "Volume per day",
-      "perDay": "{count} / day",
-      "save": "Save",
-      "saved": "Saved"
-    },
-    "rules": {
-      "title": "Sending rules",
-      "window": "Sending between 8am and 9pm (Europe/Paris)",
-      "weekly": "Max 200 invitations per rolling 7 days",
-      "interval": "1 to 20 minutes between two actions",
-      "pause": "Automatic 24h pause if the account is restricted",
-      "single": "Only one automation tool per LinkedIn account",
-      "cgu": "LinkedIn automation is against LinkedIn’s terms of service and may lead to account restriction."
+      "notDetected": "The extension did not answer. Check that it is enabled in Chrome.",
+      "regenerate": "Reconnect the extension",
+      "stateMissing": "Extension not installed",
+      "stateInstalled": "Extension installed, not connected yet",
+      "stateConnected": "Extension connected",
+      "stateConnectedTo": "Connected to {profile}"
     },
     "stats": {
       "title": "Activity",
@@ -536,6 +533,27 @@
       "accountRestricted": "LinkedIn account restricted or signed out: sending is paused. Sign back in to LinkedIn — it resumes automatically.",
       "weeklyCapNear": "Weekly limit almost reached ({sent}/{cap} over 7 days).",
       "manyFailures": "{count} sends failed in the last 24h. Check your LinkedIn connection."
+    },
+    "sending": {
+      "title": "Sending settings",
+      "help": "When and how fast messages go out. The delay between two actions is handled automatically.",
+      "weekly": "Messages per week",
+      "perWeek": "{count} / week",
+      "days": "Sending days",
+      "day": {
+        "1": "Mon",
+        "2": "Tue",
+        "3": "Wed",
+        "4": "Thu",
+        "5": "Fri",
+        "6": "Sat",
+        "7": "Sun"
+      },
+      "from": "From",
+      "to": "Until",
+      "timezone": "Time zone",
+      "save": "Save",
+      "saved": "Saved"
     }
   },
   "directory": {
@@ -544,7 +562,6 @@
     "lead": "Search French companies by activity, department and headcount. Ceased companies are excluded.",
     "search": "Search",
     "count": "{n, plural, one {# company found} other {# companies found}}",
-    "showingFirst": "first {n} shown",
     "none": "No company for these criteria.",
     "hint": "Fill at least one criterion then run the search.",
     "add": "Add to my base",
@@ -563,6 +580,18 @@
       "mid": "10 to 49",
       "large": "50 to 499",
       "xl": "500+"
+    },
+    "countTruncated": "More than {n} companies found",
+    "bulk": {
+      "addPage": "Add this page ({count})",
+      "addAll": "Add all {count} results",
+      "addAllTruncated": "Add the results ({count} max)",
+      "confirm": "Add {count} companies to your base?",
+      "starting": "Starting…",
+      "progress": "{done} / {total}",
+      "cancel": "Cancel",
+      "cancelled": "Cancelled — {added} company(ies) added before stopping.",
+      "done": "{added} added, {existing} already there."
     }
   },
   "notifications": {
@@ -612,7 +641,7 @@
   "templates": {
     "eyebrow": "Library",
     "title": "Messages",
-    "lead": "Your message templates, versioned and multilingual. A missing variable blocks sending.",
+    "lead": "Templates you reuse across campaigns, instead of rewriting them every time.",
     "new": "New message",
     "demoNotice": "Connect Supabase to edit.",
     "empty": "No messages yet.",
@@ -677,7 +706,7 @@
   "smartleadWh": {
     "eyebrow": "Email reception",
     "title": "Smartlead webhooks",
-    "lead": "Receive replies, bounces and unsubscribes from Smartlead to close the email loop.",
+    "lead": "The webhook connects itself on the first send. This screen only serves to reconnect it or rotate its secret.",
     "demoNotice": "Connect Supabase to configure the webhook.",
     "urlTitle": "Webhook URL",
     "copy": "Copy URL",
@@ -692,5 +721,25 @@
     "regenWarn": "Regenerating invalidates the old URL — reconfigure Smartlead.",
     "yourDomain": "https://your-instance",
     "adminOnly": "Only admins can configure the webhook."
+  },
+  "senders": {
+    "eyebrow": "Who sends",
+    "title": "Senders",
+    "lead": "The accounts your messages go out from. The display name is what the recipient sees; the caps limit what each sender sends.",
+    "kind": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "postal": "Letter"
+    },
+    "displayName": "Display name",
+    "displayNamePlaceholder": "The name the recipient sees",
+    "dailyQuota": "Daily cap",
+    "hourlyQuota": "Hourly cap",
+    "noLimit": "No cap",
+    "active": "Send from this sender",
+    "save": "Save",
+    "saving": "Saving",
+    "saved": "Saved",
+    "empty": "No senders yet. Connect an account under Providers to send your first messages."
   }
 }

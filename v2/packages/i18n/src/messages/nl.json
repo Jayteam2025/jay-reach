@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Model (scoring) — standaard Sonnet",
       "modelFast": "Model (lichte taken) — standaard Haiku"
-    }
+    },
+    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen"
   },
   "jobs": {
     "title": "Achtergrondwachtrijen",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Wie contacteren",
     "title": "Persona's",
-    "lead": "Wie te benaderen in gedetecteerde bedrijven: functietitels, senioriteit, kanalen.",
+    "lead": "Wie u benadert binnen gedetecteerde bedrijven: functietitels, senioriteit en de instructie om contacten te scoren.",
     "name": "Naam",
     "description": "Beschrijving",
-    "patterns": "Triggertitels (kommagescheiden)",
-    "excludeTitles": "Uit te sluiten titels (kommagescheiden)",
+    "patterns": "Beoogde functietitels (komma gescheiden)",
+    "excludeTitles": "Uit te sluiten titels (komma gescheiden)",
     "seniority": "Senioriteit",
-    "channels": "Outreach-kanalen",
-    "scoringPrompt": "Scoringsprompt (AI)",
-    "scoringPromptHint": "Beschrijf precies wie kwalificeert — gebruikt door de AI om contacten te scoren.",
+    "scoringPrompt": "Scoringsinstructie (AI)",
     "titlesLabel": "Titels:",
     "seniorityLevel": {
       "executive": "Directie",
       "director": "Directeur",
       "manager": "Manager",
       "individual": "Medewerker"
-    },
-    "channel": {
-      "email": "E-mail",
-      "linkedin": "LinkedIn",
-      "letter": "Brief",
-      "call": "Telefoon"
     },
     "statsTotal": "Persona's",
     "statsActive": "Actief",
@@ -118,7 +111,11 @@
     "created": "Persona aangemaakt",
     "empty": "Geen persona gedefinieerd. Maak er een om te starten.",
     "demoNote": "Demogegevens — je wijzigingen blijven lokaal (niet opgeslagen).",
-    "patternsCount": "{n} titels"
+    "patternsCount": "{n} titels",
+    "patternsPlaceholder": "inkoopmanager, afdelingshoofd, schooldirecteur",
+    "exclusionsPlaceholder": "stagiair, leerling, assistent",
+    "scoringPromptPlaceholder": "Bv. score inkoopmanagers bij bedrijven met meer dan 50 medewerkers en meerdere vestigingen hoog. Score ondersteunende functies en bedrijven onder 10 medewerkers laag.",
+    "scoringPromptHelp": "De AI leest het contact en zijn bedrijf en geeft een score van 0 tot 100 volgens deze instructie. Die score vergelijkt de “minimumscore” van een campagne: zonder instructie wordt niets gekwalificeerd."
   },
   "signals": {
     "nav": {
@@ -162,10 +159,10 @@
     "campaigns": "Campagnes",
     "inbox": "Inbox",
     "import": "Import",
-    "sources": "Bronnen",
+    "sources": "Monitoringthema's",
     "personas": "Persona's",
     "providers": "Providers",
-    "branding": "Identiteit",
+    "senders": "Afzenders",
     "linkedin": "LinkedIn",
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
@@ -173,32 +170,17 @@
     "templates": "Berichten",
     "smartlead": "Smartlead-webhooks"
   },
-  "branding": {
-    "eyebrow": "Identiteit",
-    "title": "Merkidentiteit",
-    "lead": "Wat je vertegenwoordigt in e-mails en brieven: afzender, handtekening, logo.",
-    "senderName": "Afzendernaam",
-    "replyTo": "Antwoord-e-mail",
-    "emailSignature": "E-mailhandtekening",
-    "letterSignature": "Handgeschreven handtekening (brief)",
-    "accent": "Accentkleur",
-    "logo": "Logo",
-    "logoHint": "PNG of SVG, transparante achtergrond.",
-    "upload": "Bestand kiezen",
-    "save": "Opslaan",
-    "note": "Voorbeeld — opslaan activeert wanneer Supabase is verbonden."
-  },
   "sources": {
     "eyebrow": "Detectie",
-    "title": "Signaalbronnen",
-    "lead": "Waar vacatures vandaan komen — en de uitvoeringsgeschiedenis om een verslechterende bron te zien.",
+    "title": "Monitoringthema's",
+    "lead": "Wat u volgt, en waar. Trefwoorden voert u één keer per thema in en gelden voor al zijn providers.",
     "provider": "Provider",
     "keywords": "Trefwoorden",
     "location": "Gebied",
     "active": "Actief",
     "paused": "Gepauzeerd",
     "history": "Uitvoeringsgeschiedenis",
-    "empty": "Nog geen bron. Voeg er een toe om detectie te starten.",
+    "empty": "Nog geen monitoringthema. Maak er een aan om signalen te detecteren.",
     "neverRan": "Nooit uitgevoerd.",
     "found": "gevonden",
     "new": "nieuw",
@@ -212,24 +194,32 @@
     "pause": "Pauzeren",
     "resume": "Hervatten",
     "form": {
-      "add": "Bron toevoegen",
-      "create": "Bron aanmaken",
+      "add": "Thema toevoegen",
+      "create": "Thema aanmaken",
       "save": "Opslaan",
       "edit": "Bewerken",
       "cancel": "Annuleren",
       "saved": "Opgeslagen",
       "name": "Naam",
-      "namePlaceholder": "France Travail — industrieel onderhoud",
-      "provider": "Provider",
-      "keywordsPlaceholder": "onderhoudstechnicus, onderhoudsmanager",
+      "namePlaceholder": "France Travail — commerciële functies",
+      "keywordsPlaceholder": "salesmanager, accountmanager",
       "locationPlaceholder": "Lyon (69) — leeg laten voor heel Frankrijk",
       "qualification": "KWALIFICATIE",
-      "qualificationHelp": "Wat bepaalt of een signaal de moeite waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
+      "qualificationHelp": "Wat bepaalt of een signaal het bewerken waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
       "scoringPrompt": "Kwalificatie-instructie",
-      "scoringPromptPlaceholder": "Beoordeel of het bedrijf een industriële mkb'er is die zijn onderhoud versterkt. Sluit wervingsbureaus en uitzendwerk uit.",
+      "scoringPromptPlaceholder": "Beoordeel of het bedrijf past bij wat u zoekt, en waarom. Bv. kmo’s met meer dan 50 medewerkers en meerdere vestigingen. Sluit tussenpersonen en bedrijven onder 10 medewerkers uit.",
       "threshold": "Minimumscore",
-      "active": "Actieve bron"
-    }
+      "active": "Actief thema",
+      "description": "Omschrijving",
+      "descriptionPlaceholder": "Waar deze monitoring voor dient, in één zin",
+      "providers": "Bevraagde providers",
+      "providersHelp": "De trefwoorden hieronder gelden voor elke aangevinkte provider.",
+      "noProviderWarning": "Zonder provider verzamelt dit thema niets."
+    },
+    "noProvider": "geen provider",
+    "providerPause": "Pauzeren",
+    "providerResume": "Hervatten",
+    "beforeProviders": "Eerdere runs (provider niet bijgehouden)"
   },
   "inbox": {
     "eyebrow": "Antwoorden",
@@ -420,7 +410,7 @@
       "call": "Telefoon"
     },
     "wait": "wacht",
-    "dayUnit": "{n, plural, one {dag} other {dagen}}",
+    "dayUnit": "{n} {n, plural, one {dag} other {dagen}}",
     "noCondition": "geen voorwaarde",
     "validation": "Goedkeuring",
     "editRule": "Wijzigen",
@@ -482,48 +472,55 @@
       "empty": "Nog geen stap — voeg er een toe.",
       "noRule": "Geen ingangsregel.",
       "callNote": "Het kanaal Bellen maakt een gedateerde taak, zonder verzending of bericht.",
-      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij."
-    }
+      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij.",
+      "subject": "Onderwerp",
+      "subjectPlaceholder": "Wat de ontvanger leest voor het openen",
+      "body": "Bericht",
+      "bodyPlaceholder": "Hallo {{prenom}},",
+      "variables": "Beschikbare variabelen",
+      "variablesHelp": "Klik om in te voegen. Een variabele zonder waarde blokkeert de verzending in plaats van leeg te vertrekken.",
+      "insert": "Invoegen",
+      "saveMessage": "Bericht opslaan",
+      "messageSaved": "Bericht opgeslagen",
+      "promote": "Als sjabloon opslaan",
+      "promoteName": "Sjabloonnaam",
+      "promoteNamePlaceholder": "Opvolging na beurs",
+      "promoteConfirm": "Aan bibliotheek toevoegen",
+      "promoted": "Toegevoegd aan de bibliotheek",
+      "generate": "Een eerste versie voorstellen",
+      "generating": "Schrijven…",
+      "generateHint": "Een instructie, als u er een hebt (optioneel)",
+      "useThis": "Deze gebruiken"
+    },
+    "watchThemes": "Monitoringthema's",
+    "pickSource": "Monitoringthema's",
+    "minScoreHelp": "Score die de AI elk contact geeft, 0 tot 100, volgens de scoringsinstructie van zijn persona. Onder deze drempel komt het contact er niet in.",
+    "minScoreLink": "De scoringsinstructies instellen",
+    "dailyCapHelp": "Alle kanalen samen. Zijn de LinkedIn-instellingen strenger, dan gelden die: de strengste limiet wint altijd.",
+    "dailyCapLink": "De LinkedIn-instellingen bekijken"
   },
   "linkedin": {
     "eyebrow": "Kanaal",
     "title": "LinkedIn",
-    "lead": "LinkedIn-uitnodigingen en -berichten verzonden vanuit je eigen sessie via de extensie. Verzendlimieten worden automatisch toegepast.",
+    "lead": "Uitnodigingen en berichten verstuurd vanuit uw eigen LinkedIn-sessie, via de Chrome-extensie.",
     "connect": {
-      "title": "De extensie installeren en verbinden",
-      "intro": "Eenmalig, ongeveer 2 minuten. Doe dit in Google Chrome.",
-      "download": "Download de extensie (.zip)",
-      "step1": "Download het pakket hierboven en pak het uit (dubbelklik op de .zip).",
-      "step2": "Open in Chrome de extensiepagina: typ chrome://extensions in de adresbalk.",
-      "step3": "Zet “Ontwikkelaarsmodus” aan met de schakelaar rechtsboven.",
-      "step4": "Klik op “Uitgepakte extensie laden” en kies de map die je zojuist hebt uitgepakt.",
-      "step5": "Log in op LinkedIn in Chrome, kom terug naar deze pagina en klik op “Extensie verbinden”.",
+      "title": "De Chrome-extensie",
+      "install": "Extensie installeren",
+      "installHint": "Opent de Chrome Web Store. Deze pagina werkt zichzelf daarna bij.",
+      "notPublished": "De extensie staat nog niet in de Chrome Web Store. Tot dan installeert u ze handmatig.",
+      "manualTitle": "Handmatige installatie (tijdelijk)",
+      "download": "Extensie downloaden (.zip)",
+      "step1": "Download het pakket en pak het uit.",
+      "step2": "Open in Chrome chrome://extensions.",
+      "step3": "Zet “Ontwikkelaarsmodus” aan, rechtsboven.",
+      "step4": "Klik “Uitgepakte extensie laden” en kies de uitgepakte map.",
       "button": "Extensie verbinden",
-      "connected": "Extensie verbonden ✓",
-      "notDetected": "Extensie nog niet gedetecteerd — installeer deze eerst (stappen hierboven).",
-      "regenerate": "Extensie opnieuw verbinden"
-    },
-    "cursor": {
-      "title": "Verzendschuif",
-      "auto": "Automatisch",
-      "autoHint": "Jay Reach verzendt alles automatisch.",
-      "hybrid": "Hybride",
-      "hybridHint": "Deels automatisch, deels handmatig te bevestigen.",
-      "manual": "Handmatig",
-      "manualHint": "Er wordt niets verzonden zonder jouw actie.",
-      "volume": "Volume per dag",
-      "perDay": "{count} / dag",
-      "save": "Opslaan",
-      "saved": "Opgeslagen"
-    },
-    "rules": {
-      "title": "Verzendregels",
-      "window": "Verzenden tussen 8u en 21u (Europe/Paris)",
-      "weekly": "Max. 200 uitnodigingen per voortschrijdende 7 dagen",
-      "interval": "1 tot 20 minuten tussen twee acties",
-      "pause": "Automatische pauze van 24u als het account beperkt is",
-      "single": "Slechts één automatiseringstool per LinkedIn-account",
-      "cgu": "LinkedIn-automatisering is in strijd met de voorwaarden van LinkedIn en kan leiden tot accountbeperking."
+      "notDetected": "De extensie antwoordde niet. Controleer of ze is ingeschakeld in Chrome.",
+      "regenerate": "Extensie opnieuw verbinden",
+      "stateMissing": "Extensie niet geïnstalleerd",
+      "stateInstalled": "Extensie geïnstalleerd, nog niet verbonden",
+      "stateConnected": "Extensie verbonden",
+      "stateConnectedTo": "Verbonden met {profile}"
     },
     "stats": {
       "title": "Activiteit",
@@ -536,6 +533,27 @@
       "accountRestricted": "LinkedIn-account beperkt of afgemeld: verzenden is gepauzeerd. Log opnieuw in op LinkedIn — het hervat automatisch.",
       "weeklyCapNear": "Weeklimiet bijna bereikt ({sent}/{cap} over 7 dagen).",
       "manyFailures": "{count} verzendingen mislukt in de laatste 24u. Controleer je LinkedIn-verbinding."
+    },
+    "sending": {
+      "title": "Verzendinstellingen",
+      "help": "Wanneer en hoe snel berichten vertrekken. De tussentijd wordt automatisch geregeld.",
+      "weekly": "Berichten per week",
+      "perWeek": "{count} / week",
+      "days": "Verzenddagen",
+      "day": {
+        "1": "Ma",
+        "2": "Di",
+        "3": "Wo",
+        "4": "Do",
+        "5": "Vr",
+        "6": "Za",
+        "7": "Zo"
+      },
+      "from": "Vanaf",
+      "to": "Tot",
+      "timezone": "Tijdzone",
+      "save": "Opslaan",
+      "saved": "Opgeslagen"
     }
   },
   "directory": {
@@ -544,7 +562,6 @@
     "lead": "Zoek Franse bedrijven op activiteit, departement en personeelsbestand. Beëindigde bedrijven worden uitgesloten.",
     "search": "Zoeken",
     "count": "{n, plural, one {# bedrijf gevonden} other {# bedrijven gevonden}}",
-    "showingFirst": "eerste {n} getoond",
     "none": "Geen bedrijf voor deze criteria.",
     "hint": "Vul minstens één criterium in en start de zoekopdracht.",
     "add": "Toevoegen aan mijn basis",
@@ -563,6 +580,18 @@
       "mid": "10 tot 49",
       "large": "50 tot 499",
       "xl": "500+"
+    },
+    "countTruncated": "Meer dan {n} bedrijven gevonden",
+    "bulk": {
+      "addPage": "Deze pagina toevoegen ({count})",
+      "addAll": "Alle {count} resultaten toevoegen",
+      "addAllTruncated": "De resultaten toevoegen (max. {count})",
+      "confirm": "{count} bedrijven aan uw bestand toevoegen?",
+      "starting": "Starten…",
+      "progress": "{done} / {total}",
+      "cancel": "Annuleren",
+      "cancelled": "Geannuleerd — {added} bedrijf(ven) toegevoegd voor de stop.",
+      "done": "{added} toegevoegd, {existing} al aanwezig."
     }
   },
   "notifications": {
@@ -612,7 +641,7 @@
   "templates": {
     "eyebrow": "Bibliotheek",
     "title": "Berichten",
-    "lead": "Je berichtsjablonen, met versies en meertalig. Een ontbrekende variabele blokkeert verzending.",
+    "lead": "Sjablonen die u hergebruikt in uw campagnes, zonder ze telkens te herschrijven.",
     "new": "Nieuw bericht",
     "demoNotice": "Verbind Supabase om te bewerken.",
     "empty": "Nog geen berichten.",
@@ -677,7 +706,7 @@
   "smartleadWh": {
     "eyebrow": "E-mailontvangst",
     "title": "Smartlead-webhooks",
-    "lead": "Ontvang antwoorden, bounces en uitschrijvingen van Smartlead om de e-maillus te sluiten.",
+    "lead": "De webhook koppelt zichzelf bij de eerste verzending. Dit scherm dient enkel om ze opnieuw te koppelen of het geheim te vernieuwen.",
     "demoNotice": "Verbind Supabase om de webhook te configureren.",
     "urlTitle": "Webhook-URL",
     "copy": "URL kopiëren",
@@ -692,5 +721,25 @@
     "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
     "yourDomain": "https://uw-instantie",
     "adminOnly": "Alleen beheerders kunnen de webhook configureren."
+  },
+  "senders": {
+    "eyebrow": "Wie verstuurt",
+    "title": "Afzenders",
+    "lead": "De accounts waarvandaan uw berichten vertrekken. De weergavenaam is wat de ontvanger ziet; de limieten begrenzen wat elke afzender verstuurt.",
+    "kind": {
+      "email": "E-mail",
+      "linkedin": "LinkedIn",
+      "postal": "Brief"
+    },
+    "displayName": "Weergavenaam",
+    "displayNamePlaceholder": "De naam die de ontvanger ziet",
+    "dailyQuota": "Daglimiet",
+    "hourlyQuota": "Uurlimiet",
+    "noLimit": "Geen limiet",
+    "active": "Verstuur vanaf deze afzender",
+    "save": "Opslaan",
+    "saving": "Opslaan",
+    "saved": "Opgeslagen",
+    "empty": "Nog geen afzenders. Koppel een account onder Providers om uw eerste berichten te versturen."
   }
 }

@@ -14,6 +14,11 @@
     const patch = { extensionToken: msg.token, appBaseUrl: event.origin };
     chrome.storage.local.set(patch, () => {
       window.postMessage({ type: 'JAY_REACH_LINKEDIN_TOKEN_SAVED', success: true }, event.origin);
+      // Le background lit le profil LinkedIn et le remonte a l'application :
+      // l'ecran peut alors dire a quel compte il est connecte. Ce script-ci ne
+      // peut pas le faire lui-meme, il tourne sur l'origine de l'application et
+      // non sur celle de LinkedIn.
+      chrome.runtime.sendMessage({ type: 'JAY_REACH_REMONTER_PROFIL' }, () => void chrome.runtime.lastError);
     });
   });
 

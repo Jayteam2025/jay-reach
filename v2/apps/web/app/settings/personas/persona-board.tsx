@@ -13,7 +13,6 @@ import {
 import type { Persona } from '../../../lib/sample-personas';
 
 const SENIORITIES = ['executive', 'director', 'manager', 'individual'] as const;
-const CHANNELS = ['email', 'linkedin', 'letter', 'call'] as const;
 
 interface Draft {
   id: string | null;
@@ -22,13 +21,12 @@ interface Draft {
   patterns: string;
   exclusions: string;
   seniority: string | null;
-  channels: string[];
   scoringPrompt: string;
   isActive: boolean;
 }
 
 function emptyDraft(): Draft {
-  return { id: null, name: '', description: '', patterns: '', exclusions: '', seniority: null, channels: ['email'], scoringPrompt: '', isActive: true };
+  return { id: null, name: '', description: '', patterns: '', exclusions: '', seniority: null, scoringPrompt: '', isActive: true };
 }
 
 function toDraft(p: Persona): Draft {
@@ -39,7 +37,6 @@ function toDraft(p: Persona): Draft {
     patterns: (p.title_patterns ?? []).join(', '),
     exclusions: (p.title_exclusions ?? []).join(', '),
     seniority: p.seniority,
-    channels: p.channels_priority ?? ['email'],
     scoringPrompt: p.scoring_prompt ?? '',
     isActive: p.is_active,
   };
@@ -75,7 +72,6 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
       titlePatterns: split(draft.patterns),
       titleExclusions: split(draft.exclusions),
       seniority: draft.seniority,
-      channels: draft.channels,
       scoringPrompt: draft.scoringPrompt,
       isActive: draft.isActive,
     };
@@ -87,7 +83,6 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
         title_patterns: input.titlePatterns,
         title_exclusions: input.titleExclusions,
         seniority: input.seniority,
-        channels_priority: input.channels.length > 0 ? input.channels : ['email'],
         scoring_prompt: input.scoringPrompt.trim() || null,
         is_active: input.isActive,
       };
@@ -207,18 +202,13 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
                       {p.description}
                     </p>
                   ) : null}
-                  <div className="rs-chips" style={{ marginTop: 8 }}>
-                    {(p.channels_priority ?? []).map((c) => (
-                      <span key={c} className="rs-chip">
-                        {t(`channel.${c}`)}
-                      </span>
-                    ))}
-                    {p.seniority ? (
+                  {p.seniority ? (
+                    <div className="rs-chips" style={{ marginTop: 8 }}>
                       <span className="rs-pill" data-tone="neutral">
                         {t(`seniorityLevel.${p.seniority}`)}
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                   {titles.trim() ? (
                     <p className="rs-row-sub" style={{ marginTop: 6 }}>
                       {t('titlesLabel')} {titles}
@@ -263,11 +253,11 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
             </label>
             <label className="rs-label">
               {t('patterns')}
-              <input className="rs-input" value={draft.patterns} onChange={(e) => setDraft({ ...draft, patterns: e.target.value })} placeholder="directeur commercial, sales director" />
+              <input className="rs-input" value={draft.patterns} onChange={(e) => setDraft({ ...draft, patterns: e.target.value })} placeholder={t('patternsPlaceholder')} />
             </label>
             <label className="rs-label">
               {t('excludeTitles')}
-              <input className="rs-input" value={draft.exclusions} onChange={(e) => setDraft({ ...draft, exclusions: e.target.value })} placeholder="stagiaire, assistant" />
+              <input className="rs-input" value={draft.exclusions} onChange={(e) => setDraft({ ...draft, exclusions: e.target.value })} placeholder={t('exclusionsPlaceholder')} />
             </label>
 
             <div className="rs-label">
@@ -287,40 +277,22 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
               </div>
             </div>
 
-            <div className="rs-label">
-              {t('channels')}
-              <div className="rs-chips" style={{ marginTop: 4 }}>
-                {CHANNELS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className="rs-toggle"
-                    data-on={draft.channels.includes(c) ? 'true' : 'false'}
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        channels: draft.channels.includes(c) ? draft.channels.filter((x) => x !== c) : [...draft.channels, c],
-                      })
-                    }
-                  >
-                    {t(`channel.${c}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <label className="rs-label">
               {t('scoringPrompt')}
               <textarea
                 className="rs-textarea"
                 value={draft.scoringPrompt}
                 onChange={(e) => setDraft({ ...draft, scoringPrompt: e.target.value })}
-                placeholder={t('scoringPromptHint')}
+                placeholder={t('scoringPromptPlaceholder')}
               />
+              {/* Ce que l'IA note, et sur quelle échelle. Sans ça, le « score
+                  minimum » du formulaire de campagne est un nombre sans repère :
+                  personne ne sait s'il faut mettre 40 ou 80. */}
+              <span className="rs-row-sub">{t('scoringPromptHelp')}</span>
               <span className="rs-row-sub mono">{draft.scoringPrompt.length}</span>
             </label>
 
-            <label className="rs-row-sub" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <label className="rs-check" style={{ marginTop: 4 }}>
               <input type="checkbox" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />
               {t('active')}
             </label>

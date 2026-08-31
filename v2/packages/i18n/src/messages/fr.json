@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Modèle (scoring) — défaut Sonnet",
       "modelFast": "Modèle (tâches légères) — défaut Haiku"
-    }
+    },
+    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main"
   },
   "jobs": {
     "title": "Files de fond",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Qui contacter",
     "title": "Personas",
-    "lead": "Qui viser dans les entreprises détectées : intitulés de poste, séniorité, canaux.",
+    "lead": "Qui viser dans les entreprises détectées : intitulés de poste, séniorité, et la consigne qui sert à noter les contacts.",
     "name": "Nom",
     "description": "Description",
-    "patterns": "Intitulés déclencheurs (séparés par des virgules)",
-    "excludeTitles": "Titres à exclure (séparés par des virgules)",
+    "patterns": "Intitulés de poste ciblés (séparés par des virgules)",
+    "excludeTitles": "Intitulés à exclure (séparés par des virgules)",
     "seniority": "Séniorité",
-    "channels": "Canaux d'outreach",
-    "scoringPrompt": "Prompt de scoring (IA)",
-    "scoringPromptHint": "Décris précisément qui qualifier — sert à l'IA pour noter les contacts.",
+    "scoringPrompt": "Consigne de notation (IA)",
     "titlesLabel": "Titres :",
     "seniorityLevel": {
       "executive": "Direction",
       "director": "Directeur",
       "manager": "Manager",
       "individual": "Contributeur"
-    },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "letter": "Courrier",
-      "call": "Appel"
     },
     "statsTotal": "Personas",
     "statsActive": "Actifs",
@@ -118,7 +111,11 @@
     "created": "Persona créé",
     "empty": "Aucun persona défini. Crée-en un pour démarrer.",
     "demoNote": "Données de démonstration — vos modifications restent locales (non enregistrées).",
-    "patternsCount": "{n} intitulés"
+    "patternsCount": "{n} intitulés",
+    "patternsPlaceholder": "responsable achats, chef de rayon, directeur d'école",
+    "exclusionsPlaceholder": "stagiaire, alternant, assistant",
+    "scoringPromptPlaceholder": "Ex. : note haut les responsables achats d'entreprises de plus de 50 salariés qui gèrent plusieurs sites. Note bas les fonctions support et les structures de moins de 10 salariés.",
+    "scoringPromptHelp": "L'IA lit le contact et son entreprise, puis attribue une note de 0 à 100 selon cette consigne. C'est cette note que le « score minimum » d'une campagne compare : sans consigne, rien n'est qualifié."
   },
   "signals": {
     "nav": {
@@ -162,10 +159,10 @@
     "campaigns": "Campagnes",
     "inbox": "Réception",
     "import": "Import",
-    "sources": "Sources",
+    "sources": "Thèmes de veille",
     "personas": "Personas",
     "providers": "Fournisseurs",
-    "branding": "Identité",
+    "senders": "Expéditeurs",
     "linkedin": "LinkedIn",
     "annuaire": "Annuaire",
     "approvals": "Approbations",
@@ -173,32 +170,17 @@
     "templates": "Messages",
     "smartlead": "Webhooks Smartlead"
   },
-  "branding": {
-    "eyebrow": "Identité",
-    "title": "Identité de marque",
-    "lead": "Ce qui vous représente dans les emails et les courriers : expéditeur, signature, logo.",
-    "senderName": "Nom d'expéditeur",
-    "replyTo": "Email de réponse",
-    "emailSignature": "Signature email",
-    "letterSignature": "Signature manuscrite (courrier)",
-    "accent": "Couleur d'accent",
-    "logo": "Logo",
-    "logoHint": "PNG ou SVG, fond transparent.",
-    "upload": "Choisir un fichier",
-    "save": "Enregistrer",
-    "note": "Aperçu — l'enregistrement s'active quand Supabase est branché."
-  },
   "sources": {
     "eyebrow": "Détection",
-    "title": "Sources de signaux",
-    "lead": "D'où viennent les offres — et l'historique d'exécution pour repérer une source qui se dégrade.",
+    "title": "Thèmes de veille",
+    "lead": "Ce que vous surveillez, et chez qui. Les mots-clés se saisissent une fois par thème et valent pour tous ses fournisseurs.",
     "provider": "Fournisseur",
     "keywords": "Mots-clés",
     "location": "Zone",
     "active": "Active",
     "paused": "En pause",
     "history": "Historique d'exécution",
-    "empty": "Aucune source pour l'instant. Ajoutez-en une pour lancer la détection.",
+    "empty": "Aucun thème de veille. Créez-en un pour commencer à détecter des signaux.",
     "neverRan": "Jamais exécutée.",
     "found": "trouvés",
     "new": "nouveaux",
@@ -212,24 +194,32 @@
     "pause": "Mettre en pause",
     "resume": "Reprendre",
     "form": {
-      "add": "Ajouter une source",
-      "create": "Créer la source",
+      "add": "Ajouter un thème",
+      "create": "Créer le thème",
       "save": "Enregistrer",
       "edit": "Modifier",
       "cancel": "Annuler",
       "saved": "Enregistré",
       "name": "Nom",
-      "namePlaceholder": "France Travail — maintenance industrielle",
-      "provider": "Provider",
-      "keywordsPlaceholder": "technicien de maintenance, responsable maintenance",
+      "namePlaceholder": "France Travail — postes commerciaux",
+      "keywordsPlaceholder": "responsable commercial, chargé d’affaires",
       "locationPlaceholder": "Lyon (69) — laisser vide pour toute la France",
       "qualification": "QUALIFICATION",
       "qualificationHelp": "Ce qui décide qu'un signal mérite d'être travaillé. Sans consigne, les signaux collectés restent en attente.",
       "scoringPrompt": "Consigne de qualification",
-      "scoringPromptPlaceholder": "Évalue si l'entreprise est une PME ou ETI industrielle qui renforce sa maintenance. Écarte les cabinets de recrutement et l'intérim.",
+      "scoringPromptPlaceholder": "Évalue si l'entreprise correspond à ce qu'on cherche, et pourquoi. Ex. : PME ou ETI de plus de 50 salariés, avec plusieurs sites. Écarte les intermédiaires et les structures de moins de 10 salariés.",
       "threshold": "Score minimum",
-      "active": "Source active"
-    }
+      "active": "Thème actif",
+      "description": "Descriptif",
+      "descriptionPlaceholder": "À quoi sert cette veille, en une phrase",
+      "providers": "Fournisseurs interrogés",
+      "providersHelp": "Les mots-clés ci-dessous valent pour tous les fournisseurs cochés.",
+      "noProviderWarning": "Sans fournisseur, ce thème ne collectera rien."
+    },
+    "noProvider": "aucun fournisseur",
+    "providerPause": "Mettre en pause",
+    "providerResume": "Réactiver",
+    "beforeProviders": "Collectes antérieures (fournisseur non tracé)"
   },
   "inbox": {
     "eyebrow": "Réponses",
@@ -420,7 +410,7 @@
       "call": "Appel"
     },
     "wait": "attendre",
-    "dayUnit": "{n, plural, one {jour} other {jours}}",
+    "dayUnit": "{n} {n, plural, one {jour} other {jours}}",
     "noCondition": "aucune condition",
     "validation": "Validation",
     "editRule": "Modifier",
@@ -482,48 +472,55 @@
       "empty": "Aucune étape — ajoutez-en une.",
       "noRule": "Aucune règle d'entrée.",
       "callNote": "Le canal Appel crée une tâche datée, sans envoi ni message.",
-      "letterNote": "Le courrier passe toujours par la file de validation."
-    }
+      "letterNote": "Le courrier passe toujours par la file de validation.",
+      "subject": "Objet",
+      "subjectPlaceholder": "Ce que le destinataire lit avant d'ouvrir",
+      "body": "Message",
+      "bodyPlaceholder": "Bonjour {{prenom}},",
+      "variables": "Variables disponibles",
+      "variablesHelp": "Cliquez pour insérer. Une variable sans valeur bloque l'envoi plutôt que de partir vide.",
+      "insert": "Insérer",
+      "saveMessage": "Enregistrer le message",
+      "messageSaved": "Message enregistré",
+      "promote": "Enregistrer comme modèle",
+      "promoteName": "Nom du modèle",
+      "promoteNamePlaceholder": "Relance après salon",
+      "promoteConfirm": "Verser dans la bibliothèque",
+      "promoted": "Versé dans la bibliothèque",
+      "generate": "Proposer un premier jet",
+      "generating": "Rédaction…",
+      "generateHint": "Une consigne, si vous en avez une (facultatif)",
+      "useThis": "Utiliser cette proposition"
+    },
+    "watchThemes": "Thèmes de veille",
+    "pickSource": "Thèmes de veille",
+    "minScoreHelp": "Note attribuée par l'IA à chaque contact, de 0 à 100, selon la consigne de notation de son persona. En dessous de ce seuil, le contact n'entre pas.",
+    "minScoreLink": "Régler les consignes de notation",
+    "dailyCapHelp": "Tous canaux confondus. Si les réglages LinkedIn sont plus stricts, ce sont eux qui s'appliquent : c'est toujours le plus contraignant qui gagne.",
+    "dailyCapLink": "Voir les réglages LinkedIn"
   },
   "linkedin": {
     "eyebrow": "Canal",
     "title": "LinkedIn",
-    "lead": "Invitations et messages LinkedIn envoyés depuis votre propre session via l'extension. Les limites d'envoi sont appliquées automatiquement.",
+    "lead": "Invitations et messages envoyés depuis votre propre session LinkedIn, via l'extension Chrome.",
     "connect": {
-      "title": "Installer et connecter l’extension",
-      "intro": "Une seule fois, environ 2 minutes. À faire dans Google Chrome.",
-      "download": "Télécharger l’extension (.zip)",
-      "step1": "Télécharge le paquet ci-dessus, puis décompresse-le (double-clic sur le .zip).",
-      "step2": "Dans Chrome, ouvre la page des extensions : tape chrome://extensions dans la barre d’adresse.",
-      "step3": "Active le « Mode développeur » avec l’interrupteur en haut à droite.",
-      "step4": "Clique « Charger l’extension non empaquetée », puis choisis le dossier que tu viens de décompresser.",
-      "step5": "Connecte-toi à LinkedIn dans Chrome, reviens sur cette page et clique « Connecter l’extension ».",
-      "button": "Connecter l’extension",
-      "connected": "Extension connectée ✓",
-      "notDetected": "Extension pas encore détectée — installe-la d’abord (étapes ci-dessus).",
-      "regenerate": "Reconnecter l’extension"
-    },
-    "cursor": {
-      "title": "Curseur d'envoi",
-      "auto": "Automatique",
-      "autoHint": "Jay Reach envoie tout automatiquement.",
-      "hybrid": "Hybride",
-      "hybridHint": "Une partie automatique, une partie à valider à la main.",
-      "manual": "Manuel",
-      "manualHint": "Rien n'est envoyé sans votre action.",
-      "volume": "Volume par jour",
-      "perDay": "{count} / jour",
-      "save": "Enregistrer",
-      "saved": "Enregistré"
-    },
-    "rules": {
-      "title": "Règles d'envoi",
-      "window": "Envois entre 8 h et 21 h (Europe/Paris)",
-      "weekly": "200 invitations maximum sur 7 jours glissants",
-      "interval": "1 à 20 minutes entre deux actions",
-      "pause": "Pause automatique de 24 h si le compte est restreint",
-      "single": "Un seul outil d’automatisation par compte LinkedIn",
-      "cgu": "L'automatisation LinkedIn est contraire aux CGU de LinkedIn et peut entraîner une restriction du compte."
+      "title": "L'extension Chrome",
+      "install": "Installer l'extension",
+      "installHint": "S'ouvre dans le Chrome Web Store. Cette page se met à jour toute seule ensuite.",
+      "notPublished": "L'extension n'est pas encore publiée sur le Chrome Web Store. En attendant, elle s'installe à la main.",
+      "manualTitle": "Installation manuelle (temporaire)",
+      "download": "Télécharger l'extension (.zip)",
+      "step1": "Téléchargez le paquet, puis décompressez-le.",
+      "step2": "Dans Chrome, ouvrez chrome://extensions.",
+      "step3": "Activez le « Mode développeur », en haut à droite.",
+      "step4": "Cliquez « Charger l'extension non empaquetée » et choisissez le dossier décompressé.",
+      "button": "Connecter l'extension",
+      "notDetected": "L'extension n'a pas répondu. Vérifiez qu'elle est bien activée dans Chrome.",
+      "regenerate": "Reconnecter l'extension",
+      "stateMissing": "Extension non installée",
+      "stateInstalled": "Extension installée, pas encore connectée",
+      "stateConnected": "Extension connectée",
+      "stateConnectedTo": "Connectée au compte {profile}"
     },
     "stats": {
       "title": "Activité",
@@ -536,6 +533,27 @@
       "accountRestricted": "Compte LinkedIn restreint ou déconnecté : les envois sont en pause. Reconnecte-toi à LinkedIn, la reprise est automatique.",
       "weeklyCapNear": "Limite hebdomadaire bientôt atteinte ({sent}/{cap} sur 7 jours).",
       "manyFailures": "{count} envois ont échoué ces dernières 24 h. Vérifie ta connexion LinkedIn."
+    },
+    "sending": {
+      "title": "Réglages d'envoi",
+      "help": "Quand et à quel rythme les messages partent. Le délai entre deux actions est géré automatiquement.",
+      "weekly": "Messages par semaine",
+      "perWeek": "{count} / semaine",
+      "days": "Jours d'envoi",
+      "day": {
+        "1": "Lun",
+        "2": "Mar",
+        "3": "Mer",
+        "4": "Jeu",
+        "5": "Ven",
+        "6": "Sam",
+        "7": "Dim"
+      },
+      "from": "À partir de",
+      "to": "Jusqu'à",
+      "timezone": "Fuseau horaire",
+      "save": "Enregistrer",
+      "saved": "Enregistré"
     }
   },
   "directory": {
@@ -544,7 +562,6 @@
     "lead": "Cherchez des entreprises françaises par activité, département et effectif. Le département retient les entreprises qui y sont implantées : leur siège peut se trouver ailleurs. Les entreprises cessées sont exclues.",
     "search": "Rechercher",
     "count": "{n, plural, one {# entreprise trouvée} other {# entreprises trouvées}}",
-    "showingFirst": "{n} premières affichées",
     "none": "Aucune entreprise pour ces critères.",
     "hint": "Renseignez au moins un critère puis lancez la recherche.",
     "add": "Ajouter à ma base",
@@ -563,6 +580,18 @@
       "mid": "10 à 49",
       "large": "50 à 499",
       "xl": "500 et plus"
+    },
+    "countTruncated": "Plus de {n} entreprises trouvées",
+    "bulk": {
+      "addPage": "Ajouter la page ({count})",
+      "addAll": "Ajouter les {count} résultats",
+      "addAllTruncated": "Ajouter les résultats ({count} max)",
+      "confirm": "Ajouter {count} entreprises à votre base ?",
+      "starting": "Démarrage…",
+      "progress": "{done} / {total}",
+      "cancel": "Annuler",
+      "cancelled": "Annulé — {added} entreprise(s) ajoutée(s) avant l'arrêt.",
+      "done": "{added} ajoutée(s), {existing} déjà présente(s)."
     }
   },
   "notifications": {
@@ -612,7 +641,7 @@
   "templates": {
     "eyebrow": "Bibliothèque",
     "title": "Messages",
-    "lead": "Vos modèles de messages, versionnés et multilingues. Une variable manquante bloque l'envoi.",
+    "lead": "Des modèles qu'on réutilise dans ses campagnes, sans les réécrire à chaque fois.",
     "new": "Nouveau message",
     "demoNotice": "Connectez Supabase pour éditer.",
     "empty": "Aucun message pour l'instant.",
@@ -677,7 +706,7 @@
   "smartleadWh": {
     "eyebrow": "Réception email",
     "title": "Webhooks Smartlead",
-    "lead": "Recevez les réponses, bounces et désinscriptions de Smartlead pour fermer la boucle email.",
+    "lead": "Le webhook se branche tout seul au premier envoi. Cet écran ne sert qu'à le rebrancher ou à régénérer son secret.",
     "demoNotice": "Connectez Supabase pour configurer le webhook.",
     "urlTitle": "URL du webhook",
     "copy": "Copier l'URL",
@@ -692,5 +721,25 @@
     "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
     "yourDomain": "https://votre-instance",
     "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
+  },
+  "senders": {
+    "eyebrow": "Qui envoie",
+    "title": "Expéditeurs",
+    "lead": "Les comptes depuis lesquels partent vos messages. Le nom affiché est celui que voit le destinataire ; les plafonds limitent ce qui part par expéditeur.",
+    "kind": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "postal": "Courrier"
+    },
+    "displayName": "Nom affiché",
+    "displayNamePlaceholder": "Le nom que voit le destinataire",
+    "dailyQuota": "Plafond par jour",
+    "hourlyQuota": "Plafond par heure",
+    "noLimit": "Sans plafond",
+    "active": "Envoyer depuis cet expéditeur",
+    "save": "Enregistrer",
+    "saving": "Enregistrement",
+    "saved": "Enregistré",
+    "empty": "Aucun expéditeur. Branchez un compte dans Fournisseurs pour envoyer vos premiers messages."
   }
 }

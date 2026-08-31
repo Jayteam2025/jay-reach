@@ -3,8 +3,6 @@ import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { LinkedInPanel } from './linkedin-panel';
 
-type Mode = 'auto' | 'hybrid' | 'manual';
-
 export default async function LinkedInSettingsPage() {
   const t = await getTranslations();
   const supabase = await createClientOrNull();
@@ -14,12 +12,29 @@ export default async function LinkedInSettingsPage() {
     : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
 
-  // Réglages actuels (curseur) — valeurs par défaut si absents.
+  // Réglages d'envoi — valeurs par défaut si la ligne n'existe pas encore.
   const settingsRow = supabase && orgId
-    ? (await supabase.from('linkedin_settings').select('mode, daily_cap').eq('organization_id', orgId).maybeSingle())
-        .data
+    ? (
+        await supabase
+          .from('linkedin_settings')
+          .select('weekly_cap, send_days, send_from_hour, send_to_hour, timezone')
+          .eq('organization_id', orgId)
+          .maybeSingle()
+      ).data
     : null;
-  const settings = (settingsRow as { mode: Mode; daily_cap: number } | null) ?? { mode: 'auto' as Mode, daily_cap: 25 };
+  const settings = (settingsRow as {
+    weekly_cap: number;
+    send_days: number[];
+    send_from_hour: number;
+    send_to_hour: number;
+    timezone: string;
+  } | null) ?? {
+    weekly_cap: 100,
+    send_days: [1, 2, 3, 4, 5],
+    send_from_hour: 9,
+    send_to_hour: 18,
+    timezone: 'Europe/Paris',
+  };
 
   // Un jeton actif signifie que l'extension a deja ete connectee au moins une
   // fois. C'est ce qui decide laquelle des deux actions de la page merite le
@@ -31,13 +46,15 @@ export default async function LinkedInSettingsPage() {
     ? (
         await supabase
           .from('extension_tokens')
-          .select('organization_id')
+          .select('organization_id, linkedin_profile_name')
           .eq('organization_id', orgId)
           .eq('is_active', true)
           .limit(1)
       )
     : null;
-  const alreadyConnected = (jetonActif?.data ?? []).length > 0;
+  const jetons = (jetonActif?.data ?? []) as { linkedin_profile_name: string | null }[];
+  const alreadyConnected = jetons.length > 0;
+  const profileName = jetons[0]?.linkedin_profile_name ?? null;
 
   // Compteurs d'activité.
   const now = Date.now();
@@ -115,10 +132,15 @@ export default async function LinkedInSettingsPage() {
 
         <LinkedInPanel
           orgId={orgId}
-          mode={settings.mode}
-          dailyCap={settings.daily_cap}
+          weeklyCap={settings.weekly_cap}
+          sendDays={settings.send_days}
+          sendFromHour={settings.send_from_hour}
+          sendToHour={settings.send_to_hour}
+          timezone={settings.timezone}
           stats={{ pending, sent7d, today }}
           alreadyConnected={alreadyConnected}
+          profileName={profileName}
+          storeUrl={process.env.NEXT_PUBLIC_EXTENSION_STORE_URL ?? null}
           alerts={alerts}
         />
       </main>

@@ -3,6 +3,16 @@ import { Icon, type IconName } from './icons';
 import { createClientOrNull } from '../lib/supabase/server';
 import { NotificationsBell, type NotifItem } from './notifications-bell';
 
+/**
+ * Navigation principale.
+ *
+ * Deux entrées l'ont quittée (retours 4.1 et 6.1) : les thèmes de veille, qui
+ * se règlent là où on construit la campagne qu'ils alimentent, et les webhooks
+ * Smartlead, qui se branchent désormais tout seuls. Les écrans existent
+ * toujours — le premier depuis Campagnes, le second en réglage avancé depuis
+ * Fournisseurs — mais aucun des deux n'est un endroit où l'on va tous les
+ * jours.
+ */
 const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/', key: 'dashboard', icon: 'dashboard' },
   { href: '/signals', key: 'signals', icon: 'signals' },
@@ -12,12 +22,10 @@ const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/settings/templates', key: 'templates', icon: 'mail' },
   { href: '/inbox', key: 'inbox', icon: 'inbox' },
   { href: '/settings/linkedin', key: 'linkedin', icon: 'linkedin' },
-  { href: '/settings/sources', key: 'sources', icon: 'sources' },
   { href: '/settings/personas', key: 'personas', icon: 'personas' },
   { href: '/settings/customers', key: 'customers', icon: 'prospects' },
   { href: '/settings/providers', key: 'providers', icon: 'providers' },
-  { href: '/settings/smartlead', key: 'smartlead', icon: 'mail' },
-  { href: '/settings/branding', key: 'branding', icon: 'branding' },
+  { href: '/settings/senders', key: 'senders', icon: 'senders' },
 ];
 
 function relWhen(iso: string | null): string {

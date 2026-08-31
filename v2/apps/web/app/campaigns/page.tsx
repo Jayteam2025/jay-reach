@@ -50,6 +50,12 @@ export default async function CampaignsPage() {
             </p>
           </div>
           <div className="rs-head-actions">
+            {/* Les thèmes de veille ont quitté le menu principal : on configure
+                d'où viennent les prospects là où on construit la campagne qu'ils
+                alimentent, pas dans une entrée de navigation séparée. */}
+            <a className="rs-btn" href="/settings/sources">
+              {t('campaigns.watchThemes')}
+            </a>
             <a className="rs-btn" data-primary="true" href="/campaigns/new">
               {t('campaigns.newCampaign')}
             </a>

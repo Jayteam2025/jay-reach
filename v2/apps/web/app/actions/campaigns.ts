@@ -25,13 +25,20 @@ async function asAdmin(organizationId: string): Promise<SimpleResult> {
   }
 }
 
-/** Crée une campagne (brouillon) adossée à UNE source OU UNE liste. */
+/**
+ * Crée une campagne (brouillon), adossée à un ou plusieurs thèmes de veille, ou
+ * à une liste.
+ *
+ * `campaigns.source_id` reste renseigné avec le premier thème : la colonne est
+ * dépréciée mais lue par du code encore en place, et la vider d'un coup ferait
+ * disparaître l'entrée de campagnes qui fonctionnent.
+ */
 export async function createCampaign(organizationId: string, input: unknown): Promise<CampaignActionResult> {
   const auth = await asAdmin(organizationId);
   if (!auth.ok) return auth;
   const parsed = parseCampaignCreate(input);
   if (!parsed.ok) return { ok: false, error: 'Entrée invalide.', issues: parsed.errors };
-  const { name, entryKind, entryId, minScore, personaIds, dailyCap } = parsed.data;
+  const { name, entryKind, entryId, sourceIds, minScore, personaIds, dailyCap } = parsed.data;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -48,8 +55,18 @@ export async function createCampaign(organizationId: string, input: unknown): Pr
     .select('id')
     .single();
   if (error) return { ok: false, error: error.message };
+
+  const campaignId = data.id as string;
+  const themes = entryKind === 'source' ? (sourceIds ?? [entryId]) : [];
+  if (themes.length > 0) {
+    const { error: erreurThemes } = await supabase
+      .from('campaign_sources')
+      .insert(themes.map((source_id) => ({ campaign_id: campaignId, source_id })));
+    if (erreurThemes) return { ok: false, error: erreurThemes.message };
+  }
+
   revalidatePath('/campaigns');
-  return { ok: true, id: data.id as string };
+  return { ok: true, id: campaignId };
 }
 
 /** Met à jour nom / plafond / règles d'entrée d'une campagne. */
