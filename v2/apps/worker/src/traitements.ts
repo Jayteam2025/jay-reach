@@ -82,6 +82,19 @@ export const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 1
 /** Fréquence du tick de séquence. Même rôle de fenêtre. */
 export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 
+/**
+ * URL publique de l'instance, telle qu'un provider doit la joindre.
+ *
+ * `APP_URL` d'abord, la variable documentée. À défaut, l'URL de production
+ * Vercel — jamais `VERCEL_URL`, qui désigne le déploiement courant et change à
+ * chaque envoi : un webhook branché avec elle cesserait de recevoir au
+ * déploiement suivant, sans que rien ne le signale.
+ */
+function deduireUrlPublique(): string | undefined {
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  return production ? `https://${production}` : undefined;
+}
+
 // ---------------------------------------------------------------- collecte
 
 export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise<void> {
@@ -191,7 +204,7 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
     console.warn(`[dispatch] Smartlead non configuré pour l’org ${data.organizationId} — job ignoré`);
     return;
   }
-  const result = await runDispatch(data, apiKey);
+  const result = await runDispatch(data, apiKey, pool, process.env.APP_URL ?? deduireUrlPublique());
   // Le chiffre qui interesse l'operateur est le nombre de leads AJOUTES, que
   // Smartlead nomme `total_leads`. `upload_count` compte les lignes traitees,
   // deja-presents compris : l'annoncer comme un ajout gonflait le compte rendu.

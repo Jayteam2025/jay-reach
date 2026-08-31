@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Model (scoring) — default Sonnet",
       "modelFast": "Model (light tasks) — default Haiku"
-    }
+    },
+    "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand"
   },
   "jobs": {
     "title": "Background queues",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Who to contact",
     "title": "Personas",
-    "lead": "Who to target in detected companies: job titles, seniority, channels.",
+    "lead": "Who to target inside detected companies: job titles, seniority, and the brief used to score contacts.",
     "name": "Name",
     "description": "Description",
-    "patterns": "Trigger titles (comma-separated)",
-    "excludeTitles": "Titles to exclude (comma-separated)",
+    "patterns": "Target job titles (comma separated)",
+    "excludeTitles": "Titles to exclude (comma separated)",
     "seniority": "Seniority",
-    "channels": "Outreach channels",
-    "scoringPrompt": "Scoring prompt (AI)",
-    "scoringPromptHint": "Describe precisely who qualifies — used by the AI to score contacts.",
+    "scoringPrompt": "Scoring brief (AI)",
     "titlesLabel": "Titles:",
     "seniorityLevel": {
       "executive": "Executive",
       "director": "Director",
       "manager": "Manager",
       "individual": "Individual"
-    },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "letter": "Letter",
-      "call": "Call"
     },
     "statsTotal": "Personas",
     "statsActive": "Active",
@@ -118,7 +111,11 @@
     "created": "Persona created",
     "empty": "No persona defined. Create one to start.",
     "demoNote": "Demo data — your changes stay local (not saved).",
-    "patternsCount": "{n} titles"
+    "patternsCount": "{n} titles",
+    "patternsPlaceholder": "purchasing manager, store manager, head teacher",
+    "exclusionsPlaceholder": "intern, trainee, assistant",
+    "scoringPromptPlaceholder": "E.g. score high purchasing managers at companies over 50 staff running several sites. Score low support roles and companies under 10 staff.",
+    "scoringPromptHelp": "The AI reads the contact and their company, then gives a score from 0 to 100 against this brief. That score is what a campaign’s “minimum score” compares against: without a brief, nothing gets qualified."
   },
   "signals": {
     "nav": {
@@ -473,7 +470,8 @@
       "noRule": "No entry rule.",
       "callNote": "The Call channel creates a dated task, no send or message.",
       "letterNote": "Letters always go through the approval queue."
-    }
+    },
+    "watchThemes": "Watch themes"
   },
   "linkedin": {
     "eyebrow": "Channel",
@@ -671,7 +669,7 @@
   "smartleadWh": {
     "eyebrow": "Email reception",
     "title": "Smartlead webhooks",
-    "lead": "Receive replies, bounces and unsubscribes from Smartlead to close the email loop.",
+    "lead": "The webhook connects itself on the first send. This screen only serves to reconnect it or rotate its secret.",
     "demoNotice": "Connect Supabase to configure the webhook.",
     "urlTitle": "Webhook URL",
     "copy": "Copy URL",

@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Modèle (scoring) — défaut Sonnet",
       "modelFast": "Modèle (tâches légères) — défaut Haiku"
-    }
+    },
+    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main"
   },
   "jobs": {
     "title": "Files de fond",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Qui contacter",
     "title": "Personas",
-    "lead": "Qui viser dans les entreprises détectées : intitulés de poste, séniorité, canaux.",
+    "lead": "Qui viser dans les entreprises détectées : intitulés de poste, séniorité, et la consigne qui sert à noter les contacts.",
     "name": "Nom",
     "description": "Description",
-    "patterns": "Intitulés déclencheurs (séparés par des virgules)",
-    "excludeTitles": "Titres à exclure (séparés par des virgules)",
+    "patterns": "Intitulés de poste ciblés (séparés par des virgules)",
+    "excludeTitles": "Intitulés à exclure (séparés par des virgules)",
     "seniority": "Séniorité",
-    "channels": "Canaux d'outreach",
-    "scoringPrompt": "Prompt de scoring (IA)",
-    "scoringPromptHint": "Décris précisément qui qualifier — sert à l'IA pour noter les contacts.",
+    "scoringPrompt": "Consigne de notation (IA)",
     "titlesLabel": "Titres :",
     "seniorityLevel": {
       "executive": "Direction",
       "director": "Directeur",
       "manager": "Manager",
       "individual": "Contributeur"
-    },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "letter": "Courrier",
-      "call": "Appel"
     },
     "statsTotal": "Personas",
     "statsActive": "Actifs",
@@ -118,7 +111,11 @@
     "created": "Persona créé",
     "empty": "Aucun persona défini. Crée-en un pour démarrer.",
     "demoNote": "Données de démonstration — vos modifications restent locales (non enregistrées).",
-    "patternsCount": "{n} intitulés"
+    "patternsCount": "{n} intitulés",
+    "patternsPlaceholder": "responsable achats, chef de rayon, directeur d'école",
+    "exclusionsPlaceholder": "stagiaire, alternant, assistant",
+    "scoringPromptPlaceholder": "Ex. : note haut les responsables achats d'entreprises de plus de 50 salariés qui gèrent plusieurs sites. Note bas les fonctions support et les structures de moins de 10 salariés.",
+    "scoringPromptHelp": "L'IA lit le contact et son entreprise, puis attribue une note de 0 à 100 selon cette consigne. C'est cette note que le « score minimum » d'une campagne compare : sans consigne, rien n'est qualifié."
   },
   "signals": {
     "nav": {
@@ -473,7 +470,8 @@
       "noRule": "Aucune règle d'entrée.",
       "callNote": "Le canal Appel crée une tâche datée, sans envoi ni message.",
       "letterNote": "Le courrier passe toujours par la file de validation."
-    }
+    },
+    "watchThemes": "Thèmes de veille"
   },
   "linkedin": {
     "eyebrow": "Canal",
@@ -671,7 +669,7 @@
   "smartleadWh": {
     "eyebrow": "Réception email",
     "title": "Webhooks Smartlead",
-    "lead": "Recevez les réponses, bounces et désinscriptions de Smartlead pour fermer la boucle email.",
+    "lead": "Le webhook se branche tout seul au premier envoi. Cet écran ne sert qu'à le rebrancher ou à régénérer son secret.",
     "demoNotice": "Connectez Supabase pour configurer le webhook.",
     "urlTitle": "URL du webhook",
     "copy": "Copier l'URL",

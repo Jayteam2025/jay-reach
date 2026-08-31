@@ -53,7 +53,8 @@
       "appKey": "App key",
       "modelSmart": "Model (scoring) — standaard Sonnet",
       "modelFast": "Model (lichte taken) — standaard Haiku"
-    }
+    },
+    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen"
   },
   "jobs": {
     "title": "Achtergrondwachtrijen",
@@ -79,27 +80,19 @@
   "personas": {
     "eyebrow": "Wie contacteren",
     "title": "Persona's",
-    "lead": "Wie te benaderen in gedetecteerde bedrijven: functietitels, senioriteit, kanalen.",
+    "lead": "Wie u benadert binnen gedetecteerde bedrijven: functietitels, senioriteit en de instructie om contacten te scoren.",
     "name": "Naam",
     "description": "Beschrijving",
-    "patterns": "Triggertitels (kommagescheiden)",
-    "excludeTitles": "Uit te sluiten titels (kommagescheiden)",
+    "patterns": "Beoogde functietitels (komma gescheiden)",
+    "excludeTitles": "Uit te sluiten titels (komma gescheiden)",
     "seniority": "Senioriteit",
-    "channels": "Outreach-kanalen",
-    "scoringPrompt": "Scoringsprompt (AI)",
-    "scoringPromptHint": "Beschrijf precies wie kwalificeert — gebruikt door de AI om contacten te scoren.",
+    "scoringPrompt": "Scoringsinstructie (AI)",
     "titlesLabel": "Titels:",
     "seniorityLevel": {
       "executive": "Directie",
       "director": "Directeur",
       "manager": "Manager",
       "individual": "Medewerker"
-    },
-    "channel": {
-      "email": "E-mail",
-      "linkedin": "LinkedIn",
-      "letter": "Brief",
-      "call": "Telefoon"
     },
     "statsTotal": "Persona's",
     "statsActive": "Actief",
@@ -118,7 +111,11 @@
     "created": "Persona aangemaakt",
     "empty": "Geen persona gedefinieerd. Maak er een om te starten.",
     "demoNote": "Demogegevens — je wijzigingen blijven lokaal (niet opgeslagen).",
-    "patternsCount": "{n} titels"
+    "patternsCount": "{n} titels",
+    "patternsPlaceholder": "inkoopmanager, afdelingshoofd, schooldirecteur",
+    "exclusionsPlaceholder": "stagiair, leerling, assistent",
+    "scoringPromptPlaceholder": "Bv. score inkoopmanagers bij bedrijven met meer dan 50 medewerkers en meerdere vestigingen hoog. Score ondersteunende functies en bedrijven onder 10 medewerkers laag.",
+    "scoringPromptHelp": "De AI leest het contact en zijn bedrijf en geeft een score van 0 tot 100 volgens deze instructie. Die score vergelijkt de “minimumscore” van een campagne: zonder instructie wordt niets gekwalificeerd."
   },
   "signals": {
     "nav": {
@@ -473,7 +470,8 @@
       "noRule": "Geen ingangsregel.",
       "callNote": "Het kanaal Bellen maakt een gedateerde taak, zonder verzending of bericht.",
       "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij."
-    }
+    },
+    "watchThemes": "Monitoringthema's"
   },
   "linkedin": {
     "eyebrow": "Kanaal",
@@ -671,7 +669,7 @@
   "smartleadWh": {
     "eyebrow": "E-mailontvangst",
     "title": "Smartlead-webhooks",
-    "lead": "Ontvang antwoorden, bounces en uitschrijvingen van Smartlead om de e-maillus te sluiten.",
+    "lead": "De webhook koppelt zichzelf bij de eerste verzending. Dit scherm dient enkel om ze opnieuw te koppelen of het geheim te vernieuwen.",
     "demoNotice": "Verbind Supabase om de webhook te configureren.",
     "urlTitle": "Webhook-URL",
     "copy": "URL kopiëren",
