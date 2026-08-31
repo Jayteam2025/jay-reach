@@ -478,42 +478,25 @@
   "linkedin": {
     "eyebrow": "Canal",
     "title": "LinkedIn",
-    "lead": "Invitations et messages LinkedIn envoyés depuis votre propre session via l'extension. Les limites d'envoi sont appliquées automatiquement.",
+    "lead": "Invitations et messages envoyés depuis votre propre session LinkedIn, via l'extension Chrome.",
     "connect": {
-      "title": "Installer et connecter l’extension",
-      "intro": "Une seule fois, environ 2 minutes. À faire dans Google Chrome.",
-      "download": "Télécharger l’extension (.zip)",
-      "step1": "Télécharge le paquet ci-dessus, puis décompresse-le (double-clic sur le .zip).",
-      "step2": "Dans Chrome, ouvre la page des extensions : tape chrome://extensions dans la barre d’adresse.",
-      "step3": "Active le « Mode développeur » avec l’interrupteur en haut à droite.",
-      "step4": "Clique « Charger l’extension non empaquetée », puis choisis le dossier que tu viens de décompresser.",
-      "step5": "Connecte-toi à LinkedIn dans Chrome, reviens sur cette page et clique « Connecter l’extension ».",
-      "button": "Connecter l’extension",
-      "connected": "Extension connectée ✓",
-      "notDetected": "Extension pas encore détectée — installe-la d’abord (étapes ci-dessus).",
-      "regenerate": "Reconnecter l’extension"
-    },
-    "cursor": {
-      "title": "Curseur d'envoi",
-      "auto": "Automatique",
-      "autoHint": "Jay Reach envoie tout automatiquement.",
-      "hybrid": "Hybride",
-      "hybridHint": "Une partie automatique, une partie à valider à la main.",
-      "manual": "Manuel",
-      "manualHint": "Rien n'est envoyé sans votre action.",
-      "volume": "Volume par jour",
-      "perDay": "{count} / jour",
-      "save": "Enregistrer",
-      "saved": "Enregistré"
-    },
-    "rules": {
-      "title": "Règles d'envoi",
-      "window": "Envois entre 8 h et 21 h (Europe/Paris)",
-      "weekly": "200 invitations maximum sur 7 jours glissants",
-      "interval": "1 à 20 minutes entre deux actions",
-      "pause": "Pause automatique de 24 h si le compte est restreint",
-      "single": "Un seul outil d’automatisation par compte LinkedIn",
-      "cgu": "L'automatisation LinkedIn est contraire aux CGU de LinkedIn et peut entraîner une restriction du compte."
+      "title": "L'extension Chrome",
+      "install": "Installer l'extension",
+      "installHint": "S'ouvre dans le Chrome Web Store. Cette page se met à jour toute seule ensuite.",
+      "notPublished": "L'extension n'est pas encore publiée sur le Chrome Web Store. En attendant, elle s'installe à la main.",
+      "manualTitle": "Installation manuelle (temporaire)",
+      "download": "Télécharger l'extension (.zip)",
+      "step1": "Téléchargez le paquet, puis décompressez-le.",
+      "step2": "Dans Chrome, ouvrez chrome://extensions.",
+      "step3": "Activez le « Mode développeur », en haut à droite.",
+      "step4": "Cliquez « Charger l'extension non empaquetée » et choisissez le dossier décompressé.",
+      "button": "Connecter l'extension",
+      "notDetected": "L'extension n'a pas répondu. Vérifiez qu'elle est bien activée dans Chrome.",
+      "regenerate": "Reconnecter l'extension",
+      "stateMissing": "Extension non installée",
+      "stateInstalled": "Extension installée, pas encore connectée",
+      "stateConnected": "Extension connectée",
+      "stateConnectedTo": "Connectée au compte {profile}"
     },
     "stats": {
       "title": "Activité",
@@ -526,6 +509,27 @@
       "accountRestricted": "Compte LinkedIn restreint ou déconnecté : les envois sont en pause. Reconnecte-toi à LinkedIn, la reprise est automatique.",
       "weeklyCapNear": "Limite hebdomadaire bientôt atteinte ({sent}/{cap} sur 7 jours).",
       "manyFailures": "{count} envois ont échoué ces dernières 24 h. Vérifie ta connexion LinkedIn."
+    },
+    "sending": {
+      "title": "Réglages d'envoi",
+      "help": "Quand et à quel rythme les messages partent. Le délai entre deux actions est géré automatiquement.",
+      "weekly": "Messages par semaine",
+      "perWeek": "{count} / semaine",
+      "days": "Jours d'envoi",
+      "day": {
+        "1": "Lun",
+        "2": "Mar",
+        "3": "Mer",
+        "4": "Jeu",
+        "5": "Ven",
+        "6": "Sam",
+        "7": "Dim"
+      },
+      "from": "À partir de",
+      "to": "Jusqu'à",
+      "timezone": "Fuseau horaire",
+      "save": "Enregistrer",
+      "saved": "Enregistré"
     }
   },
   "directory": {

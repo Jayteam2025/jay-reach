@@ -141,6 +141,34 @@ async function pollLinkedInQueue() {
  * de ces personnes quittent le navigateur. La messagerie personnelle de
  * l'utilisateur n'est jamais transmise.
  */
+/**
+ * Remonte a l'application le compte LinkedIn depuis lequel l'extension enverra.
+ *
+ * Appelee apres la connexion, puis a chaque releve : la session LinkedIn du
+ * navigateur peut changer sans que l'extension soit reinstallee, et l'ecran
+ * afficherait alors un compte qui n'est plus celui qui enverra.
+ *
+ * Silencieuse en cas d'echec : ce n'est qu'un libelle d'ecran, il ne doit pas
+ * empecher une releve de reponses de se faire.
+ */
+async function remonterProfil() {
+  try {
+    const token = await getToken();
+    if (!token) return;
+    const csrf = await self.linkedinGetCsrfToken();
+    const identite = await self.linkedinGetSelfIdentity(csrf);
+    if (!identite?.name && !identite?.publicIdentifier) return;
+    const base = await getBaseUrl();
+    await postJson(base, '/api/extension/linkedin/profile', {
+      token,
+      name: identite.name,
+      publicIdentifier: identite.publicIdentifier,
+    });
+  } catch (err) {
+    console.warn('⚠️ Profil LinkedIn non remonte :', err?.code || err?.message || err);
+  }
+}
+
 async function releverReponses() {
   try {
     const token = await getToken();
@@ -196,6 +224,7 @@ async function releverReponses() {
     }
 
     await chrome.storage.local.set({ derniereReleve: Date.now() });
+    await remonterProfil();
   } catch (err) {
     console.error('❌ releverReponses :', err);
   }
@@ -205,6 +234,10 @@ async function releverReponses() {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'GET_STATUS') {
     getStatus().then(sendResponse);
+    return true;
+  }
+  if (message.type === 'JAY_REACH_REMONTER_PROFIL') {
+    remonterProfil().then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message.type === 'POLL_NOW') {
@@ -242,6 +275,10 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
     if (typeof message.baseUrl === 'string') patch.appBaseUrl = message.baseUrl.replace(/\/$/, '');
     chrome.storage.local.set(patch, () => {
       pollLinkedInQueue();
+      // Juste apres la connexion : l'ecran de reglages attend de pouvoir dire a
+      // quel compte il est connecte, sans faire patienter jusqu'a la releve
+      // suivante.
+      remonterProfil();
       sendResponse({ ok: true });
     });
     return true;

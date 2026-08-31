@@ -478,42 +478,25 @@
   "linkedin": {
     "eyebrow": "Channel",
     "title": "LinkedIn",
-    "lead": "LinkedIn invitations and messages sent from your own session via the extension. Sending limits are enforced automatically.",
+    "lead": "Invitations and messages sent from your own LinkedIn session, through the Chrome extension.",
     "connect": {
-      "title": "Install and connect the extension",
-      "intro": "One time, about 2 minutes. Do it in Google Chrome.",
+      "title": "The Chrome extension",
+      "install": "Install the extension",
+      "installHint": "Opens the Chrome Web Store. This page updates on its own afterwards.",
+      "notPublished": "The extension is not on the Chrome Web Store yet. In the meantime, it installs by hand.",
+      "manualTitle": "Manual install (temporary)",
       "download": "Download the extension (.zip)",
-      "step1": "Download the package above, then unzip it (double-click the .zip).",
-      "step2": "In Chrome, open the extensions page: type chrome://extensions in the address bar.",
-      "step3": "Turn on “Developer mode” with the switch at the top right.",
-      "step4": "Click “Load unpacked”, then pick the folder you just unzipped.",
-      "step5": "Sign in to LinkedIn in Chrome, come back to this page and click “Connect the extension”.",
+      "step1": "Download the package, then unzip it.",
+      "step2": "In Chrome, open chrome://extensions.",
+      "step3": "Turn on “Developer mode”, top right.",
+      "step4": "Click “Load unpacked” and pick the unzipped folder.",
       "button": "Connect the extension",
-      "connected": "Extension connected ✓",
-      "notDetected": "Extension not detected yet — install it first (steps above).",
-      "regenerate": "Reconnect the extension"
-    },
-    "cursor": {
-      "title": "Sending cursor",
-      "auto": "Automatic",
-      "autoHint": "Jay Reach sends everything automatically.",
-      "hybrid": "Hybrid",
-      "hybridHint": "Part automatic, part sent by hand.",
-      "manual": "Manual",
-      "manualHint": "Nothing is sent without your action.",
-      "volume": "Volume per day",
-      "perDay": "{count} / day",
-      "save": "Save",
-      "saved": "Saved"
-    },
-    "rules": {
-      "title": "Sending rules",
-      "window": "Sending between 8am and 9pm (Europe/Paris)",
-      "weekly": "Max 200 invitations per rolling 7 days",
-      "interval": "1 to 20 minutes between two actions",
-      "pause": "Automatic 24h pause if the account is restricted",
-      "single": "Only one automation tool per LinkedIn account",
-      "cgu": "LinkedIn automation is against LinkedIn’s terms of service and may lead to account restriction."
+      "notDetected": "The extension did not answer. Check that it is enabled in Chrome.",
+      "regenerate": "Reconnect the extension",
+      "stateMissing": "Extension not installed",
+      "stateInstalled": "Extension installed, not connected yet",
+      "stateConnected": "Extension connected",
+      "stateConnectedTo": "Connected to {profile}"
     },
     "stats": {
       "title": "Activity",
@@ -526,6 +509,27 @@
       "accountRestricted": "LinkedIn account restricted or signed out: sending is paused. Sign back in to LinkedIn — it resumes automatically.",
       "weeklyCapNear": "Weekly limit almost reached ({sent}/{cap} over 7 days).",
       "manyFailures": "{count} sends failed in the last 24h. Check your LinkedIn connection."
+    },
+    "sending": {
+      "title": "Sending settings",
+      "help": "When and how fast messages go out. The delay between two actions is handled automatically.",
+      "weekly": "Messages per week",
+      "perWeek": "{count} / week",
+      "days": "Sending days",
+      "day": {
+        "1": "Mon",
+        "2": "Tue",
+        "3": "Wed",
+        "4": "Thu",
+        "5": "Fri",
+        "6": "Sat",
+        "7": "Sun"
+      },
+      "from": "From",
+      "to": "Until",
+      "timezone": "Time zone",
+      "save": "Save",
+      "saved": "Saved"
     }
   },
   "directory": {
