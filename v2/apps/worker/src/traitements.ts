@@ -114,22 +114,33 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
   const runId = await startSourceRun(pool, data.sourceId, data.sourceProviderId);
   try {
     const result = await runDiscover(
-    ctx.budgetCollecteMs !== undefined ? { ...data, budgetMs: ctx.budgetCollecteMs } : data,
-    credentials,
-  );
+      ctx.budgetCollecteMs !== undefined ? { ...data, budgetMs: ctx.budgetCollecteMs } : data,
+      credentials,
+    );
     const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);
     // Chaînage : chaque NOUVEAU signal (avec une entreprise) part en qualification.
     // Id déterministe par signal => un signal ne se qualifie qu'une fois.
-    for (const sig of inserted) {
-      if (!sig.companyName) {
-        continue;
-      }
-      const qualifyJob: QualifyJob = {
-        organizationId: sig.organizationId,
-        companyName: sig.companyName,
-        signalId: sig.signalId,
-      };
-      await boss.insert([{ name: 'signals.qualify', id: deterministicUuid('qualify', sig.signalId), data: qualifyJob }]);
+    //
+    // Tous en une insertion : un appel par signal coûtait un aller-retour
+    // réseau chacun, et une collecte de plusieurs centaines d'offres dépassait
+    // à elle seule le plafond d'exécution d'une fonction serverless.
+    const aQualifier = inserted.flatMap((sig) =>
+      sig.companyName
+        ? [
+            {
+              name: 'signals.qualify',
+              id: deterministicUuid('qualify', sig.signalId),
+              data: {
+                organizationId: sig.organizationId,
+                companyName: sig.companyName,
+                signalId: sig.signalId,
+              } satisfies QualifyJob,
+            },
+          ]
+        : [],
+    );
+    if (aQualifier.length > 0) {
+      await boss.insert(aQualifier);
     }
     await finishSourceRun(pool, runId, { found: result.signals.length, added: inserted.length, status: 'success' });
     console.log(

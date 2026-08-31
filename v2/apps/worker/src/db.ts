@@ -66,6 +66,19 @@ function codePostalDe(location: string | null): string | undefined {
   return location?.match(/\b(\d{5})\b/)?.[1];
 }
 
+/**
+ * Signaux insérés par requête.
+ *
+ * Une requête par signal coûtait un aller-retour réseau chacune — mesuré à
+ * 36 ms depuis un poste, davantage depuis une fonction serverless. Sur une
+ * collecte de 978 offres, cela dépassait la minute et faisait tuer la fonction
+ * avant la fin : la collecte entière était perdue.
+ *
+ * Cent par requête ramène ça à une dizaine d'allers-retours. Au-delà, la
+ * requête devient longue à préparer sans rien gagner.
+ */
+const TAILLE_LOT_INSERTION = 100;
+
 export async function insertSignals(
   pool: Pool,
   organizationId: string,
@@ -73,11 +86,19 @@ export async function insertSignals(
   providerId: string,
   signals: readonly ScrapedSignal[],
 ): Promise<InsertedSignal[]> {
-  const inserted: InsertedSignal[] = [];
   // Empreintes déjà posées pendant ce lot : une même offre remontée deux fois
   // par le même appel n'a pas encore été écrite en base, donc la vérification
   // SQL ne la verrait pas.
   const vuesDansLeLot = new Set<string>();
+  const aInserer: {
+    externalId: string;
+    occurredAt: string | null;
+    raw: string;
+    title: string | null;
+    companyName: string | null;
+    location: string | null;
+    fingerprint: string | null;
+  }[] = [];
 
   for (const signal of signals) {
     if (signal.signal_type !== 'job_posting') {
@@ -99,44 +120,56 @@ export async function insertSignals(
     if (fingerprint && vuesDansLeLot.has(fingerprint)) {
       continue;
     }
+    if (fingerprint) {
+      vuesDansLeLot.add(fingerprint);
+    }
 
-    const res = await pool.query<{ id: string }>(
+    aInserer.push({
+      externalId: signal.source_url,
+      occurredAt: (data.posted_date as string | null | undefined) ?? null,
+      raw: JSON.stringify(data),
+      title,
+      companyName,
+      location,
+      fingerprint,
+    });
+  }
+
+  const inserted: InsertedSignal[] = [];
+  for (let i = 0; i < aInserer.length; i += TAILLE_LOT_INSERTION) {
+    const lot = aInserer.slice(i, i + TAILLE_LOT_INSERTION);
+    const valeurs: unknown[] = [organizationId, sourceId, providerId];
+    const lignes = lot.map((l, n) => {
+      const d = 3 + n * 7;
+      valeurs.push(l.externalId, l.occurredAt, l.raw, l.title, l.companyName, l.location, l.fingerprint);
+      return `($${d + 1}::text, $${d + 2}::timestamptz, $${d + 3}::jsonb, $${d + 4}::text, $${d + 5}::text, $${d + 6}::text, $${d + 7}::text)`;
+    });
+
+    const res = await pool.query<{ id: string; company_hint: string | null }>(
       `insert into signals
          (organization_id, source_id, provider_id, external_id, kind, occurred_at,
           raw, title, url, company_hint, location, status, fingerprint)
-       select $1, $2, $3, $4, 'job_posting', coalesce($5::timestamptz, now()),
-          $6::jsonb, $7, $8, $9, $10, 'new', $11
-       where $11::text is null
-          or not exists (
-            select 1 from signals
-             where organization_id = $1
-               and fingerprint = $11
-               and occurred_at > now() - interval '30 days'
-          )
+       select $1, $2, $3, v.external_id, 'job_posting', coalesce(v.occurred_at, now()),
+              v.raw, v.title, v.external_id, v.company_hint, v.location, 'new', v.fingerprint
+         from (values ${lignes.join(', ')})
+              as v(external_id, occurred_at, raw, title, company_hint, location, fingerprint)
+        where v.fingerprint is null
+           or not exists (
+             select 1 from signals s
+              where s.organization_id = $1
+                and s.fingerprint = v.fingerprint
+                and s.occurred_at > now() - interval '30 days'
+           )
        on conflict (source_id, external_id) do nothing
-       returning id`,
-      [
-        organizationId,
-        sourceId,
-        providerId,
-        signal.source_url,
-        (data.posted_date as string | null | undefined) ?? null,
-        JSON.stringify(data),
-        title,
-        signal.source_url,
-        companyName,
-        location,
-        fingerprint,
-      ],
+       returning id, company_hint`,
+      valeurs,
     );
-    const id = res.rows[0]?.id;
-    if (id) {
-      if (fingerprint) {
-        vuesDansLeLot.add(fingerprint);
-      }
-      inserted.push({ signalId: id, organizationId, companyName });
+
+    for (const ligne of res.rows) {
+      inserted.push({ signalId: ligne.id, organizationId, companyName: ligne.company_hint });
     }
   }
+
   return inserted;
 }
 
