@@ -301,7 +301,10 @@ function mapOfferToSignal(offer: FranceTravailOffer): ScrapedSignal {
 export const franceTravailScraper: Scraper = {
   name: 'france_travail',
 
-  async fetch(keywords: string[], opts: { location?: string; credentials: Record<string, string> }): Promise<ScraperResult> {
+  async fetch(
+    keywords: string[],
+    opts: { location?: string; credentials: Record<string, string>; budgetMs?: number },
+  ): Promise<ScraperResult> {
     const startTime = Date.now();
     const signals: ScrapedSignal[] = [];
     const errors: string[] = [];
@@ -314,7 +317,18 @@ export const franceTravailScraper: Scraper = {
 
     try {
       // Limit to top 15 keywords to avoid resource exhaustion
-      for (const keyword of keywords.slice(0, 15)) {
+      const retenus = keywords.slice(0, 15);
+      for (const [index, keyword] of retenus.entries()) {
+        // Un mot-cle = un appel a l'API, environ cinq secondes. Quinze en serie
+        // depassent le plafond d'execution d'une fonction serverless, qui tue
+        // alors la collecte entiere. On s'arrete avant, et on rend ce qu'on a :
+        // les mots-cles suivants passeront au tour d'apres.
+        if (opts.budgetMs !== undefined && Date.now() - startTime > opts.budgetMs) {
+          errors.push(
+            `Budget de temps atteint apres ${index} mot(s)-cle(s) sur ${retenus.length} — les suivants seront collectes au prochain tour.`,
+          );
+          break;
+        }
         try {
           const offers = await searchOffers(keyword, clientId, clientSecret, opts.location);
           for (const offer of offers) {

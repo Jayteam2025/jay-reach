@@ -348,7 +348,7 @@
   },
   "prospects": {
     "eyebrow": "Fiche entreprise",
-    "headcount": "{n} salariés",
+    "headcount": "{n, number} salariés",
     "signals": "Signaux liés",
     "sequence": "Tableau de séquence",
     "contacts": "Contacts",
@@ -579,11 +579,11 @@
     "countTruncated": "Plus de {n, number} entreprises trouvées",
     "bulk": {
       "addPage": "Ajouter la page ({count})",
-      "addAll": "Ajouter les {count} résultats",
-      "addAllTruncated": "Ajouter les résultats ({count} max)",
-      "confirm": "Ajouter {count} entreprises à votre base ?",
+      "addAll": "Ajouter les {count, number} résultats",
+      "addAllTruncated": "Ajouter les résultats ({count, number} max)",
+      "confirm": "Ajouter {count, number} entreprises à votre base ?",
       "starting": "Démarrage…",
-      "progress": "{done} / {total}",
+      "progress": "{done, number} / {total, number}",
       "cancel": "Annuler",
       "cancelled": "Annulé — {added} entreprise(s) ajoutée(s) avant l'arrêt.",
       "done": "{added} ajoutée(s), {existing} déjà présente(s)."
