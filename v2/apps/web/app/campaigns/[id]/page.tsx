@@ -31,11 +31,11 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     ? ((
         await supabase
           .from('campaigns')
-          .select('id,organization_id,name,status,entry_rules,daily_cap,created_at')
+          .select('id,organization_id,name,status,entry_rules,daily_cap,created_at,source_id,list_id')
           .eq('id', id)
           .maybeSingle()
       ).data as
-        | { id: string; organization_id: string; name: string; status: string; entry_rules: unknown; daily_cap: number | null; created_at: string }
+        | { id: string; organization_id: string; name: string; status: string; entry_rules: unknown; daily_cap: number | null; created_at: string; source_id: string | null; list_id: string | null }
         | null)
     : null;
   if (!campaign) {
@@ -62,10 +62,10 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     ((
       await supabase!
         .from('message_templates')
-        .select('id,parent_id,name,channel,locale,version,subject,body,is_active')
+        .select('id,parent_id,name,channel,locale,version,subject,body,is_active,origin')
         .eq('organization_id', campaign.organization_id)
     ).data as
-      | { id: string; parent_id: string | null; name: string; channel: Channel; locale: string; version: number; subject: string | null; body: string; is_active: boolean }[]
+      | { id: string; parent_id: string | null; name: string; channel: Channel; locale: string; version: number; subject: string | null; body: string; is_active: boolean; origin: string }[]
       | null) ?? [];
 
   // Lignée = parent_id, sinon id de la racine. On résume chaque lignée (nom, canal)
@@ -75,7 +75,11 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const activeByFamily = new Map<string, { name: string; subject: string | null; body: string }>();
   for (const t of templates) {
     const fam = famKey(t);
-    if (!familyMap.has(fam)) familyMap.set(fam, { familyId: fam, name: t.name, channel: t.channel });
+    // Le sélecteur ne liste que la bibliothèque : un message écrit dans une
+    // étape appartient à sa campagne, pas au catalogue de modèles.
+    if (!familyMap.has(fam) && t.origin === 'library') {
+      familyMap.set(fam, { familyId: fam, name: t.name, channel: t.channel });
+    }
     if (t.is_active) {
       const prev = activeByFamily.get(fam);
       // fr prime ; sinon on garde la première active rencontrée.
@@ -130,6 +134,10 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     repliedContacts: [],
     avatarOverflow: Math.max(0, stat.contacted - 5),
     templateFamilies,
+    // Une campagne alimentée par un thème de veille dispose des variables du
+    // signal ; une campagne alimentée par une liste, non.
+    nature: campaign.list_id ? ('list' as const) : ('signal' as const),
+    locale: 'fr',
   };
 
   // File d'approbation de CETTE campagne (onglet « File d'attente »).

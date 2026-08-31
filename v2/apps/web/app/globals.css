@@ -1787,3 +1787,33 @@ button.rs-pill.rs-pill-lime:hover {
   gap: 12px;
   margin-top: 16px;
 }
+
+/* Écriture du message dans l'étape de séquence. */
+.rs-step-msg {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--slate2);
+}
+/* Variables insérables : des jetons, pas des boutons d'action — ils ne doivent
+   pas concurrencer l'action primaire de la modale. */
+.rs-var-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rs-var {
+  appearance: none;
+  cursor: pointer;
+  background: var(--limeghost);
+  border: 1px solid var(--limeline);
+  border-radius: var(--r-ctl);
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--lime2);
+}
+.rs-var:hover {
+  border-color: var(--lime);
+  color: var(--chalk);
+}

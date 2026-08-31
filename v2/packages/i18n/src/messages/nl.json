@@ -407,7 +407,7 @@
       "call": "Telefoon"
     },
     "wait": "wacht",
-    "dayUnit": "{n, plural, one {dag} other {dagen}}",
+    "dayUnit": "{n} {n, plural, one {dag} other {dagen}}",
     "noCondition": "geen voorwaarde",
     "validation": "Goedkeuring",
     "editRule": "Wijzigen",
@@ -469,7 +469,21 @@
       "empty": "Nog geen stap — voeg er een toe.",
       "noRule": "Geen ingangsregel.",
       "callNote": "Het kanaal Bellen maakt een gedateerde taak, zonder verzending of bericht.",
-      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij."
+      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij.",
+      "subject": "Onderwerp",
+      "subjectPlaceholder": "Wat de ontvanger leest voor het openen",
+      "body": "Bericht",
+      "bodyPlaceholder": "Hallo {{prenom}},",
+      "variables": "Beschikbare variabelen",
+      "variablesHelp": "Klik om in te voegen. Een variabele zonder waarde blokkeert de verzending in plaats van leeg te vertrekken.",
+      "insert": "Invoegen",
+      "saveMessage": "Bericht opslaan",
+      "messageSaved": "Bericht opgeslagen",
+      "promote": "Als sjabloon opslaan",
+      "promoteName": "Sjabloonnaam",
+      "promoteNamePlaceholder": "Opvolging na beurs",
+      "promoteConfirm": "Aan bibliotheek toevoegen",
+      "promoted": "Toegevoegd aan de bibliotheek"
     },
     "watchThemes": "Monitoringthema's"
   },
@@ -615,7 +629,7 @@
   "templates": {
     "eyebrow": "Bibliotheek",
     "title": "Berichten",
-    "lead": "Je berichtsjablonen, met versies en meertalig. Een ontbrekende variabele blokkeert verzending.",
+    "lead": "Sjablonen die u hergebruikt in uw campagnes, zonder ze telkens te herschrijven.",
     "new": "Nieuw bericht",
     "demoNotice": "Verbind Supabase om te bewerken.",
     "empty": "Nog geen berichten.",

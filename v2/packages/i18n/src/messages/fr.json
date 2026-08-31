@@ -407,7 +407,7 @@
       "call": "Appel"
     },
     "wait": "attendre",
-    "dayUnit": "{n, plural, one {jour} other {jours}}",
+    "dayUnit": "{n} {n, plural, one {jour} other {jours}}",
     "noCondition": "aucune condition",
     "validation": "Validation",
     "editRule": "Modifier",
@@ -469,7 +469,21 @@
       "empty": "Aucune étape — ajoutez-en une.",
       "noRule": "Aucune règle d'entrée.",
       "callNote": "Le canal Appel crée une tâche datée, sans envoi ni message.",
-      "letterNote": "Le courrier passe toujours par la file de validation."
+      "letterNote": "Le courrier passe toujours par la file de validation.",
+      "subject": "Objet",
+      "subjectPlaceholder": "Ce que le destinataire lit avant d'ouvrir",
+      "body": "Message",
+      "bodyPlaceholder": "Bonjour {{prenom}},",
+      "variables": "Variables disponibles",
+      "variablesHelp": "Cliquez pour insérer. Une variable sans valeur bloque l'envoi plutôt que de partir vide.",
+      "insert": "Insérer",
+      "saveMessage": "Enregistrer le message",
+      "messageSaved": "Message enregistré",
+      "promote": "Enregistrer comme modèle",
+      "promoteName": "Nom du modèle",
+      "promoteNamePlaceholder": "Relance après salon",
+      "promoteConfirm": "Verser dans la bibliothèque",
+      "promoted": "Versé dans la bibliothèque"
     },
     "watchThemes": "Thèmes de veille"
   },
@@ -615,7 +629,7 @@
   "templates": {
     "eyebrow": "Bibliothèque",
     "title": "Messages",
-    "lead": "Vos modèles de messages, versionnés et multilingues. Une variable manquante bloque l'envoi.",
+    "lead": "Des modèles qu'on réutilise dans ses campagnes, sans les réécrire à chaque fois.",
     "new": "Nouveau message",
     "demoNotice": "Connectez Supabase pour éditer.",
     "empty": "Aucun message pour l'instant.",

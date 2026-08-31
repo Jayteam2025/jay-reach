@@ -407,7 +407,7 @@
       "call": "Call"
     },
     "wait": "wait",
-    "dayUnit": "{n, plural, one {day} other {days}}",
+    "dayUnit": "{n} {n, plural, one {day} other {days}}",
     "noCondition": "no condition",
     "validation": "Approval",
     "editRule": "Edit",
@@ -469,7 +469,21 @@
       "empty": "No step yet — add one.",
       "noRule": "No entry rule.",
       "callNote": "The Call channel creates a dated task, no send or message.",
-      "letterNote": "Letters always go through the approval queue."
+      "letterNote": "Letters always go through the approval queue.",
+      "subject": "Subject",
+      "subjectPlaceholder": "What the recipient reads before opening",
+      "body": "Message",
+      "bodyPlaceholder": "Hi {{prenom}},",
+      "variables": "Available variables",
+      "variablesHelp": "Click to insert. A variable with no value blocks the send rather than going out empty.",
+      "insert": "Insert",
+      "saveMessage": "Save message",
+      "messageSaved": "Message saved",
+      "promote": "Save as template",
+      "promoteName": "Template name",
+      "promoteNamePlaceholder": "Post-trade-show follow-up",
+      "promoteConfirm": "Add to library",
+      "promoted": "Added to the library"
     },
     "watchThemes": "Watch themes"
   },
@@ -615,7 +629,7 @@
   "templates": {
     "eyebrow": "Library",
     "title": "Messages",
-    "lead": "Your message templates, versioned and multilingual. A missing variable blocks sending.",
+    "lead": "Templates you reuse across campaigns, instead of rewriting them every time.",
     "new": "New message",
     "demoNotice": "Connect Supabase to edit.",
     "empty": "No messages yet.",
