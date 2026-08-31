@@ -3,22 +3,33 @@
   "name": "Jay Reach — LinkedIn",
   "version": "0.1.0",
   "description": "Envoi des invitations et messages LinkedIn de Jay Reach via votre propre session. Usage interne — ne pas distribuer.",
-  "permissions": ["storage", "alarms", "cookies"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "cookies"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://www.linkedin.com http://localhost:3000 https://app.jay-reach.fr"
   },
   "host_permissions": [
     "https://www.linkedin.com/*",
     "http://localhost:3000/*",
-    "https://app.jay-reach.fr/*"
+    "https://app.jay-reach.fr/*",
+    "https://jay-reach.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost:3000/settings/linkedin*", "https://app.jay-reach.fr/settings/linkedin*"],
-      "js": ["content-oauth.js"],
+      "matches": [
+        "http://localhost:3000/settings/linkedin*",
+        "https://app.jay-reach.fr/settings/linkedin*",
+        "https://jay-reach.vercel.app/settings/linkedin*"
+      ],
+      "js": [
+        "content-oauth.js"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -39,6 +50,10 @@
     "128": "icons/icon128.png"
   },
   "externally_connectable": {
-    "matches": ["http://localhost:3000/*", "https://app.jay-reach.fr/*"]
+    "matches": [
+      "http://localhost:3000/*",
+      "https://app.jay-reach.fr/*",
+      "https://jay-reach.vercel.app/*"
+    ]
   }
 }
