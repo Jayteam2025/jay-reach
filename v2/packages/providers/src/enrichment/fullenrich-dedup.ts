@@ -68,7 +68,11 @@ export async function resolveCompanyDomain(
   if (counts.size === 0) return null;
 
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const [topDomain, topCount] = sorted[0];
+  // La garde sur `counts.size` garantit une premiere entree, mais le compilateur
+  // ne relie pas la taille de la map a celle du tableau qu'on en tire.
+  const premier = sorted[0];
+  if (!premier) return null;
+  const [topDomain, topCount] = premier;
   if (topCount < 2) return null;
   return topDomain;
 }

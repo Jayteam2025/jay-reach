@@ -54,8 +54,10 @@ export function reconstructNameFromEmail(
     const local = email.split("@")[0]?.toLowerCase().trim() ?? "";
     if (local.includes(".")) {
       const parts = local.split(".").filter(Boolean);
-      if (parts.length === 2) {
-        const [emailFirst, emailLast] = parts;
+      const [emailFirst, emailLast] = parts;
+      // On teste les deux parties plutot que leur nombre : meme condition, mais
+      // le compilateur sait alors qu'elles existent.
+      if (parts.length === 2 && emailFirst && emailLast) {
         const fnLower = fn.toLowerCase().replace(/\s+/g, "");
         // Le prenom doit matcher exactement la 1ere partie de l'email
         if (fnLower && emailFirst === fnLower && emailLast.length >= 2) {

@@ -91,7 +91,7 @@ export function looksLikeJobTitleFragment(name: string | null | undefined): bool
       // Mots de transition / verbes
       'participer', 'gerer', 'gérer', 'piloter', 'animer', 'développer', 'developper',
     ]);
-    const lowerSingle = tokens[0].toLowerCase().replace(/[.,;:!?]$/, '');
+    const lowerSingle = (tokens[0] ?? '').toLowerCase().replace(/[.,;:!?]$/, '');
     if (singleWordStopWords.has(lowerSingle)) return true;
   }
 
@@ -110,7 +110,7 @@ export function looksLikeJobTitleFragment(name: string | null | undefined): bool
   // Fin par un mot tronque typique de nom compose ("Caisse d'Epargne Grand" -> "Grand Est")
   // Detecte les noms qui finissent juste avant la specification geographique habituelle.
   if (tokens.length >= 2) {
-    const lastWord = tokens[tokens.length - 1].toLowerCase().replace(/[.,;:!?]$/, '');
+    const lastWord = (tokens[tokens.length - 1] ?? '').toLowerCase().replace(/[.,;:!?]$/, '');
     const truncationSuffixes = new Set([
       'grand', 'grande', 'saint', 'sainte', 'nouvelle', 'nouveau',
       'pays', 'haut', 'haute', 'bas', 'basse', 'centre', 'rhin',

@@ -50,6 +50,9 @@ importers:
       '@jay-reach/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@jay-reach/worker':
+        specifier: workspace:*
+        version: link:../worker
       '@supabase/ssr':
         specifier: ^0.6.1
         version: 0.6.1(@supabase/supabase-js@2.112.3)

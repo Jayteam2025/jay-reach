@@ -844,8 +844,9 @@ export async function searchContactsAtCompanyCascade(
 
   let totalCredits = 0;
 
-  for (let i = 0; i < geoCascade.length; i++) {
-    const level = geoCascade[i];
+  // `entries()` donne l'index ET l'element : indexer a la main obligeait a
+  // convaincre le compilateur que l'element existe.
+  for (const [i, level] of geoCascade.entries()) {
     const result = await searchContactsAtCompany(apiKey, {
       ...options,
       personLocations: [level],
