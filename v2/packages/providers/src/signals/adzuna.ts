@@ -32,6 +32,12 @@ interface AdzunaResponse {
   mean?: number;
 }
 
+/**
+ * Delai maximal d'un appel sortant. Sans lui, un appel qui ne repond pas bloque
+ * la collecte, et en fonction serverless c'est l'invocation qui meurt.
+ */
+const TIMEOUT_MS = 10_000;
+
 async function searchAdzuna(
   appId: string,
   appKey: string,
@@ -50,7 +56,7 @@ async function searchAdzuna(
 
   try {
     const url = `${ADZUNA_BASE}/${country}/search/${page}?${params}`;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
 
     if (!response.ok) {
       const text = await response.text();
