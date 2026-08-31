@@ -1,6 +1,9 @@
 import { getTranslations } from 'next-intl/server';
 import { Icon, type IconName } from './icons';
+import { Suspense } from 'react';
+import { headers } from 'next/headers';
 import { createClientOrNull } from '../lib/supabase/server';
+import { EN_TETE_UTILISATEUR } from '../lib/supabase/middleware';
 import { NotificationsBell, type NotifItem } from './notifications-bell';
 
 /**
@@ -37,17 +40,24 @@ function relWhen(iso: string | null): string {
   return `il y a ${Math.floor(h / 24)} j`;
 }
 
+/**
+ * Douze dernières notifications de l'utilisateur.
+ *
+ * L'identité vient du middleware, qui vient de la vérifier : la redemander ici
+ * coûtait un aller-retour de plus sur chaque page. Les politiques de sécurité
+ * de la base filtrent de toute façon sur le jeton, pas sur cette valeur.
+ */
 async function loadNotifications(): Promise<NotifItem[]> {
+  const userId = (await headers()).get(EN_TETE_UTILISATEUR);
+  if (!userId) return [];
   const supabase = await createClientOrNull();
   if (!supabase) return [];
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return [];
   const rows =
     ((
       await supabase
         .from('notifications')
         .select('id,event,payload,sent_at,read_at')
-        .eq('user_id', userData.user.id)
+        .eq('user_id', userId)
         .order('sent_at', { ascending: false })
         .limit(12)
     ).data as { id: string; event: string; payload: { title?: string; body?: string } | null; sent_at: string | null; read_at: string | null }[] | null) ?? [];
@@ -61,9 +71,22 @@ async function loadNotifications(): Promise<NotifItem[]> {
 }
 
 /** Barre de navigation latérale (rail gauche). Nom conservé pour ne pas toucher les pages. */
+/**
+ * La cloche, chargée à part.
+ *
+ * `AppTopBar` est appelée par chaque page, donc son attente s'ajoute à celle de
+ * la page au lieu de s'y superposer. Isolée derrière une frontière de
+ * suspension, la navigation part immédiatement et la cloche se remplit quand sa
+ * lecture aboutit.
+ */
+async function Cloche() {
+  const notifications = await loadNotifications();
+  return <NotificationsBell items={notifications} />;
+}
+
+/** Barre de navigation latérale (rail gauche). Nom conservé pour ne pas toucher les pages. */
 export async function AppTopBar({ active }: { active: string }) {
   const t = await getTranslations();
-  const notifications = await loadNotifications();
   return (
     <aside className="rs-sidebar">
       <div className="rs-sidetop">
@@ -74,7 +97,9 @@ export async function AppTopBar({ active }: { active: string }) {
           </span>
           <span className="rs-brand">{t('app.name')}</span>
         </a>
-        <NotificationsBell items={notifications} />
+        <Suspense fallback={<NotificationsBell items={[]} />}>
+          <Cloche />
+        </Suspense>
       </div>
       <nav className="rs-sidenav">
         {NAV.map((item) => (

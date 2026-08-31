@@ -12,6 +12,18 @@ export interface SessionResult {
 }
 
 /**
+ * En-tête par lequel le middleware transmet l'utilisateur qu'il vient de
+ * vérifier, pour que les écrans n'aient pas à le redemander.
+ *
+ * Il est posé — ou effacé — à CHAQUE requête, donc un client qui l'enverrait
+ * lui-même le verrait écrasé. Et il ne sert jamais à autoriser quoi que ce
+ * soit : les politiques de sécurité de la base filtrent sur le jeton
+ * (`user_id = auth.uid()`), pas sur cet en-tête. Au pire, un identifiant forgé
+ * ne renvoie aucune ligne.
+ */
+export const EN_TETE_UTILISATEUR = 'x-jr-user-id';
+
+/**
  * Rafraîchit la session Supabase à chaque requête (cookies) et indique si une
  * session est présente. Tant que Supabase n'est pas configuré, ne fait rien —
  * et surtout ne charge pas le SDK (évite une incompatibilité de runtime au
@@ -45,5 +57,21 @@ export async function updateSession(request: NextRequest): Promise<SessionResult
   });
 
   const { data } = await supabase.auth.getUser();
-  return { response, configured: true, authenticated: data.user !== null };
+
+  // L'identité vérifiée ici voyage avec la requête : la vérifier une seconde
+  // fois dans la barre latérale coûtait un aller-retour de plus sur chaque
+  // page. L'en-tête est réécrit systématiquement, y compris quand il n'y a pas
+  // de session — sans quoi celui d'un client passerait.
+  const enTetes = new Headers(request.headers);
+  if (data.user) {
+    enTetes.set(EN_TETE_UTILISATEUR, data.user.id);
+  } else {
+    enTetes.delete(EN_TETE_UTILISATEUR);
+  }
+  const reponse = NextResponse.next({ request: { headers: enTetes } });
+  for (const cookie of response.cookies.getAll()) {
+    reponse.cookies.set(cookie);
+  }
+
+  return { response: reponse, configured: true, authenticated: data.user !== null };
 }
