@@ -1880,3 +1880,45 @@ button.rs-pill.rs-pill-lime:hover {
 .rs-gen-body {
   white-space: pre-wrap;
 }
+
+/* ---------------------------------------------------------------- squelettes
+   Ce qui attend une donnée prend sa forme, à ses dimensions, pour que rien ne
+   saute quand la donnée arrive. Un rectangle gris générique ferait sauter la
+   mise en page au remplacement — ce qui est plus désagréable qu'un écran vide.
+
+   La pulsation est très faible : un squelette annonce une attente, il ne doit
+   pas attirer l'œil plus que le contenu qui le remplacera. */
+@keyframes rs-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.rs-skel {
+  display: block;
+  background: var(--slate2);
+  border-radius: 4px;
+  animation: rs-skel-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rs-skel { animation: none; opacity: 0.8; }
+}
+
+/* Hauteurs calées sur les styles réels : un titre fait 32 px, un intertitre 26,
+   une ligne de corps 15 avec un interlignage de 1,5. */
+.rs-skel-h1 { height: 32px; width: 42%; margin-bottom: 14px; }
+.rs-skel-lead { height: 15px; width: 68%; margin-bottom: 6px; }
+.rs-skel-lead + .rs-skel-lead { width: 44%; margin-bottom: 24px; }
+.rs-skel-line { height: 13px; }
+.rs-skel-pill { height: 22px; width: 74px; border-radius: 999px; }
+.rs-skel-num { height: 30px; width: 56px; }
+
+.rs-skel-cards { display: grid; gap: 14px; }
+.rs-skel-card {
+  background: var(--slate);
+  border: 1px solid var(--slate2);
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+.rs-skel-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
