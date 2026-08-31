@@ -207,7 +207,7 @@
       "qualification": "QUALIFICATION",
       "qualificationHelp": "What decides a signal is worth working. Without a brief, collected signals stay pending.",
       "scoringPrompt": "Qualification brief",
-      "scoringPromptPlaceholder": "Assess whether the company is an industrial SME strengthening its maintenance. Rule out recruitment agencies and temp work.",
+      "scoringPromptPlaceholder": "Assess whether the company matches what you look for, and why. E.g. SMEs over 50 staff, running several sites. Rule out intermediaries and companies under 10 staff.",
       "threshold": "Minimum score",
       "active": "Active theme",
       "description": "Description",

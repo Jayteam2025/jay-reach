@@ -207,7 +207,7 @@
       "qualification": "KWALIFICATIE",
       "qualificationHelp": "Wat bepaalt of een signaal het bewerken waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
       "scoringPrompt": "Kwalificatie-instructie",
-      "scoringPromptPlaceholder": "Beoordeel of het bedrijf een industriële mkb'er is die zijn onderhoud versterkt. Sluit wervingsbureaus en uitzendwerk uit.",
+      "scoringPromptPlaceholder": "Beoordeel of het bedrijf past bij wat u zoekt, en waarom. Bv. kmo’s met meer dan 50 medewerkers en meerdere vestigingen. Sluit tussenpersonen en bedrijven onder 10 medewerkers uit.",
       "threshold": "Minimumscore",
       "active": "Actief thema",
       "description": "Omschrijving",

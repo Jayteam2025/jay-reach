@@ -207,7 +207,7 @@
       "qualification": "QUALIFICATION",
       "qualificationHelp": "Ce qui décide qu'un signal mérite d'être travaillé. Sans consigne, les signaux collectés restent en attente.",
       "scoringPrompt": "Consigne de qualification",
-      "scoringPromptPlaceholder": "Évalue si l'entreprise est une PME ou ETI industrielle qui renforce sa maintenance. Écarte les cabinets de recrutement et l'intérim.",
+      "scoringPromptPlaceholder": "Évalue si l'entreprise correspond à ce qu'on cherche, et pourquoi. Ex. : PME ou ETI de plus de 50 salariés, avec plusieurs sites. Écarte les intermédiaires et les structures de moins de 10 salariés.",
       "threshold": "Score minimum",
       "active": "Thème actif",
       "description": "Descriptif",
