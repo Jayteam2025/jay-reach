@@ -144,16 +144,27 @@ async function getSelfIdentity(csrf) {
     throw Object.assign(new Error(`me_${res.status}`), { code: 'me_error' });
   }
   const data = await res.json();
-  const mini = data?.data?.miniProfile ?? data?.data ?? {};
-  const publicIdentifier = mini.publicIdentifier || null;
-  let nom = [mini.firstName, mini.lastName].filter(Boolean).join(' ').trim();
-  if (!nom && Array.isArray(data?.included) && publicIdentifier) {
-    // Selon la forme de la reponse, le nom vit dans included[] plutot que sous
-    // data. On ne retient que le profil dont l'identifiant est le notre.
-    const moi = data.included.find((i) => i?.publicIdentifier === publicIdentifier);
-    nom = [moi?.firstName, moi?.lastName].filter(Boolean).join(' ').trim();
+
+  // /voyager/api/me ne renvoie PAS le profil : il renvoie une REFERENCE
+  // (`*miniProfile`, un URN) et le profil lui-meme vit dans `included[]`.
+  // Mesure sur la reponse reelle : data.miniProfile est absent, et
+  // data['*miniProfile'] vaut « urn:li:fs_miniProfile:… ». Chercher le nom
+  // directement sous `data` ne trouve donc jamais rien.
+  const reference = data?.data?.['*miniProfile'];
+  const inclus = Array.isArray(data?.included) ? data.included : [];
+
+  // On suit la reference. A defaut — la forme de la reponse peut changer — on
+  // se rabat sur l'unique profil inclus, jamais sur un profil quelconque : la
+  // reponse peut en porter plusieurs, et prendre le mauvais afficherait le nom
+  // de quelqu'un d'autre comme etant le compte qui envoie.
+  const profils = inclus.filter((i) => typeof i?.entityUrn === 'string' && i.entityUrn.includes('miniProfile'));
+  const moi = profils.find((i) => i.entityUrn === reference) ?? (profils.length === 1 ? profils[0] : null);
+  if (!moi) {
+    return { name: null, publicIdentifier: null };
   }
-  return { name: nom || null, publicIdentifier };
+
+  const nom = [moi.firstName, moi.lastName].filter(Boolean).join(' ').trim();
+  return { name: nom || null, publicIdentifier: moi.publicIdentifier ?? null };
 }
 
 self.linkedinGetSelfIdentity = getSelfIdentity;
