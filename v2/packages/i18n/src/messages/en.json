@@ -536,7 +536,6 @@
     "lead": "Search French companies by activity, department and headcount. Ceased companies are excluded.",
     "search": "Search",
     "count": "{n, plural, one {# company found} other {# companies found}}",
-    "showingFirst": "first {n} shown",
     "none": "No company for these criteria.",
     "hint": "Fill at least one criterion then run the search.",
     "add": "Add to my base",
@@ -555,6 +554,18 @@
       "mid": "10 to 49",
       "large": "50 to 499",
       "xl": "500+"
+    },
+    "countTruncated": "More than {n} companies found",
+    "bulk": {
+      "addPage": "Add this page ({count})",
+      "addAll": "Add all {count} results",
+      "addAllTruncated": "Add the results ({count} max)",
+      "confirm": "Add {count} companies to your base?",
+      "starting": "Starting…",
+      "progress": "{done} / {total}",
+      "cancel": "Cancel",
+      "cancelled": "Cancelled — {added} company(ies) added before stopping.",
+      "done": "{added} added, {existing} already there."
     }
   },
   "notifications": {

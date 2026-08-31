@@ -27,6 +27,12 @@ export interface DirectoryResult {
   total: number;
   page: number;
   perPage: number;
+  /**
+   * L'API plafonne le décompte à 10 000 et le dit : « Le nombre total de
+   * résultats est restreint à 10 000 ». Au-delà, `total` n'est plus un nombre
+   * d'entreprises mais une borne, et l'écran doit l'afficher comme telle.
+   */
+  truncated: boolean;
   results: DirectoryCompany[];
 }
 
@@ -57,11 +63,22 @@ export const EFFECTIF_BUCKETS: Record<string, string> = {
   xl: '41,42,51,52,53',
 };
 
-const PER_PAGE = 10;
+/**
+ * Résultats par page. C'est le maximum de l'API, qui refuse au-delà : «
+ * Veuillez indiquer un paramètre `per_page` entre `1` et `25` ». Le plafond
+ * n'est donc pas le nôtre, et 100 par page est hors d'atteinte.
+ */
+export const PER_PAGE = 25;
+
+/** Plafond de résultats imposé par l'API, quels que soient les critères. */
+export const PLAFOND_API = 10_000;
+
+/** Nombre de pages atteignables : au-delà, l'API répond 400. */
+export const PAGES_MAX = PLAFOND_API / PER_PAGE;
 
 export async function searchCompanies(p: DirectoryParams): Promise<DirectoryResult> {
   const hasFilter = p.naf || p.department || p.effectif || p.q;
-  if (!hasFilter) return { total: 0, page: 1, perPage: PER_PAGE, results: [] };
+  if (!hasFilter) return { total: 0, page: 1, perPage: PER_PAGE, truncated: false, results: [] };
 
   const url = new URL('https://recherche-entreprises.api.gouv.fr/search');
   if (p.q) url.searchParams.set('q', p.q);
@@ -82,7 +99,7 @@ export async function searchCompanies(p: DirectoryParams): Promise<DirectoryResu
 
   const res = await fetch(url, { headers: { accept: 'application/json' }, next: { revalidate: 0 } });
   if (!res.ok) {
-    return { total: 0, page: p.page ?? 1, perPage: PER_PAGE, results: [] };
+    return { total: 0, page: p.page ?? 1, perPage: PER_PAGE, truncated: false, results: [] };
   }
   const data = (await res.json()) as {
     total_results?: number;
@@ -95,10 +112,12 @@ export async function searchCompanies(p: DirectoryParams): Promise<DirectoryResu
     }[];
   };
 
+  const total = data.total_results ?? 0;
   return {
-    total: data.total_results ?? 0,
+    total,
     page: p.page ?? 1,
     perPage: PER_PAGE,
+    truncated: total >= PLAFOND_API,
     results: (data.results ?? []).map((r) => ({
       siren: r.siren,
       name: r.nom_complet ?? r.siren,

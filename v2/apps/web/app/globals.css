@@ -1752,3 +1752,38 @@ button.rs-pill.rs-pill-lime:hover {
   color: var(--moss2);
   margin-bottom: 10px;
 }
+
+/* Ajout en masse depuis l'annuaire : la barre et ses commandes tiennent sur une
+   ligne au-dessus des résultats, à hauteur du compteur. */
+.rs-dir-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rs-dir-progress {
+  flex: 1 1 160px;
+  height: 6px;
+  min-width: 120px;
+  border-radius: 999px;
+  background: var(--slate2);
+  overflow: hidden;
+}
+.rs-dir-progress-bar {
+  height: 100%;
+  background: var(--lime);
+  transition: width 240ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rs-dir-progress-bar {
+    transition: none;
+  }
+}
+.rs-dir-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}

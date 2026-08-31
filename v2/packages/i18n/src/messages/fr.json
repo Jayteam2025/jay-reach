@@ -536,7 +536,6 @@
     "lead": "Cherchez des entreprises françaises par activité, département et effectif. Le département retient les entreprises qui y sont implantées : leur siège peut se trouver ailleurs. Les entreprises cessées sont exclues.",
     "search": "Rechercher",
     "count": "{n, plural, one {# entreprise trouvée} other {# entreprises trouvées}}",
-    "showingFirst": "{n} premières affichées",
     "none": "Aucune entreprise pour ces critères.",
     "hint": "Renseignez au moins un critère puis lancez la recherche.",
     "add": "Ajouter à ma base",
@@ -555,6 +554,18 @@
       "mid": "10 à 49",
       "large": "50 à 499",
       "xl": "500 et plus"
+    },
+    "countTruncated": "Plus de {n} entreprises trouvées",
+    "bulk": {
+      "addPage": "Ajouter la page ({count})",
+      "addAll": "Ajouter les {count} résultats",
+      "addAllTruncated": "Ajouter les résultats ({count} max)",
+      "confirm": "Ajouter {count} entreprises à votre base ?",
+      "starting": "Démarrage…",
+      "progress": "{done} / {total}",
+      "cancel": "Annuler",
+      "cancelled": "Annulé — {added} entreprise(s) ajoutée(s) avant l'arrêt.",
+      "done": "{added} ajoutée(s), {existing} déjà présente(s)."
     }
   },
   "notifications": {

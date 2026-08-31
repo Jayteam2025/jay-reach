@@ -536,7 +536,6 @@
     "lead": "Zoek Franse bedrijven op activiteit, departement en personeelsbestand. Beëindigde bedrijven worden uitgesloten.",
     "search": "Zoeken",
     "count": "{n, plural, one {# bedrijf gevonden} other {# bedrijven gevonden}}",
-    "showingFirst": "eerste {n} getoond",
     "none": "Geen bedrijf voor deze criteria.",
     "hint": "Vul minstens één criterium in en start de zoekopdracht.",
     "add": "Toevoegen aan mijn basis",
@@ -555,6 +554,18 @@
       "mid": "10 tot 49",
       "large": "50 tot 499",
       "xl": "500+"
+    },
+    "countTruncated": "Meer dan {n} bedrijven gevonden",
+    "bulk": {
+      "addPage": "Deze pagina toevoegen ({count})",
+      "addAll": "Alle {count} resultaten toevoegen",
+      "addAllTruncated": "De resultaten toevoegen (max. {count})",
+      "confirm": "{count} bedrijven aan uw bestand toevoegen?",
+      "starting": "Starten…",
+      "progress": "{done} / {total}",
+      "cancel": "Annuleren",
+      "cancelled": "Geannuleerd — {added} bedrijf(ven) toegevoegd voor de stop.",
+      "done": "{added} toegevoegd, {existing} al aanwezig."
     }
   },
   "notifications": {
