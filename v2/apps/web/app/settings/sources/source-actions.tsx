@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { requestSourceRun, toggleSource } from '../../actions/sources';
@@ -23,6 +23,11 @@ export function SourceActions(props: { orgId: string; source: SourceFormValues &
   const [message, setMessage] = useState<string | null>(null);
   const [edition, setEdition] = useState(false);
 
+  // Mettre un thème en pause est réversible : on affiche le nouvel état tout de
+  // suite plutôt que d'attendre l'écriture et le rechargement. En cas d'échec,
+  // la valeur du serveur n'a pas bougé et le bouton reprend son libellé seul.
+  const [actifAffiche, poserActif] = useOptimistic(props.source.isActive);
+
   const lancer = () =>
     startTransition(async () => {
       const res = await requestSourceRun(props.orgId, props.source.id);
@@ -34,6 +39,7 @@ export function SourceActions(props: { orgId: string; source: SourceFormValues &
 
   const basculer = () =>
     startTransition(async () => {
+      poserActif(!props.source.isActive);
       const res = await toggleSource(props.orgId, props.source.id, !props.source.isActive);
       if (!res.ok) setMessage(res.error);
       router.refresh();
@@ -42,11 +48,11 @@ export function SourceActions(props: { orgId: string; source: SourceFormValues &
   return (
     <div>
       <div className="rs-actions" style={{ marginTop: 12 }}>
-        <button className="rs-btn" type="button" onClick={lancer} disabled={pending || !props.source.isActive}>
+        <button className="rs-btn" type="button" onClick={lancer} disabled={pending || !actifAffiche}>
           {t('sources.runNow')}
         </button>
         <button className="rs-btn" type="button" onClick={basculer} disabled={pending}>
-          {props.source.isActive ? t('sources.pause') : t('sources.resume')}
+          {actifAffiche ? t('sources.pause') : t('sources.resume')}
         </button>
         <button className="rs-btn" type="button" onClick={() => setEdition((e) => !e)} disabled={pending}>
           {edition ? t('sources.form.cancel') : t('sources.form.edit')}

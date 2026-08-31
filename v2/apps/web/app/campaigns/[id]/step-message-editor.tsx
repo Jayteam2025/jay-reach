@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core';
+import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core/messages/variables.js';
 import { saveStepMessage, promoteStepMessage } from '../../actions/step-message';
 import { generateStepMessage } from '../../actions/generate-message';
 

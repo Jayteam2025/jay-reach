@@ -3,15 +3,9 @@
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import {
-  parseCsv,
-  suggestMapping,
-  processImport,
-  IMPORT_FIELDS,
-  type ParsedRows,
-  type ImportField,
-  type ColumnMapping,
-} from '@jay-reach/core';
+import { parseCsv, type ParsedRows } from '@jay-reach/core/import/parse.js';
+import { suggestMapping, IMPORT_FIELDS, type ImportField, type ColumnMapping } from '@jay-reach/core/import/mapping.js';
+import { processImport } from '@jay-reach/core/import/pipeline.js';
 import { runImport } from '../actions/import';
 
 type MappingState = Record<string, ImportField | ''>;

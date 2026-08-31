@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useOptimistic } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -59,8 +59,21 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
   const [localItems, setLocalItems] = useState<Persona[]>(personas);
   const list = demo ? localItems : personas;
 
-  const total = list.length;
-  const active = list.filter((p) => p.is_active).length;
+  // Activer ou désactiver un persona se voit tout de suite, compteur compris.
+  //
+  // L'écriture puis le rechargement de la page prenaient près d'une seconde,
+  // pendant laquelle la carte gardait son ancien état : rien ne distinguait un
+  // clic pris en compte d'un clic perdu. Le geste est réversible, donc on peut
+  // l'afficher avant d'en avoir la confirmation ; si l'écriture échoue, la
+  // valeur du serveur n'a pas changé et la carte reprend son état seule.
+  const [listeAffichee, basculerDansLaListe] = useOptimistic(
+    list,
+    (courante: Persona[], id: string) =>
+      courante.map((x) => (x.id === id ? { ...x, is_active: !x.is_active } : x)),
+  );
+
+  const total = listeAffichee.length;
+  const active = listeAffichee.filter((p) => p.is_active).length;
 
   const submit = (): void => {
     if (!draft) {
@@ -127,6 +140,7 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
       return;
     }
     startTransition(async () => {
+      basculerDansLaListe(p.id);
       const res = await togglePersonaActive(orgId, p.id, !p.is_active);
       if (res.ok) {
         router.refresh();
@@ -176,11 +190,11 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
         </p>
       ) : null}
 
-      {list.length === 0 ? (
+      {listeAffichee.length === 0 ? (
         <p className="rs-empty">{t('empty')}</p>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
-          {list.map((p) => {
+          {listeAffichee.map((p) => {
             const titles = (p.title_patterns ?? []).slice(0, 5).join(', ') + ((p.title_patterns ?? []).length > 5 ? ' …' : '');
             return (
               <div key={p.id} className="rs-card rs-persona" data-inactive={!p.is_active ? 'true' : undefined}>
