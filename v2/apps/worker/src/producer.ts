@@ -1,10 +1,15 @@
 /**
  * Producteur d'orchestration : ce qui MET les jobs en file. Sans lui, rien ne
- * démarre. Lit les sources actives et enfile un `sources.discover` par source.
+ * démarre. Enfile un `sources.discover` par couple (thème de veille,
+ * fournisseur rattaché) : un thème cherché chez deux fournisseurs donne deux
+ * collectes, avec les mêmes mots-clés puisqu'ils appartiennent au thème.
  *
  * Idempotent sur une fenêtre temporelle : l'id de job est dérivé de
- * (source, fenêtre), donc deux passages du producteur dans la même fenêtre ne
- * créent qu'un seul job — utile si plusieurs workers tournent en parallèle.
+ * (rattachement, fenêtre), donc deux passages du producteur dans la même
+ * fenêtre ne créent qu'un seul job — utile si plusieurs workers tournent en
+ * parallèle. Il est dérivé du rattachement et non du thème, sans quoi deux
+ * fournisseurs du même thème produiraient le même identifiant et l'un des deux
+ * serait silencieusement écarté.
  * Les secrets ne sont jamais dans le payload (résolus à l'exécution).
  */
 import type PgBoss from 'pg-boss';
@@ -16,6 +21,8 @@ interface SourceRow {
   readonly id: string;
   readonly organization_id: string;
   readonly provider_id: string;
+  /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
+  readonly source_provider_id: string;
   readonly config: { keywords?: unknown; location?: unknown } | null;
 }
 
@@ -26,8 +33,10 @@ export async function enqueueDiscoverForActiveSources(
 ): Promise<number> {
   const bucket = opts.bucket ?? 'once';
   const res = await pool.query<SourceRow>(
-    `select id, organization_id, provider_id, config
-       from sources where is_active = true`,
+    `select s.id, s.organization_id, sp.provider_id, sp.id as source_provider_id, s.config
+       from sources s
+       join source_providers sp on sp.source_id = s.id
+      where s.is_active = true and sp.is_active = true`,
   );
 
   let enqueued = 0;
@@ -35,17 +44,18 @@ export async function enqueueDiscoverForActiveSources(
     const config = src.config ?? {};
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {
-      // Une source sans mots-clés n'a rien à chercher — on la saute (pas d'erreur).
+      // Un thème sans mots-clés n'a rien à chercher — on le saute (pas d'erreur).
       continue;
     }
     const job: DiscoverJob = {
       organizationId: src.organization_id,
       sourceId: src.id,
       provider: src.provider_id,
+      sourceProviderId: src.source_provider_id,
       keywords,
       ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
     };
-    const id = deterministicUuid('discover', src.id, bucket);
+    const id = deterministicUuid('discover', src.source_provider_id, bucket);
     await boss.insert([{ name: 'sources.discover', id, data: job }]);
     enqueued += 1;
   }
@@ -154,36 +164,51 @@ export async function enqueueEnrichmentForQualified(
  *  - la demande est effacée avant d'enfiler, pour qu'un worker qui redémarre
  *    au mauvais moment ne relance pas une collecte déjà partie.
  *
- * Une source sans mots-clés voit sa demande effacée sans job : elle n'a rien à
+ * Un thème sans mots-clés voit sa demande effacée sans job : il n'a rien à
  * chercher, et laisser la demande en place la ferait relever à chaque cycle.
+ * Un thème sans fournisseur actif non plus, pour la même raison.
+ *
+ * Demander une collecte sur un thème la demande chez tous ses fournisseurs :
+ * c'est la veille qu'on relance, pas un connecteur en particulier.
  */
 export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<number> {
   // `returning` sous le UPDATE : la demande est consommée et lue d'un seul geste,
   // donc deux workers ne peuvent pas enfiler la même collecte.
-  const res = await pool.query<SourceRow>(
+  const demandes = await pool.query<{ id: string; organization_id: string; config: SourceRow['config'] }>(
     `update sources
         set run_requested_at = null
       where run_requested_at is not null
-      returning id, organization_id, provider_id, config`,
+      returning id, organization_id, config`,
   );
 
   let enqueued = 0;
-  for (const src of res.rows) {
+  for (const src of demandes.rows) {
     const config = src.config ?? {};
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {
-      console.warn(`[producer] collecte demandée pour la source ${src.id} sans mots-clés — ignorée`);
+      console.warn(`[producer] collecte demandée pour le thème ${src.id} sans mots-clés — ignorée`);
       continue;
     }
-    const job: DiscoverJob = {
-      organizationId: src.organization_id,
-      sourceId: src.id,
-      provider: src.provider_id,
-      keywords,
-      ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
-    };
-    await boss.send('sources.discover', job);
-    enqueued += 1;
+    const rattachements = await pool.query<{ id: string; provider_id: string }>(
+      `select id, provider_id from source_providers where source_id = $1 and is_active = true`,
+      [src.id],
+    );
+    if (rattachements.rowCount === 0) {
+      console.warn(`[producer] collecte demandée pour le thème ${src.id} sans fournisseur actif — ignorée`);
+      continue;
+    }
+    for (const rattachement of rattachements.rows) {
+      const job: DiscoverJob = {
+        organizationId: src.organization_id,
+        sourceId: src.id,
+        provider: rattachement.provider_id,
+        sourceProviderId: rattachement.id,
+        keywords,
+        ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+      };
+      await boss.send('sources.discover', job);
+      enqueued += 1;
+    }
   }
   return enqueued;
 }

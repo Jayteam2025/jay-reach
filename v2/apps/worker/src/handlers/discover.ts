@@ -25,6 +25,12 @@ export interface DiscoverJob {
   readonly organizationId: string;
   readonly sourceId: string;
   readonly provider: string;
+  /**
+   * Rattachement (thème, fournisseur) dont vient cette collecte. Absent des
+   * jobs enfilés avant la bascule vers les thèmes : l'exécution est alors
+   * tracée sur le thème seul, comme auparavant.
+   */
+  readonly sourceProviderId?: string;
   readonly keywords: string[];
   readonly location?: string;
 }

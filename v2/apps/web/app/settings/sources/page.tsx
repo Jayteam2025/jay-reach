@@ -15,9 +15,16 @@ const RUNS_AFFICHES = 3;
 interface SourceRow {
   readonly id: string;
   readonly name: string;
-  readonly provider_id: string;
+  readonly description: string | null;
   readonly is_active: boolean;
   readonly config: { keywords?: unknown; location?: unknown; scoring_prompt?: unknown; match_threshold?: unknown } | null;
+}
+
+interface SourceProviderRow {
+  readonly id: string;
+  readonly source_id: string;
+  readonly provider_id: string;
+  readonly is_active: boolean;
 }
 
 interface RunRow {
@@ -55,9 +62,22 @@ export default async function SourcesPage() {
   const sources = supabase
     ? (((await supabase
         .from('sources')
-        .select('id, name, provider_id, is_active, config')
+        .select('id, name, description, is_active, config')
         .order('created_at', { ascending: true })).data ?? []) as SourceRow[])
     : [];
+
+  const rattachements = supabase && sources.length > 0
+    ? (((await supabase
+        .from('source_providers')
+        .select('id, source_id, provider_id, is_active')
+        .in('source_id', sources.map((s) => s.id))
+        .order('created_at', { ascending: true })).data ?? []) as SourceProviderRow[])
+    : [];
+
+  const fournisseursParTheme = new Map<string, SourceProviderRow[]>();
+  for (const r of rattachements) {
+    fournisseursParTheme.set(r.source_id, [...(fournisseursParTheme.get(r.source_id) ?? []), r]);
+  }
 
   const runs = supabase && sources.length > 0
     ? (((await supabase
@@ -97,6 +117,8 @@ export default async function SourcesPage() {
                 : [];
               const location = typeof source.config?.location === 'string' ? source.config.location : null;
               const sesRuns = runsParSource.get(source.id) ?? [];
+              const sesFournisseurs = fournisseursParTheme.get(source.id) ?? [];
+              const actifs = sesFournisseurs.filter((f) => f.is_active);
 
               return (
                 <section key={source.id} className="rs-card">
@@ -105,10 +127,24 @@ export default async function SourcesPage() {
                     <span className="rs-pill" data-tone={source.is_active ? 'live' : 'neutral'}>
                       {source.is_active ? t('sources.active') : t('sources.paused')}
                     </span>
-                    <span className="rs-chan" style={{ marginLeft: 'auto' }}>
-                      {source.provider_id}
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {actifs.length === 0 ? (
+                        <span className="rs-row-sub">{t('sources.noProvider')}</span>
+                      ) : (
+                        actifs.map((f) => (
+                          <span key={f.id} className="rs-chan">
+                            {t(`providers.${f.provider_id}`)}
+                          </span>
+                        ))
+                      )}
                     </span>
                   </div>
+
+                  {source.description ? (
+                    <p className="rs-row-sub" style={{ marginTop: 6 }}>
+                      {source.description}
+                    </p>
+                  ) : null}
 
                   <dl className="rs-kv" style={{ gridTemplateColumns: '110px 1fr' }}>
                     <dt>{t('sources.keywords')}</dt>
@@ -183,7 +219,8 @@ export default async function SourcesPage() {
                     source={{
                       id: source.id,
                       name: source.name,
-                      providerId: source.provider_id,
+                      description: source.description ?? '',
+                      providerIds: actifs.map((f) => f.provider_id),
                       keywords,
                       location: location ?? '',
                       scoringPrompt: typeof source.config?.scoring_prompt === 'string' ? source.config.scoring_prompt : '',

@@ -91,7 +91,7 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
     console.warn(`[discover] provider ${data.provider} non configuré pour l’org ${data.organizationId} — job ignoré`);
     return;
   }
-  const runId = await startSourceRun(pool, data.sourceId);
+  const runId = await startSourceRun(pool, data.sourceId, data.sourceProviderId);
   try {
     const result = await runDiscover(data, credentials);
     const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);

@@ -141,10 +141,14 @@ export async function insertSignals(
 }
 
 /** Ouvre un enregistrement d'exécution de source (`source_runs`, statut `running`). */
-export async function startSourceRun(pool: Pool, sourceId: string): Promise<string> {
+export async function startSourceRun(
+  pool: Pool,
+  sourceId: string,
+  sourceProviderId?: string,
+): Promise<string> {
   const res = await pool.query<{ id: string }>(
-    `insert into source_runs (source_id, status) values ($1, 'running') returning id`,
-    [sourceId],
+    `insert into source_runs (source_id, source_provider_id, status) values ($1, $2, 'running') returning id`,
+    [sourceId, sourceProviderId ?? null],
   );
   const id = res.rows[0]?.id;
   if (!id) {

@@ -25,8 +25,9 @@ function toConfig(input: SourceInput): Record<string, unknown> {
 
 function valider(input: SourceInput): string | null {
   if (!input.name.trim()) return 'Nom requis.';
-  if (!SOURCE_PROVIDERS.includes(input.providerId as SourceProvider)) {
-    return `Provider inconnu : ${input.providerId}`;
+  const inconnu = input.providerIds.find((p) => !SOURCE_PROVIDERS.includes(p as SourceProvider));
+  if (inconnu) {
+    return `Provider inconnu : ${inconnu}`;
   }
   if (input.keywords.filter((k) => k.trim()).length === 0) {
     return 'Au moins un mot-clé est requis, sinon la source n’a rien à chercher.';
@@ -37,7 +38,46 @@ function valider(input: SourceInput): string | null {
   return null;
 }
 
-/** Crée une source de signaux (admin requis). */
+/**
+ * Aligne les fournisseurs rattachés au thème sur ceux demandés.
+ *
+ * Un fournisseur retiré est *désactivé*, jamais supprimé : les exécutions
+ * passées y font référence, et les effacer ferait disparaître l'historique de
+ * collecte au moment précis où on cherche à comprendre ce qui a changé.
+ */
+async function synchroniserFournisseurs(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sourceId: string,
+  providerIds: readonly string[],
+): Promise<string | null> {
+  const demandes = [...new Set(providerIds)];
+
+  if (demandes.length > 0) {
+    const { error } = await supabase.from('source_providers').upsert(
+      demandes.map((provider_id) => ({ source_id: sourceId, provider_id, is_active: true })),
+      { onConflict: 'source_id,provider_id' },
+    );
+    if (error) return error.message;
+  }
+
+  const { data: existants, error: erreurLecture } = await supabase
+    .from('source_providers')
+    .select('id, provider_id')
+    .eq('source_id', sourceId);
+  if (erreurLecture) return erreurLecture.message;
+
+  const aDesactiver = ((existants ?? []) as { id: string; provider_id: string }[])
+    .filter((r) => !demandes.includes(r.provider_id))
+    .map((r) => r.id);
+
+  if (aDesactiver.length > 0) {
+    const { error } = await supabase.from('source_providers').update({ is_active: false }).in('id', aDesactiver);
+    if (error) return error.message;
+  }
+  return null;
+}
+
+/** Crée un thème de veille (admin requis). */
 export async function createSource(organizationId: string, input: SourceInput): Promise<SourceActionResult> {
   try {
     await requireRole(organizationId, 'admin');
@@ -48,20 +88,28 @@ export async function createSource(organizationId: string, input: SourceInput): 
   if (invalide) return { ok: false, error: invalide };
 
   const supabase = await createClient();
-  const { error } = await supabase.from('sources').insert({
-    organization_id: organizationId,
-    provider_id: input.providerId,
-    name: input.name.trim(),
-    config: toConfig(input),
-    schedule: 'daily',
-    is_active: input.isActive,
-  });
+  const { data, error } = await supabase
+    .from('sources')
+    .insert({
+      organization_id: organizationId,
+      name: input.name.trim(),
+      description: input.description.trim() || null,
+      config: toConfig(input),
+      schedule: 'daily',
+      is_active: input.isActive,
+    })
+    .select('id')
+    .single();
   if (error) return { ok: false, error: error.message };
+
+  const echec = await synchroniserFournisseurs(supabase, (data as { id: string }).id, input.providerIds);
+  if (echec) return { ok: false, error: echec };
+
   revalidatePath('/settings/sources');
   return { ok: true };
 }
 
-/** Met à jour une source existante (admin requis). */
+/** Met à jour un thème de veille existant (admin requis). */
 export async function updateSource(
   organizationId: string,
   sourceId: string,
@@ -79,14 +127,18 @@ export async function updateSource(
   const { error } = await supabase
     .from('sources')
     .update({
-      provider_id: input.providerId,
       name: input.name.trim(),
+      description: input.description.trim() || null,
       config: toConfig(input),
       is_active: input.isActive,
     })
     .eq('id', sourceId)
     .eq('organization_id', organizationId);
   if (error) return { ok: false, error: error.message };
+
+  const echec = await synchroniserFournisseurs(supabase, sourceId, input.providerIds);
+  if (echec) return { ok: false, error: echec };
+
   revalidatePath('/settings/sources');
   return { ok: true };
 }
