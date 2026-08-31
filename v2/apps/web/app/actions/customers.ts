@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole } from '../../lib/auth';
 import { getPool } from '../../lib/db';
 import { applyMapping, type ParsedRows, type ColumnMapping } from '@jay-reach/core';
@@ -88,6 +90,7 @@ export async function importCustomers(
     );
 
     await client.query('commit');
+    revalidatePath('/settings/customers');
     return { ok: true, count: entries.length, excluded: upd.rowCount ?? 0 };
   } catch (e) {
     await client.query('rollback').catch(() => {});

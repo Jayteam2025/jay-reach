@@ -100,10 +100,13 @@ export function SqueletteTableauDeBord() {
       <EnTete />
       <div className="rs-kpis">
         {Array.from({ length: 4 }, (_, i) => (
+          // Hauteurs relevées sur la carte réelle : 17 + 33 + 18, deux
+          // espacements de 8, padding de 14 — soit 112 px au total. À 14 px
+          // près, tout ce qui suit glissait au remplacement.
           <div key={i} className="rs-kpi" style={{ display: 'grid', gap: 8 }}>
-            <Barre l="62%" h={11} />
-            <Barre l={64} h={30} />
-            <Barre l="48%" h={11} />
+            <Barre l="62%" h={17} />
+            <Barre l={64} h={33} />
+            <Barre l="48%" h={18} />
           </div>
         ))}
       </div>

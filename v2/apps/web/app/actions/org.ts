@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { isMembershipRole } from '@jay-reach/core';
 import { createClient } from '../../lib/supabase/server';
 
@@ -17,6 +19,7 @@ export async function createOrganization(name: string, slug: string): Promise<Ac
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/');
   return { ok: true, data: data as string };
 }
 
@@ -36,6 +39,7 @@ export async function inviteMember(
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/');
   return { ok: true, data: undefined };
 }
 
@@ -46,5 +50,6 @@ export async function acceptInvitation(token: string): Promise<ActionResult<stri
   if (error) {
     return { ok: false, error: error.message };
   }
+  revalidatePath('/');
   return { ok: true, data: data as string };
 }

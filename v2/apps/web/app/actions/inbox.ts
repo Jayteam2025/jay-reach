@@ -1,5 +1,7 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
+
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 import { classifyReply, type ReplyClassification } from '@jay-reach/core';
@@ -144,5 +146,6 @@ export async function classifyInbox(organizationId: string): Promise<ClassifyRes
     count += 1;
   }
 
+  revalidatePath('/inbox');
   return { ok: true, count };
 }
