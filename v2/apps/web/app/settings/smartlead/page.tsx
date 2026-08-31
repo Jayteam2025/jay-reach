@@ -1,6 +1,7 @@
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { createServiceClient } from '../../../lib/supabase/service';
 import { requireRole } from '../../../lib/auth';
+import { appUrl } from '../../../lib/env';
 import { AppTopBar } from '../../chrome';
 import { SmartleadWebhooks } from './smartlead-webhooks';
 
@@ -46,7 +47,7 @@ export default async function SmartleadWebhooksPage() {
           orgId={orgId}
           demo={!supabase}
           canManage={canManage}
-          appUrl={process.env.APP_URL ?? ''}
+          appUrl={appUrl()}
           initialSecret={secret}
         />
       </main>

@@ -320,7 +320,7 @@ export function PersonaBoard({ personas, orgId, demo }: { personas: Persona[]; o
               <span className="rs-row-sub mono">{draft.scoringPrompt.length}</span>
             </label>
 
-            <label className="rs-row-sub" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <label className="rs-check" style={{ marginTop: 4 }}>
               <input type="checkbox" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />
               {t('active')}
             </label>

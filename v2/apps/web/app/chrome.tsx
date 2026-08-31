@@ -17,7 +17,7 @@ const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/settings/customers', key: 'customers', icon: 'prospects' },
   { href: '/settings/providers', key: 'providers', icon: 'providers' },
   { href: '/settings/smartlead', key: 'smartlead', icon: 'mail' },
-  { href: '/settings/branding', key: 'branding', icon: 'branding' },
+  { href: '/settings/senders', key: 'senders', icon: 'senders' },
 ];
 
 function relWhen(iso: string | null): string {

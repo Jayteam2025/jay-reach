@@ -165,28 +165,13 @@
     "sources": "Bronnen",
     "personas": "Persona's",
     "providers": "Providers",
-    "branding": "Identiteit",
+    "senders": "Afzenders",
     "linkedin": "LinkedIn",
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
     "customers": "Klanten",
     "templates": "Berichten",
     "smartlead": "Smartlead-webhooks"
-  },
-  "branding": {
-    "eyebrow": "Identiteit",
-    "title": "Merkidentiteit",
-    "lead": "Wat je vertegenwoordigt in e-mails en brieven: afzender, handtekening, logo.",
-    "senderName": "Afzendernaam",
-    "replyTo": "Antwoord-e-mail",
-    "emailSignature": "E-mailhandtekening",
-    "letterSignature": "Handgeschreven handtekening (brief)",
-    "accent": "Accentkleur",
-    "logo": "Logo",
-    "logoHint": "PNG of SVG, transparante achtergrond.",
-    "upload": "Bestand kiezen",
-    "save": "Opslaan",
-    "note": "Voorbeeld — opslaan activeert wanneer Supabase is verbonden."
   },
   "sources": {
     "eyebrow": "Detectie",
@@ -219,9 +204,9 @@
       "cancel": "Annuleren",
       "saved": "Opgeslagen",
       "name": "Naam",
-      "namePlaceholder": "France Travail — industrieel onderhoud",
+      "namePlaceholder": "France Travail — commerciële functies",
       "provider": "Provider",
-      "keywordsPlaceholder": "onderhoudstechnicus, onderhoudsmanager",
+      "keywordsPlaceholder": "salesmanager, accountmanager",
       "locationPlaceholder": "Lyon (69) — leeg laten voor heel Frankrijk",
       "qualification": "KWALIFICATIE",
       "qualificationHelp": "Wat bepaalt of een signaal de moeite waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
@@ -692,5 +677,25 @@
     "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
     "yourDomain": "https://uw-instantie",
     "adminOnly": "Alleen beheerders kunnen de webhook configureren."
+  },
+  "senders": {
+    "eyebrow": "Wie verstuurt",
+    "title": "Afzenders",
+    "lead": "De accounts waarvandaan uw berichten vertrekken. De weergavenaam is wat de ontvanger ziet; de limieten begrenzen wat elke afzender verstuurt.",
+    "kind": {
+      "email": "E-mail",
+      "linkedin": "LinkedIn",
+      "postal": "Brief"
+    },
+    "displayName": "Weergavenaam",
+    "displayNamePlaceholder": "De naam die de ontvanger ziet",
+    "dailyQuota": "Daglimiet",
+    "hourlyQuota": "Uurlimiet",
+    "noLimit": "Geen limiet",
+    "active": "Verstuur vanaf deze afzender",
+    "save": "Opslaan",
+    "saving": "Opslaan",
+    "saved": "Opgeslagen",
+    "empty": "Nog geen afzenders. Koppel een account onder Providers om uw eerste berichten te versturen."
   }
 }

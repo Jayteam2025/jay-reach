@@ -165,28 +165,13 @@
     "sources": "Sources",
     "personas": "Personas",
     "providers": "Providers",
-    "branding": "Branding",
+    "senders": "Senders",
     "linkedin": "LinkedIn",
     "annuaire": "Directory",
     "approvals": "Approvals",
     "customers": "Customers",
     "templates": "Messages",
     "smartlead": "Smartlead webhooks"
-  },
-  "branding": {
-    "eyebrow": "Identity",
-    "title": "Brand identity",
-    "lead": "What represents you in emails and letters: sender, signature, logo.",
-    "senderName": "Sender name",
-    "replyTo": "Reply-to email",
-    "emailSignature": "Email signature",
-    "letterSignature": "Handwritten signature (letter)",
-    "accent": "Accent color",
-    "logo": "Logo",
-    "logoHint": "PNG or SVG, transparent background.",
-    "upload": "Choose a file",
-    "save": "Save",
-    "note": "Preview — saving activates when Supabase is connected."
   },
   "sources": {
     "eyebrow": "Detection",
@@ -219,9 +204,9 @@
       "cancel": "Cancel",
       "saved": "Saved",
       "name": "Name",
-      "namePlaceholder": "France Travail — industrial maintenance",
+      "namePlaceholder": "France Travail — sales roles",
       "provider": "Provider",
-      "keywordsPlaceholder": "maintenance technician, maintenance manager",
+      "keywordsPlaceholder": "sales manager, account executive",
       "locationPlaceholder": "Lyon (69) — leave empty for all of France",
       "qualification": "QUALIFICATION",
       "qualificationHelp": "What decides a signal is worth working. Without a brief, collected signals stay pending.",
@@ -692,5 +677,25 @@
     "regenWarn": "Regenerating invalidates the old URL — reconfigure Smartlead.",
     "yourDomain": "https://your-instance",
     "adminOnly": "Only admins can configure the webhook."
+  },
+  "senders": {
+    "eyebrow": "Who sends",
+    "title": "Senders",
+    "lead": "The accounts your messages go out from. The display name is what the recipient sees; the caps limit what each sender sends.",
+    "kind": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "postal": "Letter"
+    },
+    "displayName": "Display name",
+    "displayNamePlaceholder": "The name the recipient sees",
+    "dailyQuota": "Daily cap",
+    "hourlyQuota": "Hourly cap",
+    "noLimit": "No cap",
+    "active": "Send from this sender",
+    "save": "Save",
+    "saving": "Saving",
+    "saved": "Saved",
+    "empty": "No senders yet. Connect an account under Providers to send your first messages."
   }
 }

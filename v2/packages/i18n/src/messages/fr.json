@@ -165,28 +165,13 @@
     "sources": "Sources",
     "personas": "Personas",
     "providers": "Fournisseurs",
-    "branding": "Identité",
+    "senders": "Expéditeurs",
     "linkedin": "LinkedIn",
     "annuaire": "Annuaire",
     "approvals": "Approbations",
     "customers": "Clients",
     "templates": "Messages",
     "smartlead": "Webhooks Smartlead"
-  },
-  "branding": {
-    "eyebrow": "Identité",
-    "title": "Identité de marque",
-    "lead": "Ce qui vous représente dans les emails et les courriers : expéditeur, signature, logo.",
-    "senderName": "Nom d'expéditeur",
-    "replyTo": "Email de réponse",
-    "emailSignature": "Signature email",
-    "letterSignature": "Signature manuscrite (courrier)",
-    "accent": "Couleur d'accent",
-    "logo": "Logo",
-    "logoHint": "PNG ou SVG, fond transparent.",
-    "upload": "Choisir un fichier",
-    "save": "Enregistrer",
-    "note": "Aperçu — l'enregistrement s'active quand Supabase est branché."
   },
   "sources": {
     "eyebrow": "Détection",
@@ -219,9 +204,9 @@
       "cancel": "Annuler",
       "saved": "Enregistré",
       "name": "Nom",
-      "namePlaceholder": "France Travail — maintenance industrielle",
+      "namePlaceholder": "France Travail — postes commerciaux",
       "provider": "Provider",
-      "keywordsPlaceholder": "technicien de maintenance, responsable maintenance",
+      "keywordsPlaceholder": "responsable commercial, chargé d’affaires",
       "locationPlaceholder": "Lyon (69) — laisser vide pour toute la France",
       "qualification": "QUALIFICATION",
       "qualificationHelp": "Ce qui décide qu'un signal mérite d'être travaillé. Sans consigne, les signaux collectés restent en attente.",
@@ -692,5 +677,25 @@
     "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
     "yourDomain": "https://votre-instance",
     "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
+  },
+  "senders": {
+    "eyebrow": "Qui envoie",
+    "title": "Expéditeurs",
+    "lead": "Les comptes depuis lesquels partent vos messages. Le nom affiché est celui que voit le destinataire ; les plafonds limitent ce qui part par expéditeur.",
+    "kind": {
+      "email": "Email",
+      "linkedin": "LinkedIn",
+      "postal": "Courrier"
+    },
+    "displayName": "Nom affiché",
+    "displayNamePlaceholder": "Le nom que voit le destinataire",
+    "dailyQuota": "Plafond par jour",
+    "hourlyQuota": "Plafond par heure",
+    "noLimit": "Sans plafond",
+    "active": "Envoyer depuis cet expéditeur",
+    "save": "Enregistrer",
+    "saving": "Enregistrement",
+    "saved": "Enregistré",
+    "empty": "Aucun expéditeur. Branchez un compte dans Fournisseurs pour envoyer vos premiers messages."
   }
 }

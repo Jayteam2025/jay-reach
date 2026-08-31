@@ -383,6 +383,18 @@ button.rs-pill.rs-pill-lime:hover {
 .rs-btn:hover {
   border-color: var(--lime);
 }
+/* Un bouton hors d'usage doit se voir comme tel : sans cette règle, il garde
+   l'aspect d'un bouton actif et son clic ne produit rien, ce qu'on lit comme
+   une panne. Le survol est neutralisé pour la même raison. */
+.rs-btn:disabled,
+.rs-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rs-btn:disabled:hover,
+.rs-btn[aria-disabled='true']:hover {
+  border-color: var(--slate2);
+}
 .rs-actions {
   display: flex;
   gap: 8px;
