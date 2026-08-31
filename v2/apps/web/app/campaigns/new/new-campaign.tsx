@@ -37,11 +37,16 @@ export function NewCampaign({
   const [name, setName] = useState('');
   const [entryKind, setEntryKind] = useState<EntryKind>('source');
   const [entryId, setEntryId] = useState('');
+  /**
+   * Thèmes de veille retenus. Plusieurs sont permis : une prospection réelle
+   * croise plusieurs veilles, et il fallait jusqu'ici dupliquer la campagne
+   * pour chacune. Une liste importée reste unique — c'est un fichier.
+   */
+  const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [personaIds, setPersonaIds] = useState<string[]>([]);
   const [minScore, setMinScore] = useState('60');
   const [dailyCap, setDailyCap] = useState('');
 
-  const entryOptions = entryKind === 'source' ? sources : lists;
 
   const togglePersona = (id: string): void =>
     setPersonaIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -53,7 +58,8 @@ export function NewCampaign({
       const res = await createCampaign(orgId, {
         name,
         entryKind,
-        entryId,
+        entryId: entryKind === 'source' ? (sourceIds[0] ?? '') : entryId,
+        ...(entryKind === 'source' ? { sourceIds } : {}),
         ...(score !== undefined && Number.isFinite(score) ? { minScore: score } : {}),
         ...(personaIds.length > 0 ? { personaIds } : {}),
         ...(dailyCap.trim() ? { dailyCap: Number(dailyCap) } : {}),
@@ -66,7 +72,7 @@ export function NewCampaign({
     });
   };
 
-  const canSubmit = Boolean(name.trim() && entryId) && !pending && !demo;
+  const canSubmit = Boolean(name.trim() && (entryKind === 'source' ? sourceIds.length > 0 : entryId)) && !pending && !demo;
 
   return (
     <>
@@ -109,18 +115,40 @@ export function NewCampaign({
           </div>
         </div>
 
-        <label className="rs-label">
-          {entryKind === 'source' ? t('pickSource') : t('pickList')}
-          <select className="rs-input" value={entryId} onChange={(e) => setEntryId(e.target.value)}>
-            <option value="">{t('choose')}</option>
-            {entryOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-          {entryOptions.length === 0 ? <span className="rs-row-sub">{t('noneAvailable')}</span> : null}
-        </label>
+        {entryKind === 'source' ? (
+          <div className="rs-label">
+            {t('pickSource')}
+            <div className="rs-chips" style={{ marginTop: 4 }}>
+              {sources.length === 0 ? <span className="rs-row-sub">{t('noneAvailable')}</span> : null}
+              {sources.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  className="rs-toggle"
+                  data-on={sourceIds.includes(o.id) ? 'true' : 'false'}
+                  onClick={() =>
+                    setSourceIds((ids) => (ids.includes(o.id) ? ids.filter((x) => x !== o.id) : [...ids, o.id]))
+                  }
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <label className="rs-label">
+            {t('pickList')}
+            <select className="rs-input" value={entryId} onChange={(e) => setEntryId(e.target.value)}>
+              <option value="">{t('choose')}</option>
+              {lists.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+            {lists.length === 0 ? <span className="rs-row-sub">{t('noneAvailable')}</span> : null}
+          </label>
+        )}
 
         <div className="rs-label">
           {t('personas')}
@@ -143,11 +171,23 @@ export function NewCampaign({
         <label className="rs-label">
           {t('minScore')}
           <input className="rs-input mono" inputMode="numeric" value={minScore} onChange={(e) => setMinScore(e.target.value.replace(/[^\d]/g, ''))} />
+          {/* « 60 » ne veut rien dire sans dire de quoi c'est la note. Le lien
+              vers les personas est là parce que c'est leur consigne qui produit
+              ce score : les deux ne se comprennent que l'un par l'autre. */}
+          <span className="rs-row-sub">
+            {t('minScoreHelp')} <a href="/settings/personas">{t('minScoreLink')}</a>
+          </span>
         </label>
 
         <label className="rs-label">
           {t('dailyCap')}
           <input className="rs-input mono" inputMode="numeric" value={dailyCap} onChange={(e) => setDailyCap(e.target.value.replace(/[^\d]/g, ''))} placeholder={t('dailyCapPlaceholder')} />
+          {/* Deux plafonds peuvent se contredire : celui-ci et celui de l'écran
+              LinkedIn. Le plus contraignant l'emporte — c'est ce que fait le
+              séquenceur, et le taire laissait croire à un réglage sans effet. */}
+          <span className="rs-row-sub">
+            {t('dailyCapHelp')} <a href="/settings/linkedin">{t('dailyCapLink')}</a>
+          </span>
         </label>
 
         {error ? (

@@ -216,7 +216,10 @@
       "providersHelp": "De trefwoorden hieronder gelden voor elke aangevinkte provider.",
       "noProviderWarning": "Zonder provider verzamelt dit thema niets."
     },
-    "noProvider": "geen provider"
+    "noProvider": "geen provider",
+    "providerPause": "Pauzeren",
+    "providerResume": "Hervatten",
+    "beforeProviders": "Eerdere runs (provider niet bijgehouden)"
   },
   "inbox": {
     "eyebrow": "Antwoorden",
@@ -485,7 +488,12 @@
       "promoteConfirm": "Aan bibliotheek toevoegen",
       "promoted": "Toegevoegd aan de bibliotheek"
     },
-    "watchThemes": "Monitoringthema's"
+    "watchThemes": "Monitoringthema's",
+    "pickSource": "Monitoringthema's",
+    "minScoreHelp": "Score die de AI elk contact geeft, 0 tot 100, volgens de scoringsinstructie van zijn persona. Onder deze drempel komt het contact er niet in.",
+    "minScoreLink": "De scoringsinstructies instellen",
+    "dailyCapHelp": "Alle kanalen samen. Zijn de LinkedIn-instellingen strenger, dan gelden die: de strengste limiet wint altijd.",
+    "dailyCapLink": "De LinkedIn-instellingen bekijken"
   },
   "linkedin": {
     "eyebrow": "Kanaal",

@@ -188,3 +188,29 @@ export async function toggleSource(
   revalidatePath('/settings/sources');
   return { ok: true };
 }
+
+/**
+ * Met en pause ou réactive un seul fournisseur d'un thème (retour 4.6).
+ *
+ * Quand une source déraille, on l'arrête sans interrompre la veille : le thème
+ * continue de collecter chez ses autres fournisseurs.
+ */
+export async function toggleSourceProvider(
+  organizationId: string,
+  sourceProviderId: string,
+  isActive: boolean,
+): Promise<SourceActionResult> {
+  try {
+    await requireRole(organizationId, 'admin');
+  } catch {
+    return { ok: false, error: 'Droit administrateur requis.' };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('source_providers')
+    .update({ is_active: isActive })
+    .eq('id', sourceProviderId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/settings/sources');
+  return { ok: true };
+}

@@ -216,7 +216,10 @@
       "providersHelp": "The keywords below apply to every provider you tick.",
       "noProviderWarning": "Without a provider, this theme will collect nothing."
     },
-    "noProvider": "no provider"
+    "noProvider": "no provider",
+    "providerPause": "Pause",
+    "providerResume": "Resume",
+    "beforeProviders": "Earlier runs (provider not tracked)"
   },
   "inbox": {
     "eyebrow": "Replies",
@@ -485,7 +488,12 @@
       "promoteConfirm": "Add to library",
       "promoted": "Added to the library"
     },
-    "watchThemes": "Watch themes"
+    "watchThemes": "Watch themes",
+    "pickSource": "Watch themes",
+    "minScoreHelp": "Score the AI gives each contact, 0 to 100, following their persona’s scoring brief. Below this threshold, the contact does not enter.",
+    "minScoreLink": "Set the scoring briefs",
+    "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
+    "dailyCapLink": "See the LinkedIn settings"
   },
   "linkedin": {
     "eyebrow": "Channel",

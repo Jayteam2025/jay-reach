@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { SourceActions, AddSource } from './source-actions';
+import { ProviderActions } from './provider-actions';
 
 const RUN_COLOR: Record<string, string> = {
   success: 'var(--lime2)',
@@ -29,6 +30,7 @@ interface SourceProviderRow {
 
 interface RunRow {
   readonly source_id: string;
+  readonly source_provider_id: string | null;
   readonly status: string;
   readonly started_at: string;
   readonly items_found: number;
@@ -82,16 +84,23 @@ export default async function SourcesPage() {
   const runs = supabase && sources.length > 0
     ? (((await supabase
         .from('source_runs')
-        .select('source_id, status, started_at, items_found, items_new, error')
+        .select('source_id, source_provider_id, status, started_at, items_found, items_new, error')
         .in('source_id', sources.map((s) => s.id))
         .order('started_at', { ascending: false })).data ?? []) as RunRow[])
     : [];
 
-  const runsParSource = new Map<string, RunRow[]>();
+  // L'historique s'affiche PAR FOURNISSEUR : c'est ce qui permet de repérer
+  // celui qui se dégrade. Regroupé par thème, une panne chez l'un se noyait
+  // dans les collectes réussies de l'autre.
+  const runsParFournisseur = new Map<string, RunRow[]>();
+  const runsSansFournisseur = new Map<string, RunRow[]>();
   for (const run of runs) {
-    const liste = runsParSource.get(run.source_id) ?? [];
+    const cle = run.source_provider_id;
+    const cible = cle ? runsParFournisseur : runsSansFournisseur;
+    const index = cle ?? run.source_id;
+    const liste = cible.get(index) ?? [];
     if (liste.length < RUNS_AFFICHES) liste.push(run);
-    runsParSource.set(run.source_id, liste);
+    cible.set(index, liste);
   }
 
   return (
@@ -116,7 +125,6 @@ export default async function SourcesPage() {
                 ? (source.config.keywords as unknown[]).map((k) => String(k)).filter(Boolean)
                 : [];
               const location = typeof source.config?.location === 'string' ? source.config.location : null;
-              const sesRuns = runsParSource.get(source.id) ?? [];
               const sesFournisseurs = fournisseursParTheme.get(source.id) ?? [];
               const actifs = sesFournisseurs.filter((f) => f.is_active);
 
@@ -168,51 +176,40 @@ export default async function SourcesPage() {
                   <div className="rs-section-title" style={{ marginTop: 14 }}>
                     {t('sources.history')}
                   </div>
-                  {sesRuns.length === 0 ? (
-                    <p className="rs-row-sub">{t('sources.neverRan')}</p>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 0 }}>
-                      {sesRuns.map((run) => (
-                        <div
-                          key={`${run.source_id}-${run.started_at}`}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '90px 1fr auto',
-                            gap: 12,
-                            alignItems: 'center',
-                            padding: '9px 0',
-                            borderTop: '1px solid var(--slate2)',
-                          }}
-                        >
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
-                            <span
-                              style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: 999,
-                                background: RUN_COLOR[run.status] ?? 'var(--moss)',
-                                flex: '0 0 auto',
-                              }}
-                            />
-                            {t(`sources.status.${run.status}`)}
-                          </span>
-                          <span className="rs-row-sub">
-                            {run.error ? (
-                              <span style={{ color: 'var(--flare)' }}>{run.error}</span>
-                            ) : (
-                              quand(run.started_at, 'fr-FR')
-                            )}
-                          </span>
-                          <span className="mono" style={{ fontSize: 12, color: 'var(--moss)' }}>
-                            {run.items_found} {t('sources.found')} ·{' '}
-                            <span style={{ color: run.items_new > 0 ? 'var(--lime)' : 'var(--moss2)' }}>
-                              {run.items_new} {t('sources.new')}
+                  {sesFournisseurs.map((f) => {
+                    const runsDuFournisseur = runsParFournisseur.get(f.id) ?? [];
+                    return (
+                      <div key={f.id} className="rs-src-provider">
+                        <div className="rs-src-provider-head">
+                          <span className="rs-chan">{t(`providers.${f.provider_id}`)}</span>
+                          {!f.is_active ? (
+                            <span className="rs-pill" data-tone="neutral">
+                              {t('sources.paused')}
                             </span>
+                          ) : null}
+                          <span style={{ marginLeft: 'auto' }}>
+                            <ProviderActions orgId={orgId} sourceProviderId={f.id} isActive={f.is_active} />
                           </span>
                         </div>
-                      ))}
+                        {runsDuFournisseur.length === 0 ? (
+                          <p className="rs-row-sub">{t('sources.neverRan')}</p>
+                        ) : (
+                          <Executions runs={runsDuFournisseur} t={t} />
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* Exécutions antérieures à la bascule vers les thèmes : elles
+                      ne portent pas de fournisseur, et les taire ferait
+                      disparaître l'historique déjà accumulé. */}
+                  {(runsSansFournisseur.get(source.id) ?? []).length > 0 ? (
+                    <div className="rs-src-provider">
+                      <div className="rs-src-provider-head">
+                        <span className="rs-row-sub">{t('sources.beforeProviders')}</span>
+                      </div>
+                      <Executions runs={runsSansFournisseur.get(source.id) ?? []} t={t} />
                     </div>
-                  )}
+                  ) : null}
 
                   <SourceActions
                     orgId={orgId}
@@ -234,6 +231,58 @@ export default async function SourcesPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+/**
+ * Trois dernières exécutions d'un fournisseur : de quoi voir une dégradation
+ * sans dérouler tout l'historique.
+ */
+function Executions({
+  runs,
+  t,
+}: {
+  runs: RunRow[];
+  t: Awaited<ReturnType<typeof getTranslations>>;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 0 }}>
+      {runs.map((run) => (
+        <div
+          key={`${run.source_id}-${run.started_at}`}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '90px 1fr auto',
+            gap: 12,
+            alignItems: 'center',
+            padding: '9px 0',
+            borderTop: '1px solid var(--slate2)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background: RUN_COLOR[run.status] ?? 'var(--moss)',
+                flex: '0 0 auto',
+              }}
+            />
+            {t(`sources.status.${run.status}`)}
+          </span>
+          <span className="rs-row-sub">
+            {run.error ? <span style={{ color: 'var(--flare)' }}>{run.error}</span> : quand(run.started_at, 'fr-FR')}
+          </span>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--moss)' }}>
+            {run.items_found} {t('sources.found')} ·{' '}
+            <span style={{ color: run.items_new > 0 ? 'var(--lime)' : 'var(--moss2)' }}>
+              {run.items_new} {t('sources.new')}
+            </span>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

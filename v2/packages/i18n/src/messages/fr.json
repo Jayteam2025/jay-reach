@@ -216,7 +216,10 @@
       "providersHelp": "Les mots-clés ci-dessous valent pour tous les fournisseurs cochés.",
       "noProviderWarning": "Sans fournisseur, ce thème ne collectera rien."
     },
-    "noProvider": "aucun fournisseur"
+    "noProvider": "aucun fournisseur",
+    "providerPause": "Mettre en pause",
+    "providerResume": "Réactiver",
+    "beforeProviders": "Collectes antérieures (fournisseur non tracé)"
   },
   "inbox": {
     "eyebrow": "Réponses",
@@ -485,7 +488,12 @@
       "promoteConfirm": "Verser dans la bibliothèque",
       "promoted": "Versé dans la bibliothèque"
     },
-    "watchThemes": "Thèmes de veille"
+    "watchThemes": "Thèmes de veille",
+    "pickSource": "Thèmes de veille",
+    "minScoreHelp": "Note attribuée par l'IA à chaque contact, de 0 à 100, selon la consigne de notation de son persona. En dessous de ce seuil, le contact n'entre pas.",
+    "minScoreLink": "Régler les consignes de notation",
+    "dailyCapHelp": "Tous canaux confondus. Si les réglages LinkedIn sont plus stricts, ce sont eux qui s'appliquent : c'est toujours le plus contraignant qui gagne.",
+    "dailyCapLink": "Voir les réglages LinkedIn"
   },
   "linkedin": {
     "eyebrow": "Canal",

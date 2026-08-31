@@ -1817,3 +1817,23 @@ button.rs-pill.rs-pill-lime:hover {
   border-color: var(--lime);
   color: var(--chalk);
 }
+
+/* Historique par fournisseur, à l'intérieur de la carte du thème : chacun a son
+   bloc, pour qu'une panne chez l'un ne se noie pas dans les succès de l'autre. */
+.rs-src-provider {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.rs-src-provider + .rs-src-provider {
+  border-top: 1px solid var(--slate2);
+}
+.rs-src-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rs-btn-mini {
+  padding: 3px 8px;
+  font-size: 12px;
+}
