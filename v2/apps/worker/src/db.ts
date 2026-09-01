@@ -323,10 +323,41 @@ export async function upsertResolvedAccount(pool: Pool, acc: ResolvedAccount): P
     );
     return res.rows[0]?.id ?? null;
   }
+  // Un compte non résolu se REJOINT s'il existe déjà sous le même nom.
+  //
+  // Cette branche insérait sans rien chercher. Chaque offre d'un employeur sans
+  // SIREN créait donc son propre compte : au 01/09/2026, cinquante-deux comptes
+  // « Groupe PIMENT », trente-huit « AB Stratégies Equilibre », 387 comptes en
+  // trop sur 1 558. Le coût n'est pas cosmétique — le producteur d'enrichissement
+  // ne retient que les comptes jamais enrichis, si bien qu'un employeur en
+  // douze exemplaires vaut douze appels FullEnrich facturés pour la même
+  // entreprise. Quarante-cinq de ces appels redondants étaient en attente.
+  //
+  // La branche du dessus, elle, avait son garde-fou depuis toujours : un
+  // `on conflict` sur le SIREN. C'est seulement quand l'annuaire légal ne
+  // répond pas qu'on créait à l'aveugle.
+  //
+  // On ne peut pas s'appuyer ici sur une contrainte d'unicité : les doublons
+  // déjà en base l'empêcheraient d'être posée. La recherche est donc explicite,
+  // et se contente du nom — c'est la seule chose qu'on connaisse d'un compte
+  // non résolu.
   const res = await pool.query<{ id: string }>(
-    `insert into accounts (organization_id, name, resolution_status)
-     values ($1, $2, 'unresolved')
-     returning id`,
+    `with existant as (
+       select id from accounts
+        where organization_id = $1
+          and lower(name) = lower($2)
+          and siren is null
+        order by created_at, id
+        limit 1
+     ), cree as (
+       insert into accounts (organization_id, name, resolution_status)
+       select $1, $2, 'unresolved'
+        where not exists (select 1 from existant)
+       returning id
+     )
+     select id from existant
+     union all
+     select id from cree`,
     [acc.organizationId, acc.name],
   );
   return res.rows[0]?.id ?? null;
