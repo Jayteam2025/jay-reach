@@ -18,6 +18,16 @@ const JOURS = [1, 2, 3, 4, 5, 6, 7] as const;
 const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
 
 /**
+ * Version du paquet que cette application attend.
+ *
+ * Le manifeste a changé le 31/08/2026 sans que son numéro bouge : impossible
+ * alors de distinguer le paquet corrigé de celui qui portait le bug, et un
+ * opérateur qui rechargeait son ancien dossier décompressé rechargeait le
+ * défaut. À faire évoluer avec `apps/extension/manifest.json`.
+ */
+const VERSION_ATTENDUE = '0.2.0';
+
+/**
  * L'installation de l'extension, en trois états.
  *
  * L'ancien parcours demandait de télécharger un zip, de le décompresser, puis
@@ -60,6 +70,7 @@ export function LinkedInPanel(props: {
   const [connectPending, startConnect] = useTransition();
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
   const [extPresent, setExtPresent] = useState(false);
+  const [versionExt, setVersionExt] = useState<string | null>(null);
   const [connected, setConnected] = useState(props.alreadyConnected);
   const [profil, setProfil] = useState<string | null>(props.profileName);
   // `onConnect` lit cette valeur depuis une closure, qui ne verrait jamais une
@@ -68,6 +79,17 @@ export function LinkedInPanel(props: {
 
   const etat: EtatExtension = connected ? 'connectee' : extPresent ? 'installee' : 'absente';
 
+  // Le manifeste de l'extension ne connaît que trois origines. Sur une autre —
+  // typiquement l'URL d'un déploiement Vercel, reconnaissable à l'identifiant
+  // qui suit le nom du projet — son script ne s'injecte pas et rien ne
+  // fonctionnera, quoi qu'on clique.
+  const [adresseInattendue, setAdresseInattendue] = useState(false);
+  useEffect(() => {
+    const hote = window.location.hostname;
+    const connue = hote === 'localhost' || hote === 'app.jay-reach.fr' || hote === 'jay-reach.vercel.app';
+    setAdresseInattendue(!connue);
+  }, []);
+
   const ping = useCallback(() => {
     window.postMessage({ type: 'JAY_REACH_EXTENSION_PING' }, window.location.origin);
   }, []);
@@ -75,8 +97,13 @@ export function LinkedInPanel(props: {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.source !== window) return;
-      const data = event.data as { type?: string; success?: boolean; name?: string };
-      if (data?.type === 'JAY_REACH_EXTENSION_PRESENT') setExtPresent(true);
+      const data = event.data as { type?: string; success?: boolean; name?: string; version?: string };
+      if (data?.type === 'JAY_REACH_EXTENSION_PRESENT') {
+        setExtPresent(true);
+        // Une version absente signe un paquet antérieur à l'annonce de version,
+        // donc forcément périmé.
+        setVersionExt(typeof data.version === 'string' ? data.version : 'ancienne');
+      }
       if (data?.type === 'JAY_REACH_LINKEDIN_PROFILE' && data.name) setProfil(data.name);
       if (data?.type === 'JAY_REACH_LINKEDIN_TOKEN_SAVED' && data.success) {
         confirmedRef.current = true;
@@ -127,7 +154,13 @@ export function LinkedInPanel(props: {
       // que vaut une annonce qui a pu se perdre.
       await new Promise((resolve) => setTimeout(resolve, 1200));
       if (!confirmedRef.current) {
-        setConnectMsg(t('linkedin.connect.notDetected'));
+        // La cause la plus fréquente n'est pas une extension absente mais une
+        // adresse inattendue : le script ne s'injecte que sur les domaines
+        // listés dans son manifeste, et Chrome n'accepte pas de joker au milieu
+        // d'un nom d'hôte. Une URL de déploiement Vercel — celle qui porte un
+        // identifiant après le nom du projet — ne réveille donc jamais
+        // l'extension, et l'écran ne pouvait que répéter qu'elle ne répond pas.
+        setConnectMsg(adresseInattendue ? t('linkedin.connect.wrongOrigin') : t('linkedin.connect.notDetected'));
       }
     });
   }
@@ -166,6 +199,20 @@ export function LinkedInPanel(props: {
       {/* ---------------------------------------------- L'extension, en trois états */}
       <section className="rs-card">
         <h2 className="rs-card-title">{t('linkedin.connect.title')}</h2>
+
+        {versionExt !== null && versionExt !== VERSION_ATTENDUE ? (
+          <div className="rs-lk-alert" data-level="warn" style={{ marginBottom: 12 }}>
+            <span className="rs-lk-alert-dot" aria-hidden="true" />
+            <span>{t('linkedin.connect.staleVersion', { installee: versionExt, attendue: VERSION_ATTENDUE })}</span>
+          </div>
+        ) : null}
+
+        {adresseInattendue ? (
+          <div className="rs-lk-alert" data-level="warn" style={{ marginBottom: 12 }}>
+            <span className="rs-lk-alert-dot" aria-hidden="true" />
+            <span>{t('linkedin.connect.wrongOrigin')}</span>
+          </div>
+        ) : null}
 
         <div className="rs-lk-state" data-state={etat}>
           <span className="rs-lk-state-dot" aria-hidden="true" />

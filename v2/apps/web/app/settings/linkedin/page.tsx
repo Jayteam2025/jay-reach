@@ -46,18 +46,28 @@ export default async function LinkedInSettingsPage() {
           .then((r) => r.data)
       : Promise.resolve(null),
 
-    // Un jeton actif signifie que l'extension a déjà été connectée au moins une
-    // fois. C'est ce qui décide laquelle des deux actions de la page mérite le
-    // lime : connecter tant que ce n'est pas fait, enregistrer les réglages
-    // ensuite. On lit une ligne plutôt qu'un `count: 'exact', head: true` :
-    // cette forme renvoie `count: null` sans erreur sur cette table, et un
-    // drapeau faux se serait traduit par du lime sur le mauvais bouton.
+    // « Connectée » veut dire que l'extension a RÉELLEMENT appelé le serveur
+    // avec son jeton, pas qu'un jeton existe.
+    //
+    // La page se contentait de l'existence d'un jeton actif. Or générer un
+    // jeton est un geste de la page, pas de l'extension : cliquer « Connecter »
+    // suffisait à faire passer l'état au vert, même si l'extension n'était pas
+    // installée, pas activée, ou sur une adresse où son script ne s'injecte
+    // pas. Alexandre a vu le 01/09/2026 les deux messages côte à côte —
+    // « Extension connectée » et « L'extension n'a pas répondu » — et le second
+    // disait vrai. C'est la même tromperie que la CSP la veille : un état vert
+    // affirmé sans preuve.
+    //
+    // `last_used_at` est posé par `validate_extension_token`, donc uniquement
+    // quand un appel de l'extension a été authentifié. C'est la seule preuve
+    // qu'elle parle.
     peutLire
       ? supabase!
           .from('extension_tokens')
-          .select('organization_id, linkedin_profile_name')
+          .select('organization_id, linkedin_profile_name, last_used_at')
           .eq('organization_id', orgId)
           .eq('is_active', true)
+          .not('last_used_at', 'is', null)
           .limit(1)
           .then((r) => (r.data ?? []) as { linkedin_profile_name: string | null }[])
       : Promise.resolve([] as { linkedin_profile_name: string | null }[]),
