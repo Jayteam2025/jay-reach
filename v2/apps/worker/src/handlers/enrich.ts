@@ -63,6 +63,16 @@ export function toCompanyEnrichment(r: ResolvedCompany): CompanyEnrichment {
   };
 }
 
+/**
+ * Temps maximal d'attente d'un enrichissement FullEnrich.
+ *
+ * Vingt-cinq secondes tient dans le budget d'un tour de moteur éphémère
+ * (quarante-cinq secondes, partagées avec les autres files). En
+ * auto-hébergement, où le worker est permanent, `ENRICH_MAX_WAIT_MS` permet de
+ * rendre à FullEnrich le temps qu'il demande.
+ */
+const ATTENTE_MAX_MS = Number(process.env.ENRICH_MAX_WAIT_MS ?? 25_000);
+
 export interface EnrichContactsJob {
   readonly organizationId: string;
   readonly accountId: string;
@@ -130,7 +140,20 @@ export async function runFindContacts(apiKey: string, job: EnrichContactsJob): P
     custom: { contact_key: `c_${idx}` },
   }));
 
-  const enriched = await enrichContactsViaFullEnrich(apiKey, `enrich-${job.accountId}`, inputs);
+  // Attendre moins longtemps que la fonction qui nous héberge.
+  //
+  // FullEnrich est interrogé en boucle jusqu'à ce qu'il ait fini, avec un
+  // plafond par défaut de deux minutes. Sur Vercel, la fonction est coupée à
+  // soixante secondes : le job était donc tué en pleine attente, laissé en
+  // `active`, et l'appel — déjà facturé — perdu. Treize enrichissements dans
+  // cet état au 01/09/2026.
+  //
+  // En s'arrêtant avant, l'échec devient explicite : le job repart en file et
+  // sera retenté, au lieu de disparaître. `ENRICH_MAX_WAIT_MS` permet de lever
+  // ce plafond en auto-hébergement, où rien ne coupe le processus.
+  const enriched = await enrichContactsViaFullEnrich(apiKey, `enrich-${job.accountId}`, inputs, {
+    maxWaitMs: ATTENTE_MAX_MS,
+  });
 
   const out: EnrichedContact[] = [];
   people.forEach((p, idx) => {

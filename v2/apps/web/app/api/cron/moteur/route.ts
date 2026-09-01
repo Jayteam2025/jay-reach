@@ -71,6 +71,24 @@ export async function GET(req: Request): Promise<Response> {
     await boss.start();
     await registerQueues(boss);
 
+    // Reprendre le travail que le tour précédent n'a pas pu finir.
+    //
+    // Une fonction éphémère se fait couper à soixante secondes, en plein job.
+    // pg-boss laisse alors la ligne en `active` et compte sur sa boucle de
+    // supervision pour la remettre en file — boucle que le mode éphémère
+    // désactive (`supervise: false`), puisqu'elle ne survivrait pas à
+    // l'invocation. Résultat : un job tué ne revenait jamais.
+    //
+    // Mesuré sur la base le 01/09/2026 : 124 jobs bloqués, dont 99 de scoring
+    // et 13 d'enrichissement — le plus ancien depuis vingt et une heures. Le
+    // scoring en perdait presque un sur deux, et chaque enrichissement perdu
+    // avait déjà été facturé par FullEnrich.
+    //
+    // `maintain()` fait ce que la supervision aurait fait : rendre à la file
+    // les jobs dont le délai d'exécution est dépassé, puis archiver. Trois
+    // requêtes, négligeables devant le budget du tour.
+    await boss.maintain();
+
     // L'ordre compte : on produit avant de consommer, pour que le travail créé
     // pendant ce tour parte dès maintenant plutôt qu'au tour suivant.
     await produire(ctx);

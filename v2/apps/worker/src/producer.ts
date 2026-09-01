@@ -95,7 +95,10 @@ export async function enqueueScoringForOrgs(
  * handlers existaient et écoutaient leurs files, mais personne n'y déposait de
  * job. Un signal qualifié restait donc sans suite.
  *
- * FullEnrich est facturé à l'appel, d'où trois précautions :
+ * FullEnrich est facturé à l'appel, d'où quatre précautions :
+ *  - un plafond quotidien, décompté ici plutôt que dans le handler : refuser
+ *    un job avant de le créer coûte moins cher que de le créer pour l'annuler,
+ *    et le compteur est le même que celui qui protège déjà Reoon ;
  *  - seuls les comptes JAMAIS enrichis (`enriched_at is null`) sont candidats ;
  *  - l'identifiant de job est déterministe par (compte, persona), donc un
  *    passage répété du producteur ne redemande pas le même enrichissement ;
@@ -113,6 +116,17 @@ export async function enqueueScoringForOrgs(
  * récent — un compte peut en avoir plusieurs, et le dernier est celui qui
  * motive l'enrichissement.
  */
+/**
+ * Paires (compte, persona) enrichies par jour, au maximum.
+ *
+ * Rien ne bornait cette dépense : vingt-cinq paires par tour, un tour tous les
+ * quarts d'heure, soit deux mille quatre cents appels quotidiens possibles —
+ * soixante fois ce qu'une capacité d'envoi de cent trente-cinq courriels par
+ * jour peut consommer. La valeur est donc dérivée de la sortie, pas de ce que
+ * le moteur sait faire.
+ */
+const PLAFOND_ENRICHISSEMENT_PAR_JOUR = Number(process.env.ENRICH_DAILY_CAP ?? 50);
+
 export async function enqueueEnrichmentForQualified(
   boss: PgBoss,
   pool: Pool,
@@ -129,23 +143,43 @@ export async function enqueueEnrichmentForQualified(
     title_patterns: string[];
     source_signal_id: string;
   }>(
-    `select distinct on (a.id, p.id)
-            a.organization_id, a.id as account_id, a.name as company_name,
-            a.domain, a.country, p.id as persona_id, p.title_patterns,
-            s.id as source_signal_id
-       from signals s
-       join accounts a on a.id = s.account_id
-       join personas p on p.organization_id = a.organization_id
-      where s.status = 'qualified'
-        and a.enriched_at is null
-        and array_length(p.title_patterns, 1) > 0
-      order by a.id, p.id, s.occurred_at desc, s.id
+    `with candidats as (
+       select distinct on (a.id, p.id)
+              a.organization_id, a.id as account_id, a.name as company_name,
+              a.domain, a.country, p.id as persona_id, p.title_patterns,
+              s.id as source_signal_id, s.score
+         from signals s
+         join accounts a on a.id = s.account_id
+         join personas p on p.organization_id = a.organization_id
+        where s.status = 'qualified'
+          and a.enriched_at is null
+          and p.is_active
+          and array_length(p.title_patterns, 1) > 0
+        order by a.id, p.id, s.occurred_at desc, s.id
+     )
+     select organization_id, account_id, company_name, domain, country,
+            persona_id, title_patterns, source_signal_id
+       from candidats
+      order by score desc nulls last, account_id
       limit $1`,
     [limit],
   );
 
   let enqueued = 0;
   for (const row of res.rows) {
+    // Le crédit se prend AVANT de déposer le job, et par paire. Le compteur est
+    // atomique : deux tours simultanés ne peuvent pas dépasser le plafond à
+    // eux deux.
+    const credit = await pool.query<{ ok: boolean }>(
+      `select app.consume_provider_credit($1, 'fullenrich', $2, 1) as ok`,
+      [row.organization_id, PLAFOND_ENRICHISSEMENT_PAR_JOUR],
+    );
+    if (credit.rows[0]?.ok !== true) {
+      console.warn(
+        `[enrich] plafond quotidien atteint pour l'organisation ${row.organization_id} — ${res.rows.length - enqueued} paire(s) reportée(s)`,
+      );
+      break;
+    }
     await boss.insert([
       {
         name: 'enrichment.company',
