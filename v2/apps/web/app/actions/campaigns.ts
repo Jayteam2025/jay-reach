@@ -177,6 +177,103 @@ async function chercherCollisionDePersona(
   return null;
 }
 
+/**
+ * Ce qui manque à une campagne pour pouvoir envoyer quoi que ce soit.
+ *
+ * Une campagne s'activait sans que rien ne vérifie qu'elle en était capable.
+ * Constaté en recette le 01/09/2026 : « Job commercial » activée, huit contacts
+ * inscrits dans la minute, huit actions créées — et pas une seule qui pouvait
+ * partir. Aucun message n'était relié à son étape. L'échec n'apparaissait
+ * qu'après coup, dans le `block_reason` de chaque action, là où personne ne
+ * regarde.
+ *
+ * Ces contrôles ne remplacent pas les garde-fous du séquenceur, qui jugent
+ * action par action au moment d'envoyer. Ils répondent à une autre question,
+ * posée une seule fois : cette campagne peut-elle produire un envoi ? Y
+ * répondre à l'activation coûte une requête ; y répondre après coup coûte des
+ * inscriptions à défaire.
+ *
+ * Le canal `call` est écarté partout : il ne consomme aucun expéditeur, ne
+ * passe par aucun provider et n'envoie rien.
+ */
+async function cequiManquePourEnvoyer(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  campaignId: string,
+): Promise<string[]> {
+  const manques: string[] = [];
+
+  const { data: etapes } = await supabase
+    .from('sequence_steps')
+    .select('position, channel, template_parent_id')
+    .eq('campaign_id', campaignId)
+    .order('position');
+  const lignes = (etapes ?? []) as { position: number; channel: string; template_parent_id: string | null }[];
+
+  if (lignes.length === 0) {
+    manques.push('la séquence ne comporte aucune étape');
+    return manques;
+  }
+
+  // 1. Chaque étape qui envoie doit avoir un message.
+  const sansMessage = lignes.filter((e) => e.channel !== 'call' && !e.template_parent_id);
+  if (sansMessage.length > 0) {
+    const numeros = sansMessage.map((e) => e.position + 1).join(', ');
+    manques.push(
+      sansMessage.length === 1
+        ? `l’étape ${numeros} n’a pas de message relié`
+        : `les étapes ${numeros} n’ont pas de message relié`,
+    );
+  }
+
+  // 2. Un expéditeur actif par canal utilisé.
+  const canaux = new Set(lignes.map((e) => e.channel).filter((c) => c !== 'call'));
+  const besoinEmail = [...canaux].some((c) => c === 'email');
+  const besoinLinkedIn = [...canaux].some((c) => c.startsWith('linkedin'));
+  const { data: expediteurs } = await supabase
+    .from('senders')
+    .select('kind')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true);
+  const genres = new Set(((expediteurs ?? []) as { kind: string }[]).map((s) => s.kind));
+  if (besoinEmail && !genres.has('email')) {
+    manques.push('aucun expéditeur email actif');
+  }
+  if (besoinLinkedIn && !genres.has('linkedin')) {
+    manques.push('aucun expéditeur LinkedIn actif');
+  }
+
+  // 3. Une campagne d'envoi côté Smartlead, pour chaque persona acceptée.
+  //
+  // Sans elle l'action reste planifiée sans jamais être expédiée : le provider
+  // ne sait pas dans quelle campagne déposer le contact.
+  if (besoinEmail) {
+    const { data: regles } = await supabase
+      .from('campaigns')
+      .select('entry_rules')
+      .eq('id', campaignId)
+      .maybeSingle();
+    const personas = ((regles as { entry_rules?: { personas?: string[] } } | null)?.entry_rules?.personas) ?? [];
+    if (personas.length > 0) {
+      const { data: mappings } = await supabase
+        .from('smartlead_campaign_mappings')
+        .select('persona_id')
+        .in('persona_id', personas);
+      const couvertes = new Set(((mappings ?? []) as { persona_id: string }[]).map((m) => m.persona_id));
+      const orphelines = personas.filter((p) => !couvertes.has(p));
+      if (orphelines.length > 0) {
+        const { data: noms } = await supabase.from('personas').select('name').in('id', orphelines);
+        const libelles = ((noms ?? []) as { name: string }[]).map((n) => n.name).join(', ');
+        manques.push(
+          `aucune campagne d’envoi reliée à ${orphelines.length === 1 ? 'la persona' : 'les personas'} ${libelles || orphelines.join(', ')}`,
+        );
+      }
+    }
+  }
+
+  return manques;
+}
+
 /** Change le statut d'une campagne (brouillon / active / en pause / archivée). */
 export async function setCampaignStatus(organizationId: string, campaignId: string, status: string): Promise<SimpleResult> {
   const auth = await asAdmin(organizationId);
@@ -195,6 +292,14 @@ export async function setCampaignStatus(organizationId: string, campaignId: stri
     const personas = ((reglesActuelles as { entry_rules?: { personas?: string[] } } | null)?.entry_rules?.personas) ?? [];
     const collision = await chercherCollisionDePersona(supabase, organizationId, campaignId, personas);
     if (collision) return { ok: false, error: collision };
+
+    const manques = await cequiManquePourEnvoyer(supabase, organizationId, campaignId);
+    if (manques.length > 0) {
+      return {
+        ok: false,
+        error: `Cette campagne ne peut rien envoyer en l’état : ${manques.join(' ; ')}.`,
+      };
+    }
   }
 
   const { error } = await supabase

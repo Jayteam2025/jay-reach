@@ -66,12 +66,20 @@ export function toCompanyEnrichment(r: ResolvedCompany): CompanyEnrichment {
 /**
  * Temps maximal d'attente d'un enrichissement FullEnrich.
  *
- * Vingt-cinq secondes tient dans le budget d'un tour de moteur éphémère
- * (quarante-cinq secondes, partagées avec les autres files). En
- * auto-hébergement, où le worker est permanent, `ENRICH_MAX_WAIT_MS` permet de
- * rendre à FullEnrich le temps qu'il demande.
+ * Calé sur ce que FullEnrich met réellement, mesuré sur les jobs menés à terme
+ * le 01/09/2026 : **28,9 secondes en moyenne, 55,8 au pire**. Une première
+ * version plafonnait à vingt-cinq secondes — le budget d'un tour de moteur — et
+ * aurait donc fait échouer trois enrichissements sur cinq. Le budget de la
+ * fonction n'est pas la bonne référence : c'est la durée du travail qui l'est.
+ *
+ * Quarante secondes laissent la place de rendre la main proprement avant la
+ * coupure à soixante. Ce qui dépasse repart en file et sera retenté, ce qui
+ * reste préférable à un job tué dont on a déjà payé l'appel.
+ *
+ * En worker permanent, rien ne coupe : `ENRICH_MAX_WAIT_MS` permet alors de
+ * rendre à FullEnrich tout le temps qu'il demande.
  */
-const ATTENTE_MAX_MS = Number(process.env.ENRICH_MAX_WAIT_MS ?? 25_000);
+const ATTENTE_MAX_MS = Number(process.env.ENRICH_MAX_WAIT_MS ?? 40_000);
 
 export interface EnrichContactsJob {
   readonly organizationId: string;
