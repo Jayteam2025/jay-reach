@@ -104,6 +104,14 @@ export async function enqueueScoringForOrgs(
  *
  * Le persona fournit les intitulés de poste recherchés : sans eux, le handler
  * résout l'entreprise mais ne cherche aucun contact.
+ *
+ * Le signal qui a qualifié le compte voyage avec le job jusqu'au contact créé.
+ * Il était perdu ici : la requête partait bien des signaux, mais son `distinct`
+ * ne retenait que le couple (compte, persona). Résultat, les 102 contacts de
+ * la base ne portaient aucune origine, et rien ne disait quelle offre avait
+ * déclenché quelle prise de contact. On garde le signal qualifié le plus
+ * récent — un compte peut en avoir plusieurs, et le dernier est celui qui
+ * motive l'enrichissement.
  */
 export async function enqueueEnrichmentForQualified(
   boss: PgBoss,
@@ -119,15 +127,19 @@ export async function enqueueEnrichmentForQualified(
     country: string | null;
     persona_id: string;
     title_patterns: string[];
+    source_signal_id: string;
   }>(
-    `select distinct a.organization_id, a.id as account_id, a.name as company_name,
-            a.domain, a.country, p.id as persona_id, p.title_patterns
+    `select distinct on (a.id, p.id)
+            a.organization_id, a.id as account_id, a.name as company_name,
+            a.domain, a.country, p.id as persona_id, p.title_patterns,
+            s.id as source_signal_id
        from signals s
        join accounts a on a.id = s.account_id
        join personas p on p.organization_id = a.organization_id
       where s.status = 'qualified'
         and a.enriched_at is null
         and array_length(p.title_patterns, 1) > 0
+      order by a.id, p.id, s.occurred_at desc, s.id
       limit $1`,
     [limit],
   );
@@ -146,6 +158,7 @@ export async function enqueueEnrichmentForQualified(
           ...(row.country ? { countryCode: row.country } : {}),
           personaId: row.persona_id,
           positionTitles: row.title_patterns,
+          sourceSignalId: row.source_signal_id,
         },
       },
     ]);

@@ -148,6 +148,12 @@ export async function persistEnrichedContact(
         email_confidence = excluded.email_confidence,
         linkedin_url = coalesce(excluded.linkedin_url, contacts.linkedin_url),
         linkedin_provider_id = coalesce(excluded.linkedin_provider_id, contacts.linkedin_provider_id),
+        -- L'origine reste celle du PREMIER signal qui a mené a ce contact :
+        -- c'est elle qui explique pourquoi on l'a prospecte. Le sens du
+        -- coalesce est donc inverse par rapport aux autres champs, qui eux se
+        -- laissent completer par la donnee la plus fraiche. Sans cette ligne,
+        -- un contact deja connu ne recevait jamais son origine.
+        source_signal_id = coalesce(contacts.source_signal_id, excluded.source_signal_id),
         enriched_at = now()
      returning id`,
     [

@@ -31,6 +31,8 @@ export interface EnrichCompanyJob {
   readonly domain?: string;
   readonly linkedinUrl?: string;
   readonly countryCode?: string;
+  /** Signal qualifié qui a déclenché l'enrichissement, transmis au contact. */
+  readonly sourceSignalId?: string;
 }
 
 /** Résout l'identité canonique FullEnrich d'une entreprise (domaine, effectif…). */
