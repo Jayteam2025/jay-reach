@@ -240,15 +240,17 @@ export function LinkedInPanel(props: {
               <p className="rs-lk-intro">{t('linkedin.connect.notPublished')}</p>
               <details className="rs-lk-fallback">
                 <summary>{t('linkedin.connect.manualTitle')}</summary>
-                <ol className="rs-lk-steps rs-lk-steps-num">
-                  <li>{t('linkedin.connect.step1')}</li>
-                  <li>{t('linkedin.connect.step2')}</li>
-                  <li>{t('linkedin.connect.step3')}</li>
-                  <li>{t('linkedin.connect.step4')}</li>
-                </ol>
-                <a className="rs-btn" href="/jay-reach-linkedin-extension.zip" download>
-                  {t('linkedin.connect.download')}
-                </a>
+                <div className="rs-lk-fallback-corps">
+                  <ol className="rs-lk-steps rs-lk-steps-num">
+                    <li>{t('linkedin.connect.step1')}</li>
+                    <li>{t('linkedin.connect.step2')}</li>
+                    <li>{t('linkedin.connect.step3')}</li>
+                    <li>{t('linkedin.connect.step4')}</li>
+                  </ol>
+                  <a className="rs-btn" href="/jay-reach-linkedin-extension.zip" download>
+                    {t('linkedin.connect.download')}
+                  </a>
+                </div>
               </details>
             </>
           )
@@ -284,15 +286,17 @@ export function LinkedInPanel(props: {
         {!props.storeUrl && etat !== 'absente' ? (
           <details className="rs-lk-fallback" style={{ marginTop: 12 }}>
             <summary>{t('linkedin.connect.reinstall')}</summary>
-            <ol className="rs-lk-steps rs-lk-steps-num">
-              <li>{t('linkedin.connect.step1')}</li>
-              <li>{t('linkedin.connect.step2')}</li>
-              <li>{t('linkedin.connect.step3')}</li>
-              <li>{t('linkedin.connect.step4')}</li>
-            </ol>
-            <a className="rs-btn" href="/jay-reach-linkedin-extension.zip" download>
-              {t('linkedin.connect.download')}
-            </a>
+            <div className="rs-lk-fallback-corps">
+              <ol className="rs-lk-steps rs-lk-steps-num">
+                <li>{t('linkedin.connect.step1')}</li>
+                <li>{t('linkedin.connect.step2')}</li>
+                <li>{t('linkedin.connect.step3')}</li>
+                <li>{t('linkedin.connect.step4')}</li>
+              </ol>
+              <a className="rs-btn" href="/jay-reach-linkedin-extension.zip" download>
+                {t('linkedin.connect.download')}
+              </a>
+            </div>
           </details>
         ) : null}
       </section>

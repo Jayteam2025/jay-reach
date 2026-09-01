@@ -373,6 +373,18 @@ button.rs-pill.rs-pill-lime:hover {
   border: 1px solid var(--limeline);
   background: transparent;
   color: var(--chalk);
+  /* `inline-flex` et non `inline` : un `<a class="rs-btn">` gardait la hauteur
+     de sa ligne de texte, et son rembourrage débordait sur le contenu du
+     dessus au lieu de pousser le flux. Visible sur la procédure de
+     réinstallation LinkedIn, où le bouton chevauchait la dernière étape. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.rs-btn:focus-visible {
+  outline: 2px solid var(--limeline);
+  outline-offset: 2px;
 }
 .rs-btn[data-primary='true'] {
   background: var(--lime);
@@ -1744,13 +1756,67 @@ button.rs-pill.rs-pill-lime:hover {
 /* Repli d'installation manuelle : présent tant que l'extension n'est pas
    publiée, mais replié — ce n'est pas le parcours qu'on recommande. */
 .rs-lk-fallback {
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 13px;
+  border: 1px solid var(--slate2);
+  border-radius: 10px;
+  background: var(--slate);
 }
+
+/* Le titre est un contrôle : il se comporte comme tel, et se voit comme tel.
+   Sans style propre, un `summary` prend le contour bleu du navigateur au
+   clavier — étranger au reste de l'interface. */
 .rs-lk-fallback summary {
   cursor: pointer;
   color: var(--moss2);
-  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  user-select: none;
+}
+.rs-lk-fallback summary::-webkit-details-marker {
+  display: none;
+}
+/* Chevron dessiné plutôt qu'un caractère : les polices ne rendent pas les
+   flèches de la même façon, et l'une d'elles s'affichait comme un point. */
+.rs-lk-fallback summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+.rs-lk-fallback[open] summary::before {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rs-lk-fallback summary::before { transition: none; }
+}
+.rs-lk-fallback summary:hover {
+  color: var(--chalk);
+}
+.rs-lk-fallback summary:focus-visible {
+  outline: 2px solid var(--limeline);
+  outline-offset: -2px;
+}
+
+/* Le contenu déplié vit dans son propre bloc, séparé du titre par un trait :
+   l'espacement se lit alors sans compter les pixels. */
+.rs-lk-fallback[open] summary {
+  border-bottom: 1px solid var(--slate2);
+  border-radius: 10px 10px 0 0;
+}
+.rs-lk-fallback-corps {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  padding: 14px;
 }
 
 /* Ajout en masse depuis l'annuaire : la barre et ses commandes tiennent sur une
