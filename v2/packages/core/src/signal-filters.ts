@@ -79,7 +79,10 @@ export function isRecruitmentAgency(
 export interface FingerprintInput {
   readonly company: string;
   readonly title: string;
-  readonly postalCode?: string;
+  /** Libellé de lieu tel que le fournisseur le donne. */
+  readonly location?: string | null;
+  /** Code postal, quand le fournisseur le sépare. Sert de repli. */
+  readonly postalCode?: string | null;
 }
 
 function normalizeText(value: string): string {
@@ -91,9 +94,41 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-/** Empreinte de déduplication : entreprise + intitulé + code postal, normalisés. */
+/**
+ * Commune d'un libellé de lieu, ramenée à une forme commune aux fournisseurs.
+ *
+ * Les deux sources décrivent le même endroit autrement : France Travail écrit
+ * « 44 - Rezé », Adzuna « Rezé, Loire-Atlantique ». Sans mise en forme
+ * commune, la même offre parue chez les deux produit deux empreintes.
+ *
+ * On retire donc le préfixe départemental, et on garde le premier segment —
+ * le plus précis. Le dernier désigne l'arrondissement ou le département
+ * (« Maubeuge, Avesnes-sur-Helpe »), et s'en servir confondrait deux communes
+ * voisines.
+ */
+export function normalizeLocation(location: string | null | undefined): string {
+  if (!location) return '';
+  const sansDepartement = location.replace(/^\s*\d{2,3}\s*-\s*/, '');
+  return normalizeText(sansDepartement.split(',')[0] ?? '');
+}
+
+/**
+ * Empreinte de déduplication : entreprise + intitulé + commune.
+ *
+ * La composante géographique était le code postal seul. Or Adzuna ne le donne
+ * jamais — son libellé est libre — et l'empreinte se réduisait alors à
+ * l'entreprise et l'intitulé. Deux offres réelles au même intitulé dans deux
+ * villes différentes portaient donc la même empreinte, et la seconde était
+ * rejetée à l'insertion. Mesuré sur la base au 01/09/2026 : 113 groupes
+ * d'offres légitimes concernés, dont un employeur recrutant le même profil
+ * dans douze communes — onze auraient disparu.
+ *
+ * Le lieu est presque toujours présent là où le code postal ne l'est presque
+ * jamais, d'où l'inversion : la commune d'abord, le code postal en repli.
+ */
 export function signalFingerprint(input: FingerprintInput): string {
-  return [normalizeText(input.company), normalizeText(input.title), (input.postalCode ?? '').trim()].join('|');
+  const lieu = normalizeLocation(input.location) || (input.postalCode ?? '').trim();
+  return [normalizeText(input.company), normalizeText(input.title), lieu].join('|');
 }
 
 /** Déduplique une même offre publiée sur plusieurs agrégateurs. */

@@ -318,6 +318,9 @@ export async function traiterEnrichCompany(
       positionTitles: data.positionTitles,
       ...(data.seniorityLevels ? { seniorityLevels: data.seniorityLevels } : {}),
       ...(data.personaId ? { personaId: data.personaId } : {}),
+      // Sans ce report, le contact créé plus loin naît sans origine : on ne
+      // sait plus quelle offre a motivé la prise de contact.
+      ...(data.sourceSignalId ? { sourceSignalId: data.sourceSignalId } : {}),
     };
     await boss.insert([
       { name: 'enrichment.contacts', id: deterministicUuid('enrich-contacts', data.accountId, data.personaId ?? '*'), data: next },

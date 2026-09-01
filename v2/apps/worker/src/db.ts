@@ -4,7 +4,7 @@
  */
 import { Pool } from 'pg';
 import type { ScrapedSignal } from '@jay-reach/providers/signals';
-import { signalFingerprint } from '@jay-reach/core';
+import { normalizeLocation, signalFingerprint } from '@jay-reach/core';
 
 export function createPool(connectionString: string): Pool {
   return new Pool({ connectionString });
@@ -58,9 +58,8 @@ export interface InsertedSignal {
  * Code postal français lu dans un libellé de lieu, quand il s'y trouve.
  *
  * Les sources ne le donnent pas séparément : Adzuna renvoie un libellé libre,
- * France Travail un « 75 - PARIS 01 » qui ne contient pas de code postal. Il
- * est donc souvent absent, et l'empreinte repose alors sur l'entreprise et
- * l'intitulé seuls — ce que `signalFingerprint` accepte.
+ * France Travail un « 75 - PARIS 01 » qui n'en contient pas. Il ne sert donc
+ * que de repli quand le libellé de lieu est absent.
  */
 function codePostalDe(location: string | null): string | undefined {
   return location?.match(/\b(\d{5})\b/)?.[1];
@@ -109,12 +108,19 @@ export async function insertSignals(
     const title = (data.job_title as string | null | undefined) ?? null;
     const location = (data.location as string | null | undefined) ?? null;
 
-    // L'empreinte n'a de sens qu'avec une entreprise et un intitulé. Sans eux,
-    // on insère sans dédupliquer plutôt que de regrouper des offres sans
-    // rapport sous une empreinte vide.
+    // L'empreinte exige les trois composantes : entreprise, intitulé ET lieu.
+    //
+    // Elle s'est longtemps contentée des deux premières quand le lieu manquait,
+    // et c'était un piège : un employeur qui recrute le même profil dans douze
+    // communes produisait douze fois la même empreinte, et onze de ses offres
+    // étaient rejetées à l'insertion. Sans composante géographique on préfère
+    // donc ne pas dédupliquer du tout — un doublon se voit et se nettoie, une
+    // offre jamais insérée ne laisse aucune trace.
+    const codePostal = codePostalDe(location);
+    const lieu = normalizeLocation(location) || codePostal || '';
     const fingerprint =
-      companyName && title
-        ? signalFingerprint({ company: companyName, title, postalCode: codePostalDe(location) })
+      companyName && title && lieu
+        ? signalFingerprint({ company: companyName, title, location, postalCode: codePostal })
         : null;
 
     if (fingerprint && vuesDansLeLot.has(fingerprint)) {
