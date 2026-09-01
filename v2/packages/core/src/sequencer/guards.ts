@@ -22,9 +22,28 @@ export interface GuardContext {
   readonly now: number;
   /** Suppression active (email/domaine/linkedin/postal/account, client, opposition légale). */
   readonly suppression?: { scope: string; reason: string } | null;
-  /** Un autre contact du même compte a déjà été touché aujourd'hui. */
-  readonly accountContactedToday?: boolean;
+  /**
+   * Une personne de CETTE persona a déjà été touchée aujourd'hui chez ce compte.
+   *
+   * La règle regardait le compte seul, sans distinguer la personne : dès que le
+   * directeur commercial recevait quelque chose, tous les commerciaux de la
+   * même entreprise étaient repoussés au lendemain. Comme une campagne touche
+   * son compte presque chaque jour pendant deux semaines, la seconde campagne
+   * glissait indéfiniment sans jamais partir.
+   */
+  readonly personaContactedToday?: boolean;
   readonly nextAccountSlot?: number;
+  /**
+   * Personnes distinctes déjà touchées aujourd'hui chez ce compte, et combien
+   * on en admet.
+   *
+   * C'est ce couple qui conserve la protection d'origine : sur les données
+   * réelles, une entreprise publiant huit offres générait huit messages le même
+   * jour. Distinguer les personas sans plafonner le total aurait rouvert cette
+   * porte.
+   */
+  readonly accountPeopleToday?: number;
+  readonly accountPeopleCap?: number;
   /** Variables du message non résolues (bloque et les nomme). */
   readonly unresolvedVariables?: readonly string[];
   /** Courrier : adresse postale vérifiée ? */
@@ -57,9 +76,20 @@ export function runGuards(ctx: GuardContext): GuardDecision {
 
   const isCall = ctx.channel === 'call';
 
-  // 3. Un contact par compte et par jour.
-  if (!isCall && ctx.accountContactedToday) {
-    return defer(ctx.nextAccountSlot ?? ctx.now, 'Un contact de ce compte a déjà été touché aujourd’hui.');
+  // 3. Une personne par persona et par jour, et pas plus de N personnes par
+  //    entreprise le même jour.
+  if (!isCall && ctx.personaContactedToday) {
+    return defer(ctx.nextAccountSlot ?? ctx.now, 'Cette persona a déjà été touchée aujourd’hui chez ce compte.');
+  }
+  if (
+    !isCall &&
+    ctx.accountPeopleCap !== undefined &&
+    (ctx.accountPeopleToday ?? 0) >= ctx.accountPeopleCap
+  ) {
+    return defer(
+      ctx.nextAccountSlot ?? ctx.now,
+      `Déjà ${ctx.accountPeopleCap} personne(s) touchée(s) dans cette entreprise aujourd’hui.`,
+    );
   }
 
   // 4. Variables toutes résolues.

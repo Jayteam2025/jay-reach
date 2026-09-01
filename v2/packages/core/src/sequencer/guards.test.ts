@@ -44,8 +44,8 @@ describe('garde-fous', () => {
     expect(d).toMatchObject({ kind: 'defer', until: 9999 });
   });
 
-  it('reporte si un contact du compte a déjà été touché aujourd’hui', () => {
-    const d = runGuards({ ...base, accountContactedToday: true, nextAccountSlot: 8000 });
+  it('reporte si cette persona a déjà été touchée aujourd’hui chez ce compte', () => {
+    const d = runGuards({ ...base, personaContactedToday: true, nextAccountSlot: 8000 });
     expect(d).toMatchObject({ kind: 'defer', until: 8000 });
   });
 
@@ -60,7 +60,7 @@ describe('garde-fous', () => {
       quotaRemaining: 0,
       businessHoursNextSlot: 9999,
       spendWouldExceed: true,
-      accountContactedToday: true,
+      personaContactedToday: true,
     });
     expect(d.kind).toBe('allow');
   });
@@ -68,5 +68,63 @@ describe('garde-fous', () => {
   it('mais une suppression bloque même un call', () => {
     const d = runGuards({ ...base, channel: 'call', suppression: { scope: 'account', reason: 'opposition' } });
     expect(d.kind).toBe('block');
+  });
+});
+
+describe('deux campagnes sur le même compte', () => {
+  const base = {
+    channel: 'email',
+    now: 1000,
+  } as const;
+
+  it('laisse partir deux personas différentes du même compte le même jour', () => {
+    // Le cas que la règle d'origine interdisait : « un contact par compte et
+    // par jour » regardait le compte sans distinguer la personne. Dès que le
+    // directeur commercial recevait quelque chose, tous les commerciaux de la
+    // même entreprise étaient repoussés au lendemain — et comme la première
+    // campagne touche le compte presque chaque jour pendant deux semaines, la
+    // seconde glissait indéfiniment sans jamais partir.
+    const d = runGuards({
+      ...base,
+      personaContactedToday: false,
+      accountPeopleToday: 1,
+      accountPeopleCap: 2,
+    });
+    expect(d.kind).toBe('allow');
+  });
+
+  it('reporte la même persona touchée deux fois dans la journée', () => {
+    const d = runGuards({
+      ...base,
+      personaContactedToday: true,
+      nextAccountSlot: 8000,
+      accountPeopleToday: 1,
+      accountPeopleCap: 2,
+    });
+    expect(d).toMatchObject({ kind: 'defer', until: 8000 });
+  });
+
+  it('reporte au-delà du nombre de personnes admis par entreprise et par jour', () => {
+    // Ce qui conserve la protection d'origine : sur les données réelles, une
+    // entreprise publiant huit offres générait huit messages le même jour.
+    const d = runGuards({
+      ...base,
+      personaContactedToday: false,
+      nextAccountSlot: 8000,
+      accountPeopleToday: 2,
+      accountPeopleCap: 2,
+    });
+    expect(d).toMatchObject({ kind: 'defer', until: 8000 });
+  });
+
+  it('une étape call ignore ces deux plafonds', () => {
+    const d = runGuards({
+      ...base,
+      channel: 'call',
+      personaContactedToday: true,
+      accountPeopleToday: 9,
+      accountPeopleCap: 2,
+    });
+    expect(d.kind).toBe('allow');
   });
 });

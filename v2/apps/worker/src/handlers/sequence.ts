@@ -67,6 +67,7 @@ interface DueRow {
   readonly email: string | null;
   readonly email_status: EmailStatus | null;
   readonly account_id: string | null;
+  readonly persona_id: string | null;
   readonly approval_policy: unknown;
   /** Arrêt global des envois de l'organisation (garde-fou prioritaire). */
   readonly sending_paused_at: string | null;
@@ -300,28 +301,51 @@ function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean 
   return false;
 }
 
+/** Ce qu'on a déjà envoyé aujourd'hui chez un compte donné. */
+interface ToucheAujourdhui {
+  /** Personnes distinctes touchées, toutes personas confondues. */
+  readonly personnes: number;
+  /** Personas déjà servies chez ce compte. */
+  readonly personas: ReadonlySet<string>;
+  /** Instant où le compte redevient joignable. */
+  readonly prochainCreneau: number;
+}
+
 /**
- * Comptes déjà touchés aujourd'hui, avec l'instant où ils redeviennent
- * joignables.
+ * Personnes touchées aujourd'hui, par compte, avec le détail des personas.
  *
- * La spec l'énonce ainsi : deux personnes de la même entreprise ne reçoivent
- * jamais quelque chose le même jour. Sans cette règle, une entreprise qui publie
- * huit offres reçoit huit messages — sur les données réelles de JB, un seul
- * groupe représentait huit des dix signaux qualifiés.
+ * La règle d'origine était « un contact par compte et par jour » — elle
+ * regardait le compte sans distinguer la personne. Elle protégeait bien contre
+ * le cas réel qui l'a motivée (une entreprise publiant huit offres recevait
+ * huit messages), mais elle interdisait aussi ce que deux campagnes par métier
+ * demandent : écrire au directeur commercial ET à un commercial de la même
+ * entreprise. Comme la première campagne touche son compte presque chaque jour
+ * pendant deux semaines, la seconde glissait indéfiniment sans jamais partir.
  *
- * On mesure sur les actions RÉELLEMENT parties ou planifiées du jour, pas sur
- * les actions bloquées : un contact qu'on n'a pas touché ne consomme pas la
- * place de son entreprise.
+ * On mesure donc deux choses : quelles personas ont déjà été servies chez ce
+ * compte, et combien de personnes distinctes en tout. La première empêche de
+ * réécrire au même profil, la seconde conserve la protection d'origine.
+ *
+ * Compté sur les actions RÉELLEMENT parties ou planifiées du jour, pas sur les
+ * actions bloquées : un contact qu'on n'a pas touché ne consomme pas la place
+ * de son entreprise.
  */
 async function loadAccountsContactedToday(
   pool: Pool,
   organizationIds: string[],
-): Promise<Map<string, number>> {
-  const parCompte = new Map<string, number>();
+): Promise<Map<string, ToucheAujourdhui>> {
+  const parCompte = new Map<string, ToucheAujourdhui>();
   if (organizationIds.length === 0) return parCompte;
-  const res = await pool.query<{ account_id: string; prochain_creneau: string }>(
+  const res = await pool.query<{
+    account_id: string;
+    prochain_creneau: string;
+    personnes: string;
+    personas: (string | null)[];
+  }>(
     `select c.account_id,
-            (date_trunc('day', min(a.created_at)) + interval '1 day') as prochain_creneau
+            (date_trunc('day', min(a.created_at)) + interval '1 day') as prochain_creneau,
+            count(distinct c.id) as personnes,
+            array_agg(distinct c.persona_id) filter (where c.persona_id is not null) as personas
        from actions a
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
@@ -333,10 +357,23 @@ async function loadAccountsContactedToday(
     [organizationIds],
   );
   for (const row of res.rows) {
-    parCompte.set(row.account_id, new Date(row.prochain_creneau).getTime());
+    parCompte.set(row.account_id, {
+      personnes: Number(row.personnes),
+      personas: new Set((row.personas ?? []).filter((p): p is string => p !== null)),
+      prochainCreneau: new Date(row.prochain_creneau).getTime(),
+    });
   }
   return parCompte;
 }
+
+/**
+ * Personnes qu'on accepte de toucher dans une même entreprise le même jour.
+ *
+ * Deux, parce que deux campagnes par métier tournent en parallèle. Au-delà, on
+ * ne prospecte plus une entreprise, on la démarche — ce que le produit annonce
+ * ne pas faire.
+ */
+const PERSONNES_PAR_ENTREPRISE_ET_PAR_JOUR = Number(process.env.ACCOUNT_PEOPLE_PER_DAY ?? 2);
 
 /**
  * Délai entre la remise au provider et l'arrivée chez le destinataire, en
@@ -373,7 +410,7 @@ function graine(id: string): number {
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
   const due = await pool.query<DueRow>(
     `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
-            c.linkedin_url, c.email, c.email_status, c.account_id, c.first_name, c.last_name,
+            c.linkedin_url, c.email, c.email_status, c.account_id, c.persona_id, c.first_name, c.last_name,
             c.locale, c.job_title,
             camp.approval_policy,
             org.sending_paused_at,
@@ -470,7 +507,8 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     // Garde-fous d'envoi (T18). Interrogés AVANT `composeTick` : un report ne
     // doit pas faire avancer l'inscription, alors que composer l'avance.
     if (step) {
-      const prochainCreneauCompte = row.account_id ? comptesTouches.get(row.account_id) : undefined;
+      const dejaTouche = row.account_id ? comptesTouches.get(row.account_id) : undefined;
+      const prochainCreneauCompte = dejaTouche?.prochainCreneau;
 
       // Contraintes portées par l'expéditeur qui sera retenu : fenêtre horaire et
       // quotas. On résout ici — avant d'émettre — parce que ce sont ses horaires
@@ -511,7 +549,9 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         channel: step.channel,
         now: now.getTime(),
         killSwitch: row.sending_paused_at !== null,
-        accountContactedToday: prochainCreneauCompte !== undefined,
+        personaContactedToday: row.persona_id !== null && dejaTouche?.personas.has(row.persona_id) === true,
+        accountPeopleToday: dejaTouche?.personnes ?? 0,
+        accountPeopleCap: PERSONNES_PAR_ENTREPRISE_ET_PAR_JOUR,
         ...(prochainCreneauCompte !== undefined ? { nextAccountSlot: prochainCreneauCompte } : {}),
         ...(quotaRestant !== undefined ? { quotaRemaining: quotaRestant } : {}),
         ...(quotaResetAt !== undefined ? { quotaResetAt } : {}),
