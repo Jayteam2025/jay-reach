@@ -516,7 +516,8 @@
       "stateMissing": "Extension not installed",
       "stateInstalled": "Extension installed, not connected yet",
       "stateConnected": "Extension connected",
-      "stateConnectedTo": "Connected to {profile}"
+      "stateConnectedTo": "Connected to {profile}",
+      "wrongOrigin": "The extension does not recognise this address. It only activates on https://jay-reach.vercel.app — a deployment URL, the one with an identifier after the project name, never wakes it up."
     },
     "stats": {
       "title": "Activity",
