@@ -46,6 +46,7 @@ import {
   enqueueDiscoverForActiveSources,
   enqueueScoringForOrgs,
   enqueueEnrichmentForQualified,
+  enqueueEnrollments,
   enqueueRequestedRuns,
 } from './producer.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
@@ -391,6 +392,12 @@ export async function produire(ctx: Contexte): Promise<void> {
     }
     // Enrichissement des comptes qualifiés : le maillon entre le scoring et
     // FullEnrich. Sans lui, un signal qualifié n'a aucune suite.
+    // Entrée en campagne : le maillon entre l'enrichissement et la séquence.
+    // Sans lui, un contact enrichi n'était jamais inscrit nulle part.
+    const i = await enqueueEnrollments(boss, pool);
+    if (i > 0) {
+      console.log(`[producer] ${i} contact(s) inscrit(s) en campagne`);
+    }
     const e = await enqueueEnrichmentForQualified(boss, pool);
     if (e > 0) {
       console.log(`[producer] enrichissement enfilé pour ${e} couple(s) compte/persona`);

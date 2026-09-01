@@ -202,6 +202,94 @@ export async function enqueueEnrichmentForQualified(
 }
 
 /**
+ * Inscrit en campagne les contacts enrichis qui n'y sont pas encore.
+ *
+ * C'était le maillon manquant. La file `sequence.enroll` était déclarée, le
+ * worker s'y abonnait, son traitement était écrit — et personne n'y déposait
+ * jamais de job. Un signal était collecté, qualifié, scoré, enrichi, puis
+ * s'arrêtait là. C'est l'unique raison pour laquelle la chaîne ne produisait
+ * rien.
+ *
+ * Le chemin va du contact à la campagne : son signal d'origine donne le thème
+ * de veille, le thème donne les campagnes qui s'en nourrissent, et parmi
+ * elles on retient celle qui accepte sa persona.
+ *
+ * Trois refus délibérés :
+ *
+ *  - **Une campagne qui ne déclare aucune persona n'inscrit personne.** Une
+ *    règle d'entrée vide se lit comme « accepte tout le monde », et une
+ *    campagne d'essai aspirerait alors chaque contact enrichi de
+ *    l'organisation. L'inscription engage des envois réels : on demande donc
+ *    que la cible ait été dite.
+ *  - **Un contact sans persona n'est pas inscrit.** On ne saurait pas quel
+ *    message lui adresser.
+ *  - **Le score minimum de la campagne est enfin lu.** Il était enregistré
+ *    depuis l'éditeur et n'avait aucun lecteur : une campagne exigeant 60
+ *    inscrivait à 12 sans que rien ne le signale.
+ *
+ * L'identifiant de job est déterministe par (campagne, contact) : un passage
+ * répété du producteur ne réinscrit pas le même contact, et l'index partiel
+ * d'`enrollments` refuse de toute façon une seconde inscription vivante.
+ */
+export async function enqueueEnrollments(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? 50;
+  const res = await pool.query<{
+    organization_id: string;
+    campaign_id: string;
+    contact_id: string;
+    signal_id: string;
+  }>(
+    `select distinct on (ct.id)
+            ct.organization_id, c.id as campaign_id, ct.id as contact_id, s.id as signal_id
+       from contacts ct
+       join signals s on s.id = ct.source_signal_id
+       join campaigns c on c.organization_id = ct.organization_id
+        and c.status = 'active'
+       -- Le thème peut être rattaché de deux façons : directement sur la
+       -- campagne, ou par la table de liaison quand elle en sert plusieurs.
+        and (c.source_id = s.source_id
+             or exists (select 1 from campaign_sources cs
+                         where cs.campaign_id = c.id and cs.source_id = s.source_id))
+       -- La persona du contact doit être explicitement acceptée.
+        and ct.persona_id is not null
+        and c.entry_rules -> 'personas' ? ct.persona_id::text
+       -- Score minimum de la campagne, absent = aucune exigence.
+        and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
+      where ct.source_signal_id is not null
+        and not exists (
+          select 1 from enrollments e
+           where e.contact_id = ct.id
+             and e.status in ('active', 'paused', 'paused_absence')
+        )
+      order by ct.id, s.score desc nulls last, c.created_at
+      limit $1`,
+    [limit],
+  );
+
+  let enqueued = 0;
+  for (const row of res.rows) {
+    await boss.insert([
+      {
+        name: 'sequence.enroll',
+        id: deterministicUuid('enroll', row.campaign_id, row.contact_id),
+        data: {
+          organizationId: row.organization_id,
+          campaignId: row.campaign_id,
+          contactId: row.contact_id,
+          signalId: row.signal_id,
+        },
+      },
+    ]);
+    enqueued += 1;
+  }
+  return enqueued;
+}
+
+/**
  * Enfile les collectes demandées à la main depuis l'écran Sources.
  *
  * Le bouton « lancer maintenant » pose un horodatage sur la source ; c'est ici

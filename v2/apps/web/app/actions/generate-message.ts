@@ -81,7 +81,11 @@ export async function generateStepMessage(
     ? await supabase.from('sources').select('name, description, config').in('id', sourceIds)
     : { data: [] };
 
-  const personaIds = ((campagne as { entry_rules?: { persona_ids?: string[] } } | null)?.entry_rules?.persona_ids) ?? [];
+  // La clé est `personas`, pas `persona_ids` : c'est celle que l'éditeur écrit
+  // et celle que documente `campaigns/validation.ts`. Lue au mauvais nom, la
+  // liste ressortait toujours vide et le message se rédigeait sans savoir à
+  // qui il s'adressait — sans que rien ne le signale.
+  const personaIds = ((campagne as { entry_rules?: { personas?: string[] } } | null)?.entry_rules?.personas) ?? [];
   const { data: personas } = personaIds.length
     ? await supabase.from('personas').select('name, description, title_patterns').in('id', personaIds)
     : { data: [] };
