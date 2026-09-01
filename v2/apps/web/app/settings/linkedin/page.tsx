@@ -1,4 +1,6 @@
+import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
+import { EN_TETE_UTILISATEUR } from '../../../lib/supabase/middleware';
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { LinkedInPanel } from './linkedin-panel';
@@ -25,6 +27,10 @@ const REGLAGES_PAR_DEFAUT = {
 export default async function LinkedInSettingsPage() {
   const t = await getTranslations();
   const supabase = await createClientOrNull();
+  // L'extension appartient à une personne et à son navigateur, pas à
+  // l'organisation. L'identité vérifiée est déjà posée en en-tête par le
+  // middleware : la relire ne coûte pas d'aller-retour.
+  const userId = (await headers()).get(EN_TETE_UTILISATEUR);
 
   const memberships = supabase
     ? (await supabase.from('memberships').select('organization_id').limit(1)).data
@@ -61,11 +67,19 @@ export default async function LinkedInSettingsPage() {
     // `last_used_at` est posé par `validate_extension_token`, donc uniquement
     // quand un appel de l'extension a été authentifié. C'est la seule preuve
     // qu'elle parle.
-    peutLire
+    //
+    // Et le jeton doit être CELUI DE LA PERSONNE qui regarde. Filtrer sur la
+    // seule organisation faisait voir à Alexandre l'extension de JB : deux
+    // jetons vivaient côte à côte, le sien jamais utilisé, celui de JB actif
+    // depuis le 31/08. L'écran lui affirmait donc « Extension connectée »
+    // pendant que la sienne restait muette — précisément le message qu'il a
+    // remonté.
+    peutLire && userId
       ? supabase!
           .from('extension_tokens')
           .select('organization_id, linkedin_profile_name, last_used_at')
           .eq('organization_id', orgId)
+          .eq('user_id', userId)
           .eq('is_active', true)
           .not('last_used_at', 'is', null)
           .limit(1)
