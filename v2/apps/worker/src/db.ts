@@ -337,27 +337,26 @@ export async function upsertResolvedAccount(pool: Pool, acc: ResolvedAccount): P
   // `on conflict` sur le SIREN. C'est seulement quand l'annuaire légal ne
   // répond pas qu'on créait à l'aveugle.
   //
-  // On ne peut pas s'appuyer ici sur une contrainte d'unicité : les doublons
-  // déjà en base l'empêcheraient d'être posée. La recherche est donc explicite,
-  // et se contente du nom — c'est la seule chose qu'on connaisse d'un compte
-  // non résolu.
+  // `on conflict` plutôt qu'une recherche puis une insertion : entre les deux,
+  // une seconde collecte peut insérer le même employeur, et la course rendrait
+  // le doublon qu'on cherche à empêcher — ou ferait échouer le worker sur la
+  // violation d'unicité. Le premier correctif faisait cette recherche, faute
+  // d'index : les 404 doublons alors en base empêchaient de le poser.
+  //
+  // L'index est partiel sur `siren is null`, comme la clause ici : deux
+  // établissements d'un même groupe portent légitimement le même nom dès lors
+  // qu'ils ont des SIREN distincts. C'est l'absence d'identité légale qui rend
+  // le nom seul discriminant.
+  //
+  // `do update` plutôt que `do nothing` parce qu'un `do nothing` ne renvoie
+  // rien sur conflit : on perdrait l'identifiant du compte existant, qui est
+  // précisément ce qu'on vient chercher.
   const res = await pool.query<{ id: string }>(
-    `with existant as (
-       select id from accounts
-        where organization_id = $1
-          and lower(name) = lower($2)
-          and siren is null
-        order by created_at, id
-        limit 1
-     ), cree as (
-       insert into accounts (organization_id, name, resolution_status)
-       select $1, $2, 'unresolved'
-        where not exists (select 1 from existant)
-       returning id
-     )
-     select id from existant
-     union all
-     select id from cree`,
+    `insert into accounts (organization_id, name, resolution_status)
+     values ($1, $2, 'unresolved')
+     on conflict (organization_id, lower(name)) where siren is null
+     do update set name = excluded.name
+     returning id`,
     [acc.organizationId, acc.name],
   );
   return res.rows[0]?.id ?? null;
