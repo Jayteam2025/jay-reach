@@ -270,6 +270,31 @@ export function LinkedInPanel(props: {
             ) : null}
           </div>
         )}
+
+        {/* Le paquet reste téléchargeable en permanence.
+            Il ne s'affichait que dans l'état « absente », si bien qu'un écran
+            qui se croyait connecté retirait le seul moyen de récupérer
+            l'extension. Alexandre s'est retrouvé exactement là le 01/09/2026 :
+            extension supprimée de Chrome pour la réinstaller, écran affirmant
+            « connectée » à cause du jeton d'un collègue, et plus aucun bouton
+            de téléchargement.
+            Le cas n'a d'ailleurs rien d'exceptionnel : mettre à jour son
+            extension demande de retélécharger, et on ne le fait précisément
+            que lorsqu'on est déjà connecté. */}
+        {!props.storeUrl && etat !== 'absente' ? (
+          <details className="rs-lk-fallback" style={{ marginTop: 12 }}>
+            <summary>{t('linkedin.connect.reinstall')}</summary>
+            <ol className="rs-lk-steps rs-lk-steps-num">
+              <li>{t('linkedin.connect.step1')}</li>
+              <li>{t('linkedin.connect.step2')}</li>
+              <li>{t('linkedin.connect.step3')}</li>
+              <li>{t('linkedin.connect.step4')}</li>
+            </ol>
+            <a className="rs-btn" href="/jay-reach-linkedin-extension.zip" download>
+              {t('linkedin.connect.download')}
+            </a>
+          </details>
+        ) : null}
       </section>
 
       {/* ---------------------------------------------- Réglages d'envoi */}
