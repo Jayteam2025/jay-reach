@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Jay Reach — LinkedIn",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Envoi des invitations et messages LinkedIn de Jay Reach via votre propre session. Usage interne — ne pas distribuer.",
   "permissions": [
     "storage",

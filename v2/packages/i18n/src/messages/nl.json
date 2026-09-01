@@ -517,7 +517,8 @@
       "stateInstalled": "Extensie geïnstalleerd, nog niet verbonden",
       "stateConnected": "Extensie verbonden",
       "stateConnectedTo": "Verbonden met {profile}",
-      "wrongOrigin": "De extensie herkent dit adres niet. Ze werkt alleen op https://jay-reach.vercel.app — een deployment-URL, met een identificatie na de projectnaam, activeert haar nooit."
+      "wrongOrigin": "De extensie herkent dit adres niet. Ze werkt alleen op https://jay-reach.vercel.app — een deployment-URL, met een identificatie na de projectnaam, activeert haar nooit.",
+      "staleVersion": "Extensie versie {installee}, maar deze app verwacht {attendue}. Download het pakket hieronder opnieuw en herlaad de extensie: het oude uitgepakte mapje herladen installeert de oude versie terug."
     },
     "stats": {
       "title": "Activiteit",

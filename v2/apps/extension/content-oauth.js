@@ -4,6 +4,17 @@
 // en production, externally_connectable prend le relais côté background.
 
 (function () {
+  /**
+   * Version du paquet installe, annoncee a la page.
+   *
+   * Sans elle, impossible de savoir laquelle des deux versions un operateur a
+   * chargee : le manifeste a change le 31/08/2026 (origines de la politique de
+   * securite) sans que le numero bouge. Rechargeant son ancien dossier
+   * decompresse plutot que le paquet neuf, on rechargeait le bug — et l'ecran
+   * ne pouvait que repeter que l'extension ne repond pas.
+   */
+  const VERSION = chrome.runtime.getManifest().version;
+
   // Origines autorisees a dialoguer avec l'extension. Elles doivent rester
   // alignees sur `externally_connectable` et sur les `matches` du manifeste :
   // une origine ajoutee ici mais absente la-bas ne verrait jamais ce script
@@ -39,7 +50,7 @@
   window.addEventListener('message', (event) => {
     if (!ALLOWED.includes(event.origin)) return;
     if (event.data?.type !== 'JAY_REACH_EXTENSION_PING') return;
-    window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT' }, event.origin);
+    window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT', version: VERSION }, event.origin);
   });
-  window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT' }, '*');
+  window.postMessage({ type: 'JAY_REACH_EXTENSION_PRESENT', version: VERSION }, '*');
 })();

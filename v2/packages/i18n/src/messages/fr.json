@@ -517,7 +517,8 @@
       "stateInstalled": "Extension installée, pas encore connectée",
       "stateConnected": "Extension connectée",
       "stateConnectedTo": "Connectée au compte {profile}",
-      "wrongOrigin": "Cette adresse n'est pas celle que l'extension reconnaît. Elle ne s'active que sur https://jay-reach.vercel.app — une URL de déploiement, avec un identifiant après le nom du projet, ne la réveille jamais."
+      "wrongOrigin": "Cette adresse n'est pas celle que l'extension reconnaît. Elle ne s'active que sur https://jay-reach.vercel.app — une URL de déploiement, avec un identifiant après le nom du projet, ne la réveille jamais.",
+      "staleVersion": "Extension en version {installee} alors que cette application attend la {attendue}. Retéléchargez le paquet ci-dessous et rechargez l'extension : recharger l'ancien dossier décompressé réinstalle l'ancienne version."
     },
     "stats": {
       "title": "Activité",
