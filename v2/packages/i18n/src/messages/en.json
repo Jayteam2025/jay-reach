@@ -740,6 +740,22 @@
     "save": "Save",
     "saving": "Saving",
     "saved": "Saved",
-    "empty": "No senders yet. Connect an account under Providers to send your first messages."
+    "empty": "No senders yet. Connect an account under Providers to send your first messages.",
+    "sendDays": "Sending days",
+    "sendFrom": "From",
+    "sendTo": "Until",
+    "timezone": "Time zone",
+    "form": {
+      "add": "Add a sender",
+      "cancel": "Cancel",
+      "create": "Create sender",
+      "creating": "Creating",
+      "channel": "Channel",
+      "emailIdentity": "Sending address",
+      "linkedinIdentity": "LinkedIn handle",
+      "emailPlaceholder": "first@your-domain.com",
+      "linkedinPlaceholder": "your-profile",
+      "identityHint": "Set once, at creation. It names the account connected at the provider, so changing it later would not change what actually goes out."
+    }
   }
 }

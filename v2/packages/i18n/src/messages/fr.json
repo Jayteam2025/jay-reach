@@ -740,6 +740,22 @@
     "save": "Enregistrer",
     "saving": "Enregistrement",
     "saved": "Enregistré",
-    "empty": "Aucun expéditeur. Branchez un compte dans Fournisseurs pour envoyer vos premiers messages."
+    "empty": "Aucun expéditeur. Branchez un compte dans Fournisseurs pour envoyer vos premiers messages.",
+    "sendDays": "Jours d'envoi",
+    "sendFrom": "À partir de",
+    "sendTo": "Jusqu'à",
+    "timezone": "Fuseau horaire",
+    "form": {
+      "add": "Ajouter un expéditeur",
+      "cancel": "Annuler",
+      "create": "Créer l'expéditeur",
+      "creating": "Création",
+      "channel": "Canal",
+      "emailIdentity": "Adresse d'envoi",
+      "linkedinIdentity": "Identifiant LinkedIn",
+      "emailPlaceholder": "prenom@votre-domaine.fr",
+      "linkedinPlaceholder": "votre-profil",
+      "identityHint": "Se fixe à la création. Elle désigne le compte branché chez le fournisseur, la changer ensuite ne changerait pas ce qui part."
+    }
   }
 }

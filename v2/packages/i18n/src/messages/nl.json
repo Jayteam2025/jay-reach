@@ -740,6 +740,22 @@
     "save": "Opslaan",
     "saving": "Opslaan",
     "saved": "Opgeslagen",
-    "empty": "Nog geen afzenders. Koppel een account onder Providers om uw eerste berichten te versturen."
+    "empty": "Nog geen afzenders. Koppel een account onder Providers om uw eerste berichten te versturen.",
+    "sendDays": "Verzenddagen",
+    "sendFrom": "Vanaf",
+    "sendTo": "Tot",
+    "timezone": "Tijdzone",
+    "form": {
+      "add": "Afzender toevoegen",
+      "cancel": "Annuleren",
+      "create": "Afzender aanmaken",
+      "creating": "Aanmaken",
+      "channel": "Kanaal",
+      "emailIdentity": "Verzendadres",
+      "linkedinIdentity": "LinkedIn-gebruikersnaam",
+      "emailPlaceholder": "voornaam@uw-domein.nl",
+      "linkedinPlaceholder": "uw-profiel",
+      "identityHint": "Wordt bij het aanmaken vastgelegd. Het benoemt het account bij de provider, dus later wijzigen verandert niet wat er werkelijk uitgaat."
+    }
   }
 }

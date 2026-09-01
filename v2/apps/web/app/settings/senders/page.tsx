@@ -2,7 +2,7 @@ import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { SendersForm, type SenderRow } from './senders-form';
 
-const COLS = 'id, kind, identity, display_name, daily_quota, hourly_quota, is_active';
+const COLS = 'id, kind, identity, display_name, daily_quota, hourly_quota, is_active, business_hours, timezone';
 
 export default async function SendersPage() {
   const supabase = await createClientOrNull();
