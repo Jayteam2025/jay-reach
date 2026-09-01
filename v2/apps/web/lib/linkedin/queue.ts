@@ -10,7 +10,7 @@
 import type { Pool, PoolClient } from 'pg';
 import {
   decideCanSend,
-  parisHour,
+  heureLocale,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
   type PaceReason,
@@ -81,14 +81,31 @@ export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<st
 interface PaceStats {
   readonly mode: 'auto' | 'hybrid' | 'manual';
   readonly dailyCap: number;
+  readonly weeklyCap: number;
+  readonly startHour: number;
+  readonly endHour: number;
+  readonly days: number[];
+  readonly timezone: string;
   readonly sentLast7Days: number;
   readonly sentToday: number;
   readonly lastSentAtIso: string | null;
 }
 
 async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Promise<PaceStats> {
-  const settings = await client.query<{ mode: 'auto' | 'hybrid' | 'manual'; daily_cap: number }>(
-    'select mode, daily_cap from linkedin_settings where organization_id = $1',
+  // L'écran enregistre `weekly_cap`, les jours, la plage horaire et le fuseau
+  // depuis toujours ; rien ici ne les lisait. Le pacing appliquait une fenêtre
+  // 8 h - 21 h Paris codée en dur, tous les jours, et le plafond dur de 200 par
+  // semaine quel que soit le curseur.
+  const settings = await client.query<{
+    mode: 'auto' | 'hybrid' | 'manual';
+    weekly_cap: number | null;
+    send_days: number[] | null;
+    send_from_hour: number | null;
+    send_to_hour: number | null;
+    timezone: string | null;
+  }>(
+    `select mode, weekly_cap, send_days, send_from_hour, send_to_hour, timezone
+       from linkedin_settings where organization_id = $1`,
     [orgId],
   );
   const nowIso = now.toISOString();
@@ -109,9 +126,29 @@ async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Prom
     [orgId],
   );
   void nowIso;
+  const r = settings.rows[0];
+  const jours = (r?.send_days ?? []).filter((j) => j >= 1 && j <= 7);
+  const hebdo = r?.weekly_cap ?? 100;
+
+  // Le plafond quotidien se DÉDUIT du curseur hebdomadaire, et `daily_cap` est
+  // volontairement ignoré.
+  //
+  // L'écran ne saisit plus que le volume par semaine ; `daily_cap` est une
+  // colonne héritée que plus personne n'écrit. Sur la base, elle vaut encore 25
+  // alors que le curseur dit 100 par semaine sur cinq jours — soit vingt. S'y
+  // fier ferait envoyer cent vingt-cinq invitations en affichant cent : le
+  // réglage visible mentirait sur ce qui part, ce qui est pire que pas de
+  // réglage du tout.
+  const quotidien = Math.max(1, Math.ceil(hebdo / Math.max(1, jours.length || 5)));
+
   return {
-    mode: settings.rows[0]?.mode ?? 'auto',
-    dailyCap: settings.rows[0]?.daily_cap ?? 25,
+    mode: r?.mode ?? 'auto',
+    dailyCap: quotidien,
+    weeklyCap: hebdo,
+    startHour: r?.send_from_hour ?? 8,
+    endHour: r?.send_to_hour ?? 21,
+    days: jours.length > 0 ? jours : [1, 2, 3, 4, 5],
+    timezone: r?.timezone ?? 'Europe/Paris',
     sentLast7Days: Number(counts.rows[0]?.last7 ?? 0),
     sentToday: Number(counts.rows[0]?.today ?? 0),
     lastSentAtIso: last.rows[0]?.sent_at ?? null,
@@ -149,10 +186,17 @@ export async function claimNext(pool: Pool, orgId: string, now: Date = new Date(
     const minutesSinceLastSent = stats.lastSentAtIso
       ? (now.getTime() - new Date(stats.lastSentAtIso).getTime()) / 60_000
       : null;
+    const { hour, isoDay } = heureLocale(now, stats.timezone);
     const decision = decideCanSend({
-      hour: parisHour(now),
+      hour,
+      isoDay,
+      startHour: stats.startHour,
+      endHour: stats.endHour,
+      days: stats.days,
       sentLast7Days: stats.sentLast7Days,
-      cap7Days: HARD_CAP_7_DAYS,
+      // Le curseur de l'opérateur, sans jamais dépasser le plafond dur : c'est
+      // lui qui protège le compte LinkedIn, pas le réglage.
+      cap7Days: Math.min(stats.weeklyCap, HARD_CAP_7_DAYS),
       lastSentAtIso: stats.lastSentAtIso,
       minutesSinceLastSent,
     });

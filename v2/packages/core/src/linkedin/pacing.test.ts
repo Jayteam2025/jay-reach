@@ -4,6 +4,7 @@ import {
   isWithinWindow,
   seededRandom,
   parisHour,
+  heureLocale,
   WINDOW_START_HOUR,
   WINDOW_END_HOUR,
   type PaceInput,
@@ -66,5 +67,67 @@ describe('pacing LinkedIn', () => {
     const h = parisHour(new Date('2026-08-20T12:00:00.000Z'));
     expect(h).toBeGreaterThanOrEqual(0);
     expect(h).toBeLessThanOrEqual(23);
+  });
+});
+
+describe('la fenêtre saisie à l’écran est celle qui s’applique', () => {
+  const base = {
+    sentLast7Days: 0,
+    cap7Days: 100,
+    lastSentAtIso: null,
+    minutesSinceLastSent: null,
+  };
+
+  it('respecte des heures autres que 8 h - 21 h', () => {
+    // L'écran LinkedIn enregistre une plage horaire depuis toujours ; le pacing
+    // appliquait 8 h - 21 h codées en dur et l'ignorait.
+    const fenetre = { startHour: 10, endHour: 12, days: [1, 2, 3, 4, 5] };
+    expect(decideCanSend({ ...base, hour: 9, isoDay: 1, ...fenetre })).toEqual({
+      ok: false,
+      reason: 'outside_window',
+    });
+    expect(decideCanSend({ ...base, hour: 10, isoDay: 1, ...fenetre })).toEqual({ ok: true });
+    expect(decideCanSend({ ...base, hour: 12, isoDay: 1, ...fenetre })).toEqual({
+      ok: false,
+      reason: 'outside_window',
+    });
+  });
+
+  it('respecte les jours cochés', () => {
+    // Cocher « lundi à vendredi » n'empêchait rien : le samedi partait comme
+    // les autres jours.
+    const fenetre = { startHour: 8, endHour: 21, days: [1, 2, 3, 4, 5] };
+    expect(decideCanSend({ ...base, hour: 10, isoDay: 6, ...fenetre })).toEqual({
+      ok: false,
+      reason: 'outside_window',
+    });
+    expect(decideCanSend({ ...base, hour: 10, isoDay: 5, ...fenetre })).toEqual({ ok: true });
+  });
+
+  it('applique le plafond hebdomadaire de l’opérateur, sans dépasser le plafond dur', () => {
+    // `weekly_cap` était enregistré et jamais lu : seul le plafond dur de 200
+    // s'appliquait, quel que soit le curseur.
+    expect(
+      decideCanSend({ ...base, hour: 10, isoDay: 1, sentLast7Days: 30, cap7Days: 30 }),
+    ).toEqual({ ok: false, reason: 'weekly_cap_reached' });
+    expect(
+      decideCanSend({ ...base, hour: 10, isoDay: 1, sentLast7Days: 250, cap7Days: 10_000 }),
+    ).toEqual({ ok: false, reason: 'weekly_cap_reached' });
+  });
+
+  it('lit l’heure ET le jour dans le fuseau demandé', () => {
+    // Mardi 1er septembre 2026, 22 h 30 UTC. À Paris il est déjà minuit passé,
+    // donc mercredi ; à Montréal il fait encore jour, et c'est toujours mardi.
+    // Les deux basculent ensemble : les lire dans deux fuseaux différents
+    // ferait partir un message le mercredi pour l'heure et le mardi pour le
+    // jour.
+    const d = new Date('2026-09-01T22:30:00Z');
+    expect(heureLocale(d, 'Europe/Paris')).toEqual({ hour: 0, isoDay: 3 });
+    expect(heureLocale(d, 'America/Montreal')).toEqual({ hour: 18, isoDay: 2 });
+  });
+
+  it('retombe sur la fenêtre par défaut quand rien n’est réglé', () => {
+    expect(decideCanSend({ ...base, hour: 7, isoDay: 1 })).toEqual({ ok: false, reason: 'outside_window' });
+    expect(decideCanSend({ ...base, hour: 8, isoDay: 1 })).toEqual({ ok: true });
   });
 });
