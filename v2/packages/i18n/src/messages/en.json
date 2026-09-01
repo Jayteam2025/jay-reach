@@ -518,7 +518,8 @@
       "stateConnected": "Extension connected",
       "stateConnectedTo": "Connected to {profile}",
       "wrongOrigin": "The extension does not recognise this address. It only activates on https://jay-reach.vercel.app — a deployment URL, the one with an identifier after the project name, never wakes it up.",
-      "staleVersion": "Extension version {installee}, but this app expects {attendue}. Download the package below again and reload the extension: reloading your old unzipped folder reinstalls the old version."
+      "staleVersion": "Extension version {installee}, but this app expects {attendue}. Download the package below again and reload the extension: reloading your old unzipped folder reinstalls the old version.",
+      "reinstall": "Reinstall or update the extension"
     },
     "stats": {
       "title": "Activity",
