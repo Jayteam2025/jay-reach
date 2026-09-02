@@ -7,6 +7,11 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+- **Les réglages d'un fournisseur ne se relisaient jamais.** L'écran ne demandait que le statut et les quatre derniers caractères de la clé ; la configuration non secrète — un plafond quotidien, un modèle — n'était pas chargée. Le champ s'affichait donc vide alors qu'une valeur existait, et enregistrer par-dessus l'effaçait. C'est la raison pour laquelle Alexandre cherchait son quota sans le trouver : il était bien enregistré, l'écran ne le montrait pas. La vue l'exposait pourtant depuis toujours, seule la requête l'omettait.
+- **Un libellé de champ portait toute son explication.** Le plafond d'enrichissement s'appelait « Contacts enrichis par jour, au maximum — défaut 50. C'est le poste le plus coûteux… » : cent cinquante caractères là où l'on attend deux mots. Le manifeste d'un fournisseur distingue désormais le nom, l'aide et l'exemple — un libellé nomme, il n'explique pas.
+
+
 ### Ajouté
 - **Enrichir une entreprise choisie, depuis l'écran des signaux.** L'enrichissement tourne tout seul sur les comptes qualifiés — bon régime une fois la machine réglée, inutilisable pour une mise en route où l'on veut voir ce que le fournisseur rend sur deux entreprises avant de laisser dépenser. Le socle v1 permettait de choisir dans la liste ce qu'on enrichissait ; le geste est rendu. Le crédit se décompte du même plafond quotidien : demander à la main ne contourne pas le garde-fou. L'identifiant du job reproduit **au caractère près** celui du producteur automatique — même SHA-1, même découpage — sans quoi un clic manuel dédoublerait un job déjà en file, et la facture avec.
 

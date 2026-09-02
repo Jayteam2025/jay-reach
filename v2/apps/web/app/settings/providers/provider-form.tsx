@@ -12,6 +12,9 @@ type Field = {
   type: 'text' | 'password';
   secret: boolean;
   required: boolean;
+  /** Aide sous le champ, quand le libellé ne suffit pas à expliquer. */
+  hintKey?: string;
+  placeholderKey?: string;
 };
 
 export function ProviderForm(props: {
@@ -21,6 +24,16 @@ export function ProviderForm(props: {
   fields: Field[];
   status: string | null;
   last4: string | null;
+  /**
+   * Réglages non secrets déjà enregistrés — un plafond quotidien, un modèle.
+   *
+   * Ils n'étaient pas relus : le champ s'affichait vide alors qu'une valeur
+   * existait, si bien qu'on ne pouvait ni vérifier son réglage ni le modifier
+   * sans le retaper de mémoire. Enregistrer par-dessus l'effaçait.
+   * Le secret, lui, n'est jamais renvoyé : seuls ses quatre derniers
+   * caractères le sont, pour reconnaître la clé sans la révéler.
+   */
+  config: Record<string, string> | null;
 }) {
   const t = useTranslations();
   const router = useRouter();
@@ -75,8 +88,11 @@ export function ProviderForm(props: {
                 type={f.type}
                 required={f.required}
                 autoComplete="off"
-                placeholder={t(f.labelKey)}
+                placeholder={f.placeholderKey ? t(f.placeholderKey) : t(f.labelKey)}
+                // Un secret ne se relit pas ; un réglage, si.
+                defaultValue={f.secret ? undefined : (props.config?.[f.name] ?? '')}
               />
+              {f.hintKey ? <span className="rs-row-sub">{t(f.hintKey)}</span> : null}
             </label>
           ))}
           <div className="rs-actions">

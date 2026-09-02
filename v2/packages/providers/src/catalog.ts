@@ -24,7 +24,15 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
     // deux mille quatre cents appels par jour.
     fields: [
       { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'FULLENRICH_API_KEY' },
-      { name: 'daily_cap', labelKey: 'providers.field.enrichDailyCap', type: 'text', secret: false, required: false },
+      {
+        name: 'daily_cap',
+        labelKey: 'providers.field.enrichDailyCap',
+        hintKey: 'providers.field.enrichDailyCapHint',
+        placeholderKey: 'providers.field.enrichDailyCapPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
     ],
   },
   {

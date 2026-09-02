@@ -23,6 +23,16 @@ export const credentialFieldSchema = z.object({
   secret: z.boolean(),
   required: z.boolean(),
   fallbackEnv: z.string().optional(),
+  /**
+   * Aide sous le champ, et exemple dans le champ.
+   *
+   * Séparés du libellé parce qu'un libellé doit nommer, pas expliquer : la
+   * première version du plafond d'enrichissement portait toute sa
+   * justification dans son nom, une phrase de cent cinquante caractères là où
+   * l'on attend deux mots.
+   */
+  hintKey: z.string().optional(),
+  placeholderKey: z.string().optional(),
 });
 export type CredentialField = z.infer<typeof credentialFieldSchema>;
 

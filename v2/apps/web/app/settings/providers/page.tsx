@@ -18,9 +18,9 @@ export default async function ProvidersPage() {
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
 
   const creds = supabase
-    ? (await supabase.from('credentials_public').select('provider_id, status, last4').eq('organization_id', orgId)).data
+    ? (await supabase.from('credentials_public').select('provider_id, status, last4, config').eq('organization_id', orgId)).data
     : null;
-  const rows = (creds ?? []) as { provider_id: string; status: string; last4: string | null }[];
+  const rows = (creds ?? []) as { provider_id: string; status: string; last4: string | null; config: Record<string, string> | null }[];
   const byProvider = new Map(rows.map((row) => [row.provider_id, row]));
 
   const categories = CATEGORY_ORDER.map((cat) => ({
@@ -57,9 +57,12 @@ export default async function ProvidersPage() {
                       type: f.type,
                       secret: f.secret,
                       required: f.required,
+                      ...(f.hintKey ? { hintKey: f.hintKey } : {}),
+                      ...(f.placeholderKey ? { placeholderKey: f.placeholderKey } : {}),
                     }))}
                     status={row?.status ?? null}
                     last4={row?.last4 ?? null}
+                    config={row?.config ?? null}
                   />
                 );
               })}
