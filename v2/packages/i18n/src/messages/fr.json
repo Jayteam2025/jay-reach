@@ -151,7 +151,9 @@
       "customer": "Client présent dans votre liste",
       "manual": "Écarté manuellement",
       "opposition": "Opposition au démarchage (registre légal)"
-    }
+    },
+    "enrich": "Enrichir cette entreprise",
+    "enrichHint": "Cherche ses contacts maintenant, sans attendre le tour automatique. Décompté du plafond du jour."
   },
   "nav": {
     "dashboard": "Tableau de bord",

@@ -143,7 +143,11 @@ async function plafondEnrichissement(pool: Pool, organizationId: string): Promis
     [organizationId],
   );
   const saisi = Number(res.rows[0]?.valeur);
-  return Number.isFinite(saisi) && saisi > 0 ? saisi : PLAFOND_ENRICHISSEMENT_PAR_DEFAUT;
+  // Zéro est un réglage, pas une absence : c'est ainsi qu'on met
+  // l'enrichissement automatique en pause le temps d'éprouver la chaîne sur
+  // deux entreprises choisies à la main. Le traiter comme invalide aurait
+  // rétabli le plafond par défaut — l'inverse exact de ce qui est demandé.
+  return Number.isFinite(saisi) && saisi >= 0 ? saisi : PLAFOND_ENRICHISSEMENT_PAR_DEFAUT;
 }
 
 export async function enqueueEnrichmentForQualified(

@@ -7,6 +7,13 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Ajouté
+- **Enrichir une entreprise choisie, depuis l'écran des signaux.** L'enrichissement tourne tout seul sur les comptes qualifiés — bon régime une fois la machine réglée, inutilisable pour une mise en route où l'on veut voir ce que le fournisseur rend sur deux entreprises avant de laisser dépenser. Le socle v1 permettait de choisir dans la liste ce qu'on enrichissait ; le geste est rendu. Le crédit se décompte du même plafond quotidien : demander à la main ne contourne pas le garde-fou. L'identifiant du job reproduit **au caractère près** celui du producteur automatique — même SHA-1, même découpage — sans quoi un clic manuel dédoublerait un job déjà en file, et la facture avec.
+
+### Corrigé
+- **Un plafond d'enrichissement à zéro rétablissait le plafond par défaut**, soit l'inverse exact de ce qu'on demande. Zéro est un réglage, pas une absence : c'est ainsi qu'on met l'enrichissement automatique en pause le temps d'éprouver la chaîne sur quelques cas choisis.
+
+
 ### Corrigé
 - **Les modèles importés du socle v1 parlaient encore anglais**, et rien ne le signalait. La migration des données legacy a recopié les corps tels quels : `{company}`, `{first_name}`, `{job_title}`, `{salutation}`, `{signature}`. Ce n'était pas une invention de l'opérateur — ces noms étaient bien ceux de Jay Reach avant la refonte, et trois de ces modèles seraient partis avec les accolades visibles chez le prospect. L'ancien vocabulaire est désormais traduit à la lecture comme à l'enregistrement, et les modèles déjà en base ont été convertis.
 
