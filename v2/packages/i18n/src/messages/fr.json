@@ -53,7 +53,9 @@
       "appKey": "App key",
       "modelSmart": "Modèle (scoring) — défaut Sonnet",
       "modelFast": "Modèle (tâches légères) — défaut Haiku",
-      "enrichDailyCap": "Contacts enrichis par jour, au maximum — défaut 50. C'est le poste le plus coûteux : la valeur se dérive de ce que vous pouvez envoyer, pas de ce que le moteur sait faire."
+      "enrichDailyCap": "Plafond quotidien",
+      "enrichDailyCapHint": "Contacts enrichis par jour, au maximum. Mettez 0 pour mettre l'enrichissement automatique en pause et n'enrichir qu'à la main, depuis l'écran Signaux.",
+      "enrichDailyCapPlaceholder": "ex. 50"
     },
     "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main"
   },

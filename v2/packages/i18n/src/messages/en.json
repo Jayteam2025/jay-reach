@@ -53,7 +53,9 @@
       "appKey": "App key",
       "modelSmart": "Model (scoring) — default Sonnet",
       "modelFast": "Model (light tasks) — default Haiku",
-      "enrichDailyCap": "Contacts enriched per day, at most — default 50. This is the costliest step: derive the figure from what you can actually send, not from what the engine can do."
+      "enrichDailyCap": "Daily cap",
+      "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
+      "enrichDailyCapPlaceholder": "e.g. 50"
     },
     "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand"
   },
