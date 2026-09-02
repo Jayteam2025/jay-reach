@@ -192,9 +192,27 @@ export async function enqueueEnrichmentForQualified(
   // Un plafond par organisation, lu une seule fois pour tout le lot.
   const plafonds = new Map<string, number>();
   for (const row of res.rows) {
-    // Le crédit se prend AVANT de déposer le job, et par paire. Le compteur est
-    // atomique : deux tours simultanés ne peuvent pas dépasser le plafond à
-    // eux deux.
+    // Un job déjà en file ne se paie pas deux fois.
+    //
+    // L'identifiant est déterministe par (compte, persona) : redéposer le même
+    // ne crée rien. Mais le crédit, lui, était pris avant l'insertion — donc
+    // décompté pour un job qui n'existera pas. Mesuré sur la base le
+    // 02/09/2026 : cinq crédits consommés dans la journée pour deux jobs
+    // réellement créés. Trois brûlés sur des doublons, sans qu'aucun appel ne
+    // parte chez le fournisseur.
+    const idJob = deterministicUuid('enrich-company', row.account_id, row.persona_id);
+    const dejaEnFile = await pool.query<{ existe: boolean }>(
+      `select exists (select 1 from pgboss.job where id = $1::uuid
+                       and state in ('created','retry','active')) as existe`,
+      [idJob],
+    );
+    if (dejaEnFile.rows[0]?.existe) {
+      continue;
+    }
+
+    // Le crédit se prend ensuite, mais TOUJOURS avant l'insertion : le compteur
+    // est atomique, et deux tours simultanés ne peuvent pas dépasser le plafond
+    // à eux deux. L'ordre inverse laisserait passer un dépassement.
     const plafond = plafonds.get(row.organization_id) ?? (await plafondEnrichissement(pool, row.organization_id));
     plafonds.set(row.organization_id, plafond);
     const credit = await pool.query<{ ok: boolean }>(
@@ -210,7 +228,7 @@ export async function enqueueEnrichmentForQualified(
     await boss.insert([
       {
         name: 'enrichment.company',
-        id: deterministicUuid('enrich-company', row.account_id, row.persona_id),
+        id: idJob,
         data: {
           organizationId: row.organization_id,
           accountId: row.account_id,
