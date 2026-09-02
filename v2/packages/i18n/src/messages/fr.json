@@ -57,7 +57,8 @@
       "enrichDailyCapHint": "Contacts enrichis par jour, au maximum. Mettez 0 pour mettre l'enrichissement automatique en pause et n'enrichir qu'à la main, depuis l'écran Signaux.",
       "enrichDailyCapPlaceholder": "ex. 50"
     },
-    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main"
+    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
+    "secretUnchanged": "Laissez vide pour garder la clé actuelle"
   },
   "jobs": {
     "title": "Files de fond",

@@ -8,6 +8,10 @@ Versionnement sémantique.
 ## [Non publié]
 
 ### Corrigé
+- **Changer un réglage de fournisseur exigeait de ressaisir sa clé d'API.** Le champ était marqué obligatoire et la clé n'est pas relisible : le formulaire refusait donc de partir, sans message ni explication. Alexandre a cliqué « Enregistrer » et rien ne s'est produit. Une clé déjà enregistrée n'est plus exigée — laissée vide, elle reste ce qu'elle est, et le champ le dit. Côté base, un secret vide sur une ligne existante ne réécrit plus que la configuration ; il ne peut pas vouloir dire « efface la clé », car on n'efface pas un secret par omission.
+
+
+### Corrigé
 - **Les réglages d'un fournisseur ne se relisaient jamais.** L'écran ne demandait que le statut et les quatre derniers caractères de la clé ; la configuration non secrète — un plafond quotidien, un modèle — n'était pas chargée. Le champ s'affichait donc vide alors qu'une valeur existait, et enregistrer par-dessus l'effaçait. C'est la raison pour laquelle Alexandre cherchait son quota sans le trouver : il était bien enregistré, l'écran ne le montrait pas. La vue l'exposait pourtant depuis toujours, seule la requête l'omettait.
 - **Un libellé de champ portait toute son explication.** Le plafond d'enrichissement s'appelait « Contacts enrichis par jour, au maximum — défaut 50. C'est le poste le plus coûteux… » : cent cinquante caractères là où l'on attend deux mots. Le manifeste d'un fournisseur distingue désormais le nom, l'aide et l'exemple — un libellé nomme, il n'explique pas.
 

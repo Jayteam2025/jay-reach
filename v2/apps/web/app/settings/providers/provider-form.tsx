@@ -86,9 +86,18 @@ export function ProviderForm(props: {
                 className="rs-input mono"
                 name={f.name}
                 type={f.type}
-                required={f.required}
+                // Une clé déjà enregistrée n'est plus obligatoire : elle n'est
+                // pas relisible, et l'exiger empêchait de modifier le moindre
+                // réglage à côté. Laissée vide, elle reste ce qu'elle est.
+                required={f.required && !(f.secret && configured)}
                 autoComplete="off"
-                placeholder={f.placeholderKey ? t(f.placeholderKey) : t(f.labelKey)}
+                placeholder={
+                  f.secret && configured
+                    ? t('providers.secretUnchanged')
+                    : f.placeholderKey
+                      ? t(f.placeholderKey)
+                      : t(f.labelKey)
+                }
                 // Un secret ne se relit pas ; un réglage, si.
                 defaultValue={f.secret ? undefined : (props.config?.[f.name] ?? '')}
               />

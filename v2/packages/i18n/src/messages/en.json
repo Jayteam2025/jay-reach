@@ -57,7 +57,8 @@
       "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
       "enrichDailyCapPlaceholder": "e.g. 50"
     },
-    "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand"
+    "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand",
+    "secretUnchanged": "Leave empty to keep the current key"
   },
   "jobs": {
     "title": "Background queues",

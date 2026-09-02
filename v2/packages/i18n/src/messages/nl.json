@@ -57,7 +57,8 @@
       "enrichDailyCapHint": "Maximaal verrijkte contacten per dag. Zet 0 om automatische verrijking te pauzeren en alleen handmatig te verrijken vanuit het scherm Signalen.",
       "enrichDailyCapPlaceholder": "bv. 50"
     },
-    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen"
+    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
+    "secretUnchanged": "Laat leeg om de huidige sleutel te behouden"
   },
   "jobs": {
     "title": "Achtergrondwachtrijen",
