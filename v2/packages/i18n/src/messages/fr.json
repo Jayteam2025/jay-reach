@@ -761,5 +761,19 @@
       "linkedinPlaceholder": "votre-profil",
       "identityHint": "Se fixe à la création. Elle désigne le compte branché chez le fournisseur, la changer ensuite ne changerait pas ce qui part."
     }
+  },
+  "snippets": {
+    "title": "Textes réutilisables",
+    "lead": "Un texte écrit une fois, inséré dans vos messages comme une variable. Changez-le ici, tous les messages qui l'utilisent suivent.",
+    "add": "Ajouter un texte",
+    "name": "Nom",
+    "namePlaceholder": "signature",
+    "nameHint": "S'écrira '{{'{exemple}'}}' dans vos messages. Minuscules, sans accent ni espace.",
+    "body": "Contenu",
+    "bodyPlaceholder": "Marie Dupont\nDirectrice commerciale, Acme",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "empty": "Aucun pour l'instant. Une signature, des mentions légales : ce qui se répète d'un message à l'autre."
   }
 }

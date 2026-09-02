@@ -7,6 +7,14 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+- **Les modèles importés du socle v1 parlaient encore anglais**, et rien ne le signalait. La migration des données legacy a recopié les corps tels quels : `{company}`, `{first_name}`, `{job_title}`, `{salutation}`, `{signature}`. Ce n'était pas une invention de l'opérateur — ces noms étaient bien ceux de Jay Reach avant la refonte, et trois de ces modèles seraient partis avec les accolades visibles chez le prospect. L'ancien vocabulaire est désormais traduit à la lecture comme à l'enregistrement, et les modèles déjà en base ont été convertis.
+
+### Ajouté
+- **Quatre variables de plus, tirées de ce qu'on possède déjà** : `salutation` (« Bonjour Marie », ou « Bonjour » quand le prénom manque — elle porte le cas que `prenom` refuse d'affronter, celui-ci interdisant toute valeur de repli), `lien_offre`, `site`, `departement` et `pays`. Deux autres ont été écartées à dessein : `secteur` viendrait du code NAF brut, illisible dans un message tant qu'aucune table de libellés n'existe ; et la raison du score est une note interne du modèle, qui n'a rien à faire sous les yeux d'un prospect.
+- **Les textes réutilisables** (`message_snippets`) : une signature, des mentions légales, tout ce qui se répète d'un message à l'autre. Écrit une fois, appelé comme une variable — `{{signature}}` s'écrit comme `{{prenom}}`, inutile d'imposer une seconde syntaxe. Résolu à l'ENVOI et non copié à la rédaction : changer un numéro de téléphone met à jour tous les messages déjà écrits, ce qui est la raison d'être de la fonctionnalité. Un extrait encore appelé par un message ne peut pas être supprimé — il laisserait ce message bloqué avec une variable que plus rien ne résout. L'écran les présente comme un glossaire, le nom d'appel aligné en colonne : c'est lui qu'on vient chercher pour le recopier.
+
+
 ### Ajouté
 - **Taper `{` ouvre la liste des variables.** La double accolade est une convention de développeur : Alexandre a demandé où se réglaient les variables et écrivait `{name}`. On choisit désormais dans une liste filtrée à la frappe, au clavier ou à la souris, et la forme exacte est insérée. Le mot nu sans accolade ne peut PAS être reconnu — « entreprise », « ville » et « poste » sont des mots français courants, et « au sujet de votre entreprise » deviendrait une variable au milieu d'une phrase qui n'en veut pas. L'accolade reste le signal d'intention, mais une seule suffit désormais.
 - **Le plafond d'enrichissement se règle dans l'écran Fournisseurs**, à côté de la clé FullEnrich, comme celui de Reoon. Il vivait dans une variable d'environnement que personne ne pouvait voir ni changer depuis l'application — alors que c'est le poste le plus coûteux de la chaîne, et le seul frein à la dépense. L'environnement reste le repli pour une instance qui n'a rien saisi.

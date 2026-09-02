@@ -153,3 +153,36 @@ describe('on écrit le nom, le reste se répare', () => {
     expect(soucis[0]?.suggestion).toBe('prenom');
   });
 });
+
+describe('le vocabulaire du socle v1 est traduit', () => {
+  it('convertit les noms hérités vers leurs équivalents', () => {
+    // Les modèles importés parlent encore anglais : la migration des données
+    // legacy a recopié les corps tels quels. Ce n'est pas une invention de
+    // l'opérateur, ces noms étaient ceux de Jay Reach avant la refonte.
+    expect(normalizeVariableSyntax('Bonjour {first_name} chez {company}')).toBe(
+      'Bonjour {{prenom}} chez {{entreprise}}',
+    );
+    expect(normalizeVariableSyntax('{{company_name}} recrute un {{job_title}}')).toBe(
+      '{{entreprise}} recrute un {{poste}}',
+    );
+  });
+
+  it('accepte salutation, qui existait en v1 et manquait ici', () => {
+    // `prenom` interdit toute valeur de repli, pour ne jamais expédier
+    // « Bonjour , ». `salutation` porte le cas du prénom inconnu.
+    expect(validateTemplateVariables('{salutation}\n\nVotre annonce…', 'signal')).toEqual([]);
+    expect(normalizeVariableSyntax('{salutation}')).toBe('{{salutation}}');
+  });
+
+  it('laisse signature en erreur tant qu’aucun extrait ne porte ce nom', () => {
+    // Sa valeur ne dépend pas du prospect : c'est un extrait de l'organisation,
+    // pas une variable. Sans extrait défini, le nom reste inconnu.
+    const soucis = validateTemplateVariables('Cordialement,\n{{signature}}', 'signal');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.variable).toBe('signature');
+  });
+
+  it('accepte un extrait déclaré par l’organisation', () => {
+    expect(validateTemplateVariables('Cordialement,\n{{signature}}', 'signal', ['signature'])).toEqual([]);
+  });
+});
