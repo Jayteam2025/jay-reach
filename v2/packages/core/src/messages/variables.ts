@@ -21,6 +21,15 @@ export type VariableAvailability = 'always' | 'signal' | 'list';
  */
 export const STANDARD_VARIABLES: Readonly<Record<string, VariableAvailability>> = {
   prenom: 'always',
+  /**
+   * Formule d'appel complète : « Bonjour Marie » ou « Bonjour » à défaut.
+   *
+   * Existait dans le socle v1 et n'avait pas d'équivalent ici. Elle résout le
+   * cas que `prenom` interdit d'affronter : celui-ci refuse toute valeur de
+   * repli, pour ne jamais expédier « Bonjour , ». `salutation` s'en charge à sa
+   * place, et permet donc d'écrire à un contact dont on ignore le prénom.
+   */
+  salutation: 'always',
   nom: 'always',
   poste: 'always',
   entreprise: 'always',
@@ -31,7 +40,32 @@ export const STANDARD_VARIABLES: Readonly<Record<string, VariableAvailability>> 
   signal_mois: 'signal',
   signal_titre: 'signal',
   signal_zone: 'signal',
+  /** Adresse de l'annonce, pour y renvoyer explicitement. */
+  lien_offre: 'signal',
   contexte: 'list',
+  /** Nom de domaine du compte, sans le protocole. */
+  site: 'always',
+  /** Deux premiers chiffres du code postal — « 44 », « 75 ». */
+  departement: 'always',
+  pays: 'always',
+};
+
+/**
+ * Ce que les modèles du socle v1 appelaient, et ce que cela devient ici.
+ *
+ * La migration des données legacy a recopié les corps tels quels : les modèles
+ * importés parlent donc encore anglais. Ce n'est pas une invention de
+ * l'opérateur — ces noms étaient bien ceux de Jay Reach avant la refonte.
+ *
+ * `signature` n'y figure pas : sa valeur ne dépend pas du prospect, c'est un
+ * extrait réutilisable défini par l'organisation, pas une variable.
+ */
+export const VARIABLES_HERITEES: Readonly<Record<string, string>> = {
+  first_name: 'prenom',
+  last_name: 'nom',
+  company: 'entreprise',
+  company_name: 'entreprise',
+  job_title: 'poste',
 };
 
 /** Variables sur lesquelles une valeur de repli est interdite (spec : jamais {{prenom}}). */
@@ -69,7 +103,9 @@ const TOKEN_TOLERANT_RE = /\{\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\|([^}]*))?\}?\
  */
 export function normalizeVariableSyntax(body: string): string {
   return body.replace(TOKEN_TOLERANT_RE, (brut, nom: string, repli?: string) => {
-    const clef = nom.toLowerCase();
+    // L'ancien vocabulaire est traduit avant d'être reconnu : les modèles
+    // importés du socle v1 parlent encore anglais.
+    const clef = VARIABLES_HERITEES[nom.toLowerCase()] ?? nom.toLowerCase();
     if (!(clef in STANDARD_VARIABLES)) {
       return brut;
     }
@@ -146,12 +182,23 @@ export interface TemplateValidationIssue {
  *    dans une campagne alimentée par une liste) ;
  *  - `fallback_forbidden` : valeur de repli sur une variable qui l'interdit.
  */
-export function validateTemplateVariables(body: string, nature: CampaignNature): TemplateValidationIssue[] {
+export function validateTemplateVariables(
+  body: string,
+  nature: CampaignNature,
+  /**
+   * Noms des extraits réutilisables de l'organisation (`signature`, mentions).
+   * Leur valeur ne dépend pas du prospect, mais ils se résolvent au même
+   * moment et s'écrivent de la même façon — inutile d'imposer une seconde
+   * syntaxe à l'opérateur.
+   */
+  extraits: readonly string[] = [],
+): TemplateValidationIssue[] {
   const issues: TemplateValidationIssue[] = [];
   const seen = new Set<string>();
   // On valide sur le texte normalisé : une accolade simple autour d'un nom
   // connu est une variable pour l'opérateur, elle doit l'être ici aussi.
   for (const token of parseTemplateTokens(normalizeVariableSyntax(body))) {
+    if (extraits.includes(token.name)) continue;
     const availability = STANDARD_VARIABLES[token.name];
     if (availability === undefined) {
       if (!seen.has(`unknown:${token.name}`)) {
@@ -196,8 +243,9 @@ export function validateTemplateVariables(body: string, nature: CampaignNature):
   // Ces formes traversaient tous les contrôles et partaient littéralement chez
   // le prospect.
   for (const m of body.matchAll(QUASI_VARIABLE_RE)) {
-    const nom = (m[1] ?? '').toLowerCase();
-    if (nom in STANDARD_VARIABLES || seen.has(`unknown:${nom}`)) continue;
+    const brut = (m[1] ?? '').toLowerCase();
+    const nom = VARIABLES_HERITEES[brut] ?? brut;
+    if (nom in STANDARD_VARIABLES || extraits.includes(nom) || seen.has(`unknown:${nom}`)) continue;
     const proche = suggestVariable(nom);
     issues.push({
       variable: nom,

@@ -761,5 +761,19 @@
       "linkedinPlaceholder": "your-profile",
       "identityHint": "Set once, at creation. It names the account connected at the provider, so changing it later would not change what actually goes out."
     }
+  },
+  "snippets": {
+    "title": "Reusable text",
+    "lead": "Text written once, inserted into your messages like a variable. Change it here and every message using it follows.",
+    "add": "Add a text",
+    "name": "Name",
+    "namePlaceholder": "signature",
+    "nameHint": "Will be written '{{'{exemple}'}}' in your messages. Lowercase, no accents or spaces.",
+    "body": "Content",
+    "bodyPlaceholder": "Marie Dupont\nHead of Sales, Acme",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "empty": "None yet. A signature, legal notices: whatever repeats from one message to the next."
   }
 }

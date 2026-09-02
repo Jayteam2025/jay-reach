@@ -761,5 +761,19 @@
       "linkedinPlaceholder": "uw-profiel",
       "identityHint": "Wordt bij het aanmaken vastgelegd. Het benoemt het account bij de provider, dus later wijzigen verandert niet wat er werkelijk uitgaat."
     }
+  },
+  "snippets": {
+    "title": "Herbruikbare teksten",
+    "lead": "Tekst die u één keer schrijft en als een variabele in uw berichten invoegt. Wijzig hem hier en elk bericht volgt.",
+    "add": "Tekst toevoegen",
+    "name": "Naam",
+    "namePlaceholder": "signature",
+    "nameHint": "Wordt '{{'{exemple}'}}' in uw berichten. Kleine letters, zonder accenten of spaties.",
+    "body": "Inhoud",
+    "bodyPlaceholder": "Marie Dupont\nCommercieel directeur, Acme",
+    "save": "Opslaan",
+    "cancel": "Annuleren",
+    "delete": "Verwijderen",
+    "empty": "Nog geen. Een handtekening, juridische vermeldingen: wat zich van bericht tot bericht herhaalt."
   }
 }

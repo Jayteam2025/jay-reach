@@ -2034,3 +2034,121 @@ button.rs-pill.rs-pill-lime:hover {
   outline: 2px solid var(--limeline);
   outline-offset: -2px;
 }
+
+/* Textes réutilisables.
+   Mis en page comme un glossaire : un nom d'appel désigne un texte, et c'est
+   exactement la relation qu'une liste de définitions exprime. La colonne de
+   noms est ce qu'on vient chercher — on la recopiera dans un message — d'où le
+   même mono que dans l'éditeur, et un alignement qui la rend balayable. */
+.rs-extraits {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+  margin: 28px 0 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--slate2);
+}
+.rs-extraits-tete {
+  display: grid;
+  gap: 4px;
+}
+.rs-extraits h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.rs-extraits-vide {
+  margin: 0;
+  color: var(--moss2);
+  font-size: 13px;
+}
+
+.rs-extraits-liste {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+}
+.rs-extrait {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--slate2);
+}
+.rs-extrait:last-child {
+  border-bottom: 0;
+}
+/* En édition, la ligne prend toute la largeur : le formulaire n'a pas à tenir
+   dans la colonne de droite. */
+.rs-extrait[data-edite='true'] {
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 14px;
+  background: var(--slate);
+  border: 1px solid var(--limeline);
+  border-radius: 10px;
+}
+.rs-extrait dt,
+.rs-extrait dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.rs-extrait-nom {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lime);
+  cursor: pointer;
+  text-align: left;
+}
+.rs-extrait-nom:hover {
+  text-decoration: underline;
+}
+.rs-extrait-nom:focus-visible {
+  outline: 2px solid var(--limeline);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.rs-extrait-nom:disabled {
+  color: var(--moss2);
+  cursor: default;
+}
+
+/* Le texte garde ses retours à la ligne : une signature en est faite. Deux
+   lignes suffisent à la reconnaître, le reste s'ouvre à l'édition. */
+.rs-extrait-apercu {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+  font-size: 13px;
+  color: var(--chalk);
+}
+
+.rs-extrait-form {
+  display: grid;
+  gap: 10px;
+}
+.rs-extrait-suppr {
+  margin-left: auto;
+  border-color: var(--slate2);
+  color: var(--moss2);
+}
+.rs-extrait-suppr:hover:not(:disabled) {
+  border-color: var(--flare);
+  color: var(--flare);
+}
+
+@media (max-width: 560px) {
+  .rs-extrait {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

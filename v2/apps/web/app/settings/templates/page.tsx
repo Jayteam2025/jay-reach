@@ -2,6 +2,7 @@ import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { TemplatesBoard } from './templates-board';
 import { groupFamilies, type TemplateRow } from './families';
+import { Extraits, type SnippetRow } from './extraits';
 
 const COLS = 'id, parent_id, name, channel, locale, version, subject, body, sent_count, is_active';
 
@@ -21,6 +22,9 @@ export default async function TemplatesPage() {
           .order('version', { ascending: true })
       ).data
     : null;
+  const extraits = supabase
+    ? (await supabase.from('message_snippets').select('name, body').order('name')).data
+    : null;
   const demo = !supabase;
   const families = groupFamilies((rows ?? []) as unknown as TemplateRow[]);
 
@@ -29,6 +33,7 @@ export default async function TemplatesPage() {
       <AppTopBar active="templates" />
       <main className="rs-main">
         <TemplatesBoard families={families} orgId={orgId} demo={demo} />
+        <Extraits extraits={(extraits ?? []) as SnippetRow[]} orgId={orgId} demo={demo} />
       </main>
     </div>
   );

@@ -62,7 +62,13 @@ export async function saveStepMessage(
   // Même normalisation qu'à la bibliothèque de messages : ce qui est tapé est
   // ramené à la forme que le moteur sait résoudre.
   const corpsNormalise = normalizeVariableSyntax(corps);
-  const problemes = validateTemplateVariables(corpsNormalise, input.nature);
+  const client = await createClient();
+  const { data: extraits } = await client
+    .from('message_snippets')
+    .select('name')
+    .eq('organization_id', organizationId);
+  const nomsExtraits = ((extraits ?? []) as { name: string }[]).map((e) => e.name);
+  const problemes = validateTemplateVariables(corpsNormalise, input.nature, nomsExtraits);
   if (problemes.length > 0) {
     return { ok: false, error: problemes.map((p) => p.message).join(' ') };
   }

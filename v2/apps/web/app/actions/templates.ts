@@ -45,7 +45,15 @@ export async function saveTemplateVersion(
   // On enregistre la forme canonique, pas ce qui a été tapé : l'opérateur
   // écrit `{prenom}` ou `{Prenom}`, le moteur ne connaît que `{{prenom}}`.
   const corpsNormalise = normalizeVariableSyntax(input.body);
-  const issues = validateTemplateVariables(corpsNormalise, input.nature);
+  // Les extraits de l'organisation comptent comme des variables valides :
+  // `{{signature}}` doit passer si l'organisation en a défini un.
+  const client = await createClient();
+  const { data: extraits } = await client
+    .from('message_snippets')
+    .select('name')
+    .eq('organization_id', organizationId);
+  const nomsExtraits = ((extraits ?? []) as { name: string }[]).map((e) => e.name);
+  const issues = validateTemplateVariables(corpsNormalise, input.nature, nomsExtraits);
   if (issues.length > 0) {
     return { ok: false, error: 'Variables invalides.', issues: issues.map((i) => i.message) };
   }

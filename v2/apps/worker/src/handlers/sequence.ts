@@ -89,6 +89,9 @@ interface DueRow {
   readonly signal_title: string | null;
   readonly signal_occurred_at: string | null;
   readonly signal_location: string | null;
+  readonly signal_url: string | null;
+  readonly postal_code: string | null;
+  readonly country: string | null;
   readonly context_note: string | null;
 }
 
@@ -98,9 +101,16 @@ interface DueRow {
  * `undefined` → `renderTemplate` la remonte dans `missing` (→ blocage, jamais un
  * champ vide envoyé). Dates via `Intl` (spec §90).
  */
-function buildMessageValues(row: DueRow): Record<string, string | undefined> {
+function buildMessageValues(
+  row: DueRow,
+  /** Extraits de l'organisation, résolus comme des variables. */
+  extraits: ReadonlyMap<string, string> = new Map(),
+): Record<string, string | undefined> {
   const values: Record<string, string | undefined> = {
     prenom: row.first_name ?? undefined,
+    // Porte le cas que `prenom` refuse d'affronter : sans prénom connu, on
+    // salue quand même, au lieu de bloquer l'envoi.
+    salutation: row.first_name ? `Bonjour ${row.first_name}` : 'Bonjour',
     nom: row.last_name ?? undefined,
     poste: row.job_title ?? undefined,
     entreprise: row.company_name ?? undefined,
@@ -109,8 +119,18 @@ function buildMessageValues(row: DueRow): Record<string, string | undefined> {
     persona_angle: row.persona_angle ?? undefined,
     signal_titre: row.signal_title ?? undefined,
     signal_zone: row.signal_location ?? undefined,
+    lien_offre: row.signal_url ?? undefined,
     contexte: row.context_note ?? undefined,
+    site: row.domain ?? undefined,
+    // Le département se lit sur les deux premiers chiffres du code postal.
+    departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
+    pays: row.country ?? undefined,
   };
+  // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
+  // veut pas qu'un extrait nommé « prenom » masque le prospect.
+  for (const [nom, texte] of extraits) {
+    if (!(nom in values)) values[nom] = texte;
+  }
   if (row.signal_occurred_at) {
     const d = new Date(row.signal_occurred_at);
     values.signal_date = d.toLocaleDateString('fr-FR');
@@ -281,6 +301,30 @@ function heuresOuvrees(brut: unknown): BusinessHours {
   return { startHour: start, endHour: end, days };
 }
 
+/**
+ * Extraits réutilisables, par organisation.
+ *
+ * Chargés avec le lot plutôt qu'à chaque message : ils ne dépendent pas du
+ * prospect, et les relire par action coûterait une requête pour rien.
+ */
+async function loadSnippets(
+  pool: Pool,
+  organizationIds: string[],
+): Promise<Map<string, Map<string, string>>> {
+  const parOrg = new Map<string, Map<string, string>>();
+  if (organizationIds.length === 0) return parOrg;
+  const res = await pool.query<{ organization_id: string; name: string; body: string }>(
+    'select organization_id, name, body from message_snippets where organization_id = any($1::uuid[])',
+    [organizationIds],
+  );
+  for (const r of res.rows) {
+    const m = parOrg.get(r.organization_id) ?? new Map<string, string>();
+    m.set(r.name, r.body);
+    parOrg.set(r.organization_id, m);
+  }
+  return parOrg;
+}
+
 /** Liens contact ↔ expéditeur déjà établis, pour les contacts de ce lot. */
 async function loadBindings(pool: Pool, contactIds: string[]): Promise<Binding[]> {
   if (contactIds.length === 0) return [];
@@ -416,8 +460,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
             org.sending_paused_at,
             sc.campaign_id as smartlead_campaign_id,
             a.name as company_name, a.domain, a.city, a.headcount,
+            a.postal_code, a.country,
             p.angle as persona_angle,
             sig.title as signal_title, sig.occurred_at as signal_occurred_at, sig.location as signal_location,
+            sig.url as signal_url,
             lst.context_note,
             ls.mode as lk_mode
        from enrollments e
@@ -447,6 +493,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     [...new Set(due.rows.map((r) => r.organization_id))],
   );
   const bindings = await loadBindings(pool, [...new Set(due.rows.map((r) => r.contact_id))]);
+  const extraitsParOrg = await loadSnippets(pool, [...new Set(due.rows.map((r) => r.organization_id))]);
   const comptesTouches = await loadAccountsContactedToday(
     pool,
     [...new Set(due.rows.map((r) => r.organization_id))],
@@ -496,7 +543,10 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           missingLocale = true;
         } else if (resolved.body !== null) {
           templateId = resolved.id;
-          const rendered = renderTemplate(resolved.body, buildMessageValues(row));
+          const rendered = renderTemplate(
+            resolved.body,
+            buildMessageValues(row, extraitsParOrg.get(row.organization_id)),
+          );
           messageBody = rendered.text;
           unresolvedVariables = rendered.missing;
         }
