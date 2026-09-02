@@ -17,7 +17,15 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
     id: 'fullenrich',
     category: 'enrichment',
     labelKey: 'providers.fullenrich',
-    fields: [{ name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'FULLENRICH_API_KEY' }],
+    // Le plafond quotidien est le seul frein à la dépense d'enrichissement, et
+    // c'est de loin le poste le plus cher de la chaîne : il se règle donc ici,
+    // et non dans une variable d'environnement que personne ne voit. Sans lui,
+    // vingt-cinq paires par tour et un tour tous les quarts d'heure autorisent
+    // deux mille quatre cents appels par jour.
+    fields: [
+      { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'FULLENRICH_API_KEY' },
+      { name: 'daily_cap', labelKey: 'providers.field.enrichDailyCap', type: 'text', secret: false, required: false },
+    ],
   },
   {
     id: 'dropcontact',

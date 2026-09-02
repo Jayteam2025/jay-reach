@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
-import { validateTemplateVariables } from '@jay-reach/core';
+import { normalizeVariableSyntax, validateTemplateVariables } from '@jay-reach/core';
 
 export type StepMessageResult = { ok: true; templateParentId: string } | { ok: false; error: string };
 export type SimpleResult = { ok: true } | { ok: false; error: string };
@@ -59,7 +59,10 @@ export async function saveStepMessage(
 
   // Une variable inconnue bloquerait l'envoi bien plus tard, au moment où le
   // message devait partir. On refuse ici, pendant qu'on l'écrit.
-  const problemes = validateTemplateVariables(corps, input.nature);
+  // Même normalisation qu'à la bibliothèque de messages : ce qui est tapé est
+  // ramené à la forme que le moteur sait résoudre.
+  const corpsNormalise = normalizeVariableSyntax(corps);
+  const problemes = validateTemplateVariables(corpsNormalise, input.nature);
   if (problemes.length > 0) {
     return { ok: false, error: problemes.map((p) => p.message).join(' ') };
   }
@@ -87,7 +90,7 @@ export async function saveStepMessage(
     p_channel: input.channel,
     p_locale: input.locale,
     p_subject: input.channel === 'email' ? input.subject.trim() : null,
-    p_body: corps,
+    p_body: corpsNormalise,
     // Un message écrit dans une étape appartient à sa campagne. Une version
     // suivante hérite de l'origine de sa famille, donc réécrire un modèle de
     // bibliothèque ne le fait pas basculer.

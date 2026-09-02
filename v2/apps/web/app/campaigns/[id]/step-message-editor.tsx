@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core/messages/variables.js';
+import { ChampMessage } from '../../champ-message';
 import { saveStepMessage, promoteStepMessage } from '../../actions/step-message';
 import { generateStepMessage } from '../../actions/generate-message';
 
@@ -193,13 +194,13 @@ export function StepMessageEditor({
 
       <label className="rs-label">
         {t('body')}
-        <textarea
-          ref={zone}
-          className="rs-textarea"
-          rows={8}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
+        <ChampMessage
+          valeur={body}
+          onChange={setBody}
+          nature={nature}
+          lignes={8}
           placeholder={t('bodyPlaceholder')}
+          libelleListe={t('variables')}
         />
       </label>
 

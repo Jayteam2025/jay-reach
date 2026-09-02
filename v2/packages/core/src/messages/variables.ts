@@ -49,6 +49,66 @@ export interface TemplateToken {
 // Nom = lettres/chiffres/underscore ; repli = tout sauf `}` (jusqu'à `}}`).
 const TOKEN_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*(?:\|([^}]*))?\}\}/g;
 
+/**
+ * Ce qu'un opérateur écrit quand il ne connaît pas la convention : une seule
+ * accolade, des majuscules, des espaces autour du nom.
+ *
+ * La double accolade est une habitude de développeur. Écrire `{prenom}` était
+ * silencieusement accepté et le message partait avec les accolades visibles
+ * chez le prospect — alors que notre première règle interdit d'expédier un
+ * champ littéral.
+ */
+const TOKEN_TOLERANT_RE = /\{\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\|([^}]*))?\}?\}/g;
+
+/**
+ * Ramène les formes tolérées à la forme canonique `{{nom}}`.
+ *
+ * On ne convertit QUE si le nom désigne une variable connue : sans cette
+ * réserve, « le tarif est de {50} euros » deviendrait une variable fantôme, et
+ * le message serait bloqué à l'envoi pour une accolade décorative.
+ */
+export function normalizeVariableSyntax(body: string): string {
+  return body.replace(TOKEN_TOLERANT_RE, (brut, nom: string, repli?: string) => {
+    const clef = nom.toLowerCase();
+    if (!(clef in STANDARD_VARIABLES)) {
+      return brut;
+    }
+    return repli === undefined ? `{{${clef}}}` : `{{${clef}|${repli}}}`;
+  });
+}
+
+/**
+ * Le contenu entre accolades prétend-il être une variable ?
+ *
+ * Un identifiant simple — lettres et souligné, sans espace — est presque
+ * sûrement une tentative de variable, même mal orthographiée. Une accolade
+ * qui entoure des mots ou des chiffres est décorative, et on la laisse vivre.
+ */
+const QUASI_VARIABLE_RE = /\{\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\|[^}]*)?\}?\}/g;
+
+/** Distance de Levenshtein, pour proposer le nom que l'opérateur visait. */
+function distance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cout = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i]![j] = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + cout);
+    }
+  }
+  return d[a.length]![b.length]!;
+}
+
+/** Variable connue la plus proche d'un nom mal orthographié, s'il y en a une. */
+export function suggestVariable(nom: string): string | undefined {
+  const candidats = Object.keys(STANDARD_VARIABLES)
+    .map((v) => ({ v, d: distance(nom.toLowerCase(), v) }))
+    .filter((c) => c.d <= 2)
+    .sort((a, b) => a.d - b.d);
+  return candidats[0]?.v;
+}
+
 /** Extrait tous les jetons d'un corps, dans l'ordre (doublons inclus). */
 export function parseTemplateTokens(body: string): TemplateToken[] {
   const tokens: TemplateToken[] = [];
@@ -74,6 +134,8 @@ export interface TemplateValidationIssue {
   readonly variable: string;
   readonly kind: 'unknown' | 'unavailable' | 'fallback_forbidden';
   readonly message: string;
+  /** Variable connue la plus proche, quand le nom semble mal orthographié. */
+  readonly suggestion?: string;
 }
 
 /**
@@ -87,11 +149,21 @@ export interface TemplateValidationIssue {
 export function validateTemplateVariables(body: string, nature: CampaignNature): TemplateValidationIssue[] {
   const issues: TemplateValidationIssue[] = [];
   const seen = new Set<string>();
-  for (const token of parseTemplateTokens(body)) {
+  // On valide sur le texte normalisé : une accolade simple autour d'un nom
+  // connu est une variable pour l'opérateur, elle doit l'être ici aussi.
+  for (const token of parseTemplateTokens(normalizeVariableSyntax(body))) {
     const availability = STANDARD_VARIABLES[token.name];
     if (availability === undefined) {
       if (!seen.has(`unknown:${token.name}`)) {
-        issues.push({ variable: token.name, kind: 'unknown', message: `La variable {{${token.name}}} n'existe pas.` });
+        const proche = suggestVariable(token.name);
+        issues.push({
+          variable: token.name,
+          kind: 'unknown',
+          message: proche
+            ? `La variable « ${token.name} » n'existe pas. Vouliez-vous dire « ${proche} » ?`
+            : `La variable « ${token.name} » n'existe pas.`,
+          ...(proche ? { suggestion: proche } : {}),
+        });
         seen.add(`unknown:${token.name}`);
       }
       continue;
@@ -112,12 +184,32 @@ export function validateTemplateVariables(body: string, nature: CampaignNature):
         issues.push({
           variable: token.name,
           kind: 'fallback_forbidden',
-          message: `Une valeur de repli est interdite sur {{${token.name}}}.`,
+          message: `Une valeur de repli est interdite sur « ${token.name} ».`,
         });
         seen.add(`fallback:${token.name}`);
       }
     }
   }
+
+  // Reste ce qui ressemble à une variable sans en être une : `{name}` en
+  // accolade simple, que la normalisation n'a pas converti faute de nom connu.
+  // Ces formes traversaient tous les contrôles et partaient littéralement chez
+  // le prospect.
+  for (const m of body.matchAll(QUASI_VARIABLE_RE)) {
+    const nom = (m[1] ?? '').toLowerCase();
+    if (nom in STANDARD_VARIABLES || seen.has(`unknown:${nom}`)) continue;
+    const proche = suggestVariable(nom);
+    issues.push({
+      variable: nom,
+      kind: 'unknown',
+      message: proche
+        ? `La variable « ${nom} » n'existe pas. Vouliez-vous dire « ${proche} » ?`
+        : `« ${nom} » n'est pas une variable. Choisissez-en une dans la liste, ou retirez les accolades.`,
+      ...(proche ? { suggestion: proche } : {}),
+    });
+    seen.add(`unknown:${nom}`);
+  }
+
   return issues;
 }
 

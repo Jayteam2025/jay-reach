@@ -52,7 +52,8 @@
       "appId": "App ID",
       "appKey": "App key",
       "modelSmart": "Model (scoring) — default Sonnet",
-      "modelFast": "Model (light tasks) — default Haiku"
+      "modelFast": "Model (light tasks) — default Haiku",
+      "enrichDailyCap": "Contacts enriched per day, at most — default 50. This is the costliest step: derive the figure from what you can actually send, not from what the engine can do."
     },
     "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand"
   },

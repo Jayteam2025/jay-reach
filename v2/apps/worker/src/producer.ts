@@ -125,7 +125,26 @@ export async function enqueueScoringForOrgs(
  * jour peut consommer. La valeur est donc dérivée de la sortie, pas de ce que
  * le moteur sait faire.
  */
-const PLAFOND_ENRICHISSEMENT_PAR_JOUR = Number(process.env.ENRICH_DAILY_CAP ?? 50);
+const PLAFOND_ENRICHISSEMENT_PAR_DEFAUT = Number(process.env.ENRICH_DAILY_CAP ?? 50);
+
+/**
+ * Plafond de l'organisation, tel qu'elle l'a saisi dans l'écran Fournisseurs.
+ *
+ * Une variable d'environnement ne se règle pas depuis l'application : personne
+ * ne voyait ce plafond, et un opérateur cherchait où borner sa dépense sans
+ * rien trouver. Le réglage vit maintenant à côté de la clé du fournisseur,
+ * comme celui de Reoon. L'environnement reste le repli, pour une instance qui
+ * n'a rien saisi.
+ */
+async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
+  const res = await pool.query<{ valeur: string | null }>(
+    `select config ->> 'daily_cap' as valeur
+       from credentials where organization_id = $1 and provider_id = 'fullenrich'`,
+    [organizationId],
+  );
+  const saisi = Number(res.rows[0]?.valeur);
+  return Number.isFinite(saisi) && saisi > 0 ? saisi : PLAFOND_ENRICHISSEMENT_PAR_DEFAUT;
+}
 
 export async function enqueueEnrichmentForQualified(
   boss: PgBoss,
@@ -166,13 +185,17 @@ export async function enqueueEnrichmentForQualified(
   );
 
   let enqueued = 0;
+  // Un plafond par organisation, lu une seule fois pour tout le lot.
+  const plafonds = new Map<string, number>();
   for (const row of res.rows) {
     // Le crédit se prend AVANT de déposer le job, et par paire. Le compteur est
     // atomique : deux tours simultanés ne peuvent pas dépasser le plafond à
     // eux deux.
+    const plafond = plafonds.get(row.organization_id) ?? (await plafondEnrichissement(pool, row.organization_id));
+    plafonds.set(row.organization_id, plafond);
     const credit = await pool.query<{ ok: boolean }>(
       `select app.consume_provider_credit($1, 'fullenrich', $2, 1) as ok`,
-      [row.organization_id, PLAFOND_ENRICHISSEMENT_PAR_JOUR],
+      [row.organization_id, plafond],
     );
     if (credit.rows[0]?.ok !== true) {
       console.warn(

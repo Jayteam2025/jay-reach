@@ -6,6 +6,7 @@ import {
   parseTemplateTokens,
   renderTemplate,
   validateTemplateVariables,
+  normalizeVariableSyntax,
 } from './variables.js';
 
 describe('extraction des variables', () => {
@@ -109,5 +110,46 @@ describe('contraintes de longueur par canal', () => {
     const texte = Array(80).fill('mot').join(' ');
     expect(exceedsWordLimit(texte, 'email_opening')).toBe(false);
     expect(exceedsWordLimit(texte, 'email_followup')).toBe(true);
+  });
+});
+
+describe('on écrit le nom, le reste se répare', () => {
+  it('accepte une accolade simple, la casse et les espaces', () => {
+    // La double accolade est une convention de développeur. Un opérateur qui
+    // écrit ce qu'il a sous les yeux ne doit pas voir son message partir avec
+    // les accolades visibles chez le prospect.
+    expect(normalizeVariableSyntax('Bonjour {prenom},')).toBe('Bonjour {{prenom}},');
+    expect(normalizeVariableSyntax('Bonjour {Prenom},')).toBe('Bonjour {{prenom}},');
+    expect(normalizeVariableSyntax('Bonjour { prenom },')).toBe('Bonjour {{prenom}},');
+    expect(normalizeVariableSyntax('Bonjour {{ PRENOM }},')).toBe('Bonjour {{prenom}},');
+  });
+
+  it('garde les valeurs de repli', () => {
+    expect(normalizeVariableSyntax('à {ville|votre région}')).toBe('à {{ville|votre région}}');
+  });
+
+  it('ne touche pas à ce qui n’est pas une variable connue', () => {
+    // Sans cette réserve, « {50} euros » deviendrait une variable fantôme, et
+    // le message serait bloqué à l'envoi pour une accolade décorative.
+    expect(normalizeVariableSyntax('le tarif est de {50} euros')).toBe('le tarif est de {50} euros');
+    expect(normalizeVariableSyntax('accolade {décorative ici}')).toBe('accolade {décorative ici}');
+  });
+
+  it('signale un nom qui ressemble à une variable ratée', () => {
+    // `{name}` traversait tous les contrôles et partait littéralement.
+    const soucis = validateTemplateVariables('Bonjour {name},', 'signal');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.variable).toBe('name');
+    expect(soucis[0]?.kind).toBe('unknown');
+  });
+
+  it('laisse passer une accolade qui ne prétend pas être une variable', () => {
+    expect(validateTemplateVariables('le tarif est de {50} euros', 'signal')).toEqual([]);
+    expect(validateTemplateVariables('accolade {avec des mots} ici', 'signal')).toEqual([]);
+  });
+
+  it('propose la variable la plus proche quand le nom est presque bon', () => {
+    const soucis = validateTemplateVariables('Bonjour {{prenoms}},', 'signal');
+    expect(soucis[0]?.suggestion).toBe('prenom');
   });
 });

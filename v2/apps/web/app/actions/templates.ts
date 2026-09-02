@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { validateTemplateVariables, type CampaignNature } from '@jay-reach/core';
+import { normalizeVariableSyntax, validateTemplateVariables, type CampaignNature } from '@jay-reach/core';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
 
@@ -42,7 +42,10 @@ export async function saveTemplateVersion(
   if (!input.name.trim()) return { ok: false, error: 'Nom requis.' };
   if (!input.body.trim()) return { ok: false, error: 'Message requis.' };
 
-  const issues = validateTemplateVariables(input.body, input.nature);
+  // On enregistre la forme canonique, pas ce qui a été tapé : l'opérateur
+  // écrit `{prenom}` ou `{Prenom}`, le moteur ne connaît que `{{prenom}}`.
+  const corpsNormalise = normalizeVariableSyntax(input.body);
+  const issues = validateTemplateVariables(corpsNormalise, input.nature);
   if (issues.length > 0) {
     return { ok: false, error: 'Variables invalides.', issues: issues.map((i) => i.message) };
   }
@@ -55,7 +58,7 @@ export async function saveTemplateVersion(
     p_channel: input.channel,
     p_locale: input.locale,
     p_subject: input.subject?.trim() ? input.subject.trim() : null,
-    p_body: input.body,
+    p_body: corpsNormalise,
   });
   if (error) return { ok: false, error: error.message };
   revalidatePath('/settings/templates');
