@@ -1988,3 +1988,49 @@ button.rs-pill.rs-pill-lime:hover {
   gap: 10px;
 }
 .rs-skel-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+
+/* Rédaction d'un message : la liste des variables s'ouvre sous le champ dès la
+   première accolade. Ancrée au champ et non au curseur — placer un menu sur le
+   caret d'un textarea demande de mesurer le texte caractère par caractère, pour
+   un gain que la proximité du champ rend inutile. */
+.rs-champ-msg {
+  position: relative;
+}
+.rs-champ-msg-liste {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 210px;
+  overflow-y: auto;
+  background: var(--slate);
+  border: 1px solid var(--limeline);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.45);
+}
+.rs-champ-msg-liste button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--chalk);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.rs-champ-msg-liste button[data-choisi='true'] {
+  background: var(--slate2);
+  color: var(--lime);
+}
+.rs-champ-msg-liste button:focus-visible {
+  outline: 2px solid var(--limeline);
+  outline-offset: -2px;
+}

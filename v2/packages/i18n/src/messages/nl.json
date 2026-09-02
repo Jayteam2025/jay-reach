@@ -52,7 +52,8 @@
       "appId": "App ID",
       "appKey": "App key",
       "modelSmart": "Model (scoring) — standaard Sonnet",
-      "modelFast": "Model (lichte taken) — standaard Haiku"
+      "modelFast": "Model (lichte taken) — standaard Haiku",
+      "enrichDailyCap": "Maximaal verrijkte contacten per dag — standaard 50. Dit is de duurste stap: leid het getal af van wat u kunt versturen, niet van wat de motor aankan."
     },
     "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen"
   },

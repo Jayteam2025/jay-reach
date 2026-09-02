@@ -13,6 +13,7 @@ import {
 } from '@jay-reach/core/messages/variables.js';
 import { saveTemplateVersion, activateTemplateVersion, type TemplateChannel } from '../../actions/templates';
 import type { TemplateFamily, TemplateRow } from './families';
+import { ChampMessage } from '../../champ-message';
 export type { TemplateFamily, TemplateRow } from './families';
 
 const LOCALES = ['fr', 'en', 'nl'] as const;
@@ -257,7 +258,14 @@ export function TemplatesBoard({ families, orgId, demo }: { families: TemplateFa
 
             <label className="rs-label">
               {t('message')}
-              <textarea ref={bodyRef} className="rs-textarea" rows={6} value={current.body} onChange={(e) => setCurrent({ body: e.target.value })} placeholder={t('messagePlaceholder')} />
+              <ChampMessage
+                valeur={current.body}
+                onChange={(v) => setCurrent({ body: v })}
+                nature={draft.nature}
+                lignes={6}
+                placeholder={t('messagePlaceholder')}
+                libelleListe={t('insertVar')}
+              />
               <span className="rs-row-sub mono" style={overLimit ? flare : undefined}>
                 {t('wordCount', { n: words, max: limit })}
               </span>
