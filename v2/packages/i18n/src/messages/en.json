@@ -151,7 +151,9 @@
       "customer": "Customer in your list",
       "manual": "Manually discarded",
       "opposition": "Opted out of prospecting (legal registry)"
-    }
+    },
+    "enrich": "Enrich this company",
+    "enrichHint": "Looks for its contacts now, without waiting for the automatic pass. Counts against today’s cap."
   },
   "nav": {
     "dashboard": "Dashboard",

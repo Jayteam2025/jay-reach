@@ -151,7 +151,9 @@
       "customer": "Klant in uw lijst",
       "manual": "Handmatig afgewezen",
       "opposition": "Verzet tegen prospectie (wettelijk register)"
-    }
+    },
+    "enrich": "Dit bedrijf verrijken",
+    "enrichHint": "Zoekt nu zijn contacten, zonder op de automatische ronde te wachten. Telt mee voor het daglimiet."
   },
   "nav": {
     "dashboard": "Dashboard",

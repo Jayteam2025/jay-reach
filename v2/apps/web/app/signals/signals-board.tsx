@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { setSignalStatus } from '../actions/signals';
+import { enrichirMaintenant } from '../actions/enrichir';
 
 export type SignalState = 'todo' | 'validated' | 'discarded' | 'arbitrate';
 
@@ -39,6 +40,7 @@ export function SignalsBoard({ signals, orgId }: { signals: readonly SignalRow[]
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [avis, setAvis] = useState<string | null>(null);
 
   const rows = useMemo(() => signals.filter((s) => s.state === tab), [signals, tab]);
   const selected = signals.find((s) => s.id === selectedId) ?? rows[0] ?? null;
@@ -48,8 +50,32 @@ export function SignalsBoard({ signals, orgId }: { signals: readonly SignalRow[]
     return REASON_KEYS.has(reason) ? t(`signals.reason.${reason}`) : reason;
   }
 
+  /**
+   * Enrichit l'entreprise de ce signal, et elle seule.
+   *
+   * L'enrichissement tourne tout seul sur les comptes qualifiés. Choisir une
+   * entreprise à la main sert à la mise en route : on veut voir ce que le
+   * fournisseur rend sur deux cas avant de laisser la machine dépenser. Le
+   * crédit se décompte du même plafond quotidien — demander à la main ne
+   * contourne pas le garde-fou.
+   */
+  function enrichir(signalId: string) {
+    setError(null);
+    setAvis(null);
+    startTransition(async () => {
+      const res = await enrichirMaintenant(orgId, signalId);
+      if (res.ok) {
+        setAvis(res.message);
+        router.refresh();
+      } else {
+        setError(res.error);
+      }
+    });
+  }
+
   function decide(signalId: string, decision: 'validate' | 'discard') {
     setError(null);
+    setAvis(null);
     startTransition(async () => {
       const res = await setSignalStatus(orgId, signalId, decision);
       if (res.ok) {
@@ -151,7 +177,24 @@ export function SignalsBoard({ signals, orgId }: { signals: readonly SignalRow[]
                   </button>
                 </div>
               ) : null}
-              {error ? <p className="rs-lk-msg">{error}</p> : null}
+
+              {/* Disponible sur un signal validé : c'est là qu'on décide d'aller
+                  chercher les contacts, une entreprise à la fois. */}
+              {selected.state === 'validated' ? (
+                <div className="rs-actions">
+                  <button className="rs-btn" type="button" disabled={pending} onClick={() => enrichir(selected.id)}>
+                    {t('signals.enrich')}
+                  </button>
+                  <span className="rs-row-sub">{t('signals.enrichHint')}</span>
+                </div>
+              ) : null}
+
+              {avis ? (
+                <p role="status" className="rs-lk-msg" data-ok="true">
+                  {avis}
+                </p>
+              ) : null}
+              {error ? <p className="rs-lk-msg" role="alert">{error}</p> : null}
             </aside>
           ) : null}
         </div>
