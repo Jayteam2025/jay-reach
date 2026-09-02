@@ -8,6 +8,10 @@ Versionnement sémantique.
 ## [Non publié]
 
 ### Corrigé
+- **Un job d'enrichissement déjà en file était payé une seconde fois.** L'identifiant est déterministe par (compte, persona) : redéposer le même ne crée rien. Mais le crédit était décompté **avant** l'insertion, donc pour un job qui n'existerait pas. Mesuré sur la base le 02/09/2026 : **cinq crédits consommés dans la journée pour deux jobs réellement créés** — trois brûlés sur des doublons, sans qu'aucun appel ne parte chez le fournisseur. Le producteur et l'action manuelle vérifient désormais la file avant de décompter. L'ordre reste crédit-puis-insertion, jamais l'inverse : le compteur est atomique, et permuter laisserait deux tours simultanés dépasser le plafond.
+
+
+### Corrigé
 - **Changer un réglage de fournisseur exigeait de ressaisir sa clé d'API.** Le champ était marqué obligatoire et la clé n'est pas relisible : le formulaire refusait donc de partir, sans message ni explication. Alexandre a cliqué « Enregistrer » et rien ne s'est produit. Une clé déjà enregistrée n'est plus exigée — laissée vide, elle reste ce qu'elle est, et le champ le dit. Côté base, un secret vide sur une ligne existante ne réécrit plus que la configuration ; il ne peut pas vouloir dire « efface la clé », car on n'efface pas un secret par omission.
 
 

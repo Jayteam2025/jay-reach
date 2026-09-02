@@ -68,7 +68,22 @@ export async function enrichirMaintenant(
     return { ok: false, error: 'Aucune persona active avec des intitulés de poste. Renseignez-en une d’abord.' };
   }
 
-  // Le crédit d'abord : demander à la main ne contourne pas le plafond du jour.
+  // Un job déjà en file ne se paie pas deux fois : l'identifiant est
+  // déterministe par (compte, persona), donc redéposer le même ne crée rien —
+  // mais le crédit, lui, serait décompté pour rien. Le producteur automatique
+  // avait ce défaut, mesuré à trois crédits perdus sur cinq le 02/09/2026.
+  const { data: dejaEnFile } = await supabase.rpc('enrichissement_deja_en_file', {
+    p_account: acc.id,
+    p_persona: persona.id,
+  });
+  if (dejaEnFile === true) {
+    return {
+      ok: false,
+      error: `${acc.name} est déjà en file d'enrichissement. Ses contacts arriveront dans Prospects.`,
+    };
+  }
+
+  // Le crédit ensuite : demander à la main ne contourne pas le plafond du jour.
   const { data: cap } = await supabase
     .from('credentials')
     .select('config')
