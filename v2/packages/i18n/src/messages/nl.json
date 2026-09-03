@@ -497,7 +497,9 @@
       "generating": "Schrijven…",
       "generateHint": "Een instructie, als u er een hebt (optioneel)",
       "useThis": "Deze gebruiken",
-      "inviteNoMessage": "Een LinkedIn-uitnodiging vertrekt zonder notitie: hier valt niets te schrijven. Wilt u toch tekst sturen, voeg dan na aanvaarding een stap “LinkedIn-bericht” toe."
+      "inviteNoMessage": "Een LinkedIn-uitnodiging vertrekt zonder notitie: hier valt niets te schrijven. Wilt u toch tekst sturen, voeg dan na aanvaarding een stap “LinkedIn-bericht” toe.",
+      "subjectRequired": "Een e-mail heeft een onderwerp nodig om te worden opgeslagen.",
+      "closeUnsaved": "Dit bericht is niet opgeslagen. Nu sluiten betekent verlies."
     },
     "watchThemes": "Monitoringthema's"
   },

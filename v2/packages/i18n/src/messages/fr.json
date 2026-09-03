@@ -497,7 +497,9 @@
       "generating": "Rédaction…",
       "generateHint": "Une consigne, si vous en avez une (facultatif)",
       "useThis": "Utiliser cette proposition",
-      "inviteNoMessage": "Une invitation LinkedIn part sans note : rien à rédiger ici. Pour accompagner d'un texte, ajoutez une étape « Message LinkedIn » après l'acceptation."
+      "inviteNoMessage": "Une invitation LinkedIn part sans note : rien à rédiger ici. Pour accompagner d'un texte, ajoutez une étape « Message LinkedIn » après l'acceptation.",
+      "subjectRequired": "Un email a besoin d'un objet pour être enregistré.",
+      "closeUnsaved": "Ce message n'est pas enregistré. Fermer maintenant le perdra."
     },
     "watchThemes": "Thèmes de veille"
   },
