@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core/messages/variables.js';
 import { ChampMessage } from '../../champ-message';
@@ -24,6 +24,7 @@ export function StepMessageEditor({
   templateParentId,
   initialSubject,
   initialBody,
+  onModifications,
   estPremiereEtape,
   onSaved,
 }: {
@@ -38,6 +39,9 @@ export function StepMessageEditor({
   /** Un premier message ne se rédige pas comme une relance. */
   estPremiereEtape: boolean;
   onSaved: (templateParentId: string) => void;
+  /** Prévient le parent qu'il reste du texte non enregistré, pour qu'il
+      demande confirmation avant de fermer. */
+  onModifications?: (nonEnregistre: boolean) => void;
 }) {
   const t = useTranslations('campaigns.stepEd');
   /**
@@ -57,6 +61,39 @@ export function StepMessageEditor({
   const [consigne, setConsigne] = useState('');
   const [propositions, setPropositions] = useState<{ subject: string | null; body: string }[]>([]);
   const [generation, setGeneration] = useState(false);
+  const [enregistre, setEnregistre] = useState(false);
+
+  /**
+   * Ce qui empêche d'enregistrer, dit avant le clic et non après.
+   *
+   * Le refus existait déjà côté serveur, mais n'apparaissait qu'une fois le
+   * bouton pressé, dans un message posé tout en bas d'une longue modale.
+   * Alexandre a écrit six messages, en a enregistré un, et a cru que les cinq
+   * autres avaient été supprimés : ils n'avaient jamais atteint la base, faute
+   * d'objet sur un canal email.
+   *
+   * On n'avertit que si un corps existe : réclamer un objet sur une étape
+   * qu'on vient d'ouvrir serait du bruit, pas de l'aide.
+   */
+  const corpsEcrit = body.trim().length > 0;
+  const objetManquant = channel === 'email' && corpsEcrit && subject.trim() === '';
+  const peutEnregistrer = corpsEcrit && !objetManquant && !pending;
+
+  /**
+   * Du texte tapé qui n'est pas encore en base.
+   *
+   * Sert au parent à demander confirmation avant de fermer : la modale se
+   * ferme aussi sur un clic à côté, et un long message peut disparaître d'un
+   * geste involontaire.
+   */
+  const nonEnregistre = !enregistre && (body !== initialBody || subject !== initialSubject);
+  // Une frappe après un enregistrement redevient du travail en cours.
+  useEffect(() => {
+    setEnregistre(false);
+  }, [body, subject]);
+  useEffect(() => {
+    onModifications?.(nonEnregistre);
+  }, [nonEnregistre, onModifications]);
 
   // 9.4 : les variables disponibles dépendent de la nature de la campagne — une
   // campagne alimentée par une liste n'a pas de signal daté à citer.
@@ -126,6 +163,7 @@ export function StepMessageEditor({
         templateParentId,
       });
       if (res.ok) {
+        setEnregistre(true);
         setMessage(t('messageSaved'));
         onSaved(res.templateParentId);
       } else {
@@ -188,7 +226,22 @@ export function StepMessageEditor({
       {channel === 'email' ? (
         <label className="rs-label">
           {t('subject')}
-          <input className="rs-input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('subjectPlaceholder')} />
+          <input
+            className="rs-input"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder={t('subjectPlaceholder')}
+            // L'avertissement vit sur le champ qui manque, pas dans une alerte
+            // posée loin de lui.
+            data-manquant={objetManquant ? 'true' : undefined}
+            aria-invalid={objetManquant}
+            aria-describedby={objetManquant ? 'objet-manquant' : undefined}
+          />
+          {objetManquant ? (
+            <span id="objet-manquant" className="rs-champ-manquant">
+              {t('subjectRequired')}
+            </span>
+          ) : null}
         </label>
       ) : null}
 
@@ -219,7 +272,13 @@ export function StepMessageEditor({
       </div>
 
       <div className="rs-actions">
-        <button type="button" className="rs-btn" data-primary="true" onClick={enregistrer} disabled={pending}>
+        <button
+          type="button"
+          className="rs-btn"
+          data-primary="true"
+          onClick={enregistrer}
+          disabled={!peutEnregistrer}
+        >
           {t('saveMessage')}
         </button>
         {templateParentId && !versement ? (

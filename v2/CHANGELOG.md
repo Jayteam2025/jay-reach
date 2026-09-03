@@ -8,6 +8,10 @@ Versionnement sémantique.
 ## [Non publié]
 
 ### Corrigé
+- **Un message écrit dans une étape pouvait disparaître sans un mot.** Alexandre a rédigé six messages, en a retrouvé un, et a cru que les cinq autres avaient été supprimés. Vérification faite : ils n'ont jamais atteint la base. Un email sans objet est refusé — la règle est juste — mais le refus n'apparaissait qu'après le clic, dans un message posé tout en bas d'une longue modale, sous la liste des variables. Et la modale se ferme de trois façons, dont **un clic à côté**, sans qu'aucune ne prévienne : dix lignes de texte partaient d'un geste involontaire. Trois défenses désormais, dans l'ordre où le problème se présente. L'objet manquant se signale **sur son propre champ**, dès qu'un corps de message existe — pas à l'ouverture d'une étape vide, où ce serait du bruit. Le bouton d'enregistrement est désactivé tant qu'il ne peut rien faire, au lieu de promettre puis refuser. Et fermer avec du texte non enregistré demande confirmation.
+
+
+### Corrigé
 - **Un job d'enrichissement déjà en file était payé une seconde fois.** L'identifiant est déterministe par (compte, persona) : redéposer le même ne crée rien. Mais le crédit était décompté **avant** l'insertion, donc pour un job qui n'existerait pas. Mesuré sur la base le 02/09/2026 : **cinq crédits consommés dans la journée pour deux jobs réellement créés** — trois brûlés sur des doublons, sans qu'aucun appel ne parte chez le fournisseur. Le producteur et l'action manuelle vérifient désormais la file avant de décompter. L'ordre reste crédit-puis-insertion, jamais l'inverse : le compteur est atomique, et permuter laisserait deux tours simultanés dépasser le plafond.
 
 

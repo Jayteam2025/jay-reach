@@ -58,6 +58,24 @@ export function CampaignDetailView({
   const [tab, setTab] = useState<Tab>('sequence');
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [draft, setDraft] = useState<StepDraft | null>(null);
+  /**
+   * Du texte tapé dans l'étape qui n'est pas encore en base.
+   *
+   * La modale se ferme de trois façons — la croix, le bouton, et un clic à
+   * côté. Aucune ne prévenait. Un message de dix lignes disparaissait donc
+   * d'un geste involontaire, sans que rien ne le dise : c'est ce qui a fait
+   * croire à Alexandre que ses messages avaient été supprimés.
+   */
+  const [messageNonEnregistre, setMessageNonEnregistre] = useState(false);
+
+  /** Ferme l'étape, en demandant confirmation si du texte s'y perdrait. */
+  const fermerEtape = (): void => {
+    if (messageNonEnregistre && !window.confirm(te('closeUnsaved'))) {
+      return;
+    }
+    setMessageNonEnregistre(false);
+    setDraft(null);
+  };
 
   const families = detail.templateFamilies ?? [];
   const exitedPct = detail.contacted > 0 ? Math.round((detail.replies / detail.contacted) * 100) : 0;
@@ -308,11 +326,11 @@ export function CampaignDetailView({
       )}
 
       {draft ? (
-        <div className="rs-overlay" role="dialog" aria-modal="true" onClick={() => setDraft(null)}>
+        <div className="rs-overlay" role="dialog" aria-modal="true" onClick={fermerEtape}>
           <div className="rs-modal" onClick={(e) => e.stopPropagation()}>
             <div className="rs-modal-head">
               <h3 style={{ fontSize: 16 }}>{draft.id ? te('edit') : te('new')}</h3>
-              <button className="rs-modal-close" aria-label={t('modal.close')} onClick={() => setDraft(null)}>
+              <button className="rs-modal-close" aria-label={t('modal.close')} onClick={fermerEtape}>
                 ×
               </button>
             </div>
@@ -354,6 +372,7 @@ export function CampaignDetailView({
                   initialBody={draft.body}
                   estPremiereEtape={detail.steps.findIndex((st) => st.id === draft.id) <= 0}
                   onSaved={(id) => setDraft((d) => (d ? { ...d, templateParentId: id } : d))}
+                  onModifications={setMessageNonEnregistre}
                 />
 
                 <label className="rs-label">
@@ -395,7 +414,7 @@ export function CampaignDetailView({
             ) : null}
 
             <div className="rs-actions">
-              <button className="rs-btn" onClick={() => setDraft(null)}>
+              <button className="rs-btn" onClick={fermerEtape}>
                 {t('modal.close')}
               </button>
               <button className="rs-btn" data-primary="true" disabled={pending} onClick={saveDraft}>

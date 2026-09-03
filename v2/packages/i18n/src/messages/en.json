@@ -497,7 +497,9 @@
       "generating": "Writing…",
       "generateHint": "A brief, if you have one (optional)",
       "useThis": "Use this one",
-      "inviteNoMessage": "A LinkedIn invitation goes out without a note: nothing to write here. To send text as well, add a “LinkedIn message” step after acceptance."
+      "inviteNoMessage": "A LinkedIn invitation goes out without a note: nothing to write here. To send text as well, add a “LinkedIn message” step after acceptance.",
+      "subjectRequired": "An email needs a subject before it can be saved.",
+      "closeUnsaved": "This message is not saved. Closing now will lose it."
     },
     "watchThemes": "Watch themes"
   },
