@@ -14,6 +14,21 @@
  * Idempotent par construction : les jobs portent un identifiant déterministe
  * dérivé d'une fenêtre temporelle, donc deux invocations rapprochées ne créent
  * pas deux fois le même travail.
+ *
+ * PLUS AUCUNE PLANIFICATION AUTOMATIQUE. Le bloc `crons` de `vercel.json` a été
+ * retiré le 07/09/2026. Il valait `* * * * *` : un tour de moteur par minute,
+ * nuit et week-end compris. Sur les sept jours précédents il avait produit
+ * 21 487 signaux et 6 126 comptes, pour 7 mises en séquence et zéro envoi. Le
+ * scoring Anthropic de ce stock a vidé la réserve de crédits deux fois en quatre
+ * jours, après quoi les jobs `signals.score` ont échoué en boucle sur « credit
+ * balance is too low » — en continuant d'être reproduits à chaque tour.
+ *
+ * La route reste appelable et sert le déclenchement manuel : `verifierCron` exige
+ * toujours `CRON_SECRET`. Pour remettre une planification, rétablir le bloc dans
+ * `apps/web/vercel.json` avec une fréquence dimensionnée sur ce qu'on exploite
+ * vraiment (`0 * * * *` couvre déjà large), pas sur ce que le moteur sait
+ * produire. Le mode permanent (`apps/worker` via `docker compose`) reste l'autre
+ * voie, et il n'a jamais dépendu de ce bloc.
  */
 import { createRuntime, registerQueues } from '@jay-reach/worker/runtime';
 import { createPool } from '@jay-reach/worker/db';
