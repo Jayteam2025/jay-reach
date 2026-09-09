@@ -2,7 +2,8 @@
 -- Test du coffre à credentials (T5).
 --  1. le serveur chiffre un secret (pgcrypto),
 --  2. la bonne clé le déchiffre, la mauvaise échoue,
---  3. un membre non-admin ne voit jamais le secret (seulement la vue publique).
+--  3. un membre non-admin ne voit jamais le secret (seulement la vue publique),
+--  4. la vue publique n'accepte aucune écriture venant de l'API.
 -- ============================================================================
 \set ON_ERROR_STOP on
 
@@ -99,6 +100,25 @@ begin
     raise exception 'FAIL vault-view-tenant : un membre d''une autre org voit les credentials de org-vault';
   end if;
   raise notice 'OK vault-view-tenant (cloisonnement multi-org respecté)';
+end $$;
+
+-- ASSERT 7 : la vue publique est en LECTURE SEULE pour les rôles de l'API.
+-- Elle est en `definer` et sans `with check option` : son filtre
+-- `where organization_id in (app.user_orgs())` ne s'applique pas à un insert.
+-- Si le droit d'écriture restait accordé, un simple viewer écrirait une ligne
+-- de credentials dans n'importe quelle organisation, sans passer par la policy
+-- admin-only de la table ni par le chiffrement.
+reset role;
+set role authenticated;
+select set_config('test.user_id', '77777777-7777-7777-7777-777777777777', false);
+do $$
+begin
+  insert into public.credentials_public (organization_id, provider_id, status)
+  values (current_setting('test.orgv')::uuid, 'faux-provider', 'configured');
+  raise exception 'FAIL vault-view-readonly : un membre a écrit dans credentials via la vue publique';
+exception
+  when insufficient_privilege then
+    raise notice 'OK vault-view-readonly (écriture refusée sur la vue publique)';
 end $$;
 
 reset role;
