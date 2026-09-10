@@ -7,10 +7,14 @@ en continu sur votre serveur, en dehors de la planification Vercel.
 
 - Docker 24+ avec Compose v2 (`docker compose version`).
 - `git`.
-- Un projet Supabase (URL de connexion Postgres, clé de chiffrement).
+- Un projet Supabase (URL de connexion Postgres, clé de chiffrement) **ayant
+  reçu les migrations de ce dépôt** (`v2/supabase/migrations`) : le worker
+  suppose leurs tables et fonctions déjà en place, il ne les crée pas.
 - Un accès root ou sudo sur le serveur.
 
 ## Installation
+
+Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
 
 1. Cloner le dépôt public dans un dossier de votre choix sur le serveur.
 2. Créer le dossier de configuration :
@@ -30,7 +34,21 @@ en continu sur votre serveur, en dehors de la planification Vercel.
    sudo nano /etc/jay-reach/worker.env
    ```
 
-4. Premier déploiement :
+4. Appliquer les migrations sur le projet Supabase, si ce n'est pas déjà fait :
+
+   ```bash
+   supabase db push --linked
+   ```
+
+   ou, sans CLI liée, en exécutant le contenu de chaque fichier de
+   `supabase/migrations/` dans l'éditeur SQL du projet, dans l'ordre des noms
+   de fichiers. **Sans cette étape, rien ne prévient au démarrage** : le
+   conteneur démarre, écrit son fichier de battement et reste `healthy`, mais
+   chaque tour échoue faute de table `engine_status` — une erreur par minute
+   dans les journaux — et l'écran Tableau de bord affiche « Aucun battement
+   reçu » indéfiniment.
+
+5. Premier déploiement :
 
    ```bash
    cd deploy/vps
@@ -47,6 +65,12 @@ docker compose -p jay-reach ps
 
 Dans l'application web, l'écran Tableau de bord doit afficher « Moteur actif ».
 
+Ce contrôle est un voyant, pas un garde-fou : un conteneur `unhealthy` n'est
+**pas** redémarré automatiquement (`restart: unless-stopped` ne réagit qu'à un
+arrêt du process, jamais au `healthcheck`). Un `unhealthy` qui persiste se
+traite à la main (`docker compose -p jay-reach restart worker`, ou
+`./deployer.sh --force-recreate`).
+
 ## Mettre à jour
 
 ```bash
@@ -58,6 +82,14 @@ recréation forcée pour que le conteneur reprenne les nouvelles variables :
 
 ```bash
 ./deployer.sh --force-recreate
+```
+
+Chaque déploiement construit une image `jay-reach-worker:<sha>` distincte :
+elles s'accumulent sur le disque du serveur au fil des mises à jour. Purger de
+temps en temps celles qui ne sont plus utilisées :
+
+```bash
+docker image prune
 ```
 
 ## Journaux
@@ -83,6 +115,9 @@ docker compose -p jay-reach down
   tourne : les deux produiraient le même travail.
 - **Aucun port n'est publié** par ce compose : le worker n'expose aucun
   service réseau, il ne fait que consommer des files d'attente.
+- **Les plafonds quotidiens comptent en UTC**, le jour de la base Postgres,
+  pas le fuseau du serveur ni celui d'un opérateur. C'est le comportement par
+  défaut d'un projet Supabase ; à vérifier si le projet a été reconfiguré.
 
 ### Variables d'environnement
 
