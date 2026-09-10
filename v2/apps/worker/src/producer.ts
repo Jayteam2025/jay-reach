@@ -28,6 +28,53 @@ interface SourceRow {
   readonly config: { keywords?: unknown; location?: unknown } | null;
 }
 
+const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
+
+/** Une valeur invalide de `SIGNAL_MAX_AGE_DAYS` retombe sur quatorze jours plutôt que de casser le cycle de production. */
+function lireAgeMaxSignalJours(): number {
+  const brut = process.env.SIGNAL_MAX_AGE_DAYS;
+  if (brut === undefined || brut.trim() === '') return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+  const valeur = Number(brut);
+  if (Number.isFinite(valeur) && valeur > 0) return Math.trunc(valeur);
+  console.warn(`[producer] SIGNAL_MAX_AGE_DAYS invalide (« ${brut} »), repli sur ${AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT} jours`);
+  return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+}
+
+/**
+ * Au-delà de ce nombre de jours, un signal ne vaut plus ni scoring ni
+ * enrichissement : la base contient des milliers de signaux de juillet et
+ * août jamais traités, et les faire scorer coûterait du crédit IA pour rien.
+ */
+export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
+
+// Ecart global, toutes organisations confondues : la règle d'ancienneté est
+// la même pour tout le monde et ne dépend d'aucun réglage d'organisation.
+/** Ecarte les signaux trop anciens pour valoir un scoring ou un enrichissement. */
+export async function ecarterSignauxTropAnciens(
+  pool: Pool,
+  maxJours: number,
+): Promise<{ nouveaux: number; qualifies: number }> {
+  if (!Number.isFinite(maxJours) || maxJours <= 0) return { nouveaux: 0, qualifies: 0 };
+  const nouveaux = await pool.query(
+    `update signals
+        set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
+      where status = 'new' and score is null
+        and occurred_at < now() - make_interval(days => $1)`,
+    [maxJours],
+  );
+  // Un signal qualifie attend l'enrichissement tant que son compte n'a pas
+  // `enriched_at` (critere de `enqueueEnrichmentForQualified`).
+  const qualifies = await pool.query(
+    `update signals s
+        set status = 'discarded', discard_reason = 'stale_unenriched'
+      where s.status = 'qualified'
+        and s.occurred_at < now() - make_interval(days => $1)
+        and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
+    [maxJours],
+  );
+  return { nouveaux: nouveaux.rowCount ?? 0, qualifies: qualifies.rowCount ?? 0 };
+}
+
 export async function enqueueDiscoverForActiveSources(
   boss: PgBoss,
   pool: Pool,
@@ -183,7 +230,7 @@ export async function enqueueEnrichmentForQualified(
        select distinct on (a.id, p.id)
               a.organization_id, a.id as account_id, a.name as company_name,
               a.domain, a.country, p.id as persona_id, p.title_patterns,
-              s.id as source_signal_id, s.score
+              s.id as source_signal_id, s.score, s.occurred_at
          from signals s
          join accounts a on a.id = s.account_id
          join personas p on p.organization_id = a.organization_id
@@ -191,14 +238,15 @@ export async function enqueueEnrichmentForQualified(
           and a.enriched_at is null
           and p.is_active
           and array_length(p.title_patterns, 1) > 0
+          and s.occurred_at >= now() - make_interval(days => $2)
         order by a.id, p.id, s.occurred_at desc, s.id
      )
      select organization_id, account_id, company_name, domain, country,
             persona_id, title_patterns, source_signal_id
        from candidats
-      order by score desc nulls last, account_id
+      order by occurred_at desc, score desc nulls last, account_id
       limit $1`,
-    [limit],
+    [limit, AGE_MAX_SIGNAL_JOURS],
   );
 
   let enqueued = 0;

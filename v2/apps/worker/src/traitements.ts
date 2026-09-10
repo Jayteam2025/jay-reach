@@ -43,6 +43,8 @@ import {
 } from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
 import {
+  AGE_MAX_SIGNAL_JOURS,
+  ecarterSignauxTropAnciens,
   enqueueDiscoverForActiveSources,
   enqueueScoringForOrgs,
   enqueueEnrichmentForQualified,
@@ -411,6 +413,10 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
 export async function produire(ctx: Contexte): Promise<void> {
   const { pool, boss } = ctx;
   try {
+    const ecartes = await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+    if (ecartes.nouveaux > 0 || ecartes.qualifies > 0) {
+      console.log(`[produire] signaux ecartes pour anciennete (> ${AGE_MAX_SIGNAL_JOURS} j) : ${ecartes.nouveaux} non scores, ${ecartes.qualifies} qualifies non enrichis`);
+    }
     const n = await enqueueDiscoverForActiveSources(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
     if (n > 0) {
       console.log(`[producer] ${n} source(s) active(s) mise(s) en file`);
