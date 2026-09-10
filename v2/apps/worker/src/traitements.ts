@@ -13,11 +13,11 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES, resolveScoringModel } from '@jay-reach/core';
+import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
 import { countRejected } from '@jay-reach/providers/outreach';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
-import { runScore } from './handlers/score.js';
+import { runScore, DEFAULT_BATCH } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runDispatch, runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import {
@@ -48,6 +48,8 @@ import {
   enqueueEnrichmentForQualified,
   enqueueEnrollments,
   enqueueRequestedRuns,
+  lirePlafondFournisseur,
+  PLAFOND_SCORING_PAR_DEFAUT,
 } from './producer.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -198,7 +200,34 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
   // Niveau `smart` (Sonnet par défaut), surchargeable par org via la config du
   // provider (`model_smart`) — jamais par variable d'env.
   console.log(`[score] org ${data.organizationId} : modèle ${resolveScoringModel('smart', credentials)}`);
-  const summary = await runScore({ pool, organizationId: data.organizationId, scorer: createAnthropicScorer(apiKey, credentials) });
+  const plafond = await lirePlafondFournisseur(pool, data.organizationId, ANTHROPIC_PROVIDER, PLAFOND_SCORING_PAR_DEFAUT);
+  const usage = await pool.query<{ used: number }>(
+    `select used from provider_daily_usage
+      where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
+    [data.organizationId, ANTHROPIC_PROVIDER],
+  );
+  const enAttente = await pool.query<{ n: string }>(
+    `select count(*)::text as n from signals
+      where organization_id = $1 and status = 'new' and score is null`,
+    [data.organizationId],
+  );
+  const nbEnAttente = Number(enAttente.rows[0]?.n ?? 0);
+  if (nbEnAttente === 0) return;
+  const reste = placesRestantes(plafond, usage.rows[0]?.used ?? 0);
+  const lot = reduireLotAuReste(Math.min(DEFAULT_BATCH, nbEnAttente), reste);
+  if (lot === 0) {
+    console.warn(`[score] org ${data.organizationId} : plafond quotidien de scoring atteint (${plafond}/jour), ${nbEnAttente} signaux en attente`);
+    return;
+  }
+  const credit = await pool.query<{ ok: boolean }>(
+    `select app.consume_provider_credit($1, $2, $3, $4) as ok`,
+    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot],
+  );
+  if (credit.rows[0]?.ok !== true) {
+    console.warn(`[score] org ${data.organizationId} : credit de scoring refuse (plafond ${plafond}/jour)`);
+    return;
+  }
+  const summary = await runScore({ pool, organizationId: data.organizationId, scorer: createAnthropicScorer(apiKey, credentials), batchSize: lot });
   if (summary.skippedNoPrompt) {
     console.log(`[score] org ${data.organizationId} : aucune source configurée avec prompt de scoring — ignoré`);
     return;

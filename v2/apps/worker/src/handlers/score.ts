@@ -37,7 +37,7 @@ export type SignalScorer = (
 const MIN_SCORING_PROMPT_LENGTH = 200;
 const DEFAULT_MIN_SCORE = 60;
 const DEFAULT_FRESHNESS_DAYS = 30;
-const DEFAULT_BATCH = 50;
+export const DEFAULT_BATCH = 50;
 
 export interface ScoreSignalsInput {
   readonly pool: Pool;

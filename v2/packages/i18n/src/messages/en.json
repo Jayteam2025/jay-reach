@@ -55,7 +55,10 @@
       "modelFast": "Model (light tasks) — default Haiku",
       "enrichDailyCap": "Daily cap",
       "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
-      "enrichDailyCapPlaceholder": "e.g. 50"
+      "enrichDailyCapPlaceholder": "e.g. 50",
+      "scoreDailyCap": "Daily scoring cap",
+      "scoreDailyCapHint": "Signals processed per day by the scoring AI, all sources included. Set 0 to pause scoring.",
+      "scoreDailyCapPlaceholder": "e.g. 300"
     },
     "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand",
     "secretUnchanged": "Leave empty to keep the current key"

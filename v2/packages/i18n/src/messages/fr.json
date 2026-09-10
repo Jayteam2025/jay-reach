@@ -55,7 +55,10 @@
       "modelFast": "Modèle (tâches légères) — défaut Haiku",
       "enrichDailyCap": "Plafond quotidien",
       "enrichDailyCapHint": "Contacts enrichis par jour, au maximum. Mettez 0 pour mettre l'enrichissement automatique en pause et n'enrichir qu'à la main, depuis l'écran Signaux.",
-      "enrichDailyCapPlaceholder": "ex. 50"
+      "enrichDailyCapPlaceholder": "ex. 50",
+      "scoreDailyCap": "Plafond quotidien de scoring",
+      "scoreDailyCapHint": "Signaux traités par jour par l'IA de scoring, toutes sources confondues. Mettez 0 pour mettre le scoring en pause.",
+      "scoreDailyCapPlaceholder": "ex. 300"
     },
     "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
     "secretUnchanged": "Laissez vide pour garder la clé actuelle"

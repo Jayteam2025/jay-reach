@@ -136,18 +136,29 @@ const PLAFOND_ENRICHISSEMENT_PAR_DEFAUT = Number(process.env.ENRICH_DAILY_CAP ??
  * comme celui de Reoon. L'environnement reste le repli, pour une instance qui
  * n'a rien saisi.
  */
-async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
-  const res = await pool.query<{ valeur: string | null }>(
-    `select config ->> 'daily_cap' as valeur
-       from credentials where organization_id = $1 and provider_id = 'fullenrich'`,
-    [organizationId],
+export async function lirePlafondFournisseur(
+  pool: Pool,
+  organizationId: string,
+  providerId: string,
+  defaut: number,
+): Promise<number> {
+  const res = await pool.query<{ daily_cap: string | null }>(
+    `select config ->> 'daily_cap' as daily_cap
+       from credentials
+      where organization_id = $1 and provider_id = $2
+      limit 1`,
+    [organizationId, providerId],
   );
-  const saisi = Number(res.rows[0]?.valeur);
-  // Zéro est un réglage, pas une absence : c'est ainsi qu'on met
-  // l'enrichissement automatique en pause le temps d'éprouver la chaîne sur
-  // deux entreprises choisies à la main. Le traiter comme invalide aurait
-  // rétabli le plafond par défaut — l'inverse exact de ce qui est demandé.
-  return Number.isFinite(saisi) && saisi >= 0 ? saisi : PLAFOND_ENRICHISSEMENT_PAR_DEFAUT;
+  const brut = res.rows[0]?.daily_cap;
+  if (brut === null || brut === undefined || brut.trim() === '') return defaut;
+  const valeur = Number(brut);
+  return Number.isFinite(valeur) && valeur >= 0 ? valeur : defaut;
+}
+
+export const PLAFOND_SCORING_PAR_DEFAUT = Number(process.env.SCORE_DAILY_CAP ?? 300);
+
+async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
+  return lirePlafondFournisseur(pool, organizationId, 'fullenrich', PLAFOND_ENRICHISSEMENT_PAR_DEFAUT);
 }
 
 export async function enqueueEnrichmentForQualified(

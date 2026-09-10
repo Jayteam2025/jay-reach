@@ -55,7 +55,10 @@
       "modelFast": "Model (lichte taken) — standaard Haiku",
       "enrichDailyCap": "Daglimiet",
       "enrichDailyCapHint": "Maximaal verrijkte contacten per dag. Zet 0 om automatische verrijking te pauzeren en alleen handmatig te verrijken vanuit het scherm Signalen.",
-      "enrichDailyCapPlaceholder": "bv. 50"
+      "enrichDailyCapPlaceholder": "bv. 50",
+      "scoreDailyCap": "Daglimiet voor scoring",
+      "scoreDailyCapHint": "Signalen die de scorings-AI per dag verwerkt, alle bronnen samen. Zet 0 om het scoren te pauzeren.",
+      "scoreDailyCapPlaceholder": "bv. 300"
     },
     "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
     "secretUnchanged": "Laat leeg om de huidige sleutel te behouden"
