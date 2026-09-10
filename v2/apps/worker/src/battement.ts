@@ -19,11 +19,26 @@ export type IdentiteMoteur = {
 export function identiteDepuisEnvironnement(maintenant: Date = new Date()): IdentiteMoteur {
   const hote = process.env.HOSTNAME ?? hostnameOs();
   return {
-    instanceId: hote,
+    // Stable d'un déploiement à l'autre (contrairement au nom d'hôte, qui
+    // change à chaque `--force-recreate` du conteneur) : sans ça,
+    // `engine_status` accumule une ligne morte par recréation.
+    instanceId: process.env.ENGINE_INSTANCE_ID ?? 'worker',
     hostname: hote,
     version: process.env.GIT_SHA ?? 'inconnu',
     startedAt: maintenant,
   };
+}
+
+const LONGUEUR_MAX_ERREUR = 500;
+
+/**
+ * Message prêt pour `last_error` : `null` si aucune erreur, sinon le message
+ * borné à 500 caractères — un message Postgres peut citer l'hôte de la base,
+ * et `last_error` est lisible par tout utilisateur authentifié.
+ */
+export function messageErreur(erreur: Error | null): string | null {
+  if (erreur === null) return null;
+  return erreur.message.slice(0, LONGUEUR_MAX_ERREUR);
 }
 
 /** Enregistre un tour reussi ou echoue. `erreur` vide le dernier echec quand elle vaut null. */

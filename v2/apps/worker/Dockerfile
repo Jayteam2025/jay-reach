@@ -52,8 +52,8 @@ COPY --from=build /app/packages/providers packages/providers
 COPY --from=build /app/apps/worker apps/worker
 RUN pnpm install --frozen-lockfile --prod --filter @jay-reach/worker...
 
-# Utilisateur non privilégié : le worker n'écrit rien sur le disque, il n'a
-# aucune raison d'être root.
+# Utilisateur non privilégié : le worker n'écrit que son fichier de battement
+# dans /tmp (`battement.ts`), il n'a aucune raison d'être root.
 USER node
 
 ARG GIT_SHA=inconnu

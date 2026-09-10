@@ -12,6 +12,7 @@ import {
   CHEMIN_BATTEMENT_PAR_DEFAUT,
   identiteDepuisEnvironnement,
   enregistrerTour,
+  messageErreur,
 } from './battement.js';
 import { createPool } from './db.js';
 import {
@@ -52,25 +53,26 @@ async function main(): Promise<void> {
 
   const tourProduction = async (): Promise<void> => {
     try {
-      await produire(ctx);
-      await enregistrerTour(pool, identite, 'production', null);
+      const erreur = await produire(ctx);
+      await enregistrerTour(pool, identite, 'production', messageErreur(erreur));
     } catch (err) {
-      console.error('[moteur] echec du cycle de production', err);
-      await enregistrerTour(pool, identite, 'production', err instanceof Error ? err.message : String(err)).catch(
-        () => undefined,
-      );
+      // Ne peut venir que de l'enregistrement lui-même (fichier ou base) :
+      // `produire` avale déjà ses propres erreurs et les retourne.
+      console.error('[battement] enregistrement impossible', err);
     }
   };
   const tourSequences = async (): Promise<void> => {
     try {
-      await produireTick(ctx);
-      await ecrireBattementFichier(cheminBattement);
-      await enregistrerTour(pool, identite, 'tick', null);
+      const erreur = await produireTick(ctx);
+      // Le fichier de battement n'est écrit qu'après un tick réussi : un
+      // conteneur « healthy » veut dire « les tours passent », pas seulement
+      // « le process est vivant ».
+      if (erreur === null) {
+        await ecrireBattementFichier(cheminBattement);
+      }
+      await enregistrerTour(pool, identite, 'tick', messageErreur(erreur));
     } catch (err) {
-      console.error('[moteur] echec du tour de sequences', err);
-      await enregistrerTour(pool, identite, 'tick', err instanceof Error ? err.message : String(err)).catch(
-        () => undefined,
-      );
+      console.error('[battement] enregistrement impossible', err);
     }
   };
 
@@ -78,7 +80,7 @@ async function main(): Promise<void> {
   console.log(`[worker] pg-boss démarré — ${QUEUES.length} files déclarées.`);
   void tourSequences();
 
-  await produire(ctx);
+  void tourProduction();
   const producer = setInterval(() => void tourProduction(), DISCOVER_INTERVAL_MS);
   producer.unref();
 

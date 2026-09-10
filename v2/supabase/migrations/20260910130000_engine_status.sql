@@ -20,6 +20,12 @@ drop policy if exists engine_status_read on public.engine_status;
 create policy engine_status_read on public.engine_status
   for select to authenticated using (true);
 
-revoke all on public.engine_status from public;
+-- Supabase accorde par défaut tous les privilèges à `anon` et `authenticated`
+-- sur toute table créée dans `public` : un simple `revoke ... from public` ne
+-- les reprend pas (motif suivi depuis la migration 20260909120000).
+revoke all on public.engine_status from anon;
+revoke insert, update, delete, truncate, references, trigger
+  on public.engine_status from authenticated;
+
 grant select on public.engine_status to authenticated;
 grant select, insert, update, delete on public.engine_status to service_role;

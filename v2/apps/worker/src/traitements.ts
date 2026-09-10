@@ -415,8 +415,15 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
 
 // ------------------------------------------------------------- production
 
-/** Met en file le travail périodique : collectes, scoring, enrichissement, entretien. */
-export async function produire(ctx: Contexte): Promise<void> {
+/**
+ * Met en file le travail périodique : collectes, scoring, enrichissement,
+ * entretien. Retourne `null` en succès, ou l'erreur rencontrée : l'appelant
+ * (`index.ts`, route `api/cron/moteur`) la consigne dans
+ * `engine_status.last_error`, seule trace d'un échec de CYCLE — les échecs de
+ * jobs individuels (par exemple un appel Anthropic refusé) restent dans
+ * `pgboss.job.output`.
+ */
+export async function produire(ctx: Contexte): Promise<Error | null> {
   const { pool, boss } = ctx;
   try {
     const ecartes = await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
@@ -456,8 +463,10 @@ export async function produire(ctx: Contexte): Promise<void> {
     if (orphelines > 0) {
       console.warn(`[producer] ${orphelines} collecte(s) interrompue(s) refermée(s)`);
     }
+    return null;
   } catch (err) {
     console.error('[producer] échec', err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 
@@ -482,14 +491,19 @@ export async function releverDemandes(ctx: Contexte): Promise<void> {
   }
 }
 
-/** Enfile un tick périodique, dédupliqué par fenêtre. */
-export async function produireTick(ctx: Contexte): Promise<void> {
+/**
+ * Enfile un tick périodique, dédupliqué par fenêtre. Retourne `null` en
+ * succès, ou l'erreur rencontrée — même contrat que `produire`.
+ */
+export async function produireTick(ctx: Contexte): Promise<Error | null> {
   try {
     await ctx.boss.insert([
       { name: 'sequence.tick', id: deterministicUuid('tick-cron', currentBucket(TICK_INTERVAL_MS)), data: {} },
     ]);
+    return null;
   } catch (err) {
     console.error('[tick-producer] échec', err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 
