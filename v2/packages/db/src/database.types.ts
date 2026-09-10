@@ -587,6 +587,71 @@ export type Database = {
           },
         ]
       }
+      email_transport_bindings: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          last_replanned_at: string | null
+          list_id: string
+          organization_id: string
+          provider: string
+          sequence_id: string
+          step_id: string
+          template_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          last_replanned_at?: string | null
+          list_id: string
+          organization_id: string
+          provider?: string
+          sequence_id: string
+          step_id: string
+          template_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          last_replanned_at?: string | null
+          list_id?: string
+          organization_id?: string
+          provider?: string
+          sequence_id?: string
+          step_id?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_transport_bindings_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_transport_bindings_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_transport_bindings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_transport_bindings_step_id_fkey"
+            columns: ["step_id"]
+            isOneToOne: false
+            referencedRelation: "sequence_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       enrollments: {
         Row: {
           campaign_id: string
@@ -1329,6 +1394,38 @@ export type Database = {
           },
         ]
       }
+      provider_sync_state: {
+        Row: {
+          cursor_ms: number
+          last_error: string | null
+          last_run_at: string | null
+          organization_id: string
+          provider: string
+        }
+        Insert: {
+          cursor_ms?: number
+          last_error?: string | null
+          last_run_at?: string | null
+          organization_id: string
+          provider: string
+        }
+        Update: {
+          cursor_ms?: number
+          last_error?: string | null
+          last_run_at?: string | null
+          organization_id?: string
+          provider?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_sync_state_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_subscriptions: {
         Row: {
           created_at: string
@@ -1372,6 +1469,8 @@ export type Database = {
           kind: Database["public"]["Enums"]["sender_kind"]
           organization_id: string
           provider_id: string | null
+          provider_ref: string | null
+          provider_state: Json | null
           timezone: string
           warmup_stage: number
         }
@@ -1387,6 +1486,8 @@ export type Database = {
           kind: Database["public"]["Enums"]["sender_kind"]
           organization_id: string
           provider_id?: string | null
+          provider_ref?: string | null
+          provider_state?: Json | null
           timezone?: string
           warmup_stage?: number
         }
@@ -1402,6 +1503,8 @@ export type Database = {
           kind?: Database["public"]["Enums"]["sender_kind"]
           organization_id?: string
           provider_id?: string | null
+          provider_ref?: string | null
+          provider_state?: Json | null
           timezone?: string
           warmup_stage?: number
         }
