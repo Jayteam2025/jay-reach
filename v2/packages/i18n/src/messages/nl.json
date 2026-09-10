@@ -35,6 +35,7 @@
     "save": "Opslaan",
     "saved": "Opgeslagen",
     "smartlead": "Smartlead (e-mail)",
+    "salesblink": "SalesBlink (e-mail)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
     "bouncer": "Bouncer (e-mailverificatie)",
@@ -58,7 +59,16 @@
       "enrichDailyCapPlaceholder": "bv. 50",
       "scoreDailyCap": "Daglimiet voor scoring",
       "scoreDailyCapHint": "Signalen die de scorings-AI per dag verwerkt, alle bronnen samen. Zet 0 om het scoren te pauzeren.",
-      "scoreDailyCapPlaceholder": "bv. 300"
+      "scoreDailyCapPlaceholder": "bv. 300",
+      "emailDailyCap": "Dagelijks e-mailplafond",
+      "emailDailyCapHint": "E-mails per dag naar SalesBlink, alle campagnes (0 = pauze, leeg = onbeperkt)",
+      "emailDailyCapPlaceholder": "Aantal, leeg = onbeperkt",
+      "syncIntervalMin": "Ophaalfrequentie (minuten)",
+      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, antwoorden en bounces bij SalesBlink leest (2 tot 60)",
+      "syncIntervalMinPlaceholder": "Minuten, standaard 5",
+      "replyMaxDelayH": "Maximale vertraging van een opvolging (uren)",
+      "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
+      "replyMaxDelayHPlaceholder": "Uren, standaard 6"
     },
     "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
     "secretUnchanged": "Laat leeg om de huidige sleutel te behouden"

@@ -10,7 +10,7 @@ describe('ProviderRegistry', () => {
 
   it('résout par id et par catégorie', () => {
     const registry = createRegistry(PROVIDER_CATALOG);
-    expect(registry.get('smartlead')?.category).toBe('email');
+    expect(registry.get('salesblink')?.category).toBe('email');
     expect(registry.listByCategory('signals').map((m) => m.id)).toContain('francetravail');
   });
 

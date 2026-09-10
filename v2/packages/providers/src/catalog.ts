@@ -8,10 +8,41 @@ import type { ProviderManifest } from './manifest.js';
 
 export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
   {
-    id: 'smartlead',
+    // Transport email. La clé est celle du workspace SalesBlink ; les trois réglages
+    // se lisent ici et nulle part ailleurs (décision JB du 10/09 : rien de figé).
+    id: 'salesblink',
     category: 'email',
-    labelKey: 'providers.smartlead',
-    fields: [{ name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'SMARTLEAD_API_KEY' }],
+    labelKey: 'providers.salesblink',
+    fields: [
+      { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'SALESBLINK_API_KEY' },
+      {
+        name: 'daily_cap',
+        labelKey: 'providers.field.emailDailyCap',
+        hintKey: 'providers.field.emailDailyCapHint',
+        placeholderKey: 'providers.field.emailDailyCapPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
+      {
+        name: 'sync_interval_min',
+        labelKey: 'providers.field.syncIntervalMin',
+        hintKey: 'providers.field.syncIntervalMinHint',
+        placeholderKey: 'providers.field.syncIntervalMinPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
+      {
+        name: 'reply_max_delay_h',
+        labelKey: 'providers.field.replyMaxDelayH',
+        hintKey: 'providers.field.replyMaxDelayHHint',
+        placeholderKey: 'providers.field.replyMaxDelayHPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
+    ],
   },
   {
     id: 'fullenrich',

@@ -35,6 +35,7 @@
     "save": "Save",
     "saved": "Saved",
     "smartlead": "Smartlead (email)",
+    "salesblink": "SalesBlink (email)",
     "fullenrich": "FullEnrich (enrichment)",
     "dropcontact": "Dropcontact (enrichment)",
     "bouncer": "Bouncer (email verification)",
@@ -58,7 +59,16 @@
       "enrichDailyCapPlaceholder": "e.g. 50",
       "scoreDailyCap": "Daily scoring cap",
       "scoreDailyCapHint": "Signals processed per day by the scoring AI, all sources included. Set 0 to pause scoring.",
-      "scoreDailyCapPlaceholder": "e.g. 300"
+      "scoreDailyCapPlaceholder": "e.g. 300",
+      "emailDailyCap": "Daily email cap",
+      "emailDailyCapHint": "Emails pushed to SalesBlink per day, all campaigns (0 = pause, empty = unlimited)",
+      "emailDailyCapPlaceholder": "Number, empty = unlimited",
+      "syncIntervalMin": "Sync interval (minutes)",
+      "syncIntervalMinHint": "How often Jay Reach reads sends, replies and bounces from SalesBlink (2 to 60)",
+      "syncIntervalMinPlaceholder": "Minutes, default 5",
+      "replyMaxDelayH": "Max follow-up delay (hours)",
+      "replyMaxDelayHHint": "Past this delay, a follow-up still queued at SalesBlink is re-sent as a new \"Re:\" email (1 to 72)",
+      "replyMaxDelayHPlaceholder": "Hours, default 6"
     },
     "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand",
     "secretUnchanged": "Leave empty to keep the current key"
