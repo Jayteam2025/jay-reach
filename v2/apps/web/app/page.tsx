@@ -173,7 +173,7 @@ async function loadDashboard(
         (r) => (r.data as { channel: string; dispatched_at: string | null; enrollments: { started_at: string } | null }[] | null) ?? [],
       ),
 
-    chargerEtatMoteur(supabase),
+    chargerEtatMoteur(supabase, orgId),
   ]);
 
   const sumReplies = stats.reduce((a, s) => a + (s.replies ?? 0), 0);
@@ -306,37 +306,49 @@ export default async function DashboardPage() {
           <h3 className="rs-section-title" style={{ marginTop: 16 }}>
             {t('engine.caps')}
           </h3>
-          {data.engine.plafonds.map((p) => (
-            <div key={p.providerId} className="rs-mini">
-              <div className="rs-mini-main">
-                <div className="rs-mini-title">{tp.has(p.providerId) ? tp(p.providerId) : p.providerId}</div>
-                <div className="rs-mini-sub mono">{t('engine.usage', { used: p.utilise, cap: p.plafond })}</div>
+          {data.engine.plafonds.length === 0 ? (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {t('engine.noCaps')}
+            </p>
+          ) : (
+            data.engine.plafonds.map((p) => (
+              <div key={p.providerId} className="rs-mini">
+                <div className="rs-mini-main">
+                  <div className="rs-mini-title">{tp.has(p.providerId) ? tp(p.providerId) : p.providerId}</div>
+                  <div className="rs-mini-sub mono">{t('engine.usage', { used: p.utilise, cap: p.plafond })}</div>
+                </div>
+                {p.plafond === 0 ? (
+                  <span className="rs-pill" data-tone="ghost">
+                    {t('engine.paused')}
+                  </span>
+                ) : p.utilise >= p.plafond ? (
+                  <span className="rs-pill" data-tone="flare">
+                    {t('engine.reached')}
+                  </span>
+                ) : null}
               </div>
-              {p.plafond === 0 ? (
-                <span className="rs-pill" data-tone="ghost">
-                  {t('engine.paused')}
-                </span>
-              ) : p.utilise >= p.plafond ? (
-                <span className="rs-pill" data-tone="flare">
-                  {t('engine.reached')}
-                </span>
-              ) : null}
-            </div>
-          ))}
+            ))
+          )}
 
           <h3 className="rs-section-title" style={{ marginTop: 16 }}>
             {t('engine.campaigns')}
           </h3>
-          {data.engine.campagnes.map((c) => (
-            <div key={c.id} className="rs-mini">
-              <div className="rs-mini-main">
-                <div className="rs-mini-title">{c.nom}</div>
+          {data.engine.campagnes.length === 0 ? (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {t('engine.noCampaigns')}
+            </p>
+          ) : (
+            data.engine.campagnes.map((c) => (
+              <div key={c.id} className="rs-mini">
+                <div className="rs-mini-main">
+                  <div className="rs-mini-title">{c.nom}</div>
+                </div>
+                <span className="rs-mini-sub mono">
+                  {c.plafond === null ? t('engine.entriesUnlimited', { used: c.entrees }) : t('engine.entries', { used: c.entrees, cap: c.plafond })}
+                </span>
               </div>
-              <span className="rs-mini-sub mono">
-                {c.plafond === null ? t('engine.entriesUnlimited', { used: c.entrees }) : t('engine.entries', { used: c.entrees, cap: c.plafond })}
-              </span>
-            </div>
-          ))}
+            ))
+          )}
         </section>
 
         <div className="rs-dash">

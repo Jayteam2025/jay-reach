@@ -366,7 +366,9 @@
       "reached": "plafond atteint",
       "campaigns": "Entrées en campagne",
       "entries": "{used} / {cap} aujourd'hui",
-      "entriesUnlimited": "{used} aujourd'hui, sans plafond"
+      "entriesUnlimited": "{used} aujourd'hui, sans plafond",
+      "noCaps": "Aucun plafond réglé et aucune consommation aujourd'hui",
+      "noCampaigns": "Aucune campagne active"
     }
   },
   "prospects": {

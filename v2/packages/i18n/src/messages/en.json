@@ -366,7 +366,9 @@
       "reached": "cap reached",
       "campaigns": "Campaign entries",
       "entries": "{used} / {cap} today",
-      "entriesUnlimited": "{used} today, no cap"
+      "entriesUnlimited": "{used} today, no cap",
+      "noCaps": "No cap configured and no usage today",
+      "noCampaigns": "No active campaign"
     }
   },
   "prospects": {

@@ -366,7 +366,9 @@
       "reached": "limiet bereikt",
       "campaigns": "Instroom per campagne",
       "entries": "{used} / {cap} vandaag",
-      "entriesUnlimited": "{used} vandaag, geen limiet"
+      "entriesUnlimited": "{used} vandaag, geen limiet",
+      "noCaps": "Geen limiet ingesteld en geen verbruik vandaag",
+      "noCampaigns": "Geen actieve campagne"
     }
   },
   "prospects": {
