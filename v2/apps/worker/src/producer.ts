@@ -330,9 +330,14 @@ export async function enqueueEnrichmentForQualified(
  *    depuis l'éditeur et n'avait aucun lecteur : une campagne exigeant 60
  *    inscrivait à 12 sans que rien ne le signale.
  *
- * L'identifiant de job est déterministe par (campagne, contact) : un passage
- * répété du producteur ne réinscrit pas le même contact, et l'index partiel
- * d'`enrollments` refuse de toute façon une seconde inscription vivante.
+ * L'identifiant de job est déterministe par (campagne, contact, jour UTC) : un
+ * passage répété du producteur le même jour ne réinscrit pas le même contact.
+ * Le jour fait partie de la clé pour qu'un contact reporté par le plafond de
+ * la campagne (`handlers/sequence.ts`, `enrollContact`) revienne le
+ * lendemain avec un nouveau job, plutôt que de rester coincé derrière le
+ * même identifiant jusqu'à l'archivage pg-boss (douze heures après un job
+ * terminé) ; l'index partiel d'`enrollments` refuse de toute façon une
+ * seconde inscription vivante.
  */
 export async function enqueueEnrollments(
   boss: PgBoss,
@@ -395,12 +400,17 @@ export async function enqueueEnrollments(
     console.log(`[enroll] campagne ${campaignId} : ${n} contact(s) reportes au lendemain, plafond du jour atteint`);
   }
 
+  // Le jour UTC fait partie de la clé d'idempotence : sans lui, un contact
+  // reporté hier par le plafond de la campagne (job terminé sans inscrire,
+  // cf. `enrollContact`) ne reviendrait qu'à l'archivage pg-boss du job
+  // précédent (douze heures), jamais au reset du plafond à minuit.
+  const jourUtc = new Date().toISOString().slice(0, 10);
   let enqueued = 0;
   for (const row of retenues) {
     await boss.insert([
       {
         name: 'sequence.enroll',
-        id: deterministicUuid('enroll', row.campaign_id, row.contact_id),
+        id: deterministicUuid('enroll', row.campaign_id, row.contact_id, jourUtc),
         data: {
           organizationId: row.organization_id,
           campaignId: row.campaign_id,

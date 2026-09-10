@@ -55,7 +55,11 @@ export async function compterEntreesDuJour(pool: Pool, campaignId: string): Prom
  * Retourne l'id créé, ou null si le contact a déjà une inscription active
  * ou si le plafond quotidien de la campagne est atteint (contrôle autoritaire :
  * le pré-filtre du producteur peut avoir laissé passer un contact entre-temps
- * comptabilisé).
+ * comptabilisé). Dans ce dernier cas, le contact est repris le lendemain :
+ * l'identifiant du job d'inscription porte le jour UTC (`enqueueEnrollments`),
+ * donc un nouveau job est créé chaque jour tant que l'inscription n'a pas eu
+ * lieu ; la déduplication réelle reste l'index `enrollments_one_active_uidx`
+ * et le `on conflict do nothing` ci-dessus.
  */
 export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
   // Compter puis insérer n'est pas atomique, mais ça suffit ici : le moteur ne
