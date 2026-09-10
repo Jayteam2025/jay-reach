@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bornerParCampagne, placesRestantes, reduireLotAuReste } from './plafonds.js';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, reduireLotAuReste } from './plafonds.js';
 
 describe('placesRestantes', () => {
   it('rend le reste quand le plafond est positif', () => {
@@ -45,5 +45,34 @@ describe('bornerParCampagne', () => {
     const { retenues, reportees } = bornerParCampagne(lignes, new Map());
     expect(retenues).toHaveLength(5);
     expect(reportees.size).toBe(0);
+  });
+});
+
+describe('normaliserPlafond', () => {
+  const defaut = 42;
+  it('rend le defaut si la valeur est absente', () => {
+    expect(normaliserPlafond(null, defaut)).toBe(defaut);
+    expect(normaliserPlafond(undefined, defaut)).toBe(defaut);
+  });
+  it('rend le defaut pour une chaine vide', () => {
+    expect(normaliserPlafond('', defaut)).toBe(defaut);
+  });
+  it('accepte zero (pause voulue)', () => {
+    expect(normaliserPlafond('0', defaut)).toBe(0);
+  });
+  it('accepte un entier positif', () => {
+    expect(normaliserPlafond('300', defaut)).toBe(300);
+  });
+  it('tronque une valeur non entiere', () => {
+    expect(normaliserPlafond('300.5', defaut)).toBe(300);
+  });
+  it('rend le defaut pour une valeur negative', () => {
+    expect(normaliserPlafond('-1', defaut)).toBe(defaut);
+  });
+  it('rend le defaut pour une valeur non numerique', () => {
+    expect(normaliserPlafond('abc', defaut)).toBe(defaut);
+  });
+  it('borne a la valeur max d\'un entier Postgres', () => {
+    expect(normaliserPlafond('9999999999', defaut)).toBe(2147483647);
   });
 });

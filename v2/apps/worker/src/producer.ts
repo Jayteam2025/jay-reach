@@ -14,7 +14,7 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, placesRestantes } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
@@ -198,10 +198,7 @@ export async function lirePlafondFournisseur(
       limit 1`,
     [organizationId, providerId],
   );
-  const brut = res.rows[0]?.daily_cap;
-  if (brut === null || brut === undefined || brut.trim() === '') return defaut;
-  const valeur = Number(brut);
-  return Number.isFinite(valeur) && valeur >= 0 ? valeur : defaut;
+  return normaliserPlafond(res.rows[0]?.daily_cap, defaut);
 }
 
 export const PLAFOND_SCORING_PAR_DEFAUT = Number(process.env.SCORE_DAILY_CAP ?? 300);

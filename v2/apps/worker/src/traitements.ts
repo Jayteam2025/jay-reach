@@ -17,7 +17,7 @@ import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from 
 import { countRejected } from '@jay-reach/providers/outreach';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
-import { runScore, DEFAULT_BATCH } from './handlers/score.js';
+import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runDispatch, runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import {
@@ -208,17 +208,23 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
       where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
     [data.organizationId, ANTHROPIC_PROVIDER],
   );
-  const enAttente = await pool.query<{ n: string }>(
-    `select count(*)::text as n from signals
-      where organization_id = $1 and status = 'new' and score is null`,
-    [data.organizationId],
-  );
-  const nbEnAttente = Number(enAttente.rows[0]?.n ?? 0);
-  if (nbEnAttente === 0) return;
+  // Compte exactement ce que runScore sélectionnera ET scorera (même source
+  // avec un prompt exploitable) : un signal dont la source n'a pas de prompt
+  // reste `new` indéfiniment, et le compter ici viderait le plafond du jour
+  // sans qu'aucun appel au modèle n'ait lieu (I1, revue du 10/09/2026).
+  const nbEnAttente = await compterSignauxScorables(pool, data.organizationId);
+  if (nbEnAttente === 0) {
+    console.log(`[score] org ${data.organizationId} : aucun signal scorable — ignoré`);
+    return;
+  }
   const reste = placesRestantes(plafond, usage.rows[0]?.used ?? 0);
   const lot = reduireLotAuReste(Math.min(DEFAULT_BATCH, nbEnAttente), reste);
   if (lot === 0) {
-    console.warn(`[score] org ${data.organizationId} : plafond quotidien de scoring atteint (${plafond}/jour), ${nbEnAttente} signaux en attente`);
+    if (plafond === 0) {
+      console.warn(`[score] org ${data.organizationId} : scoring en pause (plafond 0)`);
+    } else {
+      console.warn(`[score] org ${data.organizationId} : plafond quotidien de scoring atteint (${plafond}/jour), ${nbEnAttente} signaux en attente`);
+    }
     return;
   }
   const credit = await pool.query<{ ok: boolean }>(

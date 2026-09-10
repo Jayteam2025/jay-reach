@@ -1,3 +1,22 @@
+/** Borne superieure d'un `int` Postgres (`daily_cap int`). */
+const PLAFOND_MAX = 2_147_483_647;
+
+/**
+ * Normalise un plafond saisi en texte libre (champ `daily_cap` de l'ecran
+ * Fournisseurs, `type: 'text'`) : absent, vide, negatif ou non numerique
+ * retombe sur le defaut ; une valeur decimale est tronquee a l'entier ; une
+ * valeur trop grande est bornee a ce qu'un `int` Postgres peut recevoir.
+ * Zero reste zero (pause voulue).
+ */
+export function normaliserPlafond(brut: string | null | undefined, defaut: number): number {
+  if (brut === null || brut === undefined) return defaut;
+  const texte = brut.trim();
+  if (texte === '') return defaut;
+  const valeur = Number(texte);
+  if (!Number.isFinite(valeur) || valeur < 0) return defaut;
+  return Math.min(Math.trunc(valeur), PLAFOND_MAX);
+}
+
 /** Places restantes aujourd'hui. Un plafond nul, negatif ou invalide vaut pause : zero place. */
 export function placesRestantes(plafond: number, consomme: number): number {
   if (!Number.isFinite(plafond) || plafond <= 0) return 0;

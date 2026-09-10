@@ -34,7 +34,9 @@ export type SignalScorer = (
 
 // Longueur minimale d'un prompt de scoring exploitable (repris de
 // signal-scoring-core : en-dessous, la source est considérée non configurée).
-const MIN_SCORING_PROMPT_LENGTH = 200;
+// Exportée : `compterSignauxScorables` doit appliquer exactement la même
+// condition pour ne créditer que ce que `runScore` scorera réellement.
+export const MIN_SCORING_PROMPT_LENGTH = 200;
 const DEFAULT_MIN_SCORE = 60;
 const DEFAULT_FRESHNESS_DAYS = 30;
 export const DEFAULT_BATCH = 50;
@@ -97,6 +99,30 @@ async function persistScore(
       where id = $1`,
     [id, score, reason, status, discardReason],
   );
+}
+
+/**
+ * Compte les signaux qu'un appel à `runScore` sélectionnerait ET scorerait
+ * réellement pour cette organisation : `status = 'new'`, `score is null`, et
+ * une source dont le prompt de scoring est exploitable (même seuil de
+ * longueur que le pré-filtre par source de `runScore`, ci-dessous). Un signal
+ * dont la source n'a pas de prompt exploitable reste `new` indéfiniment
+ * (déclencheur non configuré) : il ne doit jamais être compté ici, sous peine
+ * de créditer un lot qui ne scorera jamais rien (I1, revue du 10/09/2026).
+ */
+export async function compterSignauxScorables(pool: Pool, organizationId: string): Promise<number> {
+  const res = await pool.query<{ count: string }>(
+    `select count(*)::text as count
+       from public.signals s
+       join public.sources so on so.id = s.source_id
+      where s.organization_id = $1
+        and s.status = 'new'
+        and s.score is null
+        and so.config ->> 'scoring_prompt' is not null
+        and length(trim(so.config ->> 'scoring_prompt')) >= $2`,
+    [organizationId, MIN_SCORING_PROMPT_LENGTH],
+  );
+  return Number(res.rows[0]?.count ?? 0);
 }
 
 /**
