@@ -353,7 +353,21 @@
     "noCampaignSub": "Goed gescoord, nog geen campagne heeft ze opgepakt.",
     "replied": "Hebben geantwoord",
     "repliedSub": "Laatste gekwalificeerde antwoorden.",
-    "atStep": "stap {n}"
+    "atStep": "stap {n}",
+    "engine": {
+      "title": "Status van de motor",
+      "unknown": "Geen hartslag ontvangen. De motor heeft nooit op deze database gedraaid.",
+      "active": "Motor actief · laatste ronde {ago} · versie {version}",
+      "stopped": "Motor gestopt · laatste ronde {ago}",
+      "lastError": "Laatste fout: {message}",
+      "caps": "Limieten van vandaag",
+      "usage": "vandaag {used} / {cap}",
+      "paused": "gepauzeerd",
+      "reached": "limiet bereikt",
+      "campaigns": "Instroom per campagne",
+      "entries": "{used} / {cap} vandaag",
+      "entriesUnlimited": "{used} vandaag, geen limiet"
+    }
   },
   "prospects": {
     "eyebrow": "Bedrijfsprofiel",

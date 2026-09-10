@@ -353,7 +353,21 @@
     "noCampaignSub": "Bien notés, aucune campagne ne les prend encore.",
     "replied": "Ont répondu",
     "repliedSub": "Dernières réponses qualifiées.",
-    "atStep": "étape {n}"
+    "atStep": "étape {n}",
+    "engine": {
+      "title": "État du moteur",
+      "unknown": "Aucun battement reçu. Le moteur n'a jamais tourné sur cette base.",
+      "active": "Moteur actif · dernier tour {ago} · version {version}",
+      "stopped": "Moteur arrêté · dernier tour {ago}",
+      "lastError": "Dernière erreur : {message}",
+      "caps": "Plafonds du jour",
+      "usage": "aujourd'hui {used} / {cap}",
+      "paused": "en pause",
+      "reached": "plafond atteint",
+      "campaigns": "Entrées en campagne",
+      "entries": "{used} / {cap} aujourd'hui",
+      "entriesUnlimited": "{used} aujourd'hui, sans plafond"
+    }
   },
   "prospects": {
     "eyebrow": "Fiche entreprise",

@@ -353,7 +353,21 @@
     "noCampaignSub": "Well-scored, no campaign has picked them up yet.",
     "replied": "Replied",
     "repliedSub": "Latest qualified replies.",
-    "atStep": "step {n}"
+    "atStep": "step {n}",
+    "engine": {
+      "title": "Engine status",
+      "unknown": "No heartbeat received. The engine has never run on this database.",
+      "active": "Engine running · last cycle {ago} · version {version}",
+      "stopped": "Engine stopped · last cycle {ago}",
+      "lastError": "Last error: {message}",
+      "caps": "Today's caps",
+      "usage": "today {used} / {cap}",
+      "paused": "paused",
+      "reached": "cap reached",
+      "campaigns": "Campaign entries",
+      "entries": "{used} / {cap} today",
+      "entriesUnlimited": "{used} today, no cap"
+    }
   },
   "prospects": {
     "eyebrow": "Company profile",
