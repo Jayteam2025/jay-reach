@@ -13,11 +13,11 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES, resolveScoringModel } from '@jay-reach/core';
+import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
 import { countRejected } from '@jay-reach/providers/outreach';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
-import { runScore } from './handlers/score.js';
+import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runDispatch, runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import {
@@ -43,11 +43,15 @@ import {
 } from './enrichment-persist.js';
 import { resolveProviderCredentials } from './credentials.js';
 import {
+  AGE_MAX_SIGNAL_JOURS,
+  ecarterSignauxTropAnciens,
   enqueueDiscoverForActiveSources,
   enqueueScoringForOrgs,
   enqueueEnrichmentForQualified,
   enqueueEnrollments,
   enqueueRequestedRuns,
+  lirePlafondFournisseur,
+  PLAFOND_SCORING_PAR_DEFAUT,
 } from './producer.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -198,7 +202,40 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
   // Niveau `smart` (Sonnet par défaut), surchargeable par org via la config du
   // provider (`model_smart`) — jamais par variable d'env.
   console.log(`[score] org ${data.organizationId} : modèle ${resolveScoringModel('smart', credentials)}`);
-  const summary = await runScore({ pool, organizationId: data.organizationId, scorer: createAnthropicScorer(apiKey, credentials) });
+  const plafond = await lirePlafondFournisseur(pool, data.organizationId, ANTHROPIC_PROVIDER, PLAFOND_SCORING_PAR_DEFAUT);
+  const usage = await pool.query<{ used: number }>(
+    `select used from provider_daily_usage
+      where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
+    [data.organizationId, ANTHROPIC_PROVIDER],
+  );
+  // Compte exactement ce que runScore sélectionnera ET scorera (même source
+  // avec un prompt exploitable) : un signal dont la source n'a pas de prompt
+  // reste `new` indéfiniment, et le compter ici viderait le plafond du jour
+  // sans qu'aucun appel au modèle n'ait lieu (I1, revue du 10/09/2026).
+  const nbEnAttente = await compterSignauxScorables(pool, data.organizationId);
+  if (nbEnAttente === 0) {
+    console.log(`[score] org ${data.organizationId} : aucun signal scorable — ignoré`);
+    return;
+  }
+  const reste = placesRestantes(plafond, usage.rows[0]?.used ?? 0);
+  const lot = reduireLotAuReste(Math.min(DEFAULT_BATCH, nbEnAttente), reste);
+  if (lot === 0) {
+    if (plafond === 0) {
+      console.warn(`[score] org ${data.organizationId} : scoring en pause (plafond 0)`);
+    } else {
+      console.warn(`[score] org ${data.organizationId} : plafond quotidien de scoring atteint (${plafond}/jour), ${nbEnAttente} signaux en attente`);
+    }
+    return;
+  }
+  const credit = await pool.query<{ ok: boolean }>(
+    `select app.consume_provider_credit($1, $2, $3, $4) as ok`,
+    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot],
+  );
+  if (credit.rows[0]?.ok !== true) {
+    console.warn(`[score] org ${data.organizationId} : credit de scoring refuse (plafond ${plafond}/jour)`);
+    return;
+  }
+  const summary = await runScore({ pool, organizationId: data.organizationId, scorer: createAnthropicScorer(apiKey, credentials), batchSize: lot });
   if (summary.skippedNoPrompt) {
     console.log(`[score] org ${data.organizationId} : aucune source configurée avec prompt de scoring — ignoré`);
     return;
@@ -378,10 +415,21 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
 
 // ------------------------------------------------------------- production
 
-/** Met en file le travail périodique : collectes, scoring, enrichissement, entretien. */
-export async function produire(ctx: Contexte): Promise<void> {
+/**
+ * Met en file le travail périodique : collectes, scoring, enrichissement,
+ * entretien. Retourne `null` en succès, ou l'erreur rencontrée : l'appelant
+ * (`index.ts`, route `api/cron/moteur`) la consigne dans
+ * `engine_status.last_error`, seule trace d'un échec de CYCLE — les échecs de
+ * jobs individuels (par exemple un appel Anthropic refusé) restent dans
+ * `pgboss.job.output`.
+ */
+export async function produire(ctx: Contexte): Promise<Error | null> {
   const { pool, boss } = ctx;
   try {
+    const ecartes = await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+    if (ecartes.nouveaux > 0 || ecartes.qualifies > 0) {
+      console.log(`[produire] signaux ecartes pour anciennete (> ${AGE_MAX_SIGNAL_JOURS} j) : ${ecartes.nouveaux} non scores, ${ecartes.qualifies} qualifies non enrichis`);
+    }
     const n = await enqueueDiscoverForActiveSources(boss, pool, { bucket: currentBucket(DISCOVER_INTERVAL_MS) });
     if (n > 0) {
       console.log(`[producer] ${n} source(s) active(s) mise(s) en file`);
@@ -415,8 +463,10 @@ export async function produire(ctx: Contexte): Promise<void> {
     if (orphelines > 0) {
       console.warn(`[producer] ${orphelines} collecte(s) interrompue(s) refermée(s)`);
     }
+    return null;
   } catch (err) {
     console.error('[producer] échec', err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 
@@ -441,14 +491,19 @@ export async function releverDemandes(ctx: Contexte): Promise<void> {
   }
 }
 
-/** Enfile un tick périodique, dédupliqué par fenêtre. */
-export async function produireTick(ctx: Contexte): Promise<void> {
+/**
+ * Enfile un tick périodique, dédupliqué par fenêtre. Retourne `null` en
+ * succès, ou l'erreur rencontrée — même contrat que `produire`.
+ */
+export async function produireTick(ctx: Contexte): Promise<Error | null> {
   try {
     await ctx.boss.insert([
       { name: 'sequence.tick', id: deterministicUuid('tick-cron', currentBucket(TICK_INTERVAL_MS)), data: {} },
     ]);
+    return null;
   } catch (err) {
     console.error('[tick-producer] échec', err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 

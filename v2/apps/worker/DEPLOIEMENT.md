@@ -1,5 +1,9 @@
 # Faire tourner le worker en permanence
 
+> Pour un serveur de production, utiliser `deploy/vps/` (compose, script de
+> déploiement, guide). Ce document décrit le build et le run manuels de
+> l'image.
+
 Le moteur tourne aujourd'hui en mode éphémère : une fonction Vercel par tour,
 déclenchée par la planification. C'est suffisant depuis que la maintenance de
 pg-boss rattrape les jobs coupés, mais un processus permanent reste préférable

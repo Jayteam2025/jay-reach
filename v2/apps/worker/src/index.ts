@@ -7,6 +7,13 @@
  */
 import { QUEUES } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
+import {
+  ecrireBattementFichier,
+  CHEMIN_BATTEMENT_PAR_DEFAUT,
+  identiteDepuisEnvironnement,
+  enregistrerTour,
+  messageErreur,
+} from './battement.js';
 import { createPool } from './db.js';
 import {
   ecouterLesFiles,
@@ -28,6 +35,7 @@ async function main(): Promise<void> {
   if (!connectionString) {
     throw new Error('DATABASE_URL manquant — voir .env.example');
   }
+  const cheminBattement = process.env.HEARTBEAT_FILE ?? CHEMIN_BATTEMENT_PAR_DEFAUT;
   // Clé du coffre à secrets (hors base). Absente → repli sur les variables
   // d'environnement des providers (fonctionnement mono-org sans écran Fournisseurs).
   const encryptionKey = process.env.ENCRYPTION_KEY;
@@ -37,23 +45,52 @@ async function main(): Promise<void> {
 
   const boss = createRuntime(connectionString);
   const pool = createPool(connectionString);
+  const identite = identiteDepuisEnvironnement();
   await boss.start();
   await registerQueues(boss);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
+
+  const tourProduction = async (): Promise<void> => {
+    try {
+      const erreur = await produire(ctx);
+      await enregistrerTour(pool, identite, 'production', messageErreur(erreur));
+    } catch (err) {
+      // Ne peut venir que de l'enregistrement lui-même (fichier ou base) :
+      // `produire` avale déjà ses propres erreurs et les retourne.
+      console.error('[battement] enregistrement impossible', err);
+    }
+  };
+  const tourSequences = async (): Promise<void> => {
+    try {
+      const erreur = await produireTick(ctx);
+      // Le fichier de battement n'est écrit qu'après un tick réussi : un
+      // conteneur « healthy » veut dire « les tours passent », pas seulement
+      // « le process est vivant ».
+      if (erreur === null) {
+        await ecrireBattementFichier(cheminBattement);
+      }
+      await enregistrerTour(pool, identite, 'tick', messageErreur(erreur));
+    } catch (err) {
+      console.error('[battement] enregistrement impossible', err);
+    }
+  };
+
   await ecouterLesFiles(ctx);
   console.log(`[worker] pg-boss démarré — ${QUEUES.length} files déclarées.`);
+  void tourSequences();
 
-  await produire(ctx);
-  const producer = setInterval(() => void produire(ctx), DISCOVER_INTERVAL_MS);
+  void tourProduction();
+  const producer = setInterval(() => void tourProduction(), DISCOVER_INTERVAL_MS);
   producer.unref();
 
   await releverDemandes(ctx);
   const demandes = setInterval(() => void releverDemandes(ctx), REQUESTED_RUN_POLL_MS);
   demandes.unref();
 
-  await produireTick(ctx);
-  const ticker = setInterval(() => void produireTick(ctx), TICK_INTERVAL_MS);
+  const ticker = setInterval(() => {
+    void tourSequences();
+  }, TICK_INTERVAL_MS);
   ticker.unref();
 
   const shutdown = async (signal: string): Promise<void> => {

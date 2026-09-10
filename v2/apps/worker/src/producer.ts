@@ -14,7 +14,9 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
+import { bornerParCampagne, normaliserPlafond, placesRestantes } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
+import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
 
 interface SourceRow {
@@ -24,6 +26,53 @@ interface SourceRow {
   /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
   readonly source_provider_id: string;
   readonly config: { keywords?: unknown; location?: unknown } | null;
+}
+
+const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
+
+/** Une valeur invalide de `SIGNAL_MAX_AGE_DAYS` retombe sur quatorze jours plutôt que de casser le cycle de production. */
+function lireAgeMaxSignalJours(): number {
+  const brut = process.env.SIGNAL_MAX_AGE_DAYS;
+  if (brut === undefined || brut.trim() === '') return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+  const valeur = Number(brut);
+  if (Number.isFinite(valeur) && valeur > 0) return Math.trunc(valeur);
+  console.warn(`[producer] SIGNAL_MAX_AGE_DAYS invalide (« ${brut} »), repli sur ${AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT} jours`);
+  return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+}
+
+/**
+ * Au-delà de ce nombre de jours, un signal ne vaut plus ni scoring ni
+ * enrichissement : la base contient des milliers de signaux de juillet et
+ * août jamais traités, et les faire scorer coûterait du crédit IA pour rien.
+ */
+export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
+
+// Ecart global, toutes organisations confondues : la règle d'ancienneté est
+// la même pour tout le monde et ne dépend d'aucun réglage d'organisation.
+/** Ecarte les signaux trop anciens pour valoir un scoring ou un enrichissement. */
+export async function ecarterSignauxTropAnciens(
+  pool: Pool,
+  maxJours: number,
+): Promise<{ nouveaux: number; qualifies: number }> {
+  if (!Number.isFinite(maxJours) || maxJours <= 0) return { nouveaux: 0, qualifies: 0 };
+  const nouveaux = await pool.query(
+    `update signals
+        set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
+      where status = 'new' and score is null
+        and occurred_at < now() - make_interval(days => $1)`,
+    [maxJours],
+  );
+  // Un signal qualifie attend l'enrichissement tant que son compte n'a pas
+  // `enriched_at` (critere de `enqueueEnrichmentForQualified`).
+  const qualifies = await pool.query(
+    `update signals s
+        set status = 'discarded', discard_reason = 'stale_unenriched'
+      where s.status = 'qualified'
+        and s.occurred_at < now() - make_interval(days => $1)
+        and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
+    [maxJours],
+  );
+  return { nouveaux: nouveaux.rowCount ?? 0, qualifies: qualifies.rowCount ?? 0 };
 }
 
 export async function enqueueDiscoverForActiveSources(
@@ -136,18 +185,26 @@ const PLAFOND_ENRICHISSEMENT_PAR_DEFAUT = Number(process.env.ENRICH_DAILY_CAP ??
  * comme celui de Reoon. L'environnement reste le repli, pour une instance qui
  * n'a rien saisi.
  */
-async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
-  const res = await pool.query<{ valeur: string | null }>(
-    `select config ->> 'daily_cap' as valeur
-       from credentials where organization_id = $1 and provider_id = 'fullenrich'`,
-    [organizationId],
+export async function lirePlafondFournisseur(
+  pool: Pool,
+  organizationId: string,
+  providerId: string,
+  defaut: number,
+): Promise<number> {
+  const res = await pool.query<{ daily_cap: string | null }>(
+    `select config ->> 'daily_cap' as daily_cap
+       from credentials
+      where organization_id = $1 and provider_id = $2
+      limit 1`,
+    [organizationId, providerId],
   );
-  const saisi = Number(res.rows[0]?.valeur);
-  // Zéro est un réglage, pas une absence : c'est ainsi qu'on met
-  // l'enrichissement automatique en pause le temps d'éprouver la chaîne sur
-  // deux entreprises choisies à la main. Le traiter comme invalide aurait
-  // rétabli le plafond par défaut — l'inverse exact de ce qui est demandé.
-  return Number.isFinite(saisi) && saisi >= 0 ? saisi : PLAFOND_ENRICHISSEMENT_PAR_DEFAUT;
+  return normaliserPlafond(res.rows[0]?.daily_cap, defaut);
+}
+
+export const PLAFOND_SCORING_PAR_DEFAUT = Number(process.env.SCORE_DAILY_CAP ?? 300);
+
+async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
+  return lirePlafondFournisseur(pool, organizationId, 'fullenrich', PLAFOND_ENRICHISSEMENT_PAR_DEFAUT);
 }
 
 export async function enqueueEnrichmentForQualified(
@@ -170,7 +227,7 @@ export async function enqueueEnrichmentForQualified(
        select distinct on (a.id, p.id)
               a.organization_id, a.id as account_id, a.name as company_name,
               a.domain, a.country, p.id as persona_id, p.title_patterns,
-              s.id as source_signal_id, s.score
+              s.id as source_signal_id, s.score, s.occurred_at
          from signals s
          join accounts a on a.id = s.account_id
          join personas p on p.organization_id = a.organization_id
@@ -178,14 +235,15 @@ export async function enqueueEnrichmentForQualified(
           and a.enriched_at is null
           and p.is_active
           and array_length(p.title_patterns, 1) > 0
+          and s.occurred_at >= now() - make_interval(days => $2)
         order by a.id, p.id, s.occurred_at desc, s.id
      )
      select organization_id, account_id, company_name, domain, country,
             persona_id, title_patterns, source_signal_id
        from candidats
-      order by score desc nulls last, account_id
+      order by occurred_at desc, score desc nulls last, account_id
       limit $1`,
-    [limit],
+    [limit, AGE_MAX_SIGNAL_JOURS],
   );
 
   let enqueued = 0;
@@ -272,9 +330,14 @@ export async function enqueueEnrichmentForQualified(
  *    depuis l'éditeur et n'avait aucun lecteur : une campagne exigeant 60
  *    inscrivait à 12 sans que rien ne le signale.
  *
- * L'identifiant de job est déterministe par (campagne, contact) : un passage
- * répété du producteur ne réinscrit pas le même contact, et l'index partiel
- * d'`enrollments` refuse de toute façon une seconde inscription vivante.
+ * L'identifiant de job est déterministe par (campagne, contact, jour UTC) : un
+ * passage répété du producteur le même jour ne réinscrit pas le même contact.
+ * Le jour fait partie de la clé pour qu'un contact reporté par le plafond de
+ * la campagne (`handlers/sequence.ts`, `enrollContact`) revienne le
+ * lendemain avec un nouveau job, plutôt que de rester coincé derrière le
+ * même identifiant jusqu'à l'archivage pg-boss (douze heures après un job
+ * terminé) ; l'index partiel d'`enrollments` refuse de toute façon une
+ * seconde inscription vivante.
  */
 export async function enqueueEnrollments(
   boss: PgBoss,
@@ -304,6 +367,12 @@ export async function enqueueEnrollments(
         and c.entry_rules -> 'personas' ? ct.persona_id::text
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
+       -- Pré-filtre : une campagne dont le plafond du jour est déjà atteint
+       -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
+        and (c.daily_cap is null
+             or c.daily_cap > (select count(*) from enrollments e2
+                                 where e2.campaign_id = c.id
+                                   and e2.started_at >= date_trunc('day', now())))
       where ct.source_signal_id is not null
         and not exists (
           select 1 from enrollments e
@@ -315,12 +384,33 @@ export async function enqueueEnrollments(
     [limit],
   );
 
+  const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
+  const places = new Map<string, number | null>();
+  if (ids.length > 0) {
+    const caps = await pool.query<{ id: string; daily_cap: number | null }>(
+      `select id, daily_cap from campaigns where id = any($1::uuid[])`,
+      [ids],
+    );
+    for (const c of caps.rows) {
+      places.set(c.id, c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id)));
+    }
+  }
+  const { retenues, reportees } = bornerParCampagne(res.rows, places);
+  for (const [campaignId, n] of reportees) {
+    console.log(`[enroll] campagne ${campaignId} : ${n} contact(s) reportes au lendemain, plafond du jour atteint`);
+  }
+
+  // Le jour UTC fait partie de la clé d'idempotence : sans lui, un contact
+  // reporté hier par le plafond de la campagne (job terminé sans inscrire,
+  // cf. `enrollContact`) ne reviendrait qu'à l'archivage pg-boss du job
+  // précédent (douze heures), jamais au reset du plafond à minuit.
+  const jourUtc = new Date().toISOString().slice(0, 10);
   let enqueued = 0;
-  for (const row of res.rows) {
+  for (const row of retenues) {
     await boss.insert([
       {
         name: 'sequence.enroll',
-        id: deterministicUuid('enroll', row.campaign_id, row.contact_id),
+        id: deterministicUuid('enroll', row.campaign_id, row.contact_id, jourUtc),
         data: {
           organizationId: row.organization_id,
           campaignId: row.campaign_id,

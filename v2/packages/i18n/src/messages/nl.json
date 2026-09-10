@@ -55,7 +55,10 @@
       "modelFast": "Model (lichte taken) — standaard Haiku",
       "enrichDailyCap": "Daglimiet",
       "enrichDailyCapHint": "Maximaal verrijkte contacten per dag. Zet 0 om automatische verrijking te pauzeren en alleen handmatig te verrijken vanuit het scherm Signalen.",
-      "enrichDailyCapPlaceholder": "bv. 50"
+      "enrichDailyCapPlaceholder": "bv. 50",
+      "scoreDailyCap": "Daglimiet voor scoring",
+      "scoreDailyCapHint": "Signalen die de scorings-AI per dag verwerkt, alle bronnen samen. Zet 0 om het scoren te pauzeren.",
+      "scoreDailyCapPlaceholder": "bv. 300"
     },
     "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
     "secretUnchanged": "Laat leeg om de huidige sleutel te behouden"
@@ -350,7 +353,23 @@
     "noCampaignSub": "Goed gescoord, nog geen campagne heeft ze opgepakt.",
     "replied": "Hebben geantwoord",
     "repliedSub": "Laatste gekwalificeerde antwoorden.",
-    "atStep": "stap {n}"
+    "atStep": "stap {n}",
+    "engine": {
+      "title": "Status van de motor",
+      "unknown": "Geen hartslag ontvangen. De motor heeft nooit op deze database gedraaid.",
+      "active": "Motor actief · laatste ronde {ago} · versie {version}",
+      "stopped": "Motor gestopt · laatste ronde {ago}",
+      "lastError": "Laatste fout: {message}",
+      "caps": "Limieten van vandaag",
+      "usage": "vandaag {used} / {cap}",
+      "paused": "gepauzeerd",
+      "reached": "limiet bereikt",
+      "campaigns": "Instroom per campagne",
+      "entries": "{used} / {cap} vandaag",
+      "entriesUnlimited": "{used} vandaag, geen limiet",
+      "noCaps": "Geen limiet ingesteld en geen verbruik vandaag",
+      "noCampaigns": "Geen actieve campagne"
+    }
   },
   "prospects": {
     "eyebrow": "Bedrijfsprofiel",
@@ -395,7 +414,8 @@
     "progress": "{pct}% van pool gecontacteerd",
     "back": "← Campagnes",
     "detailSub": "{days} d geleden aangemaakt · volgende verzending over {next} · {contacts, plural, one {# contact} other {# contacten}} · {steps, plural, one {# stap} other {# stappen}}",
-    "perDay": "{n} / dag",
+    "perDayUsed": "vandaag {used} / {n}",
+    "perDayUnlimited": "geen limiet",
     "addContacts": "Contacten toevoegen",
     "pause": "Pauzeren",
     "tabs": {

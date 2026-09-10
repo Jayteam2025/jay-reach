@@ -1,0 +1,29 @@
+# Compose de production du worker Jay Reach. À lancer depuis ce dossier :
+#   GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+# Le fichier d'environnement est créé à la main par l'opérateur (voir README.md).
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-inconnu}
+    image: jay-reach-worker:${GIT_SHA:-local}
+    restart: unless-stopped
+    env_file:
+      - ${JAY_REACH_ENV_FILE:-/etc/jay-reach/worker.env}
+    environment:
+      GIT_SHA: ${GIT_SHA:-inconnu}
+      HEARTBEAT_FILE: /tmp/jay-reach-battement
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "node", "apps/worker/dist/sante.js"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

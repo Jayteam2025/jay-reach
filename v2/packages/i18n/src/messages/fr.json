@@ -55,7 +55,10 @@
       "modelFast": "Modèle (tâches légères) — défaut Haiku",
       "enrichDailyCap": "Plafond quotidien",
       "enrichDailyCapHint": "Contacts enrichis par jour, au maximum. Mettez 0 pour mettre l'enrichissement automatique en pause et n'enrichir qu'à la main, depuis l'écran Signaux.",
-      "enrichDailyCapPlaceholder": "ex. 50"
+      "enrichDailyCapPlaceholder": "ex. 50",
+      "scoreDailyCap": "Plafond quotidien de scoring",
+      "scoreDailyCapHint": "Signaux traités par jour par l'IA de scoring, toutes sources confondues. Mettez 0 pour mettre le scoring en pause.",
+      "scoreDailyCapPlaceholder": "ex. 300"
     },
     "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
     "secretUnchanged": "Laissez vide pour garder la clé actuelle"
@@ -350,7 +353,23 @@
     "noCampaignSub": "Bien notés, aucune campagne ne les prend encore.",
     "replied": "Ont répondu",
     "repliedSub": "Dernières réponses qualifiées.",
-    "atStep": "étape {n}"
+    "atStep": "étape {n}",
+    "engine": {
+      "title": "État du moteur",
+      "unknown": "Aucun battement reçu. Le moteur n'a jamais tourné sur cette base.",
+      "active": "Moteur actif · dernier tour {ago} · version {version}",
+      "stopped": "Moteur arrêté · dernier tour {ago}",
+      "lastError": "Dernière erreur : {message}",
+      "caps": "Plafonds du jour",
+      "usage": "aujourd'hui {used} / {cap}",
+      "paused": "en pause",
+      "reached": "plafond atteint",
+      "campaigns": "Entrées en campagne",
+      "entries": "{used} / {cap} aujourd'hui",
+      "entriesUnlimited": "{used} aujourd'hui, sans plafond",
+      "noCaps": "Aucun plafond réglé et aucune consommation aujourd'hui",
+      "noCampaigns": "Aucune campagne active"
+    }
   },
   "prospects": {
     "eyebrow": "Fiche entreprise",
@@ -395,7 +414,8 @@
     "progress": "{pct}% du vivier contacté",
     "back": "← Campagnes",
     "detailSub": "Créée il y a {days} j · prochain envoi dans {next} · {contacts, plural, one {# contact} other {# contacts}} · {steps, plural, one {# étape} other {# étapes}}",
-    "perDay": "{n} / jour",
+    "perDayUsed": "aujourd'hui {used} / {n}",
+    "perDayUnlimited": "sans plafond",
     "addContacts": "Ajouter des contacts",
     "pause": "Mettre en pause",
     "tabs": {

@@ -68,6 +68,15 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
       { name: 'api_key', labelKey: 'providers.field.apiKey', type: 'password', secret: true, required: true, fallbackEnv: 'ANTHROPIC_API_KEY' },
       { name: 'model_smart', labelKey: 'providers.field.modelSmart', type: 'text', secret: false, required: false },
       { name: 'model_fast', labelKey: 'providers.field.modelFast', type: 'text', secret: false, required: false },
+      {
+        name: 'daily_cap',
+        labelKey: 'providers.field.scoreDailyCap',
+        hintKey: 'providers.field.scoreDailyCapHint',
+        placeholderKey: 'providers.field.scoreDailyCapPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
     ],
   },
   {

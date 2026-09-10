@@ -159,7 +159,9 @@ export function CampaignDetailView({
         </div>
         <div className="rs-head-actions">
           <span className="rs-pill" data-tone="live">
-            {t('perDay', { n: detail.cadencePerDay })}
+            {detail.cadencePerDay === null
+              ? t('perDayUnlimited')
+              : t('perDayUsed', { used: detail.entriesToday, n: detail.cadencePerDay })}
           </span>
           <Link className="rs-btn" href="/import">
             {t('addContacts')}

@@ -61,7 +61,9 @@ export interface CampaignDetail {
   readonly replyRate: number;
   readonly createdDaysAgo: number;
   readonly nextSendIn: string;
-  readonly cadencePerDay: number;
+  readonly cadencePerDay: number | null;
+  /** Entrées déjà comptabilisées aujourd'hui (jour UTC) pour cette campagne. */
+  readonly entriesToday: number;
   /** Règle de qualification (tags affichés en tête de séquence). */
   readonly qualif: readonly string[];
   readonly steps: readonly SeqStepDetail[];
@@ -225,6 +227,7 @@ export function getCampaignDetail(id: string): CampaignDetail | null {
     createdDaysAgo: 22,
     nextSendIn: '3 h',
     cadencePerDay: 18,
+    entriesToday: 7,
     qualif: ['SIGNAL = OFFRE D’EMPLOI', 'SCORE ≥ 60', 'PERSONA = DRH', '50–500 SALARIÉS'],
     steps: buildSteps(base.contacted, base.replies),
     repliedContacts: REPLIES,

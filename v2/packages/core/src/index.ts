@@ -16,6 +16,7 @@ export * from './linkedin/index.js';
 export * from './inbox/index.js';
 export * from './messages/index.js';
 export * from './campaigns/index.js';
+export * from './plafonds.js';
 
 /** Version du paquet cœur — sert de sonde de santé au worker/web. */
 export const CORE_VERSION = '0.0.0';

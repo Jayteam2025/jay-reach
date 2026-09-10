@@ -55,7 +55,10 @@
       "modelFast": "Model (light tasks) — default Haiku",
       "enrichDailyCap": "Daily cap",
       "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
-      "enrichDailyCapPlaceholder": "e.g. 50"
+      "enrichDailyCapPlaceholder": "e.g. 50",
+      "scoreDailyCap": "Daily scoring cap",
+      "scoreDailyCapHint": "Signals processed per day by the scoring AI, all sources included. Set 0 to pause scoring.",
+      "scoreDailyCapPlaceholder": "e.g. 300"
     },
     "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand",
     "secretUnchanged": "Leave empty to keep the current key"
@@ -350,7 +353,23 @@
     "noCampaignSub": "Well-scored, no campaign has picked them up yet.",
     "replied": "Replied",
     "repliedSub": "Latest qualified replies.",
-    "atStep": "step {n}"
+    "atStep": "step {n}",
+    "engine": {
+      "title": "Engine status",
+      "unknown": "No heartbeat received. The engine has never run on this database.",
+      "active": "Engine running · last cycle {ago} · version {version}",
+      "stopped": "Engine stopped · last cycle {ago}",
+      "lastError": "Last error: {message}",
+      "caps": "Today's caps",
+      "usage": "today {used} / {cap}",
+      "paused": "paused",
+      "reached": "cap reached",
+      "campaigns": "Campaign entries",
+      "entries": "{used} / {cap} today",
+      "entriesUnlimited": "{used} today, no cap",
+      "noCaps": "No cap configured and no usage today",
+      "noCampaigns": "No active campaign"
+    }
   },
   "prospects": {
     "eyebrow": "Company profile",
@@ -395,7 +414,8 @@
     "progress": "{pct}% of pool contacted",
     "back": "← Campaigns",
     "detailSub": "Created {days} d ago · next send in {next} · {contacts, plural, one {# contact} other {# contacts}} · {steps, plural, one {# step} other {# steps}}",
-    "perDay": "{n} / day",
+    "perDayUsed": "today {used} / {n}",
+    "perDayUnlimited": "no cap",
     "addContacts": "Add contacts",
     "pause": "Pause",
     "tabs": {

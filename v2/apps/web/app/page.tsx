@@ -1,8 +1,9 @@
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { AppTopBar } from './chrome';
 import { createClientOrNull } from '../lib/supabase/server';
 import { initials, type DashPoint, type ChannelShare, type DashKpi, type DashSignalRow, type DashReplyRow } from '../lib/sample-dashboard';
 import { providerLabel } from '../lib/labels';
+import { chargerEtatMoteur, type EtatMoteur } from '../lib/engine-status';
 
 // Courbe d'activité (aire lime pour les signaux, ligne sourde pour les réponses).
 const CW = 640;
@@ -85,12 +86,27 @@ function Kpi(props: { label: string; value: string; live?: boolean; trend: strin
   );
 }
 
+/** « il y a N s / min / h / j », dans la locale courante. */
+function formatAgo(iso: string, locale: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  const diffMin = Math.round(diffSec / 60);
+  const diffHour = Math.round(diffMin / 60);
+  const diffDay = Math.round(diffHour / 24);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (diffSec < 60) return rtf.format(-diffSec, 'second');
+  if (diffMin < 60) return rtf.format(-diffMin, 'minute');
+  if (diffHour < 24) return rtf.format(-diffHour, 'hour');
+  return rtf.format(-diffDay, 'day');
+}
+
 interface DashData {
   kpi: DashKpi;
   activity: DashPoint[];
   channels: ChannelShare[];
   noCampaign: DashSignalRow[];
   replies: DashReplyRow[];
+  engine: EtatMoteur;
 }
 
 const EMPTY: DashData = {
@@ -99,6 +115,7 @@ const EMPTY: DashData = {
   channels: [],
   noCampaign: [],
   replies: [],
+  engine: { moteur: null, plafonds: [], campagnes: [] },
 };
 
 function dayKey(iso: string): string {
@@ -106,7 +123,7 @@ function dayKey(iso: string): string {
 }
 
 /**
- * Les quatre jeux de données du tableau de bord.
+ * Les cinq jeux de données du tableau de bord.
  *
  * Aucun ne dépend d'un autre : ils partent donc ENSEMBLE. Enchaînés, ils
  * coûtaient quatre fois 140 ms d'attente avant que la page n'envoie son premier
@@ -118,7 +135,7 @@ async function loadDashboard(
 ): Promise<DashData> {
   if (!orgId) return EMPTY;
 
-  const [stats, qualified, threads, actions] = await Promise.all([
+  const [stats, qualified, threads, actions, engine] = await Promise.all([
     supabase
       .from('campaign_stats')
       .select('sent,accepted,replies')
@@ -155,6 +172,8 @@ async function loadDashboard(
       .then(
         (r) => (r.data as { channel: string; dispatched_at: string | null; enrollments: { started_at: string } | null }[] | null) ?? [],
       ),
+
+    chargerEtatMoteur(supabase, orgId),
   ]);
 
   const sumReplies = stats.reduce((a, s) => a + (s.replies ?? 0), 0);
@@ -219,11 +238,14 @@ async function loadDashboard(
     channels,
     noCampaign,
     replies,
+    engine,
   };
 }
 
 export default async function DashboardPage() {
   const t = await getTranslations('dashboard');
+  const tp = await getTranslations('providers');
+  const locale = await getLocale();
   const supabase = await createClientOrNull();
   const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
   const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
@@ -254,6 +276,80 @@ export default async function DashboardPage() {
             dir="up"
           />
         </div>
+
+        <section className="rs-card" style={{ marginTop: 16 }}>
+          <h3 className="rs-section-title" style={{ margin: 0 }}>
+            {t('engine.title')}
+          </h3>
+          {data.engine.moteur === null ? (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {t('engine.unknown')}
+            </p>
+          ) : (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {data.engine.moteur.actif
+                ? t('engine.active', {
+                    ago: data.engine.moteur.dernierTour ? formatAgo(data.engine.moteur.dernierTour, locale) : '',
+                    version: data.engine.moteur.version,
+                  })
+                : t('engine.stopped', {
+                    ago: data.engine.moteur.dernierTour ? formatAgo(data.engine.moteur.dernierTour, locale) : '',
+                  })}
+            </p>
+          )}
+          {data.engine.moteur?.erreur ? (
+            <p className="rs-row-sub" style={{ margin: '2px 0 0' }}>
+              {t('engine.lastError', { message: data.engine.moteur.erreur })}
+            </p>
+          ) : null}
+
+          <h3 className="rs-section-title" style={{ marginTop: 16 }}>
+            {t('engine.caps')}
+          </h3>
+          {data.engine.plafonds.length === 0 ? (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {t('engine.noCaps')}
+            </p>
+          ) : (
+            data.engine.plafonds.map((p) => (
+              <div key={p.providerId} className="rs-mini">
+                <div className="rs-mini-main">
+                  <div className="rs-mini-title">{tp.has(p.providerId) ? tp(p.providerId) : p.providerId}</div>
+                  <div className="rs-mini-sub mono">{t('engine.usage', { used: p.utilise, cap: p.plafond })}</div>
+                </div>
+                {p.plafond === 0 ? (
+                  <span className="rs-pill" data-tone="ghost">
+                    {t('engine.paused')}
+                  </span>
+                ) : p.utilise >= p.plafond ? (
+                  <span className="rs-pill" data-tone="flare">
+                    {t('engine.reached')}
+                  </span>
+                ) : null}
+              </div>
+            ))
+          )}
+
+          <h3 className="rs-section-title" style={{ marginTop: 16 }}>
+            {t('engine.campaigns')}
+          </h3>
+          {data.engine.campagnes.length === 0 ? (
+            <p className="rs-row-sub" style={{ margin: '6px 0 0' }}>
+              {t('engine.noCampaigns')}
+            </p>
+          ) : (
+            data.engine.campagnes.map((c) => (
+              <div key={c.id} className="rs-mini">
+                <div className="rs-mini-main">
+                  <div className="rs-mini-title">{c.nom}</div>
+                </div>
+                <span className="rs-mini-sub mono">
+                  {c.plafond === null ? t('engine.entriesUnlimited', { used: c.entrees }) : t('engine.entries', { used: c.entrees, cap: c.plafond })}
+                </span>
+              </div>
+            ))
+          )}
+        </section>
 
         <div className="rs-dash">
           <section className="rs-card">
