@@ -398,7 +398,8 @@
     "progress": "{pct}% du vivier contacté",
     "back": "← Campagnes",
     "detailSub": "Créée il y a {days} j · prochain envoi dans {next} · {contacts, plural, one {# contact} other {# contacts}} · {steps, plural, one {# étape} other {# étapes}}",
-    "perDay": "{n} / jour",
+    "perDayUsed": "aujourd'hui {used} / {n}",
+    "perDayUnlimited": "sans plafond",
     "addContacts": "Ajouter des contacts",
     "pause": "Mettre en pause",
     "tabs": {

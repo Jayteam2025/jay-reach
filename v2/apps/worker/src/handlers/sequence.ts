@@ -11,6 +11,7 @@ import type { Pool } from 'pg';
 import {
   actionIdempotencyKey,
   composeTick,
+  placesRestantes,
   runGuards,
   renderTemplate,
   resolveSender,
@@ -37,13 +38,44 @@ export interface EnrollJob {
   readonly signalId?: string | null;
 }
 
+/** Nombre d'entrées déjà comptabilisées aujourd'hui (jour UTC) pour une campagne. */
+export async function compterEntreesDuJour(pool: Pool, campaignId: string): Promise<number> {
+  const res = await pool.query<{ n: string }>(
+    `select count(*)::text as n from enrollments
+      where campaign_id = $1 and started_at >= date_trunc('day', now())`,
+    [campaignId],
+  );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
 /**
  * Inscrit un contact dans une campagne. Dédup par l'index partiel
  * `enrollments_one_active_uidx` (une seule inscription vivante par contact) :
  * `on conflict do nothing`. Première action due immédiatement (tick suivant).
- * Retourne l'id créé, ou null si le contact a déjà une inscription active.
+ * Retourne l'id créé, ou null si le contact a déjà une inscription active
+ * ou si le plafond quotidien de la campagne est atteint (contrôle autoritaire :
+ * le pré-filtre du producteur peut avoir laissé passer un contact entre-temps
+ * comptabilisé).
  */
 export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
+  // Compter puis insérer n'est pas atomique, mais ça suffit ici : le moteur ne
+  // tourne qu'en une seule instance (deploy/vps/README.md), et pg-boss traite
+  // cette file un job à la fois dans ce process sans `batchSize`. Si le worker
+  // est un jour répliqué, remplacer par une transaction avec
+  // `select ... from campaigns where id = $1 for update`, sous peine de
+  // dépasser le plafond d'une entrée par job concurrent sur la campagne.
+  const cap = await pool.query<{ daily_cap: number | null }>(
+    `select daily_cap from campaigns where id = $1`,
+    [job.campaignId],
+  );
+  const plafond = cap.rows[0]?.daily_cap ?? null;
+  if (plafond !== null) {
+    const reste = placesRestantes(plafond, await compterEntreesDuJour(pool, job.campaignId));
+    if (reste === 0) {
+      console.warn(`[enroll] plafond du jour atteint pour la campagne ${job.campaignId} (${plafond}/jour), contact ${job.contactId} reporte`);
+      return null;
+    }
+  }
   const res = await pool.query<{ id: string }>(
     `insert into enrollments
        (organization_id, campaign_id, contact_id, signal_id, status, current_step, next_action_at, started_at)

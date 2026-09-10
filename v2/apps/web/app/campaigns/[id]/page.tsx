@@ -114,6 +114,14 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     };
   });
 
+  const debutJourUtc = new Date();
+  debutJourUtc.setUTCHours(0, 0, 0, 0);
+  const { count: entriesToday } = await supabase!
+    .from('enrollments')
+    .select('id', { count: 'exact', head: true })
+    .eq('campaign_id', campaign.id)
+    .gte('started_at', debutJourUtc.toISOString());
+
   const minScore = (campaign.entry_rules as { min_score?: number } | null)?.min_score;
   const detail: CampaignDetail = {
     id: campaign.id,
@@ -128,7 +136,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     replyRate: stat.sent > 0 ? Math.round((stat.replies / stat.sent) * 1000) / 10 : 0,
     createdDaysAgo: daysAgo(campaign.created_at),
     nextSendIn: '—',
-    cadencePerDay: campaign.daily_cap ?? 0,
+    cadencePerDay: campaign.daily_cap,
+    entriesToday: entriesToday ?? 0,
     qualif: minScore ? [`Score ≥ ${minScore}`] : [],
     steps,
     repliedContacts: [],

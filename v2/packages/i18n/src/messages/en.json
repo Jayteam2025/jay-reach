@@ -398,7 +398,8 @@
     "progress": "{pct}% of pool contacted",
     "back": "← Campaigns",
     "detailSub": "Created {days} d ago · next send in {next} · {contacts, plural, one {# contact} other {# contacts}} · {steps, plural, one {# step} other {# steps}}",
-    "perDay": "{n} / day",
+    "perDayUsed": "today {used} / {n}",
+    "perDayUnlimited": "no cap",
     "addContacts": "Add contacts",
     "pause": "Pause",
     "tabs": {

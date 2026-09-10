@@ -14,7 +14,9 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
+import { bornerParCampagne, placesRestantes } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
+import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
 
 interface SourceRow {
@@ -315,6 +317,12 @@ export async function enqueueEnrollments(
         and c.entry_rules -> 'personas' ? ct.persona_id::text
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
+       -- Pré-filtre : une campagne dont le plafond du jour est déjà atteint
+       -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
+        and (c.daily_cap is null
+             or c.daily_cap > (select count(*) from enrollments e2
+                                 where e2.campaign_id = c.id
+                                   and e2.started_at >= date_trunc('day', now())))
       where ct.source_signal_id is not null
         and not exists (
           select 1 from enrollments e
@@ -326,8 +334,24 @@ export async function enqueueEnrollments(
     [limit],
   );
 
+  const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
+  const places = new Map<string, number | null>();
+  if (ids.length > 0) {
+    const caps = await pool.query<{ id: string; daily_cap: number | null }>(
+      `select id, daily_cap from campaigns where id = any($1::uuid[])`,
+      [ids],
+    );
+    for (const c of caps.rows) {
+      places.set(c.id, c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id)));
+    }
+  }
+  const { retenues, reportees } = bornerParCampagne(res.rows, places);
+  for (const [campaignId, n] of reportees) {
+    console.log(`[enroll] campagne ${campaignId} : ${n} contact(s) reportes au lendemain, plafond du jour atteint`);
+  }
+
   let enqueued = 0;
-  for (const row of res.rows) {
+  for (const row of retenues) {
     await boss.insert([
       {
         name: 'sequence.enroll',

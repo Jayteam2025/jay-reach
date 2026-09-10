@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placesRestantes, reduireLotAuReste } from './plafonds.js';
+import { bornerParCampagne, placesRestantes, reduireLotAuReste } from './plafonds.js';
 
 describe('placesRestantes', () => {
   it('rend le reste quand le plafond est positif', () => {
@@ -25,5 +25,25 @@ describe('reduireLotAuReste', () => {
   });
   it('rend zero sans reste', () => {
     expect(reduireLotAuReste(50, 0)).toBe(0);
+  });
+});
+
+describe('bornerParCampagne', () => {
+  const lignes = [
+    { campaign_id: 'A', contact_id: '1' },
+    { campaign_id: 'A', contact_id: '2' },
+    { campaign_id: 'A', contact_id: '3' },
+    { campaign_id: 'B', contact_id: '4' },
+    { campaign_id: 'C', contact_id: '5' },
+  ];
+  it('retient au plus les places restantes par campagne, dans l\'ordre', () => {
+    const { retenues, reportees } = bornerParCampagne(lignes, new Map([['A', 2], ['B', 0], ['C', null]]));
+    expect(retenues.map((l) => l.contact_id)).toEqual(['1', '2', '5']);
+    expect([...reportees.entries()]).toEqual([['A', 1], ['B', 1]]);
+  });
+  it('laisse tout passer pour une campagne sans plafond ou inconnue', () => {
+    const { retenues, reportees } = bornerParCampagne(lignes, new Map());
+    expect(retenues).toHaveLength(5);
+    expect(reportees.size).toBe(0);
   });
 });

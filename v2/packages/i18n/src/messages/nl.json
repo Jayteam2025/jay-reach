@@ -398,7 +398,8 @@
     "progress": "{pct}% van pool gecontacteerd",
     "back": "← Campagnes",
     "detailSub": "{days} d geleden aangemaakt · volgende verzending over {next} · {contacts, plural, one {# contact} other {# contacten}} · {steps, plural, one {# stap} other {# stappen}}",
-    "perDay": "{n} / dag",
+    "perDayUsed": "vandaag {used} / {n}",
+    "perDayUnlimited": "geen limiet",
     "addContacts": "Contacten toevoegen",
     "pause": "Pauzeren",
     "tabs": {
