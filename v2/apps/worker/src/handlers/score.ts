@@ -102,6 +102,24 @@ async function persistScore(
 }
 
 /**
+ * Fragment SQL : la source jointe (alias `so`, sur `sources.id = signals.source_id`)
+ * porte un prompt de scoring exploitable — même seuil que le pré-filtre par
+ * source de `runScore`. Partagé par `compterSignauxScorables` et par la
+ * sélection de `runScore` : le crédit est décompté sur le premier compte AVANT
+ * l'appel au modèle, donc les deux requêtes doivent isoler EXACTEMENT le même
+ * ensemble de signaux, sous peine de créditer un lot dont une partie ne sera
+ * jamais scorée (I1, revue du 10/09/2026 ; second passage du même jour :
+ * la sélection filtrait moins que le compteur, un signal sans prompt
+ * exploitable pouvait alors occuper toute la file d'attente `created_at asc`
+ * sans jamais être écarté). `$paramIndex` est le numéro du paramètre lié à
+ * `MIN_SCORING_PROMPT_LENGTH` dans la requête appelante.
+ */
+function conditionSourceScorable(paramIndex: number): string {
+  return `so.config ->> 'scoring_prompt' is not null
+        and length(trim(so.config ->> 'scoring_prompt')) >= $${paramIndex}`;
+}
+
+/**
  * Compte les signaux qu'un appel à `runScore` sélectionnerait ET scorerait
  * réellement pour cette organisation : `status = 'new'`, `score is null`, et
  * une source dont le prompt de scoring est exploitable (même seuil de
@@ -118,8 +136,7 @@ export async function compterSignauxScorables(pool: Pool, organizationId: string
       where s.organization_id = $1
         and s.status = 'new'
         and s.score is null
-        and so.config ->> 'scoring_prompt' is not null
-        and length(trim(so.config ->> 'scoring_prompt')) >= $2`,
+        and ${conditionSourceScorable(2)}`,
     [organizationId, MIN_SCORING_PROMPT_LENGTH],
   );
   return Number(res.rows[0]?.count ?? 0);
@@ -156,6 +173,13 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
        left join public.accounts a on a.id = s.account_id
        left join public.sources so on so.id = s.source_id
       where s.organization_id = $1 and s.status = 'new' and s.score is null
+        -- Un signal dont la source n'a pas de prompt exploitable doit être
+        -- exclu ICI, pas seulement au regroupement par source plus bas : le
+        -- crédit consommé avant l'appel au modèle (traiterScore) est compté
+        -- sur compterSignauxScorables, qui applique la même condition. Sans
+        -- elle, ces signaux jamais scorés restaient les plus anciens de la
+        -- file (created_at asc) et monopolisaient chaque lot, payé pour rien.
+        and ${conditionSourceScorable(3)}
       -- Ordre d'ARRIVEE, pas de fraicheur. Trier par occurred_at desc faisait
       -- passer les signaux récents devant les anciens à chaque cycle : les plus
       -- vieux n'étaient jamais atteints tant que la collecte tournait, et
@@ -168,7 +192,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       -- modèle.
       order by s.created_at asc
       limit $2`,
-    [org, batchSize],
+    [org, batchSize, MIN_SCORING_PROMPT_LENGTH],
   );
   const candidates = candRes.rows;
   const empty: ScoreSummary = {
