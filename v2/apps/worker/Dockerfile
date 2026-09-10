@@ -56,4 +56,7 @@ RUN pnpm install --frozen-lockfile --prod --filter @jay-reach/worker...
 # aucune raison d'être root.
 USER node
 
+ARG GIT_SHA=inconnu
+ENV GIT_SHA=${GIT_SHA}
+
 CMD ["node", "apps/worker/dist/index.js"]

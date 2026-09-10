@@ -7,6 +7,7 @@
  */
 import { QUEUES } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
+import { ecrireBattementFichier, CHEMIN_BATTEMENT_PAR_DEFAUT } from './battement.js';
 import { createPool } from './db.js';
 import {
   ecouterLesFiles,
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
   if (!connectionString) {
     throw new Error('DATABASE_URL manquant — voir .env.example');
   }
+  const cheminBattement = process.env.HEARTBEAT_FILE ?? CHEMIN_BATTEMENT_PAR_DEFAUT;
   // Clé du coffre à secrets (hors base). Absente → repli sur les variables
   // d'environnement des providers (fonctionnement mono-org sans écran Fournisseurs).
   const encryptionKey = process.env.ENCRYPTION_KEY;
@@ -38,6 +40,7 @@ async function main(): Promise<void> {
   const boss = createRuntime(connectionString);
   const pool = createPool(connectionString);
   await boss.start();
+  await ecrireBattementFichier(cheminBattement).catch((err) => console.warn('[battement] écriture impossible', err));
   await registerQueues(boss);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
@@ -53,7 +56,10 @@ async function main(): Promise<void> {
   demandes.unref();
 
   await produireTick(ctx);
-  const ticker = setInterval(() => void produireTick(ctx), TICK_INTERVAL_MS);
+  const ticker = setInterval(() => {
+    void produireTick(ctx);
+    void ecrireBattementFichier(cheminBattement).catch((err) => console.warn('[battement] écriture impossible', err));
+  }, TICK_INTERVAL_MS);
   ticker.unref();
 
   const shutdown = async (signal: string): Promise<void> => {
