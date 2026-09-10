@@ -7,6 +7,14 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+
+- **Sous plafond, le scoring prend les signaux les plus récents d'abord.** Depuis que le scoring est
+  plafonné (300 par jour par défaut) alors que la collecte en apporte plusieurs milliers, l'ordre
+  d'arrivée dépensait le plafond sur des offres vieilles de dix à quatorze jours pendant que les
+  fraîches attendaient puis expiraient. La sélection prend désormais `occurred_at` décroissant ; la
+  règle d'ancienneté écarte gratuitement ce que le plafond n'atteint pas.
+
 ### Ajouté
 - **Le worker se déploie en production par `docker compose`, avec battement et contrôle de santé.** Rien ne permettait jusqu'ici de lancer le worker permanent ailleurs qu'à la main : `v2/deploy/vps/` porte désormais le compose de production, un `worker.env.example` qui liste les clés à remplir sans jamais porter de valeur, et `deployer.sh`. L'image embarque `GIT_SHA` à la construction, pour distinguer une version déployée d'une autre sans avoir à redémarrer le service pour le savoir. Le worker écrit désormais un fichier de battement à chaque tour (`battement.ts`, chemin réglable par `HEARTBEAT_FILE`), et un second point d'entrée, `sante.ts`, le relit pour le `healthcheck` Docker : un battement vieux de plus de cinq minutes fait échouer le contrôle. Le compose de production remplace le cron Vercel retiré le 07/09 ; une seule instance du moteur doit tourner.
 - **Le moteur écrit un battement de cœur en base à chaque tour.** Le fichier de battement du worker ne dit rien à qui consulte l'application. Une table `engine_status` (migration `20260910130000_engine_status.sql`) porte désormais une ligne par instance, lue par toute session authentifiée et écrite par le rôle de service. `enregistrerTour` y consigne l'heure du dernier cycle de production et du dernier tour de séquences, la version (`GIT_SHA`) et l'instance. `last_error` porte le dernier échec d'un TOUR entier — cycle de production ou tour de séquences —, vidé au tour suivant qui réussit ; l'échec d'un job pris isolément (un appel Anthropic refusé, par exemple) reste lisible dans `pgboss.job.output`, pas ici.
