@@ -180,17 +180,17 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
         -- elle, ces signaux jamais scorés restaient les plus anciens de la
         -- file (created_at asc) et monopolisaient chaque lot, payé pour rien.
         and ${conditionSourceScorable(3)}
-      -- Ordre d'ARRIVEE, pas de fraicheur. Trier par occurred_at desc faisait
-      -- passer les signaux récents devant les anciens à chaque cycle : les plus
-      -- vieux n'étaient jamais atteints tant que la collecte tournait, et
-      -- restaient « à traiter » indéfiniment. Mesuré sur cette base : 91 signaux
-      -- en attente depuis plus de deux heures alors que le scoring traitait 182
-      -- signaux par heure pour une file de 100.
-      --
-      -- La fraîcheur reste prise en compte, mais là où c'est sa place : le
-      -- pré-filtre écarte gratuitement les signaux périmés avant tout appel au
-      -- modèle.
-      order by s.created_at asc
+      -- Les plus RECENTS d'abord. Depuis le 10/09/2026 le scoring est plafonné
+      -- (300 signaux par jour par défaut) alors que la collecte en apporte
+      -- plusieurs milliers : on ne scorera jamais tout, autant dépenser le
+      -- plafond sur les offres les plus fraîches, celles qui valent un contact.
+      -- Le choix inverse du 28/08 (ordre d'arrivée, contre la famine des vieux
+      -- signaux) datait d'un moteur sans plafond, où tout finissait par passer :
+      -- la famine n'est plus un risque à borner, c'est la règle d'ancienneté
+      -- (ecarterSignauxTropAnciens, quatorze jours) qui écarte gratuitement ce
+      -- que le plafond n'a pas atteint. Quand le débit dépasse l'arrivée, la
+      -- file reste courte et l'ordre n'a plus d'importance.
+      order by s.occurred_at desc, s.created_at desc
       limit $2`,
     [org, batchSize, MIN_SCORING_PROMPT_LENGTH],
   );
