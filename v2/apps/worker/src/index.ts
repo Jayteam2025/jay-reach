@@ -7,7 +7,12 @@
  */
 import { QUEUES } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
-import { ecrireBattementFichier, CHEMIN_BATTEMENT_PAR_DEFAUT } from './battement.js';
+import {
+  ecrireBattementFichier,
+  CHEMIN_BATTEMENT_PAR_DEFAUT,
+  identiteDepuisEnvironnement,
+  enregistrerTour,
+} from './battement.js';
 import { createPool } from './db.js';
 import {
   ecouterLesFiles,
@@ -39,26 +44,50 @@ async function main(): Promise<void> {
 
   const boss = createRuntime(connectionString);
   const pool = createPool(connectionString);
+  const identite = identiteDepuisEnvironnement();
   await boss.start();
-  await ecrireBattementFichier(cheminBattement).catch((err) => console.warn('[battement] écriture impossible', err));
   await registerQueues(boss);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
+
+  const tourProduction = async (): Promise<void> => {
+    try {
+      await produire(ctx);
+      await enregistrerTour(pool, identite, 'production', null);
+    } catch (err) {
+      console.error('[moteur] echec du cycle de production', err);
+      await enregistrerTour(pool, identite, 'production', err instanceof Error ? err.message : String(err)).catch(
+        () => undefined,
+      );
+    }
+  };
+  const tourSequences = async (): Promise<void> => {
+    try {
+      await produireTick(ctx);
+      await ecrireBattementFichier(cheminBattement);
+      await enregistrerTour(pool, identite, 'tick', null);
+    } catch (err) {
+      console.error('[moteur] echec du tour de sequences', err);
+      await enregistrerTour(pool, identite, 'tick', err instanceof Error ? err.message : String(err)).catch(
+        () => undefined,
+      );
+    }
+  };
+
   await ecouterLesFiles(ctx);
   console.log(`[worker] pg-boss démarré — ${QUEUES.length} files déclarées.`);
+  void tourSequences();
 
   await produire(ctx);
-  const producer = setInterval(() => void produire(ctx), DISCOVER_INTERVAL_MS);
+  const producer = setInterval(() => void tourProduction(), DISCOVER_INTERVAL_MS);
   producer.unref();
 
   await releverDemandes(ctx);
   const demandes = setInterval(() => void releverDemandes(ctx), REQUESTED_RUN_POLL_MS);
   demandes.unref();
 
-  await produireTick(ctx);
   const ticker = setInterval(() => {
-    void produireTick(ctx);
-    void ecrireBattementFichier(cheminBattement).catch((err) => console.warn('[battement] écriture impossible', err));
+    void tourSequences();
   }, TICK_INTERVAL_MS);
   ticker.unref();
 

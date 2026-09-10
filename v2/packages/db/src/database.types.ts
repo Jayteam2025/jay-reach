@@ -678,6 +678,39 @@ export type Database = {
           },
         ]
       }
+      engine_status: {
+        Row: {
+          hostname: string
+          instance_id: string
+          last_error: string | null
+          last_produce_at: string | null
+          last_tick_at: string | null
+          started_at: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          hostname: string
+          instance_id: string
+          last_error?: string | null
+          last_produce_at?: string | null
+          last_tick_at?: string | null
+          started_at: string
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          hostname?: string
+          instance_id?: string
+          last_error?: string | null
+          last_produce_at?: string | null
+          last_tick_at?: string | null
+          started_at?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
       extension_tokens: {
         Row: {
           created_at: string
