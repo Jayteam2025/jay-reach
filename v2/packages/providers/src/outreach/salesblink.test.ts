@@ -3,6 +3,7 @@ import {
   ErreurSalesBlink,
   listerBoites,
   santeBoite,
+  creerGabaritNeutre,
   pousserLeads,
   creerSequenceEtape,
   activerEtPlanifier,
@@ -215,6 +216,37 @@ describe('listerRapports', () => {
     const [rapport] = await listerRapports({ message: 'Error', depuisMs: 0 }, CLE_TEST);
     expect(rapport?.corps).toBe('{"message":"Email Sender sending disabled. Needs to reconnect."}');
   });
+
+  it('pagine sur skip=0 puis skip=1 quand la premiere page est pleine (100 rapports)', async () => {
+    const urlsAppelees: string[] = [];
+    const rapportFictif = (id: string) => ({
+      id,
+      time: '1700000000000',
+      type: 'outreach',
+      message: 'Sent',
+      email: 'exemple@exemple.fr',
+      sequence: 'sequence-uuid-1',
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urlsAppelees.push(url);
+        const lot =
+          urlsAppelees.length === 1
+            ? Array.from({ length: 100 }, (_, i) => rapportFictif(`rapport-${i}`))
+            : [rapportFictif('rapport-100')];
+        return reponseJson({ success: true, data: lot });
+      }),
+    );
+
+    const rapports = await listerRapports({ message: 'Sent', depuisMs: 0 }, CLE_TEST);
+
+    expect(urlsAppelees).toHaveLength(2);
+    expect(urlsAppelees[0]).toContain('skip=0');
+    expect(urlsAppelees[1]).toContain('skip=1');
+    expect(rapports).toHaveLength(101);
+  });
 });
 
 describe('pousserLeads', () => {
@@ -356,6 +388,52 @@ describe('gestion des erreurs HTTP', () => {
     );
 
     await expect(listerBoites(CLE_TEST)).rejects.toMatchObject({ code: 'reseau', statut: null });
+  });
+
+  it('503 leve ErreurSalesBlink code serveur', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reponseJson({ success: false, message: 'Service indisponible' }, 503)));
+
+    await expect(listerBoites(CLE_TEST)).rejects.toMatchObject({ code: 'serveur', statut: 503 });
+  });
+
+  it("un corps non-JSON sur un 200 leve ErreurSalesBlink sans faire fuiter la cle", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<html>pas du json</html>', { status: 200 })),
+    );
+
+    let erreurCapturee: ErreurSalesBlink | undefined;
+    try {
+      await listerBoites(CLE_TEST);
+    } catch (erreur) {
+      erreurCapturee = erreur as ErreurSalesBlink;
+    }
+
+    expect(erreurCapturee).toBeInstanceOf(ErreurSalesBlink);
+    expect(erreurCapturee?.message).not.toContain(CLE_TEST);
+  });
+});
+
+describe('creerGabaritNeutre', () => {
+  it('envoie un FormData avec les placeholders jr_subject/jr_body, sans Content-Type pose a la main, et renvoie data.id', async () => {
+    let entetesRecues: Record<string, string> | undefined;
+    let corpsRecu: FormData | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        entetesRecues = init.headers as Record<string, string>;
+        corpsRecu = init.body as FormData;
+        return reponseJson({ success: true, data: { id: 'gabarit-uuid-1' } });
+      }),
+    );
+
+    const id = await creerGabaritNeutre('Gabarit de test', '<p>Contenu fixe</p>', CLE_TEST);
+
+    expect(id).toBe('gabarit-uuid-1');
+    expect(corpsRecu).toBeInstanceOf(FormData);
+    expect(corpsRecu?.get('subject_line')).toBe('{{jr_subject}}');
+    expect(String(corpsRecu?.get('content'))).toContain('{{jr_body}}');
+    expect(entetesRecues?.['Content-Type']).toBeUndefined();
   });
 });
 

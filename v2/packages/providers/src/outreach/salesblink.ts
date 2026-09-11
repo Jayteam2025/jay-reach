@@ -3,9 +3,9 @@
  * transport email »). SalesBlink envoie et relève les emails ; Jay Reach rend
  * le texte et sequence les etapes.
  *
- * Base et conventions verifiees empiriquement le 10/09 et le 11/09 sur le
- * compte d'essai de JB (voir _internal/2026-09-10-salesblink-dossier-technique.md
- * et la spec OpenAPI v1.0.0 publiee a https://developer.salesblink.io/openapi.json) :
+ * Base et conventions verifiees empiriquement les 10 et 11/09/2026 sur un
+ * compte d'essai, et dans la spec OpenAPI v1.0.0 publiee a
+ * https://developer.salesblink.io/openapi.json :
  * - Authentification : en-tete `Authorization: <cle>`, sans prefixe `Bearer`.
  * - Enveloppe standard `{ success, data, message }`, depliee par `donnees()`.
  *   Exceptions : `GET /replies` (et `/sent`) renvoient un tableau nu ; `GET /inbox`
@@ -476,6 +476,8 @@ export async function listerRapports(
     const lot = enTableau(donnees(resultat)).map(versRapport);
     rapports.push(...lot);
     if (lot.length < TAILLE_PAGE_RAPPORTS) break;
+    // `skip` est un numero de page 0-based, pas un decalage d'enregistrements :
+    // l'OpenAPI precise que le serveur le convertit lui-meme en `skip x limit`.
     skip += 1;
   }
   return rapports;
