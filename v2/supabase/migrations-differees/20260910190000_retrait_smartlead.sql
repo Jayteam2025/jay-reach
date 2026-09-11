@@ -1,6 +1,7 @@
--- Retrait de Smartlead (lot 3, tache 8). A appliquer SEULEMENT apres le
--- deploiement du worker et du web de ce lot (voir deploy/vps/README.md et le
--- CHANGELOG pour l'ordre complet) : ils sont les derniers a lire encore
+-- Retrait de Smartlead (lot 3, tache 8). Migration DIFFEREE (voir le README de
+-- ce dossier) : a appliquer a la main SEULEMENT apres le deploiement du
+-- worker et du web de ce lot (voir deploy/vps/README.md et le CHANGELOG pour
+-- l'ordre complet) : ils sont les derniers a lire encore
 -- public.smartlead_campaign_mappings, remplacee par le transport email
 -- SalesBlink (email_transport_bindings, provider_sync_state).
 --

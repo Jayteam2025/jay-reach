@@ -46,12 +46,13 @@ export interface EnrollJob {
 
 /**
  * Plafond quotidien d'une campagne (`campaigns.daily_cap`), ou `null` si
- * aucun n'est réglé. Revérifié à l'inscription (ci-dessous) et à l'envoi
- * (`email-salesblink.ts`, I5, revue finale du 11/09) : un rattrapage après
- * coupure d'expéditeur peut pousser en une fois des dizaines d'actions
- * accumulées, à un rythme que le tick seul n'atteindrait jamais.
+ * aucun n'est réglé. Gouverne les ENTRÉES en séquence (`enrollContact`
+ * ci-dessous), pas les envois : l'envoi d'un email (`email-salesblink.ts`) ne
+ * le revérifie pas, seuls le quota d'expéditeur et le plafond fournisseur
+ * bornent à ce moment-là (fix round 2, 11/09 — retiré d'`email-salesblink.ts`
+ * où il avait été ajouté par erreur lors de la revue finale).
  */
-export async function chargerPlafondCampagne(pool: Pool, campaignId: string): Promise<number | null> {
+async function chargerPlafondCampagne(pool: Pool, campaignId: string): Promise<number | null> {
   const res = await pool.query<{ daily_cap: number | null }>(`select daily_cap from campaigns where id = $1`, [
     campaignId,
   ]);
@@ -214,9 +215,14 @@ export function quotaSenderRestant(c: ContraintesSender): number {
 }
 
 /**
- * Contraintes d'UN expéditeur, chargées pour lui seul — même requête que
- * `loadSenders`, mais sans le lot : l'envoi (contrairement au tick) ne
- * connaît qu'un expéditeur à la fois.
+ * Contraintes d'UN expéditeur, chargées pour lui seul — pour le lot, voir
+ * `loadSenders` : l'envoi (contrairement au tick) ne connaît qu'un
+ * expéditeur à la fois.
+ *
+ * Compte les envois réellement partis (`status in ('dispatched','delivered')`,
+ * `dispatched_at`), pas les créations (`loadSenders` compte par `created_at`,
+ * sans filtre de statut) : le tick planifie l'avenir, l'envoi vérifie ce qui
+ * est effectivement sorti par cet expéditeur (fix round 2, 11/09).
  */
 export async function chargerContraintesSender(pool: Pool, senderId: string): Promise<ContraintesSender | null> {
   const res = await pool.query<{
@@ -230,10 +236,12 @@ export async function chargerContraintesSender(pool: Pool, senderId: string): Pr
     `select s.daily_quota, s.hourly_quota, s.timezone, s.business_hours,
             (select count(*)::int from actions act
               where act.sender_id = s.id
-                and act.created_at >= date_trunc('day', now())) as used_today,
+                and act.status in ('dispatched', 'delivered')
+                and act.dispatched_at >= date_trunc('day', now())) as used_today,
             (select count(*)::int from actions act
               where act.sender_id = s.id
-                and act.created_at >= date_trunc('hour', now())) as used_this_hour
+                and act.status in ('dispatched', 'delivered')
+                and act.dispatched_at >= date_trunc('hour', now())) as used_this_hour
        from senders s where s.id = $1`,
     [senderId],
   );

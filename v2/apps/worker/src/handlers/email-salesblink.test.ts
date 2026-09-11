@@ -118,8 +118,6 @@ const SUPPRESSION_CHECK = /from suppressions/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
 const CONTRAINTES_SENDER = /from senders s where s\.id/i;
-const CAP_CAMPAGNE = /select daily_cap from campaigns/i;
-const ENTREES_DU_JOUR = /from enrollments\s+where campaign_id/i;
 const PLAFOND = /daily_cap/i;
 const CREDIT = /consume_provider_credit/i;
 // Spécifique a `chargerLigneInscription` (message-values.ts) : la jointure
@@ -143,6 +141,7 @@ const UPDATE_ESSAIS = /jsonb_build_object\('essais'/i;
 const SELECT_ESSAIS = /payload ->> 'essais'/i;
 const THREAD_LOOKUP = /select id from threads where/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
+const THREAD_UPDATE = /update threads set last_message_at/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -172,7 +171,6 @@ function gestionnairesBase(): Gestionnaire[] {
           { daily_quota: null, hourly_quota: null, timezone: 'Europe/Paris', business_hours: null, used_today: 0, used_this_hour: 0 },
         ]),
     },
-    { motif: CAP_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
     { motif: PLAFOND, repondre: () => ligne([]) },
     { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
     { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
@@ -187,6 +185,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
     { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
     { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+    { motif: THREAD_UPDATE, repondre: () => ligne([]) },
   ];
 }
 
@@ -299,21 +298,27 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.pousserLeads).not.toHaveBeenCalled();
   });
 
-  it('plafond quotidien de la campagne atteint : action laissée en attente, aucun appel client (I5)', async () => {
+  it('le quota d’expéditeur compte les envois partis (dispatched/delivered), pas les créations (fix round 2)', async () => {
     const { pool, appels } = creerPoolFactice(
-      avecBase(
-        { motif: CAP_CAMPAGNE, repondre: () => ligne([{ daily_cap: 5 }]) },
-        { motif: ENTREES_DU_JOUR, repondre: () => ligne([{ n: '5' }]) },
-      ),
+      // Chemin « relance » : évite `assurerObjetsEtape` (campagne/étape),
+      // sans intérêt pour ce test — seul le texte de la requête de quota compte.
+      avecBase({
+        motif: ENVOIS_ANTERIEURS,
+        repondre: () => ligne([{ message_id: 'msg-1', subject: 'Objet' }]),
+      }),
     );
-    const client = clientFactice();
 
-    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
 
-    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
-    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
-    expect(client.creerListe).not.toHaveBeenCalled();
-    expect(client.pousserLeads).not.toHaveBeenCalled();
+    const requeteQuota = appels.find((a) => CONTRAINTES_SENDER.test(a.sql));
+    expect(requeteQuota).toBeDefined();
+    expect(requeteQuota!.sql).toMatch(/status in \('dispatched', 'delivered'\)/);
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\)\)/);
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\)\)/);
+    // Une action encore `scheduled` (pas encore partie) n'a pas `dispatched_at`
+    // renseigné : elle ne peut donc jamais matcher ce filtre, contrairement au
+    // filtre par `created_at` du tick (`loadSenders`), qui l'aurait comptée.
+    expect(requeteQuota!.sql).not.toMatch(/created_at/);
   });
 
   it('premier email : crée liste et séquence puis pousse le lead avec jr_action_id', async () => {
@@ -360,6 +365,11 @@ describe('envoyerEmailSalesBlink', () => {
     const rawFil = JSON.parse(filMessage!.values[2] as string) as Record<string, unknown>;
     expect(rawFil.action_id).toBe(ACTION_ID);
     expect(rawFil.subject).toBe('Objet Marie');
+    // fix round 2 : le fil est aussi retouché en last_message_at, même si
+    // `assurerFil` (fil déjà existant) ne l'aurait pas fait tout seul.
+    const filUpdate = appels.find((a) => THREAD_UPDATE.test(a.sql));
+    expect(filUpdate).toBeDefined();
+    expect(filUpdate!.values[0]).toBe('fil-1');
   });
 
   it('gabarit neutre réutilisé s’il existe déjà dans une liaison de l’organisation (minor)', async () => {

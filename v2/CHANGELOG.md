@@ -17,7 +17,11 @@ Versionnement sémantique.
   par persona disparaît. Plafond d'emails par jour, fréquence de relève et délai maximal d'une relance se règlent
   dans l'écran Fournisseurs, rien dans l'environnement. Le retrait de Smartlead ne s'applique qu'après le
   déploiement de ce worker et de l'application web (voir `deploy/vps/README.md`) : la migration qui supprime son
-  ancienne table est destructrice et sauvegarde son contenu avant de le faire.
+  ancienne table est destructrice, vit à part dans `supabase/migrations-differees/` (jamais prise par
+  `supabase db push`) et sauvegarde son contenu avant de le faire.
+- **Chaque email envoyé par SalesBlink est écrit dans le fil du contact (Boîte de réception), avec son identifiant
+  de message posé à la relève.** Sans lui, une réponse arrivée plus tard n'avait dans le fil que sa propre moitié
+  de la conversation.
 
 ### Supprimé
 - **Smartlead** : client, webhook entrant, table `smartlead_campaign_mappings`, écran de webhook et clés de traduction.

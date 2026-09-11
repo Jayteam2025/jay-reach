@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { LIVE_STATUSES, notifier, notifyReply, recordInboundReply } from './record-reply.js';
+import { LIVE_STATUSES, assurerFil, notifier, notifyReply, recordInboundReply } from './record-reply.js';
 
 interface ReponsesFactices {
   threadExistant?: { id: string } | null;
@@ -88,6 +88,29 @@ describe('notifier', () => {
 
     expect(appels).toHaveLength(1);
     expect(appels[0]!.values[2]).toBe('sender.disconnected');
+  });
+});
+
+describe('assurerFil', () => {
+  it('un fil créé pour un envoi sortant naît lu (fix round 2)', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+
+    const threadId = await assurerFil(ex, 'org-1', 'contact-1', 'email');
+
+    expect(threadId).toBe('thread-nouveau');
+    const insertion = appels.find((a) => a.text.includes('insert into threads'));
+    expect(insertion).toBeDefined();
+    expect(insertion!.values).toEqual(['org-1', 'contact-1', 'email']);
+    expect(insertion!.text).toContain('now(), true');
+  });
+
+  it('un fil déjà existant est renvoyé tel quel, sans être reclassé ni marqué non lu', async () => {
+    const { ex, appels } = creerExecuteurFactice({ threadExistant: { id: 'thread-existant' } });
+
+    const threadId = await assurerFil(ex, 'org-1', 'contact-1', 'email');
+
+    expect(threadId).toBe('thread-existant');
+    expect(appels.some((a) => a.text.includes('update threads'))).toBe(false);
   });
 });
 

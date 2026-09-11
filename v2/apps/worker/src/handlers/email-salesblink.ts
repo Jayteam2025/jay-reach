@@ -20,7 +20,6 @@ import {
   sortDErreur,
   corpsPourSalesBlink,
   objetPourSalesBlink,
-  placesRestantes,
   assurerFil,
   type ModeEnvoi,
 } from '@jay-reach/core';
@@ -37,7 +36,7 @@ import {
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, resolveTemplate } from './message-values.js';
-import { chargerContraintesSender, chargerPlafondCampagne, compterEntreesDuJour, quotaSenderRestant } from './sequence.js';
+import { chargerContraintesSender, quotaSenderRestant } from './sequence.js';
 import type { DispatchJob } from './dispatch.js';
 
 export const SALESBLINK_PROVIDER = 'salesblink';
@@ -453,25 +452,19 @@ export async function envoyerEmailSalesBlink(
     mode = deciderModeEnvoi({ envoisAnterieurs });
   }
 
-  // 4.5 Quotas de l'expéditeur et de la campagne (I5, revue finale du 11/09) —
-  // mêmes contraintes que celles vérifiées au tick (`sequence.ts`),
-  // revérifiées ici : tant que les actions partaient dans la minute, le
-  // contrôle du tick suffisait, mais le balayage de rejeu peut désormais
-  // pousser d'un coup un arriéré accumulé pendant une coupure d'expéditeur,
-  // hors du rythme du tick. Épuisé → l'action reste en attente, comme la
-  // coupure d'envoi ci-dessus, pas un blocage.
+  // 4.5 Quota de l'expéditeur (I5, revue finale du 11/09) — même contrainte
+  // que celle vérifiée au tick (`sequence.ts`), revérifiée ici : tant que les
+  // actions partaient dans la minute, le contrôle du tick suffisait, mais le
+  // balayage de rejeu peut désormais pousser d'un coup un arriéré accumulé
+  // pendant une coupure d'expéditeur, hors du rythme du tick. Épuisé →
+  // l'action reste en attente, comme la coupure d'envoi ci-dessus, pas un
+  // blocage. `campaigns.daily_cap` gouverne les ENTRÉES en séquence
+  // (`enrollContact`), pas les envois : il ne se revérifie pas ici (fix
+  // round 2, 11/09 — retiré d'ici où il avait été ajouté par erreur).
   const contraintesSender = await chargerContraintesSender(pool, sender.id);
   if (contraintesSender && quotaSenderRestant(contraintesSender) <= 0) {
     console.warn(`[email-salesblink] action ${actionId} en attente : quota expéditeur épuisé (${sender.identity})`);
     return;
-  }
-  const plafondCampagne = await chargerPlafondCampagne(pool, email.campaignId);
-  if (plafondCampagne !== null) {
-    const resteCampagne = placesRestantes(plafondCampagne, await compterEntreesDuJour(pool, email.campaignId));
-    if (resteCampagne === 0) {
-      console.warn(`[email-salesblink] action ${actionId} en attente : plafond quotidien de la campagne atteint`);
-      return;
-    }
   }
 
   // 5. Plafond fournisseur — consommé ici, juste avant l'envoi réel : une
@@ -558,6 +551,11 @@ export async function envoyerEmailSalesBlink(
          values ($1, 'out', $2, null, $3::jsonb, now())`,
       [filId, renduCorps.text, JSON.stringify({ action_id: actionId, mode: mode.mode, subject: payloadSucces.subject })],
     );
+    // Un fil déjà existant (relance dans un fil ouvert par un envoi
+    // précédent) n'est pas touché par `assurerFil` : sans cette mise à jour,
+    // son `last_message_at` resterait figé à la date du dernier message
+    // entrant plutôt que de refléter cette relance sortante.
+    await pool.query(`update threads set last_message_at = now() where id = $1`, [filId]);
     console.log(`[email-salesblink] action ${actionId} envoyée (${mode.mode})`);
   } catch (err) {
     // 8. Erreur SalesBlink : nouvel essai ou échec définitif selon le code et
