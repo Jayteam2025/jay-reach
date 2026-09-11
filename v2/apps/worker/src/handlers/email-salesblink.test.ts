@@ -243,7 +243,7 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.pousserLeads).not.toHaveBeenCalled();
   });
 
-  it('inscription non active (rejeu/course) : action ignorée sans aucun appel client (C1)', async () => {
+  it('inscription replied/stopped/bounced (rejeu/course) : action ignorée sans aucun appel client (C1)', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
       { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'replied', email: 'contact@exemple.fr' }]) },
@@ -256,6 +256,52 @@ describe('envoyerEmailSalesBlink', () => {
     const skip = appels.find((a) => UPDATE_SKIPPED.test(a.sql));
     expect(skip).toBeDefined();
     expect(skip!.values).toEqual([ACTION_ID, 'enrollment_inactive']);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+  });
+
+  it('une inscription completed envoie quand même (hotfix dernier email, 11/09)', async () => {
+    // Dernière étape d'une séquence : le tick (`sequence.ts`) bascule
+    // l'inscription à `completed` avant même que ce gestionnaire ne
+    // s'exécute. `completed` signifie « planification terminée », pas « ne
+    // plus contacter » — l'envoi doit quand même avoir lieu, sans quoi le
+    // dernier email d'une séquence ne part jamais.
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'completed', email: 'contact@exemple.fr' }]) },
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.pousserLeads).toHaveBeenCalledTimes(1);
+    const succes = appels.find((a) => UPDATE_SUCCES.test(a.sql));
+    expect(succes).toBeDefined();
+    expect(appels.some((a) => UPDATE_SKIPPED.test(a.sql))).toBe(false);
+  });
+
+  it('une inscription paused laisse l’action scheduled sans appel client (hotfix dernier email, 11/09)', async () => {
+    // L'expéditeur peut être coupé transitoirement (vérification IMAP,
+    // absence) : l'action reste `scheduled` intacte, sans être marquée
+    // `skipped` — le balayage de rejeu (`traitements.ts`) la reprendra une
+    // fois l'inscription de nouveau active.
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'paused', email: 'contact@exemple.fr' }]) },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => UPDATE_SKIPPED.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
     expect(client.creerListe).not.toHaveBeenCalled();
     expect(client.pousserLeads).not.toHaveBeenCalled();
     expect(client.repondreDansLeFil).not.toHaveBeenCalled();
