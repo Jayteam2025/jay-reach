@@ -14,12 +14,13 @@
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
-import { countRejected } from '@jay-reach/providers/outreach';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
-import { runDispatch, runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
+import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
+import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
+import { releverSalesBlink } from './handlers/releve-salesblink.js';
 import {
   runResolveCompany,
   toCompanyEnrichment,
@@ -82,9 +83,9 @@ export const FILES_BRANCHEES = [
   'enrichment.contacts',
   'sequence.enroll',
   'sequence.tick',
+  'inbox.sync',
 ] as const;
 
-const SMARTLEAD_PROVIDER = 'smartlead';
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
 const ANTHROPIC_PROVIDER = 'anthropic';
@@ -95,17 +96,13 @@ export const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 1
 export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 
 /**
- * URL publique de l'instance, telle qu'un provider doit la joindre.
- *
- * `APP_URL` d'abord, la variable documentée. À défaut, l'URL de production
- * Vercel — jamais `VERCEL_URL`, qui désigne le déploiement courant et change à
- * chaque envoi : un webhook branché avec elle cesserait de recevoir au
- * déploiement suivant, sans que rien ne le signale.
+ * Fenêtre de rejeu des actions email laissées `scheduled` (expéditeur
+ * désactivé, plafond fournisseur atteint, erreur transitoire sous le seuil de
+ * retry) : au plus un rejeu par action toutes les cinq minutes. Constante
+ * fixe, pas lue dans l'environnement — contrairement aux plafonds et cadences
+ * de l'écran Fournisseurs, ce n'est pas un réglage que l'opérateur ajuste.
  */
-function deduireUrlPublique(): string | undefined {
-  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  return production ? `https://${production}` : undefined;
-}
+export const REJEU_ACTIONS_EMAIL_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------- collecte
 
@@ -257,38 +254,9 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
     console.log(`[dispatch] LinkedIn ${data.channel} → ${id ? `enfilé ${id}` : 'déjà en file (dédup)'}`);
     return;
   }
-  const credentials = await resolveProviderCredentials(pool, data.organizationId, SMARTLEAD_PROVIDER, { encryptionKey });
-  const apiKey = credentials?.api_key;
-  if (!apiKey) {
-    console.warn(`[dispatch] Smartlead non configuré pour l’org ${data.organizationId} — job ignoré`);
-    return;
-  }
-  const result = await runDispatch(data, apiKey, pool, process.env.APP_URL ?? deduireUrlPublique());
-  // Le chiffre qui interesse l'operateur est le nombre de leads AJOUTES, que
-  // Smartlead nomme `total_leads`. `upload_count` compte les lignes traitees,
-  // deja-presents compris : l'annoncer comme un ajout gonflait le compte rendu.
-  const ajoutes = result.total_leads ?? 0;
-  const dejaLa = result.already_added_to_campaign ?? 0;
-  const refuses = countRejected(result);
-  console.log(
-    `[dispatch] ${ajoutes} lead(s) ajouté(s) à la campagne Smartlead` +
-      (dejaLa > 0 ? `, ${dejaLa} déjà présent(s)` : '') +
-      (refuses > 0 ? `, ${refuses} refusé(s)` : ''),
-  );
-  if (refuses > 0) {
-    console.warn(
-      `[dispatch] refus — doublons ${result.duplicate_count ?? 0}, emails invalides ${result.invalid_email_count ?? 0}, ` +
-        `désinscrits ${result.unsubscribed_leads?.length ?? 0}, bloqués ${result.block_count ?? 0}`,
-    );
-  }
-  if (result.is_lead_limit_exhausted) {
-    console.warn('[dispatch] plafond de leads Smartlead atteint — les prochains envois seront refusés');
-  }
-  // Le lead est chez Smartlead : l'action est partie. Sans ce marquage, elle
-  // restait au statut d'émission et n'apparaissait dans aucune statistique.
-  if (ajoutes > 0 && data.actionId) {
-    await pool.query('select app.mark_action_dispatched($1)', [data.actionId]);
-  }
+  // Canal email : SalesBlink. Résolution de la clé, de l'expéditeur, du
+  // plafond, du rendu et du mode d'envoi — tout se passe dans le handler.
+  await envoyerEmailSalesBlink({ pool, encryptionKey }, data);
 }
 
 // -------------------------------------------------------------- séquenceur
@@ -306,16 +274,104 @@ export async function traiterEnroll(ctx: Contexte, data: EnrollJob): Promise<voi
   console.log(`[enroll] inscription ${id} créée`);
 }
 
+interface ActionEnAttenteRow {
+  readonly action_id: string;
+  readonly organization_id: string;
+  readonly enrollment_id: string;
+  readonly step_id: string;
+  readonly sender_id: string | null;
+  readonly contact_id: string;
+  readonly campaign_id: string;
+  readonly template_parent_id: string | null;
+  readonly locale: string | null;
+}
+
+/**
+ * Relance les actions email laissées `scheduled` par un envoi précédent qui
+ * n'a ni échoué ni réussi — `envoyerEmailSalesBlink` les laisse intactes
+ * plutôt que de les bloquer (expéditeur désactivé, plafond fournisseur
+ * atteint, erreur transitoire sous le seuil de retry), et rien d'autre ne les
+ * relance : l'id du job de dispatch initial est déterministe par action, une
+ * réinsertion identique serait donc dédupliquée par pg-boss sans jamais
+ * réessayer.
+ *
+ * Fenêtre de deux minutes avant de considérer une action bloquée : le temps
+ * qu'un envoi en cours se termine. Fenêtre de rejeu de cinq minutes
+ * (`REJEU_ACTIONS_EMAIL_MS`) : un id de job différent par seau temporel, pour
+ * qu'un rejeu ne s'accumule pas à chaque tour du tick (60 s) tant que l'action
+ * reste en attente. `envoyerEmailSalesBlink` relit l'état de l'action à
+ * l'exécution : une action déjà partie ou bloquée entre-temps est ignorée.
+ *
+ * `e.status = 'active'` et l'absence de suppression active sur l'adresse
+ * (C1, revue finale du 11/09) : sans ce filtre, une inscription arrêtée
+ * pendant qu'une action reste `scheduled` — l'expéditeur coupé par la
+ * vérification IMAP, un prospect qui répond ou rebondit entre-temps — voyait
+ * son email repartir dès l'expéditeur rétabli, vers quelqu'un qui avait déjà
+ * répondu ou une adresse désinscrite. Même garde que `hasActiveSuppression`
+ * (`sequence.ts`), portée sur l'adresse du contact déjà jointe ici.
+ */
+export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
+  const { pool, boss } = ctx;
+  const res = await pool.query<ActionEnAttenteRow>(
+    `select a.id as action_id, a.organization_id, a.enrollment_id, a.step_id, a.sender_id,
+            e.contact_id, e.campaign_id, s.template_parent_id, c.locale
+       from actions a
+       join enrollments e on e.id = a.enrollment_id
+       join contacts c on c.id = e.contact_id
+       join sequence_steps s on s.id = a.step_id
+       join organizations org on org.id = a.organization_id
+      where a.channel = 'email'
+        and a.status = 'scheduled'
+        and a.dispatched_at is null
+        and a.created_at < now() - interval '2 minutes'
+        and org.sending_paused_at is null
+        and e.status = 'active'
+        and not exists (
+          select 1 from suppressions sup
+           where sup.organization_id = a.organization_id
+             and sup.scope = 'email'
+             and sup.value = c.email
+             and (sup.expires_at is null or sup.expires_at > now())
+        )
+      order by a.created_at asc
+      limit 200`,
+  );
+  const bucket = currentBucket(REJEU_ACTIONS_EMAIL_MS);
+  let rejouees = 0;
+  for (const row of res.rows) {
+    const job: DispatchJob = {
+      organizationId: row.organization_id,
+      channel: 'email',
+      actionId: row.action_id,
+      email: {
+        enrollmentId: row.enrollment_id,
+        contactId: row.contact_id,
+        stepId: row.step_id,
+        campaignId: row.campaign_id,
+        templateParentId: row.template_parent_id,
+        senderId: row.sender_id,
+        locale: row.locale,
+      },
+    };
+    await boss.insert([
+      { name: 'actions.dispatch', id: deterministicUuid('dispatch-rejeu', row.action_id, bucket), data: job },
+    ]);
+    rejouees += 1;
+  }
+  return rejouees;
+}
+
 /**
  * Avance les inscriptions dues et enfile les envois autorisés vers
- * `actions.dispatch` (id déterministe par action → pas de doublon de job).
+ * `actions.dispatch` (id déterministe par action → pas de doublon de job),
+ * puis relance les actions email restées en attente d'un tour précédent.
  */
 export async function traiterTick(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
   const jobs = await tickDueEnrollments(pool);
   for (const job of jobs) {
-    // Réf de dédup par contact/lead : LinkedIn via contactId/url, email via l'adresse.
-    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? job.leads?.[0]?.email ?? 'x';
+    // Réf de dédup par contact/action : LinkedIn via contactId/url, email via l'action du séquenceur.
+    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? job.actionId ?? 'x';
     await boss.insert([
       { name: 'actions.dispatch', id: deterministicUuid('dispatch', ref, job.channel ?? 'email'), data: job },
     ]);
@@ -323,7 +379,11 @@ export async function traiterTick(ctx: Contexte): Promise<number> {
   if (jobs.length > 0) {
     console.log(`[tick] ${jobs.length} envoi(s) enfilé(s)`);
   }
-  return jobs.length;
+  const rejouees = await rejouerActionsEmailEnAttente(ctx);
+  if (rejouees > 0) {
+    console.log(`[tick] ${rejouees} action(s) email en attente rejouée(s)`);
+  }
+  return jobs.length + rejouees;
 }
 
 // ------------------------------------------------------------ enrichissement
@@ -529,6 +589,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnrichCompany(ctx, donnees as EnrichCompanyJob);
     case 'enrichment.contacts':
       return traiterEnrichContacts(ctx, donnees as EnrichContactsJob);
+    case 'inbox.sync':
+      return releverSalesBlink(ctx, donnees as { organizationId: string });
     default:
       // File déclarée mais sans traitement : on ne la laisse pas s'accumuler.
       return;

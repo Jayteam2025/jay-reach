@@ -10,7 +10,7 @@ describe('ProviderRegistry', () => {
 
   it('résout par id et par catégorie', () => {
     const registry = createRegistry(PROVIDER_CATALOG);
-    expect(registry.get('smartlead')?.category).toBe('email');
+    expect(registry.get('salesblink')?.category).toBe('email');
     expect(registry.listByCategory('signals').map((m) => m.id)).toContain('francetravail');
   });
 
@@ -21,7 +21,7 @@ describe('ProviderRegistry', () => {
 
   it("rejette un doublon d'id", () => {
     const registry = new ProviderRegistry();
-    const manifest = { id: 'dup', category: 'email', labelKey: 'providers.smartlead', fields: [] };
+    const manifest = { id: 'dup', category: 'email', labelKey: 'providers.dup', fields: [] };
     registry.register(manifest);
     expect(() => registry.register(manifest)).toThrow(/déjà enregistré/);
   });

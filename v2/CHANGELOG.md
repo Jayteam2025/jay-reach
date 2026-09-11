@@ -7,6 +7,25 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Modifié
+- **Les emails de séquence partent par SalesBlink, et Jay Reach garde tout le reste.** Smartlead portait le texte
+  et la cadence ; SalesBlink ne porte plus que l'expédition depuis la boîte de l'utilisateur. Une séquence SalesBlink
+  evergreen est créée par étape email au premier envoi, Jay Reach y pousse chaque contact avec le sujet et le corps
+  qu'il a rendus, les relances partent en réponse à notre propre email pour rester dans le fil, et une relève
+  périodique (réglable dans Fournisseurs) remonte envois, réponses, rebonds, désinscriptions et santé de la boîte.
+  La garde d'activation demande une clé SalesBlink et un expéditeur email relié à une boîte connectée ; le mapping
+  par persona disparaît. Plafond d'emails par jour, fréquence de relève et délai maximal d'une relance se règlent
+  dans l'écran Fournisseurs, rien dans l'environnement. Le retrait de Smartlead ne s'applique qu'après le
+  déploiement de ce worker et de l'application web (voir `deploy/vps/README.md`) : la migration qui supprime son
+  ancienne table est destructrice, vit à part dans `supabase/migrations-differees/` (jamais prise par
+  `supabase db push`) et sauvegarde son contenu avant de le faire.
+- **Chaque email envoyé par SalesBlink est écrit dans le fil du contact (Boîte de réception), avec son identifiant
+  de message posé à la relève.** Sans lui, une réponse arrivée plus tard n'avait dans le fil que sa propre moitié
+  de la conversation.
+
+### Supprimé
+- **Smartlead** : client, webhook entrant, table `smartlead_campaign_mappings`, écran de webhook et clés de traduction.
+
 ### Corrigé
 
 - **Sous plafond, le scoring prend les signaux les plus récents d'abord.** Depuis que le scoring est

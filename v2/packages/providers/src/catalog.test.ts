@@ -22,7 +22,7 @@ describe('catalogue des providers', () => {
   });
 
   it('getProviderEntry retrouve un provider connu et rien sinon', () => {
-    expect(getProviderEntry('smartlead')?.category).toBe('email');
+    expect(getProviderEntry('salesblink')?.category).toBe('email');
     expect(getProviderEntry('inconnu')).toBeUndefined();
   });
 });

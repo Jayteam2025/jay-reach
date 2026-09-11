@@ -34,7 +34,7 @@
     "secretHidden": "clé se terminant par {last4}",
     "save": "Enregistrer",
     "saved": "Enregistré",
-    "smartlead": "Smartlead (email)",
+    "salesblink": "SalesBlink (email)",
     "fullenrich": "FullEnrich (enrichissement)",
     "dropcontact": "Dropcontact (enrichissement)",
     "bouncer": "Bouncer (vérification email)",
@@ -58,10 +58,21 @@
       "enrichDailyCapPlaceholder": "ex. 50",
       "scoreDailyCap": "Plafond quotidien de scoring",
       "scoreDailyCapHint": "Signaux traités par jour par l'IA de scoring, toutes sources confondues. Mettez 0 pour mettre le scoring en pause.",
-      "scoreDailyCapPlaceholder": "ex. 300"
+      "scoreDailyCapPlaceholder": "ex. 300",
+      "emailDailyCap": "Plafond quotidien d'emails",
+      "emailDailyCapHint": "Nombre d'emails poussés vers SalesBlink par jour, toutes campagnes confondues (0 = pause, vide = illimité)",
+      "emailDailyCapPlaceholder": "Nombre, vide = illimité",
+      "syncIntervalMin": "Fréquence de relève (minutes)",
+      "syncIntervalMinHint": "Toutes les combien de minutes Jay Reach relit les envois, réponses et rebonds chez SalesBlink (entre 2 et 60)",
+      "syncIntervalMinPlaceholder": "Minutes, défaut 5",
+      "replyMaxDelayH": "Délai maximal d'une relance (heures)",
+      "replyMaxDelayHHint": "Au-delà, une relance restée en file chez SalesBlink est renvoyée comme nouvel email « Re : » (entre 1 et 72)",
+      "replyMaxDelayHPlaceholder": "Heures, défaut 6"
     },
-    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
-    "secretUnchanged": "Laissez vide pour garder la clé actuelle"
+    "secretUnchanged": "Laissez vide pour garder la clé actuelle",
+    "todayUsage": "aujourd’hui : {used} / {cap}",
+    "lastSync": "{ago, select, never {Dernière relève : jamais} other {Dernière relève : {ago}}}",
+    "lastSyncError": "Dernière erreur : {error}"
   },
   "jobs": {
     "title": "Files de fond",
@@ -176,8 +187,7 @@
     "annuaire": "Annuaire",
     "approvals": "Approbations",
     "customers": "Clients",
-    "templates": "Messages",
-    "smartlead": "Webhooks Smartlead"
+    "templates": "Messages"
   },
   "sources": {
     "eyebrow": "Détection",
@@ -649,7 +659,11 @@
     "reason": {
       "letter": "Courrier — vérification requise",
       "budget": "Budget dépassé",
-      "manual": "Mode manuel"
+      "manual": "Mode manuel",
+      "sender_unbound": "Aucun expéditeur relié",
+      "missing_locale": "Langue du contact inconnue",
+      "missing_template": "Aucun message relié à l’étape",
+      "missing_variable": "Variable de message non résolue"
     }
   },
   "customers": {
@@ -734,25 +748,6 @@
     "dailyCapLink": "Voir les réglages LinkedIn",
     "minScoreLink": "Régler les consignes de notation"
   },
-  "smartleadWh": {
-    "eyebrow": "Réception email",
-    "title": "Webhooks Smartlead",
-    "lead": "Le webhook se branche tout seul au premier envoi. Cet écran ne sert qu'à le rebrancher ou à régénérer son secret.",
-    "demoNotice": "Connectez Supabase pour configurer le webhook.",
-    "urlTitle": "URL du webhook",
-    "copy": "Copier l'URL",
-    "copied": "Copié ✓",
-    "noSecret": "Générez d'abord un secret pour obtenir l'URL.",
-    "howTitle": "Comment brancher",
-    "step1": "Dans Smartlead, ouvrez la campagne → Webhooks → Ajouter, et collez l'URL ci-dessus.",
-    "step2": "Activez les événements :",
-    "step3": "Enregistrez. Les réponses arriveront dans la boîte de réception, les bounces et désinscriptions iront en exclusion.",
-    "generate": "Générer le secret",
-    "regenerate": "Régénérer le secret",
-    "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
-    "yourDomain": "https://votre-instance",
-    "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
-  },
   "senders": {
     "eyebrow": "Qui envoie",
     "title": "Expéditeurs",
@@ -776,6 +771,7 @@
     "sendFrom": "À partir de",
     "sendTo": "Jusqu'à",
     "timezone": "Fuseau horaire",
+    "sendHoursSalesBlinkHint": "Ces horaires sont transmis à SalesBlink à la création de la séquence de l'étape. Un changement ultérieur ne redescend pas automatiquement chez SalesBlink.",
     "form": {
       "add": "Ajouter un expéditeur",
       "cancel": "Annuler",
@@ -787,7 +783,12 @@
       "emailPlaceholder": "prenom@votre-domaine.fr",
       "linkedinPlaceholder": "votre-profil",
       "identityHint": "Se fixe à la création. Elle désigne le compte branché chez le fournisseur, la changer ensuite ne changerait pas ce qui part."
-    }
+    },
+    "salesblinkBox": "Boîte SalesBlink",
+    "salesblinkBoxNone": "Aucune boîte SalesBlink disponible pour le moment. Vérifiez la clé dans Fournisseurs.",
+    "salesblinkHealth": "{etat, select, actif {Envoi actif} coupe {Coupé : {message}} other {Jamais relevé}}",
+    "salesblinkCap": "Plafond SalesBlink",
+    "lowestApplies": "le plus bas s’applique"
   },
   "snippets": {
     "title": "Textes réutilisables",
@@ -802,5 +803,12 @@
     "cancel": "Annuler",
     "delete": "Supprimer",
     "empty": "Aucun pour l'instant. Une signature, des mentions légales : ce qui se répète d'un message à l'autre."
+  },
+  "campaign": {
+    "guard": {
+      "noSalesBlinkKey": "aucune clé SalesBlink configurée",
+      "noBoundEmailSender": "aucun expéditeur email relié à une boîte SalesBlink",
+      "emailSenderDisconnected": "l’expéditeur email relié à SalesBlink n’a pas l’envoi actif"
+    }
   }
 }

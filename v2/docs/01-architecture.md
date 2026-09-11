@@ -18,7 +18,7 @@ jay-reach/
 │   ├── providers/
 │   │   ├── signals/          jobboard, appointment, tradeshow
 │   │   ├── enrichment/       fullenrich, dropcontact, legalregistry
-│   │   ├── email/            smartlead
+│   │   ├── email/            salesblink
 │   │   ├── linkedin/         unipile, manual
 │   │   ├── mail/             manuscry, pdf
 │   │   ├── inbox/            unipile

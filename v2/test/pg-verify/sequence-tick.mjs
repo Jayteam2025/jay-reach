@@ -88,7 +88,6 @@ async function main() {
   await q(`delete from linkedin_action_queue where organization_id=$1`, [ORG]);
   await q(`delete from suppressions where organization_id=$1`, [ORG]);
   await q(`delete from message_templates where organization_id=$1`, [ORG]);
-  await q(`delete from smartlead_campaign_mappings where organization_id=$1`, [ORG]);
   await q(`delete from contact_sender_bindings where contact_id in (select id from contacts where organization_id=$1)`, [ORG]);
   await q(`delete from domain_patterns where organization_id=$1`, [ORG]);
   await q(`update organizations set sending_paused_at=null, sending_paused_reason=null where id=$1`, [ORG]);
@@ -158,15 +157,16 @@ async function main() {
   const e3 = (await q(`select status, stop_reason from enrollments where id=$1`, [enr2])).rows[0];
   check('inscription arrêtée', e3.status === 'stopped' && e3.stop_reason === 'suppression');
 
-  // --- Étape 7 : canal email → Smartlead, mapping PAR PERSONA (review #20) ------
-  console.log('\n[seq] 7. Canal email : campagne Smartlead résolue par persona');
+  // --- Étape 7 : canal email → job de dispatch (rendu et objets SalesBlink
+  // résolus à l'envoi, pas ici) ------
+  console.log('\n[seq] 7. Canal email : job de dispatch, gate de délivrabilité');
   const persona = (
     await q(`insert into personas (organization_id, name) values ($1,'SEQ Directeur de site') returning id`, [ORG])
   ).rows[0].id;
   const account = (
     await q(`insert into accounts (organization_id, name, domain) values ($1,'SEQ Usine Nord','usine-nord.fr') returning id`, [ORG])
   ).rows[0].id;
-  // email_status pilote le gate de délivrabilité : seul 'valid' passe vers Smartlead.
+  // email_status pilote le gate de délivrabilité : seul 'valid' passe.
   const mkMailContact = async (v, emailStatus = 'valid') => {
     // Un compte par contact : la règle « un contact par compte et par jour »
     // reporterait le second contact d'une même entreprise, et ces cas éprouvent
@@ -191,24 +191,13 @@ async function main() {
 
   const mailCamp = await seedCampaign('SEQ email', [{ channel: 'email', delay_hours: 0 }]);
 
-  // Mapping activé (persona → campagne Smartlead SL-EMAIL-77).
-  await q(
-    `insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, campaign_name, enabled)
-     values ($1,$2,'SL-EMAIL-77','Prospection Directeurs',true)`,
-    [ORG, persona],
-  );
   const cm1 = await mkMailContact('on');
   const enrM1 = await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cm1 });
   const jobsM1 = (await tickDueEnrollments(pool, at(10000))).filter((j) => j.channel === 'email');
   check(
-    '1 job email vers la campagne Smartlead de la persona (SL-EMAIL-77)',
-    jobsM1.length === 1 && jobsM1[0].campaignId === 'SL-EMAIL-77',
-    JSON.stringify(jobsM1.map((j) => j.campaignId)),
-  );
-  check(
-    'lead assemblé (email + société depuis le compte)',
-    jobsM1[0]?.leads?.[0]?.email === 'seqmail-on@example.test' && jobsM1[0]?.leads?.[0]?.company_name === 'SEQ Usine Nord',
-    JSON.stringify(jobsM1[0]?.leads?.[0]),
+    '1 job email, référencé par campagne et contact (rendu résolu à l’envoi)',
+    jobsM1.length === 1 && jobsM1[0].email?.campaignId === mailCamp && jobsM1[0].email?.contactId === cm1,
+    JSON.stringify(jobsM1.map((j) => j.email)),
   );
   const aM1 = (await q(`select channel, status from actions where enrollment_id=$1`, [enrM1])).rows[0];
   check('action email enregistrée', aM1?.channel === 'email');
@@ -217,28 +206,15 @@ async function main() {
   const cmBad = await mkMailContact('bad', 'invalid');
   const enrBad = await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cmBad });
   const jobsBad = (await tickDueEnrollments(pool, at(10500))).filter(
-    (j) => j.channel === 'email' && j.leads?.[0]?.email === 'seqmail-bad@example.test',
+    (j) => j.channel === 'email' && j.email?.contactId === cmBad,
   );
-  check('email invalide → aucun push Smartlead', jobsBad.length === 0);
+  check('email invalide → aucun push', jobsBad.length === 0);
   const aBad = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrBad])).rows[0];
   check(
     'action bloquée par le gate (email_gate)',
     aBad?.status === 'blocked' && String(aBad?.block_reason).startsWith('email_gate:'),
     `${aBad?.status}/${aBad?.block_reason}`,
   );
-
-  // Mapping désactivé (enabled=false) : suspension sans perte d'identifiant.
-  await q(`update smartlead_campaign_mappings set enabled=false where organization_id=$1 and persona_id=$2`, [ORG, persona]);
-  const cm2 = await mkMailContact('off');
-  await enrollContact(pool, { organizationId: ORG, campaignId: mailCamp, contactId: cm2 });
-  const jobsM2 = (await tickDueEnrollments(pool, at(11000))).filter(
-    (j) => j.channel === 'email' && j.leads?.[0]?.email === 'seqmail-off@example.test',
-  );
-  check('mapping désactivé → aucun envoi dispatché (action planifiée)', jobsM2.length === 0);
-  const stillMapped = (
-    await q(`select campaign_id from smartlead_campaign_mappings where organization_id=$1 and persona_id=$2`, [ORG, persona])
-  ).rows[0];
-  check('identifiant Smartlead conservé malgré la suspension', stillMapped?.campaign_id === 'SL-EMAIL-77');
 
   // --- Étape 8 : rendu des variables + blocage missing_variable/missing_locale (T19) -
   console.log('\n[seq] 8. Variables de message : rendu, blocage variable/langue');
@@ -395,18 +371,16 @@ async function main() {
   // Le contact à pousser : email CATCH_ALL, donc `risky`. Avant, le gate le
   // bloquait faute de pattern ; il doit maintenant passer.
   const campPat = await seedCampaign('Email pattern', [{ channel: 'email', delay_hours: 0 }]);
-  await q(
-    `insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
-     values ($1,$2,'SL-PATTERN',true)`, [ORG, persoPat],
-  );
   const cRisky = (await q(
     `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, email, email_status)
      values ($1,$2,$3,'Jean','Nouveau',$4,'risky') returning id`,
     [ORG, cptPat, persoPat, `jean.nouveau@${dom}`],
   )).rows[0].id;
   const enrRisky = await enrollContact(pool, { organizationId: ORG, campaignId: campPat, contactId: cRisky });
-  const jRisky = (await tickDueEnrollments(pool, at(150000))).filter((j) => j.campaignId === 'SL-PATTERN');
-  check('risky + pattern high → poussé vers Smartlead', jRisky.length === 1, JSON.stringify(jRisky.map((j) => j.campaignId)));
+  const jRisky = (await tickDueEnrollments(pool, at(150000))).filter(
+    (j) => j.channel === 'email' && j.email?.contactId === cRisky,
+  );
+  check('risky + pattern high → poussé', jRisky.length === 1, JSON.stringify(jRisky.map((j) => j.email)));
   const aRisky = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrRisky])).rows[0];
   check('action non bloquée', aRisky?.status !== 'blocked', `${aRisky?.status}/${aRisky?.block_reason}`);
 
@@ -421,7 +395,7 @@ async function main() {
   )).rows[0].id;
   const enrInconnu = await enrollContact(pool, { organizationId: ORG, campaignId: campPat, contactId: cInconnu });
   const jInconnu = (await tickDueEnrollments(pool, at(180000))).filter(
-    (j) => j.campaignId === 'SL-PATTERN' && j.leads?.[0]?.email === 'alice.inconnue@domaine-inconnu.test',
+    (j) => j.channel === 'email' && j.email?.contactId === cInconnu,
   );
   check('risky sans pattern → toujours bloqué', jInconnu.length === 0);
   const aInconnu = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrInconnu])).rows[0];
@@ -440,8 +414,6 @@ async function main() {
     `insert into personas (organization_id, name) values ($1,'SEQ Garde') returning id`, [ORG],
   )).rows[0].id;
   const campGarde = await seedCampaign('Garde-fous', [{ channel: 'email', delay_hours: 0 }]);
-  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
-           values ($1,$2,'SL-GARDE',true)`, [ORG, persoGarde]);
 
   const duo = [];
   for (const [f, l] of [['Premier','Contact'],['Second','Contact']]) {
@@ -492,8 +464,6 @@ async function main() {
   const persoOrd = (await q(
     `insert into personas (organization_id, name) values ($1,'SEQ Ord') returning id`, [ORG])).rows[0].id;
   const campOrd = await seedCampaign('Ordonnancement', [{ channel: 'email', delay_hours: 0 }]);
-  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
-           values ($1,$2,'SL-ORD',true)`, [ORG, persoOrd]);
   // On neutralise les autres expéditeurs email pour que celui-ci soit retenu.
   await q(`update senders set is_active=false where organization_id=$1 and kind='email'`, [ORG]);
   const sndOrd = (await q(
@@ -543,8 +513,6 @@ async function main() {
     { channel: 'email', delay_hours: 0 },
     { channel: 'email', delay_hours: 24 },
   ]);
-  await q(`insert into smartlead_campaign_mappings (organization_id, persona_id, campaign_id, enabled)
-           values ($1,$2,'SL-JIT',true)`, [ORG, persoJit]);
 
   const echeances = [];
   for (const nom of ['Alpha', 'Beta', 'Gamma']) {

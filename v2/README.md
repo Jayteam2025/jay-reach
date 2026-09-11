@@ -47,7 +47,7 @@ Jay Reach n'inclut aucune donnée et aucun quota d'envoi. Vous branchez vos prop
 | Enrichissement contacts | FullEnrich, Dropcontact | Recommandé |
 | Identité et adresses d'entreprise | Annuaire légal | Oui pour le courrier |
 | Modèle de langage | Anthropic, OpenAI, Ollama | Oui |
-| Email | Smartlead | Si canal email |
+| Email | SalesBlink | Si canal email |
 | LinkedIn | Unipile, mode manuel | Si canal LinkedIn |
 | Courrier | Manuscry | Si canal courrier |
 | Boîte de réception | Unipile | Recommandé |

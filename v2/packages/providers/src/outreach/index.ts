@@ -1,4 +1,4 @@
 /**
- * Canaux d'envoi — code moteur repris du legacy (client Smartlead).
+ * Canaux d'envoi. `salesblink.js` est le transport email courant.
  */
-export * from './smartlead.js';
+export * from './salesblink.js';

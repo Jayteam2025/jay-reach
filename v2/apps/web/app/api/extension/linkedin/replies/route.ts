@@ -11,13 +11,14 @@
  * ici, où elles suivent exactement le même traitement qu'une réponse email :
  * classement, ouverture du fil, arrêt de la séquence, notification.
  *
- * Un contact inconnu ne laisse aucune trace, comme pour le webhook Smartlead :
- * la boîte de réception de l'opérateur ne doit contenir que des gens qu'il a
- * lui-même démarchés, pas sa messagerie LinkedIn personnelle.
+ * Un contact inconnu ne laisse aucune trace, comme pour toute autre source
+ * d'événements email : la boîte de réception de l'opérateur ne doit contenir
+ * que des gens qu'il a lui-même démarchés, pas sa messagerie LinkedIn
+ * personnelle.
  */
 import { getPool } from '../../../../../lib/db';
 import { validateToken } from '../../../../../lib/linkedin/queue';
-import { notifyReply, recordInboundReply } from '../../../../../lib/inbox/record-reply';
+import { notifyReply, recordInboundReply } from '@jay-reach/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

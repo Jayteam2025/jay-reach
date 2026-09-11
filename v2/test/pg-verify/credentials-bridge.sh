@@ -51,7 +51,7 @@ ORG=$(psql -tAc "select id from public.organizations where slug='org-bridge'" | 
 
 psql >/dev/null <<SQL || { echo "[cred] SEED_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 10; }
 set role service_role;
-select app.set_credential('$ORG', 'smartlead', 'sk-live-9999', '$KEY', '{}');
+select app.set_credential('$ORG', 'salesblink', 'sk-live-9999', '$KEY', '{}');
 select app.set_credential('$ORG', 'francetravail', 'ft-secret-XYZ', '$KEY', '{"client_id":"FT-CLIENT-42"}');
 SQL
 

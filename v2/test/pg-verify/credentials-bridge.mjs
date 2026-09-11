@@ -23,9 +23,9 @@ function check(name, cond) {
   }
 }
 
-// 1. Smartlead : un seul champ secret (api_key), stocké au coffre.
-const sl = await resolveProviderCredentials(pool, ORG, 'smartlead', { encryptionKey: KEY });
-check('smartlead-secret-roundtrip', sl?.api_key === 'sk-live-9999');
+// 1. SalesBlink : le champ secret (api_key), stocké au coffre.
+const sb = await resolveProviderCredentials(pool, ORG, 'salesblink', { encryptionKey: KEY });
+check('salesblink-secret-roundtrip', sb?.api_key === 'sk-live-9999');
 
 // 2. France Travail : client_id (config) + client_secret (coffre).
 const ft = await resolveProviderCredentials(pool, ORG, 'francetravail', { encryptionKey: KEY });
@@ -44,8 +44,8 @@ const dc = await resolveProviderCredentials(pool, ORG, 'dropcontact', { encrypti
 check('dropcontact-unconfigured-null', dc === null);
 
 // 5. Sans clé de chiffrement : le coffre est ignoré, seul l'env répond.
-const slNoKey = await resolveProviderCredentials(pool, ORG, 'smartlead', {});
-check('smartlead-no-key-ignores-vault', slNoKey === null);
+const sbNoKey = await resolveProviderCredentials(pool, ORG, 'salesblink', {});
+check('salesblink-no-key-ignores-vault', sbNoKey === null);
 
 await pool.end();
 if (failures > 0) {

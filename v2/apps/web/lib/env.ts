@@ -9,7 +9,7 @@ export function requireEnv(name: string): string {
 
 /**
  * URL publique de l'instance, celle qu'on affiche à l'opérateur pour qu'il la
- * colle chez un provider (webhook Smartlead, notamment).
+ * colle chez un provider tiers (un webhook entrant, notamment).
  *
  * `APP_URL` d'abord : c'est la variable documentée, la seule qui vaille quand
  * on s'auto-héberge. À défaut, on déduit l'URL de production Vercel.

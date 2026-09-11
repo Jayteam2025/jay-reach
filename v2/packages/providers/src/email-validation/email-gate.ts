@@ -1,13 +1,14 @@
 /**
- * Email gate : decide si un profil enriche peut etre pousse a Smartlead.
+ * Email gate : decide si un profil enrichi peut etre pousse vers le transport
+ * email (SalesBlink, lot 3).
  *
  * Pure function, testable, sans dependances externes.
  * Cf docs/superpowers/specs/2026-05-13-bouncer-integration-bounce-learning-design.md section 5.2
  *
  * Le verdict lu est deliverability_status (colonne provider-agnostique, ecrite
  * par Bouncer OU Reoon). Les codes de raison "bouncer_*" / "pending_bouncer"
- * sont conserves tels quels : persistes dans smartlead_push_reason et testes
- * programmatiquement (send-via-smartlead) — les renommer casserait l'historique.
+ * sont conserves tels quels : persistes historiquement et testes
+ * programmatiquement — les renommer casserait l'historique.
  */
 
 export type GateDecision = {
@@ -48,7 +49,7 @@ function isSuspiciousName(s: string): boolean {
   return false;
 }
 
-export function shouldPushToSmartlead(input: GateInput): GateDecision {
+export function emailGateAllows(input: GateInput): GateDecision {
   if (input.deliverability_status === "invalid") {
     return { allow: false, reason: "bouncer_invalid", detail: input.deliverability_reason ?? undefined };
   }

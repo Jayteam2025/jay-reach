@@ -42,7 +42,10 @@ Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
 
    ou, sans CLI liée, en exécutant le contenu de chaque fichier de
    `supabase/migrations/` dans l'éditeur SQL du projet, dans l'ordre des noms
-   de fichiers. **Sans cette étape, rien ne prévient au démarrage** : le
+   de fichiers. Cette commande n'applique QUE `supabase/migrations/` : les
+   migrations destructrices (qui suppriment une table) vivent à part, dans
+   `supabase/migrations-differees/`, et ne sont jamais prises par `db push` —
+   voir l'étape 6. **Sans cette étape, rien ne prévient au démarrage** : le
    conteneur démarre, écrit son fichier de battement et reste `healthy`, mais
    chaque tour échoue faute de table `engine_status` — une erreur par minute
    dans les journaux — et l'écran Tableau de bord affiche « Aucun battement
@@ -54,6 +57,30 @@ Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
    cd deploy/vps
    ./deployer.sh
    ```
+
+6. **Seulement après** avoir vérifié que ce worker ET l'application web sont
+   déployés et sains (section suivante) : appliquer à la main les migrations
+   de `supabase/migrations-differees/`. Une migration qui supprime une table
+   encore lue par un déploiement précédent du worker ou du web casserait ce
+   déploiement avant que le nouveau ne soit confirmé — l'ordre inverse
+   (migration avant déploiement) ferait tomber le tour de séquences toutes
+   les 60 secondes tant que l'ancien worker reste en place. Chaque migration
+   destructrice sauvegarde ce qu'elle supprime dans une table
+   `..._sauvegarde_<date>` avant le `drop`, à son propre en-tête SQL.
+
+   Geste exact (voir aussi le README de `supabase/migrations-differees/`) :
+   soit copier le contenu du fichier dans l'éditeur SQL du projet, soit le
+   déplacer dans `supabase/migrations/` puis :
+
+   ```bash
+   supabase db push --linked --include-all
+   ```
+
+   `--include-all` est nécessaire ici : l'horodatage de cette migration
+   (`20260910190000`) est antérieur à celui de la migration additive déjà
+   appliquée (`20260911120000`), et `db push` refuse par défaut d'appliquer
+   une migration plus ancienne que la dernière déjà en place. Ne pas
+   renommer le fichier pour la faire paraître plus récente.
 
 ## Vérifier
 

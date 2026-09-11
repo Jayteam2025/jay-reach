@@ -31,6 +31,12 @@ export interface SenderInput {
   readonly endHour: number;
   readonly days: number[];
   readonly timezone: string;
+  /**
+   * Boîte SalesBlink reliée (son `id` chez SalesBlink), ou `null` pour
+   * délier. Ne concerne que les expéditeurs email : le transport LinkedIn ne
+   * passe pas par SalesBlink.
+   */
+  readonly providerRef: string | null;
 }
 
 /** Ce qu'il faut pour faire naître un expéditeur, en plus de ses réglages. */
@@ -117,6 +123,8 @@ export async function updateSender(
       is_active: input.isActive,
       business_hours: { startHour: input.startHour, endHour: input.endHour, days: [...input.days].sort() },
       timezone: input.timezone,
+      provider_id: input.providerRef ? 'salesblink' : null,
+      provider_ref: input.providerRef,
     })
     .eq('id', senderId)
     .eq('organization_id', organizationId);
@@ -198,6 +206,8 @@ export async function createSender(
     is_active: input.isActive,
     business_hours: { startHour: input.startHour, endHour: input.endHour, days: [...input.days].sort() },
     timezone: input.timezone,
+    provider_id: input.providerRef ? 'salesblink' : null,
+    provider_ref: input.providerRef,
   });
 
   if (error) {

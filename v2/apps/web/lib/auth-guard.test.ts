@@ -53,10 +53,10 @@ describe('decideAccess — garde d’authentification du middleware', () => {
   });
 
   it('un webhook entrant reste joignable en production (Supabase configuré, non authentifié)', () => {
-    // Scénario réel : Smartlead POST sans session. Sans /api/webhooks en public,
+    // Scénario réel : un provider POST sans session. Sans /api/webhooks en public,
     // le middleware redirigerait vers /login et le handler ne serait jamais appelé.
     expect(
-      decideAccess({ pathname: '/api/webhooks/smartlead', configured: true, authenticated: false, allowUnconfigured: false }),
+      decideAccess({ pathname: '/api/webhooks/exemple', configured: true, authenticated: false, allowUnconfigured: false }),
     ).toBe('allow');
   });
 

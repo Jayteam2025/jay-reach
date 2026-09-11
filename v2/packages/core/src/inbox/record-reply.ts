@@ -1,18 +1,22 @@
 /**
  * Enregistrement d'une réponse entrante, quel que soit le canal.
  *
- * Extrait du traitement du webhook Smartlead, qui était le seul chemin par
- * lequel une réponse pouvait entrer. Une réponse LinkedIn suit exactement les
- * mêmes règles — classer, ouvrir le fil, arrêter l'inscription, notifier — et
- * les dupliquer aurait garanti qu'elles divergent.
+ * Extrait du traitement de l'ancien webhook entrant email (le seul chemin par
+ * lequel une réponse pouvait entrer, avant le lot 3). Une réponse LinkedIn — ou une réponse
+ * relevée via SalesBlink — suit exactement les mêmes règles : classer, ouvrir
+ * le fil, arrêter l'inscription, notifier. Les dupliquer aurait garanti
+ * qu'elles divergent.
  *
  * L'arrêt d'inscription ne filtre jamais par canal : il porte sur le contact.
  * C'est ce qui fait qu'une réponse reçue quelque part interrompt la séquence
  * partout, et cette table `enrollments` n'admet de toute façon qu'une seule
  * inscription vivante par contact.
+ *
+ * Vit dans `packages/core` (pas d'import `pg`) : le worker comme le web
+ * l'appellent avec leur propre exécuteur de requêtes structurel.
  */
-import type { Pool } from 'pg';
-import { classifyReply } from '@jay-reach/core';
+import type { Executeur } from '../executeur.js';
+import { classifyReply } from './classify.js';
 
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
 export const LIVE_STATUSES = "('active','paused','paused_absence')";
@@ -38,27 +42,59 @@ export interface RecordedReply {
   readonly isNew: boolean;
 }
 
-/** Crée ou actualise le fil du contact sur un canal donné. */
+/**
+ * Trouve ou crée le fil du contact sur un canal donné, sans toucher sa
+ * classification ni son statut de lecture s'il existe déjà.
+ *
+ * Exportée (I4, revue finale du 11/09) : l'envoi email SalesBlink s'en sert
+ * pour savoir dans quel fil ranger le message qu'il vient d'envoyer, avant
+ * même qu'une réponse existe — il n'a pas à reclasser le fil, ce que fait
+ * `upsertThread` ci-dessous pour une réponse entrante. Un fil créé ICI naît
+ * lu (`is_read = true`, fix round 2, 11/09) : rien n'y attend l'opérateur
+ * tant qu'aucune réponse n'est arrivée ; `upsertThread` continue de le
+ * repasser non lu à la première réponse entrante.
+ */
+export async function assurerFil(
+  ex: Executeur,
+  org: string,
+  contactId: string,
+  channel: ReplyChannel,
+): Promise<string> {
+  const found = await ex.query<{ id: string }>(
+    `select id from threads where organization_id = $1 and contact_id = $2 and channel = $3 limit 1`,
+    [org, contactId, channel],
+  );
+  const existing = found.rows[0];
+  if (existing) return existing.id;
+  const created = await ex.query<{ id: string }>(
+    `insert into threads (organization_id, contact_id, channel, last_message_at, is_read)
+     values ($1, $2, $3, now(), true) returning id`,
+    [org, contactId, channel],
+  );
+  return created.rows[0]!.id;
+}
+
+/** Crée ou actualise le fil du contact sur un canal donné, avec sa classification (réponse entrante). */
 async function upsertThread(
-  pool: Pool,
+  ex: Executeur,
   org: string,
   contactId: string,
   channel: ReplyChannel,
   classification: string,
 ): Promise<string> {
-  const found = await pool.query<{ id: string }>(
+  const found = await ex.query<{ id: string }>(
     `select id from threads where organization_id = $1 and contact_id = $2 and channel = $3 limit 1`,
     [org, contactId, channel],
   );
   const existing = found.rows[0];
   if (existing) {
-    await pool.query(
+    await ex.query(
       `update threads set classification = $2, last_message_at = now(), is_read = false where id = $1`,
       [existing.id, classification],
     );
     return existing.id;
   }
-  const created = await pool.query<{ id: string }>(
+  const created = await ex.query<{ id: string }>(
     `insert into threads (organization_id, contact_id, channel, classification, last_message_at, is_read)
      values ($1, $2, $3, $4, now(), false) returning id`,
     [org, contactId, channel, classification],
@@ -66,14 +102,25 @@ async function upsertThread(
   return created.rows[0]!.id;
 }
 
-/** Notifie tous les membres de l'organisation (règle non négociable n° 9). */
-export async function notifyReply(pool: Pool, org: string, title: string, body: string): Promise<void> {
-  await pool.query(
+/**
+ * Notifie tous les membres de l'organisation, avec l'événement de son choix.
+ * `event` distingue une réponse entrante (`contact.replied`, compté comme
+ * telle par le tableau de bord) d'un autre motif de notification — un
+ * expéditeur déconnecté ou une relance en retard ne doivent pas gonfler le
+ * compteur de réponses.
+ */
+export async function notifier(ex: Executeur, org: string, event: string, title: string, body: string): Promise<void> {
+  await ex.query(
     `insert into notifications (organization_id, user_id, event, payload, channel, sent_at)
-     select $1, m.user_id, 'contact.replied', $2::jsonb, 'push', now()
+     select $1, m.user_id, $3, $2::jsonb, 'push', now()
      from memberships m where m.organization_id = $1`,
-    [org, JSON.stringify({ title, body })],
+    [org, JSON.stringify({ title, body }), event],
   );
+}
+
+/** Notifie d'une réponse entrante (règle non négociable n° 9). */
+export async function notifyReply(ex: Executeur, org: string, title: string, body: string): Promise<void> {
+  await notifier(ex, org, 'contact.replied', title, body);
 }
 
 /**
@@ -81,14 +128,14 @@ export async function notifyReply(pool: Pool, org: string, title: string, body: 
  * sans filtre de canal : une réponse arrête la séquence entière.
  */
 async function applyToEnrollment(
-  pool: Pool,
+  ex: Executeur,
   org: string,
   contactId: string,
   classification: string,
   resumeInDays: number | undefined,
 ): Promise<void> {
   if (classification === 'human_reply') {
-    await pool.query(
+    await ex.query(
       `update enrollments set status = 'replied', ended_at = now()
         where organization_id = $1 and contact_id = $2 and status in ${LIVE_STATUSES}`,
       [org, contactId],
@@ -97,7 +144,7 @@ async function applyToEnrollment(
   }
   if (classification === 'auto_absence') {
     const days = resumeInDays ?? 7;
-    await pool.query(
+    await ex.query(
       `update enrollments
           set status = 'paused_absence',
               resume_at = now() + ($3 || ' days')::interval,
@@ -108,7 +155,7 @@ async function applyToEnrollment(
     return;
   }
   if (classification === 'auto_left_company') {
-    await pool.query(
+    await ex.query(
       `update enrollments set status = 'stopped', stop_reason = 'contact_left', ended_at = now()
         where organization_id = $1 and contact_id = $2 and status in ${LIVE_STATUSES}`,
       [org, contactId],
@@ -132,7 +179,7 @@ async function applyToEnrollment(
  * à la main — il n'y a rien à rattacher, et on ne fabrique pas.
  */
 async function recordOutcome(
-  pool: Pool,
+  ex: Executeur,
   org: string,
   contactId: string,
   classification: string,
@@ -141,7 +188,7 @@ async function recordOutcome(
   // chiffre qui dit si la prospection marche.
   if (classification !== 'human_reply') return;
 
-  await pool.query(
+  await ex.query(
     `insert into outcomes (action_id, type)
      select a.id, 'replied'
        from actions a
@@ -160,21 +207,22 @@ async function recordOutcome(
  * Enregistre une réponse entrante et en tire toutes les conséquences.
  *
  * Renvoie `isNew: false` si le message était déjà connu. La relève LinkedIn
- * repasse sur les mêmes conversations à chaque tour : sans cette garde, un seul
- * message rouvrirait le fil et renotifierait l'opérateur indéfiniment.
+ * comme la relève SalesBlink repassent sur les mêmes conversations à chaque
+ * tour : sans cette garde, un seul message rouvrirait le fil et renotifierait
+ * l'opérateur indéfiniment.
  */
-export async function recordInboundReply(pool: Pool, org: string, reply: InboundReply): Promise<RecordedReply> {
+export async function recordInboundReply(ex: Executeur, org: string, reply: InboundReply): Promise<RecordedReply> {
   const cls = classifyReply(reply.body, reply.headers ?? null) ?? { classification: 'human_reply' as const };
 
   if (reply.providerMessageId) {
-    const deja = await pool.query<{ id: string }>(
+    const deja = await ex.query<{ id: string }>(
       `select m.id from thread_messages m
          join threads t on t.id = m.thread_id
         where t.organization_id = $1 and m.provider_message_id = $2 limit 1`,
       [org, reply.providerMessageId],
     );
     if (deja.rows[0]) {
-      const fil = await pool.query<{ id: string }>(
+      const fil = await ex.query<{ id: string }>(
         `select thread_id as id from thread_messages where id = $1`,
         [deja.rows[0].id],
       );
@@ -182,8 +230,8 @@ export async function recordInboundReply(pool: Pool, org: string, reply: Inbound
     }
   }
 
-  const threadId = await upsertThread(pool, org, reply.contactId, reply.channel, cls.classification);
-  await pool.query(
+  const threadId = await upsertThread(ex, org, reply.contactId, reply.channel, cls.classification);
+  await ex.query(
     `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
      values ($1, 'in', $2, $3, $4::jsonb, $5)`,
     [
@@ -195,8 +243,8 @@ export async function recordInboundReply(pool: Pool, org: string, reply: Inbound
     ],
   );
 
-  await applyToEnrollment(pool, org, reply.contactId, cls.classification, cls.resumeInDays);
-  await recordOutcome(pool, org, reply.contactId, cls.classification);
+  await applyToEnrollment(ex, org, reply.contactId, cls.classification, cls.resumeInDays);
+  await recordOutcome(ex, org, reply.contactId, cls.classification);
 
   return { threadId, classification: cls.classification, isNew: true };
 }

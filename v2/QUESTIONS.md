@@ -71,7 +71,7 @@ Format :
 **Impact si l'arbitrage humain diffère.** Brancher l'org courante quand le sélecteur existe.
 
 **Question 3.** Test de connexion par provider.
-**Décision prise.** Interface + action serveur en place, mais le test réel (appel API) arrive avec chaque provider (T20 Smartlead, T22 LinkedIn…). Pour l'instant, il valide que le provider est connu.
+**Décision prise.** Interface + action serveur en place, mais le test réel (appel API) arrive avec chaque provider (T20 email, T22 LinkedIn…). Pour l'instant, il valide que le provider est connu.
 **Impact si l'arbitrage humain diffère.** Implémenter `testConnection` dans chaque manifest de provider.
 
 ## T6 — Contrats et registre de providers
@@ -161,7 +161,7 @@ Format :
 1. **Planification.** L'action de l'étape due est planifiée à `now` (immédiat) ; le décalage fenêtre ouvrée (`shiftIntoBusinessHours`), le jitter et les quotas d'expéditeur (`allocateWithinQuota`) ne sont pas encore appliqués dans le tick (helpers purs prêts). Le pacing LinkedIn reste, lui, appliqué en aval (file + serveur).
 2. **Liaison expéditeur.** `resolveSender` n'est pas encore invoqué par le tick (l'envoi LinkedIn passe par la session de l'utilisateur, pas par un `sender`). `actions.sender_id` reste nul pour l'instant.
 3. **Approbation.** File d'attente humaine (`pending_approval`) déclenchée si : canal `letter`, mode LinkedIn `manual` (curseur), ou `approval_policy` de la campagne (`mode:'all'` ou `channels:[…]`). Le budget courrier (`letter_monthly_budget_eur`) et l'écran de validation ne sont pas encore câblés.
-4. **Canaux dispatchés.** Seuls `email` (Smartlead, existant) et `linkedin_invite`/`linkedin_message` sont routés. Le tick **émet** aussi les actions `letter`/`call` mais aucun envoi aval n'existe encore pour elles. L'email : l'action est émise mais le tick n'enfile pas encore de job Smartlead (mapping campagne→id Smartlead + assemblage des leads = ticket dédié).
+4. **Canaux dispatchés.** Seuls `email` (fournisseur d'envoi externe, existant) et `linkedin_invite`/`linkedin_message` sont routés. Le tick **émet** aussi les actions `letter`/`call` mais aucun envoi aval n'existe encore pour elles. L'email : l'action est émise mais le tick n'enfile pas encore de job d'envoi (mapping campagne→id externe + assemblage des leads = ticket dédié).
 5. **Rendu des variables.** Le corps du message LinkedIn est pris tel quel dans le template ; la résolution des variables (`unresolvedVariables` de `runGuards`) n'est pas encore appliquée.
 6. **Réconciliation des résultats.** L'action reste en `scheduled` ; l'état d'envoi réel vit dans `linkedin_action_queue`. Le rapprochement `outcomes`/`actions` (ouvert/répondu/accepté) est un ticket séparé.
 
@@ -218,9 +218,9 @@ Le code de migration vient plus tard (après parité, cf. issue #17) ; cette dé
 
 Périmètre minimal pour que le v2 remplace le v1 = **Jalons 0 + 1 + 2, + T19, + T20**, **plus** :
 - **T24** (éditeur de campagne) — l'édition des templates/séquences en application fait partie de la parité (T16 ne donne que les écrans en lecture).
-- **Volet webhooks de T27** — réception des webhooks Smartlead (le reste de T27, API publique, reste hors parité).
+- **Volet webhooks de T27** — réception des webhooks du fournisseur d'envoi email (le reste de T27, API publique, reste hors parité).
 
-Et deux compléments **dans** la plage, cadrés mais pas finis : l'**auto-apprentissage de la blacklist** (T12) et le **mapping campagne→Smartlead + enfilage depuis le tick** (T20). Le reste (LinkedIn, courrier, téléphone, boîte de réception complète, API publique) reste hors critère de bascule.
+Et deux compléments **dans** la plage, cadrés mais pas finis : l'**auto-apprentissage de la blacklist** (T12) et le **mapping campagne→fournisseur d'envoi + enfilage depuis le tick** (T20). Le reste (LinkedIn, courrier, téléphone, boîte de réception complète, API publique) reste hors critère de bascule.
 
 ## Résolu — Scoring LLM des signaux + auto-apprentissage blacklist (T12) [2026-08-25]
 
@@ -297,22 +297,24 @@ contact lié à un expéditeur email n'aurait aucun moyen d'être touché sur Li
 **Documentation.** `docs/02-data-model.md` est corrigé pour refléter la clé retenue. Aucune donnée à
 reprendre : la table est vide, aucune migration du v2 n'a encore été appliquée nulle part.
 
-## Résolu — Collision de schéma `smartlead_campaigns` avec le socle actuel [2026-08-27]
+## Résolu — Collision de schéma de la table de mapping campagne email avec le socle actuel [2026-08-27]
 
 **Question.** Les migrations du v2 s'appliquent désormais sur la même base Postgres que le socle
-actuel, jusqu'à la bascule. Or `public.smartlead_campaigns` existe déjà des deux côtés, avec des
-formes incompatibles : côté socle, `workspace_id` NOT NULL référençant `workspaces`, `persona_id`
-référençant `icp_personas` et non `personas`, et une unicité sur `(workspace_id, persona_id)`. Le
-`create table if not exists` du v2 devient alors un no-op silencieux, et la suite de la migration
-casse sur une colonne `organization_id` absente.
+actuel, jusqu'à la bascule. Or la table de mapping persona→campagne du fournisseur d'envoi d'alors
+existe déjà des deux côtés, sous le même nom, avec des formes incompatibles : côté socle,
+`workspace_id` NOT NULL référençant `workspaces`, `persona_id` référençant `icp_personas` et non
+`personas`, et une unicité sur `(workspace_id, persona_id)`. Le `create table if not exists` du v2
+devient alors un no-op silencieux, et la suite de la migration casse sur une colonne
+`organization_id` absente.
 
-**Décision prise.** La table du v2 s'appelle `smartlead_campaign_mappings`. L'alternative —
-rendre `workspace_id` nullable et retirer la clé étrangère vers `icp_personas` — revenait à
-affaiblir un schéma qui tourne en production pour arranger celui qui ne tourne pas encore, et
-aurait laissé le v2 insérer des lignes que le socle actuel considère comme invalides. Le coût du
-renommage est faible : la migration, deux lignes dans `sequence.ts` et le harnais `sequence-tick`.
+**Décision prise.** La table du v2 prend un nom distinct de celle du socle (suffixé `_mappings`).
+L'alternative — rendre `workspace_id` nullable et retirer la clé étrangère vers `icp_personas` —
+revenait à affaiblir un schéma qui tourne en production pour arranger celui qui ne tourne pas
+encore, et aurait laissé le v2 insérer des lignes que le socle actuel considère comme invalides.
+Le coût du renommage est faible : la migration, deux lignes dans `sequence.ts` et le harnais
+`sequence-tick`.
 
-**Impact si l'arbitrage humain diffère.** Le nom peut être raccourci en `smartlead_campaigns`
+**Impact si l'arbitrage humain diffère.** Le nom peut être raccourci pour reprendre celui du socle
 dans le commit de bascule, quand l'ancien socle disparaît. Aucune donnée à reprendre : la table
 du v2 est vide jusqu'au premier mapping.
 
@@ -334,16 +336,16 @@ Découvert pendant la config des clés du run réel : l'écran Fournisseurs renv
 
 ## Résolu — Gate de délivrabilité email branché (T14/T20, avant recette) [2026-08-26]
 
-Retour de JB : le module `email-validation` (`bouncer.ts`, `reoon.ts`, `email-gate.ts`, `email-pattern.ts`) était porté mais **aucun handler ne l'appelait** → un email non vérifié pouvait partir vers Smartlead (risque réputation, non rattrapable).
+Retour de JB : le module `email-validation` (`bouncer.ts`, `reoon.ts`, `email-gate.ts`, `email-pattern.ts`) était porté mais **aucun handler ne l'appelait** → un email non vérifié pouvait partir vers le fournisseur d'envoi (risque réputation, non rattrapable).
 
-**Correctif** : le gate `shouldPushToSmartlead` est branché au **point d'envoi email du tick** (`sequence.ts`). Avant de produire le job de dispatch Smartlead, on construit un `GateInput` depuis le contact (`email`, `email_status → deliverability_status`, prénom/nom) et on interroge le gate. S'il **refuse**, l'action passe à `blocked` avec `block_reason = 'email_gate:<raison>'` et **aucun lead n'est poussé**. Module exposé en sous-chemin `@jay-reach/providers/email-validation` (barrel + export package.json + path tsconfig).
+**Correctif** : le gate de délivrabilité (aujourd'hui `emailGateAllows`) est branché au **point d'envoi email du tick** (`sequence.ts`). Avant de produire le job de dispatch email, on construit un `GateInput` depuis le contact (`email`, `email_status → deliverability_status`, prénom/nom) et on interroge le gate. S'il **refuse**, l'action passe à `blocked` avec `block_reason = 'email_gate:<raison>'` et **aucun lead n'est poussé**. Module exposé en sous-chemin `@jay-reach/providers/email-validation` (barrel + export package.json + path tsconfig).
 
 **Décisions / périmètre** :
 - **Gate conservateur** : la logique existante refuse par défaut tout ce qui n'est pas explicitement délivrable. Avec `domain_pattern` null (non câblé), seul `email_status = 'valid'` passe ; `unknown`/`risky`/`invalid` sont bloqués. **Conséquence assumée** (validée avec l'utilisateur) : rien ne part sans vérification — c'est l'intention (protection domaine), mais la **vérification email doit tourner** (FullEnrich pose déjà `email_status` ; Reoon en complément).
 - **Vérification Reoon en direct** (calcul du `deliverability_status` à l'enrichissement, `verifyEmail`) **pas encore câblée** : c'est ce qui alimentera le gate pour les emails que FullEnrich laisse `unknown`. À brancher derrière le pont credentials (clé Reoon), testable au run réel. Le `domain_pattern` (statistiques d'envoi/bounce) reste `null` (tables legacy non portées).
 - **Blocage de l'action** (pas d'arrêt d'inscription) : l'étape email est bloquée, la séquence peut continuer sur d'autres canaux.
 
-**Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 7 — contact `email_status='valid'` → 1 job Smartlead ; contact `email_status='invalid'` → **aucun push**, action `blocked / email_gate:bouncer_invalid`. + typecheck/lint/build, 165 tests.
+**Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 7 — contact `email_status='valid'` → 1 job email ; contact `email_status='invalid'` → **aucun push**, action `blocked / email_gate:bouncer_invalid`. + typecheck/lint/build, 165 tests.
 ## Résolu — Opposition au démarchage appliquée (T8/T12, avant recette) [2026-08-26]
 
 Retour de JB sur le worker réel : `prospecting_opposition` n'était posé nulle part → le filtre d'opposition au démarchage (non désactivable, spec) n'était pas appliqué.
@@ -357,15 +359,15 @@ Retour de JB sur le worker réel : `prospecting_opposition` n'était posé nulle
 
 **Vérifié** : `test/pg-verify/scoring.sh` (compte `prospecting_opposition=true` → signal écarté ; `prefiltered` +1) + test unitaire `isProspectingOpposition`. Pas de migration (la colonne `accounts.prospecting_opposition` existe déjà).
 
-## Résolu — Réception des webhooks Smartlead (T27, volet réception email) [2026-08-25]
+## Résolu — Réception des webhooks du fournisseur d'envoi email (T27, volet réception email) [2026-08-25]
 
-Rien ne recevait les retours email : la boucle email n'était pas fermée (pas de réponses en boîte de réception, pas de bounces/désinscriptions en suppression). Volet parité de T27 (recoupe le T20 « webhooks signés, bounces et désinscriptions »).
+Rien ne recevait les retours email : la boucle email n'était pas fermée (pas de réponses en boîte de réception, pas de bounces/désinscriptions en suppression). Volet parité de T27 (recoupe le T20 « webhooks signés, bounces et désinscriptions »). *(Ce webhook entrant et son écran de config ont depuis été retirés — lot 3, remplacés par la relève périodique de SalesBlink.)*
 
-**Parseur** `@jay-reach/core/inbox/smartlead-events.ts` (Zod, défensif) : `parseSmartleadEvent` normalise les payloads Smartlead (noms de champs variables) vers `{ type, email, campaignId, replyText, headers, messageId, raw }` ; `type` ∈ replied/bounced/unsubscribed/opened/clicked/sent/unknown. Testé unitairement.
+**Parseur** `@jay-reach/core/inbox/` (Zod, défensif) : normalise les payloads du fournisseur (noms de champs variables) vers `{ type, email, campaignId, replyText, headers, messageId, raw }` ; `type` ∈ replied/bounced/unsubscribed/opened/clicked/sent/unknown. Testé unitairement.
 
-**Endpoint** `apps/web/app/api/webhooks/smartlead/route.ts` : POST, `runtime nodejs`. Auth par **`?org=&token=`** — token comparé en **temps constant** (`timingSafeEqual`) au secret `credentials.config.webhook_secret` du provider Smartlead de l'org. (Choix : Smartlead ne permet de configurer qu'une **URL** de webhook, pas d'en-tête personnalisé → le secret vit dans l'URL, comme le pattern `extension/linkedin/update`.) Body parsé (Zod) → `processSmartleadEvent`. **Middleware [fix review #25]** : `/api/webhooks` ajouté à `PUBLIC_PREFIXES` (`auth-guard.ts`) — sinon en production (Supabase configuré → fail-closed), le POST de Smartlead serait redirigé vers `/login` et le handler jamais appelé (panne silencieuse et durable). Ces routes ne sont pas « ouvertes » : elles portent leur propre auth par token, comme `/api/extension`. Test de non-régression ajouté (`auth-guard.test.ts` : webhook `allow` en prod non authentifiée).
+**Endpoint** `apps/web/app/api/webhooks/.../route.ts` : POST, `runtime nodejs`. Auth par **`?org=&token=`** — token comparé en **temps constant** (`timingSafeEqual`) au secret `credentials.config.webhook_secret` du provider d'envoi email de l'org. (Choix : ce fournisseur ne permettait de configurer qu'une **URL** de webhook, pas d'en-tête personnalisé → le secret vit dans l'URL, comme le pattern `extension/linkedin/update`.) Body parsé (Zod) → la fonction d'effets email. **Middleware [fix review #25]** : `/api/webhooks` ajouté à `PUBLIC_PREFIXES` (`auth-guard.ts`) — sinon en production (Supabase configuré → fail-closed), le POST du fournisseur serait redirigé vers `/login` et le handler jamais appelé (panne silencieuse et durable). Ces routes ne sont pas « ouvertes » : elles portent leur propre auth par token, comme `/api/extension`. Test de non-régression ajouté (`auth-guard.test.ts` : webhook `allow` en prod non authentifiée).
 
-**Traitement** `apps/web/lib/webhooks/smartlead.ts` (`pg`, donc testable hermétiquement — comme les handlers worker) :
+**Traitement** `apps/web/lib/webhooks/` (`pg`, donc testable hermétiquement — comme les handlers worker) :
 - **Contact inconnu → RIEN stocké** (docs/06 + CLAUDE.md) : résolution par `(org, lower(email))`, sinon on sort sans écrire.
 - **Réponse** : `classifyReply` (réutilisé) ; **défaut `human_reply`** si la détection auto ne matche pas (l'événement EST une réponse → jamais continuer à écrire à quelqu'un qui a répondu). Fil (`threads`) + message entrant (`thread_messages` direction `in`) + effet inscription (human_reply→`replied` ; auto_absence→`paused_absence`+`resume_at` ; auto_left_company→`stopped/contact_left`) + **notification** à tous les membres de l'org.
 - **Bounce / désinscription** : `suppressions` (origin `bounce`/`unsubscribe`, dédup par (org, scope, value)) + inscription `bounced`/`stopped`.
@@ -374,28 +376,28 @@ Rien ne recevait les retours email : la boucle email n'était pas fermée (pas d
 
 **Décisions / périmètre** :
 - **Ouvertures / clics** non traités ici : un `outcome` exige une `action_id` (FK) et le dispatch n'écrit pas encore `actions.provider_ref` pour corréler → laissé à un raffinement (c'est aussi ce qui rebranchera les conditions d'étape retirées en #24).
-- **Auth par token d'URL** plutôt que signature HMAC de Smartlead (schéma de signature non documenté de façon fiable côté provisioning). À revoir si Smartlead expose une signature stable.
-- **Provisionnement** (appeler `upsertCampaignWebhook` pour abonner les campagnes + écran de config du secret) = **volet suivant** (T27-b). Ici on reçoit ; brancher l'émission côté Smartlead vient après.
+- **Auth par token d'URL** plutôt que signature HMAC du fournisseur (schéma de signature non documenté de façon fiable côté provisioning). À revoir si ce fournisseur expose une signature stable.
+- **Provisionnement** (abonner les campagnes automatiquement + écran de config du secret) = **volet suivant** (T27-b). Ici on reçoit ; brancher l'émission côté fournisseur vient après.
 
-**Vérifié** : `bash test/pg-verify/smartlead-webhook.sh` (jr_dev, zéro API) → réponse humaine (arrêt + fil + message + notif), auto-absence (`paused_absence`+`resume_at`), bounce (suppression+`bounced`), désinscription (suppression+`stopped`), **contact inconnu → aucune écriture**. + tests unitaires du parseur, typecheck/lint/build web, 164 tests.
+**Vérifié** : harnais `pg-verify` dédié (jr_dev, zéro API) → réponse humaine (arrêt + fil + message + notif), auto-absence (`paused_absence`+`resume_at`), bounce (suppression+`bounced`), désinscription (suppression+`stopped`), **contact inconnu → aucune écriture**. + tests unitaires du parseur, typecheck/lint/build web, 164 tests.
 
-## Résolu — Configuration du webhook Smartlead (T27, volet config) [2026-08-25]
+## Résolu — Configuration du webhook du fournisseur d'envoi email (T27, volet config) [2026-08-25]
 
-Complète la réception (#25) : de quoi **brancher** le webhook côté opérateur.
+Complète la réception (#25) : de quoi **brancher** le webhook côté opérateur. *(Écran retiré depuis — lot 3.)*
 
 **RPC `merge_provider_config(org, provider, config)`** (migration `20260825160000`) : met à jour la **config jsonb** d'un provider **sans toucher au secret chiffré**. Nécessaire parce que `set_credential` ré-écrit `secret = pgp_sym_encrypt(p_secret, …)` — impossible de poser juste `config.webhook_secret` sans re-fournir la clé API (indisponible en clair côté web). Upsert (config-only possible, `credentials.secret` étant nullable), merge `config || excluded.config`. Réservé `service_role` (comme `set_provider_credential`) ; la server action fait le `requireRole('admin')`.
 
-**Server action** `regenerateSmartleadWebhookSecret(org)` : génère un secret aléatoire (`randomBytes(24).hex`), le range dans `credentials.config.webhook_secret`, le renvoie pour affichage.
+**Server action** de régénération du secret : génère un secret aléatoire (`randomBytes(24).hex`), le range dans `credentials.config.webhook_secret`, le renvoie pour affichage.
 
-**Écran** `/settings/smartlead` (+ nav) : affiche l'**URL du webhook** (`${APP_URL}/api/webhooks/smartlead?org=…&token=…`), les événements à activer (`LEAD_REPLIED`, `EMAIL_BOUNCED`, `LEAD_UNSUBSCRIBED`), un bouton **copier**, et **générer/régénérer** le secret. i18n FR/EN/NL.
+**Écran** de réglage du webhook (+ nav) : affiche l'**URL du webhook** (`${APP_URL}/api/webhooks/...?org=…&token=…`), les événements à activer (`LEAD_REPLIED`, `EMAIL_BOUNCED`, `LEAD_UNSUBSCRIBED`), un bouton **copier**, et **générer/régénérer** le secret. i18n FR/EN/NL.
 
 **Contrôle de LECTURE du secret [fix review #26]** : le secret est un identifiant d'authentification → sa lecture exige `admin`, comme sa régénération. `page.tsx` lit le secret via le client `service_role` (la RLS ne l'expose pas) **seulement après `requireRole(orgId, 'admin')`** — sinon un `viewer` verrait le token + l'org id (tous deux dans l'URL affichée) et pourrait **forger des événements** (marquer des contacts répondus/désinscrits/bounce) : élévation de privilège. Non-admin → l'écran affiche « admin requis », sans secret ni URL. (Applique la règle T5 : « ne jamais lire le secret côté client sans contrôle ».)
 
 **Décisions / périmètre** :
-- **Collage manuel de l'URL** dans Smartlead (campagne → Webhooks) plutôt qu'un provisionnement automatique via l'API Smartlead (`upsertCampaignWebhook`). Motif : l'appel API exige la **clé API déchiffrée**, disponible **uniquement côté worker** (`app.get_credential`), pas dans une server action web ; l'automatiser proprement suppose un job worker déclenché depuis le web (pas de bus pg-boss côté web aujourd'hui). Le collage manuel est fiable, self-hosted-friendly, et suffit à activer la réception. Provisionnement auto = raffinement ultérieur.
+- **Collage manuel de l'URL** chez le fournisseur (campagne → Webhooks) plutôt qu'un provisionnement automatique via son API. Motif : l'appel API exige la **clé API déchiffrée**, disponible **uniquement côté worker** (`app.get_credential`), pas dans une server action web ; l'automatiser proprement suppose un job worker déclenché depuis le web (pas de bus pg-boss côté web aujourd'hui). Le collage manuel est fiable, self-hosted-friendly, et suffit à activer la réception. Provisionnement auto = raffinement ultérieur.
 - **URL de base** via l'env `APP_URL` (déjà présent dans `.env.example`) ; sans elle, l'écran affiche un placeholder de domaine.
 
-**Vérifié** : merge de config prouvé (upsert config-only, puis merge qui **préserve** `webhook_secret` et ajoute les autres clés) ; typecheck/lint/build web (`/settings/smartlead`), 164 tests.
+**Vérifié** : merge de config prouvé (upsert config-only, puis merge qui **préserve** `webhook_secret` et ajoute les autres clés) ; typecheck/lint/build web (écran de réglage du webhook), 164 tests.
 
 ## Résolu — Éditeur de séquence dans l'écran campagne (T24, partie éditeur) [2026-08-25]
 
@@ -465,23 +467,26 @@ Le schéma `message_templates` était versionné/multilingue, mais **aucune logi
 **Application dans le séquenceur** (règle #2) : `composeTick` gère deux nouveaux blocages — `missing_variable` (variable non résolue) et `missing_locale` (variante de langue absente). Les deux **bloquent l'action mais N'ARRÊTENT PAS l'inscription** (statut `active`, `next_action_at` null) : c'est récupérable, l'opérateur complète le contact ou ajoute la variante, un re-tick réévalue. Le worker charge le corps **par la langue du contact** (`contacts.locale`), assemble les valeurs (contact/compte/persona/signal/liste), rend, et trace la version exacte (`actions.template_id`). Les champs manquants sont nommés dans `actions.payload.missingVariables` (pour le regroupement UI).
 
 **Décisions / périmètre** :
-- **Rendu local réservé aux canaux dont Jay Reach possède le corps** (message LinkedIn, courrier). L'email est rendu par Smartlead (variables = champs du lead) ; son blocage variable relève de T20/Smartlead, pas d'ici.
+- **Rendu local réservé aux canaux dont Jay Reach possède le corps** (message LinkedIn, courrier). À l'époque, l'email était rendu par le fournisseur d'envoi (variables = champs du lead) ; son blocage variable relevait de T20, pas d'ici. *(Devenu obsolète — lot 3 : Jay Reach rend désormais lui-même le corps de l'email, avant l'envoi.)*
 - Sans `contacts.locale` connue, on prend la dernière version (repli, pas de `missing_locale`) plutôt que de bloquer.
 - **Non fait dans cette partie** (partie « éditeur » à suivre) : l'écran d'édition versionné avec onglets fr/en/nl et indicateur de manque, le panneau d'historique de versions + taux de réponse, la traduction assistée relue, le retour arrière de version (nécessite une colonne `is_active`/`status` — absente, non ajoutée ici), et l'UI de regroupement des actions bloquées par champ manquant. Le `guards.ts` porte encore une logique `unresolvedVariables` parallèle (non branchée) ; à unifier avec `composeTick` lors de cette partie.
 
 **Vérifié** : `bash test/pg-verify/sequence-tick.sh` étape 8 (base locale, zéro envoi réel) → fr + prénom présent = corps substitué dispatché (« Bonjour Marie chez … ») + `template_id` tracé ; fr + prénom manquant = **bloqué `missing_variable`**, champ `prenom` nommé, inscription non arrêtée ; langue `nl` sans variante = **bloqué `missing_locale`**. + 21 tests unitaires (extraction, validation par nature, rendu/repli, longueurs, `composeTick`).
 
-## Résolu — Enfilage email depuis le tick vers Smartlead (T20) [2026-08-25]
+## Résolu — Enfilage email depuis le tick vers le fournisseur d'envoi (T20) [2026-08-25]
 
-Le tick du séquenceur émettait bien l'action email mais **n'enfilait pas de job Smartlead** (le `dispatch → Smartlead` existait, mais rien ne l'alimentait pour l'email). Comblé.
+*(Le mapping par persona décrit ici a depuis été retiré — lot 3 : SalesBlink ne porte plus qu'un
+transport par étape, sans mapping campagne par persona. Section conservée pour l'historique.)*
 
-- **Mapping PAR PERSONA [révisé 2026-08-25 après review #20]** : première version = `campaigns.smartlead_campaign_id` (une campagne Smartlead par campagne Jay Reach). Review JB : mauvaise granularité. Le socle v1 mappe **par persona** (`smartlead_campaigns (workspace, persona) → campagne`, avec `enabled`) — on n'écrit pas la même chose à un Directeur de site et à un Responsable RH, donc pas la même séquence Smartlead ; et un même couple ne peut pas exprimer deux personas vers une même campagne ni le toggle d'activation. Migration `20260825130000_smartlead_campaigns.sql` : table `smartlead_campaigns (organization_id, persona_id, campaign_id, campaign_name, enabled)`, unicité `(org, persona)`, RLS (lecture viewer+, écriture admin+). La colonne `campaigns.smartlead_campaign_id` est retirée (drop if exists). Plusieurs personas peuvent partager une campagne ; `enabled=false` suspend l'envoi **sans perdre l'identifiant**.
-- **Tick** (`tickDueEnrollments`) : la requête résout la campagne Smartlead via **la persona du contact** (`left join smartlead_campaigns sc on sc.persona_id = c.persona_id and sc.enabled`), + les champs du lead (contact + compte). Quand un envoi email est autorisé, un job `actions.dispatch` (channel `email`, `campaignId` = id Smartlead de la persona, `leads` = [contact assemblé : email, prénom, nom, entreprise, site, LinkedIn]) est produit. **Sans mapping activé pour la persona** : action planifiée mais **non dispatchée** (log), jamais d'envoi vers une campagne inconnue.
+Le tick du séquenceur émettait bien l'action email mais **n'enfilait pas de job d'envoi** (le `dispatch → fournisseur` existait, mais rien ne l'alimentait pour l'email). Comblé.
+
+- **Mapping PAR PERSONA [révisé 2026-08-25 après review #20]** : première version = `campaigns.<fournisseur>_campaign_id` (une campagne du fournisseur par campagne Jay Reach). Review JB : mauvaise granularité. Le socle v1 mappe **par persona** (table de mapping `(workspace, persona) → campagne`, avec `enabled`) — on n'écrit pas la même chose à un Directeur de site et à un Responsable RH, donc pas la même séquence chez le fournisseur ; et un même couple ne peut pas exprimer deux personas vers une même campagne ni le toggle d'activation. Migration `20260825130000` : table de mapping `(organization_id, persona_id, campaign_id, campaign_name, enabled)`, unicité `(org, persona)`, RLS (lecture viewer+, écriture admin+). La colonne `campaigns.<fournisseur>_campaign_id` est retirée (drop if exists). Plusieurs personas peuvent partager une campagne ; `enabled=false` suspend l'envoi **sans perdre l'identifiant**.
+- **Tick** (`tickDueEnrollments`) : la requête résout la campagne du fournisseur via **la persona du contact** (jointure sur la table de mapping, filtrée `enabled`), + les champs du lead (contact + compte). Quand un envoi email est autorisé, un job `actions.dispatch` (channel `email`, `campaignId` = id du fournisseur pour la persona, `leads` = [contact assemblé : email, prénom, nom, entreprise, site, LinkedIn]) est produit. **Sans mapping activé pour la persona** : action planifiée mais **non dispatchée** (log), jamais d'envoi vers une campagne inconnue.
 - **Dédup** : correction de `runTick` — la réf de dédup de `actions.dispatch` retombait sur `'x'` pour l'email (tous les emails auraient partagé un id) ; elle utilise désormais l'adresse.
 
-**Vérifié hermétiquement** (`bash test/pg-verify/sequence-tick.sh`, étape 7) : persona → campagne `SL-EMAIL-77` **activée** → 1 job email + lead assemblé (société depuis le compte) ; mapping **désactivé** (`enabled=false`) → 0 job dispatché mais identifiant conservé.
+**Vérifié hermétiquement** (`bash test/pg-verify/sequence-tick.sh`, étape 7) : persona → campagne test **activée** → 1 job email + lead assemblé (société depuis le compte) ; mapping **désactivé** (`enabled=false`) → 0 job dispatché mais identifiant conservé.
 
-**Reste (raffinements)** : régler ces mappings **dans l'app** = onglet Campagnes (**T24**, relie chaque persona active à sa campagne Smartlead avec le toggle) ; pour l'instant via SQL.
+**Reste (raffinements)** : régler ces mappings **dans l'app** = onglet Campagnes (**T24**, relie chaque persona active à sa campagne chez le fournisseur avec le toggle) ; pour l'instant via SQL.
 
 ## Résolu — Garde d'authentification (middleware) [retour PR de JB, 2026-08-24]
 

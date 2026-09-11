@@ -34,7 +34,7 @@
     "secretHidden": "sleutel eindigend op {last4}",
     "save": "Opslaan",
     "saved": "Opgeslagen",
-    "smartlead": "Smartlead (e-mail)",
+    "salesblink": "SalesBlink (e-mail)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
     "bouncer": "Bouncer (e-mailverificatie)",
@@ -58,10 +58,21 @@
       "enrichDailyCapPlaceholder": "bv. 50",
       "scoreDailyCap": "Daglimiet voor scoring",
       "scoreDailyCapHint": "Signalen die de scorings-AI per dag verwerkt, alle bronnen samen. Zet 0 om het scoren te pauzeren.",
-      "scoreDailyCapPlaceholder": "bv. 300"
+      "scoreDailyCapPlaceholder": "bv. 300",
+      "emailDailyCap": "Dagelijks e-mailplafond",
+      "emailDailyCapHint": "E-mails per dag naar SalesBlink, alle campagnes (0 = pauze, leeg = onbeperkt)",
+      "emailDailyCapPlaceholder": "Aantal, leeg = onbeperkt",
+      "syncIntervalMin": "Ophaalfrequentie (minuten)",
+      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, antwoorden en bounces bij SalesBlink leest (2 tot 60)",
+      "syncIntervalMinPlaceholder": "Minuten, standaard 5",
+      "replyMaxDelayH": "Maximale vertraging van een opvolging (uren)",
+      "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
+      "replyMaxDelayHPlaceholder": "Uren, standaard 6"
     },
-    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
-    "secretUnchanged": "Laat leeg om de huidige sleutel te behouden"
+    "secretUnchanged": "Laat leeg om de huidige sleutel te behouden",
+    "todayUsage": "vandaag: {used} / {cap}",
+    "lastSync": "{ago, select, never {Laatste controle: nooit} other {Laatste controle: {ago}}}",
+    "lastSyncError": "Laatste fout: {error}"
   },
   "jobs": {
     "title": "Achtergrondwachtrijen",
@@ -176,8 +187,7 @@
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
     "customers": "Klanten",
-    "templates": "Berichten",
-    "smartlead": "Smartlead-webhooks"
+    "templates": "Berichten"
   },
   "sources": {
     "eyebrow": "Detectie",
@@ -649,7 +659,11 @@
     "reason": {
       "letter": "Brief — verificatie vereist",
       "budget": "Budget overschreden",
-      "manual": "Handmatige modus"
+      "manual": "Handmatige modus",
+      "sender_unbound": "Geen afzender gekoppeld",
+      "missing_locale": "Taal van contact onbekend",
+      "missing_template": "Geen bericht gekoppeld aan de stap",
+      "missing_variable": "Niet-opgeloste berichtvariabele"
     }
   },
   "customers": {
@@ -734,25 +748,6 @@
     "dailyCapHelp": "Alle kanalen samen. Zijn de LinkedIn-instellingen strenger, dan gelden die: de strengste limiet wint altijd.",
     "dailyCapLink": "De LinkedIn-instellingen bekijken"
   },
-  "smartleadWh": {
-    "eyebrow": "E-mailontvangst",
-    "title": "Smartlead-webhooks",
-    "lead": "De webhook koppelt zichzelf bij de eerste verzending. Dit scherm dient enkel om ze opnieuw te koppelen of het geheim te vernieuwen.",
-    "demoNotice": "Verbind Supabase om de webhook te configureren.",
-    "urlTitle": "Webhook-URL",
-    "copy": "URL kopiëren",
-    "copied": "Gekopieerd ✓",
-    "noSecret": "Genereer eerst een secret om de URL te krijgen.",
-    "howTitle": "Hoe koppelen",
-    "step1": "Open in Smartlead de campagne → Webhooks → Toevoegen en plak de bovenstaande URL.",
-    "step2": "Activeer de events:",
-    "step3": "Opslaan. Antwoorden komen in de inbox; bounces en uitschrijvingen gaan naar uitsluiting.",
-    "generate": "Secret genereren",
-    "regenerate": "Secret opnieuw genereren",
-    "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
-    "yourDomain": "https://uw-instantie",
-    "adminOnly": "Alleen beheerders kunnen de webhook configureren."
-  },
   "senders": {
     "eyebrow": "Wie verstuurt",
     "title": "Afzenders",
@@ -776,6 +771,7 @@
     "sendFrom": "Vanaf",
     "sendTo": "Tot",
     "timezone": "Tijdzone",
+    "sendHoursSalesBlinkHint": "Deze uren worden naar SalesBlink gestuurd zodra de sequentie van de stap wordt aangemaakt. Een latere wijziging wordt niet automatisch doorgevoerd naar SalesBlink.",
     "form": {
       "add": "Afzender toevoegen",
       "cancel": "Annuleren",
@@ -787,7 +783,12 @@
       "emailPlaceholder": "voornaam@uw-domein.nl",
       "linkedinPlaceholder": "uw-profiel",
       "identityHint": "Wordt bij het aanmaken vastgelegd. Het benoemt het account bij de provider, dus later wijzigen verandert niet wat er werkelijk uitgaat."
-    }
+    },
+    "salesblinkBox": "SalesBlink-postbus",
+    "salesblinkBoxNone": "Nu geen SalesBlink-postbus beschikbaar. Controleer de sleutel onder Providers.",
+    "salesblinkHealth": "{etat, select, actif {Verzending actief} coupe {Verbroken: {message}} other {Nog nooit gecontroleerd}}",
+    "salesblinkCap": "SalesBlink-limiet",
+    "lowestApplies": "de laagste geldt"
   },
   "snippets": {
     "title": "Herbruikbare teksten",
@@ -802,5 +803,12 @@
     "cancel": "Annuleren",
     "delete": "Verwijderen",
     "empty": "Nog geen. Een handtekening, juridische vermeldingen: wat zich van bericht tot bericht herhaalt."
+  },
+  "campaign": {
+    "guard": {
+      "noSalesBlinkKey": "geen SalesBlink-sleutel ingesteld",
+      "noBoundEmailSender": "geen e-mailafzender gekoppeld aan een SalesBlink-postbus",
+      "emailSenderDisconnected": "de aan SalesBlink gekoppelde e-mailafzender heeft geen actieve verzending"
+    }
   }
 }
