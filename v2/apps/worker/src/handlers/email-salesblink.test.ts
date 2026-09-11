@@ -1,0 +1,359 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Pool } from 'pg';
+import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
+import { envoyerEmailSalesBlink, heuresEnvoiSalesBlink, type ClientSalesBlink } from './email-salesblink.js';
+import type { DispatchJob } from './dispatch.js';
+
+const ORG_ID = 'org-1';
+const ACTION_ID = 'action-1';
+const ENROLLMENT_ID = 'enrollment-1';
+const CAMPAIGN_ID = 'campagne-1';
+const STEP_ID = 'etape-1';
+const SENDER_ID = 'sender-1';
+
+/** Ligne complète de `chargerLigneInscription`, avec des defauts neutres. */
+function ligneInscription(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: ENROLLMENT_ID,
+    organization_id: ORG_ID,
+    campaign_id: CAMPAIGN_ID,
+    contact_id: 'contact-1',
+    signal_id: null,
+    current_step: 1,
+    linkedin_url: null,
+    email: 'contact@exemple.fr',
+    email_status: 'valid',
+    account_id: null,
+    persona_id: null,
+    approval_policy: {},
+    sending_paused_at: null,
+    lk_mode: null,
+    first_name: 'Marie',
+    last_name: 'Durand',
+    company_name: 'Acme',
+    domain: 'acme.fr',
+    locale: null,
+    job_title: 'Directrice',
+    city: 'Lyon',
+    headcount: 20,
+    persona_angle: null,
+    signal_title: null,
+    signal_occurred_at: null,
+    signal_location: null,
+    signal_url: null,
+    postal_code: '69000',
+    country: 'FR',
+    context_note: null,
+    ...overrides,
+  };
+}
+
+function jobEmail(overrides: Partial<NonNullable<DispatchJob['email']>> = {}): DispatchJob {
+  return {
+    organizationId: ORG_ID,
+    channel: 'email',
+    actionId: ACTION_ID,
+    email: {
+      enrollmentId: ENROLLMENT_ID,
+      contactId: 'contact-1',
+      stepId: STEP_ID,
+      campaignId: CAMPAIGN_ID,
+      templateParentId: 'gabarit-famille-1',
+      senderId: SENDER_ID,
+      locale: null,
+      ...overrides,
+    },
+  };
+}
+
+interface Reponse {
+  readonly rows: unknown[];
+  readonly rowCount: number;
+}
+
+interface Appel {
+  readonly sql: string;
+  readonly values: unknown[];
+}
+
+interface Gestionnaire {
+  readonly motif: RegExp;
+  readonly repondre: (values: unknown[]) => Reponse;
+}
+
+function ligne(rows: unknown[] = []): Reponse {
+  return { rows, rowCount: rows.length };
+}
+
+/** Pool factice : `query` est dispatché par motif de SQL, premier motif qui matche gagne. */
+function creerPoolFactice(gestionnaires: Gestionnaire[]): { pool: Pool; appels: Appel[] } {
+  const appels: Appel[] = [];
+  const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+    appels.push({ sql, values });
+    const trouve = gestionnaires.find((g) => g.motif.test(sql));
+    if (!trouve) {
+      throw new Error(`requete non prevue par le test :\n${sql}`);
+    }
+    return trouve.repondre(values);
+  });
+  return { pool: { query } as unknown as Pool, appels };
+}
+
+function clientFactice(overrides: Partial<ClientSalesBlink> = {}): ClientSalesBlink {
+  return {
+    creerGabaritNeutre: vi.fn(async () => 'gabarit-neutre-1'),
+    creerListe: vi.fn(async () => 'liste-1'),
+    creerSequenceEtape: vi.fn(async () => 'sequence-1'),
+    activerEtPlanifier: vi.fn(async () => undefined),
+    pousserLeads: vi.fn(async () => undefined),
+    repondreDansLeFil: vi.fn(async () => ({ idTache: 'tache-reponse-1' })),
+    ...overrides,
+  };
+}
+
+// Motifs de requetes communs a plusieurs scenarios.
+const CONFIG_CREDENTIALS = /select config from credentials/i;
+const SENDER = /from senders where id/i;
+const PLAFOND = /daily_cap/i;
+const CREDIT = /consume_provider_credit/i;
+const INSCRIPTION = /from enrollments e/i;
+const TEMPLATE = /from message_templates/i;
+const ENVOIS_ANTERIEURS = /payload ->> 'message_id'/i;
+const MODE_FORCE = /select payload ->> 'mode_force'/i;
+const BINDING_SELECT = /select sequence_id, list_id from email_transport_bindings/i;
+const BINDING_INSERT = /insert into email_transport_bindings/i;
+const BINDING_UPSERT_TEMPLATE = /insert into credentials/i;
+const CAMPAGNE_NOM = /from campaigns/i;
+const ETAPE_POSITION = /from sequence_steps/i;
+const MARK_DISPATCHED = /mark_action_dispatched/i;
+const UPDATE_SUCCES = /update actions set provider_ref/i;
+const UPDATE_BLOQUE = /status = 'blocked'/i;
+const UPDATE_ECHEC = /status = 'failed'/i;
+const UPDATE_ESSAIS = /jsonb_build_object\('essais'/i;
+const SELECT_ESSAIS = /payload ->> 'essais'/i;
+
+/** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
+function gestionnairesBase(): Gestionnaire[] {
+  return [
+    { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
+    {
+      motif: SENDER,
+      repondre: () =>
+        ligne([
+          {
+            id: SENDER_ID,
+            identity: 'expediteur@exemple.fr',
+            provider_ref: 'sb-sender-1',
+            provider_state: { sending_enabled: true },
+            timezone: 'Europe/Paris',
+            business_hours: null,
+          },
+        ]),
+    },
+    { motif: PLAFOND, repondre: () => ligne([]) },
+    { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
+    { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
+    {
+      motif: TEMPLATE,
+      repondre: () => ligne([{ id: 'gabarit-1', body: 'Bonjour {{prenom}}', subject: 'Objet {{prenom}}', name: 'Gabarit' }]),
+    },
+    { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([]) },
+    { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: null }]) },
+    { motif: BINDING_UPSERT_TEMPLATE, repondre: () => ligne([{ template_id: 'gabarit-neutre-1' }]) },
+    { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
+    { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
+  ];
+}
+
+/**
+ * Combine des gestionnaires propres à un test avec le socle par défaut — les
+ * premiers gagnent (premier motif qui matche dans `creerPoolFactice`), ce qui
+ * permet de surcharger un motif déjà présent dans `gestionnairesBase()`.
+ */
+function avecBase(...specifiques: Gestionnaire[]): Gestionnaire[] {
+  return [...specifiques, ...gestionnairesBase()];
+}
+
+beforeEach(() => {
+  process.env.SALESBLINK_API_KEY = 'cle-de-test';
+});
+
+afterEach(() => {
+  delete process.env.SALESBLINK_API_KEY;
+  vi.restoreAllMocks();
+});
+
+describe('envoyerEmailSalesBlink', () => {
+  it('sans provider_ref l’action est bloquée sender_unbound', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CONFIG_CREDENTIALS, repondre: () => ligne([]) },
+      {
+        motif: SENDER,
+        repondre: () =>
+          ligne([
+            {
+              id: SENDER_ID,
+              identity: 'expediteur@exemple.fr',
+              provider_ref: null,
+              provider_state: null,
+              timezone: 'Europe/Paris',
+              business_hours: null,
+            },
+          ]),
+      },
+      { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage).toBeDefined();
+    expect(blocage!.values[0]).toBe(ACTION_ID);
+    expect(blocage!.values[1]).toBe('sender_unbound');
+    // Aucun appel SalesBlink ne doit avoir eu lieu : bloqué avant tout envoi.
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
+  it('premier email : crée liste et séquence puis pousse le lead avec jr_action_id', async () => {
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.creerListe).toHaveBeenCalledTimes(1);
+    expect(client.creerSequenceEtape).toHaveBeenCalledTimes(1);
+    expect(client.activerEtPlanifier).toHaveBeenCalledWith('sequence-1', 'cle-de-test');
+    expect(client.pousserLeads).toHaveBeenCalledTimes(1);
+    const [listeId, leads] = (client.pousserLeads as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(listeId).toBe('liste-1');
+    expect(leads).toEqual([
+      expect.objectContaining({
+        email: 'contact@exemple.fr',
+        first_name: 'Marie',
+        last_name: 'Durand',
+        company_name: 'Acme',
+        jr_subject: 'Objet Marie',
+        jr_body: '<p>Bonjour Marie</p>',
+        jr_action_id: ACTION_ID,
+      }),
+    ]);
+  });
+
+  it('relance : appelle repondreDansLeFil avec le dernier message_id', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase({
+        motif: ENVOIS_ANTERIEURS,
+        repondre: () =>
+          ligne([
+            { message_id: 'msg-ancien', subject: 'Premier objet' },
+            { message_id: 'msg-recent', subject: 'Second objet' },
+          ]),
+      }),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.repondreDansLeFil).toHaveBeenCalledTimes(1);
+    expect(client.repondreDansLeFil).toHaveBeenCalledWith('msg-recent', '<p>Bonjour Marie</p>', 'cle-de-test');
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+
+    const succes = appels.find((a) => UPDATE_SUCCES.test(a.sql));
+    expect(succes).toBeDefined();
+    const payload = JSON.parse(succes!.values[2] as string) as Record<string, unknown>;
+    expect(payload.mode).toBe('relance');
+    expect(payload.reply_task_id).toBe('tache-reponse-1');
+  });
+
+  it('429 : l’action reste en attente et essais vaut 1', async () => {
+    const client = clientFactice({
+      creerListe: vi.fn(async () => {
+        throw new ErreurSalesBlink('limite', 429, 'Trop de requetes');
+      }),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: null }]) },
+        { motif: UPDATE_ESSAIS, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const retry = appels.find((a) => UPDATE_ESSAIS.test(a.sql));
+    expect(retry).toBeDefined();
+    expect(retry!.values).toEqual([ACTION_ID, 1]);
+    // L'action ne doit pas etre marquee bloquee ni echouee : elle reste pending.
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_ECHEC.test(a.sql))).toBe(false);
+  });
+
+  it('mode_force = relance_repli force le repli et retire mode_force du payload', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: 'relance_repli' }]) },
+        {
+          motif: ENVOIS_ANTERIEURS,
+          repondre: () => ligne([{ message_id: null, subject: 'Sujet original' }]),
+        },
+        {
+          motif: BINDING_SELECT,
+          repondre: () => ligne([{ sequence_id: 'sequence-existante', list_id: 'liste-existante' }]),
+        },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.pousserLeads).toHaveBeenCalledTimes(1);
+    const [, leads] = (client.pousserLeads as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, unknown>[]];
+    expect(leads[0]?.jr_subject).toBe('Re: Sujet original');
+
+    const succes = appels.find((a) => UPDATE_SUCCES.test(a.sql));
+    expect(succes).toBeDefined();
+    // La requete retire explicitement `mode_force` du payload existant.
+    expect(succes!.sql).toContain(`- 'mode_force'`);
+    const payload = JSON.parse(succes!.values[2] as string) as Record<string, unknown>;
+    expect(payload.mode).toBe('relance_repli');
+    expect(payload.subject).toBe('Re: Sujet original');
+  });
+});
+
+describe('heuresEnvoiSalesBlink', () => {
+  it('valeur nulle : lundi-vendredi 9h-18h', () => {
+    expect(heuresEnvoiSalesBlink(null)).toEqual([
+      { name: 'Monday', enabled: true, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Tuesday', enabled: true, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Wednesday', enabled: true, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Thursday', enabled: true, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Friday', enabled: true, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Saturday', enabled: false, fromTime: '09:00', toTime: '18:00' },
+      { name: 'Sunday', enabled: false, fromTime: '09:00', toTime: '18:00' },
+    ]);
+  });
+
+  it('heures personnalisees : jours et plage respectes', () => {
+    const heures = heuresEnvoiSalesBlink({ startHour: 8, endHour: 20, days: [6, 7] });
+    expect(heures.find((h) => h.name === 'Saturday')).toEqual({
+      name: 'Saturday',
+      enabled: true,
+      fromTime: '08:00',
+      toTime: '20:00',
+    });
+    expect(heures.find((h) => h.name === 'Monday')?.enabled).toBe(false);
+  });
+});

@@ -14,12 +14,12 @@
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
-import { countRejected } from '@jay-reach/providers/outreach';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
-import { runDispatch, runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
+import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
+import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
 import {
   runResolveCompany,
   toCompanyEnrichment,
@@ -84,7 +84,6 @@ export const FILES_BRANCHEES = [
   'sequence.tick',
 ] as const;
 
-const SMARTLEAD_PROVIDER = 'smartlead';
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
 const ANTHROPIC_PROVIDER = 'anthropic';
@@ -93,19 +92,6 @@ const ANTHROPIC_PROVIDER = 'anthropic';
 export const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 15 * 60 * 1000);
 /** Fréquence du tick de séquence. Même rôle de fenêtre. */
 export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
-
-/**
- * URL publique de l'instance, telle qu'un provider doit la joindre.
- *
- * `APP_URL` d'abord, la variable documentée. À défaut, l'URL de production
- * Vercel — jamais `VERCEL_URL`, qui désigne le déploiement courant et change à
- * chaque envoi : un webhook branché avec elle cesserait de recevoir au
- * déploiement suivant, sans que rien ne le signale.
- */
-function deduireUrlPublique(): string | undefined {
-  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  return production ? `https://${production}` : undefined;
-}
 
 // ---------------------------------------------------------------- collecte
 
@@ -257,38 +243,9 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
     console.log(`[dispatch] LinkedIn ${data.channel} → ${id ? `enfilé ${id}` : 'déjà en file (dédup)'}`);
     return;
   }
-  const credentials = await resolveProviderCredentials(pool, data.organizationId, SMARTLEAD_PROVIDER, { encryptionKey });
-  const apiKey = credentials?.api_key;
-  if (!apiKey) {
-    console.warn(`[dispatch] Smartlead non configuré pour l’org ${data.organizationId} — job ignoré`);
-    return;
-  }
-  const result = await runDispatch(data, apiKey, pool, process.env.APP_URL ?? deduireUrlPublique());
-  // Le chiffre qui interesse l'operateur est le nombre de leads AJOUTES, que
-  // Smartlead nomme `total_leads`. `upload_count` compte les lignes traitees,
-  // deja-presents compris : l'annoncer comme un ajout gonflait le compte rendu.
-  const ajoutes = result.total_leads ?? 0;
-  const dejaLa = result.already_added_to_campaign ?? 0;
-  const refuses = countRejected(result);
-  console.log(
-    `[dispatch] ${ajoutes} lead(s) ajouté(s) à la campagne Smartlead` +
-      (dejaLa > 0 ? `, ${dejaLa} déjà présent(s)` : '') +
-      (refuses > 0 ? `, ${refuses} refusé(s)` : ''),
-  );
-  if (refuses > 0) {
-    console.warn(
-      `[dispatch] refus — doublons ${result.duplicate_count ?? 0}, emails invalides ${result.invalid_email_count ?? 0}, ` +
-        `désinscrits ${result.unsubscribed_leads?.length ?? 0}, bloqués ${result.block_count ?? 0}`,
-    );
-  }
-  if (result.is_lead_limit_exhausted) {
-    console.warn('[dispatch] plafond de leads Smartlead atteint — les prochains envois seront refusés');
-  }
-  // Le lead est chez Smartlead : l'action est partie. Sans ce marquage, elle
-  // restait au statut d'émission et n'apparaissait dans aucune statistique.
-  if (ajoutes > 0 && data.actionId) {
-    await pool.query('select app.mark_action_dispatched($1)', [data.actionId]);
-  }
+  // Canal email : SalesBlink. Résolution de la clé, de l'expéditeur, du
+  // plafond, du rendu et du mode d'envoi — tout se passe dans le handler.
+  await envoyerEmailSalesBlink({ pool, encryptionKey }, data);
 }
 
 // -------------------------------------------------------------- séquenceur
@@ -314,8 +271,8 @@ export async function traiterTick(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
   const jobs = await tickDueEnrollments(pool);
   for (const job of jobs) {
-    // Réf de dédup par contact/lead : LinkedIn via contactId/url, email via l'adresse.
-    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? job.leads?.[0]?.email ?? 'x';
+    // Réf de dédup par contact/action : LinkedIn via contactId/url, email via l'action du séquenceur.
+    const ref = job.linkedin?.contactId ?? job.linkedin?.linkedinUrl ?? job.actionId ?? 'x';
     await boss.insert([
       { name: 'actions.dispatch', id: deterministicUuid('dispatch', ref, job.channel ?? 'email'), data: job },
     ]);

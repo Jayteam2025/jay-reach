@@ -1,25 +1,20 @@
 /**
- * Handler de la file `actions.dispatch` — routage par canal. L'email part via
- * Smartlead (code moteur repris du legacy). LinkedIn (invitation/message)
- * n'appelle aucune API d'envoi : l'action est ENFILÉE dans `linkedin_action_queue`
- * et c'est l'extension Chrome qui l'exécute (API Voyager, session de
- * l'utilisateur ; pacing appliqué côté serveur). Les garde-fous et l'approbation
- * sont appliqués en amont (séquenceur).
+ * Handler de la file `actions.dispatch` — routage par canal. L'email part par
+ * SalesBlink (`envoyerEmailSalesBlink`, lot 3 : « SalesBlink comme simple
+ * transport email »). LinkedIn (invitation/message) n'appelle aucune API
+ * d'envoi : l'action est ENFILÉE dans `linkedin_action_queue` et c'est
+ * l'extension Chrome qui l'exécute (API Voyager, session de l'utilisateur ;
+ * pacing appliqué côté serveur). Les garde-fous et l'approbation sont
+ * appliqués en amont (séquenceur).
  */
 import type { Pool } from 'pg';
-import {
-  addLeadsToCampaign,
-  type AddLeadsResponse,
-  type SmartleadLead,
-} from '@jay-reach/providers/outreach';
 import { enqueueLinkedInAction, type LinkedInActionJob } from '../db.js';
-import { assurerWebhookSmartlead } from './webhook-smartlead.js';
 
 /** Canaux d'envoi routés par le dispatch. */
 export type DispatchChannel = 'email' | 'linkedin_invite' | 'linkedin_message';
 
 /**
- * Payload de la file — sans clé d'API : la clé Smartlead est résolue à
+ * Payload de la file — sans clé d'API : la clé SalesBlink est résolue à
  * l'exécution par le worker (coffre + repli env), jamais dans le job.
  * `channel` absent ⇒ 'email' (compatibilité ascendante).
  */
@@ -33,9 +28,21 @@ export interface DispatchJob {
    * entièrement vide.
    */
   readonly actionId?: string | null;
-  // Canal email (Smartlead).
-  readonly campaignId?: number | string;
-  readonly leads?: SmartleadLead[];
+  /**
+   * Canal email (SalesBlink) : uniquement des références. Le rendu (gabarit,
+   * variables) et la résolution des objets SalesBlink (séquence, liste) ont
+   * lieu à l'envoi, pas au tick — sans quoi un corps déjà rendu attendrait
+   * dans la file pendant que la langue ou les variables auraient pu changer.
+   */
+  readonly email?: {
+    readonly enrollmentId: string;
+    readonly contactId: string;
+    readonly stepId: string;
+    readonly campaignId: string;
+    readonly templateParentId: string | null;
+    readonly senderId: string | null;
+    readonly locale: string | null;
+  };
   // Canal LinkedIn.
   readonly linkedin?: {
     readonly linkedinUrl: string;
@@ -49,28 +56,6 @@ export interface DispatchJob {
 
 export function isLinkedInChannel(channel: DispatchChannel | undefined): boolean {
   return channel === 'linkedin_invite' || channel === 'linkedin_message';
-}
-
-/**
- * Envoi email : pousse les leads vers la campagne Smartlead.
- *
- * Le webhook de la campagne est branché au passage, une seule fois. C'est le
- * moment où on sait que la campagne existe et que la clé est valide — et sans
- * lui, les réponses de ces leads ne remonteraient jamais.
- */
-export async function runDispatch(
-  job: DispatchJob,
-  apiKey: string,
-  pool?: Pool,
-  appUrl?: string,
-): Promise<AddLeadsResponse> {
-  if (job.campaignId === undefined || !job.leads) {
-    throw new Error('dispatch email : campaignId/leads manquants');
-  }
-  if (pool) {
-    await assurerWebhookSmartlead(pool, job.organizationId, job.campaignId, apiKey, appUrl);
-  }
-  return addLeadsToCampaign(job.campaignId, job.leads, apiKey);
 }
 
 /** Envoi LinkedIn : enfile l'action pour l'extension (aucun appel réseau ici). */

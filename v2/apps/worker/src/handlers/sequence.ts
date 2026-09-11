@@ -24,10 +24,16 @@ import {
   type TickChannel,
   type TickStep,
 } from '@jay-reach/core';
-import { shouldPushToSmartlead } from '@jay-reach/providers/email-validation';
+import { emailGateAllows } from '@jay-reach/providers/email-validation';
 import { loadDomainPatterns, domainOf, type DomainPattern } from '../domain-patterns.js';
-import type { EmailStatus } from '../enrichment-persist.js';
 import type { DispatchJob } from './dispatch.js';
+import {
+  REQUETE_LIGNE_INSCRIPTION,
+  buildMessageValues,
+  resolveTemplate,
+  loadSnippets,
+  type DueRow,
+} from './message-values.js';
 
 
 
@@ -90,127 +96,6 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
     [job.organizationId, job.campaignId, job.contactId, job.signalId ?? null],
   );
   return res.rows[0]?.id ?? null;
-}
-
-interface DueRow {
-  readonly id: string;
-  readonly organization_id: string;
-  readonly campaign_id: string;
-  readonly contact_id: string;
-  readonly signal_id: string | null;
-  readonly current_step: number;
-  readonly linkedin_url: string | null;
-  readonly email: string | null;
-  readonly email_status: EmailStatus | null;
-  readonly account_id: string | null;
-  readonly persona_id: string | null;
-  readonly approval_policy: unknown;
-  /** Arrêt global des envois de l'organisation (garde-fou prioritaire). */
-  readonly sending_paused_at: string | null;
-  readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
-  // Canal email (Smartlead) : id de campagne résolu PAR PERSONA (mapping activé),
-  // + champs du lead.
-  readonly smartlead_campaign_id: string | null;
-  readonly first_name: string | null;
-  readonly last_name: string | null;
-  readonly company_name: string | null;
-  readonly domain: string | null;
-  // Résolution des variables du message (T19) : langue du contact + données
-  // source pour substituer {{prenom}}, {{entreprise}}, {{signal_titre}}, etc.
-  readonly locale: string | null;
-  readonly job_title: string | null;
-  readonly city: string | null;
-  readonly headcount: number | null;
-  readonly persona_angle: string | null;
-  readonly signal_title: string | null;
-  readonly signal_occurred_at: string | null;
-  readonly signal_location: string | null;
-  readonly signal_url: string | null;
-  readonly postal_code: string | null;
-  readonly country: string | null;
-  readonly context_note: string | null;
-}
-
-/**
- * Table des valeurs pour le rendu des variables d'un message, assemblée depuis le
- * contact, son compte, sa persona, le signal et la liste. Une valeur absente reste
- * `undefined` → `renderTemplate` la remonte dans `missing` (→ blocage, jamais un
- * champ vide envoyé). Dates via `Intl` (spec §90).
- */
-function buildMessageValues(
-  row: DueRow,
-  /** Extraits de l'organisation, résolus comme des variables. */
-  extraits: ReadonlyMap<string, string> = new Map(),
-): Record<string, string | undefined> {
-  const values: Record<string, string | undefined> = {
-    prenom: row.first_name ?? undefined,
-    // Porte le cas que `prenom` refuse d'affronter : sans prénom connu, on
-    // salue quand même, au lieu de bloquer l'envoi.
-    salutation: row.first_name ? `Bonjour ${row.first_name}` : 'Bonjour',
-    nom: row.last_name ?? undefined,
-    poste: row.job_title ?? undefined,
-    entreprise: row.company_name ?? undefined,
-    ville: row.city ?? undefined,
-    effectif: row.headcount != null ? String(row.headcount) : undefined,
-    persona_angle: row.persona_angle ?? undefined,
-    signal_titre: row.signal_title ?? undefined,
-    signal_zone: row.signal_location ?? undefined,
-    lien_offre: row.signal_url ?? undefined,
-    contexte: row.context_note ?? undefined,
-    site: row.domain ?? undefined,
-    // Le département se lit sur les deux premiers chiffres du code postal.
-    departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
-    pays: row.country ?? undefined,
-  };
-  // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
-  // veut pas qu'un extrait nommé « prenom » masque le prospect.
-  for (const [nom, texte] of extraits) {
-    if (!(nom in values)) values[nom] = texte;
-  }
-  if (row.signal_occurred_at) {
-    const d = new Date(row.signal_occurred_at);
-    values.signal_date = d.toLocaleDateString('fr-FR');
-    values.signal_mois = d.toLocaleDateString('fr-FR', { month: 'long' });
-  }
-  return values;
-}
-
-/**
- * Résout la variante de template pour la langue du contact (T19). Choisit la
- * dernière version de la famille pour cette `locale`. Si la langue est connue mais
- * qu'aucune variante n'existe alors que la famille en a d'autres → `missingLocale`
- * (spec §84-88 : bloqué `missing_locale`). Sans locale connue, on prend la dernière
- * version (repli, pas de blocage de langue).
- */
-async function resolveTemplate(
-  pool: Pool,
-  familyId: string,
-  locale: string | null,
-): Promise<{ id: string | null; body: string | null; missingLocale: boolean }> {
-  if (locale) {
-    // Version EN VIGUEUR (`is_active`) pour cette langue — permet le retour arrière
-    // (une version antérieure réactivée prime sur une plus récente désactivée).
-    const byLocale = await pool.query<{ id: string; body: string }>(
-      `select id, body from message_templates
-        where (id = $1 or parent_id = $1) and locale = $2 and is_active
-        order by version desc limit 1`,
-      [familyId, locale],
-    );
-    const found = byLocale.rows[0];
-    if (found) return { id: found.id, body: found.body, missingLocale: false };
-    const any = await pool.query(
-      `select 1 from message_templates where id = $1 or parent_id = $1 limit 1`,
-      [familyId],
-    );
-    return { id: null, body: null, missingLocale: (any.rowCount ?? 0) > 0 };
-  }
-  const latest = await pool.query<{ id: string; body: string }>(
-    `select id, body from message_templates
-      where (id = $1 or parent_id = $1) and is_active order by version desc limit 1`,
-    [familyId],
-  );
-  const found = latest.rows[0];
-  return { id: found?.id ?? null, body: found?.body ?? null, missingLocale: false };
 }
 
 interface StepRow {
@@ -335,30 +220,6 @@ function heuresOuvrees(brut: unknown): BusinessHours {
     ? (h.days as unknown[]).map(Number).filter((d) => d >= 1 && d <= 7)
     : [1, 2, 3, 4, 5];
   return { startHour: start, endHour: end, days };
-}
-
-/**
- * Extraits réutilisables, par organisation.
- *
- * Chargés avec le lot plutôt qu'à chaque message : ils ne dépendent pas du
- * prospect, et les relire par action coûterait une requête pour rien.
- */
-async function loadSnippets(
-  pool: Pool,
-  organizationIds: string[],
-): Promise<Map<string, Map<string, string>>> {
-  const parOrg = new Map<string, Map<string, string>>();
-  if (organizationIds.length === 0) return parOrg;
-  const res = await pool.query<{ organization_id: string; name: string; body: string }>(
-    'select organization_id, name, body from message_snippets where organization_id = any($1::uuid[])',
-    [organizationIds],
-  );
-  for (const r of res.rows) {
-    const m = parOrg.get(r.organization_id) ?? new Map<string, string>();
-    m.set(r.name, r.body);
-    parOrg.set(r.organization_id, m);
-  }
-  return parOrg;
 }
 
 /** Liens contact ↔ expéditeur déjà établis, pour les contacts de ce lot. */
@@ -489,32 +350,7 @@ function graine(id: string): number {
  */
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
   const due = await pool.query<DueRow>(
-    `select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
-            c.linkedin_url, c.email, c.email_status, c.account_id, c.persona_id, c.first_name, c.last_name,
-            c.locale, c.job_title,
-            camp.approval_policy,
-            org.sending_paused_at,
-            sc.campaign_id as smartlead_campaign_id,
-            a.name as company_name, a.domain, a.city, a.headcount,
-            a.postal_code, a.country,
-            p.angle as persona_angle,
-            sig.title as signal_title, sig.occurred_at as signal_occurred_at, sig.location as signal_location,
-            sig.url as signal_url,
-            lst.context_note,
-            ls.mode as lk_mode
-       from enrollments e
-       join contacts c on c.id = e.contact_id
-       join campaigns camp on camp.id = e.campaign_id
-       join organizations org on org.id = e.organization_id
-       left join accounts a on a.id = c.account_id
-       left join personas p on p.id = c.persona_id
-       left join signals sig on sig.id = e.signal_id
-       left join lists lst on lst.id = camp.list_id
-       left join smartlead_campaign_mappings sc
-              on sc.organization_id = e.organization_id
-             and sc.persona_id = c.persona_id
-             and sc.enabled
-       left join linkedin_settings ls on ls.organization_id = e.organization_id
+    `${REQUETE_LIGNE_INSCRIPTION}
       where e.status = 'active' and e.next_action_at is not null and e.next_action_at <= $1
       order by e.next_action_at asc
       limit $2`,
@@ -828,16 +664,18 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       });
     }
 
-    // Envoi email autorisé → job de dispatch Smartlead. La campagne est résolue
-    // PAR PERSONA du contact (mapping `smartlead_campaign_mappings` activé). Sans mapping
-    // activé pour la persona, l'action reste planifiée mais n'est pas dispatchée :
-    // on ne pousse jamais vers une campagne inconnue.
+    // Envoi email autorisé → job de dispatch SalesBlink. Le tick ne fait que
+    // décider l'éligibilité (gate de délivrabilité) et transmettre des
+    // références : le rendu (gabarit, variables) et la résolution des objets
+    // SalesBlink (séquence, liste) ont lieu à l'envoi (`envoyerEmailSalesBlink`),
+    // pas ici — sans quoi un corps rendu attendrait dans la file pendant que
+    // la langue ou les variables auraient pu changer entre-temps.
     if (result.dispatch && result.action && result.action.channel === 'email') {
-      if (row.smartlead_campaign_id && row.email) {
+      if (row.email) {
         // Gate de délivrabilité : un email non vérifié `valid` n'est JAMAIS poussé
-        // vers Smartlead (protection de la réputation du domaine). Le gate refuse
-        // par défaut tout ce qui n'est pas explicitement délivrable.
-        const gate = shouldPushToSmartlead({
+        // (protection de la réputation du domaine). Le gate refuse par défaut
+        // tout ce qui n'est pas explicitement délivrable.
+        const gate = emailGateAllows({
           email: row.email,
           email_source: 'fullenrich',
           email_validation_status: row.email_status,
@@ -855,30 +693,25 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           jobs.push({
             organizationId: row.organization_id,
             channel: 'email',
-            campaignId: row.smartlead_campaign_id,
-            leads: [
-              {
-                email: row.email,
-                ...(row.first_name ? { first_name: row.first_name } : {}),
-                ...(row.last_name ? { last_name: row.last_name } : {}),
-                ...(row.company_name ? { company_name: row.company_name } : {}),
-                ...(row.domain ? { website: row.domain } : {}),
-                ...(row.linkedin_url ? { linkedin_profile: row.linkedin_url } : {}),
-              },
-            ],
+            actionId,
+            email: {
+              enrollmentId: row.id,
+              contactId: row.contact_id,
+              stepId: step!.id,
+              campaignId: row.campaign_id,
+              templateParentId: step!.template_parent_id,
+              senderId,
+              locale: row.locale,
+            },
           });
         } else {
-          // Email non délivrable → action bloquée, rien ne part vers Smartlead.
+          // Email non délivrable → action bloquée, rien ne part.
           await pool.query(
             `update actions set status = 'blocked', block_reason = $2 where idempotency_key = $1`,
             [result.action.idempotencyKey, `email_gate:${gate.reason}`],
           );
           console.warn(`[tick] email du contact ${row.contact_id} NON poussé (gate: ${gate.reason})`);
         }
-      } else if (!row.smartlead_campaign_id) {
-        console.warn(
-          `[tick] étape email du contact ${row.contact_id} sans mapping Smartlead activé pour sa persona — action planifiée mais non dispatchée`,
-        );
       }
     }
   }
