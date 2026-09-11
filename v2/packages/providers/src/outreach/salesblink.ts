@@ -209,30 +209,53 @@ function versMs(valeur: unknown): number | null {
   return null;
 }
 
+/**
+ * Forme reelle de `error` sur `GET /senders/{id}/health`, mesuree le 11/09 sur
+ * un expediteur coupe par la verification IMAP : `{ app: 'imap-check',
+ * errorFunction: 'imap-worker.action', error: 'Command failed NO true 3 NO
+ * [ALERT] IMAP access is disabled for your domain...', errorTime:
+ * '11/09/2026 12:28:18' }`. `errorFunction` n'est pas repris : redondant avec
+ * `app` pour l'usage qu'en fait Jay Reach.
+ */
 function versDerniereErreur(brut: unknown): SanteBoite['derniereErreur'] {
   if (!brut || typeof brut !== 'object') return null;
   const ligne = brut as Record<string, unknown>;
   return {
-    app: texte(ligne.app ?? ligne.source ?? ligne.service),
-    message: texte(ligne.message),
-    a: texte(ligne.at ?? ligne.a ?? ligne.date),
+    app: texte(ligne.app),
+    message: texte(ligne.error).slice(0, LONGUEUR_MAX_ERREUR),
+    a: texte(ligne.errorTime),
   };
 }
 
 // --- Expediteurs (Senders) --------------------------------------------------
 
+/**
+ * `GET /senders` n'est pas type dans la spec OpenAPI ; noms de champs mesures
+ * le 11/09 sur le compte d'essai (notamment `alias`/`senderName` en camelCase,
+ * a ne pas confondre avec `sending_enabled`/`receiving_enabled` en snake_case
+ * de `/senders/{id}/health`) : `alias` (adresse d'envoi), `google_email`
+ * (repli pour une boite Google), `senderName`, `sendingEnabled`,
+ * `receivingEnabled`, `sequence_max_daily_frequency` (plafond quotidien de
+ * sequence). `readyForOutreach` vaut `'unknown'` sur une boite non testee :
+ * ne pas s'y fier pour `connectee`. `maxDailyFrequency` est le plafond de
+ * warmup, distinct du plafond de sequence : ignore ici.
+ */
 export async function listerBoites(cle: string): Promise<BoiteSalesBlink[]> {
   const resultat = await appeler('GET', '/senders', {}, cle);
   return enTableau(donnees(resultat)).map((brut) => {
     const ligne = brut as Record<string, unknown>;
+    const email = texte(ligne.alias, texte(ligne.google_email));
+    const envoiActif = booleen(ligne.sendingEnabled);
+    const receptionActive = booleen(ligne.receivingEnabled);
     return {
       id: texte(ligne.id),
-      email: texte(ligne.email),
-      nom: texte(ligne.name, texte(ligne.email)),
-      connectee: booleen(ligne.connected),
-      envoiActif: booleen(ligne.sending_enabled),
-      receptionActive: booleen(ligne.receiving_enabled),
-      plafondQuotidien: nombreOuNull(ligne.sequence_max_daily_frequency ?? ligne.daily_limit),
+      email,
+      nom: texte(ligne.senderName, email),
+      // La boite est operationnelle pour au moins un sens (envoi ou reception).
+      connectee: envoiActif || receptionActive,
+      envoiActif,
+      receptionActive,
+      plafondQuotidien: nombreOuNull(ligne.sequence_max_daily_frequency),
     };
   });
 }

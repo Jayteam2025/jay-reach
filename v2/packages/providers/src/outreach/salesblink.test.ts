@@ -2,11 +2,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   ErreurSalesBlink,
   listerBoites,
+  santeBoite,
   pousserLeads,
   creerSequenceEtape,
   activerEtPlanifier,
   listerEnvoisSortis,
   listerReponses,
+  listerRapports,
   type LeadSalesBlink,
 } from './salesblink.js';
 
@@ -21,6 +23,198 @@ function reponseJson(corps: unknown, statut = 200): Response {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('listerBoites', () => {
+  it('lit alias, senderName, sendingEnabled/receivingEnabled et le plafond de sequence', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: [
+            {
+              id: 'boite-uuid-1',
+              alias: 'exemple@exemple.fr',
+              google_email: 'exemple@exemple.fr',
+              senderName: 'Boite de test',
+              serviceName: 'Google',
+              senderType: 'OAUTH',
+              sendingEnabled: true,
+              receivingEnabled: false,
+              readyForOutreach: 'unknown',
+              sequence_max_daily_frequency: 20,
+              maxDailyFrequency: 50,
+              mailbox_subscription_expired: false,
+              warmupEnabled: true,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const [boite] = await listerBoites(CLE_TEST);
+
+    expect(boite).toMatchObject({
+      id: 'boite-uuid-1',
+      email: 'exemple@exemple.fr',
+      nom: 'Boite de test',
+      connectee: true,
+      envoiActif: true,
+      receptionActive: false,
+      plafondQuotidien: 20,
+    });
+  });
+
+  it("replie sur google_email quand alias est absent, et sur l'email quand senderName est absent", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: [
+            {
+              id: 'boite-uuid-2',
+              google_email: 'repli@exemple.fr',
+              sendingEnabled: false,
+              receivingEnabled: false,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const [boite] = await listerBoites(CLE_TEST);
+
+    expect(boite).toMatchObject({
+      email: 'repli@exemple.fr',
+      nom: 'repli@exemple.fr',
+      connectee: false,
+      envoiActif: false,
+      receptionActive: false,
+      plafondQuotidien: null,
+    });
+  });
+});
+
+describe('santeBoite', () => {
+  it('mappe derniereErreur depuis app/error/errorTime, message tronque a 200 caracteres', async () => {
+    const messageLong = 'Command failed NO true 3 NO [ALERT] IMAP access is disabled for your domain. '.repeat(4);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            sender_id: 'boite-uuid-1',
+            email: 'exemple@exemple.fr',
+            connected: true,
+            processing: false,
+            sending_enabled: false,
+            receiving_enabled: false,
+            health_score: 50,
+            error: {
+              app: 'imap-check',
+              errorFunction: 'imap-worker.action',
+              error: messageLong,
+              errorTime: '11/09/2026 12:28:18',
+            },
+          },
+        }),
+      ),
+    );
+
+    const sante = await santeBoite('boite-uuid-1', CLE_TEST);
+
+    expect(sante.connectee).toBe(true);
+    expect(sante.envoiActif).toBe(false);
+    expect(sante.receptionActive).toBe(false);
+    expect(sante.sante).toBe(50);
+    expect(sante.derniereErreur?.app).toBe('imap-check');
+    expect(sante.derniereErreur?.a).toBe('11/09/2026 12:28:18');
+    expect(sante.derniereErreur?.message).toBe(messageLong.slice(0, 200));
+  });
+
+  it('derniereErreur vaut null quand la boite est saine', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            connected: true,
+            sending_enabled: true,
+            receiving_enabled: true,
+            health_score: 100,
+            error: null,
+          },
+        }),
+      ),
+    );
+
+    const sante = await santeBoite('boite-uuid-1', CLE_TEST);
+    expect(sante.derniereErreur).toBeNull();
+  });
+});
+
+describe('listerRapports', () => {
+  it('parse time (chaine de millisecondes) en horodatageMs numerique', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: [
+            {
+              id: 'rapport-1',
+              time: '1789050100069',
+              type: 'outreach',
+              message: 'Sent',
+              email: 'exemple@exemple.fr',
+              sequence: 'sequence-uuid-1',
+              sender: 'boite-uuid-1',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const rapports = await listerRapports({ message: 'Sent', depuisMs: 0 }, CLE_TEST);
+
+    expect(rapports).toHaveLength(1);
+    expect(rapports[0]).toMatchObject({
+      id: 'rapport-1',
+      horodatageMs: 1789050100069,
+      type: 'outreach',
+      message: 'Sent',
+      sequenceId: 'sequence-uuid-1',
+    });
+  });
+
+  it("lit le corps JSON d'une erreur dans body", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: [
+            {
+              id: 'rapport-2',
+              time: '1789050200000',
+              type: 'error',
+              message: 'Error',
+              email: 'exemple@exemple.fr',
+              sequence: 'sequence-uuid-1',
+              body: '{"message":"Email Sender sending disabled. Needs to reconnect."}',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const [rapport] = await listerRapports({ message: 'Error', depuisMs: 0 }, CLE_TEST);
+    expect(rapport?.corps).toBe('{"message":"Email Sender sending disabled. Needs to reconnect."}');
+  });
 });
 
 describe('pousserLeads', () => {
