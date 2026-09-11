@@ -16,6 +16,14 @@ const CATEGORY_ORDER = ['email', 'enrichment', 'signals', 'ai'] as const;
  */
 const PLAFOND_AFFICHAGE_ILLIMITE = 1_000_000;
 
+/** Plafond réglé dans la config non secrète (`daily_cap`, saisi en texte) — même lecture que `plafondConfigure` de `lib/engine-status.ts`. Absent ou non numérique → aucun réglage connu. */
+function plafondConfigure(config: Record<string, string> | null): number | null {
+  const brut = config?.['daily_cap'];
+  if (brut === undefined || brut === null || brut === '') return null;
+  const valeur = Number(brut);
+  return Number.isFinite(valeur) ? valeur : null;
+}
+
 /** « il y a N s / min / h / j », dans la locale courante — même formule que le tableau de bord (`app/page.tsx`). */
 function formatAgo(iso: string, locale: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -101,14 +109,20 @@ export default async function ProvidersPage() {
               {providers.map((provider) => {
                 const row = byProvider.get(provider.id);
                 const usage = usageByProvider.get(provider.id);
-                // Consommation du jour : uniquement pour un fournisseur qui porte
-                // un plafond quotidien, et seulement s'il a déjà consommé
-                // aujourd'hui (sinon rien à distinguer d'un fournisseur sans plafond).
+                // Consommation du jour : pour un fournisseur qui porte un
+                // plafond quotidien. Une ligne du jour prime (c'est le plafond
+                // réellement appliqué) ; à défaut, un fournisseur configuré
+                // avec un plafond réglé affiche « 0 / <plafond> » — sinon
+                // l'écran resterait muet jusqu'au premier appel de la journée.
                 const porteUnPlafond = provider.fields.some((f) => f.name === 'daily_cap');
-                const todayUsage =
-                  porteUnPlafond && usage
+                const capConfigure = plafondConfigure(row?.config ?? null);
+                const todayUsage = !porteUnPlafond
+                  ? null
+                  : usage
                     ? { used: usage.used, cap: usage.daily_cap >= PLAFOND_AFFICHAGE_ILLIMITE ? '∞' : usage.daily_cap }
-                    : null;
+                    : row?.status === 'configured' && capConfigure !== null
+                      ? { used: 0, cap: capConfigure }
+                      : null;
                 const lastSyncAgo =
                   provider.id === 'salesblink'
                     ? salesblinkSync?.last_run_at

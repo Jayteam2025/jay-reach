@@ -15,6 +15,8 @@
 import { getPool } from './db';
 
 const BASE_SALESBLINK = 'https://run.salesblink.io/api/public/v1.0.0';
+/** Même ordre de grandeur que les autres providers (`adzuna.ts`, `reoon.ts`), mais plus court : cet appel est sur le chemin de rendu de l'écran Expéditeurs, pas dans un job de fond. */
+const TIMEOUT_MS = 5_000;
 
 export interface BoiteSalesBlink {
   readonly id: string;
@@ -42,6 +44,10 @@ async function resolveSalesblinkKey(organizationId: string): Promise<string | nu
         [organizationId, 'salesblink', encryptionKey],
       );
       const brut = res.rows[0]?.secret;
+      // Pas de dépliage JSON ici (contrairement à `resolveAnthropicKey`, qui
+      // porte cet héritage du socle v1) : aucune clé SalesBlink n'existe hors
+      // de Jay Reach, la saisie dans l'onglet Fournisseurs est toujours la
+      // clé brute.
       if (brut) return brut;
     } catch {
       // Coffre injoignable : on retombe sur l'environnement plutôt que d'échouer.
@@ -89,8 +95,12 @@ export async function listerBoitesSalesBlink(organizationId: string): Promise<Re
     reponse = await fetch(`${BASE_SALESBLINK}/senders`, {
       method: 'GET',
       headers: { Authorization: cle, Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
+    // Réseau injoignable ou délai dépassé (`AbortSignal.timeout` rejette avec
+    // un `DOMException` nommé `TimeoutError`) : même code générique, la cause
+    // exacte n'a pas à transiter jusqu'à l'écran.
     return { ok: false, error: 'reseau' };
   }
 
