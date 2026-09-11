@@ -42,7 +42,36 @@ export interface RecordedReply {
   readonly isNew: boolean;
 }
 
-/** Crée ou actualise le fil du contact sur un canal donné. */
+/**
+ * Trouve ou crée le fil du contact sur un canal donné, sans toucher sa
+ * classification ni son statut de lecture.
+ *
+ * Exportée (I4, revue finale du 11/09) : l'envoi email SalesBlink s'en sert
+ * pour savoir dans quel fil ranger le message qu'il vient d'envoyer, avant
+ * même qu'une réponse existe — il n'a pas à reclasser le fil ni à le marquer
+ * non lu, ce que fait `upsertThread` ci-dessous pour une réponse entrante.
+ */
+export async function assurerFil(
+  ex: Executeur,
+  org: string,
+  contactId: string,
+  channel: ReplyChannel,
+): Promise<string> {
+  const found = await ex.query<{ id: string }>(
+    `select id from threads where organization_id = $1 and contact_id = $2 and channel = $3 limit 1`,
+    [org, contactId, channel],
+  );
+  const existing = found.rows[0];
+  if (existing) return existing.id;
+  const created = await ex.query<{ id: string }>(
+    `insert into threads (organization_id, contact_id, channel, last_message_at, is_read)
+     values ($1, $2, $3, now(), false) returning id`,
+    [org, contactId, channel],
+  );
+  return created.rows[0]!.id;
+}
+
+/** Crée ou actualise le fil du contact sur un canal donné, avec sa classification (réponse entrante). */
 async function upsertThread(
   ex: Executeur,
   org: string,

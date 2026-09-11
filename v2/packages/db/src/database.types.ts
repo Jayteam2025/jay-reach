@@ -595,6 +595,7 @@ export type Database = {
           list_id: string
           organization_id: string
           provider: string
+          sender_id: string
           sequence_id: string
           step_id: string
           template_id: string
@@ -606,6 +607,7 @@ export type Database = {
           list_id: string
           organization_id: string
           provider?: string
+          sender_id: string
           sequence_id: string
           step_id: string
           template_id: string
@@ -617,6 +619,7 @@ export type Database = {
           list_id?: string
           organization_id?: string
           provider?: string
+          sender_id?: string
           sequence_id?: string
           step_id?: string
           template_id?: string
@@ -641,6 +644,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_transport_bindings_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "senders"
             referencedColumns: ["id"]
           },
           {

@@ -20,6 +20,8 @@ import {
   sortDErreur,
   corpsPourSalesBlink,
   objetPourSalesBlink,
+  placesRestantes,
+  assurerFil,
   type ModeEnvoi,
 } from '@jay-reach/core';
 import {
@@ -33,9 +35,9 @@ import {
   type LeadSalesBlink,
 } from '@jay-reach/providers/outreach';
 import { resolveProviderCredentials } from '../credentials.js';
-import { getCredentialConfig } from '../db.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, resolveTemplate } from './message-values.js';
+import { chargerContraintesSender, chargerPlafondCampagne, compterEntreesDuJour, quotaSenderRestant } from './sequence.js';
 import type { DispatchJob } from './dispatch.js';
 
 export const SALESBLINK_PROVIDER = 'salesblink';
@@ -96,18 +98,31 @@ function deuxChiffres(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+/** Une heure de la journée, bornée à la plage 0-23 ; `null` si la valeur brute n'est pas un nombre. */
+function heureBornee(valeur: unknown): number | null {
+  if (typeof valeur !== 'number' || !Number.isFinite(valeur)) return null;
+  return Math.min(23, Math.max(0, Math.trunc(valeur)));
+}
+
 /**
  * Traduit les heures ouvrées d'un expéditeur (`senders.business_hours`,
  * `{ startHour, endHour, days }` ISO 1-7) vers `emailSendingHours` de
  * SalesBlink : sept entrées nommées `Monday`…`Sunday`, `fromTime`/`toTime` en
- * `HH:00`. Valeur nulle ou invalide → défaut lundi-vendredi 9h-18h.
+ * `HH:00`. Valeur nulle ou invalide → défaut lundi-vendredi 9h-18h ; `startHour`
+ * et `endHour` sont bornés à 0-23, et une fenêtre qui ne progresse pas
+ * (`endHour` ne dépassant pas `startHour`, minor de la revue finale du 11/09 —
+ * une valeur 25 produisait `"25:00"`) retombe elle aussi sur le défaut.
  */
 export function heuresEnvoiSalesBlink(
   businessHours: unknown,
 ): { name: string; enabled: boolean; fromTime: string; toTime: string }[] {
   const brut = (businessHours ?? null) as BusinessHoursBrutes | null;
-  const startHour = typeof brut?.startHour === 'number' ? brut.startHour : 9;
-  const endHour = typeof brut?.endHour === 'number' ? brut.endHour : 18;
+  let startHour = heureBornee(brut?.startHour) ?? 9;
+  let endHour = heureBornee(brut?.endHour) ?? 18;
+  if (endHour <= startHour) {
+    startHour = 9;
+    endHour = 18;
+  }
   const days =
     Array.isArray(brut?.days) && brut.days.length > 0
       ? (brut.days as unknown[]).map((d) => Number(d))
@@ -143,13 +158,15 @@ async function bloquerAction(
 }
 
 /**
- * Gabarit neutre de l'organisation : un seul par organisation, mémorisé dans
- * `credentials.config.template_id` (table `credentials`, provider
- * `salesblink`) plutôt que recréé à chaque étape. L'upsert ne retient jamais
- * un `template_id` que l'organisation a déjà : deux envois concurrents pour
- * deux étapes différentes de la même organisation peuvent chacun croire
- * devoir en créer un — celui déjà mémorisé gagne, l'autre reste orphelin chez
- * SalesBlink mais inoffensif.
+ * Gabarit neutre de l'organisation : un seul, réutilisé par toutes les
+ * étapes. Relu depuis `email_transport_bindings.template_id` plutôt que
+ * mémorisé dans `credentials.config` (minor, revue finale du 11/09) : ce
+ * champ y était effacé à chaque enregistrement de l'écran Fournisseurs, qui
+ * ne renvoie que les champs du catalogue et remplace `config` en entier — un
+ * gabarit orphelin de plus chez SalesBlink après chaque sauvegarde suivie
+ * d'un envoi. Deux créations concurrentes pour deux étapes différentes,
+ * avant qu'aucune liaison n'existe encore, peuvent chacune créer un gabarit :
+ * accepté (comme pour la séquence et la liste), sans effet fonctionnel.
  */
 async function gabaritNeutreDeLOrganisation(
   pool: Pool,
@@ -157,24 +174,16 @@ async function gabaritNeutreDeLOrganisation(
   cle: string,
   client: ClientSalesBlink,
 ): Promise<string> {
-  const config = await getCredentialConfig(pool, organizationId, SALESBLINK_PROVIDER);
-  const existant = config?.template_id;
-  if (existant) return existant;
-
-  const cree = await client.creerGabaritNeutre(NOM_GABARIT_NEUTRE, '', cle);
-  const res = await pool.query<{ template_id: string | null }>(
-    `insert into credentials (organization_id, provider_id, config)
-       values ($1, $2, jsonb_build_object('template_id', $3::text))
-     on conflict (organization_id, provider_id) do update
-       set config = jsonb_set(
-             coalesce(credentials.config, '{}'::jsonb),
-             '{template_id}',
-             to_jsonb(coalesce(credentials.config ->> 'template_id', $3::text))
-           )
-     returning config ->> 'template_id' as template_id`,
-    [organizationId, SALESBLINK_PROVIDER, cree],
+  const existant = await pool.query<{ template_id: string }>(
+    `select template_id from email_transport_bindings
+      where organization_id = $1 and template_id is not null
+      limit 1`,
+    [organizationId],
   );
-  return res.rows[0]?.template_id ?? cree;
+  const gabarit = existant.rows[0]?.template_id;
+  if (gabarit) return gabarit;
+
+  return client.creerGabaritNeutre(NOM_GABARIT_NEUTRE, '', cle);
 }
 
 interface ObjetsEtape {
@@ -183,20 +192,26 @@ interface ObjetsEtape {
 }
 
 interface SenderPourSalesBlink {
+  readonly id: string;
+  readonly identity: string;
   readonly providerRef: string;
   readonly timezone: string | null;
   readonly businessHours: unknown;
 }
 
 /**
- * Séquence et liste SalesBlink d'une étape email d'une campagne — créées au
- * premier envoi, réutilisées ensuite (`email_transport_bindings`).
+ * Séquence et liste SalesBlink d'une étape email d'une campagne, PAR
+ * EXPÉDITEUR — créées au premier envoi de cette étape pour cet expéditeur,
+ * réutilisées ensuite (`email_transport_bindings`, clé étendue à `sender_id`
+ * depuis I2, revue finale du 11/09) : sans cette clé, deux expéditeurs email
+ * liés à la même étape partageraient la même séquence, donc la même boîte
+ * d'envoi chez SalesBlink pour le second.
  *
  * L'insertion `on conflict … do nothing` puis relecture rend la création sûre
- * entre deux envois concurrents pour la même étape (deux contacts différents
- * du même pas de séquence) : les deux peuvent créer une séquence/liste chez
- * SalesBlink, mais une seule ligne survit en base et les deux convergent sur
- * ses identifiants.
+ * entre deux envois concurrents pour la même étape ET le même expéditeur
+ * (deux contacts différents du même pas de séquence) : les deux peuvent créer
+ * une séquence/liste chez SalesBlink, mais une seule ligne survit en base et
+ * les deux convergent sur ses identifiants.
  */
 export async function assurerObjetsEtape(
   pool: Pool,
@@ -209,8 +224,8 @@ export async function assurerObjetsEtape(
 ): Promise<ObjetsEtape> {
   const existant = await pool.query<{ sequence_id: string; list_id: string }>(
     `select sequence_id, list_id from email_transport_bindings
-      where organization_id = $1 and campaign_id = $2 and step_id = $3`,
-    [organizationId, campaignId, stepId],
+      where organization_id = $1 and campaign_id = $2 and step_id = $3 and sender_id = $4`,
+    [organizationId, campaignId, stepId, sender.id],
   );
   const ligne = existant.rows[0];
   if (ligne) {
@@ -224,7 +239,10 @@ export async function assurerObjetsEtape(
     stepId,
   ]);
   const numeroEtape = (etape.rows[0]?.position ?? 0) + 1;
-  const nom = `Jay Reach · ${campagne.rows[0]?.name ?? campaignId} · étape ${numeroEtape}`;
+  // Le nom porte l'identité de l'expéditeur (I2) : une séquence par étape ET
+  // par boîte d'envoi, jamais partagée entre deux expéditeurs de la même
+  // étape.
+  const nom = `Jay Reach · ${campagne.rows[0]?.name ?? campaignId} · étape ${numeroEtape} · ${sender.identity}`;
 
   const listId = await client.creerListe(nom, cle);
   const sequenceId = await client.creerSequenceEtape(
@@ -241,11 +259,11 @@ export async function assurerObjetsEtape(
   await client.activerEtPlanifier(sequenceId, cle);
 
   const insere = await pool.query<{ sequence_id: string; list_id: string }>(
-    `insert into email_transport_bindings (organization_id, campaign_id, step_id, sequence_id, list_id, template_id)
-       values ($1, $2, $3, $4, $5, $6)
-     on conflict (organization_id, campaign_id, step_id) do nothing
+    `insert into email_transport_bindings (organization_id, campaign_id, step_id, sender_id, sequence_id, list_id, template_id)
+       values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (organization_id, campaign_id, step_id, sender_id) do nothing
      returning sequence_id, list_id`,
-    [organizationId, campaignId, stepId, sequenceId, listId, templateId],
+    [organizationId, campaignId, stepId, sender.id, sequenceId, listId, templateId],
   );
   if (insere.rows[0]) {
     return { sequenceId: insere.rows[0].sequence_id, listId: insere.rows[0].list_id };
@@ -254,12 +272,12 @@ export async function assurerObjetsEtape(
   // derrière lui plutôt que de garder nos propres identifiants.
   const relu = await pool.query<{ sequence_id: string; list_id: string }>(
     `select sequence_id, list_id from email_transport_bindings
-      where organization_id = $1 and campaign_id = $2 and step_id = $3`,
-    [organizationId, campaignId, stepId],
+      where organization_id = $1 and campaign_id = $2 and step_id = $3 and sender_id = $4`,
+    [organizationId, campaignId, stepId, sender.id],
   );
   const gagnant = relu.rows[0];
   if (!gagnant) {
-    throw new Error(`email_transport_bindings introuvable après course pour l'étape ${stepId}`);
+    throw new Error(`email_transport_bindings introuvable après course pour l'étape ${stepId} et l'expéditeur ${sender.id}`);
   }
   return { sequenceId: gagnant.sequence_id, listId: gagnant.list_id };
 }
@@ -303,6 +321,40 @@ export async function envoyerEmailSalesBlink(
   if (statut !== 'scheduled') {
     console.log(`[email-salesblink] action ${actionId} déjà ${statut ?? 'introuvable'} — ignorée`);
     return;
+  }
+
+  // 0.5 Défense en profondeur (C1, revue finale du 11/09) : le balayage de
+  // rejeu (`rejouerActionsEmailEnAttente`) filtre déjà sur l'inscription
+  // active et l'absence de suppression, mais ce gestionnaire ne doit pas
+  // dépendre uniquement de ce filtre SQL — un envoi peut aussi arriver ici
+  // par un autre chemin, présent ou futur. Sans cette seconde vérification,
+  // un prospect qui répond ou se désinscrit pendant qu'un envoi est déjà en
+  // file recevrait quand même l'email.
+  const inscriptionRes = await pool.query<{ status: string; email: string | null }>(
+    `select en.status, c.email from enrollments en join contacts c on c.id = en.contact_id where en.id = $1`,
+    [email.enrollmentId],
+  );
+  const inscription = inscriptionRes.rows[0];
+  if (!inscription || inscription.status !== 'active') {
+    await pool.query(`update actions set status = 'skipped', error = $2 where id = $1`, [
+      actionId,
+      'enrollment_inactive',
+    ]);
+    console.warn(`[email-salesblink] action ${actionId} ignorée : inscription non active`);
+    return;
+  }
+  if (inscription.email) {
+    const suppressionRes = await pool.query<{ n: number }>(
+      `select count(*)::int as n from suppressions
+        where organization_id = $1 and scope = 'email' and value = $2
+          and (expires_at is null or expires_at > now())`,
+      [job.organizationId, inscription.email],
+    );
+    if ((suppressionRes.rows[0]?.n ?? 0) > 0) {
+      await pool.query(`update actions set status = 'skipped', error = $2 where id = $1`, [actionId, 'suppressed']);
+      console.warn(`[email-salesblink] action ${actionId} ignorée : adresse supprimée`);
+      return;
+    }
   }
 
   // 1. Clé.
@@ -401,6 +453,27 @@ export async function envoyerEmailSalesBlink(
     mode = deciderModeEnvoi({ envoisAnterieurs });
   }
 
+  // 4.5 Quotas de l'expéditeur et de la campagne (I5, revue finale du 11/09) —
+  // mêmes contraintes que celles vérifiées au tick (`sequence.ts`),
+  // revérifiées ici : tant que les actions partaient dans la minute, le
+  // contrôle du tick suffisait, mais le balayage de rejeu peut désormais
+  // pousser d'un coup un arriéré accumulé pendant une coupure d'expéditeur,
+  // hors du rythme du tick. Épuisé → l'action reste en attente, comme la
+  // coupure d'envoi ci-dessus, pas un blocage.
+  const contraintesSender = await chargerContraintesSender(pool, sender.id);
+  if (contraintesSender && quotaSenderRestant(contraintesSender) <= 0) {
+    console.warn(`[email-salesblink] action ${actionId} en attente : quota expéditeur épuisé (${sender.identity})`);
+    return;
+  }
+  const plafondCampagne = await chargerPlafondCampagne(pool, email.campaignId);
+  if (plafondCampagne !== null) {
+    const resteCampagne = placesRestantes(plafondCampagne, await compterEntreesDuJour(pool, email.campaignId));
+    if (resteCampagne === 0) {
+      console.warn(`[email-salesblink] action ${actionId} en attente : plafond quotidien de la campagne atteint`);
+      return;
+    }
+  }
+
   // 5. Plafond fournisseur — consommé ici, juste avant l'envoi réel : une
   // étape mal rendue (gabarit manquant, langue manquante, variable non
   // résolue) est bloquée plus haut et ne doit jamais coûter une unité du
@@ -435,7 +508,13 @@ export async function envoyerEmailSalesBlink(
         job.organizationId,
         email.campaignId,
         email.stepId,
-        { providerRef: sender.provider_ref, timezone: sender.timezone, businessHours: sender.business_hours },
+        {
+          id: sender.id,
+          identity: sender.identity,
+          providerRef: sender.provider_ref,
+          timezone: sender.timezone,
+          businessHours: sender.business_hours,
+        },
         cle,
         client,
       );
@@ -467,6 +546,17 @@ export async function envoyerEmailSalesBlink(
               payload = (coalesce(payload, '{}'::jsonb) - 'mode_force') || $3::jsonb
         where id = $1`,
       [actionId, sender.provider_ref, JSON.stringify(payloadSucces)],
+    );
+    // Fil de discussion (I4, revue finale du 11/09) : le message sortant se
+    // pose au moment de l'envoi, avec le corps rendu en texte brut (jamais le
+    // HTML transmis à SalesBlink) — sans lui, une réponse relevée plus tard
+    // arrive dans un fil qui ne montre que sa moitié. `provider_message_id`
+    // reste nul ici ; la relève le pose quand SalesBlink le donne.
+    const filId = await assurerFil(pool, job.organizationId, email.contactId, 'email');
+    await pool.query(
+      `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
+         values ($1, 'out', $2, null, $3::jsonb, now())`,
+      [filId, renduCorps.text, JSON.stringify({ action_id: actionId, mode: mode.mode, subject: payloadSucces.subject })],
     );
     console.log(`[email-salesblink] action ${actionId} envoyée (${mode.mode})`);
   } catch (err) {

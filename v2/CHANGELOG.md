@@ -15,7 +15,9 @@ Versionnement sémantique.
   périodique (réglable dans Fournisseurs) remonte envois, réponses, rebonds, désinscriptions et santé de la boîte.
   La garde d'activation demande une clé SalesBlink et un expéditeur email relié à une boîte connectée ; le mapping
   par persona disparaît. Plafond d'emails par jour, fréquence de relève et délai maximal d'une relance se règlent
-  dans l'écran Fournisseurs, rien dans l'environnement.
+  dans l'écran Fournisseurs, rien dans l'environnement. Le retrait de Smartlead ne s'applique qu'après le
+  déploiement de ce worker et de l'application web (voir `deploy/vps/README.md`) : la migration qui supprime son
+  ancienne table est destructrice et sauvegarde son contenu avant de le faire.
 
 ### Supprimé
 - **Smartlead** : client, webhook entrant, table `smartlead_campaign_mappings`, écran de webhook et clés de traduction.

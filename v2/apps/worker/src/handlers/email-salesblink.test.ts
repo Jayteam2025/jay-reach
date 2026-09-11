@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
-import { envoyerEmailSalesBlink, heuresEnvoiSalesBlink, type ClientSalesBlink } from './email-salesblink.js';
+import { envoyerEmailSalesBlink, assurerObjetsEtape, heuresEnvoiSalesBlink, type ClientSalesBlink } from './email-salesblink.js';
 import type { DispatchJob } from './dispatch.js';
 
 const ORG_ID = 'org-1';
@@ -113,30 +113,43 @@ function clientFactice(overrides: Partial<ClientSalesBlink> = {}): ClientSalesBl
 
 // Motifs de requetes communs a plusieurs scenarios.
 const ETAT_ACTION = /select status from actions where id/i;
+const INSCRIPTION_ACTIVE = /select en\.status, c\.email from enrollments en/i;
+const SUPPRESSION_CHECK = /from suppressions/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
+const CONTRAINTES_SENDER = /from senders s where s\.id/i;
+const CAP_CAMPAGNE = /select daily_cap from campaigns/i;
+const ENTREES_DU_JOUR = /from enrollments\s+where campaign_id/i;
 const PLAFOND = /daily_cap/i;
 const CREDIT = /consume_provider_credit/i;
-const INSCRIPTION = /from enrollments e/i;
+// Spécifique a `chargerLigneInscription` (message-values.ts) : la jointure
+// jusqu'a `campaigns camp` la distingue de la requete de defense en profondeur
+// C1 ci-dessus, qui interroge aussi `enrollments`/`contacts` mais pas `campaigns`.
+const INSCRIPTION = /join campaigns camp/i;
 const TEMPLATE = /from message_templates/i;
 const ENVOIS_ANTERIEURS = /payload ->> 'message_id'/i;
 const MODE_FORCE = /select payload ->> 'mode_force'/i;
 const BINDING_SELECT = /select sequence_id, list_id from email_transport_bindings/i;
 const BINDING_INSERT = /insert into email_transport_bindings/i;
-const BINDING_UPSERT_TEMPLATE = /insert into credentials/i;
-const CAMPAGNE_NOM = /from campaigns/i;
+const GABARIT_NEUTRE_LOOKUP = /select template_id from email_transport_bindings/i;
+const CAMPAGNE_NOM = /select name from campaigns/i;
 const ETAPE_POSITION = /from sequence_steps/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
 const UPDATE_ECHEC = /status = 'failed'/i;
+const UPDATE_SKIPPED = /status = 'skipped'/i;
 const UPDATE_ESSAIS = /jsonb_build_object\('essais'/i;
 const SELECT_ESSAIS = /payload ->> 'essais'/i;
+const THREAD_LOOKUP = /select id from threads where/i;
+const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
   return [
     { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+    { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+    { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
     { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
     {
       motif: SENDER,
@@ -152,6 +165,14 @@ function gestionnairesBase(): Gestionnaire[] {
           },
         ]),
     },
+    {
+      motif: CONTRAINTES_SENDER,
+      repondre: () =>
+        ligne([
+          { daily_quota: null, hourly_quota: null, timezone: 'Europe/Paris', business_hours: null, used_today: 0, used_this_hour: 0 },
+        ]),
+    },
+    { motif: CAP_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
     { motif: PLAFOND, repondre: () => ligne([]) },
     { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
     { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
@@ -161,9 +182,11 @@ function gestionnairesBase(): Gestionnaire[] {
     },
     { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([]) },
     { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: null }]) },
-    { motif: BINDING_UPSERT_TEMPLATE, repondre: () => ligne([{ template_id: 'gabarit-neutre-1' }]) },
+    { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([]) },
     { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
+    { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
+    { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
   ];
 }
 
@@ -189,6 +212,8 @@ describe('envoyerEmailSalesBlink', () => {
   it('sans provider_ref l’action est bloquée sender_unbound', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
       { motif: CONFIG_CREDENTIALS, repondre: () => ligne([]) },
       {
         motif: SENDER,
@@ -219,8 +244,80 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.pousserLeads).not.toHaveBeenCalled();
   });
 
+  it('inscription non active (rejeu/course) : action ignorée sans aucun appel client (C1)', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'replied', email: 'contact@exemple.fr' }]) },
+      { motif: UPDATE_SKIPPED, repondre: () => ligne([]) },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const skip = appels.find((a) => UPDATE_SKIPPED.test(a.sql));
+    expect(skip).toBeDefined();
+    expect(skip!.values).toEqual([ACTION_ID, 'enrollment_inactive']);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+  });
+
+  it('adresse supprimée entre l’enfilement et l’exécution : action ignorée sans aucun appel client (C1)', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 1 }]) },
+      { motif: UPDATE_SKIPPED, repondre: () => ligne([]) },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const skip = appels.find((a) => UPDATE_SKIPPED.test(a.sql));
+    expect(skip).toBeDefined();
+    expect(skip!.values).toEqual([ACTION_ID, 'suppressed']);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
+  it('quota horaire/journalier de l’expéditeur épuisé : action laissée en attente, aucun appel client (I5)', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase({
+        motif: CONTRAINTES_SENDER,
+        repondre: () =>
+          ligne([{ daily_quota: 10, hourly_quota: null, timezone: 'Europe/Paris', business_hours: null, used_today: 10, used_this_hour: 0 }]),
+      }),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
+  it('plafond quotidien de la campagne atteint : action laissée en attente, aucun appel client (I5)', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CAP_CAMPAGNE, repondre: () => ligne([{ daily_cap: 5 }]) },
+        { motif: ENTREES_DU_JOUR, repondre: () => ligne([{ n: '5' }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
   it('premier email : crée liste et séquence puis pousse le lead avec jr_action_id', async () => {
-    const { pool } = creerPoolFactice(
+    const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
@@ -234,6 +331,12 @@ describe('envoyerEmailSalesBlink', () => {
 
     expect(client.creerListe).toHaveBeenCalledTimes(1);
     expect(client.creerSequenceEtape).toHaveBeenCalledTimes(1);
+    // I2 : le nom de la séquence porte l'identité de l'expéditeur — pas
+    // partagée entre deux expéditeurs de la même étape.
+    const [parametresSequence] = (client.creerSequenceEtape as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { nom: string },
+    ];
+    expect(parametresSequence.nom).toContain('expediteur@exemple.fr');
     expect(client.activerEtPlanifier).toHaveBeenCalledWith('sequence-1', 'cle-de-test');
     expect(client.pousserLeads).toHaveBeenCalledTimes(1);
     const [listeId, leads] = (client.pousserLeads as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
@@ -249,6 +352,85 @@ describe('envoyerEmailSalesBlink', () => {
         jr_action_id: ACTION_ID,
       }),
     ]);
+    // I4 : le message sortant se pose dans le fil, corps en texte brut (pas le HTML).
+    const filMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+    expect(filMessage).toBeDefined();
+    expect(filMessage!.values[0]).toBe('fil-1');
+    expect(filMessage!.values[1]).toBe('Bonjour Marie');
+    const rawFil = JSON.parse(filMessage!.values[2] as string) as Record<string, unknown>;
+    expect(rawFil.action_id).toBe(ACTION_ID);
+    expect(rawFil.subject).toBe('Objet Marie');
+  });
+
+  it('gabarit neutre réutilisé s’il existe déjà dans une liaison de l’organisation (minor)', async () => {
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([{ template_id: 'gabarit-existant-1' }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.creerGabaritNeutre).not.toHaveBeenCalled();
+    const [parametresSequence] = (client.creerSequenceEtape as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { idGabarit: string },
+    ];
+    expect(parametresSequence.idGabarit).toBe('gabarit-existant-1');
+  });
+
+  describe('assurerObjetsEtape (I2)', () => {
+    it('deux expéditeurs de la même étape obtiennent chacun leur séquence et leur liste', async () => {
+      let compteur = 0;
+      const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+        if (BINDING_SELECT.test(sql)) return ligne([]);
+        if (BINDING_INSERT.test(sql)) {
+          const parametres = values as unknown[];
+          return ligne([{ sequence_id: parametres[4], list_id: parametres[5] }]);
+        }
+        if (GABARIT_NEUTRE_LOOKUP.test(sql)) return ligne([]);
+        if (CAMPAGNE_NOM.test(sql)) return ligne([{ name: 'Campagne Test' }]);
+        if (ETAPE_POSITION.test(sql)) return ligne([{ position: 0 }]);
+        throw new Error(`requete non prevue par le test :\n${sql}`);
+      });
+      const pool = { query } as unknown as Pool;
+      const client = clientFactice({
+        creerListe: vi.fn(async () => `liste-${++compteur}`),
+        creerSequenceEtape: vi.fn(async () => `sequence-${compteur}`),
+      });
+
+      const objetsA = await assurerObjetsEtape(
+        pool,
+        ORG_ID,
+        CAMPAIGN_ID,
+        STEP_ID,
+        { id: 'sender-a', identity: 'a@exemple.fr', providerRef: 'sb-a', timezone: null, businessHours: null },
+        'cle-de-test',
+        client,
+      );
+      const objetsB = await assurerObjetsEtape(
+        pool,
+        ORG_ID,
+        CAMPAIGN_ID,
+        STEP_ID,
+        { id: 'sender-b', identity: 'b@exemple.fr', providerRef: 'sb-b', timezone: null, businessHours: null },
+        'cle-de-test',
+        client,
+      );
+
+      expect(objetsA).not.toEqual(objetsB);
+      expect(client.creerSequenceEtape).toHaveBeenCalledTimes(2);
+      const noms = (client.creerSequenceEtape as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c) => (c[0] as { nom: string }).nom,
+      );
+      expect(noms[0]).toContain('a@exemple.fr');
+      expect(noms[1]).toContain('b@exemple.fr');
+      expect(noms[0]).not.toBe(noms[1]);
+    });
   });
 
   it('relance : appelle repondreDansLeFil avec le dernier message_id', async () => {
@@ -395,5 +577,19 @@ describe('heuresEnvoiSalesBlink', () => {
       toTime: '20:00',
     });
     expect(heures.find((h) => h.name === 'Monday')?.enabled).toBe(false);
+  });
+
+  it('startHour/endHour hors 0-23 sont bornés (minor)', () => {
+    const heures = heuresEnvoiSalesBlink({ startHour: -3, endHour: 25, days: [1] });
+    const lundi = heures.find((h) => h.name === 'Monday');
+    expect(lundi?.fromTime).toBe('00:00');
+    expect(lundi?.toTime).toBe('23:00');
+  });
+
+  it('endHour <= startHour retombe sur le défaut 09-18 (minor)', () => {
+    const heures = heuresEnvoiSalesBlink({ startHour: 18, endHour: 9, days: [1] });
+    const lundi = heures.find((h) => h.name === 'Monday');
+    expect(lundi?.fromTime).toBe('09:00');
+    expect(lundi?.toTime).toBe('18:00');
   });
 });

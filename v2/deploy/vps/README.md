@@ -34,7 +34,10 @@ Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
    sudo nano /etc/jay-reach/worker.env
    ```
 
-4. Appliquer les migrations sur le projet Supabase, si ce n'est pas déjà fait :
+4. Appliquer les migrations ADDITIVES sur le projet Supabase, si ce n'est pas
+   déjà fait — toutes SAUF celles qui suppriment une table, marquées comme
+   telles dans leur en-tête SQL (au 11/09/2026 : la suppression du transport
+   email précédent) :
 
    ```bash
    supabase db push --linked
@@ -42,11 +45,11 @@ Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
 
    ou, sans CLI liée, en exécutant le contenu de chaque fichier de
    `supabase/migrations/` dans l'éditeur SQL du projet, dans l'ordre des noms
-   de fichiers. **Sans cette étape, rien ne prévient au démarrage** : le
-   conteneur démarre, écrit son fichier de battement et reste `healthy`, mais
-   chaque tour échoue faute de table `engine_status` — une erreur par minute
-   dans les journaux — et l'écran Tableau de bord affiche « Aucun battement
-   reçu » indéfiniment.
+   de fichiers (en sautant les migrations destructrices, voir l'étape 6).
+   **Sans cette étape, rien ne prévient au démarrage** : le conteneur démarre,
+   écrit son fichier de battement et reste `healthy`, mais chaque tour échoue
+   faute de table `engine_status` — une erreur par minute dans les journaux —
+   et l'écran Tableau de bord affiche « Aucun battement reçu » indéfiniment.
 
 5. Premier déploiement :
 
@@ -54,6 +57,16 @@ Tous les chemins ci-dessous sont relatifs à `v2/`, la racine du monorepo.
    cd deploy/vps
    ./deployer.sh
    ```
+
+6. **Seulement après** avoir vérifié que ce worker ET l'application web sont
+   déployés et sains (section suivante) : appliquer les migrations
+   destructrices restées de côté à l'étape 4. Une migration qui supprime une
+   table encore lue par un déploiement précédent du worker ou du web
+   casserait ce déploiement avant que le nouveau ne soit confirmé — l'ordre
+   inverse (migration avant déploiement) ferait tomber le tour de séquences
+   toutes les 60 secondes tant que l'ancien worker reste en place. Chaque
+   migration destructrice sauvegarde ce qu'elle supprime dans une table
+   `..._sauvegarde_<date>` avant le `drop`, à son propre en-tête SQL.
 
 ## Vérifier
 
