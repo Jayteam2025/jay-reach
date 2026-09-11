@@ -93,6 +93,15 @@ export const DISCOVER_INTERVAL_MS = Number(process.env.DISCOVER_INTERVAL_MS ?? 1
 /** Fréquence du tick de séquence. Même rôle de fenêtre. */
 export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000);
 
+/**
+ * Fenêtre de rejeu des actions email laissées `scheduled` (expéditeur
+ * désactivé, plafond fournisseur atteint, erreur transitoire sous le seuil de
+ * retry) : au plus un rejeu par action toutes les cinq minutes. Constante
+ * fixe, pas lue dans l'environnement — contrairement aux plafonds et cadences
+ * de l'écran Fournisseurs, ce n'est pas un réglage que l'opérateur ajuste.
+ */
+export const REJEU_ACTIONS_EMAIL_MS = 5 * 60 * 1000;
+
 // ---------------------------------------------------------------- collecte
 
 export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise<void> {
@@ -263,9 +272,81 @@ export async function traiterEnroll(ctx: Contexte, data: EnrollJob): Promise<voi
   console.log(`[enroll] inscription ${id} créée`);
 }
 
+interface ActionEnAttenteRow {
+  readonly action_id: string;
+  readonly organization_id: string;
+  readonly enrollment_id: string;
+  readonly step_id: string;
+  readonly sender_id: string | null;
+  readonly contact_id: string;
+  readonly campaign_id: string;
+  readonly template_parent_id: string | null;
+  readonly locale: string | null;
+}
+
+/**
+ * Relance les actions email laissées `scheduled` par un envoi précédent qui
+ * n'a ni échoué ni réussi — `envoyerEmailSalesBlink` les laisse intactes
+ * plutôt que de les bloquer (expéditeur désactivé, plafond fournisseur
+ * atteint, erreur transitoire sous le seuil de retry), et rien d'autre ne les
+ * relance : l'id du job de dispatch initial est déterministe par action, une
+ * réinsertion identique serait donc dédupliquée par pg-boss sans jamais
+ * réessayer.
+ *
+ * Fenêtre de deux minutes avant de considérer une action bloquée : le temps
+ * qu'un envoi en cours se termine. Fenêtre de rejeu de cinq minutes
+ * (`REJEU_ACTIONS_EMAIL_MS`) : un id de job différent par seau temporel, pour
+ * qu'un rejeu ne s'accumule pas à chaque tour du tick (60 s) tant que l'action
+ * reste en attente. `envoyerEmailSalesBlink` relit l'état de l'action à
+ * l'exécution : une action déjà partie ou bloquée entre-temps est ignorée.
+ */
+export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
+  const { pool, boss } = ctx;
+  const res = await pool.query<ActionEnAttenteRow>(
+    `select a.id as action_id, a.organization_id, a.enrollment_id, a.step_id, a.sender_id,
+            e.contact_id, e.campaign_id, s.template_parent_id, c.locale
+       from actions a
+       join enrollments e on e.id = a.enrollment_id
+       join contacts c on c.id = e.contact_id
+       join sequence_steps s on s.id = a.step_id
+       join organizations org on org.id = a.organization_id
+      where a.channel = 'email'
+        and a.status = 'scheduled'
+        and a.dispatched_at is null
+        and a.created_at < now() - interval '2 minutes'
+        and org.sending_paused_at is null
+      order by a.created_at asc
+      limit 200`,
+  );
+  const bucket = currentBucket(REJEU_ACTIONS_EMAIL_MS);
+  let rejouees = 0;
+  for (const row of res.rows) {
+    const job: DispatchJob = {
+      organizationId: row.organization_id,
+      channel: 'email',
+      actionId: row.action_id,
+      email: {
+        enrollmentId: row.enrollment_id,
+        contactId: row.contact_id,
+        stepId: row.step_id,
+        campaignId: row.campaign_id,
+        templateParentId: row.template_parent_id,
+        senderId: row.sender_id,
+        locale: row.locale,
+      },
+    };
+    await boss.insert([
+      { name: 'actions.dispatch', id: deterministicUuid('dispatch-rejeu', row.action_id, bucket), data: job },
+    ]);
+    rejouees += 1;
+  }
+  return rejouees;
+}
+
 /**
  * Avance les inscriptions dues et enfile les envois autorisés vers
- * `actions.dispatch` (id déterministe par action → pas de doublon de job).
+ * `actions.dispatch` (id déterministe par action → pas de doublon de job),
+ * puis relance les actions email restées en attente d'un tour précédent.
  */
 export async function traiterTick(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
@@ -280,7 +361,11 @@ export async function traiterTick(ctx: Contexte): Promise<number> {
   if (jobs.length > 0) {
     console.log(`[tick] ${jobs.length} envoi(s) enfilé(s)`);
   }
-  return jobs.length;
+  const rejouees = await rejouerActionsEmailEnAttente(ctx);
+  if (rejouees > 0) {
+    console.log(`[tick] ${rejouees} action(s) email en attente rejouée(s)`);
+  }
+  return jobs.length + rejouees;
 }
 
 // ------------------------------------------------------------ enrichissement

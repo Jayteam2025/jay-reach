@@ -292,6 +292,19 @@ export async function envoyerEmailSalesBlink(
     throw new Error('dispatch email SalesBlink : payload email/actionId manquant');
   }
 
+  // 0. État de l'action : un rejeu (relève des actions en attente,
+  // `rejouerActionsEmailEnAttente`) ou un job concurrent a pu la faire
+  // avancer entre l'enfilement et l'exécution. Seule une action encore
+  // `scheduled` doit être traitée — toute autre valeur (dispatched, delivered,
+  // blocked, failed, cancelled, skipped) signifie qu'un autre passage s'en est
+  // déjà occupé.
+  const etatActuel = await pool.query<{ status: string }>(`select status from actions where id = $1`, [actionId]);
+  const statut = etatActuel.rows[0]?.status;
+  if (statut !== 'scheduled') {
+    console.log(`[email-salesblink] action ${actionId} déjà ${statut ?? 'introuvable'} — ignorée`);
+    return;
+  }
+
   // 1. Clé.
   const credentials = await resolveProviderCredentials(pool, job.organizationId, SALESBLINK_PROVIDER, {
     encryptionKey,
@@ -325,20 +338,7 @@ export async function envoyerEmailSalesBlink(
     return;
   }
 
-  // 3. Plafond fournisseur.
-  const plafond = await lirePlafondFournisseur(pool, job.organizationId, SALESBLINK_PROVIDER, PLAFOND_SALESBLINK_ILLIMITE);
-  const credit = await pool.query<{ ok: boolean }>(`select app.consume_provider_credit($1, $2, $3, $4) as ok`, [
-    job.organizationId,
-    SALESBLINK_PROVIDER,
-    plafond,
-    1,
-  ]);
-  if (credit.rows[0]?.ok !== true) {
-    console.warn(`[email-salesblink] action ${actionId} en attente : plafond SalesBlink atteint (${plafond}/jour)`);
-    return;
-  }
-
-  // 4. Rendu.
+  // 3. Rendu.
   const ligne = await chargerLigneInscription(pool, email.enrollmentId);
   if (!ligne || !ligne.email) {
     console.warn(`[email-salesblink] action ${actionId} : inscription ${email.enrollmentId} sans adresse`);
@@ -374,7 +374,7 @@ export async function envoyerEmailSalesBlink(
   const corps = corpsPourSalesBlink(renduCorps.text);
   const objet = objetPourSalesBlink(renduObjet.text);
 
-  // 5. Mode d'envoi.
+  // 4. Mode d'envoi.
   const precedentes = await pool.query<EnvoiAnterieur>(
     `select payload ->> 'message_id' as message_id, payload ->> 'subject' as subject
        from actions
@@ -399,6 +399,22 @@ export async function envoyerEmailSalesBlink(
     mode = { mode: 'relance_repli', objet: `Re: ${premierEnvoi?.objet ?? objet}` };
   } else {
     mode = deciderModeEnvoi({ envoisAnterieurs });
+  }
+
+  // 5. Plafond fournisseur — consommé ici, juste avant l'envoi réel : une
+  // étape mal rendue (gabarit manquant, langue manquante, variable non
+  // résolue) est bloquée plus haut et ne doit jamais coûter une unité du
+  // quota quotidien pour un envoi qui n'aura jamais lieu.
+  const plafond = await lirePlafondFournisseur(pool, job.organizationId, SALESBLINK_PROVIDER, PLAFOND_SALESBLINK_ILLIMITE);
+  const credit = await pool.query<{ ok: boolean }>(`select app.consume_provider_credit($1, $2, $3, $4) as ok`, [
+    job.organizationId,
+    SALESBLINK_PROVIDER,
+    plafond,
+    1,
+  ]);
+  if (credit.rows[0]?.ok !== true) {
+    console.warn(`[email-salesblink] action ${actionId} en attente : plafond SalesBlink atteint (${plafond}/jour)`);
+    return;
   }
 
   try {

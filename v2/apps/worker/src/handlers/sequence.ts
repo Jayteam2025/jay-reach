@@ -408,7 +408,9 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);
       // Rendu local des variables pour les canaux dont Jay Reach possède le corps
-      // (message LinkedIn, courrier). L'email est rendu par Smartlead (leads).
+      // ici, dans le tick (message LinkedIn, courrier). L'email est aussi rendu
+      // par Jay Reach (`jr_subject`/`jr_body`), mais au moment de l'envoi
+      // (`envoyerEmailSalesBlink`), pas ici : voir `message-values.ts`.
       if ((ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
         const resolved = await resolveTemplate(pool, step.template_parent_id, row.locale);
         if (resolved.missingLocale) {

@@ -112,6 +112,7 @@ function clientFactice(overrides: Partial<ClientSalesBlink> = {}): ClientSalesBl
 }
 
 // Motifs de requetes communs a plusieurs scenarios.
+const ETAT_ACTION = /select status from actions where id/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
 const PLAFOND = /daily_cap/i;
@@ -135,6 +136,7 @@ const SELECT_ESSAIS = /payload ->> 'essais'/i;
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
   return [
+    { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
     { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
     {
       motif: SENDER,
@@ -186,6 +188,7 @@ afterEach(() => {
 describe('envoyerEmailSalesBlink', () => {
   it('sans provider_ref l’action est bloquée sender_unbound', async () => {
     const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
       { motif: CONFIG_CREDENTIALS, repondre: () => ligne([]) },
       {
         motif: SENDER,
@@ -299,6 +302,43 @@ describe('envoyerEmailSalesBlink', () => {
     // L'action ne doit pas etre marquee bloquee ni echouee : elle reste pending.
     expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
     expect(appels.some((a) => UPDATE_ECHEC.test(a.sql))).toBe(false);
+  });
+
+  it('une action déjà dispatched est ignorée (rejeu ou job concurrent)', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: ETAT_ACTION, repondre: () => ligne([{ status: 'dispatched' }]) }]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    // Rien d'autre n'a ete tente : ni resolution de credentials, ni envoi.
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.sql).toMatch(ETAT_ACTION);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+  });
+
+  it('une action déjà bloquée est ignorée (rejeu ou job concurrent)', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: ETAT_ACTION, repondre: () => ligne([{ status: 'blocked' }]) }]);
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    expect(appels).toHaveLength(1);
+  });
+
+  it('une étape sans gabarit ne consomme pas de crédit', async () => {
+    const { pool, appels } = creerPoolFactice(avecBase({ motif: UPDATE_BLOQUE, repondre: () => ligne([]) }));
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail({ templateParentId: null }), client);
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage).toBeDefined();
+    expect(blocage!.values[1]).toBe('missing_template');
+    // Bloqué avant le plafond : aucun crédit n'a été consommé pour un envoi
+    // qui n'aura jamais lieu.
+    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
+    expect(client.creerListe).not.toHaveBeenCalled();
   });
 
   it('mode_force = relance_repli force le repli et retire mode_force du payload', async () => {
