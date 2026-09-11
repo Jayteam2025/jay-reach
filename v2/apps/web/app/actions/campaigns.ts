@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { getTranslations } from 'next-intl/server';
 import {
   parseCampaignCreate,
   parseCampaignSettings,
@@ -12,6 +13,7 @@ import {
 } from '@jay-reach/core';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
+import { manquesTransportEmail } from './transport-email';
 
 export type CampaignActionResult = { ok: true; id: string } | { ok: false; error: string; issues?: string[] };
 export type SimpleResult = { ok: true } | { ok: false; error: string; issues?: string[] };
@@ -243,31 +245,32 @@ async function cequiManquePourEnvoyer(
     manques.push('aucun expéditeur LinkedIn actif');
   }
 
-  // 3. Une campagne d'envoi côté Smartlead, pour chaque persona acceptée.
-  //
-  // Sans elle l'action reste planifiée sans jamais être expédiée : le provider
-  // ne sait pas dans quelle campagne déposer le contact.
+  // 3. Un transport email prêt : la clé SalesBlink de l'organisation et au moins un
+  // expéditeur email actif relié à une boîte SalesBlink dont la dernière santé dit
+  // « envoi actif ». Sans cela l'action resterait planifiée sans jamais partir.
   if (besoinEmail) {
-    const { data: regles } = await supabase
-      .from('campaigns')
-      .select('entry_rules')
-      .eq('id', campaignId)
+    const { data: cle } = await supabase
+      .from('credentials_public')
+      .select('status')
+      .eq('organization_id', organizationId)
+      .eq('provider_id', 'salesblink')
       .maybeSingle();
-    const personas = ((regles as { entry_rules?: { personas?: string[] } } | null)?.entry_rules?.personas) ?? [];
-    if (personas.length > 0) {
-      const { data: mappings } = await supabase
-        .from('smartlead_campaign_mappings')
-        .select('persona_id')
-        .in('persona_id', personas);
-      const couvertes = new Set(((mappings ?? []) as { persona_id: string }[]).map((m) => m.persona_id));
-      const orphelines = personas.filter((p) => !couvertes.has(p));
-      if (orphelines.length > 0) {
-        const { data: noms } = await supabase.from('personas').select('name').in('id', orphelines);
-        const libelles = ((noms ?? []) as { name: string }[]).map((n) => n.name).join(', ');
-        manques.push(
-          `aucune campagne d’envoi reliée à ${orphelines.length === 1 ? 'la persona' : 'les personas'} ${libelles || orphelines.join(', ')}`,
-        );
-      }
+    const { data: boitesEmail } = await supabase
+      .from('senders')
+      .select('provider_ref, provider_state')
+      .eq('organization_id', organizationId)
+      .eq('kind', 'email')
+      .eq('is_active', true);
+    const t = await getTranslations();
+    const manquesTransport = manquesTransportEmail({
+      cleStatus: (cle as { status: string } | null)?.status ?? null,
+      boites: (boitesEmail ?? []) as {
+        provider_ref: string | null;
+        provider_state: { sending_enabled?: boolean } | null;
+      }[],
+    });
+    for (const manque of manquesTransport) {
+      manques.push(t(`campaign.guard.${manque}`));
     }
   }
 

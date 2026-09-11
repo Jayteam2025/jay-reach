@@ -71,7 +71,10 @@
       "replyMaxDelayHPlaceholder": "Heures, défaut 6"
     },
     "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
-    "secretUnchanged": "Laissez vide pour garder la clé actuelle"
+    "secretUnchanged": "Laissez vide pour garder la clé actuelle",
+    "todayUsage": "aujourd’hui : {used} / {cap}",
+    "lastSync": "{ago, select, never {Dernière relève : jamais} other {Dernière relève : {ago}}}",
+    "lastSyncError": "Dernière erreur : {error}"
   },
   "jobs": {
     "title": "Files de fond",
@@ -659,7 +662,11 @@
     "reason": {
       "letter": "Courrier — vérification requise",
       "budget": "Budget dépassé",
-      "manual": "Mode manuel"
+      "manual": "Mode manuel",
+      "sender_unbound": "Aucun expéditeur relié",
+      "missing_locale": "Langue du contact inconnue",
+      "missing_template": "Aucun message relié à l’étape",
+      "missing_variable": "Variable de message non résolue"
     }
   },
   "customers": {
@@ -797,7 +804,12 @@
       "emailPlaceholder": "prenom@votre-domaine.fr",
       "linkedinPlaceholder": "votre-profil",
       "identityHint": "Se fixe à la création. Elle désigne le compte branché chez le fournisseur, la changer ensuite ne changerait pas ce qui part."
-    }
+    },
+    "salesblinkBox": "Boîte SalesBlink",
+    "salesblinkBoxNone": "Aucune boîte SalesBlink disponible pour le moment. Vérifiez la clé dans Fournisseurs.",
+    "salesblinkHealth": "{etat, select, actif {Envoi actif} coupe {Coupé : {message}} other {Jamais relevé}}",
+    "salesblinkCap": "Plafond SalesBlink",
+    "lowestApplies": "le plus bas s’applique"
   },
   "snippets": {
     "title": "Textes réutilisables",
@@ -812,5 +824,12 @@
     "cancel": "Annuler",
     "delete": "Supprimer",
     "empty": "Aucun pour l'instant. Une signature, des mentions légales : ce qui se répète d'un message à l'autre."
+  },
+  "campaign": {
+    "guard": {
+      "noSalesBlinkKey": "aucune clé SalesBlink configurée",
+      "noBoundEmailSender": "aucun expéditeur email relié à une boîte SalesBlink",
+      "emailSenderDisconnected": "l’expéditeur email relié à SalesBlink n’a pas l’envoi actif"
+    }
   }
 }

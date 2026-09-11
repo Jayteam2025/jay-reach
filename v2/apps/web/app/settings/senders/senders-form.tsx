@@ -6,6 +6,23 @@ import { createSender, updateSender } from '../../actions/senders';
 
 export type SenderKind = 'email' | 'linkedin' | 'postal';
 
+/**
+ * Dernière santé relevée chez le transport email (SalesBlink), écrite par la
+ * relève périodique du worker. `sending_enabled` est le champ miroir lu par
+ * le handler d'envoi et par la garde d'activation ; `derniereErreur` vient de
+ * `GET /senders/{id}/health` et n'est renseignée que si un dernier échec a
+ * été relevé.
+ */
+export interface ProviderState {
+  readonly connectee?: boolean;
+  readonly envoiActif?: boolean;
+  readonly receptionActive?: boolean;
+  readonly sante?: number | null;
+  readonly derniereErreur?: { app: string; message: string; a: string } | null;
+  readonly sending_enabled?: boolean;
+  readonly receiving_enabled?: boolean;
+}
+
 export interface SenderRow {
   readonly id: string;
   readonly kind: SenderKind;
@@ -16,6 +33,35 @@ export interface SenderRow {
   readonly is_active: boolean;
   readonly business_hours: unknown;
   readonly timezone: string | null;
+  /** Boîte SalesBlink reliée (son `id` chez SalesBlink), ou `null`. */
+  readonly provider_ref: string | null;
+  readonly provider_state: ProviderState | null;
+}
+
+/** Une boîte du workspace SalesBlink, telle que proposée par le sélecteur. */
+export interface BoiteSalesBlinkOption {
+  readonly id: string;
+  readonly email: string;
+  readonly nom: string;
+  readonly plafondQuotidien: number | null;
+}
+
+export type ResultatBoitesSalesBlink =
+  | { ok: true; boites: readonly BoiteSalesBlinkOption[] }
+  | { ok: false; error: string };
+
+/** Libellé de la santé d'une boîte reliée, ou `null` si aucune boîte n'est reliée. */
+function libelleSante(
+  t: ReturnType<typeof useTranslations>,
+  providerRef: string | null,
+  state: ProviderState | null,
+): string | null {
+  if (!providerRef) return null;
+  if (!state) return t('salesblinkHealth', { etat: 'jamais' });
+  if (state.sending_enabled === false) {
+    return t('salesblinkHealth', { etat: 'coupe', message: state.derniereErreur?.message ?? '' });
+  }
+  return t('salesblinkHealth', { etat: 'actif' });
 }
 
 /** Jours au sens ISO : 1 = lundi … 7 = dimanche. */
@@ -163,14 +209,64 @@ function ReglageFenetre({
   );
 }
 
+/**
+ * Sélecteur de la boîte SalesBlink reliée à un expéditeur email. Partagé
+ * entre la carte d'un expéditeur existant et le formulaire de création : dans
+ * les deux cas, c'est le même geste — dire quelle boîte du workspace envoie
+ * réellement les messages de cet expéditeur.
+ */
+function SelecteurBoiteSalesBlink({
+  boitesSalesBlink,
+  providerRef,
+  onProviderRef,
+  idChamp,
+}: {
+  boitesSalesBlink: ResultatBoitesSalesBlink;
+  providerRef: string | null;
+  onProviderRef: (v: string | null) => void;
+  idChamp: string;
+}) {
+  const t = useTranslations('senders');
+
+  if (!boitesSalesBlink.ok || boitesSalesBlink.boites.length === 0) {
+    return (
+      <div className="rs-label">
+        {t('salesblinkBox')}
+        <p className="rs-row-sub" style={{ margin: 0 }}>
+          {t('salesblinkBoxNone')}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <label className="rs-label" htmlFor={idChamp}>
+      {t('salesblinkBox')}
+      <select
+        id={idChamp}
+        className="rs-input"
+        value={providerRef ?? ''}
+        onChange={(e) => onProviderRef(e.target.value || null)}
+      >
+        <option value="">—</option>
+        {boitesSalesBlink.boites.map((b) => (
+          <option key={b.id} value={b.id}>{`${b.nom} — ${b.email}`}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function CarteExpediteur({
   sender,
   orgId,
   demo,
+  boitesSalesBlink,
 }: {
   sender: SenderRow;
   orgId: string;
   demo: boolean;
+  boitesSalesBlink: ResultatBoitesSalesBlink;
 }) {
   const t = useTranslations('senders');
   const [nom, setNom] = useState(sender.display_name ?? '');
@@ -179,6 +275,7 @@ function CarteExpediteur({
   const [actif, setActif] = useState(sender.is_active);
   const [fenetre, setFenetre] = useState<Fenetre>(() => lireFenetre(sender.business_hours));
   const [fuseau, setFuseau] = useState(sender.timezone ?? 'Europe/Paris');
+  const [providerRef, setProviderRef] = useState<string | null>(sender.provider_ref);
   const [etat, setEtat] = useState<'repos' | 'envoi' | 'enregistre'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -189,9 +286,18 @@ function CarteExpediteur({
     horaire !== (sender.hourly_quota?.toString() ?? '') ||
     actif !== sender.is_active ||
     fuseau !== (sender.timezone ?? 'Europe/Paris') ||
+    providerRef !== sender.provider_ref ||
     fenetre.startHour !== fenetreInitiale.startHour ||
     fenetre.endHour !== fenetreInitiale.endHour ||
     !memesJours(fenetre.days, fenetreInitiale.days);
+
+  // Boîte reliée : sa santé (relevée en base par le worker) et son propre
+  // plafond de séquence, à comparer au plafond Jay Reach ci-dessous.
+  const boiteReliee = boitesSalesBlink.ok ? boitesSalesBlink.boites.find((b) => b.id === providerRef) ?? null : null;
+  // `provider_state` décrit la dernière relève de la boîte ENREGISTRÉE : tant
+  // qu'une nouvelle sélection n'est pas sauvegardée, cette santé ne la
+  // concerne pas encore.
+  const sante = providerRef === sender.provider_ref ? libelleSante(t, providerRef, sender.provider_state) : null;
 
   function touche<T>(setter: (v: T) => void) {
     return (v: T) => {
@@ -213,6 +319,7 @@ function CarteExpediteur({
       endHour: fenetre.endHour,
       days: fenetre.days,
       timezone: fuseau,
+      providerRef,
     });
     if (res.ok) {
       setEtat('enregistre');
@@ -243,6 +350,22 @@ function CarteExpediteur({
         />
       </label>
 
+      {sender.kind === 'email' ? (
+        <>
+          <SelecteurBoiteSalesBlink
+            boitesSalesBlink={boitesSalesBlink}
+            providerRef={providerRef}
+            onProviderRef={touche(setProviderRef)}
+            idChamp={`${sender.id}-boite-salesblink`}
+          />
+          {sante ? (
+            <p className="rs-row-sub" style={{ margin: 0 }}>
+              {sante}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <label className="rs-label">
           {t('dailyQuota')}
@@ -255,6 +378,11 @@ function CarteExpediteur({
             placeholder={t('noLimit')}
             onChange={(e) => touche(setQuotidien)(e.target.value)}
           />
+          {boiteReliee?.plafondQuotidien != null ? (
+            <span className="rs-row-sub">
+              {t('salesblinkCap')} : {boiteReliee.plafondQuotidien} — {t('lowestApplies')}
+            </span>
+          ) : null}
         </label>
         <label className="rs-label">
           {t('hourlyQuota')}
@@ -309,7 +437,15 @@ function CarteExpediteur({
  * repousserait sous la ligne de flottaison les expéditeurs déjà configurés,
  * qu'on vient consulter bien plus souvent.
  */
-function AjouterExpediteur({ orgId, demo }: { orgId: string; demo: boolean }) {
+function AjouterExpediteur({
+  orgId,
+  demo,
+  boitesSalesBlink,
+}: {
+  orgId: string;
+  demo: boolean;
+  boitesSalesBlink: ResultatBoitesSalesBlink;
+}) {
   const t = useTranslations('senders');
   const [ouvert, setOuvert] = useState(false);
   const [canal, setCanal] = useState<'email' | 'linkedin'>('email');
@@ -319,6 +455,7 @@ function AjouterExpediteur({ orgId, demo }: { orgId: string; demo: boolean }) {
   const [horaire, setHoraire] = useState('');
   const [fenetre, setFenetre] = useState<Fenetre>({ ...FENETRE_PAR_DEFAUT, days: [...FENETRE_PAR_DEFAUT.days] });
   const [fuseau, setFuseau] = useState('Europe/Paris');
+  const [providerRef, setProviderRef] = useState<string | null>(null);
   const [etat, setEtat] = useState<'repos' | 'envoi'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -330,6 +467,7 @@ function AjouterExpediteur({ orgId, demo }: { orgId: string; demo: boolean }) {
     setHoraire('');
     setFenetre({ ...FENETRE_PAR_DEFAUT, days: [...FENETRE_PAR_DEFAUT.days] });
     setFuseau('Europe/Paris');
+    setProviderRef(null);
     setErreur(null);
   }
 
@@ -347,6 +485,7 @@ function AjouterExpediteur({ orgId, demo }: { orgId: string; demo: boolean }) {
       endHour: fenetre.endHour,
       days: fenetre.days,
       timezone: fuseau,
+      providerRef: canal === 'email' ? providerRef : null,
     });
     setEtat('repos');
     if (res.ok) {
@@ -413,6 +552,15 @@ function AjouterExpediteur({ orgId, demo }: { orgId: string; demo: boolean }) {
                 compte branché chez le provider. */}
             <span className="rs-row-sub">{t('form.identityHint')}</span>
           </label>
+
+          {canal === 'email' ? (
+            <SelecteurBoiteSalesBlink
+              boitesSalesBlink={boitesSalesBlink}
+              providerRef={providerRef}
+              onProviderRef={setProviderRef}
+              idChamp="nouvel-expediteur-boite-salesblink"
+            />
+          ) : null}
 
           <label className="rs-label">
             {t('displayName')}
@@ -491,10 +639,12 @@ export function SendersForm({
   senders,
   orgId,
   demo,
+  boitesSalesBlink,
 }: {
   senders: readonly SenderRow[];
   orgId: string;
   demo: boolean;
+  boitesSalesBlink: ResultatBoitesSalesBlink;
 }) {
   const t = useTranslations('senders');
 
@@ -504,7 +654,7 @@ export function SendersForm({
       <h1>{t('title')}</h1>
       <p className="rs-lead">{t('lead')}</p>
 
-      <AjouterExpediteur orgId={orgId} demo={demo} />
+      <AjouterExpediteur orgId={orgId} demo={demo} boitesSalesBlink={boitesSalesBlink} />
 
       {senders.length === 0 ? (
         <div className="rs-card">
@@ -515,7 +665,7 @@ export function SendersForm({
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {senders.map((s) => (
-            <CarteExpediteur key={s.id} sender={s} orgId={orgId} demo={demo} />
+            <CarteExpediteur key={s.id} sender={s} orgId={orgId} demo={demo} boitesSalesBlink={boitesSalesBlink} />
           ))}
         </div>
       )}

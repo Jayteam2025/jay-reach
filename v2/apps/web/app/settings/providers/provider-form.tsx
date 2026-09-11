@@ -34,6 +34,11 @@ export function ProviderForm(props: {
    * caractères le sont, pour reconnaître la clé sans la révéler.
    */
   config: Record<string, string> | null;
+  /** Consommation du jour, pour un fournisseur qui porte un plafond quotidien. */
+  todayUsage?: { used: number; cap: number | string } | null;
+  /** SalesBlink seulement : dernière relève (temps relatif, ou `'never'`) et dernière erreur. */
+  lastSyncAgo?: string | null;
+  lastSyncError?: string | null;
 }) {
   const t = useTranslations();
   const router = useRouter();
@@ -53,6 +58,26 @@ export function ProviderForm(props: {
           {configured ? t('providers.configured') : t('providers.notConfigured')}
         </span>
       </button>
+
+      {props.todayUsage || props.lastSyncAgo || props.lastSyncError ? (
+        <div className="rs-prov-status">
+          {props.todayUsage ? (
+            <p className="rs-row-sub" style={{ margin: 0 }}>
+              {t('providers.todayUsage', { used: props.todayUsage.used, cap: props.todayUsage.cap })}
+            </p>
+          ) : null}
+          {props.lastSyncAgo ? (
+            <p className="rs-row-sub" style={{ margin: 0 }}>
+              {t('providers.lastSync', { ago: props.lastSyncAgo })}
+            </p>
+          ) : null}
+          {props.lastSyncError ? (
+            <p className="rs-row-sub" style={{ margin: 0, color: 'var(--flare)' }}>
+              {t('providers.lastSyncError', { error: props.lastSyncError })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {open ? (
         <form

@@ -1228,6 +1228,14 @@ button.rs-pill.rs-pill-lime:hover {
   background: var(--ink);
   border-top: 1px solid var(--slate2);
 }
+/* Ligne d'état toujours visible (consommation du jour, dernière relève) — même
+   indentation que le détail déplié, sans son fond ni sa bordure : ce n'est pas
+   un formulaire, juste un chiffre à consulter d'un coup d'œil. */
+.rs-prov-status {
+  display: grid;
+  gap: 2px;
+  padding: 0 16px 10px 41px;
+}
 .rs-prov-detail .rs-label {
   margin-bottom: 0;
 }
