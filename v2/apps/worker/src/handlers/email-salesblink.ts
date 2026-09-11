@@ -324,17 +324,30 @@ export async function envoyerEmailSalesBlink(
 
   // 0.5 Défense en profondeur (C1, revue finale du 11/09) : le balayage de
   // rejeu (`rejouerActionsEmailEnAttente`) filtre déjà sur l'inscription
-  // active et l'absence de suppression, mais ce gestionnaire ne doit pas
-  // dépendre uniquement de ce filtre SQL — un envoi peut aussi arriver ici
-  // par un autre chemin, présent ou futur. Sans cette seconde vérification,
-  // un prospect qui répond ou se désinscrit pendant qu'un envoi est déjà en
-  // file recevrait quand même l'email.
+  // active/completed et l'absence de suppression, mais ce gestionnaire ne
+  // doit pas dépendre uniquement de ce filtre SQL — un envoi peut aussi
+  // arriver ici par un autre chemin, présent ou futur. Sans cette seconde
+  // vérification, un prospect qui répond ou se désinscrit pendant qu'un envoi
+  // est déjà en file recevrait quand même l'email.
+  //
+  // `completed` signifie que le tick a fini de planifier la séquence, pas
+  // qu'il ne faut plus contacter le prospect : la dernière étape passe
+  // l'inscription à `completed` avant même que ce gestionnaire ne s'exécute
+  // (hotfix du 11/09 — sans quoi le dernier email d'une séquence n'était
+  // jamais envoyé). `paused`/`paused_absence` sont transitoires : on laisse
+  // l'action `scheduled` intacte, le balayage de rejeu la reprendra une fois
+  // l'inscription active de nouveau. Seuls `stopped`, `replied`, `bounced` ou
+  // une inscription introuvable marquent l'action `skipped`.
   const inscriptionRes = await pool.query<{ status: string; email: string | null }>(
     `select en.status, c.email from enrollments en join contacts c on c.id = en.contact_id where en.id = $1`,
     [email.enrollmentId],
   );
   const inscription = inscriptionRes.rows[0];
-  if (!inscription || inscription.status !== 'active') {
+  if (inscription?.status === 'paused' || inscription?.status === 'paused_absence') {
+    console.log(`[email-salesblink] action ${actionId} en attente : inscription en pause`);
+    return;
+  }
+  if (!inscription || (inscription.status !== 'active' && inscription.status !== 'completed')) {
     await pool.query(`update actions set status = 'skipped', error = $2 where id = $1`, [
       actionId,
       'enrollment_inactive',

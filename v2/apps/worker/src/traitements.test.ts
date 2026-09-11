@@ -72,7 +72,7 @@ describe('rejouerActionsEmailEnAttente', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it('la requête filtre sur l’inscription active et l’absence de suppression email (C1)', async () => {
+  it('la requête filtre sur l’inscription active/completed et l’absence de suppression email (C1)', async () => {
     // Le pool factice de ce fichier renvoie toujours les mêmes lignes, quelle
     // que soit la requête : il ne peut donc pas rejouer le filtrage réel de
     // Postgres. On vérifie ici que le garde-fou est bien dans la requête —
@@ -84,10 +84,26 @@ describe('rejouerActionsEmailEnAttente', () => {
     await rejouerActionsEmailEnAttente(ctx);
 
     const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
-    expect(sql).toContain(`e.status = 'active'`);
+    expect(sql).toContain(`e.status in ('active', 'completed')`);
     expect(sql).toMatch(/not exists[\s\S]*from suppressions/i);
     expect(sql).toMatch(/scope = 'email'/);
     expect(sql).toMatch(/sup\.value = c\.email/);
+  });
+
+  it('le balayage réenfile une action d’une inscription completed (hotfix dernier email, 11/09)', async () => {
+    // Même limite du pool factice que le test C1 ci-dessus : il ne filtre pas
+    // réellement par statut, donc ce test documente et vérifie que la requête
+    // autorise `completed` dans son filtre — sans quoi le dernier email d'une
+    // séquence, dont l'inscription passe à `completed` avant l'envoi (voir
+    // `sequence.ts`), ne serait jamais repris par ce balayage.
+    const { ctx, insert } = creerContexteFactice([ligneActionEnAttente()]);
+
+    const rejouees = await rejouerActionsEmailEnAttente(ctx);
+
+    expect(rejouees).toBe(1);
+    expect(insert).toHaveBeenCalledTimes(1);
+    const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(sql).toContain(`e.status in ('active', 'completed')`);
   });
 
   it('deux passages dans le même seau produisent le même id de job', async () => {

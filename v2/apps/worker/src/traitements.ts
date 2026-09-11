@@ -302,12 +302,16 @@ interface ActionEnAttenteRow {
  * reste en attente. `envoyerEmailSalesBlink` relit l'état de l'action à
  * l'exécution : une action déjà partie ou bloquée entre-temps est ignorée.
  *
- * `e.status = 'active'` et l'absence de suppression active sur l'adresse
- * (C1, revue finale du 11/09) : sans ce filtre, une inscription arrêtée
- * pendant qu'une action reste `scheduled` — l'expéditeur coupé par la
- * vérification IMAP, un prospect qui répond ou rebondit entre-temps — voyait
- * son email repartir dès l'expéditeur rétabli, vers quelqu'un qui avait déjà
- * répondu ou une adresse désinscrite. Même garde que `hasActiveSuppression`
+ * `e.status in ('active', 'completed')` et l'absence de suppression active
+ * sur l'adresse (C1, revue finale du 11/09 ; élargi à `completed` par le
+ * hotfix du 11/09) : sans ce filtre, une inscription arrêtée pendant qu'une
+ * action reste `scheduled` — l'expéditeur coupé par la vérification IMAP, un
+ * prospect qui répond ou rebondit entre-temps — voyait son email repartir
+ * dès l'expéditeur rétabli, vers quelqu'un qui avait déjà répondu ou une
+ * adresse désinscrite. `completed` est inclus au même titre que `active` :
+ * le tick y bascule l'inscription dès la dernière étape planifiée, avant même
+ * que l'action ne soit envoyée — un email de dernière étape resterait sinon
+ * `scheduled` sans jamais être repris. Même garde que `hasActiveSuppression`
  * (`sequence.ts`), portée sur l'adresse du contact déjà jointe ici.
  */
 export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
@@ -325,7 +329,7 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
-        and e.status = 'active'
+        and e.status in ('active', 'completed')
         and not exists (
           select 1 from suppressions sup
            where sup.organization_id = a.organization_id
