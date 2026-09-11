@@ -17,7 +17,7 @@
  */
 import { getPool } from '../../../../../lib/db';
 import { validateToken } from '../../../../../lib/linkedin/queue';
-import { notifyReply, recordInboundReply } from '../../../../../lib/inbox/record-reply';
+import { notifyReply, recordInboundReply } from '@jay-reach/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

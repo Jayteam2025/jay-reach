@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './contracts.js';
+export * from './executeur.js';
 export * from './roles.js';
 export * from './queues.js';
 export * from './company-resolution.js';
@@ -18,6 +19,7 @@ export * from './messages/index.js';
 export * from './campaigns/index.js';
 export * from './plafonds.js';
 export * from './reglages-salesblink.js';
+export * from './email-transport/index.js';
 
 /** Version du paquet cœur — sert de sonde de santé au worker/web. */
 export const CORE_VERSION = '0.0.0';

@@ -14,7 +14,7 @@
  */
 import type { Pool } from 'pg';
 import type { SmartleadEvent } from '@jay-reach/core';
-import { LIVE_STATUSES, notifyReply, recordInboundReply } from '../inbox/record-reply';
+import { LIVE_STATUSES, notifyReply, recordInboundReply } from '@jay-reach/core';
 
 export type ProcessResult =
   | { readonly stored: false; readonly reason: 'no_email' | 'unknown_contact' | 'ignored' }
@@ -78,7 +78,7 @@ export async function processSmartleadEvent(pool: Pool, org: string, event: Smar
 
   if (event.type === 'replied') {
     // Le traitement est commun à tous les canaux : classer, ouvrir le fil,
-    // arrêter la séquence, notifier. Voir `lib/inbox/record-reply`.
+    // arrêter la séquence, notifier. Voir `@jay-reach/core` (`inbox/record-reply`).
     const enregistre = await recordInboundReply(pool, org, {
       contactId: contact.id,
       channel: 'email',
