@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { LIVE_STATUSES, notifyReply, recordInboundReply } from './record-reply.js';
+import { LIVE_STATUSES, notifier, notifyReply, recordInboundReply } from './record-reply.js';
 
 interface ReponsesFactices {
   threadExistant?: { id: string } | null;
@@ -71,12 +71,23 @@ describe('recordInboundReply', () => {
 });
 
 describe('notifyReply', () => {
-  it('insère une notification pour l’organisation', async () => {
+  it('insère une notification pour l’organisation avec l’événement contact.replied', async () => {
     const { ex, appels } = creerExecuteurFactice({});
     await notifyReply(ex, 'org-1', 'Nouvelle réponse', 'Extrait du message');
 
     expect(appels).toHaveLength(1);
     expect(appels[0]!.text).toContain('insert into notifications');
+    expect(appels[0]!.values).toEqual(['org-1', JSON.stringify({ title: 'Nouvelle réponse', body: 'Extrait du message' }), 'contact.replied']);
+  });
+});
+
+describe('notifier', () => {
+  it('insère une notification avec l’événement fourni, distinct de contact.replied', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    await notifier(ex, 'org-1', 'sender.disconnected', 'Expéditeur email déconnecté', 'expediteur@exemple.fr');
+
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.values[2]).toBe('sender.disconnected');
   });
 });
 

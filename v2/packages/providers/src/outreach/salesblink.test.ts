@@ -10,6 +10,8 @@ import {
   listerEnvoisSortis,
   listerReponses,
   listerRapports,
+  PAGES_MAX_PAR_DEFAUT,
+  TAILLE_PAGE_RAPPORTS,
   type LeadSalesBlink,
 } from './salesblink.js';
 
@@ -565,5 +567,118 @@ describe('listerReponses', () => {
       email: 'lead@exemple.test',
       sequenceId: 'sequence-1',
     });
+  });
+});
+
+describe('fenêtre from/to et plafond de pages', () => {
+  it('listerReponses envoie from et to quand jusquaMs est fourni', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: [] });
+      }),
+    );
+
+    await listerReponses(1000, CLE_TEST, { jusquaMs: 2000 });
+
+    expect(urls[0]).toContain('from=1000');
+    expect(urls[0]).toContain('to=2000');
+  });
+
+  it('listerReponses omet to quand jusquaMs est absent (retrocompatible)', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: [] });
+      }),
+    );
+
+    await listerReponses(1000, CLE_TEST);
+
+    expect(urls[0]).toContain('from=1000');
+    expect(urls[0]).not.toContain('to=');
+  });
+
+  it('listerRapports envoie from et to quand jusquaMs est fourni', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: [] });
+      }),
+    );
+
+    await listerRapports({ message: 'Bounced', depuisMs: 1000, jusquaMs: 2000 }, CLE_TEST);
+
+    expect(urls[0]).toContain('from=1000');
+    expect(urls[0]).toContain('to=2000');
+  });
+
+  it('listerEnvoisSortis encode la fenêtre dans le paramètre date, borne haute = jusquaMs', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: { result: [] } });
+      }),
+    );
+
+    await listerEnvoisSortis(1000, CLE_TEST, { jusquaMs: 2000 });
+
+    expect(urls[0]).toContain('date=1000-2000');
+  });
+
+  it('maxPages borne le nombre de pages récupérées, même si chaque page est pleine (listerRapports)', async () => {
+    const urls: string[] = [];
+    const rapportFictif = (id: string) => ({
+      id,
+      time: '1700000000000',
+      type: 'outreach',
+      message: 'Sent',
+      email: 'exemple@exemple.fr',
+      sequence: 'sequence-1',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: Array.from({ length: 100 }, (_, i) => rapportFictif(`r-${urls.length}-${i}`)) });
+      }),
+    );
+
+    const rapports = await listerRapports({ message: 'Sent', depuisMs: 0, maxPages: 2 }, CLE_TEST);
+
+    expect(urls).toHaveLength(2);
+    expect(rapports).toHaveLength(200);
+  });
+
+  it('sans maxPages explicite, s’arrête à PAGES_MAX_PAR_DEFAUT pages pleines (listerRapports)', async () => {
+    const urls: string[] = [];
+    const rapportFictif = (id: string) => ({
+      id,
+      time: '1700000000000',
+      type: 'outreach',
+      message: 'Sent',
+      email: 'exemple@exemple.fr',
+      sequence: 'sequence-1',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: Array.from({ length: 100 }, (_, i) => rapportFictif(`r-${urls.length}-${i}`)) });
+      }),
+    );
+
+    const rapports = await listerRapports({ message: 'Sent', depuisMs: 0 }, CLE_TEST);
+
+    expect(urls).toHaveLength(PAGES_MAX_PAR_DEFAUT);
+    expect(rapports).toHaveLength(PAGES_MAX_PAR_DEFAUT * TAILLE_PAGE_RAPPORTS);
   });
 });

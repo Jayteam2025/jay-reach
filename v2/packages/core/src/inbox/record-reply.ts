@@ -70,14 +70,25 @@ async function upsertThread(
   return created.rows[0]!.id;
 }
 
-/** Notifie tous les membres de l'organisation (règle non négociable n° 9). */
-export async function notifyReply(ex: Executeur, org: string, title: string, body: string): Promise<void> {
+/**
+ * Notifie tous les membres de l'organisation, avec l'événement de son choix.
+ * `event` distingue une réponse entrante (`contact.replied`, compté comme
+ * telle par le tableau de bord) d'un autre motif de notification — un
+ * expéditeur déconnecté ou une relance en retard ne doivent pas gonfler le
+ * compteur de réponses.
+ */
+export async function notifier(ex: Executeur, org: string, event: string, title: string, body: string): Promise<void> {
   await ex.query(
     `insert into notifications (organization_id, user_id, event, payload, channel, sent_at)
-     select $1, m.user_id, 'contact.replied', $2::jsonb, 'push', now()
+     select $1, m.user_id, $3, $2::jsonb, 'push', now()
      from memberships m where m.organization_id = $1`,
-    [org, JSON.stringify({ title, body })],
+    [org, JSON.stringify({ title, body }), event],
   );
+}
+
+/** Notifie d'une réponse entrante (règle non négociable n° 9). */
+export async function notifyReply(ex: Executeur, org: string, title: string, body: string): Promise<void> {
+  await notifier(ex, org, 'contact.replied', title, body);
 }
 
 /**

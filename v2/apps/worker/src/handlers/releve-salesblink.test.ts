@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
+import { ErreurSalesBlink, PAGES_MAX_PAR_DEFAUT, TAILLE_PAGE_RAPPORTS } from '@jay-reach/providers/outreach';
 import type { EnvoiSorti, Rapport, SanteBoite } from '@jay-reach/providers/outreach';
 import { deterministicUuid, currentBucket } from '../ids.js';
-import { releverSalesBlink, enqueueReleveSalesBlink, type ClientReleveSalesBlink } from './releve-salesblink.js';
+import {
+  releverSalesBlink,
+  enqueueReleveSalesBlink,
+  FENETRE_RELEVE_MAX_MS,
+  RETARD_SECURITE_MS,
+  type ClientReleveSalesBlink,
+} from './releve-salesblink.js';
 
 const ORG_ID = 'org-1';
 
@@ -128,6 +134,9 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => MAJ_LIVREE_SEQUENCE.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-1', new Date(2000).toISOString(), 'seq-1', 'marie@exemple.fr']);
+    // Fenêtre non saturée : last_error reste null.
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur!.values[3]).toBeNull();
   });
 
   it('un rapport Bounced ouvre une suppression et arrête l’inscription (rebond)', async () => {
@@ -158,8 +167,73 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => ENROLLMENT_UPDATE.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values[2]).toBe('bounced');
+    // Le curseur avance à la fin de la fenêtre traitée (départ 100 + une
+    // heure), pas au max des horodatages des événements (4242 + 1) : un flux
+    // plus lent ne doit jamais être sauté par un curseur déjà passé plus loin.
     const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
-    expect(curseur!.values[2]).toBe(4243);
+    expect(curseur!.values[2]).toBe(100 + FENETRE_RELEVE_MAX_MS);
+    expect(curseur!.values[3]).toBeNull();
+  });
+
+  it('fenêtre trop fraîche (< 2 min) : les flux datés sont sautés, tâches reply et santé tournent quand même', async () => {
+    const curseurRecent = Date.now() - RETARD_SECURITE_MS / 2;
+    const client = clientFactice();
+    const { pool, appels } = creerPoolFactice([
+      { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
+      { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: curseurRecent }]) },
+      { motif: SENDERS_SELECT, repondre: () => ligne([]) },
+      { motif: CURSEUR_UPSERT, repondre: () => ligne([]) },
+    ]);
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(client.listerEnvoisSortis).not.toHaveBeenCalled();
+    expect(client.listerReponses).not.toHaveBeenCalled();
+    expect(client.listerRapports).not.toHaveBeenCalled();
+    expect(client.listerTachesReponse).toHaveBeenCalledTimes(1);
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur).toBeDefined();
+    expect(curseur!.values[2]).toBe(curseurRecent);
+    expect(curseur!.values[3]).toBeNull();
+  });
+
+  it('une fenêtre saturée sur un flux avance quand même le curseur mais pose last_error', async () => {
+    const envoisSatures: EnvoiSorti[] = Array.from({ length: PAGES_MAX_PAR_DEFAUT * TAILLE_PAGE_RAPPORTS }, (_, i) => ({
+      id: `envoi-${i}`,
+      messageId: null,
+      email: `x${i}@exemple.fr`,
+      sequenceId: null,
+      termine: false,
+      termineMs: null,
+      planifieMs: null,
+      typeTache: 'reply',
+    }));
+    const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => envoisSatures) });
+    const { pool, appels } = creerPoolFactice(avecBase());
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur).toBeDefined();
+    expect(curseur!.values[3]).toBe('fenetre_saturee:envois');
+  });
+
+  it('une réponse sans email est ignorée par versEvenementsRepondus (aucun traitement)', async () => {
+    const rapport: Rapport = {
+      id: 'r-sans-email',
+      horodatageMs: 999,
+      type: 'reply',
+      message: 'Replied',
+      email: null,
+      sequenceId: null,
+      corps: 'Bonjour',
+    };
+    const client = clientFactice({ listerReponses: vi.fn(async () => [rapport]) });
+    const { pool, appels } = creerPoolFactice(avecBase());
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(appels.some((a) => CONTACT_LOOKUP.test(a.sql))).toBe(false);
   });
 
   it('un rapport Error remet l’action en attente avec essais=1 et replanifie la séquence', async () => {
@@ -222,6 +296,34 @@ describe('releverSalesBlink', () => {
     expect(JSON.parse(maj!.values[1] as string)).toEqual({ essais: 1 });
   });
 
+  it('une tâche reply en erreur après trop d’essais force le repli (mode_force) plutôt qu’un nouvel essai', async () => {
+    const tache: EnvoiSorti = {
+      id: 'tache-4',
+      messageId: null,
+      email: 'marie@exemple.fr',
+      sequenceId: null,
+      termine: false,
+      termineMs: null,
+      planifieMs: Date.now(),
+      typeTache: 'reply',
+      erreur: 'Panne persistante',
+    };
+    const client = clientFactice({ listerTachesReponse: vi.fn(async () => [tache]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: LOOKUP_ERREUR_REPLY, repondre: () => ligne([{ id: 'action-9', essais: '2' }]) },
+        { motif: REMETTRE_EN_ATTENTE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const maj = appels.find((a) => REMETTRE_EN_ATTENTE.test(a.sql));
+    expect(maj).toBeDefined();
+    expect(maj!.values[0]).toBe('action-9');
+    expect(JSON.parse(maj!.values[1] as string)).toEqual({ mode_force: 'relance_repli' });
+  });
+
   it('une tâche reply trop vieille force le repli et notifie', async () => {
     const septHeures = 7 * 60 * 60 * 1000;
     const tache: EnvoiSorti = {
@@ -248,7 +350,10 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => REMETTRE_EN_ATTENTE.test(a.sql));
     expect(maj).toBeDefined();
     expect(JSON.parse(maj!.values[1] as string)).toEqual({ mode_force: 'relance_repli' });
-    expect(appels.some((a) => NOTIFICATIONS_INSERT.test(a.sql))).toBe(true);
+    const notif = appels.find((a) => NOTIFICATIONS_INSERT.test(a.sql));
+    expect(notif).toBeDefined();
+    // Événement distinct de contact.replied : une relance en retard ne doit pas compter comme une réponse.
+    expect(notif!.values[2]).toBe('email.reply_late');
   });
 
   it('une tâche reply terminée marque l’action liée delivered', async () => {
@@ -293,7 +398,10 @@ describe('releverSalesBlink', () => {
     expect(client.reconnecterBoite).toHaveBeenCalledTimes(1);
     expect(client.reconnecterBoite).toHaveBeenCalledWith('sb-sender-1', 'cle-de-test');
     expect(client.santeBoite).toHaveBeenCalledTimes(2);
-    expect(appels.some((a) => NOTIFICATIONS_INSERT.test(a.sql))).toBe(true);
+    const notif = appels.find((a) => NOTIFICATIONS_INSERT.test(a.sql));
+    expect(notif).toBeDefined();
+    // Événement distinct de contact.replied : un expéditeur déconnecté ne doit pas compter comme une réponse.
+    expect(notif!.values[2]).toBe('sender.disconnected');
     const maj = appels.find((a) => SENDERS_UPDATE.test(a.sql));
     expect(maj).toBeDefined();
     const etat = JSON.parse(maj!.values[1] as string);

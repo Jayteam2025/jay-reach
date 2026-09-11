@@ -19,7 +19,17 @@
 
 const BASE_SALESBLINK = 'https://run.salesblink.io/api/public/v1.0.0';
 const TAILLE_LOT_LEADS = 500;
-const TAILLE_PAGE_RAPPORTS = 100;
+/** Taille de page des flux datés (envois, réponses, rapports) — commune aux trois. */
+export const TAILLE_PAGE_RAPPORTS = 100;
+/**
+ * Plafond de pages par flux et par relève (défaut). Avec une fenêtre de relève
+ * d'une heure au plus (`FENETRE_RELEVE_MAX_MS` côté worker) et cent éléments
+ * par page, cinq pages couvrent cinq cents événements par flux — largement
+ * hors de portée pour la volumétrie de ce produit. Exporté pour que la relève
+ * détecte une fenêtre saturée (nombre de lignes = ce plafond × la taille de
+ * page) sans dupliquer la constante.
+ */
+export const PAGES_MAX_PAR_DEFAUT = 5;
 const LONGUEUR_MAX_ERREUR = 200;
 
 export class ErreurSalesBlink extends Error {
@@ -401,15 +411,41 @@ function versEnvoiSorti(brut: unknown): EnvoiSorti {
   return envoi;
 }
 
-export async function listerEnvoisSortis(depuisMs: number, cle: string): Promise<EnvoiSorti[]> {
-  const resultat = await appeler(
-    'GET',
-    '/inbox',
-    { parametres: { type: 'sent', limit: 100, date: `${depuisMs}-${Date.now()}` } },
-    cle,
-  );
-  const enveloppe = (donnees(resultat) ?? {}) as Record<string, unknown>;
-  return enTableau(enveloppe.result).map(versEnvoiSorti);
+/**
+ * `/inbox` ne documente pas de fenêtre `from`/`to` séparée : son seul filtre de
+ * date est `date` (`startTs-endTs`, en ms). `jusquaMs` (défaut : maintenant,
+ * pour ne pas changer le comportement des appels existants) en fixe la borne
+ * haute — c'est la fenêtre fermée `[depuisMs, jusquaMs)` que la relève
+ * demande, exprimée dans le format que cet endpoint comprend.
+ */
+export async function listerEnvoisSortis(
+  depuisMs: number,
+  cle: string,
+  options: { jusquaMs?: number; maxPages?: number } = {},
+): Promise<EnvoiSorti[]> {
+  const jusquaMs = options.jusquaMs ?? Date.now();
+  const maxPages = options.maxPages ?? PAGES_MAX_PAR_DEFAUT;
+  const envois: EnvoiSorti[] = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const resultat = await appeler(
+      'GET',
+      '/inbox',
+      {
+        parametres: {
+          type: 'sent',
+          limit: TAILLE_PAGE_RAPPORTS,
+          skip: page * TAILLE_PAGE_RAPPORTS,
+          date: `${depuisMs}-${jusquaMs}`,
+        },
+      },
+      cle,
+    );
+    const enveloppe = (donnees(resultat) ?? {}) as Record<string, unknown>;
+    const lot = enTableau(enveloppe.result).map(versEnvoiSorti);
+    envois.push(...lot);
+    if (lot.length < TAILLE_PAGE_RAPPORTS) break;
+  }
+  return envois;
 }
 
 export async function listerTachesReponse(cle: string): Promise<EnvoiSorti[]> {
@@ -442,14 +478,25 @@ function versRapport(brut: unknown): Rapport {
   };
 }
 
-export async function listerReponses(depuisMs: number, cle: string): Promise<Rapport[]> {
+/**
+ * `/replies` documente `since` (rétrocompatible) ainsi que `from`/`to` : la
+ * relève fixe les deux bornes de sa fenêtre fermée `[depuisMs, jusquaMs)`,
+ * `jusquaMs` omis retombant sur le comportement historique (pas de borne
+ * haute, `to` absent de la requête).
+ */
+export async function listerReponses(
+  depuisMs: number,
+  cle: string,
+  options: { jusquaMs?: number; maxPages?: number } = {},
+): Promise<Rapport[]> {
+  const maxPages = options.maxPages ?? PAGES_MAX_PAR_DEFAUT;
   const rapports: Rapport[] = [];
   let page = 1;
-  for (;;) {
+  for (let i = 0; i < maxPages; i += 1) {
     const resultat = await appeler(
       'GET',
       '/replies',
-      { parametres: { since: depuisMs, per_page: TAILLE_PAGE_RAPPORTS, page } },
+      { parametres: { from: depuisMs, to: options.jusquaMs, per_page: TAILLE_PAGE_RAPPORTS, page } },
       cle,
     );
     const lot = enTableau(donnees(resultat)).map(versRapport);
@@ -461,16 +508,23 @@ export async function listerReponses(depuisMs: number, cle: string): Promise<Rap
 }
 
 export async function listerRapports(
-  p: { message: 'Bounced' | 'Unsubscribed' | 'Error' | 'Sent'; depuisMs: number },
+  p: {
+    message: 'Bounced' | 'Unsubscribed' | 'Error' | 'Sent';
+    depuisMs: number;
+    /** Borne haute de la fenêtre `[depuisMs, jusquaMs)` ; omise = pas de borne haute (comportement historique). */
+    jusquaMs?: number;
+    maxPages?: number;
+  },
   cle: string,
 ): Promise<Rapport[]> {
+  const maxPages = p.maxPages ?? PAGES_MAX_PAR_DEFAUT;
   const rapports: Rapport[] = [];
   let skip = 0;
-  for (;;) {
+  for (let i = 0; i < maxPages; i += 1) {
     const resultat = await appeler(
       'GET',
       '/reports',
-      { parametres: { message: p.message, from: p.depuisMs, limit: TAILLE_PAGE_RAPPORTS, skip } },
+      { parametres: { message: p.message, from: p.depuisMs, to: p.jusquaMs, limit: TAILLE_PAGE_RAPPORTS, skip } },
       cle,
     );
     const lot = enTableau(donnees(resultat)).map(versRapport);

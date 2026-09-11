@@ -9,6 +9,23 @@
  * l'envoi ; cette relève ferme la boucle en relisant ce que SalesBlink a fait
  * depuis le dernier passage (`provider_sync_state.cursor_ms`).
  *
+ * Fenêtre bornée (revue du 11/09) : un curseur unique avancé au max des
+ * horodatages de tous les flux peut sauter un événement en retard sur l'un
+ * d'eux si un autre flux, plus rapide, a poussé le curseur plus loin. Chaque
+ * passage traite donc une fenêtre fermée `[depuis, jusqua)` d'au plus une
+ * heure (`FENETRE_RELEVE_MAX_MS`), avec deux minutes de retard de sécurité
+ * (`RETARD_SECURITE_MS`) sur le bord le plus récent — un retard de plusieurs
+ * heures se rattrape par tranches d'une heure, un passage à la fois, sans
+ * rien sauter. Le curseur n'avance qu'à la fin de la fenêtre traitée
+ * (`jusqua`), jamais au max des événements individuels.
+ *
+ * Budget d'appels par passage (fenêtre non saturée) : 6 GET fixes (les cinq
+ * flux datés — envois, réponses, rebonds, désinscriptions, erreurs — plus les
+ * tâches `reply`), plus jusqu'à 4 pages supplémentaires par flux daté si sa
+ * liste dépasse cent éléments (`PAGES_MAX_PAR_DEFAUT` de
+ * `packages/providers`), plus un appel de santé par expéditeur SalesBlink lié
+ * (et un second, exceptionnel, après une reconnexion).
+ *
  * Aucune clé, en-tête `Authorization` ni URL complète ne doit jamais figurer
  * dans un log ou une erreur stockée : en cas d'`ErreurSalesBlink`, seuls
  * `code` et `statut` sont conservés dans `provider_sync_state.last_error`.
@@ -22,7 +39,7 @@ import {
   sortDErreur,
   relanceTropVieille,
   traiterEvenementEmail,
-  notifyReply,
+  notifier,
   normaliserDelaiRelanceMax,
   normaliserIntervalleReleve,
   type EvenementEmail,
@@ -36,6 +53,8 @@ import {
   reconnecterBoite,
   replanifier,
   ErreurSalesBlink,
+  PAGES_MAX_PAR_DEFAUT,
+  TAILLE_PAGE_RAPPORTS,
   type Rapport,
   type EnvoiSorti,
   type SanteBoite,
@@ -48,6 +67,12 @@ import { SALESBLINK_PROVIDER } from './email-salesblink.js';
 const UNE_HEURE_MS = 60 * 60 * 1000;
 /** Absence de curseur (première relève d'une organisation) : on part de 24 h en arrière. */
 const FENETRE_PREMIERE_RELEVE_MS = 24 * 60 * 60 * 1000;
+/** Largeur maximale d'une fenêtre de relève : un retard se rattrape par tranches d'une heure. */
+export const FENETRE_RELEVE_MAX_MS = 60 * 60 * 1000;
+/** Retard de sécurité sur le bord le plus récent de la fenêtre : les tout derniers événements peuvent encore arriver. */
+export const RETARD_SECURITE_MS = 2 * 60 * 1000;
+/** Un flux dont la page est pleine à ce plafond a probablement plus à dire que ce que la fenêtre a pu lire. */
+const SEUIL_SATURATION = PAGES_MAX_PAR_DEFAUT * TAILLE_PAGE_RAPPORTS;
 
 /** Client SalesBlink minimal requis par la relève — injectable pour les tests. */
 export interface ClientReleveSalesBlink {
@@ -185,6 +210,22 @@ function formatErreurSync(err: ErreurSalesBlink): string {
   return err.statut !== null ? `${err.code} ${err.statut}` : err.code;
 }
 
+/**
+ * Une liste dont la longueur atteint pile `PAGES_MAX_PAR_DEFAUT × TAILLE_PAGE_RAPPORTS`
+ * a rempli toutes ses pages : la fenêtre est saturée pour ce flux, il en reste
+ * peut-être au-delà. On ne bloque pas la relève pour autant (avec une fenêtre
+ * d'une heure et cinq cents événements par flux, le cas est irréaliste pour ce
+ * produit) — juste une alerte visible : le curseur avance quand même, mais
+ * `last_error` porte la marque plutôt que de rester `null`.
+ */
+function verifierSaturation(org: string, nomFlux: string, longueur: number): string | null {
+  if (longueur !== SEUIL_SATURATION) return null;
+  console.warn(
+    `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « ${nomFlux} » (${longueur} éléments) — le passage suivant reprend là où celui-ci s'arrête`,
+  );
+  return nomFlux;
+}
+
 async function enregistrerCurseur(pool: Pool, org: string, cursorMs: number, lastError: string | null): Promise<void> {
   await pool.query(
     `insert into provider_sync_state (organization_id, provider, cursor_ms, last_run_at, last_error)
@@ -243,7 +284,7 @@ async function relangerSanteExpediteurs(
       const maintenant = Date.now();
       const derniereNotif = sender.provider_state?.derniere_notification_ms ?? 0;
       if (maintenant - derniereNotif > UNE_HEURE_MS) {
-        await notifyReply(pool, org, 'Expéditeur email déconnecté', sender.identity);
+        await notifier(pool, org, 'sender.disconnected', 'Expéditeur email déconnecté', sender.identity);
         etat.derniere_notification_ms = maintenant;
       } else {
         etat.derniere_notification_ms = derniereNotif;
@@ -257,9 +298,9 @@ async function relangerSanteExpediteurs(
 /**
  * Relève périodique d'une organisation : envois terminés, réponses, rebonds,
  * désinscriptions, erreurs, tâches de relance en file, santé des boîtes, puis
- * avance du curseur. Toute `ErreurSalesBlink` interrompt le passage : le
- * curseur ne bouge pas et `last_error` retient code + statut (jamais la clé,
- * jamais le corps brut).
+ * avance du curseur à la fin de la fenêtre traitée. Toute `ErreurSalesBlink`
+ * interrompt le passage : le curseur ne bouge pas et `last_error` retient
+ * code + statut (jamais la clé, jamais le corps brut).
  */
 export async function releverSalesBlink(
   ctx: { readonly pool: Pool; readonly encryptionKey?: string | undefined },
@@ -285,82 +326,112 @@ export async function releverSalesBlink(
   const brut = etatCurseur.rows[0]?.cursor_ms;
   const curseurDepart = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : departParDefaut;
 
+  const maintenant = Date.now();
+  // Fenêtre fermée [curseurDepart, jusqua) : au plus une heure d'un coup, et
+  // jamais plus près du présent que RETARD_SECURITE_MS (les tout derniers
+  // événements peuvent encore arriver chez SalesBlink).
+  const jusqua = Math.min(maintenant - RETARD_SECURITE_MS, curseurDepart + FENETRE_RELEVE_MAX_MS);
+  const fenetreOuverte = jusqua > curseurDepart;
+
   let tousEvenements: EvenementEmail[] = [];
+  const fluxSatures: string[] = [];
 
   try {
-    // 2. Envois sortis terminés : marquent l'action livrée (message_id posé par SalesBlink).
-    const envois = await client.listerEnvoisSortis(curseurDepart, cle);
-    const evEnvoyes = evenementsDepuisEnvois(envois);
-    tousEvenements = tousEvenements.concat(evEnvoyes);
-    for (const ev of evEnvoyes) {
-      if (ev.type !== 'envoye') continue;
-      await marquerActionLivreeParSequence(pool, org, {
-        sequenceId: ev.sequenceId,
-        email: ev.email,
-        messageId: ev.messageId,
-        aMs: ev.aMs,
-      });
-    }
+    if (fenetreOuverte) {
+      // 2. Envois sortis terminés : marquent l'action livrée (message_id posé par SalesBlink).
+      const envois = await client.listerEnvoisSortis(curseurDepart, cle, { jusquaMs: jusqua });
+      const s1 = verifierSaturation(org, 'envois', envois.length);
+      if (s1) fluxSatures.push(s1);
+      const evEnvoyes = evenementsDepuisEnvois(envois);
+      tousEvenements = tousEvenements.concat(evEnvoyes);
+      for (const ev of evEnvoyes) {
+        if (ev.type !== 'envoye') continue;
+        await marquerActionLivreeParSequence(pool, org, {
+          sequenceId: ev.sequenceId,
+          email: ev.email,
+          messageId: ev.messageId,
+          aMs: ev.aMs,
+        });
+      }
 
-    // 3. Réponses : ouvrent le fil, arrêtent la séquence, notifient (règle n° 9).
-    const reponses = await client.listerReponses(curseurDepart, cle);
-    const evRepondus = versEvenementsRepondus(reponses);
-    tousEvenements = tousEvenements.concat(evRepondus);
-    for (const ev of evRepondus) {
-      await traiterEvenementEmail(pool, org, ev, 'salesblink');
-    }
+      // 3. Réponses : ouvrent le fil, arrêtent la séquence, notifient (règle n° 9).
+      const reponses = await client.listerReponses(curseurDepart, cle, { jusquaMs: jusqua });
+      const s2 = verifierSaturation(org, 'reponses', reponses.length);
+      if (s2) fluxSatures.push(s2);
+      const evRepondus = versEvenementsRepondus(reponses);
+      tousEvenements = tousEvenements.concat(evRepondus);
+      for (const ev of evRepondus) {
+        await traiterEvenementEmail(pool, org, ev, 'salesblink');
+      }
 
-    // 4. Rebonds et désinscriptions : suppriment l'adresse, arrêtent la séquence.
-    const rapportsBounced = await client.listerRapports({ message: 'Bounced', depuisMs: curseurDepart }, cle);
-    const evBounced = evenementsDepuisRapports(rapportsBounced);
-    tousEvenements = tousEvenements.concat(evBounced);
-    for (const ev of evBounced) {
-      await traiterEvenementEmail(pool, org, ev, 'salesblink');
-    }
+      // 4. Rebonds et désinscriptions : suppriment l'adresse, arrêtent la séquence.
+      const rapportsBounced = await client.listerRapports(
+        { message: 'Bounced', depuisMs: curseurDepart, jusquaMs: jusqua },
+        cle,
+      );
+      const s3 = verifierSaturation(org, 'bounced', rapportsBounced.length);
+      if (s3) fluxSatures.push(s3);
+      const evBounced = evenementsDepuisRapports(rapportsBounced);
+      tousEvenements = tousEvenements.concat(evBounced);
+      for (const ev of evBounced) {
+        await traiterEvenementEmail(pool, org, ev, 'salesblink');
+      }
 
-    const rapportsUnsub = await client.listerRapports({ message: 'Unsubscribed', depuisMs: curseurDepart }, cle);
-    const evUnsub = evenementsDepuisRapports(rapportsUnsub);
-    tousEvenements = tousEvenements.concat(evUnsub);
-    for (const ev of evUnsub) {
-      await traiterEvenementEmail(pool, org, ev, 'salesblink');
-    }
+      const rapportsUnsub = await client.listerRapports(
+        { message: 'Unsubscribed', depuisMs: curseurDepart, jusquaMs: jusqua },
+        cle,
+      );
+      const s4 = verifierSaturation(org, 'unsubscribed', rapportsUnsub.length);
+      if (s4) fluxSatures.push(s4);
+      const evUnsub = evenementsDepuisRapports(rapportsUnsub);
+      tousEvenements = tousEvenements.concat(evUnsub);
+      for (const ev of evUnsub) {
+        await traiterEvenementEmail(pool, org, ev, 'salesblink');
+      }
 
-    // 5. Erreurs de séquence : nouvel essai (et replanification de la séquence
-    // — SalesBlink ne rejoue pas seul un email tombé pendant une coupure
-    // d'expéditeur) ou échec définitif selon `sortDErreur`.
-    const rapportsErreur = await client.listerRapports({ message: 'Error', depuisMs: curseurDepart }, cle);
-    const evErreurs = evenementsDepuisRapports(rapportsErreur);
-    tousEvenements = tousEvenements.concat(evErreurs);
-    const sequencesReplanifiees = new Set<string>();
-    for (const ev of evErreurs) {
-      if (ev.type !== 'erreur') continue;
-      const action = await actionParSequenceEtEmail(pool, org, ev.sequenceId, ev.email);
-      if (!action) continue;
-      if (sortDErreur('serveur', action.essais) === 'reessayer') {
-        await remettreEnAttente(pool, action.id, { essais: action.essais + 1 });
-        if (ev.sequenceId && !sequencesReplanifiees.has(ev.sequenceId)) {
-          sequencesReplanifiees.add(ev.sequenceId);
-          await client.replanifier(ev.sequenceId, cle);
-          await pool.query(
-            `update email_transport_bindings set last_replanned_at = now()
-              where organization_id = $1 and sequence_id = $2`,
-            [org, ev.sequenceId],
-          );
+      // 5. Erreurs de séquence : nouvel essai (et replanification de la séquence
+      // — SalesBlink ne rejoue pas seul un email tombé pendant une coupure
+      // d'expéditeur) ou échec définitif selon `sortDErreur`.
+      const rapportsErreur = await client.listerRapports(
+        { message: 'Error', depuisMs: curseurDepart, jusquaMs: jusqua },
+        cle,
+      );
+      const s5 = verifierSaturation(org, 'erreur', rapportsErreur.length);
+      if (s5) fluxSatures.push(s5);
+      const evErreurs = evenementsDepuisRapports(rapportsErreur);
+      tousEvenements = tousEvenements.concat(evErreurs);
+      const sequencesReplanifiees = new Set<string>();
+      for (const ev of evErreurs) {
+        if (ev.type !== 'erreur') continue;
+        const action = await actionParSequenceEtEmail(pool, org, ev.sequenceId, ev.email);
+        if (!action) continue;
+        if (sortDErreur('serveur', action.essais) === 'reessayer') {
+          await remettreEnAttente(pool, action.id, { essais: action.essais + 1 });
+          if (ev.sequenceId && !sequencesReplanifiees.has(ev.sequenceId)) {
+            sequencesReplanifiees.add(ev.sequenceId);
+            await client.replanifier(ev.sequenceId, cle);
+            await pool.query(
+              `update email_transport_bindings set last_replanned_at = now()
+                where organization_id = $1 and sequence_id = $2`,
+              [org, ev.sequenceId],
+            );
+          }
+        } else {
+          await pool.query(`update actions set status = 'failed', error = $2 where id = $1`, [
+            action.id,
+            messageEchecRapport(ev.motif),
+          ]);
         }
-      } else {
-        await pool.query(`update actions set status = 'failed', error = $2 where id = $1`, [
-          action.id,
-          messageEchecRapport(ev.motif),
-        ]);
       }
     }
 
     // 6. Tâches de relance (`reply`) en file chez SalesBlink : terminées →
     // livrées ; en erreur → repli immédiat, sans attendre le délai (mesuré le
     // 11/09 : une tâche en erreur n'est jamais rejouée par SalesBlink) ; trop
-    // vieilles → repli forcé et notification.
+    // vieilles → repli forcé et notification. Ce flux n'a pas de fenêtre
+    // temporelle (SalesBlink ne le filtre pas par date) : il tourne à chaque
+    // passage, même quand la fenêtre datée ci-dessus est encore trop fraîche.
     const taches = await client.listerTachesReponse(cle);
-    const maintenant = Date.now();
     for (const tache of taches) {
       if (tache.termine) {
         await marquerActionLivreeParTacheReponse(pool, org, tache);
@@ -380,16 +451,24 @@ export async function releverSalesBlink(
         const action = await actionParTacheReponse(pool, org, tache.id);
         if (!action) continue;
         await remettreEnAttente(pool, action.id, { mode_force: 'relance_repli' });
-        await notifyReply(pool, org, 'Relance en retard', 'Relance en retard, renvoyée en nouvel email.');
+        await notifier(pool, org, 'email.reply_late', 'Relance en retard', 'Relance en retard, renvoyée en nouvel email.');
       }
     }
 
-    // 7. Santé des expéditeurs liés à l'organisation.
+    // 7. Santé des expéditeurs liés à l'organisation — pas de fenêtre non plus.
     await relangerSanteExpediteurs(pool, org, cle, client);
 
-    // 8. Curseur : avance au maximum des horodatages des événements du passage.
-    const nouveauCurseur = curseurSuivant(tousEvenements, curseurDepart);
-    await enregistrerCurseur(pool, org, nouveauCurseur, null);
+    // 8. Curseur : n'avance qu'en bout de fenêtre traitée (jamais au max des
+    // horodatages individuels, qui sous-compterait un flux plus lent). Fenêtre
+    // encore trop fraîche (`!fenetreOuverte`) : rien à avancer, mais le
+    // passage est tracé (last_run_at) sans erreur.
+    if (fenetreOuverte) {
+      const nouveauCurseur = curseurSuivant(tousEvenements, jusqua);
+      const lastError = fluxSatures.length > 0 ? `fenetre_saturee:${fluxSatures[0]}` : null;
+      await enregistrerCurseur(pool, org, nouveauCurseur, lastError);
+    } else {
+      await enregistrerCurseur(pool, org, curseurDepart, null);
+    }
   } catch (err) {
     if (err instanceof ErreurSalesBlink) {
       await enregistrerCurseur(pool, org, curseurDepart, formatErreurSync(err));
