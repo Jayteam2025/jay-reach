@@ -46,7 +46,7 @@ export async function setProviderCredential(
 
 /**
  * Test de connexion. Le test réel par provider arrive avec chaque
- * implémentation (T20 Smartlead, T22 LinkedIn…). Ici on valide que le
+ * implémentation (SalesBlink, LinkedIn…). Ici on valide que le
  * provider est connu.
  */
 export async function testProviderConnection(

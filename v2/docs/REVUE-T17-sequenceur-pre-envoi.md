@@ -34,7 +34,7 @@ producteur → discover → qualify → accounts
         │  sequence.tick   : sélection des dus → conditions → rendu   │
         │                    du message → garde-fous → quota →        │
         │                    expéditeur → écrit les actions           │
-        │  actions.dispatch : envoi RÉEL (Smartlead…) — seulement     │
+        │  actions.dispatch : envoi RÉEL (email…) — seulement         │
         │                     après garde-fous + approbation          │
         └─────────────────────────────────────────────────────────────┘
 ```
@@ -130,7 +130,7 @@ qui n'existe pas encore.
 
 Par priorité :
 
-1. **`actions.dispatch` n'applique AUCUN garde-fou.** `handlers/dispatch.ts` pousse directement vers Smartlead ; son commentaire prétend « garde-fous appliqués en amont » — mais aucun amont ne les applique. Si un producteur enfile un `actions.dispatch`, c'est un **envoi sans garde-fou**. → Ne jamais alimenter `actions.dispatch` sans passer par un tick qui exécute `runGuards`.
+1. **`actions.dispatch` n'applique AUCUN garde-fou.** `handlers/dispatch.ts` pousse directement vers le transport email ; son commentaire prétend « garde-fous appliqués en amont » — mais aucun amont ne les applique. Si un producteur enfile un `actions.dispatch`, c'est un **envoi sans garde-fou**. → Ne jamais alimenter `actions.dispatch` sans passer par un tick qui exécute `runGuards`.
 2. **Le plafond de budget bloque au lieu de mettre en file.** `guards.ts:78` `block` ⇒ l'action est **perdue** ; `docs/04:58` veut qu'elle « passe en file » (approbation). À trancher/corriger avant d'activer le canal courrier.
 3. **Les entrées des garde-fous ne sont jamais calculées.** `accountContactedToday`, `spendWouldExceed`, `unresolvedVariables`, `quotaRemaining`, `postalVerified`, `businessHoursNextSlot`, `suppression` sont des entrées de `runGuards` sans producteur. Les garde-fous ne valent que ce que vaut ce calcul — qui n'existe pas encore.
 4. **Idempotence en mémoire seule.** `dedupeActions` a besoin d'une vraie source de clés existantes ET d'un **index unique DB** sur la clé. La clé `enrollmentId:stepId:attempt` **n'inclut ni le canal ni la version de template** → une étape multi-canaux pourrait entrer en collision. À vérifier avant de compter sur la sécurité de rejeu.

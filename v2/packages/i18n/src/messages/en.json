@@ -34,7 +34,6 @@
     "secretHidden": "key ending in {last4}",
     "save": "Save",
     "saved": "Saved",
-    "smartlead": "Smartlead (email)",
     "salesblink": "SalesBlink (email)",
     "fullenrich": "FullEnrich (enrichment)",
     "dropcontact": "Dropcontact (enrichment)",
@@ -70,7 +69,6 @@
       "replyMaxDelayHHint": "Past this delay, a follow-up still queued at SalesBlink is re-sent as a new \"Re:\" email (1 to 72)",
       "replyMaxDelayHPlaceholder": "Hours, default 6"
     },
-    "advancedWebhook": "Advanced: reconnect the Smartlead webhook by hand",
     "secretUnchanged": "Leave empty to keep the current key",
     "todayUsage": "today: {used} / {cap}",
     "lastSync": "{ago, select, never {Last sync: never} other {Last sync: {ago}}}",
@@ -189,8 +187,7 @@
     "annuaire": "Directory",
     "approvals": "Approvals",
     "customers": "Customers",
-    "templates": "Messages",
-    "smartlead": "Smartlead webhooks"
+    "templates": "Messages"
   },
   "sources": {
     "eyebrow": "Detection",
@@ -750,25 +747,6 @@
     "minScoreLink": "Set the scoring briefs",
     "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
     "dailyCapLink": "See the LinkedIn settings"
-  },
-  "smartleadWh": {
-    "eyebrow": "Email reception",
-    "title": "Smartlead webhooks",
-    "lead": "The webhook connects itself on the first send. This screen only serves to reconnect it or rotate its secret.",
-    "demoNotice": "Connect Supabase to configure the webhook.",
-    "urlTitle": "Webhook URL",
-    "copy": "Copy URL",
-    "copied": "Copied ✓",
-    "noSecret": "Generate a secret first to get the URL.",
-    "howTitle": "How to connect",
-    "step1": "In Smartlead, open the campaign → Webhooks → Add, and paste the URL above.",
-    "step2": "Enable the events:",
-    "step3": "Save. Replies land in the inbox; bounces and unsubscribes go to suppression.",
-    "generate": "Generate secret",
-    "regenerate": "Regenerate secret",
-    "regenWarn": "Regenerating invalidates the old URL — reconfigure Smartlead.",
-    "yourDomain": "https://your-instance",
-    "adminOnly": "Only admins can configure the webhook."
   },
   "senders": {
     "eyebrow": "Who sends",

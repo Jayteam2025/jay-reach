@@ -182,7 +182,7 @@ export async function persistEnrichedContact(
  * Léa Nature ressort en `recrutement-leanature.com`, son site de recrutement,
  * alors que ses adresses sont en `@leanature.com`. Constaté en recette le
  * 2026-08-28 — la recherche de contacts par domaine échouait, et le champ
- * `website` envoyé à Smartlead pointait au mauvais endroit.
+ * `website` transmis au transport email pointait au mauvais endroit.
  *
  * On retient le domaine MAJORITAIRE des contacts du compte : une adresse
  * personnelle isolée (gmail, yahoo) ne doit pas emporter la décision. Les

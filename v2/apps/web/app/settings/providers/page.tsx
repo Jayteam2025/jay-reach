@@ -3,7 +3,6 @@ import { PROVIDER_CATALOG } from '@jay-reach/providers';
 import { createClientOrNull } from '../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { ProviderForm } from './provider-form';
-import Link from 'next/link';
 
 const CATEGORY_ORDER = ['email', 'enrichment', 'signals', 'ai'] as const;
 
@@ -99,9 +98,6 @@ export default async function ProvidersPage() {
         <h1>{t('providers.title')}</h1>
         <p className="rs-lead">{t('providers.lead')}</p>
 
-        {/* Réglage avancé : le webhook Smartlead se branche tout seul au premier
-            envoi. Cet écran ne sert qu'à le rebrancher ou à régénérer son
-            secret — d'où sa place ici plutôt que dans la navigation. */}
         {categories.map(({ cat, providers }) => (
           <section key={cat} className="rs-prov-cat">
             <div className="rs-prov-cat-head">{t(`providers.category.${cat}`)}</div>
@@ -157,9 +153,6 @@ export default async function ProvidersPage() {
             </div>
           </section>
         ))}
-        <p className="rs-row-sub" style={{ marginTop: 24 }}>
-          <Link href="/settings/smartlead">{t('providers.advancedWebhook')}</Link>
-        </p>
       </main>
     </div>
   );

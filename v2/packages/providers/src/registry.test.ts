@@ -21,7 +21,7 @@ describe('ProviderRegistry', () => {
 
   it("rejette un doublon d'id", () => {
     const registry = new ProviderRegistry();
-    const manifest = { id: 'dup', category: 'email', labelKey: 'providers.smartlead', fields: [] };
+    const manifest = { id: 'dup', category: 'email', labelKey: 'providers.dup', fields: [] };
     registry.register(manifest);
     expect(() => registry.register(manifest)).toThrow(/déjà enregistré/);
   });

@@ -1,5 +1,5 @@
 -- Transport email SalesBlink (lot 3) : liaison des expediteurs, objets SalesBlink par etape, curseur de releve.
--- Additive seulement : le retrait de Smartlead arrive dans une migration distincte, appliquee au deploiement.
+-- Additive seulement : le retrait du transport precedent arrive dans une migration distincte, appliquee au deploiement.
 
 alter table public.senders
   add column if not exists provider_ref text,
@@ -37,7 +37,7 @@ alter table public.email_transport_bindings force row level security;
 alter table public.provider_sync_state enable row level security;
 alter table public.provider_sync_state force row level security;
 
--- Lecture : tout membre de l''organisation (viewer+), meme forme que smartlead_campaign_mappings_read.
+-- Lecture : tout membre de l''organisation (viewer+), meme forme que les autres tables de configuration provider.
 drop policy if exists email_transport_bindings_read on public.email_transport_bindings;
 create policy email_transport_bindings_read on public.email_transport_bindings
   for select to authenticated

@@ -16,7 +16,7 @@ Réponse sous 72 heures. Nous vous tenons informé de l'avancement du correctif 
 
 Sont dans le périmètre : le code de ce dépôt, les images Docker publiées, l'API publique.
 
-Sont hors périmètre : les services tiers (Smartlead, Unipile, Manuscry, enrichisseurs), et les instances déployées par des tiers que nous n'opérons pas.
+Sont hors périmètre : les services tiers (SalesBlink, Unipile, Manuscry, enrichisseurs), et les instances déployées par des tiers que nous n'opérons pas.
 
 ## Ce que nous traitons en priorité
 

@@ -48,7 +48,7 @@ Ce n'est pas un produit pour une équipe de quarante commerciaux sédentaires. C
 - Enrichissement entreprise et contacts
 - Scoring configurable (règles + modèle de langage)
 - Séquenceur multicanal avec branchements
-- Email via Smartlead, LinkedIn via provider tiers, courrier via Manuscry
+- Email via SalesBlink, LinkedIn via provider tiers, courrier via Manuscry
 - Messages versionnés, déclinés en trois langues
 - Boîte de réception unifiée, dans les deux sens, avec détection des réponses automatiques
 - API publique et webhooks sortants

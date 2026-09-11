@@ -25,12 +25,12 @@ on conflict do nothing;
 -- Le serveur (service_role) enregistre un secret chiffré.
 set role service_role;
 select set_config('test.orgv', :'orgv', false);
-select app.set_credential(:'orgv', 'smartlead', 'sk-secret-ABCD', 'clef-chiffrement-32-octets-xxxxx', '{"note":"demo"}') as last4 \gset
+select app.set_credential(:'orgv', 'salesblink', 'sk-secret-ABCD', 'clef-chiffrement-32-octets-xxxxx', '{"note":"demo"}') as last4 \gset
 
 -- ASSERT 1 : la bonne clé déchiffre.
 do $$
 begin
-  if app.get_credential(current_setting('test.orgv')::uuid, 'smartlead', 'clef-chiffrement-32-octets-xxxxx')
+  if app.get_credential(current_setting('test.orgv')::uuid, 'salesblink', 'clef-chiffrement-32-octets-xxxxx')
      <> 'sk-secret-ABCD' then
     raise exception 'FAIL vault-decrypt : mauvais déchiffrement';
   end if;
@@ -41,11 +41,11 @@ end $$;
 do $$
 begin
   if (select last4 from public.credentials
-      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') is distinct from 'ABCD' then
+      where organization_id = current_setting('test.orgv')::uuid and provider_id='salesblink') is distinct from 'ABCD' then
     raise exception 'FAIL vault-last4';
   end if;
   if (select position('sk-secret-ABCD'::bytea in secret) <> 0 from public.credentials
-      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') then
+      where organization_id = current_setting('test.orgv')::uuid and provider_id='salesblink') then
     raise exception 'FAIL vault-plaintext : le secret est stocké en clair !';
   end if;
   raise notice 'OK vault-encrypted-at-rest';
@@ -54,7 +54,7 @@ end $$;
 -- ASSERT 3 : la mauvaise clé échoue.
 do $$
 begin
-  perform app.get_credential(current_setting('test.orgv')::uuid, 'smartlead', 'mauvaise-clef');
+  perform app.get_credential(current_setting('test.orgv')::uuid, 'salesblink', 'mauvaise-clef');
   raise exception 'FAIL vault-wrong-key : déchiffrement avec mauvaise clé accepté';
 exception when others then
   if sqlerrm like 'FAIL%' then raise; end if;
@@ -77,7 +77,7 @@ end $$;
 do $$
 begin
   if (select last4 from public.credentials_public
-      where organization_id = current_setting('test.orgv')::uuid and provider_id='smartlead') is distinct from 'ABCD' then
+      where organization_id = current_setting('test.orgv')::uuid and provider_id='salesblink') is distinct from 'ABCD' then
     raise exception 'FAIL vault-view : le viewer ne voit pas la vue publique';
   end if;
   raise notice 'OK vault-public-view (viewer voit last4/statut, jamais le secret)';

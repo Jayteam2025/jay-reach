@@ -11,11 +11,11 @@ import Link from 'next/link';
  * Navigation principale.
  *
  * Deux entrées l'ont quittée (retours 4.1 et 6.1) : les thèmes de veille, qui
- * se règlent là où on construit la campagne qu'ils alimentent, et les webhooks
- * Smartlead, qui se branchent désormais tout seuls. Les écrans existent
- * toujours — le premier depuis Campagnes, le second en réglage avancé depuis
- * Fournisseurs — mais aucun des deux n'est un endroit où l'on va tous les
- * jours.
+ * se règlent là où on construit la campagne qu'ils alimentent, et l'ancien
+ * webhook entrant email, qui se branchait désormais tout seul avant d'être
+ * retiré avec son fournisseur (lot 3). L'écran des thèmes de veille existe
+ * toujours, depuis Campagnes — ce n'est simplement pas un endroit où l'on va
+ * tous les jours.
  */
 const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/', key: 'dashboard', icon: 'dashboard' },

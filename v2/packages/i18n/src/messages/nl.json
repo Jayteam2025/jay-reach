@@ -34,7 +34,6 @@
     "secretHidden": "sleutel eindigend op {last4}",
     "save": "Opslaan",
     "saved": "Opgeslagen",
-    "smartlead": "Smartlead (e-mail)",
     "salesblink": "SalesBlink (e-mail)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
@@ -70,7 +69,6 @@
       "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
       "replyMaxDelayHPlaceholder": "Uren, standaard 6"
     },
-    "advancedWebhook": "Geavanceerd: de Smartlead-webhook handmatig opnieuw koppelen",
     "secretUnchanged": "Laat leeg om de huidige sleutel te behouden",
     "todayUsage": "vandaag: {used} / {cap}",
     "lastSync": "{ago, select, never {Laatste controle: nooit} other {Laatste controle: {ago}}}",
@@ -189,8 +187,7 @@
     "annuaire": "Gids",
     "approvals": "Goedkeuringen",
     "customers": "Klanten",
-    "templates": "Berichten",
-    "smartlead": "Smartlead-webhooks"
+    "templates": "Berichten"
   },
   "sources": {
     "eyebrow": "Detectie",
@@ -750,25 +747,6 @@
     "minScoreLink": "De scoringsinstructies instellen",
     "dailyCapHelp": "Alle kanalen samen. Zijn de LinkedIn-instellingen strenger, dan gelden die: de strengste limiet wint altijd.",
     "dailyCapLink": "De LinkedIn-instellingen bekijken"
-  },
-  "smartleadWh": {
-    "eyebrow": "E-mailontvangst",
-    "title": "Smartlead-webhooks",
-    "lead": "De webhook koppelt zichzelf bij de eerste verzending. Dit scherm dient enkel om ze opnieuw te koppelen of het geheim te vernieuwen.",
-    "demoNotice": "Verbind Supabase om de webhook te configureren.",
-    "urlTitle": "Webhook-URL",
-    "copy": "URL kopiëren",
-    "copied": "Gekopieerd ✓",
-    "noSecret": "Genereer eerst een secret om de URL te krijgen.",
-    "howTitle": "Hoe koppelen",
-    "step1": "Open in Smartlead de campagne → Webhooks → Toevoegen en plak de bovenstaande URL.",
-    "step2": "Activeer de events:",
-    "step3": "Opslaan. Antwoorden komen in de inbox; bounces en uitschrijvingen gaan naar uitsluiting.",
-    "generate": "Secret genereren",
-    "regenerate": "Secret opnieuw genereren",
-    "regenWarn": "Opnieuw genereren maakt de oude URL ongeldig — herconfigureer Smartlead.",
-    "yourDomain": "https://uw-instantie",
-    "adminOnly": "Alleen beheerders kunnen de webhook configureren."
   },
   "senders": {
     "eyebrow": "Wie verstuurt",

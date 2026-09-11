@@ -34,7 +34,6 @@
     "secretHidden": "clé se terminant par {last4}",
     "save": "Enregistrer",
     "saved": "Enregistré",
-    "smartlead": "Smartlead (email)",
     "salesblink": "SalesBlink (email)",
     "fullenrich": "FullEnrich (enrichissement)",
     "dropcontact": "Dropcontact (enrichissement)",
@@ -70,7 +69,6 @@
       "replyMaxDelayHHint": "Au-delà, une relance restée en file chez SalesBlink est renvoyée comme nouvel email « Re : » (entre 1 et 72)",
       "replyMaxDelayHPlaceholder": "Heures, défaut 6"
     },
-    "advancedWebhook": "Réglage avancé : rebrancher le webhook Smartlead à la main",
     "secretUnchanged": "Laissez vide pour garder la clé actuelle",
     "todayUsage": "aujourd’hui : {used} / {cap}",
     "lastSync": "{ago, select, never {Dernière relève : jamais} other {Dernière relève : {ago}}}",
@@ -189,8 +187,7 @@
     "annuaire": "Annuaire",
     "approvals": "Approbations",
     "customers": "Clients",
-    "templates": "Messages",
-    "smartlead": "Webhooks Smartlead"
+    "templates": "Messages"
   },
   "sources": {
     "eyebrow": "Détection",
@@ -750,25 +747,6 @@
     "dailyCapHelp": "Tous canaux confondus. Si les réglages LinkedIn sont plus stricts, ce sont eux qui s'appliquent : c'est toujours le plus contraignant qui gagne.",
     "dailyCapLink": "Voir les réglages LinkedIn",
     "minScoreLink": "Régler les consignes de notation"
-  },
-  "smartleadWh": {
-    "eyebrow": "Réception email",
-    "title": "Webhooks Smartlead",
-    "lead": "Le webhook se branche tout seul au premier envoi. Cet écran ne sert qu'à le rebrancher ou à régénérer son secret.",
-    "demoNotice": "Connectez Supabase pour configurer le webhook.",
-    "urlTitle": "URL du webhook",
-    "copy": "Copier l'URL",
-    "copied": "Copié ✓",
-    "noSecret": "Générez d'abord un secret pour obtenir l'URL.",
-    "howTitle": "Comment brancher",
-    "step1": "Dans Smartlead, ouvrez la campagne → Webhooks → Ajouter, et collez l'URL ci-dessus.",
-    "step2": "Activez les événements :",
-    "step3": "Enregistrez. Les réponses arriveront dans la boîte de réception, les bounces et désinscriptions iront en exclusion.",
-    "generate": "Générer le secret",
-    "regenerate": "Régénérer le secret",
-    "regenWarn": "Régénérer invalide l'ancienne URL — reconfigurez Smartlead.",
-    "yourDomain": "https://votre-instance",
-    "adminOnly": "Seuls les administrateurs peuvent configurer le webhook."
   },
   "senders": {
     "eyebrow": "Qui envoie",

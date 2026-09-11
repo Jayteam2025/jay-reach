@@ -4,7 +4,7 @@
 // Chemins accessibles sans session :
 //  - /login          : la page de connexion elle-même
 //  - /api/extension  : endpoints de l'extension (auth par token, pas par session)
-//  - /api/webhooks   : webhooks entrants (Smartlead…) — auth par token dans l'URL
+//  - /api/webhooks   : webhooks entrants — auth par token dans l'URL
 //  - /api/health     : sonde de disponibilité
 //  - /api/cron       : tâches planifiées — auth par CRON_SECRET, jamais par session
 //  - /extension/auth : handshake OAuth du token d'extension

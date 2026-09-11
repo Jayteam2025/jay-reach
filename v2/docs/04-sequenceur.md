@@ -78,13 +78,13 @@ Attribution initiale : le sender actif du bon type ayant la plus faible consomma
 
 ## Canaux
 
-### Email — Smartlead
+### Email — SalesBlink
 
-Jay Reach décide quoi envoyer et quand. Smartlead envoie et gère la délivrabilité.
+Jay Reach décide quoi envoyer et rend le texte ; SalesBlink n'est que le transport, depuis la boîte connectée.
 
-- Une campagne Smartlead par campagne Jay Reach, alimentée à l'unité via l'API.
-- Webhooks (réponse, bounce, désinscription) alimentent `outcomes` puis les transitions. Signature vérifiée, rejet sinon.
-- Le fil est conservé : les relances partent dans le même thread, avec le même `Message-ID` de référence.
+- Une séquence SalesBlink evergreen par étape email, créée au premier envoi et alimentée contact par contact.
+- Le fil est conservé : les relances partent en réponse à notre propre email, pas dans une nouvelle séquence.
+- Relève périodique (réglable dans Fournisseurs, pas de webhook) : envois, réponses, rebonds, désinscriptions, santé de la boîte ; alimente `outcomes` puis les transitions.
 
 Isoler derrière `EmailProvider` dès le premier jour, même avec une seule implémentation.
 

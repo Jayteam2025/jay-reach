@@ -1,8 +1,8 @@
 /**
  * Enregistrement d'une réponse entrante, quel que soit le canal.
  *
- * Extrait du traitement du webhook Smartlead, qui était le seul chemin par
- * lequel une réponse pouvait entrer. Une réponse LinkedIn — ou une réponse
+ * Extrait du traitement de l'ancien webhook entrant email (le seul chemin par
+ * lequel une réponse pouvait entrer, avant le lot 3). Une réponse LinkedIn — ou une réponse
  * relevée via SalesBlink — suit exactement les mêmes règles : classer, ouvrir
  * le fil, arrêter l'inscription, notifier. Les dupliquer aurait garanti
  * qu'elles divergent.

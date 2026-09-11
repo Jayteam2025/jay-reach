@@ -49,7 +49,7 @@ La v1 vise l'auto-hébergement — usage propre de l'éditeur et co-constructeur
 1. **L'approbation se règle par canal, et le courrier n'est jamais négociable.** Email et LinkedIn partent automatiquement par défaut. Le courrier passe systématiquement par la file d'attente. Les trois premiers envois d'un couple template + version passent aussi par la file, quel que soit le canal.
 2. **Une variable non résolue bloque l'envoi.** Jamais de message expédié avec un `{{champ}}` vide ou littéral. L'action part en file avec le champ manquant nommé.
 3. **Aucun secret en clair en base.** Credentials chiffrés via `pgcrypto`, clé hors base. Jamais de clé dans un log ni dans une réponse d'API.
-4. **Tout provider externe passe par une interface.** Aucun appel direct à Smartlead, Unipile, Manuscry, Apify, FullEnrich ou Anthropic hors de `packages/providers/*`.
+4. **Tout provider externe passe par une interface.** Aucun appel direct à SalesBlink, Unipile, Manuscry, Apify, FullEnrich ou Anthropic hors de `packages/providers/*`.
 5. **Multi-utilisateurs dès le schéma.** Chaque table métier porte `organization_id`. RLS activée partout. Le worker utilise la clé de service et doit donc filtrer explicitement par organisation dans chaque requête.
 6. **TypeScript strict.** Pas de `any`, pas de `@ts-ignore`. Zod sur toute donnée entrante : API, webhooks, réponses providers, fichiers importés.
 7. **Trois langues dès le premier écran.** Français, anglais, néerlandais. Aucune chaîne en dur dans un composant.
@@ -78,7 +78,7 @@ La v1 vise l'auto-hébergement — usage propre de l'éditeur et co-constructeur
 
 ## Ce qu'il ne faut pas faire
 
-- Ne pas coder de client SMTP maison. Smartlead gère l'email en v1.
+- Ne pas coder de client SMTP maison. SalesBlink gère l'envoi email en v1.
 - Ne pas scraper LinkedIn en direct (Puppeteer, cookies bruts, extension). On passe par un provider tiers assumé.
 - Ne pas stocker un message de boîte de réception qui ne correspond à aucun contact connu.
 - Ne pas inventer de fonctionnalité absente du backlog.

@@ -1,6 +1,6 @@
 /**
  * Email gate : decide si un profil enrichi peut etre pousse vers le transport
- * email (SalesBlink, lot 3 — anciennement Smartlead).
+ * email (SalesBlink, lot 3).
  *
  * Pure function, testable, sans dependances externes.
  * Cf docs/superpowers/specs/2026-05-13-bouncer-integration-bounce-learning-design.md section 5.2

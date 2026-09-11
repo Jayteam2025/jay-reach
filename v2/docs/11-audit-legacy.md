@@ -40,7 +40,7 @@ Reconstituer ce que le code fait vraiment, de la collecte à l'envoi. Signaler t
 - Règles de parsing éprouvées sur des cas réels
 - Prompts de scoring, avec leurs itérations si l'historique Git les contient
 - Templates de messages ayant obtenu des réponses, avec leurs taux si mesurés
-- Mappings de champs vers Smartlead
+- Mappings de champs vers le fournisseur d'envoi email
 - Toute donnée réelle collectée : elle devient un jeu de fixtures, après anonymisation
 
 Chaque actif est écrit dans `docs/legacy-assets/` avec sa provenance.

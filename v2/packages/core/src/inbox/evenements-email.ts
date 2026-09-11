@@ -1,9 +1,8 @@
 /**
  * Effets en base d'un `EvenementEmail` (rendu neutre, indépendant du
  * provider). Reprise de `addSuppression`, `stopEnrollment` et de la logique
- * de l'ancien `processSmartleadEvent` (webhook Smartlead), généralisée à
- * n'importe quelle source d'événements email — SalesBlink comme, hier,
- * Smartlead.
+ * de l'ancien traitement du webhook entrant email, généralisée à n'importe
+ * quelle source d'événements email — SalesBlink aujourd'hui.
  *
  * Règles inchangées :
  *  - **Contact inconnu → RIEN n'est stocké** : ni thread, ni message, ni

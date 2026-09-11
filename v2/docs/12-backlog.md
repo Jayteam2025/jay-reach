@@ -87,8 +87,8 @@ Les neuf garde-fous, avec décisions explicites `allow` / `defer` / `block`. Int
 ### T19 — Messages, versions et variables
 `message_templates` versionnés et multilingues. Validation statique des variables à l'enregistrement. Valeurs de repli. Blocage au rendu avec regroupement par champ manquant et actions groupées. Contraintes de longueur par canal. Traduction assistée relue.
 
-### T20 — Canal email — Smartlead
-`EmailProvider`, envoi, webhooks signés, conservation du fil, bounces et désinscriptions.
+### T20 — Canal email — SalesBlink
+`EmailProvider`, envoi, relève périodique, conservation du fil, bounces et désinscriptions.
 
 ### T21 — Politique d'approbation et file d'attente · **STOP**
 Réglage par canal, courrier non désactivable, rodage des trois premiers envois d'une version, dépassement de budget. Onglet de campagne, navigation clavier, édition en ligne.
@@ -171,7 +171,7 @@ Relecture de sécurité complète, purge de l'historique Git, rotation de tous l
 ## Décidé, ne pas rouvrir
 
 - **Nom** : Jay Reach.
-- **Migration** de l'existant Smartlead : hors périmètre, pas de reprise de données.
+- **Migration** de l'existant (ancien outil d'envoi email) : hors périmètre, pas de reprise de données.
 - **Approbation** : par canal, courrier obligatoire, non désactivable.
 - **CRM** : réponse positive uniquement en automatique.
 - **Langues** : français, anglais, néerlandais dès le départ.
