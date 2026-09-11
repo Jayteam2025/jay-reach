@@ -24,11 +24,21 @@ import {
   TICK_INTERVAL_MS,
   type Contexte,
 } from './traitements.js';
+import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
 // ressent l'opérateur entre son clic et le départ de la collecte. La requête est
 // un SELECT sur un index partiel, donc négligeable même à cette fréquence.
 const REQUESTED_RUN_POLL_MS = Number(process.env.REQUESTED_RUN_POLL_MS ?? 10_000);
+
+/**
+ * Fréquence d'enfilage de la relève SalesBlink. `produire()` tourne toutes les
+ * quinze minutes (`DISCOVER_INTERVAL_MS`) — trop lâche pour respecter un
+ * `sync_interval_min` par défaut de cinq minutes (réglable à l'écran
+ * Fournisseurs) : ce minuteur dédié tourne toutes les 60 s, et
+ * `enqueueReleveSalesBlink` déduplique lui-même par fenêtre.
+ */
+const RELEVE_SALESBLINK_POLL_MS = 60_000;
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -93,11 +103,16 @@ async function main(): Promise<void> {
   }, TICK_INTERVAL_MS);
   ticker.unref();
 
+  void enqueueReleveSalesBlink(boss, pool);
+  const releveSalesBlink = setInterval(() => void enqueueReleveSalesBlink(boss, pool), RELEVE_SALESBLINK_POLL_MS);
+  releveSalesBlink.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[worker] ${signal} reçu, arrêt propre…`);
     clearInterval(producer);
     clearInterval(demandes);
     clearInterval(ticker);
+    clearInterval(releveSalesBlink);
     await boss.stop({ graceful: true });
     process.exit(0);
   };

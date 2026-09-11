@@ -20,6 +20,7 @@ import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/sco
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
+import { releverSalesBlink } from './handlers/releve-salesblink.js';
 import {
   runResolveCompany,
   toCompanyEnrichment,
@@ -82,6 +83,7 @@ export const FILES_BRANCHEES = [
   'enrichment.contacts',
   'sequence.enroll',
   'sequence.tick',
+  'inbox.sync',
 ] as const;
 
 const FULLENRICH_PROVIDER = 'fullenrich';
@@ -571,6 +573,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnrichCompany(ctx, donnees as EnrichCompanyJob);
     case 'enrichment.contacts':
       return traiterEnrichContacts(ctx, donnees as EnrichContactsJob);
+    case 'inbox.sync':
+      return releverSalesBlink(ctx, donnees as { organizationId: string });
     default:
       // File déclarée mais sans traitement : on ne la laisse pas s'accumuler.
       return;
