@@ -448,10 +448,41 @@ export async function listerEnvoisSortis(
   return envois;
 }
 
-export async function listerTachesReponse(cle: string): Promise<EnvoiSorti[]> {
-  const resultat = await appeler('GET', '/inbox', { parametres: { type: 'reply', limit: 100 } }, cle);
-  const enveloppe = (donnees(resultat) ?? {}) as Record<string, unknown>;
-  return enTableau(enveloppe.result).map(versEnvoiSorti);
+export interface TachesReponse {
+  readonly taches: EnvoiSorti[];
+  /** `true` quand `totalCount` dépasse ce que les pages récupérées ont rendu : il en reste, la relève doit le signaler. */
+  readonly sature: boolean;
+}
+
+/**
+ * Tâches `reply` en file chez SalesBlink. `type` est omis du paramétrage :
+ * l'OpenAPI n'accepte que `draft | scheduled | sent`, « Omit `type` to get
+ * replies » — mesuré le 11/09 : avec ou sans `type: 'reply'` (hors énumération),
+ * même réponse, mais rien ne garantit que SalesBlink continue de l'accepter.
+ * Paginé comme `listerEnvoisSortis` (`skip` = décalage d'enregistrements sur
+ * `/inbox`, pas un numéro de page comme sur `/reports`) : sans pagination, une
+ * relance en attente au-delà de la centième tâche ne serait jamais vue.
+ * `totalCount` (rendu par l'enveloppe) dit s'il en reste au-delà des pages
+ * récupérées.
+ */
+export async function listerTachesReponse(cle: string, options: { maxPages?: number } = {}): Promise<TachesReponse> {
+  const maxPages = options.maxPages ?? PAGES_MAX_PAR_DEFAUT;
+  const taches: EnvoiSorti[] = [];
+  let totalCount: number | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const resultat = await appeler(
+      'GET',
+      '/inbox',
+      { parametres: { limit: TAILLE_PAGE_RAPPORTS, skip: page * TAILLE_PAGE_RAPPORTS } },
+      cle,
+    );
+    const enveloppe = (donnees(resultat) ?? {}) as Record<string, unknown>;
+    totalCount = nombreOuNull(enveloppe.totalCount) ?? totalCount;
+    const lot = enTableau(enveloppe.result).map(versEnvoiSorti);
+    taches.push(...lot);
+    if (lot.length < TAILLE_PAGE_RAPPORTS) break;
+  }
+  return { taches, sature: totalCount !== null && totalCount > taches.length };
 }
 
 export async function repondreDansLeFil(

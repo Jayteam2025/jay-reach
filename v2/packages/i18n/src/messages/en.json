@@ -771,6 +771,7 @@
     "sendFrom": "From",
     "sendTo": "Until",
     "timezone": "Time zone",
+    "sendHoursSalesBlinkHint": "These hours are sent to SalesBlink when the step's sequence is created. A later change does not propagate to SalesBlink automatically.",
     "form": {
       "add": "Add a sender",
       "cancel": "Cancel",

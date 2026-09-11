@@ -56,7 +56,7 @@ function clientFactice(overrides: Partial<ClientReleveSalesBlink> = {}): ClientR
     listerEnvoisSortis: vi.fn(async () => [] as EnvoiSorti[]),
     listerReponses: vi.fn(async () => [] as Rapport[]),
     listerRapports: vi.fn(async () => [] as Rapport[]),
-    listerTachesReponse: vi.fn(async () => [] as EnvoiSorti[]),
+    listerTachesReponse: vi.fn(async () => ({ taches: [] as EnvoiSorti[], sature: false })),
     santeBoite: vi.fn(async () => santeSaine()),
     reconnecterBoite: vi.fn(async () => undefined),
     replanifier: vi.fn(async () => undefined),
@@ -66,7 +66,7 @@ function clientFactice(overrides: Partial<ClientReleveSalesBlink> = {}): ClientR
 
 // Motifs de requetes communs a plusieurs scenarios.
 const CONFIG_CREDENTIALS = /select config from credentials/i;
-const CURSEUR_SELECT = /select cursor_ms from provider_sync_state/i;
+const CURSEUR_SELECT = /select cursor_ms, last_error from provider_sync_state/i;
 const CURSEUR_UPSERT = /insert into provider_sync_state/i;
 const SENDERS_SELECT = /select id, identity, provider_ref, provider_state from senders/i;
 const SENDERS_UPDATE = /update senders set provider_state/i;
@@ -76,6 +76,7 @@ const LOOKUP_ERREUR_SEQUENCE = /payload ->> 'essais'[\s\S]*sequence_id/i;
 const LOOKUP_ERREUR_REPLY = /payload ->> 'essais'[\s\S]*reply_task_id/i;
 const REMETTRE_EN_ATTENTE = /update actions set status = 'scheduled'/i;
 const BINDING_REPLANIFIE = /update email_transport_bindings set last_replanned_at/i;
+const MAJ_PROVIDER_MESSAGE_ID = /update thread_messages set provider_message_id/i;
 const CONTACT_LOOKUP = /select id from contacts where/i;
 const SUPPRESSION_INSERT = /insert into suppressions/i;
 const ENROLLMENT_UPDATE = /update enrollments[\s\S]*set status/i;
@@ -127,13 +128,22 @@ describe('releverSalesBlink', () => {
       typeTache: 'email',
     };
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
-    const { pool, appels } = creerPoolFactice(avecBase({ motif: MAJ_LIVREE_SEQUENCE, repondre: () => ligne([]) }));
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: MAJ_LIVREE_SEQUENCE, repondre: () => ligne([{ id: 'action-livree-1' }]) },
+        { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+      ),
+    );
 
     await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
 
     const maj = appels.find((a) => MAJ_LIVREE_SEQUENCE.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-1', new Date(2000).toISOString(), 'seq-1', 'marie@exemple.fr']);
+    // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
+    const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
+    expect(filMaj).toBeDefined();
+    expect(filMaj!.values).toEqual(['action-livree-1', 'msg-1']);
     // Fenêtre non saturée : last_error reste null.
     const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
     expect(curseur!.values[3]).toBeNull();
@@ -175,6 +185,37 @@ describe('releverSalesBlink', () => {
     expect(curseur!.values[3]).toBeNull();
   });
 
+  it('un envoi terminé après la fin de la fenêtre n’avance pas le curseur au-delà de jusqua (I1)', async () => {
+    const jusqua = 100 + FENETRE_RELEVE_MAX_MS;
+    const envoi: EnvoiSorti = {
+      id: 'envoi-tardif',
+      messageId: 'msg-tardif',
+      email: 'marie@exemple.fr',
+      sequenceId: 'seq-1',
+      termine: true,
+      // Au-delà de la fenêtre traitée : mesuré le 11/09, `completed_time` d'un
+      // envoi peut tomber après la fin de la fenêtre demandée à l'API, qui ne
+      // le documente même pas comme filtre. Avant le correctif, le curseur
+      // aurait sauté ici jusqu'à `jusqua + 500000`.
+      termineMs: jusqua + 500_000,
+      planifieMs: 50,
+      typeTache: 'email',
+    };
+    const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: 100 }]) },
+        { motif: MAJ_LIVREE_SEQUENCE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur).toBeDefined();
+    expect(curseur!.values[2]).toBe(jusqua);
+  });
+
   it('fenêtre trop fraîche (< 2 min) : les flux datés sont sautés, tâches reply et santé tournent quand même', async () => {
     const curseurRecent = Date.now() - RETARD_SECURITE_MS / 2;
     const client = clientFactice();
@@ -197,6 +238,23 @@ describe('releverSalesBlink', () => {
     expect(curseur!.values[3]).toBeNull();
   });
 
+  it('fenêtre trop fraîche : un last_error non résolu du passage précédent n’est pas effacé (minor)', async () => {
+    const curseurRecent = Date.now() - RETARD_SECURITE_MS / 2;
+    const client = clientFactice();
+    const { pool, appels } = creerPoolFactice([
+      { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
+      { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: curseurRecent, last_error: 'fenetre_saturee:envois' }]) },
+      { motif: SENDERS_SELECT, repondre: () => ligne([]) },
+      { motif: CURSEUR_UPSERT, repondre: () => ligne([]) },
+    ]);
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur).toBeDefined();
+    expect(curseur!.values[3]).toBe('fenetre_saturee:envois');
+  });
+
   it('une fenêtre saturée sur un flux avance quand même le curseur mais pose last_error', async () => {
     const envoisSatures: EnvoiSorti[] = Array.from({ length: PAGES_MAX_PAR_DEFAUT * TAILLE_PAGE_RAPPORTS }, (_, i) => ({
       id: `envoi-${i}`,
@@ -216,6 +274,19 @@ describe('releverSalesBlink', () => {
     const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
     expect(curseur).toBeDefined();
     expect(curseur!.values[3]).toBe('fenetre_saturee:envois');
+  });
+
+  it('une file de tâches reply saturée (totalCount) pose last_error (minor)', async () => {
+    const client = clientFactice({
+      listerTachesReponse: vi.fn(async () => ({ taches: [], sature: true })),
+    });
+    const { pool, appels } = creerPoolFactice(avecBase());
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(curseur).toBeDefined();
+    expect(curseur!.values[3]).toBe('fenetre_saturee:taches_reply');
   });
 
   it('une réponse sans email est ignorée par versEvenementsRepondus (aucun traitement)', async () => {
@@ -280,7 +351,7 @@ describe('releverSalesBlink', () => {
       typeTache: 'reply',
       erreur: 'Email Sender sending disabled.',
     };
-    const client = clientFactice({ listerTachesReponse: vi.fn(async () => [tache]) });
+    const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: LOOKUP_ERREUR_REPLY, repondre: () => ligne([{ id: 'action-2', essais: '0' }]) },
@@ -308,7 +379,7 @@ describe('releverSalesBlink', () => {
       typeTache: 'reply',
       erreur: 'Panne persistante',
     };
-    const client = clientFactice({ listerTachesReponse: vi.fn(async () => [tache]) });
+    const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: LOOKUP_ERREUR_REPLY, repondre: () => ligne([{ id: 'action-9', essais: '2' }]) },
@@ -336,7 +407,7 @@ describe('releverSalesBlink', () => {
       planifieMs: Date.now() - septHeures,
       typeTache: 'reply',
     };
-    const client = clientFactice({ listerTachesReponse: vi.fn(async () => [tache]) });
+    const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: LOOKUP_ERREUR_REPLY, repondre: () => ligne([{ id: 'action-3', essais: '0' }]) },
@@ -367,14 +438,23 @@ describe('releverSalesBlink', () => {
       planifieMs: 8000,
       typeTache: 'reply',
     };
-    const client = clientFactice({ listerTachesReponse: vi.fn(async () => [tache]) });
-    const { pool, appels } = creerPoolFactice(avecBase({ motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) }));
+    const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([{ id: 'action-livree-2' }]) },
+        { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+      ),
+    );
 
     await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
 
     const maj = appels.find((a) => MAJ_LIVREE_REPLY.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-repondu-1', new Date(9000).toISOString(), 'tache-3']);
+    // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
+    const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
+    expect(filMaj).toBeDefined();
+    expect(filMaj!.values).toEqual(['action-livree-2', 'msg-repondu-1']);
   });
 
   it('une boîte envoiActif=false déclenche reconnecterBoite puis, toujours inactive, notifie une fois', async () => {

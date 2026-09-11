@@ -301,6 +301,14 @@ interface ActionEnAttenteRow {
  * qu'un rejeu ne s'accumule pas à chaque tour du tick (60 s) tant que l'action
  * reste en attente. `envoyerEmailSalesBlink` relit l'état de l'action à
  * l'exécution : une action déjà partie ou bloquée entre-temps est ignorée.
+ *
+ * `e.status = 'active'` et l'absence de suppression active sur l'adresse
+ * (C1, revue finale du 11/09) : sans ce filtre, une inscription arrêtée
+ * pendant qu'une action reste `scheduled` — l'expéditeur coupé par la
+ * vérification IMAP, un prospect qui répond ou rebondit entre-temps — voyait
+ * son email repartir dès l'expéditeur rétabli, vers quelqu'un qui avait déjà
+ * répondu ou une adresse désinscrite. Même garde que `hasActiveSuppression`
+ * (`sequence.ts`), portée sur l'adresse du contact déjà jointe ici.
  */
 export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
@@ -317,6 +325,14 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
+        and e.status = 'active'
+        and not exists (
+          select 1 from suppressions sup
+           where sup.organization_id = a.organization_id
+             and sup.scope = 'email'
+             and sup.value = c.email
+             and (sup.expires_at is null or sup.expires_at > now())
+        )
       order by a.created_at asc
       limit 200`,
   );

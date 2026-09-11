@@ -771,6 +771,7 @@
     "sendFrom": "Vanaf",
     "sendTo": "Tot",
     "timezone": "Tijdzone",
+    "sendHoursSalesBlinkHint": "Deze uren worden naar SalesBlink gestuurd zodra de sequentie van de stap wordt aangemaakt. Een latere wijziging wordt niet automatisch doorgevoerd naar SalesBlink.",
     "form": {
       "add": "Afzender toevoegen",
       "cancel": "Annuleren",

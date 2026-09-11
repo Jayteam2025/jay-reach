@@ -771,6 +771,7 @@
     "sendFrom": "À partir de",
     "sendTo": "Jusqu'à",
     "timezone": "Fuseau horaire",
+    "sendHoursSalesBlinkHint": "Ces horaires sont transmis à SalesBlink à la création de la séquence de l'étape. Un changement ultérieur ne redescend pas automatiquement chez SalesBlink.",
     "form": {
       "add": "Ajouter un expéditeur",
       "cancel": "Annuler",

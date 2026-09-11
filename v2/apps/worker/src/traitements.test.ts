@@ -72,6 +72,24 @@ describe('rejouerActionsEmailEnAttente', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it('la requête filtre sur l’inscription active et l’absence de suppression email (C1)', async () => {
+    // Le pool factice de ce fichier renvoie toujours les mêmes lignes, quelle
+    // que soit la requête : il ne peut donc pas rejouer le filtrage réel de
+    // Postgres. On vérifie ici que le garde-fou est bien dans la requête —
+    // et le test juste au-dessus (« aucune action retournée… ») couvre déjà
+    // le cas où ce filtre exclut la ligne : la fonction ne produit alors
+    // aucun job, exactement le scénario d'une inscription `replied`.
+    const { ctx } = creerContexteFactice([ligneActionEnAttente()]);
+
+    await rejouerActionsEmailEnAttente(ctx);
+
+    const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(sql).toContain(`e.status = 'active'`);
+    expect(sql).toMatch(/not exists[\s\S]*from suppressions/i);
+    expect(sql).toMatch(/scope = 'email'/);
+    expect(sql).toMatch(/sup\.value = c\.email/);
+  });
+
   it('deux passages dans le même seau produisent le même id de job', async () => {
     const { ctx: ctx1, insert: insert1 } = creerContexteFactice([ligneActionEnAttente()]);
     const { ctx: ctx2, insert: insert2 } = creerContexteFactice([ligneActionEnAttente()]);

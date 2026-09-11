@@ -16,8 +16,11 @@
  * heure (`FENETRE_RELEVE_MAX_MS`), avec deux minutes de retard de sécurité
  * (`RETARD_SECURITE_MS`) sur le bord le plus récent — un retard de plusieurs
  * heures se rattrape par tranches d'une heure, un passage à la fois, sans
- * rien sauter. Le curseur n'avance qu'à la fin de la fenêtre traitée
- * (`jusqua`), jamais au max des événements individuels.
+ * rien sauter. Le curseur n'avance QUE jusqu'à `jusqua`, jamais au-delà (I1,
+ * revue finale du 11/09) : `completed_time` d'un envoi peut tomber après la
+ * fin de la fenêtre demandée à l'API (`/inbox` ne le documente même pas comme
+ * filtre), et faire avancer le curseur sur cet horodatage sauterait tout ce
+ * qui vit dans l'intervalle — une réponse, un rebond — au passage suivant.
  *
  * Budget d'appels par passage (fenêtre non saturée) : 6 GET fixes (les cinq
  * flux datés — envois, réponses, rebonds, désinscriptions, erreurs — plus les
@@ -35,7 +38,6 @@ import type PgBoss from 'pg-boss';
 import {
   evenementsDepuisEnvois,
   evenementsDepuisRapports,
-  curseurSuivant,
   sortDErreur,
   relanceTropVieille,
   traiterEvenementEmail,
@@ -107,7 +109,7 @@ async function marquerActionLivreeParSequence(
   org: string,
   p: { readonly sequenceId: string | null; readonly email: string; readonly messageId: string | null; readonly aMs: number },
 ): Promise<void> {
-  await pool.query(
+  const res = await pool.query<{ id: string }>(
     `update actions set status = 'delivered',
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
@@ -115,13 +117,18 @@ async function marquerActionLivreeParSequence(
          where organization_id = $1 and channel = 'email' and status in ('dispatched')
            and payload ->> 'sequence_id' = $4 and lower(payload ->> 'email') = lower($5)
          order by dispatched_at desc limit 1
-      )`,
+      )
+      returning id`,
     [org, p.messageId, new Date(p.aMs).toISOString(), p.sequenceId, p.email],
   );
+  const actionId = res.rows[0]?.id;
+  if (actionId && p.messageId) {
+    await poserProviderMessageId(pool, actionId, p.messageId);
+  }
 }
 
 async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache: EnvoiSorti): Promise<void> {
-  await pool.query(
+  const res = await pool.query<{ id: string }>(
     `update actions set status = 'delivered',
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
@@ -129,8 +136,27 @@ async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache
          where organization_id = $1 and channel = 'email' and status = 'dispatched'
            and payload ->> 'reply_task_id' = $4
          order by dispatched_at desc limit 1
-      )`,
+      )
+      returning id`,
     [org, tache.messageId, new Date(tache.termineMs ?? Date.now()).toISOString(), tache.id],
+  );
+  const actionId = res.rows[0]?.id;
+  if (actionId && tache.messageId) {
+    await poserProviderMessageId(pool, actionId, tache.messageId);
+  }
+}
+
+/**
+ * Pose `provider_message_id` sur le message sortant du fil, une fois
+ * SalesBlink le donne à la relève (I4, revue finale du 11/09) — le message
+ * lui-même a été écrit sans lui au moment de l'envoi (`email-salesblink.ts`),
+ * `raw->>'action_id'` le rattache à l'action qui vient d'être livrée.
+ */
+async function poserProviderMessageId(pool: Pool, actionId: string, messageId: string): Promise<void> {
+  await pool.query(
+    `update thread_messages set provider_message_id = $2
+      where raw ->> 'action_id' = $1 and provider_message_id is null`,
+    [actionId, messageId],
   );
 }
 
@@ -318,13 +344,14 @@ export async function releverSalesBlink(
   }
   const delaiMaxH = normaliserDelaiRelanceMax(credentials.reply_max_delay_h);
 
-  const etatCurseur = await pool.query<{ cursor_ms: string | number | null }>(
-    `select cursor_ms from provider_sync_state where organization_id = $1 and provider = $2`,
+  const etatCurseur = await pool.query<{ cursor_ms: string | number | null; last_error: string | null }>(
+    `select cursor_ms, last_error from provider_sync_state where organization_id = $1 and provider = $2`,
     [org, SALESBLINK_PROVIDER],
   );
   const departParDefaut = Date.now() - FENETRE_PREMIERE_RELEVE_MS;
   const brut = etatCurseur.rows[0]?.cursor_ms;
   const curseurDepart = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : departParDefaut;
+  const lastErrorPrecedent = etatCurseur.rows[0]?.last_error ?? null;
 
   const maintenant = Date.now();
   // Fenêtre fermée [curseurDepart, jusqua) : au plus une heure d'un coup, et
@@ -333,7 +360,6 @@ export async function releverSalesBlink(
   const jusqua = Math.min(maintenant - RETARD_SECURITE_MS, curseurDepart + FENETRE_RELEVE_MAX_MS);
   const fenetreOuverte = jusqua > curseurDepart;
 
-  let tousEvenements: EvenementEmail[] = [];
   const fluxSatures: string[] = [];
 
   try {
@@ -343,7 +369,6 @@ export async function releverSalesBlink(
       const s1 = verifierSaturation(org, 'envois', envois.length);
       if (s1) fluxSatures.push(s1);
       const evEnvoyes = evenementsDepuisEnvois(envois);
-      tousEvenements = tousEvenements.concat(evEnvoyes);
       for (const ev of evEnvoyes) {
         if (ev.type !== 'envoye') continue;
         await marquerActionLivreeParSequence(pool, org, {
@@ -359,7 +384,6 @@ export async function releverSalesBlink(
       const s2 = verifierSaturation(org, 'reponses', reponses.length);
       if (s2) fluxSatures.push(s2);
       const evRepondus = versEvenementsRepondus(reponses);
-      tousEvenements = tousEvenements.concat(evRepondus);
       for (const ev of evRepondus) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
@@ -372,7 +396,6 @@ export async function releverSalesBlink(
       const s3 = verifierSaturation(org, 'bounced', rapportsBounced.length);
       if (s3) fluxSatures.push(s3);
       const evBounced = evenementsDepuisRapports(rapportsBounced);
-      tousEvenements = tousEvenements.concat(evBounced);
       for (const ev of evBounced) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
@@ -384,7 +407,6 @@ export async function releverSalesBlink(
       const s4 = verifierSaturation(org, 'unsubscribed', rapportsUnsub.length);
       if (s4) fluxSatures.push(s4);
       const evUnsub = evenementsDepuisRapports(rapportsUnsub);
-      tousEvenements = tousEvenements.concat(evUnsub);
       for (const ev of evUnsub) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
@@ -399,7 +421,6 @@ export async function releverSalesBlink(
       const s5 = verifierSaturation(org, 'erreur', rapportsErreur.length);
       if (s5) fluxSatures.push(s5);
       const evErreurs = evenementsDepuisRapports(rapportsErreur);
-      tousEvenements = tousEvenements.concat(evErreurs);
       const sequencesReplanifiees = new Set<string>();
       for (const ev of evErreurs) {
         if (ev.type !== 'erreur') continue;
@@ -431,7 +452,13 @@ export async function releverSalesBlink(
     // vieilles → repli forcé et notification. Ce flux n'a pas de fenêtre
     // temporelle (SalesBlink ne le filtre pas par date) : il tourne à chaque
     // passage, même quand la fenêtre datée ci-dessus est encore trop fraîche.
-    const taches = await client.listerTachesReponse(cle);
+    const { taches, sature: tachesSaturees } = await client.listerTachesReponse(cle);
+    if (tachesSaturees) {
+      fluxSatures.push('taches_reply');
+      console.warn(
+        `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « taches_reply » (totalCount dépasse ce qui a été récupéré) — le passage suivant reprend là où celui-ci s'arrête`,
+      );
+    }
     for (const tache of taches) {
       if (tache.termine) {
         await marquerActionLivreeParTacheReponse(pool, org, tache);
@@ -458,16 +485,20 @@ export async function releverSalesBlink(
     // 7. Santé des expéditeurs liés à l'organisation — pas de fenêtre non plus.
     await relangerSanteExpediteurs(pool, org, cle, client);
 
-    // 8. Curseur : n'avance qu'en bout de fenêtre traitée (jamais au max des
-    // horodatages individuels, qui sous-compterait un flux plus lent). Fenêtre
-    // encore trop fraîche (`!fenetreOuverte`) : rien à avancer, mais le
-    // passage est tracé (last_run_at) sans erreur.
+    // 8. Curseur : avance TOUJOURS jusqu'à `jusqua`, jamais au-delà (I1) —
+    // fenêtre encore trop fraîche (`!fenetreOuverte`) : les flux datés n'ont
+    // pas tourné, rien à avancer. Un passage complet qui se termine proprement
+    // efface `last_error` ; un passage à fenêtre trop fraîche ne doit PAS
+    // écraser un `last_error` non résolu du passage précédent (minor, revue
+    // finale du 11/09) — sauf si les tâches reply ou la santé des boîtes
+    // (étapes 6-7, qui tournent quel que soit l'état de la fenêtre) viennent
+    // justement de constater une nouvelle saturation.
     if (fenetreOuverte) {
-      const nouveauCurseur = curseurSuivant(tousEvenements, jusqua);
       const lastError = fluxSatures.length > 0 ? `fenetre_saturee:${fluxSatures[0]}` : null;
-      await enregistrerCurseur(pool, org, nouveauCurseur, lastError);
+      await enregistrerCurseur(pool, org, jusqua, lastError);
     } else {
-      await enregistrerCurseur(pool, org, curseurDepart, null);
+      const lastError = fluxSatures.length > 0 ? `fenetre_saturee:${fluxSatures[0]}` : lastErrorPrecedent;
+      await enregistrerCurseur(pool, org, curseurDepart, lastError);
     }
   } catch (err) {
     if (err instanceof ErreurSalesBlink) {
@@ -485,16 +516,20 @@ interface CredentialRow {
 }
 
 /**
- * Enfile un `inbox.sync` par organisation ayant une clé SalesBlink configurée,
- * dédupliqué par fenêtre (`sync_interval_min` de l'organisation, réglable à
- * l'écran Fournisseurs — jamais lu dans l'environnement). Appelé par un
- * minuteur de 60 s (`index.ts`) : `produire()` tourne toutes les 15 minutes,
- * trop lâche pour un intervalle par défaut de 5 minutes.
+ * Enfile un `inbox.sync` par organisation ayant une clé SalesBlink configurée
+ * (`status = 'configured'` — minor de la revue finale du 11/09 : une ligne
+ * posée par le catalogue mais jamais remplie enfilait quand même un passage
+ * toutes les cinq minutes, pour un simple avertissement), dédupliqué par
+ * fenêtre (`sync_interval_min` de l'organisation, réglable à l'écran
+ * Fournisseurs — jamais lu dans l'environnement). Appelé par un minuteur de
+ * 60 s (`index.ts`) : `produire()` tourne toutes les 15 minutes, trop lâche
+ * pour un intervalle par défaut de 5 minutes.
  */
 export async function enqueueReleveSalesBlink(boss: PgBoss, pool: Pool): Promise<number> {
-  const res = await pool.query<CredentialRow>(`select organization_id, config from credentials where provider_id = $1`, [
-    SALESBLINK_PROVIDER,
-  ]);
+  const res = await pool.query<CredentialRow>(
+    `select organization_id, config from credentials where provider_id = $1 and status = 'configured'`,
+    [SALESBLINK_PROVIDER],
+  );
   let enqueued = 0;
   for (const row of res.rows) {
     const intervalMin = normaliserIntervalleReleve(row.config?.sync_interval_min);

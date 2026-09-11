@@ -10,6 +10,7 @@ import {
   listerEnvoisSortis,
   listerReponses,
   listerRapports,
+  listerTachesReponse,
   PAGES_MAX_PAR_DEFAUT,
   TAILLE_PAGE_RAPPORTS,
   type LeadSalesBlink,
@@ -680,5 +681,115 @@ describe('fenêtre from/to et plafond de pages', () => {
 
     expect(urls).toHaveLength(PAGES_MAX_PAR_DEFAUT);
     expect(rapports).toHaveLength(PAGES_MAX_PAR_DEFAUT * TAILLE_PAGE_RAPPORTS);
+  });
+});
+
+describe('listerTachesReponse', () => {
+  it("n'envoie jamais type=reply (hors enumeration de l'OpenAPI) et pagine par skip", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({ success: true, data: { totalCount: 1, result: [] } });
+      }),
+    );
+
+    await listerTachesReponse(CLE_TEST);
+
+    expect(urls[0]).not.toContain('type=');
+    expect(urls[0]).toContain('skip=0');
+  });
+
+  it('pagine avec skip = decalage (comme listerEnvoisSortis), jusqu’a maxPages pages pleines', async () => {
+    const urls: string[] = [];
+    const tacheFictive = (id: string) => ({
+      id,
+      messageId: null,
+      email: 'lead@exemple.test',
+      sequence: null,
+      completed: false,
+      completed_time: null,
+      scheduled_time: null,
+      task_type: 'reply',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return reponseJson({
+          success: true,
+          data: { totalCount: 200, result: Array.from({ length: 100 }, (_, i) => tacheFictive(`t-${urls.length}-${i}`)) },
+        });
+      }),
+    );
+
+    const { taches } = await listerTachesReponse(CLE_TEST, { maxPages: 2 });
+
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain('skip=0');
+    expect(urls[1]).toContain('skip=100');
+    expect(taches).toHaveLength(200);
+  });
+
+  it('sature quand totalCount depasse ce qui a ete recupere', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            totalCount: 5,
+            result: [
+              {
+                id: 'tache-1',
+                messageId: null,
+                email: 'lead@exemple.test',
+                sequence: null,
+                completed: false,
+                completed_time: null,
+                scheduled_time: null,
+                task_type: 'reply',
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const { taches, sature } = await listerTachesReponse(CLE_TEST, { maxPages: 1 });
+
+    expect(taches).toHaveLength(1);
+    expect(sature).toBe(true);
+  });
+
+  it('non saturee quand totalCount egale ce qui a ete recupere', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            totalCount: 1,
+            result: [
+              {
+                id: 'tache-1',
+                messageId: null,
+                email: 'lead@exemple.test',
+                sequence: null,
+                completed: false,
+                completed_time: null,
+                scheduled_time: null,
+                task_type: 'reply',
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const { sature } = await listerTachesReponse(CLE_TEST);
+
+    expect(sature).toBe(false);
   });
 });

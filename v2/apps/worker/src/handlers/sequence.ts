@@ -44,6 +44,20 @@ export interface EnrollJob {
   readonly signalId?: string | null;
 }
 
+/**
+ * Plafond quotidien d'une campagne (`campaigns.daily_cap`), ou `null` si
+ * aucun n'est réglé. Revérifié à l'inscription (ci-dessous) et à l'envoi
+ * (`email-salesblink.ts`, I5, revue finale du 11/09) : un rattrapage après
+ * coupure d'expéditeur peut pousser en une fois des dizaines d'actions
+ * accumulées, à un rythme que le tick seul n'atteindrait jamais.
+ */
+export async function chargerPlafondCampagne(pool: Pool, campaignId: string): Promise<number | null> {
+  const res = await pool.query<{ daily_cap: number | null }>(`select daily_cap from campaigns where id = $1`, [
+    campaignId,
+  ]);
+  return res.rows[0]?.daily_cap ?? null;
+}
+
 /** Nombre d'entrées déjà comptabilisées aujourd'hui (jour UTC) pour une campagne. */
 export async function compterEntreesDuJour(pool: Pool, campaignId: string): Promise<number> {
   const res = await pool.query<{ n: string }>(
@@ -74,11 +88,7 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
   // est un jour répliqué, remplacer par une transaction avec
   // `select ... from campaigns where id = $1 for update`, sous peine de
   // dépasser le plafond d'une entrée par job concurrent sur la campagne.
-  const cap = await pool.query<{ daily_cap: number | null }>(
-    `select daily_cap from campaigns where id = $1`,
-    [job.campaignId],
-  );
-  const plafond = cap.rows[0]?.daily_cap ?? null;
+  const plafond = await chargerPlafondCampagne(pool, job.campaignId);
   if (plafond !== null) {
     const reste = placesRestantes(plafond, await compterEntreesDuJour(pool, job.campaignId));
     if (reste === 0) {
@@ -182,13 +192,61 @@ async function loadSenders(
  * Contraintes d'envoi portées par l'expéditeur, au-delà de ce que
  * `SenderInfo` transporte pour l'attribution.
  */
-interface ContraintesSender {
+export interface ContraintesSender {
   readonly usedToday: number;
   readonly usedThisHour: number;
   readonly dailyQuota: number | null;
   readonly hourlyQuota: number | null;
   readonly timezone: string | null;
   readonly businessHours: unknown;
+}
+
+/**
+ * Places encore disponibles pour un expéditeur, quota horaire et journalier
+ * confondus (le plus contraignant des deux) — `Infinity` quand aucun des
+ * deux n'est réglé. Extrait du tick pour que l'envoi (`email-salesblink.ts`,
+ * I5, revue finale du 11/09) le revérifie sans dupliquer le calcul.
+ */
+export function quotaSenderRestant(c: ContraintesSender): number {
+  const restantJour = c.dailyQuota !== null ? Math.max(0, c.dailyQuota - c.usedToday) : Infinity;
+  const restantHeure = c.hourlyQuota !== null ? Math.max(0, c.hourlyQuota - c.usedThisHour) : Infinity;
+  return Math.min(restantJour, restantHeure);
+}
+
+/**
+ * Contraintes d'UN expéditeur, chargées pour lui seul — même requête que
+ * `loadSenders`, mais sans le lot : l'envoi (contrairement au tick) ne
+ * connaît qu'un expéditeur à la fois.
+ */
+export async function chargerContraintesSender(pool: Pool, senderId: string): Promise<ContraintesSender | null> {
+  const res = await pool.query<{
+    daily_quota: number | null;
+    hourly_quota: number | null;
+    timezone: string | null;
+    business_hours: unknown;
+    used_today: number;
+    used_this_hour: number;
+  }>(
+    `select s.daily_quota, s.hourly_quota, s.timezone, s.business_hours,
+            (select count(*)::int from actions act
+              where act.sender_id = s.id
+                and act.created_at >= date_trunc('day', now())) as used_today,
+            (select count(*)::int from actions act
+              where act.sender_id = s.id
+                and act.created_at >= date_trunc('hour', now())) as used_this_hour
+       from senders s where s.id = $1`,
+    [senderId],
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    usedToday: r.used_today,
+    usedThisHour: r.used_this_hour,
+    dailyQuota: r.daily_quota,
+    hourlyQuota: r.hourly_quota,
+    timezone: r.timezone,
+    businessHours: r.business_hours,
+  };
 }
 
 /**
@@ -456,12 +514,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         // la fenêtre : une différence signifie donc « hors créneau ».
         if (decale > now.getTime()) creneauOuvre = decale;
 
-        const restantJour = c.dailyQuota !== null ? Math.max(0, c.dailyQuota - c.usedToday) : Infinity;
-        const restantHeure = c.hourlyQuota !== null ? Math.max(0, c.hourlyQuota - c.usedThisHour) : Infinity;
-        const restant = Math.min(restantJour, restantHeure);
+        const restant = quotaSenderRestant(c);
         if (Number.isFinite(restant)) {
           quotaRestant = restant;
           // Le quota horaire se libère à l'heure suivante, le journalier demain.
+          const restantHeure = c.hourlyQuota !== null ? Math.max(0, c.hourlyQuota - c.usedThisHour) : Infinity;
+          const restantJour = c.dailyQuota !== null ? Math.max(0, c.dailyQuota - c.usedToday) : Infinity;
           quotaResetAt =
             restantHeure <= restantJour
               ? new Date(now).setMinutes(60, 0, 0)

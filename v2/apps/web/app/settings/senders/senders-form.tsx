@@ -125,6 +125,7 @@ function ReglageFenetre({
   onFenetre,
   onFuseau,
   prefixe,
+  kind,
 }: {
   fenetre: Fenetre;
   fuseau: string;
@@ -132,6 +133,8 @@ function ReglageFenetre({
   onFuseau: (tz: string) => void;
   /** Rend les identifiants uniques quand plusieurs cartes coexistent. */
   prefixe: string;
+  /** Un expéditeur email dépend de SalesBlink pour l'envoi : seul lui affiche l'avertissement de propagation des heures. */
+  kind: SenderKind;
 }) {
   const t = useTranslations('senders');
   const tl = useTranslations('linkedin');
@@ -194,6 +197,12 @@ function ReglageFenetre({
           </select>
         </label>
       </div>
+
+      {kind === 'email' ? (
+        <p className="rs-row-sub" style={{ margin: 0 }}>
+          {t('sendHoursSalesBlinkHint')}
+        </p>
+      ) : null}
 
       <label className="rs-label">
         {t('timezone')}
@@ -401,6 +410,7 @@ function CarteExpediteur({
       <ReglageFenetre
         fenetre={fenetre}
         fuseau={fuseau}
+        kind={sender.kind}
         onFenetre={touche(setFenetre)}
         onFuseau={touche(setFuseau)}
         prefixe={sender.id}
@@ -602,6 +612,7 @@ function AjouterExpediteur({
           <ReglageFenetre
             fenetre={fenetre}
             fuseau={fuseau}
+            kind={canal}
             onFenetre={(f) => {
               setFenetre(f);
               setErreur(null);
