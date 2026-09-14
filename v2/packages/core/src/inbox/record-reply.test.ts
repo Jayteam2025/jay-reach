@@ -53,6 +53,33 @@ describe('recordInboundReply', () => {
     expect(appels.some((a) => a.text.includes('insert into outcomes'))).toBe(true);
   });
 
+  it('headers (tâche 10, par exemple le sujet) est persisté dans thread_messages.headers', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Merci pour votre message.',
+      headers: { subject: 'Re: Prise de contact' },
+    });
+
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion).toBeDefined();
+    expect(insertion!.text).toContain('headers');
+    expect(JSON.parse(insertion!.values[3] as string)).toEqual({ subject: 'Re: Prise de contact' });
+  });
+
+  it('sans headers, thread_messages.headers reste NULL (pas la chaîne "null")', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Merci pour votre message.',
+    });
+
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion!.values[3]).toBeNull();
+  });
+
   it('une réponse humaine passe aussi une inscription completed en replied (décision 3)', async () => {
     const { ex, appels } = creerExecuteurFactice({});
     await recordInboundReply(ex, 'org-1', {

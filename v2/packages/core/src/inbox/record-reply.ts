@@ -243,12 +243,15 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
 
   const threadId = await upsertThread(ex, org, reply.contactId, reply.channel, cls.classification);
   await ex.query(
-    `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
-     values ($1, 'in', $2, $3, $4::jsonb, $5)`,
+    // `headers` (tâche 10) : posé tel quel, `null` quand absent — jamais la
+    // chaîne JSON `"null"`, qui resterait une valeur au lieu d'un NULL SQL.
+    `insert into thread_messages (thread_id, direction, body, provider_message_id, headers, raw, sent_at)
+     values ($1, 'in', $2, $3, $4::jsonb, $5::jsonb, $6)`,
     [
       threadId,
       reply.body,
       reply.providerMessageId ?? null,
+      reply.headers ? JSON.stringify(reply.headers) : null,
       JSON.stringify(reply.raw ?? {}),
       (reply.receivedAt ?? new Date()).toISOString(),
     ],
