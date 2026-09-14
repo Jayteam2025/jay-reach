@@ -18,15 +18,33 @@ interface LigneAdhesion {
 }
 
 /**
+ * `Contexte` (métier, partagé avec le MCP) enrichi de ce que seule la
+ * coquille affiche : le nom montré dans le bloc utilisateur. Reste
+ * assignable partout où un `Contexte` est attendu (propriété en plus, pas en
+ * moins) — `lireAujourdhui`/`lireEtatMoteur` ne voient que `Contexte`.
+ */
+export interface ContexteWeb extends Contexte {
+  utilisateur: { nomAffiche: string };
+}
+
+/** `user_metadata.full_name`, sinon la partie locale de l'email, sinon un tiret. */
+function nomAffiche(utilisateur: { email?: string | null; user_metadata: Record<string, unknown> }): string {
+  const nomComplet = utilisateur.user_metadata.full_name;
+  if (typeof nomComplet === 'string' && nomComplet.trim() !== '') return nomComplet.trim();
+  return utilisateur.email?.split('@')[0] ?? '—';
+}
+
+/**
  * Contexte courant, mémoïsé pour la durée du rendu (une requête RSC peut
  * l'appeler depuis la coquille ET depuis la page sans relire deux fois la
- * base).
+ * base — et sans relire deux fois la session : une seule mémoïsation ici sert
+ * les deux).
  *
  * Organisation : la seule adhésion de l'utilisateur ; s'il en a plusieurs, le
  * cookie `jr-org` tranche s'il pointe vers l'une d'elles, sinon la première
  * par nom.
  */
-export const contexteCourant = cache(async (): Promise<Contexte> => {
+export const contexteCourant = cache(async (): Promise<ContexteWeb> => {
   const utilisateur = await requireUser();
   const pool = getPool();
 
@@ -57,5 +75,5 @@ export const contexteCourant = cache(async (): Promise<Contexte> => {
   }
 
   const role = await getMembershipRole(organisationId);
-  return { ex: pool, organisationId, utilisateurId: utilisateur.id, role };
+  return { ex: pool, organisationId, utilisateurId: utilisateur.id, role, utilisateur: { nomAffiche: nomAffiche(utilisateur) } };
 });

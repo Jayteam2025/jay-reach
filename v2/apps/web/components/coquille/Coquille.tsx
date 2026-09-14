@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import type { Contexte } from '@jay-reach/core';
-import { getUser } from '../../lib/auth';
+import type { ContexteWeb } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
@@ -9,7 +8,7 @@ import { CarteMoteur } from './CarteMoteur';
 import { CarteEnvois } from './CarteEnvois';
 
 export interface CoquilleProps {
-  ctx: Contexte;
+  ctx: ContexteWeb;
   children: ReactNode;
 }
 
@@ -19,9 +18,11 @@ function formatHeure(iso: string | null): string | null {
 }
 
 export async function Coquille({ ctx, children }: CoquilleProps) {
-  const [t, a, utilisateur] = await Promise.all([getTranslations(), lireAujourdhuiCourant(ctx), getUser()]);
+  // Une seule lecture de session par rendu : `contexteCourant()` (mémoïsée)
+  // porte déjà le nom affiché, pas besoin d'un second appel à `getUser()`.
+  const [t, a] = await Promise.all([getTranslations(), lireAujourdhuiCourant(ctx)]);
 
-  const nomAffiche = utilisateur?.user_metadata?.full_name?.trim() || utilisateur?.email?.split('@')[0] || '—';
+  const nomAffiche = ctx.utilisateur.nomAffiche;
   const roleLibelle = ctx.role ? t(`coquille.role.${ctx.role}`) : t('coquille.role.none');
 
   const dernier = formatHeure(a.moteur.dernierPassage);

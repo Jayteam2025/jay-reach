@@ -12,9 +12,9 @@ export interface BarreLateraleProps {
 
 type Entree = { href: string; cle: string; icone: ReactNode };
 
-// Icônes reprises telles quelles de la maquette (`_internal/maquettes/lot2/aujourdhui.html`) :
-// `svg` nu, sans props — la taille et le trait viennent de la règle globale
-// `.jr-app svg` de composants.css, pas d'un composant Icon partagé.
+// Icônes reprises telles quelles de la maquette Aujourd'hui : `svg` nu, sans
+// props — la taille et le trait viennent de la règle globale `.jr-app svg` de
+// composants.css, pas d'un composant Icon partagé.
 const ENTREES: Entree[] = [
   {
     href: '/',
@@ -78,7 +78,7 @@ export function BarreLaterale({ aTraiterTotal }: BarreLateraleProps) {
   const t = useTranslations('coquille.nav');
   const pathname = usePathname();
   return (
-    <nav className="jr-nav">
+    <nav className="jr-nav" aria-label={t('ariaLabel')}>
       {ENTREES.map((entree) => {
         const actif = estActif(pathname, entree.href);
         return (

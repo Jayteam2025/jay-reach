@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
-import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, Tendance, TuileLogo } from '../../components/ui';
+import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
 export const revalidate = 60;
@@ -51,6 +51,21 @@ function marqueSource(providerId: string): 'linkedin' | 'adzuna' | 'francetravai
   return 'lettre';
 }
 
+/**
+ * Logo de la boîte d'envoi, déduit du domaine de son adresse — `senders` ne
+ * porte aucune colonne « type de boîte » (son seul `provider_id` désigne le
+ * transport, SalesBlink, pas la messagerie). Une adresse sur un domaine
+ * personnalisé (le cas réel de production) ne matche aucun des deux motifs :
+ * pas de logo, comme le prévoit le kit.
+ */
+function logoBoiteEnvoi(identite: string | null): 'outlook' | 'gmail' | null {
+  const domaine = identite?.split('@')[1]?.toLowerCase();
+  if (!domaine) return null;
+  if (['outlook.com', 'hotmail.com', 'live.com', 'office365.com'].some((d) => domaine.endsWith(d)) || domaine.includes('microsoft')) return 'outlook';
+  if (domaine.endsWith('gmail.com') || domaine.endsWith('googlemail.com')) return 'gmail';
+  return null;
+}
+
 const TON_STATUT_CAMPAGNE: Record<CampagneResume['statut'], PuceTon> = {
   draft: 'gris',
   active: 'bon',
@@ -68,8 +83,9 @@ export default async function AujourdhuiPage() {
 
   return (
     <>
-      {a.alertes.map((alerte) => (
-        <div key={alerte.type} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
+      {a.alertes.map((alerte, index) => (
+        // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
+        <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
           <span>{alerte.texte}</span>
           <Link href={alerte.lien} className="jr-lien">
             {t('alerts.action')}
@@ -134,26 +150,29 @@ export default async function AujourdhuiPage() {
           ) : (
             <table className="jr-table">
               <tbody>
-                {a.fileDuJour.envois.map((envoi) => (
-                  <tr key={envoi.id}>
-                    <td style={{ paddingLeft: 0 }}>{envoi.heure ?? '—'}</td>
-                    <td>
-                      <div className="jr-qui">
-                        <Avatar nom={envoi.contactNom} canal={envoi.canal} />
-                        <span>
-                          <b>{envoi.contactNom}</b>
-                          <small>
-                            {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
-                            {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}
-                          </small>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="num jr-secondaire" style={{ paddingRight: 0 }}>
-                      {envoi.expediteur ?? '—'}
-                    </td>
-                  </tr>
-                ))}
+                {a.fileDuJour.envois.map((envoi) => {
+                  const logo = logoBoiteEnvoi(envoi.expediteur);
+                  return (
+                    <tr key={envoi.id}>
+                      <td style={{ paddingLeft: 0 }}>{envoi.heure ?? '—'}</td>
+                      <td>
+                        <div className="jr-qui">
+                          <Avatar nom={envoi.contactNom} canal={envoi.canal} />
+                          <span>
+                            <b>{envoi.contactNom}</b>
+                            <small>
+                              {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
+                              {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}
+                            </small>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="num jr-secondaire" style={{ paddingRight: 0 }}>
+                        {logo && <i className={`jr-logo-inline jr-logo-${logo}`} />} {envoi.expediteur ?? '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {nbAutresEnvois > 0 && (
                   <tr>
                     <td colSpan={3} className="jr-secondaire" style={{ paddingLeft: 0 }}>
@@ -243,7 +262,10 @@ export default async function AujourdhuiPage() {
                   {nf.format(campagne.reponses)} <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>{campagne.tauxReponse.toLocaleString('fr-FR')} %</em>
                 </>
               ),
-              semaine: <Tendance valeurs={[]} />,
+              // Tendance 7 jours non calculée (demanderait une requête groupée par jour, hors
+              // périmètre de cette tâche) : un tiret plutôt qu'une jauge vide qui suggérerait une
+              // vraie mesure à zéro.
+              semaine: <span className="jr-secondaire">—</span>,
               statut: <Puce ton={TON_STATUT_CAMPAGNE[campagne.statut]} point>{t(`campaigns.status.${campagne.statut}`)}</Puce>,
             }))}
             vide={<div className="jr-vide">{t('campaigns.empty')}</div>}

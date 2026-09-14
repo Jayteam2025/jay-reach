@@ -817,7 +817,8 @@
       "campaigns": "Campagnes",
       "contacts": "Contacts",
       "inbox": "Réception",
-      "settings": "Réglages"
+      "settings": "Réglages",
+      "ariaLabel": "Navigation principale"
     },
     "engine": {
       "running": "Moteur en marche",
@@ -836,11 +837,11 @@
     }
   },
   "aujourdhui": {
-    "resume": "{aTraiter} réponses à traiter, {envois} envois prévus, {campagnes} campagnes actives.",
+    "resume": "{aTraiter, plural, one {# réponse} other {# réponses}} à traiter, {envois, plural, one {# envoi prévu} other {# envois prévus}}, {campagnes, plural, one {# campagne active} other {# campagnes actives}}.",
     "newCampaign": "Nouvelle campagne",
     "toProcess": {
       "title": "À traiter",
-      "count": "{n} réponses",
+      "count": "{n, plural, one {# réponse} other {# réponses}}",
       "open": "Ouvrir la Réception",
       "empty": "Aucune réponse à traiter pour le moment."
     },
@@ -853,10 +854,10 @@
     },
     "queue": {
       "title": "File du jour",
-      "count": "{envois} envois, {partis} déjà partis",
+      "count": "{envois, plural, one {# envoi} other {# envois}}, {partis, plural, one {# déjà parti} other {# déjà partis}}",
       "seeAll": "Toute la file",
       "step": "Étape {n}",
-      "andMore": "et {n} autres",
+      "andMore": "{n, plural, one {et # autre} other {et # autres}}",
       "empty": "Rien à envoyer aujourd'hui."
     },
     "engine": {
@@ -877,7 +878,7 @@
     },
     "campaigns": {
       "title": "Campagnes",
-      "count": "{n} actives",
+      "count": "{n, plural, one {# active} other {# actives}}",
       "seeAll": "Toutes les campagnes",
       "columns": {
         "campaign": "Campagne",
@@ -887,7 +888,7 @@
         "replies": "Réponses",
         "week": "Cette semaine"
       },
-      "steps": "{n} étapes email · {boites} boîtes",
+      "steps": "{n, plural, one {# étape email} other {# étapes email}} · {boites, plural, one {# boîte} other {# boîtes}}",
       "noSource": "aucune source",
       "status": {
         "draft": "Brouillon",
