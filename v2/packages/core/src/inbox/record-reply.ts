@@ -21,6 +21,17 @@ import { classifyReply } from './classify.js';
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
 export const LIVE_STATUSES = "('active','paused','paused_absence')";
 
+/**
+ * Statuts qu'une réponse HUMAINE peut encore faire passer en `replied`
+ * (tâche 10, décision 3) : `LIVE_STATUSES` plus `completed`. Une réponse reçue
+ * après la dernière étape de la séquence ne doit pas être perdue pour le taux
+ * de réponse par campagne — `replied` l'emporte sur `completed`. Les autres
+ * classifications (`auto_absence`, `auto_left_company`) restent sur
+ * `LIVE_STATUSES` : seule une réponse humaine justifie de rouvrir une
+ * inscription déjà terminée.
+ */
+export const REPLY_STATUSES = "('active','paused','paused_absence','completed')";
+
 export type ReplyChannel = 'email' | 'linkedin_invite' | 'linkedin_message' | 'letter' | 'call';
 
 export interface InboundReply {
@@ -137,7 +148,7 @@ async function applyToEnrollment(
   if (classification === 'human_reply') {
     await ex.query(
       `update enrollments set status = 'replied', ended_at = now()
-        where organization_id = $1 and contact_id = $2 and status in ${LIVE_STATUSES}`,
+        where organization_id = $1 and contact_id = $2 and status in ${REPLY_STATUSES}`,
       [org, contactId],
     );
     return;

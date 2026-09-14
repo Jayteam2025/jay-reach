@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { LIVE_STATUSES, assurerFil, notifier, notifyReply, recordInboundReply } from './record-reply.js';
+import { LIVE_STATUSES, REPLY_STATUSES, assurerFil, notifier, notifyReply, recordInboundReply } from './record-reply.js';
 
 interface ReponsesFactices {
   threadExistant?: { id: string } | null;
@@ -51,6 +51,35 @@ describe('recordInboundReply', () => {
     expect(appels.some((a) => a.text.includes('insert into thread_messages'))).toBe(true);
     expect(appels.some((a) => a.text.includes('update enrollments'))).toBe(true);
     expect(appels.some((a) => a.text.includes('insert into outcomes'))).toBe(true);
+  });
+
+  it('une réponse humaine passe aussi une inscription completed en replied (décision 3)', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Bonjour, merci pour votre message, on se rappelle la semaine prochaine.',
+    });
+
+    const maj = appels.find((a) => a.text.includes('update enrollments'));
+    expect(maj).toBeDefined();
+    expect(maj!.text).toContain(REPLY_STATUSES);
+    expect(REPLY_STATUSES).toContain('completed');
+  });
+
+  it('une absence automatique reste sur LIVE_STATUSES (ne rouvre pas une inscription completed)', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    const resultat = await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Je suis actuellement en congés, de retour le 20.',
+    });
+
+    expect(resultat.classification).toBe('auto_absence');
+    const maj = appels.find((a) => a.text.includes('update enrollments'));
+    expect(maj).toBeDefined();
+    expect(maj!.text).toContain(LIVE_STATUSES);
+    expect(maj!.text).not.toContain('completed');
   });
 
   it('un message déjà connu ne réinsère rien et renvoie isNew: false', async () => {
