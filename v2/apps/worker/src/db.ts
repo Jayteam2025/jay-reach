@@ -7,7 +7,10 @@ import type { ScrapedSignal } from '@jay-reach/providers/signals';
 import { normalizeLocation, signalFingerprint } from '@jay-reach/core';
 
 export function createPool(connectionString: string): Pool {
-  return new Pool({ connectionString });
+  // Le worker traite séquentiellement (batchSize 1) : quatre connexions
+  // suffisent largement, et le pooler Supabase en mode session (15 sessions,
+  // partagées avec le web) ne supporte pas qu'un seul processus les épuise.
+  return new Pool({ connectionString, max: 4 });
 }
 
 /**
