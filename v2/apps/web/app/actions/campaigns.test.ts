@@ -3,120 +3,97 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 const ORG_ID = 'org-1';
-const CAMPAIGN_ID = 'campagne-1';
-
-interface Appel {
-  readonly table: string;
-  readonly op: string;
-  readonly payload?: unknown;
-}
+const CAMPAIGN_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 /**
- * Client Supabase factice minimal : assez de chaînage (`select`/`update`/
- * `insert`/`eq`/`maybeSingle`, et `then` pour un builder awaité directement)
- * pour couvrir le chemin `setCampaignStatus` → 'paused'/'active', sans
- * reconstruire tout le client. `role` pilote `getMembershipRole`,
- * `erreurMiseAJour`/`erreurJournal` simulent un échec ciblé de chaque insert.
+ * `contexteCourant` factice : la façade (tâche 7) ne parle plus directement à
+ * Supabase pour `setCampaignStatus` — elle appelle `mettreEnPause`/`lancer`/
+ * `archiver` (packages/core) avec un `Contexte` dont `ex.query` est ce mock.
+ * `role` pilote `exiger` (viewer < operator ⇒ `ForbiddenError`) ;
+ * `erreurJournal`, si posée, fait échouer le seul `insert into audit_events`.
  */
-function creerSupabaseFactice(opts: {
-  role: string | null;
-  erreurMiseAJour?: { message: string } | null;
-  erreurJournal?: unknown;
-}): { supabase: unknown; appels: Appel[] } {
-  const appels: Appel[] = [];
-
-  function chain(table: string) {
-    let op: 'select' | 'update' | 'insert' = 'select';
-    let payload: unknown;
-    const c = {
-      select: () => c,
-      update: (p: unknown) => {
-        op = 'update';
-        payload = p;
-        return c;
-      },
-      insert: (p: unknown) => {
-        appels.push({ table, op: 'insert', payload: p });
-        return Promise.resolve({ error: table === 'audit_events' ? (opts.erreurJournal ?? null) : null });
-      },
-      eq: () => c,
-      maybeSingle: async () => {
-        appels.push({ table, op: 'maybeSingle' });
-        if (table === 'memberships') {
-          return { data: opts.role ? { role: opts.role } : null };
-        }
-        return { data: null };
-      },
-      then: (resolve: (v: { error: unknown }) => void) => {
-        appels.push({ table, op, payload });
-        resolve({ error: op === 'update' ? (opts.erreurMiseAJour ?? null) : null });
-      },
-    };
-    return c;
-  }
-
+function creerContexteFactice(opts: { role: 'viewer' | 'operator' | 'admin' | null; erreurJournal?: Error }) {
+  const appels: { sql: string; params: unknown[] }[] = [];
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    appels.push({ sql, params });
+    if (/insert into audit_events/i.test(sql) && opts.erreurJournal) {
+      throw opts.erreurJournal;
+    }
+    if (/update campaigns/i.test(sql)) {
+      return { rows: [{ id: CAMPAIGN_ID }], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  });
   return {
-    supabase: {
-      auth: { getUser: async () => ({ data: { user: { id: 'utilisateur-1' } } }) },
-      from: (table: string) => chain(table),
+    ctx: {
+      ex: { query },
+      organisationId: ORG_ID,
+      utilisateurId: 'utilisateur-1',
+      role: opts.role,
+      utilisateur: { nomAffiche: 'utilisateur-1' },
     },
     appels,
   };
 }
 
-vi.mock('../../lib/supabase/server', () => ({
-  createClient: vi.fn(),
-}));
+vi.mock('../../lib/contexte', () => ({ contexteCourant: vi.fn() }));
 
-import { createClient } from '../../lib/supabase/server';
+import { contexteCourant } from '../../lib/contexte';
 import { setCampaignStatus } from './campaigns';
 
 beforeEach(() => {
-  vi.mocked(createClient).mockReset();
+  vi.mocked(contexteCourant).mockReset();
 });
 
-describe('setCampaignStatus — journal d’activité (tâche 6)', () => {
+describe('setCampaignStatus — journal d’activité (tâche 6, façade tâche 7)', () => {
   it('une mise en pause écrit campaign_paused avec l’utilisateur qui a agi', async () => {
-    const { supabase, appels } = creerSupabaseFactice({ role: 'admin' });
-    vi.mocked(createClient).mockResolvedValue(supabase as Awaited<ReturnType<typeof createClient>>);
+    const { ctx, appels } = creerContexteFactice({ role: 'admin' });
+    vi.mocked(contexteCourant).mockResolvedValue(ctx as Awaited<ReturnType<typeof contexteCourant>>);
 
     const resultat = await setCampaignStatus(ORG_ID, CAMPAIGN_ID, 'paused');
 
     expect(resultat).toEqual({ ok: true });
-    const journal = appels.find((a) => a.table === 'audit_events');
+    const journal = appels.find((a) => /insert into audit_events/i.test(a.sql));
     expect(journal).toBeDefined();
-    expect(journal!.payload).toMatchObject({
-      organization_id: ORG_ID,
-      actor_id: 'utilisateur-1',
-      entity_type: 'campaign',
-      entity_id: CAMPAIGN_ID,
-      action: 'campaign_paused',
-      diff: { libelle: 'Campagne mise en pause.' },
-    });
+    expect(journal!.params).toEqual([
+      ORG_ID,
+      'utilisateur-1',
+      'campaign',
+      CAMPAIGN_ID,
+      'campaign_paused',
+      JSON.stringify({ libelle: 'Campagne mise en pause' }),
+    ]);
   });
 
-  it('sans rôle admin, aucune écriture n’a lieu (ni campagne ni journal)', async () => {
-    const { supabase, appels } = creerSupabaseFactice({ role: 'viewer' });
-    vi.mocked(createClient).mockResolvedValue(supabase as Awaited<ReturnType<typeof createClient>>);
+  it('sans rôle suffisant, aucune écriture n’a lieu (ni campagne ni journal)', async () => {
+    const { ctx, appels } = creerContexteFactice({ role: 'viewer' });
+    vi.mocked(contexteCourant).mockResolvedValue(ctx as Awaited<ReturnType<typeof contexteCourant>>);
 
     const resultat = await setCampaignStatus(ORG_ID, CAMPAIGN_ID, 'paused');
 
     expect(resultat.ok).toBe(false);
-    expect(appels.some((a) => a.table === 'audit_events')).toBe(false);
+    expect(appels).toHaveLength(0);
   });
 
   it('un échec du journal n’empêche jamais la mise en pause de réussir', async () => {
-    const { supabase } = creerSupabaseFactice({
-      role: 'admin',
-      erreurJournal: { message: 'table audit_events indisponible' },
-    });
-    vi.mocked(createClient).mockResolvedValue(supabase as Awaited<ReturnType<typeof createClient>>);
+    const { ctx } = creerContexteFactice({ role: 'admin', erreurJournal: new Error('table audit_events indisponible') });
+    vi.mocked(contexteCourant).mockResolvedValue(ctx as Awaited<ReturnType<typeof contexteCourant>>);
     const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     const resultat = await setCampaignStatus(ORG_ID, CAMPAIGN_ID, 'paused');
 
     expect(resultat).toEqual({ ok: true });
-    expect(avertissement).toHaveBeenCalledWith('[journal] campaign_paused', { message: 'table audit_events indisponible' });
+    expect(avertissement).toHaveBeenCalledWith('[journal] campaign_paused', expect.any(Error));
     avertissement.mockRestore();
+  });
+
+  it('une organisation qui ne coïncide pas avec celle du contexte courant ne change rien', async () => {
+    const { ctx, appels } = creerContexteFactice({ role: 'admin' });
+    vi.mocked(contexteCourant).mockResolvedValue(ctx as Awaited<ReturnType<typeof contexteCourant>>);
+
+    const resultat = await setCampaignStatus('une-autre-organisation', CAMPAIGN_ID, 'paused');
+
+    expect(resultat).toEqual({ ok: false, error: 'Organisation invalide.' });
+    expect(appels).toHaveLength(0);
   });
 });

@@ -1,108 +1,71 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getTranslations } from 'next-intl/server';
 import {
-  parseCampaignCreate,
-  parseCampaignSettings,
   parseStep,
-  campaignStatusSchema,
-  toEntryRules,
   toStepConditions,
-  type CampaignStatus,
+  campaignStatusSchema,
+  creerCampagne,
+  modifierReglagesCampagne,
+  lancer,
+  mettreEnPause,
+  archiver,
+  exiger,
+  ErreurEntree,
+  ErreurIntrouvable,
+  ErreurConflit,
+  ForbiddenError,
 } from '@jay-reach/core';
-import { requireRole, getUser } from '../../lib/auth';
+import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
-import { manquesTransportEmail } from './transport-email';
-
-/**
- * Journal d'activité (tâche 6) : `campaign_activated`/`campaign_paused` sont
- * les deux seuls événements du journal déclenchés depuis l'écran plutôt que
- * par le moteur — `actorId` porte donc l'utilisateur qui a agi, jamais `null`.
- *
- * Écrit directement via le client Supabase (pas `ecrireEvenement` de
- * `@jay-reach/core`, qui attend un `Executeur` `pg` — cette action serveur
- * n'en a pas) : même forme de ligne, dans la même table.
- */
-async function journaliserChangementStatutCampagne(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  params: { organizationId: string; campaignId: string; actorId: string | null; actif: boolean },
-): Promise<void> {
-  const action = params.actif ? 'campaign_activated' : 'campaign_paused';
-  try {
-    // `.insert()` de Supabase JS ne lève pas : l'échec revient dans `error`,
-    // jamais en exception — vérifié explicitement, sinon un échec silencieux
-    // ne serait ni journalisé ni averti.
-    const { error } = await supabase.from('audit_events').insert({
-      organization_id: params.organizationId,
-      actor_id: params.actorId,
-      entity_type: 'campaign',
-      entity_id: params.campaignId,
-      action,
-      diff: { libelle: params.actif ? 'Campagne activée.' : 'Campagne mise en pause.' },
-    });
-    if (error) {
-      console.warn(`[journal] ${action}`, error);
-    }
-  } catch (err) {
-    console.warn(`[journal] ${action}`, err);
-  }
-}
+import { contexteCourant } from '../../lib/contexte';
 
 export type CampaignActionResult = { ok: true; id: string } | { ok: false; error: string; issues?: string[] };
 export type SimpleResult = { ok: true } | { ok: false; error: string; issues?: string[] };
 
-async function asAdmin(organizationId: string): Promise<SimpleResult> {
-  try {
-    await requireRole(organizationId, 'admin');
-    return { ok: true };
-  } catch {
-    return { ok: false, error: 'Droit administrateur requis.' };
+/**
+ * Traduit une erreur des fonctions de `packages/core/src/fonctions/campagnes.ts`
+ * en résultat de façade — jamais une exception qui ferait tomber la Server
+ * Action (les anciennes actions renvoyaient toutes un `SimpleResult`, jamais
+ * une exception non attrapée).
+ */
+function resultatDErreur(err: unknown): { ok: false; error: string; issues?: string[] } {
+  if (err instanceof ForbiddenError) {
+    return { ok: false, error: 'Droit insuffisant pour cette action.' };
   }
+  if (err instanceof ErreurEntree) {
+    const details = err.details as { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> };
+    const issues = [...(details.formErrors ?? []), ...Object.values(details.fieldErrors ?? {}).flat()].filter(
+      (m): m is string => typeof m === 'string',
+    );
+    return { ok: false, error: 'Entrée invalide.', issues: issues.length > 0 ? issues : undefined };
+  }
+  if (err instanceof ErreurIntrouvable || err instanceof ErreurConflit) {
+    return { ok: false, error: err.message };
+  }
+  return { ok: false, error: err instanceof Error ? err.message : 'Erreur inconnue.' };
 }
 
 /**
  * Crée une campagne (brouillon), adossée à un ou plusieurs thèmes de veille, ou
- * à une liste.
- *
- * `campaigns.source_id` reste renseigné avec le premier thème : la colonne est
- * dépréciée mais lue par du code encore en place, et la vider d'un coup ferait
- * disparaître l'entrée de campagnes qui fonctionnent.
+ * à une liste. Façade fine : le contexte vient de la session courante,
+ * JAMAIS de `organizationId` — un id d'organisation reçu du client n'a
+ * aucune valeur d'autorisation, il ne sert plus qu'à vérifier qu'il coïncide
+ * avec l'organisation réellement courante (sinon la Server Action ne fait
+ * rien).
  */
 export async function createCampaign(organizationId: string, input: unknown): Promise<CampaignActionResult> {
-  const auth = await asAdmin(organizationId);
-  if (!auth.ok) return auth;
-  const parsed = parseCampaignCreate(input);
-  if (!parsed.ok) return { ok: false, error: 'Entrée invalide.', issues: parsed.errors };
-  const { name, entryKind, entryId, sourceIds, minScore, personaIds, dailyCap } = parsed.data;
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('campaigns')
-    .insert({
-      organization_id: organizationId,
-      name,
-      status: 'draft',
-      source_id: entryKind === 'source' ? entryId : null,
-      list_id: entryKind === 'list' ? entryId : null,
-      entry_rules: toEntryRules({ minScore, personaIds }),
-      daily_cap: dailyCap ?? null,
-    })
-    .select('id')
-    .single();
-  if (error) return { ok: false, error: error.message };
-
-  const campaignId = data.id as string;
-  const themes = entryKind === 'source' ? (sourceIds ?? [entryId]) : [];
-  if (themes.length > 0) {
-    const { error: erreurThemes } = await supabase
-      .from('campaign_sources')
-      .insert(themes.map((source_id) => ({ campaign_id: campaignId, source_id })));
-    if (erreurThemes) return { ok: false, error: erreurThemes.message };
+  try {
+    const ctx = await contexteCourant();
+    if (ctx.organisationId !== organizationId) {
+      return { ok: false, error: 'Organisation invalide.' };
+    }
+    const { id } = await creerCampagne(ctx, input);
+    revalidatePath('/campaigns');
+    return { ok: true, id };
+  } catch (err) {
+    return resultatDErreur(err);
   }
-
-  revalidatePath('/campaigns');
-  return { ok: true, id: campaignId };
 }
 
 /** Met à jour nom / plafond / règles d'entrée d'une campagne. */
@@ -111,255 +74,67 @@ export async function updateCampaignSettings(
   campaignId: string,
   input: unknown,
 ): Promise<SimpleResult> {
-  const auth = await asAdmin(organizationId);
-  if (!auth.ok) return auth;
-  const parsed = parseCampaignSettings(input);
-  if (!parsed.ok) return { ok: false, error: 'Entrée invalide.', issues: parsed.errors };
-  const patch: Record<string, unknown> = {};
-  if (parsed.data.name !== undefined) patch.name = parsed.data.name;
-  if (parsed.data.dailyCap !== undefined) patch.daily_cap = parsed.data.dailyCap;
-  if (parsed.data.minScore !== undefined || parsed.data.personaIds !== undefined) {
-    patch.entry_rules = toEntryRules({ minScore: parsed.data.minScore, personaIds: parsed.data.personaIds });
-  }
-  const supabase = await createClient();
-
-  // Même contrôle qu'à l'activation : élargir les personas d'une campagne déjà
-  // active peut créer la collision aussi sûrement que l'activer.
-  if (parsed.data.personaIds !== undefined && parsed.data.personaIds.length > 0) {
-    const { data: etat } = await supabase
-      .from('campaigns')
-      .select('status')
-      .eq('id', campaignId)
-      .eq('organization_id', organizationId)
-      .maybeSingle();
-    if ((etat as { status?: string } | null)?.status === 'active') {
-      const collision = await chercherCollisionDePersona(supabase, organizationId, campaignId, parsed.data.personaIds);
-      if (collision) return { ok: false, error: collision };
+  try {
+    const ctx = await contexteCourant();
+    if (ctx.organisationId !== organizationId) {
+      return { ok: false, error: 'Organisation invalide.' };
     }
+    const entree = typeof input === 'object' && input !== null ? { ...input, campagneId: campaignId } : { campagneId: campaignId };
+    await modifierReglagesCampagne(ctx, entree);
+    revalidatePath(`/campaigns/${campaignId}`);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
   }
-  const { error } = await supabase.from('campaigns').update(patch).eq('id', campaignId).eq('organization_id', organizationId);
-  if (error) return { ok: false, error: error.message };
-  revalidatePath(`/campaigns/${campaignId}`);
-  return { ok: true };
 }
 
 /**
- * Une persona ne peut être servie que par une campagne active à la fois, sur un
- * même thème de veille.
- *
- * Sans cette règle, le producteur d'inscription doit arbitrer entre deux
- * destinations pour le même contact : il en choisirait une, silencieusement, et
- * l'opérateur découvrirait des mois plus tard que la moitié de ses prospects
- * partaient dans la mauvaise campagne.
- *
- * Une contrainte en base ne peut pas exprimer ça — elle traverserait
- * `campaigns`, `campaign_sources` et le contenu d'un jsonb. C'est donc à
- * l'application de la tenir, au moment précis où la collision devient réelle :
- * l'activation, et le changement de personas d'une campagne déjà active.
- *
- * Renvoie le message à afficher, ou `null` si la voie est libre.
+ * Change le statut d'une campagne (brouillon / active / en pause / archivée).
+ * Délègue à `lancer`/`mettreEnPause`/`archiver` (packages/core), qui portent
+ * désormais la garde d'activation, la collision de persona et le journal
+ * d'activité — cette façade ne fait plus qu'aiguiller et traduire l'erreur.
  */
-async function chercherCollisionDePersona(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  organizationId: string,
-  campaignId: string,
-  personaIds: readonly string[],
-): Promise<string | null> {
-  if (personaIds.length === 0) return null;
-
-  // Thèmes de cette campagne : ceux de la table de liaison, plus le thème
-  // direct que la colonne dépréciée porte encore.
-  const { data: liens } = await supabase
-    .from('campaign_sources')
-    .select('source_id')
-    .eq('campaign_id', campaignId);
-  const { data: courante } = await supabase
-    .from('campaigns')
-    .select('source_id')
-    .eq('id', campaignId)
-    .maybeSingle();
-  const themes = new Set<string>([
-    ...((liens ?? []) as { source_id: string }[]).map((l) => l.source_id),
-    ...((courante as { source_id: string | null } | null)?.source_id ? [(courante as { source_id: string }).source_id] : []),
-  ]);
-  if (themes.size === 0) return null;
-
-  const { data: autres } = await supabase
-    .from('campaigns')
-    .select('id, name, entry_rules, source_id, campaign_sources(source_id)')
-    .eq('organization_id', organizationId)
-    .eq('status', 'active')
-    .neq('id', campaignId);
-
-  for (const autre of (autres ?? []) as {
-    id: string;
-    name: string;
-    entry_rules: { personas?: string[] } | null;
-    source_id: string | null;
-    campaign_sources: { source_id: string }[] | null;
-  }[]) {
-    const themesAutre = new Set<string>([
-      ...(autre.campaign_sources ?? []).map((l) => l.source_id),
-      ...(autre.source_id ? [autre.source_id] : []),
-    ]);
-    const themeCommun = [...themes].some((t) => themesAutre.has(t));
-    if (!themeCommun) continue;
-
-    const partagee = (autre.entry_rules?.personas ?? []).find((p) => personaIds.includes(p));
-    if (partagee) {
-      return `La campagne « ${autre.name} » est déjà active sur le même thème pour cette persona. Mettez-la en pause, ou retirez la persona de l’une des deux.`;
-    }
-  }
-  return null;
-}
-
-/**
- * Ce qui manque à une campagne pour pouvoir envoyer quoi que ce soit.
- *
- * Une campagne s'activait sans que rien ne vérifie qu'elle en était capable.
- * Constaté en recette le 01/09/2026 : « Job commercial » activée, huit contacts
- * inscrits dans la minute, huit actions créées — et pas une seule qui pouvait
- * partir. Aucun message n'était relié à son étape. L'échec n'apparaissait
- * qu'après coup, dans le `block_reason` de chaque action, là où personne ne
- * regarde.
- *
- * Ces contrôles ne remplacent pas les garde-fous du séquenceur, qui jugent
- * action par action au moment d'envoyer. Ils répondent à une autre question,
- * posée une seule fois : cette campagne peut-elle produire un envoi ? Y
- * répondre à l'activation coûte une requête ; y répondre après coup coûte des
- * inscriptions à défaire.
- *
- * Le canal `call` est écarté partout : il ne consomme aucun expéditeur, ne
- * passe par aucun provider et n'envoie rien.
- */
-async function cequiManquePourEnvoyer(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  organizationId: string,
-  campaignId: string,
-): Promise<string[]> {
-  const manques: string[] = [];
-
-  const { data: etapes } = await supabase
-    .from('sequence_steps')
-    .select('position, channel, template_parent_id')
-    .eq('campaign_id', campaignId)
-    .order('position');
-  const lignes = (etapes ?? []) as { position: number; channel: string; template_parent_id: string | null }[];
-
-  if (lignes.length === 0) {
-    manques.push('la séquence ne comporte aucune étape');
-    return manques;
-  }
-
-  // 1. Chaque étape qui envoie doit avoir un message.
-  const sansMessage = lignes.filter((e) => e.channel !== 'call' && !e.template_parent_id);
-  if (sansMessage.length > 0) {
-    const numeros = sansMessage.map((e) => e.position + 1).join(', ');
-    manques.push(
-      sansMessage.length === 1
-        ? `l’étape ${numeros} n’a pas de message relié`
-        : `les étapes ${numeros} n’ont pas de message relié`,
-    );
-  }
-
-  // 2. Un expéditeur actif par canal utilisé.
-  const canaux = new Set(lignes.map((e) => e.channel).filter((c) => c !== 'call'));
-  const besoinEmail = [...canaux].some((c) => c === 'email');
-  const besoinLinkedIn = [...canaux].some((c) => c.startsWith('linkedin'));
-  const { data: expediteurs } = await supabase
-    .from('senders')
-    .select('kind')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true);
-  const genres = new Set(((expediteurs ?? []) as { kind: string }[]).map((s) => s.kind));
-  if (besoinEmail && !genres.has('email')) {
-    manques.push('aucun expéditeur email actif');
-  }
-  if (besoinLinkedIn && !genres.has('linkedin')) {
-    manques.push('aucun expéditeur LinkedIn actif');
-  }
-
-  // 3. Un transport email prêt : la clé SalesBlink de l'organisation et au moins un
-  // expéditeur email actif relié à une boîte SalesBlink dont la dernière santé dit
-  // « envoi actif ». Sans cela l'action resterait planifiée sans jamais partir.
-  if (besoinEmail) {
-    const { data: cle } = await supabase
-      .from('credentials_public')
-      .select('status')
-      .eq('organization_id', organizationId)
-      .eq('provider_id', 'salesblink')
-      .maybeSingle();
-    const { data: boitesEmail } = await supabase
-      .from('senders')
-      .select('provider_ref, provider_state')
-      .eq('organization_id', organizationId)
-      .eq('kind', 'email')
-      .eq('is_active', true);
-    const t = await getTranslations();
-    const manquesTransport = manquesTransportEmail({
-      cleStatus: (cle as { status: string } | null)?.status ?? null,
-      boites: (boitesEmail ?? []) as {
-        provider_ref: string | null;
-        provider_state: { sending_enabled?: boolean } | null;
-      }[],
-    });
-    for (const manque of manquesTransport) {
-      manques.push(t(`campaign.guard.${manque}`));
-    }
-  }
-
-  return manques;
-}
-
-/** Change le statut d'une campagne (brouillon / active / en pause / archivée). */
 export async function setCampaignStatus(organizationId: string, campaignId: string, status: string): Promise<SimpleResult> {
-  const auth = await asAdmin(organizationId);
-  if (!auth.ok) return auth;
   const s = campaignStatusSchema.safeParse(status);
   if (!s.success) return { ok: false, error: 'Statut invalide.' };
-  const supabase = await createClient();
 
-  if (s.data === 'active') {
-    const { data: reglesActuelles } = await supabase
-      .from('campaigns')
-      .select('entry_rules')
-      .eq('id', campaignId)
-      .eq('organization_id', organizationId)
-      .maybeSingle();
-    const personas = ((reglesActuelles as { entry_rules?: { personas?: string[] } } | null)?.entry_rules?.personas) ?? [];
-    const collision = await chercherCollisionDePersona(supabase, organizationId, campaignId, personas);
-    if (collision) return { ok: false, error: collision };
-
-    const manques = await cequiManquePourEnvoyer(supabase, organizationId, campaignId);
-    if (manques.length > 0) {
-      return {
-        ok: false,
-        error: `Cette campagne ne peut rien envoyer en l’état : ${manques.join(' ; ')}.`,
-      };
+  try {
+    const ctx = await contexteCourant();
+    if (ctx.organisationId !== organizationId) {
+      return { ok: false, error: 'Organisation invalide.' };
     }
+
+    if (s.data === 'active') {
+      const r = await lancer(ctx, { campagneId: campaignId });
+      if (!r.ok) {
+        return { ok: false, error: `Cette campagne ne peut rien envoyer en l’état : ${r.manques.join(' ; ')}.` };
+      }
+    } else if (s.data === 'paused') {
+      await mettreEnPause(ctx, { campagneId: campaignId });
+    } else if (s.data === 'archived') {
+      await archiver(ctx, { campagneId: campaignId });
+    } else {
+      // 'draft' : aucun écran ne repasse une campagne en brouillon aujourd'hui, et le brief de
+      // cette tâche ne définit pas de fonction dédiée — mise à jour minimale conservée pour ne
+      // pas faire régresser un appel existant à ce statut.
+      exiger(ctx, 'operator');
+      await ctx.ex.query(`update campaigns set status = 'draft' where id = $1 and organization_id = $2`, [campaignId, organizationId]);
+    }
+
+    revalidatePath(`/campaigns/${campaignId}`);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
   }
+}
 
-  const { error } = await supabase
-    .from('campaigns')
-    .update({ status: s.data as CampaignStatus })
-    .eq('id', campaignId)
-    .eq('organization_id', organizationId);
-  if (error) return { ok: false, error: error.message };
-
-  // Journal d'activité (tâche 6) : seules les transitions active/en pause
-  // comptent comme événement — brouillon et archivée n'ont pas d'action dédiée.
-  if (s.data === 'active' || s.data === 'paused') {
-    const utilisateur = await getUser();
-    await journaliserChangementStatutCampagne(supabase, {
-      organizationId,
-      campaignId,
-      actorId: utilisateur?.id ?? null,
-      actif: s.data === 'active',
-    });
+async function asAdmin(organizationId: string): Promise<SimpleResult> {
+  try {
+    await requireRole(organizationId, 'admin');
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Droit administrateur requis.' };
   }
-
-  revalidatePath(`/campaigns/${campaignId}`);
-  return { ok: true };
 }
 
 /** Ajoute une étape en fin de séquence. */
