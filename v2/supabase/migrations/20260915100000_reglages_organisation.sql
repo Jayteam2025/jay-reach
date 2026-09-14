@@ -7,8 +7,10 @@ create table if not exists organization_settings (
   primary key (organization_id, key)
 );
 alter table organization_settings enable row level security;
+drop policy if exists organization_settings_lecture on organization_settings;
 create policy organization_settings_lecture on organization_settings for select
   using (organization_id in (select organization_id from memberships where user_id = auth.uid()));
+drop policy if exists organization_settings_ecriture on organization_settings;
 create policy organization_settings_ecriture on organization_settings for all
   using (organization_id in (select organization_id from memberships where user_id = auth.uid() and role in ('admin','owner')))
   with check (organization_id in (select organization_id from memberships where user_id = auth.uid() and role in ('admin','owner')));

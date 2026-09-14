@@ -7,6 +7,7 @@ create table if not exists contact_notes (
 );
 create index if not exists contact_notes_contact_idx on contact_notes (contact_id, created_at desc);
 alter table contact_notes enable row level security;
+drop policy if exists contact_notes_membres on contact_notes;
 create policy contact_notes_membres on contact_notes for all
   using (contact_id in (select c.id from contacts c join memberships m on m.organization_id = c.organization_id where m.user_id = auth.uid()))
   with check (contact_id in (select c.id from contacts c join memberships m on m.organization_id = c.organization_id where m.user_id = auth.uid()));
