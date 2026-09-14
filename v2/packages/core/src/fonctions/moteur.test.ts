@@ -1,18 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
+import { ForbiddenError } from '../roles.js';
 import type { Contexte } from './contexte.js';
 import { INTERVALLE_TICK_MS, lireEtatMoteur } from './moteur.js';
 
 /** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
-function faux(rows: Record<string, unknown[]>): Contexte {
+function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'admin'): Contexte {
   const query = vi.fn(async (sql: string) => {
     for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
     return { rows: [], rowCount: 0 };
   }) as unknown as Executeur['query'];
-  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
 }
 
 describe('lireEtatMoteur', () => {
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireEtatMoteur(faux({}, null))).rejects.toThrow(ForbiddenError);
+  });
+
+
   it('est en marche quand le dernier tour date de moins de 15 minutes', async () => {
     const dernierTour = new Date(Date.now() - 2 * 60_000).toISOString();
     const ctx = faux({

@@ -8,6 +8,7 @@
  * ce dépôt est public, ces deux colonnes désignent la machine de production.
  */
 import type { Contexte } from './contexte.js';
+import { exiger } from './contexte.js';
 
 /**
  * Intervalle entre deux tours de la boucle `sequence.tick` du worker.
@@ -38,6 +39,7 @@ interface LigneEngineStatus {
 }
 
 export async function lireEtatMoteur(ctx: Contexte): Promise<EtatMoteurResume> {
+  exiger(ctx, 'viewer');
   const [etatRes, erreursRes] = await Promise.all([
     ctx.ex.query<LigneEngineStatus>(
       `select version, last_tick_at, last_error /* jr:engine_status */

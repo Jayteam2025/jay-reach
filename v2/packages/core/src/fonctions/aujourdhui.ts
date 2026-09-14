@@ -5,10 +5,12 @@
  * par le futur serveur MCP (spec « une fonction, deux façades »).
  */
 import type { Contexte } from './contexte.js';
+import { exiger } from './contexte.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 
-export type CanalFil = 'email' | 'linkedin';
+/** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
+export type CanalFil = 'email' | 'linkedin' | undefined;
 export type ClassificationFil = 'human_reply' | 'auto_absence' | 'auto_left_company' | 'auto_other' | 'unclassified';
 
 export interface FilResume {
@@ -105,8 +107,11 @@ interface LigneCampagne {
   reponses: number;
 }
 
+/** Pas de pastille pour `letter`/`call` (le kit n'en a pas) — `undefined`, jamais un repli sur email. */
 function canalDe(channel: string): CanalFil {
-  return channel.startsWith('linkedin') ? 'linkedin' : 'email';
+  if (channel.startsWith('linkedin')) return 'linkedin';
+  if (channel === 'email') return 'email';
+  return undefined;
 }
 
 function nomComplet(prenom: string | null, nom: string | null): string {
@@ -118,7 +123,8 @@ function formatterHeure(iso: string, fuseau: string): string {
 }
 
 export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
-  const [reglages, filsRes, actionsRes, campagnesRes, orphelinesRes, moteur, plafonds] = await Promise.all([
+  exiger(ctx, 'viewer');
+  const [reglages, filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds] = await Promise.all([
     lireReglages(ctx),
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
@@ -170,6 +176,24 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and not exists (select 1 from campaign_sources cs where cs.source_id = s.id)`,
       [ctx.organisationId],
     ),
+    ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
+      `select sending_paused_at, sending_paused_reason /* jr:pause_envoi */
+         from organizations
+        where id = $1`,
+      [ctx.organisationId],
+    ),
+    ctx.ex.query<{ identity: string }>(
+      // `sending_enabled` est le champ mémoïsé lu par le handler d'envoi lui-même
+      // (`apps/worker/src/handlers/email-salesblink.ts`) — le migrer vers un autre
+      // champ de `provider_state` désynchroniserait cette alerte du vrai blocage.
+      `select identity /* jr:boites_deconnectees */
+         from senders
+        where organization_id = $1
+          and kind = 'email'
+          and is_active
+          and provider_state->>'sending_enabled' = 'false'`,
+      [ctx.organisationId],
+    ),
     lireEtatMoteur(ctx),
     lireConsommationDuJour(ctx),
   ]);
@@ -194,7 +218,9 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       heure: quand ? formatterHeure(quand, fuseau) : null,
       envoye: r.dispatched_at !== null,
       contactNom: nomComplet(r.first_name, r.last_name),
-      etape: r.etape,
+      // `sequence_steps.position` part de 0 (première étape = 0, voir la même
+      // conversion dans `apps/web/app/actions/campaigns.ts`) : +1 pour l'humain.
+      etape: r.etape !== null ? r.etape + 1 : null,
       campagneNom: r.campagne_nom,
       expediteur: r.expediteur,
       canal: canalDe(r.channel),
@@ -239,6 +265,25 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           ? "Une source active n'alimente aucune campagne."
           : `${nbOrphelines} sources actives n'alimentent aucune campagne.`,
       lien: '/campaigns',
+    });
+  }
+  const organisation = organisationRes.rows[0];
+  if (organisation?.sending_paused_at) {
+    const heurePause = formatterHeure(organisation.sending_paused_at, fuseau);
+    alertes.push({
+      type: 'pause_envoi',
+      texte: organisation.sending_paused_reason
+        ? `Les envois sont en pause depuis ${heurePause} : ${organisation.sending_paused_reason}.`
+        : `Les envois sont en pause depuis ${heurePause}.`,
+      // Route de la tâche 23 (réglages du moteur), pas encore construite.
+      lien: '/settings/engine',
+    });
+  }
+  for (const boite of boitesDeconnecteesRes.rows) {
+    alertes.push({
+      type: 'boite_deconnectee',
+      texte: `La boîte ${boite.identity} est déconnectée : elle n'envoie plus.`,
+      lien: '/settings/senders',
     });
   }
 

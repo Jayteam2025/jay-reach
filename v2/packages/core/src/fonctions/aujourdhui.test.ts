@@ -1,18 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
+import { ForbiddenError } from '../roles.js';
 import type { Contexte } from './contexte.js';
 import { lireAujourdhui } from './aujourdhui.js';
 
 /** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
-function faux(rows: Record<string, unknown[]>): Contexte {
+function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'viewer'): Contexte {
   const query = vi.fn(async (sql: string) => {
     for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
     return { rows: [], rowCount: 0 };
   }) as unknown as Executeur['query'];
-  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
 }
 
 describe('lireAujourdhui', () => {
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireAujourdhui(faux({}, null))).rejects.toThrow(ForbiddenError);
+  });
+
   it('compte les fils à traiter et en garde un aperçu', async () => {
     const ctx = faux({
       'jr:threads_a_traiter': [
@@ -27,12 +32,24 @@ describe('lireAujourdhui', () => {
     expect(a.aTraiter.fils[1]).toMatchObject({ id: 't2', contactNom: 'Claire Moreau', canal: 'linkedin' });
   });
 
+  it("n'attribue aucune pastille de canal au courrier ni à l'appel (pas de repli sur email)", async () => {
+    const ctx = faux({
+      'jr:threads_a_traiter': [
+        { id: 't3', channel: 'letter', classification: 'unclassified', last_message_at: null, first_name: 'Une', last_name: 'Entreprise', job_title: null, account_name: null, dernier_message: null },
+        { id: 't4', channel: 'call', classification: 'unclassified', last_message_at: null, first_name: 'Une', last_name: 'Autre', job_title: null, account_name: null, dernier_message: null },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.aTraiter.fils[0]?.canal).toBeUndefined();
+    expect(a.aTraiter.fils[1]?.canal).toBeUndefined();
+  });
+
   it("calcule la dernière heure d'envoi dans le fuseau de l'organisation", async () => {
     const ctx = faux({
       'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }],
       'jr:file_du_jour': [
-        { id: 'a1', dispatched_at: '2026-09-14T08:30:00.000Z', scheduled_for: null, dispatch_after: null, status: 'dispatched', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 1, expediteur: 'a.declercq' },
-        { id: 'a2', dispatched_at: '2026-09-14T10:05:00.000Z', scheduled_for: null, dispatch_after: null, status: 'dispatched', channel: 'email', first_name: 'Karim', last_name: 'Benali', campagne_nom: 'Directeur commercial', etape: 2, expediteur: 'alexandre' },
+        { id: 'a1', dispatched_at: '2026-09-14T08:30:00.000Z', scheduled_for: null, dispatch_after: null, status: 'dispatched', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 0, expediteur: 'prospection@exemple.fr' },
+        { id: 'a2', dispatched_at: '2026-09-14T10:05:00.000Z', scheduled_for: null, dispatch_after: null, status: 'dispatched', channel: 'email', first_name: 'Karim', last_name: 'Benali', campagne_nom: 'Directeur commercial', etape: 1, expediteur: 'ventes@exemple.fr' },
       ],
     });
     const a = await lireAujourdhui(ctx);
@@ -40,6 +57,16 @@ describe('lireAujourdhui', () => {
     expect(a.fileDuJour.derniereHeure).toBe('12:05');
     expect(a.fileDuJour.dejaPartis).toBe(2);
     expect(a.fileDuJour.total).toBe(2);
+  });
+
+  it("numérote l'étape à partir de 1 pour l'humain (position stockée à partir de 0)", async () => {
+    const ctx = faux({
+      'jr:file_du_jour': [
+        { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 0, expediteur: 'prospection@exemple.fr' },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fileDuJour.envois[0]?.etape).toBe(1);
   });
 
   it('lève une alerte moteur_silencieux quand le dernier tour date de plus de 15 minutes', async () => {
@@ -70,6 +97,39 @@ describe('lireAujourdhui', () => {
     const ctx = faux({ 'jr:sources_orphelines': [{ n: 0 }] });
     const a = await lireAujourdhui(ctx);
     expect(a.alertes.some((al) => al.type === 'source_orpheline')).toBe(false);
+  });
+
+  it("lève une alerte pause_envoi quand l'organisation a un arrêt global des envois", async () => {
+    const ctx = faux({
+      'jr:pause_envoi': [{ sending_paused_at: '2026-09-14T08:00:00.000Z', sending_paused_reason: 'import douteux' }],
+    });
+    const a = await lireAujourdhui(ctx);
+    const alerte = a.alertes.find((al) => al.type === 'pause_envoi');
+    expect(alerte).toBeDefined();
+    expect(alerte?.texte).toContain('import douteux');
+  });
+
+  it("ne lève pas d'alerte pause_envoi quand les envois ne sont pas en pause", async () => {
+    const ctx = faux({ 'jr:pause_envoi': [{ sending_paused_at: null, sending_paused_reason: null }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'pause_envoi')).toBe(false);
+  });
+
+  it('lève une alerte boite_deconnectee par boîte email active dont l’envoi est coupé', async () => {
+    const ctx = faux({
+      'jr:boites_deconnectees': [{ identity: 'prospection@exemple.fr' }, { identity: 'ventes@exemple.fr' }],
+    });
+    const a = await lireAujourdhui(ctx);
+    const alertesBoites = a.alertes.filter((al) => al.type === 'boite_deconnectee');
+    expect(alertesBoites).toHaveLength(2);
+    expect(alertesBoites[0]?.texte).toContain('prospection@exemple.fr');
+    expect(alertesBoites[1]?.texte).toContain('ventes@exemple.fr');
+  });
+
+  it("ne lève pas d'alerte boite_deconnectee quand aucune boîte active n'est coupée", async () => {
+    const ctx = faux({ 'jr:boites_deconnectees': [] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'boite_deconnectee')).toBe(false);
   });
 
   it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
