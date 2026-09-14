@@ -41,7 +41,31 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   { cle: 'fuseau', defaut: 'Europe/Paris' },
 ];
 
-/** Lit les réglages de l'organisation : ligne en base en premier, sinon l'environnement (repli numérique), sinon le défaut. */
+/** Type attendu pour la `valeur` de chaque clé, dérivé du type de son défaut — sert au schéma d'écriture ci-dessous. */
+const TYPE_ATTENDU_PAR_CLE: Record<ClePlafond, 'number' | 'string'> = Object.fromEntries(
+  CLES_REGLAGES.map(({ cle, defaut }) => [cle, typeof defaut === 'number' ? 'number' : 'string']),
+) as Record<ClePlafond, 'number' | 'string'>;
+
+/**
+ * Une valeur jsonb lue en base qui n'est pas du type attendu pour sa clé (mauvais type stocké,
+ * corruption, ligne posée par un ancien format) doit être traitée comme ABSENTE — jamais coercée en
+ * `NaN` ou en `[object Object]`. Une chaîne numérique reste acceptée pour une clé numérique : c'est le
+ * format que l'écran envoie (`schemaEcrireReglage` accepte aussi les chaînes, cf. plus bas).
+ */
+function valeurNumeriqueValide(brut: unknown): number | null {
+  if (typeof brut === 'number' && Number.isFinite(brut)) return brut;
+  if (typeof brut === 'string' && brut.trim() !== '') {
+    const n = Number(brut.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function valeurTexteValide(brut: unknown): string | null {
+  return typeof brut === 'string' && brut.trim() !== '' ? brut : null;
+}
+
+/** Lit les réglages de l'organisation : ligne en base en premier (si du bon type), sinon l'environnement (repli numérique), sinon le défaut. */
 export async function lireReglages(ctx: Contexte): Promise<Record<ClePlafond, number | string>> {
   const res = await ctx.ex.query<{ key: string; value: unknown }>(
     `select key, value from organization_settings where organization_id = $1`,
@@ -51,24 +75,40 @@ export async function lireReglages(ctx: Contexte): Promise<Record<ClePlafond, nu
 
   const sortie = {} as Record<ClePlafond, number | string>;
   for (const { cle, defaut, env } of CLES_REGLAGES) {
-    const enBase = parCle.get(cle);
-    if (enBase !== undefined) {
-      sortie[cle] = typeof defaut === 'number' ? Number(enBase) : String(enBase);
+    const brut = parCle.get(cle);
+    if (typeof defaut === 'number') {
+      const n = valeurNumeriqueValide(brut);
+      sortie[cle] = n ?? (env ? normaliserPlafond(process.env[env] ?? null, defaut) : defaut);
       continue;
     }
-    if (typeof defaut === 'number' && env) {
-      sortie[cle] = normaliserPlafond(process.env[env] ?? null, defaut);
-      continue;
-    }
-    sortie[cle] = defaut;
+    sortie[cle] = valeurTexteValide(brut) ?? defaut;
   }
   return sortie;
 }
 
-export const schemaEcrireReglage = z.object({
-  cle: z.enum(CLE_PLAFOND_VALUES),
-  valeur: z.union([z.number().int().min(0), z.string().min(1)]),
-});
+/**
+ * La `valeur` doit correspondre au type attendu de la `cle` visée (un entier pour un plafond, une
+ * chaîne non vide pour `fuseau`) — sinon `organization_settings` accumulerait des lignes du mauvais
+ * type que `lireReglages` devrait ensuite écarter silencieusement.
+ */
+export const schemaEcrireReglage = z
+  .object({
+    cle: z.enum(CLE_PLAFOND_VALUES),
+    valeur: z.union([z.number().int().min(0), z.string().min(1)]),
+  })
+  .superRefine((entree, ctx) => {
+    const attendu = TYPE_ATTENDU_PAR_CLE[entree.cle];
+    if (typeof entree.valeur !== attendu) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['valeur'],
+        message:
+          attendu === 'number'
+            ? `La clé « ${entree.cle} » attend un nombre entier positif ou nul, pas une chaîne.`
+            : `La clé « ${entree.cle} » attend une chaîne non vide, pas un nombre.`,
+      });
+    }
+  });
 
 /** Écrit un réglage — réservé aux admins et au-delà (owner). */
 export async function ecrireReglage(ctx: Contexte, entree: unknown): Promise<void> {
@@ -97,6 +137,10 @@ export interface Jauge {
  * les actions réellement parties (mêmes statuts que `chargerContraintesSender`
  * dans `apps/worker/src/handlers/sequence.ts`), plafonnés par la somme des
  * quotas des expéditeurs email actifs.
+ *
+ * Chaque jauge garde la fraîcheur de son propre mécanisme d'origine (scoring et
+ * enrichissement : `usage_date = current_date`, en UTC comme `provider_daily_usage` ;
+ * envois : le fuseau de l'organisation) — décision du coordinateur, pas une omission.
  */
 export async function lireConsommationDuJour(
   ctx: Contexte,
@@ -120,6 +164,7 @@ export async function lireConsommationDuJour(
     `select count(*)::int as n
        from actions a
       where a.organization_id = $1
+        and a.channel = 'email'
         and a.status in ('dispatched', 'delivered')
         and a.dispatched_at >= date_trunc('day', now() at time zone $2)`,
     [ctx.organisationId, fuseau],
