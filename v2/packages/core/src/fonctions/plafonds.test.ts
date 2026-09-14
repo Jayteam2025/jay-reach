@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
+import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ecrireReglage, lireConsommationDuJour, lireReglages } from './plafonds.js';
 
-/** Contexte factice : `rows` associe un motif (regex, insensible à la casse) au résultat renvoyé par `query`. */
+/**
+ * Contexte factice : `rows` associe un motif (regex, insensible à la casse) au résultat renvoyé par `query`.
+ * `query` reste un `vi.fn` (les tests vérifient parfois les arguments reçus) ; le cast est nécessaire car
+ * `Executeur['query']` est générique en `T` et un mock, lui, s'infère toujours sur un type concret.
+ */
 function faux(rows: Record<string, unknown[]>): Contexte {
   const query = vi.fn(async (sql: string) => {
     for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
     return { rows: [], rowCount: 0 };
-  });
+  }) as unknown as Executeur['query'];
   return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
 }
 
