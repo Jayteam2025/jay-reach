@@ -86,6 +86,7 @@ const THREAD_SELECT = /select id from threads where/i;
 const THREAD_INSERT = /insert into threads/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const OUTCOME_INSERT = /insert into outcomes/i;
+const AUDIT_INSERT = /insert into audit_events/i;
 
 /** Gestionnaires par defaut : chemin neutre, aucune ligne nulle part. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -94,6 +95,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: CURSEUR_SELECT, repondre: () => ligne([]) },
     { motif: SENDERS_SELECT, repondre: () => ligne([]) },
     { motif: CURSEUR_UPSERT, repondre: () => ligne([]) },
+    { motif: AUDIT_INSERT, repondre: () => ligne([]) },
   ];
 }
 
@@ -142,6 +144,7 @@ describe('releverSalesBlink', () => {
       avecBase(
         { motif: MAJ_LIVREE_SEQUENCE, repondre: () => ligne([{ id: 'action-livree-1' }]) },
         { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
       ),
     );
 
@@ -157,6 +160,10 @@ describe('releverSalesBlink', () => {
     // Fenêtre non saturée : last_error reste null.
     const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
     expect(curseur!.values[3]).toBeNull();
+    // Tâche 6 : le journal d'activité écrit action_delivered, rattaché au contact.
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'action_delivered']);
   });
 
   it('un rapport Bounced ouvre une suppression et arrête l’inscription (rebond)', async () => {
@@ -865,6 +872,7 @@ describe('releverSalesBlink', () => {
       avecBase(
         { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([{ id: 'action-livree-2' }]) },
         { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
       ),
     );
 
@@ -877,6 +885,74 @@ describe('releverSalesBlink', () => {
     const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
     expect(filMaj).toBeDefined();
     expect(filMaj!.values).toEqual(['action-livree-2', 'msg-repondu-1']);
+    // Tâche 6 : le journal d'activité écrit action_delivered pour cette relance aussi.
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'action_delivered']);
+  });
+
+  it('une réponse humaine écrit reply_received dans le journal (tâche 6)', async () => {
+    const rapport: Rapport = {
+      id: 'r-humain-1',
+      horodatageMs: 4000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: 'Oui, ça m’intéresse, pouvez-vous m’en dire plus ?',
+    };
+    const client = clientFactice({ listerReponses: vi.fn(async () => [rapport]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: /status = 'skipped'/i, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'reply_received']);
+  });
+
+  it('une réponse automatique d’absence écrit absence_detected, jamais reply_received', async () => {
+    const rapport: Rapport = {
+      id: 'r-absence-1',
+      horodatageMs: 4000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: 'Je suis actuellement en congés jusqu’au 20 septembre, réponse à mon retour.',
+    };
+    const client = clientFactice({ listerReponses: vi.fn(async () => [rapport]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: /status = 'skipped'/i, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'absence_detected']);
   });
 
   it('une boîte envoiActif=false déclenche reconnecterBoite puis, toujours inactive, notifie une fois', async () => {

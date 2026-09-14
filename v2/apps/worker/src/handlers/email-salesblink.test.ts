@@ -142,6 +142,7 @@ const SELECT_ESSAIS = /payload ->> 'essais'/i;
 const THREAD_LOOKUP = /select id from threads where/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const THREAD_UPDATE = /update threads set last_message_at/i;
+const AUDIT_INSERT = /insert into audit_events/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -186,6 +187,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
     { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
     { motif: THREAD_UPDATE, repondre: () => ligne([]) },
+    { motif: AUDIT_INSERT, repondre: () => ligne([]) },
   ];
 }
 
@@ -416,6 +418,52 @@ describe('envoyerEmailSalesBlink', () => {
     const filUpdate = appels.find((a) => THREAD_UPDATE.test(a.sql));
     expect(filUpdate).toBeDefined();
     expect(filUpdate!.values[0]).toBe('fil-1');
+  });
+
+  it('un envoi réussi écrit un événement action_sent dans le journal (tâche 6)', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    const ecriture = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(ecriture).toBeDefined();
+    expect(ecriture!.values[0]).toBe(ORG_ID);
+    expect(ecriture!.values[1]).toBeNull(); // actor_id : jamais un utilisateur pour un envoi du moteur
+    expect(ecriture!.values[2]).toBe('contact');
+    expect(ecriture!.values[3]).toBe('contact-1');
+    expect(ecriture!.values[4]).toBe('action_sent');
+    const diff = JSON.parse(ecriture!.values[5] as string) as { libelle: string };
+    expect(diff.libelle).toBe('Email envoyé : premier email.');
+  });
+
+  it('un échec au journal ne fait jamais échouer un envoi déjà parti (jamais de throw remonté)', async () => {
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        {
+          motif: AUDIT_INSERT,
+          repondre: () => {
+            throw new Error('panne base — table audit_events indisponible');
+          },
+        },
+      ),
+    );
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice())).resolves.toBeUndefined();
+    expect(avertissement).toHaveBeenCalledWith('[journal] action_sent', expect.any(Error));
+
+    avertissement.mockRestore();
   });
 
   it('gabarit neutre réutilisé s’il existe déjà dans une liaison de l’organisation (minor)', async () => {
