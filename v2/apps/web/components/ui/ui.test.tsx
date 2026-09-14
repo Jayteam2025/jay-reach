@@ -11,7 +11,10 @@ describe('kit', () => {
     expect(html).toContain('jr-canal em');
   });
   it('Puce : ton bon', () => {
-    expect(renderToStaticMarkup(<Puce ton="bon" point>Active</Puce>)).toContain('jr-puce bon');
+    // Le texte est passé en expression ({'Active'}) : le kit interdit tout
+    // texte JSX en dur (règle i18next/no-literal-string, apps/web/**/*.tsx),
+    // même dans un test — le rendu est strictement identique.
+    expect(renderToStaticMarkup(<Puce ton="bon" point>{'Active'}</Puce>)).toContain('jr-puce bon');
   });
   it('Table : colonnes bornées', () => {
     const html = renderToStaticMarkup(

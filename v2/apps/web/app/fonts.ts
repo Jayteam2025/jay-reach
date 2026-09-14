@@ -1,10 +1,12 @@
-import { Archivo, Geist, Geist_Mono } from 'next/font/google';
+import { Instrument_Sans, Geist_Mono } from 'next/font/google';
 
 // Chargées via next/font : self-hébergées, aucun appel externe à l'exécution.
-export const display = Archivo({
+// `display` reste un alias de `body` (Instrument Sans porte tout le kit, y
+// compris les titres) le temps que globals.css et layout.tsx soient repris (tâche 5).
+export const body = Instrument_Sans({
   subsets: ['latin'],
-  weight: ['600', '700'],
-  variable: '--font-display',
+  variable: '--font-body',
+  weight: ['400', '500', '600', '700'],
 });
-export const body = Geist({ subsets: ['latin'], variable: '--font-body' });
+export const display = body;
 export const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' });
