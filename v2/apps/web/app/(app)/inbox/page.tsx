@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
-import type { InboxThread, InboxMessage, Classification, Treatment, InboxChannel } from '../../lib/sample-inbox';
+import { createClientOrNull } from '../../../lib/supabase/server';
+import type { InboxThread, InboxMessage, Classification, Treatment, InboxChannel } from '../../../lib/sample-inbox';
 import { InboxView } from './inbox-view';
 
 interface DbThread {

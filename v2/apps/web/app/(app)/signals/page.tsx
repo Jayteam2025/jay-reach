@@ -1,8 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
+import { createClientOrNull } from '../../../lib/supabase/server';
 import { SignalsBoard, type SignalRow, type SignalState } from './signals-board';
-import { providerLabel } from '../../lib/labels';
+import { providerLabel } from '../../../lib/labels';
 
 interface DbSignal {
   id: string;

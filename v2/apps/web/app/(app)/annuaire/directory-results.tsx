@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { addAccountFromDirectory } from '../actions/directory';
-import type { DirectoryCompany } from '../../lib/directory';
+import { addAccountFromDirectory } from '../../actions/directory';
+import type { DirectoryCompany } from '../../../lib/directory';
 
 export function DirectoryResults({ companies, orgId }: { companies: DirectoryCompany[]; orgId: string }) {
   const t = useTranslations('directory');

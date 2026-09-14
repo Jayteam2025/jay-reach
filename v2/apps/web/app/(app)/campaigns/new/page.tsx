@@ -1,4 +1,4 @@
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { NewCampaign, type EntryOption, type PersonaOption } from './new-campaign';
 

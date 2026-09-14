@@ -3,7 +3,7 @@
 import { useOptimistic, useTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toggleSourceProvider } from '../../actions/sources';
+import { toggleSourceProvider } from '../../../actions/sources';
 
 /**
  * Mise en pause d'un seul fournisseur d'un thème (retour 4.6).

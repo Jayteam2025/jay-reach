@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { markNotificationsRead } from './actions/notifications';
+import { markNotificationsRead } from '../actions/notifications';
 import { PushToggle } from './push-toggle';
 
 export interface NotifItem {

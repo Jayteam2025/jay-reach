@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { AppTopBar } from '../../chrome';
-import { createClientOrNull } from '../../../lib/supabase/server';
-import type { CampaignDetail, Channel, SeqStepDetail } from '../../../lib/sample-campaign-detail';
+import { createClientOrNull } from '../../../../lib/supabase/server';
+import type { CampaignDetail, Channel, SeqStepDetail } from '../../../../lib/sample-campaign-detail';
 import { CampaignDetailView } from './detail-view';
 
 const CHANNEL_TITLE: Record<Channel, string> = {

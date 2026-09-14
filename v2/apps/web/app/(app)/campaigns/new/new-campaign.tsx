@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { createCampaign } from '../../actions/campaigns';
+import { createCampaign } from '../../../actions/campaigns';
 import Link from 'next/link';
 
 export interface EntryOption {

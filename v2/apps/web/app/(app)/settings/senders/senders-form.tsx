@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { createSender, updateSender } from '../../actions/senders';
+import { createSender, updateSender } from '../../../actions/senders';
 
 export type SenderKind = 'email' | 'linkedin' | 'postal';
 

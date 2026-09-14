@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { EN_TETE_UTILISATEUR } from '../../../lib/supabase/middleware';
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { EN_TETE_UTILISATEUR } from '../../../../lib/supabase/middleware';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { LinkedInPanel } from './linkedin-panel';
 

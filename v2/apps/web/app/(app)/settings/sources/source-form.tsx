@@ -3,8 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { createSource, updateSource } from '../../actions/sources';
-import { SOURCE_PROVIDERS, type SourceInput } from '../../../lib/sources';
+import { createSource, updateSource } from '../../../actions/sources';
+import { SOURCE_PROVIDERS, type SourceInput } from '../../../../lib/sources';
 
 export interface SourceFormValues {
   readonly id?: string;

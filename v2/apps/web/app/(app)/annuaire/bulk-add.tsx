@@ -8,7 +8,7 @@ import {
   getBulkImport,
   type BulkImportParams,
   type BulkStatus,
-} from '../actions/directory';
+} from '../../actions/directory';
 
 /**
  * Au-delà de ce nombre, on demande confirmation.

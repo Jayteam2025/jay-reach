@@ -1,7 +1,7 @@
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { PersonaBoard } from './persona-board';
-import { SAMPLE_PERSONAS, type Persona } from '../../../lib/sample-personas';
+import { SAMPLE_PERSONAS, type Persona } from '../../../../lib/sample-personas';
 
 const COLS = 'id, name, description, title_patterns, title_exclusions, seniority, scoring_prompt, is_active';
 

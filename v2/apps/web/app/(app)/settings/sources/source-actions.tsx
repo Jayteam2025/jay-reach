@@ -3,7 +3,7 @@
 import { useOptimistic, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { requestSourceRun, toggleSource } from '../../actions/sources';
+import { requestSourceRun, toggleSource } from '../../../actions/sources';
 import { SourceForm, type SourceFormValues } from './source-form';
 
 /**

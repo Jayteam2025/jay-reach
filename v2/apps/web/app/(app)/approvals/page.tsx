@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
+import { createClientOrNull } from '../../../lib/supabase/server';
 import { ApprovalList, type ApprovalRow } from './approval-list';
 
 interface DbAction {

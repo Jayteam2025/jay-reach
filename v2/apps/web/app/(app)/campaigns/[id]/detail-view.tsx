@@ -3,10 +3,10 @@
 import { useState, useTransition, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { CampaignDetail, SeqStepDetail, Channel } from '../../../lib/sample-campaign-detail';
+import type { CampaignDetail, SeqStepDetail, Channel } from '../../../../lib/sample-campaign-detail';
 import { Icon, type IconName } from '../../icons';
 import { ApprovalList, type ApprovalRow } from '../../approvals/approval-list';
-import { setCampaignStatus, addStep, updateStep, deleteStep, moveStep } from '../../actions/campaigns';
+import { setCampaignStatus, addStep, updateStep, deleteStep, moveStep } from '../../../actions/campaigns';
 import { StepMessageEditor } from './step-message-editor';
 import Link from 'next/link';
 

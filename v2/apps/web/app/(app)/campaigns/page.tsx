@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
+import { createClientOrNull } from '../../../lib/supabase/server';
 import Link from 'next/link';
 
 const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost', archived: 'neutral' };

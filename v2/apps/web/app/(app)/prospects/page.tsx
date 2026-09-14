@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
-import { providerLabel } from '../../lib/labels';
+import { createClientOrNull } from '../../../lib/supabase/server';
+import { providerLabel } from '../../../lib/labels';
 
 type SeqState = 'done' | 'current' | 'planned';
 

@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../lib/supabase/server';
-import { searchCompanies, PER_PAGE, PAGES_MAX } from '../../lib/directory';
+import { createClientOrNull } from '../../../lib/supabase/server';
+import { searchCompanies, PER_PAGE, PAGES_MAX } from '../../../lib/directory';
 import { DirectoryResults } from './directory-results';
 import { BulkAdd } from './bulk-add';
 import Link from 'next/link';

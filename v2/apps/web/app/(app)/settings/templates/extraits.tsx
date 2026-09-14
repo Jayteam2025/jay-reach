@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { deleteSnippet, saveSnippet } from '../../actions/snippets';
+import { deleteSnippet, saveSnippet } from '../../../actions/snippets';
 
 export interface SnippetRow {
   readonly name: string;

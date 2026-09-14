@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { setActionApproval } from '../actions/approvals';
+import { setActionApproval } from '../../actions/approvals';
 import { Icon, type IconName } from '../icons';
 
 export interface ApprovalRow {

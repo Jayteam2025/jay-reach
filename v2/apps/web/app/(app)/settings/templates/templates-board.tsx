@@ -11,7 +11,7 @@ import {
   type CampaignNature,
   type MessageRole,
 } from '@jay-reach/core/messages/variables.js';
-import { saveTemplateVersion, activateTemplateVersion, type TemplateChannel } from '../../actions/templates';
+import { saveTemplateVersion, activateTemplateVersion, type TemplateChannel } from '../../../actions/templates';
 import type { TemplateFamily, TemplateRow } from './families';
 import { ChampMessage } from '../../champ-message';
 export type { TemplateFamily, TemplateRow } from './families';

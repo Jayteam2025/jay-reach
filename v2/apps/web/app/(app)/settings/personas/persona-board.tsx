@@ -9,8 +9,8 @@ import {
   deletePersona,
   togglePersonaActive,
   type PersonaInput,
-} from '../../actions/personas';
-import type { Persona } from '../../../lib/sample-personas';
+} from '../../../actions/personas';
+import type { Persona } from '../../../../lib/sample-personas';
 
 const SENIORITIES = ['executive', 'director', 'manager', 'individual'] as const;
 

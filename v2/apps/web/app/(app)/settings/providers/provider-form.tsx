@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { setProviderCredential } from '../../actions/providers';
+import { setProviderCredential } from '../../../actions/providers';
 import { Icon } from '../../icons';
 
 type Field = {

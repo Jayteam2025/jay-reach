@@ -3,9 +3,9 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { TREATMENTS, type InboxThread, type Treatment, type Classification } from '../../lib/sample-inbox';
+import { TREATMENTS, type InboxThread, type Treatment, type Classification } from '../../../lib/sample-inbox';
 import { Icon } from '../icons';
-import { classifyInbox, suggestReply } from '../actions/inbox';
+import { classifyInbox, suggestReply } from '../../actions/inbox';
 
 type Filter = 'all' | Treatment;
 

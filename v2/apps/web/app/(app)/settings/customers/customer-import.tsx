@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { parseCsv, type ParsedRows } from '@jay-reach/core/import/parse.js';
 import { suggestMapping, type ColumnMapping } from '@jay-reach/core/import/mapping.js';
-import { importCustomers } from '../../actions/customers';
+import { importCustomers } from '../../../actions/customers';
 
 export function CustomerImport({ orgId }: { orgId: string }) {
   const t = useTranslations('customers');

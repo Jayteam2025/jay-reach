@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { STANDARD_VARIABLES, type CampaignNature } from '@jay-reach/core/messages/variables.js';
 import { ChampMessage } from '../../champ-message';
-import { saveStepMessage, promoteStepMessage } from '../../actions/step-message';
-import { generateStepMessage } from '../../actions/generate-message';
+import { saveStepMessage, promoteStepMessage } from '../../../actions/step-message';
+import { generateStepMessage } from '../../../actions/generate-message';
 
 /**
  * Écriture du message directement dans l'étape (retours 9.1, 9.3 et 9.4).

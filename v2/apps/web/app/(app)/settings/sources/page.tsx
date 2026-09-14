@@ -1,5 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { SourceActions, AddSource } from './source-actions';
 import { ProviderActions } from './provider-actions';

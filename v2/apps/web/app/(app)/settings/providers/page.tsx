@@ -1,6 +1,6 @@
 import { getTranslations, getLocale } from 'next-intl/server';
 import { PROVIDER_CATALOG } from '@jay-reach/providers';
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { ProviderForm } from './provider-form';
 

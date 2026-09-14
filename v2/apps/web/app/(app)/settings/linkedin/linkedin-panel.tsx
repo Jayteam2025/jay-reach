@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { generateExtensionToken, saveLinkedInSettings } from '../../actions/linkedin';
+import { generateExtensionToken, saveLinkedInSettings } from '../../../actions/linkedin';
 
 type Stats = { pending: number; sent7d: number; today: number };
 type Alert = { level: 'danger' | 'warn'; key: string; params?: Record<string, number> };

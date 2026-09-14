@@ -1,5 +1,5 @@
-import { createClientOrNull } from '../../../lib/supabase/server';
-import { listerBoitesSalesBlink } from '../../../lib/salesblink';
+import { createClientOrNull } from '../../../../lib/supabase/server';
+import { listerBoitesSalesBlink } from '../../../../lib/salesblink';
 import { AppTopBar } from '../../chrome';
 import { SendersForm, type SenderRow } from './senders-form';
 

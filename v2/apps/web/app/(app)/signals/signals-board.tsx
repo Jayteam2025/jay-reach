@@ -3,8 +3,8 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { setSignalStatus } from '../actions/signals';
-import { enrichirMaintenant } from '../actions/enrichir';
+import { setSignalStatus } from '../../actions/signals';
+import { enrichirMaintenant } from '../../actions/enrichir';
 
 export type SignalState = 'todo' | 'validated' | 'discarded' | 'arbitrate';
 

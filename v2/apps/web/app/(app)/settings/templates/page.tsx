@@ -1,4 +1,4 @@
-import { createClientOrNull } from '../../../lib/supabase/server';
+import { createClientOrNull } from '../../../../lib/supabase/server';
 import { AppTopBar } from '../../chrome';
 import { TemplatesBoard } from './templates-board';
 import { groupFamilies, type TemplateRow } from './families';
