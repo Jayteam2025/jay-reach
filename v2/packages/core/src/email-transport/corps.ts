@@ -59,13 +59,19 @@ function decoderEntitesHtml(texte: string): string {
  * HTML minimal SalesBlink → texte brut (sens inverse de `corpsPourSalesBlink`).
  * `GET /inbox` ne renvoie le corps d'une tâche qu'en HTML (`data.email.body`) ;
  * ce convertisseur volontairement simple (pas de parseur HTML complet) retire
- * `<style>`/`<script>` et leur contenu, convertit les sauts de bloc usuels
- * (`<br>`, `</p>`, `</div>`, `</li>`, `</tr>`) en saut de ligne, retire les
- * balises restantes, décode les entités HTML courantes puis compacte les
- * espaces et les lignes vides en trop.
+ * d'abord les commentaires HTML (`<!-- … -->`, y compris les blocs
+ * conditionnels Outlook `<!--[if mso]>…<![endif]-->` qui ne sont que des
+ * commentaires du point de vue du navigateur — souvent du style `mso-*` sans
+ * rapport avec le texte de la réponse), puis `<style>`/`<script>` et leur
+ * contenu, convertit les sauts de bloc usuels (`<br>`, `</p>`, `</div>`,
+ * `</li>`, `</tr>`) en saut de ligne, retire les balises restantes, décode
+ * les entités HTML courantes puis compacte les espaces et les lignes vides
+ * en trop.
  */
 export function texteDepuisHtml(html: string): string {
-  const sansStyleNiScript = html
+  const sansCommentaires = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  const sansStyleNiScript = sansCommentaires
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
 

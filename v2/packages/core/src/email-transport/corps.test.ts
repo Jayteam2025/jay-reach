@@ -66,6 +66,44 @@ describe('texteDepuisHtml', () => {
     expect(texteDepuisHtml('Caf&#xE9;')).toBe('Café');
   });
 
+  it('retire un commentaire HTML simple', () => {
+    expect(texteDepuisHtml('<!-- commentaire --><p>Bonjour</p>')).toBe('Bonjour');
+  });
+
+  it(
+    'retire un bloc conditionnel Outlook et garde le texte cité qui suit ' +
+      '(fixture Outlook réaliste)',
+    () => {
+      const html = `
+        <!--[if mso]>
+        <style type="text/css">
+          body,table,td,a { mso-line-height-rule: exactly; }
+          .mso-hide { mso-hide: all; }
+        </style>
+        <![endif]-->
+        <div>
+          <p>Bonjour,</p>
+          <p>Merci pour votre message, je reviens vers vous rapidement.</p>
+          <p>De : Prospect Test<br>Envoyé : lundi 14 septembre 2026 10:00<br>À : Expéditeur Test<br>Objet : Re: Prise de contact</p>
+        </div>
+      `;
+
+      const resultat = texteDepuisHtml(html);
+
+      // Le bloc conditionnel Outlook (style mso-*) n'apparaît nulle part.
+      expect(resultat).not.toContain('mso-hide');
+      expect(resultat).not.toContain('mso-line-height-rule');
+      expect(resultat).not.toContain('<style');
+      // Le texte cité (« De : … Envoyé : … »), lui, est du texte légitime.
+      expect(resultat).toContain('Bonjour,');
+      expect(resultat).toContain('Merci pour votre message, je reviens vers vous rapidement.');
+      expect(resultat).toContain('De : Prospect Test');
+      expect(resultat).toContain('Envoyé : lundi 14 septembre 2026 10:00');
+      expect(resultat).toContain('À : Expéditeur Test');
+      expect(resultat).toContain('Objet : Re: Prise de contact');
+    },
+  );
+
   it('compacte les espaces et les lignes vides en trop', () => {
     expect(texteDepuisHtml('<p>Un</p>\n\n\n<p>Deux</p>   avec    des espaces')).toBe('Un\n\nDeux\navec des espaces');
   });
