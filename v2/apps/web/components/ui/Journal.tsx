@@ -4,7 +4,7 @@ export type EntreeJournal = {
   heure: string;
   texte: ReactNode;
   note?: ReactNode;
-  ton?: 'erreur';
+  ton?: 'erreur' | 'attention';
 };
 
 export type JournalProps = {
@@ -17,7 +17,7 @@ export function Journal({ entrees }: JournalProps) {
       {entrees.map((entree, index) => (
         <li key={index}>
           <time>{entree.heure}</time>
-          <span style={entree.ton === 'erreur' ? { color: 'var(--jr-erreur)' } : undefined}>
+          <span className={entree.ton}>
             {entree.texte}
             {entree.note && <small>{entree.note}</small>}
           </span>

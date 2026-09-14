@@ -314,3 +314,5 @@
 
 /* Actions : regroupe des boutons côte à côte (pied de ZoneReponse, pied de Tiroir) */
 .jr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.jr-petit { font-size: var(--jr-petit); }
+.jr-journal .erreur { color: var(--jr-erreur); } .jr-journal .attention { color: var(--jr-attention); }

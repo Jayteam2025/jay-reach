@@ -17,7 +17,12 @@ export function Onglets({ onglets, actif }: OngletsProps) {
   return (
     <nav className="jr-onglets">
       {onglets.map((onglet) => (
-        <Link key={onglet.href} href={onglet.href} className={onglet.href === actif ? 'actif' : undefined}>
+        <Link
+          key={onglet.href}
+          href={onglet.href}
+          className={onglet.href === actif ? 'actif' : undefined}
+          aria-current={onglet.href === actif ? 'page' : undefined}
+        >
           {onglet.libelle}
           {onglet.compteur !== undefined && <span className="jr-compteur">{onglet.compteur}</span>}
         </Link>

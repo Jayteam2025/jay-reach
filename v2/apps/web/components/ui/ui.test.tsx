@@ -2,13 +2,25 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Avatar, Puce, Table, TuileLogo } from './index';
+import { Avatar, Onglets, Puce, Table, TuileLogo } from './index';
 
 describe('kit', () => {
   it('Avatar : initiales quand pas de photo', () => {
     const html = renderToStaticMarkup(<Avatar nom="Claire Moreau" canal="email" />);
     expect(html).toContain('CM');
     expect(html).toContain('jr-canal em');
+  });
+  it("Onglets : l'onglet actif porte aria-current=page pour les lecteurs d'écran", () => {
+    const html = renderToStaticMarkup(
+      <Onglets
+        onglets={[
+          { href: '/a', libelle: 'A' },
+          { href: '/b', libelle: 'B' },
+        ]}
+        actif="/b"
+      />,
+    );
+    expect(html).toContain('aria-current="page"');
   });
   it('TuileLogo : la marque linkedin reprend la tuile bleue du kit (svg inliné, pas de <img>)', () => {
     const html = renderToStaticMarkup(<TuileLogo marque="linkedin" />);
