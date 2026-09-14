@@ -150,4 +150,12 @@ describe('lireAujourdhui', () => {
     expect(a.campagnes).toEqual([]);
     expect(a.aTraiter).toEqual({ total: 0, fils: [] });
   });
+
+  it('ne lit `organization_settings` qu’une seule fois (réglages passés à lireConsommationDuJour, pas relus)', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }] });
+    await lireAujourdhui(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appelsReglages = appels.filter((appel) => /from organization_settings/i.test(String(appel[0])));
+    expect(appelsReglages).toHaveLength(1);
+  });
 });

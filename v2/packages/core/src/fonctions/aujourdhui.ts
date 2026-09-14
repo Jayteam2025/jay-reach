@@ -124,8 +124,11 @@ function formatterHeure(iso: string, fuseau: string): string {
 
 export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   exiger(ctx, 'viewer');
-  const [reglages, filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds] = await Promise.all([
-    lireReglages(ctx),
+  // Lus d'abord, seuls : `lireConsommationDuJour` en a besoin aussi (fuseau,
+  // plafonds), et lui repasser ceux-ci lui évite de relire lui-même
+  // `organization_settings` une seconde fois dans le même appel.
+  const reglages = await lireReglages(ctx);
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -195,7 +198,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       [ctx.organisationId],
     ),
     lireEtatMoteur(ctx),
-    lireConsommationDuJour(ctx),
+    lireConsommationDuJour(ctx, reglages),
   ]);
 
   const fuseau = String(reglages.fuseau);

@@ -141,12 +141,19 @@ export interface Jauge {
  * Chaque jauge garde la fraîcheur de son propre mécanisme d'origine (scoring et
  * enrichissement : `usage_date = current_date`, en UTC comme `provider_daily_usage` ;
  * envois : le fuseau de l'organisation) — décision du coordinateur, pas une omission.
+ *
+ * `reglages` : à passer quand l'appelant les a déjà lus (`lireAujourdhui`, qui
+ * en a aussi besoin pour son propre fuseau) — évite une deuxième lecture de
+ * `organization_settings` dans le même appel. Absent, `lireReglages(ctx)` est
+ * appelé ici comme avant : le comportement ne change pas pour un appelant qui
+ * ne passe rien.
  */
 export async function lireConsommationDuJour(
   ctx: Contexte,
+  reglages?: Awaited<ReturnType<typeof lireReglages>>,
 ): Promise<{ scoring: Jauge; enrichissement: Jauge; envois: Jauge }> {
-  const reglages = await lireReglages(ctx);
-  const fuseau = String(reglages.fuseau);
+  const reglagesResolus = reglages ?? (await lireReglages(ctx));
+  const fuseau = String(reglagesResolus.fuseau);
 
   const scoringRes = await ctx.ex.query<{ n: number }>(
     `select coalesce(used, 0)::int as n /* scored_today */
@@ -177,8 +184,8 @@ export async function lireConsommationDuJour(
   );
 
   return {
-    scoring: { utilise: scoringRes.rows[0]?.n ?? 0, plafond: Number(reglages.scoring_par_jour) },
-    enrichissement: { utilise: enrichRes.rows[0]?.n ?? 0, plafond: Number(reglages.enrichissements_par_jour) },
+    scoring: { utilise: scoringRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.scoring_par_jour) },
+    enrichissement: { utilise: enrichRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.enrichissements_par_jour) },
     envois: { utilise: envoisUtiliseRes.rows[0]?.n ?? 0, plafond: envoisPlafondRes.rows[0]?.plafond ?? 0 },
   };
 }
