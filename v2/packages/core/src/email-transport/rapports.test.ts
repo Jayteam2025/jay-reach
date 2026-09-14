@@ -28,6 +28,7 @@ function envoi(partiel: Partial<EnvoiSorti>): EnvoiSorti {
     corpsHtml: null,
     sujet: null,
     deSoi: false,
+    destinataire: null,
     references: [],
     ...partiel,
   };

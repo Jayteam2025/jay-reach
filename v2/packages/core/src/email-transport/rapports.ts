@@ -31,6 +31,7 @@ export interface EnvoiSorti {
   corpsHtml: string | null;
   sujet: string | null;
   deSoi: boolean;
+  destinataire: string | null;
   references: string[];
   erreur?: string;
 }

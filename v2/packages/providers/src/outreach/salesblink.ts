@@ -99,12 +99,20 @@ export interface EnvoiSorti {
   /** Sujet de la tache (`data.email.subject`), conserve avec le corps. */
   sujet: string | null;
   /**
-   * `self` : tache creee par NOS PROPRES relances (`repondreDansLeFil`),
-   * distincte d'une tache creee par SalesBlink pour la reponse du prospect.
-   * Sert a exclure nos propres messages quand on cherche le corps d'une
-   * reponse entrante (tache 10, decision 1).
+   * `self`. NE distingue PAS de facon fiable nos propres relances : verifie
+   * contre l'API reelle le 14/09, notre propre premier email (`task_type:
+   * 'email'`) porte aussi `self: false`, comme la reponse du prospect.
+   * Conserve comme indice secondaire (tache 10, decision 1) ; le
+   * discriminant fiable est `destinataire` ci-dessous.
    */
   deSoi: boolean;
+  /**
+   * Destinataire de la tache (`data.email.to`), tache 10 : seul champ verifie
+   * fiable pour distinguer la reponse DU PROSPECT (adressee a NOTRE
+   * expediteur) d'une de nos propres relances (adressee au prospect). Absent
+   * sur une tache `email` sortante.
+   */
+  destinataire: string | null;
   /** En-tetes `reference` (RFC 5322) portes par la tache, vide si absents. */
   references: string[];
   /**
@@ -417,22 +425,28 @@ function extraireErreurTache(ligne: Record<string, unknown>): string | undefined
 }
 
 /**
- * Extrait `data.email.body`/`data.email.subject` d'une tache inbox. Robuste a
- * toute forme absente ou inattendue (une tache `email` sortante n'a pas
+ * Extrait `data.email.body`/`subject`/`to` d'une tache inbox. Robuste a toute
+ * forme absente ou inattendue (une tache `email` sortante n'a pas
  * necessairement ce detail) : null plutot qu'une exception.
  */
-function versDonneesEmailTache(ligne: Record<string, unknown>): { corpsHtml: string | null; sujet: string | null } {
+function versDonneesEmailTache(
+  ligne: Record<string, unknown>,
+): { corpsHtml: string | null; sujet: string | null; destinataire: string | null } {
   const donneesTache = ligne.data;
-  if (!donneesTache || typeof donneesTache !== 'object') return { corpsHtml: null, sujet: null };
+  if (!donneesTache || typeof donneesTache !== 'object') return { corpsHtml: null, sujet: null, destinataire: null };
   const email = (donneesTache as Record<string, unknown>).email;
-  if (!email || typeof email !== 'object') return { corpsHtml: null, sujet: null };
+  if (!email || typeof email !== 'object') return { corpsHtml: null, sujet: null, destinataire: null };
   const champsEmail = email as Record<string, unknown>;
-  return { corpsHtml: texteOuNull(champsEmail.body), sujet: texteOuNull(champsEmail.subject) };
+  return {
+    corpsHtml: texteOuNull(champsEmail.body),
+    sujet: texteOuNull(champsEmail.subject),
+    destinataire: texteOuNull(champsEmail.to),
+  };
 }
 
 function versEnvoiSorti(brut: unknown): EnvoiSorti {
   const ligne = brut as Record<string, unknown>;
-  const { corpsHtml, sujet } = versDonneesEmailTache(ligne);
+  const { corpsHtml, sujet, destinataire } = versDonneesEmailTache(ligne);
   const envoi: EnvoiSorti = {
     id: texte(ligne.id),
     messageId: texteOuNull(ligne.messageId),
@@ -445,6 +459,7 @@ function versEnvoiSorti(brut: unknown): EnvoiSorti {
     corpsHtml,
     sujet,
     deSoi: booleen(ligne.self),
+    destinataire,
     references: tableauDeChaines(ligne.reference),
   };
   const erreur = extraireErreurTache(ligne);

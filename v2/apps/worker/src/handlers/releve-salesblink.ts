@@ -213,19 +213,33 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
  * Complète le corps vide d'une réponse `/replies` avec celui de la tâche
  * `/inbox` correspondante (tâche 10, décision 1) : `/replies` ne porte jamais
  * de corps, le texte n'existe que dans la tâche `reply` que SalesBlink crée
- * pour la réponse DU PROSPECT — jamais dans une tâche `self` (nos propres
- * relances, `deSoi`). Aucune clé commune entre les deux flux : rapprochement
- * par email (insensible à la casse) et séquence. Plusieurs correspondances →
- * la plus récente (`planifieMs`, qui reprend `scheduled_time`, le plus
- * grand). Corps HTML converti en texte ; sujet conservé avec lui. Si rien ne
- * correspond, le corps reste vide plutôt que d'inventer.
+ * pour la réponse DU PROSPECT. Aucune clé commune entre les deux flux :
+ * rapprochement par email (insensible à la casse) et séquence.
+ *
+ * `self` NE distingue PAS nos propres relances de façon fiable — vérifié
+ * contre l'API réelle le 14/09 : notre propre premier email porte aussi
+ * `self: false`. Le discriminant fiable est `destinataire` (`data.email.to`) :
+ * la tâche créée pour la réponse DU PROSPECT lui est adressée à NOTRE
+ * expéditeur (`destinataire` renseigné et différent de l'email du prospect),
+ * alors qu'une de nos relances est adressée AU prospect (`destinataire`
+ * égal à son email). `!deSoi` reste vérifié en plus, sans qu'on compte
+ * dessus. Plusieurs correspondances → la plus récente (`planifieMs`, qui
+ * reprend `scheduled_time`, le plus grand). Corps HTML converti en texte ;
+ * sujet conservé avec lui. Si rien ne correspond, le corps reste vide plutôt
+ * que d'inventer.
  */
 function completerCorpsReponse(r: Rapport, taches: EnvoiSorti[]): { corps: string; sujet: string | null } {
   if (r.corps) return { corps: r.corps, sujet: null };
   if (!r.email) return { corps: '', sujet: null };
   const emailBas = r.email.toLowerCase();
   const correspondantes = taches.filter(
-    (t) => t.typeTache === 'reply' && !t.deSoi && t.email.toLowerCase() === emailBas && t.sequenceId === r.sequenceId,
+    (t) =>
+      t.typeTache === 'reply' &&
+      !t.deSoi &&
+      t.email.toLowerCase() === emailBas &&
+      t.sequenceId === r.sequenceId &&
+      t.destinataire !== null &&
+      t.destinataire.toLowerCase() !== emailBas,
   );
   if (correspondantes.length === 0) return { corps: '', sujet: null };
   const plusRecente = correspondantes.reduce((plusRecenteJusquIci, candidate) =>

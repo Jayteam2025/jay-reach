@@ -134,6 +134,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
     };
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
@@ -212,6 +213,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
     };
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
@@ -281,6 +283,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
     }));
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => envoisSatures) });
@@ -326,7 +329,8 @@ describe('releverSalesBlink', () => {
 
   it(
     'une réponse au corps vide (/replies) se complète avec le corps de la tâche /inbox correspondante ' +
-      '(décision 1) : converti en texte, en excluant les tâches self',
+      '(décision 1) : retenue par destinataire (adressée à notre expéditeur), en excluant notre propre ' +
+      'relance même quand self ment (self=false sur les deux, vérifié le 14/09)',
     async () => {
       const rapport: Rapport = {
         id: 'r-repondu-1',
@@ -349,6 +353,8 @@ describe('releverSalesBlink', () => {
         corpsHtml: '<p>Merci pour votre message</p>',
         sujet: 'Re: Prise de contact',
         deSoi: false,
+        // Adressée à NOTRE expéditeur : c'est la réponse du prospect.
+        destinataire: 'expediteur@exemple.test',
         references: [],
       };
       const tacheRelanceASoi: EnvoiSorti = {
@@ -365,7 +371,11 @@ describe('releverSalesBlink', () => {
         typeTache: 'reply',
         corpsHtml: '<p>Notre relance</p>',
         sujet: 'Relance',
-        deSoi: true,
+        // self=false ici aussi (mesuré le 14/09) : la garde !deSoi ne suffirait
+        // pas seule à l'écarter. Adressée AU prospect (son propre email) :
+        // c'est `destinataire` qui l'exclut.
+        deSoi: false,
+        destinataire: 'prospect@exemple.test',
         references: [],
       };
       const client = clientFactice({
@@ -420,6 +430,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: '<p>Premier message</p>',
       sujet: null,
       deSoi: false,
+      destinataire: 'expediteur@exemple.test',
       references: [],
     };
     const recente: EnvoiSorti = {
@@ -434,6 +445,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: '<p>Message le plus récent</p>',
       sujet: null,
       deSoi: false,
+      destinataire: 'expediteur@exemple.test',
       references: [],
     };
     const client = clientFactice({
@@ -507,6 +519,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
       erreur: 'Email Sender sending disabled.',
     };
@@ -539,6 +552,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
       erreur: 'Panne persistante',
     };
@@ -572,6 +586,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
@@ -607,6 +622,7 @@ describe('releverSalesBlink', () => {
       corpsHtml: null,
       sujet: null,
       deSoi: false,
+      destinataire: null,
       references: [],
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
