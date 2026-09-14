@@ -395,6 +395,7 @@ describe('releverSalesBlink', () => {
           // Les deux tâches sont `termine: true` : l'étape 6 marque aussi
           // l'action de relance livrée, sans lien avec ce que ce test vérifie.
           { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+          { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
         ),
       );
 
@@ -465,6 +466,7 @@ describe('releverSalesBlink', () => {
         // Les deux tâches sont `termine: true` : l'étape 6 marque aussi
         // l'action de relance livrée, sans lien avec ce que ce test vérifie.
         { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+        { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
       ),
     );
 
@@ -472,6 +474,239 @@ describe('releverSalesBlink', () => {
 
     const insertionMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
     expect(insertionMessage!.values[1]).toBe('Message le plus récent');
+  });
+
+  it(
+    'deux réponses du même prospect dans un même passage : chacune récupère le bon corps, ' +
+      'appariées par rang chronologique (revue du 14/09)',
+    async () => {
+      const rapportAncien: Rapport = {
+        id: 'r-repondu-ancien',
+        horodatageMs: 1000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const rapportRecent: Rapport = {
+        id: 'r-repondu-recent',
+        horodatageMs: 2000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const tacheAncienne: EnvoiSorti = {
+        id: 'tache-ancienne-1',
+        messageId: null,
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        termine: true,
+        termineMs: null,
+        planifieMs: 1500,
+        typeTache: 'reply',
+        corpsHtml: '<p>Premier message</p>',
+        sujet: null,
+        deSoi: false,
+        destinataire: 'expediteur@exemple.test',
+        references: [],
+      };
+      const tacheRecente: EnvoiSorti = {
+        id: 'tache-recente-1',
+        messageId: null,
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        termine: true,
+        termineMs: null,
+        planifieMs: 2500,
+        typeTache: 'reply',
+        corpsHtml: '<p>Second message</p>',
+        sujet: null,
+        deSoi: false,
+        destinataire: 'expediteur@exemple.test',
+        references: [],
+      };
+      const client = clientFactice({
+        listerReponses: vi.fn(async () => [rapportAncien, rapportRecent]),
+        listerTachesReponse: vi.fn(async () => ({ taches: [tacheAncienne, tacheRecente], sature: false })),
+      });
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+          { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+          { motif: THREAD_SELECT, repondre: () => ligne([]) },
+          { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+          { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+          { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+          { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+          { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+          { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+          { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
+        ),
+      );
+
+      await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+      const insertions = appels.filter((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+      expect(insertions).toHaveLength(2);
+      // Ordre respecté : la réponse la plus ancienne prend la tâche la plus
+      // ancienne, la plus récente prend la plus récente — jamais l'inverse.
+      expect(insertions[0]!.values[1]).toBe('Premier message');
+      expect(insertions[1]!.values[1]).toBe('Second message');
+    },
+  );
+
+  it(
+    'deux réponses du même prospect et une seule tâche disponible : seule la plus récente ' +
+      'reçoit le corps, l’autre reste vide et journalise un avertissement sans email ni corps',
+    async () => {
+      const rapportAncien: Rapport = {
+        id: 'r-repondu-ancien-2',
+        horodatageMs: 1000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const rapportRecent: Rapport = {
+        id: 'r-repondu-recent-2',
+        horodatageMs: 2000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const seuleTache: EnvoiSorti = {
+        id: 'tache-seule',
+        messageId: null,
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        termine: true,
+        termineMs: null,
+        planifieMs: 1500,
+        typeTache: 'reply',
+        corpsHtml: '<p>Seul message disponible</p>',
+        sujet: null,
+        deSoi: false,
+        destinataire: 'expediteur@exemple.test',
+        references: [],
+      };
+      const client = clientFactice({
+        listerReponses: vi.fn(async () => [rapportAncien, rapportRecent]),
+        listerTachesReponse: vi.fn(async () => ({ taches: [seuleTache], sature: false })),
+      });
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+          { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+          { motif: THREAD_SELECT, repondre: () => ligne([]) },
+          { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+          { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+          { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+          { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+          { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+          { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+          { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
+        ),
+      );
+      const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+      const insertions = appels.filter((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+      expect(insertions).toHaveLength(2);
+      expect(insertions[0]!.values[1]).toBe('');
+      expect(insertions[1]!.values[1]).toBe('Seul message disponible');
+      // L'avertissement nomme l'identifiant de la réponse restée sans corps,
+      // jamais son email ni un corps (même vide, rien à propos du contenu).
+      const messagesAvertissement = avertissement.mock.calls.map((appel) => String(appel[0]));
+      expect(messagesAvertissement.some((m) => m.includes('r-repondu-ancien-2') && m.includes('sans tâche /inbox correspondante'))).toBe(
+        true,
+      );
+      expect(messagesAvertissement.some((m) => m.includes('prospect@exemple.test'))).toBe(false);
+
+      avertissement.mockRestore();
+    },
+  );
+
+  it('deux prospects différents sur la même séquence : aucun croisement de corps', async () => {
+    const rapportA: Rapport = {
+      id: 'r-repondu-a',
+      horodatageMs: 1000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect-a@exemple.test',
+      sequenceId: 'seq-1',
+      corps: '',
+    };
+    const rapportB: Rapport = {
+      id: 'r-repondu-b',
+      horodatageMs: 2000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect-b@exemple.test',
+      sequenceId: 'seq-1',
+      corps: '',
+    };
+    const tacheA: EnvoiSorti = {
+      id: 'tache-a',
+      messageId: null,
+      email: 'prospect-a@exemple.test',
+      sequenceId: 'seq-1',
+      termine: true,
+      termineMs: null,
+      planifieMs: 1500,
+      typeTache: 'reply',
+      corpsHtml: '<p>Message A</p>',
+      sujet: null,
+      deSoi: false,
+      destinataire: 'expediteur@exemple.test',
+      references: [],
+    };
+    const tacheB: EnvoiSorti = {
+      id: 'tache-b',
+      messageId: null,
+      email: 'prospect-b@exemple.test',
+      sequenceId: 'seq-1',
+      termine: true,
+      termineMs: null,
+      planifieMs: 2500,
+      typeTache: 'reply',
+      corpsHtml: '<p>Message B</p>',
+      sujet: null,
+      deSoi: false,
+      destinataire: 'expediteur@exemple.test',
+      references: [],
+    };
+    const client = clientFactice({
+      listerReponses: vi.fn(async () => [rapportA, rapportB]),
+      listerTachesReponse: vi.fn(async () => ({ taches: [tacheA, tacheB], sature: false })),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+        { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const insertions = appels.filter((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+    expect(insertions).toHaveLength(2);
+    expect(insertions[0]!.values[1]).toBe('Message A');
+    expect(insertions[1]!.values[1]).toBe('Message B');
   });
 
   it('un rapport Error remet l’action en attente avec essais=1 et replanifie la séquence', async () => {

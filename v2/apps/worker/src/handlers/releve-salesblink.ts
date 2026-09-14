@@ -209,12 +209,14 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
   return { id: row.id, essais: Number(row.essais ?? 0) || 0 };
 }
 
+/** Une réponse `/replies` a-t-elle déjà un corps ? Sinon elle a besoin d'être enrichie depuis `/inbox`. */
+function reponseSansCorps(r: Rapport): boolean {
+  return !r.corps;
+}
+
 /**
- * Complète le corps vide d'une réponse `/replies` avec celui de la tâche
- * `/inbox` correspondante (tâche 10, décision 1) : `/replies` ne porte jamais
- * de corps, le texte n'existe que dans la tâche `reply` que SalesBlink crée
- * pour la réponse DU PROSPECT. Aucune clé commune entre les deux flux :
- * rapprochement par email (insensible à la casse) et séquence.
+ * Une tâche `/inbox` candidate pour enrichir une réponse `/replies` : type
+ * `reply`, jamais une des nôtres.
  *
  * `self` NE distingue PAS nos propres relances de façon fiable — vérifié
  * contre l'API réelle le 14/09 : notre propre premier email porte aussi
@@ -223,29 +225,76 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
  * expéditeur (`destinataire` renseigné et différent de l'email du prospect),
  * alors qu'une de nos relances est adressée AU prospect (`destinataire`
  * égal à son email). `!deSoi` reste vérifié en plus, sans qu'on compte
- * dessus. Plusieurs correspondances → la plus récente (`planifieMs`, qui
- * reprend `scheduled_time`, le plus grand). Corps HTML converti en texte ;
- * sujet conservé avec lui. Si rien ne correspond, le corps reste vide plutôt
- * que d'inventer.
+ * dessus.
  */
-function completerCorpsReponse(r: Rapport, taches: EnvoiSorti[]): { corps: string; sujet: string | null } {
-  if (r.corps) return { corps: r.corps, sujet: null };
-  if (!r.email) return { corps: '', sujet: null };
-  const emailBas = r.email.toLowerCase();
-  const correspondantes = taches.filter(
-    (t) =>
-      t.typeTache === 'reply' &&
-      !t.deSoi &&
-      t.email.toLowerCase() === emailBas &&
-      t.sequenceId === r.sequenceId &&
-      t.destinataire !== null &&
-      t.destinataire.toLowerCase() !== emailBas,
-  );
-  if (correspondantes.length === 0) return { corps: '', sujet: null };
-  const plusRecente = correspondantes.reduce((plusRecenteJusquIci, candidate) =>
-    (candidate.planifieMs ?? -Infinity) > (plusRecenteJusquIci.planifieMs ?? -Infinity) ? candidate : plusRecenteJusquIci,
-  );
-  return { corps: plusRecente.corpsHtml ? texteDepuisHtml(plusRecente.corpsHtml) : '', sujet: plusRecente.sujet };
+function estTacheCandidate(t: EnvoiSorti): boolean {
+  if (t.typeTache !== 'reply' || t.deSoi) return false;
+  if (t.destinataire === null) return false;
+  return t.destinataire.toLowerCase() !== t.email.toLowerCase();
+}
+
+/** Clé de regroupement (email insensible à la casse, séquence) : jamais de rapprochement entre deux prospects ou deux séquences. */
+function cleGroupeReponse(email: string, sequenceId: string | null): string {
+  return `${email.toLowerCase()}|${sequenceId ?? ''}`;
+}
+
+/**
+ * Apparie, groupe par groupe (email, séquence), les réponses `/replies` au
+ * corps vide avec les tâches `/inbox` candidates (tâche 10, décision 1 —
+ * revue du 14/09 : plusieurs réponses du même prospect dans un même passage
+ * recevaient toutes le corps de la même tâche, la plus récente, sans
+ * distinction).
+ *
+ * Dans chaque groupe, les deux listes sont triées par ordre chronologique
+ * croissant (`horodatageMs` pour les réponses, `planifieMs` pour les
+ * tâches) puis alignées sur leur FIN : la réponse et la tâche les plus
+ * récentes s'apparient d'abord, puis on remonte dans le temps d'un cran à
+ * la fois. Une tâche n'est utilisée qu'une fois par passage. S'il y a moins
+ * de tâches que de réponses, les réponses les plus ANCIENNES du groupe
+ * restent sans corps plutôt que d'en emprunter un — jamais l'inverse : une
+ * réponse récente ne doit pas rester vide pendant qu'une ancienne récupère
+ * un corps qui ne lui correspond pas. Une seule réponse avec plusieurs
+ * tâches retient donc la plus récente, comme avant cette revue.
+ */
+function apparierReponsesEtTaches(
+  reponses: Rapport[],
+  taches: EnvoiSorti[],
+): Map<string, { corps: string; sujet: string | null }> {
+  const reponsesParGroupe = new Map<string, Rapport[]>();
+  for (const r of reponses) {
+    if (!r.email || !reponseSansCorps(r)) continue;
+    const cle = cleGroupeReponse(r.email, r.sequenceId);
+    const liste = reponsesParGroupe.get(cle);
+    if (liste) liste.push(r);
+    else reponsesParGroupe.set(cle, [r]);
+  }
+
+  const tachesParGroupe = new Map<string, EnvoiSorti[]>();
+  for (const t of taches) {
+    if (!estTacheCandidate(t)) continue;
+    const cle = cleGroupeReponse(t.email, t.sequenceId);
+    const liste = tachesParGroupe.get(cle);
+    if (liste) liste.push(t);
+    else tachesParGroupe.set(cle, [t]);
+  }
+
+  const corpsParReponse = new Map<string, { corps: string; sujet: string | null }>();
+  for (const [cle, listeReponses] of reponsesParGroupe) {
+    const listeTaches = tachesParGroupe.get(cle);
+    if (!listeTaches || listeTaches.length === 0) continue;
+    listeReponses.sort((a, b) => a.horodatageMs - b.horodatageMs);
+    listeTaches.sort((a, b) => (a.planifieMs ?? -Infinity) - (b.planifieMs ?? -Infinity));
+    const n = Math.min(listeReponses.length, listeTaches.length);
+    for (let k = 0; k < n; k += 1) {
+      const reponse = listeReponses[listeReponses.length - n + k]!;
+      const tache = listeTaches[listeTaches.length - n + k]!;
+      corpsParReponse.set(reponse.id, {
+        corps: tache.corpsHtml ? texteDepuisHtml(tache.corpsHtml) : '',
+        sujet: tache.sujet,
+      });
+    }
+  }
+  return corpsParReponse;
 }
 
 /**
@@ -257,14 +306,33 @@ function completerCorpsReponse(r: Rapport, taches: EnvoiSorti[]): { corps: strin
  * `providerMessageId`) : sans lui, le même message reviendrait à chaque tour
  * tant qu'il reste dans la fenêtre `depuisMs`. `taches` (les tâches `/inbox`
  * déjà récupérées pour l'étape 6, un seul appel par passage) sert à combler
- * le corps vide de chaque réponse — voir `completerCorpsReponse`.
+ * le corps vide de chaque réponse — voir `apparierReponsesEtTaches`. Une
+ * réponse qui en a besoin mais ne trouve aucune tâche correspondante est
+ * journalisée (jamais son email ni son corps) : son corps reste vide.
  */
-function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[]): EvenementEmail[] {
+function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[], org: string): EvenementEmail[] {
+  const corpsApparies = apparierReponsesEtTaches(reponses, taches);
   const evenements: EvenementEmail[] = [];
   for (const r of reponses) {
     if (!r.email) continue;
-    const { corps, sujet } = completerCorpsReponse(r, taches);
-    evenements.push({ type: 'repondu', email: r.email, corps, sujet, messageId: r.id || null, aMs: r.horodatageMs });
+    if (!reponseSansCorps(r)) {
+      evenements.push({ type: 'repondu', email: r.email, corps: r.corps ?? '', sujet: null, messageId: r.id || null, aMs: r.horodatageMs });
+      continue;
+    }
+    const trouve = corpsApparies.get(r.id);
+    if (!trouve) {
+      console.warn(
+        `[releve-salesblink] org ${org} : réponse ${r.id} sans tâche /inbox correspondante, corps laissé vide`,
+      );
+    }
+    evenements.push({
+      type: 'repondu',
+      email: r.email,
+      corps: trouve?.corps ?? '',
+      sujet: trouve?.sujet ?? null,
+      messageId: r.id || null,
+      aMs: r.horodatageMs,
+    });
   }
   return evenements;
 }
@@ -437,7 +505,7 @@ export async function releverSalesBlink(
       const reponses = await client.listerReponses(curseurDepart, cle, { jusquaMs: jusqua });
       const s2 = verifierSaturation(org, 'reponses', reponses.length);
       if (s2) fluxSatures.push(s2);
-      const evRepondus = versEvenementsRepondus(reponses, taches);
+      const evRepondus = versEvenementsRepondus(reponses, taches, org);
       for (const ev of evRepondus) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
