@@ -116,9 +116,14 @@ export async function setCampaignStatus(organizationId: string, campaignId: stri
     } else {
       // 'draft' : aucun écran ne repasse une campagne en brouillon aujourd'hui, et le brief de
       // cette tâche ne définit pas de fonction dédiée — mise à jour minimale conservée pour ne
-      // pas faire régresser un appel existant à ce statut.
+      // pas faire régresser un appel existant à ce statut, avec la même vérification d'existence
+      // que mettreEnPause/archiver (tour de correction 1, relecture).
       exiger(ctx, 'operator');
-      await ctx.ex.query(`update campaigns set status = 'draft' where id = $1 and organization_id = $2`, [campaignId, organizationId]);
+      const r = await ctx.ex.query(
+        `update campaigns set status = 'draft' where id = $1 and organization_id = $2 returning id`,
+        [campaignId, organizationId],
+      );
+      if (r.rowCount === 0) throw new ErreurIntrouvable('Campagne');
     }
 
     revalidatePath(`/campaigns/${campaignId}`);

@@ -170,7 +170,7 @@ describe('listerContactsCampagne', () => {
     await expect(listerContactsCampagne(faux({}, null), { campagneId })).rejects.toThrow(ForbiddenError);
   });
 
-  it('calcule les compteurs par statut, tous compris', async () => {
+  it('calcule les compteurs par statut, tous compris, et en fait le total (pas de la page)', async () => {
     const ctx = faux({
       'jr:compteurs_contacts_campagne': [
         { statut: 'en_sequence', n: 5 },
@@ -183,6 +183,36 @@ describe('listerContactsCampagne', () => {
     expect(r.compteurs.a_repondu).toBe(2);
     expect(r.compteurs.sans_email).toBe(0);
     expect(r.compteurs.tous).toBe(7);
+    expect(r.total).toBe(7);
+  });
+
+  it('le total vient des compteurs, pas de la page demandée (une page au-delà de la dernière garde le bon total)', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 42 }],
+      'jr:lignes_contacts_campagne': [], // page au-delà de la dernière : aucune ligne renvoyée
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId, filtre: 'en_sequence', page: 50 });
+    expect(r.lignes).toHaveLength(0);
+    expect(r.total).toBe(42);
+  });
+
+  it('la population est faite de personnes : jointure interne sur contacts, signaux non qualifiés exclus (R29)', async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    await listerContactsCampagne(ctx, { campagneId });
+    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(sql).toMatch(/join contacts c on c\.source_signal_id = s\.id/);
+    expect(sql).not.toMatch(/left join contacts/);
+    expect(sql).toMatch(/s\.status <> 'new'/);
+  });
+
+  it('la règle « sans email » couvre invalide, risqué et inconnu, pas seulement invalide (R27)', async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    await listerContactsCampagne(ctx, { campagneId });
+    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(sql).toMatch(/c\.email_status <> 'valid'/);
+    expect(sql).not.toMatch(/email_status = 'invalid'/);
   });
 
   it('un contact `replied` avec un fil intéressé remonte comme `interesse` (priorité sur `a_repondu`)', async () => {
@@ -201,7 +231,6 @@ describe('listerContactsCampagne', () => {
           entreprise: 'Néolia',
           current_step: 2,
           statut: 'interesse',
-          total: 1,
         },
       ],
     });
@@ -212,30 +241,6 @@ describe('listerContactsCampagne', () => {
     expect(r.lignes[0]!.etape).toBe(3);
     expect(r.total).toBe(1);
     expect(ORDRE_STATUTS.indexOf('interesse')).toBeLessThan(ORDRE_STATUTS.indexOf('a_repondu'));
-  });
-
-  it('affiche « — » pour une ligne sans contact (signal jamais promu)', async () => {
-    const ctx = faux({
-      'jr:compteurs_contacts_campagne': [{ statut: 'ecarte', n: 1 }],
-      'jr:lignes_contacts_campagne': [
-        {
-          signal_id: 'sig-2',
-          contact_id: null,
-          first_name: null,
-          last_name: null,
-          job_title: null,
-          email: null,
-          entreprise: 'Une entreprise',
-          current_step: null,
-          statut: 'ecarte',
-          total: 1,
-        },
-      ],
-    });
-    const r = await listerContactsCampagne(ctx, { campagneId });
-    expect(r.lignes[0]!.nom).toBe('—');
-    expect(r.lignes[0]!.contactId).toBeNull();
-    expect(r.lignes[0]!.etape).toBeNull();
   });
 
   it('passe la pagination et le filtre à la requête (page 2, filtre en_sequence)', async () => {
@@ -295,8 +300,9 @@ describe('listerActivite', () => {
 
   it('mappe libellé et détail depuis `diff`', async () => {
     const ctx = faux({
+      'jr:activite_campagne_total': [{ n: 1 }],
       'jr:activite_campagne': [
-        { id: 'ev-1', created_at: '2026-09-14T08:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée' }, total: 1 },
+        { id: 'ev-1', created_at: '2026-09-14T08:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée' } },
       ],
     });
     const r = await listerActivite(ctx, { campagneId });
@@ -304,13 +310,26 @@ describe('listerActivite', () => {
     expect(r.evenements[0]).toEqual({ id: 'ev-1', quand: '2026-09-14T08:00:00Z', type: 'campaign_activated', libelle: 'Campagne lancée', detail: null });
   });
 
-  it('restreint aux actions du filtre demandé', async () => {
+  it('le total vient d’une requête `count(*)` séparée, pas de la page (une page vide garde le bon total)', async () => {
+    const ctx = faux({
+      'jr:activite_campagne_total': [{ n: 12 }],
+      'jr:activite_campagne': [], // page au-delà de la dernière : aucune ligne renvoyée
+    });
+    const r = await listerActivite(ctx, { campagneId, page: 50 });
+    expect(r.evenements).toHaveLength(0);
+    expect(r.total).toBe(12);
+  });
+
+  it('restreint aux actions du filtre demandé (compte et page)', async () => {
     const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerActivite(ctx, { campagneId, filtre: 'scoring' });
-    const [sql, params] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
-    expect(sql).toMatch(/action = any\(\$3::text\[\]\)/);
-    expect(params).toContainEqual(['scoring_batch']);
+    const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]][];
+    expect(appels).toHaveLength(2);
+    for (const [sql, params] of appels) {
+      expect(sql).toMatch(/action = any\(\$3::text\[\]\)/);
+      expect(params).toContainEqual(['scoring_batch']);
+    }
   });
 });
 

@@ -48,9 +48,11 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
 
 /**
  * Expression SQL du statut dérivé, dans l'ordre de `ORDRE_STATUTS`. `c` = le
- * contact éventuellement lié au signal (peut être absent : signal jamais
- * promu), `e` = sa dernière inscription DANS CETTE campagne (LEFT JOIN
- * LATERAL, au plus une ligne), `s` = le signal d'origine.
+ * contact du signal (jointure interne dans `FROM_POPULATION_CAMPAGNE` : la
+ * population de l'onglet Contacts, ce sont des personnes, jamais des
+ * signaux bruts — tour de correction 1, R29), `e` = sa dernière inscription
+ * DANS CETTE campagne (LEFT JOIN LATERAL, au plus une ligne), `s` = le
+ * signal d'origine.
  *
  * Portée : campagnes alimentées par des thèmes de veille (`campaign_sources`)
  * — une campagne alimentée par une liste importée n'a pas de signal d'origine
@@ -58,29 +60,38 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
  * sur les campagnes `entryKind: 'list'`).
  */
 const CASE_STATUT_DERIVE = `case
-      when c.id is not null and (c.status = 'do_not_contact' or exists (
+      when c.status = 'do_not_contact' or exists (
         select 1 from suppressions sup
          where sup.organization_id = s.organization_id
            and c.email is not null
            and ((sup.scope = 'email' and lower(sup.value) = lower(c.email))
              or (sup.scope = 'domain' and lower(sup.value) = lower(split_part(c.email, '@', 2))))
-      )) then 'ne_plus_contacter'
+      ) then 'ne_plus_contacter'
       when e.status = 'bounced' then 'rebond'
-      when c.id is not null and exists (
+      when exists (
         select 1 from threads t where t.contact_id = c.id and t.interest = 'interested'
       ) then 'interesse'
       when e.status = 'replied' then 'a_repondu'
       when s.status = 'discarded' or e.status = 'stopped' then 'ecarte'
       when e.status = 'completed' then 'termine'
       when e.status in ('active', 'paused', 'paused_absence') then 'en_sequence'
-      when c.id is not null and (c.email is null or c.email_status = 'invalid') then 'sans_email'
+      when c.email is null or c.email_status <> 'valid' then 'sans_email'
       else 'a_contacter'
     end`;
 
-/** Population d'une campagne : tous les signaux remontés par ses thèmes de veille (`campaign_sources`). */
+/**
+ * Population d'une campagne (onglet Contacts) : les personnes identifiées à
+ * partir des signaux remontés par ses thèmes de veille (`campaign_sources`).
+ * Jointure INTERNE sur `contacts` et exclusion des signaux `new` (spec §6.5,
+ * R29, tour de correction 1) : un signal jamais promu en contact — pas
+ * encore scoré, ou écarté par le scoring sans devenir une personne — n'est
+ * pas un « contact » de la campagne ; il compte dans l'entonnoir
+ * (`trouves`/`qualifies`, `lireEntonnoir`, requêtes séparées sur `signals`
+ * seul) mais pas ici.
+ */
 const FROM_POPULATION_CAMPAGNE = `from signals s
       join campaign_sources cs on cs.source_id = s.source_id
-      left join contacts c on c.source_signal_id = s.id
+      join contacts c on c.source_signal_id = s.id
       left join lateral (
         select e2.status, e2.current_step
           from enrollments e2
@@ -89,6 +100,9 @@ const FROM_POPULATION_CAMPAGNE = `from signals s
          limit 1
       ) e on true
       left join accounts ac on ac.id = s.account_id`;
+
+/** Signaux exclus de la population de l'onglet Contacts : pas encore scorés/qualifiés (R29). */
+const FILTRE_SIGNAL_QUALIFIE = `s.status <> 'new'`;
 
 // ---------------------------------------------------------------------------
 // Petits utilitaires partagés (copies volontairement locales de celles
@@ -515,7 +529,7 @@ const TAILLE_PAGE_CONTACTS = 50;
 export const schemaListerContacts = schemaCampagneId.extend({
   filtre: z.enum(['tous', ...ORDRE_STATUTS]).default('tous'),
   recherche: z.string().max(80).optional(),
-  page: z.number().int().min(1).default(1),
+  page: z.number().int().min(1).max(10_000).default(1),
 });
 
 interface LigneContactCampagne {
@@ -528,7 +542,6 @@ interface LigneContactCampagne {
   entreprise: string | null;
   current_step: number | null;
   statut: StatutContactCampagne;
-  total: number;
 }
 
 export async function listerContactsCampagne(
@@ -543,7 +556,7 @@ export async function listerContactsCampagne(
        from (
          select ${CASE_STATUT_DERIVE} as statut
          ${FROM_POPULATION_CAMPAGNE}
-         where cs.campaign_id = $1
+         where cs.campaign_id = $1 and ${FILTRE_SIGNAL_QUALIFIE}
        ) x /* jr:compteurs_contacts_campagne */
       group by statut`,
     [campagneId],
@@ -554,11 +567,15 @@ export async function listerContactsCampagne(
     compteurs[r.statut] = r.n;
     compteurs.tous += r.n;
   }
+  // Le total vient des compteurs (déjà exacts, tous statuts confondus), pas d'un `count(*) over()`
+  // posé sur la page demandée : une page au-delà de la dernière renvoie alors 0 ligne et 0 total,
+  // au lieu du vrai total (tour de correction 1, relecture). `recherche` ne réduit pas ce total :
+  // seul `filtre` le fait, les compteurs par onglet ne connaissant pas le texte recherché.
+  const total = compteurs[filtre];
 
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
-    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut,
-            count(*) over()::int as total
+    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut
        from (
          select
            s.id as signal_id,
@@ -568,7 +585,7 @@ export async function listerContactsCampagne(
            e.current_step,
            ${CASE_STATUT_DERIVE} as statut
          ${FROM_POPULATION_CAMPAGNE}
-         where cs.campaign_id = $1
+         where cs.campaign_id = $1 and ${FILTRE_SIGNAL_QUALIFIE}
        ) x /* jr:lignes_contacts_campagne */
       where ($2 = 'tous' or statut = $2)
         and ($3::text is null or first_name ilike $3 or last_name ilike $3 or entreprise ilike $3)
@@ -580,7 +597,7 @@ export async function listerContactsCampagne(
   const lignes: ContactCampagne[] = lignesRes.rows.map((r) => ({
     signalId: r.signal_id,
     contactId: r.contact_id,
-    nom: r.contact_id ? nomComplet(r.first_name, r.last_name) : '—',
+    nom: nomComplet(r.first_name, r.last_name),
     poste: r.job_title,
     entreprise: r.entreprise,
     email: r.email,
@@ -588,7 +605,7 @@ export async function listerContactsCampagne(
     etape: r.current_step !== null ? r.current_step + 1 : null,
   }));
 
-  return { total: lignesRes.rows[0]?.total ?? 0, compteurs, lignes };
+  return { total, compteurs, lignes };
 }
 
 // ---------------------------------------------------------------------------
@@ -643,7 +660,7 @@ const TAILLE_PAGE_ACTIVITE = 20;
 
 export const schemaActivite = schemaCampagneId.extend({
   filtre: z.enum(['tout', 'sources', 'scoring', 'envois', 'reponses', 'erreurs']).default('tout'),
-  page: z.number().int().min(1).default(1),
+  page: z.number().int().min(1).max(10_000).default(1),
 });
 
 type FiltreActivite = z.infer<typeof schemaActivite>['filtre'];
@@ -673,26 +690,37 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
       or (entity_type = 'engine' and action = 'engine_error')
     )`;
 
+  // Clause WHERE commune au compte total et à la page : une requête `count(*)` séparée plutôt
+  // qu'un `count(*) over()` posé sur la page demandée, qui renverrait 0 (aucune ligne, donc
+  // aucune fenêtre) pour une page au-delà de la dernière (tour de correction 1, relecture).
   const params: unknown[] = [campagneId, ctx.organisationId];
-  let sql = `select id, created_at, entity_type, action, diff, count(*) over()::int as total
-               from audit_events /* jr:activite_campagne */
-              where organization_id = $2 and ${conditionTout}`;
+  let where = `organization_id = $2 and ${conditionTout}`;
   const actionsFiltre = filtre === 'tout' ? undefined : ACTIONS_PAR_FILTRE[filtre];
   if (actionsFiltre) {
     params.push(actionsFiltre);
-    sql += ` and action = any($${params.length}::text[])`;
+    where += ` and action = any($${params.length}::text[])`;
   }
-  params.push(TAILLE_PAGE_ACTIVITE, (page - 1) * TAILLE_PAGE_ACTIVITE);
-  sql += ` order by created_at desc limit $${params.length - 1} offset $${params.length}`;
 
+  const totalRes = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n from audit_events /* jr:activite_campagne_total */ where ${where}`,
+    params,
+  );
+
+  const paramsPage = [...params, TAILLE_PAGE_ACTIVITE, (page - 1) * TAILLE_PAGE_ACTIVITE];
   const res = await ctx.ex.query<{
     id: string;
     created_at: string;
     entity_type: string;
     action: ActionJournal;
     diff: { libelle?: string; detail?: string } | null;
-    total: number;
-  }>(sql, params);
+  }>(
+    `select id, created_at, entity_type, action, diff
+       from audit_events /* jr:activite_campagne */
+      where ${where}
+      order by created_at desc
+      limit $${paramsPage.length - 1} offset $${paramsPage.length}`,
+    paramsPage,
+  );
 
   const evenements: Evenement[] = res.rows.map((r) => ({
     id: r.id,
@@ -701,7 +729,7 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
   }));
-  return { total: res.rows[0]?.total ?? 0, evenements };
+  return { total: totalRes.rows[0]?.n ?? 0, evenements };
 }
 
 // ---------------------------------------------------------------------------
