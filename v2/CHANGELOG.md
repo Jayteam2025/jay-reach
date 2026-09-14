@@ -7,6 +7,22 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+- **Une réponse relevée par SalesBlink n'affiche plus un message vide dans la boîte de réception.**
+  `/replies`, l'endpoint qui signale une réponse, ne porte jamais de corps ni l'heure réelle de la réponse
+  (seulement celle de sa détection par SalesBlink). Le texte existe ailleurs : dans la tâche `/inbox` que
+  SalesBlink crée pour la réponse du prospect, déjà relevée pour les relances en file — un seul appel par
+  passage, réutilisé pour les deux. Rapprochement par email (insensible à la casse) et séquence ; le
+  discriminant fiable de nos propres relances est le destinataire de la tâche (`data.email.to`), pas `self`
+  qui vaut `false` aussi bien sur notre premier envoi que sur la réponse du prospect. Plusieurs réponses du
+  même prospect dans un même passage sont désormais appariées par rang chronologique plutôt que de recevoir
+  toutes le même corps ; une tâche n'est jamais réutilisée deux fois, et une réponse sans tâche correspondante
+  garde un corps vide (journalisé) plutôt que d'en emprunter un. Le corps HTML est converti en texte
+  (`texteDepuisHtml`, nouveau dans `packages/core`), commentaires et blocs conditionnels Outlook retirés en
+  premier. Une réponse reçue après la dernière étape d'une séquence (inscription déjà `completed`) passe
+  quand même en `replied` : le taux de réponse par campagne ne perd plus les réponses tardives, et les actions
+  encore programmées de l'inscription sont marquées ignorées plutôt que de rester en attente indéfiniment.
+
 ### Modifié
 - **Les emails de séquence partent par SalesBlink, et Jay Reach garde tout le reste.** Smartlead portait le texte
   et la cadence ; SalesBlink ne porte plus que l'expédition depuis la boîte de l'utilisateur. Une séquence SalesBlink

@@ -63,6 +63,14 @@ describe('traiterEvenementEmail', () => {
     expect(appels.some((a) => a.text.includes('insert into notifications'))).toBe(true);
   });
 
+  it('répondu avec sujet (tâche 10) : passe par headers sans changer la classification', async () => {
+    const { ex } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
+    const repondu: EvenementEmail = { ...REPONDU, sujet: 'Re: Prise de contact' };
+    const resultat = await traiterEvenementEmail(ex, 'org-1', repondu, 'SalesBlink');
+    expect(resultat.stored).toBe(true);
+    expect((resultat as { effect: string; classification: string }).classification).toBe('human_reply');
+  });
+
   it('envoyé → ignoré (traité par la relève, pas ici)', async () => {
     const { ex } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
     const resultat = await traiterEvenementEmail(ex, 'org-1', ENVOYE, 'SalesBlink');

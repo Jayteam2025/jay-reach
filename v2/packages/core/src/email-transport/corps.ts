@@ -38,3 +38,56 @@ export function objetPourSalesBlink(texte: string): string {
     .join(' ');
   return uneLigne.slice(0, LONGUEUR_MAX_OBJET);
 }
+
+/**
+ * Décode les entités HTML courantes. `&amp;` en dernier : le décoder plus tôt
+ * transformerait à tort une entité déjà échappée (`&amp;lt;`, qui affiche le
+ * texte littéral « &lt; ») en caractère spécial.
+ */
+function decoderEntitesHtml(texte: string): string {
+  return texte
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#x([0-9a-f]+);/gi, (_correspondance, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_correspondance, decimal: string) => String.fromCodePoint(parseInt(decimal, 10)))
+    .replace(/&amp;/gi, '&');
+}
+
+/**
+ * HTML minimal SalesBlink → texte brut (sens inverse de `corpsPourSalesBlink`).
+ * `GET /inbox` ne renvoie le corps d'une tâche qu'en HTML (`data.email.body`) ;
+ * ce convertisseur volontairement simple (pas de parseur HTML complet) retire
+ * d'abord les commentaires HTML (`<!-- … -->`, y compris les blocs
+ * conditionnels Outlook `<!--[if mso]>…<![endif]-->` qui ne sont que des
+ * commentaires du point de vue du navigateur — souvent du style `mso-*` sans
+ * rapport avec le texte de la réponse), puis `<style>`/`<script>` et leur
+ * contenu, convertit les sauts de bloc usuels (`<br>`, `</p>`, `</div>`,
+ * `</li>`, `</tr>`) en saut de ligne, retire les balises restantes, décode
+ * les entités HTML courantes puis compacte les espaces et les lignes vides
+ * en trop.
+ */
+export function texteDepuisHtml(html: string): string {
+  const sansCommentaires = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  const sansStyleNiScript = sansCommentaires
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+
+  const avecSautsDeLigne = sansStyleNiScript
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr)>/gi, '\n');
+
+  const sansBalises = avecSautsDeLigne.replace(/<[^>]+>/g, '');
+
+  const decode = decoderEntitesHtml(sansBalises);
+
+  return decode
+    .replace(/[ \t]+/g, ' ')
+    .split('\n')
+    .map((ligne) => ligne.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

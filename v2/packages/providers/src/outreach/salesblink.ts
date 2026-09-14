@@ -91,6 +91,31 @@ export interface EnvoiSorti {
   planifieMs: number | null;
   typeTache: 'email' | 'reply' | string;
   /**
+   * Corps HTML de la tache (`data.email.body`), tache 10 : c'est la seule
+   * source du texte d'une reponse, `/replies` n'en renvoie jamais. Null si
+   * absent (une tache `email` sortante n'a pas necessairement ce detail).
+   */
+  corpsHtml: string | null;
+  /** Sujet de la tache (`data.email.subject`), conserve avec le corps. */
+  sujet: string | null;
+  /**
+   * `self`. NE distingue PAS de facon fiable nos propres relances : verifie
+   * contre l'API reelle le 14/09, notre propre premier email (`task_type:
+   * 'email'`) porte aussi `self: false`, comme la reponse du prospect.
+   * Conserve comme indice secondaire (tache 10, decision 1) ; le
+   * discriminant fiable est `destinataire` ci-dessous.
+   */
+  deSoi: boolean;
+  /**
+   * Destinataire de la tache (`data.email.to`), tache 10 : seul champ verifie
+   * fiable pour distinguer la reponse DU PROSPECT (adressee a NOTRE
+   * expediteur) d'une de nos propres relances (adressee au prospect). Absent
+   * sur une tache `email` sortante.
+   */
+  destinataire: string | null;
+  /** En-tetes `reference` (RFC 5322) portes par la tache, vide si absents. */
+  references: string[];
+  /**
    * Erreur portee par la tache inbox (`error.message.message`, mesure le
    * 11/09 : un `reply` accepte pendant que l'expediteur etait deconnecte y
    * reste sans jamais etre rejoue). Tronquee a 200 caracteres, absente si la
@@ -205,6 +230,11 @@ function booleen(valeur: unknown): boolean {
 
 function nombreOuNull(valeur: unknown): number | null {
   return typeof valeur === 'number' && Number.isFinite(valeur) ? valeur : null;
+}
+
+/** Tableau de chaines, filtre des elements qui n'en sont pas ; vide si `valeur` n'est pas un tableau. */
+function tableauDeChaines(valeur: unknown): string[] {
+  return Array.isArray(valeur) ? valeur.filter((element): element is string => typeof element === 'string') : [];
 }
 
 /** Convertit un horodatage SalesBlink (nombre, chaine numerique ou date ISO) en millisecondes. */
@@ -394,8 +424,29 @@ function extraireErreurTache(ligne: Record<string, unknown>): string | undefined
   return undefined;
 }
 
+/**
+ * Extrait `data.email.body`/`subject`/`to` d'une tache inbox. Robuste a toute
+ * forme absente ou inattendue (une tache `email` sortante n'a pas
+ * necessairement ce detail) : null plutot qu'une exception.
+ */
+function versDonneesEmailTache(
+  ligne: Record<string, unknown>,
+): { corpsHtml: string | null; sujet: string | null; destinataire: string | null } {
+  const donneesTache = ligne.data;
+  if (!donneesTache || typeof donneesTache !== 'object') return { corpsHtml: null, sujet: null, destinataire: null };
+  const email = (donneesTache as Record<string, unknown>).email;
+  if (!email || typeof email !== 'object') return { corpsHtml: null, sujet: null, destinataire: null };
+  const champsEmail = email as Record<string, unknown>;
+  return {
+    corpsHtml: texteOuNull(champsEmail.body),
+    sujet: texteOuNull(champsEmail.subject),
+    destinataire: texteOuNull(champsEmail.to),
+  };
+}
+
 function versEnvoiSorti(brut: unknown): EnvoiSorti {
   const ligne = brut as Record<string, unknown>;
+  const { corpsHtml, sujet, destinataire } = versDonneesEmailTache(ligne);
   const envoi: EnvoiSorti = {
     id: texte(ligne.id),
     messageId: texteOuNull(ligne.messageId),
@@ -405,6 +456,11 @@ function versEnvoiSorti(brut: unknown): EnvoiSorti {
     termineMs: versMs(ligne.completed_time),
     planifieMs: versMs(ligne.scheduled_time),
     typeTache: texte(ligne.task_type),
+    corpsHtml,
+    sujet,
+    deSoi: booleen(ligne.self),
+    destinataire,
+    references: tableauDeChaines(ligne.reference),
   };
   const erreur = extraireErreurTache(ligne);
   if (erreur !== undefined) envoi.erreur = erreur;

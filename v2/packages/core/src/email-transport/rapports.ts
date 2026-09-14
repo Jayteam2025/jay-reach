@@ -28,12 +28,22 @@ export interface EnvoiSorti {
   termineMs: number | null;
   planifieMs: number | null;
   typeTache: 'email' | 'reply' | string;
+  corpsHtml: string | null;
+  sujet: string | null;
+  deSoi: boolean;
+  destinataire: string | null;
+  references: string[];
   erreur?: string;
 }
 
 export type EvenementEmail =
   | { type: 'envoye'; email: string; sequenceId: string | null; messageId: string | null; aMs: number }
-  | { type: 'repondu'; email: string; corps: string; messageId: string | null; aMs: number }
+  /**
+   * `sujet` (tâche 10) : conservé quand le corps vide de `/replies` a pu être
+   * enrichi depuis la tâche `/inbox` correspondante — absent sinon. Optionnel
+   * pour ne pas casser les événements déjà construits sans lui.
+   */
+  | { type: 'repondu'; email: string; corps: string; sujet?: string | null; messageId: string | null; aMs: number }
   | { type: 'rebond'; email: string; aMs: number }
   | { type: 'desinscrit'; email: string; aMs: number }
   | { type: 'erreur'; email: string; sequenceId: string | null; motif: string; aMs: number };

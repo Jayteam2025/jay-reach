@@ -21,6 +21,17 @@ import { classifyReply } from './classify.js';
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
 export const LIVE_STATUSES = "('active','paused','paused_absence')";
 
+/**
+ * Statuts qu'une réponse HUMAINE peut encore faire passer en `replied`
+ * (tâche 10, décision 3) : `LIVE_STATUSES` plus `completed`. Une réponse reçue
+ * après la dernière étape de la séquence ne doit pas être perdue pour le taux
+ * de réponse par campagne — `replied` l'emporte sur `completed`. Les autres
+ * classifications (`auto_absence`, `auto_left_company`) restent sur
+ * `LIVE_STATUSES` : seule une réponse humaine justifie de rouvrir une
+ * inscription déjà terminée.
+ */
+export const REPLY_STATUSES = "('active','paused','paused_absence','completed')";
+
 export type ReplyChannel = 'email' | 'linkedin_invite' | 'linkedin_message' | 'letter' | 'call';
 
 export interface InboundReply {
@@ -137,7 +148,22 @@ async function applyToEnrollment(
   if (classification === 'human_reply') {
     await ex.query(
       `update enrollments set status = 'replied', ended_at = now()
-        where organization_id = $1 and contact_id = $2 and status in ${LIVE_STATUSES}`,
+        where organization_id = $1 and contact_id = $2 and status in ${REPLY_STATUSES}`,
+      [org, contactId],
+    );
+    // Une inscription `replied` sort de `rejouerActionsEmailEnAttente`
+    // (`e.status in ('active','completed')`, apps/worker/src/traitements.ts) :
+    // une action encore `scheduled` n'y sera donc plus jamais reprise. Sans ce
+    // marquage immédiat, elle resterait `scheduled` indéfiniment plutôt que
+    // d'être vue comme abandonnée — même motif de saut que le contrôle fait
+    // au moment de l'envoi pour une inscription inactive
+    // (`email-salesblink.ts`, `enrollment_inactive`).
+    await ex.query(
+      `update actions set status = 'skipped', error = 'enrollment_inactive'
+        where organization_id = $1 and status = 'scheduled'
+          and enrollment_id in (
+            select id from enrollments where organization_id = $1 and contact_id = $2 and status = 'replied'
+          )`,
       [org, contactId],
     );
     return;
@@ -232,12 +258,15 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
 
   const threadId = await upsertThread(ex, org, reply.contactId, reply.channel, cls.classification);
   await ex.query(
-    `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
-     values ($1, 'in', $2, $3, $4::jsonb, $5)`,
+    // `headers` (tâche 10) : posé tel quel, `null` quand absent — jamais la
+    // chaîne JSON `"null"`, qui resterait une valeur au lieu d'un NULL SQL.
+    `insert into thread_messages (thread_id, direction, body, provider_message_id, headers, raw, sent_at)
+     values ($1, 'in', $2, $3, $4::jsonb, $5::jsonb, $6)`,
     [
       threadId,
       reply.body,
       reply.providerMessageId ?? null,
+      reply.headers ? JSON.stringify(reply.headers) : null,
       JSON.stringify(reply.raw ?? {}),
       (reply.receivedAt ?? new Date()).toISOString(),
     ],

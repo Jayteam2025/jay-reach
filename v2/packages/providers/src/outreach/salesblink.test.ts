@@ -505,6 +505,162 @@ describe('listerEnvoisSortis', () => {
     expect(envois[0]?.erreur).toBeUndefined();
   });
 
+  it('lit corpsHtml, sujet, deSoi, destinataire et references depuis une tache reply (forme reelle /inbox)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            result: [
+              {
+                id: 'tache-reponse-1',
+                task_type: 'reply',
+                self: false,
+                completed: true,
+                email: 'prospect@exemple.test',
+                sequence: 'sequence-1',
+                messageId: 'msg-graph-1',
+                reference: ['<a@exemple.test>', '<b@hxcore.ol>'],
+                scheduled_time: 1700000000000,
+                data: {
+                  email: {
+                    body: '<html><div>Test reponse</div></html>',
+                    subject: 'Re: Prise de contact',
+                    to: 'expediteur@exemple.test',
+                    cc: null,
+                    bcc: null,
+                    attachments: [],
+                  },
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const [envoi] = await listerEnvoisSortis(0, CLE_TEST);
+
+    expect(envoi).toMatchObject({
+      corpsHtml: '<html><div>Test reponse</div></html>',
+      sujet: 'Re: Prise de contact',
+      deSoi: false,
+      destinataire: 'expediteur@exemple.test',
+      references: ['<a@exemple.test>', '<b@hxcore.ol>'],
+    });
+  });
+
+  it(
+    'self ne distingue pas nos propres relances : notre propre email sortant porte aussi self=false ' +
+      '(verifie contre l’API reelle le 14/09)',
+    async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          reponseJson({
+            success: true,
+            data: {
+              result: [
+                {
+                  id: 'tache-email-sortant-1',
+                  task_type: 'email',
+                  self: false,
+                  completed: true,
+                  email: 'prospect@exemple.test',
+                  sequence: 'sequence-1',
+                },
+              ],
+            },
+          }),
+        ),
+      );
+
+      const [envoi] = await listerEnvoisSortis(0, CLE_TEST);
+
+      expect(envoi).toMatchObject({ typeTache: 'email', deSoi: false, destinataire: null });
+    },
+  );
+
+  it('destinataire (data.email.to) est absent sur notre propre email sortant', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            result: [
+              {
+                id: 'tache-email-sortant-2',
+                task_type: 'email',
+                completed: true,
+                email: 'prospect@exemple.test',
+                sequence: 'sequence-1',
+                data: { email: { subject: 'Prise de contact', to: null, cc: null, bcc: null, attachments: [] } },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const [envoi] = await listerEnvoisSortis(0, CLE_TEST);
+
+    expect(envoi?.destinataire).toBeNull();
+  });
+
+  it('deSoi vaut true pour une tache self (nos propres relances)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            result: [
+              {
+                id: 'tache-relance-1',
+                task_type: 'reply',
+                self: true,
+                completed: true,
+                email: 'prospect@exemple.test',
+                sequence: 'sequence-1',
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const [envoi] = await listerEnvoisSortis(0, CLE_TEST);
+
+    expect(envoi?.deSoi).toBe(true);
+  });
+
+  it('corpsHtml, sujet et references sont robustes a des champs absents', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reponseJson({
+          success: true,
+          data: {
+            result: [
+              {
+                id: 'tache-minimale',
+                task_type: 'email',
+                completed: true,
+                email: 'prospect@exemple.test',
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const [envoi] = await listerEnvoisSortis(0, CLE_TEST);
+
+    expect(envoi).toMatchObject({ corpsHtml: null, sujet: null, deSoi: false, destinataire: null, references: [] });
+  });
+
   it("remplit erreur depuis error.message.message, tronque a 200 caracteres, sans le fuiter ailleurs", async () => {
     const messageInterieur = 'Email Sender sending disabled. Needs to reconnect.';
     vi.stubGlobal(

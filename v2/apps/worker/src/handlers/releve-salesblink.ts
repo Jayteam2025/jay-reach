@@ -44,6 +44,7 @@ import {
   notifier,
   normaliserDelaiRelanceMax,
   normaliserIntervalleReleve,
+  texteDepuisHtml,
   type EvenementEmail,
 } from '@jay-reach/core';
 import {
@@ -208,6 +209,94 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
   return { id: row.id, essais: Number(row.essais ?? 0) || 0 };
 }
 
+/** Une réponse `/replies` a-t-elle déjà un corps ? Sinon elle a besoin d'être enrichie depuis `/inbox`. */
+function reponseSansCorps(r: Rapport): boolean {
+  return !r.corps;
+}
+
+/**
+ * Une tâche `/inbox` candidate pour enrichir une réponse `/replies` : type
+ * `reply`, jamais une des nôtres.
+ *
+ * `self` NE distingue PAS nos propres relances de façon fiable — vérifié
+ * contre l'API réelle le 14/09 : notre propre premier email porte aussi
+ * `self: false`. Le discriminant fiable est `destinataire` (`data.email.to`) :
+ * la tâche créée pour la réponse DU PROSPECT lui est adressée à NOTRE
+ * expéditeur (`destinataire` renseigné et différent de l'email du prospect),
+ * alors qu'une de nos relances est adressée AU prospect (`destinataire`
+ * égal à son email). `!deSoi` reste vérifié en plus, sans qu'on compte
+ * dessus.
+ */
+function estTacheCandidate(t: EnvoiSorti): boolean {
+  if (t.typeTache !== 'reply' || t.deSoi) return false;
+  if (t.destinataire === null) return false;
+  return t.destinataire.toLowerCase() !== t.email.toLowerCase();
+}
+
+/** Clé de regroupement (email insensible à la casse, séquence) : jamais de rapprochement entre deux prospects ou deux séquences. */
+function cleGroupeReponse(email: string, sequenceId: string | null): string {
+  return `${email.toLowerCase()}|${sequenceId ?? ''}`;
+}
+
+/**
+ * Apparie, groupe par groupe (email, séquence), les réponses `/replies` au
+ * corps vide avec les tâches `/inbox` candidates (tâche 10, décision 1 —
+ * revue du 14/09 : plusieurs réponses du même prospect dans un même passage
+ * recevaient toutes le corps de la même tâche, la plus récente, sans
+ * distinction).
+ *
+ * Dans chaque groupe, les deux listes sont triées par ordre chronologique
+ * croissant (`horodatageMs` pour les réponses, `planifieMs` pour les
+ * tâches) puis alignées sur leur FIN : la réponse et la tâche les plus
+ * récentes s'apparient d'abord, puis on remonte dans le temps d'un cran à
+ * la fois. Une tâche n'est utilisée qu'une fois par passage. S'il y a moins
+ * de tâches que de réponses, les réponses les plus ANCIENNES du groupe
+ * restent sans corps plutôt que d'en emprunter un — jamais l'inverse : une
+ * réponse récente ne doit pas rester vide pendant qu'une ancienne récupère
+ * un corps qui ne lui correspond pas. Une seule réponse avec plusieurs
+ * tâches retient donc la plus récente, comme avant cette revue.
+ */
+function apparierReponsesEtTaches(
+  reponses: Rapport[],
+  taches: EnvoiSorti[],
+): Map<string, { corps: string; sujet: string | null }> {
+  const reponsesParGroupe = new Map<string, Rapport[]>();
+  for (const r of reponses) {
+    if (!r.email || !reponseSansCorps(r)) continue;
+    const cle = cleGroupeReponse(r.email, r.sequenceId);
+    const liste = reponsesParGroupe.get(cle);
+    if (liste) liste.push(r);
+    else reponsesParGroupe.set(cle, [r]);
+  }
+
+  const tachesParGroupe = new Map<string, EnvoiSorti[]>();
+  for (const t of taches) {
+    if (!estTacheCandidate(t)) continue;
+    const cle = cleGroupeReponse(t.email, t.sequenceId);
+    const liste = tachesParGroupe.get(cle);
+    if (liste) liste.push(t);
+    else tachesParGroupe.set(cle, [t]);
+  }
+
+  const corpsParReponse = new Map<string, { corps: string; sujet: string | null }>();
+  for (const [cle, listeReponses] of reponsesParGroupe) {
+    const listeTaches = tachesParGroupe.get(cle);
+    if (!listeTaches || listeTaches.length === 0) continue;
+    listeReponses.sort((a, b) => a.horodatageMs - b.horodatageMs);
+    listeTaches.sort((a, b) => (a.planifieMs ?? -Infinity) - (b.planifieMs ?? -Infinity));
+    const n = Math.min(listeReponses.length, listeTaches.length);
+    for (let k = 0; k < n; k += 1) {
+      const reponse = listeReponses[listeReponses.length - n + k]!;
+      const tache = listeTaches[listeTaches.length - n + k]!;
+      corpsParReponse.set(reponse.id, {
+        corps: tache.corpsHtml ? texteDepuisHtml(tache.corpsHtml) : '',
+        sujet: tache.sujet,
+      });
+    }
+  }
+  return corpsParReponse;
+}
+
 /**
  * Rapports SalesBlink → réponses : `listerReponses` (endpoint `/replies`) ne
  * renvoie que des réponses, contrairement à `listerRapports` (`/reports`,
@@ -215,13 +304,35 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
  * sans filtrer sur `message`. `id` sert d'identifiant de déduplication
  * (`recordInboundReply` ne réenregistre jamais deux fois le même
  * `providerMessageId`) : sans lui, le même message reviendrait à chaque tour
- * tant qu'il reste dans la fenêtre `depuisMs`.
+ * tant qu'il reste dans la fenêtre `depuisMs`. `taches` (les tâches `/inbox`
+ * déjà récupérées pour l'étape 6, un seul appel par passage) sert à combler
+ * le corps vide de chaque réponse — voir `apparierReponsesEtTaches`. Une
+ * réponse qui en a besoin mais ne trouve aucune tâche correspondante est
+ * journalisée (jamais son email ni son corps) : son corps reste vide.
  */
-function versEvenementsRepondus(reponses: Rapport[]): EvenementEmail[] {
+function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[], org: string): EvenementEmail[] {
+  const corpsApparies = apparierReponsesEtTaches(reponses, taches);
   const evenements: EvenementEmail[] = [];
   for (const r of reponses) {
     if (!r.email) continue;
-    evenements.push({ type: 'repondu', email: r.email, corps: r.corps ?? '', messageId: r.id || null, aMs: r.horodatageMs });
+    if (!reponseSansCorps(r)) {
+      evenements.push({ type: 'repondu', email: r.email, corps: r.corps ?? '', sujet: null, messageId: r.id || null, aMs: r.horodatageMs });
+      continue;
+    }
+    const trouve = corpsApparies.get(r.id);
+    if (!trouve) {
+      console.warn(
+        `[releve-salesblink] org ${org} : réponse ${r.id} sans tâche /inbox correspondante, corps laissé vide`,
+      );
+    }
+    evenements.push({
+      type: 'repondu',
+      email: r.email,
+      corps: trouve?.corps ?? '',
+      sujet: trouve?.sujet ?? null,
+      messageId: r.id || null,
+      aMs: r.horodatageMs,
+    });
   }
   return evenements;
 }
@@ -363,6 +474,17 @@ export async function releverSalesBlink(
   const fluxSatures: string[] = [];
 
   try {
+    // Tâches `/inbox` : un seul appel par passage, réutilisé par l'étape 6
+    // (relances en file) et pour combler le corps vide des réponses ci-dessous
+    // (décision 1, tâche 10) — d'où sa remontée avant la fenêtre datée.
+    const { taches, sature: tachesSaturees } = await client.listerTachesReponse(cle);
+    if (tachesSaturees) {
+      fluxSatures.push('taches_reply');
+      console.warn(
+        `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « taches_reply » (totalCount dépasse ce qui a été récupéré) — le passage suivant reprend là où celui-ci s'arrête`,
+      );
+    }
+
     if (fenetreOuverte) {
       // 2. Envois sortis terminés : marquent l'action livrée (message_id posé par SalesBlink).
       const envois = await client.listerEnvoisSortis(curseurDepart, cle, { jusquaMs: jusqua });
@@ -383,7 +505,7 @@ export async function releverSalesBlink(
       const reponses = await client.listerReponses(curseurDepart, cle, { jusquaMs: jusqua });
       const s2 = verifierSaturation(org, 'reponses', reponses.length);
       if (s2) fluxSatures.push(s2);
-      const evRepondus = versEvenementsRepondus(reponses);
+      const evRepondus = versEvenementsRepondus(reponses, taches, org);
       for (const ev of evRepondus) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
@@ -446,19 +568,13 @@ export async function releverSalesBlink(
       }
     }
 
-    // 6. Tâches de relance (`reply`) en file chez SalesBlink : terminées →
-    // livrées ; en erreur → repli immédiat, sans attendre le délai (mesuré le
-    // 11/09 : une tâche en erreur n'est jamais rejouée par SalesBlink) ; trop
-    // vieilles → repli forcé et notification. Ce flux n'a pas de fenêtre
-    // temporelle (SalesBlink ne le filtre pas par date) : il tourne à chaque
-    // passage, même quand la fenêtre datée ci-dessus est encore trop fraîche.
-    const { taches, sature: tachesSaturees } = await client.listerTachesReponse(cle);
-    if (tachesSaturees) {
-      fluxSatures.push('taches_reply');
-      console.warn(
-        `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « taches_reply » (totalCount dépasse ce qui a été récupéré) — le passage suivant reprend là où celui-ci s'arrête`,
-      );
-    }
+    // 6. Tâches de relance (`reply`) en file chez SalesBlink (déjà récupérées
+    // ci-dessus, un seul appel par passage) : terminées → livrées ; en erreur
+    // → repli immédiat, sans attendre le délai (mesuré le 11/09 : une tâche en
+    // erreur n'est jamais rejouée par SalesBlink) ; trop vieilles → repli
+    // forcé et notification. Ce flux n'a pas de fenêtre temporelle (SalesBlink
+    // ne le filtre pas par date) : il tourne à chaque passage, même quand la
+    // fenêtre datée ci-dessus est encore trop fraîche.
     for (const tache of taches) {
       if (tache.termine) {
         await marquerActionLivreeParTacheReponse(pool, org, tache);
