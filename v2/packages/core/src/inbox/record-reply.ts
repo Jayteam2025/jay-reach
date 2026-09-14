@@ -151,6 +151,21 @@ async function applyToEnrollment(
         where organization_id = $1 and contact_id = $2 and status in ${REPLY_STATUSES}`,
       [org, contactId],
     );
+    // Une inscription `replied` sort de `rejouerActionsEmailEnAttente`
+    // (`e.status in ('active','completed')`, apps/worker/src/traitements.ts) :
+    // une action encore `scheduled` n'y sera donc plus jamais reprise. Sans ce
+    // marquage immédiat, elle resterait `scheduled` indéfiniment plutôt que
+    // d'être vue comme abandonnée — même motif de saut que le contrôle fait
+    // au moment de l'envoi pour une inscription inactive
+    // (`email-salesblink.ts`, `enrollment_inactive`).
+    await ex.query(
+      `update actions set status = 'skipped', error = 'enrollment_inactive'
+        where organization_id = $1 and status = 'scheduled'
+          and enrollment_id in (
+            select id from enrollments where organization_id = $1 and contact_id = $2 and status = 'replied'
+          )`,
+      [org, contactId],
+    );
     return;
   }
   if (classification === 'auto_absence') {

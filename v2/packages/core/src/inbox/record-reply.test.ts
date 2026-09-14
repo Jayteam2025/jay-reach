@@ -94,6 +94,35 @@ describe('recordInboundReply', () => {
     expect(REPLY_STATUSES).toContain('completed');
   });
 
+  it(
+    'une réponse humaine marque skipped les actions encore scheduled de l’inscription ' +
+      '(le balayage de rejeu ne les reprendrait plus jamais)',
+    async () => {
+      const { ex, appels } = creerExecuteurFactice({});
+      await recordInboundReply(ex, 'org-1', {
+        contactId: 'contact-1',
+        channel: 'email',
+        body: 'Bonjour, merci pour votre message, on se rappelle la semaine prochaine.',
+      });
+
+      const maj = appels.find((a) => a.text.includes("update actions set status = 'skipped'"));
+      expect(maj).toBeDefined();
+      expect(maj!.values).toEqual(['org-1', 'contact-1']);
+      expect(maj!.text).toContain('enrollment_inactive');
+    },
+  );
+
+  it('une absence automatique ne touche pas aux actions scheduled (l’inscription reste vivante)', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Je suis actuellement en congés, de retour le 20.',
+    });
+
+    expect(appels.some((a) => a.text.includes("update actions set status = 'skipped'"))).toBe(false);
+  });
+
   it('une absence automatique reste sur LIVE_STATUSES (ne rouvre pas une inscription completed)', async () => {
     const { ex, appels } = creerExecuteurFactice({});
     const resultat = await recordInboundReply(ex, 'org-1', {
