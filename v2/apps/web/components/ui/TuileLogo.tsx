@@ -1,3 +1,5 @@
+import { IconeLinkedin } from './IconeLinkedin';
+
 export type TuileLogoMarque =
   | 'linkedin'
   | 'gmail'
@@ -18,6 +20,7 @@ export type TuileLogoProps = {
 export function TuileLogo({ marque, lettre, taille }: TuileLogoProps) {
   const classe = [
     'jr-tuile-logo',
+    marque === 'linkedin' ? 'li' : undefined,
     taille === 'grande' ? 'grande' : undefined,
     marque === 'email' || marque === 'lettre' ? 'em' : undefined,
   ]
@@ -28,6 +31,13 @@ export function TuileLogo({ marque, lettre, taille }: TuileLogoProps) {
   }
   if (marque === 'email') {
     return <span className={classe}>@</span>;
+  }
+  if (marque === 'linkedin') {
+    return (
+      <span className={classe}>
+        <IconeLinkedin />
+      </span>
+    );
   }
   return (
     <span className={classe}>

@@ -311,3 +311,6 @@
 @media (max-width: 1180px) { .jr-reglages { grid-template-columns: 160px minmax(0, 1fr); } }
 .jr-maitre-detail { padding: 0; grid-template-columns: 300px minmax(0, 1fr); }
 @media (max-width: 1180px) { .jr-maitre-detail { grid-template-columns: minmax(0, 1fr); } }
+
+/* Actions : regroupe des boutons côte à côte (pied de ZoneReponse, pied de Tiroir) */
+.jr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

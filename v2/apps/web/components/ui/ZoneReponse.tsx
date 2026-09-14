@@ -21,7 +21,7 @@ export function ZoneReponse({ depuis, placeholder, note, actions, value, onChang
         <span className="jr-secondaire" style={{ fontSize: '12.5px' }}>
           {note}
         </span>
-        <div style={{ display: 'flex', gap: '8px' }}>{actions}</div>
+        <div className="jr-actions">{actions}</div>
       </div>
     </div>
   );

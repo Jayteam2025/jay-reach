@@ -2,13 +2,19 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Avatar, Puce, Table } from './index';
+import { Avatar, Puce, Table, TuileLogo } from './index';
 
 describe('kit', () => {
   it('Avatar : initiales quand pas de photo', () => {
     const html = renderToStaticMarkup(<Avatar nom="Claire Moreau" canal="email" />);
     expect(html).toContain('CM');
     expect(html).toContain('jr-canal em');
+  });
+  it('TuileLogo : la marque linkedin reprend la tuile bleue du kit (svg inliné, pas de <img>)', () => {
+    const html = renderToStaticMarkup(<TuileLogo marque="linkedin" />);
+    expect(html).toContain('jr-tuile-logo li');
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('<img');
   });
   it('Puce : ton bon', () => {
     // Le texte est passé en expression ({'Active'}) : le kit interdit tout
