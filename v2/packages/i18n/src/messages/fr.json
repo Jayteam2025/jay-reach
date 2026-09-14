@@ -810,5 +810,95 @@
       "noBoundEmailSender": "aucun expéditeur email relié à une boîte SalesBlink",
       "emailSenderDisconnected": "l’expéditeur email relié à SalesBlink n’a pas l’envoi actif"
     }
+  },
+  "coquille": {
+    "nav": {
+      "today": "Aujourd'hui",
+      "campaigns": "Campagnes",
+      "contacts": "Contacts",
+      "inbox": "Réception",
+      "settings": "Réglages"
+    },
+    "engine": {
+      "running": "Moteur en marche",
+      "stopped": "Moteur arrêté",
+      "lastNext": "Dernier passage {last}, prochain {next}",
+      "lastOnly": "Dernier passage {last}",
+      "never": "Le moteur n'a jamais tourné"
+    },
+    "sentToday": "Envois du jour",
+    "role": {
+      "owner": "Propriétaire",
+      "admin": "Administrateur",
+      "operator": "Opérateur",
+      "viewer": "Lecteur",
+      "none": "Sans rôle"
+    }
+  },
+  "aujourdhui": {
+    "resume": "{aTraiter} réponses à traiter, {envois} envois prévus, {campagnes} campagnes actives.",
+    "newCampaign": "Nouvelle campagne",
+    "toProcess": {
+      "title": "À traiter",
+      "count": "{n} réponses",
+      "open": "Ouvrir la Réception",
+      "empty": "Aucune réponse à traiter pour le moment."
+    },
+    "classification": {
+      "human_reply": "Réponse humaine",
+      "auto_absence": "Absence automatique",
+      "auto_left_company": "A quitté l'entreprise",
+      "auto_other": "Réponse automatique",
+      "unclassified": "Non classée"
+    },
+    "queue": {
+      "title": "File du jour",
+      "count": "{envois} envois, {partis} déjà partis",
+      "seeAll": "Toute la file",
+      "step": "Étape {n}",
+      "andMore": "et {n} autres",
+      "empty": "Rien à envoyer aujourd'hui."
+    },
+    "engine": {
+      "title": "Moteur",
+      "running": "En marche",
+      "stopped": "Arrêté",
+      "last": "Dernier passage",
+      "next": "Prochain passage",
+      "errors": "Erreurs depuis minuit",
+      "version": "Version"
+    },
+    "caps": {
+      "title": "Plafonds du jour",
+      "settings": "Régler",
+      "scoring": "Scoring (Anthropic)",
+      "enrichment": "Enrichissement (FullEnrich)",
+      "sending": "Envois (SalesBlink)"
+    },
+    "campaigns": {
+      "title": "Campagnes",
+      "count": "{n} actives",
+      "seeAll": "Toutes les campagnes",
+      "columns": {
+        "campaign": "Campagne",
+        "sources": "Sources",
+        "qualified": "Qualifiés",
+        "sequence": "En séquence",
+        "replies": "Réponses",
+        "week": "Cette semaine"
+      },
+      "steps": "{n} étapes email · {boites} boîtes",
+      "noSource": "aucune source",
+      "status": {
+        "draft": "Brouillon",
+        "active": "Active",
+        "paused": "En pause",
+        "archived": "Archivée"
+      },
+      "empty": "Aucune campagne pour le moment."
+    },
+    "alerts": {
+      "action": "Régler"
+    }
   }
 }
