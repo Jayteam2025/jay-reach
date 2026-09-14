@@ -25,6 +25,10 @@ function envoi(partiel: Partial<EnvoiSorti>): EnvoiSorti {
     termineMs: 2000,
     planifieMs: 1500,
     typeTache: 'email',
+    corpsHtml: null,
+    sujet: null,
+    deSoi: false,
+    references: [],
     ...partiel,
   };
 }

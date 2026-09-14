@@ -81,6 +81,11 @@ const CONTACT_LOOKUP = /select id from contacts where/i;
 const SUPPRESSION_INSERT = /insert into suppressions/i;
 const ENROLLMENT_UPDATE = /update enrollments[\s\S]*set status/i;
 const NOTIFICATIONS_INSERT = /insert into notifications/i;
+const DEDUP_LOOKUP = /select m\.id from thread_messages/i;
+const THREAD_SELECT = /select id from threads where/i;
+const THREAD_INSERT = /insert into threads/i;
+const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
+const OUTCOME_INSERT = /insert into outcomes/i;
 
 /** Gestionnaires par defaut : chemin neutre, aucune ligne nulle part. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -126,6 +131,10 @@ describe('releverSalesBlink', () => {
       termineMs: 2000,
       planifieMs: 1500,
       typeTache: 'email',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
     };
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
     const { pool, appels } = creerPoolFactice(
@@ -200,6 +209,10 @@ describe('releverSalesBlink', () => {
       termineMs: jusqua + 500_000,
       planifieMs: 50,
       typeTache: 'email',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
     };
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => [envoi]) });
     const { pool, appels } = creerPoolFactice(
@@ -265,6 +278,10 @@ describe('releverSalesBlink', () => {
       termineMs: null,
       planifieMs: null,
       typeTache: 'reply',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
     }));
     const client = clientFactice({ listerEnvoisSortis: vi.fn(async () => envoisSatures) });
     const { pool, appels } = creerPoolFactice(avecBase());
@@ -305,6 +322,144 @@ describe('releverSalesBlink', () => {
     await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
 
     expect(appels.some((a) => CONTACT_LOOKUP.test(a.sql))).toBe(false);
+  });
+
+  it(
+    'une réponse au corps vide (/replies) se complète avec le corps de la tâche /inbox correspondante ' +
+      '(décision 1) : converti en texte, en excluant les tâches self',
+    async () => {
+      const rapport: Rapport = {
+        id: 'r-repondu-1',
+        horodatageMs: 3000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const tacheProspect: EnvoiSorti = {
+        id: 'tache-prospect-1',
+        messageId: 'msg-graph-1',
+        email: 'PROSPECT@exemple.test',
+        sequenceId: 'seq-1',
+        termine: true,
+        termineMs: null,
+        planifieMs: 5000,
+        typeTache: 'reply',
+        corpsHtml: '<p>Merci pour votre message</p>',
+        sujet: 'Re: Prise de contact',
+        deSoi: false,
+        references: [],
+      };
+      const tacheRelanceASoi: EnvoiSorti = {
+        id: 'tache-soi-1',
+        messageId: null,
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        // termine: true, planifieMs récent : ne déclenche ni le repli pour
+        // relance trop vieille ni une erreur, seulement le marquage livré de
+        // l'étape 6 (MAJ_LIVREE_REPLY ci-dessous) — hors sujet pour ce test.
+        termine: true,
+        termineMs: null,
+        planifieMs: Date.now(),
+        typeTache: 'reply',
+        corpsHtml: '<p>Notre relance</p>',
+        sujet: 'Relance',
+        deSoi: true,
+        references: [],
+      };
+      const client = clientFactice({
+        listerReponses: vi.fn(async () => [rapport]),
+        listerTachesReponse: vi.fn(async () => ({ taches: [tacheProspect, tacheRelanceASoi], sature: false })),
+      });
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+          { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+          { motif: THREAD_SELECT, repondre: () => ligne([]) },
+          { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+          { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+          { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+          { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+          { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+          // Les deux tâches sont `termine: true` : l'étape 6 marque aussi
+          // l'action de relance livrée, sans lien avec ce que ce test vérifie.
+          { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+        ),
+      );
+
+      await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+      const insertionMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+      expect(insertionMessage).toBeDefined();
+      // Rapprochement par email insensible à la casse + séquence, HTML converti
+      // en texte : jamais la tâche self (nos propres relances).
+      expect(insertionMessage!.values[1]).toBe('Merci pour votre message');
+    },
+  );
+
+  it('plusieurs tâches /inbox correspondantes : la plus récente (planifieMs) l’emporte', async () => {
+    const rapport: Rapport = {
+      id: 'r-repondu-2',
+      horodatageMs: 3000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: '',
+    };
+    const ancienne: EnvoiSorti = {
+      id: 'tache-ancienne',
+      messageId: null,
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      termine: true,
+      termineMs: null,
+      planifieMs: 1000,
+      typeTache: 'reply',
+      corpsHtml: '<p>Premier message</p>',
+      sujet: null,
+      deSoi: false,
+      references: [],
+    };
+    const recente: EnvoiSorti = {
+      id: 'tache-recente',
+      messageId: null,
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      termine: true,
+      termineMs: null,
+      planifieMs: 6000,
+      typeTache: 'reply',
+      corpsHtml: '<p>Message le plus récent</p>',
+      sujet: null,
+      deSoi: false,
+      references: [],
+    };
+    const client = clientFactice({
+      listerReponses: vi.fn(async () => [rapport]),
+      listerTachesReponse: vi.fn(async () => ({ taches: [ancienne, recente], sature: false })),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        // Les deux tâches sont `termine: true` : l'étape 6 marque aussi
+        // l'action de relance livrée, sans lien avec ce que ce test vérifie.
+        { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const insertionMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+    expect(insertionMessage!.values[1]).toBe('Message le plus récent');
   });
 
   it('un rapport Error remet l’action en attente avec essais=1 et replanifie la séquence', async () => {
@@ -349,6 +504,10 @@ describe('releverSalesBlink', () => {
       termineMs: null,
       planifieMs: Date.now(),
       typeTache: 'reply',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
       erreur: 'Email Sender sending disabled.',
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
@@ -377,6 +536,10 @@ describe('releverSalesBlink', () => {
       termineMs: null,
       planifieMs: Date.now(),
       typeTache: 'reply',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
       erreur: 'Panne persistante',
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
@@ -406,6 +569,10 @@ describe('releverSalesBlink', () => {
       termineMs: null,
       planifieMs: Date.now() - septHeures,
       typeTache: 'reply',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
     const { pool, appels } = creerPoolFactice(
@@ -437,6 +604,10 @@ describe('releverSalesBlink', () => {
       termineMs: 9000,
       planifieMs: 8000,
       typeTache: 'reply',
+      corpsHtml: null,
+      sujet: null,
+      deSoi: false,
+      references: [],
     };
     const client = clientFactice({ listerTachesReponse: vi.fn(async () => ({ taches: [tache], sature: false })) });
     const { pool, appels } = creerPoolFactice(

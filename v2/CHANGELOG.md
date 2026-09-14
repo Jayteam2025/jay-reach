@@ -7,6 +7,17 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Corrigé
+- **Une réponse relevée par SalesBlink n'affichait plus qu'un message vide dans la boîte de réception.**
+  `/replies`, l'endpoint qui signale une réponse, ne porte jamais de corps ni l'heure réelle de la réponse
+  (seulement celle de sa détection par SalesBlink). Le texte existe ailleurs : dans la tâche `/inbox` que
+  SalesBlink crée pour la réponse du prospect, déjà relevée pour les relances en file — un seul appel par
+  passage, réutilisé pour les deux. Rapprochement par email (insensible à la casse) et séquence, jamais une
+  tâche portant nos propres relances ; s'il y en a plusieurs, la plus récente l'emporte. Le corps, en HTML,
+  est converti en texte (`texteDepuisHtml`, nouveau dans `packages/core`). Une réponse reçue après la
+  dernière étape d'une séquence (inscription déjà `completed`) passe désormais quand même en `replied` :
+  le taux de réponse par campagne ne perdait plus les réponses tardives.
+
 ### Modifié
 - **Les emails de séquence partent par SalesBlink, et Jay Reach garde tout le reste.** Smartlead portait le texte
   et la cadence ; SalesBlink ne porte plus que l'expédition depuis la boîte de l'utilisateur. Une séquence SalesBlink

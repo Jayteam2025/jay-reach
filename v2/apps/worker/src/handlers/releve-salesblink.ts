@@ -44,6 +44,7 @@ import {
   notifier,
   normaliserDelaiRelanceMax,
   normaliserIntervalleReleve,
+  texteDepuisHtml,
   type EvenementEmail,
 } from '@jay-reach/core';
 import {
@@ -209,19 +210,47 @@ async function actionParTacheReponse(pool: Pool, org: string, tacheId: string): 
 }
 
 /**
+ * Complète le corps vide d'une réponse `/replies` avec celui de la tâche
+ * `/inbox` correspondante (tâche 10, décision 1) : `/replies` ne porte jamais
+ * de corps, le texte n'existe que dans la tâche `reply` que SalesBlink crée
+ * pour la réponse DU PROSPECT — jamais dans une tâche `self` (nos propres
+ * relances, `deSoi`). Aucune clé commune entre les deux flux : rapprochement
+ * par email (insensible à la casse) et séquence. Plusieurs correspondances →
+ * la plus récente (`planifieMs`, qui reprend `scheduled_time`, le plus
+ * grand). Corps HTML converti en texte ; sujet conservé avec lui. Si rien ne
+ * correspond, le corps reste vide plutôt que d'inventer.
+ */
+function completerCorpsReponse(r: Rapport, taches: EnvoiSorti[]): { corps: string; sujet: string | null } {
+  if (r.corps) return { corps: r.corps, sujet: null };
+  if (!r.email) return { corps: '', sujet: null };
+  const emailBas = r.email.toLowerCase();
+  const correspondantes = taches.filter(
+    (t) => t.typeTache === 'reply' && !t.deSoi && t.email.toLowerCase() === emailBas && t.sequenceId === r.sequenceId,
+  );
+  if (correspondantes.length === 0) return { corps: '', sujet: null };
+  const plusRecente = correspondantes.reduce((plusRecenteJusquIci, candidate) =>
+    (candidate.planifieMs ?? -Infinity) > (plusRecenteJusquIci.planifieMs ?? -Infinity) ? candidate : plusRecenteJusquIci,
+  );
+  return { corps: plusRecente.corpsHtml ? texteDepuisHtml(plusRecente.corpsHtml) : '', sujet: plusRecente.sujet };
+}
+
+/**
  * Rapports SalesBlink → réponses : `listerReponses` (endpoint `/replies`) ne
  * renvoie que des réponses, contrairement à `listerRapports` (`/reports`,
  * filtré par `message`) — chaque ligne devient donc un événement `repondu`,
  * sans filtrer sur `message`. `id` sert d'identifiant de déduplication
  * (`recordInboundReply` ne réenregistre jamais deux fois le même
  * `providerMessageId`) : sans lui, le même message reviendrait à chaque tour
- * tant qu'il reste dans la fenêtre `depuisMs`.
+ * tant qu'il reste dans la fenêtre `depuisMs`. `taches` (les tâches `/inbox`
+ * déjà récupérées pour l'étape 6, un seul appel par passage) sert à combler
+ * le corps vide de chaque réponse — voir `completerCorpsReponse`.
  */
-function versEvenementsRepondus(reponses: Rapport[]): EvenementEmail[] {
+function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[]): EvenementEmail[] {
   const evenements: EvenementEmail[] = [];
   for (const r of reponses) {
     if (!r.email) continue;
-    evenements.push({ type: 'repondu', email: r.email, corps: r.corps ?? '', messageId: r.id || null, aMs: r.horodatageMs });
+    const { corps, sujet } = completerCorpsReponse(r, taches);
+    evenements.push({ type: 'repondu', email: r.email, corps, sujet, messageId: r.id || null, aMs: r.horodatageMs });
   }
   return evenements;
 }
@@ -363,6 +392,17 @@ export async function releverSalesBlink(
   const fluxSatures: string[] = [];
 
   try {
+    // Tâches `/inbox` : un seul appel par passage, réutilisé par l'étape 6
+    // (relances en file) et pour combler le corps vide des réponses ci-dessous
+    // (décision 1, tâche 10) — d'où sa remontée avant la fenêtre datée.
+    const { taches, sature: tachesSaturees } = await client.listerTachesReponse(cle);
+    if (tachesSaturees) {
+      fluxSatures.push('taches_reply');
+      console.warn(
+        `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « taches_reply » (totalCount dépasse ce qui a été récupéré) — le passage suivant reprend là où celui-ci s'arrête`,
+      );
+    }
+
     if (fenetreOuverte) {
       // 2. Envois sortis terminés : marquent l'action livrée (message_id posé par SalesBlink).
       const envois = await client.listerEnvoisSortis(curseurDepart, cle, { jusquaMs: jusqua });
@@ -383,7 +423,7 @@ export async function releverSalesBlink(
       const reponses = await client.listerReponses(curseurDepart, cle, { jusquaMs: jusqua });
       const s2 = verifierSaturation(org, 'reponses', reponses.length);
       if (s2) fluxSatures.push(s2);
-      const evRepondus = versEvenementsRepondus(reponses);
+      const evRepondus = versEvenementsRepondus(reponses, taches);
       for (const ev of evRepondus) {
         await traiterEvenementEmail(pool, org, ev, 'salesblink');
       }
@@ -446,19 +486,13 @@ export async function releverSalesBlink(
       }
     }
 
-    // 6. Tâches de relance (`reply`) en file chez SalesBlink : terminées →
-    // livrées ; en erreur → repli immédiat, sans attendre le délai (mesuré le
-    // 11/09 : une tâche en erreur n'est jamais rejouée par SalesBlink) ; trop
-    // vieilles → repli forcé et notification. Ce flux n'a pas de fenêtre
-    // temporelle (SalesBlink ne le filtre pas par date) : il tourne à chaque
-    // passage, même quand la fenêtre datée ci-dessus est encore trop fraîche.
-    const { taches, sature: tachesSaturees } = await client.listerTachesReponse(cle);
-    if (tachesSaturees) {
-      fluxSatures.push('taches_reply');
-      console.warn(
-        `[releve-salesblink] org ${org} : fenêtre saturée sur le flux « taches_reply » (totalCount dépasse ce qui a été récupéré) — le passage suivant reprend là où celui-ci s'arrête`,
-      );
-    }
+    // 6. Tâches de relance (`reply`) en file chez SalesBlink (déjà récupérées
+    // ci-dessus, un seul appel par passage) : terminées → livrées ; en erreur
+    // → repli immédiat, sans attendre le délai (mesuré le 11/09 : une tâche en
+    // erreur n'est jamais rejouée par SalesBlink) ; trop vieilles → repli
+    // forcé et notification. Ce flux n'a pas de fenêtre temporelle (SalesBlink
+    // ne le filtre pas par date) : il tourne à chaque passage, même quand la
+    // fenêtre datée ci-dessus est encore trop fraîche.
     for (const tache of taches) {
       if (tache.termine) {
         await marquerActionLivreeParTacheReponse(pool, org, tache);
