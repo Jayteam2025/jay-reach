@@ -11,9 +11,43 @@ import {
   toStepConditions,
   type CampaignStatus,
 } from '@jay-reach/core';
-import { requireRole } from '../../lib/auth';
+import { requireRole, getUser } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
 import { manquesTransportEmail } from './transport-email';
+
+/**
+ * Journal d'activité (tâche 6) : `campaign_activated`/`campaign_paused` sont
+ * les deux seuls événements du journal déclenchés depuis l'écran plutôt que
+ * par le moteur — `actorId` porte donc l'utilisateur qui a agi, jamais `null`.
+ *
+ * Écrit directement via le client Supabase (pas `ecrireEvenement` de
+ * `@jay-reach/core`, qui attend un `Executeur` `pg` — cette action serveur
+ * n'en a pas) : même forme de ligne, dans la même table.
+ */
+async function journaliserChangementStatutCampagne(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: { organizationId: string; campaignId: string; actorId: string | null; actif: boolean },
+): Promise<void> {
+  const action = params.actif ? 'campaign_activated' : 'campaign_paused';
+  try {
+    // `.insert()` de Supabase JS ne lève pas : l'échec revient dans `error`,
+    // jamais en exception — vérifié explicitement, sinon un échec silencieux
+    // ne serait ni journalisé ni averti.
+    const { error } = await supabase.from('audit_events').insert({
+      organization_id: params.organizationId,
+      actor_id: params.actorId,
+      entity_type: 'campaign',
+      entity_id: params.campaignId,
+      action,
+      diff: { libelle: params.actif ? 'Campagne activée.' : 'Campagne mise en pause.' },
+    });
+    if (error) {
+      console.warn(`[journal] ${action}`, error);
+    }
+  } catch (err) {
+    console.warn(`[journal] ${action}`, err);
+  }
+}
 
 export type CampaignActionResult = { ok: true; id: string } | { ok: false; error: string; issues?: string[] };
 export type SimpleResult = { ok: true } | { ok: false; error: string; issues?: string[] };
@@ -311,6 +345,19 @@ export async function setCampaignStatus(organizationId: string, campaignId: stri
     .eq('id', campaignId)
     .eq('organization_id', organizationId);
   if (error) return { ok: false, error: error.message };
+
+  // Journal d'activité (tâche 6) : seules les transitions active/en pause
+  // comptent comme événement — brouillon et archivée n'ont pas d'action dédiée.
+  if (s.data === 'active' || s.data === 'paused') {
+    const utilisateur = await getUser();
+    await journaliserChangementStatutCampagne(supabase, {
+      organizationId,
+      campaignId,
+      actorId: utilisateur?.id ?? null,
+      actif: s.data === 'active',
+    });
+  }
+
   revalidatePath(`/campaigns/${campaignId}`);
   return { ok: true };
 }

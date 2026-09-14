@@ -21,6 +21,7 @@ import {
   corpsPourSalesBlink,
   objetPourSalesBlink,
   assurerFil,
+  ecrireEvenement,
   type ModeEnvoi,
 } from '@jay-reach/core';
 import {
@@ -290,6 +291,13 @@ interface EnvoiAnterieur {
 function messageErreurGenerique(err: ErreurSalesBlink): string {
   const statut = err.statut !== null ? ` ${err.statut}` : '';
   return `Envoi SalesBlink en échec (${err.code}${statut}) : ${err.message}`;
+}
+
+/** Libellé du mode d'envoi, pour le journal d'activité (tâche 6). */
+export function libelleModeEnvoi(mode: ModeEnvoi['mode']): string {
+  if (mode === 'relance') return 'réponse dans le fil';
+  if (mode === 'relance_repli') return 'relance en nouveau fil';
+  return 'premier email';
 }
 
 /**
@@ -570,6 +578,21 @@ export async function envoyerEmailSalesBlink(
     // entrant plutôt que de refléter cette relance sortante.
     await pool.query(`update threads set last_message_at = now() where id = $1`, [filId]);
     console.log(`[email-salesblink] action ${actionId} envoyée (${mode.mode})`);
+
+    // Journal d'activité (tâche 6) : jamais d'échec du handler pour ça, l'envoi
+    // a déjà eu lieu — un journal qui ne s'écrit pas ne doit pas faire échouer
+    // pg-boss et retenter un email déjà parti.
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: job.organizationId,
+        entityType: 'contact',
+        entityId: email.contactId,
+        action: 'action_sent',
+        diff: { libelle: `Email envoyé : ${libelleModeEnvoi(mode.mode)}.` },
+      });
+    } catch (err) {
+      console.warn('[journal] action_sent', err);
+    }
   } catch (err) {
     // 8. Erreur SalesBlink : nouvel essai ou échec définitif selon le code et
     // le nombre d'essais déjà comptés. Toute autre erreur (SQL, bug) remonte

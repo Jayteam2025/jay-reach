@@ -13,7 +13,14 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
+import {
+  QUEUES,
+  resolveScoringModel,
+  placesRestantes,
+  reduireLotAuReste,
+  ecrireEvenement,
+  nettoyerMessageErreurJournal,
+} from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
@@ -104,6 +111,53 @@ export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000
  */
 export const REJEU_ACTIONS_EMAIL_MS = 5 * 60 * 1000;
 
+// --------------------------------------------------- journal d'activité (T6)
+
+/** Noms d'affichage des connecteurs de signaux, pour le libellé `source_run` du journal. */
+const LIBELLES_PROVIDER_SOURCE: Record<string, string> = {
+  adzuna: 'Adzuna',
+  francetravail: 'France Travail',
+  apify: 'Apify',
+};
+
+/** Libellé + détail d'un passage de collecte, pour `ecrireEvenement` (action `source_run`). */
+export function libelleSourceRun(provider: string, found: number, added: number): { libelle: string; detail?: string } {
+  const nom = LIBELLES_PROVIDER_SOURCE[provider] ?? provider;
+  const ignorees = found - added;
+  const libelle = `Passage ${nom} : ${found} offre(s) lue(s), ${added} retenue(s)`;
+  return ignorees > 0 ? { libelle, detail: `${ignorees} offre(s) déjà connue(s) ignorée(s).` } : { libelle };
+}
+
+/** Libellé + détail d'un lot de scoring, pour `ecrireEvenement` (action `scoring_batch`). */
+export function libelleScoringBatch(resume: { scored: number; qualified: number; learned: number }): {
+  libelle: string;
+  detail?: string;
+} {
+  const libelle = `Scoring : ${resume.scored} signal(aux) noté(s), ${resume.qualified} retenu(s) au-dessus du seuil`;
+  return resume.learned > 0
+    ? { libelle, detail: `${resume.learned} entreprise(s) appris(e)(s) comme cabinet(s) de recrutement.` }
+    : { libelle };
+}
+
+/**
+ * Libellé + détail d'un lot d'enrichissement, pour `ecrireEvenement` (action
+ * `enrichment_batch`). Le crédit FullEnrich est fixé à 1 : il a déjà été
+ * consommé par paire compte/persona AVANT l'enfilement de ce job
+ * (`app.consume_provider_credit`, `enqueueEnrichmentForQualified` dans
+ * `producer.ts`) — jamais reconsommé ici, ce lot en représente donc toujours
+ * exactement un.
+ */
+export function libelleEnrichmentBatch(
+  companyName: string,
+  demandes: number,
+  trouves: number,
+): { libelle: string; detail: string } {
+  return {
+    libelle: `Enrichissement ${companyName} : ${trouves} contact(s) trouvé(s) sur ${demandes} demandé(s)`,
+    detail: '1 crédit FullEnrich consommé.',
+  };
+}
+
 // ---------------------------------------------------------------- collecte
 
 export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise<void> {
@@ -148,8 +202,30 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
     console.log(
       `[discover] ${result.signals.length} trouvés, ${inserted.length} nouveaux → qualif, ${result.errors.length} erreur(s) en ${result.duration_ms} ms`,
     );
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: data.organizationId,
+        entityType: 'source',
+        entityId: data.sourceId,
+        action: 'source_run',
+        diff: libelleSourceRun(data.provider, result.signals.length, inserted.length),
+      });
+    } catch (err) {
+      console.warn('[journal] source_run', err);
+    }
   } catch (err) {
     await finishSourceRun(pool, runId, { found: 0, added: 0, status: 'error', error: String(err) });
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: data.organizationId,
+        entityType: 'engine',
+        entityId: null,
+        action: 'engine_error',
+        diff: { libelle: nettoyerMessageErreurJournal(err instanceof Error ? err.message : String(err)) },
+      });
+    } catch (err2) {
+      console.warn('[journal] engine_error', err2);
+    }
     throw err; // laisse pg-boss appliquer le backoff/reprise
   }
 }
@@ -241,6 +317,19 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
     `[score] org ${data.organizationId} : ${summary.considered} examinés, ${summary.prefiltered} pré-filtrés, ` +
       `${summary.qualified} qualifiés, ${summary.discarded} écartés, ${summary.learned} appris`,
   );
+  try {
+    await ecrireEvenement(pool, {
+      organisationId: data.organizationId,
+      // Le scoring porte sur les signaux en attente de TOUTE l'organisation,
+      // pas sur une source précise : `entityId` reste `null`.
+      entityType: 'source',
+      entityId: null,
+      action: 'scoring_batch',
+      diff: libelleScoringBatch(summary),
+    });
+  } catch (err) {
+    console.warn('[journal] scoring_batch', err);
+  }
 }
 
 // -------------------------------------------------------------------- envoi
@@ -475,6 +564,18 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
     console.log(`[enrich-contacts] ${patterns} pattern(s) de domaine recalculé(s)`);
   }
   console.log(`[enrich-contacts] ${data.companyName} → ${saved} contact(s) avec email persisté(s)`);
+  try {
+    await ecrireEvenement(pool, {
+      organisationId: data.organizationId,
+      // Le lot peut produire plusieurs contacts : pas UNE fiche précise, `entityId` reste `null`.
+      entityType: 'contact',
+      entityId: null,
+      action: 'enrichment_batch',
+      diff: libelleEnrichmentBatch(data.companyName, data.maxContacts ?? 10, saved),
+    });
+  } catch (err) {
+    console.warn('[journal] enrichment_batch', err);
+  }
 }
 
 // ------------------------------------------------------------- production
