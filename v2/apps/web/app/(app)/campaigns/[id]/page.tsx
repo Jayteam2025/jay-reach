@@ -1,186 +1,161 @@
-import { notFound } from 'next/navigation';
-import { AppTopBar } from '../../chrome';
-import { createClientOrNull } from '../../../../lib/supabase/server';
-import type { CampaignDetail, Channel, SeqStepDetail } from '../../../../lib/sample-campaign-detail';
-import { CampaignDetailView } from './detail-view';
+import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
+import { lireVueDEnsemble } from '@jay-reach/core';
+import { contexteCourant } from '../../../../lib/contexte';
+import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
-const CHANNEL_TITLE: Record<Channel, string> = {
-  email: 'Email',
-  linkedin_invite: 'Invitation LinkedIn',
-  linkedin_message: 'Message LinkedIn',
-  letter: 'Courrier manuscrit',
-  call: 'Appel',
-};
+export const revalidate = 60;
 
-function extractVars(body: string): string[] {
-  const out = new Set<string>();
-  for (const m of body.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)) out.add(m[1]!);
-  return [...out];
+const nf = new Intl.NumberFormat('fr-FR');
+
+/** Aperçu de la file du jour affiché sur cette carte — la file complète vit dans l'onglet File du jour (tâche 11). */
+const TAILLE_APERCU_FILE = 5;
+
+function formatHeure(iso: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
 
-function daysAgo(iso: string | null): number {
-  if (!iso) return 0;
-  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+function pourcentageTexte(valeur: number): string {
+  return `${valeur.toLocaleString('fr-FR')} %`;
 }
 
-export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
+/** Tuile de logo pour l'icône d'une source, à partir de son `providerId` — copie locale de celle d'`(app)/page.tsx` (convention du module : pas de partage cross-fichier pour un si petit utilitaire, voir `campagnes.ts`). */
+function marqueSource(providerId: string): 'linkedin' | 'adzuna' | 'francetravail' | 'lettre' {
+  if (providerId.includes('linkedin')) return 'linkedin';
+  if (providerId.includes('adzuna')) return 'adzuna';
+  if (providerId.includes('francetravail')) return 'francetravail';
+  return 'lettre';
+}
+
+export default async function CampagneVueDEnsemblePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createClientOrNull();
+  const ctx = await contexteCourant();
+  const [t, vue] = await Promise.all([getTranslations('campagne'), lireVueDEnsemble(ctx, { campagneId: id })]);
 
-  const campaign = supabase
-    ? ((
-        await supabase
-          .from('campaigns')
-          .select('id,organization_id,name,status,entry_rules,daily_cap,created_at,source_id,list_id')
-          .eq('id', id)
-          .maybeSingle()
-      ).data as
-        | { id: string; organization_id: string; name: string; status: string; entry_rules: unknown; daily_cap: number | null; created_at: string; source_id: string | null; list_id: string | null }
-        | null)
-    : null;
-  if (!campaign) {
-    notFound();
-  }
-
-  const stat =
-    ((await supabase!.from('campaign_stats').select('*').eq('id', id).maybeSingle()).data as
-      | { enrolled: number; sent: number; contacted: number; invites: number; accepted: number; replies: number; channels: number }
-      | null) ?? { enrolled: 0, sent: 0, contacted: 0, invites: 0, accepted: 0, replies: 0, channels: 0 };
-
-  const stepRows =
-    ((
-      await supabase!
-        .from('sequence_steps')
-        .select('id,position,channel,delay_hours,template_parent_id,conditions')
-        .eq('campaign_id', id)
-        .order('position', { ascending: true })
-    ).data as
-      | { id: string; position: number; channel: Channel; delay_hours: number; template_parent_id: string | null; conditions: { requires?: string } | null }[]
-      | null) ?? [];
-
-  const templates =
-    ((
-      await supabase!
-        .from('message_templates')
-        .select('id,parent_id,name,channel,locale,version,subject,body,is_active,origin')
-        .eq('organization_id', campaign.organization_id)
-    ).data as
-      | { id: string; parent_id: string | null; name: string; channel: Channel; locale: string; version: number; subject: string | null; body: string; is_active: boolean; origin: string }[]
-      | null) ?? [];
-
-  // Lignée = parent_id, sinon id de la racine. On résume chaque lignée (nom, canal)
-  // et on retient la version ACTIVE (fr en priorité) pour l'aperçu de l'étape.
-  const famKey = (t: { parent_id: string | null; id: string }): string => t.parent_id ?? t.id;
-  const familyMap = new Map<string, { familyId: string; name: string; channel: Channel }>();
-  const activeByFamily = new Map<string, { name: string; subject: string | null; body: string }>();
-  for (const t of templates) {
-    const fam = famKey(t);
-    // Le sélecteur ne liste que la bibliothèque : un message écrit dans une
-    // étape appartient à sa campagne, pas au catalogue de modèles.
-    if (!familyMap.has(fam) && t.origin === 'library') {
-      familyMap.set(fam, { familyId: fam, name: t.name, channel: t.channel });
-    }
-    if (t.is_active) {
-      const prev = activeByFamily.get(fam);
-      // fr prime ; sinon on garde la première active rencontrée.
-      if (!prev || t.locale === 'fr') activeByFamily.set(fam, { name: t.name, subject: t.subject, body: t.body });
-    }
-  }
-  const templateFamilies = [...familyMap.values()];
-
-  const steps: SeqStepDetail[] = stepRows.map((s, i) => {
-    const active = s.template_parent_id ? activeByFamily.get(s.template_parent_id) : undefined;
-    const body = active?.body ?? '';
-    const preview = body ? body.split('\n')[0]! : `${CHANNEL_TITLE[s.channel]} — étape ${i + 1}`;
-    const requires = s.conditions?.requires;
-    const conditionKind =
-      requires === 'previous_opened' || requires === 'previous_accepted' || requires === 'no_reply' ? requires : null;
-    return {
-      n: i + 1,
-      id: s.id,
-      channel: s.channel,
-      title: active?.name ?? CHANNEL_TITLE[s.channel],
-      subject: active?.subject ?? undefined,
-      preview,
-      body,
-      templateParentId: s.template_parent_id,
-      delayDays: Math.round(s.delay_hours / 24),
-      conditionKind,
-      variables: extractVars(body),
-      validation: s.channel === 'letter',
-      eligible: stat.enrolled,
-      sent: i === 0 ? stat.sent : Math.max(0, stat.sent - i),
-      replied: i === stepRows.length - 1 ? stat.replies : 0,
-    };
-  });
-
-  const debutJourUtc = new Date();
-  debutJourUtc.setUTCHours(0, 0, 0, 0);
-  const { count: entriesToday } = await supabase!
-    .from('enrollments')
-    .select('id', { count: 'exact', head: true })
-    .eq('campaign_id', campaign.id)
-    .gte('started_at', debutJourUtc.toISOString());
-
-  const minScore = (campaign.entry_rules as { min_score?: number } | null)?.min_score;
-  const detail: CampaignDetail = {
-    id: campaign.id,
-    name: campaign.name,
-    status: (['active', 'paused', 'draft'].includes(campaign.status) ? campaign.status : 'draft') as CampaignDetail['status'],
-    total: stat.enrolled,
-    contacted: stat.contacted,
-    sent: stat.sent,
-    replies: stat.replies,
-    positives: stat.accepted,
-    acceptanceRate: stat.invites > 0 ? Math.round((stat.accepted / stat.invites) * 1000) / 10 : 0,
-    replyRate: stat.sent > 0 ? Math.round((stat.replies / stat.sent) * 1000) / 10 : 0,
-    createdDaysAgo: daysAgo(campaign.created_at),
-    nextSendIn: '—',
-    cadencePerDay: campaign.daily_cap,
-    entriesToday: entriesToday ?? 0,
-    qualif: minScore ? [`Score ≥ ${minScore}`] : [],
-    steps,
-    repliedContacts: [],
-    avatarOverflow: Math.max(0, stat.contacted - 5),
-    templateFamilies,
-    // Une campagne alimentée par un thème de veille dispose des variables du
-    // signal ; une campagne alimentée par une liste, non.
-    nature: campaign.list_id ? ('list' as const) : ('signal' as const),
-    locale: 'fr',
-  };
-
-  // File d'approbation de CETTE campagne (onglet « File d'attente »).
-  const approvalRows =
-    ((
-      await supabase!
-        .from('actions')
-        .select('id,channel,block_reason,enrollments!inner(campaign_id,contacts(first_name,last_name,accounts(name)))')
-        .eq('organization_id', campaign.organization_id)
-        .eq('status', 'pending_approval')
-        .eq('enrollments.campaign_id', id)
-    ).data as
-      | {
-          id: string;
-          channel: string;
-          block_reason: string | null;
-          enrollments: { contacts: { first_name: string | null; last_name: string | null; accounts: { name: string | null } | null } | null } | null;
-        }[]
-      | null) ?? [];
-  const pendingApprovals = approvalRows.map((a) => ({
-    id: a.id,
-    channel: a.channel,
-    contact: `${a.enrollments?.contacts?.first_name ?? ''} ${a.enrollments?.contacts?.last_name ?? ''}`.trim() || '—',
-    company: a.enrollments?.contacts?.accounts?.name ?? '—',
-    campaign: campaign.name,
-    reason: a.block_reason,
-  }));
+  const apercuFile = vue.fileDuJour.slice(0, TAILLE_APERCU_FILE);
+  const resteFile = vue.fileDuJour.length - apercuFile.length;
+  const dejaPartis = vue.fileDuJour.filter((envoi) => envoi.envoye).length;
 
   return (
-    <div className="rs-shell">
-      <AppTopBar active="campaigns" />
-      <main className="rs-main">
-        <CampaignDetailView detail={detail} pendingApprovals={pendingApprovals} orgId={campaign.organization_id} />
-      </main>
-    </div>
+    <section className="jr-contenu">
+      <Carte className="pleine">
+        <Entonnoir
+          etapes={[
+            { valeur: vue.entonnoir.trouves, libelle: t('overview.funnel.found') },
+            { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
+            { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence') },
+            { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: pourcentageTexte(vue.entonnoir.tauxLivres) },
+            { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: pourcentageTexte(vue.entonnoir.tauxReponses) },
+            { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
+          ]}
+        />
+      </Carte>
+
+      <Carte
+        titre={t('overview.queue.title')}
+        action={
+          <>
+            <small>{t('overview.queue.count', { envois: vue.fileDuJour.length, partis: dejaPartis })}</small>
+            <Link href={`/campaigns/${id}/queue`} className="jr-lien" style={{ fontSize: 13 }}>
+              {t('overview.queue.seeAll')}
+            </Link>
+          </>
+        }
+      >
+        {apercuFile.length === 0 ? (
+          <div className="jr-vide">{t('overview.queue.empty')}</div>
+        ) : (
+          <table className="jr-table">
+            <tbody>
+              {apercuFile.map((envoi) => (
+                <tr key={envoi.id}>
+                  <td style={{ paddingLeft: 0 }}>{envoi.heure ?? '—'}</td>
+                  <td>
+                    <div className="jr-qui">
+                      <Avatar nom={envoi.contactNom} canal={envoi.canal} />
+                      <span>
+                        <b>{envoi.contactNom}</b>
+                        <small>{envoi.etape !== null ? t('overview.queue.step', { n: envoi.etape }) : ''}</small>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="jr-secondaire" style={{ paddingRight: 0 }}>
+                    {envoi.expediteur ?? '—'}
+                  </td>
+                </tr>
+              ))}
+              {resteFile > 0 && (
+                <tr>
+                  <td colSpan={3} className="jr-secondaire" style={{ paddingLeft: 0 }}>
+                    {t('overview.queue.andMore', { n: resteFile })}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </Carte>
+
+      <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
+        <Carte titre={t('overview.caps.title')}>
+          <CleValeur
+            libelle={t('overview.caps.scoring')}
+            valeur={`${nf.format(vue.plafonds.scoring.utilise)} / ${nf.format(vue.plafonds.scoring.plafond)}`}
+          />
+          <CleValeur
+            libelle={t('overview.caps.enrichment')}
+            valeur={`${nf.format(vue.plafonds.enrichissement.utilise)} / ${nf.format(vue.plafonds.enrichissement.plafond)}`}
+          />
+          <CleValeur
+            libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
+            valeur={`${nf.format(vue.plafonds.envois.utilise)} / ${nf.format(vue.plafonds.envois.plafond)}`}
+          />
+          <Link href="/settings" className="jr-lien" style={{ display: 'block', marginTop: 10, fontSize: 13 }}>
+            {t('overview.caps.settingsLink')}
+          </Link>
+        </Carte>
+
+        <Carte titre={t('overview.sources.title')} action={<small>{t('overview.sources.count', { n: vue.sources.length })}</small>}>
+          {vue.sources.length === 0 ? (
+            <p className="jr-secondaire">{t('overview.sources.empty')}</p>
+          ) : (
+            vue.sources.map((source) => (
+              <div className="jr-source" key={source.providerId}>
+                <TuileLogo marque={marqueSource(source.providerId)} lettre={source.providerId.charAt(0).toUpperCase()} />
+                <span>
+                  <b>{source.providerId}</b>
+                </span>
+              </div>
+            ))
+          )}
+        </Carte>
+      </div>
+
+      <Carte
+        className="pleine"
+        titre={t('overview.activity.title')}
+        action={
+          <>
+            <small>{t('overview.activity.subtitle')}</small>
+            <Link href={`/campaigns/${id}/activity`} className="jr-lien" style={{ fontSize: 13 }}>
+              {t('overview.activity.seeAll')}
+            </Link>
+          </>
+        }
+      >
+        {vue.activite.length === 0 ? (
+          <p className="jr-secondaire">{t('overview.activity.empty')}</p>
+        ) : (
+          <Journal
+            entrees={vue.activite.map((evenement) => ({
+              heure: formatHeure(evenement.quand),
+              texte: evenement.libelle,
+              note: evenement.detail,
+              ton: evenement.type === 'engine_error' ? ('erreur' as const) : undefined,
+            }))}
+          />
+        )}
+      </Carte>
+    </section>
   );
 }

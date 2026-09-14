@@ -901,5 +901,102 @@
     "alerts": {
       "action": "Régler"
     }
+  },
+  "campagne": {
+    "list": {
+      "title": "Campagnes",
+      "description": "Une campagne = un persona, ses sources, sa séquence et ses boîtes d'envoi. Le moteur fait le reste.",
+      "new": "+ Nouvelle campagne",
+      "filters": {
+        "all": "{n, plural, one {Toutes #} other {Toutes #}}",
+        "active": "{n, plural, one {Active #} other {Actives #}}",
+        "paused": "{n, plural, one {En pause #} other {En pause #}}",
+        "draft": "{n, plural, one {Brouillon #} other {Brouillons #}}",
+        "archived": "{n, plural, one {Archivée #} other {Archivées #}}"
+      },
+      "search": "Rechercher une campagne…",
+      "columns": {
+        "campaign": "Campagne",
+        "status": "État",
+        "boxes": "Boîtes",
+        "contacts": "Contacts",
+        "sequence": "En séquence",
+        "replies": "Réponses",
+        "interested": "Intéressés",
+        "lastActivity": "Dernière activité"
+      },
+      "persona": "Persona {nom}",
+      "sourcesCount": "{n, plural, one {# source} other {# sources}}",
+      "noBoxes": "aucune",
+      "noSource": "aucune source",
+      "open": "Ouvrir",
+      "resume": "Reprendre",
+      "empty": {
+        "title": "Aucune campagne pour l'instant",
+        "text": "Une campagne réunit un persona, des sources, une séquence et des boîtes d'envoi. Comptez cinq minutes pour la première.",
+        "action": "+ Créer ma première campagne"
+      }
+    },
+    "status": {
+      "draft": "Brouillon",
+      "active": "Active",
+      "paused": "En pause",
+      "archived": "Archivée"
+    },
+    "header": {
+      "breadcrumb": "Campagnes",
+      "edit": "Modifier",
+      "launch": "Lancer",
+      "pause": "Mettre en pause",
+      "sendingFrom": "Envoie depuis"
+    },
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "contacts": "Contacts",
+      "queue": "File du jour",
+      "sources": "Sources",
+      "sequence": "Séquence",
+      "activity": "Activité",
+      "settings": "Réglages"
+    },
+    "overview": {
+      "funnel": {
+        "found": "Offres et profils trouvés",
+        "qualified": "Contacts qualifiés",
+        "inSequence": "En séquence",
+        "delivered": "Emails livrés",
+        "replies": "Réponses",
+        "interested": "Intéressés"
+      },
+      "queue": {
+        "title": "File du jour",
+        "count": "{envois, plural, one {# envoi prévu} other {# envois prévus}}, {partis, plural, one {# déjà parti} other {# déjà partis}}",
+        "seeAll": "Voir la file",
+        "step": "Étape {n}",
+        "andMore": "{n, plural, one {et # autre} other {et # autres}}",
+        "empty": "Rien à envoyer aujourd'hui pour cette campagne."
+      },
+      "caps": {
+        "title": "Plafonds du jour",
+        "scoring": "Scoring (Anthropic)",
+        "enrichment": "Enrichissement (FullEnrich)",
+        "sending": "{n, plural, one {Envois (SalesBlink, # boîte)} other {Envois (SalesBlink, # boîtes)}}",
+        "settingsLink": "Régler les plafonds"
+      },
+      "sources": {
+        "title": "Sources",
+        "count": "{n, plural, one {# active} other {# actives}}",
+        "empty": "Aucune source reliée à cette campagne."
+      },
+      "activity": {
+        "title": "Activité récente",
+        "subtitle": "tout ce que le moteur a fait sur cette campagne",
+        "seeAll": "Tout voir",
+        "empty": "Aucune activité pour le moment."
+      }
+    },
+    "notifications": {
+      "launchBlocked": "Impossible : {liste}."
+    }
   }
 }

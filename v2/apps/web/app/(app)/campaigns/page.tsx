@@ -1,131 +1,147 @@
-import { getTranslations } from 'next-intl/server';
-import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../../lib/supabase/server';
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
+import { listerCampagnes } from '@jay-reach/core';
+import type { CampaignStatus } from '@jay-reach/core';
+import { contexteCourant } from '../../../lib/contexte';
+import { Carte, EnTetePage, EtatVide, Puce, Table, TuileLogo } from '../../../components/ui';
+import type { PuceTon } from '../../../components/ui';
 
-const STATUS_TONE: Record<string, string> = { active: 'live', paused: 'neutral', draft: 'ghost', archived: 'neutral' };
-const nf = (n: number): string => n.toLocaleString('fr-FR');
-const pct = (a: number, b: number): number => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
+export const revalidate = 60;
 
-interface Stat {
-  id: string;
-  name: string;
-  status: string;
-  source_id: string | null;
-  enrolled: number;
-  sent: number;
-  contacted: number;
-  invites: number;
-  accepted: number;
-  replies: number;
-  channels: number;
-}
+const nf = new Intl.NumberFormat('fr-FR');
 
-export default async function CampaignsPage() {
-  const t = await getTranslations();
-  const supabase = await createClientOrNull();
-  const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
-  const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
+const TON_STATUT_CAMPAGNE: Record<CampaignStatus, PuceTon> = {
+  draft: 'gris',
+  active: 'bon',
+  paused: 'attention',
+  archived: 'gris',
+};
 
-  // Deux lectures indépendantes : elles partent ensemble.
-  const [stats, sources] = supabase && orgId
-    ? await Promise.all([
-        supabase
-          .from('campaign_stats')
-          .select('*')
-          .eq('organization_id', orgId)
-          .then((r) => (r.data as Stat[] | null) ?? []),
-        supabase
-          .from('sources')
-          .select('id,name')
-          .eq('organization_id', orgId)
-          .then((r) => (r.data as { id: string; name: string }[] | null) ?? []),
-      ])
-    : [[] as Stat[], [] as { id: string; name: string }[]];
-  const sourceName = new Map(sources.map((s) => [s.id, s.name]));
-
+/**
+ * Puces de filtre : comptes informatifs, pas des filtres cliquables — même
+ * registre que `Puce` partout ailleurs dans le kit (une étiquette en lecture
+ * seule, jamais un contrôle). Câbler un vrai filtre (client, ou un paramètre
+ * sur `listerCampagnes`) est un aller simple pour une prochaine tâche, pas
+ * un objet de celle-ci (brief : liste, en-tête à onglets, Vue d'ensemble).
+ */
+function ComptesParStatut({
+  campagnes,
+  t,
+}: {
+  campagnes: { statut: CampaignStatus }[];
+  t: (cle: string, valeurs: Record<string, number>) => string;
+}) {
+  const compte = (statut: CampaignStatus) => campagnes.filter((c) => c.statut === statut).length;
   return (
-    <div className="rs-shell">
-      <AppTopBar active="campaigns" />
-      <main className="rs-main">
-        <div className="rs-page-head">
-          <div>
-            <p className="rs-eyebrow">{t('campaigns.eyebrow')}</p>
-            <h1>{t('campaigns.title')}</h1>
-            <p className="rs-lead" style={{ marginBottom: 0 }}>
-              {t('campaigns.subtitle')}
-            </p>
-          </div>
-          <div className="rs-head-actions">
-            {/* Les thèmes de veille ont quitté le menu principal : on configure
-                d'où viennent les prospects là où on construit la campagne qu'ils
-                alimentent, pas dans une entrée de navigation séparée. */}
-            <Link className="rs-btn" href="/settings/sources">
-              {t('campaigns.watchThemes')}
-            </Link>
-            <Link className="rs-btn" data-primary="true" href="/campaigns/new">
-              {t('campaigns.newCampaign')}
-            </Link>
-          </div>
-        </div>
-
-        <div className="rs-camp-grid" style={{ marginTop: 18, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-          {stats.map((c) => {
-            const treated = pct(c.contacted, c.enrolled);
-            const acceptance = pct(c.accepted, c.invites);
-            const replyRate = pct(c.replies, c.sent);
-            const live = c.status === 'active';
-            return (
-              <Link key={c.id} href={`/campaigns/${c.id}`} className="rs-camp-card" style={{ display: 'block', color: 'inherit' }}>
-                <div className="rs-camp-head">
-                  <h3 style={{ fontSize: 15 }}>{c.name}</h3>
-                  <span className="rs-pill" data-tone={STATUS_TONE[c.status] ?? 'ghost'}>
-                    {t(`campaigns.status.${c.status}`)}
-                  </span>
-                </div>
-
-                <div className="rs-figs" style={{ gridTemplateColumns: 'repeat(2, 1fr)', rowGap: 12 }}>
-                  <Fig label={t('campaigns.fig.contacted')} value={`${nf(c.contacted)} / ${nf(c.enrolled)}`} sub={t('campaigns.treated', { pct: treated })} />
-                  <Fig label={t('campaigns.fig.sent')} value={nf(c.sent)} sub={t('campaigns.channelsN', { n: c.channels })} />
-                  <Fig label={t('campaigns.fig.accepted')} value={`${nf(acceptance)} %`} sub={t('campaigns.linkedinInvites')} live={live} />
-                  <Fig label={t('campaigns.fig.replies')} value={nf(c.replies)} sub={t('campaigns.replyRateSub', { pct: nf(replyRate) })} live={live} />
-                </div>
-
-                <div className="rs-meter">
-                  <span style={{ width: `${treated}%`, background: live ? 'var(--lime)' : 'var(--slate3)' }} />
-                </div>
-
-                <div className="rs-camp-foot">
-                  <span className="rs-row-sub">{(c.source_id && sourceName.get(c.source_id)) || t('campaigns.eyebrow')}</span>
-                  <span className="rs-open">{t('campaigns.open')}</span>
-                </div>
-              </Link>
-            );
-          })}
-
-          {/* Carte pointillée « Importer un fichier » */}
-          <Link href="/import" className="rs-camp-card rs-import-card">
-            <div>
-              <div className="rs-import-title">{t('campaigns.importCard.title')}</div>
-              <div className="rs-row-sub" style={{ maxWidth: 280, marginTop: 4 }}>
-                {t('campaigns.importCard.desc')}
-              </div>
-            </div>
-          </Link>
-        </div>
-      </main>
+    <div className="jr-puces">
+      <Puce ton="accent">{t('list.filters.all', { n: campagnes.length })}</Puce>
+      <Puce>{t('list.filters.active', { n: compte('active') })}</Puce>
+      <Puce>{t('list.filters.paused', { n: compte('paused') })}</Puce>
+      <Puce>{t('list.filters.draft', { n: compte('draft') })}</Puce>
+      <Puce>{t('list.filters.archived', { n: compte('archived') })}</Puce>
     </div>
   );
 }
 
-function Fig({ label, value, sub, live }: { label: string; value: string; sub: string; live?: boolean }) {
+export default async function CampagnesPage() {
+  const ctx = await contexteCourant();
+  const [t, campagnes] = await Promise.all([getTranslations('campagne'), listerCampagnes(ctx)]);
+
   return (
-    <div>
-      <div className="rs-fig-l">{label}</div>
-      <div className="rs-fig-n" data-live={live ? 'true' : undefined}>
-        {value}
-      </div>
-      <div className="rs-fig-sub">{sub}</div>
-    </div>
+    <>
+      <EnTetePage
+        titre={t('list.title')}
+        description={t('list.description')}
+        action={
+          <Link href="/campaigns/new" className="jr-bouton sombre">
+            {t('list.new')}
+          </Link>
+        }
+      />
+      <section className="jr-contenu une-colonne">
+        <ComptesParStatut campagnes={campagnes} t={t} />
+
+        {campagnes.length === 0 ? (
+          <EtatVide
+            titre={t('list.empty.title')}
+            texte={t('list.empty.text')}
+            action={
+              <Link href="/campaigns/new" className="jr-bouton">
+                {t('list.empty.action')}
+              </Link>
+            }
+          />
+        ) : (
+          <Carte>
+            <Table
+              colonnes={[
+                { cle: 'campagne', titre: t('list.columns.campaign') },
+                { cle: 'statut', titre: t('list.columns.status') },
+                { cle: 'boites', titre: t('list.columns.boxes') },
+                { cle: 'contacts', titre: t('list.columns.contacts'), num: true },
+                { cle: 'sequence', titre: t('list.columns.sequence'), num: true },
+                { cle: 'reponses', titre: t('list.columns.replies'), num: true },
+                { cle: 'interesses', titre: t('list.columns.interested'), num: true },
+                { cle: 'activite', titre: t('list.columns.lastActivity') },
+                { cle: 'action', titre: '' },
+              ]}
+              lignes={campagnes.map((campagne) => ({
+                campagne: (
+                  <div className="jr-qui">
+                    <TuileLogo marque="lettre" lettre={campagne.nom.charAt(0).toUpperCase()} />
+                    <span>
+                      <b>{campagne.nom}</b>
+                      <small>
+                        {t('list.persona', { nom: campagne.nom })}
+                        {' · '}
+                        {campagne.sources.length > 0 ? t('list.sourcesCount', { n: campagne.sources.length }) : t('list.noSource')}
+                      </small>
+                    </span>
+                  </div>
+                ),
+                statut: (
+                  <Puce ton={TON_STATUT_CAMPAGNE[campagne.statut]} point={campagne.statut !== 'draft'}>
+                    {t(`status.${campagne.statut}`)}
+                  </Puce>
+                ),
+                boites:
+                  campagne.boites.length === 0 ? (
+                    <span className="jr-secondaire">{t('list.noBoxes')}</span>
+                  ) : (
+                    <span className="jr-pile">
+                      {campagne.boites.map((boite) => (
+                        <span key={boite.id} className="jr-avatar" style={{ background: 'var(--jr-surface)', borderColor: 'var(--jr-filet)' }}>
+                          {boite.marque ? <i className={`jr-logo-inline jr-logo-${boite.marque}`} /> : boite.identite.charAt(0).toUpperCase()}
+                        </span>
+                      ))}
+                    </span>
+                  ),
+                contacts: nf.format(campagne.qualifies),
+                sequence: nf.format(campagne.enSequence),
+                reponses:
+                  campagne.qualifies === 0 ? (
+                    <span className="jr-secondaire">—</span>
+                  ) : (
+                    <>
+                      <b>{nf.format(campagne.reponses)}</b>{' '}
+                      <small className="jr-secondaire">{campagne.tauxReponse.toLocaleString('fr-FR')} %</small>
+                    </>
+                  ),
+                // Ni « intéressés » ni « dernière activité » ne sont portés par
+                // `CampagneListeResume` (packages/core/src/fonctions/campagnes.ts,
+                // tâche 7) : un tiret plutôt qu'une valeur inventée.
+                interesses: <span className="jr-secondaire">—</span>,
+                activite: <span className="jr-secondaire">—</span>,
+                action: (
+                  <Link href={`/campaigns/${campagne.id}`} className="jr-bouton petit">
+                    {campagne.statut === 'draft' ? t('list.resume') : t('list.open')}
+                  </Link>
+                ),
+              }))}
+            />
+          </Carte>
+        )}
+      </section>
+    </>
   );
 }
