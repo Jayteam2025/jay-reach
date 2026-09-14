@@ -5,7 +5,7 @@
  * routes planifiées de l'application. Ce fichier ne s'occupe que du mode
  * d'exécution : écouter en continu et déclencher les producteurs à intervalle.
  */
-import { QUEUES } from '@jay-reach/core';
+import { QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
 import {
   ecrireBattementFichier,
@@ -65,9 +65,16 @@ async function main(): Promise<void> {
     try {
       const erreur = await produire(ctx);
       await enregistrerTour(pool, identite, 'production', messageErreur(erreur));
+      // R23 (tour de correction 1) : une erreur de cycle rejoint aussi le
+      // journal d'activité (`audit_events`), pas seulement `engine_status.last_error` —
+      // sans quoi l'onglet Activité ne voit jamais un cycle de production en échec.
+      if (erreur) {
+        await journaliserErreurMoteur(pool, erreur, 'cycle de production');
+      }
     } catch (err) {
       // Ne peut venir que de l'enregistrement lui-même (fichier ou base) :
-      // `produire` avale déjà ses propres erreurs et les retourne.
+      // `produire` avale déjà ses propres erreurs et les retourne, et
+      // `journaliserErreurMoteur` avale les siennes.
       console.error('[battement] enregistrement impossible', err);
     }
   };
@@ -81,6 +88,9 @@ async function main(): Promise<void> {
         await ecrireBattementFichier(cheminBattement);
       }
       await enregistrerTour(pool, identite, 'tick', messageErreur(erreur));
+      if (erreur) {
+        await journaliserErreurMoteur(pool, erreur, 'tick');
+      }
     } catch (err) {
       console.error('[battement] enregistrement impossible', err);
     }

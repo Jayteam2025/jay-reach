@@ -23,7 +23,7 @@ import {
 } from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
-import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
+import { runScore, DEFAULT_BATCH, compterSignauxScorables, type ScoreSummary } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
@@ -149,13 +149,62 @@ export function libelleScoringBatch(resume: { scored: number; qualified: number;
  */
 export function libelleEnrichmentBatch(
   companyName: string,
-  demandes: number,
-  trouves: number,
+  contactsTraites: number,
+  emailsTrouves: number,
 ): { libelle: string; detail: string } {
   return {
-    libelle: `Enrichissement ${companyName} : ${trouves} contact(s) trouvé(s) sur ${demandes} demandé(s)`,
+    // R24 (tour de correction 1) : `contactsTraites` est le nombre de contacts
+    // réellement passés dans le lot (`contacts.length` de `runFindContacts`),
+    // jamais `maxContacts` — ce que le lot a demandé n'est pas ce qu'il a reçu.
+    libelle: `Enrichissement ${companyName} : ${emailsTrouves} email(s) trouvé(s) sur ${contactsTraites} contact(s) traité(s)`,
     detail: '1 crédit FullEnrich consommé.',
   };
+}
+
+/**
+ * Écrit `scoring_batch` dans le journal. Isolée de `traiterScore` (tour de
+ * correction 1, point 5) : `runScore` dépend d'un scorer LLM sans harnais de
+ * test existant, cette fonction reste testable seule avec un pool factice.
+ * N'échoue jamais le handler appelant.
+ */
+export async function journaliserScoringBatch(pool: Pool, organisationId: string, resume: ScoreSummary): Promise<void> {
+  try {
+    await ecrireEvenement(pool, {
+      organisationId,
+      // Voir le commentaire au point d'appel : même `entityType` qu'`engine_error`.
+      entityType: 'engine',
+      entityId: null,
+      action: 'scoring_batch',
+      diff: libelleScoringBatch(resume),
+    });
+  } catch (err) {
+    console.warn('[journal] scoring_batch', err);
+  }
+}
+
+/**
+ * Écrit `enrichment_batch` dans le journal. Isolée de `traiterEnrichContacts`
+ * pour la même raison (dépendance FullEnrich sans harnais de test). N'échoue
+ * jamais le handler appelant.
+ */
+export async function journaliserEnrichmentBatch(
+  pool: Pool,
+  organisationId: string,
+  companyName: string,
+  contactsTraites: number,
+  emailsTrouves: number,
+): Promise<void> {
+  try {
+    await ecrireEvenement(pool, {
+      organisationId,
+      entityType: 'engine',
+      entityId: null,
+      action: 'enrichment_batch',
+      diff: libelleEnrichmentBatch(companyName, contactsTraites, emailsTrouves),
+    });
+  } catch (err) {
+    console.warn('[journal] enrichment_batch', err);
+  }
 }
 
 // ---------------------------------------------------------------- collecte
@@ -317,19 +366,7 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
     `[score] org ${data.organizationId} : ${summary.considered} examinés, ${summary.prefiltered} pré-filtrés, ` +
       `${summary.qualified} qualifiés, ${summary.discarded} écartés, ${summary.learned} appris`,
   );
-  try {
-    await ecrireEvenement(pool, {
-      organisationId: data.organizationId,
-      // Le scoring porte sur les signaux en attente de TOUTE l'organisation,
-      // pas sur une source précise : `entityId` reste `null`.
-      entityType: 'source',
-      entityId: null,
-      action: 'scoring_batch',
-      diff: libelleScoringBatch(summary),
-    });
-  } catch (err) {
-    console.warn('[journal] scoring_batch', err);
-  }
+  await journaliserScoringBatch(pool, data.organizationId, summary);
 }
 
 // -------------------------------------------------------------------- envoi
@@ -564,18 +601,7 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
     console.log(`[enrich-contacts] ${patterns} pattern(s) de domaine recalculé(s)`);
   }
   console.log(`[enrich-contacts] ${data.companyName} → ${saved} contact(s) avec email persisté(s)`);
-  try {
-    await ecrireEvenement(pool, {
-      organisationId: data.organizationId,
-      // Le lot peut produire plusieurs contacts : pas UNE fiche précise, `entityId` reste `null`.
-      entityType: 'contact',
-      entityId: null,
-      action: 'enrichment_batch',
-      diff: libelleEnrichmentBatch(data.companyName, data.maxContacts ?? 10, saved),
-    });
-  } catch (err) {
-    console.warn('[journal] enrichment_batch', err);
-  }
+  await journaliserEnrichmentBatch(pool, data.organizationId, data.companyName, contacts.length, saved);
 }
 
 // ------------------------------------------------------------- production

@@ -588,7 +588,9 @@ export async function envoyerEmailSalesBlink(
         entityType: 'contact',
         entityId: email.contactId,
         action: 'action_sent',
-        diff: { libelle: `Email envoyé : ${libelleModeEnvoi(mode.mode)}.` },
+        // R22 (tour de correction 1) : `campagneId` connu directement, l'envoi
+        // porte déjà la campagne de son étape — pas de requête supplémentaire.
+        diff: { libelle: `Email envoyé : ${libelleModeEnvoi(mode.mode)}.`, campagneId: email.campaignId },
       });
     } catch (err) {
       console.warn('[journal] action_sent', err);

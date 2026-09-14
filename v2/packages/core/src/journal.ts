@@ -80,3 +80,35 @@ export function nettoyerMessageErreurJournal(message: string): string {
   const sansParametres = sansEmails.replace(/\b(https?:\/\/[^\s?]+)\?[^\s]*/gi, '$1?[paramètres masqués]');
   return sansParametres.slice(0, LONGUEUR_MAX_ERREUR_JOURNAL);
 }
+
+/**
+ * Journalise une erreur de CYCLE du moteur (`produire`/`produireTick` dans
+ * `apps/worker/src/index.ts`), pas une erreur métier déjà rattachée à une
+ * organisation (celles-là passent par `ecrireEvenement` directement, comme
+ * `traiterDiscover`). Une erreur de cycle n'a pas d'organisation propre — le
+ * moteur est mono-instance — donc on écrit un `engine_error` pour chaque
+ * organisation existante : c'est ce qui alimente `erreursDepuisMinuit` par
+ * organisation (`fonctions/moteur.ts`) sans changer le schéma d'`audit_events`
+ * (`organization_id` reste `NOT NULL`).
+ *
+ * `contexte` (« cycle de production », « tick ») distingue dans `diff.detail`
+ * quel minuteur a échoué. Tour de correction 1, R23. N'échoue jamais : un
+ * journal qui échoue ne doit jamais faire tomber le worker.
+ */
+export async function journaliserErreurMoteur(ex: Executeur, erreur: Error, contexte?: string): Promise<void> {
+  try {
+    const organisations = await ex.query<{ id: string }>('select id from organizations');
+    const libelle = nettoyerMessageErreurJournal(erreur.message);
+    for (const organisation of organisations.rows) {
+      await ecrireEvenement(ex, {
+        organisationId: organisation.id,
+        entityType: 'engine',
+        entityId: null,
+        action: 'engine_error',
+        diff: contexte ? { libelle, detail: contexte } : { libelle },
+      });
+    }
+  } catch (err) {
+    console.warn('[journal] engine_error (cycle)', err);
+  }
+}

@@ -48,10 +48,16 @@ export async function lireEtatMoteur(ctx: Contexte): Promise<EtatMoteurResume> {
         limit 1`,
     ),
     ctx.ex.query<{ n: number }>(
+      // `entity_type = 'engine'` seul ne suffit plus depuis la tâche 6 : les
+      // journaux de lot (`scoring_batch`, `enrichment_batch`) portent aussi
+      // cet `entity_type` (pas de source/campagne unique à rattacher) — sans
+      // le filtre sur `action`, un lot de scoring réussi gonflerait ce
+      // compteur d'erreurs comme s'il en était une.
       `select count(*)::int as n /* jr:engine_errors */
          from audit_events
         where organization_id = $1
           and entity_type = 'engine'
+          and action = 'engine_error'
           and created_at >= date_trunc('day', now())`,
       [ctx.organisationId],
     ),

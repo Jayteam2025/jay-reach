@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Executeur } from './executeur.js';
-import { ecrireEvenement, nettoyerMessageErreurJournal } from './journal.js';
+import { ecrireEvenement, nettoyerMessageErreurJournal, journaliserErreurMoteur } from './journal.js';
 
 function executeurFactice(): { ex: Executeur; query: ReturnType<typeof vi.fn> } {
   const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
@@ -138,5 +138,76 @@ describe('nettoyerMessageErreurJournal', () => {
 
   it('laisse un message court et neutre inchangé', () => {
     expect(nettoyerMessageErreurJournal('Connexion refusée par la base')).toBe('Connexion refusée par la base');
+  });
+});
+
+describe('journaliserErreurMoteur (journal, tâche 6, tour de correction 1 — R23)', () => {
+  function executeurAvecOrganisations(ids: string[]): { ex: Executeur; query: ReturnType<typeof vi.fn> } {
+    const query = vi.fn(async (sql: string) => {
+      if (/select id from organizations/i.test(sql)) {
+        return { rows: ids.map((id) => ({ id })), rowCount: ids.length };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    return { ex: { query } as unknown as Executeur, query };
+  }
+
+  it('écrit un engine_error par organisation, avec le contexte en detail', async () => {
+    const { ex, query } = executeurAvecOrganisations(['org-1', 'org-2']);
+
+    await journaliserErreurMoteur(ex, new Error('Panne de connexion à la base'), 'cycle de production');
+
+    const inserts = query.mock.calls.filter(([sql]) => /insert into audit_events/i.test(sql as string));
+    expect(inserts).toHaveLength(2);
+    const [, valeurs1] = inserts[0]!;
+    expect((valeurs1 as unknown[])[0]).toBe('org-1');
+    expect((valeurs1 as unknown[])[2]).toBe('engine');
+    expect((valeurs1 as unknown[])[3]).toBeNull();
+    expect((valeurs1 as unknown[])[4]).toBe('engine_error');
+    const diff1 = JSON.parse((valeurs1 as unknown[])[5] as string) as { libelle: string; detail: string };
+    expect(diff1.libelle).toBe('Panne de connexion à la base');
+    expect(diff1.detail).toBe('cycle de production');
+    const [, valeurs2] = inserts[1]!;
+    expect((valeurs2 as unknown[])[0]).toBe('org-2');
+  });
+
+  it('nettoie et tronque le message comme les autres erreurs du journal', async () => {
+    const { ex, query } = executeurAvecOrganisations(['org-1']);
+    const message = `Échec vers jean.dupont@exemple.fr : ${'x'.repeat(250)}`;
+
+    await journaliserErreurMoteur(ex, new Error(message), 'tick');
+
+    const insert = query.mock.calls.find(([sql]) => /insert into audit_events/i.test(sql as string))!;
+    const diff = JSON.parse((insert[1] as unknown[])[5] as string) as { libelle: string };
+    expect(diff.libelle).not.toContain('jean.dupont@exemple.fr');
+    expect(diff.libelle).toContain('[email masqué]');
+    expect(diff.libelle.length).toBe(200);
+  });
+
+  it("n'échoue jamais, même si la lecture des organisations ou l'écriture échoue", async () => {
+    const query = vi.fn(async () => {
+      throw new Error('base indisponible');
+    });
+    const ex = { query } as unknown as Executeur;
+
+    await expect(journaliserErreurMoteur(ex, new Error('x'), 'tick')).resolves.toBeUndefined();
+  });
+
+  it("n'écrit aucune ligne quand aucune organisation n'existe", async () => {
+    const { ex, query } = executeurAvecOrganisations([]);
+
+    await journaliserErreurMoteur(ex, new Error('x'), 'tick');
+
+    expect(query.mock.calls.filter(([sql]) => /insert into audit_events/i.test(sql as string))).toHaveLength(0);
+  });
+
+  it('omet detail quand aucun contexte n’est fourni', async () => {
+    const { ex, query } = executeurAvecOrganisations(['org-1']);
+
+    await journaliserErreurMoteur(ex, new Error('Erreur sans contexte'));
+
+    const insert = query.mock.calls.find(([sql]) => /insert into audit_events/i.test(sql as string))!;
+    const diff = JSON.parse((insert[1] as unknown[])[5] as string) as Record<string, unknown>;
+    expect(diff).not.toHaveProperty('detail');
   });
 });

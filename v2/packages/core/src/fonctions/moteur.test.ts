@@ -56,6 +56,30 @@ describe('lireEtatMoteur', () => {
     expect(etat.derniereErreur).toBeNull();
   });
 
+  it("le compteur d'erreurs filtre sur action = 'engine_error' (un scoring_batch ou un enrichment_batch du jour ne compte pas, tâche 6 — R22)", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/jr:engine_status/i.test(sql)) return { rows: [], rowCount: 0 };
+      if (/jr:engine_errors/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    // Cast au point d'assignation seulement : garder `query` sans le cast pour
+    // conserver `.mock` (TS2339 sinon, le cast en `Executeur['query']` efface le type mock de vitest).
+    const ctx: Contexte = {
+      ex: { query: query as unknown as Executeur['query'] },
+      organisationId: 'org-1',
+      utilisateurId: 'user-1',
+      role: 'admin',
+    };
+
+    await lireEtatMoteur(ctx);
+
+    const appelErreurs = query.mock.calls.find(([sql]) => /jr:engine_errors/i.test(sql));
+    expect(appelErreurs).toBeDefined();
+    const sql = appelErreurs![0] as string;
+    expect(sql).toContain("entity_type = 'engine'");
+    expect(sql).toContain("action = 'engine_error'");
+  });
+
   it("ne renvoie jamais hostname ni instance_id, même présents en base", async () => {
     const ctx = faux({
       'jr:engine_status': [

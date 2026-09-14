@@ -114,6 +114,35 @@ async function contactIdParEmail(pool: Pool, org: string, email: string): Promis
 }
 
 /**
+ * Campagne d'une action déjà rattachée à une inscription — sert uniquement à
+ * enrichir `diff.campagneId` du journal d'activité (tâche 6, tour de
+ * correction 1, R22) ; jamais utilisé pour la logique métier, qui a déjà
+ * marqué l'action livrée avant cet appel. `null` si rien n'est trouvé, jamais
+ * d'échec pour l'appelant (voir `journaliserActionLivree`).
+ */
+async function campagneIdParAction(pool: Pool, actionId: string): Promise<string | null> {
+  const res = await pool.query<{ campaign_id: string }>(
+    `select e.campaign_id from actions a join enrollments e on e.id = a.enrollment_id where a.id = $1`,
+    [actionId],
+  );
+  return res.rows[0]?.campaign_id ?? null;
+}
+
+/**
+ * Campagne d'un contact, via son inscription vivante ou, à défaut, la plus
+ * récente — même usage que `campagneIdParAction`, pour une réponse ou une
+ * absence où l'on ne connaît que le contact, pas l'action. `null` si le
+ * contact n'a aucune inscription (ou n'a pas été résolu du tout).
+ */
+async function campagneIdParContact(pool: Pool, contactId: string): Promise<string | null> {
+  const res = await pool.query<{ campaign_id: string }>(
+    `select campaign_id from enrollments where contact_id = $1 order by created_at desc limit 1`,
+    [contactId],
+  );
+  return res.rows[0]?.campaign_id ?? null;
+}
+
+/**
  * Un envoi (premier email) ou une tâche `reply` terminée marque l'action
  * `dispatched` correspondante `delivered`. Même appariement dans les deux cas
  * (organisation, canal email, statut `dispatched`), seule la colonne de
@@ -142,7 +171,7 @@ async function marquerActionLivreeParSequence(
   if (p.messageId) {
     await poserProviderMessageId(pool, actionId, p.messageId);
   }
-  await journaliserActionLivree(pool, org, p.email);
+  await journaliserActionLivree(pool, org, p.email, actionId);
 }
 
 async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache: EnvoiSorti): Promise<void> {
@@ -163,7 +192,7 @@ async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache
   if (tache.messageId) {
     await poserProviderMessageId(pool, actionId, tache.messageId);
   }
-  await journaliserActionLivree(pool, org, tache.email);
+  await journaliserActionLivree(pool, org, tache.email, actionId);
 }
 
 /**
@@ -171,15 +200,16 @@ async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache
  * relève. N'échoue jamais le handler — l'action est déjà livrée, un journal
  * qui échoue ne doit pas faire retenter pg-boss sur un envoi déjà parti.
  */
-async function journaliserActionLivree(pool: Pool, org: string, email: string): Promise<void> {
+async function journaliserActionLivree(pool: Pool, org: string, email: string, actionId: string): Promise<void> {
   try {
     const contactId = await contactIdParEmail(pool, org, email);
+    const campagneId = await campagneIdParAction(pool, actionId);
     await ecrireEvenement(pool, {
       organisationId: org,
       entityType: 'contact',
       entityId: contactId,
       action: 'action_delivered',
-      diff: { libelle: 'Email livré.' },
+      diff: { libelle: 'Email livré.', campagneId },
     });
   } catch (err) {
     console.warn('[journal] action_delivered', err);
@@ -204,12 +234,13 @@ async function journaliserReponse(
   const action = estAbsence ? 'absence_detected' : 'reply_received';
   try {
     const contactId = await contactIdParEmail(pool, org, email);
+    const campagneId = contactId ? await campagneIdParContact(pool, contactId) : null;
     await ecrireEvenement(pool, {
       organisationId: org,
       entityType: 'contact',
       entityId: contactId,
       action,
-      diff: { libelle: estAbsence ? 'Absence détectée (réponse automatique).' : 'Réponse reçue.' },
+      diff: { libelle: estAbsence ? 'Absence détectée (réponse automatique).' : 'Réponse reçue.', campagneId },
     });
   } catch (err) {
     console.warn(`[journal] ${action}`, err);
