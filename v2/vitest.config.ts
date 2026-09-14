@@ -15,8 +15,8 @@ export default defineConfig({
   // restent `dist/` pour le build de production.
   plugins: [tsconfigPaths({ projects: ['tsconfig.base.json'] })],
   test: {
-    // Chaque package fournit ses tests *.test.ts ; on les ramasse à la racine.
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
+    // Chaque package fournit ses tests *.test.ts (et *.test.tsx côté web) ; on les ramasse à la racine.
+    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts', 'apps/**/*.test.tsx'],
     environment: 'node',
     passWithNoTests: true,
   },
