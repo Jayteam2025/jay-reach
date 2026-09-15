@@ -1014,6 +1014,101 @@
     },
     "notifications": {
       "launchBlocked": "Impossible : {liste}."
+    },
+    "contacts": {
+      "filters": {
+        "all": "{n, plural, one {Tous #} other {Tous #}}"
+      },
+      "columns": {
+        "contact": "Contact",
+        "email": "Email",
+        "step": "Étape",
+        "campaign": "Campagne"
+      },
+      "email": {
+        "verified": "Vérifié",
+        "toFind": "À trouver"
+      },
+      "status": {
+        "a_contacter": "À contacter",
+        "sans_email": "Sans email",
+        "en_sequence": "En séquence",
+        "a_repondu": "A répondu",
+        "interesse": "Intéressé",
+        "ecarte": "Écarté",
+        "termine": "Terminé",
+        "rebond": "Rebond",
+        "ne_plus_contacter": "Ne plus contacter"
+      },
+      "step": "Étape {n}",
+      "noStep": "à contacter",
+      "search": "Rechercher un nom, une entreprise…",
+      "actions": {
+        "enrich": "Chercher l'email",
+        "enrichCost": "1 crédit",
+        "discard": "Écarter"
+      },
+      "empty": "Aucun contact pour l'instant : cette campagne n'a encore identifié personne.",
+      "emptyFilter": "Aucun contact pour ce filtre.",
+      "pageRange": "{debut} à {fin} sur {total}",
+      "pageOf": "Page {page} sur {dernierePage}",
+      "previous": "Précédent",
+      "next": "Suivant"
+    },
+    "file": {
+      "title": "{n, plural, one {# email part aujourd'hui} other {# emails partent aujourd'hui}}",
+      "description": "Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».",
+      "filters": {
+        "all": "{n, plural, one {Tous #} other {Tous #}}",
+        "scheduled": "{n, plural, one {Prévu #} other {Prévus #}}",
+        "toReview": "{n, plural, one {À relire #} other {À relire #}}",
+        "dispatched": "{n, plural, one {Parti #} other {Partis #}}",
+        "delivered": "{n, plural, one {Livré #} other {Livrés #}}",
+        "failed": "{n, plural, one {Échoué #} other {Échoués #}}",
+        "blocked": "{n, plural, one {Bloqué #} other {Bloqués #}}"
+      },
+      "columns": {
+        "time": "Heure",
+        "contact": "Contact",
+        "stepAndSubject": "Étape et objet",
+        "from": "Depuis",
+        "status": "État"
+      },
+      "group": {
+        "count": "{n, plural, one {# email} other {# emails}}"
+      },
+      "step": "Étape {n}",
+      "status": {
+        "scheduled": "Prévu",
+        "pending_approval": "À relire",
+        "approved": "Prévu",
+        "dispatched": "Parti",
+        "delivered": "Livré",
+        "failed": "Échoué",
+        "blocked": "Bloqué",
+        "cancelled": "Annulé",
+        "skipped": "Annulé"
+      },
+      "pendingDelivery": "livraison en attente",
+      "actions": {
+        "review": "Relire",
+        "postpone": "Reporter",
+        "discard": "Écarter",
+        "findEmail": "Chercher l'email"
+      },
+      "empty": {
+        "title": "Rien à envoyer aujourd'hui",
+        "text": "Tous les contacts qualifiés sont en séquence ou ont répondu. La file se remplira dès qu'une source retiendra de nouveaux contacts ou qu'un délai de relance sera écoulé."
+      },
+      "drawer": {
+        "title": "Relire avant envoi",
+        "description": "Email tel qu'il partira, à partir du gabarit de cette étape et de la fiche du contact.",
+        "close": "Fermer",
+        "hint": "Texte rendu par Jay Reach à partir de l'étape et de la fiche du contact. Le modifier ne change que cet envoi.",
+        "editText": "Modifier le texte",
+        "soon": "Bientôt",
+        "sendAsIs": "Envoyer tel quel"
+      }
     }
   }
 }

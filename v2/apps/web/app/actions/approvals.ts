@@ -1,16 +1,29 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-
-import { requireRole } from '../../lib/auth';
-import { createServiceClient } from '../../lib/supabase/service';
+import { approuverEnvoi, rejeterEnvoi, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
+import { contexteCourant } from '../../lib/contexte';
 
 export type ApprovalResult = { ok: true } | { ok: false; error: string };
+
+/** Jamais d'exception non attrapée hors d'une Server Action (même garantie que `campagne-cycle.ts`). */
+function messageDErreur(err: unknown): string {
+  if (err instanceof ForbiddenError) return 'Droit opérateur requis.';
+  if (err instanceof ErreurIntrouvable) return 'Cet envoi n’est plus en attente d’approbation.';
+  return err instanceof Error ? err.message : 'Erreur inconnue.';
+}
 
 /**
  * Valide ou rejette une action en attente d'approbation (file d'attente humaine).
  * « Valider » → `approved` (partira à l'envoi) ; « Rejeter » → `cancelled`.
  * Exige le rôle operator. N'agit que sur les actions en `pending_approval`.
+ *
+ * Façade fine sur `approuverEnvoi`/`rejeterEnvoi`
+ * (`packages/core/src/fonctions/file-du-jour.ts`, tâche 10) — cet écran
+ * appelait Supabase directement jusqu'ici ; même signature et même
+ * comportement observable, pour ne rien casser côté `/approvals`
+ * (`approval-list.tsx`, écran hérité) ni côté tiroir « Relire avant envoi »
+ * de la file du jour, qui réutilise cette même façade.
  */
 export async function setActionApproval(
   organizationId: string,
@@ -18,24 +31,19 @@ export async function setActionApproval(
   decision: 'approve' | 'reject',
 ): Promise<ApprovalResult> {
   try {
-    await requireRole(organizationId, 'operator');
-  } catch {
-    return { ok: false, error: 'Droit opérateur requis.' };
+    const ctx = await contexteCourant();
+    if (ctx.organisationId !== organizationId) {
+      return { ok: false, error: 'Organisation invalide.' };
+    }
+    if (decision === 'approve') {
+      await approuverEnvoi(ctx, { actionId });
+    } else {
+      await rejeterEnvoi(ctx, { actionId });
+    }
+    revalidatePath('/approvals');
+    revalidatePath('/campaigns');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
   }
-  const svc = createServiceClient();
-  const now = new Date().toISOString();
-  const patch =
-    decision === 'approve'
-      ? { status: 'approved', approved_at: now }
-      : { status: 'cancelled' };
-  const { error } = await svc
-    .from('actions')
-    .update(patch)
-    .eq('id', actionId)
-    .eq('organization_id', organizationId)
-    .eq('status', 'pending_approval');
-  if (error) return { ok: false, error: error.message };
-  revalidatePath('/approvals');
-  revalidatePath('/campaigns');
-  return { ok: true };
 }

@@ -1,0 +1,155 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
+import { ErreurIntrouvable, listerContactsCampagne, ORDRE_STATUTS } from '@jay-reach/core';
+import type { StatutContactCampagne } from '@jay-reach/core';
+import { contexteCourant } from '../../../../../lib/contexte';
+import { Carte } from '../../../../../components/ui';
+import { FiltresStatuts } from '../../../../../components/campagne/FiltresStatuts';
+import { TableContacts, type LigneTableContacts } from '../../../../../components/campagne/TableContacts';
+
+export const revalidate = 0;
+
+// Dupliqué volontairement de `TAILLE_PAGE_CONTACTS` (non exportée,
+// `packages/core/src/fonctions/campagnes.ts`) — même convention que les
+// petites constantes locales de ce fichier (`NOMBRE_FILS_APERCU` etc.) :
+// pas de couplage cross-fichier pour une seule valeur.
+const TAILLE_PAGE = 50;
+
+function filtreDemande(brut: string | string[] | undefined): StatutContactCampagne | 'tous' {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  if (valeur === 'tous' || (valeur && (ORDRE_STATUTS as readonly string[]).includes(valeur))) {
+    return valeur as StatutContactCampagne | 'tous';
+  }
+  return 'tous';
+}
+
+function pageDemandee(brut: string | string[] | undefined): number {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  const n = Number(valeur);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+function rechercheDemandee(brut: string | string[] | undefined): string | undefined {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  return valeur && valeur.trim() !== '' ? valeur.trim() : undefined;
+}
+
+export default async function CampagneContactsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { id } = await params;
+  const ctx = await contexteCourant();
+  const [t, sp] = await Promise.all([getTranslations('campagne'), searchParams]);
+
+  const filtre = filtreDemande(sp.filtre);
+  const recherche = rechercheDemandee(sp.q);
+  const page = pageDemandee(sp.page);
+
+  let resultat: Awaited<ReturnType<typeof listerContactsCampagne>>;
+  try {
+    resultat = await listerContactsCampagne(ctx, { campagneId: id, filtre, recherche, page });
+  } catch (err) {
+    if (err instanceof ErreurIntrouvable) notFound();
+    throw err;
+  }
+
+  const total = resultat.total;
+  const debut = total === 0 ? 0 : (page - 1) * TAILLE_PAGE + 1;
+  const fin = Math.min(page * TAILLE_PAGE, total);
+  const dernierePage = Math.max(1, Math.ceil(total / TAILLE_PAGE));
+
+  const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
+    ...ligne,
+    etapeTexte: ligne.etape !== null ? t('contacts.step', { n: ligne.etape }) : null,
+  }));
+
+  const libellesStatut = Object.fromEntries(ORDRE_STATUTS.map((s) => [s, t(`contacts.status.${s}`)])) as Record<
+    StatutContactCampagne,
+    string
+  >;
+
+  function lienPage(p: number): string {
+    const qs = new URLSearchParams();
+    if (filtre !== 'tous') qs.set('filtre', filtre);
+    if (recherche) qs.set('q', recherche);
+    qs.set('page', String(p));
+    return `/campaigns/${id}/contacts?${qs.toString()}`;
+  }
+
+  return (
+    <section className="jr-contenu une-colonne">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <FiltresStatuts
+          base={`/campaigns/${id}/contacts`}
+          compteurs={resultat.compteurs}
+          filtreActif={filtre}
+          recherche={recherche}
+          libelles={{ tous: t('contacts.filters.all'), ...libellesStatut }}
+        />
+        <form method="get" style={{ display: 'flex', gap: 8 }}>
+          <input type="hidden" name="filtre" value={filtre} />
+          <input
+            className="jr-champ"
+            style={{ width: 260 }}
+            type="search"
+            name="q"
+            defaultValue={recherche ?? ''}
+            placeholder={t('contacts.search')}
+          />
+        </form>
+      </div>
+
+      <Carte>
+        {resultat.lignes.length === 0 ? (
+          <div className="jr-vide">{t('contacts.empty')}</div>
+        ) : (
+          <TableContacts lignes={lignes} colonnes="campagne" organisationId={ctx.organisationId} campagneId={id} libelles={{
+            colonneContact: t('contacts.columns.contact'),
+            colonneEmail: t('contacts.columns.email'),
+            colonneEtape: t('contacts.columns.step'),
+            colonneCampagne: t('contacts.columns.campaign'),
+            colonneAction: '',
+            emailVerifie: t('contacts.email.verified'),
+            emailATrouver: t('contacts.email.toFind'),
+            sansEtape: t('contacts.noStep'),
+            statut: libellesStatut,
+            chercherEmail: t('contacts.actions.enrich'),
+            coutChercherEmail: t('contacts.actions.enrichCost'),
+            ecarter: t('contacts.actions.discard'),
+            vide: t('contacts.emptyFilter'),
+          }} />
+        )}
+      </Carte>
+
+      {total > 0 && (
+        <div className="jr-secondaire" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{t('contacts.pageRange', { debut, fin, total })}</span>
+          {dernierePage > 1 && (
+            <span style={{ display: 'flex', gap: 12 }}>
+              {page > 1 ? (
+                <Link href={lienPage(page - 1)} className="jr-lien">
+                  {t('contacts.previous')}
+                </Link>
+              ) : (
+                <span>{t('contacts.previous')}</span>
+              )}
+              <span>{t('contacts.pageOf', { page, dernierePage })}</span>
+              {page < dernierePage ? (
+                <Link href={lienPage(page + 1)} className="jr-lien">
+                  {t('contacts.next')}
+                </Link>
+              ) : (
+                <span>{t('contacts.next')}</span>
+              )}
+            </span>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
