@@ -362,7 +362,7 @@ export interface SourceCarte {
   readonly prochainPassage: string | null;
   /** Sept valeurs, la plus ancienne d'abord (aujourd'hui inclus en dernier). */
   readonly retenus7j: number[];
-  /** Somme de `items_found` sur tous les passages (pas seulement le dernier) — puce d'en-tête du tiroir. */
+  /** Offres distinctes trouvées par la source depuis son premier passage (signaux) — puce d'en-tête du tiroir. */
   readonly totalLu: number;
   /** Date du tout premier passage, `null` si la source n'a jamais tourné (masque la puce). */
   readonly premierPassage: string | null;
@@ -423,13 +423,17 @@ export async function listerSourcesCampagne(
         order by source_id, started_at desc`,
       [ids],
     ),
-    // Résumé sur TOUS les passages (pas seulement le dernier) : puce d'en-tête
-    // du tiroir « {n} offres lues depuis le {date du premier passage} ».
-    ctx.ex.query<{ source_id: string; total: number; premier: string }>(
-      `select source_id, sum(items_found)::int as total, min(started_at) as premier
-         from source_runs /* jr:sources_resume_passages */
-        where source_id = any($1::uuid[])
-        group by source_id`,
+    // Résumé depuis le premier passage : puce d'en-tête du tiroir « {n} offres
+    // trouvées depuis le {date} ». Le total compte les signaux distincts de la
+    // source, pas la somme de `items_found` : un passage toutes les quinze
+    // minutes relit les mêmes offres (R45 : 2 259 passages donnaient
+    // « 1 667 653 offres lues » pour 38 000 offres réelles).
+    ctx.ex.query<{ source_id: string; total: number; premier: string | null }>(
+      `select src.id as source_id,
+              (select count(*)::int from signals s where s.source_id = src.id) as total,
+              (select min(r.started_at) from source_runs r where r.source_id = src.id) as premier
+         from sources src /* jr:sources_resume_passages */
+        where src.id = any($1::uuid[])`,
       [ids],
     ),
     ctx.ex.query<{ source_id: string; jour: string; n: number }>(

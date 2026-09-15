@@ -1166,7 +1166,10 @@
           "title": "Changement de poste",
           "description": "Les profils du persona arrivés en poste récemment"
         },
-        "csv": { "title": "Fichier CSV", "description": "Importer des contacts depuis un fichier" },
+        "csv": {
+          "title": "Fichier CSV",
+          "description": "Importer des contacts depuis un fichier"
+        },
         "list": {
           "title": "Liste existante",
           "description": "Verser les contacts d'une liste déjà constituée"
@@ -1194,7 +1197,8 @@
         "neverRun": "Jamais lancé",
         "dailySchedule": "Une fois par jour",
         "franceEntiere": "France entière",
-        "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage"
+        "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage",
+        "nextPaused": "en pause"
       },
       "drawer": {
         "close": "Fermer",
@@ -1213,7 +1217,7 @@
         "schedule": "Passages",
         "offresTitle": "{provider} · offres d'emploi",
         "offresSubtitle": "La source lit les offres publiées, le moteur les score contre le persona « {persona} ».",
-        "readSince": "{n, plural, one {# offre lue} other {# offres lues}} depuis le {date}",
+        "readSince": "{n, plural, one {# offre trouvée} other {# offres trouvées}} depuis le {date}",
         "alsoProvider": "aussi {provider}",
         "runNow": "Lancer un passage",
         "save": "Enregistrer",

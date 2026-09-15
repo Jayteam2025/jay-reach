@@ -20,7 +20,7 @@ export interface SourceOffresExistante {
   /** Tous les fournisseurs réels rattachés, dans l'ordre du principal (R44) : `[providerId]` hors thème hérité multi-fournisseurs. */
   readonly providerIds: ('adzuna' | 'france_travail')[];
   readonly active: boolean;
-  /** Somme de `items_found` sur tous les passages — puce d'en-tête, masquée si `premierPassage` est `null`. */
+  /** Offres distinctes trouvées depuis le premier passage — puce d'en-tête, masquée si `premierPassage` est `null`. */
   readonly totalLu: number;
   readonly premierPassage: string | null;
 }
