@@ -23,7 +23,17 @@ export type ActionJournal =
   | 'absence_detected'
   | 'engine_error'
   | 'campaign_activated'
-  | 'campaign_paused';
+  | 'campaign_paused'
+  // Actions d'opérateur sur un envoi de la file du jour (tâche 10,
+  // `fonctions/file-du-jour.ts`) : report, écart d'une campagne, validation
+  // et rejet d'un envoi en attente d'approbation. Pas encore repris dans
+  // `ACTIONS_PAR_FILTRE`/`conditionTout` de `listerActivite` (campagnes.ts) —
+  // ces événements n'apparaissent donc pas encore dans l'onglet Activité,
+  // limite connue à traiter par la tâche qui possède cette fonction.
+  | 'action_rescheduled'
+  | 'action_skipped'
+  | 'action_approved'
+  | 'action_rejected';
 
 export interface EvenementJournal {
   readonly organisationId: string;

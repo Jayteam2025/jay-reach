@@ -457,6 +457,15 @@ interface LigneEnvoi {
   campagne_nom: string | null;
   etape: number | null;
   expediteur: string | null;
+  // Colonnes de la tâche 10 (onglet File du jour) — `EnvoiPrevu` les porte en
+  // champs optionnels, absents de la page Aujourd'hui (`aujourdhui.ts`, autre
+  // requête, non modifiée par cette tâche).
+  block_reason: string | null;
+  error: string | null;
+  objet: string | null;
+  contact_id: string | null;
+  sender_id: string | null;
+  signal_id: string | null;
 }
 
 function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
@@ -471,6 +480,12 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
     campagneNom: r.campagne_nom,
     expediteur: r.expediteur,
     canal: canalDe(r.channel),
+    etatDetaille: r.status as EnvoiPrevu['etatDetaille'],
+    objet: r.objet,
+    contactId: r.contact_id,
+    expediteurId: r.sender_id,
+    signalId: r.signal_id,
+    raisonEchec: r.block_reason ?? r.error,
   };
 }
 
@@ -491,7 +506,10 @@ async function lireEnvoisDuJour(
 
   const res = await ctx.ex.query<LigneEnvoi>(
     `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
-            c.first_name, c.last_name, camp.name as campagne_nom, st.position as etape, s.identity as expediteur
+            a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
+            c.first_name, c.last_name, c.source_signal_id as signal_id,
+            camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
+            e.contact_id
        from actions a /* jr:file_du_jour_campagne */
        join enrollments e on e.id = a.enrollment_id
        join campaigns camp on camp.id = e.campaign_id

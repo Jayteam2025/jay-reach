@@ -4,3 +4,4 @@ export * from './moteur.js';
 export * from './aujourdhui.js';
 export * from './transport-email.js';
 export * from './campagnes.js';
+export * from './file-du-jour.js';

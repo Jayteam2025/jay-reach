@@ -24,6 +24,18 @@ export interface FilResume {
   classification: ClassificationFil;
 }
 
+/** État détaillé d'un envoi — miroir de `action_status` (base). */
+export type EtatEnvoi =
+  | 'scheduled'
+  | 'pending_approval'
+  | 'approved'
+  | 'dispatched'
+  | 'delivered'
+  | 'failed'
+  | 'blocked'
+  | 'cancelled'
+  | 'skipped';
+
 export interface EnvoiPrevu {
   id: string;
   heure: string | null;
@@ -33,6 +45,21 @@ export interface EnvoiPrevu {
   campagneNom: string | null;
   expediteur: string | null;
   canal: CanalFil;
+  /**
+   * Champs supplémentaires posés par la tâche 10 (onglet File du jour d'une
+   * campagne, `campagnes.ts::listerFileDuJour`) : tous optionnels et absents
+   * de la page Aujourd'hui (`lireAujourdhui`, cette même page), qui ne les
+   * lit pas et dont les tests restent inchangés.
+   */
+  etatDetaille?: EtatEnvoi;
+  /** Objet du message, quand il est connu à moindre coût (déjà stocké après un envoi réussi) — `null`/absent sinon, pas re-rendu ici. */
+  objet?: string | null;
+  contactId?: string | null;
+  expediteurId?: string | null;
+  /** Signal d'origine du contact — sert au bouton « Chercher l'email » d'un envoi bloqué faute d'adresse. */
+  signalId?: string | null;
+  /** `block_reason` ou `error` de l'action, selon celui qui est renseigné. */
+  raisonEchec?: string | null;
 }
 
 export interface CampagneResume {
