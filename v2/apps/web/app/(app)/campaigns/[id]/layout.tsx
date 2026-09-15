@@ -51,7 +51,7 @@ export default async function CampagneLayout({ children, params }: { children: R
         onglets={
           <OngletsCampagne
             campagneId={id}
-            compteurs={{ contacts: vue.entonnoir.contacts, fileDuJour: vue.fileDuJour.length, sources: vue.sources.length }}
+            compteurs={{ contacts: vue.entonnoir.contacts, fileDuJour: vue.fileDuJour.length, sources: vue.nombreSources }}
           />
         }
       />

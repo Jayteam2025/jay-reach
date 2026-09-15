@@ -170,6 +170,7 @@ describe('lireVueDEnsemble', () => {
         'jr:entonnoir_campagne': [{ trouves: 100, qualifies: 40, contacts: 35, en_sequence: 10, livres: 20, reponses: 4, interesses: 2 }],
         'jr:file_du_jour_campagne': [],
         'jr:sources_campagne_resume': [{ provider_id: 'adzuna' }],
+        'jr:sources_campagne_compte': [{ n: 1 }],
         'jr:activite_campagne': [],
         scored_today: [],
         enrich_today: [],
@@ -204,6 +205,11 @@ describe('lireVueDEnsemble', () => {
     expect(v.entonnoir.tauxLivres).toBe(50);
     expect(v.entonnoir.tauxReponses).toBe(20);
     expect(v.sources).toEqual([{ providerId: 'adzuna' }]);
+    // Compteur de l'onglet Sources (tâche 11) : nombre réel de lignes
+    // `campaign_sources`, pas `sources.length` (distinct provider_id) — les
+    // deux coïncident ici mais divergeraient avec deux thèmes du même
+    // fournisseur.
+    expect(v.nombreSources).toBe(1);
   });
 });
 

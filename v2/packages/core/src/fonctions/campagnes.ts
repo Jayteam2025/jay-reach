@@ -250,6 +250,14 @@ export interface VueDEnsemble {
   readonly fileDuJour: EnvoiPrevu[];
   readonly plafonds: Awaited<ReturnType<typeof lireConsommationDuJour>>;
   readonly sources: SourceResume[];
+  /**
+   * Nombre RÉEL de sources reliées (lignes `campaign_sources`), pour le
+   * compteur de l'onglet Sources (tâche 11) — `sources.length` ne convient
+   * pas : c'est un nombre de FOURNISSEURS DISTINCTS (`distinct provider_id`),
+   * qui sous-compte dès que deux thèmes partagent un même fournisseur (deux
+   * veilles Adzuna, par exemple).
+   */
+  readonly nombreSources: number;
   readonly activite: Evenement[];
 }
 
@@ -570,6 +578,15 @@ async function listerSourcesCampagneResume(ctx: Contexte, campagneId: string): P
   return res.rows.map((r) => ({ providerId: r.provider_id }));
 }
 
+/** Nombre réel de sources reliées (une ligne `campaign_sources` = une carte de l'onglet Sources, tâche 11). */
+async function compterSourcesCampagne(ctx: Contexte, campagneId: string): Promise<number> {
+  const res = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n /* jr:sources_campagne_compte */ from campaign_sources where campaign_id = $1`,
+    [campagneId],
+  );
+  return res.rows[0]?.n ?? 0;
+}
+
 /** Taille de l'aperçu d'activité affiché dans la vue d'ensemble (le total réel vit dans `listerActivite`). */
 const NOMBRE_EVENEMENTS_APERCU = 10;
 
@@ -577,11 +594,12 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
   exiger(ctx, 'viewer');
   const { campagneId } = valider(schemaCampagneId, entree);
 
-  const [campagne, entonnoir, { envois }, sources, { evenements }] = await Promise.all([
+  const [campagne, entonnoir, { envois }, sources, nombreSources, { evenements }] = await Promise.all([
     lireCampagneEnTete(ctx, campagneId),
     lireEntonnoir(ctx, campagneId),
     lireEnvoisDuJour(ctx, { campagneId }),
     listerSourcesCampagneResume(ctx, campagneId),
+    compterSourcesCampagne(ctx, campagneId),
     listerActivite(ctx, { campagneId, filtre: 'tout', page: 1 }),
   ]);
   const plafonds = await lireConsommationDuJour(ctx);
@@ -592,6 +610,7 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
     fileDuJour: envois,
     plafonds,
     sources,
+    nombreSources,
     activite: evenements.slice(0, NOMBRE_EVENEMENTS_APERCU),
   };
 }
