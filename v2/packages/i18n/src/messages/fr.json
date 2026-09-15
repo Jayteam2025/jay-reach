@@ -1261,7 +1261,7 @@
         "listResult": "Résultat",
         "listWillEnter": "Contacts qui entreront à l'étape 1",
         "listAdd": "Ajouter {n} contacts",
-        "directoryIntro": "Cherchez des entreprises françaises par activité, département et effectif, puis retenez-les pour la campagne.",
+        "directoryIntro": "Cherchez des entreprises françaises par activité, département et effectif, puis ajoutez-les à votre base d'entreprises. Les entreprises cessées sont exclues.",
         "directoryQuery": "Mot-clé ou nom",
         "directoryNaf": "Code d'activité (NAF)",
         "directoryDepartment": "Département",
@@ -1271,12 +1271,13 @@
         "directoryColCity": "Ville",
         "directoryColHeadcount": "Effectif",
         "directoryFound": "{n} entreprises trouvées",
+        "directoryAlreadyKnown": "déjà dans votre base",
         "directoryProduces": "Ce que ça produit",
-        "directoryRetained": "Entreprises retenues",
-        "directoryKnown": "Déjà connues, reliées à la campagne",
+        "directoryRetained": "Entreprises ajoutées à votre base",
+        "directoryKnown": "Déjà connues, mises à jour",
         "directoryContactsCreated": "Contacts créés",
         "directoryNone": "aucun",
-        "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import.",
+        "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import. Les entreprises ajoutées apparaissent dans Contacts › Entreprises.",
         "directoryRetain": "Retenir {n} entreprises"
       }
     }

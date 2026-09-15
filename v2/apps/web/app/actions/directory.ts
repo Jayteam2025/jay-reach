@@ -6,6 +6,7 @@ import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 import {
   ajouterDepuisAnnuaire,
+  sirensConnus,
   ErreurEntree,
   ErreurIntrouvable,
   ForbiddenError,
@@ -162,18 +163,32 @@ export async function getBulkImport(
 // (`packages/core/src/fonctions/sources.ts`) : la recherche reste celle
 // ci-dessus (`searchCompanies`, `apps/web/lib/directory.ts`, une API publique
 // sans état) — cette action ne fait que PERSISTER les entreprises déjà
-// cochées à l'écran. R41 : verse des entreprises dans la campagne, jamais de
-// contact.
+// cochées à l'écran. R41 : verse des entreprises dans `accounts`, jamais de
+// contact. R42 (tour de correction 1) : aucun lien entreprise ↔ campagne
+// n'est modélisé — voir le commentaire de `ajouterDepuisAnnuaire` (core).
 // ---------------------------------------------------------------------------
+
+export interface RechercheAnnuaireResultat extends DirectoryResult {
+  /** SIREN du résultat déjà présents dans `accounts` de l'organisation (R42 : annotation avant ajout). */
+  readonly sirensConnus: string[];
+}
 
 /**
  * Recherche dans l'annuaire depuis le tiroir de la source (composant client),
  * en Server Action plutôt qu'un appel direct de `searchCompanies` depuis le
  * navigateur : une fonction serveur reste la façon sûre d'appeler une API
  * externe sans dépendre du CORS de `recherche-entreprises.api.gouv.fr`.
+ * Croise aussi les résultats avec `accounts` (`sirensConnus`, core) pour que
+ * l'écran puisse dire, avant même l'ajout, lesquels sont déjà dans la base.
  */
-export async function actionRechercherAnnuaire(params: DirectoryParams): Promise<DirectoryResult> {
-  return searchCompanies(params);
+export async function actionRechercherAnnuaire(params: DirectoryParams): Promise<RechercheAnnuaireResultat> {
+  const resultat = await searchCompanies(params);
+  if (resultat.results.length === 0) {
+    return { ...resultat, sirensConnus: [] };
+  }
+  const ctx = await contexteCourant();
+  const connus = await sirensConnus(ctx, { sirens: resultat.results.map((c) => c.siren) });
+  return { ...resultat, sirensConnus: connus };
 }
 
 export interface EntrepriseAnnuaireInput {

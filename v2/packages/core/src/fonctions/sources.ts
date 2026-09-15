@@ -802,10 +802,16 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
 }
 
 // ---------------------------------------------------------------------------
-// ajouterDepuisAnnuaire — R41 : verse des ENTREPRISES dans la campagne, JAMAIS
-// de contact. Reçoit les entreprises déjà trouvées et cochées côté écran
-// (recherche faite par `apps/web/lib/directory.ts::searchCompanies`, une API
-// publique sans état — hors de `packages/core`, qui ne dépend pas du web).
+// ajouterDepuisAnnuaire — R41 : verse des entreprises dans `accounts`
+// (l'organisation), JAMAIS de contact. Reçoit les entreprises déjà trouvées
+// et cochées côté écran (recherche faite par
+// `apps/web/lib/directory.ts::searchCompanies`, une API publique sans état —
+// hors de `packages/core`, qui ne dépend pas du web).
+//
+// R42 (tour de correction 1) : aucune table ne porte de lien entreprise ↔
+// campagne — `campagneId` ne sert ici qu'à vérifier l'organisation, jamais à
+// rattacher les comptes créés à cette campagne précise. L'écran ne doit donc
+// jamais dire « ajoutées à la campagne » ou « reliées à la campagne ».
 // ---------------------------------------------------------------------------
 
 const schemaEntrepriseAnnuaire = z.object({
@@ -851,6 +857,29 @@ export async function ajouterDepuisAnnuaire(
   // Pas d'écriture au journal ici : aucune `sources` créée (R41), et l'audit
   // de chaque compte tient déjà dans `accounts.created_at`.
   return { entreprisesRetenues, dejaConnues };
+}
+
+export const schemaSirensConnus = z.object({
+  sirens: z.array(z.string().min(1)).max(500),
+});
+
+/**
+ * SIREN parmi ceux donnés déjà présents dans `accounts` de l'organisation —
+ * pour annoter un résultat de recherche annuaire AVANT l'ajout (R42, tour de
+ * correction 1) : l'écran doit pouvoir dire « déjà dans votre base » sans
+ * attendre que l'opérateur clique, plutôt que de laisser croire que toute
+ * ligne cochée sera une entreprise neuve.
+ */
+export async function sirensConnus(ctx: Contexte, entree: unknown): Promise<string[]> {
+  exiger(ctx, 'viewer');
+  const { sirens } = valider(schemaSirensConnus, entree);
+  if (sirens.length === 0) return [];
+  const res = await ctx.ex.query<{ siren: string }>(
+    `select siren from accounts /* jr:sources_annuaire_connus */
+      where organization_id = $1 and siren = any($2::text[])`,
+    [ctx.organisationId, sirens],
+  );
+  return res.rows.map((r) => r.siren);
 }
 
 // ---------------------------------------------------------------------------

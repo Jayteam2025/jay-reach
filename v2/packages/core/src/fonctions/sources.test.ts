@@ -13,6 +13,7 @@ import {
   listerListesOrganisation,
   listerSourcesCampagne,
   modifierSource,
+  sirensConnus,
 } from './sources.js';
 
 /**
@@ -411,6 +412,29 @@ describe('ajouterDepuisAnnuaire', () => {
     });
     const r = await ajouterDepuisAnnuaire(ctx, entree);
     expect(r).toEqual({ entreprisesRetenues: 0, dejaConnues: 2 });
+  });
+});
+
+describe('sirensConnus', () => {
+  it('refuse un rôle insuffisant', async () => {
+    const { ctx } = faux({}, null);
+    await expect(sirensConnus(ctx, { sirens: ['111111111'] })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('ne requête pas la base pour une liste vide', async () => {
+    const { ctx, appels } = faux({}, 'viewer');
+    const r = await sirensConnus(ctx, { sirens: [] });
+    expect(r).toEqual([]);
+    expect(appels).toHaveLength(0);
+  });
+
+  it('retourne les SIREN déjà présents dans accounts (R42, annotation avant ajout)', async () => {
+    const { ctx } = faux(
+      { 'jr:sources_annuaire_connus': [{ siren: '111111111' }] },
+      'viewer',
+    );
+    const r = await sirensConnus(ctx, { sirens: ['111111111', '222222222'] });
+    expect(r).toEqual(['111111111']);
   });
 });
 
