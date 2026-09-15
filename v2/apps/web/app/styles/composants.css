@@ -154,6 +154,7 @@
 .jr-journal li:last-child { border-bottom: 0; }
 .jr-journal time { color: var(--jr-secondaire); font-size: var(--jr-petit); padding-top: 2px; }
 .jr-journal small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-jour { margin: 14px 0 6px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); }
 
 /* Messages et réponse */
 .jr-message { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); background: var(--jr-surface); margin: 0 0 12px; overflow: hidden; }

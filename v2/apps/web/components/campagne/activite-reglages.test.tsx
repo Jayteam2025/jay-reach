@@ -29,6 +29,11 @@ function evenement(overrides: Partial<Evenement> = {}): Evenement {
   };
 }
 
+// Lundi 14 septembre 2026, en journée à Paris — même référence que
+// `dates.test.ts` (`libelleJour`) : « aujourd'hui » pour un événement du 14.
+const MAINTENANT = new Date('2026-09-14T18:00:00.000Z');
+const FUSEAU = 'Europe/Paris';
+
 describe('JournalCampagne', () => {
   it('un filtre choisi construit `?filtre=` et marque la puce active, les autres restent neutres', () => {
     const html = renderToStaticMarkup(
@@ -36,6 +41,8 @@ describe('JournalCampagne', () => {
         base="/campaigns/c1/activity"
         filtreActif="scoring"
         evenements={[evenement()]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
         libelles={LIBELLES_JOURNAL}
       />,
     );
@@ -51,11 +58,30 @@ describe('JournalCampagne', () => {
         base="/campaigns/c1/activity"
         filtreActif="tout"
         evenements={[evenement()]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
         libelles={LIBELLES_JOURNAL}
       />,
     );
     expect(html).toContain('Scoring : 58 offres lues, 6 retenues');
     expect(html).toContain('meilleur score 91');
+  });
+
+  it('regroupe les événements par jour, avec un en-tête « Aujourd’hui » (R53)', () => {
+    const html = renderToStaticMarkup(
+      <JournalCampagne
+        base="/campaigns/c1/activity"
+        filtreActif="tout"
+        evenements={[evenement(), evenement({ id: 'ev-2', quand: '2026-09-13T08:00:00Z', libelle: 'Passage terminé' })]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
+        libelles={LIBELLES_JOURNAL}
+      />,
+    );
+    expect(html).toContain('jr-jour');
+    // React échappe l'apostrophe en entité HTML dans le texte rendu.
+    expect(html).toContain('Aujourd&#x27;hui, lundi 14 septembre');
+    expect(html).toContain('Hier, dimanche 13 septembre');
   });
 
   it('une erreur moteur porte le ton « erreur »', () => {
@@ -64,6 +90,8 @@ describe('JournalCampagne', () => {
         base="/campaigns/c1/activity"
         filtreActif="erreurs"
         evenements={[evenement({ type: 'engine_error', libelle: 'Échec du cycle' })]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
         libelles={LIBELLES_JOURNAL}
       />,
     );
@@ -73,7 +101,14 @@ describe('JournalCampagne', () => {
 
   it('filtre « tout » sans aucun événement -> état vide plein écran, sans puces de filtre', () => {
     const html = renderToStaticMarkup(
-      <JournalCampagne base="/campaigns/c1/activity" filtreActif="tout" evenements={[]} libelles={LIBELLES_JOURNAL} />,
+      <JournalCampagne
+        base="/campaigns/c1/activity"
+        filtreActif="tout"
+        evenements={[]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
+        libelles={LIBELLES_JOURNAL}
+      />,
     );
     expect(html).toContain('Aucune activité pour l’instant');
     expect(html).not.toContain('jr-filtres');
@@ -81,7 +116,14 @@ describe('JournalCampagne', () => {
 
   it('filtre précis sans résultat -> message léger, les puces de filtre restent affichées', () => {
     const html = renderToStaticMarkup(
-      <JournalCampagne base="/campaigns/c1/activity" filtreActif="erreurs" evenements={[]} libelles={LIBELLES_JOURNAL} />,
+      <JournalCampagne
+        base="/campaigns/c1/activity"
+        filtreActif="erreurs"
+        evenements={[]}
+        maintenant={MAINTENANT}
+        fuseau={FUSEAU}
+        libelles={LIBELLES_JOURNAL}
+      />,
     );
     expect(html).toContain('Aucune activité pour ce filtre.');
     expect(html).toContain('jr-filtres');

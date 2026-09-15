@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ActionJournal, Evenement } from '@jay-reach/core';
+import { libelleJour, regrouperParJour } from '../../lib/dates';
 import { EtatVide, Filtres, Journal } from '../ui';
 import type { EntreeJournal } from '../ui';
 
@@ -26,6 +27,10 @@ export interface JournalCampagneProps {
   base: string;
   filtreActif: FiltreActiviteCampagne;
   evenements: readonly Evenement[];
+  /** Instant de référence pour « Aujourd'hui »/« Hier » (`regrouperParJour`/`libelleJour`) — un paramètre, jamais lu à l'intérieur (fonction pure, testable sans horloge). */
+  maintenant: Date;
+  /** Fuseau de l'organisation (R53) : le regroupement par jour et l'heure affichée suivent CE fuseau, pas celui du serveur qui exécute le rendu. */
+  fuseau: string;
   libelles: JournalCampagneLibelles;
 }
 
@@ -38,15 +43,13 @@ function classePuce(actif: boolean): string {
 }
 
 /**
- * `heure` de `Journal` (kit ui) : date courte + heure — le journal d'une
- * campagne mélange des événements d'aujourd'hui et de jours précédents,
- * contrairement à la file du jour (une seule journée, `TableFileDuJour`) qui
- * n'affiche qu'une heure.
+ * `heure` de `Journal` (kit ui) — heure seule : le jour est déjà porté par
+ * l'en-tête de son groupe (`regrouperParJour`/R53), une date répétée sur
+ * chaque ligne serait redondante (même motif que `TableFileDuJour`, qui ne
+ * montre que l'heure une fois groupée par tranche).
  */
-function heureEvenement(iso: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(
-    new Date(iso),
-  );
+function heureEvenement(iso: string, fuseau: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(new Date(iso));
 }
 
 function tonEvenement(type: ActionJournal): 'erreur' | undefined {
@@ -66,17 +69,12 @@ function tonEvenement(type: ActionJournal): 'erreur' | undefined {
  * l'intérieur de la carte — comportement pur, aucun hook, testable par
  * `renderToStaticMarkup`.
  */
-export function JournalCampagne({ base, filtreActif, evenements, libelles }: JournalCampagneProps) {
+export function JournalCampagne({ base, filtreActif, evenements, maintenant, fuseau, libelles }: JournalCampagneProps) {
   if (filtreActif === 'tout' && evenements.length === 0) {
     return <EtatVide titre={libelles.videTitre} texte={libelles.videTexte} />;
   }
 
-  const entrees: EntreeJournal[] = evenements.map((e) => ({
-    heure: heureEvenement(e.quand),
-    texte: e.libelle,
-    note: e.detail ?? undefined,
-    ton: tonEvenement(e.type),
-  }));
+  const groupes = regrouperParJour(evenements, maintenant, fuseau);
 
   return (
     <div className="jr-carte">
@@ -88,7 +86,24 @@ export function JournalCampagne({ base, filtreActif, evenements, libelles }: Jou
         ))}
       </Filtres>
       <div className="jr-corps">
-        {entrees.length === 0 ? <div className="jr-vide">{libelles.videFiltre}</div> : <Journal entrees={entrees} />}
+        {groupes.length === 0 ? (
+          <div className="jr-vide">{libelles.videFiltre}</div>
+        ) : (
+          groupes.map((groupe) => {
+            const entrees: EntreeJournal[] = groupe.evenements.map((e) => ({
+              heure: heureEvenement(e.quand, fuseau),
+              texte: e.libelle,
+              note: e.detail ?? undefined,
+              ton: tonEvenement(e.type),
+            }));
+            return (
+              <div key={groupe.jour.toISOString()}>
+                <h4 className="jr-jour">{libelleJour(groupe.jour, maintenant, 'fr-FR', fuseau)}</h4>
+                <Journal entrees={entrees} />
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

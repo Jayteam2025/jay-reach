@@ -48,3 +48,82 @@ export function heureAvecJour(iso: string, maintenant: Date = new Date()): strin
   const jour = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit' }).format(date);
   return `${jour} ${heure}`;
 }
+
+/**
+ * Clé de jour calendaire d'un instant DANS un fuseau donné (« 2026-09-14 »),
+ * pas dans le fuseau d'exécution du serveur — `en-CA` formate en Gregorian
+ * ISO (année-mois-jour) quel que soit l'environnement, un simple artefact de
+ * cette locale plutôt qu'un choix de langue.
+ */
+function cleJourDansFuseau(date: Date, fuseau: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+    date,
+  );
+}
+
+export interface GroupeParJour<T> {
+  /**
+   * Ancré à midi UTC du jour calendaire (pas minuit) : reformaté ensuite avec
+   * le même fuseau via `libelleJour`, un ancrage à midi reste dans le même
+   * jour calendaire pour tout fuseau réellement en usage dans l'app
+   * (`Europe/Paris`, décalage toujours positif) — minuit UTC s'exposerait à
+   * un décalage négatif hypothétique qui ferait glisser le jour affiché.
+   */
+  jour: Date;
+  evenements: T[];
+}
+
+/**
+ * Regroupe une liste déjà triée par instant décroissant (`quand` ISO) en
+ * tranches d'un même jour calendaire, dans LE FUSEAU donné — pas celui du
+ * serveur qui l'exécute (R53, tour de correction 1, tâche 13). Fonction pure,
+ * même convention que `grouperParHeure` (`TableFileDuJour.tsx`) : la liste
+ * paginée reste plate côté serveur, le regroupement est un pur effet
+ * d'affichage.
+ *
+ * `maintenant` n'est pas utilisé ici (le regroupement ne dépend que du jour
+ * de chaque événement) — le paramètre existe pour la symétrie d'appel avec
+ * `libelleJour`, qui elle en a besoin (« Aujourd'hui »/« Hier »).
+ */
+export function regrouperParJour<T extends { quand: string }>(
+  evenements: readonly T[],
+  _maintenant: Date,
+  fuseau: string,
+): GroupeParJour<T>[] {
+  const groupes: { cle: string; jour: Date; evenements: T[] }[] = [];
+  for (const evenement of evenements) {
+    const cle = cleJourDansFuseau(new Date(evenement.quand), fuseau);
+    const dernier = groupes.at(-1);
+    if (dernier && dernier.cle === cle) {
+      dernier.evenements.push(evenement);
+    } else {
+      groupes.push({ cle, jour: new Date(`${cle}T12:00:00.000Z`), evenements: [evenement] });
+    }
+  }
+  return groupes.map(({ jour, evenements }) => ({ jour, evenements }));
+}
+
+/**
+ * Libellé d'un jour de `regrouperParJour` : « Aujourd'hui, lundi 14
+ * septembre », « Hier, dimanche 13 septembre », sinon une date pleine avec
+ * une majuscule initiale (« Vendredi 11 septembre » — pas de préfixe, donc le
+ * jour de semaine porte lui-même la majuscule de début de phrase).
+ */
+export function libelleJour(jour: Date, maintenant: Date, locale: string, fuseau: string): string {
+  const jourSemaineEtDate = new Intl.DateTimeFormat(locale, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: fuseau,
+  }).format(jour);
+
+  const cleJour = cleJourDansFuseau(jour, fuseau);
+  if (cleJour === cleJourDansFuseau(maintenant, fuseau)) {
+    return `Aujourd'hui, ${jourSemaineEtDate}`;
+  }
+  const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
+  if (cleJour === cleJourDansFuseau(veille, fuseau)) {
+    return `Hier, ${jourSemaineEtDate}`;
+  }
+  return jourSemaineEtDate.charAt(0).toUpperCase() + jourSemaineEtDate.slice(1);
+}

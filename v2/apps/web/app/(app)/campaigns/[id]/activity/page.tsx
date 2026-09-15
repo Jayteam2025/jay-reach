@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable, listerActivite } from '@jay-reach/core';
+import { ErreurIntrouvable, lireReglages, listerActivite } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FILTRES_ACTIVITE, JournalCampagne, type FiltreActiviteCampagne } from '../../../../../components/campagne/JournalCampagne';
 
@@ -44,6 +44,11 @@ export default async function CampagneActivitePage({
     if (err instanceof ErreurIntrouvable) notFound();
     throw err;
   }
+  // Fuseau de l'organisation (R53) : le regroupement par jour du journal
+  // suit ce fuseau, pas celui du serveur qui rend la page.
+  const reglages = await lireReglages(ctx);
+  const fuseau = String(reglages.fuseau);
+  const maintenant = new Date();
 
   const total = resultat.total;
   const debut = total === 0 ? 0 : (page - 1) * TAILLE_PAGE + 1;
@@ -68,6 +73,8 @@ export default async function CampagneActivitePage({
         base={`/campaigns/${id}/activity`}
         filtreActif={filtre}
         evenements={resultat.evenements}
+        maintenant={maintenant}
+        fuseau={fuseau}
         libelles={{
           filtres: libellesFiltres,
           videTitre: t('empty.title'),
