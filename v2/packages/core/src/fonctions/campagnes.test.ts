@@ -15,6 +15,7 @@ import {
   listerCampagnes,
   listerContactsCampagne,
   listerFileDuJour,
+  listerPersonasCampagne,
   manquesPourLancer,
   marqueBoite,
   mettreEnPause,
@@ -456,6 +457,38 @@ describe('listerBoitesPourCampagne', () => {
       { id: 'b1', identite: 'alex@outlook.com', marque: 'outlook' },
       { id: 'b2', identite: 'alex@exemple.fr', marque: null },
     ]);
+  });
+});
+
+describe('listerPersonasCampagne', () => {
+  const campagneId = '11111111-1111-1111-1111-111111111111';
+
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerPersonasCampagne(faux({}, null), { campagneId })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('lève ErreurIntrouvable si la campagne n’existe pas', async () => {
+    const ctx = faux({ 'jr:personas_campagne_lire': [] });
+    await expect(listerPersonasCampagne(ctx, { campagneId })).rejects.toThrow(ErreurIntrouvable);
+  });
+
+  it('campagne sans persona ciblé -> liste vide', async () => {
+    const ctx = faux({ 'jr:personas_campagne_lire': [{ entry_rules: {} }] });
+    const r = await listerPersonasCampagne(ctx, { campagneId });
+    expect(r).toEqual([]);
+  });
+
+  it('filtre la requête des personas par organisation ET par les ids ciblés', async () => {
+    const personaId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const ctx = faux({
+      'jr:personas_campagne_lire': [{ entry_rules: { personas: [personaId] } }],
+      'jr:personas_campagne': [{ id: personaId, name: 'Directeur commercial' }],
+    });
+    const r = await listerPersonasCampagne(ctx, { campagneId });
+    expect(r).toEqual([{ id: personaId, nom: 'Directeur commercial' }]);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appelPersonas = appels.find((a) => /jr:personas_campagne\b/i.test(String(a[0])));
+    expect(appelPersonas?.[1]).toEqual(['org-1', [personaId]]);
   });
 });
 

@@ -851,6 +851,41 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
 }
 
 // ---------------------------------------------------------------------------
+// listerPersonasCampagne (onglet Réglages, R54, tour de correction 1)
+// ---------------------------------------------------------------------------
+
+export interface PersonaCampagne {
+  readonly id: string;
+  readonly nom: string;
+}
+
+/**
+ * Personas ciblés par la campagne (`entry_rules.personas`), en LECTURE SEULE
+ * — la maquette montre leur nom et renvoie leur modification vers l'écran
+ * Personas existant, jamais une écriture ici (R54, tour de correction 1).
+ */
+export async function listerPersonasCampagne(ctx: Contexte, entree: unknown): Promise<PersonaCampagne[]> {
+  exiger(ctx, 'viewer');
+  const { campagneId } = valider(schemaCampagneId, entree);
+
+  const campagneRes = await ctx.ex.query<{ entry_rules: { personas?: string[] } | null }>(
+    `select entry_rules from campaigns /* jr:personas_campagne_lire */ where id = $1 and organization_id = $2`,
+    [campagneId, ctx.organisationId],
+  );
+  const campagne = campagneRes.rows[0];
+  if (!campagne) throw new ErreurIntrouvable('Campagne');
+
+  const personaIds = campagne.entry_rules?.personas ?? [];
+  if (personaIds.length === 0) return [];
+
+  const res = await ctx.ex.query<{ id: string; name: string }>(
+    `select id, name from personas /* jr:personas_campagne */ where organization_id = $1 and id = any($2::uuid[])`,
+    [ctx.organisationId, personaIds],
+  );
+  return res.rows.map((r) => ({ id: r.id, nom: r.name }));
+}
+
+// ---------------------------------------------------------------------------
 // Cycle de vie : création, réglages, lancement, pause, archivage
 // ---------------------------------------------------------------------------
 

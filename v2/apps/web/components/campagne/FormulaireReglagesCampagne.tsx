@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Bouton, Carte, Champ, Interrupteur, TuileLogo } from '../ui';
@@ -20,9 +21,19 @@ export interface BoiteReglage {
   readonly active: boolean;
 }
 
+export interface PersonaReglage {
+  readonly id: string;
+  readonly nom: string;
+}
+
 export interface CorpsReglagesCampagneLibelles {
   identite: string;
   nom: string;
+  /** « Persona ciblé » (R54, tour de correction 1) — lecture seule, jamais modifiable ici. */
+  personasTitre: string;
+  personasVide: string;
+  personasAide: string;
+  personasLien: string;
   ciblageEtRythme: string;
   scoreMin: string;
   scoreMinSuffixe: string;
@@ -42,6 +53,8 @@ export interface CorpsReglagesCampagneLibelles {
 export interface CorpsReglagesCampagneProps {
   nom: string;
   onNomChange: (valeur: string) => void;
+  /** Personas ciblés (`listerPersonasCampagne`) — affichage seul, aucune action de modification ici. */
+  personas: readonly PersonaReglage[];
   scoreMin: string;
   onScoreMinChange: (valeur: string) => void;
   plafondJour: string;
@@ -57,6 +70,7 @@ export interface CorpsReglagesCampagneProps {
 export function CorpsReglagesCampagne({
   nom,
   onNomChange,
+  personas,
   scoreMin,
   onScoreMinChange,
   plafondJour,
@@ -75,6 +89,23 @@ export function CorpsReglagesCampagne({
           <Champ libelle={libelles.nom}>
             <input value={nom} onChange={(e) => onNomChange(e.target.value)} disabled={disabled} />
           </Champ>
+          <div>
+            <span className="jr-libelle">{libelles.personasTitre}</span>
+            {personas.length === 0 ? (
+              <p className="jr-aide">{libelles.personasVide}</p>
+            ) : (
+              <div className="jr-puces">
+                {personas.map((persona) => (
+                  <span key={persona.id} className="jr-puce">
+                    {persona.nom}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="jr-aide">
+              {libelles.personasAide} <Link href="/settings/personas">{libelles.personasLien}</Link>
+            </div>
+          </div>
         </div>
       </Carte>
 
@@ -165,6 +196,8 @@ export interface FormulaireReglagesCampagneProps {
     dailyCap: number | null;
     relecturePremiersEnvois: number;
   };
+  /** Personas ciblés par la campagne (`listerPersonasCampagne`) — lecture seule (R54, tour de correction 1). */
+  personas: readonly PersonaReglage[];
   /** Toutes les boîtes email actives de l'organisation (`listerBoitesPourCampagne`, tâche 20 plus tard). */
   boites: readonly { id: string; identite: string; marque: 'outlook' | 'gmail' | null }[];
   /** Boîtes actuellement retenues par la campagne (`CampagneEnTete.boites` — le pool entier si `entry_rules.boiteIds` est absent). */
@@ -189,6 +222,7 @@ function versEntier(valeur: string): number | null {
 export function FormulaireReglagesCampagne({
   campagneId,
   initial,
+  personas,
   boites,
   boiteIdsSelectionnees,
   enSequence,
@@ -268,6 +302,7 @@ export function FormulaireReglagesCampagne({
       <CorpsReglagesCampagne
         nom={nom}
         onNomChange={setNom}
+        personas={personas}
         scoreMin={scoreMin}
         onScoreMinChange={setScoreMin}
         plafondJour={plafondJour}
@@ -280,6 +315,10 @@ export function FormulaireReglagesCampagne({
         libelles={{
           identite: t('identity.title'),
           nom: t('identity.name'),
+          personasTitre: t('identity.personasTitle'),
+          personasVide: t('identity.personasEmpty'),
+          personasAide: t('identity.personasHint'),
+          personasLien: t('identity.personasLink'),
           ciblageEtRythme: t('targeting.title'),
           scoreMin: t('targeting.minScore'),
           scoreMinSuffixe: t('targeting.minScoreSuffix'),

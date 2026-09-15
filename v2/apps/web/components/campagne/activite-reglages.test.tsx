@@ -133,6 +133,10 @@ describe('JournalCampagne', () => {
 const LIBELLES_REGLAGES = {
   identite: 'Identité',
   nom: 'Nom de la campagne',
+  personasTitre: 'Persona ciblé',
+  personasVide: 'Aucun persona ciblé.',
+  personasAide: 'Les personas se modifient dans',
+  personasLien: 'Personas',
   ciblageEtRythme: 'Ciblage et rythme',
   scoreMin: 'Score minimal',
   scoreMinSuffixe: '/ 100',
@@ -159,6 +163,7 @@ describe('CorpsReglagesCampagne', () => {
       <CorpsReglagesCampagne
         nom="Directeur commercial"
         onNomChange={() => {}}
+        personas={[]}
         scoreMin="70"
         onScoreMinChange={() => {}}
         plafondJour="30"
@@ -182,6 +187,7 @@ describe('CorpsReglagesCampagne', () => {
       <CorpsReglagesCampagne
         nom="Directeur commercial"
         onNomChange={() => {}}
+        personas={[]}
         scoreMin="70"
         onScoreMinChange={() => {}}
         plafondJour="30"
@@ -202,6 +208,7 @@ describe('CorpsReglagesCampagne', () => {
       <CorpsReglagesCampagne
         nom="x"
         onNomChange={() => {}}
+        personas={[]}
         scoreMin="70"
         onScoreMinChange={() => {}}
         plafondJour="30"
@@ -224,6 +231,7 @@ describe('CorpsReglagesCampagne', () => {
       <CorpsReglagesCampagne
         nom="x"
         onNomChange={() => {}}
+        personas={[]}
         scoreMin="70"
         onScoreMinChange={() => {}}
         plafondJour="30"
@@ -238,5 +246,53 @@ describe('CorpsReglagesCampagne', () => {
     );
     expect(html).toContain('Aucune boîte email active pour l’instant.');
     expect(html).not.toContain('jr-source');
+  });
+
+  it('deux personas ciblés -> une puce par persona, lien vers l’écran Personas (R54)', () => {
+    const html = renderToStaticMarkup(
+      <CorpsReglagesCampagne
+        nom="x"
+        onNomChange={() => {}}
+        personas={[
+          { id: 'p1', nom: 'Directeur commercial' },
+          { id: 'p2', nom: 'Responsable RH' },
+        ]}
+        scoreMin="70"
+        onScoreMinChange={() => {}}
+        plafondJour="30"
+        onPlafondJourChange={() => {}}
+        relecture="0"
+        onRelectureChange={() => {}}
+        boites={[]}
+        onToggleBoite={() => {}}
+        disabled={false}
+        libelles={LIBELLES_REGLAGES}
+      />,
+    );
+    expect(html).toContain('Directeur commercial');
+    expect(html).toContain('Responsable RH');
+    expect(html).toContain('href="/settings/personas"');
+    expect(html).toContain('Personas');
+  });
+
+  it('aucun persona ciblé -> état vide dédié, pas de lien manquant', () => {
+    const html = renderToStaticMarkup(
+      <CorpsReglagesCampagne
+        nom="x"
+        onNomChange={() => {}}
+        personas={[]}
+        scoreMin="70"
+        onScoreMinChange={() => {}}
+        plafondJour="30"
+        onPlafondJourChange={() => {}}
+        relecture="0"
+        onRelectureChange={() => {}}
+        boites={[]}
+        onToggleBoite={() => {}}
+        disabled={false}
+        libelles={LIBELLES_REGLAGES}
+      />,
+    );
+    expect(html).toContain('Aucun persona ciblé.');
   });
 });

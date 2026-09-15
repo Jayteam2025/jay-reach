@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { ErreurIntrouvable, listerBoitesPourCampagne } from '@jay-reach/core';
+import { ErreurIntrouvable, listerBoitesPourCampagne, listerPersonasCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../../lib/campagne';
 import { FormulaireReglagesCampagne } from '../../../../../components/campagne/FormulaireReglagesCampagne';
@@ -12,10 +12,12 @@ export default async function CampagneReglagesPage({ params }: { params: Promise
 
   let vue: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
   let toutesBoites: Awaited<ReturnType<typeof listerBoitesPourCampagne>>;
+  let personas: Awaited<ReturnType<typeof listerPersonasCampagne>>;
   try {
-    [vue, toutesBoites] = await Promise.all([
+    [vue, toutesBoites, personas] = await Promise.all([
       lireVueDEnsembleCourante(ctx, id),
       listerBoitesPourCampagne(ctx, {}),
+      listerPersonasCampagne(ctx, { campagneId: id }),
     ]);
   } catch (err) {
     if (err instanceof ErreurIntrouvable) notFound();
@@ -32,6 +34,7 @@ export default async function CampagneReglagesPage({ params }: { params: Promise
           dailyCap: vue.campagne.dailyCap,
           relecturePremiersEnvois: vue.campagne.relecturePremiersEnvois,
         }}
+        personas={personas}
         boites={toutesBoites}
         boiteIdsSelectionnees={vue.campagne.boites.map((boite) => boite.id)}
         enSequence={vue.entonnoir.enSequence}

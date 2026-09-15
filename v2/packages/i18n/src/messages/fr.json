@@ -1366,7 +1366,11 @@
     "reglages": {
       "identity": {
         "title": "Identité",
-        "name": "Nom de la campagne"
+        "name": "Nom de la campagne",
+        "personasTitle": "Persona ciblé",
+        "personasEmpty": "Aucun persona ciblé.",
+        "personasHint": "Les personas se modifient dans",
+        "personasLink": "Personas"
       },
       "targeting": {
         "title": "Ciblage et rythme",
