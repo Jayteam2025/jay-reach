@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { lireSequence, apercuEtape, ErreurIntrouvable } from '@jay-reach/core';
+import { lireSequence, apercuEtape, ErreurIntrouvable, type ApercuEtape } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
 import { FluxSequence } from '../../../../../components/sequence/FluxSequence';
@@ -35,7 +35,7 @@ export default async function CampagneSequencePage({
       // `apercuEtape` ne devrait donc jamais la manquer — mais une étape
       // supprimée entre les deux lectures ne doit pas faire tomber la page,
       // seulement priver le tiroir de son aperçu.
-      let apercu: { sujet: string; corps: string } | null = null;
+      let apercu: ApercuEtape | null = null;
       try {
         const resultat = await apercuEtape(ctx, { etapeId: etape.id });
         apercu = resultat.corps ? resultat : null;

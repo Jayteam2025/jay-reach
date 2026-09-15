@@ -26,7 +26,7 @@ export interface TiroirEtapeProps {
   /** `null` en création : le formulaire crée une nouvelle étape en fin de séquence. */
   readonly etape: EtapeAModifier | null;
   /** Rendu déjà résolu (contact fictif) par `apercuEtape`, côté serveur — `null` sans message existant. */
-  readonly apercu: { sujet: string; corps: string } | null;
+  readonly apercu: { sujet: string; corps: string; variablesManquantes: string[] } | null;
 }
 
 /** Variables offertes à l'insertion (maquette `tiroir-etape.html`), cliquer insère `{{nom}}` au curseur. */
@@ -258,7 +258,9 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
         )}
         {testMessage && <div className="jr-notification bon">{testMessage}</div>}
 
-        {apercu && <ApercuMessage sujet={apercu.sujet} corps={apercu.corps} />}
+        {apercu && (
+          <ApercuMessage sujet={apercu.sujet} corps={apercu.corps} variablesManquantes={apercu.variablesManquantes} />
+        )}
 
         {etape && canal === 'email' && <p className="jr-aide">{t('drawer.testNote')}</p>}
       </div>

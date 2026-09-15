@@ -1314,6 +1314,9 @@
         "linkedinNotice": "l'envoi s'exécute côté serveur (à venir)",
         "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
       },
+      "preview": {
+        "missing": "{n, plural, one {Variable sans valeur : {liste}.} other {Variables sans valeur : {liste}.}} L'envoi sera bloqué tant qu'elles manquent."
+      },
       "drawer": {
         "close": "Fermer",
         "titleNew": "Nouvelle étape",

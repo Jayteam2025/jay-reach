@@ -4,6 +4,8 @@ export interface ApercuMessageProps {
   /** Rendu déjà résolu par `apercuEtape` (variables remplacées) — jamais recalculé côté client. */
   readonly sujet: string;
   readonly corps: string;
+  /** `apercuEtape(...).variablesManquantes` (C5) : non vide → l'envoi sera bloqué tant qu'elles manquent, même mécanique qu'`apercuEnvoi` (`file-du-jour.ts`). */
+  readonly variablesManquantes: string[];
 }
 
 /**
@@ -13,9 +15,11 @@ export interface ApercuMessageProps {
  *
  * N'utilise pas le composant `Message` du kit (`components/ui`) : celui-ci
  * porte un émetteur et une date réels, qu'un aperçu de gabarit n'a pas — les
- * inventer laisserait croire à un envoi daté qui n'existe pas.
+ * inventer laisserait croire à un envoi daté qui n'existe pas. L'avertissement
+ * de variables manquantes reprend en revanche le même bandeau que
+ * `TiroirRelecture` (`.jr-bandeau.attention`).
  */
-export function ApercuMessage({ sujet, corps }: ApercuMessageProps) {
+export function ApercuMessage({ sujet, corps, variablesManquantes }: ApercuMessageProps) {
   const t = useTranslations('campagne.sequence');
   if (!corps) return null;
 
@@ -26,6 +30,11 @@ export function ApercuMessage({ sujet, corps }: ApercuMessageProps) {
         <span>{t('drawer.previewCaption')}</span>
       </h4>
       <div className="jr-message sortant">
+        {variablesManquantes.length > 0 && (
+          <div className="jr-bandeau attention">
+            {t('preview.missing', { n: variablesManquantes.length, liste: variablesManquantes.join(', ') })}
+          </div>
+        )}
         <div className="corps">
           {sujet && <b className="jr-message-objet">{sujet}</b>}
           {corps}

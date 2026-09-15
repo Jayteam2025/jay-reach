@@ -424,6 +424,7 @@ describe('apercuEtape', () => {
     expect(res).toEqual({
       sujet: 'Claire, une question sur ton équipe',
       corps: 'Claire chez Néolia, Directrice commerciale ?',
+      variablesManquantes: [],
     });
   });
 
@@ -455,7 +456,39 @@ describe('apercuEtape', () => {
       'jr:valeurs_contact_extraits': [],
     });
     const res = await apercuEtape(ctx, { etapeId, contactId });
-    expect(res).toEqual({ sujet: 'Objet Karim', corps: 'Corps Karim Woodpecker Studio' });
+    expect(res).toEqual({ sujet: 'Objet Karim', corps: 'Corps Karim Woodpecker Studio', variablesManquantes: [] });
+  });
+
+  it('signale une variable manquante (C5) : un contact sans entreprise ne résout pas {{entreprise}}', async () => {
+    const ctx = faux({
+      'jr:sequence_apercu_etape': [{ campaign_id: campagneId, template_parent_id: templateParentId }],
+      'jr:sequence_apercu_gabarit': [{ subject: 'Objet {{prenom}}', body: 'Corps {{prenom}} de {{entreprise}}' }],
+      'jr:valeurs_contact\\b': [
+        {
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: 'DAF',
+          email: 'k.benali@example.test',
+          locale: 'fr',
+          company_name: null,
+          domain: null,
+          city: null,
+          headcount: null,
+          postal_code: null,
+          country: null,
+          persona_angle: null,
+          signal_title: null,
+          signal_location: null,
+          signal_url: null,
+          signal_occurred_at: null,
+          context_note: null,
+        },
+      ],
+      'jr:valeurs_contact_extraits': [],
+    });
+    const res = await apercuEtape(ctx, { etapeId, contactId });
+    expect(res.variablesManquantes).toEqual(['entreprise']);
+    expect(res.corps).toBe('Corps Karim de ');
   });
 
   it('lève ErreurIntrouvable si l’étape n’appartient pas à l’organisation', async () => {

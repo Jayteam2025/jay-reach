@@ -569,7 +569,14 @@ const VALEURS_CONTACT_FICTIF: Readonly<Record<string, string>> = {
   signal_mois: 'septembre',
 };
 
-export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<{ sujet: string; corps: string }> {
+export interface ApercuEtape {
+  readonly sujet: string;
+  readonly corps: string;
+  /** `renderTemplate(...).missing` de l'objet et du corps, dédoublonnées — même mécanique qu'`apercuEnvoi` (`file-du-jour.ts`, C5). */
+  readonly variablesManquantes: string[];
+}
+
+export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<ApercuEtape> {
   exiger(ctx, 'viewer');
   const { etapeId, contactId } = valider(schemaApercuEtape, entree);
 
@@ -582,7 +589,7 @@ export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<{ suj
   const etape = etapeRes.rows[0];
   if (!etape) throw new ErreurIntrouvable('Étape');
 
-  if (!etape.template_parent_id) return { sujet: '', corps: '' };
+  if (!etape.template_parent_id) return { sujet: '', corps: '', variablesManquantes: [] };
 
   const gabaritRes = await ctx.ex.query<{ subject: string | null; body: string }>(
     `select subject, body from message_templates /* jr:sequence_apercu_gabarit */
@@ -592,7 +599,7 @@ export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<{ suj
     [etape.template_parent_id],
   );
   const gabarit = gabaritRes.rows[0];
-  if (!gabarit) return { sujet: '', corps: '' };
+  if (!gabarit) return { sujet: '', corps: '', variablesManquantes: [] };
 
   let valeurs: Record<string, string | undefined> = VALEURS_CONTACT_FICTIF;
   if (contactId) {
@@ -600,9 +607,13 @@ export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<{ suj
     valeurs = contact?.valeurs ?? {};
   }
 
+  const renduObjet = renderTemplate(gabarit.subject ?? '', valeurs);
+  const renduCorps = renderTemplate(gabarit.body, valeurs);
+
   return {
-    sujet: renderTemplate(gabarit.subject ?? '', valeurs).text,
-    corps: renderTemplate(gabarit.body, valeurs).text,
+    sujet: renduObjet.text,
+    corps: renduCorps.text,
+    variablesManquantes: [...new Set([...renduObjet.missing, ...renduCorps.missing])],
   };
 }
 
