@@ -17,8 +17,6 @@ import { getPool } from './db';
 const BASE_SALESBLINK = 'https://run.salesblink.io/api/public/v1.0.0';
 /** Même ordre de grandeur que les autres providers (`adzuna.ts`, `reoon.ts`), mais plus court : cet appel est sur le chemin de rendu de l'écran Expéditeurs, pas dans un job de fond. */
 const TIMEOUT_MS = 5_000;
-/** Appel déclenché par un clic opérateur (réponse d'un fil) : délai un peu plus large que la lecture des boîtes. */
-const TIMEOUT_MS_REPONSE = 10_000;
 
 export interface BoiteSalesBlink {
   readonly id: string;
@@ -140,57 +138,4 @@ export async function listerBoitesSalesBlink(organizationId: string): Promise<Re
   });
 
   return { ok: true, boites };
-}
-
-/** Même prudence que ci-dessus : jamais la clé ni le corps de réponse dans une erreur. */
-export class ErreurSalesBlinkWeb extends Error {
-  constructor(
-    readonly code: 'reseau' | 'client' | 'serveur',
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ErreurSalesBlinkWeb';
-  }
-}
-
-/**
- * Répond dans le fil d'un message reçu via SalesBlink (lot 3 bis, tâche 3).
- * Duplique volontairement `repondreDansLeFil`
- * (`packages/providers/src/outreach/salesblink.ts`) pour la même raison que
- * `listerBoitesSalesBlink` ci-dessus : ce paquet n'est pas transpilé par Next,
- * l'importer casserait le déploiement.
- */
-export async function repondreDansLeFilSalesBlink(
-  messageId: string,
-  corpsHtml: string,
-  cle: string,
-): Promise<{ idTache: string }> {
-  let reponse: Response;
-  try {
-    reponse = await fetch(`${BASE_SALESBLINK}/inbox/${encodeURIComponent(messageId)}/reply`, {
-      method: 'POST',
-      headers: { Authorization: cle, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: corpsHtml }),
-      signal: AbortSignal.timeout(TIMEOUT_MS_REPONSE),
-    });
-  } catch {
-    throw new ErreurSalesBlinkWeb('reseau', 'Échec de connexion à SalesBlink');
-  }
-
-  const texteReponse = await reponse.text();
-  if (!reponse.ok) {
-    throw new ErreurSalesBlinkWeb(
-      reponse.status >= 500 ? 'serveur' : 'client',
-      `Requête SalesBlink refusée (${reponse.status})`,
-    );
-  }
-
-  let corps: unknown;
-  try {
-    corps = texteReponse ? JSON.parse(texteReponse) : null;
-  } catch {
-    throw new ErreurSalesBlinkWeb('serveur', 'Réponse SalesBlink invalide (JSON)');
-  }
-
-  return { idTache: texte((donnees(corps) as Record<string, unknown> | null)?.id) };
 }

@@ -7,8 +7,10 @@ import { createServiceClient } from '../../lib/supabase/service';
 import { getPool } from '../../lib/db';
 import { classifyReply, repondreAuFil, texteVersHtml, ErreurEntree, type ReplyClassification } from '@jay-reach/core';
 import { classifyReplyWithModel, generateSuggestedReply, resolveAnthropicKey } from '../../lib/anthropic';
-import { resolveGraphConfig, repondreDansLaBoiteWeb } from '../../lib/graph';
-import { resolveSalesblinkKey, repondreDansLeFilSalesBlink } from '../../lib/salesblink';
+import { resolveGraphConfig } from '../../lib/graph';
+import { repondreDansLaBoite, ErreurGraph } from '@jay-reach/providers/mail';
+import { resolveSalesblinkKey } from '../../lib/salesblink';
+import { repondreDansLeFil, ErreurSalesBlink } from '@jay-reach/providers/outreach';
 
 export type ClassifyResult = { ok: true; count: number } | { ok: false; error: string };
 export type SuggestResult = { ok: true; draft: string } | { ok: false; error: string };
@@ -189,23 +191,27 @@ export async function repondre(threadId: string, corps: string): Promise<Repondr
           if (!config) {
             throw new ErreurEntree("Microsoft Graph n'est pas configuré pour cette organisation.");
           }
-          await repondreDansLaBoiteWeb(config, mailbox, messageId, corpsHtml);
+          await repondreDansLaBoite(config, mailbox, messageId, corpsHtml);
         },
         salesblink: async (messageId, corpsHtml) => {
           const cle = await resolveSalesblinkKey(organizationId);
           if (!cle) {
             throw new ErreurEntree("SalesBlink n'est pas configuré pour cette organisation.");
           }
-          return repondreDansLeFilSalesBlink(messageId, corpsHtml, cle);
+          return repondreDansLeFil(messageId, corpsHtml, cle);
         },
       },
     );
   } catch (err) {
-    // Jamais le détail brut d'une erreur transport (clé, secret, corps de
-    // réponse du provider) : seul le message d'`ErreurEntree`, déjà pensé
-    // pour l'opérateur, est renvoyé tel quel.
+    // `ErreurEntree` est déjà pensée pour l'opérateur : son message est
+    // renvoyé tel quel. `ErreurGraph` et `ErreurSalesBlink` (clients
+    // `@jay-reach/providers`) peuvent porter jusqu'à 200 caractères du corps
+    // de réponse du provider — jamais relayées telles quelles à l'écran.
     if (err instanceof ErreurEntree) {
       return { ok: false, error: err.message };
+    }
+    if (err instanceof ErreurGraph || err instanceof ErreurSalesBlink) {
+      return { ok: false, error: 'Envoi impossible pour le moment.' };
     }
     return { ok: false, error: 'Envoi impossible pour le moment.' };
   }

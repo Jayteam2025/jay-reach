@@ -1,50 +1,26 @@
 /**
- * Client Microsoft Graph minimal côté web — uniquement la réponse à un message
- * reçu, pour la zone de réponse de la Réception (lot 3 bis, tâche 3).
+ * Résolution de la configuration Microsoft Graph d'une organisation, côté web
+ * (lot 3 bis, tâche 3 — zone de réponse de la Réception).
  *
- * Ne réimporte PAS `@jay-reach/providers/mail` (le client complet du worker,
- * `repondreDansLaBoite`) : ce sous-chemin résout vers `dist/`, absent tant que
- * le paquet n'a pas été construit — ce que Vercel ne fait pas pour les paquets
- * internes lors du build de `apps/web` (`apps/web/vercel.json` ne construit
- * que `@jay-reach/web`, pas `packages/*`). L'importer casserait le déploiement,
- * même indirectement via `@jay-reach/worker` (qui dépend lui aussi de
- * `@jay-reach/providers`) — même raison déjà documentée dans `salesblink.ts`
- * pour `listerBoitesSalesBlink`.
- *
- * Aucun jeton ni secret ne doit jamais fuiter dans une erreur : `ErreurGraphWeb`
- * ne porte qu'un code générique, jamais le corps de réponse Microsoft.
+ * L'appel réseau lui-même passe par `repondreDansLaBoite`
+ * (`@jay-reach/providers/mail`) : ce paquet compile déjà dans `apps/web`
+ * (`actions/providers.ts`, `settings/providers/page.tsx` importent
+ * `@jay-reach/providers`) — les `paths` de `tsconfig.base.json` font pointer
+ * `@jay-reach/providers/mail` vers `packages/providers/src/mail/index.ts`,
+ * et Next suit ces chemins pour sa résolution webpack, indépendamment de
+ * `package.json#exports` (qui pointerait sinon vers un `dist/` non construit
+ * au déploiement de `apps/web`).
  */
+import type { ConfigGraph } from '@jay-reach/providers/mail';
 import { getPool } from './db';
 
-const BASE_LOGIN = 'https://login.microsoftonline.com';
-const BASE_GRAPH = 'https://graph.microsoft.com/v1.0';
-/** Appel déclenché par un clic opérateur (pas un job de fond) : délai court mais suffisant pour un aller-retour Microsoft. */
-const TIMEOUT_MS = 15_000;
-
-export interface ConfigGraphWeb {
-  readonly tenantId: string;
-  readonly clientId: string;
-  readonly clientSecret: string;
-}
-
-export class ErreurGraphWeb extends Error {
-  constructor(
-    readonly code: 'graph_auth' | 'graph_http',
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ErreurGraphWeb';
-  }
-}
-
 /**
- * Résout la configuration Microsoft Graph de l'organisation : `tenant_id` /
- * `client_id` depuis la config JSON du coffre (non secrets), `client_secret`
- * déchiffré via `app.get_credential` — mêmes champs que le provider
- * `microsoft_graph` du catalogue (`packages/providers/src/catalog.ts`),
+ * `tenant_id` / `client_id` depuis la config JSON du coffre (non secrets),
+ * `client_secret` déchiffré via `app.get_credential` — mêmes champs que le
+ * provider `microsoft_graph` du catalogue (`packages/providers/src/catalog.ts`),
  * variables d'environnement en repli, même ordre que `resolveSalesblinkKey`.
  */
-export async function resolveGraphConfig(organizationId: string): Promise<ConfigGraphWeb | null> {
+export async function resolveGraphConfig(organizationId: string): Promise<ConfigGraph | null> {
   const pool = getPool();
 
   let config: Record<string, string> | null = null;
@@ -78,65 +54,4 @@ export async function resolveGraphConfig(organizationId: string): Promise<Config
 
   if (!tenantId || !clientId || !clientSecret) return null;
   return { tenantId, clientId, clientSecret };
-}
-
-async function obtenirJetonWeb(cfg: ConfigGraphWeb): Promise<string> {
-  const corps = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    scope: 'https://graph.microsoft.com/.default',
-  });
-
-  let reponse: Response;
-  try {
-    reponse = await fetch(`${BASE_LOGIN}/${encodeURIComponent(cfg.tenantId)}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: corps.toString(),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch {
-    throw new ErreurGraphWeb('graph_auth', "Échec de connexion au service d'authentification Microsoft");
-  }
-  if (!reponse.ok) {
-    throw new ErreurGraphWeb('graph_auth', `Authentification Microsoft Graph refusée (${reponse.status})`);
-  }
-
-  let corpsJson: { access_token?: unknown };
-  try {
-    corpsJson = (await reponse.json()) as { access_token?: unknown };
-  } catch {
-    throw new ErreurGraphWeb('graph_auth', "Réponse d'authentification Microsoft Graph invalide");
-  }
-  if (typeof corpsJson.access_token !== 'string') {
-    throw new ErreurGraphWeb('graph_auth', "Réponse d'authentification Microsoft Graph sans jeton");
-  }
-  return corpsJson.access_token;
-}
-
-/** Répond dans le fil d'un message reçu, dans une boîte Microsoft 365 donnée. */
-export async function repondreDansLaBoiteWeb(
-  cfg: ConfigGraphWeb,
-  boite: string,
-  messageId: string,
-  corpsHtml: string,
-): Promise<void> {
-  const jeton = await obtenirJetonWeb(cfg);
-  const url = `${BASE_GRAPH}/users/${encodeURIComponent(boite)}/messages/${encodeURIComponent(messageId)}/reply`;
-
-  let reponse: Response;
-  try {
-    reponse = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${jeton}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: { body: { contentType: 'HTML', content: corpsHtml } } }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch {
-    throw new ErreurGraphWeb('graph_http', 'Échec de connexion à Microsoft Graph');
-  }
-  if (!reponse.ok) {
-    throw new ErreurGraphWeb('graph_http', `Requête Microsoft Graph refusée (${reponse.status})`);
-  }
 }
