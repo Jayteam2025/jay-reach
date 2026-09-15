@@ -542,6 +542,16 @@ describe('envoyerTest', () => {
 });
 
 describe('verserDansBibliotheque', () => {
+  it('bascule origin/name sur toute la lignée (id = $3 or parent_id = $3)', async () => {
+    const ctx = faux({ 'jr:sequence_verser_bibliotheque': [{}] }, 'admin');
+    await expect(
+      verserDansBibliotheque(ctx, { campagneId, templateParentId, nom: '  Premier email  ' }),
+    ).resolves.toBeUndefined();
+
+    const maj = appelsDe(ctx).find((a) => /jr:sequence_verser_bibliotheque/i.test(String(a[0])));
+    expect(maj?.[1]).toEqual(['Premier email', 'org-1', templateParentId]);
+  });
+
   it('lève ErreurIntrouvable si le modèle n’existe pas dans cette organisation', async () => {
     const ctx = faux({}, 'admin');
     await expect(verserDansBibliotheque(ctx, { campagneId, templateParentId, nom: 'Premier email' })).rejects.toThrow(
