@@ -35,7 +35,18 @@ export type ActionJournal =
   | 'action_approved'
   | 'action_rejected'
   // Relance d'un envoi échoué (R34, tour de correction 1).
-  | 'action_retried';
+  | 'action_retried'
+  // Actions d'opérateur sur une source (tâche 11, `fonctions/sources.ts`) :
+  // création, modification, activation/désactivation et demande de passage
+  // immédiat. Même limite que `action_rescheduled` et consorts ci-dessus :
+  // pas encore repris dans `ACTIONS_PAR_FILTRE`/`conditionTout` de
+  // `listerActivite` (campagnes.ts), qui ne matche pour `entity_type =
+  // 'source'` que l'action `source_run` écrite par le worker — ces
+  // événements n'apparaissent donc pas encore dans l'onglet Activité.
+  | 'source.created'
+  | 'source.updated'
+  | 'source.toggled'
+  | 'source.run_requested';
 
 export interface EvenementJournal {
   readonly organisationId: string;
