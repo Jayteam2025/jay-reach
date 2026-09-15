@@ -60,10 +60,16 @@ export async function getCurrentOrganizationId(): Promise<string | null> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return null;
+  // Tri explicite : sans lui, « la première adhésion » dépend de l'ordre que
+  // la base juge commode, et deux appels successifs peuvent désigner deux
+  // organisations différentes. L'adhésion la plus ancienne gagne, l'identifiant
+  // départage.
   const { data } = await supabase
     .from('memberships')
     .select('organization_id')
     .eq('user_id', userData.user.id)
+    .order('created_at', { ascending: true })
+    .order('organization_id', { ascending: true })
     .limit(1);
   return ((data as { organization_id: string }[] | null) ?? [])[0]?.organization_id ?? null;
 }

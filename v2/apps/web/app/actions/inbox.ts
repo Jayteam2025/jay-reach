@@ -6,11 +6,12 @@ import { requireRole, getCurrentOrganizationId } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 import { getPool } from '../../lib/db';
 import { classifyReply, repondreAuFil, texteVersHtml, ErreurEntree, type ReplyClassification } from '@jay-reach/core';
+import { messageErreurReponse } from '../../lib/erreur-reponse';
 import { classifyReplyWithModel, generateSuggestedReply, resolveAnthropicKey } from '../../lib/anthropic';
 import { resolveGraphConfig } from '../../lib/graph';
-import { repondreDansLaBoite, ErreurGraph } from '@jay-reach/providers/mail';
+import { repondreDansLaBoite } from '@jay-reach/providers/mail';
 import { resolveSalesblinkKey } from '../../lib/salesblink';
-import { repondreDansLeFil, ErreurSalesBlink } from '@jay-reach/providers/outreach';
+import { repondreDansLeFil } from '@jay-reach/providers/outreach';
 
 export type ClassifyResult = { ok: true; count: number } | { ok: false; error: string };
 export type SuggestResult = { ok: true; draft: string } | { ok: false; error: string };
@@ -203,17 +204,10 @@ export async function repondre(threadId: string, corps: string): Promise<Repondr
       },
     );
   } catch (err) {
-    // `ErreurEntree` est déjà pensée pour l'opérateur : son message est
-    // renvoyé tel quel. `ErreurGraph` et `ErreurSalesBlink` (clients
-    // `@jay-reach/providers`) peuvent porter jusqu'à 200 caractères du corps
-    // de réponse du provider — jamais relayées telles quelles à l'écran.
-    if (err instanceof ErreurEntree) {
-      return { ok: false, error: err.message };
-    }
-    if (err instanceof ErreurGraph || err instanceof ErreurSalesBlink) {
-      return { ok: false, error: 'Envoi impossible pour le moment.' };
-    }
-    return { ok: false, error: 'Envoi impossible pour le moment.' };
+    // Une seule règle, dans `lib/erreur-reponse` : message de l'opérateur pour
+    // une `ErreurEntree`, texte propre à Microsoft pour un refus de la boîte,
+    // générique sinon. Jamais le corps de réponse d'un fournisseur.
+    return { ok: false, error: messageErreurReponse(err) };
   }
 
   revalidatePath('/inbox');

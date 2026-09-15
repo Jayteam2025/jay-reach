@@ -104,12 +104,17 @@ export async function traiterEvenementEmail(
     // Sans `ev.headers` (une source email antérieure), `sujet` (tâche 10)
     // passe seul par `headers` : c'est le seul champ que le type prévoyait
     // alors pour porter une donnée annexe au message.
+    // `receivedAt` porte l'heure de réception RÉELLE du message (`ev.aMs`),
+    // pas celle du passage de la relève : SalesBlink détecte une réponse des
+    // heures après coup, et l'horodater à l'instant du passage fausse l'ordre
+    // du fil et le choix du transport, qui prend le dernier message reçu.
     const enregistre = await recordInboundReply(ex, org, {
       contactId: contact.id,
       channel: 'email',
       body: ev.corps,
       providerMessageId: ev.messageId,
       headers: ev.headers ?? (ev.sujet ? { subject: ev.sujet } : null),
+      receivedAt: new Date(ev.aMs),
     });
     if (enregistre.isNew) {
       // Notification même pour une auto-réponse : le fil doit être vu (règle n° 9).

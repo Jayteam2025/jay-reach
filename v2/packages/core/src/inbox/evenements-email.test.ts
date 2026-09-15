@@ -86,6 +86,22 @@ describe('traiterEvenementEmail', () => {
     expect(headersEcrits).toEqual({ transport: 'microsoft_graph', mailbox: 'ventes@exemple.fr', graph_message_id: 'msg-1' });
   });
 
+  it('répondu : le message est horodaté à sa réception réelle, pas à l’instant de la relève', async () => {
+    const { ex, appels } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
+    const recuA = Date.parse('2026-09-15T08:30:00.000Z');
+    const repondu: EvenementEmail = { ...REPONDU, aMs: recuA };
+
+    await traiterEvenementEmail(ex, 'org-1', repondu, 'microsoft_graph');
+
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion).toBeDefined();
+    // `sent_at` est le dernier paramètre de l'insert. La relève SalesBlink
+    // détecte une réponse des heures après sa réception : l'horodater à
+    // l'instant du passage fausse l'ordre du fil et le choix du transport,
+    // qui prend le dernier message reçu.
+    expect(insertion!.values[5]).toBe(new Date(recuA).toISOString());
+  });
+
   it('répondu avec headers d’auto-réponse (Graph) : change la classification, contrairement à sujet seul', async () => {
     const { ex } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
     const repondu: EvenementEmail = {

@@ -71,7 +71,7 @@ describe('listerMessagesRecus', () => {
       throw new Error(`URL inattendue: ${url}`);
     });
 
-    const messages = await listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
+    const { messages } = await listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
 
     expect(messages).toEqual([]);
     expect(appelsJeton).toBe(2);
@@ -107,7 +107,7 @@ describe('listerMessagesRecus', () => {
 
     const promesse = listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
     await vi.advanceTimersByTimeAsync(1000);
-    const messages = await promesse;
+    const { messages } = await promesse;
 
     expect(appelsGraph).toBe(2);
     expect(messages).toHaveLength(1);
@@ -155,9 +155,113 @@ describe('listerMessagesRecus', () => {
       });
     });
 
-    const messages = await listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
+    const { messages, tronque } = await listerMessagesRecus(
+      cfg,
+      'boite@exemple.fr',
+      '2026-01-01T00:00:00Z',
+      fetchFn as unknown as typeof fetch,
+    );
 
     expect(messages.map((m) => m.id)).toEqual(['msg-1', 'msg-2']);
+    // La dernière page n'annonçait plus de suite : tout a été lu.
+    expect(tronque).toBe(false);
+  });
+
+  it('lit du plus ancien au plus récent : une fenêtre saturée perd la fin, jamais le début', async () => {
+    const cfg = cfgTest('tri');
+    let urlPremierAppel = '';
+    const fetchFn = vi.fn(async (url: string) => {
+      if (String(url).includes('login.microsoftonline.com')) return reponseJeton();
+      if (!urlPremierAppel) urlPremierAppel = String(url);
+      return reponseJson({ value: [] });
+    });
+
+    await listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
+
+    expect(new URL(urlPremierAppel).searchParams.get('$orderby')).toBe('receivedDateTime asc');
+  });
+
+  it('plafond de pages atteint avec une suite annoncée : troncature signalée avec le dernier message lu', async () => {
+    const cfg = cfgTest('troncature');
+    let page = 0;
+    const fetchFn = vi.fn(async (url: string) => {
+      if (String(url).includes('login.microsoftonline.com')) return reponseJeton();
+      page += 1;
+      return reponseJson({
+        value: [
+          {
+            id: `msg-${page}`,
+            conversationId: 'conv-1',
+            receivedDateTime: `2026-01-01T00:${String(page).padStart(2, '0')}:00Z`,
+          },
+        ],
+        // Graph annonce toujours une suite : le plafond de pages du client
+        // finit par trancher, et l'appelant doit l'apprendre.
+        '@odata.nextLink': `https://graph.microsoft.com/v1.0/suite?page=${page}`,
+      });
+    });
+
+    const { messages, tronque, dernierRecuMs } = await listerMessagesRecus(
+      cfg,
+      'boite@exemple.fr',
+      '2026-01-01T00:00:00Z',
+      fetchFn as unknown as typeof fetch,
+    );
+
+    expect(tronque).toBe(true);
+    expect(messages).toHaveLength(10);
+    // Le dernier message effectivement lu, pas l'instant du passage : c'est
+    // la borne que l'appelant doit donner à son curseur.
+    expect(dernierRecuMs).toBe(new Date('2026-01-01T00:10:00Z').getTime());
+  });
+
+  it('avant de relancer sur 401, le corps de la réponse refusée est consommé', async () => {
+    const cfg = cfgTest('corps-401');
+    const refusees: Response[] = [];
+    let appelsJeton = 0;
+    const fetchFn = vi.fn(async (url: string) => {
+      if (String(url).includes('login.microsoftonline.com')) {
+        appelsJeton += 1;
+        return reponseJeton(`jeton-${appelsJeton}`);
+      }
+      if (appelsJeton === 1) {
+        const refusee = new Response('{"error":{"message":"jeton invalide"}}', { status: 401 });
+        refusees.push(refusee);
+        return refusee;
+      }
+      return reponseJson({ value: [] });
+    });
+
+    await listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
+
+    expect(refusees).toHaveLength(1);
+    // Un corps jamais lu retient la connexion sous undici : la relance doit
+    // d'abord vider ou annuler celui de la réponse qu'elle abandonne.
+    expect(refusees[0]!.bodyUsed).toBe(true);
+  });
+
+  it('avant de relancer sur 429, le corps de la réponse refusée est consommé', async () => {
+    vi.useFakeTimers();
+    const cfg = cfgTest('corps-429');
+    const refusees: Response[] = [];
+    let appelsGraph = 0;
+    const fetchFn = vi.fn(async (url: string) => {
+      if (String(url).includes('login.microsoftonline.com')) return reponseJeton();
+      appelsGraph += 1;
+      if (appelsGraph === 1) {
+        const refusee = reponseJson({ error: { message: 'trop de requetes' } }, 429, { 'Retry-After': '1' });
+        refusees.push(refusee);
+        return refusee;
+      }
+      return reponseJson({ value: [] });
+    });
+
+    const promesse = listerMessagesRecus(cfg, 'boite@exemple.fr', '2026-01-01T00:00:00Z', fetchFn as unknown as typeof fetch);
+    await vi.advanceTimersByTimeAsync(1000);
+    await promesse;
+
+    expect(refusees).toHaveLength(1);
+    expect(refusees[0]!.bodyUsed).toBe(true);
   });
 });
 

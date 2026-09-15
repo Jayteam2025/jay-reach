@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import { ErreurGraph } from '@jay-reach/providers/mail';
-import type { MessageGraph } from '@jay-reach/providers/mail';
+import type { MessageGraph, MessagesRecus } from '@jay-reach/providers/mail';
 import { traiterEvenementEmail } from '@jay-reach/core';
 import type * as JayReachCore from '@jay-reach/core';
 import { deterministicUuid, currentBucket } from '../ids.js';
@@ -89,9 +89,22 @@ function messageGraph(partiel: Partial<MessageGraph> & Pick<MessageGraph, 'id' |
   };
 }
 
+/**
+ * Retour de `listerMessagesRecus` : la liste, plus la troncature et le dernier
+ * message lu, dont dépend le curseur de fin de passage.
+ */
+function resultatMessages(messages: MessageGraph[], tronque = false): MessagesRecus {
+  let dernierRecuMs: number | null = null;
+  for (const message of messages) {
+    const recuMs = new Date(message.receivedDateTime).getTime();
+    if (dernierRecuMs === null || recuMs > dernierRecuMs) dernierRecuMs = recuMs;
+  }
+  return { messages, tronque, dernierRecuMs };
+}
+
 function clientFactice(overrides: Partial<ClientGraph> = {}): ClientGraph {
   return {
-    listerMessagesRecus: vi.fn(async () => [] as MessageGraph[]),
+    listerMessagesRecus: vi.fn(async () => resultatMessages([])),
     listerEnvoyesDansConversation: vi.fn(async () => [] as MessageGraph[]),
     ...overrides,
   };
@@ -243,7 +256,7 @@ describe('releverGraph', () => {
         { motif: CONTACTS_FILTRE1, repondre: () => ligne([]) },
       ),
     );
-    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => [recu]) });
+    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => resultatMessages([recu])) });
 
     const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
 
@@ -263,10 +276,11 @@ describe('releverGraph', () => {
       avecBase(
         { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
         { motif: CONTACTS_FILTRE1, repondre: () => ligne([{ id: 'contact-1', email: 'julien@exemple.fr' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
       ),
     );
     const client = clientFactice({
-      listerMessagesRecus: vi.fn(async () => [recu]),
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
       listerEnvoyesDansConversation: vi.fn(async () => []),
     });
 
@@ -303,7 +317,7 @@ describe('releverGraph', () => {
       ),
     );
     const client = clientFactice({
-      listerMessagesRecus: vi.fn(async () => [recu]),
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
       listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
     });
 
@@ -322,7 +336,7 @@ describe('releverGraph', () => {
     expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 1 });
   });
 
-  it('message déjà présent (provider_message_id) → ignoré', async () => {
+  it('message déjà présent (provider_message_id) → ignoré sans appel sentitems', async () => {
     const recu = messageGraph({
       id: 'msg-recu-1',
       conversationId: 'conv-1',
@@ -345,14 +359,120 @@ describe('releverGraph', () => {
       ),
     );
     const client = clientFactice({
-      listerMessagesRecus: vi.fn(async () => [recu]),
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
       listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
     });
 
     const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
 
     expect(traiterEvenementEmailMock).not.toHaveBeenCalled();
-    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 0 });
+    // Le dédoublonnage passe avant l'appel `sentitems` : pendant le
+    // recouvrement, les mêmes messages repassent à chaque relève et chacun
+    // coûtait un appel Graph pour rien.
+    expect(client.listerEnvoyesDansConversation).not.toHaveBeenCalled();
+    // `retenus` compte les messages retenus pour enregistrement : un message
+    // déjà connu est écarté avant le rapprochement, il n'est plus retenu.
+    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 0, enregistres: 0 });
+  });
+
+  it('curseur vieux de trois jours : la fenêtre remonte au curseur, pas à 24 h (une panne longue est rattrapée)', async () => {
+    const maintenant = Date.now();
+    const CURSEUR_TROIS_JOURS = maintenant - 3 * 24 * 60 * 60 * 1000;
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: CURSEUR_TROIS_JOURS }]) },
+      ),
+    );
+    const listerMessagesRecus = vi.fn(async (_cfg: unknown, _boite: string, _depuisIso: string) => resultatMessages([]));
+    const client = clientFactice({ listerMessagesRecus });
+
+    await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    const depuisIso = listerMessagesRecus.mock.calls[0]![2];
+    const depuisMs = new Date(depuisIso).getTime();
+    // Le plancher de 24 h ne vaut que pour une première relève sans curseur :
+    // avec un curseur, la borne basse est le curseur moins le recouvrement,
+    // quel que soit son âge — sinon trois jours de panne perdent trois jours
+    // de réponses.
+    expect(depuisMs).toBeLessThan(maintenant - 24 * 60 * 60 * 1000);
+    expect(depuisMs).toBeGreaterThanOrEqual(CURSEUR_TROIS_JOURS - 11 * 60 * 1000);
+    expect(depuisMs).toBeLessThanOrEqual(CURSEUR_TROIS_JOURS - 9 * 60 * 1000);
+  });
+
+  it('boîte tronquée : le curseur s’arrête au dernier message lu, pas à maintenant', async () => {
+    const DERNIER_LU = Date.parse('2026-09-15T10:00:00Z');
+    const recu = messageGraph({
+      id: 'msg-recu-1',
+      conversationId: 'conv-1',
+      from: 'inconnu@exemple.fr',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        {
+          motif: SENDERS_SELECT,
+          repondre: () =>
+            ligne([
+              { id: 'sender-1', identity: 'ventes@exemple.fr' },
+              { id: 'sender-2', identity: 'support@exemple.fr' },
+            ]),
+        },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: 555_000 }]) },
+        { motif: CONTACTS_FILTRE1, repondre: () => ligne([]) },
+      ),
+    );
+    const listerMessagesRecus = vi.fn(async (_cfg: unknown, boite: string) =>
+      boite === 'ventes@exemple.fr' ? resultatMessages([recu], true) : resultatMessages([]),
+    );
+    const client = clientFactice({ listerMessagesRecus });
+
+    await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    const upsert = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(upsert).toBeDefined();
+    // La fenêtre n'a pas été lue jusqu'au bout sur la première boîte : avancer
+    // le curseur à `maintenant` ferait sortir tout ce qui n'a pas été lu.
+    expect(upsert!.values[2]).toBe(DERNIER_LU);
+    expect(upsert!.values[3]).toBeNull();
+  });
+
+  it('erreur non Graph sur une boîte → last_error consigné, curseur gelé, boîte suivante traitée', async () => {
+    const CURSEUR_DEPART = 555_000;
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        {
+          motif: SENDERS_SELECT,
+          repondre: () =>
+            ligne([
+              { id: 'sender-1', identity: 'ventes@exemple.fr' },
+              { id: 'sender-2', identity: 'support@exemple.fr' },
+            ]),
+        },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: CURSEUR_DEPART }]) },
+      ),
+    );
+    const listerMessagesRecus = vi.fn(async (_cfg: unknown, boite: string) => {
+      if (boite === 'ventes@exemple.fr') {
+        throw new TypeError('lecture impossible');
+      }
+      return resultatMessages([]);
+    });
+    const client = clientFactice({ listerMessagesRecus });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    // Une erreur qui n'est pas une `ErreurGraph` faisait échouer tout le job :
+    // curseur intact mais échec totalement muet, et les autres boîtes
+    // sautées.
+    expect(listerMessagesRecus).toHaveBeenCalledTimes(2);
+    expect(resultat).toEqual({ boites: 2, lus: 0, retenus: 0, enregistres: 0 });
+    const upsert = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(upsert).toBeDefined();
+    expect(upsert!.values[2]).toBe(CURSEUR_DEPART);
+    expect(upsert!.values[3]).toBe('erreur_interne TypeError');
+    // Aucun détail du message d'erreur ne doit remonter en base.
+    expect(String(upsert!.values[3])).not.toContain('lecture impossible');
   });
 
   it('erreur Graph sur une boîte unique → le curseur ne bouge pas (reste à curseurDepart) et last_error est posé (L9)', async () => {
@@ -389,7 +509,7 @@ describe('releverGraph', () => {
         { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: 555_000 }]) },
       ),
     );
-    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => []) });
+    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => resultatMessages([])) });
 
     await releverGraph({ pool }, { organizationId: ORG_ID }, client);
     const apres = Date.now();
@@ -420,7 +540,7 @@ describe('releverGraph', () => {
       if (boite === 'ventes@exemple.fr') {
         throw new ErreurGraph('graph_http', 500, 'erreur');
       }
-      return [];
+      return resultatMessages([]);
     });
     const client = clientFactice({ listerMessagesRecus });
 

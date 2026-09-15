@@ -150,6 +150,24 @@ function attendre(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Libere le corps d'une reponse qu'on abandonne (relance sur 401 ou 429) :
+ * sous undici, un corps jamais lu retient la connexion du pool jusqu'au
+ * ramasse-miettes. Le contenu n'est jamais regarde — c'est bien pour cela
+ * qu'il faut l'annuler explicitement.
+ */
+async function abandonnerCorps(reponse: Response): Promise<void> {
+  try {
+    if (reponse.body) {
+      await reponse.body.cancel();
+    } else {
+      await reponse.text();
+    }
+  } catch {
+    // Corps deja consomme ou flux deja ferme : rien a liberer.
+  }
+}
+
 function extraireMessageErreur(texteBrut: string): string {
   try {
     const analyse = JSON.parse(texteBrut) as { error?: { message?: unknown } };
@@ -196,6 +214,7 @@ async function appelerGraph(
   }
 
   if (reponse.status === 401 && !etat.dejaReessaye401) {
+    await abandonnerCorps(reponse);
     invaliderJeton(cfg);
     return appelerGraph(cfg, methode, url, options, fetchImpl, { ...etat, dejaReessaye401: true });
   }
@@ -203,6 +222,7 @@ async function appelerGraph(
   if ((reponse.status === 429 || reponse.status === 503) && !etat.dejaReessaye429) {
     const enTete = Number(reponse.headers.get('retry-after'));
     const secondes = Number.isFinite(enTete) && enTete > 0 ? enTete : 1;
+    await abandonnerCorps(reponse);
     await attendre(Math.min(secondes * 1000, ATTENTE_MAX_MS));
     return appelerGraph(cfg, methode, url, options, fetchImpl, { ...etat, dejaReessaye429: true });
   }
@@ -286,24 +306,45 @@ function versMessageGraph(brut: unknown): MessageGraph {
 
 // --- Messages ---------------------------------------------------------------
 
+export interface MessagesRecus {
+  readonly messages: MessageGraph[];
+  /**
+   * Le plafond de pages a ete atteint alors que Graph annoncait encore une
+   * suite : la fenetre n'a PAS ete lue jusqu'au bout. L'appelant doit alors
+   * borner son curseur a `dernierRecuMs` plutot qu'a l'instant du passage,
+   * sinon les messages non lus sortent de la fenetre du passage suivant.
+   */
+  readonly tronque: boolean;
+  /** Date de reception (ms) du message le plus recent reellement lu, `null` si aucun. */
+  readonly dernierRecuMs: number | null;
+}
+
 /**
- * Messages recus depuis `depuisIso`, plus recents d'abord. Suit `@odata.nextLink`
- * jusqu'a 10 pages (50 par page, 500 messages au plus par releve).
+ * Messages recus depuis `depuisIso`, du plus ancien au plus recent. Suit
+ * `@odata.nextLink` jusqu'a 10 pages (50 par page, 500 messages au plus par
+ * releve).
+ *
+ * Le tri croissant est ce qui rend la troncature reparable : une fenetre
+ * saturee perd alors sa fin, pas son debut, et `dernierRecuMs` dit exactement
+ * jusqu'ou la lecture est allee. En tri decroissant, la meme saturation
+ * laissait tomber les messages les plus anciens pendant que le curseur
+ * avancait par-dessus : perte definitive et silencieuse.
  */
 export async function listerMessagesRecus(
   cfg: ConfigGraph,
   boite: string,
   depuisIso: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<MessageGraph[]> {
+): Promise<MessagesRecus> {
   const parametres = new URLSearchParams({
     $filter: `receivedDateTime ge ${depuisIso}`,
     $select: 'id,conversationId,internetMessageId,subject,from,toRecipients,receivedDateTime,sentDateTime,body,internetMessageHeaders',
     $top: String(TAILLE_PAGE_MESSAGES),
-    $orderby: 'receivedDateTime desc',
+    $orderby: 'receivedDateTime asc',
   });
   let url = `${BASE_GRAPH}/users/${encodeURIComponent(boite)}/mailFolders/inbox/messages?${parametres.toString()}`;
   const messages: MessageGraph[] = [];
+  let tronque = false;
 
   for (let page = 0; page < PAGES_MAX_MESSAGES_RECUS; page += 1) {
     const { corps } = await appelerGraph(cfg, 'GET', url, { preferHeader: PREFER_TEXTE }, fetchImpl);
@@ -312,8 +353,20 @@ export async function listerMessagesRecus(
     const suite = enveloppe['@odata.nextLink'];
     if (typeof suite !== 'string') break;
     url = suite;
+    // Derniere page autorisee alors qu'une suite est annoncee : on s'arrete
+    // en le disant, plutot que de laisser croire a une lecture complete.
+    if (page === PAGES_MAX_MESSAGES_RECUS - 1) tronque = true;
   }
-  return messages;
+
+  // Le maximum plutot que le dernier element : le tri est demande a Graph, il
+  // n'est pas garanti par nous.
+  let dernierRecuMs: number | null = null;
+  for (const message of messages) {
+    const recuMs = new Date(message.receivedDateTime).getTime();
+    if (!Number.isFinite(recuMs)) continue;
+    if (dernierRecuMs === null || recuMs > dernierRecuMs) dernierRecuMs = recuMs;
+  }
+  return { messages, tronque, dernierRecuMs };
 }
 
 /** Messages envoyes dans une conversation donnee (rapprochement des relances). */

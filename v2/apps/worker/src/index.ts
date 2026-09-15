@@ -111,8 +111,17 @@ async function main(): Promise<void> {
   const releveSalesBlink = setInterval(() => void enqueueReleveSalesBlink(boss, pool), RELEVE_SALESBLINK_POLL_MS);
   releveSalesBlink.unref();
 
-  void enqueueReleveGraph(boss, pool);
-  const releveGraph = setInterval(() => void enqueueReleveGraph(boss, pool), RELEVE_GRAPH_POLL_MS);
+  // Un hoquet de base pendant l'enfilage ne doit pas tuer le worker : sans ce
+  // `.catch`, la promesse rejetée d'un `void` remonte en `unhandledRejection`
+  // et arrête le process. Le code suffit, le détail de l'erreur pourrait
+  // porter une chaîne de connexion.
+  const enfilerReleveGraph = (): void => {
+    void enqueueReleveGraph(boss, pool).catch(() => {
+      console.error('[releve-graph] enfilage impossible (releve_graph_enqueue)');
+    });
+  };
+  enfilerReleveGraph();
+  const releveGraph = setInterval(enfilerReleveGraph, RELEVE_GRAPH_POLL_MS);
   releveGraph.unref();
 
   const shutdown = async (signal: string): Promise<void> => {

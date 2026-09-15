@@ -6,17 +6,17 @@
  * on lit directement la boîte Microsoft 365 concernée.
  *
  * Ordre des filtres imposé — on ne lit ni ne stocke jamais de courrier hors
- * de nos fils :
+ * de nos fils, et les deux filtres gratuits passent avant le filtre payant :
  *  1. SQL, gratuit : l'expéditeur du message reçu est-il un contact connu de
  *     l'organisation ?
- *  2. Graph : un message que NOUS avons envoyé dans la même conversation, à
- *     cet expéditeur, avant sa réponse ?
- *  3. Dédoublonnage : le message n'est-il pas déjà stocké (`provider_message_id`
- *     ou `internet_message_id`) ?
+ *  2. SQL, gratuit : le message n'est-il pas déjà stocké
+ *     (`provider_message_id` ou `internet_message_id`) ?
+ *  3. Graph, un appel par candidat : un message que NOUS avons envoyé dans la
+ *     même conversation, à cet expéditeur, avant sa réponse ?
  *
- * Le corps d'un message ne passe jamais dans un log. Une erreur Graph sur une
- * boîte n'interrompt pas les autres — seuls `code` et `statut` sont retenus
- * dans `provider_sync_state.last_error` (jamais le message, jamais un jeton).
+ * Le corps d'un message ne passe jamais dans un log. Une erreur sur une boîte
+ * n'interrompt pas les autres — seul un code court est retenu dans
+ * `provider_sync_state.last_error` (jamais le message, jamais un jeton).
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
@@ -63,6 +63,17 @@ const clientGraphReel: ClientGraph = {
 /** `last_error` ne porte jamais le message ni l'URL — seulement le code et le statut HTTP. */
 function formatErreurGraph(err: ErreurGraph): string {
   return err.statut !== null ? `${err.code} ${err.statut}` : err.code;
+}
+
+/**
+ * Code court d'échec d'une boîte, sans aucun contenu : `last_error` est lu par
+ * l'écran Fournisseurs, et le message d'une erreur inattendue peut porter une
+ * URL, un identifiant ou un extrait de réponse.
+ */
+function formatErreurBoite(err: unknown): string {
+  if (err instanceof ErreurGraph) return formatErreurGraph(err);
+  const nom = err instanceof Error ? err.constructor.name : typeof err;
+  return `erreur_interne ${nom}`;
 }
 
 /**
@@ -141,13 +152,16 @@ export interface BilanReleveGraph {
 
 /**
  * Relève d'une organisation, une boîte à la fois — jamais bloquée par une
- * autre (une `ErreurGraph` sur une boîte est journalisée et retenue dans
- * `last_error`, la suivante est quand même traitée). Le curseur n'avance à
- * `now` que si TOUTES les boîtes ont réussi (y compris quand aucune boîte
- * n'est configurée) ; dès qu'au moins une a échoué, il est réécrit avec la
- * valeur lue en début de passage (`curseurDepart`) — même règle que
- * `releverSalesBlink` — pour ne jamais faire sortir de la fenêtre relue les
- * réponses reçues pendant la panne.
+ * autre (toute erreur sur une boîte est journalisée et retenue dans
+ * `last_error`, la suivante est quand même traitée).
+ *
+ * Le curseur n'avance que si TOUTES les boîtes ont réussi (y compris quand
+ * aucune boîte n'est configurée) ; dès qu'au moins une a échoué, il est
+ * réécrit avec la valeur lue en début de passage (`curseurDepart`) — même
+ * règle que `releverSalesBlink` — pour ne jamais faire sortir de la fenêtre
+ * relue les réponses reçues pendant la panne. Même sans échec, il ne dépasse
+ * jamais ce qui a été lu : une boîte dont la fenêtre a été tronquée le borne
+ * à son dernier message lu.
  */
 export async function releverGraph(
   ctx: ContexteWorker,
@@ -179,23 +193,36 @@ export async function releverGraph(
   );
   const maintenant = Date.now();
   const brut = etatCurseur.rows[0]?.cursor_ms;
-  const curseurDepart = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : maintenant - FENETRE_PREMIERE_RELEVE_MS;
-  const depuisMs = Math.max(curseurDepart - RETARD_SECURITE_MS, maintenant - FENETRE_PREMIERE_RELEVE_MS);
+  const curseurConnu = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : null;
+  const curseurDepart = curseurConnu ?? maintenant - FENETRE_PREMIERE_RELEVE_MS;
+  // La fenêtre de 24 h est un point de DÉPART, pas un plancher permanent : avec
+  // un curseur, la borne basse est le curseur moins le recouvrement, quel que
+  // soit son âge, sinon une panne de trois jours perd trois jours de réponses
+  // — le gel du curseur sur échec ne servirait alors à rien.
+  const depuisMs = curseurConnu !== null ? curseurConnu - RETARD_SECURITE_MS : curseurDepart;
   const depuisIso = new Date(depuisMs).toISOString();
 
   let lus = 0;
   let retenus = 0;
   let enregistres = 0;
   let lastError: string | null = null;
+  // Fin de fenêtre réellement lue : plus petite borne des boîtes tronquées.
+  // Le curseur ne doit jamais dépasser ce qui a été lu.
+  let finLueMs = maintenant;
 
   for (const boite of sendersRes.rows) {
     try {
-      const messages = await client.listerMessagesRecus(cfg, boite.identity, depuisIso);
+      const { messages, tronque, dernierRecuMs } = await client.listerMessagesRecus(cfg, boite.identity, depuisIso);
+      if (tronque && dernierRecuMs !== null && dernierRecuMs < finLueMs) {
+        // Le plafond de pages a coupé la fenêtre : la suite sera lue au
+        // prochain passage, à condition que le curseur reste en deçà.
+        finLueMs = dernierRecuMs;
+      }
       lus += messages.length;
       if (messages.length === 0) continue;
 
       // Filtre 1 (SQL, gratuit) : seuls les expéditeurs déjà contacts de
-      // l'organisation méritent un appel Graph (filtre 2, coûteux).
+      // l'organisation méritent la suite (le filtre 3 coûte un appel Graph).
       const expediteurs = [
         ...new Set(
           messages
@@ -216,12 +243,10 @@ export async function releverGraph(
       for (const message of messages) {
         if (!message.from || !contactsConnus.has(message.from.toLowerCase())) continue;
 
-        // Filtre 2 (Graph) : un envoi de nous, dans la même conversation, avant cette réponse.
-        const envoyes = await client.listerEnvoyesDansConversation(cfg, boite.identity, message.conversationId);
-        if (!estReponseANotreEnvoi(message, envoyes)) continue;
-        retenus += 1;
-
-        // Filtre 3 : dédoublonnage, par identifiant Graph ou par en-tête Internet.
+        // Filtre 2 : dédoublonnage, par identifiant Graph ou par en-tête
+        // Internet. Il passe AVANT l'appel `sentitems` : pendant le
+        // recouvrement, les mêmes messages repassent à chaque relève, et
+        // chacun coûtait un appel Graph pour rien.
         const dejaVu = await pool.query(
           `select 1 from thread_messages tm
              join threads t on t.id = tm.thread_id
@@ -232,16 +257,21 @@ export async function releverGraph(
         );
         if (dejaVu.rows.length > 0) continue;
 
+        // Filtre 3 (Graph) : un envoi de nous, dans la même conversation, avant cette réponse.
+        const envoyes = await client.listerEnvoyesDansConversation(cfg, boite.identity, message.conversationId);
+        if (!estReponseANotreEnvoi(message, envoyes)) continue;
+        retenus += 1;
+
         await traiterEvenementEmail(pool, org, versEvenementRepondu(message, boite.identity), MICROSOFT_GRAPH_PROVIDER);
         enregistres += 1;
       }
     } catch (err) {
-      if (err instanceof ErreurGraph) {
-        if (lastError === null) lastError = formatErreurGraph(err);
-        console.error(`[releve-graph] org ${org}, boîte ${boite.id} : erreur Graph (${err.code})`);
-        continue;
-      }
-      throw err;
+      // Toute erreur d'une boîte est retenue ici, pas seulement une
+      // `ErreurGraph` : une erreur d'un autre type faisait échouer le job
+      // entier, sautait les boîtes suivantes et n'écrivait ni `last_run_at`
+      // ni `last_error` — l'échec était totalement muet.
+      if (lastError === null) lastError = formatErreurBoite(err);
+      console.error(`[releve-graph] org ${org}, boîte ${boite.id} : ${formatErreurBoite(err)}`);
     }
   }
 
@@ -249,9 +279,13 @@ export async function releverGraph(
   // curseur : sans ça, une panne de plus de dix minutes (jeton refusé, limite
   // de débit, tenant suspendu) ferait sortir les réponses reçues pendant la
   // panne de la fenêtre relue au passage suivant — perte silencieuse. Le
-  // dédoublonnage (filtre 3) rend inoffensif le rebalayage des boîtes déjà
-  // réussies au prochain passage.
-  await enregistrerCurseur(pool, org, lastError !== null ? curseurDepart : maintenant, lastError);
+  // dédoublonnage rend inoffensif le rebalayage des boîtes déjà réussies au
+  // prochain passage.
+  //
+  // Sans échec, le curseur s'arrête à `finLueMs` : l'instant du passage quand
+  // tout a été lu, et le dernier message lu de la boîte la plus tronquée
+  // sinon. Le curseur ne dépasse jamais ce qui a été lu.
+  await enregistrerCurseur(pool, org, lastError !== null ? curseurDepart : finLueMs, lastError);
   return { boites: sendersRes.rows.length, lus, retenus, enregistres };
 }
 
