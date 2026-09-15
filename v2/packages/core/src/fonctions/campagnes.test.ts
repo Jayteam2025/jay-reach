@@ -87,8 +87,11 @@ describe('listerCampagnes', () => {
           entry_rules: {},
           sources: ['adzuna'],
           qualifies: 20,
+          contacts: 18,
           en_sequence: 5,
           reponses: 2,
+          interesses: 1,
+          derniere_activite: '2026-09-14T10:00:00.000Z',
         },
       ],
       'jr:boites_actives': [{ id: 'send-1', identity: 'alex@outlook.com' }],
@@ -101,12 +104,51 @@ describe('listerCampagnes', () => {
     expect(r[0]!.tauxReponse).toBe(10);
     expect(r[0]!.tendance7j).toHaveLength(7);
     expect(r[0]!.tendance7j.every((n) => n === 0)).toBe(true);
+    // R31 : « Contacts » compte des personnes (`contacts`), pas les offres/signaux qualifiés (`qualifies`).
+    expect(r[0]!.contacts).toBe(18);
+    expect(r[0]!.interesses).toBe(1);
+    expect(r[0]!.derniereActivite).toBe('2026-09-14T10:00:00.000Z');
+  });
+
+  it('n’a pas de dernière activité (`derniereActivite: null`) quand `audit_events` n’a rien pour cette campagne', async () => {
+    const ctx = faux({
+      'jr:campagnes_liste': [
+        {
+          id: 'camp-1',
+          name: 'C',
+          status: 'draft',
+          entry_rules: {},
+          sources: [],
+          qualifies: 0,
+          contacts: 0,
+          en_sequence: 0,
+          reponses: 0,
+          interesses: 0,
+          derniere_activite: null,
+        },
+      ],
+      'jr:boites_actives': [],
+    });
+    const r = await listerCampagnes(ctx);
+    expect(r[0]!.derniereActivite).toBeNull();
   });
 
   it('restreint les boîtes à `entry_rules.boiteIds` quand elles sont posées', async () => {
     const ctx = faux({
       'jr:campagnes_liste': [
-        { id: 'camp-1', name: 'C', status: 'draft', entry_rules: { boiteIds: ['send-2'] }, sources: [], qualifies: 0, en_sequence: 0, reponses: 0 },
+        {
+          id: 'camp-1',
+          name: 'C',
+          status: 'draft',
+          entry_rules: { boiteIds: ['send-2'] },
+          sources: [],
+          qualifies: 0,
+          contacts: 0,
+          en_sequence: 0,
+          reponses: 0,
+          interesses: 0,
+          derniere_activite: null,
+        },
       ],
       'jr:boites_actives': [
         { id: 'send-1', identity: 'a@exemple.fr' },
@@ -125,7 +167,7 @@ describe('lireVueDEnsemble', () => {
         'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40 }],
         'jr:boites_actives': [{ id: 'send-1', identity: 'alex@outlook.com' }],
         'organization_settings': [],
-        'jr:entonnoir_campagne': [{ trouves: 100, qualifies: 40, en_sequence: 10, livres: 20, reponses: 4, interesses: 2 }],
+        'jr:entonnoir_campagne': [{ trouves: 100, qualifies: 40, contacts: 35, en_sequence: 10, livres: 20, reponses: 4, interesses: 2 }],
         'jr:file_du_jour_campagne': [],
         'jr:sources_campagne_resume': [{ provider_id: 'adzuna' }],
         'jr:activite_campagne': [],
@@ -156,6 +198,8 @@ describe('lireVueDEnsemble', () => {
     expect(v.campagne.scoreMin).toBe(80);
     expect(v.campagne.boites).toEqual([{ id: 'send-1', identite: 'alex@outlook.com', marque: 'outlook' }]);
     expect(v.entonnoir.trouves).toBe(100);
+    // Marche « Contacts identifiés » (R31), après « Contacts qualifiés » : des personnes, pas des offres.
+    expect(v.entonnoir.contacts).toBe(35);
     // tauxLivres = livres / qualifies = 20/40 = 50 % ; tauxReponses = reponses / livres = 4/20 = 20 %.
     expect(v.entonnoir.tauxLivres).toBe(50);
     expect(v.entonnoir.tauxReponses).toBe(20);

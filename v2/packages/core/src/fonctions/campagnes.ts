@@ -177,11 +177,17 @@ export interface CampagneListeResume {
   readonly boites: BoiteCampagne[];
   readonly sources: { providerId: string }[];
   readonly qualifies: number;
+  /** Personnes distinctes (pas des offres/signaux) reliées aux signaux retenus de la campagne — R31 : la colonne « Contacts » de la liste compte des personnes, pas des offres. */
+  readonly contacts: number;
   readonly enSequence: number;
   readonly reponses: number;
   readonly tauxReponse: number;
   /** Livraisons par jour sur les 7 derniers jours (le plus ancien en premier) — sparkline de la liste des campagnes. */
   readonly tendance7j: number[];
+  /** Fils dont l'intérêt est marqué, parmi les contacts inscrits dans cette campagne. */
+  readonly interesses: number;
+  /** Dernier événement du journal touchant cette campagne (`audit_events`), toutes natures confondues — `null` si aucun. */
+  readonly derniereActivite: string | null;
 }
 
 export interface CampagneEnTete {
@@ -197,6 +203,8 @@ export interface CampagneEnTete {
 export interface Entonnoir {
   readonly trouves: number;
   readonly qualifies: number;
+  /** Marche « Contacts identifiés » (R31) : personnes distinctes derrière les signaux qualifiés, pas les signaux eux-mêmes. */
+  readonly contacts: number;
   readonly enSequence: number;
   readonly livres: number;
   readonly tauxLivres: number;
@@ -280,8 +288,11 @@ interface LigneCampagneListe {
   entry_rules: unknown;
   sources: string[] | null;
   qualifies: number;
+  contacts: number;
   en_sequence: number;
   reponses: number;
+  interesses: number;
+  derniere_activite: string | null;
 }
 
 export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResume[]> {
@@ -293,8 +304,15 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
               coalesce((select array_agg(distinct so.provider_id) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               (select count(*)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
                 where cs2.campaign_id = c.id and s2.status in ('qualified', 'enrolled')) as qualifies,
+              (select count(distinct c3.id)::int from signals s3 join campaign_sources cs3 on cs3.source_id = s3.source_id
+                join contacts c3 on c3.source_signal_id = s3.id
+                where cs3.campaign_id = c.id and s3.status <> 'new') as contacts,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
-              (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses
+              (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
+              (select count(distinct c4.id)::int from threads t4 join contacts c4 on c4.id = t4.contact_id join enrollments e4 on e4.contact_id = c4.id
+                where e4.campaign_id = c.id and t4.interest = 'interested') as interesses,
+              (select max(ae.created_at) from audit_events ae
+                where (ae.entity_type = 'campaign' and ae.entity_id = c.id) or (ae.diff ->> 'campagneId' = c.id::text)) as derniere_activite
          from campaigns c /* jr:campagnes_liste */
         where c.organization_id = $1
         order by c.created_at desc`,
@@ -338,10 +356,13 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     boites: resoudreBoites(toutesBoites, boiteIdsDe(r.entry_rules)),
     sources: (r.sources ?? []).map((providerId) => ({ providerId })),
     qualifies: r.qualifies,
+    contacts: r.contacts,
     enSequence: r.en_sequence,
     reponses: r.reponses,
     tauxReponse: r.qualifies > 0 ? Math.round((r.reponses / r.qualifies) * 1000) / 10 : 0,
     tendance7j: tendanceParCampagne.get(r.id) ?? new Array(NB_JOURS_TENDANCE).fill(0),
+    interesses: r.interesses,
+    derniereActivite: r.derniere_activite,
   }));
 }
 
@@ -390,6 +411,7 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string): Promise<Entonno
   const res = await ctx.ex.query<{
     trouves: number;
     qualifies: number;
+    contacts: number;
     en_sequence: number;
     livres: number;
     reponses: number;
@@ -398,6 +420,9 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string): Promise<Entonno
     `select
         (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1) as trouves,
         (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1 and s.status in ('qualified', 'enrolled')) as qualifies,
+        (select count(distinct c2.id)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
+          join contacts c2 on c2.source_signal_id = s2.id
+          where cs2.campaign_id = $1 and s2.status <> 'new') as contacts,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
         (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = $1 and a.status = 'delivered') as livres,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status = 'replied') as reponses,
@@ -406,10 +431,11 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string): Promise<Entonno
       /* jr:entonnoir_campagne */`,
     [campagneId],
   );
-  const r = res.rows[0] ?? { trouves: 0, qualifies: 0, en_sequence: 0, livres: 0, reponses: 0, interesses: 0 };
+  const r = res.rows[0] ?? { trouves: 0, qualifies: 0, contacts: 0, en_sequence: 0, livres: 0, reponses: 0, interesses: 0 };
   return {
     trouves: r.trouves,
     qualifies: r.qualifies,
+    contacts: r.contacts,
     enSequence: r.en_sequence,
     livres: r.livres,
     tauxLivres: r.qualifies > 0 ? Math.round((r.livres / r.qualifies) * 1000) / 10 : 0,
