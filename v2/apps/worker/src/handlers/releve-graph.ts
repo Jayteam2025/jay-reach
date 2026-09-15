@@ -142,9 +142,12 @@ export interface BilanReleveGraph {
 /**
  * Relève d'une organisation, une boîte à la fois — jamais bloquée par une
  * autre (une `ErreurGraph` sur une boîte est journalisée et retenue dans
- * `last_error`, la suivante est quand même traitée). Le curseur avance à la
- * fin (`now`), y compris quand aucune boîte n'est configurée : la fenêtre
- * suivante repart de là, pas de l'ancien `cursor_ms`.
+ * `last_error`, la suivante est quand même traitée). Le curseur n'avance à
+ * `now` que si TOUTES les boîtes ont réussi (y compris quand aucune boîte
+ * n'est configurée) ; dès qu'au moins une a échoué, il est réécrit avec la
+ * valeur lue en début de passage (`curseurDepart`) — même règle que
+ * `releverSalesBlink` — pour ne jamais faire sortir de la fenêtre relue les
+ * réponses reçues pendant la panne.
  */
 export async function releverGraph(
   ctx: ContexteWorker,
@@ -176,8 +179,8 @@ export async function releverGraph(
   );
   const maintenant = Date.now();
   const brut = etatCurseur.rows[0]?.cursor_ms;
-  const depart = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : maintenant - FENETRE_PREMIERE_RELEVE_MS;
-  const depuisMs = Math.max(depart - RETARD_SECURITE_MS, maintenant - FENETRE_PREMIERE_RELEVE_MS);
+  const curseurDepart = brut !== undefined && brut !== null && Number(brut) > 0 ? Number(brut) : maintenant - FENETRE_PREMIERE_RELEVE_MS;
+  const depuisMs = Math.max(curseurDepart - RETARD_SECURITE_MS, maintenant - FENETRE_PREMIERE_RELEVE_MS);
   const depuisIso = new Date(depuisMs).toISOString();
 
   let lus = 0;
@@ -242,7 +245,13 @@ export async function releverGraph(
     }
   }
 
-  await enregistrerCurseur(pool, org, maintenant, lastError);
+  // Une boîte en échec (L9, tour de correction 1) ne fait jamais avancer le
+  // curseur : sans ça, une panne de plus de dix minutes (jeton refusé, limite
+  // de débit, tenant suspendu) ferait sortir les réponses reçues pendant la
+  // panne de la fenêtre relue au passage suivant — perte silencieuse. Le
+  // dédoublonnage (filtre 3) rend inoffensif le rebalayage des boîtes déjà
+  // réussies au prochain passage.
+  await enregistrerCurseur(pool, org, lastError !== null ? curseurDepart : maintenant, lastError);
   return { boites: sendersRes.rows.length, lus, retenus, enregistres };
 }
 

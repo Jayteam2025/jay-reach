@@ -348,16 +348,66 @@ describe('releverGraph', () => {
     expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 0 });
   });
 
-  it('erreur Graph sur une boîte → last_error posé, deuxième boîte traitée', async () => {
+  it('erreur Graph sur une boîte unique → le curseur ne bouge pas (reste à curseurDepart) et last_error est posé (L9)', async () => {
+    const CURSEUR_DEPART = 555_000;
     const { pool, appels } = creerPoolFactice(
-      avecBase({
-        motif: SENDERS_SELECT,
-        repondre: () =>
-          ligne([
-            { id: 'sender-1', identity: 'ventes@exemple.fr' },
-            { id: 'sender-2', identity: 'support@exemple.fr' },
-          ]),
-      }),
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: CURSEUR_DEPART }]) },
+      ),
+    );
+    const listerMessagesRecus = vi.fn(async () => {
+      throw new ErreurGraph('graph_http', 500, 'erreur');
+    });
+    const client = clientFactice({ listerMessagesRecus });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(resultat).toEqual({ boites: 1, lus: 0, retenus: 0, enregistres: 0 });
+    const upsert = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(upsert).toBeDefined();
+    // Bloquant (L9) : le curseur ne doit JAMAIS avancer quand une boîte a
+    // échoué — sinon une panne de plus de dix minutes ferait sortir les
+    // réponses reçues pendant la panne de la fenêtre relue au passage
+    // suivant (perte silencieuse).
+    expect(upsert!.values[2]).toBe(CURSEUR_DEPART);
+    expect(upsert!.values[3]).toBe('graph_http 500');
+  });
+
+  it('toutes les boîtes réussissent → le curseur avance à maintenant et last_error redevient null (L9)', async () => {
+    const avant = Date.now();
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: 555_000 }]) },
+      ),
+    );
+    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => []) });
+
+    await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+    const apres = Date.now();
+
+    const upsert = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
+    expect(upsert).toBeDefined();
+    expect(upsert!.values[2] as number).toBeGreaterThanOrEqual(avant);
+    expect(upsert!.values[2] as number).toBeLessThanOrEqual(apres);
+    expect(upsert!.values[3]).toBeNull();
+  });
+
+  it('erreur sur la 1re boîte, succès sur la 2e → la 2e est traitée ET le curseur n’avance pas (L9)', async () => {
+    const CURSEUR_DEPART = 555_000;
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        {
+          motif: SENDERS_SELECT,
+          repondre: () =>
+            ligne([
+              { id: 'sender-1', identity: 'ventes@exemple.fr' },
+              { id: 'sender-2', identity: 'support@exemple.fr' },
+            ]),
+        },
+        { motif: CURSEUR_SELECT, repondre: () => ligne([{ cursor_ms: CURSEUR_DEPART }]) },
+      ),
     );
     const listerMessagesRecus = vi.fn(async (_cfg: unknown, boite: string) => {
       if (boite === 'ventes@exemple.fr') {
@@ -370,9 +420,11 @@ describe('releverGraph', () => {
     const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
 
     expect(listerMessagesRecus).toHaveBeenCalledTimes(2);
+    expect(listerMessagesRecus).toHaveBeenNthCalledWith(2, expect.anything(), 'support@exemple.fr', expect.any(String));
     expect(resultat).toEqual({ boites: 2, lus: 0, retenus: 0, enregistres: 0 });
     const upsert = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
     expect(upsert).toBeDefined();
+    expect(upsert!.values[2]).toBe(CURSEUR_DEPART);
     expect(upsert!.values[3]).toBe('graph_http 500');
   });
 });
