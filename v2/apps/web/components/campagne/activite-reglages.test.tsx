@@ -149,7 +149,8 @@ const LIBELLES_REGLAGES = {
   relectureAide: '0 = tout part sans relecture',
   boites: 'Boîtes d’envoi',
   boitesAide: 'chaque contact reste lié à la boîte qui lui a écrit la première',
-  boitesNote: 'Cadence, heures et jours se règlent par boîte.',
+  boitesNoteAide: 'Cadence, heures et jours se règlent par boîte dans',
+  boitesNoteLien: 'Réglages › Expéditeurs',
   aucuneBoite: 'Aucune boîte email active pour l’instant.',
 };
 
@@ -180,6 +181,8 @@ describe('CorpsReglagesCampagne', () => {
     expect(html).toContain('value="70"');
     expect(html).toContain('value="30"');
     expect(html).toContain('value="5"');
+    expect(html).toContain('href="/settings/senders"');
+    expect(html).toContain('Réglages › Expéditeurs');
   });
 
   it('relecture à 0 (désactivée par défaut) s’affiche bien à 0, pas vide', () => {

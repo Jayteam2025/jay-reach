@@ -46,7 +46,8 @@ export interface CorpsReglagesCampagneLibelles {
   relectureAide: string;
   boites: string;
   boitesAide: string;
-  boitesNote: string;
+  boitesNoteAide: string;
+  boitesNoteLien: string;
   aucuneBoite: string;
 }
 
@@ -178,7 +179,9 @@ export function CorpsReglagesCampagne({
             </div>
           ))
         )}
-        <p className="jr-aide">{libelles.boitesNote}</p>
+        <p className="jr-aide">
+          {libelles.boitesNoteAide} <Link href="/settings/senders">{libelles.boitesNoteLien}</Link>
+        </p>
       </Carte>
     </>
   );
@@ -331,7 +334,8 @@ export function FormulaireReglagesCampagne({
           relectureAide: t('targeting.reviewHint'),
           boites: t('senders.title'),
           boitesAide: t('senders.hint'),
-          boitesNote: t('senders.note'),
+          boitesNoteAide: t('senders.noteHint'),
+          boitesNoteLien: t('senders.noteLink'),
           aucuneBoite: t('senders.empty'),
         }}
       />

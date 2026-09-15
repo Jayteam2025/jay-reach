@@ -1387,7 +1387,8 @@
       "senders": {
         "title": "Boîtes d'envoi",
         "hint": "chaque contact reste lié à la boîte qui lui a écrit la première",
-        "note": "Cadence, heures et jours d'envoi se règlent par boîte dans Réglages › Expéditeurs.",
+        "noteHint": "Cadence, heures et jours d'envoi se règlent par boîte dans",
+        "noteLink": "Réglages › Expéditeurs",
         "empty": "Aucune boîte email active pour l'instant."
       },
       "cancel": "Annuler",
