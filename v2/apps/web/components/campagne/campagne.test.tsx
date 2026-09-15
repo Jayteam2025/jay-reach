@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CampagneEnTete } from '@jay-reach/core';
 import { EnTeteCampagne } from './EnTeteCampagne';
 import { ongletActif } from './OngletsCampagne';
+import { PileDeBoites } from './PileDeBoites';
 
 const LIBELLES = { filAriane: 'Campagnes', statut: 'Active', modifier: 'Modifier', envoieDepuis: 'Envoie depuis' };
 
@@ -105,5 +106,20 @@ describe('ongletActif', () => {
 
   it("chemin d'une autre campagne -> repli sur la Vue d'ensemble de celle demandée", () => {
     expect(ongletActif('/campaigns/c2/contacts', 'c1')).toBe('/campaigns/c1');
+  });
+});
+
+describe('PileDeBoites', () => {
+  it('rend jr-puces (tuiles carrées), jamais jr-pile (réservé aux avatars ronds qui se chevauchent)', () => {
+    const html = renderToStaticMarkup(
+      <PileDeBoites
+        boites={[
+          { id: 'b1', identite: 'prospection@exemple.fr', marque: 'outlook' },
+          { id: 'b2', identite: 'veille@get-exemple.fr', marque: null },
+        ]}
+      />,
+    );
+    expect(html).toContain('jr-puces');
+    expect(html).not.toContain('jr-pile');
   });
 });

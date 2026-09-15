@@ -6,6 +6,7 @@ import { contexteCourant } from '../../../lib/contexte';
 import { dateRelativeCourte } from '../../../lib/dates';
 import { Carte, EnTetePage, EtatVide, Puce, Table, TuileLogo } from '../../../components/ui';
 import type { PuceTon } from '../../../components/ui';
+import { PileDeBoites } from '../../../components/campagne/PileDeBoites';
 
 export const revalidate = 60;
 
@@ -146,28 +147,7 @@ export default async function CampagnesPage({
                     campagne.boites.length === 0 ? (
                       <span className="jr-secondaire">{t('list.noBoxes')}</span>
                     ) : (
-                      <span className="jr-pile">
-                        {campagne.boites.map((boite) =>
-                          // `.jr-tuile-logo` (32px, carrée) ne rentre pas dans `.jr-pile .jr-avatar`
-                          // (26px, ronde) : une marque connue reste dans l'avatar (icône inline,
-                          // même composition que la maquette) ; une marque inconnue rend directement
-                          // la tuile, sans l'emboîter dans un avatar qui la couperait.
-                          boite.marque ? (
-                            <span
-                              key={boite.id}
-                              className="jr-avatar"
-                              style={{ background: 'var(--jr-surface)', borderColor: 'var(--jr-filet)' }}
-                              title={boite.identite}
-                            >
-                              <i className={`jr-logo-inline jr-logo-${boite.marque}`} />
-                            </span>
-                          ) : (
-                            <span key={boite.id} title={boite.identite}>
-                              <TuileLogo marque="email" />
-                            </span>
-                          ),
-                        )}
-                      </span>
+                      <PileDeBoites boites={campagne.boites} />
                     ),
                   contacts: nf.format(campagne.contacts),
                   sequence: nf.format(campagne.enSequence),
