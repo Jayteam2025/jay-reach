@@ -95,8 +95,7 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
                   )}
                 </b>
                 <small>
-                  {ligne.poste ?? '—'}
-                  {ligne.entreprise ? ` · ${ligne.entreprise}` : ''}
+                  {[ligne.poste, ligne.entreprise].filter(Boolean).join(' · ') || '—'}
                 </small>
               </span>
             </div>

@@ -242,7 +242,7 @@
 .jr-tiroir .entete h2 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .jr-tiroir .entete p { margin: 2px 0 8px; color: var(--jr-secondaire); font-size: 13.5px; }
 .jr-tiroir .fermer { margin-left: auto; font-size: 20px; line-height: 1; color: var(--jr-secondaire); background: none; border: 0; cursor: pointer; }
-.jr-tiroir .corps { padding: 0 24px 20px; overflow-y: auto; flex: 1; }
+.jr-tiroir > .corps { padding: 0 24px 20px; overflow-y: auto; flex: 1; }
 .jr-tiroir h4 { margin: 18px 0 8px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); display: flex; justify-content: space-between; align-items: center; }
 .jr-tiroir h4 span { font-weight: 500; }
 .jr-tiroir .pied { padding: 12px 24px; border-top: 1px solid var(--jr-filet); display: flex; justify-content: space-between; gap: 8px; background: var(--jr-surface); }
