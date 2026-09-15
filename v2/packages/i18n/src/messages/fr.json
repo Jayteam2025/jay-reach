@@ -1017,10 +1017,12 @@
     },
     "contacts": {
       "filters": {
-        "all": "{n, plural, one {Tous #} other {Tous #}}"
+        "all": "Tous"
       },
       "columns": {
         "contact": "Contact",
+        "why": "Pourquoi lui",
+        "score": "Score",
         "email": "Email",
         "step": "Étape",
         "campaign": "Campagne"
@@ -1094,7 +1096,8 @@
         "review": "Relire",
         "postpone": "Reporter",
         "discard": "Écarter",
-        "findEmail": "Chercher l'email"
+        "findEmail": "Chercher l'email",
+        "retry": "Réessayer"
       },
       "empty": {
         "title": "Rien à envoyer aujourd'hui",
@@ -1102,12 +1105,29 @@
       },
       "drawer": {
         "title": "Relire avant envoi",
-        "description": "Email tel qu'il partira, à partir du gabarit de cette étape et de la fiche du contact.",
+        "description": "Email tel qu'il partira",
         "close": "Fermer",
-        "hint": "Texte rendu par Jay Reach à partir de l'étape et de la fiche du contact. Le modifier ne change que cet envoi.",
+        "why": "Pourquoi ce contact",
+        "score": "Score {n}",
+        "scoreDetail": "score {n}",
+        "scheduledFor": "prévu {heure}",
+        "from": "depuis {expediteur}",
+        "step": "étape {n} · {nom}",
+        "missingVariables": "Variables sans valeur : {liste}. L'envoi sera bloqué tant qu'elles manquent.",
+        "hint": "Texte rendu par Jay Reach à partir de l'étape {n} et de la fiche de {prenom}. Le modifier ici ne change que cet envoi.",
         "editText": "Modifier le texte",
         "soon": "Bientôt",
-        "sendAsIs": "Envoyer tel quel"
+        "sendAsIs": "Envoyer tel quel",
+        "alreadyProcessed": "Cet envoi est {statut} : plus rien à relire.",
+        "notReviewable": {
+          "approved": "déjà validé",
+          "dispatched": "déjà parti",
+          "delivered": "livré",
+          "failed": "échoué",
+          "blocked": "bloqué",
+          "cancelled": "annulé",
+          "skipped": "sauté"
+        }
       }
     }
   }

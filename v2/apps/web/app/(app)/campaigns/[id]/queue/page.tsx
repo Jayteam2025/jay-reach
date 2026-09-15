@@ -3,8 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { apercuEnvoi, ErreurIntrouvable, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
-import { TableFileDuJour, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
-import { TiroirRelecture } from '../../../../../components/campagne/TiroirRelecture';
+import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
+import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
 
 export const revalidate = 0;
 
@@ -20,8 +20,72 @@ const ETATS_CONNUS: readonly EtatEnvoi[] = [
   'skipped',
 ];
 
+/** Statuts pour lesquels le tiroir montre encore les trois actions (R39, D6) — tout le reste affiche la ligne discrète. */
+const STATUTS_A_RELIRE = new Set<EtatEnvoi>(['scheduled', 'pending_approval']);
+
 function compter(envois: readonly EnvoiPrevu[], etats: readonly EtatEnvoi[]): number {
   return envois.filter((e) => etats.includes(e.etatDetaille ?? 'scheduled')).length;
+}
+
+/**
+ * Construit les textes déjà composés du tiroir « Relire avant envoi » à
+ * partir de l'aperçu (`apercuEnvoi`) et de l'éventuelle ligne de la file du
+ * jour correspondante (pour l'heure, déjà formatée dans le fuseau de
+ * l'organisation — même valeur que la colonne Heure de la table, R38/D1).
+ */
+function construireLibellesTiroir(
+  t: Awaited<ReturnType<typeof getTranslations>>,
+  apercu: Awaited<ReturnType<typeof apercuEnvoi>>,
+  heureDeLaLigne: string | null | undefined,
+): TiroirRelectureLibelles {
+  const heureLibelle =
+    heureDeLaLigne ??
+    (apercu.heurePrevue
+      ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(apercu.heurePrevue))
+      : null);
+
+  const segments = [apercu.contactNom, apercu.contactPoste, apercu.contactEntreprise].filter(
+    (v): v is string => Boolean(v),
+  );
+  if (heureLibelle) segments.push(t('file.drawer.scheduledFor', { heure: heureLibelle }));
+  if (apercu.expediteur) segments.push(t('file.drawer.from', { expediteur: apercu.expediteur }));
+
+  const pourquoi = apercu.pourquoi
+    ? {
+        titre: apercu.pourquoi.titre,
+        detail: [apercu.pourquoi.detail, apercu.score != null ? t('file.drawer.scoreDetail', { n: apercu.score }) : null]
+          .filter((v): v is string => Boolean(v))
+          .join(' · '),
+      }
+    : null;
+
+  const premierPrenom = apercu.contactNom.split(' ')[0] ?? apercu.contactNom;
+
+  return {
+    titre: t('file.drawer.title'),
+    fermer: t('file.drawer.close'),
+    emailTitre: t('file.drawer.description'),
+    heureLibelle,
+    statut: t(`file.status.${apercu.statut}`),
+    statutTon: TON_ETAT[apercu.statut],
+    score: apercu.score != null ? t('file.drawer.score', { n: apercu.score }) : null,
+    sousTitre: segments.join(' · '),
+    pourquoi,
+    pourquoiTitre: t('file.drawer.why'),
+    etape: t('file.drawer.step', { n: apercu.etapePosition, nom: apercu.etapeNom }),
+    avertissementVariables:
+      apercu.variablesManquantes.length > 0
+        ? t('file.drawer.missingVariables', { liste: apercu.variablesManquantes.join(', ') })
+        : null,
+    aide: t('file.drawer.hint', { n: apercu.etapePosition, prenom: premierPrenom }),
+    ecarter: t('file.actions.discard'),
+    modifierLeTexte: t('file.drawer.editText'),
+    bientot: t('file.drawer.soon'),
+    envoyerTelQuel: t('file.drawer.sendAsIs'),
+    dejaTraite: STATUTS_A_RELIRE.has(apercu.statut)
+      ? null
+      : t('file.drawer.alreadyProcessed', { statut: t(`file.drawer.notReviewable.${apercu.statut}`) }),
+  };
 }
 
 export default async function CampagneFileDuJourPage({
@@ -64,12 +128,22 @@ export default async function CampagneFileDuJourPage({
   };
 
   const brutRelire = Array.isArray(sp.relire) ? sp.relire[0] : sp.relire;
-  let tiroir: { actionId: string; contactId: string | null; apercu: Awaited<ReturnType<typeof apercuEnvoi>> } | null = null;
+  let tiroir: {
+    actionId: string;
+    contactId: string | null;
+    apercu: Awaited<ReturnType<typeof apercuEnvoi>>;
+    libelles: TiroirRelectureLibelles;
+  } | null = null;
   if (brutRelire) {
     try {
       const apercu = await apercuEnvoi(ctx, { actionId: brutRelire });
       const envoi = envois.find((e) => e.id === brutRelire);
-      tiroir = { actionId: brutRelire, contactId: envoi?.contactId ?? null, apercu };
+      tiroir = {
+        actionId: brutRelire,
+        contactId: envoi?.contactId ?? null,
+        apercu,
+        libelles: construireLibellesTiroir(t, apercu, envoi?.heure),
+      };
     } catch (err) {
       if (!(err instanceof ErreurIntrouvable)) throw err;
       // Action introuvable (id invalide, hors organisation, supprimée entre
@@ -88,7 +162,7 @@ export default async function CampagneFileDuJourPage({
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div className="jr-ligne-entre">
         <div className="jr-puces">
           <Puce ton="accent">{t('file.filters.all', { n: compteurs.tous })}</Puce>
           <Puce>{t('file.filters.scheduled', { n: compteurs.prevus })}</Puce>
@@ -120,6 +194,7 @@ export default async function CampagneFileDuJourPage({
               relire: t('file.actions.review'),
               reporter: t('file.actions.postpone'),
               ecarter: t('file.actions.discard'),
+              reessayer: t('file.actions.retry'),
               chercherEmail: t('file.actions.findEmail'),
               coutChercherEmail: t('contacts.actions.enrichCost'),
               aucunePlaceholder: '—',
@@ -135,17 +210,7 @@ export default async function CampagneFileDuJourPage({
           campagneId={id}
           organisationId={ctx.organisationId}
           apercu={tiroir.apercu}
-          libelles={{
-            titre: t('file.drawer.title'),
-            description: t('file.drawer.description'),
-            aRelire: t('file.filters.toReview', { n: 1 }),
-            fermer: t('file.drawer.close'),
-            aide: t('file.drawer.hint'),
-            ecarter: t('file.actions.discard'),
-            modifierLeTexte: t('file.drawer.editText'),
-            bientot: t('file.drawer.soon'),
-            envoyerTelQuel: t('file.drawer.sendAsIs'),
-          }}
+          libelles={tiroir.libelles}
         />
       )}
     </section>

@@ -5,6 +5,7 @@ import { Avatar, Puce } from '../ui';
 import type { PuceTon } from '../ui';
 import { BoutonChercherEmail } from './BoutonChercherEmail';
 import { BoutonEcarterContact } from './BoutonEcarterContact';
+import { BoutonReessayer } from './BoutonReessayer';
 import { BoutonReporterEnvoi } from './BoutonReporterEnvoi';
 
 /** Ligne affichée par `TableFileDuJour` : `EnvoiPrevu` + le texte d'étape déjà traduit (l'appelant a accès à `t()`). */
@@ -60,12 +61,14 @@ export interface TableFileDuJourLibelles {
   relire: string;
   reporter: string;
   ecarter: string;
+  reessayer: string;
   chercherEmail: string;
   coutChercherEmail: string;
   aucunePlaceholder: string;
 }
 
-const TON_ETAT: Record<EtatEnvoi, PuceTon> = {
+/** Ton de puce par état — réutilisé par le tiroir « Relire avant envoi » (`TiroirRelecture`, même statut réel). */
+export const TON_ETAT: Record<EtatEnvoi, PuceTon> = {
   scheduled: 'gris',
   pending_approval: 'attention',
   approved: 'gris',
@@ -95,9 +98,7 @@ function LigneEnvoiRendue({
 
   return (
     <tr>
-      <td className="jr-secondaire" style={{ whiteSpace: 'nowrap' }}>
-        {envoi.heure ?? '—'}
-      </td>
+      <td className="jr-secondaire jr-cell-heure">{envoi.heure ?? '—'}</td>
       <td>
         <div className="jr-qui">
           <Avatar nom={envoi.contactNom} canal={envoi.canal} />
@@ -108,8 +109,8 @@ function LigneEnvoiRendue({
         </div>
       </td>
       <td>
-        <b style={{ fontWeight: 500 }}>{envoi.etapeTexte ?? '—'}</b>
-        {envoi.objet && <small className="jr-secondaire" style={{ display: 'block', fontSize: 12 }}>{envoi.objet}</small>}
+        <b className="jr-demi-gras">{envoi.etapeTexte ?? '—'}</b>
+        {envoi.objet && <small className="jr-secondaire jr-detail-ligne">{envoi.objet}</small>}
       </td>
       <td>
         <span className="jr-secondaire">{envoi.expediteur ?? '—'}</span>
@@ -119,17 +120,13 @@ function LigneEnvoiRendue({
           {libelles.etat[etat]}
         </Puce>
         {etat === 'dispatched' && (
-          <small className="jr-secondaire" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
-            {libelles.livraisonEnAttente}
-          </small>
+          <small className="jr-secondaire jr-detail-ligne avec-marge">{libelles.livraisonEnAttente}</small>
         )}
         {envoi.raisonEchec && (etat === 'failed' || etat === 'blocked') && (
-          <small className="jr-secondaire" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
-            {envoi.raisonEchec}
-          </small>
+          <small className="jr-secondaire jr-detail-ligne avec-marge">{envoi.raisonEchec}</small>
         )}
       </td>
-      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+      <td className="jr-cell-actions">
         {etat === 'blocked' && envoi.raisonEchec === 'not_sendable' && envoi.signalId ? (
           <BoutonChercherEmail
             organisationId={organisationId}
@@ -138,7 +135,7 @@ function LigneEnvoiRendue({
             cout={libelles.coutChercherEmail}
           />
         ) : ETATS_A_VENIR.has(etat) ? (
-          <span style={{ display: 'inline-flex', gap: 6 }}>
+          <span className="jr-actions-en-ligne">
             {etat === 'pending_approval' && (
               <Link href={`?relire=${envoi.id}`} className="jr-bouton petit">
                 {libelles.relire}
@@ -147,8 +144,11 @@ function LigneEnvoiRendue({
             <BoutonReporterEnvoi actionId={envoi.id} campagneId={campagneId} libelle={libelles.reporter} />
             {envoi.contactId && <BoutonEcarterContact contactId={envoi.contactId} campagneId={campagneId} libelle={libelles.ecarter} />}
           </span>
-        ) : etat === 'failed' && envoi.contactId ? (
-          <BoutonEcarterContact contactId={envoi.contactId} campagneId={campagneId} libelle={libelles.ecarter} />
+        ) : etat === 'failed' ? (
+          <span className="jr-actions-en-ligne">
+            <BoutonReessayer actionId={envoi.id} campagneId={campagneId} libelle={libelles.reessayer} />
+            {envoi.contactId && <BoutonEcarterContact contactId={envoi.contactId} campagneId={campagneId} libelle={libelles.ecarter} />}
+          </span>
         ) : (
           <span className="jr-secondaire">{libelles.aucunePlaceholder}</span>
         )}

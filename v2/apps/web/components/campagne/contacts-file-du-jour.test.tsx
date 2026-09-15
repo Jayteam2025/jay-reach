@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { StatutContactCampagne } from '@jay-reach/core';
+import type { EtatEnvoi, StatutContactCampagne } from '@jay-reach/core';
 import { TableContacts, type LigneTableContacts, type TableContactsLibelles } from './TableContacts';
 import { FiltresStatuts } from './FiltresStatuts';
-import { grouperParHeure, intituleTrancheHoraire, type LigneTableFileDuJour } from './TableFileDuJour';
+import { grouperParHeure, intituleTrancheHoraire, TableFileDuJour, type LigneTableFileDuJour, type TableFileDuJourLibelles } from './TableFileDuJour';
 
 const STATUT_LIBELLES: Record<StatutContactCampagne, string> = {
   a_contacter: 'À contacter',
@@ -19,6 +19,8 @@ const STATUT_LIBELLES: Record<StatutContactCampagne, string> = {
 
 const LIBELLES: TableContactsLibelles = {
   colonneContact: 'Contact',
+  colonnePourquoi: 'Pourquoi lui',
+  colonneScore: 'Score',
   colonneEmail: 'Email',
   colonneEtape: 'Étape',
   colonneCampagne: 'Campagne',
@@ -44,6 +46,8 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     statut: 'sans_email',
     etape: null,
     etapeTexte: null,
+    score: null,
+    pourquoi: null,
     ...overrides,
   };
 }
@@ -141,6 +145,45 @@ describe('TableContacts', () => {
     expect(html).toContain('href="?contact=contact-42"');
   });
 
+  it('affiche pourquoi et le score, tiret si absents (R33, R36)', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[
+          ligne({ statut: 'a_repondu', email: 'x@exemple.fr', score: 88, pourquoi: 'A commenté un post récent' }),
+          ligne({
+            statut: 'a_contacter',
+            email: 'y@exemple.fr',
+            score: null,
+            pourquoi: null,
+            signalId: null,
+            contactId: 'contact-2',
+          }),
+        ]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('A commenté un post récent');
+    expect(html).toContain('88');
+    expect(html).toContain('—');
+  });
+
+  it('« sans email » sans signal (R36, inscription sans signal) ne montre pas le bouton d’enrichissement', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ statut: 'sans_email', email: null, signalId: null })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain("Chercher l&#x27;email");
+    expect(html).toContain('Sans email');
+  });
+
   it('aucune ligne -> le texte vide fourni par l’appelant', () => {
     const html = renderToStaticMarkup(
       <TableContacts lignes={[]} colonnes="campagne" organisationId="org-1" campagneId="camp-1" libelles={LIBELLES} />,
@@ -216,6 +259,52 @@ function envoi(overrides: Partial<LigneTableFileDuJour> = {}): LigneTableFileDuJ
     ...overrides,
   };
 }
+
+const ETAT_LIBELLES: Record<EtatEnvoi, string> = {
+  scheduled: 'Prévu',
+  pending_approval: 'À relire',
+  approved: 'Prévu',
+  dispatched: 'Parti',
+  delivered: 'Livré',
+  failed: 'Échoué',
+  blocked: 'Bloqué',
+  cancelled: 'Annulé',
+  skipped: 'Annulé',
+};
+
+const FILE_LIBELLES: TableFileDuJourLibelles = {
+  colonneHeure: 'Heure',
+  colonneContact: 'Contact',
+  colonneEtape: 'Étape et objet',
+  colonneDepuis: 'Depuis',
+  colonneEtat: 'État',
+  groupeCompte: (n) => `${n} email${n > 1 ? 's' : ''}`,
+  etat: ETAT_LIBELLES,
+  livraisonEnAttente: 'livraison en attente',
+  relire: 'Relire',
+  reporter: 'Reporter',
+  ecarter: 'Écarter',
+  reessayer: 'Réessayer',
+  chercherEmail: "Chercher l'email",
+  coutChercherEmail: '1 crédit',
+  aucunePlaceholder: '—',
+};
+
+describe('TableFileDuJour', () => {
+  it('une ligne en échec affiche le bouton Réessayer (E3)', () => {
+    const html = renderToStaticMarkup(
+      <TableFileDuJour
+        envois={[envoi({ id: 'a1', etatDetaille: 'failed', raisonEchec: 'boîte refusée (550)', contactId: 'contact-1' })]}
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={FILE_LIBELLES}
+      />,
+    );
+    expect(html).toContain('Réessayer');
+    expect(html).toContain('Écarter');
+    expect(html).toContain('boîte refusée (550)');
+  });
+});
 
 describe('grouperParHeure', () => {
   it('regroupe des envois consécutifs de la même heure', () => {

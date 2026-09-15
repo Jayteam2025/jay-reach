@@ -83,7 +83,7 @@ export default async function CampagneContactsPage({
 
   return (
     <section className="jr-contenu une-colonne">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div className="jr-ligne-entre">
         <FiltresStatuts
           base={`/campaigns/${id}/contacts`}
           compteurs={resultat.compteurs}
@@ -91,11 +91,10 @@ export default async function CampagneContactsPage({
           recherche={recherche}
           libelles={{ tous: t('contacts.filters.all'), ...libellesStatut }}
         />
-        <form method="get" style={{ display: 'flex', gap: 8 }}>
+        <form method="get" className="jr-actions">
           <input type="hidden" name="filtre" value={filtre} />
           <input
-            className="jr-champ"
-            style={{ width: 260 }}
+            className="jr-champ jr-champ-recherche"
             type="search"
             name="q"
             defaultValue={recherche ?? ''}
@@ -110,6 +109,8 @@ export default async function CampagneContactsPage({
         ) : (
           <TableContacts lignes={lignes} colonnes="campagne" organisationId={ctx.organisationId} campagneId={id} libelles={{
             colonneContact: t('contacts.columns.contact'),
+            colonnePourquoi: t('contacts.columns.why'),
+            colonneScore: t('contacts.columns.score'),
             colonneEmail: t('contacts.columns.email'),
             colonneEtape: t('contacts.columns.step'),
             colonneCampagne: t('contacts.columns.campaign'),
@@ -127,10 +128,10 @@ export default async function CampagneContactsPage({
       </Carte>
 
       {total > 0 && (
-        <div className="jr-secondaire" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="jr-secondaire jr-ligne-entre">
           <span>{t('contacts.pageRange', { debut, fin, total })}</span>
           {dernierePage > 1 && (
-            <span style={{ display: 'flex', gap: 12 }}>
+            <span className="jr-actions large">
               {page > 1 ? (
                 <Link href={lienPage(page - 1)} className="jr-lien">
                   {t('contacts.previous')}

@@ -153,6 +153,10 @@
 .jr-message .corps { padding: 12px 14px 14px; font-size: var(--jr-corps); max-width: 68ch; white-space: pre-line; }
 .jr-message.entrant { border-left: 3px solid var(--jr-accent); }
 .jr-message.sortant { background: color-mix(in srgb, var(--jr-surface) 60%, var(--jr-fond)); }
+/* Destinataire complet du message (R38, tour de correction 1) : sa propre ligne, jamais glissé dans l'heure. */
+.jr-message-destinataire { padding: 6px 14px; border-bottom: 1px solid var(--jr-filet); font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-message-objet { display: block; margin-bottom: 8px; }
+.jr-message .jr-bandeau { margin: 10px 14px 0; }
 .jr-reponse { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); background: var(--jr-surface); }
 .jr-reponse .depuis { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--jr-filet); font-size: 13px; color: var(--jr-secondaire); flex-wrap: wrap; }
 .jr-reponse .depuis b { color: var(--jr-encre); font-weight: 600; }
@@ -314,5 +318,23 @@
 
 /* Actions : regroupe des boutons côte à côte (pied de ZoneReponse, pied de Tiroir) */
 .jr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.jr-actions.large { gap: 12px; }
 .jr-petit { font-size: var(--jr-petit); }
 .jr-journal .erreur { color: var(--jr-erreur); } .jr-journal .attention { color: var(--jr-attention); }
+
+/* Tour de correction 1 (tâche 10) : classes utilitaires qui remplacent des `style={{ … }}` de mise en page (R37). */
+.jr-ligne-entre { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.jr-champ-recherche { width: 260px; }
+.jr-cell-heure { white-space: nowrap; }
+.jr-cell-actions { text-align: right; white-space: nowrap; }
+.jr-demi-gras { font-weight: 500; }
+.jr-detail-ligne { display: block; font-size: 12px; }
+.jr-detail-ligne.avec-marge { margin-top: 2px; }
+.jr-actions-en-ligne { display: inline-flex; align-items: center; gap: 6px; }
+.jr-lien-petit { font-size: 13px; }
+.jr-lien-pied { display: block; margin-top: 10px; }
+.jr-colonne-cartes { display: grid; gap: 16px; align-content: start; }
+.jr-sans-retrait-gauche { padding-left: 0; }
+.jr-sans-retrait-droite { padding-right: 0; }
+/* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la largeur, ce bloc coupe proprement. */
+.jr-tronque { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }

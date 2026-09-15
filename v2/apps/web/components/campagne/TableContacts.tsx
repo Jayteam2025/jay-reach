@@ -22,6 +22,8 @@ export interface LigneTableContacts extends ContactCampagne {
 
 export interface TableContactsLibelles {
   colonneContact: string;
+  colonnePourquoi: string;
+  colonneScore: string;
   colonneEmail: string;
   colonneEtape: string;
   colonneCampagne: string;
@@ -69,6 +71,8 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
       colonnes={[
         { cle: 'contact', titre: libelles.colonneContact },
         ...(colonnes === 'global' ? [{ cle: 'campagne', titre: libelles.colonneCampagne }] : []),
+        { cle: 'pourquoi', titre: libelles.colonnePourquoi },
+        { cle: 'score', titre: libelles.colonneScore },
         { cle: 'email', titre: libelles.colonneEmail },
         { cle: 'etape', titre: libelles.colonneEtape },
         { cle: 'action', titre: libelles.colonneAction },
@@ -98,6 +102,12 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
             </div>
           ),
           ...(colonnes === 'global' ? { campagne: ligne.campagneNom ?? '—' } : {}),
+          pourquoi: ligne.pourquoi ? (
+            <span className="jr-petit jr-tronque">{ligne.pourquoi}</span>
+          ) : (
+            <span className="jr-secondaire">—</span>
+          ),
+          score: ligne.score ?? <span className="jr-secondaire">—</span>,
           email: ligne.email ? (
             <Puce ton="bon" point>
               {libelles.emailVerifie}
@@ -109,8 +119,10 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
           ),
           etape: ligne.etapeTexte ?? <span className="jr-secondaire">{libelles.sansEtape}</span>,
           action:
-            ligne.statut === 'sans_email' ? (
-              // `signalId` est requis sur `ContactCampagne` (toujours renseigné, jointure interne sur `signals`).
+            ligne.statut === 'sans_email' && ligne.signalId ? (
+              // Un contact sans email ET sans signal (R36, inscription manuelle sans email
+              // renseigné) retombe sur la puce générique ci-dessous : rien à enrichir sans
+              // signal (pas de compte à résoudre), `enrichirMaintenant` exige un `signalId`.
               <BoutonChercherEmail
                 organisationId={organisationId}
                 signalId={ligne.signalId}
