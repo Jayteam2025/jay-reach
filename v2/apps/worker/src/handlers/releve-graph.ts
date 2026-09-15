@@ -297,7 +297,7 @@ interface OrganisationAEnfiler {
 }
 
 /** Les trois variables de repli du worker (`fallbackEnv` du catalogue) sont-elles toutes présentes ? */
-function replinEnvironnementComplet(): boolean {
+function repliEnvironnementComplet(): boolean {
   return (
     Boolean(process.env.MS_GRAPH_TENANT_ID) &&
     Boolean(process.env.MS_GRAPH_CLIENT_ID) &&
@@ -340,7 +340,7 @@ export async function enqueueReleveGraph(boss: PgBoss, pool: Pool): Promise<void
       order by s.organization_id, c.organization_id nulls last`,
     [MICROSOFT_GRAPH_PROVIDER],
   );
-  const repli = replinEnvironnementComplet();
+  const repli = repliEnvironnementComplet();
   for (const row of res.rows) {
     // Sans configuration en base ET sans repli complet, la relève rendrait un
     // bilan vide en journalisant `graph_credentials_absentes` à chaque

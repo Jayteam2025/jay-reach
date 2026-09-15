@@ -95,19 +95,16 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
   // SalesBlink répond sur `/inbox/{messageId}/reply` : l'endpoint n'accepte
   // que l'identifiant d'une tâche `/inbox`, jamais celui d'une ligne du
   // journal `/replies`. La relève pose le premier dans
-  // `salesblink_inbox_message_id` dès qu'une tâche a pu être appariée ; sans
-  // appariement, elle retombe sur l'identifiant du journal, qu'elle recopie
-  // dans `salesblink_reply_id` — le reconnaître ici évite de poster sur une
-  // adresse que SalesBlink refusera.
+  // `salesblink_inbox_message_id` dès qu'une tâche a pu être appariée. Sans
+  // lui, `provider_message_id` est un identifiant de journal (réponse non
+  // appariée, ou ligne enregistrée avant que la relève ne pose cet en-tête) :
+  // le renvoyer ferait poster sur une adresse que SalesBlink refuse, mieux
+  // vaut le dire à l'opérateur.
   const identifiantTache = dernier.salesblink_inbox_message_id ?? null;
-  if (identifiantTache) {
-    return { transport: 'salesblink', messageId: identifiantTache, mailbox: null };
-  }
-  const identifiant = dernier.provider_message_id;
-  if (!identifiant || identifiant === dernier.salesblink_reply_id) {
+  if (!identifiantTache) {
     throw new ErreurEntree("impossible de répondre : message d'origine inconnu");
   }
-  return { transport: 'salesblink', messageId: identifiant, mailbox: null };
+  return { transport: 'salesblink', messageId: identifiantTache, mailbox: null };
 }
 
 export interface TransportsReponse {

@@ -65,13 +65,9 @@ describe('choisirTransport', () => {
     });
   });
 
-  it("salesblink : lit provider_message_id quand les en-têtes ne portent pas d'origine Graph", async () => {
+  it("salesblink : provider_message_id seul, sans identifiant de tâche /inbox (ligne d'avant la relève appariée) → ErreurEntree", async () => {
     const { ex } = creerExecuteurFactice({ provider_message_id: 'sb-msg-1' });
-    await expect(choisirTransport(ex, 'org-1', 'fil-1')).resolves.toEqual({
-      transport: 'salesblink',
-      messageId: 'sb-msg-1',
-      mailbox: null,
-    });
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
   });
 
   it('salesblink sans provider_message_id : ErreurEntree', async () => {
@@ -161,7 +157,7 @@ describe('repondreAuFil', () => {
   });
 
   it('message entrant SalesBlink : transport salesblink appelé, provider_message_id = idTache', async () => {
-    const { ex, appels } = creerExecuteurFactice({ provider_message_id: 'sb-msg-1' });
+    const { ex, appels } = creerExecuteurFactice({ provider_message_id: 'sb-msg-1', salesblink_inbox_message_id: 'sb-msg-1' });
     const transports = creerTransportsFactices();
 
     const resultat = await repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports);
