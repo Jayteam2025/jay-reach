@@ -90,6 +90,31 @@ export function TiroirSourceAnnuaire({ campagneId }: TiroirSourceAnnuaireProps) 
   const [retenues, setRetenues] = useState<Set<string>>(new Set());
   const [resultat, setResultat] = useState<{ entreprisesRetenues: number; dejaConnues: number } | null>(null);
 
+  // D3 (tour de correction 2) : nom purement d'écran — `ajouterDepuisAnnuaire`
+  // ne prend pas de nom de source (R42, aucune `sources` créée pour cette
+  // action) ; ce champ n'est donc jamais envoyé au serveur, seulement
+  // préproposé pour que l'opérateur retrouve son repère visuellement.
+  const [nom, setNom] = useState('');
+  const [nomModifie, setNomModifie] = useState(false);
+
+  function suggestionNom(q: string, naf: string, department: string): string {
+    const quoi = q.trim() || naf.trim();
+    const base = quoi ? `Annuaire · ${quoi}` : 'Annuaire';
+    return department.trim() ? `${base}, ${department.trim()}` : base;
+  }
+  function changerQ(v: string) {
+    setQ(v);
+    if (!nomModifie) setNom(suggestionNom(v, naf, department));
+  }
+  function changerNaf(v: string) {
+    setNaf(v);
+    if (!nomModifie) setNom(suggestionNom(q, v, department));
+  }
+  function changerDepartment(v: string) {
+    setDepartment(v);
+    if (!nomModifie) setNom(suggestionNom(q, naf, v));
+  }
+
   function fermer() {
     router.push('?', { scroll: false });
   }
@@ -144,6 +169,7 @@ export function TiroirSourceAnnuaire({ campagneId }: TiroirSourceAnnuaireProps) 
       libelleFermer={t('drawer.close')}
       titre={t('menu.directory.title')}
       description={t('drawer.directoryIntro')}
+      puces={<Puce>{t('drawer.directoryPublicData')}</Puce>}
       pied={
         resultat ? (
           <>
@@ -185,19 +211,28 @@ export function TiroirSourceAnnuaire({ campagneId }: TiroirSourceAnnuaireProps) 
           />
         ) : (
           <>
+            <Champ libelle={t('drawer.name')}>
+              <input
+                value={nom}
+                onChange={(e) => {
+                  setNom(e.target.value);
+                  setNomModifie(true);
+                }}
+              />
+            </Champ>
             <div className="ligne">
               <Champ libelle={t('drawer.directoryQuery')}>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="logiciel" />
+                <input value={q} onChange={(e) => changerQ(e.target.value)} placeholder="logiciel" />
               </Champ>
               <Champ libelle={t('drawer.directoryNaf')}>
-                <input value={naf} onChange={(e) => setNaf(e.target.value)} placeholder="62.01Z" />
+                <input value={naf} onChange={(e) => changerNaf(e.target.value)} placeholder="62.01Z" />
               </Champ>
             </div>
             <div className="ligne">
               <Champ libelle={t('drawer.directoryDepartment')}>
                 <input
                   value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
+                  onChange={(e) => changerDepartment(e.target.value)}
                   placeholder="69"
                   maxLength={3}
                 />

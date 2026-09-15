@@ -1211,6 +1211,9 @@
         "maxAgeDays": "Âge maximal des offres",
         "maxAgeDaysHint": "jours (repli : réglage de l'organisation)",
         "schedule": "Passages",
+        "offresTitle": "{provider} · offres d'emploi",
+        "offresSubtitle": "La source lit les offres publiées, le moteur les score contre le persona « {persona} ».",
+        "readSince": "{n, plural, one {# offre lue} other {# offres lues}} depuis le {date}",
         "alsoProvider": "aussi {provider}",
         "runNow": "Lancer un passage",
         "save": "Enregistrer",
@@ -1260,6 +1263,7 @@
         "listIgnoreContacted": "Ignorer ceux qu'une autre campagne a déjà contactés",
         "listResult": "Résultat",
         "directoryIntro": "Cherchez des entreprises françaises par activité, département et effectif, puis ajoutez-les à votre base d'entreprises. Les entreprises cessées sont exclues.",
+        "directoryPublicData": "Données publiques · API entreprises",
         "directoryQuery": "Mot-clé ou nom",
         "directoryNaf": "Code d'activité (NAF)",
         "directoryDepartment": "Département",
@@ -1276,7 +1280,7 @@
         "directoryContactsCreated": "Contacts créés",
         "directoryNone": "aucun",
         "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import. Les entreprises ajoutées apparaissent dans Contacts › Entreprises.",
-        "directoryRetain": "Retenir {n} entreprises"
+        "directoryRetain": "Ajouter {n} entreprises"
       }
     }
   }

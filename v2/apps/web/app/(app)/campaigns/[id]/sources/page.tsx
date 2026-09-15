@@ -60,19 +60,34 @@ export default async function CampagneSourcesPage({
         nom: carte.nom,
         config: carte.config,
         schedule: carte.schedule,
+        active: carte.active,
+        totalLu: carte.totalLu,
+        premierPassage: carte.premierPassage,
         providerIds: carte.providerIds.filter(
           (p): p is 'adzuna' | 'france_travail' => p === 'adzuna' || p === 'france_travail',
         ),
       };
       tiroir =
         carte.providerId === 'adzuna' || carte.providerId === 'france_travail' ? (
-          <TiroirSourceOffres campagneId={id} providerId={carte.providerId} source={source} />
+          <TiroirSourceOffres
+            campagneId={id}
+            providerId={carte.providerId}
+            source={source}
+            persona={vue.campagne.nom}
+          />
         ) : (
           <TiroirSourceLinkedIn campagneId={id} providerId={carte.providerId} source={source} />
         );
     }
   } else if (brutAjouter === 'adzuna' || brutAjouter === 'france_travail') {
-    tiroir = <TiroirSourceOffres campagneId={id} providerId={brutAjouter} source={null} />;
+    tiroir = (
+      <TiroirSourceOffres
+        campagneId={id}
+        providerId={brutAjouter}
+        source={null}
+        persona={vue.campagne.nom}
+      />
+    );
   } else if (brutAjouter && estLinkedIn(brutAjouter)) {
     tiroir = <TiroirSourceLinkedIn campagneId={id} providerId={brutAjouter} source={null} />;
   } else if (brutAjouter === 'csv') {

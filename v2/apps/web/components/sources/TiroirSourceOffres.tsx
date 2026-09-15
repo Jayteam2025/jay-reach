@@ -19,6 +19,10 @@ export interface SourceOffresExistante {
   readonly schedule: string;
   /** Tous les fournisseurs réels rattachés, dans l'ordre du principal (R44) : `[providerId]` hors thème hérité multi-fournisseurs. */
   readonly providerIds: ('adzuna' | 'france_travail')[];
+  readonly active: boolean;
+  /** Somme de `items_found` sur tous les passages — puce d'en-tête, masquée si `premierPassage` est `null`. */
+  readonly totalLu: number;
+  readonly premierPassage: string | null;
 }
 
 const LIBELLE_PROVIDER: Record<'adzuna' | 'france_travail', 'menu.adzuna.title' | 'menu.franceTravail.title'> = {
@@ -30,6 +34,8 @@ export interface TiroirSourceOffresProps {
   readonly campagneId: string;
   readonly providerId: 'adzuna' | 'france_travail';
   readonly source: SourceOffresExistante | null;
+  /** Nom de la campagne (persona), pour le sous-titre D1 — vrai en création comme en modification. */
+  readonly persona: string;
 }
 
 function listeVersTexte(v: unknown): string {
@@ -61,7 +67,12 @@ type ConfigOffresAffichee = {
  * exclusions) se saisissent en texte séparé par des virgules — le kit n'a
  * pas de saisie par puces amovibles.
  */
-export function TiroirSourceOffres({ campagneId, providerId, source }: TiroirSourceOffresProps) {
+export function TiroirSourceOffres({
+  campagneId,
+  providerId,
+  source,
+  persona,
+}: TiroirSourceOffresProps) {
   const t = useTranslations('campagne.sources');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -149,23 +160,43 @@ export function TiroirSourceOffres({ campagneId, providerId, source }: TiroirSou
   // `francetravail`) — le tiroir s'ouvre sur le principal, et le dit pour
   // ne rien cacher des autres.
   const autresProviders = (source?.providerIds ?? []).filter((p) => p !== providerId);
+  const libelleProvider = t(LIBELLE_PROVIDER[providerId]);
+
+  // D1 (tour de correction 2, maquette `tiroir-source-adzuna.html`) : statut
+  // et total lu ne s'affichent qu'une fois la source créée (pas en création,
+  // et pas avant son premier passage — une puce à « 0 offre lue » ne dit rien).
+  const puces = [
+    source && (
+      <Puce key="statut" ton={source.active ? 'bon' : undefined} point>
+        {source.active ? t('card.active') : t('card.paused')}
+      </Puce>
+    ),
+    source?.premierPassage && (
+      <Puce key="lu">
+        {t('drawer.readSince', {
+          n: source.totalLu,
+          date: new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(
+            new Date(source.premierPassage),
+          ),
+        })}
+      </Puce>
+    ),
+    ...autresProviders.map((p) => (
+      <Puce key={`aussi-${p}`}>{t('drawer.alsoProvider', { provider: t(LIBELLE_PROVIDER[p]) })}</Puce>
+    )),
+  ].filter(Boolean);
 
   return (
     <Tiroir
       ouvert
       onFermer={fermer}
       libelleFermer={t('drawer.close')}
-      titre={providerId === 'adzuna' ? t('menu.adzuna.title') : t('menu.franceTravail.title')}
+      titre={t('drawer.offresTitle', { provider: libelleProvider })}
+      description={t('drawer.offresSubtitle', { persona })}
       icone={
         <TuileLogo marque={providerId === 'adzuna' ? 'adzuna' : 'francetravail'} taille="grande" />
       }
-      puces={
-        autresProviders.length > 0
-          ? autresProviders.map((p) => (
-              <Puce key={p}>{t('drawer.alsoProvider', { provider: t(LIBELLE_PROVIDER[p]) })}</Puce>
-            ))
-          : undefined
-      }
+      puces={puces.length > 0 ? puces : undefined}
       pied={
         <>
           <span />
