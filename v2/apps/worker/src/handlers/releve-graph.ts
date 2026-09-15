@@ -20,7 +20,7 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { traiterEvenementEmail, type EvenementEmail } from '@jay-reach/core';
+import { traiterEvenementEmail, entierBorne, type EvenementEmail } from '@jay-reach/core';
 import {
   listerMessagesRecus,
   listerEnvoyesDansConversation,
@@ -255,16 +255,6 @@ export async function releverGraph(
   return { boites: sendersRes.rows.length, lus, retenus, enregistres };
 }
 
-/** Minutes entre deux relèves Graph : défaut 5, entre 1 et 60 — borne propre à ce transport, réglable à l'écran Fournisseurs. */
-function normaliserIntervalleReleveGraph(brut: string | null | undefined): number {
-  if (brut === null || brut === undefined) return 5;
-  const texte = brut.trim();
-  if (texte === '') return 5;
-  const valeur = Number(texte);
-  if (!Number.isFinite(valeur)) return 5;
-  return Math.min(60, Math.max(1, Math.trunc(valeur)));
-}
-
 interface CredentialRow {
   readonly organization_id: string;
   readonly config: { readonly sync_interval_min?: string } | null;
@@ -284,7 +274,11 @@ export async function enqueueReleveGraph(boss: PgBoss, pool: Pool): Promise<void
     [MICROSOFT_GRAPH_PROVIDER],
   );
   for (const row of res.rows) {
-    const intervalMin = normaliserIntervalleReleveGraph(row.config?.sync_interval_min);
+    // Bornes propres à ce transport (1..60), distinctes des 2..60 de
+    // `normaliserIntervalleReleve` (SalesBlink) : `entierBorne` est
+    // réutilisée avec ses propres bornes plutôt qu'une fonction dédiée
+    // (B1, tour de correction 1).
+    const intervalMin = entierBorne(row.config?.sync_interval_min, 5, 1, 60);
     const bucket = currentBucket(intervalMin * 60_000);
     await boss.insert([
       {

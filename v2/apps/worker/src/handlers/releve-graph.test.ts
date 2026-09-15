@@ -213,14 +213,21 @@ describe('releverGraph', () => {
     expect(client.listerMessagesRecus).not.toHaveBeenCalled();
   });
 
-  it('boîte sans inbox_provider → aucun appel Graph', async () => {
-    const { pool } = creerPoolFactice(avecBase());
+  it('boîte sans inbox_provider → aucun appel Graph (filtré en SQL, is_active et inbox_provider = microsoft_graph)', async () => {
+    const { pool, appels } = creerPoolFactice(avecBase());
     const client = clientFactice();
 
     const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
 
     expect(resultat).toEqual({ boites: 0, lus: 0, retenus: 0, enregistres: 0 });
     expect(client.listerMessagesRecus).not.toHaveBeenCalled();
+    // B2 (tour de correction 1) : le filtre porte bien sur is_active et
+    // inbox_provider = 'microsoft_graph', pas seulement « aucune ligne ».
+    const requeteSenders = appels.find((a) => SENDERS_SELECT.test(a.sql));
+    expect(requeteSenders).toBeDefined();
+    expect(requeteSenders!.sql).toMatch(/is_active/i);
+    expect(requeteSenders!.sql).toMatch(/inbox_provider\s*=\s*\$2/i);
+    expect(requeteSenders!.values).toEqual([ORG_ID, 'microsoft_graph']);
   });
 
   it('message d’un expéditeur inconnu → ignoré sans appel sentitems', async () => {
