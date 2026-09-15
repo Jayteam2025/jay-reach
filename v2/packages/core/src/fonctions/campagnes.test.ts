@@ -11,6 +11,7 @@ import {
   lancer,
   lireVueDEnsemble,
   listerActivite,
+  listerBoitesPourCampagne,
   listerCampagnes,
   listerContactsCampagne,
   listerFileDuJour,
@@ -435,6 +436,26 @@ describe('listerActivite', () => {
       expect(sql).toMatch(/action = any\(\$3::text\[\]\)/);
       expect(params).toContainEqual(['scoring_batch']);
     }
+  });
+});
+
+describe('listerBoitesPourCampagne', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerBoitesPourCampagne(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('renvoie les boîtes email actives de l’organisation avec leur marque', async () => {
+    const ctx = faux({
+      'jr:boites_pour_campagne': [
+        { id: 'b1', identity: 'alex@outlook.com', provider_id: 'salesblink' },
+        { id: 'b2', identity: 'alex@exemple.fr', provider_id: null },
+      ],
+    });
+    const r = await listerBoitesPourCampagne(ctx, {});
+    expect(r).toEqual([
+      { id: 'b1', identite: 'alex@outlook.com', marque: 'outlook' },
+      { id: 'b2', identite: 'alex@exemple.fr', marque: null },
+    ]);
   });
 });
 

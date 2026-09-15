@@ -307,6 +307,25 @@ function boiteIdsDe(entryRules: unknown): string[] | undefined {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
 }
 
+/**
+ * Boîtes email actives de l'organisation, pour le sélecteur « Boîtes
+ * d'envoi » de l'onglet Réglages (tâche 13). Lecture directe de `senders`,
+ * même condition que `boitesActivesDeLOrganisation` — remplacée à la tâche
+ * 20 par une résolution qui tient compte du provider de transport. `entree`
+ * n'a aujourd'hui aucun champ (signature `(ctx, {})`, réservée à ce
+ * remplacement), d'où le schéma vide.
+ */
+export async function listerBoitesPourCampagne(ctx: Contexte, entree: unknown): Promise<BoiteCampagne[]> {
+  exiger(ctx, 'viewer');
+  valider(z.object({}), entree);
+
+  const res = await ctx.ex.query<{ id: string; identity: string; provider_id: string | null }>(
+    `select id, identity, provider_id from senders /* jr:boites_pour_campagne */ where organization_id = $1 and kind = 'email' and is_active`,
+    [ctx.organisationId],
+  );
+  return res.rows.map((r) => ({ id: r.id, identite: r.identity, marque: marqueBoite(r.identity) }));
+}
+
 // ---------------------------------------------------------------------------
 // listerCampagnes
 // ---------------------------------------------------------------------------

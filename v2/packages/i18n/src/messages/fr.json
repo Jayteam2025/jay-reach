@@ -1343,6 +1343,59 @@
         "testSent": "Test envoyé : il apparaîtra bientôt dans la File du jour.",
         "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour."
       }
+    },
+    "activite": {
+      "filters": {
+        "tout": "Tout",
+        "sources": "Sources",
+        "scoring": "Scoring",
+        "envois": "Envois",
+        "reponses": "Réponses",
+        "erreurs": "Erreurs"
+      },
+      "empty": {
+        "title": "Aucune activité pour l'instant",
+        "text": "Dès le lancement, chaque passage de source, scoring, envoi, réponse ou modification s'inscrira ici, à la minute."
+      },
+      "emptyFilter": "Aucune activité pour ce filtre.",
+      "pageRange": "{debut} à {fin} sur {total}",
+      "pageOf": "Page {page} sur {dernierePage}",
+      "previous": "Précédent",
+      "next": "Suivant"
+    },
+    "reglages": {
+      "identity": {
+        "title": "Identité",
+        "name": "Nom de la campagne"
+      },
+      "targeting": {
+        "title": "Ciblage et rythme",
+        "minScore": "Score minimal",
+        "minScoreSuffix": "/ 100",
+        "minScoreHint": "de 0 à 100 · vide = suit le défaut de l'organisation",
+        "dailyCap": "Nouveaux contacts par jour",
+        "dailyCapSuffix": "contacts",
+        "dailyCapHint": "plafond de la campagne, en plus des plafonds des boîtes · vide = aucun plafond propre",
+        "review": "Relecture des premiers envois",
+        "reviewSuffix": "envois",
+        "reviewHint": "0 = tout part sans relecture"
+      },
+      "senders": {
+        "title": "Boîtes d'envoi",
+        "hint": "chaque contact reste lié à la boîte qui lui a écrit la première",
+        "note": "Cadence, heures et jours d'envoi se règlent par boîte dans Réglages › Expéditeurs.",
+        "empty": "Aucune boîte email active pour l'instant."
+      },
+      "cancel": "Annuler",
+      "save": "Enregistrer",
+      "archive": {
+        "title": "Arrêter",
+        "warning": "{count, plural, one {Archiver arrête la séquence pour le contact en cours} other {Archiver arrête la séquence pour les # contacts en cours}}, garde l'historique et les fils, et sort la campagne de la liste. Les contacts restent dans l'annuaire.",
+        "button": "Archiver la campagne",
+        "confirmText": "Confirmer l'archivage de cette campagne ? Cette action est irréversible.",
+        "cancel": "Annuler",
+        "confirmButton": "Confirmer l'archivage"
+      }
     }
   }
 }
