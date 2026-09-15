@@ -253,14 +253,14 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-menu .entree:hover, .jr-menu .entree.actif { background: var(--jr-accent-doux); }
 .jr-menu .entree b { display: block; font-weight: 600; font-size: 13.5px; }
 .jr-menu .entree small { display: block; color: var(--jr-secondaire); font-size: 12px; }
-.jr-voile { position: absolute; inset: 0; background: var(--jr-voile); z-index: 3; }
-.jr-tiroir { position: absolute; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--jr-surface); border-left: 1px solid var(--jr-filet); box-shadow: var(--jr-ombre-tiroir); display: flex; flex-direction: column; z-index: 4; }
+.jr-voile { position: fixed; inset: 0; background: var(--jr-voile); z-index: 3; }
+.jr-tiroir { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--jr-surface); border-left: 1px solid var(--jr-filet); box-shadow: var(--jr-ombre-tiroir); display: flex; flex-direction: column; z-index: 4; }
 .jr-tiroir.large { width: 600px; }
 .jr-tiroir .entete { padding: 20px 24px 16px; border-bottom: 1px solid var(--jr-filet); display: flex; gap: 14px; align-items: flex-start; }
 .jr-tiroir .entete h2 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .jr-tiroir .entete p { margin: 2px 0 8px; color: var(--jr-secondaire); font-size: 13.5px; }
 .jr-tiroir .fermer { margin-left: auto; font-size: 20px; line-height: 1; color: var(--jr-secondaire); background: none; border: 0; cursor: pointer; }
-.jr-tiroir > .corps { padding: 0 24px 20px; overflow-y: auto; flex: 1; }
+.jr-tiroir > .corps { padding: 0 24px 20px; overflow-y: auto; flex: 1; min-height: 0; }
 .jr-tiroir h4 { margin: 18px 0 8px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); display: flex; justify-content: space-between; align-items: center; }
 .jr-tiroir h4 span { font-weight: 500; }
 .jr-tiroir .pied { padding: 12px 24px; border-top: 1px solid var(--jr-filet); display: flex; justify-content: space-between; gap: 8px; background: var(--jr-surface); }
