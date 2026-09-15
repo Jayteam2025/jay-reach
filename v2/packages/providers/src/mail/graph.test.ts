@@ -215,3 +215,20 @@ describe('repondreDansLaBoite', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('échappement OData', () => {
+  it("double l'apostrophe d'un identifiant de conversation dans le filtre", async () => {
+    const appels: string[] = [];
+    const fetchFactice = vi.fn(async (entree: string | URL | Request) => {
+      const url = String(entree);
+      appels.push(url);
+      if (url.includes('/oauth2/v2.0/token')) return new Response(JSON.stringify({ access_token: 'jeton-factice', expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ value: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await listerEnvoyesDansConversation({ tenantId: 't-1', clientId: 'c-1', clientSecret: 's-1' }, 'boite@exemple.fr', "AAQ'k", fetchFactice);
+    const urlGraph = appels.find((u) => u.includes('sentitems'));
+    expect(urlGraph).toBeDefined();
+    expect(decodeURIComponent(urlGraph!.replace(/\+/g, ' '))).toContain("conversationId eq 'AAQ''k'");
+  });
+});
+

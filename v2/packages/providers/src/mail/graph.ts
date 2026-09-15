@@ -15,6 +15,12 @@
  */
 
 const BASE_LOGIN = 'https://login.microsoftonline.com';
+/** Délai maximal d'un appel HTTP (jeton ou Graph) : un appel qui pend ne doit jamais bloquer un job du worker. */
+const DELAI_MS = 30_000;
+/** Échappe une valeur littérale OData : l'apostrophe se double. */
+function echapperOData(valeur: string): string {
+  return valeur.replace(/'/g, "''");
+}
 const BASE_GRAPH = 'https://graph.microsoft.com/v1.0';
 const PREFER_TEXTE = 'outlook.body-content-type="text"';
 const LONGUEUR_MAX_ERREUR = 200;
@@ -98,6 +104,7 @@ async function demanderJeton(cfg: ConfigGraph, fetchImpl: typeof fetch): Promise
   try {
     reponse = await fetchImpl(`${BASE_LOGIN}/${encodeURIComponent(cfg.tenantId)}/oauth2/v2.0/token`, {
       method: 'POST',
+      signal: AbortSignal.timeout(DELAI_MS),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: corps.toString(),
     });
@@ -183,7 +190,7 @@ async function appelerGraph(
 
   let reponse: Response;
   try {
-    reponse = await fetchImpl(url, { method: methode, headers: entetes, body: corpsRequete });
+    reponse = await fetchImpl(url, { method: methode, headers: entetes, body: corpsRequete, signal: AbortSignal.timeout(DELAI_MS) });
   } catch {
     throw new ErreurGraph('graph_http', null, 'Echec de connexion a Microsoft Graph');
   }
@@ -317,7 +324,7 @@ export async function listerEnvoyesDansConversation(
   fetchImpl: typeof fetch = fetch,
 ): Promise<MessageGraph[]> {
   const parametres = new URLSearchParams({
-    $filter: `conversationId eq '${conversationId}'`,
+    $filter: `conversationId eq '${echapperOData(conversationId)}'`,
     $select: 'id,conversationId,internetMessageId,subject,toRecipients,sentDateTime',
     $top: String(TAILLE_PAGE_ENVOYES),
   });
