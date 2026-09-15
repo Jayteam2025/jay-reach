@@ -81,6 +81,8 @@ La boîte permet de répondre dans le fil, email comme LinkedIn. Le message part
 
 Une réponse envoyée depuis Jay Reach arrête l'inscription au même titre qu'une réponse envoyée depuis votre client habituel.
 
+Une boîte email peut, en plus de la détection habituelle côté transport, être relevée directement par Microsoft Graph : l'activation se fait boîte par boîte, dans Réglages → Expéditeurs. Le message part alors par le même chemin que celui par lequel il a été reçu — Microsoft Graph si le dernier message du fil a été lu directement dans la boîte, SalesBlink sinon.
+
 ## Classement et suivi
 
 Un fil porte un état de traitement : `à traiter`, `en cours`, `traité`, `à recontacter plus tard`. Assignable à un membre de l'organisation.

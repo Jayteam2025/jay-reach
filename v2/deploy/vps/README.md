@@ -161,6 +161,40 @@ docker compose -p jay-reach down
 | `SIGNAL_MAX_AGE_DAYS` | Âge maximal d'un signal avant écart automatique (jours). |
 | `ACCOUNT_PEOPLE_PER_DAY` | Personnes contactées par entreprise et par jour. |
 | `ENRICH_MAX_WAIT_MS` | Attente maximale d'un enrichissement (millisecondes). |
+| `MS_GRAPH_TENANT_ID` | Optionnelle : repli pour la lecture directe des réponses (Microsoft Graph), seulement nécessaire si une boîte l'a activée dans Expéditeurs. La clé saisie dans l'onglet Fournisseurs prime sur cette variable. |
+| `MS_GRAPH_CLIENT_ID` | Optionnelle, même repli que ci-dessus. |
+| `MS_GRAPH_CLIENT_SECRET` | Optionnelle, même repli que ci-dessus. |
 
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
 `docker-compose.yml` : ils n'ont pas leur place dans `worker.env`.
+
+### Restreindre l'application Microsoft Graph à ses boîtes
+
+L'application Microsoft Graph qui lit les réponses ne doit avoir accès qu'aux
+boîtes réellement relevées, pas à tout le tenant. Deux permissions
+d'application (pas déléguées) suffisent, avec consentement administrateur :
+`Mail.Read` et `Mail.Send`.
+
+Dans Exchange Online PowerShell (`Connect-ExchangeOnline`), créer un groupe de
+distribution à sécurité activée contenant les boîtes relevées, puis restreindre
+l'application à ce groupe :
+
+```powershell
+New-DistributionGroup -Name "jayreach-boites" -MemberDepartRestriction Closed
+Add-DistributionGroupMember -Identity "jayreach-boites" -Member "prospection@exemple.fr"
+
+New-ApplicationAccessPolicy -AppId "00000000-0000-0000-0000-000000000000" `
+  -PolicyScopeGroupId "jayreach-boites@exemple.fr" -AccessRight RestrictAccess `
+  -Description "Jay Reach : lecture directe des réponses, boîtes autorisées seulement"
+```
+
+Vérifier ensuite que la restriction s'applique bien :
+
+```powershell
+Test-ApplicationAccessPolicy -AppId "00000000-0000-0000-0000-000000000000" `
+  -Identity "prospection@exemple.fr"
+```
+
+Les identifiants et adresses ci-dessus sont des exemples : remplacer l'`AppId`
+par celui de l'application enregistrée dans Entra ID, et l'adresse par celle
+d'une boîte réellement relevée.

@@ -796,7 +796,9 @@
     "salesblinkBoxNone": "Aucune boîte SalesBlink disponible pour le moment. Vérifiez la clé dans Fournisseurs.",
     "salesblinkHealth": "{etat, select, actif {Envoi actif} coupe {Coupé : {message}} other {Jamais relevé}}",
     "salesblinkCap": "Plafond SalesBlink",
-    "lowestApplies": "le plus bas s’applique"
+    "lowestApplies": "le plus bas s’applique",
+    "inboxProvider": "Lire les réponses directement dans cette boîte",
+    "inboxProviderHint": "Jay Reach relève cette boîte toutes les quelques minutes via Microsoft Graph, si les variables MS_GRAPH_* sont posées sur le worker. SalesBlink continue d'envoyer vos messages."
   },
   "snippets": {
     "title": "Textes réutilisables",

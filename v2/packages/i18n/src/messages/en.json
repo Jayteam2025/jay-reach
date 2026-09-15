@@ -796,7 +796,9 @@
     "salesblinkBoxNone": "No SalesBlink mailbox available right now. Check the key under Providers.",
     "salesblinkHealth": "{etat, select, actif {Sending active} coupe {Disconnected: {message}} other {Never checked}}",
     "salesblinkCap": "SalesBlink cap",
-    "lowestApplies": "the lowest one applies"
+    "lowestApplies": "the lowest one applies",
+    "inboxProvider": "Read replies directly in this mailbox",
+    "inboxProviderHint": "Jay Reach checks this mailbox every few minutes via Microsoft Graph, once the MS_GRAPH_* variables are set on the worker. SalesBlink still sends your messages."
   },
   "snippets": {
     "title": "Reusable text",
