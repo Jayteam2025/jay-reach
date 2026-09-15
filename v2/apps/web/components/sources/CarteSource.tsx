@@ -16,7 +16,8 @@ export interface BlocCarteSource {
 export interface CarteSourceProps {
   readonly campagneId: string;
   readonly sourceId: string;
-  readonly marque: TuileLogoMarque;
+  /** Un logo par fournisseur réel (R44) : la plupart des sources n'en ont qu'un, un thème hérité peut en avoir plusieurs. */
+  readonly marques: TuileLogoMarque[];
   readonly titre: string;
   readonly sousTitre: string;
   readonly active: boolean;
@@ -37,7 +38,7 @@ export interface CarteSourceProps {
 export function CarteSource({
   campagneId,
   sourceId,
-  marque,
+  marques,
   titre,
   sousTitre,
   active,
@@ -61,7 +62,15 @@ export function CarteSource({
     <Carte>
       <div className="jr-carte-h">
         <div className="jr-qui">
-          <TuileLogo marque={marque} taille="grande" />
+          {marques.length > 1 ? (
+            <div className="jr-puces">
+              {marques.map((m, i) => (
+                <TuileLogo key={i} marque={m} taille="grande" />
+              ))}
+            </div>
+          ) : (
+            <TuileLogo marque={marques[0]!} taille="grande" />
+          )}
           <span>
             <b>{titre}</b>
             <small>{sousTitre}</small>

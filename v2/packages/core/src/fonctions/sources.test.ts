@@ -159,7 +159,64 @@ describe('listerSourcesCampagne', () => {
     );
     const cartes = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
     expect(cartes).toHaveLength(1);
-    expect(cartes[0]!.providerId).toBe('adzuna');
+    // R44 (tour de correction 2) : le principal est celui dont le libellé
+    // apparaît dans le NOM de la source (« France Travail »), pas le premier
+    // alphabétique (« adzuna ») — c'est exactement le bug constaté en
+    // recette : la carte « France Travail » portait la tuile Adzuna.
+    expect(cartes[0]!.providerId).toBe('france_travail');
+    expect(cartes[0]!.providerIds).toEqual(['france_travail', 'adzuna']);
+  });
+
+  it('résume tous les passages (pas seulement le dernier) pour la puce d’en-tête du tiroir', async () => {
+    const { ctx } = faux(
+      {
+        'jr:sources_lister': [
+          {
+            id: 'src-4',
+            name: 'Adzuna',
+            config: { keywords: ['commercial'] },
+            is_active: true,
+            schedule: 'every 6h',
+          },
+        ],
+        'jr:sources_dernier_passage': [
+          { source_id: 'src-4', started_at: '2026-09-15T09:00:00.000Z', items_found: 58, items_new: 6 },
+        ],
+        'jr:sources_resume_passages': [
+          { source_id: 'src-4', total: 312, premier: '2026-09-10T08:00:00.000Z' },
+        ],
+        'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [{ source_id: 'src-4', provider_id: 'adzuna' }],
+      },
+      'viewer',
+    );
+    const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+    expect(carte!.totalLu).toBe(312);
+    expect(carte!.premierPassage).toBe('2026-09-10T08:00:00.000Z');
+  });
+
+  it('sans aucun passage, totalLu est nul et premierPassage est null', async () => {
+    const { ctx } = faux(
+      {
+        'jr:sources_lister': [
+          {
+            id: 'src-5',
+            name: 'Adzuna',
+            config: { keywords: ['commercial'] },
+            is_active: true,
+            schedule: 'every 6h',
+          },
+        ],
+        'jr:sources_dernier_passage': [],
+        'jr:sources_resume_passages': [],
+        'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [{ source_id: 'src-5', provider_id: 'adzuna' }],
+      },
+      'viewer',
+    );
+    const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+    expect(carte!.totalLu).toBe(0);
+    expect(carte!.premierPassage).toBeNull();
   });
 });
 

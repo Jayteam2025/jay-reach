@@ -8,7 +8,7 @@ import { CarteSource } from '../../../../../components/sources/CarteSource';
 import {
   construireBlocsLinkedIn,
   construireBlocsOffres,
-  marqueDe,
+  marquesDe,
   sousTitreDe,
 } from '../../../../../components/sources/blocsCarteSource';
 import { MenuAjouterSource } from '../../../../../components/sources/MenuAjouterSource';
@@ -60,6 +60,9 @@ export default async function CampagneSourcesPage({
         nom: carte.nom,
         config: carte.config,
         schedule: carte.schedule,
+        providerIds: carte.providerIds.filter(
+          (p): p is 'adzuna' | 'france_travail' => p === 'adzuna' || p === 'france_travail',
+        ),
       };
       tiroir =
         carte.providerId === 'adzuna' || carte.providerId === 'france_travail' ? (
@@ -98,7 +101,7 @@ export default async function CampagneSourcesPage({
             key={carte.id}
             campagneId={id}
             sourceId={carte.id}
-            marque={marqueDe(carte.providerId)}
+            marques={marquesDe(carte.providerIds)}
             titre={carte.nom}
             sousTitre={sousTitreDe(carte, t)}
             active={carte.active}

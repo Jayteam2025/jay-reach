@@ -1211,6 +1211,7 @@
         "maxAgeDays": "Âge maximal des offres",
         "maxAgeDaysHint": "jours (repli : réglage de l'organisation)",
         "schedule": "Passages",
+        "alsoProvider": "aussi {provider}",
         "runNow": "Lancer un passage",
         "save": "Enregistrer",
         "create": "Créer la source",

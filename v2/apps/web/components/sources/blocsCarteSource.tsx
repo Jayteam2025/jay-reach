@@ -13,6 +13,11 @@ export function marqueDe(providerId: SourceCarte['providerId']): TuileLogoMarque
   return 'linkedin';
 }
 
+/** Un logo par fournisseur réel, dans l'ordre déjà posé par `resoudreProviders` (R44, core). */
+export function marquesDe(providerIds: SourceCarte['providerIds']): TuileLogoMarque[] {
+  return providerIds.map(marqueDe);
+}
+
 /**
  * Sous-titre de la carte Adzuna/France Travail (R43, tour de correction 2) :
  * lu par `configFormulaireDepuisStockee`, jamais directement `carte.config`

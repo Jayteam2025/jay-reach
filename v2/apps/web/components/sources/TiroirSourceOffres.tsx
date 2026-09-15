@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { configFormulaireDepuisStockee } from '@jay-reach/core';
-import { Bouton, Champ, Tiroir, TuileLogo } from '../ui';
+import { Bouton, Champ, Puce, Tiroir, TuileLogo } from '../ui';
 import {
   actionCreerSource,
   actionLancerPassageCampagne,
@@ -17,7 +17,14 @@ export interface SourceOffresExistante {
   readonly nom: string;
   readonly config: Record<string, unknown>;
   readonly schedule: string;
+  /** Tous les fournisseurs réels rattachés, dans l'ordre du principal (R44) : `[providerId]` hors thème hérité multi-fournisseurs. */
+  readonly providerIds: ('adzuna' | 'france_travail')[];
 }
+
+const LIBELLE_PROVIDER: Record<'adzuna' | 'france_travail', 'menu.adzuna.title' | 'menu.franceTravail.title'> = {
+  adzuna: 'menu.adzuna.title',
+  france_travail: 'menu.franceTravail.title',
+};
 
 export interface TiroirSourceOffresProps {
   readonly campagneId: string;
@@ -137,6 +144,12 @@ export function TiroirSourceOffres({ campagneId, providerId, source }: TiroirSou
     });
   }
 
+  // R44 (tour de correction 2) : un thème hérité peut être rattaché à
+  // PLUSIEURS fournisseurs réels (ex. « France Travail » à `adzuna` ET
+  // `francetravail`) — le tiroir s'ouvre sur le principal, et le dit pour
+  // ne rien cacher des autres.
+  const autresProviders = (source?.providerIds ?? []).filter((p) => p !== providerId);
+
   return (
     <Tiroir
       ouvert
@@ -145,6 +158,13 @@ export function TiroirSourceOffres({ campagneId, providerId, source }: TiroirSou
       titre={providerId === 'adzuna' ? t('menu.adzuna.title') : t('menu.franceTravail.title')}
       icone={
         <TuileLogo marque={providerId === 'adzuna' ? 'adzuna' : 'francetravail'} taille="grande" />
+      }
+      puces={
+        autresProviders.length > 0
+          ? autresProviders.map((p) => (
+              <Puce key={p}>{t('drawer.alsoProvider', { provider: t(LIBELLE_PROVIDER[p]) })}</Puce>
+            ))
+          : undefined
       }
       pied={
         <>

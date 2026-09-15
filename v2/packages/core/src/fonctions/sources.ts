@@ -304,28 +304,41 @@ function lireSourceType(config: Record<string, unknown> | null): TypeVeille {
   throw new ErreurIntrouvable('Source');
 }
 
+/** Libellé affiché d'un fournisseur réel, pour la règle de priorité par le nom (R44). */
+const LIBELLE_PROVIDER: Record<'adzuna' | 'france_travail', string> = {
+  adzuna: 'Adzuna',
+  france_travail: 'France Travail',
+};
+
 /**
- * `providerId` UI d'une source, d'après ses fournisseurs rattachés
- * (`source_providers`, DB-first) ou, à défaut, `config.sourceType` (seul
- * repère pour un type `linkedin_*`, qui n'a jamais de ligne `source_providers`).
+ * Tous les fournisseurs UI d'une source, dans l'ordre d'affichage (R44, tour
+ * de correction 2) : le premier est le PRINCIPAL — celui dont le libellé
+ * apparaît dans le NOM de la source (ex. thème nommé « France Travail »,
+ * rattaché à `adzuna` ET `francetravail` → principal `france_travail`, pas
+ * le premier alphabétique) — puis les autres, par ordre alphabétique de
+ * `provider_id` pour rester stable. Sans correspondance de nom, l'ordre
+ * alphabétique fait foi pour tous.
  *
  * R30 (vérifié sur la base OSS, campagne « Directeur commercial ») : une
- * source peut être rattachée à PLUSIEURS fournisseurs (son thème « France
- * Travail » y est rattaché à `adzuna` ET `francetravail`) — un thème créé
- * avant ce lot, quand une source valait pour plusieurs veilles. Cette
- * fonction n'en retient qu'un seul (le premier par ordre alphabétique de
- * `provider_id`) : limite connue, ce lot ne modélise qu'un fournisseur par
- * carte (`creerSource` n'en attache jamais qu'un).
+ * source peut être rattachée à PLUSIEURS fournisseurs — un thème créé avant
+ * ce lot, quand une source valait pour plusieurs veilles (`creerSource` n'en
+ * attache jamais qu'un). Sans fournisseur réel (type `linkedin_*`, qui n'a
+ * jamais de ligne `source_providers`), le seul repère est `config.sourceType`.
  */
-function resoudreProviderId(
+function resoudreProviders(
+  nom: string,
   providerIdsReels: string[],
   config: Record<string, unknown> | null,
-): TypeVeille {
-  for (const p of providerIdsReels) {
-    const inverse = PROVIDER_ID_INVERSE[p];
-    if (inverse) return inverse;
-  }
-  return lireSourceType(config);
+): TypeVeille[] {
+  const traduits = providerIdsReels
+    .map((p) => PROVIDER_ID_INVERSE[p])
+    .filter((p): p is 'adzuna' | 'france_travail' => Boolean(p))
+    .sort();
+  if (traduits.length === 0) return [lireSourceType(config)];
+  const nomNormalise = nom.toLowerCase();
+  const estPrincipal = (p: 'adzuna' | 'france_travail') =>
+    nomNormalise.includes(LIBELLE_PROVIDER[p].toLowerCase());
+  return [...traduits.filter(estPrincipal), ...traduits.filter((p) => !estPrincipal(p))];
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +349,10 @@ export const schemaCampagneIdSource = z.object({ campagneId: z.string().uuid() }
 
 export interface SourceCarte {
   readonly id: string;
+  /** Principal (R44) : celui dont le libellé apparaît dans le nom de la source, sinon le premier alphabétique. */
   readonly providerId: TypeVeille;
+  /** Tous les fournisseurs réels rattachés (`source_providers`), dans l'ordre d'affichage — `[providerId]` hors thème hérité multi-fournisseurs (R30). */
+  readonly providerIds: TypeVeille[];
   readonly nom: string;
   readonly config: Record<string, unknown>;
   /** Brut (`every 6h`), pour préremplir le sélecteur du tiroir de réglages sans reparser `prochainPassage`. */
@@ -346,6 +362,10 @@ export interface SourceCarte {
   readonly prochainPassage: string | null;
   /** Sept valeurs, la plus ancienne d'abord (aujourd'hui inclus en dernier). */
   readonly retenus7j: number[];
+  /** Somme de `items_found` sur tous les passages (pas seulement le dernier) — puce d'en-tête du tiroir. */
+  readonly totalLu: number;
+  /** Date du tout premier passage, `null` si la source n'a jamais tourné (masque la puce). */
+  readonly premierPassage: string | null;
   /** Faux pour les quatre types `linkedin_*` tant que le worker ne les exécute pas (lot 4). */
   readonly collecteDisponible: boolean;
 }
@@ -391,7 +411,7 @@ export async function listerSourcesCampagne(
   if (res.rows.length === 0) return [];
   const ids = res.rows.map((r) => r.id);
 
-  const [passages, tendances, providers] = await Promise.all([
+  const [passages, resumes, tendances, providers] = await Promise.all([
     ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
       // Un seul run par source (`distinct on`, le plus récent) : les runs plus
       // anciens ne sont pas rattachés à un fournisseur avant la bascule vers
@@ -403,6 +423,15 @@ export async function listerSourcesCampagne(
         order by source_id, started_at desc`,
       [ids],
     ),
+    // Résumé sur TOUS les passages (pas seulement le dernier) : puce d'en-tête
+    // du tiroir « {n} offres lues depuis le {date du premier passage} ».
+    ctx.ex.query<{ source_id: string; total: number; premier: string }>(
+      `select source_id, sum(items_found)::int as total, min(started_at) as premier
+         from source_runs /* jr:sources_resume_passages */
+        where source_id = any($1::uuid[])
+        group by source_id`,
+      [ids],
+    ),
     ctx.ex.query<{ source_id: string; jour: string; n: number }>(
       `select source_id, to_char(occurred_at, 'YYYY-MM-DD') as jour, count(*)::int as n
          from signals /* jr:sources_retenus_7j */
@@ -412,7 +441,7 @@ export async function listerSourcesCampagne(
       [ids],
     ),
     // Requête à part (pas de jointure sur la sélection principale) : un thème
-    // rattaché à plusieurs fournisseurs (R30 — cf. `resoudreProviderId`)
+    // rattaché à plusieurs fournisseurs (R30 — cf. `resoudreProviders`)
     // multiplierait sinon les lignes de `res`, dupliquant sa carte.
     ctx.ex.query<{ source_id: string; provider_id: string }>(
       `select source_id, provider_id from source_providers /* jr:sources_providers_rattaches */
@@ -423,6 +452,7 @@ export async function listerSourcesCampagne(
   ]);
 
   const parPassage = new Map(passages.rows.map((r) => [r.source_id, r]));
+  const parResume = new Map(resumes.rows.map((r) => [r.source_id, r]));
   const parTendance = new Map<string, Map<string, number>>();
   for (const r of tendances.rows) {
     if (!parTendance.has(r.source_id)) parTendance.set(r.source_id, new Map());
@@ -436,7 +466,9 @@ export async function listerSourcesCampagne(
 
   return res.rows.map((row) => {
     const config = (row.config ?? {}) as Record<string, unknown>;
-    const providerId = resoudreProviderId(parProvider.get(row.id) ?? [], config);
+    const providerIds = resoudreProviders(row.name, parProvider.get(row.id) ?? [], config);
+    const providerId = providerIds[0]!;
+    const resume = parResume.get(row.id);
     const passage = parPassage.get(row.id);
     const dernierPassage = passage
       ? {
@@ -462,6 +494,7 @@ export async function listerSourcesCampagne(
     return {
       id: row.id,
       providerId,
+      providerIds,
       nom: row.name,
       config,
       schedule: row.schedule ?? 'every 6h',
@@ -469,6 +502,8 @@ export async function listerSourcesCampagne(
       dernierPassage,
       prochainPassage,
       retenus7j,
+      totalLu: resume?.total ?? 0,
+      premierPassage: resume?.premier ?? null,
       collecteDisponible: !estTypeLinkedIn(providerId),
     };
   });
@@ -575,8 +610,8 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   const { sourceId, nom, config, schedule } = valider(schemaModifierSource, entree);
 
   const [res, providersRes] = await Promise.all([
-    ctx.ex.query<{ config: Record<string, unknown> | null }>(
-      `select config from sources /* jr:sources_lire_pour_modifier */ where id = $1 and organization_id = $2`,
+    ctx.ex.query<{ name: string; config: Record<string, unknown> | null }>(
+      `select name, config from sources /* jr:sources_lire_pour_modifier */ where id = $1 and organization_id = $2`,
       [sourceId, ctx.organisationId],
     ),
     ctx.ex.query<{ provider_id: string }>(
@@ -587,10 +622,11 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   ]);
   const ligne = res.rows[0];
   if (!ligne) throw new ErreurIntrouvable('Source');
-  const providerId = resoudreProviderId(
+  const providerId = resoudreProviders(
+    ligne.name ?? '',
     providersRes.rows.map((r) => r.provider_id),
     ligne.config,
-  );
+  )[0]!;
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source

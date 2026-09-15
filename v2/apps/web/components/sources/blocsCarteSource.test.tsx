@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { SourceCarte } from '@jay-reach/core';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { construireBlocsOffres, sousTitreDe } from './blocsCarteSource';
+import { construireBlocsOffres, marquesDe, sousTitreDe } from './blocsCarteSource';
 
 /**
  * Traducteur factice : lit les vraies chaînes de `campagne.sources` dans
@@ -28,6 +28,7 @@ function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
   return {
     id: 'src-1',
     providerId: 'france_travail',
+    providerIds: ['france_travail'],
     nom: 'France Travail',
     // Config réelle constatée sur la base OSS (campagne « Directeur commercial »,
     // tour de correction 2) : clés du worker uniquement.
@@ -48,6 +49,8 @@ function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
     },
     prochainPassage: new Date(2026, 8, 16, 9, 0, 0).toISOString(),
     retenus7j: [0, 0, 0, 0, 0, 0, 6],
+    totalLu: 312,
+    premierPassage: new Date(2026, 8, 1, 8, 0, 0).toISOString(),
     collecteDisponible: true,
     ...overrides,
   };
@@ -63,6 +66,13 @@ describe('sousTitreDe', () => {
   it('« France entière » plutôt qu’un tiret seul sans lieu', () => {
     const carte = carteDeBase({ config: { keywords: ['commercial'] } });
     expect(sousTitreDe(carte, t)).toBe('France entière');
+  });
+});
+
+describe('marquesDe', () => {
+  it('une tuile par fournisseur réel, dans l’ordre déjà posé par le core (R44)', () => {
+    expect(marquesDe(['france_travail', 'adzuna'])).toEqual(['francetravail', 'adzuna']);
+    expect(marquesDe(['adzuna'])).toEqual(['adzuna']);
   });
 });
 
