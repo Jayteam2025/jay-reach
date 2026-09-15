@@ -39,6 +39,27 @@ function fichiersTsx(dossier: string): string[] {
 
 const DECLARATION = /const\s+(\w+)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*(?:'([^']*)')?\s*\)/g;
 
+/** Chemins complets de toutes les clés feuilles sous `prefixe` dans `messages`. */
+function clesDeclarees(prefixe: string): string[] {
+  const racineNode = prefixe.split('.').reduce<unknown>((node, part) => {
+    if (typeof node !== 'object' || node === null || !(part in node)) return undefined;
+    return (node as Record<string, unknown>)[part];
+  }, messages);
+
+  const feuilles: string[] = [];
+  function parcourir(node: unknown, chemin: string) {
+    if (typeof node === 'object' && node !== null) {
+      for (const [cle, valeur] of Object.entries(node as Record<string, unknown>)) {
+        parcourir(valeur, `${chemin}.${cle}`);
+      }
+    } else {
+      feuilles.push(chemin);
+    }
+  }
+  parcourir(racineNode, prefixe);
+  return feuilles;
+}
+
 describe('clés de traduction', () => {
   it('toutes celles utilisées dans les écrans existent dans leur namespace', () => {
     const manquantes: string[] = [];
@@ -64,5 +85,44 @@ describe('clés de traduction', () => {
     }
 
     expect(manquantes).toEqual([]);
+  });
+
+  it("toutes celles déclarées sous campagne.sources sont référencées par un écran", () => {
+    // Sens inverse du test ci-dessus : une clé oubliée (jamais nettoyée après
+    // une réécriture d'écran) ne casse aucun rendu, donc rien d'autre ne
+    // l'attrape. Limité à `campagne.sources.*`, l'espace de la tâche 11.
+    //
+    // Recherche textuelle brute plutôt qu'un suivi précis variable → namespace :
+    // les écrans de cet espace déclarent `t` de façons trop variées (simple
+    // `const`, déstructuration d'un `Promise.all`, paramètre de fonction) pour
+    // le regex de déclaration ci-dessus, qui sous-compterait les usages réels.
+    const texte = fichiersTsx(join(racine, 'apps/web'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const mortes = clesDeclarees('campagne.sources').filter((complet) => {
+      const relatif = complet.replace(/^campagne\.sources\./, '');
+      // Une clé sous `card` peut être référencée via le sous-namespace
+      // `campagne.sources.card` (donc sans le préfixe `card.`).
+      const candidats = [relatif];
+      if (relatif.startsWith('card.')) candidats.push(relatif.slice('card.'.length));
+
+      return !candidats.some((c) => {
+        const litterale = new RegExp(`\\(\\s*['"\`]${echapper(c)}['"\`]`);
+        if (litterale.test(texte)) return true;
+        // Accès dynamique (`t(\`csvFields.${champ}\`)`) : la clé complète
+        // n'apparaît jamais littéralement, seul le préfixe statique le fait.
+        const pointFinal = c.lastIndexOf('.');
+        if (pointFinal > 0) {
+          const prefixeDynamique = c.slice(0, pointFinal + 1);
+          const dynamique = new RegExp(`\`${echapper(prefixeDynamique)}\\$\\{`);
+          if (dynamique.test(texte)) return true;
+        }
+        return false;
+      });
+    });
+
+    expect(mortes).toEqual([]);
   });
 });
