@@ -35,6 +35,7 @@
     "save": "Enregistrer",
     "saved": "Enregistré",
     "salesblink": "SalesBlink (email)",
+    "microsoftGraph": "Microsoft 365 (relève des réponses)",
     "fullenrich": "FullEnrich (enrichissement)",
     "dropcontact": "Dropcontact (enrichissement)",
     "bouncer": "Bouncer (vérification email)",
@@ -67,7 +68,10 @@
       "syncIntervalMinPlaceholder": "Minutes, défaut 5",
       "replyMaxDelayH": "Délai maximal d'une relance (heures)",
       "replyMaxDelayHHint": "Au-delà, une relance restée en file chez SalesBlink est renvoyée comme nouvel email « Re : » (entre 1 et 72)",
-      "replyMaxDelayHPlaceholder": "Heures, défaut 6"
+      "replyMaxDelayHPlaceholder": "Heures, défaut 6",
+      "tenantId": "Tenant ID",
+      "graphSyncIntervalMin": "Fréquence de relève (minutes)",
+      "graphSyncIntervalMinPlaceholder": "5"
     },
     "secretUnchanged": "Laissez vide pour garder la clé actuelle",
     "todayUsage": "aujourd’hui : {used} / {cap}",

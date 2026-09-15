@@ -35,6 +35,7 @@
     "save": "Opslaan",
     "saved": "Opgeslagen",
     "salesblink": "SalesBlink (e-mail)",
+    "microsoftGraph": "Microsoft 365 (antwoorden ophalen)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
     "bouncer": "Bouncer (e-mailverificatie)",
@@ -67,7 +68,10 @@
       "syncIntervalMinPlaceholder": "Minuten, standaard 5",
       "replyMaxDelayH": "Maximale vertraging van een opvolging (uren)",
       "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
-      "replyMaxDelayHPlaceholder": "Uren, standaard 6"
+      "replyMaxDelayHPlaceholder": "Uren, standaard 6",
+      "tenantId": "Tenant-ID",
+      "graphSyncIntervalMin": "Ophaalfrequentie (minuten)",
+      "graphSyncIntervalMinPlaceholder": "5"
     },
     "secretUnchanged": "Laat leeg om de huidige sleutel te behouden",
     "todayUsage": "vandaag: {used} / {cap}",
