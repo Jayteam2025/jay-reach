@@ -31,6 +31,7 @@ import {
   type CampaignNature,
 } from '../messages/index.js';
 import { schemaCampagneId } from './campagnes.js';
+import { dansUneTransaction } from '../transaction.js';
 
 // ---------------------------------------------------------------------------
 // lireSequence
@@ -323,23 +324,21 @@ export async function enregistrerVersionModele(ctx: Contexte, entree: unknown): 
   const e = valider(schemaEnregistrerVersionModele, entree);
   const corpsNormalise = await validerVariables(ctx, e.corps, e.nature);
 
-  await ctx.ex.query('begin');
-  try {
-    const id = await inserVersionModele(ctx, {
-      familyId: e.familyId ?? null,
-      nom: e.nom,
-      canal: e.canal,
-      locale: e.locale,
-      sujet: e.canal === 'email' ? (e.sujet?.trim() ?? null) : null,
-      corps: corpsNormalise,
-      origin: e.origin,
-    });
-    await ctx.ex.query('commit');
-    return { id };
-  } catch (err) {
-    await ctx.ex.query('rollback').catch(() => {});
-    throw err;
-  }
+  const id = await dansUneTransaction(ctx.ex, (tx) =>
+    inserVersionModele(
+      { ...ctx, ex: tx },
+      {
+        familyId: e.familyId ?? null,
+        nom: e.nom,
+        canal: e.canal,
+        locale: e.locale,
+        sujet: e.canal === 'email' ? (e.sujet?.trim() ?? null) : null,
+        corps: corpsNormalise,
+        origin: e.origin,
+      },
+    ),
+  );
+  return { id };
 }
 
 // ---------------------------------------------------------------------------
@@ -429,9 +428,9 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
 
   const corpsNormalise = await validerVariables(ctx, e.corps, nature);
 
-  await ctx.ex.query('begin');
-  try {
-    const nouveauTemplateId = await inserVersionModele(ctx, {
+  const etapeId = await dansUneTransaction(ctx.ex, async (tx) => {
+    const ctxTx = { ...ctx, ex: tx };
+    const nouveauTemplateId = await inserVersionModele(ctxTx, {
       familyId: templateParentId,
       nom: campagne.name,
       canal: 'email',
@@ -442,12 +441,11 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
     });
     const templateFamilyId = templateParentId ?? nouveauTemplateId;
 
-    let etapeId: string;
     if (e.etapeId) {
       // `e.position` ne s'applique qu'à la création (ordre d'insertion) : ce
       // tiroir n'a pas de réorganisation des étapes existantes (aucune flèche
       // haut/bas dans la maquette), une étape réécrite garde sa position.
-      const upd = await ctx.ex.query<{ id: string }>(
+      const upd = await tx.query<{ id: string }>(
         `update sequence_steps /* jr:sequence_etape_maj */
             set template_parent_id = $1, delay_hours = $2
           where id = $3 and campaign_id = $4
@@ -455,37 +453,32 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
         [templateFamilyId, e.delaiHeures, e.etapeId, e.campagneId],
       );
       if (!upd.rows[0]) throw new ErreurIntrouvable('Étape');
-      etapeId = upd.rows[0].id;
-    } else {
-      const posRes = await ctx.ex.query<{ n: number }>(
-        `select coalesce(max(position), -1) + 1 as n /* jr:sequence_etape_position */
-           from sequence_steps where campaign_id = $1`,
-        [e.campagneId],
-      );
-      const positionSuivante = e.position !== undefined ? e.position - 1 : posRes.rows[0]!.n;
-      const ins = await ctx.ex.query<{ id: string }>(
-        `insert into sequence_steps /* jr:sequence_etape_creer */
-           (campaign_id, position, channel, delay_hours, template_parent_id)
-         values ($1, $2, 'email', $3, $4)
-         returning id`,
-        [e.campagneId, positionSuivante, e.delaiHeures, templateFamilyId],
-      );
-      etapeId = ins.rows[0]!.id;
+      return upd.rows[0].id;
     }
 
-    await ctx.ex.query('commit');
-
-    await ecrireEvenementEtape(
-      ctx,
-      'step.saved',
-      e.campagneId,
-      e.etapeId ? 'Étape de séquence modifiée.' : 'Étape de séquence ajoutée.',
+    const posRes = await tx.query<{ n: number }>(
+      `select coalesce(max(position), -1) + 1 as n /* jr:sequence_etape_position */
+         from sequence_steps where campaign_id = $1`,
+      [e.campagneId],
     );
-    return { etapeId };
-  } catch (err) {
-    await ctx.ex.query('rollback').catch(() => {});
-    throw err;
-  }
+    const positionSuivante = e.position !== undefined ? e.position - 1 : posRes.rows[0]!.n;
+    const ins = await tx.query<{ id: string }>(
+      `insert into sequence_steps /* jr:sequence_etape_creer */
+         (campaign_id, position, channel, delay_hours, template_parent_id)
+       values ($1, $2, 'email', $3, $4)
+       returning id`,
+      [e.campagneId, positionSuivante, e.delaiHeures, templateFamilyId],
+    );
+    return ins.rows[0]!.id;
+  });
+
+  await ecrireEvenementEtape(
+    ctx,
+    'step.saved',
+    e.campagneId,
+    e.etapeId ? 'Étape de séquence modifiée.' : 'Étape de séquence ajoutée.',
+  );
+  return { etapeId };
 }
 
 export const schemaSupprimerEtape = z.object({ campagneId: z.string().uuid(), etapeId: z.string().uuid() });

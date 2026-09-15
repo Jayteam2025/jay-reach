@@ -19,6 +19,7 @@ export * from './messages/index.js';
 export * from './campaigns/index.js';
 export * from './plafonds.js';
 export * from './journal.js';
+export * from './transaction.js';
 export * from './reglages-salesblink.js';
 export * from './email-transport/index.js';
 export * from './fonctions/index.js';

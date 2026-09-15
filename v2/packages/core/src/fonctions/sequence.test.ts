@@ -6,6 +6,7 @@ import { ErreurIntrouvable, ErreurEntree } from './contexte.js';
 import {
   lireSequence,
   enregistrerEtape,
+  enregistrerVersionModele,
   supprimerEtape,
   apercuEtape,
   envoyerTest,
@@ -29,6 +30,44 @@ function appelsDe(ctx: Contexte): unknown[][] {
 
 function texteDesAppels(ctx: Contexte): string[] {
   return appelsDe(ctx).map((a) => String(a[0]));
+}
+
+/**
+ * Faux POOL, `connect()` compris (R47) : les requêtes d'avant transaction
+ * (lecture de la campagne, extraits) partent sur le pool ; celles de
+ * `dansUneTransaction` partent sur le CLIENT loué — jamais le même mock, pour
+ * vérifier que `enregistrerEtape`/`enregistrerVersionModele` écrivent bien sur
+ * une connexion dédiée.
+ */
+function fauxConnectable(
+  rows: Record<string, unknown[]>,
+  role: Contexte['role'] = 'admin',
+): { ctx: Contexte; appelsPool: () => string[]; appelsClient: () => string[]; releases: () => number } {
+  let releases = 0;
+  const resoudre = (sql: string) => {
+    for (const [motif, r] of Object.entries(rows)) {
+      if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
+    }
+    return { rows: [], rowCount: 0 };
+  };
+  const poolQuery = vi.fn(async (sql: string) => resoudre(sql));
+  const clientQuery = vi.fn(async (sql: string) => resoudre(sql));
+  const ex = {
+    query: poolQuery as unknown as Executeur['query'],
+    connect: vi.fn(async () => ({
+      query: clientQuery as unknown as Executeur['query'],
+      release: vi.fn(() => {
+        releases += 1;
+      }),
+    })),
+  };
+  const ctx: Contexte = { ex: ex as unknown as Executeur, organisationId: 'org-1', utilisateurId: 'user-1', role };
+  return {
+    ctx,
+    appelsPool: () => (poolQuery.mock.calls as unknown[][]).map((a) => String(a[0])),
+    appelsClient: () => (clientQuery.mock.calls as unknown[][]).map((a) => String(a[0])),
+    releases: () => releases,
+  };
 }
 
 const campagneId = '11111111-1111-1111-1111-111111111111';
@@ -155,19 +194,16 @@ describe('enregistrerEtape', () => {
     expect(texteDesAppels(ctx).some((s) => /^begin$/i.test(s.trim()))).toBe(false);
   });
 
-  it('crée le modèle puis l’étape dans une transaction (begin … commit visibles)', async () => {
+  it('crée le modèle puis l’étape sur le CLIENT loué (begin … commit), rien de tel sur le pool (R47)', async () => {
     const nouveauTemplateId = '55555555-5555-5555-5555-555555555555';
     const nouvelleEtapeId = '66666666-6666-6666-6666-666666666666';
-    const ctx = faux(
-      {
-        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: 'src-1', locale: 'fr' }],
-        'jr:sequence_extraits': [],
-        'jr:sequence_modele_creer': [{ id: nouveauTemplateId }],
-        'jr:sequence_etape_position': [{ n: 0 }],
-        'jr:sequence_etape_creer': [{ id: nouvelleEtapeId }],
-      },
-      'admin',
-    );
+    const { ctx, appelsPool, appelsClient, releases } = fauxConnectable({
+      'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: 'src-1', locale: 'fr' }],
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_creer': [{ id: nouveauTemplateId }],
+      'jr:sequence_etape_position': [{ n: 0 }],
+      'jr:sequence_etape_creer': [{ id: nouvelleEtapeId }],
+    });
 
     const res = await enregistrerEtape(ctx, {
       campagneId,
@@ -177,29 +213,35 @@ describe('enregistrerEtape', () => {
     });
 
     expect(res).toEqual({ etapeId: nouvelleEtapeId });
-    const textes = texteDesAppels(ctx).map((s) => s.trim().toLowerCase());
-    const iBegin = textes.findIndex((s) => s === 'begin');
-    const iModele = textes.findIndex((s) => /jr:sequence_modele_creer/.test(s));
-    const iEtape = textes.findIndex((s) => /jr:sequence_etape_creer/.test(s));
-    const iCommit = textes.findIndex((s) => s === 'commit');
+
+    const textesClient = appelsClient().map((s) => s.trim().toLowerCase());
+    const iBegin = textesClient.findIndex((s) => s === 'begin');
+    const iModele = textesClient.findIndex((s) => /jr:sequence_modele_creer/.test(s));
+    const iEtape = textesClient.findIndex((s) => /jr:sequence_etape_creer/.test(s));
+    const iCommit = textesClient.findIndex((s) => s === 'commit');
     expect(iBegin).toBeGreaterThanOrEqual(0);
     expect(iCommit).toBeGreaterThan(iEtape);
     expect(iEtape).toBeGreaterThan(iModele);
     expect(iModele).toBeGreaterThan(iBegin);
+    expect(releases()).toBe(1);
+
+    // Rien de tel n'a jamais transité par le pool : lecture de la campagne et
+    // validation des extraits seulement (avant l'ouverture de la transaction).
+    const textesPool = appelsPool().join('\n');
+    expect(textesPool).toMatch(/jr:sequence_etape_campagne_lire/);
+    expect(textesPool).not.toMatch(/^begin$|^commit$/im);
+    expect(textesPool).not.toMatch(/jr:sequence_etape_creer|jr:sequence_modele_creer/);
   });
 
-  it('réécrit une étape existante : nouvelle version du modèle (désactive l’ancienne)', async () => {
-    const ctx = faux(
-      {
-        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: null, locale: 'fr' }],
-        'jr:sequence_etape_existante': [{ template_parent_id: templateParentId, channel: 'email' }],
-        'jr:sequence_extraits': [],
-        'jr:sequence_modele_prochaine_version': [{ next: 2 }],
-        'jr:sequence_modele_versionner': [{ id: 'v2-id' }],
-        'jr:sequence_etape_maj': [{ id: etapeId }],
-      },
-      'admin',
-    );
+  it('réécrit une étape existante sur le client loué : nouvelle version du modèle (désactive l’ancienne)', async () => {
+    const { ctx, appelsClient } = fauxConnectable({
+      'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: null, locale: 'fr' }],
+      'jr:sequence_etape_existante': [{ template_parent_id: templateParentId, channel: 'email' }],
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_prochaine_version': [{ next: 2 }],
+      'jr:sequence_modele_versionner': [{ id: 'v2-id' }],
+      'jr:sequence_etape_maj': [{ id: etapeId }],
+    });
 
     const res = await enregistrerEtape(ctx, {
       campagneId,
@@ -210,7 +252,7 @@ describe('enregistrerEtape', () => {
     });
 
     expect(res).toEqual({ etapeId });
-    const textes = texteDesAppels(ctx).join('\n');
+    const textes = appelsClient().join('\n');
     expect(textes).toMatch(/jr:sequence_modele_desactiver/);
     expect(textes).toMatch(/jr:sequence_modele_versionner/);
   });
@@ -226,6 +268,64 @@ describe('enregistrerEtape', () => {
     await expect(
       enregistrerEtape(ctx, { campagneId, etapeId, sujet: 'Objet', corps: 'Corps', delaiHeures: 0 }),
     ).rejects.toThrow(ErreurEntree);
+  });
+});
+
+describe('enregistrerVersionModele', () => {
+  const entreeValide = {
+    nom: 'Message de bibliothèque',
+    canal: 'email' as const,
+    locale: 'fr',
+    sujet: 'Objet',
+    corps: 'Bonjour {{prenom}}',
+    nature: 'signal' as const,
+    origin: 'library' as const,
+  };
+
+  it('crée une nouvelle lignée sur le client loué (begin … commit), R47', async () => {
+    const nouveauId = '77777777-7777-7777-7777-777777777777';
+    const { ctx, appelsClient, releases } = fauxConnectable({
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_creer': [{ id: nouveauId }],
+    });
+
+    const res = await enregistrerVersionModele(ctx, entreeValide);
+
+    expect(res).toEqual({ id: nouveauId });
+    const textes = appelsClient().map((s) => s.trim().toLowerCase());
+    expect(textes[0]).toBe('begin');
+    expect(textes.at(-1)).toBe('commit');
+    expect(releases()).toBe(1);
+  });
+
+  it('un échec d’écriture fait rollback, relâche le client et remonte l’erreur', async () => {
+    const appelsClient: string[] = [];
+    let releases = 0;
+    const ex = {
+      query: vi.fn(async (sql: string) => {
+        if (/jr:sequence_extraits/i.test(sql)) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'],
+      connect: vi.fn(async () => ({
+        query: vi.fn(async (sql: string) => {
+          appelsClient.push(sql);
+          if (/jr:sequence_modele_creer/i.test(sql)) throw new Error('violation de contrainte');
+          return { rows: [], rowCount: 0 };
+        }) as unknown as Executeur['query'],
+        release: vi.fn(() => {
+          releases += 1;
+        }),
+      })),
+    };
+    const ctx: Contexte = { ex: ex as unknown as Executeur, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await expect(enregistrerVersionModele(ctx, entreeValide)).rejects.toThrow('violation de contrainte');
+
+    const textes = appelsClient.map((s) => s.trim().toLowerCase());
+    expect(textes[0]).toBe('begin');
+    expect(textes.some((s) => /jr:sequence_modele_creer/.test(s))).toBe(true);
+    expect(textes.at(-1)).toBe('rollback');
+    expect(releases).toBe(1);
   });
 });
 
