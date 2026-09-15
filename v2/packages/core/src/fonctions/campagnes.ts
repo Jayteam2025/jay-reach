@@ -1060,7 +1060,15 @@ export async function modifierReglagesCampagne(ctx: Contexte, entree: unknown): 
     colonnes.push(`daily_cap = $${valeurs.length}`);
   }
 
-  await ctx.ex.query(`update campaigns /* jr:reglages_ecrire */ set ${colonnes.join(', ')} where id = $1 and organization_id = $2`, valeurs);
+  const res = await ctx.ex.query(
+    `update campaigns /* jr:reglages_ecrire */ set ${colonnes.join(', ')} where id = $1 and organization_id = $2`,
+    valeurs,
+  );
+  // Défense en profondeur : la lecture ci-dessus a déjà vérifié l'organisation,
+  // mais une écriture qui ne vérifie pas `rowCount` réussirait en silence si la
+  // campagne disparaissait entre les deux (ou changeait d'organisation) — même
+  // garde que les autres écritures de ce fichier (`lancer`, `mettreEnPause`).
+  if (res.rowCount !== 1) throw new ErreurIntrouvable('Campagne');
 }
 
 /**

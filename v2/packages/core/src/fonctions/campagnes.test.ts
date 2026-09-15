@@ -532,7 +532,10 @@ describe('modifierReglagesCampagne', () => {
 
   it('fusionne les nouvelles clés dans `entry_rules` sans perdre les existantes', async () => {
     const ctx = faux(
-      { 'jr:reglages_lire': [{ entry_rules: { min_score: 70, autreCle: 'x' }, status: 'draft' }], 'jr:reglages_ecrire': [] },
+      {
+        'jr:reglages_lire': [{ entry_rules: { min_score: 70, autreCle: 'x' }, status: 'draft' }],
+        'jr:reglages_ecrire': [{ id: campagneId }],
+      },
       'operator',
     );
     const boiteId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -557,6 +560,16 @@ describe('modifierReglagesCampagne', () => {
     await expect(
       modifierReglagesCampagne(ctx, { campagneId, personaIds: [personaId] }),
     ).rejects.toThrow(ErreurConflit);
+  });
+
+  it('lève ErreurIntrouvable si l’écriture ne touche aucune ligne (campagne d’une autre organisation), sans écriture superflue', async () => {
+    const ctx = faux(
+      { 'jr:reglages_lire': [{ entry_rules: {}, status: 'draft' }], 'jr:reglages_ecrire': [] },
+      'operator',
+    );
+    await expect(modifierReglagesCampagne(ctx, { campagneId, dailyCap: 30 })).rejects.toThrow(ErreurIntrouvable);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels).toHaveLength(2); // lecture + écriture, rien après l'échec
   });
 });
 
