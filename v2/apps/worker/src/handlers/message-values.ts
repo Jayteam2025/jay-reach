@@ -7,6 +7,7 @@
  * rendu depuis le tick jusqu'à la file de dispatch.
  */
 import type { Pool } from 'pg';
+import { construireValeursContact } from '@jay-reach/core';
 import type { EmailStatus } from '../enrichment-persist.js';
 
 export interface DueRow {
@@ -88,46 +89,22 @@ export async function chargerLigneInscription(pool: Pool, enrollmentId: string):
 
 /**
  * Table des valeurs pour le rendu des variables d'un message, assemblée depuis le
- * contact, son compte, sa persona, le signal et la liste. Une valeur absente reste
- * `undefined` → `renderTemplate` la remonte dans `missing` (→ blocage, jamais un
- * champ vide envoyé). Dates via `Intl` (spec §90).
+ * contact, son compte, sa persona, le signal et la liste.
+ *
+ * Simple délégation à `construireValeursContact` (`@jay-reach/core`, tâche 10,
+ * R32) : la logique elle-même a déménagé dans `packages/core` pour être
+ * partagée avec `apercuEnvoi` (relecture avant envoi, `fonctions/file-du-jour.ts`)
+ * — même rendu des deux côtés, jamais un aperçu qui divergerait de l'email
+ * réellement envoyé. `DueRow` porte plus de colonnes que ce que la fonction
+ * partagée exige : assignable telle quelle (typage structurel), rien d'autre
+ * à faire ici.
  */
 export function buildMessageValues(
   row: DueRow,
   /** Extraits de l'organisation, résolus comme des variables. */
   extraits: ReadonlyMap<string, string> = new Map(),
 ): Record<string, string | undefined> {
-  const values: Record<string, string | undefined> = {
-    prenom: row.first_name ?? undefined,
-    // Porte le cas que `prenom` refuse d'affronter : sans prénom connu, on
-    // salue quand même, au lieu de bloquer l'envoi.
-    salutation: row.first_name ? `Bonjour ${row.first_name}` : 'Bonjour',
-    nom: row.last_name ?? undefined,
-    poste: row.job_title ?? undefined,
-    entreprise: row.company_name ?? undefined,
-    ville: row.city ?? undefined,
-    effectif: row.headcount != null ? String(row.headcount) : undefined,
-    persona_angle: row.persona_angle ?? undefined,
-    signal_titre: row.signal_title ?? undefined,
-    signal_zone: row.signal_location ?? undefined,
-    lien_offre: row.signal_url ?? undefined,
-    contexte: row.context_note ?? undefined,
-    site: row.domain ?? undefined,
-    // Le département se lit sur les deux premiers chiffres du code postal.
-    departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
-    pays: row.country ?? undefined,
-  };
-  // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
-  // veut pas qu'un extrait nommé « prenom » masque le prospect.
-  for (const [nom, texte] of extraits) {
-    if (!(nom in values)) values[nom] = texte;
-  }
-  if (row.signal_occurred_at) {
-    const d = new Date(row.signal_occurred_at);
-    values.signal_date = d.toLocaleDateString('fr-FR');
-    values.signal_mois = d.toLocaleDateString('fr-FR', { month: 'long' });
-  }
-  return values;
+  return construireValeursContact(row, extraits);
 }
 
 export interface TemplateResolu {
