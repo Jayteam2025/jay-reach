@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normaliserInboxProvider } from './senders';
+import { normaliserInboxProvider } from './inbox-provider';
 
 describe('normaliserInboxProvider', () => {
   it('accepte microsoft_graph', () => {

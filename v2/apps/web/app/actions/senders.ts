@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
+import { normaliserInboxProvider } from '../../lib/inbox-provider';
 
 export type SenderActionResult = { ok: true } | { ok: false; error: string };
 
@@ -91,23 +92,6 @@ function normaliserQuota(valeur: number | null): number | null | 'invalide' {
   return valeur;
 }
 
-/**
- * Fournisseur de lecture directe des réponses, tel que reçu du formulaire.
- *
- * `null` (ou une saisie vide) désactive la lecture directe : seule la
- * détection du transport SalesBlink s'applique alors. Toute autre valeur
- * désigne un fournisseur qu'on ne sait pas relever ; mieux vaut la refuser
- * que l'enregistrer sans effet, silencieusement.
- */
-export function normaliserInboxProvider(valeur: unknown): 'microsoft_graph' | null | 'invalide' {
-  if (valeur === null || valeur === undefined || valeur === '') {
-    return null;
-  }
-  if (valeur === 'microsoft_graph') {
-    return 'microsoft_graph';
-  }
-  return 'invalide';
-}
 
 /** Met à jour un expéditeur de l'organisation (droit administrateur requis). */
 export async function updateSender(
