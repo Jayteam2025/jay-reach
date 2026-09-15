@@ -4,8 +4,14 @@ import { revalidatePath } from 'next/cache';
 
 import { requireRole } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
-import { ajouterDepuisAnnuaire, ErreurEntree, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
+import {
+  ajouterDepuisAnnuaire,
+  ErreurEntree,
+  ErreurIntrouvable,
+  ForbiddenError,
+} from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { searchCompanies, type DirectoryParams, type DirectoryResult } from '../../lib/directory';
 
 export type AddResult = { ok: true } | { ok: false; error: string };
 
@@ -15,7 +21,13 @@ export type AddResult = { ok: true } | { ok: false; error: string };
  */
 export async function addAccountFromDirectory(
   organizationId: string,
-  company: { siren: string; name: string; naf: string | null; city: string | null; postalCode: string | null },
+  company: {
+    siren: string;
+    name: string;
+    naf: string | null;
+    city: string | null;
+    postalCode: string | null;
+  },
 ): Promise<AddResult> {
   try {
     await requireRole(organizationId, 'operator');
@@ -130,7 +142,10 @@ export interface BulkStatus {
   readonly error: string | null;
 }
 
-export async function getBulkImport(organizationId: string, id: string): Promise<BulkStatus | null> {
+export async function getBulkImport(
+  organizationId: string,
+  id: string,
+): Promise<BulkStatus | null> {
   const svc = createServiceClient();
   const { data } = await svc
     .from('directory_bulk_imports')
@@ -150,6 +165,16 @@ export async function getBulkImport(organizationId: string, id: string): Promise
 // cochées à l'écran. R41 : verse des entreprises dans la campagne, jamais de
 // contact.
 // ---------------------------------------------------------------------------
+
+/**
+ * Recherche dans l'annuaire depuis le tiroir de la source (composant client),
+ * en Server Action plutôt qu'un appel direct de `searchCompanies` depuis le
+ * navigateur : une fonction serveur reste la façon sûre d'appeler une API
+ * externe sans dépendre du CORS de `recherche-entreprises.api.gouv.fr`.
+ */
+export async function actionRechercherAnnuaire(params: DirectoryParams): Promise<DirectoryResult> {
+  return searchCompanies(params);
+}
 
 export interface EntrepriseAnnuaireInput {
   readonly siren: string;
@@ -176,11 +201,19 @@ export async function actionAjouterDepuisAnnuaire(
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, error: 'Droit opérateur requis.' };
     if (err instanceof ErreurEntree) {
-      const details = err.details as { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> };
-      const issues = [...(details.formErrors ?? []), ...Object.values(details.fieldErrors ?? {}).flat()].filter(
-        (m): m is string => typeof m === 'string',
-      );
-      return { ok: false, error: 'Entrée invalide.', issues: issues.length > 0 ? issues : undefined };
+      const details = err.details as {
+        formErrors?: string[];
+        fieldErrors?: Record<string, string[] | undefined>;
+      };
+      const issues = [
+        ...(details.formErrors ?? []),
+        ...Object.values(details.fieldErrors ?? {}).flat(),
+      ].filter((m): m is string => typeof m === 'string');
+      return {
+        ok: false,
+        error: 'Entrée invalide.',
+        issues: issues.length > 0 ? issues : undefined,
+      };
     }
     if (err instanceof ErreurIntrouvable) return { ok: false, error: err.message };
     return { ok: false, error: err instanceof Error ? err.message : 'Erreur inconnue.' };

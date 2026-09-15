@@ -41,7 +41,9 @@ const SOURCE_ID = '33333333-3333-3333-3333-333333333333';
 describe('listerSourcesCampagne', () => {
   it('refuse un rôle insuffisant', async () => {
     const { ctx } = faux({}, null);
-    await expect(listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID })).rejects.toThrow(ForbiddenError);
+    await expect(listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID })).rejects.toThrow(
+      ForbiddenError,
+    );
   });
 
   it('retourne un tableau vide sans requérir de deuxième requête', async () => {
@@ -59,14 +61,26 @@ describe('listerSourcesCampagne', () => {
           {
             id: 'src-1',
             name: 'Adzuna · Test',
-            config: { sourceType: 'adzuna', motsCles: ['directeur commercial'], lieux: [], keywords: ['directeur commercial'] },
+            config: {
+              sourceType: 'adzuna',
+              motsCles: ['directeur commercial'],
+              lieux: [],
+              keywords: ['directeur commercial'],
+            },
             is_active: true,
             schedule: 'every 6h',
-            provider_id_reel: 'adzuna',
           },
         ],
-        'jr:sources_dernier_passage': [{ source_id: 'src-1', started_at: '2026-09-10T09:00:00.000Z', items_found: 58, items_new: 6 }],
+        'jr:sources_dernier_passage': [
+          {
+            source_id: 'src-1',
+            started_at: '2026-09-10T09:00:00.000Z',
+            items_found: 58,
+            items_new: 6,
+          },
+        ],
         'jr:sources_retenus_7j': [{ source_id: 'src-1', jour: aujourdhui, n: 6 }],
+        'jr:sources_providers_rattaches': [{ source_id: 'src-1', provider_id: 'adzuna' }],
       },
       'viewer',
     );
@@ -74,7 +88,12 @@ describe('listerSourcesCampagne', () => {
     expect(carte).toBeDefined();
     expect(carte!.providerId).toBe('adzuna');
     expect(carte!.collecteDisponible).toBe(true);
-    expect(carte!.dernierPassage).toEqual({ quand: '2026-09-10T09:00:00.000Z', lus: 58, retenus: 6, ignores: 52 });
+    expect(carte!.dernierPassage).toEqual({
+      quand: '2026-09-10T09:00:00.000Z',
+      lus: 58,
+      retenus: 6,
+      ignores: 52,
+    });
     expect(carte!.retenus7j).toHaveLength(7);
     expect(carte!.retenus7j[6]).toBe(6);
   });
@@ -86,14 +105,18 @@ describe('listerSourcesCampagne', () => {
           {
             id: 'src-2',
             name: 'LinkedIn · Engageurs',
-            config: { sourceType: 'linkedin_post_engagers', urlPost: 'https://exemple.fr/post', garder: ['commente'] },
+            config: {
+              sourceType: 'linkedin_post_engagers',
+              urlPost: 'https://exemple.fr/post',
+              garder: ['commente'],
+            },
             is_active: true,
             schedule: 'every 24h',
-            provider_id_reel: null,
           },
         ],
         'jr:sources_dernier_passage': [],
         'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [],
       },
       'viewer',
     );
@@ -102,6 +125,36 @@ describe('listerSourcesCampagne', () => {
     expect(carte!.collecteDisponible).toBe(false);
     expect(carte!.dernierPassage).toBeNull();
     expect(carte!.prochainPassage).toBeNull();
+  });
+
+  it('une source rattachée à plusieurs fournisseurs (thème hérité, R30) ne produit qu’UNE carte', async () => {
+    // Reproduit « France Travail » de la campagne « Directeur commercial »
+    // sur la base OSS (vérifié le 15/09) : un thème créé avant ce lot, rattaché
+    // à la fois à `adzuna` et `francetravail`. Sans agrégation dédiée, la
+    // jointure aurait produit deux lignes pour le même `id`.
+    const { ctx } = faux(
+      {
+        'jr:sources_lister': [
+          {
+            id: 'src-3',
+            name: 'France Travail',
+            config: { keywords: ['commercial'] },
+            is_active: true,
+            schedule: 'daily',
+          },
+        ],
+        'jr:sources_dernier_passage': [],
+        'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [
+          { source_id: 'src-3', provider_id: 'adzuna' },
+          { source_id: 'src-3', provider_id: 'francetravail' },
+        ],
+      },
+      'viewer',
+    );
+    const cartes = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+    expect(cartes).toHaveLength(1);
+    expect(cartes[0]!.providerId).toBe('adzuna');
   });
 });
 
@@ -125,7 +178,9 @@ describe('creerSource', () => {
 
   it('refuse csv/list/directory (pas de veille persistante pour ces types)', async () => {
     const { ctx, appels } = faux({ 'jr:sources_campagne': [{ id: 'camp-1' }] });
-    await expect(creerSource(ctx, { ...entreeAdzuna, providerId: 'csv' })).rejects.toThrow(ErreurEntree);
+    await expect(creerSource(ctx, { ...entreeAdzuna, providerId: 'csv' })).rejects.toThrow(
+      ErreurEntree,
+    );
     expect(appels).toHaveLength(0);
   });
 
@@ -140,7 +195,11 @@ describe('creerSource', () => {
       'jr:sources_campagne': [{ id: 'camp-1' }],
       'jr:sources_creer': [{ id: 'src-1' }],
     });
-    const { id } = await creerSource(ctx, { ...entreeAdzuna, providerId: 'france_travail', config: { motsCles: ['chef des ventes'] } });
+    const { id } = await creerSource(ctx, {
+      ...entreeAdzuna,
+      providerId: 'france_travail',
+      config: { motsCles: ['chef des ventes'] },
+    });
     expect(id).toBe('src-1');
 
     const motifs = appels.map(([sql]) => sql);
@@ -176,12 +235,16 @@ describe('creerSource', () => {
 describe('modifierSource', () => {
   it('refuse un rôle insuffisant', async () => {
     const { ctx } = faux({}, 'viewer');
-    await expect(modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'X', config: {}, schedule: 'every 6h' })).rejects.toThrow(ForbiddenError);
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'X', config: {}, schedule: 'every 6h' }),
+    ).rejects.toThrow(ForbiddenError);
   });
 
   it('lève ErreurIntrouvable quand la source n’existe pas', async () => {
     const { ctx } = faux({ 'jr:sources_lire_pour_modifier': [] });
-    await expect(modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'X', config: {}, schedule: 'every 6h' })).rejects.toThrow(ErreurIntrouvable);
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'X', config: {}, schedule: 'every 6h' }),
+    ).rejects.toThrow(ErreurIntrouvable);
   });
 
   it('valide la config contre le schéma du type déjà stocké', async () => {
@@ -189,22 +252,68 @@ describe('modifierSource', () => {
       'jr:sources_lire_pour_modifier': [{ config: { sourceType: 'adzuna', motsCles: ['x'] } }],
       'jr:sources_modifier': [{}],
     });
-    await modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'Adzuna renommé', config: { motsCles: ['head of sales'], lieux: [] }, schedule: 'every 12h' });
-    expect(appels.some(([sql]) => /update sources/i.test(sql) && !/source_providers/i.test(sql))).toBe(true);
+    await modifierSource(ctx, {
+      sourceId: SOURCE_ID,
+      nom: 'Adzuna renommé',
+      config: { motsCles: ['head of sales'], lieux: [] },
+      schedule: 'every 12h',
+    });
+    expect(
+      appels.some(([sql]) => /update sources/i.test(sql) && !/source_providers/i.test(sql)),
+    ).toBe(true);
+  });
+
+  it('résout le type via source_providers pour une source héritée sans config.sourceType, et préserve ses clés inconnues (R30)', async () => {
+    // Reproduit « France Travail » de la campagne « Directeur commercial »
+    // sur la base OSS (vérifié le 15/09) : config sans `sourceType`,
+    // `scoring_prompt`/`match_threshold` posés par un autre chantier.
+    const { ctx, appels } = faux({
+      'jr:sources_lire_pour_modifier': [
+        {
+          config: {
+            keywords: ['commercial'],
+            scoring_prompt: 'Instructions détaillées…',
+            match_threshold: 60,
+          },
+        },
+      ],
+      'jr:sources_provider_pour_modifier': [{ provider_id: 'francetravail' }],
+      'jr:sources_modifier': [{}],
+    });
+    await modifierSource(ctx, {
+      sourceId: SOURCE_ID,
+      nom: 'France Travail',
+      config: { motsCles: ['commercial', 'sales'], lieux: [] },
+      schedule: 'daily',
+    });
+    const appelUpdate = appels.find(
+      ([sql]) => /update sources\b/i.test(sql) && !/source_providers/i.test(sql),
+    );
+    expect(appelUpdate).toBeDefined();
+    const configEcrite = JSON.parse(appelUpdate![1]![2] as string) as Record<string, unknown>;
+    // Champs gérés par ce formulaire : mis à jour.
+    expect(configEcrite.keywords).toEqual(['commercial', 'sales']);
+    // Champs hérités, hors du formulaire : jamais perdus.
+    expect(configEcrite.scoring_prompt).toBe('Instructions détaillées…');
+    expect(configEcrite.match_threshold).toBe(60);
   });
 });
 
 describe('activerSource', () => {
   it('lève ErreurIntrouvable quand la source n’existe pas, sans toucher source_providers', async () => {
     const { ctx, appels } = faux({});
-    await expect(activerSource(ctx, { sourceId: SOURCE_ID, active: false })).rejects.toThrow(ErreurIntrouvable);
+    await expect(activerSource(ctx, { sourceId: SOURCE_ID, active: false })).rejects.toThrow(
+      ErreurIntrouvable,
+    );
     expect(appels.some(([sql]) => /update source_providers/i.test(sql))).toBe(false);
   });
 
   it('répercute is_active sur `sources` ET `source_providers`', async () => {
     const { ctx, appels } = faux({ 'jr:sources_activer': [{}] });
     await activerSource(ctx, { sourceId: SOURCE_ID, active: false });
-    expect(appels.some(([sql]) => /update sources\b/i.test(sql) && /is_active/.test(sql))).toBe(true);
+    expect(appels.some(([sql]) => /update sources\b/i.test(sql) && /is_active/.test(sql))).toBe(
+      true,
+    );
     expect(appels.some(([sql]) => /update source_providers/i.test(sql))).toBe(true);
   });
 });
@@ -232,12 +341,16 @@ describe('importerCsv', () => {
 
   it('refuse un rôle insuffisant', async () => {
     const { ctx } = faux({}, 'viewer');
-    await expect(importerCsv(ctx, { ...base, parsed: { headers: [], rows: [] } })).rejects.toThrow(ForbiddenError);
+    await expect(importerCsv(ctx, { ...base, parsed: { headers: [], rows: [] } })).rejects.toThrow(
+      ForbiddenError,
+    );
   });
 
   it('lève ErreurIntrouvable quand la campagne n’existe pas', async () => {
     const { ctx } = faux({ 'jr:sources_campagne': [] });
-    await expect(importerCsv(ctx, { ...base, parsed: { headers: [], rows: [] } })).rejects.toThrow(ErreurIntrouvable);
+    await expect(importerCsv(ctx, { ...base, parsed: { headers: [], rows: [] } })).rejects.toThrow(
+      ErreurIntrouvable,
+    );
   });
 
   it('compte les contacts nouveaux/déjà connus/sans email valide', async () => {
@@ -266,7 +379,13 @@ describe('ajouterDepuisAnnuaire', () => {
     campagneId: CAMPAGNE_ID,
     entreprises: [
       { siren: '111111111', name: 'Nordwave', naf: '62.01Z', city: 'Lyon', postalCode: '69000' },
-      { siren: '222222222', name: 'Kairn', naf: '62.01Z', city: 'Villeurbanne', postalCode: '69100' },
+      {
+        siren: '222222222',
+        name: 'Kairn',
+        naf: '62.01Z',
+        city: 'Villeurbanne',
+        postalCode: '69100',
+      },
     ],
   };
 
@@ -304,7 +423,10 @@ describe('ajouterDepuisListe', () => {
   });
 
   it('lève ErreurIntrouvable quand la liste n’existe pas', async () => {
-    const { ctx } = faux({ 'jr:sources_campagne': [{ id: 'camp-1' }], 'jr:sources_liste_verifier': [] });
+    const { ctx } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:sources_liste_verifier': [],
+    });
     await expect(ajouterDepuisListe(ctx, entree)).rejects.toThrow(ErreurIntrouvable);
   });
 
@@ -328,10 +450,16 @@ describe('listerListesOrganisation', () => {
 
   it('retourne les listes de l’organisation avec leur nombre de contacts', async () => {
     const { ctx } = faux(
-      { 'jr:sources_listes_organisation': [{ id: 'list-1', name: 'Participants webinaire de juin', n: 62 }] },
+      {
+        'jr:sources_listes_organisation': [
+          { id: 'list-1', name: 'Participants webinaire de juin', n: 62 },
+        ],
+      },
       'viewer',
     );
     const r = await listerListesOrganisation(ctx, {});
-    expect(r).toEqual([{ id: 'list-1', nom: 'Participants webinaire de juin', nombreContacts: 62 }]);
+    expect(r).toEqual([
+      { id: 'list-1', nom: 'Participants webinaire de juin', nombreContacts: 62 },
+    ]);
   });
 });

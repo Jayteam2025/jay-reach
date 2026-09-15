@@ -17,8 +17,7 @@ import {
 import { contexteCourant } from '../../lib/contexte';
 
 export type ImportRunResult =
-  | { ok: true; imported: number; listId: string }
-  | { ok: false; error: string };
+  { ok: true; imported: number; listId: string } | { ok: false; error: string };
 
 export interface ImportInput {
   parsed: ParsedRows;
@@ -33,12 +32,14 @@ export interface ImportInput {
 
 function domainOf(website: string | undefined): string | null {
   if (!website) return null;
-  return website
-    .trim()
-    .replace(/^https?:\/\//i, '')
-    .replace(/^www\./i, '')
-    .replace(/\/.*$/, '')
-    .toLowerCase() || null;
+  return (
+    website
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .replace(/\/.*$/, '')
+      .toLowerCase() || null
+  );
 }
 const val = (r: MappedRow, k: keyof MappedRow): string | null => {
   const v = r[k];
@@ -50,7 +51,10 @@ const val = (r: MappedRow, k: keyof MappedRow): string | null => {
  * comptes et contacts, remplit la liste, et — destination « campagne » — inscrit
  * les contacts. Écrit une ligne d'audit `imports`. Transactionnel. Rôle operator.
  */
-export async function runImport(organizationId: string, input: ImportInput): Promise<ImportRunResult> {
+export async function runImport(
+  organizationId: string,
+  input: ImportInput,
+): Promise<ImportRunResult> {
   try {
     await requireRole(organizationId, 'operator');
   } catch {
@@ -73,17 +77,23 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
     // 1. Liste (nouvelle, ou existante vérifiée pour l'organisation).
     let listId: string;
     if (input.destination === 'existing' && input.existingListId) {
-      const chk = await client.query<{ id: string }>('select id from lists where id = $1 and organization_id = $2', [
-        input.existingListId,
-        organizationId,
-      ]);
+      const chk = await client.query<{ id: string }>(
+        'select id from lists where id = $1 and organization_id = $2',
+        [input.existingListId, organizationId],
+      );
       if (!chk.rows[0]) throw new Error('Liste introuvable.');
       listId = chk.rows[0].id;
     } else {
       const ins = await client.query<{ id: string }>(
         `insert into lists (organization_id, name, context_note, origin, source_file_name, imported_by)
          values ($1, $2, $3, 'import', $4, $5) returning id`,
-        [organizationId, input.listName.trim(), input.contextNote.trim(), input.fileName, user?.id ?? null],
+        [
+          organizationId,
+          input.listName.trim(),
+          input.contextNote.trim(),
+          input.fileName,
+          user?.id ?? null,
+        ],
       );
       listId = ins.rows[0]!.id;
     }
@@ -102,7 +112,15 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
            on conflict (organization_id, siren) where siren is not null
            do update set name = coalesce(accounts.name, excluded.name), domain = coalesce(accounts.domain, excluded.domain)
            returning id`,
-          [organizationId, company ?? siren, siren, val(row, 'city'), val(row, 'postal_code'), val(row, 'country'), domain],
+          [
+            organizationId,
+            company ?? siren,
+            siren,
+            val(row, 'city'),
+            val(row, 'postal_code'),
+            val(row, 'country'),
+            domain,
+          ],
         );
         accountId = a.rows[0]?.id ?? null;
       } else if (domain) {
@@ -112,7 +130,14 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
            on conflict (organization_id, domain)
            do update set name = coalesce(accounts.name, excluded.name)
            returning id`,
-          [organizationId, company ?? domain, domain, val(row, 'city'), val(row, 'postal_code'), val(row, 'country')],
+          [
+            organizationId,
+            company ?? domain,
+            domain,
+            val(row, 'city'),
+            val(row, 'postal_code'),
+            val(row, 'country'),
+          ],
         );
         accountId = a.rows[0]?.id ?? null;
       } else if (company) {
@@ -162,14 +187,31 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
              account_id = coalesce(contacts.account_id, excluded.account_id),
              source_list_id = coalesce(contacts.source_list_id, excluded.source_list_id)
            returning id`,
-          [organizationId, val(row, 'first_name'), val(row, 'last_name'), email, val(row, 'job_title'), val(row, 'linkedin_url'), accountId, listId],
+          [
+            organizationId,
+            val(row, 'first_name'),
+            val(row, 'last_name'),
+            email,
+            val(row, 'job_title'),
+            val(row, 'linkedin_url'),
+            accountId,
+            listId,
+          ],
         );
         contactId = c.rows[0]!.id;
       } else {
         const c = await client.query<{ id: string }>(
           `insert into contacts (organization_id, first_name, last_name, job_title, linkedin_url, account_id, source_list_id)
            values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-          [organizationId, val(row, 'first_name'), val(row, 'last_name'), val(row, 'job_title'), val(row, 'linkedin_url'), accountId, listId],
+          [
+            organizationId,
+            val(row, 'first_name'),
+            val(row, 'last_name'),
+            val(row, 'job_title'),
+            val(row, 'linkedin_url'),
+            accountId,
+            listId,
+          ],
         );
         contactId = c.rows[0]!.id;
       }
@@ -230,13 +272,23 @@ export async function runImport(organizationId: string, input: ImportInput): Pro
 // ---------------------------------------------------------------------------
 
 export type ResultatImportCsvCampagne =
-  | { ok: true; lignesLues: number; contactsNouveaux: number; dejaConnus: number; sansEmailValide: number }
+  | {
+      ok: true;
+      lignesLues: number;
+      contactsNouveaux: number;
+      dejaConnus: number;
+      sansEmailValide: number;
+    }
   | { ok: false; error: string; issues?: string[] };
 
-export async function actionImporterCsvDansCampagne(campagneId: string, input: unknown): Promise<ResultatImportCsvCampagne> {
+export async function actionImporterCsvDansCampagne(
+  campagneId: string,
+  input: unknown,
+): Promise<ResultatImportCsvCampagne> {
   try {
     const ctx = await contexteCourant();
-    const entree = typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
+    const entree =
+      typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
     const r = await importerCsv(ctx, entree);
     revalidatePath(`/campaigns/${campagneId}/sources`);
     revalidatePath(`/campaigns/${campagneId}/contacts`);
@@ -245,11 +297,19 @@ export async function actionImporterCsvDansCampagne(campagneId: string, input: u
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, error: 'Droit opérateur requis.' };
     if (err instanceof ErreurEntree) {
-      const details = err.details as { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> };
-      const issues = [...(details.formErrors ?? []), ...Object.values(details.fieldErrors ?? {}).flat()].filter(
-        (m): m is string => typeof m === 'string',
-      );
-      return { ok: false, error: 'Entrée invalide.', issues: issues.length > 0 ? issues : undefined };
+      const details = err.details as {
+        formErrors?: string[];
+        fieldErrors?: Record<string, string[] | undefined>;
+      };
+      const issues = [
+        ...(details.formErrors ?? []),
+        ...Object.values(details.fieldErrors ?? {}).flat(),
+      ].filter((m): m is string => typeof m === 'string');
+      return {
+        ok: false,
+        error: 'Entrée invalide.',
+        issues: issues.length > 0 ? issues : undefined,
+      };
     }
     if (err instanceof ErreurIntrouvable) return { ok: false, error: err.message };
     return { ok: false, error: err instanceof Error ? err.message : 'Erreur inconnue.' };

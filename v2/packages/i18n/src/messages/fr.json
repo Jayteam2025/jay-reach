@@ -1129,6 +1129,156 @@
           "skipped": "sauté"
         }
       }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Chaque source cherche des offres ou des profils, le moteur les score et garde ceux qui correspondent au persona « {persona} ».",
+      "add": "+ Ajouter une source",
+      "empty": {
+        "title": "Aucune source pour l'instant",
+        "text": "Ajoutez une première source pour que le moteur commence à trouver des contacts."
+      },
+      "menu": {
+        "jobs": "Offres d'emploi",
+        "linkedin": "LinkedIn",
+        "manual": "Manuel",
+        "adzuna": {
+          "title": "Adzuna",
+          "description": "Offres publiées sur les sites d'emploi français"
+        },
+        "franceTravail": {
+          "title": "France Travail",
+          "description": "Offres de l'agence publique"
+        },
+        "linkedinPostEngagers": {
+          "title": "Engageurs d'un post",
+          "description": "Les personnes qui ont aimé ou commenté un post"
+        },
+        "linkedinCompetitorFollowers": {
+          "title": "Abonnés d'un concurrent",
+          "description": "Les personnes actives autour d'une page entreprise"
+        },
+        "linkedinKeywords": {
+          "title": "Mots-clés",
+          "description": "Les personnes qui publient sur un sujet"
+        },
+        "linkedinJobChange": {
+          "title": "Changement de poste",
+          "description": "Les profils du persona arrivés en poste récemment"
+        },
+        "csv": { "title": "Fichier CSV", "description": "Importer des contacts depuis un fichier" },
+        "list": {
+          "title": "Liste existante",
+          "description": "Verser les contacts d'une liste déjà constituée"
+        },
+        "directory": {
+          "title": "Annuaire d'entreprises",
+          "description": "Chercher des entreprises françaises"
+        }
+      },
+      "card": {
+        "query": "Requête",
+        "filters": "Filtres",
+        "passages": "Passages",
+        "postFollowed": "Post suivi",
+        "keep": "On garde",
+        "trend7d": "Retenus sur 7 jours",
+        "modify": "Modifier",
+        "active": "Active",
+        "paused": "En pause",
+        "toggleAriaLabel": "Activer ou mettre en pause la source",
+        "pendingLot4": "Réglée, en attente du lot 4",
+        "everyNHours": "Toutes les {n} heures",
+        "schedule": "{cadence} · dernier {dernier} · prochain {prochain}",
+        "scheduleNoLast": "{cadence} · prochain {prochain}",
+        "neverRun": "Jamais lancé",
+        "dailySchedule": "Une fois par jour",
+        "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage"
+      },
+      "drawer": {
+        "close": "Fermer",
+        "name": "Nom de la source",
+        "keywords": "Intitulés recherchés",
+        "keywordsHint": "Un intitulé par ligne.",
+        "locations": "Lieux",
+        "contract": "Contrat",
+        "contractAll": "Tous contrats",
+        "contractCdi": "CDI seulement",
+        "companySize": "Taille d'entreprise",
+        "department": "Département",
+        "exclusions": "On ignore",
+        "maxAgeDays": "Âge maximal des offres",
+        "maxAgeDaysHint": "jours (repli : réglage de l'organisation)",
+        "schedule": "Passages",
+        "delete": "Supprimer la source",
+        "runNow": "Lancer un passage",
+        "save": "Enregistrer",
+        "create": "Créer la source",
+        "cancel": "Annuler",
+        "linkedinPending": "Collecte activée au lot 4. Vous pouvez déjà régler la source ; la lecture des profils démarrera avec le lot LinkedIn.",
+        "postUrl": "Adresse du post",
+        "keepPeople": "On garde les personnes qui",
+        "commented": "ont commenté",
+        "reacted": "ont réagi",
+        "excludeFirstDegree": "hors relations de 1er degré",
+        "accountId": "Compte LinkedIn",
+        "profilesPerDay": "Profils lus par jour",
+        "competitorPages": "Pages entreprise suivies",
+        "topics": "Sujets suivis",
+        "sinceDays": "Poste pris depuis (jours)",
+        "csvIntro": "Les contacts du fichier entrent dans la campagne comme des personnes déjà qualifiées : pas de scoring.",
+        "csvFile": "Fichier",
+        "csvChoose": "Choisir un fichier…",
+        "csvMapping": "Correspondance des colonnes",
+        "csvColColumn": "Colonne du fichier",
+        "csvColExample": "Exemple",
+        "csvColField": "Champ Jay Reach",
+        "csvColIgnore": "— ignorer —",
+        "csvFields": {
+          "first_name": "Prénom",
+          "last_name": "Nom",
+          "email": "Email",
+          "job_title": "Poste",
+          "company": "Entreprise",
+          "linkedin_url": "LinkedIn",
+          "phone": "Téléphone",
+          "city": "Ville",
+          "postal_code": "Code postal",
+          "country": "Pays",
+          "siren": "SIREN",
+          "website": "Site web"
+        },
+        "csvBefore": "Avant de valider",
+        "csvRowsRead": "Lignes lues",
+        "csvNew": "Contacts nouveaux",
+        "csvKnown": "Déjà connus, mis à jour",
+        "csvMissingEmail": "Sans email valide",
+        "csvImport": "Importer {n} contacts",
+        "listSelect": "Liste",
+        "listName": "Nom de la source",
+        "listOnlyVerified": "Seulement les contacts avec un email vérifié",
+        "listIgnoreContacted": "Ignorer ceux qu'une autre campagne a déjà contactés",
+        "listResult": "Résultat",
+        "listWillEnter": "Contacts qui entreront à l'étape 1",
+        "listAdd": "Ajouter {n} contacts",
+        "directoryIntro": "Cherchez des entreprises françaises par activité, département et effectif, puis retenez-les pour la campagne.",
+        "directoryQuery": "Mot-clé ou nom",
+        "directoryNaf": "Code d'activité (NAF)",
+        "directoryDepartment": "Département",
+        "directoryEffectif": "Effectif",
+        "directorySearch": "Rechercher",
+        "directoryColCompany": "Entreprise",
+        "directoryColCity": "Ville",
+        "directoryColHeadcount": "Effectif",
+        "directoryFound": "{n} entreprises trouvées",
+        "directoryProduces": "Ce que ça produit",
+        "directoryRetained": "Entreprises retenues",
+        "directoryKnown": "Déjà connues, reliées à la campagne",
+        "directoryContactsCreated": "Contacts créés",
+        "directoryNone": "aucun",
+        "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import.",
+        "directoryRetain": "Retenir {n} entreprises"
+      }
     }
   }
 }

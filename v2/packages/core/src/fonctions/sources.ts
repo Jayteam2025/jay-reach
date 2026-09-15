@@ -27,7 +27,12 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable, ErreurEntree } from './contexte.js';
 import { ecrireEvenement } from '../journal.js';
-import { processImport, type ParsedRows, type ColumnMapping, type MappedRow } from '../import/index.js';
+import {
+  processImport,
+  type ParsedRows,
+  type ColumnMapping,
+  type MappedRow,
+} from '../import/index.js';
 
 // ---------------------------------------------------------------------------
 // Types de source
@@ -170,7 +175,10 @@ function schemaConfigDuType(providerId: TypeVeille): z.ZodTypeAny {
  * lieux choisis sont joints par « , » (ex. « Île-de-France, Lyon », comme
  * l'affiche la maquette).
  */
-function construireConfigStocke(providerId: TypeVeille, config: Record<string, unknown>): Record<string, unknown> {
+function construireConfigStocke(
+  providerId: TypeVeille,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
   if (providerId === 'adzuna' || providerId === 'france_travail') {
     const c = config as ConfigAdzuna | ConfigFranceTravail;
     return {
@@ -191,6 +199,30 @@ function lireSourceType(config: Record<string, unknown> | null): TypeVeille {
   throw new ErreurIntrouvable('Source');
 }
 
+/**
+ * `providerId` UI d'une source, d'après ses fournisseurs rattachés
+ * (`source_providers`, DB-first) ou, à défaut, `config.sourceType` (seul
+ * repère pour un type `linkedin_*`, qui n'a jamais de ligne `source_providers`).
+ *
+ * R30 (vérifié sur la base OSS, campagne « Directeur commercial ») : une
+ * source peut être rattachée à PLUSIEURS fournisseurs (son thème « France
+ * Travail » y est rattaché à `adzuna` ET `francetravail`) — un thème créé
+ * avant ce lot, quand une source valait pour plusieurs veilles. Cette
+ * fonction n'en retient qu'un seul (le premier par ordre alphabétique de
+ * `provider_id`) : limite connue, ce lot ne modélise qu'un fournisseur par
+ * carte (`creerSource` n'en attache jamais qu'un).
+ */
+function resoudreProviderId(
+  providerIdsReels: string[],
+  config: Record<string, unknown> | null,
+): TypeVeille {
+  for (const p of providerIdsReels) {
+    const inverse = PROVIDER_ID_INVERSE[p];
+    if (inverse) return inverse;
+  }
+  return lireSourceType(config);
+}
+
 // ---------------------------------------------------------------------------
 // listerSourcesCampagne
 // ---------------------------------------------------------------------------
@@ -202,6 +234,8 @@ export interface SourceCarte {
   readonly providerId: TypeVeille;
   readonly nom: string;
   readonly config: Record<string, unknown>;
+  /** Brut (`every 6h`), pour préremplir le sélecteur du tiroir de réglages sans reparser `prochainPassage`. */
+  readonly schedule: string;
   readonly active: boolean;
   readonly dernierPassage: { quand: string; lus: number; retenus: number; ignores: number } | null;
   readonly prochainPassage: string | null;
@@ -217,25 +251,34 @@ interface LigneSourceCarte {
   config: Record<string, unknown> | null;
   is_active: boolean;
   schedule: string | null;
-  provider_id_reel: string | null;
 }
 
+/**
+ * `schedule` accepte aussi la valeur historique `daily` (R30 : vérifiée sur
+ * la base OSS, campagne « Directeur commercial » — ses deux sources datent
+ * d'avant ce lot et portent `daily`, pas `every Xh`) : 24 heures pour
+ * l'affichage, jamais reformatée de force en `every 24h` par une simple
+ * lecture ou un enregistrement qui ne touche pas ce champ.
+ */
 function heuresDeSchedule(schedule: string | null): number {
+  if (schedule === 'daily') return 24;
   const m = /^every (\d+)h$/.exec(schedule ?? '');
   return m ? Number(m[1]) : 6;
 }
 
 const NOMBRE_JOURS_TENDANCE = 7;
 
-export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Promise<SourceCarte[]> {
+export async function listerSourcesCampagne(
+  ctx: Contexte,
+  entree: unknown,
+): Promise<SourceCarte[]> {
   exiger(ctx, 'viewer');
   const { campagneId } = valider(schemaCampagneIdSource, entree);
 
   const res = await ctx.ex.query<LigneSourceCarte>(
-    `select s.id, s.name, s.config, s.is_active, s.schedule, sp.provider_id as provider_id_reel
+    `select s.id, s.name, s.config, s.is_active, s.schedule
        from campaign_sources cs /* jr:sources_lister */
        join sources s on s.id = cs.source_id
-       left join source_providers sp on sp.source_id = s.id
       where cs.campaign_id = $1 and s.organization_id = $2
       order by s.created_at asc`,
     [campagneId, ctx.organisationId],
@@ -243,7 +286,7 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
   if (res.rows.length === 0) return [];
   const ids = res.rows.map((r) => r.id);
 
-  const [passages, tendances] = await Promise.all([
+  const [passages, tendances, providers] = await Promise.all([
     ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
       // Un seul run par source (`distinct on`, le plus récent) : les runs plus
       // anciens ne sont pas rattachés à un fournisseur avant la bascule vers
@@ -263,6 +306,15 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
         group by source_id, jour`,
       [ids],
     ),
+    // Requête à part (pas de jointure sur la sélection principale) : un thème
+    // rattaché à plusieurs fournisseurs (R30 — cf. `resoudreProviderId`)
+    // multiplierait sinon les lignes de `res`, dupliquant sa carte.
+    ctx.ex.query<{ source_id: string; provider_id: string }>(
+      `select source_id, provider_id from source_providers /* jr:sources_providers_rattaches */
+        where source_id = any($1::uuid[])
+        order by source_id, provider_id`,
+      [ids],
+    ),
   ]);
 
   const parPassage = new Map(passages.rows.map((r) => [r.source_id, r]));
@@ -271,10 +323,15 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
     if (!parTendance.has(r.source_id)) parTendance.set(r.source_id, new Map());
     parTendance.get(r.source_id)!.set(r.jour, r.n);
   }
+  const parProvider = new Map<string, string[]>();
+  for (const r of providers.rows) {
+    if (!parProvider.has(r.source_id)) parProvider.set(r.source_id, []);
+    parProvider.get(r.source_id)!.push(r.provider_id);
+  }
 
   return res.rows.map((row) => {
     const config = (row.config ?? {}) as Record<string, unknown>;
-    const providerId = row.provider_id_reel ? (PROVIDER_ID_INVERSE[row.provider_id_reel] ?? lireSourceType(config)) : lireSourceType(config);
+    const providerId = resoudreProviderId(parProvider.get(row.id) ?? [], config);
     const passage = parPassage.get(row.id);
     const dernierPassage = passage
       ? {
@@ -285,7 +342,9 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
         }
       : null;
     const prochainPassage = dernierPassage
-      ? new Date(new Date(dernierPassage.quand).getTime() + heuresDeSchedule(row.schedule) * 3_600_000).toISOString()
+      ? new Date(
+          new Date(dernierPassage.quand).getTime() + heuresDeSchedule(row.schedule) * 3_600_000,
+        ).toISOString()
       : null;
 
     const jours = parTendance.get(row.id) ?? new Map<string, number>();
@@ -300,6 +359,7 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
       providerId,
       nom: row.name,
       config,
+      schedule: row.schedule ?? 'every 6h',
       active: row.is_active,
       dernierPassage,
       prochainPassage,
@@ -313,15 +373,20 @@ export async function listerSourcesCampagne(ctx: Contexte, entree: unknown): Pro
 // creerSource / modifierSource / activerSource / lancerPassage
 // ---------------------------------------------------------------------------
 
+/**
+ * `every Nh` (nouvelle convention) ou `daily` (valeur historique — R30 :
+ * les deux sources de la campagne « Directeur commercial » sur la base OSS
+ * en portent une, créées avant ce lot). Un enregistrement qui ne touche pas
+ * la cadence doit pouvoir la renvoyer telle quelle sans être rejeté.
+ */
+const schemaSchedule = z.string().regex(/^(every \d+h|daily)$/);
+
 export const schemaCreerSource = z.object({
   campagneId: z.string().uuid(),
   providerId: z.enum(TYPES_SOURCES),
   nom: z.string().min(1).max(120),
   config: z.record(z.unknown()),
-  schedule: z
-    .string()
-    .regex(/^every (\d+)h$/)
-    .default('every 6h'),
+  schedule: schemaSchedule.default('every 6h'),
 });
 
 async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<void> {
@@ -345,7 +410,10 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
   exiger(ctx, 'operator');
   const { campagneId, providerId, nom, config, schedule } = valider(schemaCreerSource, entree);
   if (!estTypeVeille(providerId)) {
-    throw new ErreurEntree({ formErrors: [], fieldErrors: { providerId: ['Ce type de source ne se crée pas par ce formulaire.'] } });
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: { providerId: ['Ce type de source ne se crée pas par ce formulaire.'] },
+    });
   }
   await verifierCampagne(ctx, campagneId);
 
@@ -393,7 +461,7 @@ export const schemaModifierSource = z.object({
   sourceId: z.string().uuid(),
   nom: z.string().min(1).max(120),
   config: z.record(z.unknown()),
-  schedule: z.string().regex(/^every (\d+)h$/),
+  schedule: schemaSchedule,
 });
 
 /** Modifie une source existante : le type (`sourceType`) ne change jamais, il vient de la config déjà stockée. */
@@ -401,16 +469,33 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   exiger(ctx, 'operator');
   const { sourceId, nom, config, schedule } = valider(schemaModifierSource, entree);
 
-  const res = await ctx.ex.query<{ config: Record<string, unknown> | null }>(
-    `select config from sources /* jr:sources_lire_pour_modifier */ where id = $1 and organization_id = $2`,
-    [sourceId, ctx.organisationId],
-  );
+  const [res, providersRes] = await Promise.all([
+    ctx.ex.query<{ config: Record<string, unknown> | null }>(
+      `select config from sources /* jr:sources_lire_pour_modifier */ where id = $1 and organization_id = $2`,
+      [sourceId, ctx.organisationId],
+    ),
+    ctx.ex.query<{ provider_id: string }>(
+      `select provider_id from source_providers /* jr:sources_provider_pour_modifier */
+        where source_id = $1 order by provider_id`,
+      [sourceId],
+    ),
+  ]);
   const ligne = res.rows[0];
   if (!ligne) throw new ErreurIntrouvable('Source');
-  const providerId = lireSourceType(ligne.config);
+  const providerId = resoudreProviderId(
+    providersRes.rows.map((r) => r.provider_id),
+    ligne.config,
+  );
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
-  const configStocke = construireConfigStocke(providerId, configValide);
+  // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
+  // créée avant ce lot porte des clés que ce formulaire ne gère pas
+  // (`scoring_prompt`, `match_threshold`, `exclude_keywords` — R30, vérifié
+  // sur la base OSS) et qu'un enregistrement ne doit jamais effacer.
+  const configStocke = {
+    ...(ligne.config ?? {}),
+    ...construireConfigStocke(providerId, configValide),
+  };
 
   const ecriture = await ctx.ex.query(
     `update sources /* jr:sources_modifier */ set name = $2, config = $3::jsonb, schedule = $4
@@ -559,7 +644,15 @@ async function resoudreCompteImport(ctx: Contexte, row: MappedRow): Promise<stri
        on conflict (organization_id, siren) where siren is not null
        do update set name = coalesce(accounts.name, excluded.name), domain = coalesce(accounts.domain, excluded.domain)
        returning id`,
-      [ctx.organisationId, company ?? siren, siren, valeurDe(row, 'city'), valeurDe(row, 'postal_code'), valeurDe(row, 'country'), domain],
+      [
+        ctx.organisationId,
+        company ?? siren,
+        siren,
+        valeurDe(row, 'city'),
+        valeurDe(row, 'postal_code'),
+        valeurDe(row, 'country'),
+        domain,
+      ],
     );
     return a.rows[0]?.id ?? null;
   }
@@ -570,7 +663,14 @@ async function resoudreCompteImport(ctx: Contexte, row: MappedRow): Promise<stri
        on conflict (organization_id, domain)
        do update set name = coalesce(accounts.name, excluded.name)
        returning id`,
-      [ctx.organisationId, company ?? domain, domain, valeurDe(row, 'city'), valeurDe(row, 'postal_code'), valeurDe(row, 'country')],
+      [
+        ctx.organisationId,
+        company ?? domain,
+        domain,
+        valeurDe(row, 'city'),
+        valeurDe(row, 'postal_code'),
+        valeurDe(row, 'country'),
+      ],
     );
     return a.rows[0]?.id ?? null;
   }
@@ -599,7 +699,12 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
 
   const outcome = processImport(parsed as ParsedRows, mapping as ColumnMapping);
   if (outcome.rows.length === 0) {
-    return { lignesLues: outcome.report.rowsTotal, contactsNouveaux: 0, dejaConnus: 0, sansEmailValide: outcome.report.emailsMissing };
+    return {
+      lignesLues: outcome.report.rowsTotal,
+      contactsNouveaux: 0,
+      dejaConnus: 0,
+      sansEmailValide: outcome.report.emailsMissing,
+    };
   }
 
   const listeRes = await ctx.ex.query<{ id: string }>(
@@ -628,7 +733,16 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
            account_id = coalesce(contacts.account_id, excluded.account_id),
            source_list_id = coalesce(contacts.source_list_id, excluded.source_list_id)
          returning id, (xmax = 0) as inserted`,
-        [ctx.organisationId, valeurDe(row, 'first_name'), valeurDe(row, 'last_name'), email, valeurDe(row, 'job_title'), valeurDe(row, 'linkedin_url'), accountId, listId],
+        [
+          ctx.organisationId,
+          valeurDe(row, 'first_name'),
+          valeurDe(row, 'last_name'),
+          email,
+          valeurDe(row, 'job_title'),
+          valeurDe(row, 'linkedin_url'),
+          accountId,
+          listId,
+        ],
       );
       contactId = c.rows[0]!.id;
       if (c.rows[0]!.inserted) contactsNouveaux += 1;
@@ -637,7 +751,15 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
       const c = await ctx.ex.query<{ id: string }>(
         `insert into contacts (organization_id, first_name, last_name, job_title, linkedin_url, account_id, source_list_id) /* jr:sources_csv_contact_sans_email */
          values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [ctx.organisationId, valeurDe(row, 'first_name'), valeurDe(row, 'last_name'), valeurDe(row, 'job_title'), valeurDe(row, 'linkedin_url'), accountId, listId],
+        [
+          ctx.organisationId,
+          valeurDe(row, 'first_name'),
+          valeurDe(row, 'last_name'),
+          valeurDe(row, 'job_title'),
+          valeurDe(row, 'linkedin_url'),
+          accountId,
+          listId,
+        ],
       );
       contactId = c.rows[0]!.id;
       contactsNouveaux += 1;
@@ -660,7 +782,15 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
   await ctx.ex.query(
     `insert into imports (organization_id, file_name, rows_total, rows_unique, rows_merged, mapping, status, list_id) /* jr:sources_csv_audit */
      values ($1, $2, $3, $4, $5, $6::jsonb, 'done', $7)`,
-    [ctx.organisationId, fileName ?? 'import.csv', outcome.report.rowsTotal, outcome.report.rowsUnique, outcome.report.rowsMerged, JSON.stringify(mapping), listId],
+    [
+      ctx.organisationId,
+      fileName ?? 'import.csv',
+      outcome.report.rowsTotal,
+      outcome.report.rowsUnique,
+      outcome.report.rowsMerged,
+      JSON.stringify(mapping),
+      listId,
+    ],
   );
 
   return {
@@ -696,7 +826,10 @@ export interface ResultatAjouterDepuisAnnuaire {
   readonly dejaConnues: number;
 }
 
-export async function ajouterDepuisAnnuaire(ctx: Contexte, entree: unknown): Promise<ResultatAjouterDepuisAnnuaire> {
+export async function ajouterDepuisAnnuaire(
+  ctx: Contexte,
+  entree: unknown,
+): Promise<ResultatAjouterDepuisAnnuaire> {
   exiger(ctx, 'operator');
   const { campagneId, entreprises } = valider(schemaAjouterDepuisAnnuaire, entree);
   await verifierCampagne(ctx, campagneId);
@@ -735,7 +868,10 @@ export interface ListeResume {
 }
 
 /** Listes existantes de l'organisation, pour le sélecteur du tiroir « Liste existante ». */
-export async function listerListesOrganisation(ctx: Contexte, _entree: unknown): Promise<ListeResume[]> {
+export async function listerListesOrganisation(
+  ctx: Contexte,
+  _entree: unknown,
+): Promise<ListeResume[]> {
   exiger(ctx, 'viewer');
   const res = await ctx.ex.query<{ id: string; name: string; n: number }>(
     `select l.id, l.name, count(lm.contact_id)::int as n /* jr:sources_listes_organisation */
@@ -756,9 +892,15 @@ export const schemaAjouterDepuisListe = z.object({
   ignorerDejaContactes: z.boolean().default(false),
 });
 
-export async function ajouterDepuisListe(ctx: Contexte, entree: unknown): Promise<{ ajoutes: number }> {
+export async function ajouterDepuisListe(
+  ctx: Contexte,
+  entree: unknown,
+): Promise<{ ajoutes: number }> {
   exiger(ctx, 'operator');
-  const { campagneId, listId, seulementEmailVerifie, ignorerDejaContactes } = valider(schemaAjouterDepuisListe, entree);
+  const { campagneId, listId, seulementEmailVerifie, ignorerDejaContactes } = valider(
+    schemaAjouterDepuisListe,
+    entree,
+  );
   await verifierCampagne(ctx, campagneId);
 
   const listeRes = await ctx.ex.query<{ id: string }>(
@@ -767,7 +909,9 @@ export async function ajouterDepuisListe(ctx: Contexte, entree: unknown): Promis
   );
   if (listeRes.rowCount === 0) throw new ErreurIntrouvable('Liste');
 
-  const filtreEmail = seulementEmailVerifie ? `and c.email_status = 'valid'` : `and c.email is not null`;
+  const filtreEmail = seulementEmailVerifie
+    ? `and c.email_status = 'valid'`
+    : `and c.email is not null`;
   const filtreDejaContacte = ignorerDejaContactes
     ? `and not exists (select 1 from enrollments e2 where e2.contact_id = c.id and e2.campaign_id <> $2)`
     : '';

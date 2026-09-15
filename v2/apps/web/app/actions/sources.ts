@@ -82,14 +82,20 @@ async function synchroniserFournisseurs(
     .map((r) => r.id);
 
   if (aDesactiver.length > 0) {
-    const { error } = await supabase.from('source_providers').update({ is_active: false }).in('id', aDesactiver);
+    const { error } = await supabase
+      .from('source_providers')
+      .update({ is_active: false })
+      .in('id', aDesactiver);
     if (error) return error.message;
   }
   return null;
 }
 
 /** Crée un thème de veille (admin requis). */
-export async function createSource(organizationId: string, input: SourceInput): Promise<SourceActionResult> {
+export async function createSource(
+  organizationId: string,
+  input: SourceInput,
+): Promise<SourceActionResult> {
   try {
     await requireRole(organizationId, 'admin');
   } catch {
@@ -113,7 +119,11 @@ export async function createSource(organizationId: string, input: SourceInput): 
     .single();
   if (error) return { ok: false, error: error.message };
 
-  const echec = await synchroniserFournisseurs(supabase, (data as { id: string }).id, input.providerIds);
+  const echec = await synchroniserFournisseurs(
+    supabase,
+    (data as { id: string }).id,
+    input.providerIds,
+  );
   if (echec) return { ok: false, error: echec };
 
   revalidatePath('/settings/sources');
@@ -160,7 +170,10 @@ export async function updateSource(
  * et lui ajouter cette dépendance pour un bouton reviendrait à en dupliquer la
  * moitié.
  */
-export async function requestSourceRun(organizationId: string, sourceId: string): Promise<SourceActionResult> {
+export async function requestSourceRun(
+  organizationId: string,
+  sourceId: string,
+): Promise<SourceActionResult> {
   try {
     await requireRole(organizationId, 'operator');
   } catch {
@@ -236,18 +249,24 @@ export async function toggleSourceProvider(
 // ---------------------------------------------------------------------------
 
 export type ResultatSource = { ok: true } | { ok: false; error: string; issues?: string[] };
-export type ResultatCreerSource = { ok: true; id: string } | { ok: false; error: string; issues?: string[] };
-export type ResultatAjouterDepuisListe = { ok: true; ajoutes: number } | { ok: false; error: string; issues?: string[] };
+export type ResultatCreerSource =
+  { ok: true; id: string } | { ok: false; error: string; issues?: string[] };
+export type ResultatAjouterDepuisListe =
+  { ok: true; ajoutes: number } | { ok: false; error: string; issues?: string[] };
 
 function resultatDErreurSource(err: unknown): { ok: false; error: string; issues?: string[] } {
   if (err instanceof ForbiddenError) {
     return { ok: false, error: 'Droit opérateur requis.' };
   }
   if (err instanceof ErreurEntree) {
-    const details = err.details as { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> };
-    const issues = [...(details.formErrors ?? []), ...Object.values(details.fieldErrors ?? {}).flat()].filter(
-      (m): m is string => typeof m === 'string',
-    );
+    const details = err.details as {
+      formErrors?: string[];
+      fieldErrors?: Record<string, string[] | undefined>;
+    };
+    const issues = [
+      ...(details.formErrors ?? []),
+      ...Object.values(details.fieldErrors ?? {}).flat(),
+    ].filter((m): m is string => typeof m === 'string');
     return { ok: false, error: 'Entrée invalide.', issues: issues.length > 0 ? issues : undefined };
   }
   if (err instanceof ErreurIntrouvable) {
@@ -261,10 +280,14 @@ function revaliderOngletSources(campagneId: string): void {
   revalidatePath(`/campaigns/${campagneId}`);
 }
 
-export async function actionCreerSource(campagneId: string, input: unknown): Promise<ResultatCreerSource> {
+export async function actionCreerSource(
+  campagneId: string,
+  input: unknown,
+): Promise<ResultatCreerSource> {
   try {
     const ctx = await contexteCourant();
-    const entree = typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
+    const entree =
+      typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
     const { id } = await creerSource(ctx, entree);
     revaliderOngletSources(campagneId);
     return { ok: true, id };
@@ -273,7 +296,10 @@ export async function actionCreerSource(campagneId: string, input: unknown): Pro
   }
 }
 
-export async function actionModifierSourceCampagne(campagneId: string, input: unknown): Promise<ResultatSource> {
+export async function actionModifierSourceCampagne(
+  campagneId: string,
+  input: unknown,
+): Promise<ResultatSource> {
   try {
     const ctx = await contexteCourant();
     await modifierSource(ctx, input);
@@ -284,7 +310,11 @@ export async function actionModifierSourceCampagne(campagneId: string, input: un
   }
 }
 
-export async function actionActiverSourceCampagne(campagneId: string, sourceId: string, active: boolean): Promise<ResultatSource> {
+export async function actionActiverSourceCampagne(
+  campagneId: string,
+  sourceId: string,
+  active: boolean,
+): Promise<ResultatSource> {
   try {
     const ctx = await contexteCourant();
     await activerSource(ctx, { sourceId, active });
@@ -295,7 +325,10 @@ export async function actionActiverSourceCampagne(campagneId: string, sourceId: 
   }
 }
 
-export async function actionLancerPassageCampagne(campagneId: string, sourceId: string): Promise<ResultatSource> {
+export async function actionLancerPassageCampagne(
+  campagneId: string,
+  sourceId: string,
+): Promise<ResultatSource> {
   try {
     const ctx = await contexteCourant();
     await lancerPassage(ctx, { sourceId });
@@ -306,10 +339,14 @@ export async function actionLancerPassageCampagne(campagneId: string, sourceId: 
   }
 }
 
-export async function actionAjouterDepuisListe(campagneId: string, input: unknown): Promise<ResultatAjouterDepuisListe> {
+export async function actionAjouterDepuisListe(
+  campagneId: string,
+  input: unknown,
+): Promise<ResultatAjouterDepuisListe> {
   try {
     const ctx = await contexteCourant();
-    const entree = typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
+    const entree =
+      typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
     const r = await ajouterDepuisListe(ctx, entree);
     revaliderOngletSources(campagneId);
     revalidatePath(`/campaigns/${campagneId}/contacts`);
