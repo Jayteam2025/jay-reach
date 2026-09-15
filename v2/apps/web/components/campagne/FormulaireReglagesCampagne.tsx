@@ -165,7 +165,7 @@ export function CorpsReglagesCampagne({
           <p className="jr-aide">{libelles.aucuneBoite}</p>
         ) : (
           boites.map((boite) => (
-            <div key={boite.id} className="jr-source">
+            <div key={boite.id} className="jr-boite">
               {boite.marque && <TuileLogo marque={boite.marque} />}
               <span>
                 <b>{boite.identite}</b>

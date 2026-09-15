@@ -203,6 +203,9 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-source { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
 .jr-source:last-child { border-bottom: 0; }
 .jr-source b { display: block; font-weight: 600; }
+.jr-boite { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
+.jr-boite:last-child { border-bottom: 0; }
+.jr-boite b { font-weight: 600; overflow-wrap: anywhere; }
 .jr-source small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-source .jr-n { text-align: right; font-size: var(--jr-petit); color: var(--jr-secondaire); }
 .jr-source .jr-n b { font-size: 15px; }
