@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { listerCampagnes } from '@jay-reach/core';
+import { listerCampagnes, campaignStatusSchema } from '@jay-reach/core';
 import type { CampaignStatus } from '@jay-reach/core';
 import { contexteCourant } from '../../../lib/contexte';
+import { dateRelativeCourte } from '../../../lib/dates';
 import { Carte, EnTetePage, EtatVide, Puce, Table, TuileLogo } from '../../../components/ui';
 import type { PuceTon } from '../../../components/ui';
 
@@ -17,35 +18,63 @@ const TON_STATUT_CAMPAGNE: Record<CampaignStatus, PuceTon> = {
   archived: 'gris',
 };
 
+/** `?etat=` : un statut connu, sinon aucun filtre (une valeur inconnue ne casse jamais la page). */
+function etatDemande(brut: string | string[] | undefined): CampaignStatus | undefined {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  const r = campaignStatusSchema.safeParse(valeur);
+  return r.success ? r.data : undefined;
+}
+
+function classePuce(actif: boolean): string {
+  return ['jr-puce', actif ? 'accent' : undefined].filter(Boolean).join(' ');
+}
+
 /**
- * Puces de filtre : comptes informatifs, pas des filtres cliquables — même
- * registre que `Puce` partout ailleurs dans le kit (une étiquette en lecture
- * seule, jamais un contrôle). Câbler un vrai filtre (client, ou un paramètre
- * sur `listerCampagnes`) est un aller simple pour une prochaine tâche, pas
- * un objet de celle-ci (brief : liste, en-tête à onglets, Vue d'ensemble).
+ * Puces de filtre, cliquables (tour de correction 1, point 6) : chaque puce
+ * est un lien vers `?etat=...` (ou vers `/campaigns` sans paramètre pour
+ * « Toutes »), le filtrage se fait ici, à la lecture de `searchParams` — pas
+ * d'état client, la page reste un composant serveur.
  */
-function ComptesParStatut({
+function PucesDeFiltre({
   campagnes,
+  etat,
   t,
 }: {
   campagnes: { statut: CampaignStatus }[];
+  etat: CampaignStatus | undefined;
   t: (cle: string, valeurs: Record<string, number>) => string;
 }) {
   const compte = (statut: CampaignStatus) => campagnes.filter((c) => c.statut === statut).length;
   return (
     <div className="jr-puces">
-      <Puce ton="accent">{t('list.filters.all', { n: campagnes.length })}</Puce>
-      <Puce>{t('list.filters.active', { n: compte('active') })}</Puce>
-      <Puce>{t('list.filters.paused', { n: compte('paused') })}</Puce>
-      <Puce>{t('list.filters.draft', { n: compte('draft') })}</Puce>
-      <Puce>{t('list.filters.archived', { n: compte('archived') })}</Puce>
+      <Link href="/campaigns" className={classePuce(etat === undefined)}>
+        {t('list.filters.all', { n: campagnes.length })}
+      </Link>
+      <Link href="/campaigns?etat=active" className={classePuce(etat === 'active')}>
+        {t('list.filters.active', { n: compte('active') })}
+      </Link>
+      <Link href="/campaigns?etat=paused" className={classePuce(etat === 'paused')}>
+        {t('list.filters.paused', { n: compte('paused') })}
+      </Link>
+      <Link href="/campaigns?etat=draft" className={classePuce(etat === 'draft')}>
+        {t('list.filters.draft', { n: compte('draft') })}
+      </Link>
+      <Link href="/campaigns?etat=archived" className={classePuce(etat === 'archived')}>
+        {t('list.filters.archived', { n: compte('archived') })}
+      </Link>
     </div>
   );
 }
 
-export default async function CampagnesPage() {
+export default async function CampagnesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await contexteCourant();
-  const [t, campagnes] = await Promise.all([getTranslations('campagne'), listerCampagnes(ctx)]);
+  const [t, sp, campagnes] = await Promise.all([getTranslations('campagne'), searchParams, listerCampagnes(ctx)]);
+  const etat = etatDemande(sp.etat);
+  const campagnesAffichees = etat ? campagnes.filter((c) => c.statut === etat) : campagnes;
 
   return (
     <>
@@ -59,7 +88,7 @@ export default async function CampagnesPage() {
         }
       />
       <section className="jr-contenu une-colonne">
-        <ComptesParStatut campagnes={campagnes} t={t} />
+        <PucesDeFiltre campagnes={campagnes} etat={etat} t={t} />
 
         {campagnes.length === 0 ? (
           <EtatVide
@@ -71,6 +100,10 @@ export default async function CampagnesPage() {
               </Link>
             }
           />
+        ) : campagnesAffichees.length === 0 ? (
+          <Carte>
+            <div className="jr-vide">{t('list.emptyFilter')}</div>
+          </Carte>
         ) : (
           <Carte>
             <Table
@@ -85,59 +118,83 @@ export default async function CampagnesPage() {
                 { cle: 'activite', titre: t('list.columns.lastActivity') },
                 { cle: 'action', titre: '' },
               ]}
-              lignes={campagnes.map((campagne) => ({
-                campagne: (
-                  <div className="jr-qui">
-                    <TuileLogo marque="lettre" lettre={campagne.nom.charAt(0).toUpperCase()} />
-                    <span>
-                      <b>{campagne.nom}</b>
-                      <small>
-                        {t('list.persona', { nom: campagne.nom })}
-                        {' · '}
-                        {campagne.sources.length > 0 ? t('list.sourcesCount', { n: campagne.sources.length }) : t('list.noSource')}
-                      </small>
-                    </span>
-                  </div>
-                ),
-                statut: (
-                  <Puce ton={TON_STATUT_CAMPAGNE[campagne.statut]} point={campagne.statut !== 'draft'}>
-                    {t(`status.${campagne.statut}`)}
-                  </Puce>
-                ),
-                boites:
-                  campagne.boites.length === 0 ? (
-                    <span className="jr-secondaire">{t('list.noBoxes')}</span>
-                  ) : (
-                    <span className="jr-pile">
-                      {campagne.boites.map((boite) => (
-                        <span key={boite.id} className="jr-avatar" style={{ background: 'var(--jr-surface)', borderColor: 'var(--jr-filet)' }}>
-                          {boite.marque ? <i className={`jr-logo-inline jr-logo-${boite.marque}`} /> : boite.identite.charAt(0).toUpperCase()}
-                        </span>
-                      ))}
-                    </span>
+              lignes={campagnesAffichees.map((campagne) => {
+                // R31 : le pourcentage de réponses n'est montré que si des livraisons ont
+                // eu lieu (`tendance7j`, déjà « livraisons par jour sur 7 jours ») — sinon
+                // un « 0 0 % » sans dénominateur réel, trompeur.
+                const aEuDesLivraisons = campagne.tendance7j.some((n) => n > 0);
+                return {
+                  campagne: (
+                    <div className="jr-qui">
+                      <TuileLogo marque="lettre" lettre={campagne.nom.charAt(0).toUpperCase()} />
+                      <span>
+                        <b>{campagne.nom}</b>
+                        <small>
+                          {t('list.persona', { nom: campagne.nom })}
+                          {' · '}
+                          {campagne.sources.length > 0 ? t('list.sourcesCount', { n: campagne.sources.length }) : t('list.noSource')}
+                        </small>
+                      </span>
+                    </div>
                   ),
-                contacts: nf.format(campagne.qualifies),
-                sequence: nf.format(campagne.enSequence),
-                reponses:
-                  campagne.qualifies === 0 ? (
-                    <span className="jr-secondaire">—</span>
-                  ) : (
+                  statut: (
+                    <Puce ton={TON_STATUT_CAMPAGNE[campagne.statut]} point={campagne.statut !== 'draft'}>
+                      {t(`status.${campagne.statut}`)}
+                    </Puce>
+                  ),
+                  boites:
+                    campagne.boites.length === 0 ? (
+                      <span className="jr-secondaire">{t('list.noBoxes')}</span>
+                    ) : (
+                      <span className="jr-pile">
+                        {campagne.boites.map((boite) =>
+                          // `.jr-tuile-logo` (32px, carrée) ne rentre pas dans `.jr-pile .jr-avatar`
+                          // (26px, ronde) : une marque connue reste dans l'avatar (icône inline,
+                          // même composition que la maquette) ; une marque inconnue rend directement
+                          // la tuile, sans l'emboîter dans un avatar qui la couperait.
+                          boite.marque ? (
+                            <span
+                              key={boite.id}
+                              className="jr-avatar"
+                              style={{ background: 'var(--jr-surface)', borderColor: 'var(--jr-filet)' }}
+                              title={boite.identite}
+                            >
+                              <i className={`jr-logo-inline jr-logo-${boite.marque}`} />
+                            </span>
+                          ) : (
+                            <span key={boite.id} title={boite.identite}>
+                              <TuileLogo marque="email" />
+                            </span>
+                          ),
+                        )}
+                      </span>
+                    ),
+                  contacts: nf.format(campagne.contacts),
+                  sequence: nf.format(campagne.enSequence),
+                  reponses: (
                     <>
-                      <b>{nf.format(campagne.reponses)}</b>{' '}
-                      <small className="jr-secondaire">{campagne.tauxReponse.toLocaleString('fr-FR')} %</small>
+                      <b>{nf.format(campagne.reponses)}</b>
+                      {aEuDesLivraisons && (
+                        <>
+                          {' '}
+                          <small className="jr-secondaire">{campagne.tauxReponse.toLocaleString('fr-FR')} %</small>
+                        </>
+                      )}
                     </>
                   ),
-                // Ni « intéressés » ni « dernière activité » ne sont portés par
-                // `CampagneListeResume` (packages/core/src/fonctions/campagnes.ts,
-                // tâche 7) : un tiret plutôt qu'une valeur inventée.
-                interesses: <span className="jr-secondaire">—</span>,
-                activite: <span className="jr-secondaire">—</span>,
-                action: (
-                  <Link href={`/campaigns/${campagne.id}`} className="jr-bouton petit">
-                    {campagne.statut === 'draft' ? t('list.resume') : t('list.open')}
-                  </Link>
-                ),
-              }))}
+                  interesses: nf.format(campagne.interesses),
+                  activite: campagne.derniereActivite ? (
+                    dateRelativeCourte(campagne.derniereActivite)
+                  ) : (
+                    <span className="jr-secondaire">—</span>
+                  ),
+                  action: (
+                    <Link href={`/campaigns/${campagne.id}`} className="jr-bouton petit">
+                      {campagne.statut === 'draft' ? t('list.resume') : t('list.open')}
+                    </Link>
+                  ),
+                };
+              })}
             />
           </Carte>
         )}

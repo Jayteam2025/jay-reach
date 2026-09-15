@@ -1,7 +1,9 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { lireVueDEnsemble } from '@jay-reach/core';
+import { ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -30,7 +32,20 @@ function marqueSource(providerId: string): 'linkedin' | 'adzuna' | 'francetravai
 export default async function CampagneVueDEnsemblePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, vue] = await Promise.all([getTranslations('campagne'), lireVueDEnsemble(ctx, { campagneId: id })]);
+
+  let t: Awaited<ReturnType<typeof getTranslations>>;
+  let tSources: Awaited<ReturnType<typeof getTranslations>>;
+  let vue: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
+  try {
+    [t, tSources, vue] = await Promise.all([
+      getTranslations('campagne'),
+      getTranslations('sources'),
+      lireVueDEnsembleCourante(ctx, id),
+    ]);
+  } catch (err) {
+    if (err instanceof ErreurIntrouvable) notFound();
+    throw err;
+  }
 
   const apercuFile = vue.fileDuJour.slice(0, TAILLE_APERCU_FILE);
   const resteFile = vue.fileDuJour.length - apercuFile.length;
@@ -43,6 +58,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           etapes={[
             { valeur: vue.entonnoir.trouves, libelle: t('overview.funnel.found') },
             { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
+            { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
             { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence') },
             { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: pourcentageTexte(vue.entonnoir.tauxLivres) },
             { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: pourcentageTexte(vue.entonnoir.tauxReponses) },
@@ -119,14 +135,18 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           {vue.sources.length === 0 ? (
             <p className="jr-secondaire">{t('overview.sources.empty')}</p>
           ) : (
-            vue.sources.map((source) => (
-              <div className="jr-source" key={source.providerId}>
-                <TuileLogo marque={marqueSource(source.providerId)} lettre={source.providerId.charAt(0).toUpperCase()} />
-                <span>
-                  <b>{source.providerId}</b>
-                </span>
-              </div>
-            ))
+            vue.sources.map((source) => {
+              const cle = `fournisseurs.${source.providerId}`;
+              const libelle = tSources.has(cle) ? tSources(cle) : source.providerId;
+              return (
+                <div className="jr-source" key={source.providerId}>
+                  <TuileLogo marque={marqueSource(source.providerId)} lettre={source.providerId.charAt(0).toUpperCase()} />
+                  <span>
+                    <b>{libelle}</b>
+                  </span>
+                </div>
+              );
+            })
           )}
         </Carte>
       </div>

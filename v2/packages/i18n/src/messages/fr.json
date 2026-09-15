@@ -238,7 +238,17 @@
     "noProvider": "aucun fournisseur",
     "providerPause": "Mettre en pause",
     "providerResume": "Réactiver",
-    "beforeProviders": "Collectes antérieures (fournisseur non tracé)"
+    "beforeProviders": "Collectes antérieures (fournisseur non tracé)",
+    "fournisseurs": {
+      "adzuna": "Adzuna",
+      "francetravail": "France Travail",
+      "linkedin_post_engagers": "LinkedIn · engageurs d'un post",
+      "linkedin_competitor_followers": "LinkedIn · abonnés d'un concurrent",
+      "linkedin_keywords": "LinkedIn · mots-clés",
+      "linkedin_job_change": "LinkedIn · changement de poste",
+      "csv": "Fichier CSV",
+      "directory": "Annuaire"
+    }
   },
   "inbox": {
     "eyebrow": "Réponses",
@@ -935,7 +945,13 @@
         "title": "Aucune campagne pour l'instant",
         "text": "Une campagne réunit un persona, des sources, une séquence et des boîtes d'envoi. Comptez cinq minutes pour la première.",
         "action": "+ Créer ma première campagne"
-      }
+      },
+      "emptyFilter": "Aucune campagne pour ce statut."
+    },
+    "notFound": {
+      "title": "Campagne introuvable",
+      "text": "Cette campagne n'existe pas, ou plus, ou n'appartient pas à votre organisation.",
+      "action": "Retour aux campagnes"
     },
     "status": {
       "draft": "Brouillon",
@@ -963,6 +979,7 @@
       "funnel": {
         "found": "Offres et profils trouvés",
         "qualified": "Contacts qualifiés",
+        "contactsIdentified": "Contacts identifiés",
         "inSequence": "En séquence",
         "delivered": "Emails livrés",
         "replies": "Réponses",
