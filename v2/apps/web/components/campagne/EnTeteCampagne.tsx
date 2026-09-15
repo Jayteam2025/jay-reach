@@ -48,7 +48,7 @@ export function EnTeteCampagne({ campagne, libelles, action, onglets }: EnTeteCa
             {libelles.statut}
           </Puce>
         </h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="jr-actions">
           <Link href={`/campaigns/${campagne.id}/settings`} className="jr-bouton">
             {libelles.modifier}
           </Link>

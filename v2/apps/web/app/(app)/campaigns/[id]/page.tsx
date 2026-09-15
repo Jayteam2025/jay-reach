@@ -72,7 +72,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         action={
           <>
             <small>{t('overview.queue.count', { envois: vue.fileDuJour.length, partis: dejaPartis })}</small>
-            <Link href={`/campaigns/${id}/queue`} className="jr-lien" style={{ fontSize: 13 }}>
+            <Link href={`/campaigns/${id}/queue`} className="jr-lien jr-lien-petit">
               {t('overview.queue.seeAll')}
             </Link>
           </>
@@ -85,7 +85,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
             <tbody>
               {apercuFile.map((envoi) => (
                 <tr key={envoi.id}>
-                  <td style={{ paddingLeft: 0 }}>{envoi.heure ?? '—'}</td>
+                  <td className="jr-sans-retrait-gauche">{envoi.heure ?? '—'}</td>
                   <td>
                     <div className="jr-qui">
                       <Avatar nom={envoi.contactNom} canal={envoi.canal} />
@@ -95,14 +95,14 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
                       </span>
                     </div>
                   </td>
-                  <td className="jr-secondaire" style={{ paddingRight: 0 }}>
+                  <td className="jr-secondaire jr-sans-retrait-droite">
                     {envoi.expediteur ?? '—'}
                   </td>
                 </tr>
               ))}
               {resteFile > 0 && (
                 <tr>
-                  <td colSpan={3} className="jr-secondaire" style={{ paddingLeft: 0 }}>
+                  <td colSpan={3} className="jr-secondaire jr-sans-retrait-gauche">
                     {t('overview.queue.andMore', { n: resteFile })}
                   </td>
                 </tr>
@@ -112,7 +112,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         )}
       </Carte>
 
-      <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
+      <div className="jr-colonne-cartes">
         <Carte titre={t('overview.caps.title')}>
           <CleValeur
             libelle={t('overview.caps.scoring')}
@@ -126,7 +126,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
             libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
             valeur={`${nf.format(vue.plafonds.envois.utilise)} / ${nf.format(vue.plafonds.envois.plafond)}`}
           />
-          <Link href="/settings" className="jr-lien" style={{ display: 'block', marginTop: 10, fontSize: 13 }}>
+          <Link href="/settings" className="jr-lien jr-lien-petit jr-lien-pied">
             {t('overview.caps.settingsLink')}
           </Link>
         </Carte>
@@ -157,7 +157,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         action={
           <>
             <small>{t('overview.activity.subtitle')}</small>
-            <Link href={`/campaigns/${id}/activity`} className="jr-lien" style={{ fontSize: 13 }}>
+            <Link href={`/campaigns/${id}/activity`} className="jr-lien jr-lien-petit">
               {t('overview.activity.seeAll')}
             </Link>
           </>
