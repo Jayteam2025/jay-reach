@@ -799,7 +799,7 @@
     "salesblinkCap": "Plafond SalesBlink",
     "lowestApplies": "le plus bas s’applique",
     "inboxProvider": "Lire les réponses directement dans cette boîte",
-    "inboxProviderHint": "Jay Reach relève cette boîte toutes les quelques minutes via Microsoft Graph, si les variables MS_GRAPH_* sont posées sur le worker. SalesBlink continue d'envoyer vos messages."
+    "inboxProviderHint": "Jay Reach relève cette boîte toutes les quelques minutes via Microsoft Graph, dès que Microsoft Graph est configuré dans Fournisseurs. SalesBlink continue d'envoyer vos messages."
   },
   "snippets": {
     "title": "Textes réutilisables",

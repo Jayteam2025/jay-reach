@@ -437,12 +437,34 @@ describe('releverGraph', () => {
 });
 
 describe('enqueueReleveGraph', () => {
-  it('produit un job par organisation avec un id déterministe', async () => {
+  /** Motif de la requête d'enfilage : part des boîtes activées, pas du coffre. */
+  const BOITES_ACTIVES = /from senders s/i;
+
+  /** Environnement du worker sans aucun repli Microsoft Graph. */
+  function sansReplinEnvironnement(): void {
+    vi.stubEnv('MS_GRAPH_TENANT_ID', undefined);
+    vi.stubEnv('MS_GRAPH_CLIENT_ID', undefined);
+    vi.stubEnv('MS_GRAPH_CLIENT_SECRET', undefined);
+  }
+
+  /** Environnement du worker portant les trois variables de repli. */
+  function avecReplinEnvironnement(): void {
+    vi.stubEnv('MS_GRAPH_TENANT_ID', 'tenant-de-test');
+    vi.stubEnv('MS_GRAPH_CLIENT_ID', 'application-de-test');
+    vi.stubEnv('MS_GRAPH_CLIENT_SECRET', 'secret-de-test');
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('boîte activée et identifiants en base : un job par organisation, id déterministe', async () => {
+    sansReplinEnvironnement();
     const rows = [
-      { organization_id: 'org-1', config: { sync_interval_min: '10' } },
-      { organization_id: 'org-2', config: null },
+      { organization_id: 'org-1', config: { sync_interval_min: '10' }, configure: true },
+      { organization_id: 'org-2', config: null, configure: true },
     ];
-    const { pool } = creerPoolFactice([{ motif: /select organization_id, config from credentials/i, repondre: () => ligne(rows) }]);
+    const { pool } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne(rows) }]);
     const insert = vi.fn(async (_jobs: unknown[]) => undefined);
     const boss = { insert } as unknown as PgBoss;
 
@@ -459,9 +481,64 @@ describe('enqueueReleveGraph', () => {
     ]);
   });
 
+  it('boîte activée, rien en base, les trois variables du worker : un job quand même', async () => {
+    avecReplinEnvironnement();
+    const rows = [{ organization_id: 'org-1', config: null, configure: false }];
+    const { pool } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne(rows) }]);
+    const insert = vi.fn(async (_jobs: unknown[]) => undefined);
+    const boss = { insert } as unknown as PgBoss;
+
+    await enqueueReleveGraph(boss, pool);
+
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('boîte activée, ni base ni environnement : aucun job', async () => {
+    sansReplinEnvironnement();
+    const rows = [{ organization_id: 'org-1', config: null, configure: false }];
+    const { pool } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne(rows) }]);
+    const insert = vi.fn(async (_jobs: unknown[]) => undefined);
+    const boss = { insert } as unknown as PgBoss;
+
+    await enqueueReleveGraph(boss, pool);
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('un repli incomplet (deux variables sur trois) ne vaut pas configuration', async () => {
+    sansReplinEnvironnement();
+    vi.stubEnv('MS_GRAPH_TENANT_ID', 'tenant-de-test');
+    vi.stubEnv('MS_GRAPH_CLIENT_ID', 'application-de-test');
+    const rows = [{ organization_id: 'org-1', config: null, configure: false }];
+    const { pool } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne(rows) }]);
+    const insert = vi.fn(async (_jobs: unknown[]) => undefined);
+    const boss = { insert } as unknown as PgBoss;
+
+    await enqueueReleveGraph(boss, pool);
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('aucune boîte activée : aucun job, même identifiants configurés', async () => {
+    avecReplinEnvironnement();
+    const { pool, appels } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne([]) }]);
+    const insert = vi.fn(async (_jobs: unknown[]) => undefined);
+    const boss = { insert } as unknown as PgBoss;
+
+    await enqueueReleveGraph(boss, pool);
+
+    expect(insert).not.toHaveBeenCalled();
+    // La liste part des boîtes activées : sans cette clause, une organisation
+    // qui a saisi ses identifiants sans activer une seule boîte recevrait un
+    // job à chaque fenêtre pour ne rien lire.
+    expect(appels[0]!.sql).toMatch(/inbox_provider = \$1/);
+    expect(appels[0]!.sql).toMatch(/is_active/);
+  });
+
   it('n’enfile pas deux fois dans la même fenêtre', async () => {
-    const rows = [{ organization_id: 'org-1', config: {} }];
-    const { pool } = creerPoolFactice([{ motif: /select organization_id, config from credentials/i, repondre: () => ligne(rows) }]);
+    sansReplinEnvironnement();
+    const rows = [{ organization_id: 'org-1', config: {}, configure: true }];
+    const { pool } = creerPoolFactice([{ motif: BOITES_ACTIVES, repondre: () => ligne(rows) }]);
     const insert = vi.fn(async (_jobs: unknown[]) => undefined);
     const boss = { insert } as unknown as PgBoss;
 

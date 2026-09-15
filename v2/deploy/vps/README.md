@@ -161,9 +161,15 @@ docker compose -p jay-reach down
 | `SIGNAL_MAX_AGE_DAYS` | Âge maximal d'un signal avant écart automatique (jours). |
 | `ACCOUNT_PEOPLE_PER_DAY` | Personnes contactées par entreprise et par jour. |
 | `ENRICH_MAX_WAIT_MS` | Attente maximale d'un enrichissement (millisecondes). |
-| `MS_GRAPH_TENANT_ID` | Optionnelle : repli pour la lecture directe des réponses (Microsoft Graph), seulement nécessaire si une boîte l'a activée dans Expéditeurs. La clé saisie dans l'onglet Fournisseurs prime sur cette variable. |
+| `MS_GRAPH_TENANT_ID` | Optionnelle. La lecture directe des réponses se configure dans l'application, Fournisseurs → Microsoft Graph ; cette variable n'est qu'un repli, utilisé seulement quand rien n'y est saisi. |
 | `MS_GRAPH_CLIENT_ID` | Optionnelle, même repli que ci-dessus. |
 | `MS_GRAPH_CLIENT_SECRET` | Optionnelle, même repli que ci-dessus. |
+
+La relève ne démarre que pour une organisation ayant au moins une boîte avec la
+lecture directe activée dans Réglages → Expéditeurs, et une configuration
+joignable : celle de Fournisseurs → Microsoft Graph, ou, à défaut, les trois
+variables ci-dessus **toutes les trois** présentes. Une seule manquante et rien
+ne tourne.
 
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
 `docker-compose.yml` : ils n'ont pas leur place dans `worker.env`.
@@ -180,7 +186,7 @@ distribution à sécurité activée contenant les boîtes relevées, puis restre
 l'application à ce groupe :
 
 ```powershell
-New-DistributionGroup -Name "jayreach-boites" -MemberDepartRestriction Closed
+New-DistributionGroup -Name "jayreach-boites" -Type Security -MemberDepartRestriction Closed
 Add-DistributionGroupMember -Identity "jayreach-boites" -Member "prospection@exemple.fr"
 
 New-ApplicationAccessPolicy -AppId "00000000-0000-0000-0000-000000000000" `

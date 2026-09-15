@@ -255,25 +255,64 @@ export async function releverGraph(
   return { boites: sendersRes.rows.length, lus, retenus, enregistres };
 }
 
-interface CredentialRow {
+interface OrganisationAEnfiler {
   readonly organization_id: string;
   readonly config: { readonly sync_interval_min?: string } | null;
+  /** Une ligne `credentials` en statut `configured` existe pour cette organisation. */
+  readonly configure: boolean;
+}
+
+/** Les trois variables de repli du worker (`fallbackEnv` du catalogue) sont-elles toutes présentes ? */
+function replinEnvironnementComplet(): boolean {
+  return (
+    Boolean(process.env.MS_GRAPH_TENANT_ID) &&
+    Boolean(process.env.MS_GRAPH_CLIENT_ID) &&
+    Boolean(process.env.MS_GRAPH_CLIENT_SECRET)
+  );
 }
 
 /**
- * Enfile un `inbox.sync_graph` par organisation ayant des identifiants
- * Microsoft Graph configurés (`status = 'configured'`), dédupliqué par
- * fenêtre comme `enqueueReleveSalesBlink` : l'id du job est déterministe pour
- * toute la fenêtre (`sync_interval_min`, défaut 5, borné 1..60) — une seconde
- * insertion dans la même fenêtre porte le même id, pg-boss ne crée pas de
- * second job.
+ * Enfile un `inbox.sync_graph` par organisation qui a de quoi relever : au
+ * moins une boîte activée (`senders.is_active` et
+ * `senders.inbox_provider = 'microsoft_graph'`) ET une configuration Microsoft
+ * Graph joignable — en base (`credentials` en `configured`) ou, à défaut, dans
+ * l'environnement du worker (`MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`,
+ * `MS_GRAPH_CLIENT_SECRET`), le repli que `resolveProviderCredentials`
+ * applique déjà à l'exécution.
+ *
+ * Partir des boîtes plutôt que du coffre corrige deux défauts symétriques
+ * relevés à la revue finale : une organisation qui n'a rempli que le fichier
+ * d'environnement du worker ne recevait aucun job et la fonctionnalité restait
+ * muette ; une organisation qui avait saisi ses identifiants sans activer une
+ * seule boîte recevait un job à chaque fenêtre pour ne rien lire.
+ *
+ * Dédoublonné par fenêtre comme `enqueueReleveSalesBlink` : l'id du job est
+ * déterministe pour toute la fenêtre (`sync_interval_min`, défaut 5, borné
+ * 1..60) — une seconde insertion dans la même fenêtre porte le même id,
+ * pg-boss ne crée pas de second job.
  */
 export async function enqueueReleveGraph(boss: PgBoss, pool: Pool): Promise<void> {
-  const res = await pool.query<CredentialRow>(
-    `select organization_id, config from credentials where provider_id = $1 and status = 'configured'`,
+  const res = await pool.query<OrganisationAEnfiler>(
+    `select distinct on (s.organization_id)
+            s.organization_id as organization_id,
+            c.config as config,
+            (c.organization_id is not null) as configure
+       from senders s
+       left join credentials c
+         on c.organization_id = s.organization_id
+        and c.provider_id = $1
+        and c.status = 'configured'
+      where s.kind = 'email' and s.is_active and s.inbox_provider = $1
+      order by s.organization_id, c.organization_id nulls last`,
     [MICROSOFT_GRAPH_PROVIDER],
   );
+  const repli = replinEnvironnementComplet();
   for (const row of res.rows) {
+    // Sans configuration en base ET sans repli complet, la relève rendrait un
+    // bilan vide en journalisant `graph_credentials_absentes` à chaque
+    // fenêtre : autant ne pas créer le job.
+    if (!row.configure && !repli) continue;
+
     // Bornes propres à ce transport (1..60), distinctes des 2..60 de
     // `normaliserIntervalleReleve` (SalesBlink) : `entierBorne` est
     // réutilisée avec ses propres bornes plutôt qu'une fonction dédiée

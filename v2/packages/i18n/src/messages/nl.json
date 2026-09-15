@@ -799,7 +799,7 @@
     "salesblinkCap": "SalesBlink-limiet",
     "lowestApplies": "de laagste geldt",
     "inboxProvider": "Reacties rechtstreeks in deze postbus lezen",
-    "inboxProviderHint": "Jay Reach controleert deze postbus elke paar minuten via Microsoft Graph, zodra de MS_GRAPH_*-variabelen op de worker zijn ingesteld. SalesBlink blijft uw berichten verzenden."
+    "inboxProviderHint": "Jay Reach controleert deze postbus elke paar minuten via Microsoft Graph, zodra Microsoft Graph is ingesteld onder Providers. SalesBlink blijft uw berichten verzenden."
   },
   "snippets": {
     "title": "Herbruikbare teksten",
