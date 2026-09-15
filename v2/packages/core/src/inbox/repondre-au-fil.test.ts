@@ -7,6 +7,8 @@ interface LigneDernierEntrant {
   mailbox?: string | null;
   graph_message_id?: string | null;
   provider_message_id?: string | null;
+  salesblink_inbox_message_id?: string | null;
+  salesblink_reply_id?: string | null;
 }
 
 /** Exécuteur factice : le dernier message entrant du fil est déclaré à l'avance. */
@@ -71,6 +73,28 @@ describe('choisirTransport', () => {
 
   it('salesblink sans provider_message_id : ErreurEntree', async () => {
     const { ex } = creerExecuteurFactice({ provider_message_id: null });
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+  });
+
+  it("salesblink : l'identifiant de la tâche /inbox prime sur provider_message_id", async () => {
+    const { ex } = creerExecuteurFactice({
+      provider_message_id: 'inbox-1',
+      salesblink_inbox_message_id: 'inbox-1',
+      salesblink_reply_id: 'r-1',
+    });
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).resolves.toEqual({
+      transport: 'salesblink',
+      messageId: 'inbox-1',
+      mailbox: null,
+    });
+  });
+
+  it("salesblink : sans tâche /inbox appariée, provider_message_id n'est que l'identifiant du journal → ErreurEntree", async () => {
+    const { ex } = creerExecuteurFactice({
+      provider_message_id: 'r-1',
+      salesblink_inbox_message_id: null,
+      salesblink_reply_id: 'r-1',
+    });
     await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
   });
 });

@@ -42,18 +42,23 @@ export interface OrigineMessage {
  * `null` quand le fil n'a encore reçu aucun message : on ne sait alors pas
  * répondre. Les en-têtes du message (`headers->>'transport'`, posés par la
  * relève Graph de la tâche 2) priment ; leur absence signifie un message venu
- * de SalesBlink, dont `provider_message_id` porte l'identifiant de la tâche.
+ * de SalesBlink, dont l'identifiant de tâche `/inbox` est le seul que
+ * `repondreDansLeFil` sache utiliser.
  */
 export async function choisirTransport(ex: Executeur, org: string, threadId: string): Promise<OrigineMessage | null> {
   const res = await ex.query<{
     transport: string | null;
     mailbox: string | null;
     graph_message_id: string | null;
+    salesblink_inbox_message_id: string | null;
+    salesblink_reply_id: string | null;
     provider_message_id: string | null;
   }>(
     `select m.headers ->> 'transport' as transport,
             m.headers ->> 'mailbox' as mailbox,
             m.headers ->> 'graph_message_id' as graph_message_id,
+            m.headers ->> 'salesblink_inbox_message_id' as salesblink_inbox_message_id,
+            m.headers ->> 'salesblink_reply_id' as salesblink_reply_id,
             m.provider_message_id as provider_message_id
        from thread_messages m
        join threads t on t.id = m.thread_id
@@ -74,10 +79,22 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
     return { transport: 'microsoft_graph', messageId: dernier.graph_message_id, mailbox: dernier.mailbox };
   }
 
-  if (!dernier.provider_message_id) {
-    throw new ErreurEntree("impossible de répondre : identifiant SalesBlink du message d'origine manquant");
+  // SalesBlink répond sur `/inbox/{messageId}/reply` : l'endpoint n'accepte
+  // que l'identifiant d'une tâche `/inbox`, jamais celui d'une ligne du
+  // journal `/replies`. La relève pose le premier dans
+  // `salesblink_inbox_message_id` dès qu'une tâche a pu être appariée ; sans
+  // appariement, elle retombe sur l'identifiant du journal, qu'elle recopie
+  // dans `salesblink_reply_id` — le reconnaître ici évite de poster sur une
+  // adresse que SalesBlink refusera.
+  const identifiantTache = dernier.salesblink_inbox_message_id ?? null;
+  if (identifiantTache) {
+    return { transport: 'salesblink', messageId: identifiantTache, mailbox: null };
   }
-  return { transport: 'salesblink', messageId: dernier.provider_message_id, mailbox: null };
+  const identifiant = dernier.provider_message_id;
+  if (!identifiant || identifiant === dernier.salesblink_reply_id) {
+    throw new ErreurEntree("impossible de répondre : message d'origine inconnu");
+  }
+  return { transport: 'salesblink', messageId: identifiant, mailbox: null };
 }
 
 export interface TransportsReponse {

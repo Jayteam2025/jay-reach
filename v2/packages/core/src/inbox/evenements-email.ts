@@ -92,18 +92,18 @@ export async function traiterEvenementEmail(
     // Le traitement est commun à tous les canaux : classer, ouvrir le fil,
     // arrêter la séquence, notifier. Voir `record-reply.ts`.
     //
-    // `ev.headers` (lot 3 bis, relève Microsoft Graph) prime sur `sujet` : un
-    // événement Graph porte déjà son propre jeu d'en-têtes (transport, boîte,
-    // identifiants Graph, éventuels indices d'auto-réponse) et est transmis
-    // tel quel — CONTRAIREMENT à l'enveloppe `{ subject }` ci-dessous, il PEUT
-    // comporter les clés que `classifyByHeaders` reconnaît (`auto-submitted`,
-    // `x-autoreply`, `x-autorespond`, `precedence`), et donc changer la
-    // classification d'une réponse Graph.
+    // `ev.headers` prime sur `sujet` : les deux relèves email posent
+    // désormais leur propre jeu d'en-têtes, transmis tel quel — origine du
+    // message (`transport`, `mailbox`, `graph_message_id`,
+    // `salesblink_reply_id`, `salesblink_inbox_message_id`), sujet, et pour
+    // Graph seul les éventuels indices d'auto-réponse. Seules les clés
+    // `auto-submitted` / `x-autoreply` / `x-autorespond` / `precedence` que
+    // reconnaît `classifyByHeaders` changent une classification : aucune clé
+    // de traçabilité ne les porte.
     //
-    // Sans `ev.headers` (SalesBlink aujourd'hui), `sujet` (tâche 10) passe
-    // par `headers` : c'est le seul champ que le type prévoyait alors pour
-    // porter une donnée annexe au message, et il ne comporte aucune des clés
-    // ci-dessus — sa présence ne change donc jamais la classification.
+    // Sans `ev.headers` (une source email antérieure), `sujet` (tâche 10)
+    // passe seul par `headers` : c'est le seul champ que le type prévoyait
+    // alors pour porter une donnée annexe au message.
     const enregistre = await recordInboundReply(ex, org, {
       contactId: contact.id,
       channel: 'email',

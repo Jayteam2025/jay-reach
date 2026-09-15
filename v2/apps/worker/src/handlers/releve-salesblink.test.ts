@@ -409,6 +409,106 @@ describe('releverSalesBlink', () => {
     },
   );
 
+  it(
+    "l'identifiant de la tâche /inbox appariée devient provider_message_id, " +
+      "l'identifiant du journal /replies reste en en-tête (L14)",
+    async () => {
+      const rapport: Rapport = {
+        id: 'r-repondu-id',
+        horodatageMs: 3000,
+        type: 'reply',
+        message: 'Replied',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        corps: '',
+      };
+      const tacheProspect: EnvoiSorti = {
+        id: 'tache-prospect-id',
+        messageId: 'inbox-msg-1',
+        email: 'prospect@exemple.test',
+        sequenceId: 'seq-1',
+        termine: true,
+        termineMs: null,
+        planifieMs: 5000,
+        typeTache: 'reply',
+        corpsHtml: '<p>Merci pour votre message</p>',
+        sujet: 'Re: Prise de contact',
+        deSoi: false,
+        destinataire: 'expediteur@exemple.test',
+        references: [],
+      };
+      const client = clientFactice({
+        listerReponses: vi.fn(async () => [rapport]),
+        listerTachesReponse: vi.fn(async () => ({ taches: [tacheProspect], sature: false })),
+      });
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+          { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+          { motif: THREAD_SELECT, repondre: () => ligne([]) },
+          { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+          { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+          { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+          { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+          { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+          { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([]) },
+          { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+          { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
+        ),
+      );
+
+      await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+      const insertionMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+      expect(insertionMessage).toBeDefined();
+      expect(insertionMessage!.values[2]).toBe('inbox-msg-1');
+      expect(JSON.parse(String(insertionMessage!.values[3]))).toEqual({
+        subject: 'Re: Prise de contact',
+        salesblink_reply_id: 'r-repondu-id',
+        salesblink_inbox_message_id: 'inbox-msg-1',
+      });
+    },
+  );
+
+  it("sans tâche /inbox appariée, l'identifiant du journal reste le repli et l'en-tête de tâche est nulle", async () => {
+    const rapport: Rapport = {
+      id: 'r-repondu-sans-tache',
+      horodatageMs: 3000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: '',
+    };
+    const client = clientFactice({
+      listerReponses: vi.fn(async () => [rapport]),
+      listerTachesReponse: vi.fn(async () => ({ taches: [], sature: false })),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: /update actions set status = 'skipped'/i, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const insertionMessage = appels.find((a) => THREAD_MESSAGE_INSERT.test(a.sql));
+    expect(insertionMessage!.values[2]).toBe('r-repondu-sans-tache');
+    expect(JSON.parse(String(insertionMessage!.values[3]))).toEqual({
+      subject: null,
+      salesblink_reply_id: 'r-repondu-sans-tache',
+      salesblink_inbox_message_id: null,
+    });
+  });
+
   it('plusieurs tâches /inbox correspondantes : la plus récente (planifieMs) l’emporte', async () => {
     const rapport: Rapport = {
       id: 'r-repondu-2',
