@@ -279,6 +279,7 @@
     "replyPlaceholder": "Votre réponse…",
     "replyNote": "L'envoi part toujours par le canal du message reçu — jamais un autre.",
     "replySent": "Réponse envoyée.",
+    "replySending": "Envoi…",
     "replyImpossible": "Impossible de répondre : aucun message reçu sur ce fil.",
     "buySignal": "Signal d'achat : départ détecté → le compte remonte pour identifier le successeur.",
     "state": "État du fil",

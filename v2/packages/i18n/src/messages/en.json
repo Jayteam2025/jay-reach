@@ -279,6 +279,7 @@
     "replyPlaceholder": "Your reply…",
     "replyNote": "Sending always goes through the channel of the received message — never another.",
     "replySent": "Reply sent.",
+    "replySending": "Sending…",
     "replyImpossible": "Can't reply: no received message on this thread.",
     "buySignal": "Buy signal: departure detected → the account resurfaces to find the successor.",
     "state": "Thread state",

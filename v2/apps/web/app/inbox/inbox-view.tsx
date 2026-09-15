@@ -216,7 +216,7 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
                   title={hasInboundMessage ? undefined : t('replyImpossible')}
                   onClick={() => sendReply(selected.id)}
                 >
-                  {t('reply')}
+                  {sendingReply ? t('replySending') : t('reply')}
                 </button>
                 <span className="rs-row-sub mono">{t('via', { sender: selected.sender })}</span>
                 <label className="rs-row-sub" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
