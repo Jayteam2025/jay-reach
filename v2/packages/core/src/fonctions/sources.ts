@@ -365,7 +365,7 @@ interface LigneSourceCarte {
  * l'affichage, jamais reformatée de force en `every 24h` par une simple
  * lecture ou un enregistrement qui ne touche pas ce champ.
  */
-function heuresDeSchedule(schedule: string | null): number {
+export function heuresDeSchedule(schedule: string | null): number {
   if (schedule === 'daily') return 24;
   const m = /^every (\d+)h$/.exec(schedule ?? '');
   return m ? Number(m[1]) : 6;

@@ -1193,6 +1193,7 @@
         "scheduleNoLast": "{cadence} · prochain {prochain}",
         "neverRun": "Jamais lancé",
         "dailySchedule": "Une fois par jour",
+        "franceEntiere": "France entière",
         "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage"
       },
       "drawer": {

@@ -23,3 +23,28 @@ export function dateRelativeCourte(iso: string, maintenant: Date = new Date()): 
   }
   return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(new Date(iso));
 }
+
+function estMemeJour(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * Heure d'un instant à VENIR (prochain passage d'une source, etc.), avec le
+ * jour quand ce n'est pas aujourd'hui : une heure seule est ambiguë sinon —
+ * « prochain 16:45 » identique à « dernier 16:45 » alors que le prochain
+ * passage est le lendemain. Jour relatif jusqu'à demain, sinon une date
+ * courte (`16/09 16:45`). Fonction pure, même convention que
+ * `dateRelativeCourte` (l'instant de référence est un paramètre).
+ */
+export function heureAvecJour(iso: string, maintenant: Date = new Date()): string {
+  const date = new Date(iso);
+  const heure = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(date);
+  if (estMemeJour(date, maintenant)) return heure;
+  const demain = new Date(maintenant);
+  demain.setDate(demain.getDate() + 1);
+  if (estMemeJour(date, demain)) return `demain ${heure}`;
+  const jour = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit' }).format(date);
+  return `${jour} ${heure}`;
+}

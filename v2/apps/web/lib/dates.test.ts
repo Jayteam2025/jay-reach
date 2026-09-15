@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateRelativeCourte } from './dates';
+import { dateRelativeCourte, heureAvecJour } from './dates';
 
 describe('dateRelativeCourte', () => {
   const maintenant = new Date('2026-09-15T12:00:00.000Z');
@@ -21,5 +21,31 @@ describe('dateRelativeCourte', () => {
 
   it('au-delà de 48 h -> date courte (jour + mois abrégé)', () => {
     expect(dateRelativeCourte('2026-09-10T13:00:00.000Z', maintenant)).toBe('10 sept.');
+  });
+});
+
+/**
+ * R43/Group B (tour de correction 2) : « prochain 16:45 » était identique à
+ * « dernier 16:45 » alors que le prochain passage tombait le lendemain — la
+ * date construite en heure locale (pas l'ISO UTC brut) pour rester
+ * indépendante du fuseau d'exécution du test.
+ */
+describe('heureAvecJour', () => {
+  it('aujourd’hui -> heure seule', () => {
+    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
+    const prochain = new Date(2026, 8, 15, 16, 45, 0);
+    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('16:45');
+  });
+
+  it('demain -> « demain HH:MM »', () => {
+    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
+    const prochain = new Date(2026, 8, 16, 16, 45, 0);
+    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('demain 16:45');
+  });
+
+  it('au-delà de demain -> date courte + heure', () => {
+    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
+    const prochain = new Date(2026, 8, 18, 16, 45, 0);
+    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('18/09 16:45');
   });
 });
