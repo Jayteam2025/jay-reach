@@ -40,13 +40,15 @@ export interface OrigineMessage {
  * `thread_messages` en direction `in` du fil (filtré par organisation).
  *
  * `null` quand le fil n'a encore reçu aucun message : on ne sait alors pas
- * répondre. Les en-têtes du message (`headers->>'transport'`, posés par la
+ * répondre. `ErreurEntree` quand le fil n'est pas un fil email : le canal
+ * porte la règle, pas les en-têtes du message. Les en-têtes (`headers->>'transport'`, posés par la
  * relève Graph de la tâche 2) priment ; leur absence signifie un message venu
  * de SalesBlink, dont l'identifiant de tâche `/inbox` est le seul que
  * `repondreDansLeFil` sache utiliser.
  */
 export async function choisirTransport(ex: Executeur, org: string, threadId: string): Promise<OrigineMessage | null> {
   const res = await ex.query<{
+    channel: string | null;
     transport: string | null;
     mailbox: string | null;
     graph_message_id: string | null;
@@ -54,7 +56,8 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
     salesblink_reply_id: string | null;
     provider_message_id: string | null;
   }>(
-    `select m.headers ->> 'transport' as transport,
+    `select t.channel as channel,
+            m.headers ->> 'transport' as transport,
             m.headers ->> 'mailbox' as mailbox,
             m.headers ->> 'graph_message_id' as graph_message_id,
             m.headers ->> 'salesblink_inbox_message_id' as salesblink_inbox_message_id,
@@ -69,6 +72,16 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
   );
   const dernier = res.rows[0];
   if (!dernier) return null;
+
+  // Répondre depuis la Réception n'existe que pour l'email. La Réception
+  // liste aussi les fils LinkedIn, dont les réponses (enregistrées par le
+  // même `recordInboundReply`) portent un `provider_message_id` LinkedIn :
+  // sans cette borne, une réponse tapée dans un fil LinkedIn partait chez
+  // SalesBlink, sur un identifiant qu'il ne connaît pas. LinkedIn reste à
+  // venir (lot 4).
+  if (dernier.channel !== 'email') {
+    throw new ErreurEntree("la réponse depuis Jay Reach n'existe que pour les fils email");
+  }
 
   if (dernier.transport === 'microsoft_graph') {
     if (!dernier.graph_message_id) {

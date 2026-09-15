@@ -281,6 +281,7 @@
     "replySent": "Antwoord verzonden.",
     "replySending": "Verzenden…",
     "replyImpossible": "Antwoorden niet mogelijk: geen ontvangen bericht in deze thread.",
+    "replyEmailOnly": "Antwoorden vanuit Jay Reach kan alleen in e-mailthreads. LinkedIn volgt later.",
     "buySignal": "Koopsignaal: vertrek gedetecteerd → het account komt terug om de opvolger te vinden.",
     "state": "Threadstatus",
     "empty": "Kies een thread om te lezen.",

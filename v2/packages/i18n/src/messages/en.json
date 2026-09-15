@@ -281,6 +281,7 @@
     "replySent": "Reply sent.",
     "replySending": "Sending…",
     "replyImpossible": "Can't reply: no received message on this thread.",
+    "replyEmailOnly": "Replying from Jay Reach only works on email threads. LinkedIn is coming later.",
     "buySignal": "Buy signal: departure detected → the account resurfaces to find the successor.",
     "state": "Thread state",
     "empty": "Choose a thread to read it.",

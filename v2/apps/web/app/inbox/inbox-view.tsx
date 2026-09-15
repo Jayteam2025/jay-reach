@@ -51,6 +51,11 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
   // Répondre exige un message reçu à répondre : `choisirTransport`
   // (`@jay-reach/core`) n'a rien à s'y raccrocher sinon.
   const hasInboundMessage = selected?.messages.some((m) => m.direction === 'in') ?? false;
+  // …et un fil email : la Réception liste aussi les fils LinkedIn, que
+  // `repondreAuFil` refuse (LinkedIn viendra au lot 4). Le bouton le dit
+  // avant l'envoi plutôt que de laisser l'opérateur écrire pour rien.
+  const isEmailThread = selected?.channel === 'email';
+  const replyBlockedReason = !isEmailThread ? t('replyEmailOnly') : !hasInboundMessage ? t('replyImpossible') : null;
   const FILTERS: Filter[] = ['all', 'todo', 'in_progress', 'done', 'later'];
 
   function sortNow() {
@@ -212,8 +217,8 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
                 <button
                   type="button"
                   className="rs-btn"
-                  disabled={!hasInboundMessage || !(drafts[selected.id] ?? '').trim() || sendingReply}
-                  title={hasInboundMessage ? undefined : t('replyImpossible')}
+                  disabled={replyBlockedReason !== null || !(drafts[selected.id] ?? '').trim() || sendingReply}
+                  title={replyBlockedReason ?? undefined}
                   onClick={() => sendReply(selected.id)}
                 >
                   {sendingReply ? t('replySending') : t('reply')}
@@ -236,7 +241,7 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
                 </label>
               </div>
               <p className="rs-row-sub" style={{ marginTop: 8 }}>
-                {t('replyNote')}
+                {replyBlockedReason ?? t('replyNote')}
               </p>
               {suggestMsg ? (
                 <p className="rs-lk-msg" style={{ marginTop: 4 }}>

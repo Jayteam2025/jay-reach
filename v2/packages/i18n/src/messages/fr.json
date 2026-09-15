@@ -281,6 +281,7 @@
     "replySent": "Réponse envoyée.",
     "replySending": "Envoi…",
     "replyImpossible": "Impossible de répondre : aucun message reçu sur ce fil.",
+    "replyEmailOnly": "Répondre depuis Jay Reach n'existe que pour les fils email. LinkedIn viendra plus tard.",
     "buySignal": "Signal d'achat : départ détecté → le compte remonte pour identifier le successeur.",
     "state": "État du fil",
     "empty": "Choisissez un fil pour le lire.",

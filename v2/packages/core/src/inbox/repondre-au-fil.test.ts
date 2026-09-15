@@ -9,6 +9,8 @@ interface LigneDernierEntrant {
   provider_message_id?: string | null;
   salesblink_inbox_message_id?: string | null;
   salesblink_reply_id?: string | null;
+  /** Canal du fil. Email par défaut : c'est le seul cas que la plupart des scénarios veulent décrire. */
+  channel?: string;
 }
 
 /** Exécuteur factice : le dernier message entrant du fil est déclaré à l'avance. */
@@ -17,12 +19,13 @@ function creerExecuteurFactice(
   options: { rowCountUpdate?: number } = {},
 ): { ex: Executeur; appels: { text: string; values: unknown[] }[] } {
   const appels: { text: string; values: unknown[] }[] = [];
+  const ligne = dernierEntrant ? { channel: 'email', ...dernierEntrant } : null;
   const ex: Executeur = {
     async query<T>(text: string, values: unknown[] = []) {
       appels.push({ text, values });
       const t = text.trim();
-      if (t.startsWith('select m.headers')) {
-        return { rows: (dernierEntrant ? [dernierEntrant] : []) as T[], rowCount: dernierEntrant ? 1 : 0 };
+      if (t.startsWith('select t.channel')) {
+        return { rows: (ligne ? [ligne] : []) as T[], rowCount: ligne ? 1 : 0 };
       }
       if (t.startsWith('insert into thread_messages')) {
         return { rows: [{ id: 'message-sortant-1' }] as T[], rowCount: 1 };
@@ -89,6 +92,11 @@ describe('choisirTransport', () => {
     });
   });
 
+  it("fil LinkedIn : ErreurEntree, la réponse depuis Jay Reach n'existe que pour l'email", async () => {
+    const { ex } = creerExecuteurFactice({ channel: 'linkedin_message', provider_message_id: 'li-msg-1' });
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+  });
+
   it("salesblink : sans tâche /inbox appariée, provider_message_id n'est que l'identifiant du journal → ErreurEntree", async () => {
     const { ex } = creerExecuteurFactice({
       provider_message_id: 'r-1',
@@ -111,6 +119,19 @@ describe('repondreAuFil', () => {
     expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
     expect(transports.graph).not.toHaveBeenCalled();
     expect(transports.salesblink).not.toHaveBeenCalled();
+  });
+
+  it('fil LinkedIn : ErreurEntree, aucun transport appelé, aucun insert', async () => {
+    const { ex, appels } = creerExecuteurFactice({ channel: 'linkedin_message', provider_message_id: 'li-msg-1' });
+    const transports = creerTransportsFactices();
+
+    await expect(
+      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports),
+    ).rejects.toBeInstanceOf(ErreurEntree);
+
+    expect(transports.graph).not.toHaveBeenCalled();
+    expect(transports.salesblink).not.toHaveBeenCalled();
+    expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
   });
 
   it('message entrant Graph : transport graph appelé avec la boîte et l’id, insert marqué microsoft_graph, update vérifié', async () => {
