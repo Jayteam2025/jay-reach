@@ -46,3 +46,24 @@ export async function requireRole(
   const role = await getMembershipRole(organizationId);
   return coreRequireRole(role, min);
 }
+
+/**
+ * Organisation de l'utilisateur connecté (sa première adhésion), sans faire
+ * confiance à un identifiant fourni par le client — modèle mono-opérateur :
+ * une organisation par instance. `null` sans session ou sans adhésion.
+ *
+ * Réservé aux actions qui doivent résoudre l'organisation elles-mêmes (par
+ * exemple `repondre`, `actions/inbox.ts`) plutôt que de la recevoir en
+ * paramètre depuis un écran qui la connaît déjà.
+ */
+export async function getCurrentOrganizationId(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return null;
+  const { data } = await supabase
+    .from('memberships')
+    .select('organization_id')
+    .eq('user_id', userData.user.id)
+    .limit(1);
+  return ((data as { organization_id: string }[] | null) ?? [])[0]?.organization_id ?? null;
+}

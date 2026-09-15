@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { TREATMENTS, type InboxThread, type Treatment, type Classification } from '../../lib/sample-inbox';
 import { Icon } from '../icons';
-import { classifyInbox, suggestReply } from '../actions/inbox';
+import { classifyInbox, repondre, suggestReply } from '../actions/inbox';
 
 type Filter = 'all' | Treatment;
 
@@ -35,6 +35,8 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [suggesting, startSuggest] = useTransition();
   const [suggestMsg, setSuggestMsg] = useState<string | null>(null);
+  const [sendingReply, startReply] = useTransition();
+  const [replyMsg, setReplyMsg] = useState<string | null>(null);
   // État de traitement modifiable localement (par fil).
   const [states, setStates] = useState<Record<string, Treatment>>(
     Object.fromEntries(threads.map((th) => [th.id, th.treatment])),
@@ -46,6 +48,9 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
     [threads, filter, states],
   );
   const selected = threads.find((th) => th.id === selectedId) ?? null;
+  // Répondre exige un message reçu à répondre : `choisirTransport`
+  // (`@jay-reach/core`) n'a rien à s'y raccrocher sinon.
+  const hasInboundMessage = selected?.messages.some((m) => m.direction === 'in') ?? false;
   const FILTERS: Filter[] = ['all', 'todo', 'in_progress', 'done', 'later'];
 
   function sortNow() {
@@ -57,6 +62,22 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
         router.refresh();
       } else {
         setSortMsg(res.error);
+      }
+    });
+  }
+
+  function sendReply(threadId: string) {
+    const corps = (drafts[threadId] ?? '').trim();
+    if (!corps) return;
+    setReplyMsg(null);
+    startReply(async () => {
+      const res = await repondre(threadId, corps);
+      if (res.ok) {
+        setDrafts((d) => ({ ...d, [threadId]: '' }));
+        setReplyMsg(t('replySent'));
+        router.refresh();
+      } else {
+        setReplyMsg(res.error);
       }
     });
   }
@@ -188,7 +209,13 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
                 {/* Pas de lime sur une action indisponible : le design system reserve
                     l'action primaire a ce qu'on peut reellement faire, et il n'y en a
                     qu'une par vue — c'est « Trier automatiquement » ici. */}
-                <button className="rs-btn" disabled title={t('replyNote')}>
+                <button
+                  type="button"
+                  className="rs-btn"
+                  disabled={!hasInboundMessage || !(drafts[selected.id] ?? '').trim() || sendingReply}
+                  title={hasInboundMessage ? undefined : t('replyImpossible')}
+                  onClick={() => sendReply(selected.id)}
+                >
                   {t('reply')}
                 </button>
                 <span className="rs-row-sub mono">{t('via', { sender: selected.sender })}</span>
@@ -214,6 +241,11 @@ export function InboxView({ threads, orgId }: { threads: readonly InboxThread[];
               {suggestMsg ? (
                 <p className="rs-lk-msg" style={{ marginTop: 4 }}>
                   {suggestMsg}
+                </p>
+              ) : null}
+              {replyMsg ? (
+                <p className="rs-lk-msg" style={{ marginTop: 4 }}>
+                  {replyMsg}
                 </p>
               ) : null}
             </div>
