@@ -295,7 +295,7 @@ describe('apercuEnvoi', () => {
   it('rend l’objet et le corps avec les valeurs du contact, et masque le destinataire', async () => {
     const ctx = faux({
       'jr:apercu_lire': [
-        { id: actionId, contact_id: contactId, campaign_id: campagneId, template_parent_id: 'tpl-1', locale: 'fr', expediteur: 'alexandre@get-jay.fr' },
+        { id: actionId, contact_id: contactId, campaign_id: campagneId, template_parent_id: 'tpl-1', locale: 'fr', expediteur: 'julien@exemple.fr' },
       ],
       'jr:valeurs_contact\\b': [
         {
@@ -325,7 +325,7 @@ describe('apercuEnvoi', () => {
     expect(r).toEqual({
       objet: 'Objet pour Nadia',
       corps: 'Bonjour Nadia, chez Kairn.',
-      expediteur: 'alexandre@get-jay.fr',
+      expediteur: 'julien@exemple.fr',
       destinataireMasque: 'n.…@kairn.example',
     });
   });

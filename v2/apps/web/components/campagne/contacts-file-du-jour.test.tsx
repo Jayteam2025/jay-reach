@@ -210,7 +210,7 @@ function envoi(overrides: Partial<LigneTableFileDuJour> = {}): LigneTableFileDuJ
     contactNom: 'Claire Moreau',
     etape: 0,
     campagneNom: 'Directeur commercial',
-    expediteur: 'a.declercq@exemple.fr',
+    expediteur: 'm.rousseau@exemple.fr',
     canal: 'email',
     etapeTexte: 'Étape 1',
     ...overrides,
