@@ -175,7 +175,7 @@ function schemaConfigDuType(providerId: TypeVeille): z.ZodTypeAny {
  * lieux choisis sont joints par « , » (ex. « Île-de-France, Lyon », comme
  * l'affiche la maquette).
  */
-function construireConfigStocke(
+export function construireConfigStocke(
   providerId: TypeVeille,
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -189,6 +189,111 @@ function construireConfigStocke(
     };
   }
   return { ...config, sourceType: providerId };
+}
+
+export type ConfigFormulaire =
+  | ConfigAdzuna
+  | ConfigFranceTravail
+  | ConfigLinkedInPost
+  | ConfigLinkedInConcurrent
+  | ConfigLinkedInMotsCles
+  | ConfigLinkedInChangementPoste;
+
+function tableauDeChaines(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+function nombreOuIndefini(v: unknown): number | undefined {
+  return typeof v === 'number' ? v : undefined;
+}
+function chaineOuIndefinie(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+function chaineOuVide(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/**
+ * Config de formulaire à partir de la config STOCKÉE en base — inverse exact
+ * de `construireConfigStocke` (R43, tour de correction 2) : le tiroir de
+ * réglages ET la carte doivent lire une source existante par cette seule
+ * fonction, jamais directement les clés du formulaire dans `config`. Une
+ * source migrée avant ce lot (R30, vérifiée sur la base OSS) ne porte QUE les
+ * clés du worker (`keywords`, `location`, `exclude_keywords` — jamais
+ * `motsCles`/`lieux`/`exclusions`) : les lire directement y renvoyait un
+ * formulaire vide, obligeant à tout retaper pour pouvoir enregistrer.
+ * `scoring_prompt`/`match_threshold` (posés par un autre chantier) restent
+ * ignorés ici — non représentés dans `ConfigFormulaire` — mais jamais perdus
+ * à l'écriture (`modifierSource` fusionne à la config existante).
+ */
+export function configFormulaireDepuisStockee(
+  providerId: TypeVeille,
+  configStockee: Record<string, unknown>,
+): ConfigFormulaire {
+  const c = configStockee ?? {};
+  if (providerId === 'adzuna' || providerId === 'france_travail') {
+    const motsCles = tableauDeChaines(c.keywords ?? c.motsCles);
+    const location = typeof c.location === 'string' ? c.location : null;
+    const lieux =
+      location !== null
+        ? location
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : tableauDeChaines(c.lieux);
+    // `exclude_keywords` : nom réel sur une source migrée avant ce lot ;
+    // `exclusions` : nom que ce formulaire écrit lui-même (spread inchangé
+    // par `construireConfigStocke`, jamais renommé).
+    const exclusions = tableauDeChaines(c.exclusions ?? c.exclude_keywords);
+    const ageMaxJours = nombreOuIndefini(c.ageMaxJours ?? c.max_age_days);
+    if (providerId === 'adzuna') {
+      return {
+        motsCles,
+        lieux,
+        contrat: c.contrat === 'cdi' ? 'cdi' : 'tous',
+        taille: chaineOuIndefinie(c.taille),
+        exclusions,
+        ageMaxJours,
+      };
+    }
+    return {
+      motsCles,
+      lieux,
+      typeContrat: c.typeContrat === 'cdi' ? 'cdi' : 'tous',
+      departement: chaineOuIndefinie(c.departement),
+      exclusions,
+      ageMaxJours,
+    };
+  }
+  if (providerId === 'linkedin_post_engagers') {
+    return {
+      urlPost: chaineOuVide(c.urlPost),
+      garder: tableauDeChaines(c.garder).filter(
+        (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
+      ),
+      exclurePremierDegre: typeof c.exclurePremierDegre === 'boolean' ? c.exclurePremierDegre : true,
+      compteId: chaineOuVide(c.compteId),
+      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+    };
+  }
+  if (providerId === 'linkedin_competitor_followers') {
+    return {
+      comptesConcurrents: tableauDeChaines(c.comptesConcurrents),
+      compteId: chaineOuVide(c.compteId),
+      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+    };
+  }
+  if (providerId === 'linkedin_keywords') {
+    return {
+      sujets: tableauDeChaines(c.sujets),
+      compteId: chaineOuVide(c.compteId),
+      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+    };
+  }
+  return {
+    depuisJours: nombreOuIndefini(c.depuisJours) ?? 90,
+    compteId: chaineOuVide(c.compteId),
+    profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+  };
 }
 
 function lireSourceType(config: Record<string, unknown> | null): TypeVeille {

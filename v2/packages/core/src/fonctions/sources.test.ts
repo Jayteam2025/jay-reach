@@ -7,6 +7,8 @@ import {
   ajouterDepuisAnnuaire,
   ajouterDepuisListe,
   activerSource,
+  configFormulaireDepuisStockee,
+  construireConfigStocke,
   creerSource,
   importerCsv,
   lancerPassage,
@@ -14,6 +16,8 @@ import {
   listerSourcesCampagne,
   modifierSource,
   sirensConnus,
+  type ConfigAdzuna,
+  type ConfigFranceTravail,
 } from './sources.js';
 
 /**
@@ -156,6 +160,64 @@ describe('listerSourcesCampagne', () => {
     const cartes = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
     expect(cartes).toHaveLength(1);
     expect(cartes[0]!.providerId).toBe('adzuna');
+  });
+});
+
+describe('configFormulaireDepuisStockee', () => {
+  const FORM_ADZUNA: ConfigAdzuna = {
+    motsCles: ['directeur commercial', 'head of sales'],
+    lieux: ['Île-de-France', 'Lyon'],
+    contrat: 'cdi',
+    taille: '10 à 250 salariés',
+    exclusions: ['cabinet de recrutement', 'intérim'],
+    ageMaxJours: 14,
+  };
+  const FORM_FRANCE_TRAVAIL: ConfigFranceTravail = {
+    motsCles: ['chef des ventes'],
+    lieux: [],
+    typeContrat: 'tous',
+    departement: '69',
+    exclusions: [],
+  };
+
+  it('aller-retour exact via construireConfigStocke, pour Adzuna', () => {
+    const stocke = construireConfigStocke('adzuna', FORM_ADZUNA);
+    expect(configFormulaireDepuisStockee('adzuna', stocke)).toEqual(FORM_ADZUNA);
+  });
+
+  it('aller-retour exact via construireConfigStocke, pour France Travail (lieux vides → pas de `location`)', () => {
+    const stocke = construireConfigStocke('france_travail', FORM_FRANCE_TRAVAIL);
+    expect(stocke.location).toBeUndefined();
+    expect(configFormulaireDepuisStockee('france_travail', stocke)).toEqual(FORM_FRANCE_TRAVAIL);
+  });
+
+  it('lit une config réelle migrée avant ce lot (clés du worker uniquement, R30/R43)', () => {
+    // Config exacte du thème « France Travail » de la campagne « Directeur
+    // commercial » sur la base OSS (constat du tour de correction 2) : aucune
+    // des clés du formulaire n'existe, seulement celles du worker.
+    const configReelle = {
+      keywords: ['commercial', 'sales'],
+      location: 'Île-de-France, Lyon',
+      exclude_keywords: ['stagiaire'],
+      scoring_prompt: 'Instructions détaillées…',
+      match_threshold: 60,
+    };
+    const f = configFormulaireDepuisStockee('france_travail', configReelle) as ConfigFranceTravail;
+    expect(f.motsCles).toEqual(['commercial', 'sales']);
+    expect(f.lieux).toEqual(['Île-de-France', 'Lyon']);
+    expect(f.exclusions).toEqual(['stagiaire']);
+    // Clés inconnues du formulaire : ignorées à la lecture, jamais recopiées
+    // dans `ConfigFormulaire` (mais préservées à l'écriture par `modifierSource`).
+    expect((f as Record<string, unknown>).scoring_prompt).toBeUndefined();
+    expect((f as Record<string, unknown>).match_threshold).toBeUndefined();
+  });
+
+  it('sans aucune donnée, retourne des valeurs par défaut plutôt que de planter', () => {
+    const f = configFormulaireDepuisStockee('adzuna', {}) as ConfigAdzuna;
+    expect(f.motsCles).toEqual([]);
+    expect(f.lieux).toEqual([]);
+    expect(f.contrat).toBe('tous');
+    expect(f.exclusions).toEqual([]);
   });
 });
 

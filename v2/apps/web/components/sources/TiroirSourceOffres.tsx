@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { configFormulaireDepuisStockee } from '@jay-reach/core';
 import { Bouton, Champ, Tiroir, TuileLogo } from '../ui';
 import {
   actionCreerSource,
@@ -34,6 +35,18 @@ function texteVersListe(t: string): string[] {
     .filter(Boolean);
 }
 
+/** Vue locale unifiée de `ConfigAdzuna | ConfigFranceTravail` (champs propres à chacun en optionnel). */
+type ConfigOffresAffichee = {
+  motsCles: string[];
+  lieux: string[];
+  contrat?: 'cdi' | 'tous';
+  typeContrat?: 'cdi' | 'tous';
+  taille?: string;
+  departement?: string;
+  exclusions: string[];
+  ageMaxJours?: number;
+};
+
 /**
  * Tiroir Adzuna/France Travail (maquette `tiroir-source-adzuna.html`) : même
  * formulaire pour les deux fournisseurs, seuls les libellés « Taille
@@ -47,20 +60,24 @@ export function TiroirSourceOffres({ campagneId, providerId, source }: TiroirSou
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
 
-  const config = source?.config ?? {};
+  // R43 (tour de correction 2) : une source existante ne porte QUE les clés du
+  // WORKER (`keywords`, `location`, `exclude_keywords` — jamais `motsCles`/
+  // `lieux`/`exclusions` pour une source migrée avant ce lot). Lire `config`
+  // du formulaire directement laissait tous les champs vides à l'ouverture.
+  const config: ConfigOffresAffichee | null = source
+    ? (configFormulaireDepuisStockee(providerId, source.config) as ConfigOffresAffichee)
+    : null;
   const [nom, setNom] = useState(source?.nom ?? '');
-  const [motsCles, setMotsCles] = useState(listeVersTexte(config.motsCles));
-  const [lieux, setLieux] = useState(listeVersTexte(config.lieux));
+  const [motsCles, setMotsCles] = useState(listeVersTexte(config?.motsCles ?? []));
+  const [lieux, setLieux] = useState(listeVersTexte(config?.lieux ?? []));
   const [contrat, setContrat] = useState<'cdi' | 'tous'>(
-    ((config.contrat ?? config.typeContrat) as 'cdi' | 'tous' | undefined) ?? 'tous',
+    config?.contrat ?? config?.typeContrat ?? 'tous',
   );
-  const [taille, setTaille] = useState(typeof config.taille === 'string' ? config.taille : '');
-  const [departement, setDepartement] = useState(
-    typeof config.departement === 'string' ? config.departement : '',
-  );
-  const [exclusions, setExclusions] = useState(listeVersTexte(config.exclusions));
+  const [taille, setTaille] = useState(config?.taille ?? '');
+  const [departement, setDepartement] = useState(config?.departement ?? '');
+  const [exclusions, setExclusions] = useState(listeVersTexte(config?.exclusions ?? []));
   const [ageMaxJours, setAgeMaxJours] = useState(
-    typeof config.ageMaxJours === 'number' ? String(config.ageMaxJours) : '',
+    typeof config?.ageMaxJours === 'number' ? String(config.ageMaxJours) : '',
   );
   const [schedule, setSchedule] = useState(source?.schedule ?? 'every 6h');
 
