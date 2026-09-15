@@ -95,6 +95,7 @@
       "actionsDispatch": "Action dispatch",
       "outcomesPoll": "Outcome polling",
       "inboxSync": "Inbox sync",
+      "inboxSyncGraph": "Reply sync (Microsoft Graph)",
       "crmPush": "CRM push",
       "retentionPurge": "Retention purge"
     }

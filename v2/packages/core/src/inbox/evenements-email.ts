@@ -92,17 +92,24 @@ export async function traiterEvenementEmail(
     // Le traitement est commun à tous les canaux : classer, ouvrir le fil,
     // arrêter la séquence, notifier. Voir `record-reply.ts`.
     //
-    // `sujet` (tâche 10) passe par `headers` : c'est le seul champ que le
-    // type existant prévoyait pour porter une donnée annexe au message. Il
-    // ne comporte aucune des clés que `classifyByHeaders` reconnaît
-    // (`auto-submitted`, `x-autoreply`, `x-autorespond`, `precedence`), donc
-    // sa présence ne change jamais la classification d'une réponse.
+    // `ev.headers` (lot 3 bis, relève Microsoft Graph) prime sur `sujet` : un
+    // événement Graph porte déjà son propre jeu d'en-têtes (transport, boîte,
+    // identifiants Graph, éventuels indices d'auto-réponse) et est transmis
+    // tel quel — CONTRAIREMENT à l'enveloppe `{ subject }` ci-dessous, il PEUT
+    // comporter les clés que `classifyByHeaders` reconnaît (`auto-submitted`,
+    // `x-autoreply`, `x-autorespond`, `precedence`), et donc changer la
+    // classification d'une réponse Graph.
+    //
+    // Sans `ev.headers` (SalesBlink aujourd'hui), `sujet` (tâche 10) passe
+    // par `headers` : c'est le seul champ que le type prévoyait alors pour
+    // porter une donnée annexe au message, et il ne comporte aucune des clés
+    // ci-dessus — sa présence ne change donc jamais la classification.
     const enregistre = await recordInboundReply(ex, org, {
       contactId: contact.id,
       channel: 'email',
       body: ev.corps,
       providerMessageId: ev.messageId,
-      headers: ev.sujet ? { subject: ev.sujet } : null,
+      headers: ev.headers ?? (ev.sujet ? { subject: ev.sujet } : null),
     });
     if (enregistre.isNew) {
       // Notification même pour une auto-réponse : le fil doit être vu (règle n° 9).

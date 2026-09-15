@@ -95,6 +95,7 @@
       "actionsDispatch": "Acties verzenden",
       "outcomesPoll": "Resultaten ophalen",
       "inboxSync": "Inbox synchroniseren",
+      "inboxSyncGraph": "Reacties ophalen (Microsoft Graph)",
       "crmPush": "CRM-push",
       "retentionPurge": "Retentie opschonen"
     }

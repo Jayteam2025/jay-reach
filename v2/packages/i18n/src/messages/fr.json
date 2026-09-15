@@ -95,6 +95,7 @@
       "actionsDispatch": "Envoi des actions",
       "outcomesPoll": "Récupération des résultats",
       "inboxSync": "Synchronisation de la boîte de réception",
+      "inboxSyncGraph": "Relève des réponses (Microsoft Graph)",
       "crmPush": "Remontée CRM",
       "retentionPurge": "Purge de rétention"
     }
