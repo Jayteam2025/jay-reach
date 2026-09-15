@@ -10,6 +10,7 @@ import {
   creerSource,
   importerCsv,
   lancerPassage,
+  listerListesOrganisation,
   listerSourcesCampagne,
   modifierSource,
 } from './sources.js';
@@ -316,5 +317,21 @@ describe('ajouterDepuisListe', () => {
     });
     const r = await ajouterDepuisListe(ctx, entree);
     expect(r).toEqual({ ajoutes: 1 });
+  });
+});
+
+describe('listerListesOrganisation', () => {
+  it('refuse un rôle insuffisant', async () => {
+    const { ctx } = faux({}, null);
+    await expect(listerListesOrganisation(ctx, {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('retourne les listes de l’organisation avec leur nombre de contacts', async () => {
+    const { ctx } = faux(
+      { 'jr:sources_listes_organisation': [{ id: 'list-1', name: 'Participants webinaire de juin', n: 62 }] },
+      'viewer',
+    );
+    const r = await listerListesOrganisation(ctx, {});
+    expect(r).toEqual([{ id: 'list-1', nom: 'Participants webinaire de juin', nombreContacts: 62 }]);
   });
 });

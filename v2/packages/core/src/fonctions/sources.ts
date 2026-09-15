@@ -728,6 +728,27 @@ export async function ajouterDepuisAnnuaire(ctx: Contexte, entree: unknown): Pro
 // ne serait-ce qu'un historique dans une autre campagne.
 // ---------------------------------------------------------------------------
 
+export interface ListeResume {
+  readonly id: string;
+  readonly nom: string;
+  readonly nombreContacts: number;
+}
+
+/** Listes existantes de l'organisation, pour le sélecteur du tiroir « Liste existante ». */
+export async function listerListesOrganisation(ctx: Contexte, _entree: unknown): Promise<ListeResume[]> {
+  exiger(ctx, 'viewer');
+  const res = await ctx.ex.query<{ id: string; name: string; n: number }>(
+    `select l.id, l.name, count(lm.contact_id)::int as n /* jr:sources_listes_organisation */
+       from lists l
+       left join list_members lm on lm.list_id = l.id
+      where l.organization_id = $1
+      group by l.id, l.name
+      order by l.created_at desc`,
+    [ctx.organisationId],
+  );
+  return res.rows.map((r) => ({ id: r.id, nom: r.name, nombreContacts: r.n }));
+}
+
 export const schemaAjouterDepuisListe = z.object({
   campagneId: z.string().uuid(),
   listId: z.string().uuid(),
