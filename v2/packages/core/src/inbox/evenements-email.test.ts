@@ -71,6 +71,47 @@ describe('traiterEvenementEmail', () => {
     expect((resultat as { effect: string; classification: string }).classification).toBe('human_reply');
   });
 
+  it('répondu avec headers (lot 3 bis, Graph) : priment sur sujet et sont transmis tels quels', async () => {
+    const { ex, appels } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
+    const repondu: EvenementEmail = {
+      ...REPONDU,
+      sujet: 'Re: Prise de contact',
+      headers: { transport: 'microsoft_graph', mailbox: 'ventes@exemple.fr', graph_message_id: 'msg-1' },
+    };
+    const resultat = await traiterEvenementEmail(ex, 'org-1', repondu, 'microsoft_graph');
+    expect(resultat.stored).toBe(true);
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion).toBeDefined();
+    const headersEcrits = JSON.parse(insertion!.values[3] as string) as Record<string, string>;
+    expect(headersEcrits).toEqual({ transport: 'microsoft_graph', mailbox: 'ventes@exemple.fr', graph_message_id: 'msg-1' });
+  });
+
+  it('répondu : le message est horodaté à sa réception réelle, pas à l’instant de la relève', async () => {
+    const { ex, appels } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
+    const recuA = Date.parse('2026-09-15T08:30:00.000Z');
+    const repondu: EvenementEmail = { ...REPONDU, aMs: recuA };
+
+    await traiterEvenementEmail(ex, 'org-1', repondu, 'microsoft_graph');
+
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion).toBeDefined();
+    // `sent_at` est le dernier paramètre de l'insert. La relève SalesBlink
+    // détecte une réponse des heures après sa réception : l'horodater à
+    // l'instant du passage fausse l'ordre du fil et le choix du transport,
+    // qui prend le dernier message reçu.
+    expect(insertion!.values[5]).toBe(new Date(recuA).toISOString());
+  });
+
+  it('répondu avec headers d’auto-réponse (Graph) : change la classification, contrairement à sujet seul', async () => {
+    const { ex } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
+    const repondu: EvenementEmail = {
+      ...REPONDU,
+      headers: { transport: 'microsoft_graph', 'auto-submitted': 'auto-replied' },
+    };
+    const resultat = await traiterEvenementEmail(ex, 'org-1', repondu, 'microsoft_graph');
+    expect((resultat as { effect: string; classification: string }).classification).toBe('auto_absence');
+  });
+
   it('envoyé → ignoré (traité par la relève, pas ici)', async () => {
     const { ex } = creerExecuteurFactice({ contactExistant: { id: 'contact-1' } });
     const resultat = await traiterEvenementEmail(ex, 'org-1', ENVOYE, 'SalesBlink');

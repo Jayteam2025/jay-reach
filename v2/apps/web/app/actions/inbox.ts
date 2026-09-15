@@ -2,10 +2,16 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { requireRole } from '../../lib/auth';
+import { requireRole, getCurrentOrganizationId } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
-import { classifyReply, type ReplyClassification } from '@jay-reach/core';
+import { getPool } from '../../lib/db';
+import { classifyReply, repondreAuFil, texteVersHtml, ErreurEntree, type ReplyClassification } from '@jay-reach/core';
+import { messageErreurReponse } from '../../lib/erreur-reponse';
 import { classifyReplyWithModel, generateSuggestedReply, resolveAnthropicKey } from '../../lib/anthropic';
+import { resolveGraphConfig } from '../../lib/graph';
+import { repondreDansLaBoite } from '@jay-reach/providers/mail';
+import { resolveSalesblinkKey } from '../../lib/salesblink';
+import { repondreDansLeFil } from '@jay-reach/providers/outreach';
 
 export type ClassifyResult = { ok: true; count: number } | { ok: false; error: string };
 export type SuggestResult = { ok: true; draft: string } | { ok: false; error: string };
@@ -148,4 +154,62 @@ export async function classifyInbox(organizationId: string): Promise<ClassifyRes
 
   revalidatePath('/inbox');
   return { ok: true, count };
+}
+
+export type RepondreResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Envoie une réponse dans un fil de la Réception (lot 3 bis, tâche 3). Le
+ * transport — Microsoft Graph ou SalesBlink — n'est jamais choisi ici : il
+ * est imposé par l'origine du dernier message reçu du fil, voir
+ * `repondreAuFil` (`@jay-reach/core`). Exige le rôle operator ; l'organisation
+ * vient de la session, jamais d'un identifiant fourni par l'appelant.
+ */
+export async function repondre(threadId: string, corps: string): Promise<RepondreResult> {
+  const organizationId = await getCurrentOrganizationId();
+  if (!organizationId) {
+    return { ok: false, error: 'Session ou organisation introuvable.' };
+  }
+  try {
+    await requireRole(organizationId, 'operator');
+  } catch {
+    return { ok: false, error: 'Droit opérateur requis.' };
+  }
+
+  const texte = corps.trim();
+  if (!texte) {
+    return { ok: false, error: 'La réponse est vide.' };
+  }
+
+  try {
+    await repondreAuFil(
+      getPool(),
+      organizationId,
+      { threadId, corpsHtml: texteVersHtml(texte) },
+      {
+        graph: async (mailbox, messageId, corpsHtml) => {
+          const config = await resolveGraphConfig(organizationId);
+          if (!config) {
+            throw new ErreurEntree("Microsoft Graph n'est pas configuré pour cette organisation.");
+          }
+          await repondreDansLaBoite(config, mailbox, messageId, corpsHtml);
+        },
+        salesblink: async (messageId, corpsHtml) => {
+          const cle = await resolveSalesblinkKey(organizationId);
+          if (!cle) {
+            throw new ErreurEntree("SalesBlink n'est pas configuré pour cette organisation.");
+          }
+          return repondreDansLeFil(messageId, corpsHtml, cle);
+        },
+      },
+    );
+  } catch (err) {
+    // Une seule règle, dans `lib/erreur-reponse` : message de l'opérateur pour
+    // une `ErreurEntree`, texte propre à Microsoft pour un refus de la boîte,
+    // générique sinon. Jamais le corps de réponse d'un fournisseur.
+    return { ok: false, error: messageErreurReponse(err) };
+  }
+
+  revalidatePath('/inbox');
+  return { ok: true };
 }

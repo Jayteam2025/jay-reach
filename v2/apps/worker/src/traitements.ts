@@ -21,6 +21,7 @@ import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
 import { releverSalesBlink } from './handlers/releve-salesblink.js';
+import { releverGraph } from './handlers/releve-graph.js';
 import {
   runResolveCompany,
   toCompanyEnrichment,
@@ -84,6 +85,7 @@ export const FILES_BRANCHEES = [
   'sequence.enroll',
   'sequence.tick',
   'inbox.sync',
+  'inbox.sync_graph',
 ] as const;
 
 const FULLENRICH_PROVIDER = 'fullenrich';
@@ -595,6 +597,9 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnrichContacts(ctx, donnees as EnrichContactsJob);
     case 'inbox.sync':
       return releverSalesBlink(ctx, donnees as { organizationId: string });
+    case 'inbox.sync_graph':
+      await releverGraph(ctx, donnees as { organizationId: string });
+      return;
     default:
       // File déclarée mais sans traitement : on ne la laisse pas s'accumuler.
       return;

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
+import { normaliserInboxProvider } from '../../lib/inbox-provider';
 
 export type SenderActionResult = { ok: true } | { ok: false; error: string };
 
@@ -37,6 +38,12 @@ export interface SenderInput {
    * passe pas par SalesBlink.
    */
   readonly providerRef: string | null;
+  /**
+   * Lecture directe des réponses dans la boîte (Microsoft Graph), ou `null`
+   * pour s'en tenir à la détection du transport SalesBlink. Ne concerne que
+   * les expéditeurs email.
+   */
+  readonly inboxProvider: 'microsoft_graph' | null;
 }
 
 /** Ce qu'il faut pour faire naître un expéditeur, en plus de ses réglages. */
@@ -85,6 +92,7 @@ function normaliserQuota(valeur: number | null): number | null | 'invalide' {
   return valeur;
 }
 
+
 /** Met à jour un expéditeur de l'organisation (droit administrateur requis). */
 export async function updateSender(
   organizationId: string,
@@ -112,6 +120,10 @@ export async function updateSender(
     // sans que personne ne s'en aperçoive.
     return { ok: false, error: 'Le plafond horaire ne peut pas dépasser le plafond quotidien.' };
   }
+  const fournisseurBoite = normaliserInboxProvider(input.inboxProvider);
+  if (fournisseurBoite === 'invalide') {
+    return { ok: false, error: 'Ce fournisseur de lecture directe des réponses n’est pas reconnu.' };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -125,6 +137,7 @@ export async function updateSender(
       timezone: input.timezone,
       provider_id: input.providerRef ? 'salesblink' : null,
       provider_ref: input.providerRef,
+      inbox_provider: fournisseurBoite,
     })
     .eq('id', senderId)
     .eq('organization_id', organizationId);
@@ -178,6 +191,10 @@ export async function createSender(
   if (fenetreInvalide) {
     return { ok: false, error: fenetreInvalide };
   }
+  const fournisseurBoite = normaliserInboxProvider(input.inboxProvider);
+  if (fournisseurBoite === 'invalide') {
+    return { ok: false, error: 'Ce fournisseur de lecture directe des réponses n’est pas reconnu.' };
+  }
 
   const supabase = await createClient();
 
@@ -208,6 +225,7 @@ export async function createSender(
     timezone: input.timezone,
     provider_id: input.providerRef ? 'salesblink' : null,
     provider_ref: input.providerRef,
+    inbox_provider: fournisseurBoite,
   });
 
   if (error) {

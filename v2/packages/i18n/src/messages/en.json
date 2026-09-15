@@ -35,6 +35,7 @@
     "save": "Save",
     "saved": "Saved",
     "salesblink": "SalesBlink (email)",
+    "microsoftGraph": "Microsoft 365 (reply retrieval)",
     "fullenrich": "FullEnrich (enrichment)",
     "dropcontact": "Dropcontact (enrichment)",
     "bouncer": "Bouncer (email verification)",
@@ -67,7 +68,10 @@
       "syncIntervalMinPlaceholder": "Minutes, default 5",
       "replyMaxDelayH": "Max follow-up delay (hours)",
       "replyMaxDelayHHint": "Past this delay, a follow-up still queued at SalesBlink is re-sent as a new \"Re:\" email (1 to 72)",
-      "replyMaxDelayHPlaceholder": "Hours, default 6"
+      "replyMaxDelayHPlaceholder": "Hours, default 6",
+      "tenantId": "Tenant ID",
+      "graphSyncIntervalMin": "Sync interval (minutes)",
+      "graphSyncIntervalMinPlaceholder": "5"
     },
     "secretUnchanged": "Leave empty to keep the current key",
     "todayUsage": "today: {used} / {cap}",
@@ -91,6 +95,7 @@
       "actionsDispatch": "Action dispatch",
       "outcomesPoll": "Outcome polling",
       "inboxSync": "Inbox sync",
+      "inboxSyncGraph": "Reply sync (Microsoft Graph)",
       "crmPush": "CRM push",
       "retentionPurge": "Retention purge"
     }
@@ -272,7 +277,11 @@
     "you": "You",
     "reply": "Reply",
     "replyPlaceholder": "Your reply…",
-    "replyNote": "Sending always goes through the sender bound to the contact — never another. (Send wiring after validation.)",
+    "replyNote": "Sending always goes through the channel of the received message — never another.",
+    "replySent": "Reply sent.",
+    "replySending": "Sending…",
+    "replyImpossible": "Can't reply: no received message on this thread.",
+    "replyEmailOnly": "Replying from Jay Reach only works on email threads. LinkedIn is coming later.",
     "buySignal": "Buy signal: departure detected → the account resurfaces to find the successor.",
     "state": "Thread state",
     "empty": "Choose a thread to read it.",
@@ -788,7 +797,9 @@
     "salesblinkBoxNone": "No SalesBlink mailbox available right now. Check the key under Providers.",
     "salesblinkHealth": "{etat, select, actif {Sending active} coupe {Disconnected: {message}} other {Never checked}}",
     "salesblinkCap": "SalesBlink cap",
-    "lowestApplies": "the lowest one applies"
+    "lowestApplies": "the lowest one applies",
+    "inboxProvider": "Read replies directly in this mailbox",
+    "inboxProviderHint": "Jay Reach checks this mailbox every few minutes via Microsoft Graph, as soon as Microsoft Graph is configured under Providers. SalesBlink still sends your messages."
   },
   "snippets": {
     "title": "Reusable text",

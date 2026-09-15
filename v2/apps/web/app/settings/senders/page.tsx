@@ -3,7 +3,8 @@ import { listerBoitesSalesBlink } from '../../../lib/salesblink';
 import { AppTopBar } from '../../chrome';
 import { SendersForm, type SenderRow } from './senders-form';
 
-const COLS = 'id, kind, identity, display_name, daily_quota, hourly_quota, is_active, business_hours, timezone, provider_ref, provider_state';
+const COLS =
+  'id, kind, identity, display_name, daily_quota, hourly_quota, is_active, business_hours, timezone, provider_ref, provider_state, inbox_provider';
 
 export default async function SendersPage() {
   const supabase = await createClientOrNull();

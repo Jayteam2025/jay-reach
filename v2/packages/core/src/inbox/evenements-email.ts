@@ -92,17 +92,29 @@ export async function traiterEvenementEmail(
     // Le traitement est commun à tous les canaux : classer, ouvrir le fil,
     // arrêter la séquence, notifier. Voir `record-reply.ts`.
     //
-    // `sujet` (tâche 10) passe par `headers` : c'est le seul champ que le
-    // type existant prévoyait pour porter une donnée annexe au message. Il
-    // ne comporte aucune des clés que `classifyByHeaders` reconnaît
-    // (`auto-submitted`, `x-autoreply`, `x-autorespond`, `precedence`), donc
-    // sa présence ne change jamais la classification d'une réponse.
+    // `ev.headers` prime sur `sujet` : les deux relèves email posent
+    // désormais leur propre jeu d'en-têtes, transmis tel quel — origine du
+    // message (`transport`, `mailbox`, `graph_message_id`,
+    // `salesblink_reply_id`, `salesblink_inbox_message_id`), sujet, et pour
+    // Graph seul les éventuels indices d'auto-réponse. Seules les clés
+    // `auto-submitted` / `x-autoreply` / `x-autorespond` / `precedence` que
+    // reconnaît `classifyByHeaders` changent une classification : aucune clé
+    // de traçabilité ne les porte.
+    //
+    // Sans `ev.headers` (une source email antérieure), `sujet` (tâche 10)
+    // passe seul par `headers` : c'est le seul champ que le type prévoyait
+    // alors pour porter une donnée annexe au message.
+    // `receivedAt` porte l'heure de réception RÉELLE du message (`ev.aMs`),
+    // pas celle du passage de la relève : SalesBlink détecte une réponse des
+    // heures après coup, et l'horodater à l'instant du passage fausse l'ordre
+    // du fil et le choix du transport, qui prend le dernier message reçu.
     const enregistre = await recordInboundReply(ex, org, {
       contactId: contact.id,
       channel: 'email',
       body: ev.corps,
       providerMessageId: ev.messageId,
-      headers: ev.sujet ? { subject: ev.sujet } : null,
+      headers: ev.headers ?? (ev.sujet ? { subject: ev.sujet } : null),
+      receivedAt: new Date(ev.aMs),
     });
     if (enregistre.isNew) {
       // Notification même pour une auto-réponse : le fil doit être vu (règle n° 9).

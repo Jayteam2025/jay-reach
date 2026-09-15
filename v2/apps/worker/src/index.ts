@@ -25,6 +25,7 @@ import {
   type Contexte,
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
+import { enqueueReleveGraph } from './handlers/releve-graph.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
 // ressent l'opérateur entre son clic et le départ de la collecte. La requête est
@@ -39,6 +40,9 @@ const REQUESTED_RUN_POLL_MS = Number(process.env.REQUESTED_RUN_POLL_MS ?? 10_000
  * `enqueueReleveSalesBlink` déduplique lui-même par fenêtre.
  */
 const RELEVE_SALESBLINK_POLL_MS = 60_000;
+
+/** Même raison que `RELEVE_SALESBLINK_POLL_MS` : `produire()` est trop lâche pour un `sync_interval_min` Graph par défaut de cinq minutes. */
+const RELEVE_GRAPH_POLL_MS = 60_000;
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -107,12 +111,26 @@ async function main(): Promise<void> {
   const releveSalesBlink = setInterval(() => void enqueueReleveSalesBlink(boss, pool), RELEVE_SALESBLINK_POLL_MS);
   releveSalesBlink.unref();
 
+  // Un hoquet de base pendant l'enfilage ne doit pas tuer le worker : sans ce
+  // `.catch`, la promesse rejetée d'un `void` remonte en `unhandledRejection`
+  // et arrête le process. Le code suffit, le détail de l'erreur pourrait
+  // porter une chaîne de connexion.
+  const enfilerReleveGraph = (): void => {
+    void enqueueReleveGraph(boss, pool).catch(() => {
+      console.error('[releve-graph] enfilage impossible (releve_graph_enqueue)');
+    });
+  };
+  enfilerReleveGraph();
+  const releveGraph = setInterval(enfilerReleveGraph, RELEVE_GRAPH_POLL_MS);
+  releveGraph.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[worker] ${signal} reçu, arrêt propre…`);
     clearInterval(producer);
     clearInterval(demandes);
     clearInterval(ticker);
     clearInterval(releveSalesBlink);
+    clearInterval(releveGraph);
     await boss.stop({ graceful: true });
     process.exit(0);
   };

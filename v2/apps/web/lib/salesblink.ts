@@ -2,10 +2,13 @@
  * Client SalesBlink minimal côté web — uniquement ce qu'il faut pour lister
  * les boîtes du workspace dans l'écran Expéditeurs (sélecteur de liaison).
  *
- * Ne réimporte PAS `@jay-reach/providers/outreach` (qui porte déjà
- * `listerBoites`) : ce sous-chemin résout vers `dist/`, absent tant que le
- * paquet n'a pas été construit — ce que Vercel ne fait pas pour les paquets
- * internes lors du build de `apps/web`. L'importer casserait le déploiement.
+ * `@jay-reach/providers/outreach` porte déjà `listerBoites` et reste
+ * importable ici : les `paths` de `tsconfig.base.json` font résoudre les
+ * sous-chemins du paquet vers leurs sources, que Next transpile lui-même
+ * (vérifié avec la commande de build de Vercel, sans aucun `dist/`). Ce
+ * client local n'existe que pour son délai court, adapté au chemin de rendu
+ * de l'écran Expéditeurs ; la réponse à un fil (`actions/inbox.ts`) importe
+ * bien le paquet.
  *
  * Aucune clé, en-tête `Authorization` ni corps de réponse ne doit jamais
  * fuiter dans une erreur : `listerBoitesSalesBlink` ne renvoie qu'un code
@@ -35,7 +38,7 @@ export type ResultatBoitesSalesBlink = { ok: true; boites: BoiteSalesBlink[] } |
  * variable d'environnement en repli — même ordre que `resolveAnthropicKey`
  * (`apps/web/lib/anthropic.ts`).
  */
-async function resolveSalesblinkKey(organizationId: string): Promise<string | null> {
+export async function resolveSalesblinkKey(organizationId: string): Promise<string | null> {
   const encryptionKey = process.env.ENCRYPTION_KEY;
   if (encryptionKey) {
     try {

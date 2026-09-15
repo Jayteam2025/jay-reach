@@ -161,6 +161,46 @@ docker compose -p jay-reach down
 | `SIGNAL_MAX_AGE_DAYS` | Âge maximal d'un signal avant écart automatique (jours). |
 | `ACCOUNT_PEOPLE_PER_DAY` | Personnes contactées par entreprise et par jour. |
 | `ENRICH_MAX_WAIT_MS` | Attente maximale d'un enrichissement (millisecondes). |
+| `MS_GRAPH_TENANT_ID` | Optionnelle. La lecture directe des réponses se configure dans l'application, Fournisseurs → Microsoft Graph ; cette variable n'est qu'un repli, utilisé seulement quand rien n'y est saisi. |
+| `MS_GRAPH_CLIENT_ID` | Optionnelle, même repli que ci-dessus. |
+| `MS_GRAPH_CLIENT_SECRET` | Optionnelle, même repli que ci-dessus. |
+
+La relève ne démarre que pour une organisation ayant au moins une boîte avec la
+lecture directe activée dans Réglages → Expéditeurs, et une configuration
+joignable : celle de Fournisseurs → Microsoft Graph, ou, à défaut, les trois
+variables ci-dessus **toutes les trois** présentes. Une seule manquante et rien
+ne tourne.
 
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
 `docker-compose.yml` : ils n'ont pas leur place dans `worker.env`.
+
+### Restreindre l'application Microsoft Graph à ses boîtes
+
+L'application Microsoft Graph qui lit les réponses ne doit avoir accès qu'aux
+boîtes réellement relevées, pas à tout le tenant. Deux permissions
+d'application (pas déléguées) suffisent, avec consentement administrateur :
+`Mail.Read` et `Mail.Send`.
+
+Dans Exchange Online PowerShell (`Connect-ExchangeOnline`), créer un groupe de
+distribution à sécurité activée contenant les boîtes relevées, puis restreindre
+l'application à ce groupe :
+
+```powershell
+New-DistributionGroup -Name "jayreach-boites" -Type Security -MemberDepartRestriction Closed
+Add-DistributionGroupMember -Identity "jayreach-boites" -Member "prospection@exemple.fr"
+
+New-ApplicationAccessPolicy -AppId "00000000-0000-0000-0000-000000000000" `
+  -PolicyScopeGroupId "jayreach-boites@exemple.fr" -AccessRight RestrictAccess `
+  -Description "Jay Reach : lecture directe des réponses, boîtes autorisées seulement"
+```
+
+Vérifier ensuite que la restriction s'applique bien :
+
+```powershell
+Test-ApplicationAccessPolicy -AppId "00000000-0000-0000-0000-000000000000" `
+  -Identity "prospection@exemple.fr"
+```
+
+Les identifiants et adresses ci-dessus sont des exemples : remplacer l'`AppId`
+par celui de l'application enregistrée dans Entra ID, et l'adresse par celle
+d'une boîte réellement relevée.

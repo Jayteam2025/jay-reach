@@ -259,7 +259,7 @@ function cleGroupeReponse(email: string, sequenceId: string | null): string {
 function apparierReponsesEtTaches(
   reponses: Rapport[],
   taches: EnvoiSorti[],
-): Map<string, { corps: string; sujet: string | null }> {
+): Map<string, { corps: string; sujet: string | null; messageId: string | null }> {
   const reponsesParGroupe = new Map<string, Rapport[]>();
   for (const r of reponses) {
     if (!r.email || !reponseSansCorps(r)) continue;
@@ -278,7 +278,7 @@ function apparierReponsesEtTaches(
     else tachesParGroupe.set(cle, [t]);
   }
 
-  const corpsParReponse = new Map<string, { corps: string; sujet: string | null }>();
+  const corpsParReponse = new Map<string, { corps: string; sujet: string | null; messageId: string | null }>();
   for (const [cle, listeReponses] of reponsesParGroupe) {
     const listeTaches = tachesParGroupe.get(cle);
     if (!listeTaches || listeTaches.length === 0) continue;
@@ -291,6 +291,7 @@ function apparierReponsesEtTaches(
       corpsParReponse.set(reponse.id, {
         corps: tache.corpsHtml ? texteDepuisHtml(tache.corpsHtml) : '',
         sujet: tache.sujet,
+        messageId: tache.messageId,
       });
     }
   }
@@ -301,26 +302,33 @@ function apparierReponsesEtTaches(
  * Rapports SalesBlink → réponses : `listerReponses` (endpoint `/replies`) ne
  * renvoie que des réponses, contrairement à `listerRapports` (`/reports`,
  * filtré par `message`) — chaque ligne devient donc un événement `repondu`,
- * sans filtrer sur `message`. `id` sert d'identifiant de déduplication
- * (`recordInboundReply` ne réenregistre jamais deux fois le même
- * `providerMessageId`) : sans lui, le même message reviendrait à chaque tour
- * tant qu'il reste dans la fenêtre `depuisMs`. `taches` (les tâches `/inbox`
- * déjà récupérées pour l'étape 6, un seul appel par passage) sert à combler
- * le corps vide de chaque réponse — voir `apparierReponsesEtTaches`. Une
- * réponse qui en a besoin mais ne trouve aucune tâche correspondante est
- * journalisée (jamais son email ni son corps) : son corps reste vide.
+ * sans filtrer sur `message`. `taches` (les tâches `/inbox` déjà récupérées
+ * pour l'étape 6, un seul appel par passage) sert à combler le corps vide de
+ * chaque réponse — voir `apparierReponsesEtTaches`. Une réponse qui en a
+ * besoin mais ne trouve aucune tâche correspondante est journalisée (jamais
+ * son email ni son corps) : son corps reste vide.
+ *
+ * L'identifiant du message (L14, tour de correction de la revue finale du lot
+ * 3 bis) est celui de la tâche `/inbox` appariée, PAS celui de la ligne du
+ * journal `/replies`. Deux raisons :
+ *  - répondre passe par `POST /inbox/{messageId}/reply`, qui n'accepte que le
+ *    premier — le second faisait échouer toute réponse à un fil détecté par
+ *    SalesBlink ;
+ *  - c'est le seul identifiant que la relève Microsoft Graph peut retrouver,
+ *    donc le seul qui évite d'enregistrer deux fois la même réponse quand les
+ *    deux relèves la voient.
+ * L'identifiant du journal reste porté en en-tête (`salesblink_reply_id`) :
+ * il est stable d'un passage à l'autre, même quand l'appariement échoue une
+ * fois et réussit la suivante, et la garde de `recordInboundReply` s'en sert
+ * pour reconnaître le message dans ce cas.
  */
 function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[], org: string): EvenementEmail[] {
   const corpsApparies = apparierReponsesEtTaches(reponses, taches);
   const evenements: EvenementEmail[] = [];
   for (const r of reponses) {
     if (!r.email) continue;
-    if (!reponseSansCorps(r)) {
-      evenements.push({ type: 'repondu', email: r.email, corps: r.corps ?? '', sujet: null, messageId: r.id || null, aMs: r.horodatageMs });
-      continue;
-    }
-    const trouve = corpsApparies.get(r.id);
-    if (!trouve) {
+    const apparie = corpsApparies.get(r.id) ?? null;
+    if (apparie === null && reponseSansCorps(r)) {
       console.warn(
         `[releve-salesblink] org ${org} : réponse ${r.id} sans tâche /inbox correspondante, corps laissé vide`,
       );
@@ -328,10 +336,15 @@ function versEvenementsRepondus(reponses: Rapport[], taches: EnvoiSorti[], org: 
     evenements.push({
       type: 'repondu',
       email: r.email,
-      corps: trouve?.corps ?? '',
-      sujet: trouve?.sujet ?? null,
-      messageId: r.id || null,
+      corps: reponseSansCorps(r) ? (apparie?.corps ?? '') : (r.corps ?? ''),
+      sujet: apparie?.sujet ?? null,
+      messageId: apparie?.messageId ?? (r.id || null),
       aMs: r.horodatageMs,
+      headers: {
+        subject: apparie?.sujet ?? null,
+        salesblink_reply_id: r.id || null,
+        salesblink_inbox_message_id: apparie?.messageId ?? null,
+      },
     });
   }
   return evenements;

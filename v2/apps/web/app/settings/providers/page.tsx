@@ -1,6 +1,12 @@
 import { getTranslations, getLocale } from 'next-intl/server';
 import { PROVIDER_CATALOG } from '@jay-reach/providers';
 import { createClientOrNull } from '../../../lib/supabase/server';
+import {
+  FOURNISSEURS_AVEC_RELEVE,
+  indexerEtatsReleve,
+  resumeReleve,
+  type LigneEtatReleve,
+} from '../../../lib/etat-releve';
 import { AppTopBar } from '../../chrome';
 import { ProviderForm } from './provider-form';
 
@@ -72,18 +78,20 @@ export default async function ProvidersPage() {
     ((usages ?? []) as { provider_id: string; used: number; daily_cap: number }[]).map((u) => [u.provider_id, u]),
   );
 
-  // Relève SalesBlink : dernier passage et dernière erreur, propres au transport email.
-  const syncState = supabase
+  // Relève des réponses : dernier passage et dernière erreur, pour chacun des
+  // deux fournisseurs qui relèvent une boîte (SalesBlink et Microsoft Graph).
+  // Sans la ligne Microsoft Graph, un 403 de politique d'accès Exchange ou un
+  // secret expiré n'apparaîtrait nulle part.
+  const syncStates = supabase
     ? (
         await supabase
           .from('provider_sync_state')
-          .select('last_run_at, last_error')
+          .select('provider, last_run_at, last_error')
           .eq('organization_id', orgId)
-          .eq('provider', 'salesblink')
-          .maybeSingle()
+          .in('provider', [...FOURNISSEURS_AVEC_RELEVE])
       ).data
     : null;
-  const salesblinkSync = syncState as { last_run_at: string | null; last_error: string | null } | null;
+  const etatsReleve = indexerEtatsReleve((syncStates ?? []) as LigneEtatReleve[]);
 
   const categories = CATEGORY_ORDER.map((cat) => ({
     cat,
@@ -119,13 +127,9 @@ export default async function ProvidersPage() {
                     : row?.status === 'configured' && capConfigure !== null
                       ? { used: 0, cap: capConfigure }
                       : null;
-                const lastSyncAgo =
-                  provider.id === 'salesblink'
-                    ? salesblinkSync?.last_run_at
-                      ? formatAgo(salesblinkSync.last_run_at, locale)
-                      : 'never'
-                    : null;
-                const lastSyncError = provider.id === 'salesblink' ? (salesblinkSync?.last_error ?? null) : null;
+                const releve = resumeReleve(etatsReleve, provider.id);
+                const lastSyncAgo = releve ? (releve.lastRunAt ? formatAgo(releve.lastRunAt, locale) : 'never') : null;
+                const lastSyncError = releve?.lastError ?? null;
                 return (
                   <ProviderForm
                     key={provider.id}

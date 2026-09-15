@@ -36,6 +36,8 @@ export interface SenderRow {
   /** Boîte SalesBlink reliée (son `id` chez SalesBlink), ou `null`. */
   readonly provider_ref: string | null;
   readonly provider_state: ProviderState | null;
+  /** Lecture directe des réponses (Microsoft Graph), ou `null` si désactivée. */
+  readonly inbox_provider: 'microsoft_graph' | null;
 }
 
 /** Une boîte du workspace SalesBlink, telle que proposée par le sélecteur. */
@@ -266,6 +268,41 @@ function SelecteurBoiteSalesBlink({
   );
 }
 
+/**
+ * Case d'activation de la lecture directe des réponses (Microsoft Graph) pour
+ * une boîte email. Partagée entre la carte d'un expéditeur existant et le
+ * formulaire de création, comme le sélecteur de boîte SalesBlink au-dessus :
+ * même geste dans les deux cas.
+ */
+function CaseLectureDirecte({
+  inboxProvider,
+  onInboxProvider,
+  idChamp,
+}: {
+  inboxProvider: 'microsoft_graph' | null;
+  onInboxProvider: (v: 'microsoft_graph' | null) => void;
+  idChamp: string;
+}) {
+  const t = useTranslations('senders');
+
+  return (
+    <div>
+      <label className="rs-check" htmlFor={idChamp}>
+        <input
+          id={idChamp}
+          type="checkbox"
+          checked={inboxProvider === 'microsoft_graph'}
+          onChange={(e) => onInboxProvider(e.target.checked ? 'microsoft_graph' : null)}
+        />
+        {t('inboxProvider')}
+      </label>
+      <p className="rs-row-sub" style={{ margin: 0 }}>
+        {t('inboxProviderHint')}
+      </p>
+    </div>
+  );
+}
+
 function CarteExpediteur({
   sender,
   orgId,
@@ -285,6 +322,7 @@ function CarteExpediteur({
   const [fenetre, setFenetre] = useState<Fenetre>(() => lireFenetre(sender.business_hours));
   const [fuseau, setFuseau] = useState(sender.timezone ?? 'Europe/Paris');
   const [providerRef, setProviderRef] = useState<string | null>(sender.provider_ref);
+  const [inboxProvider, setInboxProvider] = useState<'microsoft_graph' | null>(sender.inbox_provider);
   const [etat, setEtat] = useState<'repos' | 'envoi' | 'enregistre'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -296,6 +334,7 @@ function CarteExpediteur({
     actif !== sender.is_active ||
     fuseau !== (sender.timezone ?? 'Europe/Paris') ||
     providerRef !== sender.provider_ref ||
+    inboxProvider !== sender.inbox_provider ||
     fenetre.startHour !== fenetreInitiale.startHour ||
     fenetre.endHour !== fenetreInitiale.endHour ||
     !memesJours(fenetre.days, fenetreInitiale.days);
@@ -329,6 +368,7 @@ function CarteExpediteur({
       days: fenetre.days,
       timezone: fuseau,
       providerRef,
+      inboxProvider,
     });
     if (res.ok) {
       setEtat('enregistre');
@@ -372,6 +412,11 @@ function CarteExpediteur({
               {sante}
             </p>
           ) : null}
+          <CaseLectureDirecte
+            inboxProvider={inboxProvider}
+            onInboxProvider={touche(setInboxProvider)}
+            idChamp={`${sender.id}-lecture-directe`}
+          />
         </>
       ) : null}
 
@@ -466,6 +511,7 @@ function AjouterExpediteur({
   const [fenetre, setFenetre] = useState<Fenetre>({ ...FENETRE_PAR_DEFAUT, days: [...FENETRE_PAR_DEFAUT.days] });
   const [fuseau, setFuseau] = useState('Europe/Paris');
   const [providerRef, setProviderRef] = useState<string | null>(null);
+  const [inboxProvider, setInboxProvider] = useState<'microsoft_graph' | null>(null);
   const [etat, setEtat] = useState<'repos' | 'envoi'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -478,6 +524,7 @@ function AjouterExpediteur({
     setFenetre({ ...FENETRE_PAR_DEFAUT, days: [...FENETRE_PAR_DEFAUT.days] });
     setFuseau('Europe/Paris');
     setProviderRef(null);
+    setInboxProvider(null);
     setErreur(null);
   }
 
@@ -496,6 +543,7 @@ function AjouterExpediteur({
       days: fenetre.days,
       timezone: fuseau,
       providerRef: canal === 'email' ? providerRef : null,
+      inboxProvider: canal === 'email' ? inboxProvider : null,
     });
     setEtat('repos');
     if (res.ok) {
@@ -564,12 +612,19 @@ function AjouterExpediteur({
           </label>
 
           {canal === 'email' ? (
-            <SelecteurBoiteSalesBlink
-              boitesSalesBlink={boitesSalesBlink}
-              providerRef={providerRef}
-              onProviderRef={setProviderRef}
-              idChamp="nouvel-expediteur-boite-salesblink"
-            />
+            <>
+              <SelecteurBoiteSalesBlink
+                boitesSalesBlink={boitesSalesBlink}
+                providerRef={providerRef}
+                onProviderRef={setProviderRef}
+                idChamp="nouvel-expediteur-boite-salesblink"
+              />
+              <CaseLectureDirecte
+                inboxProvider={inboxProvider}
+                onInboxProvider={setInboxProvider}
+                idChamp="nouvel-expediteur-lecture-directe"
+              />
+            </>
           ) : null}
 
           <label className="rs-label">
