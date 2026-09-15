@@ -11,6 +11,8 @@ export type TiroirProps = {
   pied?: ReactNode;
   onFermer: () => void;
   libelleFermer: string;
+  /** 'large' (600px) pour un formulaire riche (objet + corps + aperçu) — 'normal' (520px, défaut) sinon. */
+  taille?: 'normal' | 'large';
   children?: ReactNode;
 };
 
@@ -23,13 +25,14 @@ export function Tiroir({
   pied,
   onFermer,
   libelleFermer,
+  taille,
   children,
 }: TiroirProps) {
   if (!ouvert) return null;
   return (
     <>
       <div className="jr-voile" onClick={onFermer} />
-      <aside className="jr-tiroir">
+      <aside className={['jr-tiroir', taille === 'large' ? 'large' : undefined].filter(Boolean).join(' ')}>
         <div className="entete">
           {icone}
           <div>

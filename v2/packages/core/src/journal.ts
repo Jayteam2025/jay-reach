@@ -46,7 +46,14 @@ export type ActionJournal =
   | 'source.created'
   | 'source.updated'
   | 'source.toggled'
-  | 'source.run_requested';
+  | 'source.run_requested'
+  // Actions d'opérateur sur la séquence d'une campagne (tâche 12,
+  // `fonctions/sequence.ts`) : écriture/suppression d'une étape, envoi d'un
+  // test. Même limite que `source.*` ci-dessus : pas encore repris dans
+  // `listerActivite` (campagnes.ts).
+  | 'step.saved'
+  | 'step.deleted'
+  | 'step.test_sent';
 
 export interface EvenementJournal {
   readonly organisationId: string;

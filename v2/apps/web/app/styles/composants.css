@@ -193,6 +193,8 @@
 .jr-conversations .etiquettes { grid-column: 2 / 4; display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .jr-filtres { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--jr-filet); }
 .jr-puces { display: flex; gap: 6px; flex-wrap: wrap; }
+.jr-puces.variables { margin-top: 6px; }
+button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5px; cursor: pointer; }
 
 /* Sources */
 .jr-source { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
@@ -209,7 +211,10 @@
 .jr-sequence-pilules .pilule.en-cours { border-color: var(--jr-accent); background: var(--jr-accent-doux); color: var(--jr-accent); font-weight: 600; }
 .jr-sequence-pilules .delai { color: var(--jr-secondaire); }
 .jr-flux { padding: 24px 28px 32px; background-image: radial-gradient(var(--jr-filet) 1px, transparent 1px); background-size: 18px 18px; display: grid; justify-items: center; gap: 0; }
-.jr-flux .noeud { width: 720px; max-width: 100%; }
+.jr-flux .noeud { width: 720px; max-width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; }
+.jr-flux .noeud.fin { border-color: var(--jr-bon-doux); }
+.jr-tuile-logo.fin { color: var(--jr-bon); border-color: var(--jr-bon-doux); background: var(--jr-bon-doux); }
+.jr-flux-entete { padding: 20px 28px 0; }
 .jr-flux .fleche { color: var(--jr-secondaire); font-size: var(--jr-petit); padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
 .jr-flux .fleche::after { content: ""; width: 1px; height: 16px; background: var(--jr-filet); }
 .jr-etape { display: grid; grid-template-columns: 40px 560px 200px; gap: 14px; align-items: start; width: 840px; max-width: 100%; }
@@ -250,6 +255,7 @@
 .jr-menu .entree small { display: block; color: var(--jr-secondaire); font-size: 12px; }
 .jr-voile { position: absolute; inset: 0; background: var(--jr-voile); z-index: 3; }
 .jr-tiroir { position: absolute; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--jr-surface); border-left: 1px solid var(--jr-filet); box-shadow: var(--jr-ombre-tiroir); display: flex; flex-direction: column; z-index: 4; }
+.jr-tiroir.large { width: 600px; }
 .jr-tiroir .entete { padding: 20px 24px 16px; border-bottom: 1px solid var(--jr-filet); display: flex; gap: 14px; align-items: flex-start; }
 .jr-tiroir .entete h2 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .jr-tiroir .entete p { margin: 2px 0 8px; color: var(--jr-secondaire); font-size: 13.5px; }
@@ -263,6 +269,7 @@
 .jr-vide p { margin: 0; max-width: 46ch; }
 .jr-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--jr-encre); color: var(--jr-surface); border-radius: var(--jr-rayon); padding: 10px 16px; font-size: 13.5px; box-shadow: var(--jr-ombre-menu); z-index: 9; }
 .jr-notification.erreur { background: var(--jr-erreur); }
+.jr-notification.bon { background: var(--jr-bon); }
 .jr-bandeau { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--jr-rayon-controle); font-size: 13.5px; border: 1px solid transparent; }
 .jr-bandeau.attention { background: var(--jr-attention-doux); color: var(--jr-attention); }
 .jr-bandeau.erreur { background: var(--jr-erreur-doux); color: var(--jr-erreur); }

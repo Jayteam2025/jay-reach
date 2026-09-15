@@ -87,24 +87,27 @@ describe('clés de traduction', () => {
     expect(manquantes).toEqual([]);
   });
 
-  it("toutes celles déclarées sous campagne.sources sont référencées par un écran", () => {
-    // Sens inverse du test ci-dessus : une clé oubliée (jamais nettoyée après
-    // une réécriture d'écran) ne casse aucun rendu, donc rien d'autre ne
-    // l'attrape. Limité à `campagne.sources.*`, l'espace de la tâche 11.
-    //
-    // Recherche textuelle brute plutôt qu'un suivi précis variable → namespace :
-    // les écrans de cet espace déclarent `t` de façons trop variées (simple
-    // `const`, déstructuration d'un `Promise.all`, paramètre de fonction) pour
-    // le regex de déclaration ci-dessus, qui sous-compterait les usages réels.
+  // Sens inverse du test ci-dessus : une clé oubliée (jamais nettoyée après
+  // une réécriture d'écran) ne casse aucun rendu, donc rien d'autre ne
+  // l'attrape. Limité aux espaces ci-dessous (un par tâche qui les possède).
+  //
+  // Recherche textuelle brute plutôt qu'un suivi précis variable → namespace :
+  // les écrans de ces espaces déclarent `t` de façons trop variées (simple
+  // `const`, déstructuration d'un `Promise.all`, paramètre de fonction) pour
+  // le regex de déclaration ci-dessus, qui sous-compterait les usages réels.
+  function clesMortesSous(prefixe: string): string[] {
     const texte = fichiersTsx(join(racine, 'apps/web'))
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
     const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefixeRegExp = new RegExp(`^${echapper(prefixe)}\\.`);
 
-    const mortes = clesDeclarees('campagne.sources').filter((complet) => {
-      const relatif = complet.replace(/^campagne\.sources\./, '');
+    return clesDeclarees(prefixe).filter((complet) => {
+      const relatif = complet.replace(prefixeRegExp, '');
       // Une clé sous `card` peut être référencée via le sous-namespace
-      // `campagne.sources.card` (donc sans le préfixe `card.`).
+      // `<prefixe>.card` (donc sans le préfixe `card.`) — inchangé depuis la
+      // tâche 11, jamais élargi à un autre sous-namespace pour ne pas
+      // affaiblir ce contrôle sur `campagne.sources.*`.
       const candidats = [relatif];
       if (relatif.startsWith('card.')) candidats.push(relatif.slice('card.'.length));
 
@@ -122,7 +125,12 @@ describe('clés de traduction', () => {
         return false;
       });
     });
+  }
 
-    expect(mortes).toEqual([]);
-  });
+  it.each(['campagne.sources', 'campagne.sequence'])(
+    'toutes celles déclarées sous %s sont référencées par un écran',
+    (prefixe) => {
+      expect(clesMortesSous(prefixe)).toEqual([]);
+    },
+  );
 });

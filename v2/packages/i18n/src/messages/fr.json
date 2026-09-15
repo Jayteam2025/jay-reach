@@ -1286,6 +1286,59 @@
         "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import. Les entreprises ajoutées apparaissent dans Contacts › Entreprises.",
         "directoryRetain": "Ajouter {n} entreprises"
       }
+    },
+    "sequence": {
+      "title": "Séquence",
+      "description": "Les étapes envoyées automatiquement aux contacts qualifiés de cette campagne.",
+      "add": "+ Ajouter une étape",
+      "empty": {
+        "title": "Aucune étape pour l'instant",
+        "text": "Ajoutez une première étape pour que le moteur commence à écrire aux contacts qualifiés."
+      },
+      "flow": {
+        "sourcesTitle": "Sources",
+        "sourcesSubtitle": "{n, plural, one {# source alimente} other {# sources alimentent}} cette campagne, {m, plural, one {# contact qualifié} other {# contacts qualifiés}} à ce jour",
+        "intoSequence": "Les contacts qualifiés avec un email vérifié entrent en séquence",
+        "delayDays": "{n, plural, one {# jour après} other {# jours après}}",
+        "delayHours": "{n, plural, one {# heure après} other {# heures après}}",
+        "endTitle": "Fin de séquence",
+        "endText": "{n, plural, one {# contact est allé au bout sans répondre, il reste} other {# contacts sont allés au bout sans répondre, ils restent}} dans la campagne : on ne les recontacte pas."
+      },
+      "card": {
+        "step": "Étape {n}",
+        "passedThrough": "{n, plural, one {# contact est passé par cette étape} other {# contacts sont passés par cette étape}}",
+        "noMessage": "Aucun message écrit pour cette étape.",
+        "modify": "Modifier",
+        "repliedHere": "Ont répondu ici",
+        "leftSequence": "{n, plural, one {# est sorti de la séquence} other {# sont sortis de la séquence}}",
+        "linkedinNotice": "La séquence LinkedIn se pilote depuis le serveur (à venir).",
+        "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
+      },
+      "drawer": {
+        "close": "Fermer",
+        "titleNew": "Nouvelle étape",
+        "titleEdit": "Étape {n} · {titre}",
+        "channel": "Canal",
+        "channelEmail": "Email",
+        "stats": "{passes, plural, one {# envoyé} other {# envoyés}} · {repondus, plural, one {# réponse} other {# réponses}}",
+        "delay": "Délai après l'étape précédente",
+        "delayHint": "Les relances déjà planifiées gardent l'ancien délai.",
+        "delayUnitDays": "jours",
+        "delayUnitHours": "heures",
+        "subject": "Objet",
+        "body": "Corps",
+        "bodyHint": "Variables : cliquez pour insérer au curseur. Jamais de repli sur '{{'prenom'}}' : sans prénom, l'envoi est bloqué. La signature de la boîte est ajoutée à l'envoi.",
+        "preview": "Aperçu",
+        "previewCaption": "rendu avec un contact fictif",
+        "save": "Enregistrer",
+        "create": "Créer l'étape",
+        "cancel": "Annuler",
+        "delete": "Supprimer l'étape",
+        "deleteConfirm": "Supprimer cette étape de la séquence ?",
+        "sendTest": "M'envoyer un test",
+        "testSent": "Test envoyé : il apparaîtra bientôt dans la File du jour.",
+        "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour."
+      }
     }
   }
 }
