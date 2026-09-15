@@ -16,13 +16,14 @@ export interface CarteEtapeProps {
  * côté, la carte « Ont répondu ici » quand au moins un contact a répondu
  * précisément à cette étape.
  *
- * Seules les étapes email s'éditent depuis ce tiroir (R19 / en-tête de
- * `packages/core/src/fonctions/sequence.ts`) : une carte LinkedIn n'a pas de
- * lien Modifier.
+ * Les étapes email ET LinkedIn s'éditent depuis ce tiroir (R48, tour de
+ * correction 1 : une campagne réelle alterne déjà les deux) — seule
+ * l'EXÉCUTION d'une étape LinkedIn (l'envoi réel) reste pilotée côté serveur
+ * (lot 4, pas encore livré), signalé en sous-titre plutôt que par l'absence
+ * du lien Modifier.
  */
 export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
   const t = useTranslations('campagne.sequence');
-  const modifiable = etape.canal === 'email';
 
   return (
     <div className="jr-etape">
@@ -34,7 +35,8 @@ export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
             <b>{etape.titre}</b>
             <small>
               {t('card.step', { n: etape.position })}
-              {etape.position === 1 && modifiable ? ` · ${t('card.salesblinkNotice')}` : ''}
+              {etape.canal === 'linkedin' && ` · ${t('card.linkedinNotice')}`}
+              {etape.canal === 'email' && etape.position === 1 && ` · ${t('card.salesblinkNotice')}`}
             </small>
           </span>
         </div>
@@ -50,13 +52,9 @@ export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
         </div>
         <div className="pied">
           <span>{t('card.passedThrough', { n: etape.passes })}</span>
-          {modifiable ? (
-            <Link href={`/campaigns/${campagneId}/sequence?etape=${etape.id}`} className="jr-lien">
-              {t('card.modify')}
-            </Link>
-          ) : (
-            <span className="jr-secondaire">{t('card.linkedinNotice')}</span>
-          )}
+          <Link href={`/campaigns/${campagneId}/sequence?etape=${etape.id}`} className="jr-lien">
+            {t('card.modify')}
+          </Link>
         </div>
       </div>
       {etape.repondusIci.total > 0 && (

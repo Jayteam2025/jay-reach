@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { lireSequence, apercuEtape } from '@jay-reach/core';
+import { lireSequence, apercuEtape, ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
 import { FluxSequence } from '../../../../../components/sequence/FluxSequence';
@@ -29,9 +29,19 @@ export default async function CampagneSequencePage({
 
   let tiroir: ReactNode = null;
   if (brutEtape) {
-    const etape = vue.etapes.find((e) => e.id === brutEtape && e.canal === 'email');
+    const etape = vue.etapes.find((e) => e.id === brutEtape);
     if (etape) {
-      const apercu = await apercuEtape(ctx, { etapeId: etape.id });
+      // Défensif : `etape` vient de `vue.etapes` (déjà filtré par organisation),
+      // `apercuEtape` ne devrait donc jamais la manquer — mais une étape
+      // supprimée entre les deux lectures ne doit pas faire tomber la page,
+      // seulement priver le tiroir de son aperçu.
+      let apercu: { sujet: string; corps: string } | null = null;
+      try {
+        const resultat = await apercuEtape(ctx, { etapeId: etape.id });
+        apercu = resultat.corps ? resultat : null;
+      } catch (err) {
+        if (!(err instanceof ErreurIntrouvable)) throw err;
+      }
       tiroir = (
         <TiroirEtape
           campagneId={id}
@@ -39,13 +49,14 @@ export default async function CampagneSequencePage({
             id: etape.id,
             position: etape.position,
             titre: etape.titre,
+            canal: etape.canal,
             sujet: etape.sujet ?? '',
             corps: etape.corps,
             delaiHeures: etape.delaiHeures,
             passes: etape.passes,
             repondusTotal: etape.repondusIci.total,
           }}
-          apercu={apercu.corps ? apercu : null}
+          apercu={apercu}
         />
       );
     }

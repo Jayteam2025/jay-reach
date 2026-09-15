@@ -257,17 +257,77 @@ describe('enregistrerEtape', () => {
     expect(textes).toMatch(/jr:sequence_modele_versionner/);
   });
 
-  it('refuse de modifier une étape non email depuis ce tiroir', async () => {
+  it('R48 : une création email sans objet est refusée', async () => {
     const ctx = faux(
-      {
-        'jr:sequence_etape_campagne_lire': [{ name: 'X', source_id: null, locale: 'fr' }],
-        'jr:sequence_etape_existante': [{ template_parent_id: null, channel: 'linkedin_message' }],
-      },
+      { 'jr:sequence_etape_campagne_lire': [{ name: 'X', source_id: null, locale: 'fr' }] },
       'admin',
     );
     await expect(
-      enregistrerEtape(ctx, { campagneId, etapeId, sujet: 'Objet', corps: 'Corps', delaiHeures: 0 }),
+      enregistrerEtape(ctx, { campagneId, canal: 'email', corps: 'Corps', delaiHeures: 0 }),
     ).rejects.toThrow(ErreurEntree);
+    expect(texteDesAppels(ctx)).toEqual([]);
+  });
+
+  it('R48 : une création LinkedIn sans objet est acceptée (canal linkedin_message par défaut)', async () => {
+    const nouvelleEtapeId = '99999999-9999-9999-9999-999999999999';
+    const ctx = faux(
+      {
+        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: 'src-1', locale: 'fr' }],
+        'jr:sequence_extraits': [],
+        'jr:sequence_modele_creer': [{ id: 'modele-li-1' }],
+        'jr:sequence_etape_position': [{ n: 0 }],
+        'jr:sequence_etape_creer': [{ id: nouvelleEtapeId }],
+      },
+      'admin',
+    );
+
+    const res = await enregistrerEtape(ctx, {
+      campagneId,
+      canal: 'linkedin',
+      corps: 'Bonjour {{prenom}}, je vous invite à échanger.',
+      delaiHeures: 0,
+    });
+
+    expect(res).toEqual({ etapeId: nouvelleEtapeId });
+    const creerModele = appelsDe(ctx).find((a) => /jr:sequence_modele_creer/i.test(String(a[0])));
+    expect(creerModele?.[1]).toEqual([
+      'org-1',
+      'Directeur commercial',
+      'linkedin_message',
+      'fr',
+      null,
+      'Bonjour {{prenom}}, je vous invite à échanger.',
+      'step',
+      'user-1',
+    ]);
+    const creerEtape = appelsDe(ctx).find((a) => /jr:sequence_etape_creer/i.test(String(a[0])));
+    expect(creerEtape?.[1]).toEqual([campagneId, 0, 'linkedin_message', 0, 'modele-li-1']);
+  });
+
+  it('R48 : modifier une étape linkedin_invite garde le canal linkedin_invite', async () => {
+    const ctx = faux(
+      {
+        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: null, locale: 'fr' }],
+        'jr:sequence_etape_existante': [{ template_parent_id: templateParentId, channel: 'linkedin_invite' }],
+        'jr:sequence_extraits': [],
+        'jr:sequence_modele_prochaine_version': [{ next: 2 }],
+        'jr:sequence_modele_versionner': [{ id: 'v2-id' }],
+        'jr:sequence_etape_maj': [{ id: etapeId }],
+      },
+      'admin',
+    );
+
+    const res = await enregistrerEtape(ctx, {
+      campagneId,
+      etapeId,
+      canal: 'linkedin',
+      corps: 'Corps mis à jour {{prenom}}',
+      delaiHeures: 0,
+    });
+
+    expect(res).toEqual({ etapeId });
+    const maj = appelsDe(ctx).find((a) => /jr:sequence_etape_maj/i.test(String(a[0])));
+    expect(maj?.[1]).toEqual([templateParentId, 0, 'linkedin_invite', etapeId, campagneId]);
   });
 });
 

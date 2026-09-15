@@ -13,6 +13,7 @@ export interface EtapeAModifier {
   /** 1-based, pour le titre du tiroir. */
   readonly position: number;
   readonly titre: string;
+  readonly canal: 'email' | 'linkedin';
   readonly sujet: string;
   readonly corps: string;
   readonly delaiHeures: number;
@@ -46,10 +47,12 @@ function heuresVersUnite(heures: number): { valeur: number; unite: 'heures' | 'j
 }
 
 /**
- * Tiroir de création/édition d'une étape email (maquette `tiroir-etape.html`) :
- * objet, corps (textarea + variables à insérer au curseur — pas d'éditeur
- * riche, le rendu HTML se fait côté envoi comme aujourd'hui), délai,
- * aperçu rendu et envoi de test.
+ * Tiroir de création/édition d'une étape, email ou LinkedIn (maquette
+ * `tiroir-etape.html`, canal étendu par R48 : une campagne réelle alterne
+ * déjà les deux) : canal, objet (email seulement), corps (textarea +
+ * variables à insérer au curseur — pas d'éditeur riche, le rendu HTML se fait
+ * côté envoi comme aujourd'hui), délai, aperçu rendu et envoi de test (email
+ * seulement — une invitation/message LinkedIn s'exécute côté serveur, lot 4).
  */
 export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
   const t = useTranslations('campagne.sequence');
@@ -60,6 +63,7 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
   const [testMessage, setTestMessage] = useState<string | null>(null);
 
   const initial = heuresVersUnite(etape?.delaiHeures ?? 0);
+  const [canal, setCanal] = useState<'email' | 'linkedin'>(etape?.canal ?? 'email');
   const [sujet, setSujet] = useState(etape?.sujet ?? '');
   const [corps, setCorps] = useState(etape?.corps ?? '');
   const [delaiValeur, setDelaiValeur] = useState(String(initial.valeur));
@@ -94,6 +98,7 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
     startTransition(async () => {
       const res = await actionEnregistrerEtape(campagneId, {
         etapeId: etape?.id,
+        canal,
         sujet,
         corps,
         delaiHeures,
@@ -134,14 +139,17 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
     });
   }
 
-  const puces = etape
-    ? [
-        <Puce key="canal">{t('drawer.channelEmail')}</Puce>,
-        <Puce key="stats" ton="bon">
-          {t('drawer.stats', { passes: etape.passes, repondus: etape.repondusTotal })}
-        </Puce>,
-      ]
-    : [<Puce key="canal">{t('drawer.channelEmail')}</Puce>];
+  const libelleCanal = t(canal === 'linkedin' ? 'drawer.channelLinkedin' : 'drawer.channelEmail');
+  const puces = [
+    <Puce key="canal">{libelleCanal}</Puce>,
+    ...(etape
+      ? [
+          <Puce key="stats" ton="bon">
+            {t('drawer.stats', { passes: etape.passes, repondus: etape.repondusTotal })}
+          </Puce>,
+        ]
+      : []),
+  ];
 
   return (
     <Tiroir
@@ -150,7 +158,7 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
       onFermer={fermer}
       libelleFermer={t('drawer.close')}
       titre={etape ? t('drawer.titleEdit', { n: etape.position, titre: etape.titre }) : t('drawer.titleNew')}
-      icone={<TuileLogo marque="email" taille="grande" />}
+      icone={<TuileLogo marque={canal === 'linkedin' ? 'linkedin' : 'email'} taille="grande" />}
       puces={puces}
       pied={
         <>
@@ -160,7 +168,7 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
                 {t('drawer.delete')}
               </Bouton>
             )}
-            {etape && (
+            {etape && canal === 'email' && (
               <Bouton onClick={envoyerTest} disabled={pending}>
                 {t('drawer.sendTest')}
               </Bouton>
@@ -180,7 +188,10 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
       <div className="jr-formulaire">
         <div className="ligne">
           <Champ libelle={t('drawer.channel')}>
-            <span>{t('drawer.channelEmail')}</span>
+            <select value={canal} onChange={(e) => setCanal(e.target.value as 'email' | 'linkedin')}>
+              <option value="email">{t('drawer.channelEmail')}</option>
+              <option value="linkedin">{t('drawer.channelLinkedin')}</option>
+            </select>
           </Champ>
           <div>
             <span className="jr-libelle">{t('drawer.delay')}</span>
@@ -204,9 +215,11 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
           </div>
         </div>
 
-        <Champ libelle={t('drawer.subject')}>
-          <input value={sujet} onChange={(e) => setSujet(e.target.value)} />
-        </Champ>
+        {canal === 'email' && (
+          <Champ libelle={t('drawer.subject')}>
+            <input value={sujet} onChange={(e) => setSujet(e.target.value)} />
+          </Champ>
+        )}
 
         <div>
           <span className="jr-libelle">{t('drawer.body')}</span>
@@ -247,7 +260,7 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
 
         {apercu && <ApercuMessage sujet={apercu.sujet} corps={apercu.corps} />}
 
-        {etape && <p className="jr-aide">{t('drawer.testNote')}</p>}
+        {etape && canal === 'email' && <p className="jr-aide">{t('drawer.testNote')}</p>}
       </div>
     </Tiroir>
   );

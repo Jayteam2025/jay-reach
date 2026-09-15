@@ -1311,7 +1311,7 @@
         "modify": "Modifier",
         "repliedHere": "Ont répondu ici",
         "leftSequence": "{n, plural, one {# est sorti de la séquence} other {# sont sortis de la séquence}}",
-        "linkedinNotice": "La séquence LinkedIn se pilote depuis le serveur (à venir).",
+        "linkedinNotice": "l'envoi s'exécute côté serveur (à venir)",
         "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
       },
       "drawer": {
@@ -1320,6 +1320,7 @@
         "titleEdit": "Étape {n} · {titre}",
         "channel": "Canal",
         "channelEmail": "Email",
+        "channelLinkedin": "LinkedIn",
         "stats": "{passes, plural, one {# envoyé} other {# envoyés}} · {repondus, plural, one {# réponse} other {# réponses}}",
         "delay": "Délai après l'étape précédente",
         "delayHint": "Les relances déjà planifiées gardent l'ancien délai.",

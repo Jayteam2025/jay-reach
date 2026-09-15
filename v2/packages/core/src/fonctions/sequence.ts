@@ -6,11 +6,12 @@
  *
  * R19 : une étape courrier ou appel n'a pas de canal affichable ici — la
  * séquence ne montre QUE les étapes email et LinkedIn (`CANAUX_AFFICHES`
- * ci-dessous). Les étapes créées/éditées par CE tiroir sont exclusivement des
- * étapes email : le formulaire (objet + corps + variables) n'a pas de sens
- * pour un canal LinkedIn, dont la création reste pilotée côté serveur (lot 4,
- * pas encore livré). Un pas LinkedIn déjà en base s'affiche donc en lecture
- * seule (pas de lien « Modifier »).
+ * ci-dessous). Le tiroir peut créer/éditer les deux (R48, tour de correction
+ * 1 : une séquence réelle alterne déjà email et LinkedIn), avec un objet
+ * seulement pour l'email (`canalReelEtape` ci-dessous) — le tiroir ne
+ * distingue pas invitation/message LinkedIn, une nuance pilotée côté serveur
+ * (lot 4, pas encore livré) : il garde le canal LinkedIn déjà en base pour une
+ * étape existante, ou pose `linkedin_message` par défaut à la création.
  *
  * Vocabulaire des étapes (`titre`, `titreEtape` ci-dessous) : même convention
  * que `nomEtape` (`fonctions/file-du-jour.ts`) pour une étape email —
@@ -369,14 +370,36 @@ export async function verserDansBibliotheque(ctx: Contexte, entree: unknown): Pr
 // enregistrerEtape / supprimerEtape
 // ---------------------------------------------------------------------------
 
-export const schemaEnregistrerEtape = z.object({
-  campagneId: z.string().uuid(),
-  etapeId: z.string().uuid().optional(),
-  sujet: z.string().min(1).max(200),
-  corps: z.string().min(1),
-  delaiHeures: z.number().int().min(0),
-  position: z.number().int().min(1).optional(),
-});
+export const schemaEnregistrerEtape = z
+  .object({
+    campagneId: z.string().uuid(),
+    etapeId: z.string().uuid().optional(),
+    /** LinkedIn n'a pas d'objet (`sujet` facultatif) — un email en a toujours besoin, voir `superRefine`. */
+    canal: z.enum(['email', 'linkedin']).default('email'),
+    sujet: z.string().max(200).optional(),
+    corps: z.string().min(1),
+    delaiHeures: z.number().int().min(0),
+    position: z.number().int().min(1).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.canal === 'email' && !v.sujet?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['sujet'], message: 'Un email a besoin d’un objet.' });
+    }
+  });
+
+/**
+ * Canal `channel_kind` réel d'une étape à écrire (R48) : `email` → `'email'` ;
+ * `linkedin` → garde le canal LinkedIn déjà en base pour cette étape s'il y en
+ * a un (`linkedin_invite`/`linkedin_message`, jamais changé par ce tiroir qui
+ * n'a pas de notion d'invitation/message), sinon `'linkedin_message'` par
+ * défaut à la création (une invitation se crée aujourd'hui côté serveur, lot
+ * 4 — ce tiroir ne propose que le message).
+ */
+function canalReelEtape(canalFormulaire: 'email' | 'linkedin', canalExistant: string | undefined): CanalModele {
+  if (canalFormulaire === 'email') return 'email';
+  if (canalExistant === 'linkedin_invite' || canalExistant === 'linkedin_message') return canalExistant;
+  return 'linkedin_message';
+}
 
 interface LigneCampagneEtape {
   name: string;
@@ -396,13 +419,11 @@ export async function lireCampagnePourEtape(ctx: Contexte, campagneId: string): 
 }
 
 /**
- * Crée (sans `etapeId`) ou réécrit (avec) une étape EMAIL de la séquence.
- * Message et étape s'écrivent dans une seule transaction : un message versionné
- * sans son étape à jour (ou l'inverse) laisserait la séquence dans un état
- * incohérent qu'aucun écran ne rattraperait.
- *
- * Seul le canal email passe par ce formulaire (pas de champ `canal` en
- * entrée) : voir l'en-tête du fichier.
+ * Crée (sans `etapeId`) ou réécrit (avec) une étape de la séquence, email ou
+ * LinkedIn (R48 : la campagne réelle alterne les deux). Message et étape
+ * s'écrivent dans une seule transaction : un message versionné sans son étape
+ * à jour (ou l'inverse) laisserait la séquence dans un état incohérent
+ * qu'aucun écran ne rattraperait.
  */
 export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<{ etapeId: string }> {
   exiger(ctx, 'admin');
@@ -412,6 +433,7 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
   const locale = campagne.locale ?? 'fr';
 
   let templateParentId: string | null = null;
+  let canalExistant: string | undefined;
   if (e.etapeId) {
     const etapeRes = await ctx.ex.query<{ template_parent_id: string | null; channel: string }>(
       `select template_parent_id, channel from sequence_steps /* jr:sequence_etape_existante */
@@ -420,12 +442,11 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
     );
     const etape = etapeRes.rows[0];
     if (!etape) throw new ErreurIntrouvable('Étape');
-    if (etape.channel !== 'email') {
-      throw new ErreurEntree({ formErrors: ['Seules les étapes email se modifient depuis ce tiroir.'], fieldErrors: {} });
-    }
     templateParentId = etape.template_parent_id;
+    canalExistant = etape.channel;
   }
 
+  const canalReel = canalReelEtape(e.canal, canalExistant);
   const corpsNormalise = await validerVariables(ctx, e.corps, nature);
 
   const etapeId = await dansUneTransaction(ctx.ex, async (tx) => {
@@ -433,9 +454,9 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
     const nouveauTemplateId = await inserVersionModele(ctxTx, {
       familyId: templateParentId,
       nom: campagne.name,
-      canal: 'email',
+      canal: canalReel,
       locale,
-      sujet: e.sujet.trim(),
+      sujet: e.canal === 'email' ? e.sujet!.trim() : null,
       corps: corpsNormalise,
       origin: 'step',
     });
@@ -447,10 +468,10 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
       // haut/bas dans la maquette), une étape réécrite garde sa position.
       const upd = await tx.query<{ id: string }>(
         `update sequence_steps /* jr:sequence_etape_maj */
-            set template_parent_id = $1, delay_hours = $2
-          where id = $3 and campaign_id = $4
+            set template_parent_id = $1, delay_hours = $2, channel = $3
+          where id = $4 and campaign_id = $5
           returning id`,
-        [templateFamilyId, e.delaiHeures, e.etapeId, e.campagneId],
+        [templateFamilyId, e.delaiHeures, canalReel, e.etapeId, e.campagneId],
       );
       if (!upd.rows[0]) throw new ErreurIntrouvable('Étape');
       return upd.rows[0].id;
@@ -465,9 +486,9 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
     const ins = await tx.query<{ id: string }>(
       `insert into sequence_steps /* jr:sequence_etape_creer */
          (campaign_id, position, channel, delay_hours, template_parent_id)
-       values ($1, $2, 'email', $3, $4)
+       values ($1, $2, $3, $4, $5)
        returning id`,
-      [e.campagneId, positionSuivante, e.delaiHeures, templateFamilyId],
+      [e.campagneId, positionSuivante, canalReel, e.delaiHeures, templateFamilyId],
     );
     return ins.rows[0]!.id;
   });
