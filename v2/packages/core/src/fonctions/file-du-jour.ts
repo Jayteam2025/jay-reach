@@ -12,6 +12,7 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
+import type { EtatEnvoi } from './aujourdhui.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -45,19 +46,9 @@ function decalageFuseauMinutes(timezone: string | null, instant: Date): number {
   }
 }
 
-/** Masque un email à l'affichage (relecture avant envoi) : partie locale tronquée + domaine en clair. */
-export function masquerEmail(email: string): string {
-  const arobase = email.indexOf('@');
-  if (arobase <= 0) return email;
-  const locale = email.slice(0, arobase);
-  const domaine = email.slice(arobase + 1);
-  const visible = locale.slice(0, Math.min(2, locale.length));
-  return `${visible}…@${domaine}`;
-}
-
 async function ecrireEvenementEnvoi(
   ctx: Contexte,
-  action: 'action_rescheduled' | 'action_skipped' | 'action_approved' | 'action_rejected',
+  action: 'action_rescheduled' | 'action_skipped' | 'action_approved' | 'action_rejected' | 'action_retried',
   contactId: string | null,
   libelle: string,
   detail?: Record<string, unknown>,
@@ -215,6 +206,34 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
 }
 
 // ---------------------------------------------------------------------------
+// relancerEnvoi (R34, tour de correction 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Relance un envoi échoué : ne s'applique qu'à une action `failed` de
+ * l'organisation, la repasse `scheduled` (reprise par le prochain passage du
+ * moteur), efface l'ancienne erreur et reprogramme `scheduled_for` à
+ * maintenant.
+ */
+export async function relancerEnvoi(ctx: Contexte, entree: unknown): Promise<void> {
+  exiger(ctx, 'operator');
+  const { actionId } = valider(schemaActionId, entree);
+
+  const res = await ctx.ex.query<{ contact_id: string | null }>(
+    `update actions a /* jr:relancer_envoi */
+        set status = 'scheduled', scheduled_for = now(), error = null
+       from enrollments e
+      where a.id = $1 and a.organization_id = $2 and a.enrollment_id = e.id and a.status = 'failed'
+      returning e.contact_id`,
+    [actionId, ctx.organisationId],
+  );
+  const ligne = res.rows[0];
+  if (!ligne) throw new ErreurIntrouvable('Envoi en échec');
+
+  await ecrireEvenementEnvoi(ctx, 'action_retried', ligne.contact_id, 'Envoi relancé.');
+}
+
+// ---------------------------------------------------------------------------
 // approuverEnvoi / rejeterEnvoi
 // ---------------------------------------------------------------------------
 
@@ -265,26 +284,64 @@ export async function rejeterEnvoi(ctx: Contexte, entree: unknown): Promise<void
 // apercuEnvoi
 // ---------------------------------------------------------------------------
 
+/**
+ * `pourquoi` : signal d'origine de l'inscription (`signals.title`/
+ * `score_reason`) — `null` pour une inscription sans signal (R36).
+ */
 export interface ApercuEnvoi {
   readonly objet: string;
   readonly corps: string;
   readonly expediteur: string | null;
-  readonly destinataireMasque: string | null;
+  /** Adresse complète du destinataire — jamais masquée dans un écran de relecture (R38). */
+  readonly destinataire: string | null;
+  /** Variables non résolues (C5) : `renderTemplate(...).missing` de l'objet et du corps, dédoublonnées. Non vide → l'envoi sera bloqué tant qu'elles manquent. */
+  readonly variablesManquantes: string[];
+  readonly contactNom: string;
+  readonly contactPoste: string | null;
+  readonly contactEntreprise: string | null;
+  readonly score: number | null;
+  readonly pourquoi: { titre: string; detail: string | null } | null;
+  /** 1-based (`sequence_steps.position` part de 0, même conversion que `campagnes.ts`/`aujourdhui.ts`). */
+  readonly etapePosition: number;
+  readonly etapeNom: string;
+  /** ISO de `actions.scheduled_for` — `null` si jamais programmé. */
+  readonly heurePrevue: string | null;
+  /** Statut réel de l'action (`actions.status`), pour que le tiroir n'affiche les boutons d'action que sur un envoi pas encore parti (R39). */
+  readonly statut: EtatEnvoi;
 }
 
 interface LigneActionApercu {
   id: string;
+  status: EtatEnvoi;
+  scheduled_for: string | null;
   contact_id: string;
   campaign_id: string;
   template_parent_id: string | null;
+  position: number | null;
   locale: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  entreprise: string | null;
   expediteur: string | null;
+  score: number | null;
+  signal_titre: string | null;
+  score_reason: string | null;
 }
 
 interface LigneGabarit {
   body: string;
   subject: string | null;
   name: string;
+}
+
+function nomComplet(prenom: string | null, nom: string | null): string {
+  return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
+}
+
+/** « Premier email » pour la première étape (position 0), « Relance » ensuite — vocabulaire de la maquette, quel que soit le canal. */
+function nomEtape(position: number): string {
+  return position === 0 ? 'Premier email' : 'Relance';
 }
 
 /**
@@ -295,19 +352,26 @@ interface LigneGabarit {
  * (`resolveTemplate`, `apps/worker/src/handlers/message-values.ts`) : la
  * dernière version active pour la langue du contact, sans reproduire le
  * blocage `missing_locale` — un aperçu qui affiche un gabarit par défaut
- * reste préférable à un aperçu vide.
+ * reste préférable à un aperçu vide (les variables non résolues restent
+ * signalées, `variablesManquantes`, C5).
  */
 export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<ApercuEnvoi> {
   exiger(ctx, 'viewer');
   const { actionId } = valider(schemaActionId, entree);
 
   const res = await ctx.ex.query<LigneActionApercu>(
-    `select a.id, e.contact_id, e.campaign_id, st.template_parent_id, c.locale, s.identity as expediteur
+    `select a.id, a.status, a.scheduled_for, e.contact_id, e.campaign_id, st.template_parent_id, st.position,
+            c.locale, c.first_name, c.last_name, c.job_title,
+            coalesce(ac.name, sig.company_hint) as entreprise,
+            s.identity as expediteur,
+            sig.score, sig.title as signal_titre, sig.score_reason
        from actions a /* jr:apercu_lire */
        join enrollments e on e.id = a.enrollment_id
        left join sequence_steps st on st.id = a.step_id
        left join contacts c on c.id = e.contact_id
        left join senders s on s.id = a.sender_id
+       left join signals sig on sig.id = e.signal_id
+       left join accounts ac on ac.id = coalesce(sig.account_id, c.account_id)
       where a.id = $1 and a.organization_id = $2`,
     [actionId, ctx.organisationId],
   );
@@ -332,13 +396,26 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   }
 
   const valeurs = contact?.valeurs ?? {};
-  const objet = gabarit ? renderTemplate(gabarit.subject ?? gabarit.name, valeurs).text : '';
-  const corps = gabarit ? renderTemplate(gabarit.body, valeurs).text : '';
+  const renduObjet = gabarit ? renderTemplate(gabarit.subject ?? gabarit.name, valeurs) : { text: '', missing: [] };
+  const renduCorps = gabarit ? renderTemplate(gabarit.body, valeurs) : { text: '', missing: [] };
+  const variablesManquantes = [...new Set([...renduObjet.missing, ...renduCorps.missing])];
+
+  const position = ligne.position ?? 0;
 
   return {
-    objet,
-    corps,
+    objet: renduObjet.text,
+    corps: renduCorps.text,
     expediteur: ligne.expediteur,
-    destinataireMasque: contact?.email ? masquerEmail(contact.email) : null,
+    destinataire: contact?.email ?? null,
+    variablesManquantes,
+    contactNom: nomComplet(ligne.first_name, ligne.last_name),
+    contactPoste: ligne.job_title,
+    contactEntreprise: ligne.entreprise,
+    score: ligne.score,
+    pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
+    etapePosition: position + 1,
+    etapeNom: nomEtape(position),
+    heurePrevue: ligne.scheduled_for,
+    statut: ligne.status,
   };
 }

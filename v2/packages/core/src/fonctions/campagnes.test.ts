@@ -245,9 +245,18 @@ describe('listerContactsCampagne', () => {
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerContactsCampagne(ctx, { campagneId });
     const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
-    expect(sql).toMatch(/join contacts c on c\.source_signal_id = s\.id/);
+    expect(sql).toMatch(/join contacts c on c\.id = pop\.contact_id/);
     expect(sql).not.toMatch(/left join contacts/);
-    expect(sql).toMatch(/s\.status <> 'new'/);
+    expect(sql).toMatch(/s0\.status <> 'new'/);
+  });
+
+  it('la population inclut aussi les contacts inscrits sans signal (R36, tour de correction 1)', async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    await listerContactsCampagne(ctx, { campagneId });
+    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(sql).toMatch(/select e1\.contact_id, null::uuid\s+from enrollments e1/);
+    expect(sql).toMatch(/left join signals s on s\.id = pop\.signal_id/);
   });
 
   it('la règle « sans email » couvre invalide, risqué et inconnu, pas seulement invalide (R27)', async () => {
@@ -285,6 +294,52 @@ describe('listerContactsCampagne', () => {
     expect(r.lignes[0]!.etape).toBe(3);
     expect(r.total).toBe(1);
     expect(ORDRE_STATUTS.indexOf('interesse')).toBeLessThan(ORDRE_STATUTS.indexOf('a_repondu'));
+  });
+
+  it('renseigne score et pourquoi depuis le signal d’origine (R33)', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'a_contacter', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: 'Head of Sales',
+          email: 'karim@exemple.fr',
+          entreprise: 'Woodpecker Studio',
+          current_step: null,
+          statut: 'a_contacter',
+          score: 91,
+          pourquoi: 'Business developer senior',
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({ score: 91, pourquoi: 'Business developer senior' });
+  });
+
+  it('un contact inscrit sans signal (R36) a un signalId, un score et un pourquoi nuls', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: null,
+          contact_id: 'contact-2',
+          first_name: 'Alex',
+          last_name: 'Recette',
+          job_title: null,
+          email: 'alex@exemple.fr',
+          entreprise: null,
+          current_step: 0,
+          statut: 'en_sequence',
+          score: null,
+          pourquoi: null,
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({ signalId: null, score: null, pourquoi: null, statut: 'en_sequence' });
   });
 
   it('passe la pagination et le filtre à la requête (page 2, filtre en_sequence)', async () => {

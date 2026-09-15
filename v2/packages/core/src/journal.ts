@@ -33,7 +33,9 @@ export type ActionJournal =
   | 'action_rescheduled'
   | 'action_skipped'
   | 'action_approved'
-  | 'action_rejected';
+  | 'action_rejected'
+  // Relance d'un envoi échoué (R34, tour de correction 1).
+  | 'action_retried';
 
 export interface EvenementJournal {
   readonly organisationId: string;

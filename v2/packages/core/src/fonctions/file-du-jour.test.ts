@@ -7,8 +7,8 @@ import {
   apercuEnvoi,
   approuverEnvoi,
   ecarterDuneCampagne,
-  masquerEmail,
   rejeterEnvoi,
+  relancerEnvoi,
   reporterEnvoi,
 } from './file-du-jour.js';
 
@@ -30,18 +30,6 @@ function appelsDe(ctx: Contexte): unknown[][] {
 const actionId = '11111111-1111-1111-1111-111111111111';
 const contactId = '22222222-2222-2222-2222-222222222222';
 const campagneId = '33333333-3333-3333-3333-333333333333';
-
-describe('masquerEmail', () => {
-  it('tronque la partie locale et garde le domaine en clair', () => {
-    expect(masquerEmail('n.lemaire@kairn.example')).toBe('n.…@kairn.example');
-  });
-  it('garde une partie locale d’un seul caractère telle quelle', () => {
-    expect(masquerEmail('a@exemple.fr')).toBe('a…@exemple.fr');
-  });
-  it('renvoie la chaîne telle quelle si elle ne contient pas d’arobase', () => {
-    expect(masquerEmail('pas-un-email')).toBe('pas-un-email');
-  });
-});
 
 describe('reporterEnvoi', () => {
   it('refuse un viewer', async () => {
@@ -229,6 +217,41 @@ describe('ecarterDuneCampagne', () => {
   });
 });
 
+describe('relancerEnvoi', () => {
+  it('refuse un viewer', async () => {
+    await expect(relancerEnvoi(faux({}, 'viewer'), { actionId })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('lève ErreurIntrouvable quand l’action n’est pas en échec (ou introuvable)', async () => {
+    const ctx = faux({ 'jr:relancer_envoi': [] });
+    await expect(relancerEnvoi(ctx, { actionId })).rejects.toThrow(ErreurIntrouvable);
+  });
+
+  it('repasse l’action à scheduled, efface l’erreur et filtre par organisation', async () => {
+    const ctx = faux({ 'jr:relancer_envoi': [{ contact_id: contactId }] });
+    await relancerEnvoi(ctx, { actionId });
+    const ecriture = appelsDe(ctx).find((a) => /jr:relancer_envoi/i.test(String(a[0])));
+    expect(String(ecriture?.[0])).toMatch(/set status = 'scheduled', scheduled_for = now\(\), error = null/);
+    expect(String(ecriture?.[0])).toMatch(/a\.organization_id = \$2/);
+    expect(String(ecriture?.[0])).toMatch(/a\.status = 'failed'/);
+    expect(ecriture?.[1]).toEqual([actionId, 'org-1']);
+  });
+
+  it('écrit action_retried', async () => {
+    const ctx = faux({ 'jr:relancer_envoi': [{ contact_id: contactId }] });
+    await relancerEnvoi(ctx, { actionId });
+    const journal = appelsDe(ctx).find((a) => /insert into audit_events/i.test(String(a[0])));
+    expect(journal?.[1]).toEqual([
+      'org-1',
+      'user-1',
+      'contact',
+      contactId,
+      'action_retried',
+      JSON.stringify({ libelle: 'Envoi relancé.' }),
+    ]);
+  });
+});
+
 describe('approuverEnvoi', () => {
   it('refuse un viewer', async () => {
     await expect(approuverEnvoi(faux({}, 'viewer'), { actionId })).rejects.toThrow(ForbiddenError);
@@ -292,10 +315,27 @@ describe('apercuEnvoi', () => {
     await expect(apercuEnvoi(ctx, { actionId })).rejects.toThrow(ErreurIntrouvable);
   });
 
-  it('rend l’objet et le corps avec les valeurs du contact, et masque le destinataire', async () => {
+  it('rend l’objet et le corps avec les valeurs du contact, destinataire complet (R38), score et pourquoi', async () => {
     const ctx = faux({
       'jr:apercu_lire': [
-        { id: actionId, contact_id: contactId, campaign_id: campagneId, template_parent_id: 'tpl-1', locale: 'fr', expediteur: 'julien@exemple.fr' },
+        {
+          id: actionId,
+          status: 'pending_approval',
+          scheduled_for: '2026-09-15T09:40:00.000Z',
+          contact_id: contactId,
+          campaign_id: campagneId,
+          template_parent_id: 'tpl-1',
+          position: 0,
+          locale: 'fr',
+          first_name: 'Nadia',
+          last_name: 'Lemaire',
+          job_title: 'Directrice du développement',
+          entreprise: 'Kairn',
+          expediteur: 'julien@exemple.fr',
+          score: 88,
+          signal_titre: 'A commenté un post',
+          score_reason: 'Correspond au persona cible',
+        },
       ],
       'jr:valeurs_contact\\b': [
         {
@@ -326,20 +366,102 @@ describe('apercuEnvoi', () => {
       objet: 'Objet pour Nadia',
       corps: 'Bonjour Nadia, chez Kairn.',
       expediteur: 'julien@exemple.fr',
-      destinataireMasque: 'n.…@kairn.example',
+      destinataire: 'n.lemaire@kairn.example',
+      variablesManquantes: [],
+      contactNom: 'Nadia Lemaire',
+      contactPoste: 'Directrice du développement',
+      contactEntreprise: 'Kairn',
+      score: 88,
+      pourquoi: { titre: 'A commenté un post', detail: 'Correspond au persona cible' },
+      etapePosition: 1,
+      etapeNom: 'Premier email',
+      heurePrevue: '2026-09-15T09:40:00.000Z',
+      statut: 'pending_approval',
     });
+  });
+
+  it('signale les variables sans valeur (C5) sans bloquer l’aperçu', async () => {
+    const ctx = faux({
+      'jr:apercu_lire': [
+        {
+          id: actionId,
+          status: 'scheduled',
+          scheduled_for: null,
+          contact_id: contactId,
+          campaign_id: campagneId,
+          template_parent_id: 'tpl-1',
+          position: 1,
+          locale: null,
+          first_name: 'Karim',
+          last_name: null,
+          job_title: null,
+          entreprise: null,
+          expediteur: null,
+          score: null,
+          signal_titre: null,
+          score_reason: null,
+        },
+      ],
+      'jr:valeurs_contact\\b': [
+        {
+          first_name: 'Karim',
+          last_name: null,
+          job_title: null,
+          email: 'karim@exemple.fr',
+          locale: null,
+          company_name: null,
+          domain: null,
+          city: null,
+          headcount: null,
+          postal_code: null,
+          country: null,
+          persona_angle: null,
+          signal_title: null,
+          signal_location: null,
+          signal_url: null,
+          signal_occurred_at: null,
+          context_note: null,
+        },
+      ],
+      'jr:valeurs_contact_extraits': [],
+      'jr:apercu_gabarit': [{ body: 'Contexte : {{contexte}}.', subject: 'Objet {{signal_titre}}', name: 'Gabarit' }],
+    });
+    const r = await apercuEnvoi(ctx, { actionId });
+    expect(r.variablesManquantes.sort()).toEqual(['contexte', 'signal_titre']);
+    expect(r.pourquoi).toBeNull();
+    expect(r.etapePosition).toBe(2);
+    expect(r.etapeNom).toBe('Relance');
   });
 
   it('sans gabarit relié à l’étape, renvoie un objet et un corps vides plutôt que d’échouer', async () => {
     const ctx = faux({
       'jr:apercu_lire': [
-        { id: actionId, contact_id: contactId, campaign_id: campagneId, template_parent_id: null, locale: null, expediteur: null },
+        {
+          id: actionId,
+          status: 'blocked',
+          scheduled_for: null,
+          contact_id: contactId,
+          campaign_id: campagneId,
+          template_parent_id: null,
+          position: 0,
+          locale: null,
+          first_name: null,
+          last_name: null,
+          job_title: null,
+          entreprise: null,
+          expediteur: null,
+          score: null,
+          signal_titre: null,
+          score_reason: null,
+        },
       ],
       'jr:valeurs_contact\\b': [],
     });
     const r = await apercuEnvoi(ctx, { actionId });
     expect(r.objet).toBe('');
     expect(r.corps).toBe('');
-    expect(r.destinataireMasque).toBeNull();
+    expect(r.destinataire).toBeNull();
+    expect(r.variablesManquantes).toEqual([]);
+    expect(r.statut).toBe('blocked');
   });
 });

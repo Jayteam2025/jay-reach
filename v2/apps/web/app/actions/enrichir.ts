@@ -24,9 +24,13 @@ export async function enrichirMaintenant(
   signalId: string,
 ): Promise<EnrichirResult> {
   try {
-    await requireRole(organizationId, 'admin');
+    // `operator`, pas `admin` (R35, tour de correction 1) : le bouton
+    // « Chercher l'email » des onglets Contacts et File du jour d'une
+    // campagne appelle cette même façade, et un simple opérateur doit
+    // pouvoir enrichir une entreprise à la demande.
+    await requireRole(organizationId, 'operator');
   } catch {
-    return { ok: false, error: 'Droit administrateur requis.' };
+    return { ok: false, error: 'Droit opérateur requis.' };
   }
 
   const supabase = await createClient();

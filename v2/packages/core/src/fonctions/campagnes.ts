@@ -48,21 +48,21 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
 
 /**
  * Expression SQL du statut dérivé, dans l'ordre de `ORDRE_STATUTS`. `c` = le
- * contact du signal (jointure interne dans `FROM_POPULATION_CAMPAGNE` : la
- * population de l'onglet Contacts, ce sont des personnes, jamais des
- * signaux bruts — tour de correction 1, R29), `e` = sa dernière inscription
- * DANS CETTE campagne (LEFT JOIN LATERAL, au plus une ligne), `s` = le
- * signal d'origine.
+ * contact (jointure interne dans `FROM_POPULATION_CAMPAGNE` : la population
+ * de l'onglet Contacts, ce sont des personnes, jamais des signaux bruts —
+ * tour de correction 1, R29), `e` = sa dernière inscription DANS CETTE
+ * campagne (LEFT JOIN LATERAL, au plus une ligne), `s` = son signal d'origine
+ * qualifié pour cette campagne — `null` pour un contact inscrit sans signal
+ * (R36, tour de correction 1 : inscription manuelle/import de liste).
  *
- * Portée : campagnes alimentées par des thèmes de veille (`campaign_sources`)
- * — une campagne alimentée par une liste importée n'a pas de signal d'origine
- * et n'est pas peuplée par cette requête (voir le rapport de tâche : doute
- * sur les campagnes `entryKind: 'list'`).
+ * `sup.organization_id = c.organization_id` (pas `s.organization_id`) :
+ * fonctionne aussi quand `s` est `null` — un contact reste vérifié contre les
+ * suppressions de SA propre organisation, avec ou sans signal.
  */
 const CASE_STATUT_DERIVE = `case
       when c.status = 'do_not_contact' or exists (
         select 1 from suppressions sup
-         where sup.organization_id = s.organization_id
+         where sup.organization_id = c.organization_id
            and c.email is not null
            and ((sup.scope = 'email' and lower(sup.value) = lower(c.email))
              or (sup.scope = 'domain' and lower(sup.value) = lower(split_part(c.email, '@', 2))))
@@ -80,29 +80,48 @@ const CASE_STATUT_DERIVE = `case
     end`;
 
 /**
- * Population d'une campagne (onglet Contacts) : les personnes identifiées à
- * partir des signaux remontés par ses thèmes de veille (`campaign_sources`).
- * Jointure INTERNE sur `contacts` et exclusion des signaux `new` (spec §6.5,
- * R29, tour de correction 1) : un signal jamais promu en contact — pas
- * encore scoré, ou écarté par le scoring sans devenir une personne — n'est
- * pas un « contact » de la campagne ; il compte dans l'entonnoir
- * (`trouves`/`qualifies`, `lireEntonnoir`, requêtes séparées sur `signals`
- * seul) mais pas ici.
+ * Population d'une campagne (onglet Contacts), R36 (tour de correction 1) :
+ * les personnes identifiées par un signal qualifié de ses thèmes de veille
+ * (`campaign_sources`, spec §6.5, R29 : signaux `new` exclus) UNION celles
+ * inscrites dans la campagne sans passer par un signal (inscription
+ * manuelle, import de liste — constat base : les 7 inscriptions de
+ * production existantes au 14/09 sont toutes dans ce cas). Chaque contact
+ * compte une seule fois : la branche « inscrit » exclut explicitement ceux
+ * déjà couverts par la branche « signal », `union` (pas `union all`) dédoublonne
+ * le reste. `$1` = id de la campagne, même paramètre pour les deux requêtes
+ * qui utilisent cette constante (`listerContactsCampagne`).
+ *
+ * `s.id`/`s.account_id` restent `null` pour un contact sans signal
+ * qualifiant : `score`/`pourquoi` (R33) et l'entreprise via le signal
+ * suivent, mais `ac` retombe alors sur le compte du contact lui-même.
  */
-const FROM_POPULATION_CAMPAGNE = `from signals s
-      join campaign_sources cs on cs.source_id = s.source_id
-      join contacts c on c.source_signal_id = s.id
+const FROM_POPULATION_CAMPAGNE = `from (
+        select c0.id as contact_id, s0.id as signal_id
+          from signals s0
+          join campaign_sources cs0 on cs0.source_id = s0.source_id
+          join contacts c0 on c0.source_signal_id = s0.id
+         where cs0.campaign_id = $1 and s0.status <> 'new'
+        union
+        select e1.contact_id, null::uuid
+          from enrollments e1
+         where e1.campaign_id = $1
+           and not exists (
+             select 1 from signals s2
+               join campaign_sources cs2 on cs2.source_id = s2.source_id
+               join contacts c2 on c2.source_signal_id = s2.id
+              where c2.id = e1.contact_id and cs2.campaign_id = $1 and s2.status <> 'new'
+           )
+      ) pop
+      join contacts c on c.id = pop.contact_id
+      left join signals s on s.id = pop.signal_id
       left join lateral (
         select e2.status, e2.current_step
           from enrollments e2
-         where e2.contact_id = c.id and e2.campaign_id = cs.campaign_id
+         where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc
          limit 1
       ) e on true
-      left join accounts ac on ac.id = s.account_id`;
-
-/** Signaux exclus de la population de l'onglet Contacts : pas encore scorés/qualifiés (R29). */
-const FILTRE_SIGNAL_QUALIFIE = `s.status <> 'new'`;
+      left join accounts ac on ac.id = coalesce(s.account_id, c.account_id)`;
 
 // ---------------------------------------------------------------------------
 // Petits utilitaires partagés (copies volontairement locales de celles
@@ -235,7 +254,8 @@ export interface VueDEnsemble {
 }
 
 export interface ContactCampagne {
-  readonly signalId: string;
+  /** `null` pour un contact inscrit sans passer par un signal (R36 : inscription manuelle, import de liste). */
+  readonly signalId: string | null;
   readonly contactId: string | null;
   readonly nom: string;
   readonly poste: string | null;
@@ -243,6 +263,10 @@ export interface ContactCampagne {
   readonly email: string | null;
   readonly statut: StatutContactCampagne;
   readonly etape: number | null;
+  /** `signals.score` du signal d'origine (R33) — `null` sans signal. */
+  readonly score: number | null;
+  /** `signals.title` du signal d'origine (R33, « Pourquoi lui ») — `null` sans signal. */
+  readonly pourquoi: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,9 +328,13 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
               coalesce((select array_agg(distinct so.provider_id) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               (select count(*)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
                 where cs2.campaign_id = c.id and s2.status in ('qualified', 'enrolled')) as qualifies,
-              (select count(distinct c3.id)::int from signals s3 join campaign_sources cs3 on cs3.source_id = s3.source_id
-                join contacts c3 on c3.source_signal_id = s3.id
-                where cs3.campaign_id = c.id and s3.status <> 'new') as contacts,
+              (select count(distinct contact_id)::int from (
+                  select c3.id as contact_id from signals s3 join campaign_sources cs3 on cs3.source_id = s3.source_id
+                    join contacts c3 on c3.source_signal_id = s3.id
+                   where cs3.campaign_id = c.id and s3.status <> 'new'
+                  union
+                  select e3b.contact_id from enrollments e3b where e3b.campaign_id = c.id
+                ) pop3) as contacts,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
               (select count(distinct c4.id)::int from threads t4 join contacts c4 on c4.id = t4.contact_id join enrollments e4 on e4.contact_id = c4.id
@@ -420,9 +448,13 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string): Promise<Entonno
     `select
         (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1) as trouves,
         (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1 and s.status in ('qualified', 'enrolled')) as qualifies,
-        (select count(distinct c2.id)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
-          join contacts c2 on c2.source_signal_id = s2.id
-          where cs2.campaign_id = $1 and s2.status <> 'new') as contacts,
+        (select count(distinct contact_id)::int from (
+            select c2.id as contact_id from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
+              join contacts c2 on c2.source_signal_id = s2.id
+             where cs2.campaign_id = $1 and s2.status <> 'new'
+            union
+            select e2b.contact_id from enrollments e2b where e2b.campaign_id = $1
+          ) pop2) as contacts,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
         (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = $1 and a.status = 'delivered') as livres,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status = 'replied') as reponses,
@@ -577,7 +609,7 @@ export const schemaListerContacts = schemaCampagneId.extend({
 });
 
 interface LigneContactCampagne {
-  signal_id: string;
+  signal_id: string | null;
   contact_id: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -586,6 +618,8 @@ interface LigneContactCampagne {
   entreprise: string | null;
   current_step: number | null;
   statut: StatutContactCampagne;
+  score: number | null;
+  pourquoi: string | null;
 }
 
 export async function listerContactsCampagne(
@@ -600,7 +634,6 @@ export async function listerContactsCampagne(
        from (
          select ${CASE_STATUT_DERIVE} as statut
          ${FROM_POPULATION_CAMPAGNE}
-         where cs.campaign_id = $1 and ${FILTRE_SIGNAL_QUALIFIE}
        ) x /* jr:compteurs_contacts_campagne */
       group by statut`,
     [campagneId],
@@ -619,7 +652,7 @@ export async function listerContactsCampagne(
 
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
-    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut
+    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi
        from (
          select
            s.id as signal_id,
@@ -627,13 +660,14 @@ export async function listerContactsCampagne(
            c.first_name, c.last_name, c.job_title, c.email,
            coalesce(ac.name, s.company_hint) as entreprise,
            e.current_step,
+           s.score,
+           s.title as pourquoi,
            ${CASE_STATUT_DERIVE} as statut
          ${FROM_POPULATION_CAMPAGNE}
-         where cs.campaign_id = $1 and ${FILTRE_SIGNAL_QUALIFIE}
        ) x /* jr:lignes_contacts_campagne */
       where ($2 = 'tous' or statut = $2)
         and ($3::text is null or first_name ilike $3 or last_name ilike $3 or entreprise ilike $3)
-      order by signal_id desc
+      order by signal_id desc nulls last, contact_id desc
       limit $4 offset $5`,
     [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS],
   );
@@ -647,6 +681,8 @@ export async function listerContactsCampagne(
     email: r.email,
     statut: r.statut,
     etape: r.current_step !== null ? r.current_step + 1 : null,
+    score: r.score,
+    pourquoi: r.pourquoi,
   }));
 
   return { total, compteurs, lignes };
