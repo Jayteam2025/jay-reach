@@ -134,10 +134,17 @@ export async function reporterEnvoi(ctx: Contexte, entree: unknown): Promise<voi
       ? new Date(ligne.dispatch_after).getTime() - new Date(ligne.scheduled_for).getTime()
       : 0;
 
-  await ctx.ex.query(
-    `update actions /* jr:reporter_ecrire */ set scheduled_for = $2, dispatch_after = $3 where id = $1`,
-    [actionId, new Date(decale).toISOString(), new Date(decale + ecartMs).toISOString()],
+  // Filtre d'organisation ET de statut repris ici (pas seulement à la lecture,
+  // `jr:reporter_lire`) : sans lui, un `id` deviné d'une autre organisation, ou
+  // une action qui aurait changé d'état entre la lecture et l'écriture, serait
+  // modifiée quand même (tour de correction 1, A1).
+  const ecriture = await ctx.ex.query(
+    `update actions /* jr:reporter_ecrire */
+        set scheduled_for = $2, dispatch_after = $3
+      where id = $1 and organization_id = $4 and status in ('scheduled', 'pending_approval')`,
+    [actionId, new Date(decale).toISOString(), new Date(decale + ecartMs).toISOString(), ctx.organisationId],
   );
+  if (ecriture.rowCount === 0) throw new ErreurIntrouvable('Envoi');
 
   await ecrireEvenementEnvoi(ctx, 'action_rescheduled', ligne.contact_id, 'Envoi reporté d’un jour par l’opérateur.');
 }
@@ -192,11 +199,15 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
   );
   const idsInscriptions = inscriptionsRes.rows.map((r) => r.id);
   if (idsInscriptions.length > 0) {
+    // `organization_id` repris ici aussi (A2, tour de correction 1) : les
+    // `id` d'inscriptions viennent de la requête précédente, déjà filtrée par
+    // organisation, mais jamais d'`update`/`delete` sur `actions` ou
+    // `enrollments` sans ce filtre direct (règle A3 du même tour).
     await ctx.ex.query(
       `update actions /* jr:ecarter_actions */
           set status = 'skipped', error = coalesce(error, 'operator_skip')
-        where enrollment_id = any($1::uuid[]) and status in ('scheduled', 'pending_approval')`,
-      [idsInscriptions],
+        where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'pending_approval')`,
+      [idsInscriptions, ctx.organisationId],
     );
   }
 

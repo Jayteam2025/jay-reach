@@ -65,11 +65,11 @@ describe('reporterEnvoi', () => {
         },
       ],
       'jr:reporter_expediteur': [{ timezone: 'UTC', business_hours: { startHour: 8, endHour: 19, days: [1, 2, 3, 4, 5] } }],
-      'jr:reporter_ecrire': [],
+      'jr:reporter_ecrire': [{}],
     });
     await reporterEnvoi(ctx, { actionId });
     const ecriture = appelsDe(ctx).find((a) => /jr:reporter_ecrire/i.test(String(a[0])));
-    expect(ecriture?.[1]).toEqual([actionId, '2026-09-15T09:00:00.000Z', '2026-09-15T09:00:00.000Z']);
+    expect(ecriture?.[1]).toEqual([actionId, '2026-09-15T09:00:00.000Z', '2026-09-15T09:00:00.000Z', 'org-1']);
   });
 
   it('conserve l’écart entre dispatch_after et scheduled_for (lead time du canal)', async () => {
@@ -83,11 +83,11 @@ describe('reporterEnvoi', () => {
           contact_id: contactId,
         },
       ],
-      'jr:reporter_ecrire': [],
+      'jr:reporter_ecrire': [{}],
     });
     await reporterEnvoi(ctx, { actionId });
     const ecriture = appelsDe(ctx).find((a) => /jr:reporter_ecrire/i.test(String(a[0])));
-    expect(ecriture?.[1]).toEqual([actionId, '2026-09-15T09:00:00.000Z', '2026-09-12T09:00:00.000Z']);
+    expect(ecriture?.[1]).toEqual([actionId, '2026-09-15T09:00:00.000Z', '2026-09-12T09:00:00.000Z', 'org-1']);
   });
 
   it('sans expéditeur lié, retombe sur les heures ouvrées par défaut (9-18, lun-ven)', async () => {
@@ -95,7 +95,7 @@ describe('reporterEnvoi', () => {
       'jr:reporter_lire': [
         { id: actionId, scheduled_for: '2026-09-14T20:00:00.000Z', dispatch_after: null, sender_id: null, contact_id: contactId },
       ],
-      'jr:reporter_ecrire': [],
+      'jr:reporter_ecrire': [{}],
     });
     await reporterEnvoi(ctx, { actionId });
     const ecriture = appelsDe(ctx).find((a) => /jr:reporter_ecrire/i.test(String(a[0])));
@@ -108,7 +108,7 @@ describe('reporterEnvoi', () => {
       'jr:reporter_lire': [
         { id: actionId, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, sender_id: null, contact_id: contactId },
       ],
-      'jr:reporter_ecrire': [],
+      'jr:reporter_ecrire': [{}],
     });
     await reporterEnvoi(ctx, { actionId });
     const journal = appelsDe(ctx).find((a) => /insert into audit_events/i.test(String(a[0])));
@@ -130,6 +130,7 @@ describe('reporterEnvoi', () => {
           rowCount: 1,
         };
       }
+      if (/jr:reporter_ecrire/i.test(sql)) return { rows: [{}], rowCount: 1 };
       if (/insert into audit_events/i.test(sql)) throw new Error('table audit_events indisponible');
       return { rows: [], rowCount: 0 };
     }) as unknown as Executeur['query'];
@@ -139,6 +140,29 @@ describe('reporterEnvoi', () => {
     await expect(reporterEnvoi(ctx, { actionId })).resolves.toBeUndefined();
     expect(avertissement).toHaveBeenCalledWith('[journal] action_rescheduled', expect.any(Error));
     avertissement.mockRestore();
+  });
+
+  it("l'écriture filtre par organisation et par statut (A1, tour de correction 1)", async () => {
+    const ctx = faux({
+      'jr:reporter_lire': [
+        { id: actionId, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, sender_id: null, contact_id: contactId },
+      ],
+      'jr:reporter_ecrire': [{}],
+    });
+    await reporterEnvoi(ctx, { actionId });
+    const ecriture = appelsDe(ctx).find((a) => /jr:reporter_ecrire/i.test(String(a[0])));
+    expect(String(ecriture?.[0])).toMatch(/organization_id = \$4/);
+    expect(String(ecriture?.[0])).toMatch(/status in \('scheduled', 'pending_approval'\)/);
+  });
+
+  it('lève ErreurIntrouvable si l’écriture ne touche aucune ligne (organisation ou statut divergents entre temps)', async () => {
+    const ctx = faux({
+      'jr:reporter_lire': [
+        { id: actionId, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, sender_id: null, contact_id: contactId },
+      ],
+      'jr:reporter_ecrire': [],
+    });
+    await expect(reporterEnvoi(ctx, { actionId })).rejects.toThrow(ErreurIntrouvable);
   });
 });
 
@@ -166,7 +190,8 @@ describe('ecarterDuneCampagne', () => {
     });
     await ecarterDuneCampagne(ctx, { contactId, campagneId });
     const ecritureActions = appelsDe(ctx).find((a) => /jr:ecarter_actions/i.test(String(a[0])));
-    expect(ecritureActions?.[1]).toEqual([['enr-1', 'enr-2']]);
+    expect(ecritureActions?.[1]).toEqual([['enr-1', 'enr-2'], 'org-1']);
+    expect(String(ecritureActions?.[0])).toMatch(/organization_id = \$2/);
   });
 
   it('n’écrit aucune annulation d’action quand le contact n’a aucune inscription active', async () => {
