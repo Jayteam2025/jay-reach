@@ -1,5 +1,5 @@
 /**
- * Type `Persona` partagé par Réglages › Personas (`persona-board.tsx`).
+ * Type `Persona` partagé par Réglages › Personas (`components/reglages/FichePersona.tsx`).
  *
  * Ce module s'appelait à l'origine `sample-personas.ts` et portait aussi des
  * personas de démonstration pour les écrans d'avant la refonte — retirées à

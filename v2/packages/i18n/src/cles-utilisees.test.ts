@@ -139,7 +139,11 @@ describe('clés de traduction', () => {
   }
 
   function clesMortesSous(prefixe: string): string[] {
-    const texte = fichiersTsEtTsx(join(racine, 'apps/web'))
+    // `apps/web` ET `packages/*` : un catalogue de cœur (`packages/providers/src/catalog.ts`,
+    // `labelKey`/`hintKey` en chemin complet depuis la racine des messages) référence des
+    // clés sans jamais appeler `t()` lui-même — un texte borné à `apps/web` les déclarait
+    // mortes à tort (tâche 24, `providers.field.*` notamment).
+    const texte = [...fichiersTsEtTsx(join(racine, 'apps')), ...fichiersTsEtTsx(join(racine, 'packages'))]
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
     const prefixeRegExp = new RegExp(`^${echapper(prefixe)}\\.`);
@@ -147,7 +151,11 @@ describe('clés de traduction', () => {
 
     return clesDeclarees(prefixe).filter((complet) => {
       const relatif = complet.replace(prefixeRegExp, '');
-      const candidats = [relatif];
+      // `complet` (le chemin complet, jamais tronqué) couvre le traducteur
+      // racine : `getTranslations()`/`useTranslations()` sans préfixe, puis
+      // `t('coquille.engine.lastNext')` en argument — le chemin déclaré
+      // n'est alors jamais tronqué à sa forme relative au préfixe audité.
+      const candidats = [relatif, complet];
       for (const sous of sousEspaces) {
         if (relatif.startsWith(`${sous}.`)) candidats.push(relatif.slice(sous.length + 1));
       }
@@ -180,7 +188,12 @@ describe('clés de traduction', () => {
     });
   }
 
-  it.each(['campagne.sources', 'campagne.sequence', 'campagne.activite', 'campagne.reglages', 'campagne.nouvelle', 'contacts', 'reglages'])(
+  // Strict depuis la tâche 24 (R90) : plus une liste choisie à la main —
+  // TOUS les préfixes racine de `fr.json`, pour qu'un écran retiré ne
+  // laisse plus jamais ses clés orphelines hors du regard de ce test. Un
+  // faux positif se corrige en améliorant `clesMortesSous`
+  // (`sousEspacesDeclares`, accès dynamique…), jamais en excluant la clé.
+  it.each(Object.keys(messages))(
     'toutes celles déclarées sous %s sont référencées par un écran',
     (prefixe) => {
       expect(clesMortesSous(prefixe)).toEqual([]);
