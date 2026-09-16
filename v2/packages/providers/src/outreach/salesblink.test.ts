@@ -4,6 +4,7 @@ import {
   listerBoites,
   santeBoite,
   creerGabaritNeutre,
+  creerListe,
   pousserLeads,
   creerSequenceEtape,
   activerEtPlanifier,
@@ -11,6 +12,7 @@ import {
   listerReponses,
   listerRapports,
   listerTachesReponse,
+  repondreDansLeFil,
   PAGES_MAX_PAR_DEFAUT,
   TAILLE_PAGE_RAPPORTS,
   type LeadSalesBlink,
@@ -947,5 +949,44 @@ describe('listerTachesReponse', () => {
     const { sature } = await listerTachesReponse(CLE_TEST);
 
     expect(sature).toBe(false);
+  });
+});
+
+describe('mode SALESBLINK_FAKE (tâche 26, parcours e2e)', () => {
+  afterEach(() => {
+    delete process.env.SALESBLINK_FAKE;
+    vi.unstubAllGlobals();
+  });
+
+  it('ne fait jamais fetch, et renvoie des reponses canoniques pour les trois appels du web (boites, sante, reponse dans un fil)', async () => {
+    const fetchQuiEchoue = vi.fn(() => {
+      throw new Error('fetch ne doit jamais etre appele en mode SALESBLINK_FAKE');
+    });
+    vi.stubGlobal('fetch', fetchQuiEchoue);
+    process.env.SALESBLINK_FAKE = '1';
+
+    const boites = await listerBoites(CLE_TEST);
+    expect(boites).toEqual([
+      expect.objectContaining({ email: 'boite-e2e@example.com', connectee: true, envoiActif: true, receptionActive: true }),
+    ]);
+
+    const sante = await santeBoite('e2e-fake-boite', CLE_TEST);
+    expect(sante).toEqual({ connectee: true, envoiActif: true, receptionActive: true, sante: 100, derniereErreur: null });
+
+    const { idTache } = await repondreDansLeFil('message-1', '<p>Bonjour</p>', CLE_TEST);
+    expect(idTache).toBe('e2e-fake-tache-reponse');
+
+    expect(fetchQuiEchoue).not.toHaveBeenCalled();
+  });
+
+  it('refuse un chemin non couvert par le fake plutot que de laisser passer un vrai appel', async () => {
+    const fetchQuiEchoue = vi.fn(() => {
+      throw new Error('fetch ne doit jamais etre appele en mode SALESBLINK_FAKE');
+    });
+    vi.stubGlobal('fetch', fetchQuiEchoue);
+    process.env.SALESBLINK_FAKE = '1';
+
+    await expect(creerListe('liste-e2e', CLE_TEST)).rejects.toThrow(/chemin non couvert/);
+    expect(fetchQuiEchoue).not.toHaveBeenCalled();
   });
 });

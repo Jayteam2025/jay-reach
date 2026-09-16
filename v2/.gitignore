@@ -18,3 +18,9 @@ supabase/.branches
 *.local
 .turbo
 /apps/web/public/jay-reach-linkedin-extension.zip
+
+# Playwright (tâche 26) — jamais de session ni de rapport commités
+/apps/web/e2e/.auth
+/apps/web/playwright-report
+/apps/web/test-results
+/apps/web/blob-report
