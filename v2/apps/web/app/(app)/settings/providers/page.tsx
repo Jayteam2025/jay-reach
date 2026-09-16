@@ -3,7 +3,12 @@ import { listerFournisseurs, type FournisseurVue } from '@jay-reach/core';
 import { getProviderEntry } from '@jay-reach/providers';
 import { contexteCourant } from '../../../../lib/contexte';
 import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
-import { CarteFournisseur, type ChampCleFournisseur, type InfoFournisseur } from '../../../../components/reglages/CarteFournisseur';
+import {
+  CarteFournisseur,
+  type ChampCleFournisseur,
+  type ChampConfigFournisseur,
+  type InfoFournisseur,
+} from '../../../../components/reglages/CarteFournisseur';
 import type { PuceTon, TuileLogoMarque } from '../../../../components/ui';
 
 export const revalidate = 0;
@@ -28,6 +33,21 @@ function composerMasque(champsNonSecrets: ChampCleFournisseur[], config: Record<
   const valeurConnue = premier && config?.[premier.name];
   return valeurConnue ? `${premier.name} ${valeurConnue} ${bullets}` : bullets;
 }
+
+/**
+ * Champs optionnels du catalogue à ne PAS montrer ici (relecture tâche 21,
+ * point 2) : `daily_cap` d'anthropic et de fullenrich a désormais son unique
+ * source de vérité dans Réglages › Plafonds (R83, `organization_settings`,
+ * `credentials.config.daily_cap` n'en est plus qu'un repli historique) — le
+ * montrer aussi ici rouvrirait exactement la confusion à deux endroits que
+ * R83 vient de fermer. Les autres champs optionnels (sync_interval_min,
+ * reply_max_delay_h, model_smart, model_fast, le daily_cap de reoon/salesblink
+ * qui n'a pas d'équivalent Plafonds) restent montrés normalement.
+ */
+const CHAMPS_CONFIG_EXCLUS: Partial<Record<string, string[]>> = {
+  anthropic: ['daily_cap'],
+  fullenrich: ['daily_cap'],
+};
 
 export default async function ProvidersPage() {
   const t = await getTranslations('reglages.fournisseurs');
@@ -116,6 +136,16 @@ export default async function ProvidersPage() {
 
           const champsNonSecrets = champs.filter((c) => !c.secret);
 
+          const exclus = new Set(CHAMPS_CONFIG_EXCLUS[f.providerId] ?? []);
+          const champsConfig: ChampConfigFournisseur[] = (manifest?.fields ?? [])
+            .filter((champ) => !champ.required && !champ.secret && !exclus.has(champ.name))
+            .map((champ) => ({
+              name: champ.name,
+              libelle: tChamps(champ.labelKey),
+              valeurActuelle: f.config?.[champ.name] ?? '',
+              aide: champ.hintKey ? tChamps(champ.hintKey) : undefined,
+            }));
+
           return (
             <CarteFournisseur
               key={f.providerId}
@@ -125,6 +155,7 @@ export default async function ProvidersPage() {
               tuile={TUILES[f.providerId] ?? { marque: 'lettre', lettre: '?' }}
               etat={libelleEtat(f)}
               champs={champs}
+              champsConfig={champsConfig}
               presente={f.cle.presente}
               masque={composerMasque(champsNonSecrets, f.config, f.cle.dernierCaracteres)}
               infos={infosDuFournisseur(f)}
@@ -137,6 +168,8 @@ export default async function ProvidersPage() {
                 tester: t('tester'),
                 enregistrementEnCours: t('enregistrementEnCours'),
                 placeholderSecret: t('placeholderSecret'),
+                reglagesTitre: t('reglagesTitre'),
+                enregistrerReglages: t('enregistrerReglages'),
               }}
             />
           );

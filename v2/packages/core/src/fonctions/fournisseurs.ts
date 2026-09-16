@@ -19,7 +19,7 @@ import { lireConsommationDuJour, lireReglages, type Jauge } from './plafonds.js'
 export type CategorieFournisseur = 'ia' | 'enrichissement' | 'envoi' | 'offres' | 'linkedin' | 'reception';
 export type StatutCle = 'a_renseigner' | 'valide' | 'echec';
 
-interface DefinitionFournisseur {
+export interface DefinitionFournisseur {
   readonly id: string;
   readonly nom: string;
   readonly categorie: CategorieFournisseur;
@@ -33,8 +33,14 @@ interface DefinitionFournisseur {
  * offres / linkedin / réception — la dernière ajoutée par le lot 3 bis, après
  * l'écriture du plan). Microsoft Graph ne fait QUE lire les réponses
  * (transport toujours SalesBlink) : catégorie « réception », pas « envoi ».
+ *
+ * Exportée (relecture tâche 21, point 3) : `packages/providers` (qui DÉPEND de
+ * `@jay-reach/core`, jamais l'inverse) porte un test d'alignement comparant
+ * ces dix identifiants à ceux de `PROVIDER_CATALOG` — sans lui, les deux
+ * listes auraient pu diverger silencieusement (un onzième fournisseur ajouté
+ * d'un côté, oublié de l'autre) sans qu'aucun test ne le remarque.
  */
-const CATALOGUE_FOURNISSEURS: readonly DefinitionFournisseur[] = [
+export const CATALOGUE_FOURNISSEURS: readonly DefinitionFournisseur[] = [
   { id: 'anthropic', nom: 'Anthropic', categorie: 'ia', releve: false },
   { id: 'fullenrich', nom: 'FullEnrich', categorie: 'enrichissement', releve: false },
   { id: 'dropcontact', nom: 'Dropcontact', categorie: 'enrichissement', releve: false },
@@ -168,6 +174,40 @@ export async function enregistrerCle(ctx: Contexte, entree: unknown): Promise<vo
   await ctx.ex.query(
     `select set_provider_credential($1, $2, $3, $4, $5::jsonb) /* jr:enregistrer_cle */`,
     [ctx.organisationId, providerId, secret, cleChiffrement, JSON.stringify(config ?? {})],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// modifierConfigFournisseur
+// ---------------------------------------------------------------------------
+
+export const schemaModifierConfigFournisseur = z.object({
+  providerId: z.enum(IDS_FOURNISSEURS),
+  /** Champs non secrets seulement (sync_interval_min, reply_max_delay_h, model_smart…) — jamais le secret, cf. `merge_provider_config`. */
+  config: z.record(z.string()),
+});
+
+/**
+ * Modifie un ou plusieurs champs non secrets (`sync_interval_min`,
+ * `reply_max_delay_h`, `model_smart`…) SANS toucher au secret déjà enregistré
+ * — réutilise `merge_provider_config` (migration `20260825160000`, déjà posée
+ * pour exactement ce besoin : « poser `config.webhook_secret` sans re-fournir
+ * la clé API »). Relecture tâche 21 (point 2) : `enregistrerCle` seul aurait
+ * obligé à retaper le secret complet pour changer un simple intervalle de
+ * relève — `releve-graph.ts`/`releve-salesblink.ts` lisent `sync_interval_min`
+ * sur `credentials.config`, jamais recopié ailleurs, donc cette fonction est
+ * la seule façon de le changer depuis l'écran sans passer par la base à la main.
+ *
+ * `merge_provider_config` fusionne (`||`) la config existante avec celle
+ * fournie : les autres clés déjà enregistrées (dont un éventuel `daily_cap`)
+ * restent inchangées, seules celles présentes dans `config` sont écrasées.
+ */
+export async function modifierConfigFournisseur(ctx: Contexte, entree: unknown): Promise<void> {
+  exiger(ctx, 'admin');
+  const { providerId, config } = valider(schemaModifierConfigFournisseur, entree);
+  await ctx.ex.query(
+    `select merge_provider_config($1, $2, $3::jsonb) /* jr:modifier_config_fournisseur */`,
+    [ctx.organisationId, providerId, JSON.stringify(config)],
   );
 }
 

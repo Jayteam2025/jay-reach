@@ -1823,7 +1823,9 @@
         "scorings": "{utilise} scorings sur {plafond}",
         "enrichissements": "{utilise} crédits sur {plafond}",
         "envois": "{utilise} envois sur {plafond}"
-      }
+      },
+      "reglagesTitre": "Réglages",
+      "enregistrerReglages": "Enregistrer"
     }
   }
 }

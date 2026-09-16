@@ -7,7 +7,9 @@ import {
   enregistrerCle,
   ErreurFournisseurNonConfigure,
   listerFournisseurs,
+  modifierConfigFournisseur,
   schemaEnregistrerCle,
+  schemaModifierConfigFournisseur,
   schemaTesterFournisseur,
   testerFournisseur,
 } from './fournisseurs.js';
@@ -181,6 +183,49 @@ describe('enregistrerCle', () => {
     const secret = 'sk-ultra-secret-jamais-affiche';
     const sortie = await enregistrerCle(ctx, { providerId: 'anthropic', secret });
     expect(JSON.stringify(sortie ?? null)).not.toContain(secret);
+  });
+});
+
+describe('modifierConfigFournisseur (relecture tâche 21, point 2 : champs non secrets sans ressaisir la clé)', () => {
+  it('refuse un opérateur (rôle admin requis)', async () => {
+    const ctx = faux({}, 'operator');
+    await expect(modifierConfigFournisseur(ctx, { providerId: 'salesblink', config: { sync_interval_min: '10' } })).rejects.toThrow(
+      ForbiddenError,
+    );
+  });
+
+  it('refuse un providerId inconnu', async () => {
+    const ctx = faux({});
+    await expect(modifierConfigFournisseur(ctx, { providerId: 'inconnu', config: {} })).rejects.toThrow(ErreurEntree);
+  });
+
+  it('appelle merge_provider_config (jamais set_provider_credential) — aucun secret en jeu', async () => {
+    const ctx = faux({ merge_provider_config: [{ merge_provider_config: null }] });
+    await modifierConfigFournisseur(ctx, { providerId: 'microsoft_graph', config: { sync_interval_min: '10' } });
+    const appels = appelsDe(ctx);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]?.sql).toMatch(/merge_provider_config/i);
+    expect(appels[0]?.params).toEqual(['org-1', 'microsoft_graph', JSON.stringify({ sync_interval_min: '10' })]);
+  });
+
+  it('accepte plusieurs champs non secrets à la fois', async () => {
+    const ctx = faux({ merge_provider_config: [{ merge_provider_config: null }] });
+    await modifierConfigFournisseur(ctx, {
+      providerId: 'salesblink',
+      config: { sync_interval_min: '5', reply_max_delay_h: '6' },
+    });
+    const appels = appelsDe(ctx);
+    expect(appels[0]?.params?.[2]).toBe(JSON.stringify({ sync_interval_min: '5', reply_max_delay_h: '6' }));
+  });
+});
+
+describe('schemaModifierConfigFournisseur', () => {
+  it('accepte une config vide (aucun champ à changer)', () => {
+    expect(schemaModifierConfigFournisseur.safeParse({ providerId: 'salesblink', config: {} }).success).toBe(true);
+  });
+
+  it('rejette un providerId inconnu', () => {
+    expect(schemaModifierConfigFournisseur.safeParse({ providerId: 'inconnu', config: {} }).success).toBe(false);
   });
 });
 

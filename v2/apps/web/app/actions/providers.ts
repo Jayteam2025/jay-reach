@@ -21,6 +21,7 @@ import {
   ErreurEntree,
   ErreurFournisseurNonConfigure,
   ForbiddenError,
+  modifierConfigFournisseur,
   testerFournisseur,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
@@ -43,6 +44,23 @@ export async function actionEnregistrerCle(
   try {
     const ctx = await contexteCourant();
     await enregistrerCle(ctx, { providerId, secret, config });
+    revalidatePath('/settings/providers');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
+  }
+}
+
+/**
+ * Modifie un ou plusieurs champs non secrets (sync_interval_min, model_smart…)
+ * sans passer par `enregistrerCle` — relecture tâche 21, point 2 : un
+ * opérateur qui ne change que l'intervalle de relève de Microsoft Graph ne
+ * doit pas devoir retaper le secret du client.
+ */
+export async function actionModifierConfigFournisseur(providerId: string, config: Record<string, string>): Promise<ResultatFournisseur> {
+  try {
+    const ctx = await contexteCourant();
+    await modifierConfigFournisseur(ctx, { providerId, config });
     revalidatePath('/settings/providers');
     return { ok: true };
   } catch (err) {

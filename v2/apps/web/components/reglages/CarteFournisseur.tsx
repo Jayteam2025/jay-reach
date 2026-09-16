@@ -12,7 +12,7 @@ import { useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bouton, Carte, Champ, Puce, TuileLogo } from '../ui';
 import type { PuceTon, TuileLogoMarque } from '../ui';
-import { actionEnregistrerCle, actionTesterFournisseur } from '../../app/actions/providers';
+import { actionEnregistrerCle, actionModifierConfigFournisseur, actionTesterFournisseur } from '../../app/actions/providers';
 
 export interface ChampCleFournisseur {
   name: string;
@@ -21,6 +21,19 @@ export interface ChampCleFournisseur {
   required: boolean;
   aide?: string;
   exemple?: string;
+}
+
+/**
+ * Champ non secret optionnel du catalogue (`sync_interval_min`, `reply_max_delay_h`,
+ * `model_smart`…) — relecture tâche 21, point 2 : affiché avec sa valeur courante et
+ * modifiable SANS passer par « Remplacer » (donc sans retaper le secret), via
+ * `modifierConfigFournisseur`/`merge_provider_config`.
+ */
+export interface ChampConfigFournisseur {
+  name: string;
+  libelle: string;
+  valeurActuelle: string;
+  aide?: string;
 }
 
 export interface InfoFournisseur {
@@ -35,8 +48,10 @@ export interface CarteFournisseurProps {
   description: string;
   tuile: { marque: TuileLogoMarque; lettre?: string };
   etat: { ton: PuceTon; texte: string };
-  /** Champ secret d'abord, puis les champs non secrets (app_id, tenant_id…) — ordre du catalogue. */
+  /** Champs requis du catalogue (le secret et l'identité minimale, ex. app_id) — formulaire « Remplacer ». */
   champs: ChampCleFournisseur[];
+  /** Champs optionnels du catalogue (sync_interval_min, model_smart…) — bloc « Réglages » toujours visible, indépendant de « Remplacer ». */
+  champsConfig: ChampConfigFournisseur[];
   presente: boolean;
   /** 4 derniers caractères connus, pour composer le masque « ••••1234 » — la page les lit dans `config`/`last4` si elle en a, sinon un masque générique. */
   masque: string;
@@ -51,6 +66,8 @@ export interface CarteFournisseurProps {
     tester: string;
     enregistrementEnCours: string;
     placeholderSecret: string;
+    reglagesTitre: string;
+    enregistrerReglages: string;
   };
 }
 
@@ -61,6 +78,7 @@ export function CarteFournisseur({
   tuile,
   etat,
   champs,
+  champsConfig,
   presente,
   masque,
   infos,
@@ -70,8 +88,10 @@ export function CarteFournisseur({
   const router = useRouter();
   const [enEdition, setEnEdition] = useState(peutModifier && !presente);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
+  const [valeursConfig, setValeursConfig] = useState<Record<string, string>>({});
   const [pendingSave, startSave] = useTransition();
   const [pendingTest, startTest] = useTransition();
+  const [pendingConfig, startConfig] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
 
   const champSecret = champs.find((c) => c.secret);
@@ -94,6 +114,23 @@ export function CarteFournisseur({
       if (res.ok) {
         setValeurs({});
         setEnEdition(false);
+        router.refresh();
+      } else {
+        setErreur(res.error);
+      }
+    });
+  }
+
+  function enregistrerConfig() {
+    setErreur(null);
+    const config: Record<string, string> = {};
+    for (const champ of champsConfig) {
+      config[champ.name] = valeursConfig[champ.name] ?? champ.valeurActuelle;
+    }
+    startConfig(async () => {
+      const res = await actionModifierConfigFournisseur(providerId, config);
+      if (res.ok) {
+        setValeursConfig({});
         router.refresh();
       } else {
         setErreur(res.error);
@@ -193,6 +230,35 @@ export function CarteFournisseur({
           </div>
         ))}
       </div>
+
+      {champsConfig.length > 0 && (
+        <div style={{ borderTop: '1px solid var(--jr-filet)', margin: '12px 18px 0', paddingTop: 12 }}>
+          <span className="jr-libelle">{libelles.reglagesTitre}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 6 }}>
+            {champsConfig.map((champ) => (
+              <div key={champ.name}>
+                <Champ libelle={champ.libelle} id={`${providerId}-cfg-${champ.name}`}>
+                  <input
+                    id={`${providerId}-cfg-${champ.name}`}
+                    value={valeursConfig[champ.name] ?? champ.valeurActuelle}
+                    onChange={(e) => setValeursConfig((v) => ({ ...v, [champ.name]: e.target.value }))}
+                    disabled={!peutModifier || pendingConfig}
+                  />
+                </Champ>
+                {champ.aide && <div className="jr-aide">{champ.aide}</div>}
+              </div>
+            ))}
+          </div>
+          {peutModifier && (
+            <div style={{ marginTop: 8 }}>
+              <Bouton variante="principal" taille="petit" onClick={enregistrerConfig} disabled={pendingConfig} aria-busy={pendingConfig}>
+                {pendingConfig ? libelles.enregistrementEnCours : libelles.enregistrerReglages}
+              </Bouton>
+            </div>
+          )}
+        </div>
+      )}
+
       {erreur && (
         <div className="jr-bandeau erreur" role="alert" style={{ margin: '0 18px 16px' }}>
           <span>{erreur}</span>
