@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { ErreurIntrouvable } from './contexte.js';
+import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import { ErreurReponseImpossible } from '../inbox/repondre-au-fil.js';
 import { calculerReponsePossible, lireFil, listerFils, marquerInteret, marquerTraite, repondre } from './reception.js';
 
@@ -326,6 +326,14 @@ describe('repondre', () => {
     ).rejects.toBeInstanceOf(ErreurReponseImpossible);
     expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
     expect(appels.some((a) => a.text.trim().startsWith('insert into audit_events'))).toBe(false);
+  });
+
+  it("corps fait uniquement d'espaces : ErreurEntree, aucun appel à repondreAuFil (le trim porte sur le texte, pas la longueur brute)", async () => {
+    const { ctx, appels } = contexteCapturant(() => undefined);
+    await expect(
+      repondre(ctx, { filId: '11111111-1111-1111-1111-111111111111', corps: '   ' }, transportsFactices()),
+    ).rejects.toBeInstanceOf(ErreurEntree);
+    expect(appels).toHaveLength(0);
   });
 
   it("nominal : délègue à repondreAuFil (choix du transport, insert, update) PUIS journalise 'reply_sent'", async () => {

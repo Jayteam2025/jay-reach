@@ -506,7 +506,21 @@ export async function lireFil(ctx: Contexte, entree: unknown): Promise<FilDetail
 // repondre
 // ---------------------------------------------------------------------------
 
-export const schemaRepondre = z.object({ filId: z.string().uuid(), corps: z.string().min(1).max(20000) });
+/**
+ * `corps` est réduit (`trim`) AVANT la borne de longueur minimale : un texte
+ * fait uniquement d'espaces passait `min(1)` (qui ne porte que sur la
+ * longueur brute) et partait tel quel vers `repondreAuFil`. Avant cette
+ * fonction, `apps/web/app/actions/inbox.ts` faisait ce `trim()` lui-même ;
+ * une fonction « appelable sans écran » (spec « une fonction, deux façades »)
+ * ne peut pas compter sur ce que fait un appelant particulier.
+ */
+export const schemaRepondre = z.object({
+  filId: z.string().uuid(),
+  corps: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().min(1).max(20000)),
+});
 
 /** N'écrit jamais dans `audit_events` avant l'envoi réel : un journal qui échoue ne doit jamais faire échouer une réponse déjà partie (même règle que `ecrireEvenementCampagne`, `campagnes.ts`). */
 async function journaliserReponseEnvoyee(
