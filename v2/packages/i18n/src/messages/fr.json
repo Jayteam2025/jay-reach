@@ -1627,8 +1627,7 @@
         "save": "Enregistrer",
         "saving": "Enregistrement",
         "cancel": "Annuler",
-        "close": "Fermer",
-        "error": "Impossible d'enregistrer cette boîte."
+        "close": "Fermer"
       },
       "linkDrawer": {
         "title": "Relier une boîte",
@@ -1636,8 +1635,7 @@
         "empty": "Aucune boîte SalesBlink disponible pour le moment. Vérifiez la clé dans Fournisseurs.",
         "link": "Relier",
         "linking": "Liaison",
-        "close": "Fermer",
-        "error": "Impossible de relier cette boîte."
+        "close": "Fermer"
       },
       "linkedin": {
         "title": "Comptes LinkedIn",
@@ -1656,7 +1654,6 @@
         "saving": "Enregistrement",
         "cancel": "Annuler",
         "close": "Fermer",
-        "error": "Impossible d'enregistrer ce compte.",
         "drawerDailyQuota": "Profils lus et actions par jour",
         "drawerWeeklyQuota": "Plafond par semaine",
         "drawerHoursFrom": "À partir de",

@@ -95,25 +95,75 @@ describe('clés de traduction', () => {
   // les écrans de ces espaces déclarent `t` de façons trop variées (simple
   // `const`, déstructuration d'un `Promise.all`, paramètre de fonction) pour
   // le regex de déclaration ci-dessus, qui sous-compterait les usages réels.
+  const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /**
+   * Comme `fichiersTsx`, mais inclut aussi les `.ts` (hors `.d.ts`) : le
+   * contrôle des clés mortes doit voir des fonctions utilitaires comme
+   * `apps/web/lib/jours-envoi.ts`, qui reçoivent un traducteur en paramètre
+   * et n'ont aucune raison d'être un composant `.tsx`. Le contrôle direct
+   * ci-dessus (clé utilisée → existe) reste volontairement limité aux
+   * `.tsx`, voir son commentaire — seul le sens inverse en a besoin ici.
+   */
+  function fichiersTsEtTsx(dossier: string): string[] {
+    const out: string[] = [];
+    for (const entree of readdirSync(dossier)) {
+      if (entree === 'node_modules' || entree === '.next' || entree === 'dist') continue;
+      const chemin = join(dossier, entree);
+      if (statSync(chemin).isDirectory()) out.push(...fichiersTsEtTsx(chemin));
+      else if (chemin.endsWith('.tsx') || (chemin.endsWith('.ts') && !chemin.endsWith('.d.ts'))) out.push(chemin);
+    }
+    return out;
+  }
+
+  /**
+   * Sous-espaces réellement déclarés SOUS `prefixe`
+   * (`useTranslations('<prefixe>.<sous>')` / `getTranslations('<prefixe>.<sous>')`,
+   * guillemets simples — même convention que `DECLARATION` ci-dessus) : une
+   * clé qui y vit est alors référencée SANS le préfixe complet, juste sa
+   * partie après `<sous>.`. Généralise le cas `card` (seul sous-espace pris en
+   * compte jusqu'ici, `campagne.sources.card` déclaré par `CarteSource.tsx`)
+   * à tout sous-espace qu'un composant déclare vraiment, plutôt que de lister
+   * les noms un par un — constat tâche 20 : plusieurs sous-espaces sous
+   * `reglages.expediteurs.*` (`.drawer`, `.linkedin`, `.linkDrawer`) que le
+   * seul cas `card` ne couvrait pas, aurait signalé leurs clés comme mortes.
+   */
+  function sousEspacesDeclares(texte: string, prefixe: string): string[] {
+    const motif = new RegExp(`(?:useTranslations|getTranslations)\\(\\s*(?:await\\s+)?'(${echapper(prefixe)}\\.[^']+)'`, 'g');
+    const sousEspaces = new Set<string>();
+    for (const m of texte.matchAll(motif)) {
+      sousEspaces.add(m[1]!.slice(prefixe.length + 1));
+    }
+    return [...sousEspaces];
+  }
+
   function clesMortesSous(prefixe: string): string[] {
-    const texte = fichiersTsx(join(racine, 'apps/web'))
+    const texte = fichiersTsEtTsx(join(racine, 'apps/web'))
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
-    const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const prefixeRegExp = new RegExp(`^${echapper(prefixe)}\\.`);
+    const sousEspaces = sousEspacesDeclares(texte, prefixe);
 
     return clesDeclarees(prefixe).filter((complet) => {
       const relatif = complet.replace(prefixeRegExp, '');
-      // Une clé sous `card` peut être référencée via le sous-namespace
-      // `<prefixe>.card` (donc sans le préfixe `card.`) — inchangé depuis la
-      // tâche 11, jamais élargi à un autre sous-namespace pour ne pas
-      // affaiblir ce contrôle sur `campagne.sources.*`.
       const candidats = [relatif];
-      if (relatif.startsWith('card.')) candidats.push(relatif.slice('card.'.length));
+      for (const sous of sousEspaces) {
+        if (relatif.startsWith(`${sous}.`)) candidats.push(relatif.slice(sous.length + 1));
+      }
 
       return !candidats.some((c) => {
         const litterale = new RegExp(`\\(\\s*['"\`]${echapper(c)}['"\`]`);
         if (litterale.test(texte)) return true;
+        // Table (`apps/web/lib/jours-envoi.ts` : `Record<number, string>`
+        // dont les valeurs sont les clés, ou `{ valeur, cle: 'mon' }`) ou
+        // ternaire (`t(cond ? 'a' : 'b')`, `reglages.expediteurs.*`) : la clé
+        // n'est jamais l'argument direct de `t`, juste une valeur littérale
+        // qu'une variable transporte jusqu'à l'appel. Repérée par sa position
+        // (après `:`, `,`, `[` ou `?`), pas en cherchant la chaîne n'importe
+        // où : ça la distingue d'un texte ou d'un identifiant qui contiendrait
+        // la même suite de caractères par coïncidence.
+        const valeurDeTable = new RegExp(`[:,[?]\\s*['"\`]${echapper(c)}['"\`]`);
+        if (valeurDeTable.test(texte)) return true;
         // Accès dynamique (`t(\`csvFields.${champ}\`)`) : la clé complète
         // n'apparaît jamais littéralement, seul le préfixe statique le fait.
         const pointFinal = c.lastIndexOf('.');
@@ -127,7 +177,7 @@ describe('clés de traduction', () => {
     });
   }
 
-  it.each(['campagne.sources', 'campagne.sequence', 'campagne.activite', 'campagne.reglages', 'campagne.nouvelle', 'contacts'])(
+  it.each(['campagne.sources', 'campagne.sequence', 'campagne.activite', 'campagne.reglages', 'campagne.nouvelle', 'contacts', 'reglages'])(
     'toutes celles déclarées sous %s sont référencées par un écran',
     (prefixe) => {
       expect(clesMortesSous(prefixe)).toEqual([]);
