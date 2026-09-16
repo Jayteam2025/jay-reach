@@ -71,6 +71,34 @@ export const VARIABLES_HERITEES: Readonly<Record<string, string>> = {
 /** Variables sur lesquelles une valeur de repli est interdite (spec : jamais {{prenom}}). */
 export const NO_FALLBACK_VARIABLES: ReadonlySet<string> = new Set(['prenom']);
 
+/**
+ * Variable de colonne importée : `{{liste_<colonne>}}`. Contrairement aux
+ * variables standard, l'ensemble des noms possibles n'est pas fermé — chaque
+ * import CSV apporte ses propres colonnes — donc on valide un MOTIF plutôt
+ * qu'une liste fermée.
+ */
+const LISTE_VARIABLE_RE = /^liste_[a-z0-9_]+$/;
+
+/**
+ * Nom de colonne CSV → nom de variable `liste_<colonne>`. Règle commune à la
+ * validation des gabarits (ici) et à la résolution des valeurs à l'envoi
+ * (`buildMessageValues`, apps/worker) : minuscules, accents retirés, tout
+ * caractère hors `[a-z0-9]` remplacé par `_`, underscores en double réduits,
+ * underscore de tête et de queue retiré.
+ *
+ * `Intitulé Poste` → `intitule_poste` (variable `{{liste_intitule_poste}}`).
+ * Une colonne qui ne normalise vers rien (que des espaces, de la ponctuation)
+ * donne une chaîne vide — à l'appelant de l'ignorer.
+ */
+export function normalizeListColumnName(header: string): string {
+  return header
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // accents : marques diacritiques combinantes
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 /** Un jeton `{{nom}}` ou `{{nom|valeur de repli}}` trouvé dans un corps. */
 export interface TemplateToken {
   readonly name: string;
@@ -121,6 +149,15 @@ export function normalizeVariableSyntax(body: string): string {
  * qui entoure des mots ou des chiffres est décorative, et on la laisse vivre.
  */
 const QUASI_VARIABLE_RE = /\{\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\|[^}]*)?\}?\}/g;
+
+/**
+ * Tentative de variable de colonne importée mal formée : le contenu commence
+ * par « liste » suivi d'un séparateur (`_`, `-`, espace). Classe de
+ * caractères large — accents et tirets inclus — car `QUASI_VARIABLE_RE`
+ * s'arrête net sur un accent (« intitulé » perdrait son « é ») et ne
+ * permettrait pas de reconstituer le nom de colonne visé.
+ */
+const LISTE_ATTEMPT_RE = /\{\{?\s*(liste[-_ ][^{}|]*?)\s*(?:\|[^}]*)?\}?\}/gi;
 
 /** Distance de Levenshtein, pour proposer le nom que l'opérateur visait. */
 function distance(a: string, b: string): number {
@@ -181,6 +218,10 @@ export interface TemplateValidationIssue {
  *  - `unavailable` : variable réservée à l'autre nature (ex. `{{signal_date}}`
  *    dans une campagne alimentée par une liste) ;
  *  - `fallback_forbidden` : valeur de repli sur une variable qui l'interdit.
+ *
+ * `{{liste_<colonne>}}` (toute colonne d'un CSV importé) est un cas à part :
+ * accepté sur simple motif, quelle que soit la nature, car l'ensemble des
+ * noms possibles n'est connu qu'à l'import (`LISTE_VARIABLE_RE`).
  */
 export function validateTemplateVariables(
   body: string,
@@ -199,6 +240,10 @@ export function validateTemplateVariables(
   // connu est une variable pour l'opérateur, elle doit l'être ici aussi.
   for (const token of parseTemplateTokens(normalizeVariableSyntax(body))) {
     if (extraits.includes(token.name)) continue;
+    // Colonne du CSV importé : nom connu seulement à l'import, jamais dans
+    // STANDARD_VARIABLES. On accepte tout nom bien formé, quelle que soit la
+    // nature de la campagne — une colonne n'est ni « signal » ni « liste ».
+    if (LISTE_VARIABLE_RE.test(token.name)) continue;
     const availability = STANDARD_VARIABLES[token.name];
     if (availability === undefined) {
       if (!seen.has(`unknown:${token.name}`)) {
@@ -246,6 +291,12 @@ export function validateTemplateVariables(
     const brut = (m[1] ?? '').toLowerCase();
     const nom = VARIABLES_HERITEES[brut] ?? brut;
     if (nom in STANDARD_VARIABLES || extraits.includes(nom) || seen.has(`unknown:${nom}`)) continue;
+    // Déjà accepté par la première boucle (double accolade, motif liste_ bien
+    // formé). En accolade simple, ce nom n'est pas reconnu par
+    // `normalizeVariableSyntax` (liste ouverte, pas de dictionnaire à
+    // consulter) : il reste donc signalé, pour ne pas laisser passer un jeton
+    // qui ne sera jamais substitué à l'envoi.
+    if (LISTE_VARIABLE_RE.test(nom) && m[0].startsWith('{{')) continue;
     const proche = suggestVariable(nom);
     issues.push({
       variable: nom,
@@ -256,6 +307,31 @@ export function validateTemplateVariables(
       ...(proche ? { suggestion: proche } : {}),
     });
     seen.add(`unknown:${nom}`);
+  }
+
+  // Variable de colonne importée mal formée (majuscule, accent, tiret) : le
+  // nom canonique bien formé a déjà été accepté plus haut (`LISTE_VARIABLE_RE`
+  // dans la première boucle) — ce qui atterrit ici s'en écarte. On propose la
+  // forme normalisée avec la même règle que `buildMessageValues`, pour que
+  // l'opérateur corrige d'un coup d'œil plutôt que de deviner la convention.
+  const traitesListe = new Set<string>();
+  for (const m of body.matchAll(LISTE_ATTEMPT_RE)) {
+    const brut = (m[1] ?? '').trim();
+    const brutMinuscule = brut.toLowerCase();
+    if (traitesListe.has(brutMinuscule)) continue;
+    traitesListe.add(brutMinuscule);
+    if (LISTE_VARIABLE_RE.test(brutMinuscule)) continue; // déjà bien formé
+    const reste = /^liste[-_ ]?(.*)$/i.exec(brut)?.[1] ?? '';
+    const colonne = normalizeListColumnName(reste);
+    const suggestion = colonne ? `liste_${colonne}` : undefined;
+    issues.push({
+      variable: brutMinuscule,
+      kind: 'unknown',
+      message: suggestion
+        ? `Le nom de colonne « ${brut} » doit être en minuscules, sans accent ni tiret. Vouliez-vous dire « ${suggestion} » ?`
+        : `« ${brut} » n'est pas exploitable comme nom de colonne une fois normalisé.`,
+      ...(suggestion ? { suggestion } : {}),
+    });
   }
 
   return issues;

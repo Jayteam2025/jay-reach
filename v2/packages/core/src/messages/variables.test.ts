@@ -3,6 +3,7 @@ import {
   countWords,
   exceedsWordLimit,
   extractVariableNames,
+  normalizeListColumnName,
   parseTemplateTokens,
   renderTemplate,
   validateTemplateVariables,
@@ -184,5 +185,61 @@ describe('le vocabulaire du socle v1 est traduit', () => {
 
   it('accepte un extrait déclaré par l’organisation', () => {
     expect(validateTemplateVariables('Cordialement,\n{{signature}}', 'signal', ['signature'])).toEqual([]);
+  });
+});
+
+describe('normalisation d’un nom de colonne CSV', () => {
+  it('met en minuscules et retire les accents', () => {
+    expect(normalizeListColumnName('Intitulé Poste')).toBe('intitule_poste');
+  });
+
+  it('remplace tout caractère hors [a-z0-9] par un underscore', () => {
+    expect(normalizeListColumnName('Date d\'entrée')).toBe('date_d_entree');
+    expect(normalizeListColumnName('CA (k€)')).toBe('ca_k');
+  });
+
+  it('réduit les underscores en double et retire ceux de tête/queue', () => {
+    expect(normalizeListColumnName('  --Ville--  ')).toBe('ville');
+    expect(normalizeListColumnName('a   b')).toBe('a_b');
+  });
+
+  it('une colonne qui ne normalise vers rien donne une chaîne vide', () => {
+    expect(normalizeListColumnName('   ')).toBe('');
+    expect(normalizeListColumnName('---')).toBe('');
+  });
+});
+
+describe('variables de colonnes importées {{liste_*}}', () => {
+  it('accepte {{liste_intitule_poste}}, connue seulement à l’import', () => {
+    expect(validateTemplateVariables('{{liste_intitule_poste}}', 'list')).toEqual([]);
+    // Le pattern liste_ est accepté quelle que soit la nature : les colonnes ne
+    // dépendent pas de signal/liste, elles dépendent du fichier importé.
+    expect(validateTemplateVariables('{{liste_intitule_poste}}', 'signal')).toEqual([]);
+  });
+
+  it('autorise le repli sur une variable liste_', () => {
+    const r = renderTemplate('{{liste_intitule_poste|non renseigné}}', {});
+    expect(r.text).toBe('non renseigné');
+    expect(r.missing).toEqual([]);
+  });
+
+  it('rejette un nom liste_ mal formé (accent) et propose la forme normalisée', () => {
+    const soucis = validateTemplateVariables('{{liste_Intitulé}}', 'list');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.kind).toBe('unknown');
+    expect(soucis[0]?.suggestion).toBe('liste_intitule');
+  });
+
+  it('rejette un nom liste_ mal formé (tiret) et propose la forme normalisée', () => {
+    const soucis = validateTemplateVariables('{{liste-intitule-poste}}', 'list');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.kind).toBe('unknown');
+    expect(soucis[0]?.suggestion).toBe('liste_intitule_poste');
+  });
+
+  it('une variable manquante sans repli remonte dans missing', () => {
+    const r = renderTemplate('{{liste_intitule_poste}}', {});
+    expect(r.missing).toEqual(['liste_intitule_poste']);
+    expect(r.text).toBe('');
   });
 });
