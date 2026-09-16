@@ -1588,7 +1588,6 @@
       "boxesLead": "Les envois passent par SalesBlink. Chaque contact est lié à vie à la boîte qui lui a écrit la première.",
       "salesblinkLinked": "SalesBlink relié",
       "salesblinkNotLinked": "SalesBlink non relié",
-      "addBox": "Relier une boîte",
       "empty": "Aucune boîte email. Reliez-en une pour commencer à envoyer.",
       "box": {
         "createdOn": "Connectée le {date}",
