@@ -213,41 +213,45 @@ export function TiroirSourceOffres({
       }
     >
       <div className="jr-formulaire">
-        <Champ libelle={t('drawer.name')}>
-          <input value={nom} onChange={(e) => setNom(e.target.value)} />
+        <Champ libelle={t('drawer.name')} id="tiroir-offres-nom">
+          <input id="tiroir-offres-nom" value={nom} onChange={(e) => setNom(e.target.value)} />
         </Champ>
-        <Champ libelle={t('drawer.keywords')} suffixe={t('drawer.keywordsHint')}>
+        <Champ libelle={t('drawer.keywords')} suffixe={t('drawer.keywordsHint')} id="tiroir-offres-mots-cles">
           <input
+            id="tiroir-offres-mots-cles"
             value={motsCles}
             onChange={(e) => setMotsCles(e.target.value)}
             placeholder="directeur commercial, head of sales"
           />
         </Champ>
-        <Champ libelle={t('drawer.locations')}>
+        <Champ libelle={t('drawer.locations')} id="tiroir-offres-lieux">
           <input
+            id="tiroir-offres-lieux"
             value={lieux}
             onChange={(e) => setLieux(e.target.value)}
             placeholder="Île-de-France, Lyon"
           />
         </Champ>
         <div className="ligne">
-          <Champ libelle={t('drawer.contract')}>
-            <select value={contrat} onChange={(e) => setContrat(e.target.value as 'cdi' | 'tous')}>
+          <Champ libelle={t('drawer.contract')} id="tiroir-offres-contrat">
+            <select id="tiroir-offres-contrat" value={contrat} onChange={(e) => setContrat(e.target.value as 'cdi' | 'tous')}>
               <option value="tous">{t('drawer.contractAll')}</option>
               <option value="cdi">{t('drawer.contractCdi')}</option>
             </select>
           </Champ>
           {providerId === 'adzuna' ? (
-            <Champ libelle={t('drawer.companySize')}>
+            <Champ libelle={t('drawer.companySize')} id="tiroir-offres-taille">
               <input
+                id="tiroir-offres-taille"
                 value={taille}
                 onChange={(e) => setTaille(e.target.value)}
                 placeholder="10 à 250 salariés"
               />
             </Champ>
           ) : (
-            <Champ libelle={t('drawer.department')}>
+            <Champ libelle={t('drawer.department')} id="tiroir-offres-departement">
               <input
+                id="tiroir-offres-departement"
                 value={departement}
                 onChange={(e) => setDepartement(e.target.value)}
                 placeholder="69"
@@ -255,23 +259,25 @@ export function TiroirSourceOffres({
             </Champ>
           )}
         </div>
-        <Champ libelle={t('drawer.exclusions')}>
+        <Champ libelle={t('drawer.exclusions')} id="tiroir-offres-exclusions">
           <input
+            id="tiroir-offres-exclusions"
             value={exclusions}
             onChange={(e) => setExclusions(e.target.value)}
             placeholder="cabinet de recrutement, intérim"
           />
         </Champ>
         <div className="ligne">
-          <Champ libelle={t('drawer.maxAgeDays')} suffixe={t('drawer.maxAgeDaysHint')}>
+          <Champ libelle={t('drawer.maxAgeDays')} suffixe={t('drawer.maxAgeDaysHint')} id="tiroir-offres-age-max-jours">
             <input
+              id="tiroir-offres-age-max-jours"
               value={ageMaxJours}
               onChange={(e) => setAgeMaxJours(e.target.value)}
               placeholder="14"
             />
           </Champ>
-          <Champ libelle={t('drawer.schedule')}>
-            <select value={schedule} onChange={(e) => setSchedule(e.target.value)}>
+          <Champ libelle={t('drawer.schedule')} id="tiroir-offres-schedule">
+            <select id="tiroir-offres-schedule" value={schedule} onChange={(e) => setSchedule(e.target.value)}>
               <option value="every 3h">{t('card.everyNHours', { n: 3 })}</option>
               <option value="every 6h">{t('card.everyNHours', { n: 6 })}</option>
               <option value="every 12h">{t('card.everyNHours', { n: 12 })}</option>
