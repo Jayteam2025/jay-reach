@@ -58,7 +58,7 @@ export async function enrichirMaintenant(
     return { ok: false, error: 'Entreprise introuvable.' };
   }
   if (acc.enriched_at) {
-    return { ok: false, error: `${acc.name} a déjà été enrichie. Ses contacts sont dans Prospects.` };
+    return { ok: false, error: `${acc.name} a déjà été enrichie. Ses contacts sont dans Contacts.` };
   }
 
   // Une persona active avec des intitulés de poste : sans elle, l'enrichissement
@@ -85,7 +85,7 @@ export async function enrichirMaintenant(
   if (dejaEnFile === true) {
     return {
       ok: false,
-      error: `${acc.name} est déjà en file d'enrichissement. Ses contacts arriveront dans Prospects.`,
+      error: `${acc.name} est déjà en file d'enrichissement. Ses contacts arriveront dans Contacts.`,
     };
   }
 
@@ -129,9 +129,9 @@ export async function enrichirMaintenant(
     return { ok: false, error: error.message };
   }
 
-  revalidatePath('/signals');
+  revalidatePath('/contacts');
   return {
     ok: true,
-    message: `${acc.name} part à l’enrichissement pour la persona « ${persona.name} ». Ses contacts apparaîtront dans Prospects d’ici quelques minutes.`,
+    message: `${acc.name} part à l’enrichissement pour la persona « ${persona.name} ». Ses contacts apparaîtront dans Contacts d’ici quelques minutes.`,
   };
 }
