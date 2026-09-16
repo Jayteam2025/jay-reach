@@ -4,6 +4,7 @@ import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
+import { FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -16,16 +17,26 @@ function capitaliser(texte: string): string {
 }
 
 function formatHeure(iso: string | null): string {
-  return iso ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
+  return iso
+    ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso))
+    : '—';
 }
 
-/** HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » — même logique que la Réception. */
+/**
+ * HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » —
+ * même logique que la Réception. `timeZone` posé sur l'heure affichée (R67) ;
+ * la classification aujourd'hui/hier ci-dessous compare encore `toDateString()`
+ * (accesseurs locaux, donc le fuseau du PROCESS qui exécute le rendu, pas
+ * celui de `FUSEAU_PAR_DEFAUT`) — même limite que celle corrigée dans
+ * `heureAvecJour` (`lib/dates.ts`), pas reprise ici faute de couverture de
+ * test sur cette page pour la prouver sans risque de régression.
+ */
 function quandRelatif(iso: string | null): string {
   if (!iso) return '';
   const date = new Date(iso);
   const maintenant = new Date();
   if (date.toDateString() === maintenant.toDateString()) {
-    return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(date);
+    return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(date);
   }
   const hier = new Date(maintenant);
   hier.setDate(maintenant.getDate() - 1);
@@ -70,7 +81,11 @@ export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
   const [t, a] = await Promise.all([getTranslations('aujourdhui'), lireAujourdhuiCourant(ctx)]);
 
-  const jour = capitaliser(new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()));
+  const jour = capitaliser(
+    new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FUSEAU_PAR_DEFAUT }).format(
+      new Date(),
+    ),
+  );
   const campagnesActives = a.campagnes.filter((c) => c.statut === 'active').length;
   const nbAutresEnvois = a.fileDuJour.total - a.fileDuJour.envois.length;
 

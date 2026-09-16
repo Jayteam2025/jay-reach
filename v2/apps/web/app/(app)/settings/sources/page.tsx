@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { createClientOrNull } from '../../../../lib/supabase/server';
+import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { AppTopBar } from '../../chrome';
 import { SourceActions, AddSource } from './source-actions';
 import { ProviderActions } from './provider-actions';
@@ -38,14 +39,20 @@ interface RunRow {
   readonly error: string | null;
 }
 
-/** Date d'exécution en clair, dans le fuseau du lecteur. */
+/**
+ * Date d'exécution en clair. Rendue par un composant serveur (pas le
+ * navigateur du lecteur, malgré le commentaire d'origine) : sans `timeZone`
+ * explicite, `toLocaleTimeString`/`toLocaleDateString` suivaient le fuseau du
+ * PROCESS qui exécute le rendu (R67) — celui de l'organisation, faute de mieux
+ * (`FUSEAU_PAR_DEFAUT`).
+ */
 function quand(iso: string, locale: string): string {
   const d = new Date(iso);
   const jours = Math.floor((Date.now() - d.getTime()) / 86_400_000);
-  const heure = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  const heure = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT });
   if (jours === 0) return `aujourd’hui ${heure}`;
   if (jours === 1) return `hier ${heure}`;
-  return `${d.toLocaleDateString(locale)} ${heure}`;
+  return `${d.toLocaleDateString(locale, { timeZone: FUSEAU_PAR_DEFAUT })} ${heure}`;
 }
 
 export default async function SourcesPage() {

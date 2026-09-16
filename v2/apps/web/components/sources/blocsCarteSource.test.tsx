@@ -24,6 +24,18 @@ function fabriquerT() {
   }) as unknown as Parameters<typeof construireBlocsOffres>[1];
 }
 
+/**
+ * `heureAvecJour` (appelée par `construireBlocsOffres`, sans `maintenant`
+ * explicite) compare l'horloge figée par `vi.useFakeTimers` (ci-dessous) au
+ * jour calendaire de chaque instant, DANS `Europe/Paris` (fuseau par défaut
+ * de `heureAvecJour`, R67) — jamais dans le fuseau du PROCESS qui exécute le
+ * test. Toutes les dates de cette fixture sont donc des ISO UTC explicites
+ * (`Z`), jamais `new Date(année, mois, jour, heure, …)` : cette dernière
+ * construit un instant dans le fuseau LOCAL du process, un chiffre d'heure
+ * identique désignant alors un instant réel différent selon que le test
+ * tourne sous `TZ=Europe/Paris` ou `TZ=UTC` — exactement l'ambiguïté que ce
+ * correctif élimine.
+ */
 function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
   return {
     id: 'src-1',
@@ -42,15 +54,15 @@ function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
     schedule: 'daily',
     active: true,
     dernierPassage: {
-      quand: new Date(2026, 8, 15, 9, 0, 0).toISOString(),
+      quand: '2026-09-15T07:00:00.000Z', // 09:00 Paris le 15 (même jour que « maintenant », 10:00 Paris)
       lus: 58,
       retenus: 6,
       ignores: 52,
     },
-    prochainPassage: new Date(2026, 8, 16, 9, 0, 0).toISOString(),
+    prochainPassage: '2026-09-16T07:00:00.000Z', // 09:00 Paris le 16 -> « demain 09:00 »
     retenus7j: [0, 0, 0, 0, 0, 0, 6],
     totalLu: 312,
-    premierPassage: new Date(2026, 8, 1, 8, 0, 0).toISOString(),
+    premierPassage: '2026-09-01T06:00:00.000Z', // 08:00 Paris le 1er
     collecteDisponible: true,
     ...overrides,
   };
@@ -83,10 +95,13 @@ describe('construireBlocsOffres', () => {
   // `new Date()` par défaut (`construireBlocsOffres` ne lui passe pas de
   // `maintenant`) : sans horloge figée, le test devient faux un jour après
   // avoir été écrit — le « prochain » du 16/09 n'est « demain » que vu du
-  // 15/09. Figée AVANT 09:00 le 15/09 (le « dernier passage » de la fixture),
-  // jamais après le code de production.
+  // 15/09. Figée à 10:00 Paris le 15/09 (après le « dernier passage » de la
+  // fixture, 09:00 le même jour), jamais après le code de production. ISO UTC
+  // explicite (`Z`), pas `new Date(année, mois, jour, …)` : un instant fixé en
+  // heure LOCALE désignerait un moment réel différent selon le fuseau du
+  // process qui exécute le test (R67).
   beforeEach(() => {
-    vi.useFakeTimers({ now: new Date(2026, 8, 15, 8, 0, 0) });
+    vi.useFakeTimers({ now: new Date('2026-09-15T08:00:00.000Z') });
   });
   afterEach(() => {
     vi.useRealTimers();

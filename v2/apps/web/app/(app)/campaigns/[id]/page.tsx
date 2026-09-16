@@ -5,6 +5,7 @@ import { ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
+import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -15,7 +16,7 @@ const nf = new Intl.NumberFormat('fr-FR');
 const TAILLE_APERCU_FILE = 5;
 
 function formatHeure(iso: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso));
 }
 
 function pourcentageTexte(valeur: number): string {

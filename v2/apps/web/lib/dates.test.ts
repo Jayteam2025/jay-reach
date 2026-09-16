@@ -26,27 +26,44 @@ describe('dateRelativeCourte', () => {
 
 /**
  * R43/Group B (tour de correction 2) : « prochain 16:45 » était identique à
- * « dernier 16:45 » alors que le prochain passage tombait le lendemain — la
- * date construite en heure locale (pas l'ISO UTC brut) pour rester
- * indépendante du fuseau d'exécution du test.
+ * « dernier 16:45 » alors que le prochain passage tombait le lendemain.
+ * R67 (16/09) : les instants sont désormais des ISO UTC explicites (pas une
+ * construction en heure locale) — `heureAvecJour` rend dans `Europe/Paris`
+ * par défaut quel que soit le fuseau du PROCESS qui exécute le test ; une
+ * date locale aurait signifié une chose différente selon `process.env.TZ`,
+ * ce qui aurait masqué une régression plutôt que la prouver. Septembre est
+ * en heure d'été à Paris (CEST, UTC+2) : 16:45 Paris = 14:45 UTC.
  */
 describe('heureAvecJour', () => {
   it('aujourd’hui -> heure seule', () => {
-    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
-    const prochain = new Date(2026, 8, 15, 16, 45, 0);
-    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('16:45');
+    const maintenant = new Date('2026-09-15T10:00:00.000Z'); // 12:00 Paris
+    const prochain = '2026-09-15T14:45:00.000Z'; // 16:45 Paris, même jour
+    expect(heureAvecJour(prochain, maintenant)).toBe('16:45');
   });
 
   it('demain -> « demain HH:MM »', () => {
-    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
-    const prochain = new Date(2026, 8, 16, 16, 45, 0);
-    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('demain 16:45');
+    const maintenant = new Date('2026-09-15T10:00:00.000Z'); // 12:00 Paris, le 15
+    const prochain = '2026-09-16T14:45:00.000Z'; // 16:45 Paris, le 16
+    expect(heureAvecJour(prochain, maintenant)).toBe('demain 16:45');
   });
 
   it('au-delà de demain -> date courte + heure', () => {
-    const maintenant = new Date(2026, 8, 15, 12, 0, 0);
-    const prochain = new Date(2026, 8, 18, 16, 45, 0);
-    expect(heureAvecJour(prochain.toISOString(), maintenant)).toBe('18/09 16:45');
+    const maintenant = new Date('2026-09-15T10:00:00.000Z'); // 12:00 Paris, le 15
+    const prochain = '2026-09-18T14:45:00.000Z'; // 16:45 Paris, le 18
+    expect(heureAvecJour(prochain, maintenant)).toBe('18/09 16:45');
+  });
+
+  it('frontière de minuit à Paris : « demain » même si le process qui exécute le rendu est en UTC (R67)', () => {
+    // « maintenant » = 23:50 Paris le 15 (21:50 UTC) ; l'instant à classer =
+    // 00:10 Paris le 16 (22:10 UTC), vingt minutes plus tard en absolu mais un
+    // jour calendaire plus tard À PARIS. En UTC les deux tombent le même jour
+    // calendaire (15) : une comparaison par accesseurs locaux sous un process
+    // en UTC (Vercel) aurait donc classé ceci « aujourd'hui » (00:10 nu) au
+    // lieu de « demain 00:10 » — exactement le bug de `estMemeJour` corrigé
+    // par `cleJourDansFuseau` (même mécanisme que `regrouperParJour`/R53).
+    const maintenant = new Date('2026-09-15T21:50:00.000Z'); // 23:50 Paris le 15
+    const instant = '2026-09-15T22:10:00.000Z'; // 00:10 Paris le 16
+    expect(heureAvecJour(instant, maintenant)).toBe('demain 00:10');
   });
 });
 

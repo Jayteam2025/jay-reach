@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { configFormulaireDepuisStockee } from '@jay-reach/core';
 import { Bouton, Champ, Puce, Tiroir, TuileLogo } from '../ui';
+import { FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import {
   actionCreerSource,
   actionLancerPassageCampagne,
@@ -175,7 +176,7 @@ export function TiroirSourceOffres({
       <Puce key="lu">
         {t('drawer.readSince', {
           n: source.totalLu,
-          date: new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(
+          date: new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: FUSEAU_PAR_DEFAUT }).format(
             new Date(source.premierPassage),
           ),
         })}

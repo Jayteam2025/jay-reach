@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import type { ContexteWeb } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
+import { FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
 import { CarteMoteur } from './CarteMoteur';
@@ -12,9 +13,15 @@ export interface CoquilleProps {
   children: ReactNode;
 }
 
-/** HH:MM, fuseau du serveur (comme le reste du chrome — `chrome.tsx` d'avant faisait de même pour ses relatifs). */
+/**
+ * HH:MM. Le commentaire d'origine (« fuseau du serveur, comme le reste du
+ * chrome ») décrivait un choix qui allait justement à l'encontre de R67 :
+ * sans `timeZone`, la même heure de dernier/prochain passage du moteur
+ * s'affichait décalée de deux heures sur Vercel (serveur en UTC) par rapport
+ * au Mac d'un développeur (déjà à Paris). `FUSEAU_PAR_DEFAUT`, faute de mieux.
+ */
 function formatHeure(iso: string | null): string | null {
-  return iso ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : null;
+  return iso ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso)) : null;
 }
 
 export async function Coquille({ ctx, children }: CoquilleProps) {

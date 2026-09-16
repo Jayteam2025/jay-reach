@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { apercuEnvoi, ErreurIntrouvable, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
+import { FUSEAU_PAR_DEFAUT } from '../../../../../lib/dates';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
 import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
 import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
@@ -41,7 +42,9 @@ function construireLibellesTiroir(
   const heureLibelle =
     heureDeLaLigne ??
     (apercu.heurePrevue
-      ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(apercu.heurePrevue))
+      ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(
+          new Date(apercu.heurePrevue),
+        )
       : null);
 
   const segments = [apercu.contactNom, apercu.contactPoste, apercu.contactEntreprise].filter(

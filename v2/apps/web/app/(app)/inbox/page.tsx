@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { AppTopBar } from '../chrome';
 import { createClientOrNull } from '../../../lib/supabase/server';
+import { FUSEAU_PAR_DEFAUT } from '../../../lib/dates';
 import type { InboxThread, InboxMessage, Classification, Treatment, InboxChannel } from '../../../lib/sample-inbox';
 import { InboxView } from './inbox-view';
 
@@ -25,7 +26,9 @@ function relWhen(iso: string | null): string {
   return d === 1 ? 'hier' : `il y a ${d} j`;
 }
 function msgWhen(iso: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(
+    new Date(iso),
+  );
 }
 function treatmentOf(t: DbThread): Treatment {
   if (t.resume_at) return 'later';
