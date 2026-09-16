@@ -2051,6 +2051,10 @@
             }
           }
         }
+      },
+      "session": {
+        "titre": "Session",
+        "bouton": "Se déconnecter"
       }
     }
   },

@@ -6,6 +6,8 @@ import { listerPreferencesNotifications } from '../../../actions/notifications';
 import { FormulaireOrganisation } from '../../../../components/reglages/FormulaireOrganisation';
 import { TableMembres, type MembreAffiche } from '../../../../components/reglages/TableMembres';
 import { PreferencesNotifications } from '../../../../components/reglages/PreferencesNotifications';
+import { DeconnexionCompte } from '../../../../components/reglages/DeconnexionCompte';
+import { signOut } from '../../../actions/auth';
 import type { EvenementNotificationActif } from '../../../../lib/notification-events';
 
 export const revalidate = 0;
@@ -110,6 +112,8 @@ export default async function ReglagesComptePage() {
           }}
         />
       </div>
+
+      <DeconnexionCompte action={signOut} libelles={{ titre: t('session.titre'), bouton: t('session.bouton') }} />
     </div>
   );
 }
