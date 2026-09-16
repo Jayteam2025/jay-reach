@@ -7,3 +7,5 @@ export * from './campagnes.js';
 export * from './file-du-jour.js';
 export * from './sources.js';
 export * from './sequence.js';
+export * from './modeles-sequence.js';
+export * from './assistant-campagne.js';

@@ -127,7 +127,7 @@ describe('clés de traduction', () => {
     });
   }
 
-  it.each(['campagne.sources', 'campagne.sequence', 'campagne.activite', 'campagne.reglages'])(
+  it.each(['campagne.sources', 'campagne.sequence', 'campagne.activite', 'campagne.reglages', 'campagne.nouvelle'])(
     'toutes celles déclarées sous %s sont référencées par un écran',
     (prefixe) => {
       expect(clesMortesSous(prefixe)).toEqual([]);

@@ -51,8 +51,12 @@ export const TYPES_SOURCES = [
 ] as const;
 export type TypeSource = (typeof TYPES_SOURCES)[number];
 
-/** Types qui créent une veille persistante (`sources` + `campaign_sources`), seuls acceptés par `creerSource`. */
-const TYPES_VEILLE = [
+/**
+ * Types qui créent une veille persistante (`sources` + `campaign_sources`),
+ * seuls acceptés par `creerSource`. Exporté (tâche 14) pour l'assistant de
+ * création de campagne, qui ne propose que ces types dans son étape Sources.
+ */
+export const TYPES_VEILLE = [
   'adzuna',
   'france_travail',
   'linkedin_post_engagers',
@@ -60,7 +64,7 @@ const TYPES_VEILLE = [
   'linkedin_keywords',
   'linkedin_job_change',
 ] as const;
-type TypeVeille = (typeof TYPES_VEILLE)[number];
+export type TypeVeille = (typeof TYPES_VEILLE)[number];
 
 const TYPES_LINKEDIN = [
   'linkedin_post_engagers',

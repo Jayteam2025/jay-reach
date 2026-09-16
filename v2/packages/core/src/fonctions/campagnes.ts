@@ -885,6 +885,23 @@ export async function listerPersonasCampagne(ctx: Contexte, entree: unknown): Pr
   return res.rows.map((r) => ({ id: r.id, nom: r.name }));
 }
 
+/**
+ * Tous les personas actifs de l'organisation, pour le sélecteur « Qui
+ * cherchez-vous ? » de l'assistant de création de campagne (tâche 14) — à
+ * la différence de `listerPersonasCampagne`, ne dépend d'AUCUNE campagne
+ * existante (il n'y en a pas encore au moment où l'assistant en a besoin).
+ */
+export async function listerPersonasOrganisation(ctx: Contexte, entree: unknown): Promise<PersonaCampagne[]> {
+  exiger(ctx, 'viewer');
+  valider(z.object({}), entree);
+
+  const res = await ctx.ex.query<{ id: string; name: string }>(
+    `select id, name from personas /* jr:personas_organisation */ where organization_id = $1 and is_active order by name`,
+    [ctx.organisationId],
+  );
+  return res.rows.map((r) => ({ id: r.id, nom: r.name }));
+}
+
 // ---------------------------------------------------------------------------
 // Cycle de vie : création, réglages, lancement, pause, archivage
 // ---------------------------------------------------------------------------

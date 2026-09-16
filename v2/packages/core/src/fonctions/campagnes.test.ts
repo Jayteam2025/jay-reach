@@ -16,6 +16,7 @@ import {
   listerContactsCampagne,
   listerFileDuJour,
   listerPersonasCampagne,
+  listerPersonasOrganisation,
   manquesPourLancer,
   marqueBoite,
   mettreEnPause,
@@ -492,6 +493,31 @@ describe('listerPersonasCampagne', () => {
   });
 });
 
+// Tâche 14 : sélecteur « Qui cherchez-vous ? » de l'assistant de création —
+// tous les personas actifs de l'organisation, sans dépendre d'une campagne
+// existante (il n'y en a pas encore à ce stade).
+describe('listerPersonasOrganisation', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerPersonasOrganisation(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('aucun persona actif -> liste vide', async () => {
+    const ctx = faux({ 'jr:personas_organisation': [] });
+    const r = await listerPersonasOrganisation(ctx, {});
+    expect(r).toEqual([]);
+  });
+
+  it('filtre par organisation', async () => {
+    const personaId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const ctx = faux({ 'jr:personas_organisation': [{ id: personaId, name: 'Directeur commercial' }] });
+    const r = await listerPersonasOrganisation(ctx, {});
+    expect(r).toEqual([{ id: personaId, nom: 'Directeur commercial' }]);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appel = appels.find((a) => /jr:personas_organisation\b/i.test(String(a[0])));
+    expect(appel?.[1]).toEqual(['org-1']);
+  });
+});
+
 describe('creerCampagne', () => {
   it('refuse un viewer', async () => {
     await expect(
@@ -515,6 +541,26 @@ describe('creerCampagne', () => {
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const appelSources = appels.find((a) => /jr:creer_campagne_sources/i.test(String(a[0])));
     expect(appelSources?.[1]).toEqual(['camp-1', '22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333']);
+  });
+
+  // Tâche 14 : l'assistant de création crée la campagne AVANT ses sources
+  // (celles-ci n'existent pas encore), donc sans `entryKind`/`entryId`
+  // (migration `20260831230000` : `campaigns_one_source` accepte `<= 1`).
+  it('sans entryKind/entryId : crée une campagne sans thème hérité (assistant, tâche 14)', async () => {
+    const ctx = faux({ 'jr:creer_campagne': [{ id: 'camp-2' }] }, 'operator');
+    const r = await creerCampagne(ctx, { name: 'Sans thème', personaIds: ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'] });
+    expect(r).toEqual({ id: 'camp-2' });
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.some((a) => /jr:creer_campagne_sources/i.test(String(a[0])))).toBe(false);
+    const appelCreation = appels.find((a) => /jr:creer_campagne\b/i.test(String(a[0])));
+    expect(appelCreation?.[1]).toEqual(['org-1', 'Sans thème', null, null, JSON.stringify({ personas: ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'] }), null]);
+  });
+
+  it('refuse entryId sans entryKind (ErreurEntree)', async () => {
+    const ctx = faux({}, 'operator');
+    await expect(
+      creerCampagne(ctx, { name: 'Test', entryId: '22222222-2222-2222-2222-222222222222' }),
+    ).rejects.toThrow();
   });
 });
 

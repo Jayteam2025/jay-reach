@@ -1,28 +1,22 @@
-import { createClientOrNull } from '../../../../lib/supabase/server';
-import { AppTopBar } from '../../chrome';
-import { NewCampaign, type EntryOption, type PersonaOption } from './new-campaign';
+import { listerBoitesPourCampagne, listerPersonasOrganisation } from '@jay-reach/core';
+import { contexteCourant } from '../../../../lib/contexte';
+import { Assistant } from '../../../../components/campagne/assistant/Assistant';
 
+export const revalidate = 0;
+
+/**
+ * Assistant de création de campagne en quatre étapes (tâche 14). Ne fait
+ * QUE lire les options disponibles (personas, boîtes d'envoi) : l'assistant
+ * lui-même n'écrit rien avant son dernier bouton (`creerCampagneComplete`,
+ * via l'action serveur `nouvelle-campagne.ts`). La coquille (barre latérale,
+ * carte Moteur) vient du layout du groupe `(app)`, pas de cette page.
+ */
 export default async function NewCampaignPage() {
-  const supabase = await createClientOrNull();
-  const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
-  const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
+  const ctx = await contexteCourant();
+  const [personas, boites] = await Promise.all([
+    listerPersonasOrganisation(ctx, {}),
+    listerBoitesPourCampagne(ctx, {}),
+  ]);
 
-  const sources: EntryOption[] = supabase
-    ? (((await supabase.from('sources').select('id,name').eq('is_active', true)).data as EntryOption[] | null) ?? [])
-    : [];
-  const lists: EntryOption[] = supabase
-    ? (((await supabase.from('lists').select('id,name')).data as EntryOption[] | null) ?? [])
-    : [];
-  const personas: PersonaOption[] = supabase
-    ? (((await supabase.from('personas').select('id,name').eq('is_active', true)).data as PersonaOption[] | null) ?? [])
-    : [];
-
-  return (
-    <div className="rs-shell">
-      <AppTopBar active="campaigns" />
-      <main className="rs-main">
-        <NewCampaign orgId={orgId} demo={!supabase} sources={sources} lists={lists} personas={personas} />
-      </main>
-    </div>
-  );
+  return <Assistant personas={personas} boites={boites} />;
 }
