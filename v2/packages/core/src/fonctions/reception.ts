@@ -155,9 +155,24 @@ export const schemaListerFils = z.object({
 
 const TAILLE_PAGE_RECEPTION = 30;
 
+/**
+ * Fragment SQL de la règle canonique « à traiter » (spec §9, point 2) —
+ * exporté pour que `aujourdhui.ts` (badge de la barre latérale, compteur de
+ * la page Aujourd'hui) compte EXACTEMENT la même chose que la Réception au
+ * lieu de sa propre condition `is_read`/`resume_at`, antérieure à la
+ * migration `20260915100100_fils_traites_interet` (R77, tour de correction 1) :
+ * `is_read` ne porte aucune notion de « traité » ni de type de réponse, deux
+ * définitions différentes du même badge ne peuvent qu'diverger (un fil
+ * `auto_absence` non lu sans `resume_at`, ou un fil marqué traité par
+ * `marquerTraite` sans que `is_read` ne bouge). Suppose l'alias `t` posé sur
+ * `threads` par la requête appelante — même convention que
+ * `SQL_PROVIDER_ID_AFFICHAGE` (`sources.ts`).
+ */
+export const SQL_CONDITION_A_TRAITER = `t.classification = 'human_reply' and t.handled_at is null`;
+
 /** Une condition par filtre — interpolée dans le SQL (valeur fixe de cette table, jamais une entrée utilisateur : sûr). */
 const CONDITIONS_FILTRE: Record<FiltreReception, string> = {
-  a_traiter: `t.classification = 'human_reply' and t.handled_at is null`,
+  a_traiter: SQL_CONDITION_A_TRAITER,
   interesses: `t.interest = 'interested'`,
   absences: `t.classification = 'auto_absence'`,
   traites: `t.handled_at is not null`,

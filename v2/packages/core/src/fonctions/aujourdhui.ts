@@ -9,6 +9,7 @@ import { exiger } from './contexte.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_CONDITION_A_TRAITER } from './reception.js';
 
 /** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
 export type CanalFil = 'email' | 'linkedin' | undefined;
@@ -166,8 +167,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
          left join contacts c on c.id = t.contact_id
          left join accounts ac on ac.id = c.account_id
         where t.organization_id = $1
-          and t.is_read = false
-          and t.resume_at is null
+          and ${SQL_CONDITION_A_TRAITER}
         order by t.last_message_at desc nulls last`,
       [ctx.organisationId],
     ),

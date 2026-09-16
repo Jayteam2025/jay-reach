@@ -44,6 +44,29 @@ describe('lireAujourdhui', () => {
     expect(a.aTraiter.fils[1]?.canal).toBeUndefined();
   });
 
+  it(
+    "R77 (tour de correction 1) : compte « à traiter » avec la règle canonique de la Réception " +
+      "(classification = 'human_reply' et handled_at nul) — un fil marqué traité par marquerTraite " +
+      'en sort donc, ce que is_read/resume_at (l’ancienne condition) ne garantissait pas',
+    async () => {
+      const appels: { text: string }[] = [];
+      const query = vi.fn(async (text: string) => {
+        appels.push({ text });
+        if (/jr:threads_a_traiter/i.test(text)) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      await lireAujourdhui(ctx);
+
+      const requete = appels.find((a) => /jr:threads_a_traiter/i.test(a.text))!.text;
+      expect(requete).toContain("t.classification = 'human_reply'");
+      expect(requete).toContain('t.handled_at is null');
+      expect(requete).not.toContain('is_read');
+      expect(requete).not.toContain('resume_at');
+    },
+  );
+
   it("calcule la dernière heure d'envoi dans le fuseau de l'organisation", async () => {
     const ctx = faux({
       'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }],
