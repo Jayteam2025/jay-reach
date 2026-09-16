@@ -10,6 +10,7 @@ import {
   releverGraph,
   enqueueReleveGraph,
   estReponseANotreEnvoi,
+  destinataireContacte,
   versEvenementRepondu,
   type ClientGraph,
 } from './releve-graph.js';
@@ -169,6 +170,48 @@ describe('estReponseANotreEnvoi', () => {
   });
 });
 
+describe('destinataireContacte', () => {
+  it('choisit le candidat qui est réellement le destinataire de notre envoi', () => {
+    const envoye = messageGraph({
+      id: 'envoye-1',
+      conversationId: 'conv-1',
+      from: 'ventes@exemple.fr',
+      to: ['prenom+etiquette@gmail.com'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    expect(destinataireContacte(envoye, ['prenom@gmail.com', 'prenom+etiquette@gmail.com'])).toBe(
+      'prenom+etiquette@gmail.com',
+    );
+  });
+
+  it('casse ignorée pour apparier le destinataire', () => {
+    const envoye = messageGraph({
+      id: 'envoye-1',
+      conversationId: 'conv-1',
+      from: 'ventes@exemple.fr',
+      to: ['Prenom+Etiquette@Gmail.com'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    expect(destinataireContacte(envoye, ['prenom@gmail.com', 'prenom+etiquette@gmail.com'])).toBe(
+      'prenom+etiquette@gmail.com',
+    );
+  });
+
+  it('aucune correspondance littérale → repli sur le premier candidat', () => {
+    const envoye = messageGraph({
+      id: 'envoye-1',
+      conversationId: 'conv-1',
+      from: 'ventes@exemple.fr',
+      to: ['autre-adresse@exemple.fr'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    expect(destinataireContacte(envoye, ['prenom@gmail.com', 'prenom+etiquette@gmail.com'])).toBe('prenom@gmail.com');
+  });
+});
+
 describe('versEvenementRepondu', () => {
   it('porte transport, boîte et identifiants Graph, plus les en-têtes d’auto-réponse présents', () => {
     const recu = messageGraph({
@@ -181,7 +224,7 @@ describe('versEvenementRepondu', () => {
       bodyText: 'Merci pour votre message.',
       headers: { 'auto-submitted': 'auto-replied', 'x-mailer': 'peu importe' },
     });
-    const ev = versEvenementRepondu(recu, 'ventes@exemple.fr');
+    const ev = versEvenementRepondu(recu, 'ventes@exemple.fr', 'julien@exemple.fr');
     expect(ev).toEqual({
       type: 'repondu',
       email: 'julien@exemple.fr',
@@ -209,7 +252,7 @@ describe('versEvenementRepondu', () => {
       receivedDateTime: '2026-09-15T10:00:00Z',
       bodyText: 'a'.repeat(20_500),
     });
-    const ev = versEvenementRepondu(recu, 'ventes@exemple.fr');
+    const ev = versEvenementRepondu(recu, 'ventes@exemple.fr', 'julien@exemple.fr');
     expect((ev as { corps: string }).corps).toHaveLength(20_000);
   });
 });
@@ -553,6 +596,184 @@ describe('releverGraph', () => {
     expect(upsert).toBeDefined();
     expect(upsert!.values[2]).toBe(CURSEUR_DEPART);
     expect(upsert!.values[3]).toBe('graph_http 500');
+  });
+
+  it('réponse envoyée depuis un alias +étiquette de l’adresse contactée (Gmail) → retenue, email et reply_from corrects', async () => {
+    const recu = messageGraph({
+      id: 'msg-recu-alias',
+      conversationId: 'conv-alias',
+      from: 'prenom@gmail.com',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+      bodyText: 'Merci, je suis intéressé.',
+    });
+    const envoye = messageGraph({
+      id: 'envoye-alias',
+      conversationId: 'conv-alias',
+      from: 'ventes@exemple.fr',
+      to: ['prenom+etiquette@gmail.com'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CONTACTS_FILTRE1, repondre: () => ligne([{ id: 'contact-1', email: 'prenom+etiquette@gmail.com' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice({
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
+      listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
+    });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(traiterEvenementEmailMock).toHaveBeenCalledTimes(1);
+    const [, , ev] = traiterEvenementEmailMock.mock.calls[0]!;
+    expect(ev).toMatchObject({
+      email: 'prenom+etiquette@gmail.com',
+      headers: expect.objectContaining({ reply_from: 'prenom@gmail.com' }),
+    });
+    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 1 });
+  });
+
+  it('deux contacts en base qui se normalisent pareil → la réponse rejoint celui à qui NOUS avons écrit, pas le dernier lu', async () => {
+    const recu = messageGraph({
+      id: 'msg-recu-ambigu',
+      conversationId: 'conv-ambigu',
+      from: 'prenom@gmail.com',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+    });
+    const envoye = messageGraph({
+      id: 'envoye-ambigu',
+      conversationId: 'conv-ambigu',
+      from: 'ventes@exemple.fr',
+      to: ['prenom+etiquette@gmail.com'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        {
+          motif: CONTACTS_FILTRE1,
+          // Ordre SQL délibéré : le contact « de base » est lu avant l'alias.
+          // Sans le correctif, la map gardait ce dernier lu et rattachait la
+          // réponse au mauvais contact (celui sans inscription à la campagne).
+          repondre: () =>
+            ligne([
+              { id: 'contact-base', email: 'prenom@gmail.com' },
+              { id: 'contact-alias', email: 'prenom+etiquette@gmail.com' },
+            ]),
+        },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice({
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
+      listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
+    });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(traiterEvenementEmailMock).toHaveBeenCalledTimes(1);
+    const [, , ev] = traiterEvenementEmailMock.mock.calls[0]!;
+    expect(ev).toMatchObject({ email: 'prenom+etiquette@gmail.com' });
+    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 1 });
+  });
+
+  it('réponse envoyée sans les points Gmail de l’adresse contactée → retenue', async () => {
+    const recu = messageGraph({
+      id: 'msg-recu-points',
+      conversationId: 'conv-points',
+      from: 'jeandupont@gmail.com',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+    });
+    const envoye = messageGraph({
+      id: 'envoye-points',
+      conversationId: 'conv-points',
+      from: 'ventes@exemple.fr',
+      to: ['jean.dupont@gmail.com'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CONTACTS_FILTRE1, repondre: () => ligne([{ id: 'contact-2', email: 'jean.dupont@gmail.com' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice({
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
+      listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
+    });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(traiterEvenementEmailMock).toHaveBeenCalledTimes(1);
+    const [, , ev] = traiterEvenementEmailMock.mock.calls[0]!;
+    expect(ev).toMatchObject({ email: 'jean.dupont@gmail.com' });
+    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 1, enregistres: 1 });
+  });
+
+  it('expéditeur inconnu du même domaine qu’un contact → ignoré sans appel sentitems', async () => {
+    const recu = messageGraph({
+      id: 'msg-recu-domaine',
+      conversationId: 'conv-domaine',
+      from: 'quelquun-dautre@gmail.com',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+    });
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        // Le domaine gmail.com est bien celui d'un contact, mais aucune
+        // adresse normalisée ne correspond une fois rapprochée.
+        { motif: CONTACTS_FILTRE1, repondre: () => ligne([{ id: 'contact-3', email: 'julien@gmail.com' }]) },
+      ),
+    );
+    const client = clientFactice({ listerMessagesRecus: vi.fn(async () => resultatMessages([recu])) });
+
+    const resultat = await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    expect(client.listerEnvoyesDansConversation).not.toHaveBeenCalled();
+    expect(traiterEvenementEmailMock).not.toHaveBeenCalled();
+    expect(resultat).toEqual({ boites: 1, lus: 1, retenus: 0, enregistres: 0 });
+  });
+
+  it('journal de synthèse émis à chaque passage, sans adresse ni sujet', async () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const recu = messageGraph({
+      id: 'msg-recu-1',
+      conversationId: 'conv-1',
+      from: 'julien@exemple.fr',
+      receivedDateTime: '2026-09-15T10:00:00Z',
+    });
+    const envoye = messageGraph({
+      id: 'envoye-1',
+      conversationId: 'conv-1',
+      from: 'ventes@exemple.fr',
+      to: ['julien@exemple.fr'],
+      sentDateTime: '2026-09-15T09:00:00Z',
+      receivedDateTime: '2026-09-15T09:00:00Z',
+    });
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: SENDERS_SELECT, repondre: () => ligne([{ id: 'sender-1', identity: 'ventes@exemple.fr' }]) },
+        { motif: CONTACTS_FILTRE1, repondre: () => ligne([{ id: 'contact-1', email: 'julien@exemple.fr' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice({
+      listerMessagesRecus: vi.fn(async () => resultatMessages([recu])),
+      listerEnvoyesDansConversation: vi.fn(async () => [envoye]),
+    });
+
+    await releverGraph({ pool }, { organizationId: ORG_ID }, client);
+
+    const ligneSynthese = infoSpy.mock.calls.map((appel) => String(appel[0])).find((texte) => texte.includes('boîte(s)'));
+    expect(ligneSynthese).toBe('[releve-graph] org org-1 : 1 boîte(s), 1 lu(s), 1 retenu(s), 1 enregistré(s)');
+    expect(ligneSynthese).not.toMatch(/@/);
   });
 });
 
