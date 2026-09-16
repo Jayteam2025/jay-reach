@@ -111,6 +111,7 @@ describe('clés de traduction', () => {
       if (entree === 'node_modules' || entree === '.next' || entree === 'dist') continue;
       const chemin = join(dossier, entree);
       if (statSync(chemin).isDirectory()) out.push(...fichiersTsEtTsx(chemin));
+      else if (chemin.includes('.test.')) continue;
       else if (chemin.endsWith('.tsx') || (chemin.endsWith('.ts') && !chemin.endsWith('.d.ts'))) out.push(chemin);
     }
     return out;
