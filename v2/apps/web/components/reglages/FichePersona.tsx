@@ -32,9 +32,11 @@ function LignePersona({
   onSelectionner: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const sousTitre = !persona.estActif
-    ? t('list.archived')
-    : persona.campagnesUtilisatrices.length === 0
+  // Cette ligne ne rend QUE des personas actifs (`FichePersona` filtre avant
+  // d'appeler ce composant, les archivés ont leur propre section) : jamais
+  // besoin d'un libellé « archivé » ici.
+  const sousTitre =
+    persona.campagnesUtilisatrices.length === 0
       ? t('list.draft')
       : persona.scoreMoyen === null
         ? t('list.summary', {
@@ -70,6 +72,39 @@ function LignePersona({
       </span>
       <span className="jr-secondaire">›</span>
     </button>
+  );
+}
+
+/**
+ * Ligne de la section repliée « Archivés » (tour de correction 1, important
+ * #3 : un persona archivé n'avait aucun moyen d'être repris). Pas un
+ * `<button>` englobant comme `LignePersona` : le bouton « Réactiver » est LUI
+ * l'élément interactif, imbriquer un bouton dans un bouton serait invalide.
+ * Fonction pure (aucun `useTranslations`/`useRouter`), testable par
+ * `renderToStaticMarkup` — même motif que `BlocResultatAnnuaire`
+ * (`sources/TiroirSourceAnnuaire.tsx`) et `PiedTiroirRelecture`
+ * (`campagne/TiroirRelecture.tsx`).
+ */
+export function LignePersonaArchivee({
+  nom,
+  libelleReactiver,
+  disabled,
+  onReactiver,
+}: {
+  nom: string;
+  libelleReactiver: string;
+  disabled: boolean;
+  onReactiver: () => void;
+}) {
+  return (
+    <div className="jr-source" style={{ justifyContent: 'space-between' }}>
+      <span>
+        <b>{nom}</b>
+      </span>
+      <Bouton taille="petit" onClick={onReactiver} disabled={disabled}>
+        {libelleReactiver}
+      </Bouton>
+    </div>
   );
 }
 
@@ -152,7 +187,7 @@ function FormulairePersona({
 
   function archiver() {
     if (!persona) return;
-    if (typeof window !== 'undefined' && !window.confirm(tForm('deleteConfirm'))) return;
+    if (typeof window !== 'undefined' && !window.confirm(tForm('archiveConfirm'))) return;
     setErreur(null);
     startTransition(async () => {
       const res = await actionEnregistrerPersona({
@@ -321,7 +356,7 @@ function FormulairePersona({
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
             {persona ? (
               <Bouton variante="danger" onClick={archiver} disabled={pending}>
-                {tForm('delete')}
+                {tForm('archive')}
               </Bouton>
             ) : (
               <span />
@@ -355,10 +390,42 @@ function FormulairePersona({
  */
 export function FichePersona({ personas, campagnesDisponibles, peutModifier }: FichePersonaProps) {
   const t = useTranslations('reglages.personas');
-  const [selectionId, setSelectionId] = useState<string | null>(personas[0]?.id ?? null);
-  const [modeCreation, setModeCreation] = useState(false);
+  const router = useRouter();
+  const actifs = personas.filter((p) => p.estActif);
+  const archives = personas.filter((p) => !p.estActif);
 
-  const selection = modeCreation ? null : (personas.find((p) => p.id === selectionId) ?? null);
+  const [selectionId, setSelectionId] = useState<string | null>(actifs[0]?.id ?? null);
+  const [modeCreation, setModeCreation] = useState(false);
+  const [archivesOuverts, setArchivesOuverts] = useState(false);
+  const [reactivationEnCours, setReactivationEnCours] = useState<string | null>(null);
+  const [erreurReactivation, setErreurReactivation] = useState<string | null>(null);
+  const [pendingReactivation, startReactivation] = useTransition();
+
+  const selection = modeCreation ? null : (actifs.find((p) => p.id === selectionId) ?? null);
+
+  function reactiver(persona: PersonaVue) {
+    setErreurReactivation(null);
+    setReactivationEnCours(persona.id);
+    startReactivation(async () => {
+      const res = await actionEnregistrerPersona({
+        id: persona.id,
+        nom: persona.nom,
+        intitulesPostes: persona.intitulesPostes,
+        seniorite: persona.seniorite,
+        consignesNotation: persona.consignesNotation,
+        ceQueJayApporte: persona.ceQueJayApporte,
+        campagneParDefautId: persona.campagneParDefautId,
+        estActif: true,
+      });
+      setReactivationEnCours(null);
+      if (res.ok) {
+        setSelectionId(res.id);
+        router.refresh();
+      } else {
+        setErreurReactivation(res.error);
+      }
+    });
+  }
 
   return (
     <>
@@ -381,25 +448,69 @@ export function FichePersona({ personas, campagnesDisponibles, peutModifier }: F
       </div>
 
       <div className="jr-contenu jr-maitre-detail">
-        <div className="jr-carte">
-          <div className="jr-corps" style={{ paddingTop: 10 }}>
-            {personas.length === 0 ? (
-              <p className="jr-aide">{t('empty')}</p>
-            ) : (
-              personas.map((persona) => (
-                <LignePersona
-                  key={persona.id}
-                  persona={persona}
-                  selectionnee={!modeCreation && persona.id === selectionId}
-                  onSelectionner={() => {
-                    setModeCreation(false);
-                    setSelectionId(persona.id);
-                  }}
-                  t={t}
-                />
-              ))
-            )}
+        <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+          <div className="jr-carte">
+            <div className="jr-corps" style={{ paddingTop: 10 }}>
+              {actifs.length === 0 ? (
+                <p className="jr-aide">{t('empty')}</p>
+              ) : (
+                actifs.map((persona) => (
+                  <LignePersona
+                    key={persona.id}
+                    persona={persona}
+                    selectionnee={!modeCreation && persona.id === selectionId}
+                    onSelectionner={() => {
+                      setModeCreation(false);
+                      setSelectionId(persona.id);
+                    }}
+                    t={t}
+                  />
+                ))
+              )}
+            </div>
           </div>
+
+          {archives.length > 0 && (
+            <div className="jr-carte">
+              <button
+                type="button"
+                className="jr-secondaire"
+                style={{
+                  border: 0,
+                  background: 'none',
+                  width: '100%',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '10px 18px',
+                }}
+                aria-expanded={archivesOuverts}
+                onClick={() => setArchivesOuverts((o) => !o)}
+              >
+                <span>{t('archivedSection', { n: archives.length })}</span>
+                <span>{archivesOuverts ? '▾' : '▸'}</span>
+              </button>
+              {archivesOuverts && (
+                <div className="jr-corps" style={{ display: 'grid', gap: 2, paddingTop: 0 }}>
+                  {archives.map((persona) => (
+                    <LignePersonaArchivee
+                      key={persona.id}
+                      nom={persona.nom}
+                      libelleReactiver={t('reactivate')}
+                      disabled={pendingReactivation && reactivationEnCours === persona.id}
+                      onReactiver={() => reactiver(persona)}
+                    />
+                  ))}
+                  {erreurReactivation && (
+                    <div className="jr-notification erreur" role="alert">
+                      {erreurReactivation}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>

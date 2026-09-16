@@ -1829,10 +1829,11 @@
       "title": "Personas",
       "lead": "Qui l'on cherche, et comment le moteur décide qu'une offre ou un profil correspond.",
       "new": "+ Nouveau persona",
-      "empty": "Aucun persona pour l'instant.",
+      "empty": "Aucun persona actif pour l'instant.",
+      "archivedSection": "Archivés ({n})",
+      "reactivate": "Réactiver",
       "list": {
-        "draft": "brouillon · aucune campagne active",
-        "archived": "archivé · retiré du sélecteur de nouvelle campagne",
+        "draft": "brouillon · aucune campagne",
         "summary": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}}",
         "summaryWithScore": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}} · score moyen {score}"
       },
@@ -1856,10 +1857,10 @@
         "seniority_individual": "Contributeur individuel",
         "scoringPrompt": "Consignes de notation (lues par le modèle)",
         "angle": "Ce que Jay leur apporte",
-        "delete": "Supprimer",
+        "archive": "Archiver",
         "cancel": "Annuler",
         "save": "Enregistrer",
-        "deleteConfirm": "Archiver ce persona ? Il disparaît du sélecteur de nouvelle campagne, mais les contacts et campagnes déjà liés ne changent pas."
+        "archiveConfirm": "Archiver ce persona ? Il disparaît du sélecteur de nouvelle campagne, mais les contacts et campagnes déjà liés ne changent pas."
       },
       "test": {
         "title": "Tester l'appariement",

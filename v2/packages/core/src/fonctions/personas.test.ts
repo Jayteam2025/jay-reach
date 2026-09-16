@@ -207,6 +207,31 @@ describe('enregistrerPersona', () => {
     const appel = appelsDe(ctx).find((a) => /jr:personas_modifier/.test(a.sql))!;
     expect(appel.params.at(-3)).toBe(false);
   });
+
+  it('réactive un persona archivé (tour de correction 1, bouton « Réactiver » de la section Archivés)', async () => {
+    const ctx = faux({ 'jr:personas_modifier': [{ id: personaId }] }, 'admin');
+    const res = await enregistrerPersona(ctx, {
+      id: personaId,
+      nom: 'CEO de scale-ups tech',
+      estActif: true,
+    });
+    expect(res).toEqual({ id: personaId });
+    const appel = appelsDe(ctx).find((a) => /jr:personas_modifier/.test(a.sql))!;
+    expect(appel.params.at(-3)).toBe(true);
+  });
+
+  it('la réactivation refuse un appelant sans rôle admin', async () => {
+    await expect(
+      enregistrerPersona(faux({}, 'operator'), { id: personaId, nom: 'X', estActif: true }),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  it('la réactivation lève ErreurIntrouvable pour un persona inconnu (ou hors organisation)', async () => {
+    const ctx = faux({ 'jr:personas_modifier': [] }, 'admin');
+    await expect(
+      enregistrerPersona(ctx, { id: personaId, nom: 'X', estActif: true }),
+    ).rejects.toThrow(ErreurIntrouvable);
+  });
 });
 
 describe('testerAppariement', () => {
