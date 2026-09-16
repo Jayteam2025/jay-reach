@@ -1,15 +1,31 @@
 'use client';
 
 import { useState } from 'react';
-import { Bouton, Carte, Champ, EtatVide, Menu, TuileLogo } from '../../ui';
+import { Bouton, Carte, Champ, EtatVide, Menu, Puce, TuileLogo } from '../../ui';
+import type { GroupeMenu } from '../../ui';
+import {
+  ChampsSourceLinkedIn,
+  champsLinkedInValides,
+  construireConfigLinkedIn,
+  etatChampsLinkedInDepuisConfig,
+  type EtatChampsLinkedIn,
+  type TypeLinkedIn,
+} from '../../sources/ChampsSourceLinkedIn';
 
-export type ProviderIdAssistant = 'adzuna' | 'france_travail';
+export type ProviderIdAssistant = 'adzuna' | 'france_travail' | TypeLinkedIn;
+
+const TYPES_LINKEDIN: readonly TypeLinkedIn[] = [
+  'linkedin_post_engagers',
+  'linkedin_competitor_followers',
+  'linkedin_keywords',
+  'linkedin_job_change',
+];
+function estLinkedIn(providerId: ProviderIdAssistant): providerId is TypeLinkedIn {
+  return (TYPES_LINKEDIN as readonly string[]).includes(providerId);
+}
 
 export interface ConfigSourceAssistant {
-  readonly motsCles: string[];
-  readonly lieux: string[];
-  readonly contrat: 'cdi' | 'tous';
-  readonly exclusions: string[];
+  readonly [cle: string]: unknown;
 }
 
 export interface SourceAssistant {
@@ -25,13 +41,26 @@ export interface EtapeSourcesLibelles {
   description: string;
   ajouter: string;
   vide: string;
-  linkedinAide: string;
+  aide: string;
   retirer: string;
   menuOffres: string;
   menuAdzunaTitre: string;
   menuAdzunaDescription: string;
   menuFranceTravailTitre: string;
   menuFranceTravailDescription: string;
+  menuLinkedin: string;
+  menuLinkedinBadge: string;
+  menuLinkedinPostEngagersTitre: string;
+  menuLinkedinPostEngagersDescription: string;
+  menuLinkedinCompetitorFollowersTitre: string;
+  menuLinkedinCompetitorFollowersDescription: string;
+  menuLinkedinKeywordsTitre: string;
+  menuLinkedinKeywordsDescription: string;
+  menuLinkedinJobChangeTitre: string;
+  menuLinkedinJobChangeDescription: string;
+  menuManuel: string;
+  menuCsvTitre: string;
+  menuCsvNote: string;
   formNom: string;
   formMotsCles: string;
   formMotsClesAide: string;
@@ -39,6 +68,18 @@ export interface EtapeSourcesLibelles {
   formContrat: string;
   formContratTous: string;
   formContratCdi: string;
+  formLinkedinPostUrl: string;
+  formLinkedinKeepPeople: string;
+  formLinkedinCommented: string;
+  formLinkedinReacted: string;
+  formLinkedinExcludeFirstDegree: string;
+  formLinkedinCompetitorPages: string;
+  formLinkedinTopics: string;
+  formLinkedinSinceDays: string;
+  formLinkedinAccountId: string;
+  formLinkedinProfilesPerDay: string;
+  formLinkedinErreur: string;
+  resumeLinkedin: (n: number) => string;
   formAjouter: string;
   formAnnuler: string;
   formErreur: string;
@@ -59,10 +100,141 @@ function texteVersListe(t: string): string[] {
     .filter(Boolean);
 }
 
-function resumeSource(source: SourceAssistant): string {
-  const morceaux = [source.config.motsCles.join(', ')];
-  if (source.config.lieux.length > 0) morceaux.push(source.config.lieux.join(', '));
-  return morceaux.join(' · ');
+function asListeChaines(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+function titreLinkedin(providerId: TypeLinkedIn, libelles: EtapeSourcesLibelles): string {
+  switch (providerId) {
+    case 'linkedin_post_engagers':
+      return libelles.menuLinkedinPostEngagersTitre;
+    case 'linkedin_competitor_followers':
+      return libelles.menuLinkedinCompetitorFollowersTitre;
+    case 'linkedin_keywords':
+      return libelles.menuLinkedinKeywordsTitre;
+    case 'linkedin_job_change':
+      return libelles.menuLinkedinJobChangeTitre;
+  }
+}
+
+/**
+ * Construit la `config` d'une source Adzuna/France Travail depuis les
+ * champs de l'assistant (tour de correction 1, R58) : `configFranceTravail`
+ * (`packages/core/src/fonctions/sources.ts`) attend `typeContrat`,
+ * `configAdzuna` attend `contrat` — jamais l'un pour l'autre (avant ce
+ * correctif, `contrat` était envoyé aux deux, silencieusement ignoré par le
+ * schéma France Travail). Pure et exportée pour être testée directement
+ * contre le vrai schéma zod, sans passer par le rendu du formulaire.
+ */
+export function construireConfigOffre(
+  providerId: 'adzuna' | 'france_travail',
+  motsCles: string[],
+  lieux: string[],
+  contrat: 'cdi' | 'tous',
+): ConfigSourceAssistant {
+  const commun = { motsCles, lieux, exclusions: [] as string[] };
+  return providerId === 'france_travail' ? { ...commun, typeContrat: contrat } : { ...commun, contrat };
+}
+
+/**
+ * Groupes du menu « + Ajouter une source » (maquette `nouvelle-campagne-2.html`,
+ * tour de correction 1, R57) : Offres d'emploi, LinkedIn (badge « collecte
+ * activée au lot 4 », comme l'onglet Sources de la tâche 11) et Manuel
+ * (Fichier CSV, affiché mais inerte — l'import exige une campagne déjà créée).
+ * Pure et exportée pour être testée sans ouvrir le menu (état interne du
+ * composant, invisible à `renderToStaticMarkup`).
+ */
+export function construireGroupesMenu(
+  libelles: EtapeSourcesLibelles,
+  ouvrirFormulaire: (providerId: ProviderIdAssistant) => void,
+): GroupeMenu[] {
+  const badgeLinkedin = <Puce ton="gris">{libelles.menuLinkedinBadge}</Puce>;
+  return [
+    {
+      titre: libelles.menuOffres,
+      entrees: [
+        {
+          icone: <TuileLogo marque="adzuna" />,
+          titre: libelles.menuAdzunaTitre,
+          description: libelles.menuAdzunaDescription,
+          onSelectionner: () => ouvrirFormulaire('adzuna'),
+        },
+        {
+          icone: <TuileLogo marque="francetravail" />,
+          titre: libelles.menuFranceTravailTitre,
+          description: libelles.menuFranceTravailDescription,
+          onSelectionner: () => ouvrirFormulaire('france_travail'),
+        },
+      ],
+    },
+    {
+      titre: libelles.menuLinkedin,
+      entrees: [
+        {
+          icone: <TuileLogo marque="linkedin" />,
+          titre: (
+            <>
+              {libelles.menuLinkedinPostEngagersTitre} {badgeLinkedin}
+            </>
+          ),
+          description: libelles.menuLinkedinPostEngagersDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_post_engagers'),
+        },
+        {
+          icone: <TuileLogo marque="linkedin" />,
+          titre: (
+            <>
+              {libelles.menuLinkedinCompetitorFollowersTitre} {badgeLinkedin}
+            </>
+          ),
+          description: libelles.menuLinkedinCompetitorFollowersDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_competitor_followers'),
+        },
+        {
+          icone: <TuileLogo marque="linkedin" />,
+          titre: (
+            <>
+              {libelles.menuLinkedinKeywordsTitre} {badgeLinkedin}
+            </>
+          ),
+          description: libelles.menuLinkedinKeywordsDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_keywords'),
+        },
+        {
+          icone: <TuileLogo marque="linkedin" />,
+          titre: (
+            <>
+              {libelles.menuLinkedinJobChangeTitre} {badgeLinkedin}
+            </>
+          ),
+          description: libelles.menuLinkedinJobChangeDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_job_change'),
+        },
+      ],
+    },
+    {
+      titre: libelles.menuManuel,
+      entrees: [
+        {
+          icone: <TuileLogo marque="lettre" lettre="↑" />,
+          titre: libelles.menuCsvTitre,
+          description: libelles.menuCsvNote,
+          desactive: true,
+        },
+      ],
+    },
+  ];
+}
+
+function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): string {
+  if (source.providerId === 'adzuna' || source.providerId === 'france_travail') {
+    const morceaux = [asListeChaines(source.config.motsCles).join(', ')];
+    const lieux = asListeChaines(source.config.lieux);
+    if (lieux.length > 0) morceaux.push(lieux.join(', '));
+    return morceaux.join(' · ');
+  }
+  const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
+  return libelles.resumeLinkedin(profilsParJour);
 }
 
 /**
@@ -71,11 +243,12 @@ function resumeSource(source: SourceAssistant): string {
  * `creerCampagneComplete`) — les sources ajoutées ici vivent dans l'état de
  * `Assistant`, retirables tant que la campagne n'est pas créée.
  *
- * Volontairement limité à Adzuna/France Travail (les deux seuls fournisseurs
- * qui collectent réellement aujourd'hui) : les quatre sources LinkedIn se
- * règlent depuis l'onglet Sources de la campagne une fois créée (même
- * formulaire complet que `TiroirSourceLinkedIn`, hors scope de cet
- * assistant) — rien n'est perdu, seulement déplacé après la création.
+ * Catalogue complet de la maquette (tour de correction 1, R57) : Offres
+ * d'emploi (Adzuna, France Travail), les quatre sources LinkedIn — réglables
+ * dès l'assistant via `ChampsSourceLinkedIn`, partagé avec le tiroir de
+ * l'onglet Sources (tâche 11) ; la collecte elle-même ne démarre qu'au lot 4 —
+ * et Manuel (Fichier CSV, affiché mais désactivé : l'import exige une
+ * campagne déjà créée, `importerCsv`).
  */
 export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles }: EtapeSourcesProps) {
   const [menuOuvert, setMenuOuvert] = useState(false);
@@ -85,6 +258,8 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
   const [lieux, setLieux] = useState('');
   const [contrat, setContrat] = useState<'cdi' | 'tous'>('tous');
   const [erreur, setErreur] = useState(false);
+  const [etatLinkedin, setEtatLinkedin] = useState<EtatChampsLinkedIn>(() => etatChampsLinkedInDepuisConfig());
+  const [erreurLinkedin, setErreurLinkedin] = useState(false);
 
   function ouvrirFormulaire(providerId: ProviderIdAssistant) {
     setMenuOuvert(false);
@@ -94,28 +269,53 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
     setLieux('');
     setContrat('tous');
     setErreur(false);
+    setEtatLinkedin(etatChampsLinkedInDepuisConfig());
+    setErreurLinkedin(false);
   }
 
   function annulerFormulaire() {
     setAjoutEnCours(null);
     setErreur(false);
+    setErreurLinkedin(false);
   }
 
-  function validerFormulaire() {
+  function validerFormulaireOffre(providerId: 'adzuna' | 'france_travail') {
     const mots = texteVersListe(motsCles);
     if (mots.length === 0) {
       setErreur(true);
       return;
     }
-    const providerId = ajoutEnCours!;
+    const config = construireConfigOffre(providerId, mots, texteVersListe(lieux), contrat);
     onAjouter({
       cle: `${providerId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       providerId,
       nom: nom.trim() || mots.join(', '),
-      config: { motsCles: mots, lieux: texteVersListe(lieux), contrat, exclusions: [] },
+      config,
     });
     setAjoutEnCours(null);
   }
+
+  function validerFormulaireLinkedin(providerId: TypeLinkedIn) {
+    if (!champsLinkedInValides(providerId, etatLinkedin)) {
+      setErreurLinkedin(true);
+      return;
+    }
+    onAjouter({
+      cle: `${providerId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      providerId,
+      nom: nom.trim() || titreLinkedin(providerId, libelles),
+      config: construireConfigLinkedIn(providerId, etatLinkedin),
+    });
+    setAjoutEnCours(null);
+  }
+
+  function validerFormulaire() {
+    if (!ajoutEnCours) return;
+    if (estLinkedIn(ajoutEnCours)) validerFormulaireLinkedin(ajoutEnCours);
+    else validerFormulaireOffre(ajoutEnCours);
+  }
+
+  const badgeLinkedin = <Puce ton="gris">{libelles.menuLinkedinBadge}</Puce>;
 
   return (
     <Carte
@@ -138,49 +338,69 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
                   aria-label={libelles.ajouter}
                   onClick={() => setMenuOuvert(false)}
                 />
-                <Menu
-                  groupes={[
-                    {
-                      titre: libelles.menuOffres,
-                      entrees: [
-                        {
-                          icone: <TuileLogo marque="adzuna" />,
-                          titre: libelles.menuAdzunaTitre,
-                          description: libelles.menuAdzunaDescription,
-                          onSelectionner: () => ouvrirFormulaire('adzuna'),
-                        },
-                        {
-                          icone: <TuileLogo marque="francetravail" />,
-                          titre: libelles.menuFranceTravailTitre,
-                          description: libelles.menuFranceTravailDescription,
-                          onSelectionner: () => ouvrirFormulaire('france_travail'),
-                        },
-                      ],
-                    },
-                  ]}
-                />
+                <Menu groupes={construireGroupesMenu(libelles, ouvrirFormulaire)} />
               </>
             )}
           </div>
         </>
       }
     >
-      {sources.length === 0 && !ajoutEnCours && <EtatVide titre={libelles.vide} texte={libelles.linkedinAide} />}
+      {sources.length === 0 && !ajoutEnCours && <EtatVide titre={libelles.vide} texte={libelles.aide} />}
 
       {sources.map((source) => (
         <div key={source.cle} className="jr-source">
-          <TuileLogo marque={source.providerId === 'adzuna' ? 'adzuna' : 'francetravail'} />
+          <TuileLogo
+            marque={source.providerId === 'adzuna' ? 'adzuna' : source.providerId === 'france_travail' ? 'francetravail' : 'linkedin'}
+          />
           <span>
             <b>{source.nom}</b>
-            <small>{resumeSource(source)}</small>
+            <small>{resumeSource(source, libelles)}</small>
           </span>
-          <Bouton taille="petit" onClick={() => onRetirer(source.cle)} disabled={disabled}>
-            {libelles.retirer}
-          </Bouton>
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {estLinkedIn(source.providerId) && badgeLinkedin}
+            <Bouton taille="petit" onClick={() => onRetirer(source.cle)} disabled={disabled}>
+              {libelles.retirer}
+            </Bouton>
+          </span>
         </div>
       ))}
 
-      {ajoutEnCours && (
+      {ajoutEnCours && estLinkedIn(ajoutEnCours) && (
+        <div className="jr-formulaire">
+          <Champ libelle={libelles.formNom}>
+            <input value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
+          </Champ>
+          <ChampsSourceLinkedIn
+            providerId={ajoutEnCours}
+            etat={etatLinkedin}
+            onChange={(patch) => setEtatLinkedin((precedent) => ({ ...precedent, ...patch }))}
+            disabled={disabled}
+            libelles={{
+              postUrl: libelles.formLinkedinPostUrl,
+              keepPeople: libelles.formLinkedinKeepPeople,
+              commented: libelles.formLinkedinCommented,
+              reacted: libelles.formLinkedinReacted,
+              excludeFirstDegree: libelles.formLinkedinExcludeFirstDegree,
+              competitorPages: libelles.formLinkedinCompetitorPages,
+              topics: libelles.formLinkedinTopics,
+              sinceDays: libelles.formLinkedinSinceDays,
+              accountId: libelles.formLinkedinAccountId,
+              profilesPerDay: libelles.formLinkedinProfilesPerDay,
+            }}
+          />
+          {erreurLinkedin && <div className="jr-aide-erreur">{libelles.formLinkedinErreur}</div>}
+          <div className="jr-actions">
+            <Bouton onClick={annulerFormulaire} disabled={disabled}>
+              {libelles.formAnnuler}
+            </Bouton>
+            <Bouton variante="principal" onClick={validerFormulaire} disabled={disabled}>
+              {libelles.formAjouter}
+            </Bouton>
+          </div>
+        </div>
+      )}
+
+      {ajoutEnCours && !estLinkedIn(ajoutEnCours) && (
         <div className="jr-formulaire">
           <Champ libelle={libelles.formNom}>
             <input value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
@@ -209,7 +429,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
         </div>
       )}
 
-      {sources.length > 0 && !ajoutEnCours && <p className="jr-aide">{libelles.linkedinAide}</p>}
+      {sources.length > 0 && !ajoutEnCours && <p className="jr-aide">{libelles.aide}</p>}
     </Carte>
   );
 }

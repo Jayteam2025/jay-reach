@@ -6,13 +6,19 @@ import { useTranslations } from 'next-intl';
 import type { TypeSource } from '@jay-reach/core';
 import { Bouton, Champ, Tiroir, TuileLogo } from '../ui';
 import { actionCreerSource, actionModifierSourceCampagne } from '../../app/actions/sources';
-import { CaseACocher } from './CaseACocher';
+import {
+  ChampsSourceLinkedIn,
+  construireConfigLinkedIn,
+  etatChampsLinkedInDepuisConfig,
+  type EtatChampsLinkedIn,
+  type TypeLinkedIn,
+} from './ChampsSourceLinkedIn';
 
-export type TypeLinkedIn =
-  | 'linkedin_post_engagers'
-  | 'linkedin_competitor_followers'
-  | 'linkedin_keywords'
-  | 'linkedin_job_change';
+// Ré-exporté : les appelants existants (`page.tsx`) importaient `TypeLinkedIn`
+// depuis ce fichier avant que le type ne déménage vers `ChampsSourceLinkedIn`
+// (tour de correction 1, R57) — pas de raison de leur faire changer d'import
+// pour un déplacement purement interne.
+export type { TypeLinkedIn };
 
 export interface SourceLinkedInExistante {
   readonly id: string;
@@ -25,16 +31,6 @@ export interface TiroirSourceLinkedInProps {
   readonly campagneId: string;
   readonly providerId: TypeLinkedIn;
   readonly source: SourceLinkedInExistante | null;
-}
-
-function listeVersTexte(v: unknown): string {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').join(', ') : '';
-}
-function texteVersListe(t: string): string[] {
-  return t
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 const CLE_TITRE: Record<TypeLinkedIn, string> = {
@@ -51,82 +47,46 @@ const CLE_TITRE: Record<TypeLinkedIn, string> = {
  * types, `packages/core/src/fonctions/sources.ts`). Un seul sous-formulaire à
  * la fois (le type vient du menu qui a ouvert ce tiroir), pas d'onglets
  * internes pour prévisualiser les quatre variantes comme la maquette.
+ *
+ * Champs propres au sous-type + construction de la `config` : partagés avec
+ * l'assistant de création de campagne via `ChampsSourceLinkedIn` (tâche 14,
+ * R57 — ni tiroir ni tour de correction n'a de raison de diverger sur ce
+ * qu'attend `configLinkedIn*`). Ce fichier garde son propre nom de source, sa
+ * cadence et son appel serveur (`actionCreerSource`/`actionModifierSourceCampagne`).
  */
-export function TiroirSourceLinkedIn({
-  campagneId,
-  providerId,
-  source,
-}: TiroirSourceLinkedInProps) {
+export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirSourceLinkedInProps) {
   const t = useTranslations('campagne.sources');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
 
-  const config = source?.config ?? {};
   const [nom, setNom] = useState(source?.nom ?? '');
-  const [compteId, setCompteId] = useState(
-    typeof config.compteId === 'string' ? config.compteId : '',
-  );
-  const [profilsParJour, setProfilsParJour] = useState(
-    typeof config.profilsParJour === 'number' ? String(config.profilsParJour) : '40',
-  );
   const [schedule, setSchedule] = useState(source?.schedule ?? 'every 24h');
-
-  // Champs propres à chaque sous-type.
-  const [urlPost, setUrlPost] = useState(typeof config.urlPost === 'string' ? config.urlPost : '');
-  const [garderCommente, setGarderCommente] = useState(
-    Array.isArray(config.garder) ? config.garder.includes('commente') : true,
-  );
-  const [garderReagi, setGarderReagi] = useState(
-    Array.isArray(config.garder) ? config.garder.includes('reagi') : true,
-  );
-  const [exclurePremierDegre, setExclurePremierDegre] = useState(
-    config.exclurePremierDegre !== false,
-  );
-  const [comptesConcurrents, setComptesConcurrents] = useState(
-    listeVersTexte(config.comptesConcurrents),
-  );
-  const [sujets, setSujets] = useState(listeVersTexte(config.sujets));
-  const [depuisJours, setDepuisJours] = useState(
-    typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
-  );
+  const [etat, setEtat] = useState<EtatChampsLinkedIn>(() => etatChampsLinkedInDepuisConfig(source?.config ?? {}));
 
   function fermer() {
     router.push('?', { scroll: false });
   }
 
-  function construireConfig(): Record<string, unknown> {
-    const commun = { compteId, profilsParJour: Number(profilsParJour) || 40 };
-    switch (providerId) {
-      case 'linkedin_post_engagers': {
-        const garder: string[] = [];
-        if (garderCommente) garder.push('commente');
-        if (garderReagi) garder.push('reagi');
-        return { ...commun, urlPost, garder, exclurePremierDegre };
-      }
-      case 'linkedin_competitor_followers':
-        return { ...commun, comptesConcurrents: texteVersListe(comptesConcurrents) };
-      case 'linkedin_keywords':
-        return { ...commun, sujets: texteVersListe(sujets) };
-      case 'linkedin_job_change':
-        return { ...commun, depuisJours: Number(depuisJours) || 90 };
-    }
+  function modifierEtat(patch: Partial<EtatChampsLinkedIn>) {
+    setEtat((precedent) => ({ ...precedent, ...patch }));
   }
 
   function enregistrer() {
     setErreur(null);
+    const config = construireConfigLinkedIn(providerId, etat);
     startTransition(async () => {
       const res = source
         ? await actionModifierSourceCampagne(campagneId, {
             sourceId: source.id,
             nom,
-            config: construireConfig(),
+            config,
             schedule,
           })
         : await actionCreerSource(campagneId, {
             providerId: providerId as TypeSource,
             nom,
-            config: construireConfig(),
+            config,
             schedule,
           });
       if (res.ok) {
@@ -160,69 +120,24 @@ export function TiroirSourceLinkedIn({
           <input value={nom} onChange={(e) => setNom(e.target.value)} />
         </Champ>
 
-        {providerId === 'linkedin_post_engagers' && (
-          <>
-            <Champ libelle={t('drawer.postUrl')}>
-              <input
-                value={urlPost}
-                onChange={(e) => setUrlPost(e.target.value)}
-                placeholder="https://www.linkedin.com/posts/…"
-              />
-            </Champ>
-            <div>
-              <span className="jr-libelle">{t('drawer.keepPeople')}</span>
-              <CaseACocher coche={garderCommente} onChange={setGarderCommente}>
-                {t('drawer.commented')}
-              </CaseACocher>
-              <CaseACocher coche={garderReagi} onChange={setGarderReagi}>
-                {t('drawer.reacted')}
-              </CaseACocher>
-              <CaseACocher coche={exclurePremierDegre} onChange={setExclurePremierDegre}>
-                {t('drawer.excludeFirstDegree')}
-              </CaseACocher>
-            </div>
-          </>
-        )}
-        {providerId === 'linkedin_competitor_followers' && (
-          <Champ libelle={t('drawer.competitorPages')}>
-            <input
-              value={comptesConcurrents}
-              onChange={(e) => setComptesConcurrents(e.target.value)}
-              placeholder="Upsell, Uptoo"
-            />
-          </Champ>
-        )}
-        {providerId === 'linkedin_keywords' && (
-          <Champ libelle={t('drawer.topics')}>
-            <input
-              value={sujets}
-              onChange={(e) => setSujets(e.target.value)}
-              placeholder="CRM commercial, pipe de vente"
-            />
-          </Champ>
-        )}
-        {providerId === 'linkedin_job_change' && (
-          <Champ libelle={t('drawer.sinceDays')}>
-            <input
-              value={depuisJours}
-              onChange={(e) => setDepuisJours(e.target.value)}
-              placeholder="90"
-            />
-          </Champ>
-        )}
+        <ChampsSourceLinkedIn
+          providerId={providerId}
+          etat={etat}
+          onChange={modifierEtat}
+          libelles={{
+            postUrl: t('drawer.postUrl'),
+            keepPeople: t('drawer.keepPeople'),
+            commented: t('drawer.commented'),
+            reacted: t('drawer.reacted'),
+            excludeFirstDegree: t('drawer.excludeFirstDegree'),
+            competitorPages: t('drawer.competitorPages'),
+            topics: t('drawer.topics'),
+            sinceDays: t('drawer.sinceDays'),
+            accountId: t('drawer.accountId'),
+            profilesPerDay: t('drawer.profilesPerDay'),
+          }}
+        />
 
-        <div className="ligne">
-          <Champ libelle={t('drawer.accountId')}>
-            <input value={compteId} onChange={(e) => setCompteId(e.target.value)} />
-          </Champ>
-          <Champ libelle={t('drawer.profilesPerDay')}>
-            <input
-              value={profilsParJour}
-              onChange={(e) => setProfilsParJour(e.target.value)}
-              placeholder="40"
-            />
-          </Champ>
-        </div>
         <Champ libelle={t('drawer.schedule')}>
           <select value={schedule} onChange={(e) => setSchedule(e.target.value)}>
             <option value="every 24h">{t('card.everyNHours', { n: 24 })}</option>

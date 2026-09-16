@@ -7,6 +7,8 @@ export type EntreeMenu = {
   titre: ReactNode;
   description?: ReactNode;
   actif?: boolean;
+  /** Entrée affichée mais inerte (ex. import CSV, indisponible avant la création de la campagne) : pas de `onSelectionner`, pas de rôle interactif. */
+  desactive?: boolean;
   onSelectionner?: () => void;
 };
 
@@ -30,10 +32,13 @@ export function Menu({ groupes, className }: MenuProps) {
           {groupe.entrees.map((entree, indexEntree) => (
             <div
               key={indexEntree}
-              className={['entree', entree.actif ? 'actif' : undefined].filter(Boolean).join(' ')}
-              onClick={entree.onSelectionner}
-              role={entree.onSelectionner ? 'button' : undefined}
-              tabIndex={entree.onSelectionner ? 0 : undefined}
+              className={['entree', entree.actif ? 'actif' : undefined, entree.desactive ? 'desactive' : undefined]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={entree.desactive ? undefined : entree.onSelectionner}
+              role={!entree.desactive && entree.onSelectionner ? 'button' : undefined}
+              tabIndex={!entree.desactive && entree.onSelectionner ? 0 : undefined}
+              aria-disabled={entree.desactive || undefined}
             >
               {entree.icone}
               <span>

@@ -100,55 +100,79 @@ function estTypeLinkedIn(v: string): v is (typeof TYPES_LINKEDIN)[number] {
 // Schémas de `config` par type (formulaires des tiroirs)
 // ---------------------------------------------------------------------------
 
-export const configAdzuna = z.object({
-  motsCles: z.array(z.string().min(1)).min(1),
-  lieux: z.array(z.string().min(1)).default([]),
-  contrat: z.enum(['cdi', 'tous']).default('tous'),
-  taille: z.string().max(60).optional(),
-  exclusions: z.array(z.string()).default([]),
-  /** Repli : réglage de l'organisation (`AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT`, `apps/worker/src/producer.ts` = 14 jours). */
-  ageMaxJours: z.number().int().positive().max(365).optional(),
-});
+/**
+ * `.strict()` sur les six schémas de `config` (tour de correction 1, R58) :
+ * aucun autre appelant dans le dépôt ne construit ces objets à la main
+ * (grep fait avant d'ajouter — seul `sources.ts` importe ces schémas), et
+ * chaque formulaire (tiroirs tâche 11, assistant tâche 14) reconstruit un
+ * objet neuf à la soumission plutôt que de renvoyer la config stockée
+ * (qui, elle, porte des clés dérivées comme `sourceType`/`keywords` —
+ * ajoutées APRÈS validation par `construireConfigStocke`, jamais avant).
+ * Une clé du mauvais fournisseur (ex. `contrat` envoyé à France Travail,
+ * qui attend `typeContrat`) est donc désormais rejetée avec une
+ * `ErreurEntree` au lieu d'être ignorée en silence.
+ */
+export const configAdzuna = z
+  .object({
+    motsCles: z.array(z.string().min(1)).min(1),
+    lieux: z.array(z.string().min(1)).default([]),
+    contrat: z.enum(['cdi', 'tous']).default('tous'),
+    taille: z.string().max(60).optional(),
+    exclusions: z.array(z.string()).default([]),
+    /** Repli : réglage de l'organisation (`AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT`, `apps/worker/src/producer.ts` = 14 jours). */
+    ageMaxJours: z.number().int().positive().max(365).optional(),
+  })
+  .strict();
 export type ConfigAdzuna = z.infer<typeof configAdzuna>;
 
-export const configFranceTravail = z.object({
-  motsCles: z.array(z.string().min(1)).min(1),
-  lieux: z.array(z.string().min(1)).default([]),
-  typeContrat: z.enum(['cdi', 'tous']).default('tous'),
-  departement: z.string().max(60).optional(),
-  exclusions: z.array(z.string()).default([]),
-  ageMaxJours: z.number().int().positive().max(365).optional(),
-});
+export const configFranceTravail = z
+  .object({
+    motsCles: z.array(z.string().min(1)).min(1),
+    lieux: z.array(z.string().min(1)).default([]),
+    typeContrat: z.enum(['cdi', 'tous']).default('tous'),
+    departement: z.string().max(60).optional(),
+    exclusions: z.array(z.string()).default([]),
+    ageMaxJours: z.number().int().positive().max(365).optional(),
+  })
+  .strict();
 export type ConfigFranceTravail = z.infer<typeof configFranceTravail>;
 
-export const configLinkedInPost = z.object({
-  urlPost: z.string().min(1),
-  garder: z.array(z.enum(['commente', 'reagi'])).min(1),
-  exclurePremierDegre: z.boolean().default(true),
-  compteId: z.string().min(1),
-  profilsParJour: z.number().int().positive().max(200).default(40),
-});
+export const configLinkedInPost = z
+  .object({
+    urlPost: z.string().min(1),
+    garder: z.array(z.enum(['commente', 'reagi'])).min(1),
+    exclurePremierDegre: z.boolean().default(true),
+    compteId: z.string().min(1),
+    profilsParJour: z.number().int().positive().max(200).default(40),
+  })
+  .strict();
 export type ConfigLinkedInPost = z.infer<typeof configLinkedInPost>;
 
-export const configLinkedInConcurrent = z.object({
-  comptesConcurrents: z.array(z.string().min(1)).min(1),
-  compteId: z.string().min(1),
-  profilsParJour: z.number().int().positive().max(200).default(40),
-});
+export const configLinkedInConcurrent = z
+  .object({
+    comptesConcurrents: z.array(z.string().min(1)).min(1),
+    compteId: z.string().min(1),
+    profilsParJour: z.number().int().positive().max(200).default(40),
+  })
+  .strict();
 export type ConfigLinkedInConcurrent = z.infer<typeof configLinkedInConcurrent>;
 
-export const configLinkedInMotsCles = z.object({
-  sujets: z.array(z.string().min(1)).min(1),
-  compteId: z.string().min(1),
-  profilsParJour: z.number().int().positive().max(200).default(40),
-});
+export const configLinkedInMotsCles = z
+  .object({
+    sujets: z.array(z.string().min(1)).min(1),
+    compteId: z.string().min(1),
+    profilsParJour: z.number().int().positive().max(200).default(40),
+  })
+  .strict();
 export type ConfigLinkedInMotsCles = z.infer<typeof configLinkedInMotsCles>;
 
-export const configLinkedInChangementPoste = z.object({
-  depuisJours: z.number().int().positive().max(365).default(90),
-  compteId: z.string().min(1),
-  profilsParJour: z.number().int().positive().max(200).default(40),
-});
+export const configLinkedInChangementPoste = z
+  .object({
+    depuisJours: z.number().int().positive().max(365).default(90),
+    compteId: z.string().min(1),
+    profilsParJour: z.number().int().positive().max(200).default(40),
+  })
+  .strict();
 export type ConfigLinkedInChangementPoste = z.infer<typeof configLinkedInChangementPoste>;
 
 /** Bloc « collecte au lot 4 » (maquette `tiroir-source-linkedin.html`) : réglable, mais rien ne l'exécute avant le lot LinkedIn. */
