@@ -1471,6 +1471,7 @@
         "recapEnvoiValue": "{n} boîtes · {plafond} nouveaux contacts par jour au plus",
         "boxesTitle": "Boîtes qui enverront",
         "boxesEmpty": "Aucune boîte d'envoi active. Connectez-en une dans Réglages › Expéditeurs.",
+        "boxesNoneActive": "Choisissez au moins une boîte.",
         "review": "Relecture des premiers envois",
         "reviewSuffix": "envois",
         "reviewHint": "Les premiers envois attendent une validation manuelle avant de partir.",

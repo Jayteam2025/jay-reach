@@ -8,7 +8,7 @@ import {
   etatChampsLinkedInDepuisConfig,
   type TypeLinkedIn,
 } from '../../sources/ChampsSourceLinkedIn';
-import { construireEntreeAssistant } from './Assistant';
+import { construireEntreeAssistant, nombreBoitesActives } from './Assistant';
 import {
   construireConfigOffre,
   construireGroupesMenu,
@@ -182,6 +182,59 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
     });
     // C'est exactement ce que `creerSource` validera (packages/core/src/fonctions/sources.ts).
     expect(() => configLinkedInPost.parse(entree.sources[0]!.config)).not.toThrow();
+  });
+});
+
+describe('nombreBoitesActives (R71, tour de correction 4)', () => {
+  const boites = [
+    { id: 'b1', identite: 'a@exemple.fr', marque: null },
+    { id: 'b2', identite: 'b@exemple.fr', marque: null },
+    { id: 'b3', identite: 'c@exemple.fr', marque: null },
+  ];
+
+  it('compte les boîtes cochées quand aucune n’est décochée', () => {
+    expect(nombreBoitesActives(boites, new Set())).toBe(3);
+  });
+
+  it('compte les boîtes cochées quand certaines sont décochées', () => {
+    expect(nombreBoitesActives(boites, new Set(['b1']))).toBe(2);
+  });
+
+  it('rend 0 quand toutes les boîtes sont décochées', () => {
+    expect(nombreBoitesActives(boites, new Set(['b1', 'b2', 'b3']))).toBe(0);
+  });
+});
+
+describe('construireEntreeAssistant — sélection des boîtes d’envoi (R71, tour de correction 4)', () => {
+  const boites = [
+    { id: 'b1', identite: 'a@exemple.fr', marque: null },
+    { id: 'b2', identite: 'b@exemple.fr', marque: null },
+    { id: 'b3', identite: 'c@exemple.fr', marque: null },
+  ];
+  const etatBase = {
+    nom: 'Campagne test',
+    personaId: null,
+    scoreMin: '70',
+    plafondJour: '30',
+    sources: [],
+    etapes: [],
+    relecture: '5',
+  };
+
+  it('une boîte décochée sur trois -> enregistre la liste explicite des deux qui restent cochées, jamais []', () => {
+    const entree = construireEntreeAssistant(
+      { ...etatBase, boites, boiteIdsDesactivees: new Set(['b1']) },
+      false,
+    ) as { boiteIds: string[] };
+    expect(entree.boiteIds).toEqual(['b2', 'b3']);
+  });
+
+  it('toutes décochées -> [] (sémantique « toutes » côté back), mais l’écran désactive alors « Créer et lancer »', () => {
+    const entree = construireEntreeAssistant(
+      { ...etatBase, boites, boiteIdsDesactivees: new Set(['b1', 'b2', 'b3']) },
+      false,
+    ) as { boiteIds: string[] };
+    expect(entree.boiteIds).toEqual([]);
   });
 });
 
@@ -366,6 +419,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
   const LIBELLES: EtapeEnvoiLibelles = {
     boitesTitre: 'Boîtes qui enverront',
     boitesVide: 'Aucune boîte active.',
+    boitesAucuneActive: 'Choisissez au moins une boîte.',
     relecture: 'Relecture des premiers envois',
     relectureSuffixe: 'envois',
     relectureAide: 'Les premiers envois attendent une validation manuelle.',
@@ -385,6 +439,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
         boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
+        aucuneBoiteActive={false}
         relecture="5"
         onRelectureChange={() => {}}
         disabled={false}
@@ -403,6 +458,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
         boites={[{ id: 'b1', identite: 'boite@outlook.com', marque: 'outlook' }]}
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
+        aucuneBoiteActive={false}
         relecture="5"
         onRelectureChange={() => {}}
         disabled={false}
@@ -414,12 +470,49 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     expect(html).toContain('class="jr-boite avec-logo"');
   });
 
+  it('R71 (tour de correction 4) : aucune boîte cochée -> aide « Choisissez au moins une boîte »', () => {
+    const html = renderToStaticMarkup(
+      <EtapeEnvoi
+        boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        boiteIdsDesactivees={new Set(['b1'])}
+        onToggleBoite={() => {}}
+        aucuneBoiteActive={true}
+        relecture="5"
+        onRelectureChange={() => {}}
+        disabled={false}
+        recapitulatif={{ persona: '-', sources: '-', sequence: '-', envoi: '-' }}
+        manques={[]}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain(LIBELLES.boitesAucuneActive);
+  });
+
+  it('R71 : au moins une boîte cochée -> pas d’aide « Choisissez au moins une boîte »', () => {
+    const html = renderToStaticMarkup(
+      <EtapeEnvoi
+        boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        boiteIdsDesactivees={new Set()}
+        onToggleBoite={() => {}}
+        aucuneBoiteActive={false}
+        relecture="5"
+        onRelectureChange={() => {}}
+        disabled={false}
+        recapitulatif={{ persona: '-', sources: '-', sequence: '-', envoi: '-' }}
+        manques={[]}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain(LIBELLES.boitesAucuneActive);
+  });
+
   it('R66 (tour de correction 2) : le champ de relecture a un id relié à son libellé par un vrai <label>', () => {
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[]}
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
+        aucuneBoiteActive={false}
         relecture="5"
         onRelectureChange={() => {}}
         disabled={false}

@@ -16,6 +16,7 @@ export interface RecapitulatifAssistant {
 export interface EtapeEnvoiLibelles {
   boitesTitre: string;
   boitesVide: string;
+  boitesAucuneActive: string;
   relecture: string;
   relectureSuffixe: string;
   relectureAide: string;
@@ -33,6 +34,8 @@ export interface EtapeEnvoiProps {
   boites: readonly BoiteEnvoiAssistant[];
   boiteIdsDesactivees: ReadonlySet<string>;
   onToggleBoite: (id: string, actif: boolean) => void;
+  /** Au moins une boîte connectée mais aucune cochée (R71) : « Créer et lancer » se désactive côté appelant, cette aide l'explique. */
+  aucuneBoiteActive: boolean;
   relecture: string;
   onRelectureChange: (valeur: string) => void;
   disabled: boolean;
@@ -46,6 +49,7 @@ export function EtapeEnvoi({
   boites,
   boiteIdsDesactivees,
   onToggleBoite,
+  aucuneBoiteActive,
   relecture,
   onRelectureChange,
   disabled,
@@ -78,6 +82,7 @@ export function EtapeEnvoi({
             </div>
           ))
         )}
+        {aucuneBoiteActive && <p className="jr-aide">{libelles.boitesAucuneActive}</p>}
       </Carte>
 
       <Carte>

@@ -50,9 +50,25 @@ export function construireEntreeAssistant(
     sources: etat.sources.map((s) => ({ providerId: s.providerId, nom: s.nom, config: s.config })),
     etapes: etat.etapes.map((e) => ({ canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 })),
     relecturePremiersEnvois: Number(etat.relecture) || 0,
+    // [] veut dire « toutes les boîtes » (`resoudreBoites`, packages/core) : dès
+    // qu'une boîte est décochée on enregistre la liste explicite de celles qui
+    // restent cochées, jamais [] pour ce cas-là. Si TOUTES sont décochées, le
+    // filtre rend [] aussi — ambigu avec « toutes » — mais l'écran désactive
+    // alors « Créer et lancer » (R71, tour de correction 4, voir
+    // `nombreBoitesActives`) : ce [] n'atteint le back que via « Enregistrer en
+    // brouillon », où l'ambiguïté est sans conséquence tant que la campagne n'est
+    // pas lancée.
     boiteIds: toutesActives ? [] : etat.boites.map((b) => b.id).filter((id) => !etat.boiteIdsDesactivees.has(id)),
     lancer,
   };
+}
+
+/** Nombre de boîtes cochées — extrait pour être testable indépendamment du rendu (R71). */
+export function nombreBoitesActives(
+  boites: readonly BoiteEnvoiAssistant[],
+  boiteIdsDesactivees: ReadonlySet<string>,
+): number {
+  return boites.filter((b) => !boiteIdsDesactivees.has(b.id)).length;
 }
 
 export function Assistant({ personas, boites }: AssistantProps) {
@@ -151,7 +167,10 @@ export function Assistant({ personas, boites }: AssistantProps) {
 
   const personaNom = personas.find((p) => p.id === personaId)?.nom ?? '—';
   const totalJours = etapes.reduce((somme, e) => somme + e.delaiJours, 0);
-  const nbBoitesActives = boites.filter((b) => !boiteIdsDesactivees.has(b.id)).length;
+  const nbBoitesActives = nombreBoitesActives(boites, boiteIdsDesactivees);
+  // R71 : aucune boîte cochée alors qu'il y en a au moins une de connectée —
+  // « Créer et lancer » se désactive, « Enregistrer en brouillon » reste possible.
+  const aucuneBoiteActive = boites.length > 0 && nbBoitesActives === 0;
 
   return (
     <section className="jr-assistant">
@@ -293,6 +312,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
           boites={boites}
           boiteIdsDesactivees={boiteIdsDesactivees}
           onToggleBoite={toggleBoite}
+          aucuneBoiteActive={aucuneBoiteActive}
           relecture={relecture}
           onRelectureChange={setRelecture}
           disabled={pending}
@@ -306,6 +326,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
           libelles={{
             boitesTitre: t('send.boxesTitle'),
             boitesVide: t('send.boxesEmpty'),
+            boitesAucuneActive: t('send.boxesNoneActive'),
             relecture: t('send.review'),
             relectureSuffixe: t('send.reviewSuffix'),
             relectureAide: t('send.reviewHint'),
@@ -353,7 +374,12 @@ export function Assistant({ personas, boites }: AssistantProps) {
               <Bouton onClick={() => soumettre(false)} disabled={pending} aria-busy={pending}>
                 {t('actions.saveDraft')}
               </Bouton>
-              <Bouton variante="principal" onClick={() => soumettre(true)} disabled={pending} aria-busy={pending}>
+              <Bouton
+                variante="principal"
+                onClick={() => soumettre(true)}
+                disabled={pending || aucuneBoiteActive}
+                aria-busy={pending}
+              >
                 {t('actions.createAndLaunch')}
               </Bouton>
             </>
