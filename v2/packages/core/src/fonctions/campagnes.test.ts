@@ -247,6 +247,29 @@ describe('lireVueDEnsemble', () => {
     // fournisseur.
     expect(v.nombreSources).toBe(1);
   });
+
+  it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null (jamais un plantage)', () => {
+    const ctx = faux({
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null }],
+      'jr:boites_actives': [],
+      organization_settings: [],
+      'jr:entonnoir_campagne': [{ trouves: 0, qualifies: 0, contacts: 0, en_sequence: 0, livres: 0, reponses: 0, interesses: 0 }],
+      'jr:file_du_jour_campagne': [],
+      // `SQL_PROVIDER_ID_AFFICHAGE` rend `null` quand ni `source_providers`, ni
+      // `config.sourceType`, ni la colonne héritée `sources.provider_id` n'ont
+      // de valeur — la page d'ensemble doit se rabattre sur 'lettre', pas planter.
+      'jr:sources_campagne_resume': [{ provider_id: null }],
+      'jr:sources_campagne_compte': [{ n: 1 }],
+      'jr:activite_campagne': [],
+      scored_today: [],
+      enrich_today: [],
+      'from actions': [],
+      'from senders': [],
+    });
+    return expect(lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' })).resolves.toMatchObject({
+      sources: [{ providerId: null }],
+    });
+  });
 });
 
 describe('listerContactsCampagne', () => {

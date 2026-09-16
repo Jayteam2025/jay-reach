@@ -165,6 +165,20 @@ describe('lireSequence', () => {
     expect(vue.etapes[0]!.titre).toBe('Invitation LinkedIn');
   });
 
+  it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null', async () => {
+    const ctx = faux({
+      'jr:sequence_campagne\\b': [{ id: campagneId }],
+      // `SQL_PROVIDER_ID_AFFICHAGE` rend `null` quand ni `source_providers`, ni
+      // `config.sourceType`, ni la colonne héritée `sources.provider_id` n'ont
+      // de valeur — le diagramme de séquence doit se rabattre sur 'lettre',
+      // jamais planter sur `null.includes`.
+      'jr:sequence_sources': [{ provider_id: null }],
+      'jr:sequence_etapes': [],
+    });
+    const vue = await lireSequence(ctx, { campagneId });
+    expect(vue.sources).toEqual([{ providerId: null }]);
+  });
+
   it('une seule étape affichée reste « Premier email », jamais « Dernier mot »', async () => {
     const idA = 'a0000000-0000-0000-0000-000000000009';
     const ctx = faux({

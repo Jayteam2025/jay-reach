@@ -3,18 +3,13 @@
 import { Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import type { VueSequence } from '@jay-reach/core';
-import { TuileLogo, type TuileLogoMarque } from '../ui';
+import { TuileLogo } from '../ui';
+import { marqueSource } from '../../lib/marque-source';
 import { CarteEtape } from './CarteEtape';
 
 export interface FluxSequenceProps {
   readonly campagneId: string;
   readonly vue: VueSequence;
-}
-
-function marqueDeProvider(providerId: string): TuileLogoMarque {
-  if (providerId === 'adzuna') return 'adzuna';
-  if (providerId === 'france_travail') return 'francetravail';
-  return 'linkedin';
 }
 
 /** « 2 jours après » ou « 48 heures après » (un jour rond s'affiche en jours, sinon en heures). */
@@ -43,8 +38,8 @@ export function FluxSequence({ campagneId, vue }: FluxSequenceProps) {
           </span>
         </div>
         <span className="jr-puces">
-          {providers.map((p) => (
-            <TuileLogo key={p} marque={marqueDeProvider(p)} />
+          {providers.map((p, index) => (
+            <TuileLogo key={p ?? `inconnu-${index}`} marque={marqueSource(p)} lettre={p ? undefined : '?'} />
           ))}
         </span>
       </div>

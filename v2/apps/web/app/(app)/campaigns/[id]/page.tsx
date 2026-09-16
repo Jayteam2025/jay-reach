@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
+import { marqueSource } from '../../../../lib/marque-source';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -19,14 +20,6 @@ function formatHeure(iso: string): string {
 
 function pourcentageTexte(valeur: number): string {
   return `${valeur.toLocaleString('fr-FR')} %`;
-}
-
-/** Tuile de logo pour l'icône d'une source, à partir de son `providerId` — copie locale de celle d'`(app)/page.tsx` (convention du module : pas de partage cross-fichier pour un si petit utilitaire, voir `campagnes.ts`). */
-function marqueSource(providerId: string): 'linkedin' | 'adzuna' | 'francetravail' | 'lettre' {
-  if (providerId.includes('linkedin')) return 'linkedin';
-  if (providerId.includes('adzuna')) return 'adzuna';
-  if (providerId.includes('francetravail')) return 'francetravail';
-  return 'lettre';
 }
 
 export default async function CampagneVueDEnsemblePage({ params }: { params: Promise<{ id: string }> }) {
@@ -135,12 +128,12 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           {vue.sources.length === 0 ? (
             <p className="jr-secondaire">{t('overview.sources.empty')}</p>
           ) : (
-            vue.sources.map((source) => {
+            vue.sources.map((source, index) => {
               const cle = `fournisseurs.${source.providerId}`;
-              const libelle = tSources.has(cle) ? tSources(cle) : source.providerId;
+              const libelle = source.providerId && tSources.has(cle) ? tSources(cle) : (source.providerId ?? '—');
               return (
-                <div className="jr-source" key={source.providerId}>
-                  <TuileLogo marque={marqueSource(source.providerId)} lettre={source.providerId.charAt(0).toUpperCase()} />
+                <div className="jr-source" key={source.providerId ?? `inconnu-${index}`}>
+                  <TuileLogo marque={marqueSource(source.providerId)} lettre={(source.providerId ?? '?').charAt(0).toUpperCase()} />
                   <span>
                     <b>{libelle}</b>
                   </span>

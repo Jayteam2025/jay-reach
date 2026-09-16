@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
+import { marqueSource } from '../../lib/marque-source';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -41,14 +42,6 @@ function tonJauge(utilise: number, plafond: number): 'normal' | 'attention' | 'e
 
 function pourcentageJauge(utilise: number, plafond: number): number {
   return plafond > 0 ? Math.min(100, Math.round((utilise / plafond) * 100)) : 0;
-}
-
-/** Tuile de logo pour l'icône d'une source, à partir de son `provider_id` — pas d'inventaire exhaustif, juste les marques déjà connues du kit. */
-function marqueSource(providerId: string): 'linkedin' | 'adzuna' | 'francetravail' | 'lettre' {
-  if (providerId.includes('linkedin')) return 'linkedin';
-  if (providerId.includes('adzuna')) return 'adzuna';
-  if (providerId.includes('francetravail')) return 'francetravail';
-  return 'lettre';
 }
 
 /**
@@ -250,8 +243,12 @@ export default async function AujourdhuiPage() {
                   <span className="jr-secondaire">{t('campaigns.noSource')}</span>
                 ) : (
                   <span style={{ display: 'inline-flex', gap: 4 }}>
-                    {campagne.sources.map((source) => (
-                      <TuileLogo key={source} marque={marqueSource(source)} lettre={source.charAt(0).toUpperCase()} />
+                    {campagne.sources.map((source, index) => (
+                      <TuileLogo
+                        key={source ?? `inconnu-${index}`}
+                        marque={marqueSource(source)}
+                        lettre={(source ?? '?').charAt(0).toUpperCase()}
+                      />
                     ))}
                   </span>
                 ),

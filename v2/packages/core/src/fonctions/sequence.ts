@@ -32,6 +32,7 @@ import {
   type CampaignNature,
 } from '../messages/index.js';
 import { schemaCampagneId } from './campagnes.js';
+import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
 
 // ---------------------------------------------------------------------------
@@ -62,7 +63,8 @@ export interface EtapeVue {
 }
 
 export interface VueSequence {
-  readonly sources: { readonly providerId: string }[];
+  /** `providerId` peut être `null` (R70, tour de correction 4) : aucun des trois repères de fournisseur n'a de valeur. */
+  readonly sources: { readonly providerId: string | null }[];
   readonly qualifies: number;
   readonly etapes: EtapeVue[];
   readonly finDeSequence: { readonly termines: number };
@@ -119,8 +121,8 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
   if (!campRes.rows[0]) throw new ErreurIntrouvable('Campagne');
 
   const [sourcesRes, qualifiesRes, etapesRes, finRes] = await Promise.all([
-    ctx.ex.query<{ provider_id: string }>(
-      `select distinct so.provider_id /* jr:sequence_sources */
+    ctx.ex.query<{ provider_id: string | null }>(
+      `select distinct ${SQL_PROVIDER_ID_AFFICHAGE} as provider_id /* jr:sequence_sources */
          from campaign_sources cs join sources so on so.id = cs.source_id
         where cs.campaign_id = $1`,
       [campagneId],

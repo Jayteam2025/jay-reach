@@ -8,6 +8,7 @@ import type { Contexte } from './contexte.js';
 import { exiger } from './contexte.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
+import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 
 /** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
 export type CanalFil = 'email' | 'linkedin' | undefined;
@@ -68,7 +69,8 @@ export interface CampagneResume {
   statut: 'draft' | 'active' | 'paused' | 'archived';
   etapes: number;
   boites: number;
-  sources: string[];
+  /** Un élément peut être `null` (R70, tour de correction 4) : aucun des trois repères de fournisseur n'a de valeur. */
+  sources: (string | null)[];
   qualifies: number;
   enSequence: number;
   reponses: number;
@@ -128,7 +130,7 @@ interface LigneCampagne {
   status: CampagneResume['statut'];
   etapes: number;
   boites: number;
-  sources: string[] | null;
+  sources: (string | null)[] | null;
   qualifies: number;
   en_sequence: number;
   reponses: number;
@@ -189,7 +191,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       `select c.id, c.name, c.status,
               (select count(*)::int from sequence_steps ss where ss.campaign_id = c.id) as etapes,
               (select count(*)::int from senders sd where sd.organization_id = c.organization_id and sd.kind = 'email' and sd.is_active) as boites,
-              coalesce((select array_agg(distinct so.provider_id) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
+              coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               (select count(*)::int from enrollments e where e.campaign_id = c.id) as qualifies,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'active') as en_sequence,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses

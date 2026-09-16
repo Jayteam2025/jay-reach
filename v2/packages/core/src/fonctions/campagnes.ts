@@ -17,6 +17,7 @@ import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
+import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -204,7 +205,7 @@ export interface CampagneListeResume {
   readonly nom: string;
   readonly statut: CampaignStatus;
   readonly boites: BoiteCampagne[];
-  readonly sources: { providerId: string }[];
+  readonly sources: { providerId: string | null }[];
   readonly qualifies: number;
   /** Personnes distinctes (pas des offres/signaux) reliées aux signaux retenus de la campagne — R31 : la colonne « Contacts » de la liste compte des personnes, pas des offres. */
   readonly contacts: number;
@@ -243,7 +244,8 @@ export interface Entonnoir {
 }
 
 export interface SourceResume {
-  readonly providerId: string;
+  /** `null` si le fournisseur réel n'a pu être résolu par aucun des trois repères (tour de correction 4, R70) — n'est jamais survenu en pratique mais reste possible sur une config disparue. */
+  readonly providerId: string | null;
 }
 
 export interface Evenement {
@@ -352,7 +354,8 @@ interface LigneCampagneListe {
   name: string;
   status: CampaignStatus;
   entry_rules: unknown;
-  sources: string[] | null;
+  /** Chaque élément peut être `null` (R70, tour de correction 4) : `SQL_PROVIDER_ID_AFFICHAGE` renvoie `null` quand aucun des trois repères n'a de valeur. */
+  sources: (string | null)[] | null;
   qualifies: number;
   contacts: number;
   en_sequence: number;
@@ -367,7 +370,7 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
   const [campagnesRes, toutesBoites] = await Promise.all([
     ctx.ex.query<LigneCampagneListe>(
       `select c.id, c.name, c.status, c.entry_rules,
-              coalesce((select array_agg(distinct so.provider_id) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
+              coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               (select count(*)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
                 where cs2.campaign_id = c.id and s2.status in ('qualified', 'enrolled')) as qualifies,
               (select count(distinct contact_id)::int from (
@@ -602,8 +605,8 @@ async function lireEnvoisDuJour(
 }
 
 async function listerSourcesCampagneResume(ctx: Contexte, campagneId: string): Promise<SourceResume[]> {
-  const res = await ctx.ex.query<{ provider_id: string }>(
-    `select distinct so.provider_id /* jr:sources_campagne_resume */
+  const res = await ctx.ex.query<{ provider_id: string | null }>(
+    `select distinct ${SQL_PROVIDER_ID_AFFICHAGE} as provider_id /* jr:sources_campagne_resume */
        from campaign_sources cs
        join sources so on so.id = cs.source_id
       where cs.campaign_id = $1`,

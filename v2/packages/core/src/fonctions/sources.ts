@@ -332,6 +332,28 @@ function lireSourceType(config: Record<string, unknown> | null): TypeVeille {
   throw new ErreurIntrouvable('Source');
 }
 
+/**
+ * Fragment SQL du fournisseur réel d'une source, pour un simple LOGO (pas la
+ * priorité par nom de `resoudreProviders`, réservée à l'onglet Sources) :
+ * `source_providers` d'abord (une source peut en avoir plusieurs, R30 — un
+ * choix déterministe suffit ici), sinon `config.sourceType` (types
+ * `linkedin_*`, jamais de ligne `source_providers`), sinon la colonne héritée
+ * `sources.provider_id` (plus jamais écrite depuis `creerSource`, tâche 11 —
+ * seules deux sources antérieures à ce lot la portent encore). `null` si
+ * aucun des trois n'a de valeur : jamais une erreur (tour de correction 4,
+ * R70 — `column "provider_id" est toujours NULL` a fait planter la page
+ * d'ensemble d'une campagne, `campaigns/[id]/page.tsx`, sur `null.includes`).
+ *
+ * S'insère dans une requête qui alias `sources` en `so` (les quatre requêtes
+ * qui l'utilisent le font déjà) ; fragment plutôt que fonction TS, ces
+ * requêtes restent du SQL brut (`ctx.ex.query`), pas un query builder.
+ */
+export const SQL_PROVIDER_ID_AFFICHAGE = `coalesce(
+  (select sp.provider_id from source_providers sp where sp.source_id = so.id order by sp.provider_id limit 1),
+  so.config->>'sourceType',
+  so.provider_id
+)`;
+
 /** Libellé affiché d'un fournisseur réel, pour la règle de priorité par le nom (R44). */
 const LIBELLE_PROVIDER: Record<'adzuna' | 'france_travail', string> = {
   adzuna: 'Adzuna',
