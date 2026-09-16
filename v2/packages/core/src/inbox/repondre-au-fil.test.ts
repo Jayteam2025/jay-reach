@@ -109,7 +109,7 @@ describe('repondreAuFil', () => {
     const transports = creerTransportsFactices();
 
     await expect(
-      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports),
+      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports),
     ).rejects.toBeInstanceOf(ErreurEntree);
 
     expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
@@ -122,7 +122,7 @@ describe('repondreAuFil', () => {
     const transports = creerTransportsFactices();
 
     await expect(
-      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports),
+      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports),
     ).rejects.toBeInstanceOf(ErreurEntree);
 
     expect(transports.graph).not.toHaveBeenCalled();
@@ -130,7 +130,7 @@ describe('repondreAuFil', () => {
     expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
   });
 
-  it('message entrant Graph : transport graph appelé avec la boîte et l’id, insert marqué microsoft_graph, update vérifié', async () => {
+  it('message entrant Graph : transport graph reçoit le HTML, le corps stocké reste le texte saisi, mailbox posé dans headers, update vérifié', async () => {
     const { ex, appels } = creerExecuteurFactice({
       transport: 'microsoft_graph',
       mailbox: 'contact@exemple.fr',
@@ -138,36 +138,55 @@ describe('repondreAuFil', () => {
     });
     const transports = creerTransportsFactices();
 
-    const resultat = await repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports);
+    const resultat = await repondreAuFil(
+      ex,
+      'org-1',
+      { threadId: 'fil-1', corps: 'Bonjour\n\nÀ bientôt' },
+      transports,
+    );
 
-    expect(transports.graph).toHaveBeenCalledWith('contact@exemple.fr', 'graph-msg-1', '<p>Bonjour</p>');
+    expect(transports.graph).toHaveBeenCalledWith(
+      'contact@exemple.fr',
+      'graph-msg-1',
+      '<p>Bonjour</p><p>À bientôt</p>',
+    );
     expect(transports.salesblink).not.toHaveBeenCalled();
     expect(resultat).toEqual({ messageId: 'message-sortant-1', transport: 'microsoft_graph' });
 
     const insertion = appels.find((a) => a.text.trim().startsWith('insert into thread_messages'));
     expect(insertion).toBeTruthy();
+    // Le corps stocké est le texte saisi par l'opérateur, pas le HTML envoyé au transport.
+    expect(insertion!.values[1]).toBe('Bonjour\n\nÀ bientôt');
     expect(insertion!.values).toContain(null); // provider_message_id : rien côté Graph
-    expect(String(insertion!.values.find((v) => typeof v === 'string' && v.includes('microsoft_graph')))).toContain(
-      'microsoft_graph',
-    );
+    const headers = JSON.parse(insertion!.values[3] as string) as Record<string, unknown>;
+    expect(headers).toEqual({ transport: 'microsoft_graph', mailbox: 'contact@exemple.fr' });
 
     const maj = appels.find((a) => a.text.trim().startsWith('update threads'));
     expect(maj).toBeTruthy();
     expect(maj!.values).toEqual(['fil-1', 'org-1']);
   });
 
-  it('message entrant SalesBlink : transport salesblink appelé, provider_message_id = idTache', async () => {
+  it('message entrant SalesBlink : transport salesblink reçoit le HTML, le corps stocké reste le texte saisi, pas de mailbox dans headers', async () => {
     const { ex, appels } = creerExecuteurFactice({ provider_message_id: 'sb-msg-1', salesblink_inbox_message_id: 'sb-msg-1' });
     const transports = creerTransportsFactices();
 
-    const resultat = await repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports);
+    const resultat = await repondreAuFil(
+      ex,
+      'org-1',
+      { threadId: 'fil-1', corps: 'Bonjour\n\nÀ bientôt' },
+      transports,
+    );
 
-    expect(transports.salesblink).toHaveBeenCalledWith('sb-msg-1', '<p>Bonjour</p>');
+    expect(transports.salesblink).toHaveBeenCalledWith('sb-msg-1', '<p>Bonjour</p><p>À bientôt</p>');
     expect(transports.graph).not.toHaveBeenCalled();
     expect(resultat).toEqual({ messageId: 'message-sortant-1', transport: 'salesblink' });
 
     const insertion = appels.find((a) => a.text.trim().startsWith('insert into thread_messages'));
     expect(insertion!.values).toContain('tache-1');
+    // Le corps stocké est le texte saisi par l'opérateur, pas le HTML envoyé au transport.
+    expect(insertion!.values[1]).toBe('Bonjour\n\nÀ bientôt');
+    const headers = JSON.parse(insertion!.values[3] as string) as Record<string, unknown>;
+    expect(headers).toEqual({ transport: 'salesblink' });
   });
 
   it("l'update threads qui ne touche pas exactement une ligne fait échouer la réponse", async () => {
@@ -175,7 +194,7 @@ describe('repondreAuFil', () => {
     const transports = creerTransportsFactices();
 
     await expect(
-      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corpsHtml: '<p>Bonjour</p>' }, transports),
+      repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports),
     ).rejects.toThrow();
   });
 });

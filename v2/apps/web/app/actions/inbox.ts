@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireRole, getCurrentOrganizationId } from '../../lib/auth';
 import { createServiceClient } from '../../lib/supabase/service';
 import { getPool } from '../../lib/db';
-import { classifyReply, repondreAuFil, texteVersHtml, ErreurEntree, type ReplyClassification } from '@jay-reach/core';
+import { classifyReply, repondreAuFil, ErreurEntree, type ReplyClassification } from '@jay-reach/core';
 import { messageErreurReponse } from '../../lib/erreur-reponse';
 import { classifyReplyWithModel, generateSuggestedReply, resolveAnthropicKey } from '../../lib/anthropic';
 import { resolveGraphConfig } from '../../lib/graph';
@@ -185,7 +185,7 @@ export async function repondre(threadId: string, corps: string): Promise<Repondr
     await repondreAuFil(
       getPool(),
       organizationId,
-      { threadId, corpsHtml: texteVersHtml(texte) },
+      { threadId, corps: texte },
       {
         graph: async (mailbox, messageId, corpsHtml) => {
           const config = await resolveGraphConfig(organizationId);

@@ -126,7 +126,7 @@ export interface ReponseEnvoyee {
 export async function repondreAuFil(
   ex: Executeur,
   org: string,
-  p: { threadId: string; corpsHtml: string },
+  p: { threadId: string; corps: string },
   transports: TransportsReponse,
 ): Promise<ReponseEnvoyee> {
   const origine = await choisirTransport(ex, org, p.threadId);
@@ -134,15 +134,24 @@ export async function repondreAuFil(
     throw new ErreurEntree("impossible de répondre : message d'origine inconnu");
   }
 
+  // Le HTML n'est jamais persisté : il ne sert qu'à porter le texte saisi
+  // jusqu'au transport (Graph, SalesBlink). `thread_messages.body` garde le
+  // texte brut, relu tel quel par la Réception.
+  const corpsHtml = texteVersHtml(p.corps);
+
   let providerMessageId: string | null;
+  const headers: Record<string, unknown> = { transport: origine.transport };
   if (origine.transport === 'microsoft_graph') {
     if (!origine.mailbox) {
       throw new ErreurEntree("impossible de répondre : boîte Microsoft Graph du message d'origine manquante");
     }
-    await transports.graph(origine.mailbox, origine.messageId, p.corpsHtml);
+    await transports.graph(origine.mailbox, origine.messageId, corpsHtml);
     providerMessageId = null;
+    // Boîte d'origine (connue de `choisirTransport`) : utile pour retracer
+    // depuis quelle boîte Microsoft 365 la réponse est partie.
+    headers.mailbox = origine.mailbox;
   } else {
-    const { idTache } = await transports.salesblink(origine.messageId, p.corpsHtml);
+    const { idTache } = await transports.salesblink(origine.messageId, corpsHtml);
     providerMessageId = idTache;
   }
 
@@ -150,7 +159,7 @@ export async function repondreAuFil(
     `insert into thread_messages (thread_id, direction, body, provider_message_id, headers, sent_at)
      values ($1, 'out', $2, $3, $4::jsonb, now())
      returning id`,
-    [p.threadId, p.corpsHtml, providerMessageId, JSON.stringify({ transport: origine.transport })],
+    [p.threadId, p.corps, providerMessageId, JSON.stringify(headers)],
   );
 
   const maj = await ex.query(
