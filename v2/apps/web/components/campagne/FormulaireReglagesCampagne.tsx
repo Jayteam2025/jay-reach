@@ -165,7 +165,13 @@ export function CorpsReglagesCampagne({
           <p className="jr-aide">{libelles.aucuneBoite}</p>
         ) : (
           boites.map((boite) => (
-            <div key={boite.id} className="jr-boite">
+            // `.avec-logo` (tour de correction 3, R68) : trois enfants (tuile,
+            // adresse, interrupteur) dès qu'une marque est connue — sans la
+            // colonne de plus, l'interrupteur passait sous la tuile, comme
+            // constaté à l'étape Envoi de l'assistant (R62). Sans tuile
+            // (marque inconnue), deux enfants seulement : le `.jr-boite` nu
+            // à deux colonnes reste correct.
+            <div key={boite.id} className={['jr-boite', boite.marque ? 'avec-logo' : undefined].filter(Boolean).join(' ')}>
               {boite.marque && <TuileLogo marque={boite.marque} />}
               <span>
                 <b>{boite.identite}</b>

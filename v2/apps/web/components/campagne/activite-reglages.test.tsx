@@ -229,6 +229,31 @@ describe('CorpsReglagesCampagne', () => {
     expect(html).toContain('jr-interrupteur eteint');
   });
 
+  it('R68 (tour de correction 3) : une boîte de marque connue porte `.jr-boite.avec-logo` (trois enfants), une boîte sans marque garde `.jr-boite` nu', () => {
+    const html = renderToStaticMarkup(
+      <CorpsReglagesCampagne
+        nom="x"
+        onNomChange={() => {}}
+        personas={[]}
+        scoreMin="70"
+        onScoreMinChange={() => {}}
+        plafondJour="30"
+        onPlafondJourChange={() => {}}
+        relecture="0"
+        onRelectureChange={() => {}}
+        boites={[
+          boite({ id: 'b1', marque: 'outlook' }),
+          boite({ id: 'b2', identite: 'autre@exemple.fr', marque: null }),
+        ]}
+        onToggleBoite={() => {}}
+        disabled={false}
+        libelles={LIBELLES_REGLAGES}
+      />,
+    );
+    expect(html).toContain('class="jr-boite avec-logo"');
+    expect(html).toContain('class="jr-boite"');
+  });
+
   it('aucune boîte -> message dédié, pas de ligne', () => {
     const html = renderToStaticMarkup(
       <CorpsReglagesCampagne
