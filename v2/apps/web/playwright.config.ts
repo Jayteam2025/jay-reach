@@ -16,6 +16,14 @@ import { defineConfig, devices } from '@playwright/test';
  * reconnecter — seul `connexion.spec.ts` teste la connexion elle-même, donc
  * démarre SANS session.
  *
+ * `connexion` tourne APRÈS `chromium` (`dependencies: ['chromium']`), jamais
+ * en parallèle : `signOut()` (`@supabase/supabase-js`) déconnecte par défaut
+ * l'utilisateur PARTOUT (`scope: 'global'`, vérifié dans le SDK installé —
+ * pas seulement le navigateur courant), ce qui invalidait la session partagée
+ * des cinq autres parcours quand les deux projects tournaient en même temps
+ * (constaté : les cinq échouaient en timeout dès que `connexion` incluait la
+ * déconnexion). Même utilisateur de test partout, donc même session.
+ *
  * `E2E_EMAIL`/`E2E_PASSWORD` (utilisateur de l'organisation « Recette e2e »,
  * apps/web/e2e/fixtures/organisation-test.sql) : Next.js charge lui-même
  * `.env` pour le SERVEUR (`dev:e2e`), mais le processus Playwright — un
@@ -83,17 +91,20 @@ export default defineConfig({
       testMatch: 'auth.setup.ts',
     },
     {
-      // Seul parcours à tester la connexion elle-même : jamais de session
-      // préchargée, sinon il ne testerait rien.
-      name: 'connexion',
-      testMatch: 'connexion.spec.ts',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
       name: 'chromium',
       testMatch: ['creer-campagne.spec.ts', 'aujourdhui.spec.ts', 'reception.spec.ts', 'sources.spec.ts', 'plafonds.spec.ts'],
       use: { ...devices['Desktop Chrome'], storageState: ETAT_SESSION },
       dependencies: ['setup'],
+    },
+    {
+      // Seul parcours à tester la connexion ET la déconnexion : jamais de
+      // session préchargée, sinon il ne testerait rien. Dépend de `chromium`
+      // (pas seulement `setup`) pour ne s'exécuter qu'une fois les cinq
+      // autres parcours terminés — voir la déconnexion globale ci-dessus.
+      name: 'connexion',
+      testMatch: 'connexion.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['chromium'],
     },
   ],
 });
