@@ -78,16 +78,16 @@ export function EtapeQui({
           {personas.length === 0 && <p className="jr-aide">{libelles.personaVide}</p>}
           <div className="jr-choix">
             {personas.map((persona) => (
-              <div
+              <button
                 key={persona.id}
+                type="button"
                 className={['option', personaId === persona.id ? 'actif' : undefined].filter(Boolean).join(' ')}
-                role="button"
-                tabIndex={0}
                 aria-pressed={personaId === persona.id}
-                onClick={() => !disabled && onPersonaIdChange(persona.id)}
+                disabled={disabled}
+                onClick={() => onPersonaIdChange(persona.id)}
               >
                 <b>{persona.nom}</b>
-              </div>
+              </button>
             ))}
             <Link href="/settings/personas" className="option pointille">
               <b>{libelles.personaNouveau}</b>

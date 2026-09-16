@@ -82,6 +82,17 @@ export function EtapeSequence({
   libelles,
 }: EtapeSequenceProps) {
   const [etapeOuverte, setEtapeOuverte] = useState<string | null>(etapes[0]?.cle ?? null);
+  // Point de départ choisi EXPLICITEMENT par un clic (pas déduit de `etapes`,
+  // que l'utilisateur peut ensuite modifier librement étape par étape) —
+  // seulement pour l'état visuel `aria-pressed` (R59, tour de correction 1) :
+  // `null` tant qu'aucun bouton n'a été cliqué dans CETTE étape de l'assistant.
+  const [modeleChoisi, setModeleChoisi] = useState<CleModeleSequence | null>(null);
+
+  function choisir(cle: CleModeleSequence) {
+    if (disabled) return;
+    setModeleChoisi(cle);
+    onChoisirModele(cle);
+  }
 
   return (
     <>
@@ -90,21 +101,28 @@ export function EtapeSequence({
           <span className="jr-libelle">{libelles.partirDe}</span>
           <div className="jr-choix">
             {MODELES_SEQUENCE.map((modele) => (
-              <div
+              <button
                 key={modele.cle}
+                type="button"
                 className="option"
-                role="button"
-                tabIndex={0}
-                onClick={() => !disabled && onChoisirModele(modele.cle)}
+                aria-pressed={modeleChoisi === modele.cle}
+                disabled={disabled}
+                onClick={() => choisir(modele.cle)}
               >
                 <b>{modele.nom}</b>
                 <small>{modele.description}</small>
-              </div>
+              </button>
             ))}
-            <div className="option" role="button" tabIndex={0} onClick={() => !disabled && onChoisirModele('vide')}>
+            <button
+              type="button"
+              className="option"
+              aria-pressed={modeleChoisi === 'vide'}
+              disabled={disabled}
+              onClick={() => choisir('vide')}
+            >
               <b>{libelles.modeleVideNom}</b>
               <small>{libelles.modeleVideDescription}</small>
-            </div>
+            </button>
           </div>
         </div>
       </Carte>
@@ -117,14 +135,15 @@ export function EtapeSequence({
             {etapes.map((etape, index) => (
               <span key={etape.cle}>
                 {index > 0 && <span className="delai">{libelles.delaiPilule(etape.delaiJours)}</span>}
-                <span
+                <button
+                  type="button"
                   className={['pilule', etapeOuverte === etape.cle ? 'en-cours' : undefined].filter(Boolean).join(' ')}
-                  role="button"
-                  tabIndex={0}
+                  aria-pressed={etapeOuverte === etape.cle}
+                  disabled={disabled}
                   onClick={() => setEtapeOuverte(etape.cle)}
                 >
                   {index + 1} · {etape.sujet || libelles.etape}
-                </span>
+                </button>
               </span>
             ))}
           </div>

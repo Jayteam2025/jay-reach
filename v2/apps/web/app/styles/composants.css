@@ -326,6 +326,8 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-choix .option b { font-weight: 600; }
 .jr-choix .option small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-choix .option.pointille { border-style: dashed; text-decoration: none; color: inherit; }
+/* `.option`/`.pilule` sont de vrais <button> (R59, tour de correction 1) : reset du seul chrome que le navigateur ajoute pour un bouton, rien d'autre — le reste (bordure, fond, alignement) vient des règles ci-dessus/ci-dessous, identiques à avant. */
+button.option, button.pilule { background: none; border: 0; font: inherit; text-align: inherit; }
 .jr-actions.entre { justify-content: space-between; }
 .jr-case { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
 .jr-case i { width: 16px; height: 16px; border: 1px solid var(--jr-filet); border-radius: 4px; background: var(--jr-surface); display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 11px; flex: none; }
