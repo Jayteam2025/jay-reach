@@ -255,52 +255,68 @@
       "directory": "Annuaire"
     }
   },
-  "inbox": {
-    "eyebrow": "Réponses",
-    "title": "Boîte de réception",
-    "lead": "Répondre au bon moment — et savoir si vous avez déjà répondu ailleurs.",
-    "filter": {
-      "all": "Tout",
-      "todo": "À traiter",
-      "in_progress": "En cours",
-      "done": "Traité",
-      "later": "À recontacter"
+  "reception": {
+    "title": "Réception",
+    "toutesLesCampagnes": "Toutes les campagnes",
+    "filtres": {
+      "a_traiter": "À traiter",
+      "interesses": "Intéressés",
+      "absences": "Absences",
+      "traites": "Traités",
+      "tous": "Toutes",
+      "puceInteresse": "Intéressé",
+      "puceNonInteresse": "Pas intéressé",
+      "puceAbsence": "Absence",
+      "puceAbsenceAvecDate": "Absence, relance le {date}",
+      "puceLinkedin": "LinkedIn"
     },
-    "class": {
-      "human_reply": "Réponse humaine",
-      "auto_absence": "Absence auto",
-      "auto_left_company": "A quitté l'entreprise",
-      "auto_other": "Auto",
-      "unclassified": "Non classé"
+    "liste": {
+      "videTitre": "Rien dans cette vue",
+      "videTexte": "Aucun fil ne correspond à ce filtre pour le moment."
     },
-    "treatment": {
-      "todo": "À traiter",
-      "in_progress": "En cours",
-      "done": "Traité",
-      "later": "À recontacter"
+    "fil": {
+      "choisirTitre": "Choisissez un fil",
+      "choisirTexte": "Sélectionnez un fil dans la liste pour le lire.",
+      "marquerTraite": "Marquer traité",
+      "rouvrir": "Rouvrir",
+      "campagne": "campagne {nom}",
+      "etape": "étape {position} sur {total}",
+      "sequenceArretee": "séquence arrêtée à la réponse",
+      "repondDepuis": "répondu depuis {adresse}",
+      "raisonReponseImpossible": {
+        "canalNonEmail": "Répondre depuis Jay Reach n'existe que pour les fils email.",
+        "messageOrigineInconnu": "Message d'origine inconnu : impossible de répondre depuis l'application."
+      }
     },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn"
+    "reponse": {
+      "depuis": "Répondre depuis {boite}",
+      "depuisSansBoite": "Répondre",
+      "via": "via {transport}, dans le même fil",
+      "placeholder": "Votre réponse…",
+      "note": "Enregistrée dans le fil du contact et dans la Réception",
+      "marquerInteresse": "Marquer intéressé",
+      "retirerInteret": "Retirer l'intérêt",
+      "envoyer": "Envoyer",
+      "envoiEnCours": "Envoi…",
+      "envoyee": "Réponse envoyée."
     },
-    "via": "via {sender}",
-    "you": "Vous",
-    "reply": "Répondre",
-    "replyPlaceholder": "Votre réponse…",
-    "replyNote": "L'envoi part toujours par le canal du message reçu — jamais un autre.",
-    "replySent": "Réponse envoyée.",
-    "replySending": "Envoi…",
-    "replyImpossible": "Impossible de répondre : aucun message reçu sur ce fil.",
-    "replyEmailOnly": "Répondre depuis Jay Reach n'existe que pour les fils email. LinkedIn viendra plus tard.",
-    "buySignal": "Signal d'achat : départ détecté → le compte remonte pour identifier le successeur.",
-    "state": "État du fil",
-    "empty": "Choisissez un fil pour le lire.",
-    "emptyList": "Rien dans cette vue.",
-    "sortAuto": "Trier automatiquement",
-    "sorting": "Tri en cours…",
-    "sorted": "{n, plural, one {# réponse triée} other {# réponses triées}}",
-    "suggest": "Suggérer une réponse",
-    "suggesting": "Rédaction…"
+    "colonne": {
+      "pourquoiLui": "Pourquoi lui",
+      "score": "score {valeur}",
+      "aucunSignal": "Aucun signal d'origine.",
+      "ouEnEstOn": "Où en est-on",
+      "etapeResume": "Étape {position} sur {total}",
+      "aucuneSequence": "Ce contact n'est inscrit dans aucune séquence.",
+      "coordonnees": "Coordonnées",
+      "emailAbsent": "Aucun email connu.",
+      "emailVerifie": "vérifié",
+      "emailRisque": "à risque",
+      "emailInvalide": "invalide",
+      "profilLinkedin": "Profil LinkedIn",
+      "notes": "Notes",
+      "aucuneNote": "Aucune note.",
+      "ouvrirFiche": "Ouvrir la fiche complète"
+    }
   },
   "import": {
     "eyebrow": "Fichier",

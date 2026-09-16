@@ -187,9 +187,11 @@
 .jr-colonne h4 { margin: 16px 0 6px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); }
 .jr-colonne p { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
 .jr-conversations { list-style: none; margin: 0; padding: 0; }
-.jr-conversations li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--jr-filet); align-items: start; cursor: pointer; }
-.jr-conversations li:hover { background: var(--jr-fond); }
-.jr-conversations li.actif { background: var(--jr-accent-doux); }
+.jr-conversations li { border-bottom: 1px solid var(--jr-filet); }
+/* Ligne cliquable = un vrai lien (tâche 16, Réception) : la grille de la maquette portait sur le `li`, mais un `<li>` nu n'est pas navigable/accessible au clavier — le `<a>` porte donc la grille à sa place, `li` ne garde que le filet. */
+.jr-conversations li > a { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; padding: 11px 14px; align-items: start; cursor: pointer; color: inherit; text-decoration: none; }
+.jr-conversations li > a:hover { background: var(--jr-fond); }
+.jr-conversations li.actif > a { background: var(--jr-accent-doux); }
 .jr-conversations b { font-weight: 600; font-size: 13.5px; display: block; }
 .jr-conversations p { margin: 2px 0 0; font-size: var(--jr-petit); color: var(--jr-secondaire); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jr-conversations time { font-size: 11.5px; color: var(--jr-secondaire); white-space: nowrap; }

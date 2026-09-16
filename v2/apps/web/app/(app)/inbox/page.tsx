@@ -1,100 +1,137 @@
 import { getTranslations } from 'next-intl/server';
-import { AppTopBar } from '../chrome';
-import { createClientOrNull } from '../../../lib/supabase/server';
-import { FUSEAU_PAR_DEFAUT } from '../../../lib/dates';
-import type { InboxThread, InboxMessage, Classification, Treatment, InboxChannel } from '../../../lib/sample-inbox';
-import { InboxView } from './inbox-view';
+import { ErreurIntrouvable, lireFil, listerCampagnes, listerFils, type FiltreReception, type FilDetail } from '@jay-reach/core';
+import { contexteCourant } from '../../../lib/contexte';
+import { dateHeureMessage, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../lib/dates';
+import { EtatVide } from '../../../components/ui';
+import { ListeFils, type LigneFilAffichage } from '../../../components/reception/ListeFils';
+import { Fil, type MessageFilAffiche } from '../../../components/reception/Fil';
+import { ColonneContact } from '../../../components/reception/ColonneContact';
 
-interface DbThread {
-  id: string;
-  channel: string;
-  classification: Classification;
-  is_read: boolean;
-  resume_at: string | null;
-  last_message_at: string | null;
-  contacts: { first_name: string | null; last_name: string | null; job_title: string | null; accounts: { name: string | null } | null } | null;
-  thread_messages: { direction: 'in' | 'out'; body: string; sent_at: string }[] | null;
+export const revalidate = 0;
+
+const FILTRES_VALIDES: FiltreReception[] = ['a_traiter', 'interesses', 'absences', 'traites', 'tous'];
+
+function filtreDemande(brut: string | string[] | undefined): FiltreReception {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  return valeur && (FILTRES_VALIDES as readonly string[]).includes(valeur) ? (valeur as FiltreReception) : 'a_traiter';
 }
 
-function relWhen(iso: string | null): string {
-  if (!iso) return '';
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 60) return `il y a ${Math.max(1, min)} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  return d === 1 ? 'hier' : `il y a ${d} j`;
-}
-function msgWhen(iso: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(
-    new Date(iso),
-  );
-}
-function treatmentOf(t: DbThread): Treatment {
-  if (t.resume_at) return 'later';
-  if (t.is_read) return 'done';
-  return 'todo';
+function idDemande(brut: string | string[] | undefined): string | undefined {
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  return valeur && valeur.trim() !== '' ? valeur.trim() : undefined;
 }
 
-export default async function InboxPage() {
-  const t = await getTranslations('inbox');
-  const supabase = await createClientOrNull();
-  const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
-  const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
+/**
+ * Date courte (« 23/09 ») pour la relance d'une absence — `resume_at` est un
+ * instant à VENIR : `dateRelativeCourte` (« il y a… », « hier ») est écrite
+ * pour un instant PASSÉ et donnerait un résultat absurde ici.
+ */
+function dateCourte(iso: string, fuseau: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', timeZone: fuseau }).format(new Date(iso));
+}
 
-  // L'expéditeur affiché et les fils ne dépendent pas l'un de l'autre : la
-  // liste des conversations est le gros de la page, rien ne justifie de la
-  // faire attendre derrière une lecture d'une ligne.
-  const [sender, rows] = supabase && orgId
-    ? await Promise.all([
-        supabase
-          .from('senders')
-          .select('identity')
-          .eq('organization_id', orgId)
-          .eq('kind', 'email')
-          .limit(1)
-          .maybeSingle()
-          .then((r) => (r.data as { identity: string } | null)?.identity ?? '—'),
-        supabase
-          .from('threads')
-          .select(
-            'id,channel,classification,is_read,resume_at,last_message_at,contacts(first_name,last_name,job_title,accounts(name)),thread_messages(direction,body,sent_at)',
-          )
-          .eq('organization_id', orgId)
-          .order('last_message_at', { ascending: false })
-          .then((r) => (r.data as DbThread[] | null) ?? []),
-      ])
-    : ['—', [] as DbThread[]];
+/**
+ * Réception à trois volets (tâche 16) : liste + filtre (`?filtre=`,
+ * `?campagneId=`), fil (`?fil=`) et sa colonne de contexte. Sélection par
+ * navigation serveur (même motif que `FiltresStatuts`/Contacts) — aucun état
+ * client hors de la zone de réponse elle-même. Remplace l'ancien écran
+ * (`inbox-view.tsx`, `lib/sample-inbox.ts`) qui gardait le chrome `rs-*`
+ * d'avant la coquille (`AppTopBar`) au lieu de celui déjà fourni par
+ * `app/(app)/layout.tsx`.
+ */
+export default async function ReceptionPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const ctx = await contexteCourant();
+  const [t, sp] = await Promise.all([getTranslations('reception'), searchParams]);
 
-  const threads: InboxThread[] = rows.map((th) => {
-    const msgs = [...(th.thread_messages ?? [])].sort((a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime());
-    const lastIn = [...msgs].reverse().find((m) => m.direction === 'in') ?? msgs[msgs.length - 1];
-    const messages: InboxMessage[] = msgs.map((m) => ({ direction: m.direction, when: msgWhen(m.sent_at), body: m.body }));
-    return {
-      id: th.id,
-      contactName: `${th.contacts?.first_name ?? ''} ${th.contacts?.last_name ?? ''}`.trim() || '—',
-      company: th.contacts?.accounts?.name ?? '—',
-      jobTitle: th.contacts?.job_title ?? '—',
-      channel: (th.channel === 'email' ? 'email' : 'linkedin') as InboxChannel,
-      classification: th.classification,
-      treatment: treatmentOf(th),
-      when: relWhen(th.last_message_at),
-      excerpt: lastIn?.body ?? '',
-      sender,
-      buySignal: th.classification === 'auto_left_company',
-      messages,
-    };
-  });
+  const filtre = filtreDemande(sp.filtre);
+  const campagneId = idDemande(sp.campagneId) ?? null;
+  const filDemandeId = idDemande(sp.fil) ?? null;
+
+  const [resultat, campagnes] = await Promise.all([
+    listerFils(ctx, { filtre, campagneId: campagneId ?? undefined, page: 1 }),
+    listerCampagnes(ctx),
+  ]);
+
+  const maintenant = new Date();
+  const fuseau = FUSEAU_PAR_DEFAUT;
+
+  const fils: LigneFilAffichage[] = resultat.fils.map((fil) => ({
+    id: fil.id,
+    nom: fil.nom,
+    canal: fil.canal,
+    classification: fil.classification,
+    apercu: fil.apercu,
+    quandAffiche: fil.quand ? dateRelativeCourte(fil.quand, maintenant, fuseau) : '',
+    interet: fil.interet,
+    relanceLeAffiche: fil.relanceLe ? dateCourte(fil.relanceLe, fuseau) : null,
+  }));
+
+  const filSelectionneId = filDemandeId ?? resultat.fils[0]?.id ?? null;
+
+  let filDetail: FilDetail | null = null;
+  if (filSelectionneId) {
+    try {
+      filDetail = await lireFil(ctx, { filId: filSelectionneId });
+    } catch (err) {
+      if (!(err instanceof ErreurIntrouvable)) throw err;
+      filDetail = null;
+    }
+  }
+
+  const messagesAffiches: MessageFilAffiche[] = (filDetail?.messages ?? []).map((m) => ({
+    ...m,
+    quandAffiche: m.quand ? dateHeureMessage(m.quand, maintenant, fuseau) : '',
+  }));
+
+  // Canal du FIL (`lireFil().canal`, `threads.channel`) — jamais dérivé des
+  // coordonnées du contact, qui peut avoir à la fois un email et un profil LinkedIn.
+  const canalContact: 'email' | 'linkedin' = filDetail?.canal ?? 'email';
 
   return (
-    <div className="rs-shell">
-      <AppTopBar active="inbox" />
-      <main className="rs-main">
-        <p className="rs-eyebrow">{t('eyebrow')}</p>
-        <h1>{t('title')}</h1>
-        <p className="rs-lead">{t('lead')}</p>
-        {threads.length === 0 ? <p className="rs-empty">{t('lead')}</p> : <InboxView threads={threads} orgId={orgId} />}
-      </main>
-    </div>
+    <main className="jr-reception">
+      <ListeFils
+        t={t}
+        fils={fils}
+        compteurs={resultat.compteurs}
+        filtreActif={filtre}
+        campagneId={campagneId}
+        campagnes={campagnes.map((c) => ({ id: c.id, nom: c.nom }))}
+        filSelectionneId={filSelectionneId}
+      />
+      {filDetail && filSelectionneId ? (
+        <>
+          <Fil
+            t={t}
+            filId={filSelectionneId}
+            contact={filDetail.contact}
+            canal={canalContact}
+            campagne={filDetail.campagne}
+            boite={filDetail.boite}
+            messages={messagesAffiches}
+            interet={filDetail.interet}
+            traite={filDetail.traite}
+            reponsePossible={filDetail.reponsePossible}
+            raisonReponseImpossible={filDetail.raisonReponseImpossible}
+            transportReponse={filDetail.transportReponse}
+          />
+          <ColonneContact
+            t={t}
+            contact={filDetail.contact}
+            canal={canalContact}
+            campagne={filDetail.campagne}
+            pourquoi={filDetail.pourquoi}
+            pourquoiQuandAffiche={filDetail.pourquoi?.quand ? dateRelativeCourte(filDetail.pourquoi.quand, maintenant, fuseau) : null}
+          />
+        </>
+      ) : (
+        <div className="jr-fil">
+          <EtatVide titre={t('fil.choisirTitre')} texte={t('fil.choisirTexte')} />
+        </div>
+      )}
+    </main>
   );
 }
