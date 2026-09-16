@@ -167,10 +167,12 @@ describe('clés de traduction', () => {
         if (valeurDeTable.test(texte)) return true;
         // Accès dynamique (`t(\`csvFields.${champ}\`)`) : la clé complète
         // n'apparaît jamais littéralement, seul le préfixe statique le fait.
-        const pointFinal = c.lastIndexOf('.');
-        if (pointFinal > 0) {
-          const prefixeDynamique = c.slice(0, pointFinal + 1);
-          const dynamique = new RegExp(`\`${echapper(prefixeDynamique)}\\$\\{`);
+        // Le préfixe statique peut s'arrêter à un point (`csvFields.${champ}`)
+        // comme à l'intérieur d'une feuille (`seniority_${niveau}`, tâche 22) :
+        // toute coupure sur `.`, `_` ou `-` est essayée.
+        for (let i = 1; i < c.length; i++) {
+          if (!'._-'.includes(c[i - 1]!)) continue;
+          const dynamique = new RegExp(`\`${echapper(c.slice(0, i))}\\$\\{`);
           if (dynamique.test(texte)) return true;
         }
         return false;
