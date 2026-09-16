@@ -369,7 +369,13 @@ export async function relierBoite(
 // ---------------------------------------------------------------------------
 
 export interface CompteLinkedIn {
-  /** `extension_tokens.token` — identifie une session d'extension connectée. */
+  /**
+   * `extension_tokens.user_id` — identifie la personne dont la session
+   * d'extension est reliée. Jamais `token_hash` (empreinte SHA-256 du jeton,
+   * migration `20260828140000_extension_token_hash.sql`) : ce champ ne doit
+   * jamais atteindre l'écran, même sous forme de hash — seuls la présence
+   * d'une connexion et sa date comptent ici.
+   */
   readonly id: string;
   readonly nom: string;
   readonly connecte: boolean;
@@ -398,28 +404,35 @@ const REGLAGES_LINKEDIN_PAR_DEFAUT: LigneReglagesLinkedIn = {
 };
 
 /**
- * Comptes LinkedIn connectés (un par jeton d'extension actif ou non — un
- * jeton désactivé reste affiché, pour qu'un administrateur puisse le
- * reconnaître et le réactiver). Les quotas et la fenêtre d'envoi restent
+ * Comptes LinkedIn connectés (un par utilisateur ayant relié une extension —
+ * un jeton désactivé reste affiché, pour qu'un administrateur puisse le
+ * reconnaître et le réactiver ; `distinct on (user_id)` ne garde que le
+ * jeton le plus récent d'une même personne, pour ne pas afficher deux cartes
+ * pour un jeton régénéré). Les quotas et la fenêtre d'envoi restent
  * aujourd'hui RÉGLÉS PAR ORGANISATION (`linkedin_settings`, une seule ligne) :
  * il n'existe pas encore de plafond par compte dans le schéma — chaque carte
  * affiche donc le même réglage, partagé, tant qu'un seul compte est relié en
  * pratique (`docs`, canal LinkedIn actuel).
+ *
+ * Ne sélectionne jamais `token_hash` (empreinte du jeton, colonne réellement
+ * nommée ainsi depuis la migration `20260828140000_extension_token_hash.sql` —
+ * `token` n'existe plus) : rien ici n'en a besoin, `user_id` suffit à cibler
+ * la ligne depuis `modifierCompteLinkedIn`.
  */
 export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinkedIn[]> {
   exiger(ctx, 'viewer');
 
   const [jetons, reglages] = await Promise.all([
     ctx.ex.query<{
-      token: string;
+      user_id: string;
       linkedin_profile_name: string | null;
       last_used_at: string | null;
       is_active: boolean;
     }>(
-      `select token, linkedin_profile_name, last_used_at, is_active
+      `select distinct on (user_id) user_id, linkedin_profile_name, last_used_at, is_active
          from extension_tokens /* jr:expediteurs_comptes_linkedin */
         where organization_id = $1
-        order by last_used_at desc nulls last`,
+        order by user_id, last_used_at desc nulls last`,
       [ctx.organisationId],
     ),
     ctx.ex.query<LigneReglagesLinkedIn>(
@@ -431,8 +444,8 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
   ]);
 
   const r = reglages.rows[0] ?? REGLAGES_LINKEDIN_PAR_DEFAUT;
-  return jetons.rows.map((j) => ({
-    id: j.token,
+  const comptes = jetons.rows.map((j) => ({
+    id: j.user_id,
     nom: j.linkedin_profile_name ?? 'Compte LinkedIn',
     connecte: j.is_active && j.last_used_at !== null,
     derniereActivite: j.last_used_at,
@@ -445,10 +458,19 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
       fuseau: r.timezone,
     },
   }));
+
+  // `distinct on (user_id)` impose `order by user_id, ...` côté SQL — l'ordre
+  // d'affichage voulu (compte le plus récemment actif en tête) se refait donc
+  // ici, en mémoire.
+  return comptes.sort((a, b) => {
+    if (a.derniereActivite === null) return 1;
+    if (b.derniereActivite === null) return -1;
+    return b.derniereActivite.localeCompare(a.derniereActivite);
+  });
 }
 
 export const schemaModifierCompteLinkedIn = z.object({
-  compteId: z.string().min(1),
+  compteId: z.string().uuid(),
   active: z.boolean(),
   quotaJour: z.number().int().min(1).max(200),
   quotaSemaine: z.number().int().min(1).max(200),
@@ -462,10 +484,15 @@ export const schemaModifierCompteLinkedIn = z.object({
 
 /**
  * Modifie un compte LinkedIn (droit administrateur requis). `active` porte
- * sur LE JETON d'extension visé (`compteId`) ; les quotas et la fenêtre
- * d'envoi restent partagés par organisation (`linkedin_settings`, voir
- * `listerComptesLinkedIn`) — les modifier depuis N'IMPORTE QUELLE carte les
- * change pour tous les comptes, tant qu'un plafond par compte n'existe pas.
+ * sur LE JETON D'EXTENSION LE PLUS RÉCENT de la personne visée (`compteId` =
+ * `extension_tokens.user_id`, jamais `token_hash` — même ligne que celle
+ * affichée par `listerComptesLinkedIn`, choisie par la même sous-requête
+ * `order by last_used_at desc` : une personne qui a régénéré son jeton n'a
+ * que sa dernière session basculée, jamais une session périmée) ; les quotas
+ * et la fenêtre d'envoi restent partagés par organisation
+ * (`linkedin_settings`, voir `listerComptesLinkedIn`) — les modifier depuis
+ * N'IMPORTE QUELLE carte les change pour tous les comptes, tant qu'un
+ * plafond par compte n'existe pas.
  */
 export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'admin');
@@ -483,7 +510,13 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
   const jeton = await ctx.ex.query(
     `update extension_tokens /* jr:expediteurs_modifier_compte_li */
         set is_active = $3
-      where token = $1 and organization_id = $2`,
+      where organization_id = $2
+        and token_hash = (
+          select token_hash from extension_tokens
+           where user_id = $1 and organization_id = $2
+           order by last_used_at desc nulls last
+           limit 1
+        )`,
     [e.compteId, ctx.organisationId, e.active],
   );
   if ((jeton.rowCount ?? 0) !== 1) {

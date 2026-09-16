@@ -276,6 +276,10 @@ describe('relierBoite', () => {
   });
 });
 
+/** `extension_tokens.token_hash` (migration `20260828140000_extension_token_hash.sql`) : jamais `token`. */
+const UTILISATEUR_1 = '11111111-1111-1111-1111-111111111111';
+const UTILISATEUR_2 = '22222222-2222-2222-2222-222222222222';
+
 describe('listerComptesLinkedIn', () => {
   it('refuse un contexte sans rôle', async () => {
     await expect(listerComptesLinkedIn(faux({}, null))).rejects.toThrow(ForbiddenError);
@@ -284,13 +288,13 @@ describe('listerComptesLinkedIn', () => {
   it('applique les réglages par défaut sans ligne linkedin_settings', async () => {
     const ctx = faux({
       'jr:expediteurs_comptes_linkedin': [
-        { token: 'tok-1', linkedin_profile_name: 'Camille Roussel', last_used_at: '2026-09-16T08:00:00.000Z', is_active: true },
+        { user_id: UTILISATEUR_1, linkedin_profile_name: 'Camille Roussel', last_used_at: '2026-09-16T08:00:00.000Z', is_active: true },
       ],
       'jr:expediteurs_reglages_linkedin': [],
     });
     const [compte] = await listerComptesLinkedIn(ctx);
     expect(compte).toEqual({
-      id: 'tok-1',
+      id: UTILISATEUR_1,
       nom: 'Camille Roussel',
       connecte: true,
       derniereActivite: '2026-09-16T08:00:00.000Z',
@@ -303,7 +307,7 @@ describe('listerComptesLinkedIn', () => {
   it('un jeton jamais utilisé n’est pas « connecté »', async () => {
     const ctx = faux({
       'jr:expediteurs_comptes_linkedin': [
-        { token: 'tok-2', linkedin_profile_name: null, last_used_at: null, is_active: true },
+        { user_id: UTILISATEUR_2, linkedin_profile_name: null, last_used_at: null, is_active: true },
       ],
       'jr:expediteurs_reglages_linkedin': [],
     });
@@ -311,11 +315,40 @@ describe('listerComptesLinkedIn', () => {
     expect(compte!.connecte).toBe(false);
     expect(compte!.nom).toBe('Compte LinkedIn');
   });
+
+  it('trie les comptes par dernière activité, les jamais-utilisés en dernier', async () => {
+    const ctx = faux({
+      'jr:expediteurs_comptes_linkedin': [
+        { user_id: UTILISATEUR_1, linkedin_profile_name: 'Ancien', last_used_at: '2026-09-10T08:00:00.000Z', is_active: true },
+        { user_id: UTILISATEUR_2, linkedin_profile_name: 'Jamais connecté', last_used_at: null, is_active: true },
+      ],
+      'jr:expediteurs_reglages_linkedin': [],
+    });
+    const comptes = await listerComptesLinkedIn(ctx);
+    expect(comptes.map((c) => c.nom)).toEqual(['Ancien', 'Jamais connecté']);
+  });
+
+  it('interroge token_hash, jamais la colonne token (retirée par la migration du 28/08)', async () => {
+    const appels: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      appels.push(sql);
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    await listerComptesLinkedIn(ctx);
+
+    const requeteJetons = appels.find((s) => /extension_tokens/i.test(s));
+    expect(requeteJetons).toBeDefined();
+    // Une colonne « token » nue (pas suivie de « _hash ») trahirait un retour
+    // à l'ancien nom de colonne, absent depuis la migration du 28/08.
+    expect(/\btoken\b(?!_hash)/i.test(requeteJetons!)).toBe(false);
+  });
 });
 
 describe('modifierCompteLinkedIn', () => {
   const ENTREE = {
-    compteId: 'tok-1',
+    compteId: UTILISATEUR_1,
     active: false,
     quotaJour: 20,
     quotaSemaine: 80,
@@ -327,12 +360,17 @@ describe('modifierCompteLinkedIn', () => {
     await expect(modifierCompteLinkedIn(ctx, ENTREE)).rejects.toThrow(ForbiddenError);
   });
 
+  it('refuse un compteId qui n’est pas un identifiant valide', async () => {
+    const ctx = faux({});
+    await expect(modifierCompteLinkedIn(ctx, { ...ENTREE, compteId: 'tok-1' })).rejects.toThrow(ErreurEntree);
+  });
+
   it('lève ErreurIntrouvable si le jeton n’appartient pas à l’organisation', async () => {
     const ctx = faux({});
     await expect(modifierCompteLinkedIn(ctx, ENTREE)).rejects.toThrow(ErreurIntrouvable);
   });
 
-  it('met à jour le jeton puis les réglages partagés', async () => {
+  it('met à jour le jeton le plus récent de l’utilisateur (jamais un autre) puis les réglages partagés', async () => {
     const appels: string[] = [];
     const query = vi.fn(async (sql: string) => {
       appels.push(sql);
@@ -343,7 +381,11 @@ describe('modifierCompteLinkedIn', () => {
 
     await modifierCompteLinkedIn(ctx, ENTREE);
 
-    expect(appels.some((s) => /update extension_tokens/i.test(s))).toBe(true);
+    const requeteJeton = appels.find((s) => /update extension_tokens/i.test(s));
+    expect(requeteJeton).toBeDefined();
+    expect(requeteJeton).toContain('token_hash');
+    expect(requeteJeton).toContain('user_id = $1');
+    expect(requeteJeton).not.toMatch(/\btoken\b(?!_hash)\s*=/i);
     expect(appels.some((s) => /insert into linkedin_settings/i.test(s))).toBe(true);
   });
 });
