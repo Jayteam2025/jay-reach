@@ -12,3 +12,4 @@ export * from './assistant-campagne.js';
 export * from './reception.js';
 export * from './contacts.js';
 export * from './expediteurs.js';
+export * from './fournisseurs.js';

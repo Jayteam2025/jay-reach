@@ -141,6 +141,65 @@ export async function ecrireReglage(ctx: Contexte, entree: unknown): Promise<voi
   );
 }
 
+/** Une ligne de la table éditable de l'écran Réglages › Plafonds (tâche 21) : valeur réellement appliquée, défaut, repli d'environnement, et qui a modifié quand. */
+export interface DetailReglage {
+  cle: ClePlafond;
+  valeur: number | string;
+  defaut: number | string;
+  /** Nom de la variable d'environnement de repli, `null` quand la clé n'en a aucun (`score_min_defaut`, `relecture_premiers_envois_defaut`, `age_max_offres_jours`, `fuseau`). */
+  repli: string | null;
+  /** Nom affiché de l'auteur de la dernière écriture EXPLICITE en base, `null` si la clé n'a jamais été réglée dans l'écran (valeur = défaut ou repli). */
+  modifiePar: string | null;
+  modifieLe: string | null;
+}
+
+/**
+ * Détail des réglages pour la table éditable de l'écran (tâche 21) : la valeur
+ * réellement appliquée (`lireReglages`, R78 compris) enrichie de sa provenance
+ * — qui l'a réglée en base et quand, `null`/`null` pour une clé qui n'a jamais
+ * été écrite explicitement (elle applique alors son défaut ou son repli).
+ *
+ * Requête d'audit séparée de `lireReglages` (deux lectures d'`organization_settings`
+ * pour un rendu de cette page plutôt qu'une) : jointe à `auth.users` comme
+ * `ajouterNote`/`lireFiche` (`contacts.ts`) pour un NOM affiché, jamais un id
+ * technique — un coût négligeable sur un écran de réglages, pas un chemin chaud.
+ *
+ * `reglages` : à passer quand l'appelant les a déjà lus (même convention que
+ * `lireConsommationDuJour`) — la page Plafonds a aussi besoin de la
+ * consommation du jour, qui exige elle aussi `lireReglages` ; passer la même
+ * valeur aux deux évite une troisième lecture d'`organization_settings` pour
+ * un seul rendu.
+ */
+export async function lireReglagesDetail(
+  ctx: Contexte,
+  reglages?: Awaited<ReturnType<typeof lireReglages>>,
+): Promise<DetailReglage[]> {
+  const [valeurs, auditRes] = await Promise.all([
+    reglages ?? lireReglages(ctx),
+    ctx.ex.query<{ key: string; updated_at: string; nom: string | null }>(
+      `select os.key, os.updated_at,
+              coalesce(nullif(u.raw_user_meta_data ->> 'full_name', ''), split_part(u.email, '@', 1)) as nom
+         from organization_settings os
+         left join auth.users u on u.id = os.updated_by
+        where os.organization_id = $1`,
+      [ctx.organisationId],
+    ),
+  ]);
+  const parCle = new Map(auditRes.rows.map((r) => [r.key, r]));
+
+  return CLES_REGLAGES.map(({ cle, defaut, env }) => {
+    const audit = parCle.get(cle);
+    return {
+      cle,
+      valeur: valeurs[cle],
+      defaut,
+      repli: env ?? null,
+      modifiePar: audit?.nom ?? null,
+      modifieLe: audit?.updated_at ?? null,
+    };
+  });
+}
+
 /** Une jauge de consommation : ce qui a déjà été utilisé aujourd'hui, et le plafond courant. */
 export interface Jauge {
   utilise: number;

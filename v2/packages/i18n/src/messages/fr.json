@@ -1683,6 +1683,147 @@
         "sat": "S",
         "sun": "D"
       }
+    },
+    "plafonds": {
+      "title": "Plafonds et défauts de l'organisation",
+      "lead": "Tout se règle ici, en base. L'environnement ne sert que si une ligne manque : la colonne « repli » dit laquelle.",
+      "consommation": {
+        "title": "Consommation du jour",
+        "scoring": "Scorings (Anthropic)",
+        "enrichissement": "Enrichissements (FullEnrich)",
+        "envois": "Envois",
+        "aide": "Remise à zéro à minuit, heure de Paris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu."
+      },
+      "protection": {
+        "title": "Ce que ça protège",
+        "scoringTitre": "Scorings",
+        "scoringTexte": "chaque offre ou profil lu par une source coûte un appel au modèle. {plafond} par jour absorbent une dizaine de passages.",
+        "enrichissementTitre": "Enrichissements",
+        "enrichissementTexte": "un crédit FullEnrich par email cherché. Le moteur cherche d'abord pour les scores les plus hauts.",
+        "defautsTitre": "Défauts",
+        "defautsTexte": "une campagne ou une source qui ne précise rien hérite de la valeur ci-dessous."
+      },
+      "table": {
+        "colReglage": "Réglage",
+        "colValeur": "Valeur",
+        "colDefaut": "Défaut",
+        "colRepli": "Repli",
+        "colModifie": "Modifié",
+        "modifier": "Modifier",
+        "enregistrer": "Enregistrer",
+        "annuler": "Annuler",
+        "aucunRepli": "aucun",
+        "jamaisModifie": "jamais",
+        "modifiePar": "{nom} · {date}",
+        "erreurNombre": "Entrez un nombre entier positif ou nul."
+      },
+      "lignes": {
+        "scoringParJour": {
+          "nom": "Scorings par jour",
+          "description": "appels au modèle pour noter offres et profils"
+        },
+        "enrichissementsParJour": {
+          "nom": "Enrichissements par jour",
+          "description": "crédits FullEnrich pour trouver des emails"
+        },
+        "scoreMinDefaut": {
+          "nom": "Score minimal d'entrée",
+          "description": "défaut des campagnes qui ne le précisent pas"
+        },
+        "relecturePremiersEnvoisDefaut": {
+          "nom": "Relecture des premiers envois",
+          "description": "défaut des campagnes · 0 = tout part sans relecture"
+        },
+        "ageMaxOffresJours": {
+          "nom": "Âge maximal des offres",
+          "description": "défaut des sources · en jours",
+          "suffixe": "jours"
+        }
+      },
+      "ailleurs": {
+        "title": "Réglés ailleurs",
+        "lead": "Ces valeurs vivent au niveau de la boîte, de la campagne ou de la source ; le lien mène au bon écran.",
+        "colReglage": "Réglage",
+        "colNiveau": "Niveau",
+        "colOu": "Où",
+        "boites": {
+          "reglage": "Envois par jour et par heure, heures et jours d'envoi, fuseau",
+          "niveau": "boîte",
+          "lien": "Expéditeurs"
+        },
+        "campagnes": {
+          "reglage": "Plafond quotidien de nouveaux contacts, score minimal, relecture",
+          "niveau": "campagne",
+          "lien": "Campagnes"
+        },
+        "sources": {
+          "reglage": "Fréquence des passages, âge des offres, quota de profils",
+          "niveau": "source",
+          "lien": "Campagnes"
+        },
+        "pause": {
+          "reglage": "Pause d'envoi globale",
+          "niveau": "organisation",
+          "lien": "Moteur"
+        }
+      }
+    },
+    "fournisseurs": {
+      "title": "Fournisseurs",
+      "lead": "Les clés sont chiffrées en base et ne s'affichent jamais en clair.",
+      "champCle": "Clé",
+      "remplacer": "Remplacer",
+      "enregistrer": "Enregistrer",
+      "enregistrementEnCours": "Enregistrement…",
+      "annuler": "Annuler",
+      "tester": "Tester",
+      "placeholderSecret": "Coller la clé",
+      "jamaisTeste": "—",
+      "reussi": "Réussi · {date}",
+      "echec": "Échec · {date}",
+      "etat": {
+        "cleValide": "Clé valide",
+        "connecte": "Connecté",
+        "aRenseigner": "À renseigner",
+        "echec": "Erreur de connexion"
+      },
+      "nom": {
+        "anthropic": "Anthropic",
+        "fullenrich": "FullEnrich",
+        "dropcontact": "Dropcontact",
+        "bouncer": "Bouncer",
+        "reoon": "Reoon",
+        "salesblink": "SalesBlink",
+        "microsoft_graph": "Microsoft 365",
+        "adzuna": "Adzuna",
+        "francetravail": "France Travail",
+        "apify": "Apify"
+      },
+      "description": {
+        "anthropic": "Notation des offres et profils",
+        "fullenrich": "Recherche d'emails professionnels vérifiés",
+        "dropcontact": "Enrichissement de contacts",
+        "bouncer": "Vérification de délivrabilité email",
+        "reoon": "Vérification de délivrabilité email",
+        "salesblink": "Envoi des emails",
+        "microsoft_graph": "Relève des réponses, boîte par boîte",
+        "adzuna": "Offres d'emploi des sites français",
+        "francetravail": "Offres de l'agence publique",
+        "apify": "Lecture de LinkedIn côté serveur · nécessaire au lot 4"
+      },
+      "lien": {
+        "reglerPlafond": "Régler le plafond",
+        "voirLesBoites": "Voir les boîtes",
+        "voirLesCampagnes": "Voir les campagnes"
+      },
+      "colDernierTest": "Dernier test",
+      "colAujourdhui": "Aujourd'hui",
+      "sansDonnee": "—",
+      "consommation": {
+        "scorings": "{utilise} scorings sur {plafond}",
+        "enrichissements": "{utilise} crédits sur {plafond}",
+        "envois": "{utilise} envois sur {plafond}"
+      }
     }
   }
 }

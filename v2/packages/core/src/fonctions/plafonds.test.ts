@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { ecrireReglage, lireConsommationDuJour, lireReglages, plafondEnrichissementDuJour, schemaEcrireReglage } from './plafonds.js';
+import {
+  CLES_REGLAGES,
+  ecrireReglage,
+  lireConsommationDuJour,
+  lireReglages,
+  lireReglagesDetail,
+  plafondEnrichissementDuJour,
+  schemaEcrireReglage,
+} from './plafonds.js';
 
 /**
  * Contexte factice : `rows` associe un motif (regex, insensible à la casse) au résultat renvoyé par `query`.
@@ -147,6 +155,60 @@ describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17
     const plafondDirect = await plafondEnrichissementDuJour(ctx);
     expect(consommation.enrichissement.plafond).toBe(45);
     expect(consommation.enrichissement.plafond).toBe(plafondDirect);
+  });
+});
+
+describe('lireReglagesDetail (tâche 21, écran Réglages › Plafonds)', () => {
+  it('rend une entrée par clé de CLES_REGLAGES, avec le défaut et le repli quand aucune ligne n’existe', async () => {
+    const ctx = faux({ 'from organization_settings': [] });
+    const detail = await lireReglagesDetail(ctx);
+    expect(detail).toHaveLength(CLES_REGLAGES.length);
+    const scoring = detail.find((d) => d.cle === 'scoring_par_jour');
+    expect(scoring).toEqual({
+      cle: 'scoring_par_jour',
+      valeur: 300,
+      defaut: 300,
+      repli: 'SCORE_DAILY_CAP',
+      modifiePar: null,
+      modifieLe: null,
+    });
+    const scoreMin = detail.find((d) => d.cle === 'score_min_defaut');
+    expect(scoreMin?.repli).toBeNull();
+  });
+
+  it('porte la valeur, l’auteur et la date de la ligne organization_settings quand elle existe', async () => {
+    const ctx = faux({
+      'from organization_settings': [
+        { key: 'age_max_offres_jours', value: 45, updated_at: '2026-09-10T08:00:00.000Z', nom: 'Jean-Baptiste' },
+      ],
+    });
+    const detail = await lireReglagesDetail(ctx);
+    const age = detail.find((d) => d.cle === 'age_max_offres_jours');
+    expect(age).toEqual({
+      cle: 'age_max_offres_jours',
+      valeur: 45,
+      defaut: 14,
+      repli: null,
+      modifiePar: 'Jean-Baptiste',
+      modifieLe: '2026-09-10T08:00:00.000Z',
+    });
+  });
+
+  it('joint auth.users pour résoudre l’auteur (nom affiché, pas un id technique)', async () => {
+    const ctx = faux({ 'from organization_settings': [] });
+    await lireReglagesDetail(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.some((a) => /left join auth\.users/i.test(String(a[0])))).toBe(true);
+  });
+
+  it('accepte des `reglages` déjà lus (un seul appel restant : la jointure d’audit)', async () => {
+    const ctx = faux({ 'from organization_settings': [] });
+    const reglages = await lireReglages(ctx);
+    (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const detail = await lireReglagesDetail(ctx, reglages);
+    expect(detail.find((d) => d.cle === 'scoring_par_jour')?.valeur).toBe(300);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.filter((a) => /from organization_settings/i.test(String(a[0])))).toHaveLength(1);
   });
 });
 
