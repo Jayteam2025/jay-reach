@@ -53,7 +53,10 @@ export type ActionJournal =
   // `listerActivite` (campagnes.ts).
   | 'step.saved'
   | 'step.deleted'
-  | 'step.test_sent';
+  | 'step.test_sent'
+  // Réponse envoyée depuis la Réception (tâche 16, `fonctions/reception.ts`) —
+  // distinct de `reply_received` (une réponse REÇUE, posée par la relève).
+  | 'reply_sent';
 
 export interface EvenementJournal {
   readonly organisationId: string;

@@ -9,3 +9,4 @@ export * from './sources.js';
 export * from './sequence.js';
 export * from './modeles-sequence.js';
 export * from './assistant-campagne.js';
+export * from './reception.js';
