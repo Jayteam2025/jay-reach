@@ -3,17 +3,13 @@
 import { useTranslations } from 'next-intl';
 import type { MessageFicheContact } from '@jay-reach/core';
 import { Message } from '../ui';
+import { dateCourte } from '../../lib/dates';
 
 export interface SectionEchangesProps {
   echanges: MessageFicheContact[];
   filId: string | null;
   contactNom: string;
   fuseau: string;
-}
-
-function dateCourte(iso: string | null, fuseau: string): string {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: fuseau }).format(new Date(iso));
 }
 
 /**
@@ -46,7 +42,7 @@ export function SectionEchanges({ echanges, filId, contactNom, fuseau }: Section
             key={m.id}
             direction={m.direction === 'in' ? 'entrant' : 'sortant'}
             auteur={m.direction === 'in' ? contactNom : t('conversation.outbound')}
-            date={dateCourte(m.quand, fuseau)}
+            date={m.quand ? dateCourte(m.quand, undefined, fuseau) : '—'}
             corps={m.corps ?? ''}
           />
         ))

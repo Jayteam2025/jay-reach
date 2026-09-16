@@ -105,6 +105,30 @@ function cleJourDansFuseau(date: Date, fuseau: string): string {
   );
 }
 
+/**
+ * Date courte d'un instant PASSÉ (ou présent) — fiche contact (§6.10) : notes,
+ * historique, échanges (R79, tour de correction 1 de la tâche 17 : remplace
+ * quatre copies locales de la même formule dans `components/contact/*`).
+ * « aujourd'hui, HH:MM » / « hier, HH:MM » sur les deux derniers jours
+ * calendaires (dans `fuseau`, même mécanisme que `regrouperParJour`/R53),
+ * sinon une date courte SANS heure (« 4 sept. ») — perdre l'heure précise
+ * d'un événement ancien est un compromis délibéré, plus lisible qu'une
+ * minute sans contexte. Reproduit aussi le mineur de la maquette
+ * `fiche-contact.html` : le message le plus récent d'un fil affiche
+ * « aujourd'hui, 10:22 », les précédents une date nue.
+ * Fonction pure (l'instant de référence est un paramètre), même convention
+ * que `dateRelativeCourte`/`heureAvecJour`.
+ */
+export function dateCourte(iso: string, maintenant: Date = new Date(), fuseau: string = FUSEAU_PAR_DEFAUT): string {
+  const date = new Date(iso);
+  const cleDate = cleJourDansFuseau(date, fuseau);
+  const heure = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(date);
+  if (cleDate === cleJourDansFuseau(maintenant, fuseau)) return `aujourd'hui, ${heure}`;
+  const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
+  if (cleDate === cleJourDansFuseau(veille, fuseau)) return `hier, ${heure}`;
+  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: fuseau }).format(date);
+}
+
 export interface GroupeParJour<T> {
   /**
    * Ancré à midi UTC du jour calendaire (pas minuit) : reformaté ensuite avec

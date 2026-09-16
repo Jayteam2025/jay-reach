@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import type { FichePourquoi, FicheScore } from '@jay-reach/core';
 import { TuileLogo, type TuileLogoMarque } from '../ui';
 import { marqueSource } from '../../lib/marque-source';
+import { dateCourte } from '../../lib/dates';
 
 export interface SectionPourquoiLuiProps {
   pourquoi: FichePourquoi | null;
@@ -23,11 +24,6 @@ function nomFournisseur(providerId: string | null): string | null {
   return NOM_FOURNISSEUR[providerId] ?? providerId;
 }
 
-function dateCourte(iso: string | null, fuseau: string): string | null {
-  if (!iso) return null;
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: fuseau }).format(new Date(iso));
-}
-
 export function SectionPourquoiLui({ pourquoi, score, fuseau }: SectionPourquoiLuiProps) {
   const t = useTranslations('campagne.fiche');
 
@@ -43,7 +39,9 @@ export function SectionPourquoiLui({ pourquoi, score, fuseau }: SectionPourquoiL
             <span style={{ whiteSpace: 'normal' }}>
               <b style={{ fontWeight: 600 }}>{pourquoi.titre ?? '—'}</b>
               <small style={{ whiteSpace: 'normal' }}>
-                {[nomFournisseur(pourquoi.providerId), dateCourte(pourquoi.date, fuseau)].filter(Boolean).join(' · ')}
+                {[nomFournisseur(pourquoi.providerId), pourquoi.date ? dateCourte(pourquoi.date, undefined, fuseau) : null]
+                  .filter(Boolean)
+                  .join(' · ')}
                 {pourquoi.url && (
                   <>
                     {' · '}

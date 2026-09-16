@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateHeureMessage, dateRelativeCourte, heureAvecJour, libelleJour, regrouperParJour } from './dates';
+import { dateCourte, dateHeureMessage, dateRelativeCourte, heureAvecJour, libelleJour, regrouperParJour } from './dates';
 
 describe('dateRelativeCourte', () => {
   const maintenant = new Date('2026-09-15T12:00:00.000Z');
@@ -116,6 +116,35 @@ describe('regrouperParJour', () => {
     expect(groupes).toHaveLength(2);
     expect(groupes[0]!.evenements).toEqual([evenements[0]]);
     expect(groupes[1]!.evenements).toEqual([evenements[1]]);
+  });
+});
+
+/**
+ * R79 (tour de correction 1, tâche 17) : remplace quatre copies locales dans
+ * `components/contact/*` — fiche contact (notes, historique, échanges).
+ */
+describe('dateCourte', () => {
+  const maintenant = new Date('2026-09-15T10:00:00.000Z'); // 12:00 Paris
+
+  it('un instant d’aujourd’hui -> « aujourd’hui, HH:MM »', () => {
+    expect(dateCourte('2026-09-15T08:22:00.000Z', maintenant)).toBe("aujourd'hui, 10:22");
+  });
+
+  it('un instant d’hier -> « hier, HH:MM »', () => {
+    expect(dateCourte('2026-09-14T08:22:00.000Z', maintenant)).toBe('hier, 10:22');
+  });
+
+  it('un instant plus ancien -> date courte sans heure', () => {
+    expect(dateCourte('2026-09-04T08:22:00.000Z', maintenant)).toBe('4 sept.');
+  });
+
+  it('frontière de minuit à Paris : deux instants du même jour calendaire À PARIS restent « aujourd’hui » même si l’UTC les sépare (R67)', () => {
+    // maintenant = 23:50 Paris le 15 (21:50 UTC le 15) ; l'instant = 00:10 Paris le 15 (22:10 UTC le 14) —
+    // même jour calendaire à Paris, jours UTC différents : une comparaison naïve en UTC aurait classé
+    // ceci « hier » à tort (même piège que `heureAvecJour`/R67).
+    const maintenantTard = new Date('2026-09-15T21:50:00.000Z');
+    const instant = '2026-09-14T22:10:00.000Z';
+    expect(dateCourte(instant, maintenantTard)).toBe("aujourd'hui, 00:10");
   });
 });
 

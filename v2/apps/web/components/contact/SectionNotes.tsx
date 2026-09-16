@@ -5,21 +5,12 @@ import { useTranslations } from 'next-intl';
 import type { Note } from '@jay-reach/core';
 import { Champ } from '../ui';
 import { actionAjouterNote } from '../../app/actions/contacts';
+import { dateCourte } from '../../lib/dates';
 
 export interface SectionNotesProps {
   notes: Note[];
   contactId: string;
   fuseau: string;
-}
-
-function dateCourte(iso: string, fuseau: string): string {
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: fuseau,
-  }).format(new Date(iso));
 }
 
 export function SectionNotes({ notes, contactId, fuseau }: SectionNotesProps) {
@@ -57,7 +48,7 @@ export function SectionNotes({ notes, contactId, fuseau }: SectionNotesProps) {
             <p style={{ margin: 0, fontSize: 13.5 }}>{n.texte}</p>
             <small className="jr-secondaire">
               {n.auteurNom ? `${n.auteurNom} · ` : ''}
-              {dateCourte(n.quand, fuseau)}
+              {dateCourte(n.quand, undefined, fuseau)}
             </small>
           </div>
         ))
