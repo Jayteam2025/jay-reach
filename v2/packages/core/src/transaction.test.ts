@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from './executeur.js';
-import { dansUneTransaction, type ExecuteurConnectable } from './transaction.js';
+import { dansUneTransaction, type ClientLoue, type ExecuteurConnectable } from './transaction.js';
 
 /** Faux pool : `connect()` renvoie un faux client qui journalise ses requêtes et son `release()`. */
 function fauxPoolConnectable(): { pool: ExecuteurConnectable; appelsPool: string[]; appelsClient: string[]; released: boolean[] } {
@@ -101,5 +101,49 @@ describe('dansUneTransaction', () => {
 
     expect(resultat).toBe('direct');
     expect(appels).toEqual(['select 1']);
+  });
+
+  it('(e) R69 (tour de correction 3) : un vrai PoolClient a connect() hérité (lève « Client has already been connected » si rappelé) — dansUneTransaction imbriqué dessus ne le rappelle jamais, un seul begin/commit', async () => {
+    // Reproduit pg : un `PoolClient` loué garde `Client.connect()` en
+    // héritage — le rappeler lève ce message EXACT. `estConnectable`
+    // (transaction.ts) doit donc se fier à `release()` (que seul un client
+    // loué possède), pas à la présence de `connect()`.
+    const appelsClient: string[] = [];
+    const released: boolean[] = [];
+    let appelsConnectSurLeClient = 0;
+
+    const client: ClientLoue & { connect: () => Promise<never> } = {
+      query: vi.fn(async (sql: string) => {
+        appelsClient.push(sql);
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'],
+      connect: vi.fn(async () => {
+        appelsConnectSurLeClient += 1;
+        throw new Error('Client has already been connected. You cannot reuse a client.');
+      }),
+      release: vi.fn(() => {
+        released.push(true);
+      }),
+    };
+
+    const pool: ExecuteurConnectable = {
+      query: vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'],
+      connect: vi.fn(async () => client),
+    };
+
+    // `creerCampagneComplete` (assistant) loue un client puis `enregistrerEtape`
+    // rappelle `dansUneTransaction` avec CE MÊME client — exactement cette
+    // imbrication.
+    const resultat = await dansUneTransaction(pool, (tx) =>
+      dansUneTransaction(tx, async (tx2) => {
+        await tx2.query('insert into x values (1)');
+        return 'ok-imbrique';
+      }),
+    );
+
+    expect(resultat).toBe('ok-imbrique');
+    expect(appelsConnectSurLeClient).toBe(0);
+    expect(appelsClient).toEqual(['begin', 'insert into x values (1)', 'commit']);
+    expect(released).toEqual([true]);
   });
 });
