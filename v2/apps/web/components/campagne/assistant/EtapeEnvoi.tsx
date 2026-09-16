@@ -61,7 +61,8 @@ export function EtapeEnvoi({
         ) : (
           boites.map((boite) => (
             <div key={boite.id} className="jr-boite">
-              {boite.marque && <TuileLogo marque={boite.marque} />}
+              {/* Boîte de marque inconnue (domaine propre) : repli sur la tuile « @ », comme `PileDeBoites` (tâche 9) — jamais aucune tuile. */}
+              <TuileLogo marque={boite.marque ?? 'email'} />
               <span>
                 <b>{boite.identite}</b>
               </span>

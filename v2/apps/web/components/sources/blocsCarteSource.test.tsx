@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SourceCarte } from '@jay-reach/core';
 import fr from '@jay-reach/i18n/messages/fr.json';
 import { construireBlocsOffres, marquesDe, sousTitreDe } from './blocsCarteSource';
@@ -78,6 +78,19 @@ describe('marquesDe', () => {
 
 describe('construireBlocsOffres', () => {
   const t = fabriquerT();
+
+  // `heureAvecJour` (apps/web/lib/dates.ts) compare `carte.prochainPassage` à
+  // `new Date()` par défaut (`construireBlocsOffres` ne lui passe pas de
+  // `maintenant`) : sans horloge figée, le test devient faux un jour après
+  // avoir été écrit — le « prochain » du 16/09 n'est « demain » que vu du
+  // 15/09. Figée AVANT 09:00 le 15/09 (le « dernier passage » de la fixture),
+  // jamais après le code de production.
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date(2026, 8, 15, 8, 0, 0) });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('les intitulés de la config réelle apparaissent en puces (Requête)', () => {
     const [requete] = construireBlocsOffres(carteDeBase(), t);

@@ -5,7 +5,6 @@ import {
   parseStep,
   toStepConditions,
   campaignStatusSchema,
-  creerCampagne,
   modifierReglagesCampagne,
   lancer,
   mettreEnPause,
@@ -44,28 +43,6 @@ function resultatDErreur(err: unknown): { ok: false; error: string; issues?: str
     return { ok: false, error: err.message };
   }
   return { ok: false, error: err instanceof Error ? err.message : 'Erreur inconnue.' };
-}
-
-/**
- * Crée une campagne (brouillon), adossée à un ou plusieurs thèmes de veille, ou
- * à une liste. Façade fine : le contexte vient de la session courante,
- * JAMAIS de `organizationId` — un id d'organisation reçu du client n'a
- * aucune valeur d'autorisation, il ne sert plus qu'à vérifier qu'il coïncide
- * avec l'organisation réellement courante (sinon la Server Action ne fait
- * rien).
- */
-export async function createCampaign(organizationId: string, input: unknown): Promise<CampaignActionResult> {
-  try {
-    const ctx = await contexteCourant();
-    if (ctx.organisationId !== organizationId) {
-      return { ok: false, error: 'Organisation invalide.' };
-    }
-    const { id } = await creerCampagne(ctx, input);
-    revalidatePath('/campaigns');
-    return { ok: true, id };
-  } catch (err) {
-    return resultatDErreur(err);
-  }
 }
 
 /** Met à jour nom / plafond / règles d'entrée d'une campagne. */
