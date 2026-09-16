@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ErreurReponseImpossible } from '@jay-reach/core';
+import { ErreurEntree, ErreurIntrouvable, ErreurReponseImpossible, ForbiddenError } from '@jay-reach/core';
 import { ErreurGraph } from '@jay-reach/providers/mail';
 import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
 import { messageErreurReponse } from './erreur-reponse';
@@ -34,5 +34,17 @@ describe('messageErreurReponse', () => {
     expect(messageErreurReponse(new ErreurSalesBlink('serveur', 500, 'corps'))).toBe(
       messageErreurReponse(new Error('autre chose')),
     );
+  });
+
+  it('rôle insuffisant (marquerTraite/marquerInteret) : message dédié', () => {
+    expect(messageErreurReponse(new ForbiddenError('operator', 'viewer'))).toBe('Droit opérateur requis.');
+  });
+
+  it('fil introuvable ou hors organisation : message dédié', () => {
+    expect(messageErreurReponse(new ErreurIntrouvable('Fil'))).toBe('Fil introuvable.');
+  });
+
+  it('entrée invalide (schéma Zod) : message dédié', () => {
+    expect(messageErreurReponse(new ErreurEntree({ quelconque: true }))).toBe('Entrée invalide.');
   });
 });
