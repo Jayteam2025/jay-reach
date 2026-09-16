@@ -1888,6 +1888,8 @@
         "name": "Modèle",
         "channel": "Canal",
         "usedBy": "Utilisé par",
+        "sent": "Envois",
+        "sentCount": "{n, plural, =0 {Aucun envoi} one {# envoi} other {# envois}}",
         "modified": "Modifié",
         "edit": "Modifier",
         "unusedBy": "aucune",

@@ -38,6 +38,22 @@ function estLinkedin(canal: CanalModeleVue): boolean {
   return canal === 'linkedin_invite' || canal === 'linkedin_message';
 }
 
+/**
+ * Cellule « Envois » de la table (tour de correction 1, important #2 :
+ * `ModeleMessage.envois` était calculé mais jamais restitué à l'écran).
+ * Fonction PURE (comme `sousTitreDe`/`marquesDe` dans `sources/blocsCarteSource.ts`) :
+ * prend `t` déjà résolu par le composant plutôt que d'appeler `useTranslations`
+ * elle-même, pour rester testable par `renderToStaticMarkup` sans fournisseur
+ * `next-intl`.
+ */
+export function celluleEnvois(t: (cle: string, valeurs?: Record<string, number>) => string, envois: number) {
+  return (
+    <span className="jr-secondaire" style={{ fontSize: 12.5 }}>
+      {t('table.sentCount', { n: envois })}
+    </span>
+  );
+}
+
 interface EtatModele {
   nom: string;
   canal: CanalModeleVue;
@@ -258,6 +274,7 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
     { cle: 'modele', titre: t('table.name') },
     { cle: 'canal', titre: t('table.channel') },
     { cle: 'utilisePar', titre: t('table.usedBy') },
+    { cle: 'envois', titre: t('table.sent'), num: true, largeur: '110px' },
     { cle: 'modifie', titre: t('table.modified'), largeur: '160px' },
     { cle: 'action', titre: '' },
   ];
@@ -304,6 +321,7 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
           ))}
         </div>
       ),
+    envois: celluleEnvois(t, m.envois),
     modifie: (
       <small className="jr-secondaire" style={{ fontSize: 12.5 }}>
         {m.modifiePar ? `${m.modifiePar} · ${m.modifieLeTexte}` : m.modifieLeTexte}
