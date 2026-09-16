@@ -262,6 +262,11 @@ export function StepMessageEditor({
         <p className="rs-row-sub" style={{ marginTop: 2, marginBottom: 6 }}>
           {t('variablesHelp')}
         </p>
+        {/* Le CSV importé peut fournir n'importe quelle colonne : la liste ci-dessous
+            ne montre que les variables standard, connues d'avance. */}
+        <p className="rs-row-sub" style={{ marginTop: -4, marginBottom: 6 }}>
+          {t('variablesListHelp')}
+        </p>
         <div className="rs-var-list">
           {variables.map((v) => (
             <button key={v} type="button" className="rs-var" onClick={() => inserer(v)} title={t('insert')}>

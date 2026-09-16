@@ -7,6 +7,7 @@
  * rendu depuis le tick jusqu'à la file de dispatch.
  */
 import type { Pool } from 'pg';
+import { normalizeListColumnName } from '@jay-reach/core';
 import type { EmailStatus } from '../enrichment-persist.js';
 
 export interface DueRow {
@@ -43,6 +44,13 @@ export interface DueRow {
   readonly postal_code: string | null;
   readonly country: string | null;
   readonly context_note: string | null;
+  /**
+   * Ligne brute du CSV importé (`list_members.raw_row`), clés = en-têtes tels
+   * quels. Alimente les variables `{{liste_<colonne>}}` (spec import de
+   * listes). `null` si l'inscription n'a pas de liste (`enrollments.list_id`
+   * nul, ex. campagne signal) — jamais de repli sur une autre liste.
+   */
+  readonly raw_row: Record<string, unknown> | null;
 }
 
 /**
@@ -63,7 +71,8 @@ export const REQUETE_LIGNE_INSCRIPTION = `
          sig.title as signal_title, sig.occurred_at as signal_occurred_at, sig.location as signal_location,
          sig.url as signal_url,
          lst.context_note,
-         ls.mode as lk_mode
+         ls.mode as lk_mode,
+         lm.raw_row
     from enrollments e
     join contacts c on c.id = e.contact_id
     join campaigns camp on camp.id = e.campaign_id
@@ -73,6 +82,12 @@ export const REQUETE_LIGNE_INSCRIPTION = `
     left join signals sig on sig.id = e.signal_id
     left join lists lst on lst.id = camp.list_id
     left join linkedin_settings ls on ls.organization_id = e.organization_id
+    -- Colonnes du CSV importé (variables liste_<colonne>) : jointe sur
+    -- l'inscription elle-même, jamais sur contacts.source_list_id — un
+    -- contact peut venir d'une liste et être réinscrit via une autre ; seule
+    -- la liste de CETTE inscription doit nourrir son rendu. e.list_id nul
+    -- (campagne signal) laisse raw_row nul, sans repli.
+    left join list_members lm on lm.list_id = e.list_id and lm.contact_id = e.contact_id
 `;
 
 /**
@@ -117,6 +132,21 @@ export function buildMessageValues(
     departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
     pays: row.country ?? undefined,
   };
+  // Colonnes du CSV importé : chaque clé de `raw_row` devient
+  // `liste_<colonne normalisée>` (même règle que `validateTemplateVariables`,
+  // `normalizeListColumnName`). Une valeur vide, nulle ou blanche N'EST PAS
+  // ajoutée — la variable reste manquante, ce qui bloque l'envoi de CE
+  // contact plutôt que de partir avec un champ vide.
+  if (row.raw_row) {
+    for (const [cle, brut] of Object.entries(row.raw_row)) {
+      const colonne = normalizeListColumnName(cle);
+      if (!colonne) continue; // colonne qui normalise vers une clé vide : ignorée
+      if (brut === null || brut === undefined) continue;
+      const texte = String(brut).trim();
+      if (!texte) continue;
+      values[`liste_${colonne}`] = texte;
+    }
+  }
   // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
   // veut pas qu'un extrait nommé « prenom » masque le prospect.
   for (const [nom, texte] of extraits) {

@@ -524,6 +524,7 @@
       "bodyPlaceholder": "Hallo '{{'prenom'}}',",
       "variables": "Beschikbare variabelen",
       "variablesHelp": "Klik om in te voegen. Een variabele zonder waarde blokkeert de verzending in plaats van leeg te vertrekken.",
+      "variablesListHelp": "Kolommen uit het geïmporteerde CSV-bestand: '{{'liste_nom_de_colonne'}}'.",
       "insert": "Invoegen",
       "saveMessage": "Bericht opslaan",
       "messageSaved": "Bericht opgeslagen",
