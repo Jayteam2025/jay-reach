@@ -106,6 +106,8 @@ export interface ChampsSourceLinkedInProps {
   readonly onChange: (patch: Partial<EtatChampsLinkedIn>) => void;
   readonly disabled?: boolean;
   readonly libelles: ChampsSourceLinkedInLibelles;
+  /** Préfixe des `id` de champ (tour de correction 2, R66) — utile si jamais deux instances se retrouvent sur la même page ; les deux appelants actuels (tiroir tâche 11, assistant tâche 14) n'en ont chacun qu'une, le défaut suffit. */
+  readonly idPrefix?: string;
 }
 
 /**
@@ -116,13 +118,22 @@ export interface ChampsSourceLinkedInProps {
  * serveur — l'appelant garde la main sur son propre nom de source, sa cadence
  * et son mode de soumission.
  */
-export function ChampsSourceLinkedIn({ providerId, etat, onChange, disabled, libelles }: ChampsSourceLinkedInProps) {
+export function ChampsSourceLinkedIn({
+  providerId,
+  etat,
+  onChange,
+  disabled,
+  libelles,
+  idPrefix = 'linkedin',
+}: ChampsSourceLinkedInProps) {
   return (
     <>
       {providerId === 'linkedin_post_engagers' && (
         <>
-          <Champ libelle={libelles.postUrl}>
+          <Champ libelle={libelles.postUrl} id={`${idPrefix}-post-url`}>
             <input
+              id={`${idPrefix}-post-url`}
+              name="urlPost"
               value={etat.urlPost}
               onChange={(e) => onChange({ urlPost: e.target.value })}
               disabled={disabled}
@@ -144,8 +155,10 @@ export function ChampsSourceLinkedIn({ providerId, etat, onChange, disabled, lib
         </>
       )}
       {providerId === 'linkedin_competitor_followers' && (
-        <Champ libelle={libelles.competitorPages}>
+        <Champ libelle={libelles.competitorPages} id={`${idPrefix}-competitor-pages`}>
           <input
+            id={`${idPrefix}-competitor-pages`}
+            name="comptesConcurrents"
             value={etat.comptesConcurrents}
             onChange={(e) => onChange({ comptesConcurrents: e.target.value })}
             disabled={disabled}
@@ -154,8 +167,10 @@ export function ChampsSourceLinkedIn({ providerId, etat, onChange, disabled, lib
         </Champ>
       )}
       {providerId === 'linkedin_keywords' && (
-        <Champ libelle={libelles.topics}>
+        <Champ libelle={libelles.topics} id={`${idPrefix}-topics`}>
           <input
+            id={`${idPrefix}-topics`}
+            name="sujets"
             value={etat.sujets}
             onChange={(e) => onChange({ sujets: e.target.value })}
             disabled={disabled}
@@ -164,8 +179,10 @@ export function ChampsSourceLinkedIn({ providerId, etat, onChange, disabled, lib
         </Champ>
       )}
       {providerId === 'linkedin_job_change' && (
-        <Champ libelle={libelles.sinceDays}>
+        <Champ libelle={libelles.sinceDays} id={`${idPrefix}-since-days`}>
           <input
+            id={`${idPrefix}-since-days`}
+            name="depuisJours"
             value={etat.depuisJours}
             onChange={(e) => onChange({ depuisJours: e.target.value })}
             disabled={disabled}
@@ -174,11 +191,19 @@ export function ChampsSourceLinkedIn({ providerId, etat, onChange, disabled, lib
         </Champ>
       )}
       <div className="ligne">
-        <Champ libelle={libelles.accountId}>
-          <input value={etat.compteId} onChange={(e) => onChange({ compteId: e.target.value })} disabled={disabled} />
-        </Champ>
-        <Champ libelle={libelles.profilesPerDay}>
+        <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
           <input
+            id={`${idPrefix}-account-id`}
+            name="compteId"
+            value={etat.compteId}
+            onChange={(e) => onChange({ compteId: e.target.value })}
+            disabled={disabled}
+          />
+        </Champ>
+        <Champ libelle={libelles.profilesPerDay} id={`${idPrefix}-profiles-per-day`}>
+          <input
+            id={`${idPrefix}-profiles-per-day`}
+            name="profilsParJour"
             value={etat.profilsParJour}
             onChange={(e) => onChange({ profilsParJour: e.target.value })}
             disabled={disabled}

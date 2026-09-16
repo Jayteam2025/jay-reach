@@ -367,14 +367,15 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
 
       {ajoutEnCours && estLinkedIn(ajoutEnCours) && (
         <div className="jr-formulaire">
-          <Champ libelle={libelles.formNom}>
-            <input value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
+          <Champ libelle={libelles.formNom} id="assistant-sources-nom">
+            <input id="assistant-sources-nom" name="nom" value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
           </Champ>
           <ChampsSourceLinkedIn
             providerId={ajoutEnCours}
             etat={etatLinkedin}
             onChange={(patch) => setEtatLinkedin((precedent) => ({ ...precedent, ...patch }))}
             disabled={disabled}
+            idPrefix="assistant-sources-linkedin"
             libelles={{
               postUrl: libelles.formLinkedinPostUrl,
               keepPeople: libelles.formLinkedinKeepPeople,
@@ -402,18 +403,34 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
 
       {ajoutEnCours && !estLinkedIn(ajoutEnCours) && (
         <div className="jr-formulaire">
-          <Champ libelle={libelles.formNom}>
-            <input value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
+          <Champ libelle={libelles.formNom} id="assistant-sources-nom">
+            <input id="assistant-sources-nom" name="nom" value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
           </Champ>
-          <Champ libelle={libelles.formMotsCles} erreur={erreur ? libelles.formErreur : undefined}>
-            <input value={motsCles} onChange={(e) => setMotsCles(e.target.value)} disabled={disabled} />
+          <Champ
+            libelle={libelles.formMotsCles}
+            erreur={erreur ? libelles.formErreur : undefined}
+            id="assistant-sources-mots-cles"
+          >
+            <input
+              id="assistant-sources-mots-cles"
+              name="motsCles"
+              value={motsCles}
+              onChange={(e) => setMotsCles(e.target.value)}
+              disabled={disabled}
+            />
           </Champ>
           <div className="jr-aide">{libelles.formMotsClesAide}</div>
-          <Champ libelle={libelles.formLieux}>
-            <input value={lieux} onChange={(e) => setLieux(e.target.value)} disabled={disabled} />
+          <Champ libelle={libelles.formLieux} id="assistant-sources-lieux">
+            <input id="assistant-sources-lieux" name="lieux" value={lieux} onChange={(e) => setLieux(e.target.value)} disabled={disabled} />
           </Champ>
-          <Champ libelle={libelles.formContrat}>
-            <select value={contrat} onChange={(e) => setContrat(e.target.value === 'cdi' ? 'cdi' : 'tous')} disabled={disabled}>
+          <Champ libelle={libelles.formContrat} id="assistant-sources-contrat">
+            <select
+              id="assistant-sources-contrat"
+              name="contrat"
+              value={contrat}
+              onChange={(e) => setContrat(e.target.value === 'cdi' ? 'cdi' : 'tous')}
+              disabled={disabled}
+            >
               <option value="tous">{libelles.formContratTous}</option>
               <option value="cdi">{libelles.formContratCdi}</option>
             </select>

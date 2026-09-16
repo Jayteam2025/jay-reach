@@ -280,6 +280,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             delai: t('sequence.delay'),
             delaiSuffixe: t('sequence.delaySuffix'),
             delaiPilule: (n: number) => t('sequence.delaiPilule', { n }),
+            envoiImmediat: t('sequence.sentAtLaunch'),
             supprimer: t('sequence.remove'),
             variablesAide: t('sequence.variablesHint'),
             vide: t('sequence.empty'),

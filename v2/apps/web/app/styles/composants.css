@@ -206,16 +206,20 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-boite { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
 .jr-boite:last-child { border-bottom: 0; }
 .jr-boite b { font-weight: 600; overflow-wrap: anywhere; }
+/* Trois enfants (tuile, adresse, interrupteur) au lieu de deux (tour de correction 2, R62) : une colonne de plus pour la tuile, sinon l'interrupteur passe sous elle à la ligne suivante. */
+.jr-boite.avec-logo { grid-template-columns: auto minmax(0, 1fr) auto; }
 .jr-source small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-source .jr-n { text-align: right; font-size: var(--jr-petit); color: var(--jr-secondaire); }
 .jr-source .jr-n b { font-size: 15px; }
 
 /* Séquence : pilules et flux */
 .jr-sequence-pilules { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--jr-petit); }
+/* Groupe délai + pilule (tour de correction 2, R65) : inline-flex explicite, jamais scindé par le passage à la ligne du conteneur — sans ça, le délai pouvait se retrouver seul en bout de ligne. */
+.jr-sequence-pilules .jr-etape-pilule { display: inline-flex; align-items: center; gap: 6px; }
 .jr-sequence-pilules .pilule { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--jr-filet); border-radius: 999px; background: var(--jr-surface); }
 .jr-sequence-pilules .pilule.faite { border-color: var(--jr-bon); color: var(--jr-bon); }
 .jr-sequence-pilules .pilule.en-cours { border-color: var(--jr-accent); background: var(--jr-accent-doux); color: var(--jr-accent); font-weight: 600; }
-.jr-sequence-pilules .delai { color: var(--jr-secondaire); }
+.jr-sequence-pilules .delai { color: var(--jr-secondaire); white-space: nowrap; }
 .jr-flux { padding: 24px 28px 32px; background-image: radial-gradient(var(--jr-filet) 1px, transparent 1px); background-size: 18px 18px; display: grid; justify-items: center; gap: 0; }
 .jr-flux .noeud { width: 720px; max-width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; }
 .jr-flux .noeud.fin { border-color: var(--jr-bon-doux); }

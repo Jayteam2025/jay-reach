@@ -60,7 +60,10 @@ export function EtapeEnvoi({
           <p className="jr-aide">{libelles.boitesVide}</p>
         ) : (
           boites.map((boite) => (
-            <div key={boite.id} className="jr-boite">
+            // `.avec-logo` (tour de correction 2, R62) : trois enfants (tuile,
+            // adresse, interrupteur), une colonne de plus que le `.jr-boite`
+            // nu de l'onglet Réglages (deux enfants, jamais de tuile).
+            <div key={boite.id} className="jr-boite avec-logo">
               {/* Boîte de marque inconnue (domaine propre) : repli sur la tuile « @ », comme `PileDeBoites` (tâche 9) — jamais aucune tuile. */}
               <TuileLogo marque={boite.marque ?? 'email'} />
               <span>
@@ -79,8 +82,10 @@ export function EtapeEnvoi({
 
       <Carte>
         <div className="jr-formulaire">
-          <Champ libelle={libelles.relecture} suffixe={libelles.relectureSuffixe}>
+          <Champ libelle={libelles.relecture} suffixe={libelles.relectureSuffixe} id="assistant-envoi-relecture">
             <input
+              id="assistant-envoi-relecture"
+              name="relecturePremiersEnvois"
               type="number"
               min={0}
               value={relecture}

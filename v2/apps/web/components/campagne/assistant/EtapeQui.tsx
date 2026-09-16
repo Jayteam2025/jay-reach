@@ -64,8 +64,10 @@ export function EtapeQui({
   return (
     <Carte>
       <div className="jr-formulaire">
-        <Champ libelle={libelles.nom}>
+        <Champ libelle={libelles.nom} id="assistant-qui-nom">
           <input
+            id="assistant-qui-nom"
+            name="nom"
             value={nom}
             onChange={(e) => onNomChange(e.target.value)}
             placeholder={libelles.nomPlaceholder}
@@ -98,8 +100,10 @@ export function EtapeQui({
 
         <div className="ligne">
           <div>
-            <Champ libelle={libelles.scoreMin} suffixe={libelles.scoreMinSuffixe}>
+            <Champ libelle={libelles.scoreMin} suffixe={libelles.scoreMinSuffixe} id="assistant-qui-score-min">
               <input
+                id="assistant-qui-score-min"
+                name="scoreMin"
                 type="number"
                 min={0}
                 max={100}
@@ -111,8 +115,10 @@ export function EtapeQui({
             <div className="jr-aide">{libelles.scoreMinAide}</div>
           </div>
           <div>
-            <Champ libelle={libelles.plafondJour} suffixe={libelles.plafondJourSuffixe}>
+            <Champ libelle={libelles.plafondJour} suffixe={libelles.plafondJourSuffixe} id="assistant-qui-plafond-jour">
               <input
+                id="assistant-qui-plafond-jour"
+                name="plafondJour"
                 type="number"
                 min={1}
                 value={plafondJour}

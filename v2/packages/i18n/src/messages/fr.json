@@ -1458,6 +1458,7 @@
         "delay": "Délai depuis l'étape précédente",
         "delaySuffix": "jours",
         "delaiPilule": "+{n} j",
+        "sentAtLaunch": "Envoyée au lancement de la campagne.",
         "remove": "Supprimer l'étape",
         "variablesHint": "Variables disponibles : '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "Aucune étape. Choisissez un modèle ou ajoutez-en une.",

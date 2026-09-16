@@ -31,6 +31,8 @@ export interface EtapeSequenceLibelles {
   delaiSuffixe: string;
   /** Pilule d'aperçu entre deux étapes (« +2 j ») — fonction plutôt que chaîne : le délai varie par étape. */
   delaiPilule: (n: number) => string;
+  /** Remplace le champ « Délai » pour la première étape (R65, tour de correction 2) : elle n'a pas d'étape précédente. */
+  envoiImmediat: string;
   supprimer: string;
   variablesAide: string;
   vide: string;
@@ -133,7 +135,12 @@ export function EtapeSequence({
         ) : (
           <div className="jr-sequence-pilules">
             {etapes.map((etape, index) => (
-              <span key={etape.cle}>
+              // `jr-etape-pilule` (R65, tour de correction 2) : le délai et la
+              // pilule qui le suit forment un seul groupe inline-flex, jamais
+              // séparés par un retour à la ligne (auparavant, le délai pouvait
+              // se retrouver seul en bout de ligne quand les pilules passaient
+              // à la ligne).
+              <span key={etape.cle} className="jr-etape-pilule">
                 {index > 0 && <span className="delai">{libelles.delaiPilule(etape.delaiJours)}</span>}
                 <button
                   type="button"
@@ -156,11 +163,14 @@ export function EtapeSequence({
         </div>
 
         {etapes
-          .filter((etape) => etape.cle === etapeOuverte)
-          .map((etape) => (
+          .map((etape, index) => ({ etape, index }))
+          .filter(({ etape }) => etape.cle === etapeOuverte)
+          .map(({ etape, index }) => (
             <div key={etape.cle} className="jr-formulaire">
-              <Champ libelle={libelles.canal}>
+              <Champ libelle={libelles.canal} id="assistant-sequence-canal">
                 <select
+                  id="assistant-sequence-canal"
+                  name="canal"
                   value={etape.canal}
                   onChange={(e) => onModifierEtape(etape.cle, { canal: e.target.value === 'linkedin' ? 'linkedin' : 'email' })}
                   disabled={disabled}
@@ -170,16 +180,20 @@ export function EtapeSequence({
                 </select>
               </Champ>
               {etape.canal === 'email' && (
-                <Champ libelle={libelles.objet}>
+                <Champ libelle={libelles.objet} id="assistant-sequence-objet">
                   <input
+                    id="assistant-sequence-objet"
+                    name="sujet"
                     value={etape.sujet}
                     onChange={(e) => onModifierEtape(etape.cle, { sujet: e.target.value })}
                     disabled={disabled}
                   />
                 </Champ>
               )}
-              <Champ libelle={libelles.corps}>
+              <Champ libelle={libelles.corps} id="assistant-sequence-corps">
                 <textarea
+                  id="assistant-sequence-corps"
+                  name="corps"
                   rows={5}
                   value={etape.corps}
                   onChange={(e) => onModifierEtape(etape.cle, { corps: e.target.value })}
@@ -187,15 +201,22 @@ export function EtapeSequence({
                 />
               </Champ>
               <div className="jr-aide">{libelles.variablesAide}</div>
-              <Champ libelle={libelles.delai} suffixe={libelles.delaiSuffixe}>
-                <input
-                  type="number"
-                  min={0}
-                  value={etape.delaiJours}
-                  onChange={(e) => onModifierEtape(etape.cle, { delaiJours: Number(e.target.value) || 0 })}
-                  disabled={disabled}
-                />
-              </Champ>
+              {index === 0 ? (
+                // Première étape : pas de « délai depuis l'étape précédente », elle n'en a pas (R65, tour de correction 2).
+                <p className="jr-aide">{libelles.envoiImmediat}</p>
+              ) : (
+                <Champ libelle={libelles.delai} suffixe={libelles.delaiSuffixe} id="assistant-sequence-delai">
+                  <input
+                    id="assistant-sequence-delai"
+                    name="delaiJours"
+                    type="number"
+                    min={0}
+                    value={etape.delaiJours}
+                    onChange={(e) => onModifierEtape(etape.cle, { delaiJours: Number(e.target.value) || 0 })}
+                    disabled={disabled}
+                  />
+                </Champ>
+              )}
               <div className="jr-actions">
                 <Bouton
                   variante="danger"

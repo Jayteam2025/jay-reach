@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { configAdzuna, configFranceTravail, configLinkedInPost } from '@jay-reach/core';
 import {
+  ChampsSourceLinkedIn,
   champsLinkedInValides,
   construireConfigLinkedIn,
   etatChampsLinkedInDepuisConfig,
@@ -254,6 +255,28 @@ describe('EtapeQui — options persona (R59 : vrai bouton, aria-pressed)', () =>
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-pressed="false"');
   });
+
+  it('R66 (tour de correction 2) : les champs nom, score et plafond ont un id, chacun relié à son libellé par un vrai <label>', () => {
+    const html = renderToStaticMarkup(
+      <EtapeQui
+        nom=""
+        onNomChange={() => {}}
+        personas={[]}
+        personaId={null}
+        onPersonaIdChange={() => {}}
+        scoreMin="70"
+        onScoreMinChange={() => {}}
+        plafondJour="30"
+        onPlafondJourChange={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    for (const id of ['assistant-qui-nom', 'assistant-qui-score-min', 'assistant-qui-plafond-jour']) {
+      expect(html).toContain(`for="${id}"`);
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
 });
 
 describe('EtapeSequence — options « partir de » et pilules d’étape (R59 : vrai bouton, aria-pressed)', () => {
@@ -272,6 +295,7 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     delai: 'Délai',
     delaiSuffixe: 'jours',
     delaiPilule: (n: number) => `+${n} j`,
+    envoiImmediat: 'Envoyée au lancement de la campagne.',
     supprimer: 'Supprimer l’étape',
     variablesAide: 'Variables disponibles.',
     vide: 'Aucune étape.',
@@ -295,6 +319,46 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     expect((html.match(/<button type="button" class="option"/g) ?? []).length).toBe(3);
     // Une pilule par étape du modèle, la première ouverte par défaut (`en-cours`).
     expect(html).toContain('class="pilule en-cours"');
+  });
+
+  it('R65 (tour de correction 2) : la première étape (ouverte par défaut) n’a pas de champ délai, pas d’étape précédente', () => {
+    const etapes = etapesDepuisModele('question_relances');
+    const html = renderToStaticMarkup(
+      <EtapeSequence
+        etapes={etapes}
+        onChoisirModele={() => {}}
+        onAjouterEtape={() => {}}
+        onModifierEtape={() => {}}
+        onSupprimerEtape={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    // Première étape ouverte par défaut (`etapeOuverte = etapes[0].cle`) : le texte de repli s’affiche, pas le champ délai.
+    expect(html).toContain(LIBELLES.envoiImmediat);
+    expect(html).not.toContain(LIBELLES.delai);
+  });
+
+  it('R66 (tour de correction 2) : canal, objet et corps ont un id relié à leur libellé par un vrai <label>', () => {
+    const etapes = etapesDepuisModele('question_relances');
+    const html = renderToStaticMarkup(
+      <EtapeSequence
+        etapes={etapes}
+        onChoisirModele={() => {}}
+        onAjouterEtape={() => {}}
+        onModifierEtape={() => {}}
+        onSupprimerEtape={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    // Étape 1 ouverte par défaut : canal + objet (email) + corps, tous les
+    // trois visibles sans simuler de clic. Le champ délai (masqué pour cette
+    // étape par R65) garde son id posé dans le code, non exercé par ce rendu.
+    for (const id of ['assistant-sequence-canal', 'assistant-sequence-objet', 'assistant-sequence-corps']) {
+      expect(html).toContain(`for="${id}"`);
+      expect(html).toContain(`id="${id}"`);
+    }
   });
 });
 
@@ -331,5 +395,87 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     );
     expect(html).toContain('jr-tuile-logo em');
     expect(html).toContain('>@<');
+  });
+
+  it('boîte de marque connue -> `.jr-boite.avec-logo` (R62, tour de correction 2) : trois enfants, colonne de plus pour la tuile', () => {
+    const html = renderToStaticMarkup(
+      <EtapeEnvoi
+        boites={[{ id: 'b1', identite: 'boite@outlook.com', marque: 'outlook' }]}
+        boiteIdsDesactivees={new Set()}
+        onToggleBoite={() => {}}
+        relecture="5"
+        onRelectureChange={() => {}}
+        disabled={false}
+        recapitulatif={{ persona: '-', sources: '-', sequence: '-', envoi: '-' }}
+        manques={[]}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('class="jr-boite avec-logo"');
+  });
+
+  it('R66 (tour de correction 2) : le champ de relecture a un id relié à son libellé par un vrai <label>', () => {
+    const html = renderToStaticMarkup(
+      <EtapeEnvoi
+        boites={[]}
+        boiteIdsDesactivees={new Set()}
+        onToggleBoite={() => {}}
+        relecture="5"
+        onRelectureChange={() => {}}
+        disabled={false}
+        recapitulatif={{ persona: '-', sources: '-', sequence: '-', envoi: '-' }}
+        manques={[]}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('for="assistant-envoi-relecture"');
+    expect(html).toContain('id="assistant-envoi-relecture"');
+  });
+});
+
+describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', () => {
+  const LIBELLES = {
+    postUrl: 'Adresse du post',
+    keepPeople: 'On garde les personnes qui',
+    commented: 'ont commenté',
+    reacted: 'ont réagi',
+    excludeFirstDegree: 'hors relations de 1er degré',
+    competitorPages: 'Pages entreprise suivies',
+    topics: 'Sujets suivis',
+    sinceDays: 'Poste pris depuis (jours)',
+    accountId: 'Compte LinkedIn',
+    profilesPerDay: 'Profils lus par jour',
+  };
+
+  it('chaque champ du sous-type affiché a un id (préfixé par idPrefix) relié à son libellé', () => {
+    const html = renderToStaticMarkup(
+      <ChampsSourceLinkedIn
+        providerId="linkedin_job_change"
+        etat={etatChampsLinkedInDepuisConfig()}
+        onChange={() => {}}
+        libelles={LIBELLES}
+        idPrefix="assistant-sources-linkedin"
+      />,
+    );
+    for (const id of [
+      'assistant-sources-linkedin-since-days',
+      'assistant-sources-linkedin-account-id',
+      'assistant-sources-linkedin-profiles-per-day',
+    ]) {
+      expect(html).toContain(`for="${id}"`);
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
+
+  it('sans idPrefix, retombe sur le préfixe par défaut « linkedin » (compatibilité du tiroir de la tâche 11)', () => {
+    const html = renderToStaticMarkup(
+      <ChampsSourceLinkedIn
+        providerId="linkedin_keywords"
+        etat={etatChampsLinkedInDepuisConfig()}
+        onChange={() => {}}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('id="linkedin-topics"');
   });
 });
