@@ -66,12 +66,16 @@ export function Fil({
       }${campagne.sequenceArretee ? `, ${t('fil.sequenceArretee')}` : ''}`
     : '';
 
-  const depuis = boite ? (
+  // Le transport s'affiche dès qu'il est connu, même sans boîte liée au
+  // contact (aucune ligne `contact_sender_bindings` — rare, mais le transport
+  // réel est déjà déterminé : `repondreAuFil` l'utilisera quoi qu'il arrive).
+  const depuisTexte = boite ? t('reponse.depuis', { boite: boite.identite }) : t('reponse.depuisSansBoite');
+  const depuis = transportReponse ? (
     <>
-      {t('reponse.depuis', { boite: boite.identite })} · {t('reponse.via', { transport: libelleTransport(transportReponse) })}
+      {depuisTexte} · {t('reponse.via', { transport: libelleTransport(transportReponse) })}
     </>
   ) : (
-    <>{t('reponse.depuisSansBoite')}</>
+    <>{depuisTexte}</>
   );
 
   return (

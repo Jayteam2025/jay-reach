@@ -169,6 +169,26 @@ describe('Réception — rendu des trois volets', () => {
     expect(html).toContain('pour les fils email.');
   });
 
+  it('Fil : boîte nulle mais transport connu -> le transport reste affiché (tour de correction 1)', () => {
+    const html = renderToStaticMarkup(
+      <Fil
+        t={t}
+        filId="fil-3"
+        contact={CONTACT}
+        canal="email"
+        campagne={null}
+        boite={null}
+        messages={[]}
+        interet={null}
+        traite={false}
+        reponsePossible={true}
+        raisonReponseImpossible={null}
+        transportReponse="microsoft_graph"
+      />,
+    );
+    expect(html).toContain('Microsoft');
+  });
+
   it('ColonneContact : pourquoi lui, où en est-on, coordonnées, notes, lien vers la fiche', () => {
     const html = renderToStaticMarkup(
       <ColonneContact
