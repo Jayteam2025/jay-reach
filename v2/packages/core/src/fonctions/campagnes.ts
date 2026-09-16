@@ -61,7 +61,7 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
  * fonctionne aussi quand `s` est `null` — un contact reste vérifié contre les
  * suppressions de SA propre organisation, avec ou sans signal.
  */
-const CASE_STATUT_DERIVE = `case
+export const CASE_STATUT_DERIVE = `case
       when c.status = 'do_not_contact' or exists (
         select 1 from suppressions sup
          where sup.organization_id = c.organization_id
@@ -97,7 +97,7 @@ const CASE_STATUT_DERIVE = `case
  * qualifiant : `score`/`pourquoi` (R33) et l'entreprise via le signal
  * suivent, mais `ac` retombe alors sur le compte du contact lui-même.
  */
-const FROM_POPULATION_CAMPAGNE = `from (
+export const FROM_POPULATION_CAMPAGNE = `from (
         select c0.id as contact_id, s0.id as signal_id
           from signals s0
           join campaign_sources cs0 on cs0.source_id = s0.source_id
@@ -117,7 +117,7 @@ const FROM_POPULATION_CAMPAGNE = `from (
       join contacts c on c.id = pop.contact_id
       left join signals s on s.id = pop.signal_id
       left join lateral (
-        select e2.status, e2.current_step
+        select e2.id as enrollment_id, e2.status, e2.current_step
           from enrollments e2
          where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc

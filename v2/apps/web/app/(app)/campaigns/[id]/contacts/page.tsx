@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable, listerContactsCampagne, ORDRE_STATUTS } from '@jay-reach/core';
+import { ErreurIntrouvable, lireFiche, lireReglages, listerContactsCampagne, ORDRE_STATUTS } from '@jay-reach/core';
 import type { StatutContactCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { Carte } from '../../../../../components/ui';
 import { FiltresStatuts } from '../../../../../components/campagne/FiltresStatuts';
 import { TableContacts, type LigneTableContacts } from '../../../../../components/campagne/TableContacts';
+import { TiroirFiche } from '../../../../../components/contact/TiroirFiche';
 
 export const revalidate = 0;
 
@@ -81,6 +82,30 @@ export default async function CampagneContactsPage({
     return `/campaigns/${id}/contacts?${qs.toString()}`;
   }
 
+  // Tiroir fiche contact (tâche 17) : `TableContacts` (tâche 10) ouvre
+  // `?contact=<id>` sur le nom d'une ligne. Un id invalide, hors organisation,
+  // ou un contact supprimé entre-temps efface simplement le paramètre plutôt
+  // que de faire échouer toute la page (même parade que `?relire=` dans
+  // `queue/page.tsx`).
+  const brutContact = Array.isArray(sp.contact) ? sp.contact[0] : sp.contact;
+  let fiche: Awaited<ReturnType<typeof lireFiche>> | null = null;
+  if (brutContact) {
+    try {
+      fiche = await lireFiche(ctx, { contactId: brutContact, campagneId: id });
+    } catch (err) {
+      if (!(err instanceof ErreurIntrouvable)) throw err;
+    }
+  }
+  const fermerHref = (() => {
+    const qs = new URLSearchParams();
+    if (filtre !== 'tous') qs.set('filtre', filtre);
+    if (recherche) qs.set('q', recherche);
+    if (page > 1) qs.set('page', String(page));
+    const suffixe = qs.toString();
+    return `/campaigns/${id}/contacts${suffixe ? `?${suffixe}` : ''}`;
+  })();
+  const reglages = fiche ? await lireReglages(ctx) : null;
+
   return (
     <section className="jr-contenu une-colonne">
       <div className="jr-ligne-entre">
@@ -150,6 +175,10 @@ export default async function CampagneContactsPage({
             </span>
           )}
         </div>
+      )}
+
+      {fiche && reglages && (
+        <TiroirFiche fiche={fiche} campagneId={id} fuseau={String(reglages.fuseau)} fermerHref={fermerHref} />
       )}
     </section>
   );

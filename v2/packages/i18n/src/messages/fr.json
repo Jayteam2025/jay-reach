@@ -1055,6 +1055,54 @@
       "previous": "Précédent",
       "next": "Suivant"
     },
+    "fiche": {
+      "close": "Fermer la fiche",
+      "score": "Score {n}",
+      "sections": {
+        "why": "Pourquoi lui",
+        "whereAreWe": "Où en est-on",
+        "conversation": "Ce qu'on s'est dit",
+        "contactInfo": "Coordonnées",
+        "notes": "Notes",
+        "history": "Historique"
+      },
+      "why": {
+        "empty": "Aucune origine connue pour ce contact.",
+        "link": "voir l'offre"
+      },
+      "sequence": {
+        "empty": "Cette campagne n'a pas encore contacté cette personne.",
+        "sentBy": "Envoyé par {boite} · lié à cette boîte pour toute la séquence",
+        "step": "{n}"
+      },
+      "conversation": {
+        "openInInbox": "Ouvrir dans la Réception",
+        "empty": "Aucun échange pour l'instant.",
+        "outbound": "Message envoyé"
+      },
+      "contactInfo": {
+        "email": "Email",
+        "emailVerified": "vérifié",
+        "phone": "Téléphone",
+        "phoneUnavailable": "—",
+        "linkedin": "LinkedIn",
+        "findEmail": "Chercher l'email",
+        "findEmailCost": "1 crédit FullEnrich"
+      },
+      "notes": {
+        "empty": "Aucune note. Ce que vous écrivez ici reste dans la fiche.",
+        "newLabel": "Nouvelle note",
+        "placeholder": "Ajouter une note…",
+        "add": "Ajouter"
+      },
+      "history": {
+        "empty": "Aucun événement pour ce contact."
+      },
+      "actions": {
+        "discardFromCampaign": "Écarter de la campagne",
+        "doNotContact": "Ne plus contacter"
+      }
+    },
     "file": {
       "title": "{n, plural, one {# email part aujourd'hui} other {# emails partent aujourd'hui}}",
       "description": "Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».",

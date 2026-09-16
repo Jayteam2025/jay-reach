@@ -53,7 +53,7 @@ export interface TableContactsProps {
  * seul statut « avant séquence » qui n'a pas encore d'inscription active à
  * arrêter — `ecarterDuneCampagne` marque alors le signal d'origine).
  */
-const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
+export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   ne_plus_contacter: 'erreur',
   rebond: 'attention',
   interesse: 'bon',

@@ -56,7 +56,13 @@ export type ActionJournal =
   | 'step.test_sent'
   // Réponse envoyée depuis la Réception (tâche 16, `fonctions/reception.ts`) —
   // distinct de `reply_received` (une réponse REÇUE, posée par la relève).
-  | 'reply_sent';
+  | 'reply_sent'
+  // Actions d'opérateur sur la fiche d'un contact (tâche 17,
+  // `fonctions/contacts.ts`) : note ajoutée, contact marqué « ne plus
+  // contacter ». Même limite que `source.*`/`step.*` ci-dessus : pas encore
+  // repris dans `listerActivite` (campagnes.ts).
+  | 'contact.note_added'
+  | 'contact.marked_do_not_contact';
 
 export interface EvenementJournal {
   readonly organisationId: string;
