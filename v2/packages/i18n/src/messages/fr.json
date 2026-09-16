@@ -1180,7 +1180,8 @@
         "dailySchedule": "Une fois par jour",
         "franceEntiere": "France entière",
         "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage",
-        "nextPaused": "en pause"
+        "nextPaused": "en pause",
+        "nextOnLaunch": "au lancement"
       },
       "drawer": {
         "close": "Fermer",

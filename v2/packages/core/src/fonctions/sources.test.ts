@@ -218,6 +218,40 @@ describe('listerSourcesCampagne', () => {
     expect(carte!.totalLu).toBe(0);
     expect(carte!.premierPassage).toBeNull();
   });
+
+  it('campagneActive est vrai si au moins une campagne rattachée à la source est active (R72, même une AUTRE que celle affichée)', async () => {
+    const { ctx } = faux(
+      {
+        'jr:sources_lister': [
+          { id: 'src-6', name: 'France Travail', config: { keywords: ['commercial'] }, is_active: true, schedule: 'daily' },
+        ],
+        'jr:sources_dernier_passage': [],
+        'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [{ source_id: 'src-6', provider_id: 'francetravail' }],
+        'jr:sources_campagnes_actives': [{ source_id: 'src-6' }],
+      },
+      'viewer',
+    );
+    const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+    expect(carte!.campagneActive).toBe(true);
+  });
+
+  it('campagneActive est faux si aucune campagne rattachée n’est active', async () => {
+    const { ctx } = faux(
+      {
+        'jr:sources_lister': [
+          { id: 'src-7', name: 'Adzuna', config: { keywords: ['commercial'] }, is_active: true, schedule: 'every 6h' },
+        ],
+        'jr:sources_dernier_passage': [],
+        'jr:sources_retenus_7j': [],
+        'jr:sources_providers_rattaches': [{ source_id: 'src-7', provider_id: 'adzuna' }],
+        'jr:sources_campagnes_actives': [],
+      },
+      'viewer',
+    );
+    const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+    expect(carte!.campagneActive).toBe(false);
+  });
 });
 
 describe('configFormulaireDepuisStockee', () => {

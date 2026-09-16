@@ -64,6 +64,7 @@ function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
     totalLu: 312,
     premierPassage: '2026-09-01T06:00:00.000Z', // 08:00 Paris le 1er
     collecteDisponible: true,
+    campagneActive: true,
     ...overrides,
   };
 }
@@ -129,5 +130,19 @@ describe('construireBlocsOffres', () => {
     // jamais la même heure nue que le dernier.
     expect(html).toContain('demain 09:00');
     expect(html).not.toMatch(/dernier 09:00.*prochain 09:00(?!.*demain)/);
+  });
+
+  it('R72 : une source active sans AUCUNE campagne rattachée active annonce « au lancement », jamais l’heure calculée', () => {
+    const [, , passages] = construireBlocsOffres(carteDeBase({ campagneActive: false }), t);
+    const html = renderToStaticMarkup(<>{passages!.contenu}</>);
+    expect(html).toContain('au lancement');
+    expect(html).not.toContain('demain 09:00');
+  });
+
+  it('une source active avec une campagne rattachée active continue d’annoncer l’heure calculée', () => {
+    const [, , passages] = construireBlocsOffres(carteDeBase({ campagneActive: true }), t);
+    const html = renderToStaticMarkup(<>{passages!.contenu}</>);
+    expect(html).toContain('demain 09:00');
+    expect(html).not.toContain('au lancement');
   });
 });

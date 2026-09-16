@@ -81,11 +81,20 @@ export async function enqueueDiscoverForActiveSources(
   opts: { bucket?: string } = {},
 ): Promise<number> {
   const bucket = opts.bucket ?? 'once';
+  // R72 : une source rattachée à AUCUNE campagne active ne tourne pas, même
+  // active elle-même — une campagne encore en brouillon (ou en pause/archivée)
+  // ne doit produire aucune collecte. Une source liée à plusieurs campagnes
+  // dont une seule active reste due (l'`exists` évite de la dupliquer).
   const res = await pool.query<SourceRow>(
     `select s.id, s.organization_id, sp.provider_id, sp.id as source_provider_id, s.config
        from sources s
        join source_providers sp on sp.source_id = s.id
-      where s.is_active = true and sp.is_active = true`,
+      where s.is_active = true and sp.is_active = true
+        and exists (
+          select 1 from campaign_sources cs
+            join campaigns c on c.id = cs.campaign_id
+           where cs.source_id = s.id and c.status = 'active'
+        )`,
   );
 
   let enqueued = 0;
@@ -440,19 +449,39 @@ export async function enqueueEnrollments(
  *
  * Demander une collecte sur un thème la demande chez tous ses fournisseurs :
  * c'est la veille qu'on relance, pas un connecteur en particulier.
+ *
+ * R72 : un passage demandé à la main obéit à la même règle que la
+ * planification périodique — aucune campagne rattachée active, aucune
+ * collecte. La demande est quand même consommée (`run_requested_at` remis à
+ * `null`) pour ne pas relever indéfiniment la même demande orpheline ; seule
+ * une ligne de journal courte le dit, sans nom ni config de la source.
  */
 export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<number> {
   // `returning` sous le UPDATE : la demande est consommée et lue d'un seul geste,
   // donc deux workers ne peuvent pas enfiler la même collecte.
-  const demandes = await pool.query<{ id: string; organization_id: string; config: SourceRow['config'] }>(
-    `update sources
+  const demandes = await pool.query<{
+    id: string;
+    organization_id: string;
+    config: SourceRow['config'];
+    has_active_campaign: boolean;
+  }>(
+    `update sources s
         set run_requested_at = null
       where run_requested_at is not null
-      returning id, organization_id, config`,
+      returning id, organization_id, config,
+        exists (
+          select 1 from campaign_sources cs
+            join campaigns c on c.id = cs.campaign_id
+           where cs.source_id = s.id and c.status = 'active'
+        ) as has_active_campaign`,
   );
 
   let enqueued = 0;
   for (const src of demandes.rows) {
+    if (!src.has_active_campaign) {
+      console.warn(`[producer] passage demandé ignoré : aucune campagne active`);
+      continue;
+    }
     const config = src.config ?? {};
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {

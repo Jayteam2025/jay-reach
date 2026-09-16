@@ -418,6 +418,14 @@ export interface SourceCarte {
   readonly premierPassage: string | null;
   /** Faux pour les quatre types `linkedin_*` tant que le worker ne les exécute pas (lot 4). */
   readonly collecteDisponible: boolean;
+  /**
+   * R72 : vrai si au moins une campagne rattachée (`campaign_sources`, toutes
+   * campagnes confondues, pas seulement celle de cet écran) est `active`.
+   * Faux → le producteur du worker ignore la source malgré `active` ; l'écran
+   * s'en sert pour ne jamais annoncer une heure de prochain passage qui ne
+   * viendra pas.
+   */
+  readonly campagneActive: boolean;
 }
 
 interface LigneSourceCarte {
@@ -461,7 +469,7 @@ export async function listerSourcesCampagne(
   if (res.rows.length === 0) return [];
   const ids = res.rows.map((r) => r.id);
 
-  const [passages, resumes, tendances, providers] = await Promise.all([
+  const [passages, resumes, tendances, providers, campagnesActives] = await Promise.all([
     ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
       // Un seul run par source (`distinct on`, le plus récent) : les runs plus
       // anciens ne sont pas rattachés à un fournisseur avant la bascule vers
@@ -503,6 +511,15 @@ export async function listerSourcesCampagne(
         order by source_id, provider_id`,
       [ids],
     ),
+    // R72 : toutes campagnes confondues (pas seulement `campagneId` de cet
+    // écran) — une source partagée peut rester due grâce à une AUTRE
+    // campagne active que celle affichée ici.
+    ctx.ex.query<{ source_id: string }>(
+      `select distinct cs.source_id from campaign_sources cs /* jr:sources_campagnes_actives */
+         join campaigns c on c.id = cs.campaign_id
+        where cs.source_id = any($1::uuid[]) and c.status = 'active'`,
+      [ids],
+    ),
   ]);
 
   const parPassage = new Map(passages.rows.map((r) => [r.source_id, r]));
@@ -517,6 +534,7 @@ export async function listerSourcesCampagne(
     if (!parProvider.has(r.source_id)) parProvider.set(r.source_id, []);
     parProvider.get(r.source_id)!.push(r.provider_id);
   }
+  const idsAvecCampagneActive = new Set(campagnesActives.rows.map((r) => r.source_id));
 
   return res.rows.map((row) => {
     const config = (row.config ?? {}) as Record<string, unknown>;
@@ -559,6 +577,7 @@ export async function listerSourcesCampagne(
       totalLu: resume?.total ?? 0,
       premierPassage: resume?.premier ?? null,
       collecteDisponible: !estTypeLinkedIn(providerId),
+      campagneActive: idsAvecCampagneActive.has(row.id),
     };
   });
 }

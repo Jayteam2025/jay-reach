@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
+import { dansUneTransaction } from '../transaction.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
@@ -1193,10 +1194,21 @@ export async function lancer(ctx: Contexte, entree: unknown): Promise<{ ok: true
   const manques = await manquesPourLancer(ctx, { campagneId });
   if (manques.length > 0) return { ok: false, manques };
 
-  await ctx.ex.query(
-    `update campaigns /* jr:lancer_activer */ set status = 'active' where id = $1 and organization_id = $2`,
-    [campagneId, ctx.organisationId],
-  );
+  // R72 : le premier passage promis par l'écran (« dès le lancement ») est
+  // posé dans la MÊME transaction que l'activation — sans ça, le producteur
+  // du worker (qui n'exécute que les sources d'une campagne déjà active,
+  // R72) pourrait ne rien enfiler avant le prochain cycle planifié.
+  await dansUneTransaction(ctx.ex, async (tx) => {
+    await tx.query(
+      `update campaigns /* jr:lancer_activer */ set status = 'active' where id = $1 and organization_id = $2`,
+      [campagneId, ctx.organisationId],
+    );
+    await tx.query(
+      `update sources /* jr:lancer_premier_passage */ set run_requested_at = now()
+        where is_active = true and id in (select source_id from campaign_sources where campaign_id = $1)`,
+      [campagneId],
+    );
+  });
   await ecrireEvenementCampagne(ctx, 'campaign_activated', campagneId, 'Campagne lancée');
   return { ok: true };
 }

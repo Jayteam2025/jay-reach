@@ -72,12 +72,17 @@ export function construireBlocsOffres(carte: SourceCarte, t: Traducteur): BlocCa
 
   const cadence = cadenceDe(carte.schedule, t);
   // Une source en pause n'a pas de prochain passage : on le dit plutôt que
-  // d'afficher une heure (souvent déjà passée).
+  // d'afficher une heure (souvent déjà passée). R72 : une source active sans
+  // AUCUNE campagne rattachée active ne tournera pas à l'heure calculée (le
+  // producteur du worker l'ignore) — « au lancement » plutôt qu'une heure
+  // trompeuse.
   const prochain = !carte.active
     ? t('card.nextPaused')
-    : carte.prochainPassage
-      ? heureAvecJour(carte.prochainPassage)
-      : '—';
+    : !carte.campagneActive
+      ? t('card.nextOnLaunch')
+      : carte.prochainPassage
+        ? heureAvecJour(carte.prochainPassage)
+        : '—';
   const passages = carte.dernierPassage
     ? t('card.schedule', { cadence, dernier: heureAvecJour(carte.dernierPassage.quand), prochain })
     : t('card.scheduleNoLast', { cadence, prochain: carte.active ? t('card.neverRun') : t('card.nextPaused') });

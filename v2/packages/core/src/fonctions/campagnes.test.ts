@@ -787,6 +787,31 @@ describe('lancer', () => {
     expect(journal?.[1]).toEqual(['org-1', 'user-1', 'campaign', campagneId, 'campaign_activated', JSON.stringify({ libelle: 'Campagne lancée' })]);
   });
 
+  it('pose run_requested_at sur les sources rattachées, après l’activation (R72 : premier passage dès le lancement)', async () => {
+    const ctx = faux(
+      {
+        'jr:lancer_lire': [{ entry_rules: {} }],
+        'jr:collision_themes': [],
+        'jr:manques_etapes': [{ position: 0, channel: 'email', template_parent_id: 'tpl-1' }],
+        'jr:manques_genres': [{ kind: 'email' }],
+        'jr:manques_cle': [{ status: 'configured' }],
+        'jr:manques_boites': [{ provider_ref: 'sblk-1', provider_state: { sending_enabled: true } }],
+        'jr:lancer_activer': [{ id: campagneId }],
+        'jr:lancer_premier_passage': [],
+      },
+      'operator',
+    );
+    const r = await lancer(ctx, { campagneId });
+    expect(r).toEqual({ ok: true });
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const iActivation = appels.findIndex((a) => /jr:lancer_activer/i.test(String(a[0])));
+    const iPassage = appels.findIndex((a) => /jr:lancer_premier_passage/i.test(String(a[0])));
+    expect(iActivation).toBeGreaterThanOrEqual(0);
+    expect(iPassage).toBeGreaterThan(iActivation);
+    expect(String(appels[iPassage]![0])).toMatch(/run_requested_at\s*=\s*now\(\)/i);
+    expect(appels[iPassage]![1]).toEqual([campagneId]);
+  });
+
   it('refuse par collision de persona avant même de regarder les manques', async () => {
     const ctx = faux(
       {
