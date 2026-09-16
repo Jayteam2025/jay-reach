@@ -77,9 +77,13 @@ Quand `successor_hint` est renseigné, l'interface propose directement d'enrichi
 
 ## Répondre depuis Jay Reach
 
-La boîte permet de répondre dans le fil, email comme LinkedIn. Le message part par le sender lié au contact, jamais par un autre.
+La boîte permet de répondre dans le fil **email**. Le message part par le sender lié au contact, jamais par un autre.
+
+Répondre à un fil LinkedIn depuis Jay Reach n'existe pas encore : le bouton est grisé et le dit. La réponse se tape sur LinkedIn, et la détection la rapporte dans le fil comme aujourd'hui. Le canal LinkedIn arrive au lot 4.
 
 Une réponse envoyée depuis Jay Reach arrête l'inscription au même titre qu'une réponse envoyée depuis votre client habituel.
+
+Une boîte email peut, en plus de la détection habituelle côté transport, être relevée directement par Microsoft Graph : l'activation se fait boîte par boîte, dans Réglages → Expéditeurs. Sur un fil email, le message part alors par le même chemin que celui par lequel il a été reçu — Microsoft Graph si le dernier message du fil a été lu directement dans la boîte, SalesBlink sinon.
 
 ## Classement et suivi
 

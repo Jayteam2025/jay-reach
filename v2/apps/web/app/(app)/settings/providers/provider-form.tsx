@@ -36,7 +36,7 @@ export function ProviderForm(props: {
   config: Record<string, string> | null;
   /** Consommation du jour, pour un fournisseur qui porte un plafond quotidien. */
   todayUsage?: { used: number; cap: number | string } | null;
-  /** SalesBlink seulement : dernière relève (temps relatif, ou `'never'`) et dernière erreur. */
+  /** Fournisseur qui relève une boîte (SalesBlink, Microsoft Graph) : dernière relève (temps relatif, ou `'never'`) et dernière erreur. */
   lastSyncAgo?: string | null;
   lastSyncError?: string | null;
 }) {

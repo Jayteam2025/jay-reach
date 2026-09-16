@@ -25,4 +25,12 @@ describe('catalogue des providers', () => {
     expect(getProviderEntry('salesblink')?.category).toBe('email');
     expect(getProviderEntry('inconnu')).toBeUndefined();
   });
+
+  it("microsoft_graph a 4 champs, seul client_secret est secret", () => {
+    const entree = getProviderEntry('microsoft_graph');
+    expect(entree?.category).toBe('email');
+    expect(entree?.fields).toHaveLength(4);
+    const secrets = entree?.fields.filter((f) => f.secret).map((f) => f.name);
+    expect(secrets).toEqual(['client_secret']);
+  });
 });

@@ -42,8 +42,24 @@ export type EvenementEmail =
    * `sujet` (tâche 10) : conservé quand le corps vide de `/replies` a pu être
    * enrichi depuis la tâche `/inbox` correspondante — absent sinon. Optionnel
    * pour ne pas casser les événements déjà construits sans lui.
+   *
+   * `headers` (lot 3 bis, relève Microsoft Graph) : en-têtes bruts du message
+   * d'origine, transmis tels quels à `thread_messages.headers`. Sert deux
+   * fins — classification d'auto-réponse quand Graph fournit `auto-submitted`
+   * / `x-autoreply` / `x-autorespond` / `precedence`, et traçabilité de
+   * l'origine (`transport`, `mailbox`, `graph_message_id`…) pour qu'une
+   * réponse ultérieure sache par quel transport répondre (`choisirTransport`).
+   * Absent pour un événement SalesBlink, qui continue de ne porter que `sujet`.
    */
-  | { type: 'repondu'; email: string; corps: string; sujet?: string | null; messageId: string | null; aMs: number }
+  | {
+      type: 'repondu';
+      email: string;
+      corps: string;
+      sujet?: string | null;
+      messageId: string | null;
+      aMs: number;
+      headers?: Record<string, string | null>;
+    }
   | { type: 'rebond'; email: string; aMs: number }
   | { type: 'desinscrit'; email: string; aMs: number }
   | { type: 'erreur'; email: string; sequenceId: string | null; motif: string; aMs: number };

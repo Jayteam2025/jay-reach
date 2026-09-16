@@ -230,6 +230,15 @@ async function recordOutcome(
 }
 
 /**
+ * Valeur d'un en-tête quand elle est une chaîne non vide, `null` sinon —
+ * `headers` vient de plusieurs relèves et n'a jamais de forme garantie.
+ */
+function enTeteTexte(headers: Record<string, unknown> | null, cle: string): string | null {
+  const valeur = headers?.[cle];
+  return typeof valeur === 'string' && valeur !== '' ? valeur : null;
+}
+
+/**
  * Enregistre une réponse entrante et en tire toutes les conséquences.
  *
  * Renvoie `isNew: false` si le message était déjà connu. La relève LinkedIn
@@ -240,12 +249,38 @@ async function recordOutcome(
 export async function recordInboundReply(ex: Executeur, org: string, reply: InboundReply): Promise<RecordedReply> {
   const cls = classifyReply(reply.body, reply.headers ?? null) ?? { classification: 'human_reply' as const };
 
-  if (reply.providerMessageId) {
+  const headers = reply.headers ?? null;
+  // Tous les identifiants sous lesquels ce message a pu être écrit par une
+  // AUTRE relève. Depuis le lot 3 bis, deux relèves regardent les mêmes
+  // boîtes : Microsoft Graph en quelques minutes, SalesBlink des heures plus
+  // tard. Chacune nomme le message à sa façon — identifiant Graph d'un côté,
+  // identifiant de la tâche `/inbox` (et, en repli, celui du journal
+  // `/replies`) de l'autre. La garde doit le reconnaître sous n'importe
+  // lequel, sinon le fil repasse non lu et une seconde notification part.
+  const identifiants = [
+    ...new Set(
+      [
+        reply.providerMessageId ?? null,
+        enTeteTexte(headers, 'graph_message_id'),
+        enTeteTexte(headers, 'salesblink_inbox_message_id'),
+      ].filter((valeur): valeur is string => valeur !== null),
+    ),
+  ];
+  const internetMessageId = enTeteTexte(headers, 'internet_message_id');
+  const salesblinkReplyId = enTeteTexte(headers, 'salesblink_reply_id');
+
+  if (identifiants.length > 0 || internetMessageId !== null || salesblinkReplyId !== null) {
+    // Une seule requête, filtrée par organisation. Un paramètre absent
+    // (`null`, ou tableau vide) ne rapproche rien plutôt que tout.
     const deja = await ex.query<{ id: string }>(
       `select m.id from thread_messages m
          join threads t on t.id = m.thread_id
-        where t.organization_id = $1 and m.provider_message_id = $2 limit 1`,
-      [org, reply.providerMessageId],
+        where t.organization_id = $1
+          and (m.provider_message_id = any($2::text[])
+               or ($3::text is not null and m.headers ->> 'internet_message_id' = $3)
+               or ($4::text is not null and m.headers ->> 'salesblink_reply_id' = $4))
+        limit 1`,
+      [org, identifiants, internetMessageId, salesblinkReplyId],
     );
     if (deja.rows[0]) {
       const fil = await ex.query<{ id: string }>(

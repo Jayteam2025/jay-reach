@@ -4,7 +4,13 @@
  * défaut, une valeur hors bornes est ramenée à la borne (décision JB du 10/09 : tous
  * les plafonds se règlent dans l'app).
  */
-function entierBorne(brut: string | null | undefined, defaut: number, min: number, max: number): number {
+/**
+ * Entier réglé en texte libre : une valeur absente ou invalide retombe sur le
+ * défaut, une valeur hors bornes est ramenée à la borne. Exportée (tour de
+ * correction 1, lot 3 bis) pour que `releve-graph.ts` la réutilise avec ses
+ * propres bornes (1..60) plutôt que d'en recopier une variante locale.
+ */
+export function entierBorne(brut: string | null | undefined, defaut: number, min: number, max: number): number {
   if (brut === null || brut === undefined) return defaut;
   const texte = brut.trim();
   if (texte === '') return defaut;

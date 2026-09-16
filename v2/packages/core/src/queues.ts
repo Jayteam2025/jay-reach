@@ -30,6 +30,7 @@ export const QUEUES: readonly QueueDef[] = [
   { name: 'actions.dispatch', descriptionKey: 'jobs.q.actionsDispatch', retry: DEFAULT_RETRY },
   { name: 'outcomes.poll', descriptionKey: 'jobs.q.outcomesPoll', retry: DEFAULT_RETRY },
   { name: 'inbox.sync', descriptionKey: 'jobs.q.inboxSync', retry: DEFAULT_RETRY },
+  { name: 'inbox.sync_graph', descriptionKey: 'jobs.q.inboxSyncGraph', retry: DEFAULT_RETRY },
   { name: 'crm.push', descriptionKey: 'jobs.q.crmPush', retry: DEFAULT_RETRY },
   { name: 'retention.purge', descriptionKey: 'jobs.q.retentionPurge', retry: DEFAULT_RETRY },
 ] as const;

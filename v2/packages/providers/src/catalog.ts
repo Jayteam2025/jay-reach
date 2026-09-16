@@ -45,6 +45,29 @@ export const PROVIDER_CATALOG: readonly ProviderManifest[] = [
     ],
   },
   {
+    // Lecture directe des reponses dans la boite (lot 3 bis) : SalesBlink reste
+    // le transport d'envoi, mais detecte les reponses avec des heures de
+    // retard. Une boite dont `senders.inbox_provider = 'microsoft_graph'` est
+    // relevee directement via Microsoft Graph, credentials d'application
+    // (client_credentials), un tenant Microsoft 365 par organisation.
+    id: 'microsoft_graph',
+    category: 'email',
+    labelKey: 'providers.microsoftGraph',
+    fields: [
+      { name: 'tenant_id', labelKey: 'providers.field.tenantId', type: 'text', secret: false, required: true, fallbackEnv: 'MS_GRAPH_TENANT_ID' },
+      { name: 'client_id', labelKey: 'providers.field.clientId', type: 'text', secret: false, required: true, fallbackEnv: 'MS_GRAPH_CLIENT_ID' },
+      { name: 'client_secret', labelKey: 'providers.field.clientSecret', type: 'password', secret: true, required: true, fallbackEnv: 'MS_GRAPH_CLIENT_SECRET' },
+      {
+        name: 'sync_interval_min',
+        labelKey: 'providers.field.graphSyncIntervalMin',
+        placeholderKey: 'providers.field.graphSyncIntervalMinPlaceholder',
+        type: 'text',
+        secret: false,
+        required: false,
+      },
+    ],
+  },
+  {
     id: 'fullenrich',
     category: 'enrichment',
     labelKey: 'providers.fullenrich',

@@ -155,6 +155,166 @@ describe('recordInboundReply', () => {
   });
 });
 
+/**
+ * Exécuteur factice à mémoire : il garde les messages réellement insérés et
+ * évalue la garde de dédoublonnage sur ses PARAMÈTRES (organisation, liste
+ * d'identifiants connus, `internet_message_id`, `salesblink_reply_id`), pas
+ * sur le texte SQL. Deux appels successifs de `recordInboundReply` se
+ * comportent donc comme deux passages de relève sur la même base — ce que le
+ * scénario « la même réponse détectée par Graph puis par SalesBlink »
+ * demande, et qu'un exécuteur à réponses figées ne sait pas jouer.
+ */
+function creerBaseFactice(): { ex: Executeur; messages: { providerMessageId: string | null; headers: Record<string, unknown> | null }[] } {
+  const messages: { providerMessageId: string | null; headers: Record<string, unknown> | null }[] = [];
+  let prochainFil = 0;
+  const ex: Executeur = {
+    async query<T>(text: string, values: unknown[] = []) {
+      const t = text.trim();
+      if (t.startsWith('select m.id from thread_messages')) {
+        const identifiants = (values[1] as string[]) ?? [];
+        const internetMessageId = (values[2] as string | null) ?? null;
+        const salesblinkReplyId = (values[3] as string | null) ?? null;
+        const trouve = messages.find((m) => {
+          if (m.providerMessageId !== null && identifiants.includes(m.providerMessageId)) return true;
+          if (internetMessageId !== null && m.headers?.internet_message_id === internetMessageId) return true;
+          if (salesblinkReplyId !== null && m.headers?.salesblink_reply_id === salesblinkReplyId) return true;
+          return false;
+        });
+        return { rows: (trouve ? [{ id: 'message-connu' }] : []) as T[], rowCount: trouve ? 1 : 0 };
+      }
+      if (t.startsWith('select thread_id as id from thread_messages')) {
+        return { rows: [{ id: 'thread-1' }] as T[], rowCount: 1 };
+      }
+      if (t.startsWith('select id from threads')) {
+        return prochainFil > 0
+          ? { rows: [{ id: 'thread-1' }] as T[], rowCount: 1 }
+          : { rows: [] as T[], rowCount: 0 };
+      }
+      if (t.startsWith('insert into threads')) {
+        prochainFil += 1;
+        return { rows: [{ id: 'thread-1' }] as T[], rowCount: 1 };
+      }
+      if (t.startsWith('insert into thread_messages')) {
+        const brut = values[3] as string | null;
+        messages.push({
+          providerMessageId: (values[2] as string | null) ?? null,
+          headers: brut ? (JSON.parse(brut) as Record<string, unknown>) : null,
+        });
+        return { rows: [] as T[], rowCount: 1 };
+      }
+      return { rows: [] as T[], rowCount: 0 };
+    },
+  };
+  return { ex, messages };
+}
+
+describe('recordInboundReply — une réponse détectée deux fois ne fait qu’un message', () => {
+  const base = { contactId: 'contact-1', channel: 'email' as const, body: 'Bonjour, on peut en parler jeudi ?' };
+
+  it('Graph puis SalesBlink : SalesBlink retrouve le message par salesblink_inbox_message_id', async () => {
+    const { ex, messages } = creerBaseFactice();
+    await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'graph-msg-1',
+      headers: { transport: 'microsoft_graph', graph_message_id: 'graph-msg-1', internet_message_id: '<abc@exemple.fr>' },
+    });
+    const second = await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-1',
+      headers: { subject: 'Re: bonjour', salesblink_reply_id: 'r-1', salesblink_inbox_message_id: 'graph-msg-1' },
+    });
+
+    expect(second.isNew).toBe(false);
+    expect(messages).toHaveLength(1);
+  });
+
+  it('SalesBlink puis Graph : Graph retrouve le message déjà écrit sous l’identifiant de la tâche', async () => {
+    const { ex, messages } = creerBaseFactice();
+    await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-1',
+      headers: { subject: 'Re: bonjour', salesblink_reply_id: 'r-1', salesblink_inbox_message_id: 'inbox-1' },
+    });
+    const second = await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-1',
+      headers: { transport: 'microsoft_graph', graph_message_id: 'inbox-1', internet_message_id: '<abc@exemple.fr>' },
+    });
+
+    expect(second.isNew).toBe(false);
+    expect(messages).toHaveLength(1);
+  });
+
+  it('SalesBlink sans tâche appariée puis avec : le même salesblink_reply_id suffit', async () => {
+    const { ex, messages } = creerBaseFactice();
+    // Premier passage : aucune tâche /inbox appariée, l'identifiant du journal fait office de repli.
+    await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'r-1',
+      headers: { subject: null, salesblink_reply_id: 'r-1', salesblink_inbox_message_id: null },
+    });
+    // Passage suivant : la tâche est arrivée, l'identifiant change — seul `salesblink_reply_id` rapproche les deux.
+    const second = await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-1',
+      headers: { subject: 'Re: bonjour', salesblink_reply_id: 'r-1', salesblink_inbox_message_id: 'inbox-1' },
+    });
+
+    expect(second.isNew).toBe(false);
+    expect(messages).toHaveLength(1);
+  });
+
+  it('deux passages Graph sur le même message : le même internet_message_id suffit', async () => {
+    const { ex, messages } = creerBaseFactice();
+    await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'graph-msg-1',
+      headers: { transport: 'microsoft_graph', graph_message_id: 'graph-msg-1', internet_message_id: '<abc@exemple.fr>' },
+    });
+    // Même message, identifiant Graph différent (boîte archivée puis relue) : l'en-tête Internet fait foi.
+    const second = await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'graph-msg-2',
+      headers: { transport: 'microsoft_graph', graph_message_id: 'graph-msg-2', internet_message_id: '<abc@exemple.fr>' },
+    });
+
+    expect(second.isNew).toBe(false);
+    expect(messages).toHaveLength(1);
+  });
+
+  it('deux réponses distinctes du même contact restent deux messages', async () => {
+    const { ex, messages } = creerBaseFactice();
+    await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-1',
+      headers: { salesblink_reply_id: 'r-1', salesblink_inbox_message_id: 'inbox-1' },
+    });
+    const second = await recordInboundReply(ex, 'org-1', {
+      ...base,
+      providerMessageId: 'inbox-2',
+      headers: { salesblink_reply_id: 'r-2', salesblink_inbox_message_id: 'inbox-2' },
+    });
+
+    expect(second.isNew).toBe(true);
+    expect(messages).toHaveLength(2);
+  });
+
+  it('sans aucun identifiant connu, aucune requête de dédoublonnage n’est faite', async () => {
+    const { ex } = creerBaseFactice();
+    const appels: string[] = [];
+    const espion: Executeur = {
+      async query(text, values) {
+        appels.push(text.trim());
+        return ex.query(text, values);
+      },
+    };
+    const resultat = await recordInboundReply(espion, 'org-1', { ...base });
+
+    expect(resultat.isNew).toBe(true);
+    expect(appels.some((t) => t.startsWith('select m.id from thread_messages'))).toBe(false);
+  });
+});
+
 describe('notifyReply', () => {
   it('insère une notification pour l’organisation avec l’événement contact.replied', async () => {
     const { ex, appels } = creerExecuteurFactice({});

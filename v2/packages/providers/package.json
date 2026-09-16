@@ -24,6 +24,10 @@
     "./email-validation": {
       "types": "./dist/email-validation/index.d.ts",
       "default": "./dist/email-validation/index.js"
+    },
+    "./mail": {
+      "types": "./dist/mail/index.d.ts",
+      "default": "./dist/mail/index.js"
     }
   },
   "scripts": {
