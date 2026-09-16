@@ -1,5 +1,14 @@
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable, lireFil, listerCampagnes, listerFils, type FiltreReception, type FilDetail } from '@jay-reach/core';
+import {
+  ErreurIntrouvable,
+  lireFil,
+  lireFiche,
+  listerCampagnes,
+  listerFils,
+  type FiltreReception,
+  type FilDetail,
+  type Fiche,
+} from '@jay-reach/core';
 import { contexteCourant } from '../../../lib/contexte';
 import { dateHeureMessage, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../lib/dates';
 import { EtatVide } from '../../../components/ui';
@@ -91,6 +100,21 @@ export default async function ReceptionPage({
   // coordonnées du contact, qui peut avoir à la fois un email et un profil LinkedIn.
   const canalContact: 'email' | 'linkedin' = filDetail?.canal ?? 'email';
 
+  // Colonne droite (R75) : résumé assemblé par `lireFiche` (tâche 17), pas le
+  // résumé provisoire de `lireFil` — `filDetail.campagne?.id` reste la
+  // campagne DE CE FIL (peut différer d'une autre campagne où le contact
+  // serait aussi inscrit ; `lireFiche` la reçoit pour calculer le même
+  // statut/séquence que verrait l'onglet Contacts de CETTE campagne).
+  let fiche: Fiche | null = null;
+  if (filDetail?.contact.id) {
+    try {
+      fiche = await lireFiche(ctx, { contactId: filDetail.contact.id, campagneId: filDetail.campagne?.id });
+    } catch (err) {
+      if (!(err instanceof ErreurIntrouvable)) throw err;
+      fiche = null;
+    }
+  }
+
   return (
     <main className="jr-reception">
       <ListeFils
@@ -118,14 +142,15 @@ export default async function ReceptionPage({
             raisonReponseImpossible={filDetail.raisonReponseImpossible}
             transportReponse={filDetail.transportReponse}
           />
-          <ColonneContact
-            t={t}
-            contact={filDetail.contact}
-            canal={canalContact}
-            campagne={filDetail.campagne}
-            pourquoi={filDetail.pourquoi}
-            pourquoiQuandAffiche={filDetail.pourquoi?.quand ? dateRelativeCourte(filDetail.pourquoi.quand, maintenant, fuseau) : null}
-          />
+          {fiche && (
+            <ColonneContact
+              t={t}
+              fiche={fiche}
+              canal={canalContact}
+              campagneId={filDetail.campagne?.id ?? null}
+              pourquoiQuandAffiche={fiche.pourquoi?.date ? dateRelativeCourte(fiche.pourquoi.date, maintenant, fuseau) : null}
+            />
+          )}
         </>
       ) : (
         <div className="jr-fil">

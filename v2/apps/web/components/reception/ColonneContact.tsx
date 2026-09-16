@@ -1,56 +1,95 @@
 import Link from 'next/link';
 import type { getTranslations } from 'next-intl/server';
-import type { CampagneFil, PourquoiLuiFil, ResumeContactFil } from '@jay-reach/core';
-import { Avatar, Puce, TuileLogo } from '../ui';
+import type { Fiche } from '@jay-reach/core';
+import { Avatar, Puce, TuileLogo, type TuileLogoMarque } from '../ui';
 import { IconeLinkedin } from '../ui/IconeLinkedin';
 import { marqueSource } from '../../lib/marque-source';
 
 export interface ColonneContactProps {
   /** Résolu une fois par `page.tsx` — voir le commentaire équivalent dans `Fil.tsx`. */
   readonly t: Awaited<ReturnType<typeof getTranslations>>;
-  readonly contact: ResumeContactFil;
+  /** Résumé assemblé par `lireFiche` (tâche 17) — plus le résumé provisoire construit depuis `lireFil` seul. */
+  readonly fiche: Fiche;
   readonly canal: 'email' | 'linkedin';
-  readonly campagne: CampagneFil | null;
-  readonly pourquoi: PourquoiLuiFil | null;
+  /**
+   * Campagne DU FIL affiché (pas forcément la même que celle utilisée pour
+   * calculer `fiche.statut`/`fiche.sequence` si `lireFiche` a été appelée
+   * sans campagne — voir `page.tsx`) : sert au lien « Ouvrir la fiche
+   * complète » (`/campaigns/{id}/contacts?contact=`, même mécanisme que la
+   * tâche 17). `null` si le fil n'est rattaché à aucune campagne — pas de
+   * lien alors, faute d'une page Contacts globale (tâche 18).
+   */
+  readonly campagneId: string | null;
   readonly pourquoiQuandAffiche: string | null;
 }
 
-function puceStatutEmail(statut: string | null, t: Awaited<ReturnType<typeof getTranslations>>): { ton: 'bon' | 'attention' | 'erreur'; texte: string } | null {
+function puceStatutEmail(
+  statut: string,
+  t: Awaited<ReturnType<typeof getTranslations>>,
+): { ton: 'bon' | 'attention' | 'erreur'; texte: string } | null {
   if (statut === 'valid') return { ton: 'bon', texte: t('colonne.emailVerifie') };
   if (statut === 'risky') return { ton: 'attention', texte: t('colonne.emailRisque') };
   if (statut === 'invalid') return { ton: 'erreur', texte: t('colonne.emailInvalide') };
   return null;
 }
 
+function nomComplet(prenom: string | null, nom: string | null): string {
+  return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
+}
+
 /**
- * Colonne droite : résumé de la fiche, alimenté par ce que `lireFil` sait déjà
- * (pas d'appel à `lireFiche`, tâche 17, pas encore construite). « Ouvrir la
- * fiche complète » pointe déjà vers `/contacts?contact=<id>` (URL prévue par
- * le plan de la tâche 17) : le lien devient actif dès que cette page existe,
- * rien à changer ici.
+ * Position 1-based courante dans la séquence : l'étape « en_cours » si la
+ * séquence est vivante, sinon le nombre d'étapes déjà faites (séquence
+ * arrêtée — arrivée à la réponse, par exemple).
  */
-export function ColonneContact({ t, contact, canal, campagne, pourquoi, pourquoiQuandAffiche }: ColonneContactProps) {
-  const marque = marqueSource(pourquoi?.providerId ?? null);
-  const statutEmail = puceStatutEmail(contact.emailStatut, t);
+function positionCourante(sequence: Fiche['sequence']): number {
+  if (!sequence) return 0;
+  const enCours = sequence.etapes.find((e) => e.etat === 'en_cours');
+  if (enCours) return enCours.position;
+  return sequence.etapes.filter((e) => e.etat === 'faite').length;
+}
+
+/**
+ * Colonne droite de la Réception (spec §6.12, maquette `reception.html`) :
+ * résumé de la fiche, alimenté par `lireFiche` (tâche 17, R75 — remplace le
+ * résumé provisoire construit depuis `lireFil` seul, qui reste inchangée par
+ * ailleurs : `FilDetail`/`Fil.tsx` continuent de porter le fil complet des
+ * messages, hors périmètre de cette colonne).
+ *
+ * Composition volontairement indépendante des sections du tiroir
+ * (`components/contact/Section*.tsx`) : celles-ci appellent `useTranslations`
+ * directement (React Context, nécessite un `NextIntlClientProvider` — fourni
+ * par le layout racine en production, absent d'un rendu `renderToStaticMarkup`
+ * isolé) alors que tous les composants de ce dossier reçoivent leur
+ * traducteur en prop, résolu une fois par `page.tsx` — même convention que
+ * `Fil.tsx`/`ListeFils.tsx`, qui reste testable sans fournisseur de contexte.
+ * Pas de notes éditables ici (lecture seule, comme la maquette) : le geste
+ * d'ajouter une note vit dans la fiche complète, un clic plus loin.
+ */
+export function ColonneContact({ t, fiche, canal, campagneId, pourquoiQuandAffiche }: ColonneContactProps) {
+  const marque = marqueSource(fiche.pourquoi?.providerId ?? null);
+  const statutEmail = puceStatutEmail(fiche.contact.emailStatut, t);
+  const nom = nomComplet(fiche.contact.prenom, fiche.contact.nom);
+  const sequenceArretee = fiche.sequence !== null && fiche.statut !== 'en_sequence' && fiche.sequence.etapes.some((e) => e.etat === 'faite');
 
   return (
     <aside className="jr-colonne">
       <div className="jr-qui">
-        <Avatar nom={contact.nom} taille="grand" canal={canal} />
+        <Avatar nom={nom} photoUrl={fiche.contact.photoUrl} taille="grand" canal={canal} />
         <span>
-          <h3>{contact.nom}</h3>
-          <small>{[contact.poste, contact.entreprise].filter(Boolean).join(' · ')}</small>
+          <h3>{nom}</h3>
+          <small>{[fiche.contact.poste, fiche.contact.entreprise].filter(Boolean).join(' · ')}</small>
         </span>
       </div>
 
       <h4>{t('colonne.pourquoiLui')}</h4>
-      {pourquoi ? (
+      {fiche.pourquoi ? (
         <div className="jr-qui" style={{ alignItems: 'flex-start' }}>
-          <TuileLogo marque={marque} lettre="?" />
+          <TuileLogo marque={marque as TuileLogoMarque} lettre="?" />
           <p>
-            {pourquoi.titre}
+            {fiche.pourquoi.titre}
             {pourquoiQuandAffiche ? ` — ${pourquoiQuandAffiche}` : ''}
-            {pourquoi.score !== null ? ` · ${t('colonne.score', { valeur: pourquoi.score })}` : ''}
+            {fiche.score !== null ? ` · ${t('colonne.score', { valeur: fiche.score.valeur })}` : ''}
           </p>
         </div>
       ) : (
@@ -58,18 +97,18 @@ export function ColonneContact({ t, contact, canal, campagne, pourquoi, pourquoi
       )}
 
       <h4>{t('colonne.ouEnEstOn')}</h4>
-      {campagne?.etape ? (
+      {fiche.sequence && fiche.sequence.etapes.length > 0 ? (
         <>
           <div className="jr-sequence-pilules">
-            {Array.from({ length: campagne.etape.total }, (_, i) => (
-              <span key={i} className={i < campagne.etape!.position ? 'pilule faite' : 'pilule'}>
-                {i + 1}
+            {fiche.sequence.etapes.map((e) => (
+              <span key={e.position} className={e.etat === 'a_venir' ? 'pilule' : `pilule ${e.etat === 'faite' ? 'faite' : 'en-cours'}`}>
+                {e.position}
               </span>
             ))}
           </div>
           <p style={{ marginTop: 6 }}>
-            {t('colonne.etapeResume', { position: campagne.etape.position, total: campagne.etape.total })}
-            {campagne.sequenceArretee ? `, ${t('fil.sequenceArretee')}.` : '.'}
+            {t('colonne.etapeResume', { position: positionCourante(fiche.sequence), total: fiche.sequence.etapes.length })}
+            {sequenceArretee ? `, ${t('fil.sequenceArretee')}.` : '.'}
           </p>
         </>
       ) : (
@@ -77,28 +116,36 @@ export function ColonneContact({ t, contact, canal, campagne, pourquoi, pourquoi
       )}
 
       <h4>{t('colonne.coordonnees')}</h4>
-      {contact.email ? (
+      {fiche.contact.email ? (
         <p>
-          {contact.email} {statutEmail && <Puce ton={statutEmail.ton} point>{statutEmail.texte}</Puce>}
+          {fiche.contact.email} {statutEmail && <Puce ton={statutEmail.ton} point>{statutEmail.texte}</Puce>}
         </p>
       ) : (
         <p className="jr-secondaire">{t('colonne.emailAbsent')}</p>
       )}
-      {contact.linkedinUrl && (
+      {fiche.contact.linkedinUrl && (
         <p style={{ marginTop: 4 }}>
           <IconeLinkedin className="jr-ico-li" />{' '}
-          <a className="jr-lien" href={contact.linkedinUrl} target="_blank" rel="noreferrer">
+          <a className="jr-lien" href={fiche.contact.linkedinUrl} target="_blank" rel="noreferrer">
             {t('colonne.profilLinkedin')}
           </a>
         </p>
       )}
 
       <h4>{t('colonne.notes')}</h4>
-      <p className="jr-secondaire">{t('colonne.aucuneNote')}</p>
+      {fiche.notes.length > 0 ? (
+        fiche.notes.map((n) => (
+          <p key={n.id} className="jr-secondaire" style={{ marginBottom: 6 }}>
+            {n.texte}
+          </p>
+        ))
+      ) : (
+        <p className="jr-secondaire">{t('colonne.aucuneNote')}</p>
+      )}
 
-      {contact.id && (
+      {campagneId && (
         <p style={{ marginTop: 18 }}>
-          <Link className="jr-lien" href={`/contacts?contact=${contact.id}`}>
+          <Link className="jr-lien" href={`/campaigns/${campagneId}/contacts?contact=${fiche.contact.id}`}>
             {t('colonne.ouvrirFiche')}
           </Link>
         </p>

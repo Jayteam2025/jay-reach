@@ -2,7 +2,7 @@ import { createTranslator } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import type { CampagneFil, ResumeContactFil } from '@jay-reach/core';
+import type { CampagneFil, Fiche, ResumeContactFil } from '@jay-reach/core';
 import { ListeFils, type LigneFilAffichage } from './ListeFils';
 import { Fil, type MessageFilAffiche } from './Fil';
 import { ColonneContact } from './ColonneContact';
@@ -28,6 +28,40 @@ const CAMPAGNE: CampagneFil = {
   nom: 'Directeur commercial',
   etape: { position: 2, total: 4 },
   sequenceArretee: true,
+};
+
+/** Fiche fictive (`lireFiche`, tâche 17) — R75 : la colonne droite ne construit plus son résumé depuis `lireFil` seul. */
+const FICHE: Fiche = {
+  contact: {
+    id: 'contact-1',
+    prenom: 'Karim',
+    nom: 'Benali',
+    poste: 'Head of Sales',
+    entreprise: 'Woodpecker Studio',
+    ville: 'Nantes',
+    photoUrl: null,
+    linkedinUrl: null,
+    email: 'k.benali@woodpecker-studio.example',
+    emailStatut: 'valid',
+    telephone: null,
+  },
+  statut: 'a_repondu',
+  score: { valeur: 91, explication: null },
+  pourquoi: { providerId: 'adzuna', titre: 'Business developer senior', date: '2026-09-04T00:00:00.000Z', url: null, extrait: null },
+  sequence: {
+    etapes: [
+      { position: 1, etat: 'faite' },
+      { position: 2, etat: 'faite' },
+      { position: 3, etat: 'a_venir' },
+      { position: 4, etat: 'a_venir' },
+    ],
+    boite: null,
+  },
+  echanges: [],
+  filId: 'fil-1',
+  notes: [],
+  historique: [],
+  campagnes: [{ id: 'campagne-1', nom: 'Directeur commercial' }],
 };
 
 const MESSAGES: MessageFilAffiche[] = [
@@ -189,14 +223,13 @@ describe('Réception — rendu des trois volets', () => {
     expect(html).toContain('Microsoft');
   });
 
-  it('ColonneContact : pourquoi lui, où en est-on, coordonnées, notes, lien vers la fiche', () => {
+  it('ColonneContact : pourquoi lui, où en est-on, coordonnées, notes, lien vers la fiche (alimenté par lireFiche, R75)', () => {
     const html = renderToStaticMarkup(
       <ColonneContact
         t={t}
-        contact={CONTACT}
+        fiche={FICHE}
         canal="email"
-        campagne={CAMPAGNE}
-        pourquoi={{ providerId: 'adzuna', titre: 'Business developer senior', quand: '2026-09-04T00:00:00.000Z', url: null, score: 91 }}
+        campagneId="campagne-1"
         pourquoiQuandAffiche="4 sept."
       />,
     );
@@ -207,6 +240,27 @@ describe('Réception — rendu des trois volets', () => {
     expect(html).toContain('k.benali@woodpecker-studio.example');
     expect(html).toContain('vérifié');
     expect(html).toContain('Aucune note.');
-    expect(html).toContain('/contacts?contact=contact-1');
+    expect(html).toContain('/campaigns/campagne-1/contacts?contact=contact-1');
+  });
+
+  it('ColonneContact : affiche les vraies notes de la fiche quand il y en a', () => {
+    const html = renderToStaticMarkup(
+      <ColonneContact
+        t={t}
+        fiche={{ ...FICHE, notes: [{ id: 'note-1', texte: 'À relancer jeudi', quand: '2026-09-12T08:00:00.000Z', auteurNom: 'Alexandre' }] }}
+        canal="email"
+        campagneId="campagne-1"
+        pourquoiQuandAffiche="4 sept."
+      />,
+    );
+    expect(html).toContain('À relancer jeudi');
+    expect(html).not.toContain('Aucune note.');
+  });
+
+  it('ColonneContact : sans campagne rattachée au fil, aucun lien « Ouvrir la fiche complète »', () => {
+    const html = renderToStaticMarkup(
+      <ColonneContact t={t} fiche={FICHE} canal="email" campagneId={null} pourquoiQuandAffiche="4 sept." />,
+    );
+    expect(html).not.toContain('Ouvrir la fiche complète');
   });
 });
