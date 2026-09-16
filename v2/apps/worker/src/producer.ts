@@ -14,7 +14,7 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
@@ -182,17 +182,28 @@ export async function enqueueScoringForOrgs(
  * soixante fois ce qu'une capacité d'envoi de cent trente-cinq courriels par
  * jour peut consommer. La valeur est donc dérivée de la sortie, pas de ce que
  * le moteur sait faire.
+ *
+ * R83 (relecture tâche 21) : ce plafond passait par `lirePlafondFournisseur`
+ * ci-dessous, qui lit `credentials.config.daily_cap` en ignorant complètement
+ * `organization_settings` — le réglage que pose l'écran Réglages › Plafonds.
+ * Un opérateur qui y changeait « Enrichissements par jour » ne voyait donc
+ * JAMAIS son changement appliqué par le moteur. `plafondDuJour`
+ * (`@jay-reach/core`) est désormais l'unique source : `organization_settings`
+ * d'abord, `credentials.config.daily_cap` en repli historique, puis
+ * l'environnement, puis un défaut — la même chaîne que l'écran.
  */
-const PLAFOND_ENRICHISSEMENT_PAR_DEFAUT = Number(process.env.ENRICH_DAILY_CAP ?? 50);
+async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
+  return plafondDuJour(pool, organizationId, 'enrichissements_par_jour');
+}
 
 /**
- * Plafond de l'organisation, tel qu'elle l'a saisi dans l'écran Fournisseurs.
- *
- * Une variable d'environnement ne se règle pas depuis l'application : personne
- * ne voyait ce plafond, et un opérateur cherchait où borner sa dépense sans
- * rien trouver. Le réglage vit maintenant à côté de la clé du fournisseur,
- * comme celui de Reoon. L'environnement reste le repli, pour une instance qui
- * n'a rien saisi.
+ * Plafond de l'organisation, tel qu'elle l'a saisi dans l'écran Fournisseurs —
+ * pour un fournisseur SANS équivalent dans `organization_settings` (SalesBlink :
+ * son plafond d'envoi n'est pas un plafond d'organisation, cf.
+ * `apps/worker/src/handlers/email-salesblink.ts`). Pour `anthropic` et
+ * `fullenrich`, qui ONT une clé `organization_settings`, utiliser `plafondDuJour`
+ * (`@jay-reach/core`) à la place — celui-ci lit `organization_settings` en
+ * premier, ce que cette fonction ne fait pas.
  */
 export async function lirePlafondFournisseur(
   pool: Pool,
@@ -208,12 +219,6 @@ export async function lirePlafondFournisseur(
     [organizationId, providerId],
   );
   return normaliserPlafond(res.rows[0]?.daily_cap, defaut);
-}
-
-export const PLAFOND_SCORING_PAR_DEFAUT = Number(process.env.SCORE_DAILY_CAP ?? 300);
-
-async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
-  return lirePlafondFournisseur(pool, organizationId, 'fullenrich', PLAFOND_ENRICHISSEMENT_PAR_DEFAUT);
 }
 
 export async function enqueueEnrichmentForQualified(

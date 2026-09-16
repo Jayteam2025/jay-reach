@@ -9,11 +9,25 @@
  * (`SCORE_DAILY_CAP`, `ENRICH_DAILY_CAP`) sont ceux déjà lus par le moteur
  * (`apps/worker/src/producer.ts`) : une même variable pilote les deux, qu'elle
  * soit consultée depuis le worker ou depuis cette couche fonctions.
+ *
+ * R83 (relecture tâche 21) : `scoring_par_jour` et `enrichissements_par_jour`
+ * sont les deux SEULES clés à porter un second repli historique —
+ * `credentials.config.daily_cap` du fournisseur associé (`anthropic`,
+ * `fullenrich`), l'ancien réglage v1 — et `plafondDuJour` ci-dessous en est
+ * désormais l'UNIQUE implémentation, utilisée aussi bien par le worker
+ * (`apps/worker/src/producer.ts`, `traitements.ts`, avec un `Pool` pg brut,
+ * sans `Contexte`) que par cette couche. Avant ce correctif, le worker lisait
+ * `credentials.config.daily_cap` directement (`lirePlafondFournisseur`),
+ * IGNORANT `organization_settings` : un plafond réglé dans l'écran Plafonds
+ * n'était jamais appliqué par le moteur, qui continuait sur l'ancienne valeur
+ * (ou le défaut). Une seule fonction, un seul chemin de lecture, pour que la
+ * valeur affichée soit toujours celle appliquée.
  */
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
 import { normaliserPlafond } from '../plafonds.js';
+import type { Executeur } from '../executeur.js';
 
 export type ClePlafond =
   | 'scoring_par_jour'
@@ -65,6 +79,60 @@ function valeurTexteValide(brut: unknown): string | null {
   return typeof brut === 'string' && brut.trim() !== '' ? brut : null;
 }
 
+/**
+ * Fournisseur associé à une clé de plafond, pour son repli historique
+ * `credentials.config.daily_cap` (R78, généralisé R83) — seules ces deux clés
+ * en ont un : les trois autres clés numériques (`age_max_offres_jours`,
+ * `score_min_defaut`, `relecture_premiers_envois_defaut`) n'ont jamais existé
+ * ailleurs que dans `organization_settings`, aucun repli credentials n'a de
+ * sens pour elles.
+ */
+const PROVIDER_REPLI_CREDENTIALS: Partial<Record<ClePlafond, string>> = {
+  scoring_par_jour: 'anthropic',
+  enrichissements_par_jour: 'fullenrich',
+};
+
+/**
+ * Résout la valeur d'UNE clé numérique à partir de sa valeur brute déjà lue
+ * en base (`undefined`/invalide si absente) : `organization_settings` →
+ * `credentials.config.daily_cap` du fournisseur associé (repli historique,
+ * seulement si `PROVIDER_REPLI_CREDENTIALS` en connaît un pour cette clé) →
+ * variable d'environnement → défaut en dur.
+ *
+ * Partagée par `lireReglages` (qui a déjà TOUTES les valeurs brutes en main
+ * via une lecture groupée d'`organization_settings`, une seule requête pour
+ * les six clés) et par `plafondDuJour` (une clé à la fois, sa propre lecture
+ * ciblée) — la MÊME logique des deux côtés : avant R83, le worker avait sa
+ * propre implémentation (`lirePlafondFournisseur`, `apps/worker/src/producer.ts`)
+ * qui lisait `credentials.config.daily_cap` directement et ignorait
+ * complètement `organization_settings`, si bien qu'un plafond réglé dans
+ * l'écran Plafonds n'était jamais appliqué par le moteur.
+ */
+async function resoudrePlafondNumerique(
+  ex: Executeur,
+  organisationId: string,
+  cle: ClePlafond,
+  brut: unknown,
+  defaut: number,
+  env: string | undefined,
+): Promise<number> {
+  const n = valeurNumeriqueValide(brut);
+  if (n !== null) return n;
+
+  const providerRepli = PROVIDER_REPLI_CREDENTIALS[cle];
+  if (providerRepli) {
+    const credRes = await ex.query<{ config: unknown }>(
+      `select config from credentials /* jr:plafond_du_jour_credentials */
+        where organization_id = $1 and provider_id = $2`,
+      [organisationId, providerRepli],
+    );
+    const saisi = Number((credRes.rows[0]?.config as { daily_cap?: unknown } | null)?.daily_cap);
+    if (Number.isFinite(saisi) && saisi >= 0) return saisi;
+  }
+
+  return env ? normaliserPlafond(process.env[env] ?? null, defaut) : defaut;
+}
+
 /** Lit les réglages de l'organisation : ligne en base en premier (si du bon type), sinon l'environnement (repli numérique), sinon le défaut. */
 export async function lireReglages(ctx: Contexte): Promise<Record<ClePlafond, number | string>> {
   const res = await ctx.ex.query<{ key: string; value: unknown }>(
@@ -77,31 +145,39 @@ export async function lireReglages(ctx: Contexte): Promise<Record<ClePlafond, nu
   for (const { cle, defaut, env } of CLES_REGLAGES) {
     const brut = parCle.get(cle);
     if (typeof defaut === 'number') {
-      const n = valeurNumeriqueValide(brut);
-      sortie[cle] = n ?? (env ? normaliserPlafond(process.env[env] ?? null, defaut) : defaut);
+      sortie[cle] = await resoudrePlafondNumerique(ctx.ex, ctx.organisationId, cle, brut, defaut, env);
       continue;
     }
     sortie[cle] = valeurTexteValide(brut) ?? defaut;
   }
 
-  // R78 (tour de correction 1, tâche 17) : `enrichissements_par_jour` a un
-  // second repli historique — `credentials.config.daily_cap`, l'ancien
-  // réglage v1 que lisait `enrichirMaintenant` avant ce correctif — consulté
-  // SEULEMENT si la ligne `organization_settings` est absente ou invalide.
-  // `parCle` est déjà en main (une seule lecture d'`organization_settings`
-  // au total, même avec ce repli) : aucune requête de plus dans le cas
-  // courant où l'organisation a réglé son plafond dans l'app.
-  if (valeurNumeriqueValide(parCle.get('enrichissements_par_jour')) === null) {
-    const credRes = await ctx.ex.query<{ config: unknown }>(
-      `select config from credentials /* jr:plafond_enrichissement_credentials */
-        where organization_id = $1 and provider_id = 'fullenrich'`,
-      [ctx.organisationId],
-    );
-    const saisi = Number((credRes.rows[0]?.config as { daily_cap?: unknown } | null)?.daily_cap);
-    if (Number.isFinite(saisi) && saisi >= 0) sortie.enrichissements_par_jour = saisi;
-  }
-
   return sortie;
+}
+
+/**
+ * Plafond numérique d'UNE clé — seule source de vérité (R83) pour tout
+ * appelant qui n'a pas besoin des six réglages en même temps : le worker
+ * (`apps/worker/src/producer.ts`, `traitements.ts`), qui n'a pas de `Contexte`
+ * mais un `Pool` pg brut — `Executeur` n'est que sa forme structurelle
+ * minimale, un `Pool` la respecte déjà.
+ *
+ * Même chaîne de repli que `lireReglages` (`resoudrePlafondNumerique`, code
+ * partagé) : `organization_settings` → `credentials.config.daily_cap` du
+ * fournisseur associé → environnement → défaut. AUCUN cache : chaque appel
+ * relit la base, donc une valeur posée par `ecrireReglage` s'applique dès le
+ * PROCHAIN appel — le prochain job de scoring ou d'enrichissement automatique
+ * côté worker, immédiatement côté web.
+ */
+export async function plafondDuJour(ex: Executeur, organisationId: string, cle: ClePlafond): Promise<number> {
+  const def = CLES_REGLAGES.find((d) => d.cle === cle);
+  if (!def || typeof def.defaut !== 'number') {
+    throw new Error(`« ${cle} » n'est pas un plafond numérique.`);
+  }
+  const res = await ex.query<{ value: unknown }>(
+    `select value from organization_settings where organization_id = $1 and key = $2`,
+    [organisationId, cle],
+  );
+  return resoudrePlafondNumerique(ex, organisationId, cle, res.rows[0]?.value, def.defaut, def.env);
 }
 
 /**
@@ -211,14 +287,11 @@ export interface Jauge {
  * boutons « Chercher l'email » (tâche 8 par signal, `apps/web/app/actions/enrichir.ts` ;
  * tâche 17 par contact, `fonctions/contacts.ts`), qui partagent le même
  * compteur `provider_daily_usage(provider_id='fullenrich')` et doivent donc
- * appliquer le même nombre (R78, tour de correction 1 de la tâche 17).
- * Simple projection de `lireReglages` (qui porte déjà, depuis ce correctif,
- * le repli `credentials.config.daily_cap` pour cette seule clé) — pas de
- * requête en plus pour un appelant qui a déjà ses `reglages` en main.
+ * appliquer le même nombre (R78, tour de correction 1 de la tâche 17) — et
+ * désormais (R83) le même nombre que le worker, via `plafondDuJour`.
  */
 export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number> {
-  const reglages = await lireReglages(ctx);
-  return Number(reglages.enrichissements_par_jour);
+  return plafondDuJour(ctx.ex, ctx.organisationId, 'enrichissements_par_jour');
 }
 
 /**

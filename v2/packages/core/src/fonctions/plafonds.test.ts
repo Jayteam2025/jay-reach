@@ -8,6 +8,7 @@ import {
   lireConsommationDuJour,
   lireReglages,
   lireReglagesDetail,
+  plafondDuJour,
   plafondEnrichissementDuJour,
   schemaEcrireReglage,
 } from './plafonds.js';
@@ -109,20 +110,20 @@ describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17
   it('sans ligne organization_settings, retombe sur credentials.config.daily_cap (ancien réglage v1)', async () => {
     const ctx = faux({
       'from organization_settings': [],
-      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: '45' } }],
+      'jr:plafond_du_jour_credentials': [{ config: { daily_cap: '45' } }],
     });
     await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(45);
   });
 
   it('sans organization_settings ni credentials, retombe sur le défaut (30, aucun ENRICH_DAILY_CAP dans l’environnement de test)', async () => {
-    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_enrichissement_credentials': [] });
+    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_du_jour_credentials': [] });
     await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(30);
   });
 
   it('ignore un config.daily_cap non numérique dans credentials (repli sur le défaut)', async () => {
     const ctx = faux({
       'from organization_settings': [],
-      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 'abc' } }],
+      'jr:plafond_du_jour_credentials': [{ config: { daily_cap: 'abc' } }],
     });
     await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(30);
   });
@@ -131,11 +132,11 @@ describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17
     const ctx = faux({ 'from organization_settings': [{ key: 'enrichissements_par_jour', value: 12 }] });
     await plafondEnrichissementDuJour(ctx);
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-    expect(appels.some((a) => /jr:plafond_enrichissement_credentials/i.test(String(a[0])))).toBe(false);
+    expect(appels.some((a) => /jr:plafond_du_jour_credentials/i.test(String(a[0])))).toBe(false);
   });
 
   it('ne lit `organization_settings` qu’une seule fois, même quand le repli credentials se déclenche', async () => {
-    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 45 } }] });
+    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_du_jour_credentials': [{ config: { daily_cap: 45 } }] });
     await plafondEnrichissementDuJour(ctx);
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const appelsReglages = appels.filter((a) => /from organization_settings/i.test(String(a[0])));
@@ -145,7 +146,7 @@ describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17
   it('lireConsommationDuJour applique EXACTEMENT le même plafond (les deux boutons « Chercher l’email » partagent la même source)', async () => {
     const ctx = faux({
       'from organization_settings': [],
-      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 45 } }],
+      'jr:plafond_du_jour_credentials': [{ config: { daily_cap: 45 } }],
       scored_today: [{ n: 0 }],
       enrich_today: [{ n: 7 }],
       'from actions': [{ n: 0 }],
@@ -155,6 +156,61 @@ describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17
     const plafondDirect = await plafondEnrichissementDuJour(ctx);
     expect(consommation.enrichissement.plafond).toBe(45);
     expect(consommation.enrichissement.plafond).toBe(plafondDirect);
+  });
+});
+
+describe('plafondDuJour (R83, relecture tâche 21 : une seule source de vérité pour le moteur et l’écran)', () => {
+  it('applique la ligne organization_settings de la clé demandée', async () => {
+    const ex = faux({ 'from organization_settings': [{ value: 120 }] }).ex;
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(120);
+  });
+
+  it('scoring_par_jour retombe sur credentials.config.daily_cap du fournisseur anthropic (repli historique, généralisé de R78)', async () => {
+    const ex = faux({
+      'from organization_settings': [],
+      'jr:plafond_du_jour_credentials': [{ config: { daily_cap: 250 } }],
+    }).ex;
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(250);
+  });
+
+  it('sans organization_settings ni credentials, retombe sur le défaut (300 pour scoring_par_jour, aucun SCORE_DAILY_CAP dans l’environnement de test)', async () => {
+    const ex = faux({ 'from organization_settings': [], 'jr:plafond_du_jour_credentials': [] }).ex;
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(300);
+  });
+
+  it('utilisable avec un simple Executeur, sans construire de Contexte — exactement ce qu’expose un Pool pg côté worker', async () => {
+    // Aucun `Contexte` ici (pas de rôle, pas d'utilisateur) : `plafondDuJour` ne prend que
+    // `ex`/`organisationId`/`cle`, la même signature que `apps/worker/src/producer.ts` et
+    // `traitements.ts` lui passent avec leur `Pool` pg brut.
+    const ex: Executeur = {
+      query: vi.fn(async () => ({ rows: [{ value: 77 }], rowCount: 1 })) as unknown as Executeur['query'],
+    };
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(77);
+  });
+
+  it('la valeur écrite par ecrireReglage est celle que plafondDuJour applique ensuite (aucun cache) — même chemin que le worker', async () => {
+    // Petit magasin en mémoire qui imite `organization_settings` : `ecrireReglage` y écrit,
+    // `plafondDuJour` y relit — la même table, dans le même ordre, que ce qu'observe le moteur
+    // en production (aucune connexion ni cache intermédiaire entre les deux).
+    const lignes = new Map<string, unknown>();
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (/insert into organization_settings/i.test(sql)) {
+        const [, cle, valeurJson] = params as [string, string, string];
+        lignes.set(cle, JSON.parse(valeurJson));
+        return { rows: [], rowCount: 1 };
+      }
+      if (/select value from organization_settings/i.test(sql)) {
+        const [, cle] = params as [string, string];
+        return lignes.has(cle) ? { rows: [{ value: lignes.get(cle) }], rowCount: 1 } : { rows: [], rowCount: 0 };
+      }
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ex: Executeur = { query };
+    const ctx: Contexte = { ex, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(300); // rien en base : défaut
+    await ecrireReglage(ctx, { cle: 'scoring_par_jour', valeur: 120 });
+    await expect(plafondDuJour(ex, 'org-1', 'scoring_par_jour')).resolves.toBe(120); // relu juste après l'écriture, sans détour
   });
 });
 

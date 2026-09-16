@@ -20,6 +20,7 @@ import {
   reduireLotAuReste,
   ecrireEvenement,
   nettoyerMessageErreurJournal,
+  plafondDuJour,
 } from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
@@ -59,8 +60,6 @@ import {
   enqueueEnrichmentForQualified,
   enqueueEnrollments,
   enqueueRequestedRuns,
-  lirePlafondFournisseur,
-  PLAFOND_SCORING_PAR_DEFAUT,
 } from './producer.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -326,7 +325,12 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
   // Niveau `smart` (Sonnet par défaut), surchargeable par org via la config du
   // provider (`model_smart`) — jamais par variable d'env.
   console.log(`[score] org ${data.organizationId} : modèle ${resolveScoringModel('smart', credentials)}`);
-  const plafond = await lirePlafondFournisseur(pool, data.organizationId, ANTHROPIC_PROVIDER, PLAFOND_SCORING_PAR_DEFAUT);
+  // R83 (relecture tâche 21) : `plafondDuJour` lit `organization_settings` (le
+  // réglage posé dans l'écran Réglages › Plafonds) avant tout repli — avant ce
+  // correctif, `lirePlafondFournisseur` lisait `credentials.config.daily_cap`
+  // et ignorait complètement ce réglage, si bien qu'un plafond de scoring
+  // changé dans l'écran n'était jamais appliqué par le moteur.
+  const plafond = await plafondDuJour(pool, data.organizationId, 'scoring_par_jour');
   const usage = await pool.query<{ used: number }>(
     `select used from provider_daily_usage
       where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
