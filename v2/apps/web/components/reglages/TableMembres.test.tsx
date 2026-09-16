@@ -5,7 +5,7 @@ import { CorpsTableMembres, type MembreAffiche, type TableMembresLibelles } from
 
 const LIBELLES: TableMembresLibelles = {
   titre: 'Membres',
-  compteGabarit: '{count} · un propriétaire au moins',
+  compte: '3 · un propriétaire au moins',
   inviter: '+ Inviter par email',
   colonneMembre: 'Membre',
   colonneEmail: 'Email',

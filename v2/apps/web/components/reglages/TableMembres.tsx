@@ -20,7 +20,7 @@ export interface MembreAffiche {
 export interface TableMembresLibelles {
   titre: string;
   /** Gabarit « {count} · un propriétaire au moins » — `{count}` remplacé tel quel. */
-  compteGabarit: string;
+  compte: string;
   inviter: string;
   colonneMembre: string;
   colonneEmail: string;
@@ -122,7 +122,7 @@ export function TableMembres({ organizationId, membres, libelles, erreurLibelle 
     <Carte
       titre={
         <>
-          {libelles.titre} <small>{libelles.compteGabarit.replace('{count}', String(membres.length))}</small>
+          {libelles.titre} <small>{libelles.compte}</small>
         </>
       }
     >

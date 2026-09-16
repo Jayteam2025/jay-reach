@@ -82,7 +82,7 @@ export default async function ReglagesComptePage() {
         erreurLibelle={t('membres.erreur')}
         libelles={{
           titre: t('membres.titre'),
-          compteGabarit: t('membres.compteGabarit'),
+          compte: t('membres.compteGabarit', { count: membresAffiches.length }),
           inviter: t('membres.inviter'),
           colonneMembre: t('membres.colonneMembre'),
           colonneEmail: t('membres.colonneEmail'),
