@@ -7,6 +7,7 @@ import { contexteCourant } from '../../../../../lib/contexte';
 import { Carte } from '../../../../../components/ui';
 import { FiltresStatuts } from '../../../../../components/campagne/FiltresStatuts';
 import { TableContacts, type LigneTableContacts } from '../../../../../components/campagne/TableContacts';
+import { texteEtape } from '../../../../../lib/etape-contact';
 import { TiroirFiche } from '../../../../../components/contact/TiroirFiche';
 
 export const revalidate = 0;
@@ -64,15 +65,15 @@ export default async function CampagneContactsPage({
   const fin = Math.min(page * TAILLE_PAGE, total);
   const dernierePage = Math.max(1, Math.ceil(total / TAILLE_PAGE));
 
-  const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
-    ...ligne,
-    etapeTexte: ligne.etape !== null ? t('contacts.step', { n: ligne.etape }) : null,
-  }));
-
   const libellesStatut = Object.fromEntries(ORDRE_STATUTS.map((s) => [s, t(`contacts.status.${s}`)])) as Record<
     StatutContactCampagne,
     string
   >;
+
+  const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
+    ...ligne,
+    etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
+  }));
 
   function lienPage(p: number): string {
     const qs = new URLSearchParams();

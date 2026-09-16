@@ -11,15 +11,17 @@
  */
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
-import { exiger, valider, ErreurIntrouvable } from './contexte.js';
+import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
 import { lireConsommationDuJour } from './plafonds.js';
 import {
   CASE_STATUT_DERIVE,
+  etapeAffichee,
   FROM_POPULATION_CAMPAGNE,
   marqueBoite,
+  type ContactCampagne,
   type Evenement,
   type StatutContactCampagne,
 } from './campagnes.js';
@@ -643,4 +645,474 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
     `select enfiler_enrichissement($1, $2, $3, $4, $5, $6, $7, $8) /* jr:chercher_email_enfiler */`,
     [ctx.organisationId, compte.id, compte.name, compte.domain, compte.country, persona.id, persona.title_patterns, contact.source_signal_id],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Contacts globale (spec §6.11, tâche 18) : `listerContacts` (onglet « Tous
+// les contacts »), `listerEntreprises` (onglet « Entreprises »),
+// `listerClientsEtExclusions` + `ajouterSuppression`/`ajouterAListe` (onglet
+// « Clients et exclusions »), `exporterCsv` (bouton Export des deux
+// premiers). Même socle « une fonction, deux façades » que `campagnes.ts`.
+// ---------------------------------------------------------------------------
+
+/** Même convention que `campagnes.ts` (copie locale volontaire d'un petit utilitaire, voir son commentaire « Petits utilitaires partagés »). */
+function nomComplet(prenom: string | null, nom: string | null): string {
+  return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
+}
+
+/** Copie locale de `motifRecherche` (`campagnes.ts`) — même raison : pas de couplage cross-fichier pour un utilitaire d'une ligne. */
+function motifRecherche(recherche: string | undefined): string | null {
+  if (!recherche) return null;
+  return `%${recherche.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/** Même ligne que `ContactCampagne` (`campagnes.ts`, tâche 10) plus la campagne d'origine — toujours renseignée ici (contrairement à `LigneTableContacts.campagneId?`, optionnel côté web), une ligne globale vient toujours d'exactement une campagne. */
+export interface ContactGlobal extends ContactCampagne {
+  readonly campagneId: string;
+  readonly campagneNom: string;
+}
+
+export const schemaListerContactsGlobal = z.object({
+  filtre: z.enum(['tous', 'a_contacter', 'sans_email', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'termine', 'rebond', 'ne_plus_contacter']).default('tous'),
+  campagneId: z.string().uuid().optional(),
+  source: z.enum(['adzuna', 'francetravail', 'linkedin', 'manuel']).optional(),
+  email: z.enum(['verifie', 'a_trouver']).optional(),
+  recherche: z.string().max(80).optional(),
+  page: z.number().int().min(1).max(10_000).default(1),
+});
+
+const TAILLE_PAGE_CONTACTS_GLOBAL = 50;
+
+/**
+ * Plafond mémoire du calcul global (`listerContacts` ET `exporterCsv`, qui
+ * partagent `collecterContactsGlobaux`) : au-delà, l'opérateur doit filtrer
+ * (campagne, recherche…) plutôt que de tout charger en mémoire d'un coup.
+ * Même valeur que le plafond de lignes de l'export CSV (spec §6.11).
+ */
+const LIMITE_CONTACTS_GLOBAL = 5000;
+
+interface LigneContactGlobalBrut {
+  signal_id: string | null;
+  contact_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  email: string | null;
+  entreprise: string | null;
+  current_step: number | null;
+  statut: StatutContactCampagne;
+  score: number | null;
+  pourquoi: string | null;
+  provider_id: string | null;
+  quand: string | null;
+}
+
+/** Campagnes ciblées par `listerContacts`/`exporterCsv` : une seule (filtre `campagneId`) ou toutes celles de l'organisation. */
+async function campagnesCiblees(ctx: Contexte, campagneId: string | undefined): Promise<{ id: string; nom: string }[]> {
+  if (campagneId) {
+    const r = await ctx.ex.query<{ id: string; nom: string }>(
+      `select id, name as nom from campaigns /* jr:contacts_globale_campagne_unique */ where id = $1 and organization_id = $2`,
+      [campagneId, ctx.organisationId],
+    );
+    return r.rows;
+  }
+  const r = await ctx.ex.query<{ id: string; nom: string }>(
+    `select id, name as nom from campaigns /* jr:contacts_globale_campagnes */ where organization_id = $1 order by name asc`,
+    [ctx.organisationId],
+  );
+  return r.rows;
+}
+
+type FiltresContactsGlobal = Omit<z.infer<typeof schemaListerContactsGlobal>, 'page'>;
+
+/**
+ * Population « toutes campagnes » : rejoue `CASE_STATUT_DERIVE`/
+ * `FROM_POPULATION_CAMPAGNE` (exportés par `campagnes.ts`, tâche 10) UNE FOIS
+ * PAR CAMPAGNE de l'organisation (`$1` = son id, exactement comme
+ * `listerContactsCampagne`), puis fusionne et trie en mémoire — plutôt que de
+ * généraliser ces requêtes à un `$1` = organisation : `FROM_POPULATION_CAMPAGNE`
+ * suppose une seule campagne (la lecture d'inscription en LATERAL la
+ * présuppose), la réécrire aurait dupliqué sa logique de statut au lieu de la
+ * réutiliser telle quelle. Coût : une requête de lignes + une de comptage
+ * d'étapes par campagne — acceptable à l'échelle d'une organisation
+ * autohébergée (quelques campagnes), plafonné par `LIMITE_CONTACTS_GLOBAL`.
+ */
+async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsGlobal): Promise<ContactGlobal[]> {
+  const { filtre, campagneId, source, email, recherche } = filtres;
+  const campagnes = await campagnesCiblees(ctx, campagneId);
+  if (campagnes.length === 0) return [];
+
+  const motif = motifRecherche(recherche);
+  const toutes: (ContactGlobal & { quand: string | null })[] = [];
+
+  for (const campagne of campagnes) {
+    if (toutes.length >= LIMITE_CONTACTS_GLOBAL) break;
+
+    const res = await ctx.ex.query<LigneContactGlobalBrut>(
+      `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, provider_id, quand
+         from (
+           select
+             s.id as signal_id,
+             c.id as contact_id,
+             c.first_name, c.last_name, c.job_title, c.email,
+             coalesce(ac.name, s.company_hint) as entreprise,
+             e.current_step,
+             s.score,
+             s.title as pourquoi,
+             s.provider_id,
+             coalesce(s.occurred_at, e.started_at) as quand,
+             ${CASE_STATUT_DERIVE} as statut
+           ${FROM_POPULATION_CAMPAGNE}
+         ) x /* jr:lignes_contacts_globale */
+        where ($2 = 'tous' or statut = $2)
+          and ($3::text is null or first_name ilike $3 or last_name ilike $3 or entreprise ilike $3)
+          and ($4::text is null or provider_id = $4 or ($4 = 'manuel' and signal_id is null))
+          and ($5::text is null or ($5 = 'verifie' and email is not null) or ($5 = 'a_trouver' and email is null))
+        order by quand desc nulls last, contact_id desc`,
+      [campagne.id, filtre, motif, source ?? null, email ?? null],
+    );
+    if (res.rows.length === 0) continue;
+
+    const totalEtapesRes = await ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n from sequence_steps /* jr:total_etapes_campagne */ where campaign_id = $1`,
+      [campagne.id],
+    );
+    const totalEtapes = totalEtapesRes.rows[0]?.n ?? 0;
+
+    for (const r of res.rows) {
+      toutes.push({
+        signalId: r.signal_id,
+        contactId: r.contact_id,
+        nom: nomComplet(r.first_name, r.last_name),
+        poste: r.job_title,
+        entreprise: r.entreprise,
+        email: r.email,
+        statut: r.statut,
+        etape: etapeAffichee(r.current_step, totalEtapes),
+        score: r.score,
+        pourquoi: r.pourquoi,
+        campagneId: campagne.id,
+        campagneNom: campagne.nom,
+        quand: r.quand,
+      });
+      if (toutes.length >= LIMITE_CONTACTS_GLOBAL) break;
+    }
+  }
+
+  toutes.sort((a, b) => (b.quand ?? '').localeCompare(a.quand ?? ''));
+  return toutes.map(({ quand: _quand, ...reste }) => reste);
+}
+
+export async function listerContacts(ctx: Contexte, entree: unknown): Promise<{ total: number; lignes: ContactGlobal[] }> {
+  exiger(ctx, 'viewer');
+  const { page, ...filtres } = valider(schemaListerContactsGlobal, entree);
+
+  const toutes = await collecterContactsGlobaux(ctx, filtres);
+  const debut = (page - 1) * TAILLE_PAGE_CONTACTS_GLOBAL;
+  return { total: toutes.length, lignes: toutes.slice(debut, debut + TAILLE_PAGE_CONTACTS_GLOBAL) };
+}
+
+// ---------------------------------------------------------------------------
+// listerEntreprises
+// ---------------------------------------------------------------------------
+
+const TAILLE_PAGE_ENTREPRISES = 50;
+
+export const schemaListerEntreprises = z.object({
+  recherche: z.string().max(80).optional(),
+  page: z.number().int().min(1).max(10_000).default(1),
+});
+
+export interface EntrepriseLigne {
+  readonly id: string;
+  readonly nom: string;
+  /**
+   * `accounts.naf_code` brut — aucune table de correspondance NAF → libellé
+   * sectoriel n'existe dans ce dépôt (vérifié : ni migration ni fixture).
+   * Afficher un secteur inventé (ex. « Logiciel ») violerait la règle « ne
+   * jamais afficher un chiffre/une donnée que Jay Reach ne mesure pas
+   * réellement » — le code brut, ou `null`, plutôt qu'une traduction fictive.
+   */
+  readonly secteur: string | null;
+  readonly effectif: number | null;
+  readonly ville: string | null;
+  readonly domaine: string | null;
+  readonly linkedinUrl: string | null;
+  readonly contactsConnus: number;
+}
+
+export async function listerEntreprises(
+  ctx: Contexte,
+  entree: unknown,
+): Promise<{ total: number; lignes: EntrepriseLigne[] }> {
+  exiger(ctx, 'viewer');
+  const { recherche, page } = valider(schemaListerEntreprises, entree);
+  const motif = motifRecherche(recherche);
+
+  const totalRes = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n from accounts /* jr:total_entreprises */
+      where organization_id = $1 and ($2::text is null or name ilike $2)`,
+    [ctx.organisationId, motif],
+  );
+  const total = totalRes.rows[0]?.n ?? 0;
+
+  const res = await ctx.ex.query<{
+    id: string;
+    name: string;
+    naf_code: string | null;
+    headcount: number | null;
+    city: string | null;
+    domain: string | null;
+    linkedin_url: string | null;
+    contacts_connus: number;
+  }>(
+    `select a.id, a.name, a.naf_code, a.headcount, a.city, a.domain, a.linkedin_url,
+            (select count(*)::int from contacts c where c.account_id = a.id) as contacts_connus
+       from accounts a /* jr:lignes_entreprises */
+      where a.organization_id = $1 and ($2::text is null or a.name ilike $2)
+      order by a.name asc
+      limit $3 offset $4`,
+    [ctx.organisationId, motif, TAILLE_PAGE_ENTREPRISES, (page - 1) * TAILLE_PAGE_ENTREPRISES],
+  );
+
+  return {
+    total,
+    lignes: res.rows.map((r) => ({
+      id: r.id,
+      nom: r.name,
+      secteur: r.naf_code,
+      effectif: r.headcount,
+      ville: r.city,
+      domaine: r.domain,
+      linkedinUrl: r.linkedin_url,
+      contactsConnus: r.contacts_connus,
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// listerClientsEtExclusions, ajouterSuppression, ajouterAListe
+// ---------------------------------------------------------------------------
+
+export type TypeClientExclusion = 'client' | 'email' | 'domaine' | 'linkedin';
+
+export interface LigneClientExclusion {
+  readonly id: string;
+  readonly type: TypeClientExclusion;
+  readonly valeur: string;
+  readonly raison: string | null;
+  readonly quand: string;
+}
+
+/** `suppressions.scope` → libellé de type de la table fusionnée — `account`/`postal` n'y figurent pas (spec §6.11 : email, domaine, LinkedIn seulement ; `account` est le miroir des clients importés, déjà couvert par la branche `customer_list_entries`). */
+const TYPE_DEPUIS_SCOPE: Partial<Record<string, TypeClientExclusion>> = {
+  email: 'email',
+  domain: 'domaine',
+  linkedin: 'linkedin',
+};
+
+export async function listerClientsEtExclusions(ctx: Contexte, entree: unknown): Promise<{ lignes: LigneClientExclusion[] }> {
+  exiger(ctx, 'viewer');
+  valider(z.object({}), entree);
+
+  const [clientsRes, exclusionsRes] = await Promise.all([
+    ctx.ex.query<{ id: string; domain: string | null; raw_name: string | null; siren: string | null; created_at: string }>(
+      `select id, domain, raw_name, siren, created_at
+         from customer_list_entries /* jr:clients_entreprises */
+        where organization_id = $1
+        order by created_at desc`,
+      [ctx.organisationId],
+    ),
+    ctx.ex.query<{ id: string; scope: string; value: string; reason: string | null; created_at: string }>(
+      `select id, scope, value, reason, created_at
+         from suppressions /* jr:exclusions */
+        where organization_id = $1 and scope in ('email', 'domain', 'linkedin')
+        order by created_at desc`,
+      [ctx.organisationId],
+    ),
+  ]);
+
+  const clients: LigneClientExclusion[] = clientsRes.rows.map((r) => ({
+    id: r.id,
+    type: 'client',
+    valeur: r.domain ?? r.raw_name ?? r.siren ?? '—',
+    raison: null,
+    quand: r.created_at,
+  }));
+
+  const exclusions: LigneClientExclusion[] = exclusionsRes.rows.flatMap((r) => {
+    const type = TYPE_DEPUIS_SCOPE[r.scope];
+    return type ? [{ id: r.id, type, valeur: r.value, raison: r.reason, quand: r.created_at }] : [];
+  });
+
+  return { lignes: [...clients, ...exclusions] };
+}
+
+export const schemaAjouterSuppression = z.object({
+  scope: z.enum(['email', 'domain', 'linkedin']),
+  value: z.string().trim().min(1).max(320),
+  reason: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Ajoute une suppression manuelle (encart « Ne plus contacter » de l'onglet
+ * Clients et exclusions). Rôle operator — même niveau que l'écriture de
+ * `suppressions` dans `nePlusContacter` et que la policy RLS de la table
+ * (`supabase/migrations/20260817120100_rls.sql`, `suppressions` écrite en
+ * operator+). Casse ignorée pour email/domaine (comparaison déjà `lower()`
+ * dans `CASE_STATUT_DERIVE`) ; conservée pour un identifiant LinkedIn (une
+ * URL est sensible à la casse sur son chemin).
+ */
+export async function ajouterSuppression(ctx: Contexte, entree: unknown): Promise<void> {
+  exiger(ctx, 'operator');
+  const { scope, value, reason } = valider(schemaAjouterSuppression, entree);
+  const valeur = scope === 'linkedin' ? value : value.toLowerCase();
+
+  await ctx.ex.query(
+    `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:contacts_ajouter_suppression */
+     select $1, $2, $3, $4, 'manual'
+     where not exists (
+       select 1 from suppressions where organization_id = $1 and scope = $2 and value = $3
+     )`,
+    [ctx.organisationId, scope, valeur, reason ?? null],
+  );
+}
+
+export const schemaAjouterAListe = z.object({
+  domaine: z.string().trim().min(1).max(253),
+});
+
+const NOM_LISTE_MANUELLE = 'Ajouts manuels';
+
+/** Domaine à partir d'une saisie libre (« Ajouter un domaine » — pas « ou email » : voir le doc d'`ajouterAListe`, seul le domaine sert au rapprochement). Une adresse email collée garde son domaine ; un protocole/`www.`/chemin sont retirés — même esprit que `normDomain` (`apps/web/app/actions/customers.ts`, import CSV existant), copié ici plutôt qu'importé depuis `apps/web` (packages/core ne dépend jamais de `apps/web`). */
+function normaliserDomaine(saisie: string): string {
+  let s = saisie.trim().toLowerCase();
+  const arobase = s.indexOf('@');
+  if (arobase !== -1) s = s.slice(arobase + 1);
+  return s
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '');
+}
+
+/**
+ * Ajoute un domaine à la liste clients (encart « Clients Jay »| onglet
+ * Clients et exclusions) : une ligne `customer_list_entries` dans une liste
+ * manuelle unique par organisation (créée au premier ajout), puis les
+ * comptes déjà connus sur ce domaine sont marqués clients — le trigger
+ * `enforce_customer_exclusion` (migration `20260817120500_customer_exclusion.sql`)
+ * pose alors la suppression de portée compte. Transactionnel (même motif que
+ * `nePlusContacter`) : la ligne, le compteur de la liste et le marquage des
+ * comptes avancent ensemble.
+ *
+ * Rôle ADMIN — ÉCART assumé avec le plan de tâche (qui indique « operator »
+ * pour `ajouterAListe`) : la policy RLS d'écriture de `customer_lists` ET de
+ * `customer_list_entries` exige admin+ (`supabase/migrations/20260817120100_rls.sql`
+ * l. 94-96 ; `20260817120500_customer_exclusion.sql`, policies `customer_list_entries_write`).
+ * `ctx.ex` porte la session RÉELLE de l'utilisateur (pas `service_role` — voir
+ * le commentaire de `chercherEmail` ci-dessus) : un appel en operator serait
+ * rejeté par PostgreSQL, quoi que dise l'application. Le rôle DB fait foi.
+ */
+export async function ajouterAListe(ctx: Contexte, entree: unknown): Promise<{ id: string }> {
+  exiger(ctx, 'admin');
+  const { domaine: saisie } = valider(schemaAjouterAListe, entree);
+  const domaine = normaliserDomaine(saisie);
+  if (!domaine) throw new ErreurEntree({ formErrors: ['Domaine vide.'] });
+
+  return dansUneTransaction(ctx.ex, async (tx) => {
+    const existante = await tx.query<{ id: string }>(
+      `select id from customer_lists /* jr:contacts_liste_manuelle_existante */
+        where organization_id = $1 and name = $2
+        order by created_at asc limit 1`,
+      [ctx.organisationId, NOM_LISTE_MANUELLE],
+    );
+    let listeId = existante.rows[0]?.id;
+    if (!listeId) {
+      const creee = await tx.query<{ id: string }>(
+        `insert into customer_lists (organization_id, name, source) /* jr:contacts_liste_manuelle_creer */
+         values ($1, $2, 'csv') returning id`,
+        [ctx.organisationId, NOM_LISTE_MANUELLE],
+      );
+      listeId = creee.rows[0]!.id;
+    }
+
+    const inseree = await tx.query<{ id: string }>(
+      `insert into customer_list_entries (customer_list_id, organization_id, domain) /* jr:contacts_liste_manuelle_ajouter */
+       values ($1, $2, $3) returning id`,
+      [listeId, ctx.organisationId, domaine],
+    );
+
+    await tx.query(
+      `update customer_lists set entries_count = entries_count + 1 /* jr:contacts_liste_manuelle_compteur */ where id = $1`,
+      [listeId],
+    );
+
+    await tx.query(
+      `update accounts set is_customer = true /* jr:contacts_liste_manuelle_marquer_comptes */
+        where organization_id = $1 and domain = $2 and is_customer is distinct from true`,
+      [ctx.organisationId, domaine],
+    );
+
+    return { id: inseree.rows[0]!.id };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// exporterCsv
+// ---------------------------------------------------------------------------
+
+export const schemaExporterCsv = schemaListerContactsGlobal.omit({ page: true });
+
+const ENTETES_CSV = ['Nom', 'Poste', 'Entreprise', 'Email', 'État', 'Étape', 'Campagne', 'Score', 'Pourquoi lui'];
+
+/** Libellés français bruts (pas de `t()` : `packages/core` ne dépend pas de next-intl — même parti pris que les messages d'erreur métier de ce fichier, ex. `ErreurEnrichissementImpossible`). Mêmes mots que `fr.json` (`campagne.contacts.status.*`). */
+const LIBELLES_STATUT_CSV: Record<StatutContactCampagne, string> = {
+  a_contacter: 'À contacter',
+  sans_email: 'Sans email',
+  en_sequence: 'En séquence',
+  a_repondu: 'A répondu',
+  interesse: 'Intéressé',
+  ecarte: 'Écarté',
+  termine: 'Terminé',
+  rebond: 'Rebond',
+  ne_plus_contacter: 'Ne plus contacter',
+};
+
+/** Un champ CSV entre guillemets, guillemets internes doublés (RFC 4180) — toujours entre guillemets, pas seulement quand un `;` ou un `"` est présent : plus simple à vérifier, jamais faux. */
+function champCsv(valeur: string | number | null): string {
+  const brut = valeur === null || valeur === undefined ? '' : String(valeur);
+  return `"${brut.replace(/"/g, '""')}"`;
+}
+
+function ligneCsv(champs: (string | number | null)[]): string {
+  return champs.map(champCsv).join(';');
+}
+
+/**
+ * Export CSV de l'onglet « Tous les contacts » (spec §6.11) : mêmes filtres
+ * que `listerContacts` (sans pagination), plafonné par
+ * `collecterContactsGlobaux` à `LIMITE_CONTACTS_GLOBAL` (5 000) lignes.
+ * UTF-8 avec BOM (Excel ouvre proprement les caractères accentués),
+ * séparateur `;` (convention française), fin de ligne CRLF (RFC 4180).
+ */
+export async function exporterCsv(ctx: Contexte, entree: unknown): Promise<string> {
+  exiger(ctx, 'viewer');
+  const filtres = valider(schemaExporterCsv, entree);
+  const lignes = await collecterContactsGlobaux(ctx, filtres);
+
+  const corps = lignes.map((l) =>
+    ligneCsv([
+      l.nom,
+      l.poste,
+      l.entreprise,
+      l.email,
+      LIBELLES_STATUT_CSV[l.statut],
+      l.etape,
+      l.campagneNom,
+      l.score,
+      l.pourquoi,
+    ]),
+  );
+
+  return '\uFEFF' + [ligneCsv(ENTETES_CSV), ...corps].join('\r\n');
 }

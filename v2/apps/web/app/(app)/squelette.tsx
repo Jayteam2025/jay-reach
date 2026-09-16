@@ -22,17 +22,17 @@ import { Icon, type IconName } from './icons';
  */
 
 /** Reprise de la navigation de `chrome.tsx`. Statique des deux côtés. */
+// Jalon 3 (tâche 18) : `/prospects`, `/annuaire` et `/settings/customers` ne sont
+// plus liés dans la navigation (remplacés par `/contacts`, ses trois onglets) —
+// les pages restent en place jusqu'à leur suppression (tâche 24).
 const NAV: { href: string; key: string; icon: IconName }[] = [
   { href: '/', key: 'dashboard', icon: 'dashboard' },
   { href: '/signals', key: 'signals', icon: 'signals' },
-  { href: '/prospects', key: 'prospects', icon: 'prospects' },
-  { href: '/annuaire', key: 'annuaire', icon: 'sources' },
   { href: '/campaigns', key: 'campaigns', icon: 'campaigns' },
   { href: '/settings/templates', key: 'templates', icon: 'mail' },
   { href: '/inbox', key: 'inbox', icon: 'inbox' },
   { href: '/settings/linkedin', key: 'linkedin', icon: 'linkedin' },
   { href: '/settings/personas', key: 'personas', icon: 'personas' },
-  { href: '/settings/customers', key: 'customers', icon: 'prospects' },
   { href: '/settings/providers', key: 'providers', icon: 'providers' },
   { href: '/settings/senders', key: 'senders', icon: 'senders' },
 ];

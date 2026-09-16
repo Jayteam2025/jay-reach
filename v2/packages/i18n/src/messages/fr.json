@@ -1041,6 +1041,7 @@
         "ne_plus_contacter": "Ne plus contacter"
       },
       "step": "Étape {n}",
+      "stepEnded": "{n} · {libelle}",
       "noStep": "à contacter",
       "search": "Rechercher un nom, une entreprise…",
       "actions": {
@@ -1826,6 +1827,126 @@
       },
       "reglagesTitre": "Réglages",
       "enregistrerReglages": "Enregistrer"
+    }
+  },
+  "contacts": {
+    "title": "Contacts",
+    "description": "Tous les contacts trouvés par vos sources, toutes campagnes confondues, avec les entreprises et vos exclusions.",
+    "import": "Importer un CSV",
+    "export": "Exporter",
+    "tabs": {
+      "all": "Tous les contacts",
+      "companies": "Entreprises",
+      "customers": "Clients et exclusions"
+    },
+    "filters": {
+      "campaign": "Campagne",
+      "campaignAll": "toutes",
+      "status": "État",
+      "statusAll": "tous",
+      "email": "Email",
+      "emailAll": "tous",
+      "source": "Source",
+      "sourceAll": "toutes",
+      "sourceManual": "Manuel",
+      "search": "Rechercher un nom, une entreprise, un poste…",
+      "apply": "Filtrer"
+    },
+    "columns": {
+      "contact": "Contact",
+      "why": "Pourquoi lui",
+      "score": "Score",
+      "email": "Email",
+      "step": "Étape",
+      "campaign": "Campagne"
+    },
+    "status": {
+      "a_contacter": "À contacter",
+      "sans_email": "Sans email",
+      "en_sequence": "En séquence",
+      "a_repondu": "A répondu",
+      "interesse": "Intéressé",
+      "ecarte": "Écarté",
+      "termine": "Terminé",
+      "rebond": "Rebond",
+      "ne_plus_contacter": "Ne plus contacter"
+    },
+    "step": "Étape {n}",
+    "stepEnded": "{n} · {libelle}",
+    "noStep": "à contacter",
+    "email": {
+      "verified": "Vérifié",
+      "toFind": "À trouver"
+    },
+    "actions": {
+      "enrich": "Chercher l'email",
+      "enrichCost": "1 crédit",
+      "discard": "Écarter"
+    },
+    "empty": "Aucun contact pour ce filtre.",
+    "pageRange": "{debut} à {fin} sur {total}",
+    "pageOf": "Page {page} sur {dernierePage}",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "companies": {
+      "columns": {
+        "company": "Entreprise",
+        "sector": "Secteur",
+        "size": "Taille",
+        "city": "Ville",
+        "contacts": "Contacts connus",
+        "links": "Liens"
+      },
+      "site": "site",
+      "unknown": "—",
+      "empty": "Aucune entreprise pour l'instant.",
+      "pageRange": "{debut} à {fin} sur {total}",
+      "pageOf": "Page {page} sur {dernierePage}",
+      "previous": "Précédent",
+      "next": "Suivant"
+    },
+    "customers": {
+      "clientsTitle": "Clients Jay",
+      "clientsCount": "{n} domaines",
+      "clientsEmpty": "Aucun domaine client pour l'instant.",
+      "addDomainPlaceholder": "Ajouter un domaine",
+      "add": "Ajouter",
+      "adminRequired": "Droit administrateur requis pour ajouter un client.",
+      "exclusionsTitle": "Ne plus contacter",
+      "exclusionsCount": "{n} entrées",
+      "exclusionsEmpty": "Aucune exclusion pour l'instant.",
+      "addExclusionPlaceholder": "Email, domaine ou adresse LinkedIn",
+      "scopeEmail": "Email",
+      "scopeDomain": "Domaine",
+      "scopeLinkedin": "LinkedIn",
+      "operatorRequired": "Droit opérateur requis pour ajouter une exclusion.",
+      "typeClient": "Client",
+      "typeEmail": "Email",
+      "typeDomaine": "Domaine",
+      "typeLinkedin": "LinkedIn"
+    },
+    "importDialog": {
+      "open": "Importer un CSV",
+      "close": "Fermer",
+      "cancel": "Annuler",
+      "title": "Importer des contacts",
+      "intro": "Choisissez la campagne dans laquelle ces contacts entrent.",
+      "campaign": "Campagne",
+      "chooseCampaign": "Choisir une campagne",
+      "noCampaign": "Créez d'abord une campagne pour importer des contacts.",
+      "listName": "Nom de la liste",
+      "file": "Fichier CSV",
+      "mapping": "Correspondance des colonnes",
+      "colColumn": "Colonne",
+      "colExample": "Exemple",
+      "colField": "Champ",
+      "colIgnore": "Ignorer",
+      "before": "Avant import",
+      "rowsRead": "Lignes lues",
+      "new": "Nouveaux contacts",
+      "known": "Déjà connus",
+      "missingEmail": "Sans email",
+      "submit": "Importer {n} contacts"
     }
   }
 }

@@ -4,10 +4,16 @@ import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurIntrouvable } from './contexte.js';
 import {
+  ajouterAListe,
   ajouterNote,
+  ajouterSuppression,
   chercherEmail,
   ErreurEnrichissementImpossible,
+  exporterCsv,
   lireFiche,
+  listerClientsEtExclusions,
+  listerContacts,
+  listerEntreprises,
   nePlusContacter,
 } from './contacts.js';
 
@@ -420,5 +426,297 @@ describe('chercherEmail', () => {
     );
     await expect(chercherEmail(ctx, { contactId })).rejects.toThrow(ErreurEnrichissementImpossible);
     expect(appelsDe(ctx).some((a) => /jr:chercher_email_enfiler/i.test(a.sql))).toBe(false);
+  });
+});
+
+describe('listerContacts', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerContacts(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('organisation sans campagne : total 0, aucune ligne, aucune requête de lignes', async () => {
+    const ctx = faux({ 'jr:contacts_globale_campagnes': [] });
+    const r = await listerContacts(ctx, {});
+    expect(r).toEqual({ total: 0, lignes: [] });
+  });
+
+  it('fusionne les lignes de plusieurs campagnes, chacune porte sa campagne d’origine et son étape bornée', async () => {
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [
+        { id: 'camp-1', nom: 'Directeur commercial' },
+        { id: 'camp-2', nom: 'DRH PME' },
+      ],
+      'jr:lignes_contacts_globale': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: 'Head of Sales',
+          email: 'karim@exemple.fr',
+          entreprise: 'Woodpecker Studio',
+          current_step: 1,
+          statut: 'en_sequence',
+          score: 91,
+          pourquoi: 'Business developer senior',
+          provider_id: 'adzuna',
+          quand: '2026-09-10T00:00:00.000Z',
+        },
+      ],
+      'jr:total_etapes_campagne': [{ n: 3 }],
+    });
+    const r = await listerContacts(ctx, {});
+    // Même fixture rejouée pour les deux campagnes (le double mock ne distingue pas par
+    // paramètre) : une ligne par campagne, chacune avec SA campagne d'origine.
+    expect(r.total).toBe(2);
+    expect(r.lignes.map((l) => l.campagneId).sort()).toEqual(['camp-1', 'camp-2']);
+    expect(r.lignes[0]).toMatchObject({ nom: 'Karim Benali', etape: 2 });
+  });
+
+  it('restreint à une seule campagne quand `campagneId` est fourni (pas de requête « toutes campagnes »)', async () => {
+    const ctx = faux({
+      'jr:contacts_globale_campagne_unique': [{ id: campagneId, nom: 'Directeur commercial' }],
+      'jr:lignes_contacts_globale': [],
+    });
+    const r = await listerContacts(ctx, { campagneId });
+    expect(r).toEqual({ total: 0, lignes: [] });
+    const appels = appelsDe(ctx);
+    expect(appels.some((a) => /jr:contacts_globale_campagne_unique/.test(a.sql))).toBe(true);
+    expect(appels.some((a) => /jr:contacts_globale_campagnes\b/.test(a.sql))).toBe(false);
+  });
+
+  it('trie la liste fusionnée par instant décroissant (plus récent d’abord)', async () => {
+    const ligne = (id: string, quand: string) => ({
+      signal_id: `sig-${id}`,
+      contact_id: `contact-${id}`,
+      first_name: 'Prénom',
+      last_name: id,
+      job_title: null,
+      email: null,
+      entreprise: null,
+      current_step: null,
+      statut: 'a_contacter' as const,
+      score: null,
+      pourquoi: null,
+      provider_id: null,
+      quand,
+    });
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
+      'jr:lignes_contacts_globale': [
+        ligne('ancien', '2026-09-01T00:00:00.000Z'),
+        ligne('recent', '2026-09-14T00:00:00.000Z'),
+        ligne('milieu', '2026-09-07T00:00:00.000Z'),
+      ],
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-recent', 'contact-milieu', 'contact-ancien']);
+  });
+});
+
+describe('listerEntreprises', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerEntreprises(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('mappe les colonnes (secteur = code NAF brut, aucun libellé sectoriel inventé)', async () => {
+    const ctx = faux({
+      'jr:total_entreprises': [{ n: 1 }],
+      'jr:lignes_entreprises': [
+        {
+          id: 'compte-1',
+          name: 'Woodpecker Studio',
+          naf_code: '6201Z',
+          headcount: 42,
+          city: 'Nantes',
+          domain: 'woodpecker-studio.example',
+          linkedin_url: 'https://linkedin.com/company/woodpecker',
+          contacts_connus: 2,
+        },
+      ],
+    });
+    const r = await listerEntreprises(ctx, {});
+    expect(r.total).toBe(1);
+    expect(r.lignes[0]).toMatchObject({
+      nom: 'Woodpecker Studio',
+      secteur: '6201Z',
+      effectif: 42,
+      ville: 'Nantes',
+      domaine: 'woodpecker-studio.example',
+      contactsConnus: 2,
+    });
+  });
+});
+
+describe('listerClientsEtExclusions', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(listerClientsEtExclusions(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('fusionne clients et suppressions, ignore un scope hors email/domaine/linkedin (ex. `account`)', async () => {
+    const ctx = faux({
+      'jr:clients_entreprises': [
+        {
+          id: 'entree-1',
+          domain: 'woodpecker-studio.example',
+          raw_name: null,
+          siren: null,
+          created_at: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+      'jr:exclusions': [
+        {
+          id: 'sup-1',
+          scope: 'email',
+          value: 'p.martin@exemple.fr',
+          reason: 'a demandé à ne plus être contacté',
+          created_at: '2026-09-12T00:00:00.000Z',
+        },
+        { id: 'sup-2', scope: 'account', value: 'compte-2', reason: null, created_at: '2026-09-02T00:00:00.000Z' },
+      ],
+    });
+    const r = await listerClientsEtExclusions(ctx, {});
+    expect(r.lignes).toHaveLength(2);
+    expect(r.lignes.find((l) => l.id === 'sup-2')).toBeUndefined();
+    expect(r.lignes.find((l) => l.id === 'entree-1')).toMatchObject({
+      type: 'client',
+      valeur: 'woodpecker-studio.example',
+    });
+    expect(r.lignes.find((l) => l.id === 'sup-1')).toMatchObject({ type: 'email', valeur: 'p.martin@exemple.fr' });
+  });
+});
+
+describe('ajouterSuppression', () => {
+  it('refuse un rôle insuffisant (viewer)', async () => {
+    await expect(ajouterSuppression(faux({}, 'viewer'), { scope: 'email', value: 'a@b.fr' })).rejects.toThrow(
+      ForbiddenError,
+    );
+  });
+
+  it('insère avec une garde anti-doublon, email mis en minuscule', async () => {
+    const ctx = faux({}, 'operator');
+    await ajouterSuppression(ctx, { scope: 'email', value: 'Person@Exemple.FR' });
+    const appels = appelsDe(ctx);
+    const insertion = appels.find((a) => /jr:contacts_ajouter_suppression/.test(a.sql));
+    expect(insertion?.sql).toMatch(/not exists/);
+    expect(insertion?.params).toEqual(['org-1', 'email', 'person@exemple.fr', null]);
+  });
+
+  it('conserve la casse d’un identifiant LinkedIn (sensible à la casse dans son chemin)', async () => {
+    const ctx = faux({}, 'operator');
+    await ajouterSuppression(ctx, { scope: 'linkedin', value: 'linkedin.com/in/JeanDupont' });
+    const appels = appelsDe(ctx);
+    const insertion = appels.find((a) => /jr:contacts_ajouter_suppression/.test(a.sql));
+    expect(insertion?.params).toEqual(['org-1', 'linkedin', 'linkedin.com/in/JeanDupont', null]);
+  });
+});
+
+describe('ajouterAListe', () => {
+  it('refuse un rôle operator — RLS de `customer_lists`/`customer_list_entries` : admin requis (écart documenté avec le plan de tâche)', async () => {
+    const { ctx } = fauxConnectable({}, 'operator');
+    await expect(ajouterAListe(ctx, { domaine: 'acme.example' })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('normalise une URL saisie (protocole, `www.`, chemin retirés, mis en minuscule)', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const clientQuery = vi.fn(async (sql: string, params?: unknown[]) => {
+      appels.push({ sql, params: params ?? [] });
+      if (/jr:contacts_liste_manuelle_existante/.test(sql)) return { rows: [{ id: 'liste-1' }], rowCount: 1 };
+      if (/jr:contacts_liste_manuelle_ajouter/.test(sql)) return { rows: [{ id: 'entree-1' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const ex = {
+      query: vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'],
+      connect: vi.fn(async () => ({ query: clientQuery as unknown as Executeur['query'], release: vi.fn() })),
+    };
+    const ctx: Contexte = { ex: ex as unknown as Executeur, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    const r = await ajouterAListe(ctx, { domaine: 'https://www.Acme.example/a-propos' });
+    expect(r).toEqual({ id: 'entree-1' });
+    const insertion = appels.find((a) => /jr:contacts_liste_manuelle_ajouter/.test(a.sql));
+    expect(insertion?.params).toEqual(['liste-1', 'org-1', 'acme.example']);
+  });
+
+  it('extrait le domaine d’une adresse email saisie', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const clientQuery = vi.fn(async (sql: string, params?: unknown[]) => {
+      appels.push({ sql, params: params ?? [] });
+      if (/jr:contacts_liste_manuelle_existante/.test(sql)) return { rows: [{ id: 'liste-1' }], rowCount: 1 };
+      if (/jr:contacts_liste_manuelle_ajouter/.test(sql)) return { rows: [{ id: 'entree-1' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const ex = {
+      query: vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'],
+      connect: vi.fn(async () => ({ query: clientQuery as unknown as Executeur['query'], release: vi.fn() })),
+    };
+    const ctx: Contexte = { ex: ex as unknown as Executeur, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await ajouterAListe(ctx, { domaine: 'Jean@ACME.example' });
+    const insertion = appels.find((a) => /jr:contacts_liste_manuelle_ajouter/.test(a.sql));
+    expect(insertion?.params).toEqual(['liste-1', 'org-1', 'acme.example']);
+  });
+
+  it('réutilise la liste manuelle existante plutôt que d’en créer une seconde', async () => {
+    const { ctx, appelsClient } = fauxConnectable(
+      {
+        'jr:contacts_liste_manuelle_existante': [{ id: 'liste-1' }],
+        'jr:contacts_liste_manuelle_ajouter': [{ id: 'entree-1' }],
+      },
+      'admin',
+    );
+    await ajouterAListe(ctx, { domaine: 'acme.example' });
+    expect(appelsClient().some((sql) => /jr:contacts_liste_manuelle_creer/.test(sql))).toBe(false);
+  });
+
+  it('crée la liste manuelle au premier ajout (aucune existante)', async () => {
+    const { ctx, appelsClient } = fauxConnectable(
+      {
+        'jr:contacts_liste_manuelle_existante': [],
+        'jr:contacts_liste_manuelle_creer': [{ id: 'liste-neuve' }],
+        'jr:contacts_liste_manuelle_ajouter': [{ id: 'entree-1' }],
+      },
+      'admin',
+    );
+    const r = await ajouterAListe(ctx, { domaine: 'acme.example' });
+    expect(r).toEqual({ id: 'entree-1' });
+    expect(appelsClient().some((sql) => /jr:contacts_liste_manuelle_creer/.test(sql))).toBe(true);
+  });
+});
+
+describe('exporterCsv', () => {
+  it('refuse un rôle insuffisant', async () => {
+    await expect(exporterCsv(faux({}, null), {})).rejects.toThrow(ForbiddenError);
+  });
+
+  it('BOM en tête, en-têtes français, séparateur `;`, guillemets doublés (`;` et `"` dans un champ)', async () => {
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Direction commerciale; France' }],
+      'jr:lignes_contacts_globale': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: 'Head of Sales',
+          email: 'karim@exemple.fr',
+          entreprise: 'Woodpecker Studio',
+          current_step: 0,
+          statut: 'a_contacter',
+          score: 91,
+          pourquoi: 'Recrute "vite"; profil senior',
+          provider_id: 'adzuna',
+          quand: '2026-09-10T00:00:00.000Z',
+        },
+      ],
+      'jr:total_etapes_campagne': [{ n: 0 }],
+    });
+    const csv = await exporterCsv(ctx, {});
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const lignes = csv.slice(1).split('\r\n');
+    expect(lignes[0]).toBe('"Nom";"Poste";"Entreprise";"Email";"État";"Étape";"Campagne";"Score";"Pourquoi lui"');
+    expect(lignes[1]).toContain('"Recrute ""vite""; profil senior"');
+    expect(lignes[1]).toContain('"Direction commerciale; France"');
+    expect(lignes[1]).toContain('"Karim Benali"');
+    expect(lignes[1]).toContain('"À contacter"');
   });
 });

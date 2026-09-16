@@ -9,7 +9,9 @@
  */
 import { revalidatePath } from 'next/cache';
 import {
+  ajouterAListe,
   ajouterNote,
+  ajouterSuppression,
   chercherEmail,
   nePlusContacter,
   ErreurEnrichissementImpossible,
@@ -22,8 +24,9 @@ import { contexteCourant } from '../../lib/contexte';
 export type ResultatFiche = { ok: true } | { ok: false; error: string };
 export type ResultatNote = { ok: true; id: string } | { ok: false; error: string };
 
-function messageDErreur(err: unknown): string {
-  if (err instanceof ForbiddenError) return 'Droit opérateur requis.';
+/** `role` : celui EXIGÉ par la fonction appelée (`exiger(ctx, ...)`), pour un message d'erreur qui nomme le bon droit manquant — `ajouterAListe` exige admin, les autres façades de ce fichier operator. */
+function messageDErreur(err: unknown, role: 'opérateur' | 'administrateur' = 'opérateur'): string {
+  if (err instanceof ForbiddenError) return `Droit ${role} requis.`;
   if (err instanceof ErreurEntree) return 'Entrée invalide.';
   if (err instanceof ErreurIntrouvable) return err.message;
   if (err instanceof ErreurEnrichissementImpossible) return err.message;
@@ -60,5 +63,34 @@ export async function actionChercherEmailContact(contactId: string): Promise<Res
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
+  }
+}
+
+export type ResultatAjout = { ok: true } | { ok: false; error: string };
+export type ResultatAjoutListe = { ok: true; id: string } | { ok: false; error: string };
+
+export async function actionAjouterSuppression(
+  scope: 'email' | 'domain' | 'linkedin',
+  value: string,
+  reason?: string,
+): Promise<ResultatAjout> {
+  try {
+    const ctx = await contexteCourant();
+    await ajouterSuppression(ctx, { scope, value, reason });
+    revalidatePath('/contacts');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
+  }
+}
+
+export async function actionAjouterAListe(domaine: string): Promise<ResultatAjoutListe> {
+  try {
+    const ctx = await contexteCourant();
+    const { id } = await ajouterAListe(ctx, { domaine });
+    revalidatePath('/contacts');
+    return { ok: true, id };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err, 'administrateur') };
   }
 }

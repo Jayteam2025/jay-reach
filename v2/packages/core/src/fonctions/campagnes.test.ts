@@ -8,6 +8,7 @@ import {
   archiver,
   creerCampagne,
   ErreurConflit,
+  etapeAffichee,
   lancer,
   lireVueDEnsemble,
   listerActivite,
@@ -272,6 +273,26 @@ describe('lireVueDEnsemble', () => {
   });
 });
 
+describe('etapeAffichee', () => {
+  it('numérote 1-based une inscription en cours (current_step 0-based)', () => {
+    expect(etapeAffichee(0, 4)).toBe(1);
+    expect(etapeAffichee(2, 4)).toBe(3);
+  });
+
+  it('borne au nombre d’étapes une inscription qui les a toutes dépassées (R81)', () => {
+    expect(etapeAffichee(1, 1)).toBe(1);
+    expect(etapeAffichee(3, 3)).toBe(3);
+  });
+
+  it('reste `null` sans inscription', () => {
+    expect(etapeAffichee(null, 4)).toBeNull();
+  });
+
+  it('ne borne pas quand le nombre d’étapes est inconnu (0)', () => {
+    expect(etapeAffichee(0, 0)).toBe(1);
+  });
+});
+
 describe('listerContactsCampagne', () => {
   const campagneId = '11111111-1111-1111-1111-111111111111';
 
@@ -414,6 +435,57 @@ describe('listerContactsCampagne', () => {
     const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const appelLignes = appels.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
     expect(appelLignes?.[1]).toEqual([campagneId, 'en_sequence', null, 50, 50]);
+  });
+
+  // R81 : `current_step` peut dépasser le nombre d'étapes une fois la séquence
+  // épuisée (`composeTick` avance `current_step` à `steps.length`) — sans
+  // bornage, une campagne à une seule étape affichait « Étape 2 ».
+  it('borne l’étape affichée au nombre d’étapes de la campagne (R81)', async () => {
+    const ctx = faux({
+      'jr:total_etapes_campagne': [{ n: 1 }],
+      'jr:compteurs_contacts_campagne': [{ statut: 'termine', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Léa',
+          last_name: 'Fontaine',
+          job_title: 'Head of Sales',
+          email: 'lea@exemple.fr',
+          entreprise: 'Ondine',
+          current_step: 1,
+          statut: 'termine',
+          score: 77,
+          pourquoi: 'SDR confirmé',
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]!.etape).toBe(1);
+  });
+
+  it('ne borne pas quand la campagne n’a pas encore d’étape connue (totalEtapes à 0, calcul d’origine conservé)', async () => {
+    const ctx = faux({
+      'jr:total_etapes_campagne': [{ n: 0 }],
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: null,
+          email: 'karim@exemple.fr',
+          entreprise: null,
+          current_step: 0,
+          statut: 'en_sequence',
+          score: null,
+          pourquoi: null,
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]!.etape).toBe(1);
   });
 });
 

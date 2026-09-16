@@ -117,7 +117,7 @@ export const FROM_POPULATION_CAMPAGNE = `from (
       join contacts c on c.id = pop.contact_id
       left join signals s on s.id = pop.signal_id
       left join lateral (
-        select e2.id as enrollment_id, e2.status, e2.current_step
+        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at
           from enrollments e2
          where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc
@@ -149,6 +149,24 @@ function formatterHeure(iso: string, fuseau: string): string {
 function motifRecherche(recherche: string | undefined): string | null {
   if (!recherche) return null;
   return `%${recherche.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * Numéro d'étape à afficher (colonne « Étape », tâche 10 réutilisée par la
+ * tâche 18) — R81 : `current_step` (0-based, `enrollments`) dépasse le nombre
+ * réel d'étapes une fois la séquence épuisée (`composeTick`,
+ * `packages/core/src/sequencer/tick.ts` : `nextStep = steps.length` sur la
+ * dernière étape), ce qui affichait « Étape 2 » sur une séquence à une seule
+ * étape terminée. Bornée au nombre d'étapes de LA campagne : jamais un numéro
+ * qui n'existe pas dans `sequence_steps`. Sans inscription (`currentStep`
+ * `null`), reste `null` (pas de colonne Étape à afficher — inchangé).
+ * `totalEtapes` à 0 (campagne sans étape, ex. brouillon) : pas de bornage,
+ * on garde le calcul d'origine plutôt que d'écraser à 0.
+ */
+export function etapeAffichee(currentStep: number | null, totalEtapes: number): number | null {
+  if (currentStep === null) return null;
+  const brute = currentStep + 1;
+  return totalEtapes > 0 ? Math.min(brute, totalEtapes) : brute;
 }
 
 /**
@@ -729,6 +747,16 @@ export async function listerContactsCampagne(
     [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS],
   );
 
+  // Requête séparée (pas une sous-requête corrélée par ligne) : une seule campagne pour tout
+  // l'appel, le compte d'étapes ne varie pas d'une ligne à l'autre. Placée APRÈS les deux
+  // requêtes ci-dessus (et non en tête) : ne change pas ce que `mock.calls[0]` désigne dans
+  // les tests déjà écrits contre `compteursRes` en premier appel.
+  const totalEtapesRes = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n from sequence_steps /* jr:total_etapes_campagne */ where campaign_id = $1`,
+    [campagneId],
+  );
+  const totalEtapes = totalEtapesRes.rows[0]?.n ?? 0;
+
   const lignes: ContactCampagne[] = lignesRes.rows.map((r) => ({
     signalId: r.signal_id,
     contactId: r.contact_id,
@@ -737,7 +765,7 @@ export async function listerContactsCampagne(
     entreprise: r.entreprise,
     email: r.email,
     statut: r.statut,
-    etape: r.current_step !== null ? r.current_step + 1 : null,
+    etape: etapeAffichee(r.current_step, totalEtapes),
     score: r.score,
     pourquoi: r.pourquoi,
   }));

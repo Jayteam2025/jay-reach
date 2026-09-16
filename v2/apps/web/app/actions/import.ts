@@ -293,6 +293,7 @@ export async function actionImporterCsvDansCampagne(
     revalidatePath(`/campaigns/${campagneId}/sources`);
     revalidatePath(`/campaigns/${campagneId}/contacts`);
     revalidatePath(`/campaigns/${campagneId}`);
+    revalidatePath('/contacts');
     return { ok: true, ...r };
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, error: 'Droit opérateur requis.' };
