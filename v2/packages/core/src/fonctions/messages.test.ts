@@ -27,7 +27,12 @@ function appelsDe(ctx: Contexte): { sql: string; params: unknown[] }[] {
 function fauxConnectable(
   rows: Record<string, unknown[]>,
   role: Contexte['role'] = 'admin',
-): { ctx: Contexte; appelsClient: () => string[]; releases: () => number } {
+): {
+  ctx: Contexte;
+  appelsClient: () => string[];
+  appelsClientDetail: () => { sql: string; params: unknown[] }[];
+  releases: () => number;
+} {
   let releases = 0;
   const resoudre = (sql: string) => {
     for (const [motif, r] of Object.entries(rows)) {
@@ -55,6 +60,11 @@ function fauxConnectable(
   return {
     ctx,
     appelsClient: () => (clientQuery.mock.calls as unknown[][]).map((a) => String(a[0])),
+    appelsClientDetail: () =>
+      (clientQuery.mock.calls as unknown[][]).map((a) => ({
+        sql: String(a[0]),
+        params: (a[1] as unknown[]) ?? [],
+      })),
     releases: () => releases,
   };
 }
@@ -126,13 +136,62 @@ describe('listerModeles', () => {
     expect(m!.sujet).toBeNull();
   });
 
-  it('filtre par organisation courante et par la locale par défaut de l’organisation', async () => {
+  it('filtre par organisation courante, par la locale par défaut de l’organisation et par origin = library', async () => {
     const ctx = faux({ 'jr:messages_lister': [] });
     await listerModeles(ctx, {});
     const appel = appelsDe(ctx).find((a) => /jr:messages_lister/.test(a.sql))!;
     expect(appel.sql).toMatch(/is_active/);
     expect(appel.sql).toMatch(/default_locale/);
+    expect(appel.sql).toMatch(/origin\s*=\s*'library'/);
     expect(appel.params).toEqual(['org-1']);
+  });
+
+  it('exclut les brouillons d’étape (origin = step, écrits par enregistrerEtape à chaque étape de séquence) : seules les lignes origin = library apparaissent', async () => {
+    const modeleBibliotheque = {
+      id: familyId,
+      family_id: familyId,
+      name: 'Premier email · question DC',
+      channel: 'email',
+      subject: 'Objet',
+      body: 'Corps',
+      created_at: '2026-09-11T10:00:00.000Z',
+      modifie_par: null,
+      campagnes: [],
+      envois: 0,
+      origin: 'library',
+    };
+    const brouillonEtape = {
+      id: 'step-template-1',
+      family_id: 'step-template-1',
+      // Nommé comme la campagne (`enregistrerEtape`, `sequence.ts:469`) — jamais versé dans la bibliothèque.
+      name: 'Directeur commercial',
+      channel: 'email',
+      subject: 'Objet étape',
+      body: 'Corps étape',
+      created_at: '2026-09-12T10:00:00.000Z',
+      modifie_par: null,
+      campagnes: [],
+      envois: 3,
+      origin: 'step',
+    };
+    // Faux exécuteur qui EXÉCUTE réellement la clause `origin = 'library'` de la
+    // requête (contrairement au `faux()` partagé, qui associe un motif à des
+    // lignes fixes sans regarder le texte de la clause `where`) : sans le
+    // filtre, ce test échouerait en renvoyant les deux lignes.
+    const query = vi.fn(async (sql: string) => {
+      if (!/jr:messages_lister/i.test(sql)) return { rows: [], rowCount: 0 };
+      const toutes = [modeleBibliotheque, brouillonEtape];
+      const filtrees = /origin\s*=\s*'library'/i.test(sql)
+        ? toutes.filter((r) => r.origin === 'library')
+        : toutes;
+      return { rows: filtrees, rowCount: filtrees.length };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    const modeles = await listerModeles(ctx, {});
+
+    expect(modeles).toHaveLength(1);
+    expect(modeles[0]!.nom).toBe('Premier email · question DC');
   });
 });
 
@@ -164,9 +223,9 @@ describe('enregistrerModele', () => {
     ).rejects.toThrow(ErreurEntree);
   });
 
-  it('crée une nouvelle lignée avec la locale par défaut de l’organisation (R61)', async () => {
+  it('crée une nouvelle lignée avec la locale par défaut de l’organisation (R61), toujours en origin = library', async () => {
     const nouveauId = '99999999-9999-9999-9999-999999999999';
-    const { ctx, appelsClient, releases } = fauxConnectable({
+    const { ctx, appelsClient, appelsClientDetail, releases } = fauxConnectable({
       'jr:messages_organisation_locale': [{ default_locale: 'nl' }],
       'jr:sequence_extraits': [],
       'jr:sequence_modele_creer': [{ id: nouveauId }],
@@ -178,6 +237,10 @@ describe('enregistrerModele', () => {
     const creation = appelsClient().find((s) => /jr:sequence_modele_creer/.test(s));
     expect(creation).toBeDefined();
     expect(releases()).toBe(1);
+    // `enregistrerModele` fige `origin: 'library'` (jamais 'step', réservé à `enregistrerEtape`) —
+    // (organization_id, name, channel, locale, version, subject, body, is_active, origin, created_by).
+    const detailCreation = appelsClientDetail().find((a) => /jr:sequence_modele_creer/.test(a.sql))!;
+    expect(detailCreation.params[6]).toBe('library');
   });
 
   it('verse une nouvelle version dans une lignée existante (familyId fourni)', async () => {

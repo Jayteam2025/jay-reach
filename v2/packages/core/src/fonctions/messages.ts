@@ -52,6 +52,15 @@ interface LigneModele {
  * `organizations.default_locale`, pas d'une colonne de `campaigns`) — une
  * organisation ne travaille qu'une langue à la fois, jamais un mélange dans
  * cette bibliothèque.
+ *
+ * `mt.origin = 'library'` (tour de correction 1, bloquant de relecture) :
+ * `enregistrerEtape` (`sequence.ts`) écrit une ligne `message_templates` à
+ * CHAQUE écriture d'étape, avec `origin: 'step'` — un brouillon d'étape, pas
+ * un modèle réutilisable (migration `20260831210000_messages_ecrits_dans_la_sequence.sql`).
+ * Sans ce filtre, la bibliothèque affiche une ligne nommée comme la campagne
+ * dès qu'un opérateur écrit le message d'une étape, sur N'IMPORTE quelle
+ * campagne — jamais « versée » (`verserDansBibliotheque`) et pas censée être
+ * réutilisable ailleurs.
  */
 export async function listerModeles(ctx: Contexte, entree: unknown): Promise<ModeleMessage[]> {
   exiger(ctx, 'viewer');
@@ -68,7 +77,7 @@ export async function listerModeles(ctx: Contexte, entree: unknown): Promise<Mod
        left join sequence_steps ss on ss.template_parent_id = coalesce(mt.parent_id, mt.id)
        left join campaigns c on c.id = ss.campaign_id and c.organization_id = mt.organization_id
        left join actions a on a.step_id = ss.id and a.status in ('dispatched', 'delivered')
-      where mt.organization_id = $1 and mt.is_active and mt.locale = o.default_locale
+      where mt.organization_id = $1 and mt.is_active and mt.locale = o.default_locale and mt.origin = 'library'
       group by mt.id, mt.parent_id, mt.name, mt.channel, mt.subject, mt.body, mt.created_at, u.raw_user_meta_data, u.email
       order by mt.created_at desc`,
     [ctx.organisationId],
