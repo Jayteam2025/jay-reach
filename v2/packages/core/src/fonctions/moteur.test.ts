@@ -2,7 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { ForbiddenError } from '../roles.js';
 import type { Contexte } from './contexte.js';
-import { INTERVALLE_TICK_MS, lireEtatMoteur } from './moteur.js';
+import { ErreurEntree } from './contexte.js';
+import {
+  INTERVALLE_TICK_MS,
+  lireEtatMoteur,
+  basculerPauseEnvoi,
+  lireEtatPauseEnvoi,
+  listerErreursRecentes,
+  listerTaches,
+  lancerTache,
+} from './moteur.js';
 
 /** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
 function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'admin'): Contexte {
@@ -89,5 +98,217 @@ describe('lireEtatMoteur', () => {
     const etat = await lireEtatMoteur(ctx);
     expect(etat).not.toHaveProperty('hostname');
     expect(etat).not.toHaveProperty('instance_id');
+  });
+});
+
+/** Fabrique un `Executeur` factice où `query` est un espion contrôlé directement par le test. */
+function fauxExecuteur(query: Executeur['query'], role: Contexte['role'] = 'admin'): Contexte {
+  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
+}
+
+describe('basculerPauseEnvoi', () => {
+  it('refuse un rôle inférieur à admin', async () => {
+    const ctx = fauxExecuteur(vi.fn(), 'operator');
+    await expect(basculerPauseEnvoi(ctx, { pause: true })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('refuse une entrée dont `pause` n’est pas un booléen', async () => {
+    const ctx = fauxExecuteur(vi.fn(), 'admin');
+    await expect(basculerPauseEnvoi(ctx, { pause: 'oui' })).rejects.toThrow(ErreurEntree);
+  });
+
+  it('pose sending_paused_at et journalise sending_paused quand on active la pause', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/update organizations/i.test(sql)) return { rows: [], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx = fauxExecuteur(query, 'admin');
+
+    await basculerPauseEnvoi(ctx, { pause: true });
+
+    const appelUpdate = (query as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(([sql]) =>
+      /update organizations/i.test(sql as string),
+    );
+    expect(appelUpdate).toBeDefined();
+    expect(String(appelUpdate![0])).toMatch(/sending_paused_at\s*=\s*now\(\)/i);
+    expect(appelUpdate![0]).toContain('sending_paused_at is null');
+
+    const appelJournal = (query as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(([sql]) =>
+      /insert into audit_events/i.test(sql as string),
+    );
+    expect(appelJournal).toBeDefined();
+    expect(appelJournal![1]).toEqual(expect.arrayContaining(['sending_paused']));
+  });
+
+  it('lève la pause, efface le motif et journalise sending_resumed', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/update organizations/i.test(sql)) return { rows: [], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx = fauxExecuteur(query, 'owner');
+
+    await basculerPauseEnvoi(ctx, { pause: false });
+
+    const appelUpdate = (query as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(([sql]) =>
+      /update organizations/i.test(sql as string),
+    );
+    expect(String(appelUpdate![0])).toMatch(/sending_paused_at\s*=\s*null/i);
+    expect(String(appelUpdate![0])).toMatch(/sending_paused_reason\s*=\s*null/i);
+
+    const appelJournal = (query as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(([sql]) =>
+      /insert into audit_events/i.test(sql as string),
+    );
+    expect(appelJournal![1]).toEqual(expect.arrayContaining(['sending_resumed']));
+  });
+
+  it("n'écrit aucun événement si l'état ne change pas (déjà dans l'état demandé)", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/update organizations/i.test(sql)) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx = fauxExecuteur(query, 'admin');
+
+    await basculerPauseEnvoi(ctx, { pause: true });
+
+    const appelJournal = (query as unknown as { mock: { calls: unknown[][] } }).mock.calls.find(([sql]) =>
+      /insert into audit_events/i.test(sql as string),
+    );
+    expect(appelJournal).toBeUndefined();
+  });
+});
+
+describe('lireEtatPauseEnvoi', () => {
+  it('refuse un contexte sans rôle', async () => {
+    const ctx = fauxExecuteur(vi.fn(async () => ({ rows: [], rowCount: 0 })), null);
+    await expect(lireEtatPauseEnvoi(ctx)).rejects.toThrow(ForbiddenError);
+  });
+
+  it("l'organisation n'a jamais été mise en pause : rien de courant, aucune dernière pause", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/jr:moteur_pause_etat/i.test(sql)) return { rows: [{ sending_paused_at: null, sending_paused_reason: null }], rowCount: 1 };
+      if (/jr:moteur_pause_historique/i.test(sql)) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    });
+    const ctx = fauxExecuteur(query as unknown as Executeur['query'], 'viewer');
+
+    const etat = await lireEtatPauseEnvoi(ctx);
+
+    expect(etat).toEqual({ actif: false, depuis: null, motif: null, depuisQui: null, dernierePause: null });
+  });
+
+  it('en pause actuellement : `actif` et `depuis` reflètent organizations, la dernière pause reste la fenêtre déjà refermée', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/jr:moteur_pause_etat/i.test(sql))
+        return { rows: [{ sending_paused_at: '2026-09-16T14:20:00.000Z', sending_paused_reason: 'import douteux' }], rowCount: 1 };
+      if (/jr:moteur_pause_historique/i.test(sql))
+        return {
+          rows: [
+            { created_at: '2026-09-16T14:20:00.000Z', action: 'sending_paused', acteur_nom: 'Claire Moreau' },
+            { created_at: '2026-09-11T16:05:00.000Z', action: 'sending_resumed', acteur_nom: 'Claire Moreau' },
+            { created_at: '2026-09-11T14:20:00.000Z', action: 'sending_paused', acteur_nom: 'Claire Moreau' },
+          ],
+          rowCount: 3,
+        };
+      return { rows: [], rowCount: 0 };
+    });
+    const ctx = fauxExecuteur(query as unknown as Executeur['query'], 'viewer');
+
+    const etat = await lireEtatPauseEnvoi(ctx);
+
+    expect(etat.actif).toBe(true);
+    expect(etat.depuis).toBe('2026-09-16T14:20:00.000Z');
+    expect(etat.motif).toBe('import douteux');
+    expect(etat.depuisQui).toBe('Claire Moreau');
+    expect(etat.dernierePause).toEqual({
+      depuis: '2026-09-11T14:20:00.000Z',
+      jusqua: '2026-09-11T16:05:00.000Z',
+      parQui: 'Claire Moreau',
+    });
+  });
+});
+
+describe('listerErreursRecentes', () => {
+  it('refuse un contexte sans rôle', async () => {
+    const ctx = fauxExecuteur(vi.fn(async () => ({ rows: [], rowCount: 0 })), null);
+    await expect(listerErreursRecentes(ctx)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('lit les erreurs moteur des 7 derniers jours, du plus récent au plus ancien', async () => {
+    const lignes = [
+      { created_at: '2026-09-16T08:12:00.000Z', diff: { libelle: 'SalesBlink a répondu 429', detail: 'nouvel essai réussi à 08:17' } },
+      { created_at: '2026-09-11T00:00:00.000Z', diff: { libelle: 'FullEnrich : délai dépassé sur 1 contact' } },
+    ];
+    const query = vi.fn(async (sql: string) => {
+      if (/jr:moteur_erreurs_recentes/i.test(sql)) return { rows: lignes, rowCount: lignes.length };
+      return { rows: [], rowCount: 0 };
+    });
+    const ctx = fauxExecuteur(query as unknown as Executeur['query'], 'viewer');
+
+    const erreurs = await listerErreursRecentes(ctx);
+
+    expect(erreurs).toEqual([
+      { quand: lignes[0]!.created_at, libelle: 'SalesBlink a répondu 429', detail: 'nouvel essai réussi à 08:17' },
+      { quand: lignes[1]!.created_at, libelle: 'FullEnrich : délai dépassé sur 1 contact', detail: null },
+    ]);
+    const appel = query.mock.calls.find(([sql]) => /jr:moteur_erreurs_recentes/i.test(sql));
+    expect(String(appel![0])).toContain("entity_type = 'engine'");
+    expect(String(appel![0])).toContain("action = 'engine_error'");
+    expect(String(appel![0])).toMatch(/interval\s*'7 days'/i);
+  });
+});
+
+describe('listerTaches', () => {
+  it('refuse un contexte sans rôle', async () => {
+    const ctx = fauxExecuteur(vi.fn(async () => ({ rows: [], rowCount: 0 })), null);
+    await expect(listerTaches(ctx)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('agrège les compteurs des cinq tâches, sources seule marquée lançable', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/jr:moteur_taches_sources/i.test(sql)) return { rows: [{ n: 3, dernier: '2026-09-16T09:00:00.000Z' }], rowCount: 1 };
+      if (/jr:moteur_taches_scoring/i.test(sql)) return { rows: [{ n: 136 }], rowCount: 1 };
+      if (/jr:moteur_taches_enrichissement/i.test(sql)) return { rows: [{ n: 2 }], rowCount: 1 };
+      if (/jr:moteur_taches_releve/i.test(sql)) return { rows: [{ provider: 'salesblink', last_run_at: '2026-09-16T10:44:00.000Z', cursor_ms: 1700000000000 }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx = fauxExecuteur(query, 'viewer');
+
+    const taches = await listerTaches(ctx);
+
+    expect(taches.sources).toEqual({ lancable: true, actives: 3, dernierPassage: '2026-09-16T09:00:00.000Z' });
+    expect(taches.scoring).toEqual({ lancable: false, enAttente: 136 });
+    expect(taches.enrichissement).toEqual({ lancable: false, enAttente: 2 });
+    expect(taches.releve).toEqual({ lancable: false, dernierPassage: '2026-09-16T10:44:00.000Z' });
+  });
+});
+
+describe('lancerTache', () => {
+  it('refuse un rôle inférieur à operator', async () => {
+    const ctx = fauxExecuteur(vi.fn(), 'viewer');
+    await expect(lancerTache(ctx, { tache: 'sources' })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('refuse une tâche inconnue', async () => {
+    const ctx = fauxExecuteur(vi.fn(), 'operator');
+    await expect(lancerTache(ctx, { tache: 'catchup' })).rejects.toThrow(ErreurEntree);
+  });
+
+  it('ne déclenche que les sources actives rattachées à une campagne active (R72), et journalise', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/update sources/i.test(sql)) return { rows: [], rowCount: 3 };
+      return { rows: [], rowCount: 0 };
+    });
+    const ctx = fauxExecuteur(query as unknown as Executeur['query'], 'operator');
+
+    const resultat = await lancerTache(ctx, { tache: 'sources' });
+
+    expect(resultat).toEqual({ sourcesDeclenchees: 3 });
+    const appelUpdate = query.mock.calls.find(([sql]) => /update sources/i.test(sql));
+    expect(String(appelUpdate![0])).toMatch(/run_requested_at\s*=\s*now\(\)/i);
+    expect(String(appelUpdate![0])).toContain("c.status = 'active'");
+    expect(String(appelUpdate![0])).toContain('s.is_active = true');
+
+    const appelJournal = query.mock.calls.find(([sql]) => /insert into audit_events/i.test(sql));
+    expect(appelJournal).toBeDefined();
   });
 });

@@ -15,3 +15,4 @@ export * from './expediteurs.js';
 export * from './fournisseurs.js';
 export * from './personas.js';
 export * from './messages.js';
+export * from './compte.js';

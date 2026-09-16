@@ -62,7 +62,14 @@ export type ActionJournal =
   // contacter ». Même limite que `source.*`/`step.*` ci-dessus : pas encore
   // repris dans `listerActivite` (campagnes.ts).
   | 'contact.note_added'
-  | 'contact.marked_do_not_contact';
+  | 'contact.marked_do_not_contact'
+  // Pause d'envoi globale de l'organisation (tâche 23, `fonctions/moteur.ts`,
+  // `basculerPauseEnvoi`) — distincte de `campaign_paused` (une seule
+  // campagne) : celle-ci coupe tous les canaux de toutes les campagnes.
+  // Écrite avec `entityType: 'engine'`, `entityId: null` (aucune ligne
+  // précise, même bucket que `engine_error`).
+  | 'sending_paused'
+  | 'sending_resumed';
 
 export interface EvenementJournal {
   readonly organisationId: string;

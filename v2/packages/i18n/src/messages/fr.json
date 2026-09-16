@@ -1925,6 +1925,146 @@
         "body": "Corps",
         "bodyHint": "Variables : cliquez pour insérer au curseur."
       }
+    },
+    "moteur": {
+      "titre": "Moteur",
+      "description": "Le moteur tourne sur le serveur de Jay Reach, en continu. Il passe toutes les minutes ; les sources, le scoring, l'enrichissement, les envois et la relève des réponses sont ses tâches.",
+      "etat": {
+        "titre": "État",
+        "enMarche": "En marche",
+        "arrete": "Arrêté",
+        "version": "version {version}",
+        "dernierPassage": "Dernier passage",
+        "prochainPassage": "Prochain",
+        "aucunPassage": "—",
+        "derniereErreur": "Dernière erreur",
+        "aucuneErreur": "Aucune",
+        "tachesEnAttente": "Tâches en attente",
+        "aucuneTache": "Aucune",
+        "tachesEnAttenteGabarit": "{scoring} scoring(s) · {enrichissement} enrichissement(s)"
+      },
+      "pause": {
+        "titre": "Pause d'envoi globale",
+        "description": "Coupe tous les envois de toutes les campagnes, sans rien annuler : les emails partiront quand la pause sera levée. Les sources, le scoring et la relève continuent.",
+        "etat": "État",
+        "levee": "levée",
+        "active": "active",
+        "dernierePause": "Dernière pause",
+        "aucunePause": "Aucune pause enregistrée.",
+        "dernierePauseGabarit": "{depuis} à {jusqua} · {parQui}",
+        "erreur": "La pause n'a pas pu être changée."
+      },
+      "taches": {
+        "titre": "Lancer une tâche maintenant",
+        "sousTitre": "sans attendre le prochain passage planifié",
+        "lancer": "Lancer",
+        "enCours": "En cours",
+        "erreur": "La tâche n'a pas pu être lancée.",
+        "sources": {
+          "titre": "Passage de toutes les sources",
+          "detailGabarit": "{actives} source(s) active(s) · dernier passage {dernier}",
+          "detailAucunPassage": "{actives} source(s) active(s) · aucun passage encore"
+        },
+        "scoring": {
+          "titre": "Scoring des signaux en attente",
+          "detailGabarit": "{n} signal(aux) en attente",
+          "detailVide": "aucun signal en attente"
+        },
+        "enrichissement": {
+          "titre": "Enrichissement des contacts sans email",
+          "detailGabarit": "{n} contact(s) en attente",
+          "detailVide": "aucun contact en attente"
+        },
+        "releve": {
+          "titre": "Relève des réponses SalesBlink",
+          "detailGabarit": "dernière relève {quand}",
+          "detailJamais": "jamais encore relevée"
+        }
+      },
+      "erreurs": {
+        "titre": "Erreurs récentes",
+        "sousTitre": "7 jours",
+        "vide": "Aucune erreur ces sept derniers jours."
+      },
+      "releveLectureSeule": {
+        "titre": "Relève des réponses",
+        "sousTitre": "lecture seule",
+        "cadence": "Cadence",
+        "cadenceValeur": "toutes les 5 min",
+        "derniere": "Dernière relève",
+        "jamais": "jamais",
+        "aide": "Réglé par l'environnement du serveur. Se change avec un redéploiement, pas ici."
+      },
+      "bandeauPause": {
+        "texteGabarit": "Pause d'envoi active depuis {depuis} ({parQui}) : aucun email ne part.",
+        "auteurInconnu": "auteur inconnu"
+      },
+      "bandeauSilencieux": {
+        "texteGabarit": "Le moteur n'a pas donné signe de vie depuis le dernier passage ({dernier}). Les envois planifiés attendent.",
+        "texteJamaisDemarre": "Le moteur n'a jamais tourné sur cette instance.",
+        "lien": "Voir les erreurs"
+      }
+    },
+    "compte": {
+      "titre": "Compte",
+      "description": "L'organisation, ses membres et vos notifications.",
+      "organisation": {
+        "titre": "Organisation",
+        "nom": "Nom",
+        "fuseau": "Fuseau horaire",
+        "fuseauAide": "heures affichées et fenêtres d'envoi par défaut",
+        "langue": "Langue de l'interface",
+        "langueAide": "aussi en anglais et en néerlandais",
+        "enregistrer": "Enregistrer",
+        "erreur": "L'organisation n'a pas pu être enregistrée."
+      },
+      "membres": {
+        "titre": "Membres",
+        "compteGabarit": "{count} · un propriétaire au moins",
+        "inviter": "+ Inviter par email",
+        "colonneMembre": "Membre",
+        "colonneEmail": "Email",
+        "colonneRole": "Rôle",
+        "colonneDepuis": "Depuis",
+        "vous": "vous",
+        "retirer": "Retirer",
+        "enAttenteSuffixe": "en attente",
+        "role": {
+          "owner": "Propriétaire",
+          "admin": "Administrateur",
+          "operator": "Opérateur",
+          "viewer": "Lecture seule"
+        },
+        "aide": "Propriétaire et administrateur règlent tout. Opérateur pilote les campagnes et la Réception. Lecture seule voit sans toucher.",
+        "erreur": "L'action n'a pas pu être effectuée."
+      },
+      "notifications": {
+        "titre": "Mes notifications",
+        "sousTitre": "par email et dans l'app",
+        "erreur": "La préférence n'a pas pu être enregistrée.",
+        "evenement": {
+          "reply_received": {
+            "titre": "Une réponse arrive",
+            "detail": "à chaque réponse humaine détectée"
+          },
+          "send_failed": {
+            "titre": "Un envoi échoue",
+            "detail": "rebond, refus ou boîte injoignable"
+          },
+          "sender_disconnected": {
+            "titre": "Une boîte est déconnectée",
+            "detail": "SalesBlink ne peut plus envoyer"
+          },
+          "quota_reached": {
+            "titre": "Un plafond est atteint",
+            "detail": "scoring, enrichissement ou envois du jour"
+          },
+          "daily_digest": {
+            "titre": "Résumé du jour à 18 h",
+            "detail": "envois, réponses, intéressés, erreurs"
+          }
+        }
+      }
     }
   },
   "contacts": {

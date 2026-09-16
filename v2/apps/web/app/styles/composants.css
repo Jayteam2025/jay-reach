@@ -363,6 +363,13 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-actions.fin { justify-content: flex-end; }
 .jr-petit { font-size: var(--jr-petit); }
 .jr-journal .erreur { color: var(--jr-erreur); } .jr-journal .attention { color: var(--jr-attention); }
+.jr-texte-erreur { color: var(--jr-erreur); }
+
+/* Réglages : Moteur et Compte (tâche 23) */
+.jr-reglages-corps { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.jr-etat-entete { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.jr-pause-ligne { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.jr-pause-ligne .texte { font-size: 13.5px; max-width: 48ch; }
 
 /* Tour de correction 1 (tâche 10) : classes utilitaires qui remplacent des `style={{ … }}` de mise en page (R37). */
 .jr-ligne-entre { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
