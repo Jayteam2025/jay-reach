@@ -6,11 +6,11 @@ import { useTranslations } from 'next-intl';
 
 /**
  * Sous-navigation des sept pages de Réglages (tâche 20, maquettes
- * `reglages-*.html`). Seules quatre des six autres pages ont déjà une route
- * (Fournisseurs, Personas, Messages, Moteur — les anciennes pages
- * `/settings/{providers,personas,templates,jobs}`, reprises telles quelles
- * jusqu'aux tâches 21 à 23) : Plafonds et Compte n'existent pas encore et
- * s'affichent en lecture seule (`desactive`), pas en lien mort.
+ * `reglages-*.html`). Cinq des six autres pages ont déjà leur route neuve
+ * (Fournisseurs, Personas, Messages, Expéditeurs — Moteur reste sur
+ * l'ancienne `/settings/jobs` jusqu'à la tâche 23) : Plafonds et Compte
+ * n'existent pas encore et s'affichent en lecture seule (`desactive`), pas en
+ * lien mort.
  */
 interface EntreeNavReglages {
   readonly cle: string;
@@ -22,7 +22,7 @@ const ENTREES: EntreeNavReglages[] = [
   { cle: 'limits', href: null },
   { cle: 'providers', href: '/settings/providers' },
   { cle: 'personas', href: '/settings/personas' },
-  { cle: 'messages', href: '/settings/templates' },
+  { cle: 'messages', href: '/settings/messages' },
   { cle: 'engine', href: '/settings/jobs' },
   { cle: 'account', href: null },
 ];

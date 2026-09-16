@@ -1,25 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { decideAccess, isPublicPath, PUBLIC_PREFIXES } from './auth-guard';
 
-// Les 17 écrans applicatifs (routes protégées) — aucun n'a de garde propre, la
+// Les écrans applicatifs (routes protégées) — aucun n'a de garde propre, la
 // protection tient au middleware, d'où ce test qui échoue si la politique laisse
-// passer une route applicative sans session.
+// passer une route applicative sans session. Depuis la tâche 24, il ne reste
+// que le nouveau design : cinq entrées et leurs pages (les anciennes routes
+// redirigent désormais, voir `redirections.test.ts`).
 const APP_ROUTES = [
   '/',
-  '/signals',
-  '/prospects',
-  '/annuaire',
   '/campaigns',
   '/campaigns/123',
+  '/contacts',
   '/inbox',
-  '/approvals',
-  '/import',
-  '/settings/linkedin',
-  '/settings/sources',
   '/settings/personas',
-  '/settings/customers',
   '/settings/providers',
   '/settings/senders',
+  '/settings/messages',
+  '/settings/limits',
 ];
 
 describe('decideAccess — garde d’authentification du middleware', () => {
@@ -63,7 +60,7 @@ describe('decideAccess — garde d’authentification du middleware', () => {
   it('les chemins publics restent accessibles sans session quand Supabase est configuré', () => {
     const publicPaths = [
       '/login',
-      '/login?next=/signals',
+      '/login?next=/campaigns',
       '/api/extension/linkedin/next',
       '/api/extension/linkedin/update',
       '/api/health',

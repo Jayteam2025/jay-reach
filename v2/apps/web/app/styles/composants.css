@@ -389,3 +389,13 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-sans-retrait-droite { padding-right: 0; }
 /* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la largeur, ce bloc coupe proprement. */
 .jr-tronque { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+
+/* États de chargement (squelette.tsx) : barre grise animée, reprise par chaque écran dans sa propre forme. */
+.jr-skel { display: inline-block; background: var(--jr-filet); border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .jr-skel { animation: jr-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes jr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}

@@ -74,11 +74,6 @@ export default async function ReglagesExpediteursPage() {
           <h2>{t('linkedin.title')}</h2>
           <p>{t('linkedin.lead')}</p>
         </div>
-        {peutModifier && (
-          <a className="jr-bouton" href="/settings/linkedin">
-            {t('linkedin.addAccount')}
-          </a>
-        )}
       </div>
 
       {!comptesResultat.ok ? (
