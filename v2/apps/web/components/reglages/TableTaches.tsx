@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { Fragment, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bouton, Carte, Puce } from '../ui';
 import { actionLancerTache } from '../../app/actions/moteur';
@@ -11,6 +11,16 @@ export interface LigneTache {
   detail: string;
   lancable: boolean;
   enCours?: boolean;
+  /**
+   * Ligne d'aide sous la tâche (tour de correction 1, Important n° 1) :
+   * réservée aux tâches dont le bouton est désactivé parce qu'elles tournent
+   * déjà en continu côté worker (scoring, enrichissement) — jamais pour
+   * « sources » (bouton actif, rien à expliquer) ni pour « relève » (déjà
+   * couverte par sa propre carte en lecture seule, `releveLectureSeule`).
+   * Un bouton désactivé sans cette aide laisserait l'opérateur croire à un
+   * bug plutôt qu'à un fonctionnement normal.
+   */
+  aide?: string;
 }
 
 export interface TableTachesLibelles {
@@ -39,24 +49,27 @@ export function CorpsTableTaches({ lignes, enAttente, onLancer, libelles }: Corp
     >
       <div style={{ paddingTop: 4 }}>
         {lignes.map((ligne) => (
-          <div key={ligne.cle} className="jr-source">
-            <span className="jr-tuile-logo em">▶</span>
-            <span>
-              <b>{ligne.titre}</b>
-              <small>{ligne.detail}</small>
-            </span>
-            <span className="jr-actions">
-              {ligne.enCours && <Puce ton="accent">{libelles.enCours}</Puce>}
-              <Bouton
-                taille="petit"
-                disabled={!ligne.lancable || enAttente !== null}
-                aria-busy={enAttente === ligne.cle}
-                onClick={() => onLancer(ligne.cle)}
-              >
-                {libelles.lancer}
-              </Bouton>
-            </span>
-          </div>
+          <Fragment key={ligne.cle}>
+            <div className="jr-source">
+              <span className="jr-tuile-logo em">▶</span>
+              <span>
+                <b>{ligne.titre}</b>
+                <small>{ligne.detail}</small>
+              </span>
+              <span className="jr-actions">
+                {ligne.enCours && <Puce ton="accent">{libelles.enCours}</Puce>}
+                <Bouton
+                  taille="petit"
+                  disabled={!ligne.lancable || enAttente !== null}
+                  aria-busy={enAttente === ligne.cle}
+                  onClick={() => onLancer(ligne.cle)}
+                >
+                  {libelles.lancer}
+                </Bouton>
+              </span>
+            </div>
+            {ligne.aide && <p className="jr-aide jr-tache-aide">{ligne.aide}</p>}
+          </Fragment>
         ))}
       </div>
     </Carte>

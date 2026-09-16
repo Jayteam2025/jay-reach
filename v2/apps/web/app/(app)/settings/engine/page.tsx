@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import {
+  INTERVALLE_PRODUCTION_MS,
   lireEtatMoteur,
   lireEtatPauseEnvoi,
   lireReglages,
@@ -36,6 +37,11 @@ export default async function ReglagesMoteurPage() {
       ? t('etat.tachesEnAttenteGabarit', { scoring: taches.scoring.enAttente, enrichissement: taches.enrichissement.enAttente })
       : null;
 
+  // Tour de correction 1 (Important n° 1) : les deux tâches sans mécanisme de
+  // déclenchement immédiat (voir `listerTaches`, `packages/core`) portent une
+  // ligne d'aide qui le dit — jamais un bouton grisé sans explication.
+  const aideTraitementContinu = t('taches.continuAideGabarit', { minutes: INTERVALLE_PRODUCTION_MS / 60_000 });
+
   const lignesTaches: LigneTache[] = [
     {
       cle: 'sources',
@@ -57,6 +63,7 @@ export default async function ReglagesMoteurPage() {
           ? t('taches.scoring.detailGabarit', { n: taches.scoring.enAttente })
           : t('taches.scoring.detailVide'),
       lancable: taches.scoring.lancable,
+      aide: aideTraitementContinu,
     },
     {
       cle: 'enrichissement',
@@ -66,6 +73,7 @@ export default async function ReglagesMoteurPage() {
           ? t('taches.enrichissement.detailGabarit', { n: taches.enrichissement.enAttente })
           : t('taches.enrichissement.detailVide'),
       lancable: taches.enrichissement.lancable,
+      aide: aideTraitementContinu,
     },
     {
       cle: 'releve',

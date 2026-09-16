@@ -8,8 +8,7 @@ import { createClient } from '../../lib/supabase/server';
 import { contexteCourant } from '../../lib/contexte';
 import {
   DEFAUT_ACTIF_NOTIFICATION,
-  EVENEMENTS_NOTIFICATION,
-  type EvenementNotification,
+  EVENEMENTS_NOTIFICATION_ACTIFS,
   type PreferenceNotification,
 } from '../../lib/notification-events';
 
@@ -54,7 +53,8 @@ export async function listerPreferencesNotifications(): Promise<PreferenceNotifi
   // authentifié ici, `utilisateurId` n'est donc jamais `null` en pratique —
   // le type de base (`Contexte`) le permet pour d'autres appelants
   // (ex. worker), d'où cette garde plutôt qu'un cast.
-  if (!ctx.utilisateurId) return EVENEMENTS_NOTIFICATION.map((event) => ({ event, actif: DEFAUT_ACTIF_NOTIFICATION[event] }));
+  if (!ctx.utilisateurId)
+    return EVENEMENTS_NOTIFICATION_ACTIFS.map((event) => ({ event, actif: DEFAUT_ACTIF_NOTIFICATION[event] }));
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('notification_preferences')
@@ -65,14 +65,17 @@ export async function listerPreferencesNotifications(): Promise<PreferenceNotifi
     console.warn('[notifications] lecture des préférences échouée', error.message);
   }
   const parEvent = new Map((data ?? []).map((r) => [r.event, r.enabled]));
-  return EVENEMENTS_NOTIFICATION.map((event) => ({
+  return EVENEMENTS_NOTIFICATION_ACTIFS.map((event) => ({
     event,
     actif: parEvent.get(event) ?? DEFAUT_ACTIF_NOTIFICATION[event],
   }));
 }
 
 export async function actionModifierPreferenceNotification(event: string, actif: boolean): Promise<MarkResult> {
-  if (!(EVENEMENTS_NOTIFICATION as readonly EvenementNotification[]).includes(event as EvenementNotification)) {
+  // Validé contre la liste ACTIVE, pas le catalogue complet : un événement
+  // sans producteur ne doit pas non plus être écrivable par un appel direct
+  // (défense en profondeur, même si l'écran ne l'affiche déjà plus).
+  if (!(EVENEMENTS_NOTIFICATION_ACTIFS as readonly string[]).includes(event)) {
     return { ok: false, error: `Type de notification inconnu : ${event}` };
   }
   const ctx = await contexteCourant();

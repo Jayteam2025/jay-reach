@@ -6,27 +6,24 @@ import { listerPreferencesNotifications } from '../../../actions/notifications';
 import { FormulaireOrganisation } from '../../../../components/reglages/FormulaireOrganisation';
 import { TableMembres, type MembreAffiche } from '../../../../components/reglages/TableMembres';
 import { PreferencesNotifications } from '../../../../components/reglages/PreferencesNotifications';
-import type { EvenementNotification } from '../../../../lib/notification-events';
+import type { EvenementNotificationActif } from '../../../../lib/notification-events';
 
 export const revalidate = 0;
 
 type Traducteur = Awaited<ReturnType<typeof getTranslations>>;
 
 /**
- * Appels littéraux (une clé par événement) plutôt qu'une clé construite
- * (`t(\`notifications.evenement.${event}.titre\`)`) : `cles-utilisees.test.ts`
- * ne peut vérifier que des clés littérales.
+ * Appel littéral (`cles-utilisees.test.ts` ne peut vérifier que des clés
+ * littérales) — un seul événement aujourd'hui (`contact.replied`, tour de
+ * correction 1 : les quatre autres du catalogue n'ont pas de producteur, ils
+ * sont retirés de l'écran, voir `lib/notification-events.ts`).
  */
-function libellesEvenements(t: Traducteur): Record<EvenementNotification, { titre: string; detail: string }> {
+function libellesEvenements(t: Traducteur): Record<EvenementNotificationActif, { titre: string; detail: string }> {
   return {
-    reply_received: { titre: t('notifications.evenement.reply_received.titre'), detail: t('notifications.evenement.reply_received.detail') },
-    send_failed: { titre: t('notifications.evenement.send_failed.titre'), detail: t('notifications.evenement.send_failed.detail') },
-    sender_disconnected: {
-      titre: t('notifications.evenement.sender_disconnected.titre'),
-      detail: t('notifications.evenement.sender_disconnected.detail'),
+    'contact.replied': {
+      titre: t('notifications.evenement.contact.replied.titre'),
+      detail: t('notifications.evenement.contact.replied.detail'),
     },
-    quota_reached: { titre: t('notifications.evenement.quota_reached.titre'), detail: t('notifications.evenement.quota_reached.detail') },
-    daily_digest: { titre: t('notifications.evenement.daily_digest.titre'), detail: t('notifications.evenement.daily_digest.detail') },
   };
 }
 

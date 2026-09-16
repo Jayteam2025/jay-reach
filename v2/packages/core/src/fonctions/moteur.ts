@@ -22,6 +22,17 @@ import { ecrireEvenement } from '../journal.js';
  */
 export const INTERVALLE_TICK_MS = 60_000;
 
+/**
+ * Intervalle du producteur périodique (scoring, enrichissement, collecte des
+ * sources) — même motif que `INTERVALLE_TICK_MS` : dupliqué en dur depuis
+ * `apps/worker/src/traitements.ts` (`DISCOVER_INTERVAL_MS`, surchargeable
+ * là-bas par la variable d'environnement du même nom, 15 minutes par défaut).
+ * Sert uniquement à composer le texte d'aide de l'écran Moteur (tour de
+ * correction 1, Important n° 1 : « tourne en continu, aucun déclenchement
+ * manuel possible ici ») — jamais une valeur d'exécution réelle.
+ */
+export const INTERVALLE_PRODUCTION_MS = 15 * 60_000;
+
 /** Passé ce délai sans tour enregistré, le moteur est considéré arrêté. */
 const SEUIL_SILENCE_MS = 15 * 60_000;
 

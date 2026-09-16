@@ -12,12 +12,12 @@
 import { useState, useTransition } from 'react';
 import { Carte, CleValeur, Interrupteur } from '../ui';
 import { actionModifierPreferenceNotification } from '../../app/actions/notifications';
-import type { EvenementNotification, PreferenceNotification } from '../../lib/notification-events';
+import type { EvenementNotificationActif, PreferenceNotification } from '../../lib/notification-events';
 
 export interface PreferencesNotificationsLibelles {
   titre: string;
   sousTitre: string;
-  evenement: Record<EvenementNotification, { titre: string; detail: string }>;
+  evenement: Record<EvenementNotificationActif, { titre: string; detail: string }>;
   erreur: string;
 }
 
@@ -31,7 +31,7 @@ export function PreferencesNotifications({ preferences, libelles }: PreferencesN
   const [etat, setEtat] = useState(preferences);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  function basculer(event: EvenementNotification, actif: boolean) {
+  function basculer(event: EvenementNotificationActif, actif: boolean) {
     setErreur(null);
     setEtat((precedent) => precedent.map((p) => (p.event === event ? { ...p, actif } : p)));
     startTransition(async () => {

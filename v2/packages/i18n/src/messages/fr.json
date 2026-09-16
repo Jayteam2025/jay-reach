@@ -1960,6 +1960,7 @@
         "lancer": "Lancer",
         "enCours": "En cours",
         "erreur": "La tâche n'a pas pu être lancée.",
+        "continuAideGabarit": "Tourne en continu côté serveur, toutes les {minutes} minutes environ. Aucun déclenchement manuel possible ici.",
         "sources": {
           "titre": "Passage de toutes les sources",
           "detailGabarit": "{actives} source(s) active(s) · dernier passage {dernier}",
@@ -2043,25 +2044,11 @@
         "sousTitre": "par email et dans l'app",
         "erreur": "La préférence n'a pas pu être enregistrée.",
         "evenement": {
-          "reply_received": {
-            "titre": "Une réponse arrive",
-            "detail": "à chaque réponse humaine détectée"
-          },
-          "send_failed": {
-            "titre": "Un envoi échoue",
-            "detail": "rebond, refus ou boîte injoignable"
-          },
-          "sender_disconnected": {
-            "titre": "Une boîte est déconnectée",
-            "detail": "SalesBlink ne peut plus envoyer"
-          },
-          "quota_reached": {
-            "titre": "Un plafond est atteint",
-            "detail": "scoring, enrichissement ou envois du jour"
-          },
-          "daily_digest": {
-            "titre": "Résumé du jour à 18 h",
-            "detail": "envois, réponses, intéressés, erreurs"
+          "contact": {
+            "replied": {
+              "titre": "Une réponse arrive",
+              "detail": "à chaque réponse humaine détectée"
+            }
           }
         }
       }
