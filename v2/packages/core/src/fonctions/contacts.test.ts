@@ -429,6 +429,24 @@ describe('chercherEmail', () => {
   });
 });
 
+function ligneGlobaleMinimale(id: string): Record<string, unknown> {
+  return {
+    signal_id: null,
+    contact_id: `contact-${id}`,
+    first_name: 'Prénom',
+    last_name: id,
+    job_title: null,
+    email: null,
+    entreprise: null,
+    current_step: null,
+    statut: 'a_contacter',
+    score: null,
+    pourquoi: null,
+    provider_id: null,
+    quand: null,
+  };
+}
+
 describe('listerContacts', () => {
   it('refuse un rôle insuffisant', async () => {
     await expect(listerContacts(faux({}, null), {})).rejects.toThrow(ForbiddenError);
@@ -437,7 +455,7 @@ describe('listerContacts', () => {
   it('organisation sans campagne : total 0, aucune ligne, aucune requête de lignes', async () => {
     const ctx = faux({ 'jr:contacts_globale_campagnes': [] });
     const r = await listerContacts(ctx, {});
-    expect(r).toEqual({ total: 0, lignes: [] });
+    expect(r).toEqual({ total: 0, lignes: [], tronque: false });
   });
 
   it('fusionne les lignes de plusieurs campagnes, chacune porte sa campagne d’origine et son étape bornée', async () => {
@@ -479,10 +497,32 @@ describe('listerContacts', () => {
       'jr:lignes_contacts_globale': [],
     });
     const r = await listerContacts(ctx, { campagneId });
-    expect(r).toEqual({ total: 0, lignes: [] });
+    expect(r).toEqual({ total: 0, lignes: [], tronque: false });
     const appels = appelsDe(ctx);
     expect(appels.some((a) => /jr:contacts_globale_campagne_unique/.test(a.sql))).toBe(true);
     expect(appels.some((a) => /jr:contacts_globale_campagnes\b/.test(a.sql))).toBe(false);
+  });
+
+  it('LIMITE_CONTACTS_GLOBAL (5 000, tour de correction 1, mineur 6) : au-delà, `tronque` est vrai et `total` s’arrête au plafond (fixture générée, pas de base réelle)', async () => {
+    const lignes = Array.from({ length: 5001 }, (_, i) => ligneGlobaleMinimale(String(i)));
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: campagneId, nom: 'Campagne' }],
+      'jr:lignes_contacts_globale': lignes,
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.tronque).toBe(true);
+    expect(r.total).toBe(5000);
+  });
+
+  it('sous le plafond : `tronque` est faux', async () => {
+    const lignes = Array.from({ length: 3 }, (_, i) => ligneGlobaleMinimale(String(i)));
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: campagneId, nom: 'Campagne' }],
+      'jr:lignes_contacts_globale': lignes,
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.tronque).toBe(false);
+    expect(r.total).toBe(3);
   });
 
   it('trie la liste fusionnée par instant décroissant (plus récent d’abord)', async () => {
@@ -576,6 +616,7 @@ describe('listerClientsEtExclusions', () => {
       ],
     });
     const r = await listerClientsEtExclusions(ctx, {});
+    expect(r.tronque).toBe(false);
     expect(r.lignes).toHaveLength(2);
     expect(r.lignes.find((l) => l.id === 'sup-2')).toBeUndefined();
     expect(r.lignes.find((l) => l.id === 'entree-1')).toMatchObject({
@@ -583,6 +624,35 @@ describe('listerClientsEtExclusions', () => {
       valeur: 'woodpecker-studio.example',
     });
     expect(r.lignes.find((l) => l.id === 'sup-1')).toMatchObject({ type: 'email', valeur: 'p.martin@exemple.fr' });
+  });
+
+  // Tour de correction 1, Important 2 : même plafond (`LIMITE_CONTACTS_GLOBAL`, 5 000) que
+  // `listerContacts`, exposé par `tronque` — sur des compteurs, pas une base réelle.
+  it('`tronque` est vrai quand `customer_list_entries` dépasse le plafond (5 000)', async () => {
+    const ctx = faux({
+      'jr:total_clients_entreprises': [{ n: 5001 }],
+      'jr:total_exclusions': [{ n: 0 }],
+    });
+    const r = await listerClientsEtExclusions(ctx, {});
+    expect(r.tronque).toBe(true);
+  });
+
+  it('`tronque` est vrai quand `suppressions` (email/domaine/linkedin) dépasse le plafond (5 000)', async () => {
+    const ctx = faux({
+      'jr:total_clients_entreprises': [{ n: 0 }],
+      'jr:total_exclusions': [{ n: 5001 }],
+    });
+    const r = await listerClientsEtExclusions(ctx, {});
+    expect(r.tronque).toBe(true);
+  });
+
+  it('`tronque` est faux sous le plafond des deux côtés', async () => {
+    const ctx = faux({
+      'jr:total_clients_entreprises': [{ n: 42 }],
+      'jr:total_exclusions': [{ n: 20 }],
+    });
+    const r = await listerClientsEtExclusions(ctx, {});
+    expect(r.tronque).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { LigneClientExclusion } from '@jay-reach/core';
-import { Bouton, Carte, Journal, Puce } from '../ui';
+import { Bouton, Carte, Champ, Journal, Puce } from '../ui';
 import { actionAjouterAListe, actionAjouterSuppression } from '../../app/actions/contacts';
 import { dateCourte } from '../../lib/dates';
 
@@ -14,6 +14,8 @@ export interface TableExclusionsProps {
   peutAjouterClient: boolean;
   /** Droit OPERATOR — RLS de `suppressions`. */
   peutAjouterSuppression: boolean;
+  /** `true` si `customer_list_entries` OU `suppressions` dépasse le plafond (`LIMITE_CONTACTS_GLOBAL`, tour de correction 1). */
+  tronque: boolean;
   fuseau: string;
 }
 
@@ -33,9 +35,16 @@ const SCOPES: { valeur: 'email' | 'domain' | 'linkedin'; cle: 'scopeEmail' | 'sc
  * toute façon un rôle insuffisant, `peutAjouterClient`/`peutAjouterSuppression`
  * ne servent qu'à ne pas montrer un formulaire voué à échouer (même motif que
  * `peutArchiver` dans `campaigns/[id]/settings/page.tsx`).
+ *
+ * Une seule portée de traduction (`contacts`, comme `page.tsx`) — pas de
+ * sous-espace `contacts.customers` : le garde-fou des clés mortes
+ * (`packages/i18n/src/cles-utilisees.test.ts::clesMortesSous`) vérifie une
+ * clé en cherchant sa forme littérale complète depuis le préfixe déclaré ;
+ * un sous-espace supplémentaire lui aurait fait rater tout ce qui est
+ * référencé plus bas dans l'arbre (tour de correction 1, Important 3).
  */
-export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppression, fuseau }: TableExclusionsProps) {
-  const t = useTranslations('contacts.customers');
+export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppression, tronque, fuseau }: TableExclusionsProps) {
+  const t = useTranslations('contacts');
   const router = useRouter();
 
   const clients = lignes.filter((l) => l.type === 'client');
@@ -43,15 +52,16 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
 
   return (
     <div className="jr-deux-colonnes">
+      {tronque && <p className="jr-secondaire">{t('truncated')}</p>}
       <Carte
         titre={
           <>
-            {t('clientsTitle')} <small>{t('clientsCount', { n: clients.length })}</small>
+            {t('customers.clientsTitle')} <small>{t('customers.clientsCount', { n: clients.length })}</small>
           </>
         }
       >
         {clients.length === 0 ? (
-          <p className="jr-secondaire">{t('clientsEmpty')}</p>
+          <p className="jr-secondaire">{t('customers.clientsEmpty')}</p>
         ) : (
           <div className="jr-puces">
             {clients.map((c) => (
@@ -60,10 +70,14 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
           </div>
         )}
         {peutAjouterClient ? (
-          <FormulaireAjouterClient onAjoute={() => router.refresh()} placeholder={t('addDomainPlaceholder')} libelleAjouter={t('add')} />
+          <FormulaireAjouterClient
+            onAjoute={() => router.refresh()}
+            libelle={t('customers.addDomainPlaceholder')}
+            libelleAjouter={t('customers.add')}
+          />
         ) : (
           <p className="jr-secondaire" style={{ marginTop: 12 }}>
-            {t('adminRequired')}
+            {t('customers.adminRequired')}
           </p>
         )}
       </Carte>
@@ -71,12 +85,12 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
       <Carte
         titre={
           <>
-            {t('exclusionsTitle')} <small>{t('exclusionsCount', { n: exclusions.length })}</small>
+            {t('customers.exclusionsTitle')} <small>{t('customers.exclusionsCount', { n: exclusions.length })}</small>
           </>
         }
       >
         {exclusions.length === 0 ? (
-          <p className="jr-secondaire">{t('exclusionsEmpty')}</p>
+          <p className="jr-secondaire">{t('customers.exclusionsEmpty')}</p>
         ) : (
           <Journal
             entrees={exclusions.map((e) => ({
@@ -87,10 +101,19 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
           />
         )}
         {peutAjouterSuppression ? (
-          <FormulaireAjouterSuppression onAjoute={() => router.refresh()} placeholder={t('addExclusionPlaceholder')} libelleAjouter={t('add')} />
+          <FormulaireAjouterSuppression
+            onAjoute={() => router.refresh()}
+            libelle={t('customers.addExclusionPlaceholder')}
+            libelleAjouter={t('customers.add')}
+            libellesScope={{
+              email: t('customers.scopeEmail'),
+              domain: t('customers.scopeDomain'),
+              linkedin: t('customers.scopeLinkedin'),
+            }}
+          />
         ) : (
           <p className="jr-secondaire" style={{ marginTop: 12 }}>
-            {t('operatorRequired')}
+            {t('customers.operatorRequired')}
           </p>
         )}
       </Carte>
@@ -100,11 +123,11 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
 
 function FormulaireAjouterClient({
   onAjoute,
-  placeholder,
+  libelle,
   libelleAjouter,
 }: {
   onAjoute: () => void;
-  placeholder: string;
+  libelle: string;
   libelleAjouter: string;
 }) {
   const [valeur, setValeur] = useState('');
@@ -127,10 +150,10 @@ function FormulaireAjouterClient({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div className="jr-champ" style={{ flex: 1 }}>
-          <input value={valeur} onChange={(e) => setValeur(e.target.value)} placeholder={placeholder} />
-        </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <Champ libelle={libelle} id="contacts-ajouter-client" className="jr-champ-large">
+          <input id="contacts-ajouter-client" value={valeur} onChange={(e) => setValeur(e.target.value)} />
+        </Champ>
         <Bouton taille="petit" onClick={ajouter} disabled={pending || !valeur.trim()}>
           {libelleAjouter}
         </Bouton>
@@ -142,14 +165,15 @@ function FormulaireAjouterClient({
 
 function FormulaireAjouterSuppression({
   onAjoute,
-  placeholder,
+  libelle,
   libelleAjouter,
+  libellesScope,
 }: {
   onAjoute: () => void;
-  placeholder: string;
+  libelle: string;
   libelleAjouter: string;
+  libellesScope: Record<'email' | 'domain' | 'linkedin', string>;
 }) {
-  const t = useTranslations('contacts.customers');
   const [scope, setScope] = useState<'email' | 'domain' | 'linkedin'>('email');
   const [valeur, setValeur] = useState('');
   const [pending, startTransition] = useTransition();
@@ -171,17 +195,23 @@ function FormulaireAjouterSuppression({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
-          {SCOPES.map((s) => (
-            <option key={s.valeur} value={s.valeur}>
-              {t(s.cle)}
-            </option>
-          ))}
-        </select>
-        <div className="jr-champ" style={{ flex: 1 }}>
-          <input value={valeur} onChange={(e) => setValeur(e.target.value)} placeholder={placeholder} />
-        </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <Champ id="contacts-ajouter-exclusion-portee">
+          <select
+            id="contacts-ajouter-exclusion-portee"
+            value={scope}
+            onChange={(e) => setScope(e.target.value as typeof scope)}
+          >
+            {SCOPES.map((s) => (
+              <option key={s.valeur} value={s.valeur}>
+                {libellesScope[s.valeur]}
+              </option>
+            ))}
+          </select>
+        </Champ>
+        <Champ libelle={libelle} id="contacts-ajouter-exclusion-valeur" className="jr-champ-large">
+          <input id="contacts-ajouter-exclusion-valeur" value={valeur} onChange={(e) => setValeur(e.target.value)} />
+        </Champ>
         <Bouton taille="petit" onClick={ajouter} disabled={pending || !valeur.trim()}>
           {libelleAjouter}
         </Bouton>

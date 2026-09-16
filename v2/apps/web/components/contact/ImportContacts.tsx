@@ -30,7 +30,7 @@ export interface ImportContactsProps {
  * puisque cette page n'a pas de campagne de contexte.
  */
 export function ImportContacts({ campagnes }: ImportContactsProps) {
-  const t = useTranslations('contacts.importDialog');
+  const t = useTranslations('contacts');
   const tChamps = useTranslations('campagne.sources');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -86,34 +86,34 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
 
   return (
     <>
-      <Bouton onClick={() => setOuvert(true)}>{t('open')}</Bouton>
+      <Bouton onClick={() => setOuvert(true)}>{t('importDialog.open')}</Bouton>
       {ouvert && (
         <Tiroir
           ouvert
           onFermer={fermer}
-          libelleFermer={t('close')}
-          titre={t('title')}
-          description={campagnes.length > 0 ? t('intro') : t('noCampaign')}
+          libelleFermer={t('importDialog.close')}
+          titre={t('importDialog.title')}
+          description={campagnes.length > 0 ? t('importDialog.intro') : t('importDialog.noCampaign')}
           pied={
             <>
               <span />
               <div className="jr-carte-h-actions">
-                <Bouton onClick={fermer}>{t('cancel')}</Bouton>
+                <Bouton onClick={fermer}>{t('importDialog.cancel')}</Bouton>
                 <Bouton
                   variante="principal"
                   onClick={importer}
                   disabled={pending || !parsed || !campagneId || (rapport?.rowsUnique ?? 0) === 0}
                 >
-                  {t('submit', { n: rapport?.rowsUnique ?? 0 })}
+                  {t('importDialog.submit', { n: rapport?.rowsUnique ?? 0 })}
                 </Bouton>
               </div>
             </>
           }
         >
           <div className="jr-formulaire">
-            <Champ libelle={t('campaign')} id="import-contacts-campagne">
+            <Champ libelle={t('importDialog.campaign')} id="import-contacts-campagne">
               <select id="import-contacts-campagne" value={campagneId} onChange={(e) => setCampagneId(e.target.value)}>
-                {campagnes.length === 0 && <option value="">{t('chooseCampaign')}</option>}
+                {campagnes.length === 0 && <option value="">{t('importDialog.chooseCampaign')}</option>}
                 {campagnes.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nom}
@@ -121,29 +121,29 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
                 ))}
               </select>
             </Champ>
-            <Champ libelle={t('listName')} id="import-contacts-nom">
+            <Champ libelle={t('importDialog.listName')} id="import-contacts-nom">
               <input id="import-contacts-nom" value={nom} onChange={(e) => setNom(e.target.value)} />
             </Champ>
-            <Champ libelle={t('file')} id="import-contacts-fichier">
+            <Champ libelle={t('importDialog.file')} id="import-contacts-fichier">
               <input id="import-contacts-fichier" type="file" accept=".csv,text/csv" onChange={choisirFichier} />
             </Champ>
 
             {parsed && (
               <>
                 <div>
-                  <span className="jr-libelle">{t('mapping')}</span>
+                  <span className="jr-libelle">{t('importDialog.mapping')}</span>
                   <Table
                     colonnes={[
-                      { cle: 'colonne', titre: t('colColumn') },
-                      { cle: 'exemple', titre: t('colExample') },
-                      { cle: 'champ', titre: t('colField') },
+                      { cle: 'colonne', titre: t('importDialog.colColumn') },
+                      { cle: 'exemple', titre: t('importDialog.colExample') },
+                      { cle: 'champ', titre: t('importDialog.colField') },
                     ]}
                     lignes={parsed.headers.map((header) => ({
                       colonne: header,
                       exemple: parsed.rows[0]?.[header] ?? '',
                       champ: (
                         <select value={mapping[header] ?? ''} onChange={(e) => changerMapping(header, e.target.value)}>
-                          <option value="">{t('colIgnore')}</option>
+                          <option value="">{t('importDialog.colIgnore')}</option>
                           {IMPORT_FIELDS.map((champ) => (
                             <option key={champ} value={champ}>
                               {tChamps(`drawer.csvFields.${champ}`)}
@@ -157,13 +157,13 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
 
                 {rapport && (
                   <div>
-                    <span className="jr-libelle">{t('before')}</span>
+                    <span className="jr-libelle">{t('importDialog.before')}</span>
                     <div className="jr-carte">
                       <div className="jr-corps">
-                        <CleValeur libelle={t('rowsRead')} valeur={rapport.rowsTotal} />
-                        <CleValeur libelle={t('new')} valeur={rapport.rowsUnique} />
-                        <CleValeur libelle={t('known')} valeur={rapport.rowsMerged} />
-                        <CleValeur libelle={t('missingEmail')} valeur={rapport.emailsMissing} />
+                        <CleValeur libelle={t('importDialog.rowsRead')} valeur={rapport.rowsTotal} />
+                        <CleValeur libelle={t('importDialog.new')} valeur={rapport.rowsUnique} />
+                        <CleValeur libelle={t('importDialog.known')} valeur={rapport.rowsMerged} />
+                        <CleValeur libelle={t('importDialog.missingEmail')} valeur={rapport.emailsMissing} />
                       </div>
                     </div>
                   </div>

@@ -72,7 +72,9 @@ export default async function CampagneContactsPage({
 
   const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
     ...ligne,
-    etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
+    etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], (cle, valeurs) =>
+      t(`contacts.${cle}`, valeurs),
+    ),
   }));
 
   function lienPage(p: number): string {

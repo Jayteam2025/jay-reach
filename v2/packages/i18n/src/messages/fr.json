@@ -1884,6 +1884,7 @@
       "discard": "Écarter"
     },
     "empty": "Aucun contact pour ce filtre.",
+    "truncated": "Affichage limité aux 5 000 premiers résultats : affinez les filtres pour voir le reste.",
     "pageRange": "{debut} à {fin} sur {total}",
     "pageOf": "Page {page} sur {dernierePage}",
     "previous": "Précédent",
@@ -1919,11 +1920,7 @@
       "scopeEmail": "Email",
       "scopeDomain": "Domaine",
       "scopeLinkedin": "LinkedIn",
-      "operatorRequired": "Droit opérateur requis pour ajouter une exclusion.",
-      "typeClient": "Client",
-      "typeEmail": "Email",
-      "typeDomaine": "Domaine",
-      "typeLinkedin": "LinkedIn"
+      "operatorRequired": "Droit opérateur requis pour ajouter une exclusion."
     },
     "importDialog": {
       "open": "Importer un CSV",

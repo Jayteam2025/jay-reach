@@ -177,6 +177,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         lignes={resultat.lignes}
         peutAjouterClient={peutAjouterClient}
         peutAjouterSuppression={peutAjouterSuppression}
+        tronque={resultat.tronque}
         fuseau={String(reglages.fuseau)}
       />
     );
@@ -228,10 +229,11 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
     contenu = (
       <>
+        {resultat.tronque && <p className="jr-secondaire">{t('truncated')}</p>}
         <form method="get" className="jr-ligne-entre" style={{ flexWrap: 'wrap', gap: 8 }}>
           <input type="hidden" name="onglet" value="tous" />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <select name="campagne" defaultValue={campagneFiltre ?? ''}>
+            <select name="campagne" defaultValue={campagneFiltre ?? ''} aria-label={t('filters.campaign')}>
               <option value="">{t('filters.campaign')} : {t('filters.campaignAll')}</option>
               {campagnesOptions.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -239,7 +241,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 </option>
               ))}
             </select>
-            <select name="etat" defaultValue={filtre}>
+            <select name="etat" defaultValue={filtre} aria-label={t('filters.status')}>
               <option value="tous">
                 {t('filters.status')} : {t('filters.statusAll')}
               </option>
@@ -249,14 +251,14 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 </option>
               ))}
             </select>
-            <select name="email" defaultValue={emailFiltre ?? ''}>
+            <select name="email" defaultValue={emailFiltre ?? ''} aria-label={t('filters.email')}>
               <option value="">
                 {t('filters.email')} : {t('filters.emailAll')}
               </option>
               <option value="verifie">{t('email.verified')}</option>
               <option value="a_trouver">{t('email.toFind')}</option>
             </select>
-            <select name="source" defaultValue={sourceFiltre ?? ''}>
+            <select name="source" defaultValue={sourceFiltre ?? ''} aria-label={t('filters.source')}>
               <option value="">
                 {t('filters.source')} : {t('filters.sourceAll')}
               </option>

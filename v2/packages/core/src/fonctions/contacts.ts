@@ -685,11 +685,15 @@ const TAILLE_PAGE_CONTACTS_GLOBAL = 50;
 
 /**
  * Plafond mémoire du calcul global (`listerContacts` ET `exporterCsv`, qui
- * partagent `collecterContactsGlobaux`) : au-delà, l'opérateur doit filtrer
- * (campagne, recherche…) plutôt que de tout charger en mémoire d'un coup.
- * Même valeur que le plafond de lignes de l'export CSV (spec §6.11).
+ * partagent `collecterContactsGlobaux` — et `listerClientsEtExclusions`, même
+ * plafond réutilisé tel quel, tour de correction 1) : au-delà, l'opérateur
+ * doit filtrer (campagne, recherche…) plutôt que de tout charger en mémoire
+ * d'un coup. Même valeur que le plafond de lignes de l'export CSV (spec §6.11).
  */
 const LIMITE_CONTACTS_GLOBAL = 5000;
+
+/** Un de plus que `LIMITE_CONTACTS_GLOBAL` : collecter jusque-là (pas jusqu'au plafond pile) permet de distinguer « il y en a exactement 5000 » (rien de coupé) de « il y en a plus » (`tronque`), sans requête `count(*)` supplémentaire par campagne. */
+const LIMITE_COLLECTE_GLOBALE = LIMITE_CONTACTS_GLOBAL + 1;
 
 interface LigneContactGlobalBrut {
   signal_id: string | null;
@@ -737,16 +741,22 @@ type FiltresContactsGlobal = Omit<z.infer<typeof schemaListerContactsGlobal>, 'p
  * d'étapes par campagne — acceptable à l'échelle d'une organisation
  * autohébergée (quelques campagnes), plafonné par `LIMITE_CONTACTS_GLOBAL`.
  */
-async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsGlobal): Promise<ContactGlobal[]> {
+export interface ResultatContactsGlobaux {
+  readonly lignes: ContactGlobal[];
+  /** `true` quand la collecte a atteint `LIMITE_CONTACTS_GLOBAL` (5 000) — davantage de contacts existent que ceux renvoyés. */
+  readonly tronque: boolean;
+}
+
+async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsGlobal): Promise<ResultatContactsGlobaux> {
   const { filtre, campagneId, source, email, recherche } = filtres;
   const campagnes = await campagnesCiblees(ctx, campagneId);
-  if (campagnes.length === 0) return [];
+  if (campagnes.length === 0) return { lignes: [], tronque: false };
 
   const motif = motifRecherche(recherche);
   const toutes: (ContactGlobal & { quand: string | null })[] = [];
 
   for (const campagne of campagnes) {
-    if (toutes.length >= LIMITE_CONTACTS_GLOBAL) break;
+    if (toutes.length >= LIMITE_COLLECTE_GLOBALE) break;
 
     const res = await ctx.ex.query<LigneContactGlobalBrut>(
       `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, provider_id, quand
@@ -795,21 +805,26 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
         campagneNom: campagne.nom,
         quand: r.quand,
       });
-      if (toutes.length >= LIMITE_CONTACTS_GLOBAL) break;
+      if (toutes.length >= LIMITE_COLLECTE_GLOBALE) break;
     }
   }
 
   toutes.sort((a, b) => (b.quand ?? '').localeCompare(a.quand ?? ''));
-  return toutes.map(({ quand: _quand, ...reste }) => reste);
+  const tronque = toutes.length > LIMITE_CONTACTS_GLOBAL;
+  const bornees = tronque ? toutes.slice(0, LIMITE_CONTACTS_GLOBAL) : toutes;
+  return { lignes: bornees.map(({ quand: _quand, ...reste }) => reste), tronque };
 }
 
-export async function listerContacts(ctx: Contexte, entree: unknown): Promise<{ total: number; lignes: ContactGlobal[] }> {
+export async function listerContacts(
+  ctx: Contexte,
+  entree: unknown,
+): Promise<{ total: number; lignes: ContactGlobal[]; tronque: boolean }> {
   exiger(ctx, 'viewer');
   const { page, ...filtres } = valider(schemaListerContactsGlobal, entree);
 
-  const toutes = await collecterContactsGlobaux(ctx, filtres);
+  const { lignes: toutes, tronque } = await collecterContactsGlobaux(ctx, filtres);
   const debut = (page - 1) * TAILLE_PAGE_CONTACTS_GLOBAL;
-  return { total: toutes.length, lignes: toutes.slice(debut, debut + TAILLE_PAGE_CONTACTS_GLOBAL) };
+  return { total: toutes.length, lignes: toutes.slice(debut, debut + TAILLE_PAGE_CONTACTS_GLOBAL), tronque };
 }
 
 // ---------------------------------------------------------------------------
@@ -911,26 +926,47 @@ const TYPE_DEPUIS_SCOPE: Partial<Record<string, TypeClientExclusion>> = {
   linkedin: 'linkedin',
 };
 
-export async function listerClientsEtExclusions(ctx: Contexte, entree: unknown): Promise<{ lignes: LigneClientExclusion[] }> {
+export interface ResultatClientsEtExclusions {
+  readonly lignes: LigneClientExclusion[];
+  /** `true` quand `customer_list_entries` OU `suppressions` (email/domaine/linkedin) dépasse `LIMITE_CONTACTS_GLOBAL` (5 000) pour l'organisation — même plafond que `listerContacts` (tour de correction 1, Important 2 de la relecture). */
+  readonly tronque: boolean;
+}
+
+export async function listerClientsEtExclusions(ctx: Contexte, entree: unknown): Promise<ResultatClientsEtExclusions> {
   exiger(ctx, 'viewer');
   valider(z.object({}), entree);
 
-  const [clientsRes, exclusionsRes] = await Promise.all([
+  const [totalClientsRes, totalExclusionsRes, clientsRes, exclusionsRes] = await Promise.all([
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n from customer_list_entries /* jr:total_clients_entreprises */ where organization_id = $1`,
+      [ctx.organisationId],
+    ),
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n from suppressions /* jr:total_exclusions */
+        where organization_id = $1 and scope in ('email', 'domain', 'linkedin')`,
+      [ctx.organisationId],
+    ),
     ctx.ex.query<{ id: string; domain: string | null; raw_name: string | null; siren: string | null; created_at: string }>(
       `select id, domain, raw_name, siren, created_at
          from customer_list_entries /* jr:clients_entreprises */
         where organization_id = $1
-        order by created_at desc`,
-      [ctx.organisationId],
+        order by created_at desc
+        limit $2`,
+      [ctx.organisationId, LIMITE_CONTACTS_GLOBAL],
     ),
     ctx.ex.query<{ id: string; scope: string; value: string; reason: string | null; created_at: string }>(
       `select id, scope, value, reason, created_at
          from suppressions /* jr:exclusions */
         where organization_id = $1 and scope in ('email', 'domain', 'linkedin')
-        order by created_at desc`,
-      [ctx.organisationId],
+        order by created_at desc
+        limit $2`,
+      [ctx.organisationId, LIMITE_CONTACTS_GLOBAL],
     ),
   ]);
+
+  const totalClients = totalClientsRes.rows[0]?.n ?? 0;
+  const totalExclusions = totalExclusionsRes.rows[0]?.n ?? 0;
+  const tronque = totalClients > LIMITE_CONTACTS_GLOBAL || totalExclusions > LIMITE_CONTACTS_GLOBAL;
 
   const clients: LigneClientExclusion[] = clientsRes.rows.map((r) => ({
     id: r.id,
@@ -945,7 +981,7 @@ export async function listerClientsEtExclusions(ctx: Contexte, entree: unknown):
     return type ? [{ id: r.id, type, valeur: r.value, raison: r.reason, quand: r.created_at }] : [];
   });
 
-  return { lignes: [...clients, ...exclusions] };
+  return { lignes: [...clients, ...exclusions], tronque };
 }
 
 export const schemaAjouterSuppression = z.object({
@@ -1098,7 +1134,7 @@ function ligneCsv(champs: (string | number | null)[]): string {
 export async function exporterCsv(ctx: Contexte, entree: unknown): Promise<string> {
   exiger(ctx, 'viewer');
   const filtres = valider(schemaExporterCsv, entree);
-  const lignes = await collecterContactsGlobaux(ctx, filtres);
+  const { lignes } = await collecterContactsGlobaux(ctx, filtres);
 
   const corps = lignes.map((l) =>
     ligneCsv([
