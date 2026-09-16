@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateRelativeCourte, heureAvecJour, libelleJour, regrouperParJour } from './dates';
+import { dateHeureMessage, dateRelativeCourte, heureAvecJour, libelleJour, regrouperParJour } from './dates';
 
 describe('dateRelativeCourte', () => {
   const maintenant = new Date('2026-09-15T12:00:00.000Z');
@@ -21,6 +21,26 @@ describe('dateRelativeCourte', () => {
 
   it('au-delà de 48 h -> date courte (jour + mois abrégé)', () => {
     expect(dateRelativeCourte('2026-09-10T13:00:00.000Z', maintenant)).toBe('10 sept.');
+  });
+});
+
+describe('dateHeureMessage', () => {
+  const maintenant = new Date('2026-09-16T10:00:00.000Z'); // 12:00 Paris
+
+  it("aujourd'hui -> « aujourd'hui, HH:MM »", () => {
+    expect(dateHeureMessage('2026-09-16T08:22:00.000Z', maintenant)).toBe("aujourd'hui, 10:22");
+  });
+
+  it('hier -> « hier, HH:MM » (même si peu d’heures se sont écoulées, près de minuit à Paris)', () => {
+    expect(dateHeureMessage('2026-09-14T22:10:00.000Z', maintenant)).toBe('hier, 00:10');
+  });
+
+  it('avant-hier ou plus tôt -> date courte + heure', () => {
+    expect(dateHeureMessage('2026-09-11T07:12:00.000Z', maintenant)).toBe('11 sept., 09:12');
+  });
+
+  it('respecte le fuseau donné, pas celui du process', () => {
+    expect(dateHeureMessage('2026-09-16T08:22:00.000Z', maintenant, 'UTC')).toBe("aujourd'hui, 08:22");
   });
 });
 

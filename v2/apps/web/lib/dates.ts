@@ -44,6 +44,24 @@ export function dateRelativeCourte(
 }
 
 /**
+ * Date et heure d'un message de la Réception (tâche 16) : « aujourd'hui,
+ * 10:22 », « hier, 22:10 », sinon une date courte suivie de l'heure
+ * (« 11 sept., 09:12 »). Même frontière de jour DANS `fuseau` que
+ * `dateRelativeCourte`/`regrouperParJour` (R53, clé de jour calendaire), pas
+ * les accesseurs locaux du serveur qui exécute le rendu.
+ */
+export function dateHeureMessage(iso: string, maintenant: Date = new Date(), fuseau: string = FUSEAU_PAR_DEFAUT): string {
+  const date = new Date(iso);
+  const heure = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(date);
+  const cleDate = cleJourDansFuseau(date, fuseau);
+  if (cleDate === cleJourDansFuseau(maintenant, fuseau)) return `aujourd'hui, ${heure}`;
+  const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
+  if (cleDate === cleJourDansFuseau(veille, fuseau)) return `hier, ${heure}`;
+  const jourMois = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: fuseau }).format(date);
+  return `${jourMois}, ${heure}`;
+}
+
+/**
  * Heure d'un instant à VENIR (prochain passage d'une source, etc.), avec le
  * jour quand ce n'est pas aujourd'hui : une heure seule est ambiguë sinon —
  * « prochain 16:45 » identique à « dernier 16:45 » alors que le prochain
