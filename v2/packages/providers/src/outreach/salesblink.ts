@@ -316,6 +316,22 @@ export async function reconnecterBoite(idBoite: string, cle: string): Promise<vo
   await appeler('POST', `/senders/${idBoite}/reconnect`, {}, cle);
 }
 
+/**
+ * Active la lecture directe des réponses côté SalesBlink pour une boîte tout
+ * juste reliée (tâche 20, écran Réglages › Expéditeurs).
+ *
+ * Toute boîte Outlook ajoutée à SalesBlink a `inbox_enabled` à `false` par
+ * défaut : sans ce PATCH, `GET /senders` répond normalement mais aucune
+ * réponse ne remonte jamais dans `/inbox` — constat du 11/09 (passation du
+ * lot 3, posé alors à la main pour les trois boîtes de production). Cette
+ * fonction n'existait pas encore dans ce client : `relierBoite`
+ * (`packages/core/src/fonctions/expediteurs.ts`) en avait besoin pour ne pas
+ * reproduire cette étape manuelle à chaque nouvelle boîte reliée.
+ */
+export async function activerLectureBoite(idBoite: string, cle: string): Promise<void> {
+  await appeler('PATCH', `/senders/${idBoite}`, { corps: { inbox_enabled: true } }, cle);
+}
+
 // --- Gabarits et listes ------------------------------------------------------
 
 export async function creerGabaritNeutre(nom: string, htmlFixe: string, cle: string): Promise<string> {

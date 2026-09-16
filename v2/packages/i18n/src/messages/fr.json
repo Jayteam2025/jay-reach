@@ -1569,5 +1569,101 @@
         "continue": "Continuer"
       }
     }
+  },
+  "reglages": {
+    "title": "Réglages",
+    "lead": "Expéditeurs, plafonds, fournisseurs, personas, messages, moteur, compte.",
+    "nav": {
+      "senders": "Expéditeurs",
+      "limits": "Plafonds",
+      "providers": "Fournisseurs",
+      "personas": "Personas",
+      "messages": "Messages",
+      "engine": "Moteur",
+      "account": "Compte",
+      "bientot": "Bientôt disponible"
+    },
+    "expediteurs": {
+      "boxesTitle": "Boîtes email",
+      "boxesLead": "Les envois passent par SalesBlink. Chaque contact est lié à vie à la boîte qui lui a écrit la première.",
+      "salesblinkLinked": "SalesBlink relié",
+      "salesblinkNotLinked": "SalesBlink non relié",
+      "addBox": "Relier une boîte",
+      "empty": "Aucune boîte email. Reliez-en une pour commencer à envoyer.",
+      "box": {
+        "createdOn": "Connectée le {date}",
+        "today": "Aujourd'hui",
+        "cadence": "Cadence",
+        "perDay": "{n} par jour",
+        "perDayNoLimit": "Sans plafond par jour",
+        "perHour": "{n} par heure",
+        "perHourNoLimit": "sans plafond par heure",
+        "hours": "Heures d'envoi",
+        "hoursValue": "{debut} à {fin}, {jours}",
+        "replies": "Réponses",
+        "repliesOk": "Relevées",
+        "repliesLast": "dernière relève {heure}",
+        "repliesNever": "jamais relevée",
+        "repliesError": "Relève en erreur",
+        "repliesNone": "Pas de relève configurée",
+        "edit": "Modifier",
+        "active": "Active",
+        "inactive": "Inactive",
+        "disconnected": "Déconnectée de SalesBlink",
+        "healthUnavailable": "État SalesBlink indisponible",
+        "notLinked": "Non reliée à SalesBlink"
+      },
+      "drawer": {
+        "title": "Modifier {identite}",
+        "dailyQuota": "Plafond par jour",
+        "hourlyQuota": "Plafond par heure",
+        "noLimit": "Sans plafond",
+        "hoursFrom": "À partir de",
+        "hoursTo": "Jusqu'à",
+        "timezone": "Fuseau horaire",
+        "days": "Jours d'envoi",
+        "inboxProvider": "Lire les réponses directement dans cette boîte",
+        "inboxProviderHint": "Jay Reach relève cette boîte toutes les quelques minutes via Microsoft Graph, dès qu'il est configuré dans Fournisseurs. SalesBlink continue d'envoyer vos messages.",
+        "save": "Enregistrer",
+        "saving": "Enregistrement",
+        "cancel": "Annuler",
+        "close": "Fermer",
+        "error": "Impossible d'enregistrer cette boîte."
+      },
+      "linkDrawer": {
+        "title": "Relier une boîte",
+        "description": "Choisissez une boîte du workspace SalesBlink pas encore reliée à un expéditeur.",
+        "empty": "Aucune boîte SalesBlink disponible pour le moment. Vérifiez la clé dans Fournisseurs.",
+        "link": "Relier",
+        "linking": "Liaison",
+        "close": "Fermer",
+        "error": "Impossible de relier cette boîte."
+      },
+      "linkedin": {
+        "title": "Comptes LinkedIn",
+        "lead": "Les actions LinkedIn partent d'une IP résidentielle dédiée, jamais du serveur.",
+        "addAccount": "Relier un compte",
+        "empty": "Aucun compte LinkedIn connecté.",
+        "connected": "Connecté",
+        "notConnected": "Non connecté",
+        "perDay": "{n} par jour",
+        "perWeek": "{n} par semaine",
+        "edit": "Modifier",
+        "active": "Active",
+        "inactive": "Inactive",
+        "drawerTitle": "Modifier {nom}",
+        "save": "Enregistrer",
+        "saving": "Enregistrement",
+        "cancel": "Annuler",
+        "close": "Fermer",
+        "error": "Impossible d'enregistrer ce compte.",
+        "drawerDailyQuota": "Profils lus et actions par jour",
+        "drawerWeeklyQuota": "Plafond par semaine",
+        "drawerHoursFrom": "À partir de",
+        "drawerHoursTo": "Jusqu'à",
+        "drawerDays": "Jours d'envoi",
+        "drawerTimezone": "Fuseau horaire"
+      }
+    }
   }
 }

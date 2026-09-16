@@ -1,33 +1,97 @@
-import { createClientOrNull } from '../../../../lib/supabase/server';
-import { listerBoitesSalesBlink } from '../../../../lib/salesblink';
-import { AppTopBar } from '../../chrome';
-import { SendersForm, type SenderRow } from './senders-form';
+import { getTranslations } from 'next-intl/server';
+import { hasMinRole, lireReglages } from '@jay-reach/core';
+import { contexteCourant } from '../../../../lib/contexte';
+import { dateCourte } from '../../../../lib/dates';
+import { listerBoitesExpediteurs } from '../../../actions/senders';
+import { listerComptesLinkedInAction } from '../../../actions/linkedin';
+import { Puce } from '../../../../components/ui';
+import { CarteBoite } from '../../../../components/reglages/CarteBoite';
+import { CarteCompteLinkedIn } from '../../../../components/reglages/CarteCompteLinkedIn';
+import { BoutonRelierBoite } from '../../../../components/reglages/BoutonRelierBoite';
 
-const COLS =
-  'id, kind, identity, display_name, daily_quota, hourly_quota, is_active, business_hours, timezone, provider_ref, provider_state, inbox_provider';
+/**
+ * Réglages › Expéditeurs (tâche 20) : boîtes email (état SalesBlink,
+ * plafonds, fenêtre d'envoi, relève des réponses) et comptes LinkedIn.
+ * Reconstruite d'après la maquette de la tâche 3 ; remplace le contenu de
+ * l'ancienne page (`senders-form.tsx`, désormais orpheline — nettoyage
+ * laissé à la tâche 24).
+ */
+export default async function ReglagesExpediteursPage() {
+  const ctx = await contexteCourant();
+  const peutModifier = ctx.role !== null && hasMinRole(ctx.role, 'admin');
 
-export default async function SendersPage() {
-  const supabase = await createClientOrNull();
-  const memberships = supabase ? (await supabase.from('memberships').select('organization_id').limit(1)).data : null;
-  const orgId = ((memberships ?? []) as { organization_id: string }[])[0]?.organization_id ?? '';
-  const data = supabase ? (await supabase.from('senders').select(COLS).order('kind')).data : null;
+  const [t, boitesResultat, comptesResultat, reglages] = await Promise.all([
+    getTranslations('reglages.expediteurs'),
+    listerBoitesExpediteurs(),
+    listerComptesLinkedInAction(),
+    lireReglages(ctx),
+  ]);
 
-  // Sans Supabase, la liste est vide et l'écran le dit : aucun expéditeur
-  // d'exemple, sinon l'opérateur croit avoir un compte branché qu'il n'a pas.
-  const demo = !supabase;
-  const senders = ((data ?? []) as unknown as SenderRow[]);
+  const boites = boitesResultat.ok ? boitesResultat.valeur : [];
+  const comptes = comptesResultat.ok ? comptesResultat.valeur : [];
+  const fuseau = String(reglages.fuseau);
+  const maintenant = new Date();
 
-  // Boîtes du workspace SalesBlink, pour le sélecteur de liaison des
-  // expéditeurs email. Résolu côté serveur : ni la clé ni l'appel HTTP ne
-  // doivent transiter par le client.
-  const boitesSalesBlink = orgId && supabase ? await listerBoitesSalesBlink(orgId) : { ok: false as const, error: 'no_key' };
+  const auMoinsUneBoiteReliee = boites.some((b) => b.providerRef !== null);
 
   return (
-    <div className="rs-shell">
-      <AppTopBar active="senders" />
-      <main className="rs-main" style={{ maxWidth: 640 }}>
-        <SendersForm senders={senders} orgId={orgId} demo={demo} boitesSalesBlink={boitesSalesBlink} />
-      </main>
-    </div>
+    <>
+      <div className="jr-section-entete">
+        <div>
+          <h2>{t('boxesTitle')}</h2>
+          <p>{t('boxesLead')}</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Puce ton={auMoinsUneBoiteReliee ? 'bon' : 'gris'} point>
+            {t(auMoinsUneBoiteReliee ? 'salesblinkLinked' : 'salesblinkNotLinked')}
+          </Puce>
+          {peutModifier && <BoutonRelierBoite />}
+        </div>
+      </div>
+
+      {!boitesResultat.ok ? (
+        <div className="jr-notification erreur" role="alert">
+          {boitesResultat.error}
+        </div>
+      ) : boites.length === 0 ? (
+        <div className="jr-carte">
+          <div className="jr-vide">{t('empty')}</div>
+        </div>
+      ) : (
+        boites.map((boite) => (
+          <CarteBoite
+            key={boite.id}
+            boite={boite}
+            creeLeTexte={dateCourte(boite.creeLe, maintenant, fuseau)}
+            derniereReleveTexte={boite.derniereReleve?.quand ? dateCourte(boite.derniereReleve.quand, maintenant, fuseau) : null}
+            peutModifier={peutModifier}
+          />
+        ))
+      )}
+
+      <div className="jr-section-entete" style={{ marginTop: 8 }}>
+        <div>
+          <h2>{t('linkedin.title')}</h2>
+          <p>{t('linkedin.lead')}</p>
+        </div>
+        {peutModifier && (
+          <a className="jr-bouton" href="/settings/linkedin">
+            {t('linkedin.addAccount')}
+          </a>
+        )}
+      </div>
+
+      {!comptesResultat.ok ? (
+        <div className="jr-notification erreur" role="alert">
+          {comptesResultat.error}
+        </div>
+      ) : comptes.length === 0 ? (
+        <div className="jr-carte">
+          <div className="jr-vide">{t('linkedin.empty')}</div>
+        </div>
+      ) : (
+        comptes.map((compte) => <CarteCompteLinkedIn key={compte.id} compte={compte} peutModifier={peutModifier} />)
+      )}
+    </>
   );
 }
