@@ -4,20 +4,29 @@
  * réels du produit (défauts spec §7, boîtes et comptes LinkedIn) — une liste
  * simple couvre tout le reste sans un algorithme de compression de plages
  * qu'aucun réglage actuel n'exercerait.
+ *
+ * Ne porte AUCUNE chaîne en dur (tour de correction 1, relecture) : chaque
+ * jour et les deux formes compactées passent par `t`, le traducteur du
+ * namespace `reglages.days` (`fr.json` : `mon`..`sun`, `weekdays`, `everyDay`)
+ * — un opérateur en anglais ou en néerlandais ne doit jamais voir « lundi à
+ * vendredi » écrit en français.
  */
-const NOMS_JOURS: Record<number, string> = {
-  1: 'lundi',
-  2: 'mardi',
-  3: 'mercredi',
-  4: 'jeudi',
-  5: 'vendredi',
-  6: 'samedi',
-  7: 'dimanche',
+const CLES_JOURS: Record<number, string> = {
+  1: 'mon',
+  2: 'tue',
+  3: 'wed',
+  4: 'thu',
+  5: 'fri',
+  6: 'sat',
+  7: 'sun',
 };
 
-export function libelleJoursEnvoi(jours: readonly number[]): string {
+/** Traducteur minimal requis — la signature de `useTranslations('reglages.days')` (next-intl) la satisfait. */
+export type TraducteurJours = (cle: string) => string;
+
+export function libelleJoursEnvoi(jours: readonly number[], t: TraducteurJours): string {
   const tries = [...jours].sort((a, b) => a - b);
-  if (tries.length === 7) return 'tous les jours';
-  if (tries.length === 5 && tries.every((j, i) => j === i + 1)) return 'lundi à vendredi';
-  return tries.map((j) => NOMS_JOURS[j] ?? '?').join(', ');
+  if (tries.length === 7) return t('everyDay');
+  if (tries.length === 5 && tries.every((j, i) => j === i + 1)) return t('weekdays');
+  return tries.map((j) => t(CLES_JOURS[j] ?? 'mon')).join(', ');
 }

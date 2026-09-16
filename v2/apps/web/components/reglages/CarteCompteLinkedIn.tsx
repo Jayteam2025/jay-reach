@@ -9,14 +9,15 @@ import { actionModifierCompteLinkedIn } from '../../app/actions/linkedin';
 
 /** Même liste restreinte que `LinkedInPanel.tsx`. */
 const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
-const JOURS: { valeur: number; abbr: string }[] = [
-  { valeur: 1, abbr: 'L' },
-  { valeur: 2, abbr: 'M' },
-  { valeur: 3, abbr: 'M' },
-  { valeur: 4, abbr: 'J' },
-  { valeur: 5, abbr: 'V' },
-  { valeur: 6, abbr: 'S' },
-  { valeur: 7, abbr: 'D' },
+/** Abréviation traduite via `reglages.days.short.*` — jamais câblée en dur. */
+const JOURS: { valeur: number; cle: string }[] = [
+  { valeur: 1, cle: 'mon' },
+  { valeur: 2, cle: 'tue' },
+  { valeur: 3, cle: 'wed' },
+  { valeur: 4, cle: 'thu' },
+  { valeur: 5, cle: 'fri' },
+  { valeur: 6, cle: 'sat' },
+  { valeur: 7, cle: 'sun' },
 ];
 const HEURES = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
 const HEURES_FIN = [...HEURES.slice(1), '24:00'];
@@ -36,6 +37,7 @@ export interface CarteCompteLinkedInProps {
  */
 export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedInProps) {
   const t = useTranslations('reglages.expediteurs.linkedin');
+  const tJours = useTranslations('reglages.days.short');
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
@@ -174,7 +176,7 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
           </Champ>
           <Champ libelle={t('drawerDays')}>
             <div style={{ display: 'flex', gap: 6 }}>
-              {JOURS.map(({ valeur, abbr }) => (
+              {JOURS.map(({ valeur, cle }) => (
                 <Bouton
                   key={valeur}
                   taille="petit"
@@ -182,7 +184,7 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
                   aria-pressed={jours.includes(valeur)}
                   onClick={() => basculerJour(valeur)}
                 >
-                  {abbr}
+                  {tJours(cle)}
                 </Bouton>
               ))}
             </div>

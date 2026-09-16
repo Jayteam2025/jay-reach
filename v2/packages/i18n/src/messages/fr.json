@@ -1595,7 +1595,7 @@
         "today": "Aujourd'hui",
         "cadence": "Cadence",
         "perDay": "{n} par jour",
-        "perDayNoLimit": "Sans plafond par jour",
+        "perDayNoLimit": "sans plafond par jour",
         "perHour": "{n} par heure",
         "perHourNoLimit": "sans plafond par heure",
         "hours": "Heures d'envoi",
@@ -1663,6 +1663,26 @@
         "drawerHoursTo": "Jusqu'à",
         "drawerDays": "Jours d'envoi",
         "drawerTimezone": "Fuseau horaire"
+      }
+    },
+    "days": {
+      "mon": "lundi",
+      "tue": "mardi",
+      "wed": "mercredi",
+      "thu": "jeudi",
+      "fri": "vendredi",
+      "sat": "samedi",
+      "sun": "dimanche",
+      "weekdays": "lundi à vendredi",
+      "everyDay": "tous les jours",
+      "short": {
+        "mon": "L",
+        "tue": "M",
+        "wed": "M",
+        "thu": "J",
+        "fri": "V",
+        "sat": "S",
+        "sun": "D"
       }
     }
   }

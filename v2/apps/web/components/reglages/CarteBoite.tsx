@@ -29,6 +29,7 @@ export interface CarteBoiteProps {
 
 export function CarteBoite({ boite, creeLeTexte, derniereReleveTexte, peutModifier }: CarteBoiteProps) {
   const t = useTranslations('reglages.expediteurs');
+  const tJours = useTranslations('reglages.days');
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
@@ -108,7 +109,7 @@ export function CarteBoite({ boite, creeLeTexte, derniereReleveTexte, peutModifi
         </div>
         <div>
           <span className="jr-libelle">{t('box.hours')}</span>
-          <div>{t('box.hoursValue', { debut: boite.heures.debut, fin: boite.heures.fin, jours: libelleJoursEnvoi(boite.heures.jours) })}</div>
+          <div>{t('box.hoursValue', { debut: boite.heures.debut, fin: boite.heures.fin, jours: libelleJoursEnvoi(boite.heures.jours, tJours) })}</div>
           <small className="jr-secondaire">{boite.heures.fuseau}</small>
         </div>
         <div>

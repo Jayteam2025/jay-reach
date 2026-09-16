@@ -9,15 +9,15 @@ import { actionModifierBoite } from '../../app/actions/senders';
 /** Même liste restreinte que `LinkedInPanel.tsx` : les fuseaux où un opérateur francophone travaille. */
 const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
 
-/** Jours ISO : 1 = lundi ... 7 = dimanche. */
-const JOURS: { valeur: number; abbr: string }[] = [
-  { valeur: 1, abbr: 'L' },
-  { valeur: 2, abbr: 'M' },
-  { valeur: 3, abbr: 'M' },
-  { valeur: 4, abbr: 'J' },
-  { valeur: 5, abbr: 'V' },
-  { valeur: 6, abbr: 'S' },
-  { valeur: 7, abbr: 'D' },
+/** Jours ISO : 1 = lundi ... 7 = dimanche. Abréviation traduite via `reglages.days.short.*` — jamais câblée en dur. */
+const JOURS: { valeur: number; cle: string }[] = [
+  { valeur: 1, cle: 'mon' },
+  { valeur: 2, cle: 'tue' },
+  { valeur: 3, cle: 'wed' },
+  { valeur: 4, cle: 'thu' },
+  { valeur: 5, cle: 'fri' },
+  { valeur: 6, cle: 'sat' },
+  { valeur: 7, cle: 'sun' },
 ];
 
 const HEURES = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
@@ -33,6 +33,7 @@ export interface TiroirBoiteProps {
 
 export function TiroirBoite({ ouvert, boite, onFermer, onEnregistre }: TiroirBoiteProps) {
   const t = useTranslations('reglages.expediteurs.drawer');
+  const tJours = useTranslations('reglages.days.short');
 
   const [sansPlafondJour, setSansPlafondJour] = useState(boite.quotas.jour === null);
   const [quotaJour, setQuotaJour] = useState(boite.quotas.jour ?? 30);
@@ -149,7 +150,7 @@ export function TiroirBoite({ ouvert, boite, onFermer, onEnregistre }: TiroirBoi
 
         <Champ libelle={t('days')}>
           <div style={{ display: 'flex', gap: 6 }}>
-            {JOURS.map(({ valeur, abbr }) => (
+            {JOURS.map(({ valeur, cle }) => (
               <Bouton
                 key={valeur}
                 taille="petit"
@@ -157,7 +158,7 @@ export function TiroirBoite({ ouvert, boite, onFermer, onEnregistre }: TiroirBoi
                 aria-pressed={jours.includes(valeur)}
                 onClick={() => basculerJour(valeur)}
               >
-                {abbr}
+                {tJours(cle)}
               </Bouton>
             ))}
           </div>
