@@ -5,6 +5,7 @@ import type { Contexte } from './contexte.js';
 import { ErreurIntrouvable, ErreurEntree } from './contexte.js';
 import {
   lireSequence,
+  lireCampagnePourEtape,
   enregistrerEtape,
   enregistrerVersionModele,
   supprimerEtape,
@@ -172,6 +173,25 @@ describe('lireSequence', () => {
     });
     const vue = await lireSequence(ctx, { campagneId });
     expect(vue.etapes[0]!.titre).toBe('Premier email');
+  });
+});
+
+describe('lireCampagnePourEtape', () => {
+  it('R61 (tour de correction 2) : lit la locale via organizations.default_locale, jamais campaigns.locale (colonne inexistante)', async () => {
+    // Bug réel de recette (16/09) : `select name, source_id, locale from
+    // campaigns` levait `column "locale" does not exist` (transaction annulée
+    // avant toute écriture) — `campaigns` n'a jamais eu cette colonne, seules
+    // `message_templates`/`accounts`/`contacts` en ont une. Les tests
+    // simulaient le pool sans jamais vérifier le texte de la requête, donc
+    // rien ne l'attrapait : cette assertion porte sur les colonnes écrites.
+    const ctx = faux({
+      'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: 'src-1', locale: 'fr' }],
+    });
+    await lireCampagnePourEtape(ctx, campagneId);
+    const requete = texteDesAppels(ctx).find((s) => /jr:sequence_etape_campagne_lire/.test(s))!;
+    expect(requete).toMatch(/organizations/i);
+    expect(requete).toMatch(/default_locale/i);
+    expect(requete).not.toMatch(/select name, source_id, locale from campaigns/i);
   });
 });
 

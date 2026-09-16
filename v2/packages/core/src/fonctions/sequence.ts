@@ -407,10 +407,22 @@ interface LigneCampagneEtape {
   locale: string | null;
 }
 
-/** Exportée pour `apps/web/app/actions/step-message.ts` (façade fine : le nom du modèle reprend celui de la campagne). */
+/**
+ * Exportée pour `apps/web/app/actions/step-message.ts` (façade fine : le nom
+ * du modèle reprend celui de la campagne).
+ *
+ * `campaigns` n'a PAS de colonne `locale` (tour de correction 2, R61 —
+ * `column "locale" does not exist` en recette, transaction annulée avant la
+ * moindre écriture) : seules `message_templates`/`accounts`/`contacts` en ont
+ * une. La locale d'un message vient du réglage de l'organisation
+ * (`organizations.default_locale`, `text not null default 'fr'`).
+ */
 export async function lireCampagnePourEtape(ctx: Contexte, campagneId: string): Promise<LigneCampagneEtape> {
   const res = await ctx.ex.query<LigneCampagneEtape>(
-    `select name, source_id, locale from campaigns /* jr:sequence_etape_campagne_lire */ where id = $1 and organization_id = $2`,
+    `select c.name, c.source_id, o.default_locale as locale
+       from campaigns c /* jr:sequence_etape_campagne_lire */
+       join organizations o on o.id = c.organization_id
+      where c.id = $1 and c.organization_id = $2`,
     [campagneId, ctx.organisationId],
   );
   const ligne = res.rows[0];
