@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { ecrireReglage, lireConsommationDuJour, lireReglages, schemaEcrireReglage } from './plafonds.js';
+import { ecrireReglage, lireConsommationDuJour, lireReglages, plafondEnrichissementDuJour, schemaEcrireReglage } from './plafonds.js';
 
 /**
  * Contexte factice : `rows` associe un motif (regex, insensible à la casse) au résultat renvoyé par `query`.
@@ -89,6 +89,64 @@ describe('plafonds', () => {
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const sqlEnvois = appels.map((call) => String(call[0])).find((sql) => /from actions/i.test(sql));
     expect(sqlEnvois).toMatch(/channel = 'email'/);
+  });
+});
+
+describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17)', () => {
+  it('applique la ligne organization_settings.enrichissements_par_jour quand elle existe', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'enrichissements_par_jour', value: 12 }] });
+    await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(12);
+  });
+
+  it('sans ligne organization_settings, retombe sur credentials.config.daily_cap (ancien réglage v1)', async () => {
+    const ctx = faux({
+      'from organization_settings': [],
+      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: '45' } }],
+    });
+    await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(45);
+  });
+
+  it('sans organization_settings ni credentials, retombe sur le défaut (30, aucun ENRICH_DAILY_CAP dans l’environnement de test)', async () => {
+    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_enrichissement_credentials': [] });
+    await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(30);
+  });
+
+  it('ignore un config.daily_cap non numérique dans credentials (repli sur le défaut)', async () => {
+    const ctx = faux({
+      'from organization_settings': [],
+      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 'abc' } }],
+    });
+    await expect(plafondEnrichissementDuJour(ctx)).resolves.toBe(30);
+  });
+
+  it('ne consulte PAS credentials quand la ligne organization_settings existe déjà (pas de dépense inutile)', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'enrichissements_par_jour', value: 12 }] });
+    await plafondEnrichissementDuJour(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.some((a) => /jr:plafond_enrichissement_credentials/i.test(String(a[0])))).toBe(false);
+  });
+
+  it('ne lit `organization_settings` qu’une seule fois, même quand le repli credentials se déclenche', async () => {
+    const ctx = faux({ 'from organization_settings': [], 'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 45 } }] });
+    await plafondEnrichissementDuJour(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appelsReglages = appels.filter((a) => /from organization_settings/i.test(String(a[0])));
+    expect(appelsReglages).toHaveLength(1);
+  });
+
+  it('lireConsommationDuJour applique EXACTEMENT le même plafond (les deux boutons « Chercher l’email » partagent la même source)', async () => {
+    const ctx = faux({
+      'from organization_settings': [],
+      'jr:plafond_enrichissement_credentials': [{ config: { daily_cap: 45 } }],
+      scored_today: [{ n: 0 }],
+      enrich_today: [{ n: 7 }],
+      'from actions': [{ n: 0 }],
+      'from senders': [{ plafond: 0 }],
+    });
+    const consommation = await lireConsommationDuJour(ctx);
+    const plafondDirect = await plafondEnrichissementDuJour(ctx);
+    expect(consommation.enrichissement.plafond).toBe(45);
+    expect(consommation.enrichissement.plafond).toBe(plafondDirect);
   });
 });
 

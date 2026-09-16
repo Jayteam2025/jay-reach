@@ -1,8 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { plafondEnrichissementDuJour } from '@jay-reach/core';
 import { requireRole } from '../../lib/auth';
 import { createClient } from '../../lib/supabase/server';
+import { getPool } from '../../lib/db';
 
 export type EnrichirResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -87,15 +89,15 @@ export async function enrichirMaintenant(
     };
   }
 
-  // Le crédit ensuite : demander à la main ne contourne pas le plafond du jour.
-  const { data: cap } = await supabase
-    .from('credentials')
-    .select('config')
-    .eq('organization_id', organizationId)
-    .eq('provider_id', 'fullenrich')
-    .maybeSingle();
-  const saisi = Number((cap as { config?: { daily_cap?: string } } | null)?.config?.daily_cap);
-  const plafond = Number.isFinite(saisi) && saisi >= 0 ? saisi : 50;
+  // Le crédit ensuite : demander à la main ne contourne pas le plafond du
+  // jour. `plafondEnrichissementDuJour` (packages/core, R78) est la SEULE
+  // source de vérité, partagée avec `chercherEmail` (fiche contact, tâche 17) :
+  // les deux boutons « Chercher l'email » consomment le même compteur
+  // `provider_daily_usage`, ils doivent appliquer le même plafond — priorité à
+  // `organization_settings.enrichissements_par_jour` (réglable dans l'app),
+  // repli sur `credentials.config.daily_cap` (l'ancien réglage lu ici avant ce
+  // correctif) seulement s'il est absent.
+  const plafond = await plafondEnrichissementDuJour({ ex: getPool(), organisationId: organizationId, utilisateurId: null, role: null });
 
   const { data: credit } = await supabase.rpc('consume_provider_credit', {
     p_org: organizationId,

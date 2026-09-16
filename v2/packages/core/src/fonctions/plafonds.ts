@@ -83,6 +83,24 @@ export async function lireReglages(ctx: Contexte): Promise<Record<ClePlafond, nu
     }
     sortie[cle] = valeurTexteValide(brut) ?? defaut;
   }
+
+  // R78 (tour de correction 1, tâche 17) : `enrichissements_par_jour` a un
+  // second repli historique — `credentials.config.daily_cap`, l'ancien
+  // réglage v1 que lisait `enrichirMaintenant` avant ce correctif — consulté
+  // SEULEMENT si la ligne `organization_settings` est absente ou invalide.
+  // `parCle` est déjà en main (une seule lecture d'`organization_settings`
+  // au total, même avec ce repli) : aucune requête de plus dans le cas
+  // courant où l'organisation a réglé son plafond dans l'app.
+  if (valeurNumeriqueValide(parCle.get('enrichissements_par_jour')) === null) {
+    const credRes = await ctx.ex.query<{ config: unknown }>(
+      `select config from credentials /* jr:plafond_enrichissement_credentials */
+        where organization_id = $1 and provider_id = 'fullenrich'`,
+      [ctx.organisationId],
+    );
+    const saisi = Number((credRes.rows[0]?.config as { daily_cap?: unknown } | null)?.daily_cap);
+    if (Number.isFinite(saisi) && saisi >= 0) sortie.enrichissements_par_jour = saisi;
+  }
+
   return sortie;
 }
 
@@ -127,6 +145,21 @@ export async function ecrireReglage(ctx: Contexte, entree: unknown): Promise<voi
 export interface Jauge {
   utilise: number;
   plafond: number;
+}
+
+/**
+ * Plafond d'enrichissement du jour — SEULE source de vérité pour les deux
+ * boutons « Chercher l'email » (tâche 8 par signal, `apps/web/app/actions/enrichir.ts` ;
+ * tâche 17 par contact, `fonctions/contacts.ts`), qui partagent le même
+ * compteur `provider_daily_usage(provider_id='fullenrich')` et doivent donc
+ * appliquer le même nombre (R78, tour de correction 1 de la tâche 17).
+ * Simple projection de `lireReglages` (qui porte déjà, depuis ce correctif,
+ * le repli `credentials.config.daily_cap` pour cette seule clé) — pas de
+ * requête en plus pour un appelant qui a déjà ses `reglages` en main.
+ */
+export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number> {
+  const reglages = await lireReglages(ctx);
+  return Number(reglages.enrichissements_par_jour);
 }
 
 /**
@@ -185,6 +218,9 @@ export async function lireConsommationDuJour(
 
   return {
     scoring: { utilise: scoringRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.scoring_par_jour) },
+    // `reglagesResolus.enrichissements_par_jour` porte déjà le repli R78
+    // (`credentials.config.daily_cap`, cf. `lireReglages`) — même valeur que
+    // `plafondEnrichissementDuJour(ctx)`, sans le relire.
     enrichissement: { utilise: enrichRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.enrichissements_par_jour) },
     envois: { utilise: envoisUtiliseRes.rows[0]?.n ?? 0, plafond: envoisPlafondRes.rows[0]?.plafond ?? 0 },
   };
