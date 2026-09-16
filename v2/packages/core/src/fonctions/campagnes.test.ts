@@ -65,6 +65,16 @@ describe('marqueBoite', () => {
   it('renvoie null pour un domaine propre à l’organisation', () => {
     expect(marqueBoite('alex@exemple.fr')).toBeNull();
   });
+  it('R63 (tour de correction 2) : inbox_provider microsoft_graph prime sur l’heuristique de domaine', () => {
+    // Une boîte Microsoft 365 connectée en Graph a un domaine propre à
+    // l'organisation (jamais outlook.com/hotmail.com), invisible à
+    // l'heuristique seule — elle s'affichait en tuile « @ » avant ce correctif.
+    expect(marqueBoite('alex@exemple.fr', 'microsoft_graph')).toBe('outlook');
+  });
+  it('R63 : sans inbox_provider microsoft_graph, l’heuristique de domaine reste inchangée', () => {
+    expect(marqueBoite('alex@exemple.fr', null)).toBeNull();
+    expect(marqueBoite('alex@gmail.com', null)).toBe('gmail');
+  });
 });
 
 describe('listerCampagnes', () => {
@@ -134,6 +144,29 @@ describe('listerCampagnes', () => {
     });
     const r = await listerCampagnes(ctx);
     expect(r[0]!.derniereActivite).toBeNull();
+  });
+
+  it('R63 (tour de correction 2) : une boîte Microsoft 365 sur un domaine propre est marquée outlook via inbox_provider', async () => {
+    const ctx = faux({
+      'jr:campagnes_liste': [
+        {
+          id: 'camp-1',
+          name: 'C',
+          status: 'draft',
+          entry_rules: {},
+          sources: [],
+          qualifies: 0,
+          contacts: 0,
+          en_sequence: 0,
+          reponses: 0,
+          interesses: 0,
+          derniere_activite: null,
+        },
+      ],
+      'jr:boites_actives': [{ id: 'send-1', identity: 'boite@exemple.fr', inbox_provider: 'microsoft_graph' }],
+    });
+    const r = await listerCampagnes(ctx);
+    expect(r[0]!.boites).toEqual([{ id: 'send-1', identite: 'boite@exemple.fr', marque: 'outlook' }]);
   });
 
   it('restreint les boîtes à `entry_rules.boiteIds` quand elles sont posées', async () => {
@@ -449,8 +482,8 @@ describe('listerBoitesPourCampagne', () => {
   it('renvoie les boîtes email actives de l’organisation avec leur marque', async () => {
     const ctx = faux({
       'jr:boites_pour_campagne': [
-        { id: 'b1', identity: 'alex@outlook.com', provider_id: 'salesblink' },
-        { id: 'b2', identity: 'alex@exemple.fr', provider_id: null },
+        { id: 'b1', identity: 'alex@outlook.com', provider_id: 'salesblink', inbox_provider: null },
+        { id: 'b2', identity: 'alex@exemple.fr', provider_id: null, inbox_provider: null },
       ],
     });
     const r = await listerBoitesPourCampagne(ctx, {});
@@ -458,6 +491,16 @@ describe('listerBoitesPourCampagne', () => {
       { id: 'b1', identite: 'alex@outlook.com', marque: 'outlook' },
       { id: 'b2', identite: 'alex@exemple.fr', marque: null },
     ]);
+  });
+
+  it('R63 (tour de correction 2) : une boîte Microsoft 365 (inbox_provider microsoft_graph) sur un domaine propre s’affiche en outlook, pas « @ »', async () => {
+    const ctx = faux({
+      'jr:boites_pour_campagne': [
+        { id: 'b1', identity: 'boite@exemple.fr', provider_id: 'salesblink', inbox_provider: 'microsoft_graph' },
+      ],
+    });
+    const r = await listerBoitesPourCampagne(ctx, {});
+    expect(r).toEqual([{ id: 'b1', identite: 'boite@exemple.fr', marque: 'outlook' }]);
   });
 });
 

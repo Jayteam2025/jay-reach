@@ -167,7 +167,17 @@ const DOMAINES_MARQUE: Record<string, 'outlook' | 'gmail'> = {
   'googlemail.com': 'gmail',
 };
 
-export function marqueBoite(identite: string): 'outlook' | 'gmail' | null {
+/**
+ * `inboxProvider` (`senders.inbox_provider`, lot 3 bis — colonne posée par une
+ * branche fusionnée après celle-ci, absente des migrations suivies par CE
+ * worktree mais déjà appliquée sur la base OSS partagée) prime sur
+ * l'heuristique de domaine (tour de correction 2, R63) : une boîte Microsoft
+ * 365 connectée en Graph a un domaine propre à l'organisation (pas
+ * `outlook.com`), que l'heuristique seule ne reconnaît jamais — elle
+ * s'affichait donc en tuile « @ » plutôt qu'en Outlook.
+ */
+export function marqueBoite(identite: string, inboxProvider?: string | null): 'outlook' | 'gmail' | null {
+  if (inboxProvider === 'microsoft_graph') return 'outlook';
   const domaine = identite.split('@')[1]?.toLowerCase().trim();
   if (!domaine) return null;
   return DOMAINES_MARQUE[domaine] ?? null;
@@ -289,17 +299,22 @@ export interface ContactCampagne {
  * campagne (voir `apps/worker/src/handlers/sequence.ts:loadSenders`, qui
  * résout par organisation, jamais par campagne).
  */
-async function boitesActivesDeLOrganisation(ctx: Contexte): Promise<{ id: string; identite: string }[]> {
-  const res = await ctx.ex.query<{ id: string; identity: string }>(
-    `select id, identity from senders /* jr:boites_actives */ where organization_id = $1 and kind = 'email' and is_active`,
+async function boitesActivesDeLOrganisation(
+  ctx: Contexte,
+): Promise<{ id: string; identite: string; inboxProvider: string | null }[]> {
+  const res = await ctx.ex.query<{ id: string; identity: string; inbox_provider: string | null }>(
+    `select id, identity, inbox_provider from senders /* jr:boites_actives */ where organization_id = $1 and kind = 'email' and is_active`,
     [ctx.organisationId],
   );
-  return res.rows.map((r) => ({ id: r.id, identite: r.identity }));
+  return res.rows.map((r) => ({ id: r.id, identite: r.identity, inboxProvider: r.inbox_provider }));
 }
 
-function resoudreBoites(toutes: { id: string; identite: string }[], boiteIds: string[] | undefined): BoiteCampagne[] {
+function resoudreBoites(
+  toutes: { id: string; identite: string; inboxProvider: string | null }[],
+  boiteIds: string[] | undefined,
+): BoiteCampagne[] {
   const retenues = boiteIds && boiteIds.length > 0 ? toutes.filter((b) => boiteIds.includes(b.id)) : toutes;
-  return retenues.map((b) => ({ id: b.id, identite: b.identite, marque: marqueBoite(b.identite) }));
+  return retenues.map((b) => ({ id: b.id, identite: b.identite, marque: marqueBoite(b.identite, b.inboxProvider) }));
 }
 
 function boiteIdsDe(entryRules: unknown): string[] | undefined {
@@ -319,11 +334,11 @@ export async function listerBoitesPourCampagne(ctx: Contexte, entree: unknown): 
   exiger(ctx, 'viewer');
   valider(z.object({}), entree);
 
-  const res = await ctx.ex.query<{ id: string; identity: string; provider_id: string | null }>(
-    `select id, identity, provider_id from senders /* jr:boites_pour_campagne */ where organization_id = $1 and kind = 'email' and is_active`,
+  const res = await ctx.ex.query<{ id: string; identity: string; provider_id: string | null; inbox_provider: string | null }>(
+    `select id, identity, provider_id, inbox_provider from senders /* jr:boites_pour_campagne */ where organization_id = $1 and kind = 'email' and is_active`,
     [ctx.organisationId],
   );
-  return res.rows.map((r) => ({ id: r.id, identite: r.identity, marque: marqueBoite(r.identity) }));
+  return res.rows.map((r) => ({ id: r.id, identite: r.identity, marque: marqueBoite(r.identity, r.inbox_provider) }));
 }
 
 // ---------------------------------------------------------------------------
