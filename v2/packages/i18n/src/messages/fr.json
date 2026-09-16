@@ -1824,6 +1824,104 @@
       },
       "reglagesTitre": "Réglages",
       "enregistrerReglages": "Enregistrer"
+    },
+    "personas": {
+      "title": "Personas",
+      "lead": "Qui l'on cherche, et comment le moteur décide qu'une offre ou un profil correspond.",
+      "new": "+ Nouveau persona",
+      "empty": "Aucun persona pour l'instant.",
+      "list": {
+        "draft": "brouillon · aucune campagne active",
+        "archived": "archivé · retiré du sélecteur de nouvelle campagne",
+        "summary": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}}",
+        "summaryWithScore": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}} · score moyen {score}"
+      },
+      "form": {
+        "titleNew": "Nouveau persona",
+        "usedBy": "utilisé par {campagnes}",
+        "notUsed": "utilisé par aucune campagne",
+        "name": "Nom",
+        "defaultCampaign": "Campagne par défaut",
+        "defaultCampaignNone": "Aucune",
+        "defaultCampaignHint": "où vont les contacts trouvés par une source sans campagne",
+        "titles": "Intitulés de poste reconnus",
+        "titlesAdd": "Ajouter…",
+        "titlesRemove": "Retirer « {intitule} »",
+        "titlesHint": "Le moteur reconnaît aussi les variantes proches ; le test ci-dessous le montre.",
+        "seniority": "Séniorité",
+        "seniorityNone": "Non précisée",
+        "seniority_executive": "Direction générale",
+        "seniority_director": "Direction et management",
+        "seniority_manager": "Management intermédiaire",
+        "seniority_individual": "Contributeur individuel",
+        "scoringPrompt": "Consignes de notation (lues par le modèle)",
+        "angle": "Ce que Jay leur apporte",
+        "delete": "Supprimer",
+        "cancel": "Annuler",
+        "save": "Enregistrer",
+        "deleteConfirm": "Archiver ce persona ? Il disparaît du sélecteur de nouvelle campagne, mais les contacts et campagnes déjà liés ne changent pas."
+      },
+      "test": {
+        "title": "Tester l'appariement",
+        "lead": "correspondance par intitulé, sur les personas actifs",
+        "placeholder": "Un intitulé de poste…",
+        "button": "Tester",
+        "testing": "Test…",
+        "matched": "Correspond à {persona}",
+        "ambiguous": "Ambigu entre {personas}",
+        "none": "Ne correspond à aucun persona"
+      }
+    },
+    "messages": {
+      "title": "Messages",
+      "lead": "La bibliothèque des modèles. Une étape de séquence pointe vers un modèle ; le modifier ici change toutes les campagnes qui l'utilisent, à partir du prochain envoi.",
+      "new": "+ Nouveau modèle",
+      "search": "Rechercher un modèle…",
+      "noResult": "Aucun modèle ne correspond à cette recherche.",
+      "filters": {
+        "all": "Tous {n}",
+        "email": "Email {n}",
+        "linkedin": "LinkedIn {n}",
+        "unused": "Non utilisés {n}"
+      },
+      "table": {
+        "name": "Modèle",
+        "channel": "Canal",
+        "usedBy": "Utilisé par",
+        "modified": "Modifié",
+        "edit": "Modifier",
+        "unusedBy": "aucune",
+        "channelEmail": "Email",
+        "channelLinkedin": "LinkedIn",
+        "channelLetter": "Courrier",
+        "channelCall": "Appel"
+      },
+      "empty": {
+        "title": "Aucun modèle pour l'instant",
+        "text": "Les modèles se créent ici ou depuis une étape de séquence. Un modèle sert à autant de campagnes que vous voulez.",
+        "action": "+ Nouveau modèle"
+      },
+      "drawer": {
+        "titleNew": "Nouveau modèle",
+        "titleEdit": "Modifier {nom}",
+        "close": "Fermer",
+        "cancel": "Annuler",
+        "save": "Enregistrer",
+        "name": "Nom",
+        "channel": "Canal",
+        "channelEmail": "Email",
+        "channelLinkedinInvite": "LinkedIn (invitation)",
+        "channelLinkedinMessage": "LinkedIn (message)",
+        "channelLetter": "Courrier",
+        "channelCall": "Appel",
+        "nature": "Type de campagne visée",
+        "natureSignal": "Alimentée par un signal",
+        "natureList": "Alimentée par une liste",
+        "natureHint": "Décide des variables disponibles dans le corps (ex. '{{'signal_titre'}}' n'existe que pour une campagne alimentée par un signal).",
+        "subject": "Objet",
+        "body": "Corps",
+        "bodyHint": "Variables : cliquez pour insérer au curseur."
+      }
     }
   },
   "contacts": {

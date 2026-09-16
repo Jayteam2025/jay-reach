@@ -13,3 +13,5 @@ export * from './reception.js';
 export * from './contacts.js';
 export * from './expediteurs.js';
 export * from './fournisseurs.js';
+export * from './personas.js';
+export * from './messages.js';
