@@ -37,7 +37,7 @@ export interface ModeleSequence {
 const QUESTION_RELANCES: ModeleSequence = {
   cle: 'question_relances',
   nom: 'Question puis trois relances',
-  description: '4 emails sur 12 jours : une question ouverte, puis trois relances jusqu’au dernier mot.',
+  description: '4 emails sur 10 jours : une question ouverte, puis trois relances jusqu’au dernier mot.',
   etapes: [
     {
       canal: 'email',

@@ -20,6 +20,14 @@ describe('MODELES_SEQUENCE', () => {
     expect(modele!.etapes.map((e) => e.delaiHeures)).toEqual([0, 48, 72, 120]);
   });
 
+  it('R64 (tour de correction 2) : la description en jours correspond à la somme des délais, pas un nombre inventé', () => {
+    const modele = modeleSequenceParCle('question_relances')!;
+    const totalJours = modele.etapes.reduce((somme, e) => somme + e.delaiHeures / 24, 0);
+    expect(totalJours).toBe(10);
+    expect(modele.description).toContain('10 jours');
+    expect(modele.description).not.toContain('12 jours');
+  });
+
   it('« Un seul email » : une seule étape, envoyée immédiatement', () => {
     const modele = modeleSequenceParCle('email_unique');
     expect(modele).toBeDefined();
