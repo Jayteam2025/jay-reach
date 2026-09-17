@@ -228,6 +228,32 @@ describe('enregistrerEtape', () => {
     expect(texteDesAppels(ctx).some((s) => /^begin$/i.test(s.trim()))).toBe(false);
   });
 
+  // Point de cohérence transversale (fusion de main) : la tolérance de
+  // `validateTemplateVariables` pour le préfixe `liste_<colonne>` (variables
+  // de colonnes importées) doit valoir aussi côté sauvegarde d'une étape par
+  // le tiroir, pas seulement à l'envoi.
+  it('accepte {{liste_poste}} (variable de colonne importée) à l’enregistrement', async () => {
+    const nouveauTemplateId = '77777777-7777-7777-7777-777777777777';
+    const nouvelleEtapeId = '88888888-8888-8888-8888-888888888888';
+    const { ctx, appelsClient } = fauxConnectable({
+      'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: 'src-1', locale: 'fr' }],
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_creer': [{ id: nouveauTemplateId }],
+      'jr:sequence_etape_position': [{ n: 0 }],
+      'jr:sequence_etape_creer': [{ id: nouvelleEtapeId }],
+    });
+
+    const res = await enregistrerEtape(ctx, {
+      campagneId,
+      sujet: 'Objet',
+      corps: 'Bonjour {{prenom}}, poste : {{liste_poste}}.',
+      delaiHeures: 0,
+    });
+
+    expect(res).toEqual({ etapeId: nouvelleEtapeId });
+    expect(appelsClient().some((s) => /jr:sequence_etape_creer/.test(s))).toBe(true);
+  });
+
   it('crée le modèle puis l’étape sur le CLIENT loué (begin … commit), rien de tel sur le pool (R47)', async () => {
     const nouveauTemplateId = '55555555-5555-5555-5555-555555555555';
     const nouvelleEtapeId = '66666666-6666-6666-6666-666666666666';
