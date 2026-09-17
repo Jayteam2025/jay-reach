@@ -601,6 +601,34 @@ describe('chercherEmail', () => {
     ]);
   });
 
+  it('#118 : le décompte du crédit journalier utilise le jour de l’organisation, pas UTC (tour de correction 5)', async () => {
+    vi.useFakeTimers();
+    // 23:30 UTC le 14/01 = 00:30 le 15/01 à Paris.
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z'));
+    try {
+      const ctx = faux(
+        {
+          'jr:chercher_email_contact': [{ id: contactId, account_id: accountId, persona_id: personaId, source_signal_id: signalId }],
+          'jr:chercher_email_compte': [{ id: accountId, name: 'Woodpecker Studio', domain: 'woodpecker-studio.example', country: 'FR', enriched_at: null }],
+          'jr:chercher_email_persona_contact': [{ id: personaId, name: 'Directeur commercial', title_patterns: ['head of sales'] }],
+          'jr:chercher_email_deja_en_file': [{ deja: false }],
+          enrich_today: [{ n: 5 }],
+          'jr:chercher_email_credit_maj': [{ used: 6 }],
+        },
+        'operator',
+      );
+
+      await chercherEmail(ctx, { contactId });
+
+      const upsert = appelsDe(ctx).find((a) => /jr:chercher_email_credit_upsert/i.test(a.sql));
+      const maj = appelsDe(ctx).find((a) => /jr:chercher_email_credit_maj/i.test(a.sql));
+      expect(upsert?.params).toEqual(['org-1', 30, '2026-01-15']);
+      expect(maj?.params).toEqual(['org-1', '2026-01-15']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('la course au plafond entre la lecture et l’écriture est refusée (update sans effet)', async () => {
     const ctx = faux(
       {

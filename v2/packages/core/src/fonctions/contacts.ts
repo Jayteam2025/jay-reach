@@ -15,7 +15,7 @@ import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js'
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
-import { lireConsommationDuJour } from './plafonds.js';
+import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
 import {
   CASE_STATUT_DERIVE,
@@ -645,7 +645,13 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
     throw new ErreurEnrichissementImpossible(`${compte.name} est déjà en file d’enrichissement. Ses contacts arriveront dans Contacts.`);
   }
 
-  const plafonds = await lireConsommationDuJour(ctx);
+  // #118 (tour de correction 5) : la même journée que le worker (`app.consume_provider_credit`,
+  // appelé avec le jour de l'organisation) et l'écran (`lireConsommationDuJour`) — sinon ce
+  // décompte manuel écrirait sur une ligne `usage_date` différente de celle que les deux autres
+  // lisent, désynchronisant le plafond entre minuit UTC et minuit heure de l'organisation.
+  const reglages = await lireReglages(ctx);
+  const jour = jourCourantDansFuseau(String(reglages.fuseau));
+  const plafonds = await lireConsommationDuJour(ctx, reglages);
   const plafond = plafonds.enrichissement.plafond;
   if (plafond <= 0) {
     throw new ErreurEnrichissementImpossible('L’enrichissement est en pause (plafond à 0). Relevez-le dans Fournisseurs pour enrichir.');
@@ -659,17 +665,17 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
   // compteur du jour, puis update conditionné par le plafond, en SQL direct.
   await ctx.ex.query(
     `insert into provider_daily_usage (organization_id, provider_id, usage_date, used, daily_cap) /* jr:chercher_email_credit_upsert */
-       values ($1, 'fullenrich', current_date, 0, $2)
+       values ($1, 'fullenrich', $3::date, 0, $2)
      on conflict (organization_id, provider_id, usage_date) do update set daily_cap = excluded.daily_cap`,
-    [ctx.organisationId, plafond],
+    [ctx.organisationId, plafond, jour],
   );
   const majRes = await ctx.ex.query<{ used: number }>(
     `update provider_daily_usage /* jr:chercher_email_credit_maj */
         set used = used + 1, updated_at = now()
-      where organization_id = $1 and provider_id = 'fullenrich' and usage_date = current_date
+      where organization_id = $1 and provider_id = 'fullenrich' and usage_date = $2::date
         and used + 1 <= daily_cap
       returning used`,
-    [ctx.organisationId],
+    [ctx.organisationId, jour],
   );
   if (majRes.rowCount === 0) {
     throw new ErreurEnrichissementImpossible(`Plafond du jour atteint (${plafond} par jour). Relevez-le dans Fournisseurs, ou réessayez demain.`);
@@ -847,6 +853,10 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
         inscriptionId: r.enrollment_id,
         motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
         repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
+        // Onglet Contacts GLOBAL (mélange campagnes à sources et à liste, point 2) : la
+        // colonne d'intitulé de poste d'une liste n'a de sens que sur la page d'UNE
+        // campagne (`listerContactsCampagne`), jamais ici.
+        intitulePosteListe: null,
         campagneId: campagne.id,
         campagneNom: campagne.nom,
         quand: r.quand,
