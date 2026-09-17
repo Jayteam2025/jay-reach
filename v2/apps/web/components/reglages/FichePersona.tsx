@@ -49,10 +49,13 @@ function LignePersona({
             score: persona.scoreMoyen,
           });
 
+  // `jr-persona` retirée de la classe ci-dessous (tour de correction F6, point 28) : aucune règle
+  // CSS ne la référençait, `.jr-source`/`.jr-liste-personas button.jr-source` portent déjà tout le
+  // style de cette ligne (point 3 du même tour).
   return (
     <button
       type="button"
-      className={`jr-source jr-persona${selectionnee ? ' selectionnee' : ''}`}
+      className={`jr-source${selectionnee ? ' selectionnee' : ''}`}
       aria-pressed={selectionnee}
       onClick={onSelectionner}
     >
