@@ -214,7 +214,7 @@ export default async function AujourdhuiPage() {
             colonnes={[
               { cle: 'campagne', titre: t('campaigns.columns.campaign') },
               { cle: 'sources', titre: t('campaigns.columns.sources') },
-              { cle: 'qualifies', titre: t('campaigns.columns.qualified'), num: true },
+              { cle: 'contacts', titre: t('campaigns.columns.contacts'), num: true },
               { cle: 'sequence', titre: t('campaigns.columns.sequence'), num: true },
               { cle: 'reponses', titre: t('campaigns.columns.replies'), num: true },
               { cle: 'semaine', titre: t('campaigns.columns.week') },
@@ -251,11 +251,14 @@ export default async function AujourdhuiPage() {
                     ))}
                   </span>
                 ),
-              qualifies: nf.format(campagne.qualifies),
+              contacts: nf.format(campagne.contacts),
               sequence: nf.format(campagne.enSequence),
               reponses: (
                 <>
-                  {nf.format(campagne.reponses)} <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>{campagne.tauxReponse.toLocaleString('fr-FR')} %</em>
+                  {nf.format(campagne.reponses)}{' '}
+                  <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>
+                    {campagne.tauxReponse !== null ? `${campagne.tauxReponse.toLocaleString('fr-FR')} %` : '—'}
+                  </em>
                 </>
               ),
               // Tendance 7 jours non calculée (demanderait une requête groupée par jour, hors

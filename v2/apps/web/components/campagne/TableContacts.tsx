@@ -55,12 +55,17 @@ export interface TableContactsProps {
   campagneId?: string;
   libelles: TableContactsLibelles;
   /**
-   * Masque « Pourquoi lui »/Score (tour de correction F6, point 20) : pour une campagne à liste
-   * (sans source de signaux), ces deux colonnes n'affichent que des tirets. La donnée qui dit si
-   * une campagne a une source vient du cœur (F5, en cours) : par défaut `false`, l'appelant la
-   * réglera une fois cette information exposée par `listerContactsCampagne`/`ContactCampagne`.
+   * Point 2 (issue #120), campagne à LISTE seulement — jamais posé par la page
+   * Contacts globale (`colonnes="global"`, qui mélange des natures de
+   * campagne différentes). Absent : campagne à sources, colonnes « Pourquoi
+   * lui »/« Score » inchangées. `{ trouve: true, titre }` : les deux colonnes
+   * sont remplacées par UNE colonne `titre`, valeur `ligne.intitulePosteListe`
+   * (`listerContactsCampagne`, `colonnePosteListe`). `{ trouve: false }` : la
+   * liste n'a pas cette colonne dans son CSV — les deux colonnes sont
+   * simplement masquées, sans remplacement (mise en page fine laissée à une
+   * tâche suivante).
    */
-  masquerScoring?: boolean;
+  posteListe?: { trouve: boolean; titre: string };
 }
 
 /**
@@ -82,7 +87,7 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   a_contacter: 'gris',
 };
 
-export function TableContacts({ lignes, colonnes, organisationId, campagneId, libelles, masquerScoring }: TableContactsProps) {
+export function TableContacts({ lignes, colonnes, organisationId, campagneId, libelles, posteListe }: TableContactsProps) {
   return (
     <Table
       colonnes={[
@@ -99,8 +104,10 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
         // Modèle au point 25 bis, `largeurMax: '0'`) — sans lui, un texte long (« AGENT COMMERCIAL
         // TERRAIN & TÉL... ») forçait sa largeur minimale à celle de sa propre phrase, jamais
         // compressible en `table-layout: auto` malgré l'ellipse posée sur le `span.jr-tronque`.
-        ...(masquerScoring
-          ? []
+        ...(posteListe
+          ? posteListe.trouve
+            ? [{ cle: 'posteListe', titre: posteListe.titre }]
+            : []
           : [
               { cle: 'pourquoi', titre: libelles.colonnePourquoi, largeur: '30%', largeurMax: '0' },
               { cle: 'score', titre: libelles.colonneScore },
@@ -133,12 +140,18 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
             </div>
           ),
           ...(colonnes === 'global' ? { campagne: ligne.campagneNom ?? '—' } : {}),
-          pourquoi: ligne.pourquoi ? (
-            <span className="jr-petit jr-tronque">{ligne.pourquoi}</span>
-          ) : (
-            <span className="jr-secondaire">—</span>
-          ),
-          score: ligne.score ?? <span className="jr-secondaire">—</span>,
+          ...(posteListe
+            ? posteListe.trouve
+              ? { posteListe: ligne.intitulePosteListe ?? <span className="jr-secondaire">—</span> }
+              : {}
+            : {
+                pourquoi: ligne.pourquoi ? (
+                  <span className="jr-petit jr-tronque">{ligne.pourquoi}</span>
+                ) : (
+                  <span className="jr-secondaire">—</span>
+                ),
+                score: ligne.score ?? <span className="jr-secondaire">—</span>,
+              }),
           email: ligne.email ? (
             <Puce ton="bon" point>
               {libelles.emailVerifie}

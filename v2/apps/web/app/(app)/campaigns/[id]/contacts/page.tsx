@@ -141,7 +141,17 @@ export default async function CampagneContactsPage({
         {resultat.lignes.length === 0 ? (
           <div className="jr-vide">{t('contacts.empty')}</div>
         ) : (
-          <TableContacts lignes={lignes} colonnes="campagne" organisationId={ctx.organisationId} campagneId={id} libelles={{
+          <TableContacts
+            lignes={lignes}
+            colonnes="campagne"
+            organisationId={ctx.organisationId}
+            campagneId={id}
+            posteListe={
+              resultat.campagneAListe
+                ? { trouve: resultat.colonnePosteListe, titre: t('contacts.columns.listJobTitle') }
+                : undefined
+            }
+            libelles={{
             colonneContact: t('contacts.columns.contact'),
             colonnePourquoi: t('contacts.columns.why'),
             colonneScore: t('contacts.columns.score'),

@@ -218,7 +218,7 @@
       "columns": {
         "campaign": "Campagne",
         "sources": "Sources",
-        "qualified": "Qualifiés",
+        "contacts": "Contacts",
         "sequence": "En séquence",
         "replies": "Réponses",
         "week": "Cette semaine"
@@ -261,6 +261,7 @@
       },
       "persona": "Persona {nom}",
       "sourcesCount": "{n, plural, one {# source} other {# sources}}",
+      "pausedCount": "{n} en pause",
       "noBoxes": "aucune",
       "noSource": "aucune source",
       "open": "Ouvrir",
@@ -304,7 +305,10 @@
         "found": "Offres et profils trouvés",
         "qualified": "Contacts qualifiés",
         "contactsIdentified": "Contacts identifiés",
+        "imported": "Contacts importés",
+        "emailVerified": "Email vérifié",
         "inSequence": "En séquence",
+        "pausedSuffix": "· {n} en pause",
         "delivered": "Emails livrés",
         "replies": "Réponses",
         "interested": "Intéressés"
@@ -327,7 +331,8 @@
       "sources": {
         "title": "Sources",
         "count": "{n, plural, one {# active} other {# actives}}",
-        "empty": "Aucune source reliée à cette campagne."
+        "empty": "Aucune source reliée à cette campagne.",
+        "listSubtitle": "{n, plural, one {# contact} other {# contacts}} · importée le {date}"
       },
       "activity": {
         "title": "Activité récente",
@@ -347,6 +352,7 @@
         "contact": "Contact",
         "why": "Pourquoi lui",
         "score": "Score",
+        "listJobTitle": "Intitulé de poste",
         "email": "Email",
         "step": "Étape",
         "campaign": "Campagne",
@@ -1341,10 +1347,12 @@
         "titre": "Relève des réponses",
         "sousTitre": "lecture seule",
         "cadence": "Cadence",
-        "cadenceValeur": "toutes les 5 min",
+        "cadenceValeurGabarit": "toutes les {minutes} min",
         "derniere": "Dernière relève",
         "jamais": "jamais",
-        "aide": "Réglé par l'environnement du serveur. Se change avec un redéploiement, pas ici."
+        "aideReglee": "Réglé dans Fournisseurs › SalesBlink.",
+        "aideDefaut": "Aucune fréquence saisie : la valeur par défaut s'applique. Réglable dans Fournisseurs › SalesBlink.",
+        "lienFournisseurs": "Ouvrir Fournisseurs"
       },
       "bandeauPause": {
         "texteGabarit": "Pause d'envoi active depuis {depuis} ({parQui}) : aucun email ne part.",

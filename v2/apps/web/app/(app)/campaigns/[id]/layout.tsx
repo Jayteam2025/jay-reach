@@ -51,7 +51,14 @@ export default async function CampagneLayout({ children, params }: { children: R
         onglets={
           <OngletsCampagne
             campagneId={id}
-            compteurs={{ contacts: vue.entonnoir.contacts, fileDuJour: vue.fileDuJour.length, sources: vue.nombreSources }}
+            compteurs={{
+              // Point 2 : une campagne à liste n'a pas de « contacts qualifiés » (aucun
+              // signal), le badge de l'onglet Contacts prend alors les contacts importés —
+              // même population que l'onglet lui-même dans les deux cas.
+              contacts: vue.entonnoir.origine === 'sources' ? vue.entonnoir.contacts : vue.entonnoir.contactsImportes,
+              fileDuJour: vue.fileDuJour.length,
+              sources: vue.nombreSources,
+            }}
           />
         }
       />

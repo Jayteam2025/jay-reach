@@ -5,7 +5,7 @@ import { ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
-import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -45,20 +45,38 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
   const resteFile = vue.fileDuJour.length - apercuFile.length;
   const dejaPartis = vue.fileDuJour.filter((envoi) => envoi.envoye).length;
 
+  // Point 1 : « — » plutôt qu'un 0 % quand rien n'est encore parti (jamais une division par
+  // zéro déguisée). Point 1 : la marche « En séquence » porte aussi le nombre en pause, en
+  // second libellé (même case `taux` que les pourcentages, réutilisée comme simple annotation).
+  const tauxOuTiret = (taux: number | null) => (taux !== null ? pourcentageTexte(taux) : '—');
+  const enPauseSuffixe = vue.entonnoir.enPause > 0 ? t('overview.funnel.pausedSuffix', { n: vue.entonnoir.enPause }) : undefined;
+
+  // Point 2 (issue #120) : une campagne à liste n'a ni signal ni thème de veille — l'entonnoir
+  // part des contacts importés plutôt que de « 0 offres et profils trouvés ».
+  const etapesEntonnoir =
+    vue.entonnoir.origine === 'liste'
+      ? [
+          { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
+          { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
+          { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuTiret(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuTiret(vue.entonnoir.tauxReponses) },
+          { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
+        ]
+      : [
+          { valeur: vue.entonnoir.trouves, libelle: t('overview.funnel.found') },
+          { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
+          { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
+          { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuTiret(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuTiret(vue.entonnoir.tauxReponses) },
+          { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
+        ];
+
   return (
     <section className="jr-contenu">
       <Carte className="pleine">
-        <Entonnoir
-          etapes={[
-            { valeur: vue.entonnoir.trouves, libelle: t('overview.funnel.found') },
-            { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
-            { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
-            { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence') },
-            { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: pourcentageTexte(vue.entonnoir.tauxLivres) },
-            { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: pourcentageTexte(vue.entonnoir.tauxReponses) },
-            { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
-          ]}
-        />
+        <Entonnoir etapes={etapesEntonnoir} />
       </Carte>
 
       <Carte
@@ -125,24 +143,44 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           </Link>
         </Carte>
 
-        <Carte titre={t('overview.sources.title')} action={<small>{t('overview.sources.count', { n: vue.sources.length })}</small>}>
-          {vue.sources.length === 0 ? (
-            <p className="jr-secondaire">{t('overview.sources.empty')}</p>
-          ) : (
-            vue.sources.map((source, index) => {
-              const cle = `fournisseurs.${source.providerId}`;
-              const libelle = source.providerId && tSources.has(cle) ? tSources(cle) : (source.providerId ?? '—');
-              return (
-                <div className="jr-source" key={source.providerId ?? `inconnu-${index}`}>
-                  <TuileLogo marque={marqueSource(source.providerId)} lettre={(source.providerId ?? '?').charAt(0).toUpperCase()} />
-                  <span>
-                    <b>{libelle}</b>
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </Carte>
+        {vue.listeSource ? (
+          // Point 2 (issue #120) : une campagne à liste montre la liste elle-même
+          // (nom, contacts, date d'import), plus jamais « Aucune source reliée ».
+          <Carte titre={t('overview.sources.title')}>
+            <div className="jr-source">
+              <TuileLogo marque="lettre" lettre={vue.listeSource.nom.charAt(0).toUpperCase()} />
+              <span>
+                <b>{vue.listeSource.nom}</b>
+                <small>
+                  {t('overview.sources.listSubtitle', {
+                    n: vue.listeSource.contacts,
+                    date: dateCourte(vue.listeSource.importeeLe, new Date(), FUSEAU_PAR_DEFAUT),
+                  })}
+                </small>
+              </span>
+            </div>
+          </Carte>
+        ) : (
+          <Carte titre={t('overview.sources.title')} action={<small>{t('overview.sources.count', { n: vue.sources.length })}</small>}>
+            {vue.sources.length === 0 ? (
+              <p className="jr-secondaire">{t('overview.sources.empty')}</p>
+            ) : (
+              vue.sources.map((source) => {
+                const cleFournisseur = `fournisseurs.${source.providerId}`;
+                const libelleFournisseur = source.providerId && tSources.has(cleFournisseur) ? tSources(cleFournisseur) : null;
+                return (
+                  <div className="jr-source" key={source.id}>
+                    <TuileLogo marque={marqueSource(source.providerId)} lettre={source.nom.charAt(0).toUpperCase()} />
+                    <span>
+                      <b>{source.nom}</b>
+                      {libelleFournisseur && libelleFournisseur !== source.nom && <small>{libelleFournisseur}</small>}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </Carte>
+        )}
       </div>
 
       <Carte

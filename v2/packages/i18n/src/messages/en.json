@@ -218,7 +218,7 @@
       "columns": {
         "campaign": "Campaign",
         "sources": "Sources",
-        "qualified": "Qualified",
+        "contacts": "Contacts",
         "sequence": "In sequence",
         "replies": "Replies",
         "week": "This week"
@@ -261,6 +261,7 @@
       },
       "persona": "Persona {nom}",
       "sourcesCount": "{n, plural, one {# source} other {# sources}}",
+      "pausedCount": "{n} paused",
       "noBoxes": "none",
       "noSource": "no source",
       "open": "Open",
@@ -304,7 +305,10 @@
         "found": "Postings and profiles found",
         "qualified": "Qualified contacts",
         "contactsIdentified": "Contacts identified",
+        "imported": "Imported contacts",
+        "emailVerified": "Email verified",
         "inSequence": "In sequence",
+        "pausedSuffix": "· {n} paused",
         "delivered": "Emails delivered",
         "replies": "Replies",
         "interested": "Interested"
@@ -327,7 +331,8 @@
       "sources": {
         "title": "Sources",
         "count": "{n, plural, one {# active} other {# active}}",
-        "empty": "No source linked to this campaign."
+        "empty": "No source linked to this campaign.",
+        "listSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}"
       },
       "activity": {
         "title": "Recent activity",
@@ -347,6 +352,7 @@
         "contact": "Contact",
         "why": "Why them",
         "score": "Score",
+        "listJobTitle": "Job title",
         "email": "Email",
         "step": "Step",
         "campaign": "Campaign",
@@ -1341,10 +1347,12 @@
         "titre": "Reply polling",
         "sousTitre": "read-only",
         "cadence": "Pace",
-        "cadenceValeur": "every 5 min",
+        "cadenceValeurGabarit": "every {minutes} min",
         "derniere": "Last poll",
         "jamais": "never",
-        "aide": "Set by the server environment. Changed with a redeploy, not here."
+        "aideReglee": "Set in Providers › SalesBlink.",
+        "aideDefaut": "No pace entered: the default value applies. Set it in Providers › SalesBlink.",
+        "lienFournisseurs": "Open Providers"
       },
       "bandeauPause": {
         "texteGabarit": "Sending pause active since {depuis} ({parQui}): no email goes out.",

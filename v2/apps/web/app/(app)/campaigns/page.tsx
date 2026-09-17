@@ -120,10 +120,6 @@ export default async function CampagnesPage({
                 { cle: 'action', titre: '' },
               ]}
               lignes={campagnesAffichees.map((campagne) => {
-                // R31 : le pourcentage de réponses n'est montré que si des livraisons ont
-                // eu lieu (`tendance7j`, déjà « livraisons par jour sur 7 jours ») — sinon
-                // un « 0 0 % » sans dénominateur réel, trompeur.
-                const aEuDesLivraisons = campagne.tendance7j.some((n) => n > 0);
                 return {
                   campagne: (
                     <div className="jr-qui">
@@ -150,11 +146,23 @@ export default async function CampagnesPage({
                       <PileDeBoites boites={campagne.boites} />
                     ),
                   contacts: nf.format(campagne.contacts),
-                  sequence: nf.format(campagne.enSequence),
+                  sequence: (
+                    <>
+                      {nf.format(campagne.enSequence)}
+                      {campagne.enPause > 0 && (
+                        <>
+                          {' '}
+                          <small className="jr-secondaire">{t('list.pausedCount', { n: campagne.enPause })}</small>
+                        </>
+                      )}
+                    </>
+                  ),
                   reponses: (
                     <>
                       <b>{nf.format(campagne.reponses)}</b>
-                      {aEuDesLivraisons && (
+                      {/* Point 1 : le pourcentage n'est montré que sur une base réelle
+                          (emails partis), jamais un « 0 0 % » qui suggérerait une mesure. */}
+                      {campagne.tauxReponse !== null && (
                         <>
                           {' '}
                           <small className="jr-secondaire">{campagne.tauxReponse.toLocaleString('fr-FR')} %</small>

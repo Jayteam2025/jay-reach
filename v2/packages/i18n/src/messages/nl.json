@@ -218,7 +218,7 @@
       "columns": {
         "campaign": "Campagne",
         "sources": "Bronnen",
-        "qualified": "Gekwalificeerd",
+        "contacts": "Contacten",
         "sequence": "In sequentie",
         "replies": "Reacties",
         "week": "Deze week"
@@ -261,6 +261,7 @@
       },
       "persona": "Persona {nom}",
       "sourcesCount": "{n, plural, one {# bron} other {# bronnen}}",
+      "pausedCount": "{n} gepauzeerd",
       "noBoxes": "geen",
       "noSource": "geen bron",
       "open": "Openen",
@@ -304,7 +305,10 @@
         "found": "Gevonden vacatures en profielen",
         "qualified": "Gekwalificeerde contacten",
         "contactsIdentified": "Geïdentificeerde contacten",
+        "imported": "Geïmporteerde contacten",
+        "emailVerified": "E-mail geverifieerd",
         "inSequence": "In sequentie",
+        "pausedSuffix": "· {n} gepauzeerd",
         "delivered": "Bezorgde e-mails",
         "replies": "Reacties",
         "interested": "Geïnteresseerd"
@@ -327,7 +331,8 @@
       "sources": {
         "title": "Bronnen",
         "count": "{n, plural, one {# actief} other {# actieve}}",
-        "empty": "Geen bron gekoppeld aan deze campagne."
+        "empty": "Geen bron gekoppeld aan deze campagne.",
+        "listSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}"
       },
       "activity": {
         "title": "Recente activiteit",
@@ -347,6 +352,7 @@
         "contact": "Contact",
         "why": "Waarom deze persoon",
         "score": "Score",
+        "listJobTitle": "Functietitel",
         "email": "E-mail",
         "step": "Stap",
         "campaign": "Campagne",
@@ -1341,10 +1347,12 @@
         "titre": "Ophalen van reacties",
         "sousTitre": "alleen-lezen",
         "cadence": "Tempo",
-        "cadenceValeur": "elke 5 min",
+        "cadenceValeurGabarit": "elke {minutes} min",
         "derniere": "Laatst opgehaald",
         "jamais": "nooit",
-        "aide": "Ingesteld door de serveromgeving. Wordt gewijzigd bij een herdeployment, niet hier."
+        "aideReglee": "Ingesteld bij Providers › SalesBlink.",
+        "aideDefaut": "Geen tempo ingesteld: de standaardwaarde geldt. In te stellen bij Providers › SalesBlink.",
+        "lienFournisseurs": "Providers openen"
       },
       "bandeauPause": {
         "texteGabarit": "Verzendpauze actief sinds {depuis} ({parQui}): er gaat geen e-mail uit.",

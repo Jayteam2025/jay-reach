@@ -3,6 +3,7 @@ import {
   INTERVALLE_PRODUCTION_MS,
   lireEtatMoteur,
   lireEtatPauseEnvoi,
+  lireReglageReleve,
   lireReglages,
   listerErreursRecentes,
   listerTaches,
@@ -21,12 +22,13 @@ export default async function ReglagesMoteurPage() {
   const ctx = await contexteCourant();
   const t = await getTranslations('reglages.moteur');
 
-  const [reglages, etat, pause, erreurs, taches] = await Promise.all([
+  const [reglages, etat, pause, erreurs, taches, reglageReleve] = await Promise.all([
     lireReglages(ctx),
     lireEtatMoteur(ctx),
     lireEtatPauseEnvoi(ctx),
     listerErreursRecentes(ctx),
     listerTaches(ctx),
+    lireReglageReleve(ctx),
   ]);
 
   const fuseau = String(reglages.fuseau ?? FUSEAU_PAR_DEFAUT);
@@ -186,13 +188,18 @@ export default async function ReglagesMoteurPage() {
         >
           <div className="jr-cle-valeur">
             <span>{t('releveLectureSeule.cadence')}</span>
-            <b>{t('releveLectureSeule.cadenceValeur')}</b>
+            <b>{t('releveLectureSeule.cadenceValeurGabarit', { minutes: reglageReleve.minutes })}</b>
           </div>
           <div className="jr-cle-valeur">
             <span>{t('releveLectureSeule.derniere')}</span>
             <b>{taches.releve.dernierPassage ? dateCourte(taches.releve.dernierPassage, maintenant, fuseau) : t('releveLectureSeule.jamais')}</b>
           </div>
-          <p className="jr-aide">{t('releveLectureSeule.aide')}</p>
+          <p className="jr-aide">
+            {reglageReleve.origine === 'reglee' ? t('releveLectureSeule.aideReglee') : t('releveLectureSeule.aideDefaut')}{' '}
+            <Link href="/settings/providers" className="jr-lien">
+              {t('releveLectureSeule.lienFournisseurs')}
+            </Link>
+          </p>
         </Carte>
       </div>
 

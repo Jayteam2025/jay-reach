@@ -54,6 +54,7 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     inscriptionId: null,
     motifPause: null,
     repriseLe: null,
+    intitulePosteListe: null,
     motifPauseAffiche: null,
     ...overrides,
   };
@@ -245,6 +246,57 @@ describe('TableContacts', () => {
       <TableContacts lignes={[]} colonnes="campagne" organisationId="org-1" campagneId="camp-1" libelles={LIBELLES} />,
     );
     expect(html).toContain('Aucun contact pour ce filtre.');
+  });
+
+  describe('point 2 (issue #120) : `posteListe`, campagne à liste', () => {
+    it('sans `posteListe` (campagne à sources) : colonnes « Pourquoi lui »/« Score » inchangées', () => {
+      const html = renderToStaticMarkup(
+        <TableContacts
+          lignes={[ligne({ pourquoi: 'A commenté un post récent', score: 88 })]}
+          colonnes="campagne"
+          organisationId="org-1"
+          campagneId="camp-1"
+          libelles={LIBELLES}
+        />,
+      );
+      expect(html).toContain('Pourquoi lui');
+      expect(html).toContain('Score');
+      expect(html).toContain('A commenté un post récent');
+      expect(html).toContain('88');
+    });
+
+    it('`posteListe.trouve` à `true` : une seule colonne remplace « Pourquoi lui »/« Score », valeur `intitulePosteListe`', () => {
+      const html = renderToStaticMarkup(
+        <TableContacts
+          lignes={[ligne({ pourquoi: null, score: null, intitulePosteListe: 'Responsable RH' })]}
+          colonnes="campagne"
+          organisationId="org-1"
+          campagneId="camp-1"
+          posteListe={{ trouve: true, titre: 'Intitulé de poste' }}
+          libelles={LIBELLES}
+        />,
+      );
+      expect(html).not.toContain('Pourquoi lui');
+      expect(html).not.toContain('>Score<');
+      expect(html).toContain('Intitulé de poste');
+      expect(html).toContain('Responsable RH');
+    });
+
+    it('`posteListe.trouve` à `false` : « Pourquoi lui »/« Score » masquées, sans remplacement', () => {
+      const html = renderToStaticMarkup(
+        <TableContacts
+          lignes={[ligne({ pourquoi: null, score: null })]}
+          colonnes="campagne"
+          organisationId="org-1"
+          campagneId="camp-1"
+          posteListe={{ trouve: false, titre: 'Intitulé de poste' }}
+          libelles={LIBELLES}
+        />,
+      );
+      expect(html).not.toContain('Pourquoi lui');
+      expect(html).not.toContain('>Score<');
+      expect(html).not.toContain('Intitulé de poste');
+    });
   });
 });
 
