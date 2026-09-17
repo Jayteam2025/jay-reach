@@ -130,6 +130,7 @@ export default async function CampagneContactsPage({
             className="jr-champ jr-champ-recherche"
             type="search"
             name="q"
+            autoComplete="off"
             defaultValue={recherche ?? ''}
             placeholder={t('contacts.search')}
           />

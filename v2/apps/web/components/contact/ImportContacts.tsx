@@ -142,7 +142,12 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
                       colonne: header,
                       exemple: parsed.rows[0]?.[header] ?? '',
                       champ: (
-                        <select value={mapping[header] ?? ''} onChange={(e) => changerMapping(header, e.target.value)}>
+                        <select
+                          className="jr-champ"
+                          name={`mapping-${header}`}
+                          value={mapping[header] ?? ''}
+                          onChange={(e) => changerMapping(header, e.target.value)}
+                        >
                           <option value="">{t('importDialog.colIgnore')}</option>
                           {IMPORT_FIELDS.map((champ) => (
                             <option key={champ} value={champ}>
