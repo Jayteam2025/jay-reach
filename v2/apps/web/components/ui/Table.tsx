@@ -40,7 +40,14 @@ export function Table({ colonnes, lignes, vide }: TableProps) {
           lignes.map((ligne, index) => (
             <tr key={index}>
               {colonnes.map((colonne) => (
-                <td key={colonne.cle} className={classeColonne(colonne)}>
+                // `largeur` posée aussi sur la cellule, pas seulement l'en-tête (tour de
+                // correction F6, point 20) : suffisant dans la plupart des navigateurs en
+                // `table-layout: auto`, mais plus sûr de le répéter que d'en dépendre.
+                <td
+                  key={colonne.cle}
+                  className={classeColonne(colonne)}
+                  style={colonne.largeur ? { width: colonne.largeur } : undefined}
+                >
                   {ligne[colonne.cle]}
                 </td>
               ))}

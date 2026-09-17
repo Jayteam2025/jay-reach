@@ -44,7 +44,10 @@ export function BoutonChercherEmail({ organisationId, signalId, libelle, cout }:
   }
 
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    // Coût empilé sous le bouton plutôt qu'à côté (tour de correction F6, point 20) : la version
+    // en ligne ajoutait sa largeur à celle du bouton, ce qui poussait la colonne Statut/Action des
+    // tableaux de contacts bien au-delà de son contenu réel.
+    <span className="jr-action-empilee">
       <button type="button" className="jr-bouton petit" disabled={pending} aria-busy={pending} onClick={lancer}>
         {libelle}
       </button>
