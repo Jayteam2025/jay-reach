@@ -8,11 +8,15 @@ import { test, expect } from '@playwright/test';
  * session : elle ne doit jamais tourner dans le project `chromium` partagé,
  * elle romprait la session des autres parcours.
  *
+ * Réglages (B1, revue finale) : l'entrée du menu principal n'a pas d'écran
+ * propre, elle redirige vers la première page de la sous-navigation
+ * (Expéditeurs) — seul parcours qui clique cette entrée depuis Aujourd'hui,
+ * les autres y vont par URL directe.
+ *
  * Déconnexion : `Réglages › Compte` (R89) — carte « Session », bouton
  * « Se déconnecter » relié à `signOut` (apps/web/app/actions/auth.ts). On y
- * va par URL directe (`NavReglages.tsx` relie désormais aussi cette entrée,
- * mais ce parcours ne clique pas la sous-navigation Réglages), comme
- * `plafonds.spec.ts` le fait déjà pour `/settings/limits`.
+ * va par URL directe, comme `plafonds.spec.ts` le fait déjà pour
+ * `/settings/limits`.
  */
 test('connexion : arrivée sur Aujourd\'hui avec le menu à cinq entrées', async ({ page }) => {
   const email = process.env.E2E_EMAIL;
@@ -38,6 +42,12 @@ test('connexion : arrivée sur Aujourd\'hui avec le menu à cinq entrées', asyn
   for (const nom of ['Aujourd\'hui', 'Campagnes', 'Contacts', 'Réception', 'Réglages']) {
     await expect(nav.getByRole('link', { name: nom })).toBeVisible();
   }
+
+  // Réglages (B1) : le clic depuis Aujourd'hui atterrit sur Expéditeurs,
+  // première page de la sous-navigation.
+  await nav.getByRole('link', { name: 'Réglages' }).click();
+  await page.waitForURL('/settings/senders');
+  await expect(page.getByRole('heading', { name: 'Boîtes email' })).toBeVisible();
 
   // Déconnexion (Réglages › Compte, carte « Session »).
   await page.goto('/settings/account');
