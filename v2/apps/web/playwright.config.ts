@@ -92,7 +92,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testMatch: ['creer-campagne.spec.ts', 'aujourdhui.spec.ts', 'reception.spec.ts', 'sources.spec.ts', 'plafonds.spec.ts'],
+      testMatch: ['creer-campagne.spec.ts', 'aujourdhui.spec.ts', 'reception.spec.ts', 'sources.spec.ts', 'plafonds.spec.ts', 'contacts.spec.ts'],
       use: { ...devices['Desktop Chrome'], storageState: ETAT_SESSION },
       dependencies: ['setup'],
     },
