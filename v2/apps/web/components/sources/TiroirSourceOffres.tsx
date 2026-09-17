@@ -245,7 +245,7 @@ export function TiroirSourceOffres({
                 id="tiroir-offres-taille"
                 value={taille}
                 onChange={(e) => setTaille(e.target.value)}
-                placeholder="10 à 250 salariés"
+                placeholder={t('drawer.companySizePlaceholder')}
               />
             </Champ>
           ) : (
@@ -264,7 +264,7 @@ export function TiroirSourceOffres({
             id="tiroir-offres-exclusions"
             value={exclusions}
             onChange={(e) => setExclusions(e.target.value)}
-            placeholder="cabinet de recrutement, intérim"
+            placeholder={t('drawer.exclusionsPlaceholder')}
           />
         </Champ>
         <div className="ligne">
