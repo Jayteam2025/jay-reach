@@ -450,6 +450,33 @@ describe('enregistrerVersionModele', () => {
     expect(textes.at(-1)).toBe('rollback');
     expect(releases).toBe(1);
   });
+
+  // M10 (Mineur, revue finale du 14/09) : `inserVersionModele` filtre bien
+  // par organisation pour le numéro de version et la désactivation, mais
+  // n'empêchait pas d'accepter un `familyId` d'une autre organisation —
+  // la version créée restait chez nous, mais son `parent_id` traversait la
+  // frontière. Vérifiée AVANT d'ouvrir la transaction (comme `validerVariables`).
+  it('lève ErreurIntrouvable quand familyId n’appartient pas à l’organisation', async () => {
+    const { ctx } = fauxConnectable({
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_lignee': [], // aucune ligne dans cette organisation
+    });
+    await expect(
+      enregistrerVersionModele(ctx, { ...entreeValide, familyId: templateParentId }),
+    ).rejects.toThrow(ErreurIntrouvable);
+  });
+
+  it('accepte une nouvelle version quand familyId appartient à l’organisation', async () => {
+    const nouveauId = '88888888-8888-8888-8888-888888888888';
+    const { ctx } = fauxConnectable({
+      'jr:sequence_extraits': [],
+      'jr:sequence_modele_lignee': [{ id: templateParentId }],
+      'jr:sequence_modele_prochaine_version': [{ next: 2 }],
+      'jr:sequence_modele_versionner': [{ id: nouveauId }],
+    });
+    const res = await enregistrerVersionModele(ctx, { ...entreeValide, familyId: templateParentId });
+    expect(res).toEqual({ id: nouveauId });
+  });
 });
 
 describe('supprimerEtape', () => {

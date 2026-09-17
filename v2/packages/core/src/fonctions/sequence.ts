@@ -329,6 +329,20 @@ export async function enregistrerVersionModele(ctx: Contexte, entree: unknown): 
   const e = valider(schemaEnregistrerVersionModele, entree);
   const corpsNormalise = await validerVariables(ctx, e.corps, e.nature);
 
+  // M10 (Mineur, revue finale du 14/09) : `inserVersionModele` filtre bien
+  // par organisation pour le numéro de version et la désactivation (la
+  // version créée reste chez nous), mais un `familyId` d'une autre
+  // organisation n'était jamais rejeté — son `parent_id` traversait quand
+  // même la frontière. Vérifié avant d'ouvrir la transaction.
+  if (e.familyId) {
+    const lignee = await ctx.ex.query<{ id: string }>(
+      `select id from message_templates /* jr:sequence_modele_lignee */
+        where id = $1 and organization_id = $2`,
+      [e.familyId, ctx.organisationId],
+    );
+    if (lignee.rowCount === 0) throw new ErreurIntrouvable('Modèle');
+  }
+
   const id = await dansUneTransaction(ctx.ex, (tx) =>
     inserVersionModele(
       { ...ctx, ex: tx },
