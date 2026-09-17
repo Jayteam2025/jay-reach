@@ -16,7 +16,7 @@ export function ZoneReponse({ depuis, placeholder, note, actions, value, onChang
   return (
     <div className="jr-reponse">
       <div className="depuis">{depuis}</div>
-      <textarea placeholder={placeholder} value={value} onChange={gererChangement} />
+      <textarea name="reponse" placeholder={placeholder} value={value} onChange={gererChangement} />
       <div className="pied">
         <span className="jr-secondaire jr-petit">{note}</span>
         <div className="jr-actions">{actions}</div>

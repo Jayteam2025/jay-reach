@@ -14,6 +14,14 @@ export interface TiroirSourceAnnuaireProps {
 
 const BUCKETS = ['small', 'mid', 'large', 'xl'] as const;
 
+/** Clé i18n du libellé français de chaque tranche d'effectif (`lib/directory.ts::EFFECTIF_BUCKETS`). */
+const BUCKET_LABEL_KEYS: Record<(typeof BUCKETS)[number], string> = {
+  small: 'drawer.directoryEffectifSmall',
+  mid: 'drawer.directoryEffectifMid',
+  large: 'drawer.directoryEffectifLarge',
+  xl: 'drawer.directoryEffectifXl',
+};
+
 export interface BlocResultatAnnuaireProps {
   readonly entreprisesRetenues: number;
   readonly dejaConnues: number;
@@ -215,10 +223,10 @@ export function TiroirSourceAnnuaire({ campagneId }: TiroirSourceAnnuaireProps) 
               </Champ>
               <Champ libelle={t('drawer.directoryEffectif')}>
                 <select value={effectif} onChange={(e) => setEffectif(e.target.value)}>
-                  <option value="">—</option>
+                  <option value="">{t('drawer.directoryEffectifAny')}</option>
                   {BUCKETS.map((b) => (
                     <option key={b} value={b}>
-                      {b}
+                      {t(BUCKET_LABEL_KEYS[b])}
                     </option>
                   ))}
                 </select>
