@@ -264,4 +264,28 @@ describe('Réception — rendu des trois volets', () => {
     );
     expect(html).not.toContain('Ouvrir la fiche complète');
   });
+
+  // Tour de correction 1, Important (relecture, T29) : une inscription
+  // `en_pause` avec au moins une étape déjà faite n'est PAS « séquence
+  // arrêtée » (reprenable), contrairement à `a_repondu` (FICHE, fixture de
+  // base) où l'affichage reste inchangé.
+  it('ColonneContact : une inscription a_repondu avec une étape faite affiche « séquence arrêtée »', () => {
+    const html = renderToStaticMarkup(
+      <ColonneContact t={t} fiche={FICHE} canal="email" campagneId="campagne-1" pourquoiQuandAffiche="4 sept." />,
+    );
+    expect(html).toContain('séquence arrêtée à la réponse');
+  });
+
+  it('ColonneContact : une inscription en_pause avec une étape faite n’affiche PAS « séquence arrêtée » (reprenable)', () => {
+    const html = renderToStaticMarkup(
+      <ColonneContact
+        t={t}
+        fiche={{ ...FICHE, statut: 'en_pause' }}
+        canal="email"
+        campagneId="campagne-1"
+        pourquoiQuandAffiche="4 sept."
+      />,
+    );
+    expect(html).not.toContain('séquence arrêtée à la réponse');
+  });
 });

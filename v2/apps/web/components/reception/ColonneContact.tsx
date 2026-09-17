@@ -70,7 +70,17 @@ export function ColonneContact({ t, fiche, canal, campagneId, pourquoiQuandAffic
   const marque = marqueSource(fiche.pourquoi?.providerId ?? null);
   const statutEmail = puceStatutEmail(fiche.contact.emailStatut, t);
   const nom = nomComplet(fiche.contact.prenom, fiche.contact.nom);
-  const sequenceArretee = fiche.sequence !== null && fiche.statut !== 'en_sequence' && fiche.sequence.etapes.some((e) => e.etat === 'faite');
+  // `en_pause` exclu au même titre qu'`en_sequence` (tour de correction 1,
+  // Important de la relecture, T29) : une inscription simplement en pause
+  // (gate email, expéditeur indisponible, absence…) est reprenable, pas
+  // arrêtée — avant T29, `paused`/`paused_absence` tombaient dans le statut
+  // dérivé `en_sequence`, donc `sequenceArretee` valait déjà `false` pour ces
+  // inscriptions ; le nouveau statut `en_pause` doit se comporter pareil.
+  const sequenceArretee =
+    fiche.sequence !== null &&
+    fiche.statut !== 'en_sequence' &&
+    fiche.statut !== 'en_pause' &&
+    fiche.sequence.etapes.some((e) => e.etat === 'faite');
 
   return (
     <aside className="jr-colonne">
