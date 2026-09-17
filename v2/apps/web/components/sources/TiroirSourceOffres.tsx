@@ -221,7 +221,7 @@ export function TiroirSourceOffres({
             id="tiroir-offres-mots-cles"
             value={motsCles}
             onChange={(e) => setMotsCles(e.target.value)}
-            placeholder="directeur commercial, head of sales"
+            placeholder={t('drawer.keywordsPlaceholder')}
           />
         </Champ>
         <Champ libelle={t('drawer.locations')} id="tiroir-offres-lieux">
@@ -229,7 +229,7 @@ export function TiroirSourceOffres({
             id="tiroir-offres-lieux"
             value={lieux}
             onChange={(e) => setLieux(e.target.value)}
-            placeholder="Île-de-France, Lyon"
+            placeholder={t('drawer.locationsPlaceholder')}
           />
         </Champ>
         <div className="ligne">
