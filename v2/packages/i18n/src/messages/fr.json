@@ -715,7 +715,9 @@
         "deleteConfirm": "Supprimer cette étape de la séquence ?",
         "sendTest": "M'envoyer un test",
         "testSent": "Test envoyé : il apparaîtra bientôt dans la File du jour.",
-        "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour."
+        "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour.",
+        "listVariables": "Colonnes de la liste importée",
+        "listVariablesEmpty": "Une campagne alimentée par un fichier importé offre aussi ses colonnes : '{{'liste_nom_de_la_colonne'}}'."
       }
     },
     "activite": {

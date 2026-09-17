@@ -27,6 +27,51 @@ export interface TiroirEtapeProps {
   readonly etape: EtapeAModifier | null;
   /** Rendu déjà résolu (contact fictif) par `apercuEtape`, côté serveur — `null` sans message existant. */
   readonly apercu: { sujet: string; corps: string; variablesManquantes: string[] } | null;
+  /**
+   * Variables `liste_<colonne>` disponibles pour cette campagne
+   * (`colonnesDeListeCampagne`, `packages/core`) — `[]` sans liste importée
+   * reliée. Calculé côté serveur par la page (`sequence/page.tsx`).
+   */
+  readonly variablesListe: readonly string[];
+}
+
+export interface VariablesDeListeLibelles {
+  /** « Colonnes de la liste importée » — au-dessus de la rangée de puces, quand `variablesListe` n'est pas vide. */
+  listVariables: string;
+  /** Seule ligne affichée quand `variablesListe` est vide — explique la convention `{{liste_<colonne>}}` sans rien à insérer. */
+  listVariablesEmpty: string;
+}
+
+export interface VariablesDeListeProps {
+  readonly variablesListe: readonly string[];
+  readonly onInserer: (nom: string) => void;
+  readonly libelles: VariablesDeListeLibelles;
+}
+
+/**
+ * Partie pure du tiroir (même extraction que `PiedTiroirRelecture`,
+ * `TiroirRelecture.tsx`) : sous la rangée de puces standard (`VARIABLES_INSERABLES`
+ * ci-dessous), même kit visuel (`jr-puces variables`, `jr-puce variable`, clic
+ * = insertion au curseur) — une campagne alimentée par une liste importée
+ * propose aussi ses colonnes (`{{liste_poste}}`…) ; sans liste, une seule
+ * ligne d'aide explique la convention plutôt que de rester silencieuse.
+ */
+export function VariablesDeListe({ variablesListe, onInserer, libelles }: VariablesDeListeProps) {
+  if (variablesListe.length === 0) {
+    return <div className="jr-aide">{libelles.listVariablesEmpty}</div>;
+  }
+  return (
+    <>
+      <div className="jr-aide">{libelles.listVariables}</div>
+      <div className="jr-puces variables">
+        {variablesListe.map((nom) => (
+          <button key={nom} type="button" className="jr-puce variable" onClick={() => onInserer(nom)}>
+            {`{{${nom}}}`}
+          </button>
+        ))}
+      </div>
+    </>
+  );
 }
 
 /** Variables offertes à l'insertion (maquette `tiroir-etape.html`), cliquer insère `{{nom}}` au curseur. */
@@ -54,7 +99,7 @@ function heuresVersUnite(heures: number): { valeur: number; unite: 'heures' | 'j
  * côté envoi comme aujourd'hui), délai, aperçu rendu et envoi de test (email
  * seulement — une invitation/message LinkedIn s'exécute côté serveur, lot 4).
  */
-export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
+export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: TiroirEtapeProps) {
   const t = useTranslations('campagne.sequence');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -244,6 +289,11 @@ export function TiroirEtape({ campagneId, etape, apercu }: TiroirEtapeProps) {
               </button>
             ))}
           </div>
+          <VariablesDeListe
+            variablesListe={variablesListe}
+            onInserer={inserVariable}
+            libelles={{ listVariables: t('drawer.listVariables'), listVariablesEmpty: t('drawer.listVariablesEmpty') }}
+          />
         </div>
 
         {issues && issues.length > 0 && (

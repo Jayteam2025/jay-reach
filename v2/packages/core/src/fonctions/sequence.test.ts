@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
+import { actionIdempotencyKey } from '../sequencer/actions.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurIntrouvable, ErreurEntree } from './contexte.js';
@@ -12,6 +13,8 @@ import {
   apercuEtape,
   envoyerTest,
   verserDansBibliotheque,
+  colonnesDeListeCampagne,
+  reprendreInscription,
 } from './sequence.js';
 
 /** Même convention que `file-du-jour.test.ts` : un motif (tag `/* jr:nom *\/`) associé aux lignes à renvoyer. */
@@ -555,6 +558,95 @@ describe('apercuEtape', () => {
     const ctx = faux({});
     await expect(apercuEtape(ctx, { etapeId })).rejects.toThrow(ErreurIntrouvable);
   });
+
+  // Tâche 29, partie A point 4 : le contact fictif ne connaît aucune colonne
+  // de liste importée, mais une variable liste_<colonne> QUE LA CAMPAGNE
+  // POSSÈDE (`colonnesDeListeCampagne`) doit s'afficher en espace réservé
+  // plutôt que manquante — sinon l'opérateur croirait la variable cassée
+  // alors qu'elle se résoudra pour un contact réel.
+  it('remplace {{liste_poste}} par [poste] pour le contact fictif quand la campagne a cette colonne, mais laisse {{liste_ville}} manquant', async () => {
+    const ctx = faux({
+      'jr:sequence_apercu_etape': [{ campaign_id: campagneId, template_parent_id: templateParentId }],
+      'jr:sequence_apercu_gabarit': [
+        { subject: 'Objet', body: 'Poste : {{liste_poste}}, ville : {{liste_ville}}' },
+      ],
+      'jr:sequence_colonnes_liste': [{ raw_row: { Poste: 'Directrice commerciale' } }],
+    });
+    const res = await apercuEtape(ctx, { etapeId });
+    expect(res.corps).toBe('Poste : [poste], ville : ');
+    expect(res.variablesManquantes).toEqual(['liste_ville']);
+  });
+
+  it('ne touche à aucune variable liste_ quand la campagne n’a pas de liste (contact fictif)', async () => {
+    const ctx = faux({
+      'jr:sequence_apercu_etape': [{ campaign_id: campagneId, template_parent_id: templateParentId }],
+      'jr:sequence_apercu_gabarit': [{ subject: 'Objet', body: 'Poste : {{liste_poste}}' }],
+      'jr:sequence_colonnes_liste': [],
+    });
+    const res = await apercuEtape(ctx, { etapeId });
+    expect(res.corps).toBe('Poste : ');
+    expect(res.variablesManquantes).toEqual(['liste_poste']);
+  });
+
+  it('avec un contactId réel, ne pose aucun espace réservé (lireValeursContact fait le vrai travail)', async () => {
+    const ctx = faux({
+      'jr:sequence_apercu_etape': [{ campaign_id: campagneId, template_parent_id: templateParentId }],
+      'jr:sequence_apercu_gabarit': [{ subject: 'Objet', body: 'Poste : {{liste_poste}}' }],
+      'jr:valeurs_contact\\b': [
+        {
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: 'DAF',
+          email: 'k.benali@example.test',
+          locale: 'fr',
+          company_name: null,
+          domain: null,
+          city: null,
+          headcount: null,
+          postal_code: null,
+          country: null,
+          persona_angle: null,
+          signal_title: null,
+          signal_location: null,
+          signal_url: null,
+          signal_occurred_at: null,
+          context_note: null,
+          raw_row: { Poste: 'DAF' },
+        },
+      ],
+      'jr:valeurs_contact_extraits': [],
+    });
+    const res = await apercuEtape(ctx, { etapeId, contactId });
+    expect(res.corps).toBe('Poste : DAF');
+    expect(texteDesAppels(ctx).some((s) => /jr:sequence_colonnes_liste/i.test(s))).toBe(false);
+  });
+});
+
+describe('colonnesDeListeCampagne', () => {
+  it('rend les variables liste_<colonne>, normalisées, dédoublonnées, dans l’ordre de première apparition', async () => {
+    const ctx = faux({
+      'jr:sequence_colonnes_liste': [
+        { raw_row: { 'Intitulé Poste': 'DAF', Ville: 'Nantes' } },
+        { raw_row: { ville: 'Rennes', 'Intitulé Poste': 'DRH' } }, // homonymes : ne comptent qu'une fois
+        { raw_row: null }, // ligne sans raw_row : ignorée
+        { raw_row: { '   ': 'x' } }, // clé qui normalise vers une chaîne vide : ignorée
+      ],
+    });
+    await expect(colonnesDeListeCampagne(ctx, { campagneId })).resolves.toEqual([
+      'liste_intitule_poste',
+      'liste_ville',
+    ]);
+  });
+
+  it('rend un tableau vide sans liste reliée à la campagne', async () => {
+    const ctx = faux({ 'jr:sequence_colonnes_liste': [] });
+    await expect(colonnesDeListeCampagne(ctx, { campagneId })).resolves.toEqual([]);
+  });
+
+  it('se lit dès viewer', async () => {
+    const ctx = faux({ 'jr:sequence_colonnes_liste': [] }, 'viewer');
+    await expect(colonnesDeListeCampagne(ctx, { campagneId })).resolves.toEqual([]);
+  });
 });
 
 describe('envoyerTest', () => {
@@ -617,5 +709,65 @@ describe('verserDansBibliotheque', () => {
     await expect(verserDansBibliotheque(ctx, { campagneId, templateParentId, nom: 'Premier email' })).rejects.toThrow(
       ErreurIntrouvable,
     );
+  });
+});
+
+describe('reprendreInscription', () => {
+  const inscriptionId = '99999999-9999-9999-9999-999999999999';
+  const etapeIdBloquee = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+  it('refuse un viewer (rôle operator requis)', async () => {
+    const ctx = faux({}, 'viewer');
+    await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('pause email_gate → reprise : inscription active, current_step inchangé, action bloquée rejouée', async () => {
+    const ctx = faux({
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 2 }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_action': [],
+      'jr:reprendre_evenement': [{}],
+    });
+    await reprendreInscription(ctx, { inscriptionId });
+
+    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+    expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1']);
+    // `current_step` n'est jamais réécrit ici : l'étape qui vient d'échouer
+    // reste l'étape courante, une reprise doit la rejouer, pas la sauter.
+    expect(String(appelInscription?.[0])).not.toMatch(/current_step\s*=/i);
+
+    const appelEtape = appelsDe(ctx).find((a) => /jr:reprendre_etape/i.test(String(a[0])));
+    expect(appelEtape?.[1]).toEqual([campagneId, 2]);
+
+    const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
+    expect(appelAction?.[1]).toEqual([actionIdempotencyKey(inscriptionId, etapeIdBloquee), 'org-1']);
+    expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
+    expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
+  });
+
+  it('pause paused_absence → reprise : resume_at posé à null par la même écriture', async () => {
+    const ctx = faux({
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_action': [],
+    });
+    await reprendreInscription(ctx, { inscriptionId });
+    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+    expect(String(appelInscription?.[0])).toMatch(/resume_at\s*=\s*null/i);
+    expect(String(appelInscription?.[0])).toMatch(/stop_reason\s*=\s*null/i);
+    expect(String(appelInscription?.[0])).toMatch(/status\s*in\s*\('paused',\s*'paused_absence'\)/i);
+  });
+
+  it('lève ErreurIntrouvable pour une inscription qui n’est pas en pause (déjà active, terminée…)', async () => {
+    const ctx = faux({ 'jr:reprendre_inscription': [] });
+    await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ErreurIntrouvable);
+  });
+
+  it('filtre par organisation dans le WHERE (une inscription d’une autre organisation reste introuvable)', async () => {
+    const ctx = faux({ 'jr:reprendre_inscription': [] });
+    await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ErreurIntrouvable);
+    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+    expect(String(appelInscription?.[0])).toMatch(/organization_id\s*=\s*\$2/i);
+    expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1']);
   });
 });

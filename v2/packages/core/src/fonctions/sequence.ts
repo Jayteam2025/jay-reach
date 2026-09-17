@@ -29,11 +29,13 @@ import {
   lireValeursContact,
   normalizeVariableSyntax,
   validateTemplateVariables,
+  normalizeListColumnName,
   type CampaignNature,
 } from '../messages/index.js';
 import { schemaCampagneId } from './campagnes.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
+import { actionIdempotencyKey } from '../sequencer/actions.js';
 
 // ---------------------------------------------------------------------------
 // lireSequence
@@ -553,6 +555,69 @@ async function ecrireEvenementEtape(
 }
 
 // ---------------------------------------------------------------------------
+// colonnesDeListeCampagne (T29, partie A)
+// ---------------------------------------------------------------------------
+
+export const schemaColonnesDeListeCampagne = z.object({ campagneId: z.string().uuid() });
+
+interface LigneRawRowListe {
+  readonly raw_row: Record<string, unknown> | null;
+}
+
+/** Échantillon maximum de `list_members` lu pour découvrir les colonnes disponibles — les plus récentes d'abord. */
+const MAX_LIGNES_ECHANTILLON_LISTE = 200;
+
+/**
+ * Noms de variables `liste_<colonne>` (déjà préfixées) disponibles pour une
+ * campagne — celles que le tiroir d'étape (`TiroirEtape.tsx`) propose à
+ * l'insertion, et que l'aperçu fictif (`apercuEtape`) sait rendre en espace
+ * réservé plutôt qu'en variable manquante.
+ *
+ * Source : un échantillon (au plus `MAX_LIGNES_ECHANTILLON_LISTE`, les plus
+ * récentes) des `list_members.raw_row` des listes reliées à la campagne —
+ * celle de chaque inscription (`enrollments.list_id`) ET celle de la
+ * campagne elle-même (`campaigns.list_id`, campagne alimentée directement par
+ * une liste). Clés normalisées par `normalizeListColumnName` (même règle que
+ * `construireValeursContact`/`validateTemplateVariables`), clés qui
+ * normalisent vers une chaîne vide ignorées, dédoublonnées, dans l'ordre de
+ * première apparition. Sans liste reliée : `[]`.
+ */
+export async function colonnesDeListeCampagne(ctx: Contexte, entree: unknown): Promise<string[]> {
+  exiger(ctx, 'viewer');
+  const { campagneId } = valider(schemaColonnesDeListeCampagne, entree);
+
+  const res = await ctx.ex.query<LigneRawRowListe>(
+    `select lm.raw_row /* jr:sequence_colonnes_liste */
+       from list_members lm
+      where lm.list_id in (
+        select distinct list_id from (
+          select list_id from enrollments where campaign_id = $1 and list_id is not null
+          union
+          select list_id from campaigns where id = $1 and list_id is not null
+        ) x
+      )
+      order by lm.added_at desc
+      limit ${MAX_LIGNES_ECHANTILLON_LISTE}`,
+    [campagneId],
+  );
+
+  const vues = new Set<string>();
+  const colonnes: string[] = [];
+  for (const ligne of res.rows) {
+    if (!ligne.raw_row) continue;
+    for (const cle of Object.keys(ligne.raw_row)) {
+      const colonne = normalizeListColumnName(cle);
+      if (!colonne) continue;
+      const variable = `liste_${colonne}`;
+      if (vues.has(variable)) continue;
+      vues.add(variable);
+      colonnes.push(variable);
+    }
+  }
+  return colonnes;
+}
+
+// ---------------------------------------------------------------------------
 // apercuEtape
 // ---------------------------------------------------------------------------
 
@@ -619,6 +684,20 @@ export async function apercuEtape(ctx: Contexte, entree: unknown): Promise<Aperc
   if (contactId) {
     const contact = await lireValeursContact(ctx.ex, ctx.organisationId, contactId, etape.campaign_id);
     valeurs = contact?.valeurs ?? {};
+  } else {
+    // Le contact fictif ne connaît aucune colonne de liste importée. Une
+    // variable liste_<colonne> QUE LA CAMPAGNE POSSÈDE s'affiche en espace
+    // réservé (`{{liste_poste}}` → `[poste]`) plutôt que manquante — sinon
+    // l'opérateur croirait la variable cassée alors qu'elle se résoudra pour
+    // un contact réel (`lireValeursContact` fait alors le vrai travail).
+    // Une variable liste_ que la campagne ne possède PAS reste manquante.
+    const colonnesListe = await colonnesDeListeCampagne(ctx, { campagneId: etape.campaign_id });
+    if (colonnesListe.length > 0) {
+      const placeholders = Object.fromEntries(
+        colonnesListe.map((variable) => [variable, `[${variable.slice('liste_'.length)}]`]),
+      );
+      valeurs = { ...VALEURS_CONTACT_FICTIF, ...placeholders };
+    }
   }
 
   const renduObjet = renderTemplate(gabarit.subject ?? '', valeurs);
@@ -753,4 +832,80 @@ export async function envoyerTest(ctx: Contexte, entree: unknown): Promise<void>
   );
 
   await ecrireEvenementEtape(ctx, 'step.test_sent', etape.campaign_id, 'Test envoyé pour une étape de séquence.');
+}
+
+// ---------------------------------------------------------------------------
+// reprendreInscription (T29, partie B — R93)
+// ---------------------------------------------------------------------------
+
+export const schemaReprendreInscription = z.object({ inscriptionId: z.string().uuid() });
+
+interface LigneInscriptionReprise {
+  contact_id: string | null;
+  campaign_id: string;
+  current_step: number;
+}
+
+async function ecrireEvenementReprise(ctx: Contexte, contactId: string | null, campagneId: string): Promise<void> {
+  try {
+    await ecrireEvenement(ctx.ex, {
+      organisationId: ctx.organisationId,
+      entityType: 'contact',
+      entityId: contactId,
+      action: 'enrollment_resumed',
+      diff: { libelle: 'Inscription reprise.', campagneId },
+      actorId: ctx.utilisateurId,
+    });
+  } catch (err) {
+    console.warn('[journal] enrollment_resumed', err);
+  }
+}
+
+/**
+ * Reprend une inscription en pause (`paused`/`paused_absence`, R93) : remet
+ * l'inscription `active` et REJOUE VRAIMENT l'étape qui vient d'échouer —
+ * `mettreInscriptionEnPause` (worker) a ramené `current_step` sur elle, mais
+ * l'action de cette étape existe déjà (`blocked`/`failed`, clé d'idempotence
+ * `actionIdempotencyKey(enrollmentId, stepId)`) : sans la remettre
+ * `scheduled` explicitement, le tick ne réinsérerait jamais une action dont
+ * la clé est déjà prise (`on conflict (idempotency_key) do nothing`), et
+ * l'inscription n'avancerait plus jamais. Même traitement que `relancerEnvoi`
+ * (`fonctions/file-du-jour.ts`) applique à une action `failed` : `scheduled`,
+ * `scheduled_for = now()`, `error = null` — étendu ici à `block_reason` (une
+ * action peut aussi être `blocked`) ; le balayage `rejouerActionsEmailEnAttente`
+ * (worker) reprend ensuite l'action `scheduled`. Le gestionnaire d'envoi
+ * (`apps/worker/src/handlers/email-salesblink.ts`) revérifie lui-même la
+ * délivrabilité avant de pousser — une action `email_gate` remise `scheduled`
+ * ici ne part donc pas forcément si l'adresse est toujours invalide.
+ */
+export async function reprendreInscription(ctx: Contexte, entree: unknown): Promise<void> {
+  exiger(ctx, 'operator');
+  const { inscriptionId } = valider(schemaReprendreInscription, entree);
+
+  const res = await ctx.ex.query<LigneInscriptionReprise>(
+    `update enrollments /* jr:reprendre_inscription */
+        set status = 'active', stop_reason = null, resume_at = null, ended_at = null, next_action_at = now()
+      where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')
+      returning contact_id, campaign_id, current_step`,
+    [inscriptionId, ctx.organisationId],
+  );
+  const ligne = res.rows[0];
+  if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
+
+  const etapeRes = await ctx.ex.query<{ id: string }>(
+    `select id from sequence_steps /* jr:reprendre_etape */ where campaign_id = $1 and position = $2`,
+    [ligne.campaign_id, ligne.current_step],
+  );
+  const etapeId = etapeRes.rows[0]?.id;
+  if (etapeId) {
+    const cle = actionIdempotencyKey(inscriptionId, etapeId);
+    await ctx.ex.query(
+      `update actions /* jr:reprendre_action */
+          set status = 'scheduled', scheduled_for = now(), error = null, block_reason = null
+        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+      [cle, ctx.organisationId],
+    );
+  }
+
+  await ecrireEvenementReprise(ctx, ligne.contact_id, ligne.campaign_id);
 }
