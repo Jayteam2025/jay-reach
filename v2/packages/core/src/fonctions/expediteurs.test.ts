@@ -328,6 +328,23 @@ describe('listerComptesLinkedIn', () => {
     expect(comptes.map((c) => c.nom)).toEqual(['Ancien', 'Jamais connecté']);
   });
 
+  // F4 (audit du 17/09) : `extension_tokens.last_used_at` est un
+  // `timestamptz`, renvoyé par `pg` comme un objet `Date` — pas une chaîne.
+  // Confirmé à l'écran (Réglages -> Expéditeurs, toast
+  // « b.derniereActivite.localeCompare is not a function ») dès qu'il y a
+  // deux comptes LinkedIn : `.localeCompare` n'existe pas sur `Date.prototype`.
+  it('trie les comptes par dernière activité même quand `last_used_at` est un objet Date (comme le renvoie pg) — pas de TypeError', async () => {
+    const ctx = faux({
+      'jr:expediteurs_comptes_linkedin': [
+        { user_id: UTILISATEUR_1, linkedin_profile_name: 'Ancien', last_used_at: new Date('2026-09-10T08:00:00.000Z'), is_active: true },
+        { user_id: UTILISATEUR_2, linkedin_profile_name: 'Récent', last_used_at: new Date('2026-09-16T08:00:00.000Z'), is_active: true },
+      ],
+      'jr:expediteurs_reglages_linkedin': [],
+    });
+    const comptes = await listerComptesLinkedIn(ctx);
+    expect(comptes.map((c) => c.nom)).toEqual(['Récent', 'Ancien']);
+  });
+
   it('interroge token_hash, jamais la colonne token (retirée par la migration du 28/08)', async () => {
     const appels: string[] = [];
     const query = vi.fn(async (sql: string) => {

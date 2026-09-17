@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
+import { comparerInstantsDesc } from '../temps.js';
 
 // ---------------------------------------------------------------------------
 // Fenêtre d'envoi : conversion HH:MM ↔ heure pleine
@@ -426,7 +427,8 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
     ctx.ex.query<{
       user_id: string;
       linkedin_profile_name: string | null;
-      last_used_at: string | null;
+      /** `extension_tokens.last_used_at`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne. */
+      last_used_at: string | Date | null;
       is_active: boolean;
     }>(
       `select distinct on (user_id) user_id, linkedin_profile_name, last_used_at, is_active
@@ -448,7 +450,10 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
     id: j.user_id,
     nom: j.linkedin_profile_name ?? 'Compte LinkedIn',
     connecte: j.is_active && j.last_used_at !== null,
-    derniereActivite: j.last_used_at,
+    // Forme publique inchangée (`CompteLinkedIn.derniereActivite: string | null`) :
+    // le tri ci-dessous compare `j.last_used_at` (honnêtement `string | Date | null`)
+    // directement, ce cast ne change rien à la valeur portée par ce champ.
+    derniereActivite: j.last_used_at as string | null,
     active: j.is_active,
     quotas: { parJour: r.daily_cap, parSemaine: r.weekly_cap },
     heures: {
@@ -461,12 +466,10 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
 
   // `distinct on (user_id)` impose `order by user_id, ...` côté SQL — l'ordre
   // d'affichage voulu (compte le plus récemment actif en tête) se refait donc
-  // ici, en mémoire.
-  return comptes.sort((a, b) => {
-    if (a.derniereActivite === null) return 1;
-    if (b.derniereActivite === null) return -1;
-    return b.derniereActivite.localeCompare(a.derniereActivite);
-  });
+  // ici, en mémoire. `comparerInstantsDesc` accepte chaîne ou `Date` (jamais
+  // `.localeCompare()`, absent de `Date.prototype`) ; départage par id (desc)
+  // pour un ordre déterministe entre deux comptes à la même dernière activité.
+  return comptes.sort((a, b) => comparerInstantsDesc(a.derniereActivite, b.derniereActivite) || b.id.localeCompare(a.id));
 }
 
 export const schemaModifierCompteLinkedIn = z.object({
