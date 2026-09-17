@@ -471,56 +471,78 @@ export async function mettreInscriptionEnPause(
 }
 
 /**
- * Rattrapage borné (tour de correction 1, revue du 17/09) : une inscription
- * `active` dont l'action de l'étape PRÉCÉDENTE est bien partie
- * (`dispatched`/`delivered`, `dispatched_at` connu) mais dont `next_action_at`
- * est resté `null`. Ce cas se produit quand `mark_action_dispatched` réussit
- * puis que la pose de l'échéance échoue juste après (panne base, redémarrage
- * du worker) : sans ce rattrapage, le tick ne sélectionne plus jamais cette
- * inscription (`next_action_at is not null` est la condition d'entrée de la
- * requête `due` ci-dessous), et son étape suivante n'arrive jamais.
+ * Rattrapage borné (issue #111) : une inscription `active` dont l'action de
+ * l'étape PRÉCÉDENTE est bien partie (`dispatched`/`delivered`,
+ * `dispatched_at` connu) mais dont `next_action_at` est resté `null`. Ce cas
+ * se produit quand `mark_action_dispatched` réussit puis que la pose de
+ * l'échéance échoue juste après (panne base, redémarrage du worker) : sans ce
+ * rattrapage, le tick ne sélectionne plus jamais cette inscription
+ * (`next_action_at is not null` est la condition d'entrée de la requête `due`
+ * ci-dessous), et son étape suivante n'arrive jamais.
  *
- * Pose l'échéance à partir du DÉPART RÉEL déjà connu (`dispatched_at` de
- * l'action précédente), jamais `now` — le résultat doit être identique à
- * celui qu'aurait posé le gestionnaire d'envoi s'il avait réussi du premier
- * coup. `dispatched_at` est un `timestamptz` renvoyé en objet `Date` par
- * `pg` : `poserEcheanceDepuisDispatch` (`@jay-reach/core`) l'accepte
- * indifféremment en `Date` ou en chaîne (`versInstant`, interne au cœur —
- * cette fonction-ci suffit, rien d'autre à importer).
+ * Sélection en UNE requête (tour de correction 2, revue du 17/09) : `status =
+ * 'active' and next_action_at is null` n'est PAS un cas rare — c'est l'état
+ * normal de CHAQUE inscription entre la création de son action et son départ
+ * réel. Sur une campagne de plusieurs milliers de contacts étalée sur
+ * plusieurs jours d'envoi, des milliers de lignes le sont à tout instant.
+ * Une première version sélectionnait ces lignes SANS filtrer sur l'action
+ * précédente, puis interrogeait chaque ligne une par une pour écarter celles
+ * encore `scheduled` : jusqu'à 200 requêtes par tick pour ne rien rattraper,
+ * et surtout un `limit 200` SANS ordre — les mêmes lignes « scheduled »
+ * revenaient à chaque tick, et une inscription réellement bloquée au-delà des
+ * 200 premières n'était jamais examinée.
  *
- * Boucle bornée (`limit`) plutôt qu'une requête ensembliste : le calcul de
- * l'échéance (jitter déterministe) est une fonction JS pure
- * (`poserEcheanceApresDepart`, `@jay-reach/core`), pas transposable en SQL.
+ * La jointure latérale sur l'étape de rang `current_step - 1` (`offset`/
+ * `limit`, jamais une égalité sur `position` — issue #115) puis sur `actions`
+ * filtrant `status in ('dispatched', 'delivered') and dispatched_at is not
+ * null` ne renvoie QUE les vrais candidats : plus aucune requête par ligne
+ * inutile. `order by dispatched_at asc` traite les plus anciennes d'abord, de
+ * sorte qu'un `limit 200` fait toujours progresser le rattrapage au lieu de
+ * ressasser les mêmes lignes non concernées.
+ *
+ * Pose l'échéance à partir du DÉPART RÉEL déjà connu (`dispatched_at`),
+ * jamais `now` — le résultat doit être identique à celui qu'aurait posé le
+ * gestionnaire d'envoi s'il avait réussi du premier coup. `dispatched_at` est
+ * un `timestamptz` renvoyé en objet `Date` par `pg` : `poserEcheanceDepuisDispatch`
+ * (`@jay-reach/core`) l'accepte indifféremment en `Date` ou en chaîne
+ * (`versInstant`, interne au cœur — cette fonction-ci suffit, rien d'autre à
+ * importer).
  */
 export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Promise<void> {
-  const candidats = await pool.query<{ id: string; campaign_id: string; current_step: number }>(
-    `select id, campaign_id, current_step
-       from enrollments
-      where status = 'active' and next_action_at is null and current_step > 0
+  const candidats = await pool.query<{
+    id: string;
+    campaign_id: string;
+    current_step: number;
+    dispatched_at: string | Date | null;
+  }>(
+    `select e.id, e.campaign_id, e.current_step, a.dispatched_at
+       from enrollments e
+       join lateral (
+         select id
+           from sequence_steps
+          where campaign_id = e.campaign_id
+          order by position asc
+          offset e.current_step - 1
+          limit 1
+       ) s on true
+       join actions a
+         on a.step_id = s.id
+        and a.enrollment_id = e.id
+        and a.status in ('dispatched', 'delivered')
+        and a.dispatched_at is not null
+      where e.status = 'active'
+        and e.next_action_at is null
+        and e.current_step > 0
+      order by a.dispatched_at asc
       limit $1`,
     [limit],
   );
   let rattrapees = 0;
   for (const candidat of candidats.rows) {
-    // L'action de l'étape PRÉCÉDENTE (rang `current_step - 1`), retrouvée par
-    // rang ordinal (`offset`/`limit`), pas par égalité de `position` (issue
-    // #115) — même défaut que corrigé dans `poserEcheanceApresDepart`.
-    const precedente = await pool.query<{ status: string; dispatched_at: string | Date | null }>(
-      `select a.status, a.dispatched_at
-         from sequence_steps s
-         join actions a on a.step_id = s.id and a.enrollment_id = $2
-        where s.campaign_id = $1
-        order by s.position asc
-        offset $3
-        limit 1`,
-      [candidat.campaign_id, candidat.id, candidat.current_step - 1],
-    );
-    const action = precedente.rows[0];
-    if (!action || (action.status !== 'dispatched' && action.status !== 'delivered')) continue;
     const ecrit = await poserEcheanceDepuisDispatch(
       pool,
       { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
-      action.dispatched_at,
+      candidat.dispatched_at,
     );
     if (ecrit) rattrapees += 1;
   }
