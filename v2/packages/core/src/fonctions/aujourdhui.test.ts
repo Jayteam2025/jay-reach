@@ -216,14 +216,24 @@ describe('lireAujourdhui', () => {
   it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [
-        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna', 'francetravail'], qualifies: 412, en_sequence: 186, reponses: 9 },
+        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna', 'francetravail'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
       ],
     });
     const a = await lireAujourdhui(ctx);
     expect(a.campagnes).toHaveLength(1);
-    expect(a.campagnes[0]).toMatchObject({ id: 'c1', nom: 'Directeur commercial', statut: 'active', qualifies: 412, enSequence: 186, reponses: 9 });
-    // Taux de réponse = réponses / qualifiés, arrondi à une décimale.
+    expect(a.campagnes[0]).toMatchObject({ id: 'c1', nom: 'Directeur commercial', statut: 'active', contacts: 412, enSequence: 186, reponses: 9 });
+    // Point 1 : taux de réponse = réponses / emails PARTIS, arrondi à une décimale.
     expect(a.campagnes[0]?.tauxReponse).toBeCloseTo(2.2, 1);
+  });
+
+  it('point 1 (tour de correction 5) : zéro email parti → tauxReponse `null`, jamais 0 %', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Recette SalesBlink', status: 'active', etapes: 1, boites: 1, sources: [], contacts: 2, en_sequence: 2, partis: 0, reponses: 1 },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]?.tauxReponse).toBeNull();
   });
 
   it('renvoie une liste vide de campagnes sans compteur quand il n’y en a aucune', async () => {

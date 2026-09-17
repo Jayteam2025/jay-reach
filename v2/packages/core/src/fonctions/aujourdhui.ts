@@ -73,10 +73,17 @@ export interface CampagneResume {
   boites: number;
   /** Un élément peut être `null` (R70, tour de correction 4) : aucun des trois repères de fournisseur n'a de valeur. */
   sources: (string | null)[];
-  qualifies: number;
+  /**
+   * Point 1 (tour de correction 5) : remplace l'ancienne colonne « Qualifiés »
+   * (qui comptait TOUTES les inscriptions, même terminées — jamais le même
+   * nombre que l'onglet Contacts). Même définition que `CampagneListeResume.contacts`
+   * (`campagnes.ts`) : personnes distinctes de la population de la campagne.
+   */
+  contacts: number;
   enSequence: number;
   reponses: number;
-  tauxReponse: number;
+  /** Réponses / emails partis (`dispatched`+`delivered`), jamais / en séquence ni / contacts (point 1) — `null` (page : « — ») sans envoi. */
+  tauxReponse: number | null;
 }
 
 export type TypeAlerte = 'pause_envoi' | 'boite_deconnectee' | 'fournisseur_sans_cle' | 'source_orpheline' | 'moteur_silencieux';
@@ -135,9 +142,20 @@ interface LigneCampagne {
   etapes: number;
   boites: number;
   sources: (string | null)[] | null;
-  qualifies: number;
+  contacts: number;
   en_sequence: number;
+  partis: number;
   reponses: number;
+}
+
+/**
+ * Taux (arrondi au dixième) sur les emails partis — copie locale volontaire de
+ * `tauxSurPartis` (`campagnes.ts`, point 1 : même définition, même convention
+ * de duplication que `jourDansFuseau`) : `null` (page : « — ») quand rien
+ * n'est encore parti, jamais un 0 % qui masquerait une division par zéro.
+ */
+function tauxSurPartis(numerateur: number, partis: number): number | null {
+  return partis > 0 ? Math.round((numerateur / partis) * 1000) / 10 : null;
 }
 
 /** Pas de pastille pour `letter`/`call` (le kit n'en a pas) — `undefined`, jamais un repli sur email. */
@@ -198,8 +216,32 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
               (select count(*)::int from sequence_steps ss where ss.campaign_id = c.id) as etapes,
               (select count(*)::int from senders sd where sd.organization_id = c.organization_id and sd.kind = 'email' and sd.is_active) as boites,
               coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
-              (select count(*)::int from enrollments e where e.campaign_id = c.id) as qualifies,
+              -- « Contacts » (point 1, tour de correction 5) : MÊME définition que
+              -- CampagneListeResume.contacts / sqlContactsCampagne('c.id')
+              -- (campagnes.ts) — copie volontaire, jamais importée d'un fichier à
+              -- l'autre (même convention que jourDansFuseau, dupliquée trois fois
+              -- dans ce dépôt) : campagnes.ts importe déjà des TYPES depuis ce
+              -- fichier (EnvoiPrevu, CanalFil), un import de fonctions en sens
+              -- inverse fermerait un cycle entre les deux modules. Remplace l'ancienne
+              -- colonne « Qualifiés » (tout l'historique des inscriptions), qui ne
+              -- rendait jamais le même chiffre que l'onglet Contacts.
+              (select count(distinct contact_id)::int from (
+                  select c0.id as contact_id from signals s0
+                    join campaign_sources cs0 on cs0.source_id = s0.source_id
+                    join contacts c0 on c0.source_signal_id = s0.id
+                   where cs0.campaign_id = c.id and s0.status <> 'new'
+                  union
+                  select e1.contact_id from enrollments e1
+                   where e1.campaign_id = c.id
+                     and not exists (
+                       select 1 from signals s2
+                         join campaign_sources cs2 on cs2.source_id = s2.source_id
+                         join contacts c2 on c2.source_signal_id = s2.id
+                        where c2.id = e1.contact_id and cs2.campaign_id = c.id and s2.status <> 'new'
+                     )
+                ) pop_contacts) as contacts,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'active') as en_sequence,
+              (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = c.id and a.status in ('dispatched', 'delivered')) as partis,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses
          from campaigns c /* jr:campagnes_resume */
         where c.organization_id = $1
@@ -287,10 +329,10 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     etapes: r.etapes,
     boites: r.boites,
     sources: r.sources ?? [],
-    qualifies: r.qualifies,
+    contacts: r.contacts,
     enSequence: r.en_sequence,
     reponses: r.reponses,
-    tauxReponse: r.qualifies > 0 ? Math.round((r.reponses / r.qualifies) * 1000) / 10 : 0,
+    tauxReponse: tauxSurPartis(r.reponses, r.partis),
   }));
 
   const alertes: Alerte[] = [];
