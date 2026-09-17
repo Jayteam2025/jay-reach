@@ -149,10 +149,13 @@ const THREAD_LOOKUP = /select id from threads where/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const THREAD_UPDATE = /update threads set last_message_at/i;
 const AUDIT_INSERT = /insert into audit_events/i;
-// `poserEcheanceApresDepart` (issue #111) : posée au départ réel, pas à la
-// création de l'action. Motifs distincts de `ETAPE_POSITION` (mot-clé
-// `delay_hours`, jamais présent dans la requête de `assurerObjetsEtape`).
-const DELAI_ETAPE_SUIVANTE = /select delay_hours from sequence_steps where campaign_id = \$1 and position = \$2/i;
+// `poserEcheanceApresDepart` (@jay-reach/core, issue #111) : posée au départ
+// réel, pas à la création de l'action. Lecture par RANG ORDINAL (`offset`/
+// `limit`), jamais par égalité de `position` (issue #115). Motifs distincts de
+// `ETAPE_POSITION` (mot-clé `delay_hours`, jamais présent dans la requête de
+// `assurerObjetsEtape`).
+const DELAI_ETAPE_SUIVANTE =
+  /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
 const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
@@ -196,7 +199,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([]) },
     { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
     { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 48 }]) },
-    { motif: POSE_ECHEANCE, repondre: () => ligne([]) },
+    { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
     { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
     { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },

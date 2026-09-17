@@ -44,9 +44,11 @@ function creerPoolFactice(gestionnaires: Gestionnaire[]): { pool: Pool; appels: 
 
 const TRANSITION = /update linkedin_action_queue/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
-// `poserEcheanceApresDepart` (issue #111).
+// `poserEcheanceApresDepart` (@jay-reach/core, issue #111). Lecture par RANG
+// ORDINAL (`offset`/`limit`), jamais par égalité de `position` (issue #115).
 const JOIN_ENROLLMENT = /from actions a\s+join enrollments en/i;
-const DELAI_ETAPE_SUIVANTE = /select delay_hours from sequence_steps where campaign_id = \$1 and position = \$2/i;
+const DELAI_ETAPE_SUIVANTE =
+  /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
 const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
 function gestionnairesSucces(overrides: Gestionnaire[] = []): Gestionnaire[] {
@@ -59,7 +61,7 @@ function gestionnairesSucces(overrides: Gestionnaire[] = []): Gestionnaire[] {
       repondre: () => ligne([{ enrollment_id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2 }]),
     },
     { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 48 }]) },
-    { motif: POSE_ECHEANCE, repondre: () => ligne([]) },
+    { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
   ];
 }
 

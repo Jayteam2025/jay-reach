@@ -10,7 +10,7 @@
 import type { Pool, PoolClient } from 'pg';
 import {
   decideCanSend,
-  echeanceEtapeSuivante,
+  poserEcheanceApresDepart,
   heureLocale,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
@@ -255,19 +255,17 @@ export interface RecordInput {
 
 /**
  * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action LinkedIn
- * (transition `processing -> sent`, confirmée par l'extension) — même point
- * que côté SalesBlink (issue #111, `apps/worker/src/handlers/sequence.ts`,
- * `poserEcheanceApresDepart`). Le tick ne pose plus cette échéance à la
- * création de l'action : un envoi LinkedIn est pacé côté serveur et peut
- * partir plusieurs jours après sa création, l'étape suivante ne doit jamais
- * devenir due avant que celle-ci ne soit réellement partie.
+ * (transition `processing -> sent`, confirmée par l'extension) — même point,
+ * même calcul et même garde que côté SalesBlink (issue #111) : les deux
+ * transports appellent la même implémentation partagée,
+ * `poserEcheanceApresDepart` de `@jay-reach/core` (tour de correction 1,
+ * revue du 17/09 — auparavant dupliquée ici avec le même SQL).
  *
- * Même garde SQL (`status = 'active' and next_action_at is null and
- * current_step = …`) et même fonction de jitter/graine que côté SalesBlink
- * (`echeanceEtapeSuivante`, `@jay-reach/core`) : un rejeu (idempotent côté
- * `mark_action_dispatched`) ne déplace jamais une échéance déjà posée.
+ * Cette fonction ne fait que la résolution propre à LinkedIn : retrouver
+ * l'inscription (`campaign_id`, `current_step`) à partir de l'`actionId` posé
+ * sur la ligne de file.
  */
-async function poserEcheanceApresDepart(pool: Pool, actionId: string, now: Date): Promise<void> {
+async function poserEcheanceApresDepartDepuisAction(pool: Pool, actionId: string, now: Date): Promise<void> {
   const inscription = await pool.query<{ enrollment_id: string; campaign_id: string; current_step: number }>(
     `select en.id as enrollment_id, en.campaign_id, en.current_step
        from actions a
@@ -277,20 +275,10 @@ async function poserEcheanceApresDepart(pool: Pool, actionId: string, now: Date)
   );
   const ligne = inscription.rows[0];
   if (!ligne) return;
-  const etape = await pool.query<{ delay_hours: number }>(
-    `select delay_hours from sequence_steps where campaign_id = $1 and position = $2`,
-    [ligne.campaign_id, ligne.current_step],
-  );
-  const echeance = echeanceEtapeSuivante(now.getTime(), ligne.enrollment_id, etape.rows[0]?.delay_hours ?? null);
-  if (echeance === null) return; // dernière étape : rien à planifier, déjà `completed`.
-  await pool.query(
-    `update enrollments
-        set next_action_at = $2
-      where id = $1
-        and status = 'active'
-        and next_action_at is null
-        and current_step = $3`,
-    [ligne.enrollment_id, new Date(echeance).toISOString(), ligne.current_step],
+  await poserEcheanceApresDepart(
+    pool,
+    { enrollmentId: ligne.enrollment_id, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
+    now,
   );
 }
 
@@ -325,7 +313,7 @@ export async function recordResult(pool: Pool, input: RecordInput): Promise<bool
   const actionId = r.rows[0]?.action_id;
   if (transitionFaite && input.status === 'sent' && actionId) {
     await pool.query('select app.mark_action_dispatched($1)', [actionId]);
-    await poserEcheanceApresDepart(pool, actionId, now);
+    await poserEcheanceApresDepartDepuisAction(pool, actionId, now);
   }
 
   return transitionFaite;
