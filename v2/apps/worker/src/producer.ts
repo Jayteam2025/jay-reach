@@ -44,6 +44,18 @@ function lireAgeMaxSignalJours(): number {
  * Au-delà de ce nombre de jours, un signal ne vaut plus ni scoring ni
  * enrichissement : la base contient des milliers de signaux de juillet et
  * août jamais traités, et les faire scorer coûterait du crédit IA pour rien.
+ *
+ * Coexiste avec le réglage `age_max_offres_jours` / `sources.config.ageMaxJours`
+ * (I3, revue finale du 17/09, filtre appliqué par `insertSignals`,
+ * `apps/worker/src/db.ts`) — les deux tombent souvent sur 14 jours par
+ * défaut, mais ce n'est PAS le même mécanisme : celui-ci PURGE APRÈS COUP,
+ * globalement pour toutes les organisations, un signal déjà en base et jamais
+ * traité (variable d'environnement `SIGNAL_MAX_AGE_DAYS`, non réglable par
+ * organisation) ; I3 ÉCARTE AVANT INSERTION, par organisation/source, une
+ * offre trop vieille au moment même où le connecteur la remonte (réglable en
+ * base, réglage par défaut de l'écran Plafonds). Une offre qui passe I3 (donc
+ * insérée) peut donc encore être purgée plus tard par celui-ci si elle reste
+ * `new`/`qualified` sans jamais être scorée ni enrichie.
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
 

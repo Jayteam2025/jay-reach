@@ -124,6 +124,11 @@ export async function insertSignals(
 
     // I3 (revue finale du 17/09) : écartée AVANT insertion, jamais après —
     // une offre sans date connue n'est jamais écartée (`offreTropVieille`).
+    // Distinct de `AGE_MAX_SIGNAL_JOURS`/`ecarterSignauxTropAnciens`
+    // (`apps/worker/src/producer.ts`), qui purge APRÈS COUP, globalement pour
+    // toutes les organisations, un signal déjà en base jamais scoré ni
+    // enrichi — les deux défauts tombent souvent à 14 jours mais ne sont pas
+    // le même mécanisme (voir le commentaire de `AGE_MAX_SIGNAL_JOURS`).
     if (offreTropVieille(occurredAt, ageMaxJours, now)) {
       ecartesAge += 1;
       continue;
