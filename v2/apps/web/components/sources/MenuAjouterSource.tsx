@@ -92,19 +92,19 @@ export function MenuAjouterSource({ campagneId }: MenuAjouterSourceProps) {
                 titre: t('menu.manual'),
                 entrees: [
                   {
-                    icone: <TuileLogo marque="lettre" lettre="↑" />,
+                    icone: <TuileLogo marque="csv" />,
                     titre: t('menu.csv.title'),
                     description: t('menu.csv.description'),
                     onSelectionner: () => ouvrirTiroir('csv'),
                   },
                   {
-                    icone: <TuileLogo marque="lettre" lettre="≡" />,
+                    icone: <TuileLogo marque="liste" />,
                     titre: t('menu.list.title'),
                     description: t('menu.list.description'),
                     onSelectionner: () => ouvrirTiroir('list'),
                   },
                   {
-                    icone: <TuileLogo marque="lettre" lettre="⌂" />,
+                    icone: <TuileLogo marque="annuaire" />,
                     titre: t('menu.directory.title'),
                     description: t('menu.directory.description'),
                     onSelectionner: () => ouvrirTiroir('directory'),

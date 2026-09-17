@@ -216,7 +216,7 @@ export function construireGroupesMenu(
       titre: libelles.menuManuel,
       entrees: [
         {
-          icone: <TuileLogo marque="lettre" lettre="↑" />,
+          icone: <TuileLogo marque="csv" />,
           titre: libelles.menuCsvTitre,
           description: libelles.menuCsvNote,
           desactive: true,
