@@ -358,6 +358,7 @@
       "status": {
         "a_contacter": "À contacter",
         "sans_email": "Sans email",
+        "en_pause": "En pause",
         "en_sequence": "En séquence",
         "a_repondu": "A répondu",
         "interesse": "Intéressé",
@@ -366,6 +367,14 @@
         "rebond": "Rebond",
         "ne_plus_contacter": "Ne plus contacter"
       },
+      "pause": {
+        "emailGate": "Email jugé non délivrable",
+        "salesblinkError": "Envoi refusé par le fournisseur d'email",
+        "senderUnavailable": "Aucune boîte d'envoi disponible",
+        "absence": "Absent, reprise le {date}",
+        "absenceNoDate": "Absent",
+        "generic": "En pause"
+      },
       "step": "Étape {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "à contacter",
@@ -373,7 +382,9 @@
       "actions": {
         "enrich": "Chercher l'email",
         "enrichCost": "1 crédit",
-        "discard": "Écarter"
+        "discard": "Écarter",
+        "resume": "Reprendre",
+        "resumeNow": "Reprendre maintenant"
       },
       "empty": "Aucun contact pour l'instant : cette campagne n'a encore identifié personne.",
       "emptyFilter": "Aucun contact pour ce filtre.",
@@ -400,7 +411,8 @@
       "sequence": {
         "empty": "Cette campagne n'a pas encore contacté cette personne.",
         "sentBy": "Envoyé par {boite} · lié à cette boîte pour toute la séquence",
-        "step": "{n}"
+        "step": "{n}",
+        "pausedLine": "En pause : {motif}"
       },
       "conversation": {
         "openInInbox": "Ouvrir dans la Réception",
@@ -1417,6 +1429,7 @@
     "status": {
       "a_contacter": "À contacter",
       "sans_email": "Sans email",
+      "en_pause": "En pause",
       "en_sequence": "En séquence",
       "a_repondu": "A répondu",
       "interesse": "Intéressé",
@@ -1424,6 +1437,14 @@
       "termine": "Terminé",
       "rebond": "Rebond",
       "ne_plus_contacter": "Ne plus contacter"
+    },
+    "pause": {
+      "emailGate": "Email jugé non délivrable",
+      "salesblinkError": "Envoi refusé par le fournisseur d'email",
+      "senderUnavailable": "Aucune boîte d'envoi disponible",
+      "absence": "Absent, reprise le {date}",
+      "absenceNoDate": "Absent",
+      "generic": "En pause"
     },
     "step": "Étape {n}",
     "stepEnded": "{n} · {libelle}",
@@ -1435,7 +1456,9 @@
     "actions": {
       "enrich": "Chercher l'email",
       "enrichCost": "1 crédit",
-      "discard": "Écarter"
+      "discard": "Écarter",
+      "resume": "Reprendre",
+      "resumeNow": "Reprendre maintenant"
     },
     "empty": "Aucun contact pour ce filtre.",
     "truncated": "Affichage limité aux 5 000 premiers résultats : affinez les filtres pour voir le reste.",

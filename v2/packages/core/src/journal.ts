@@ -69,7 +69,12 @@ export type ActionJournal =
   // Écrite avec `entityType: 'engine'`, `entityId: null` (aucune ligne
   // précise, même bucket que `engine_error`).
   | 'sending_paused'
-  | 'sending_resumed';
+  | 'sending_resumed'
+  // Reprise d'une inscription en pause par l'opérateur (tâche 29, lot 2,
+  // `fonctions/sequence.ts::reprendreInscription`) — `audit_events.action`
+  // est `text not null`, sans enum ni `check` (`20260817120000_init_schema.sql`) :
+  // aucune migration n'est nécessaire pour cette nouvelle valeur.
+  | 'enrollment_resumed';
 
 export interface EvenementJournal {
   readonly organisationId: string;

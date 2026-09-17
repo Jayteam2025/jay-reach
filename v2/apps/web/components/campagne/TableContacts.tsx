@@ -4,6 +4,7 @@ import { Avatar, Puce, Table } from '../ui';
 import type { PuceTon } from '../ui';
 import { BoutonChercherEmail } from './BoutonChercherEmail';
 import { BoutonEcarterContact } from './BoutonEcarterContact';
+import { BoutonReprendre } from './BoutonReprendre';
 
 /**
  * Ligne affichée par `TableContacts` : `ContactCampagne`
@@ -18,6 +19,11 @@ export interface LigneTableContacts extends ContactCampagne {
   campagneNom?: string;
   /** Texte déjà traduit de l'étape (« Étape 3 »), calculé par l'appelant (accès à `t()`) — `null` si `etape` est `null`. */
   etapeTexte: string | null;
+  /**
+   * Libellé déjà traduit du motif de pause (`libelleMotifPause`, `lib/motif-pause.ts`),
+   * calculé par l'appelant — `null` hors statut `en_pause`.
+   */
+  motifPauseAffiche: { texte: string; title: string | null } | null;
 }
 
 export interface TableContactsLibelles {
@@ -35,6 +41,9 @@ export interface TableContactsLibelles {
   chercherEmail: string;
   coutChercherEmail: string;
   ecarter: string;
+  /** Libellé du bouton de reprise d'une inscription en pause (T29) — `paused_absence` (motif `absence`) utilise `reprendreMaintenant` à la place. */
+  reprendre: string;
+  reprendreMaintenant: string;
   vide: string;
 }
 
@@ -60,6 +69,7 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   a_repondu: 'bon',
   ecarte: 'gris',
   termine: 'gris',
+  en_pause: 'attention',
   en_sequence: 'accent',
   sans_email: 'attention',
   a_contacter: 'gris',
@@ -136,6 +146,26 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
                   {libelles.statut.a_contacter}
                 </Puce>
               )
+            ) : ligne.statut === 'en_pause' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div>
+                  <Puce ton={TON_STATUT.en_pause} point>
+                    {libelles.statut.en_pause}
+                  </Puce>
+                  {ligne.motifPauseAffiche && (
+                    <div className="jr-petit" title={ligne.motifPauseAffiche.title ?? undefined}>
+                      {ligne.motifPauseAffiche.texte}
+                    </div>
+                  )}
+                </div>
+                {ligne.inscriptionId && campagneDeLaLigne && (
+                  <BoutonReprendre
+                    inscriptionId={ligne.inscriptionId}
+                    campagneId={campagneDeLaLigne}
+                    libelle={ligne.motifPause === 'absence' ? libelles.reprendreMaintenant : libelles.reprendre}
+                  />
+                )}
+              </div>
             ) : (
               <Puce ton={TON_STATUT[ligne.statut]} point>
                 {libelles.statut[ligne.statut]}

@@ -152,6 +152,7 @@ describe('lireFiche', () => {
         { position: 4, etat: 'a_venir' },
       ],
       boite: { identite: 'alex@exemple.fr', marque: 'outlook' },
+      pause: null,
     });
     expect(fiche.echanges).toEqual([
       { id: 'msg-1', direction: 'out', corps: 'Bonjour Karim', quand: '2026-09-11T09:00:00.000Z' },
@@ -193,6 +194,108 @@ describe('lireFiche', () => {
     expect(fiche.pourquoi).toBeNull();
     expect(fiche.echanges).toEqual([]);
     expect(fiche.filId).toBeNull();
+  });
+
+  // T29, partie B : une inscription `paused` (gate email) expose `sequence.pause`
+  // avec le motif brut (`stop_reason`) tel quel — `libelleMotifPause` (apps/web)
+  // le traduit à l'écran, `lireFiche` ne fait aucune traduction.
+  it('une inscription paused (email_gate) expose sequence.pause avec le motif brut', async () => {
+    const ctx = faux({
+      'jr:fiche_contact': [
+        {
+          id: contactId,
+          first_name: 'Sami',
+          last_name: 'Nasri',
+          job_title: null,
+          email: 'sami@exemple.fr',
+          email_status: 'invalid',
+          linkedin_url: null,
+          photo_url: null,
+          account_id: null,
+          source_signal_id: null,
+          status: 'active',
+          entreprise: null,
+          ville: null,
+        },
+      ],
+      'jr:fiche_statut_campagne': [
+        {
+          statut: 'en_pause',
+          enrollment_id: enrollmentId,
+          current_step: 1,
+          e_status: 'paused',
+          stop_reason: 'email_gate:bouncer_invalid',
+          resume_at: null,
+          signal_id: null,
+          score: null,
+          score_reason: null,
+          title: null,
+          provider_id: null,
+          occurred_at: null,
+          url: null,
+          raw: null,
+        },
+      ],
+      'jr:fiche_etapes': [{ position: 0 }, { position: 1 }],
+      'jr:fiche_boite': [],
+    });
+
+    const fiche = await lireFiche(ctx, { contactId, campagneId });
+    expect(fiche.statut).toBe('en_pause');
+    expect(fiche.sequence?.pause).toEqual({
+      motif: 'email_gate:bouncer_invalid',
+      repriseLe: null,
+      inscriptionId: enrollmentId,
+    });
+  });
+
+  it('une inscription paused_absence sans stop_reason retombe sur le motif "absence", avec repriseLe', async () => {
+    const ctx = faux({
+      'jr:fiche_contact': [
+        {
+          id: contactId,
+          first_name: 'Léa',
+          last_name: 'Petit',
+          job_title: null,
+          email: 'lea@exemple.fr',
+          email_status: 'valid',
+          linkedin_url: null,
+          photo_url: null,
+          account_id: null,
+          source_signal_id: null,
+          status: 'active',
+          entreprise: null,
+          ville: null,
+        },
+      ],
+      'jr:fiche_statut_campagne': [
+        {
+          statut: 'en_pause',
+          enrollment_id: enrollmentId,
+          current_step: 0,
+          e_status: 'paused_absence',
+          stop_reason: null,
+          resume_at: '2026-09-22T00:00:00.000Z',
+          signal_id: null,
+          score: null,
+          score_reason: null,
+          title: null,
+          provider_id: null,
+          occurred_at: null,
+          url: null,
+          raw: null,
+        },
+      ],
+      'jr:fiche_etapes': [{ position: 0 }],
+      'jr:fiche_boite': [],
+    });
+
+    const fiche = await lireFiche(ctx, { contactId, campagneId });
+    expect(fiche.sequence?.pause).toEqual({
+      motif: 'absence',
+      repriseLe: '2026-09-22T00:00:00.000Z',
+      inscriptionId: enrollmentId,
+    });
   });
 
   it('sans campagneId, lit le signal d’origine directement (pas de séquence)', async () => {

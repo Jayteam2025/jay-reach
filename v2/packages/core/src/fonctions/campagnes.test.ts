@@ -22,6 +22,7 @@ import {
   marqueBoite,
   mettreEnPause,
   modifierReglagesCampagne,
+  motifPauseDe,
 } from './campagnes.js';
 
 /**
@@ -48,10 +49,25 @@ describe('ORDRE_STATUTS', () => {
       'a_repondu',
       'ecarte',
       'termine',
+      'en_pause',
       'en_sequence',
       'sans_email',
       'a_contacter',
     ]);
+  });
+});
+
+describe('motifPauseDe', () => {
+  it('rend stop_reason quand il est posé', () => {
+    expect(motifPauseDe('paused', 'email_gate:bouncer_invalid')).toBe('email_gate:bouncer_invalid');
+  });
+
+  it('rend "absence" pour un paused_absence sans motif propre', () => {
+    expect(motifPauseDe('paused_absence', null)).toBe('absence');
+  });
+
+  it('rend "inconnu" en dernier repli (paused sans motif, ne devrait pas survenir)', () => {
+    expect(motifPauseDe('paused', null)).toBe('inconnu');
   });
 });
 
@@ -426,6 +442,99 @@ describe('listerContactsCampagne', () => {
     });
     const r = await listerContactsCampagne(ctx, { campagneId });
     expect(r.lignes[0]).toMatchObject({ signalId: null, score: null, pourquoi: null, statut: 'en_sequence' });
+  });
+
+  // T29, partie B : une ligne `en_pause` porte l'inscription, le motif de
+  // pause (dérivé de `stop_reason`/`e_status`) et la date de reprise.
+  it('une ligne en_pause (email_gate) expose inscriptionId, motifPause et repriseLe nul', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_pause', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: null,
+          contact_id: 'contact-3',
+          first_name: 'Sami',
+          last_name: 'Nasri',
+          job_title: null,
+          email: 'sami@exemple.fr',
+          entreprise: null,
+          current_step: 1,
+          statut: 'en_pause',
+          score: null,
+          pourquoi: null,
+          enrollment_id: 'enr-1',
+          e_status: 'paused',
+          stop_reason: 'email_gate:bouncer_invalid',
+          resume_at: null,
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({
+      statut: 'en_pause',
+      inscriptionId: 'enr-1',
+      motifPause: 'email_gate:bouncer_invalid',
+      repriseLe: null,
+    });
+  });
+
+  it('une ligne en_pause (paused_absence, datée) retombe sur motifPause "absence" et porte repriseLe', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_pause', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: null,
+          contact_id: 'contact-4',
+          first_name: 'Léa',
+          last_name: 'Petit',
+          job_title: null,
+          email: 'lea@exemple.fr',
+          entreprise: null,
+          current_step: 1,
+          statut: 'en_pause',
+          score: null,
+          pourquoi: null,
+          enrollment_id: 'enr-2',
+          e_status: 'paused_absence',
+          stop_reason: null,
+          resume_at: '2026-09-22T00:00:00.000Z',
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({
+      statut: 'en_pause',
+      inscriptionId: 'enr-2',
+      motifPause: 'absence',
+      repriseLe: '2026-09-22T00:00:00.000Z',
+    });
+  });
+
+  it('une ligne hors pause a motifPause et repriseLe nuls même si l’inscription en porte', async () => {
+    const ctx = faux({
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: null,
+          contact_id: 'contact-5',
+          first_name: 'Yanis',
+          last_name: 'Roux',
+          job_title: null,
+          email: 'yanis@exemple.fr',
+          entreprise: null,
+          current_step: 1,
+          statut: 'en_sequence',
+          score: null,
+          pourquoi: null,
+          enrollment_id: 'enr-3',
+          e_status: 'active',
+          stop_reason: null,
+          resume_at: null,
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({ statut: 'en_sequence', inscriptionId: 'enr-3', motifPause: null, repriseLe: null });
   });
 
   it('passe la pagination et le filtre à la requête (page 2, filtre en_sequence)', async () => {

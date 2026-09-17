@@ -633,6 +633,54 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.creerListe).not.toHaveBeenCalled();
   });
 
+  // T29, partie B, point 6 : défense en profondeur — une action `blocked`/`failed`
+  // remise `scheduled` par `reprendreInscription` (une reprise manuelle,
+  // packages/core/src/fonctions/sequence.ts) ne doit jamais partir vers une
+  // adresse toujours invalide. Même règle que le tick (`sequence.ts`) :
+  // `email_status = 'valid'`, revérifiée ici au moment d'envoyer.
+  it('email_status non valide à l’envoi (défense en profondeur) : action bloquée et inscription mise en pause, aucun appel SalesBlink', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: 'invalid' })]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 1 }]) },
+        { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage).toBeDefined();
+    expect(blocage!.values[1]).toBe('email_gate:invalid');
+
+    const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
+    expect(pause).toBeDefined();
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 1, 'email_gate:invalid']);
+
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
+  });
+
+  it('email_status null à l’envoi : même blocage, motif email_gate:unknown', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: null })]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage!.values[1]).toBe('email_gate:unknown');
+  });
+
   it('mode_force = relance_repli force le repli et retire mode_force du payload', async () => {
     const { pool, appels } = creerPoolFactice(
       avecBase(

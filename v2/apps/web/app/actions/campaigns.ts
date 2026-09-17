@@ -9,6 +9,7 @@ import {
   lancer,
   mettreEnPause,
   archiver,
+  reprendreInscription as reprendreInscriptionCoeur,
   exiger,
   ErreurEntree,
   ErreurIntrouvable,
@@ -104,6 +105,29 @@ export async function setCampaignStatus(organizationId: string, campaignId: stri
     }
 
     revalidatePath(`/campaigns/${campaignId}`);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
+  }
+}
+
+/**
+ * Reprend une inscription en pause (tâche 29, lot 2, R93) : façade fine sur
+ * `reprendreInscription` (`packages/core/src/fonctions/sequence.ts`), même
+ * patron que `setCampaignStatus` — `contexteCourant`, `resultatDErreur`. Le
+ * bouton « Reprendre » apparaît dans trois écrans (table de contacts d'une
+ * campagne, table globale, fiche contact) : `revalidatePath` couvre les
+ * trois plutôt qu'un seul, pour que la ligne redevienne à jour partout après
+ * un rechargement, quel que soit l'écran d'où l'opérateur a agi.
+ */
+export async function reprendreInscription(inscriptionId: string, campagneId: string): Promise<SimpleResult> {
+  try {
+    const ctx = await contexteCourant();
+    await reprendreInscriptionCoeur(ctx, { inscriptionId });
+    revalidatePath(`/campaigns/${campagneId}/contacts`);
+    revalidatePath(`/campaigns/${campagneId}`);
+    revalidatePath('/contacts');
+    revalidatePath('/inbox');
     return { ok: true };
   } catch (err) {
     return resultatDErreur(err);

@@ -416,6 +416,31 @@ export async function envoyerEmailSalesBlink(
     console.warn(`[email-salesblink] action ${actionId} : inscription ${email.enrollmentId} sans adresse`);
     return;
   }
+
+  // 3.5 Défense en profondeur, revérification de la délivrabilité (T29) :
+  // le tick (`sequence.ts`) vérifie le gate au moment de décider l'envoi,
+  // mais une action `blocked`/`failed` remise `scheduled` par une reprise
+  // manuelle d'inscription (`reprendreInscription`, packages/core) arrive ici
+  // SANS repasser par le tick — sans cette seconde vérification, elle
+  // partirait vers une adresse toujours invalide. Même règle simplifiée que
+  // le tick : `email_status = 'valid'` (pas le gate complet, qui a besoin du
+  // pattern de domaine et de la nature de la source — hors de portée d'une
+  // simple défense en profondeur ici).
+  if (ligne.email_status !== 'valid') {
+    const motif = `email_gate:${ligne.email_status ?? 'unknown'}`;
+    await bloquerAction(pool, actionId, motif);
+    const etapeEnEchecGate = await pool.query<{ position: number }>(
+      `select position from sequence_steps where id = $1`,
+      [email.stepId],
+    );
+    const positionEnEchecGate = etapeEnEchecGate.rows[0]?.position;
+    if (positionEnEchecGate !== undefined) {
+      await mettreInscriptionEnPause(pool, email.enrollmentId, positionEnEchecGate, motif);
+    }
+    console.warn(`[email-salesblink] action ${actionId} bloquée : email non délivrable (${ligne.email_status ?? 'unknown'})`);
+    return;
+  }
+
   if (!email.templateParentId) {
     await bloquerAction(pool, actionId, 'missing_template');
     console.warn(`[email-salesblink] action ${actionId} bloquée : aucun gabarit assigné à l’étape`);

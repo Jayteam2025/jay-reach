@@ -21,6 +21,7 @@ import {
   etapeAffichee,
   FROM_POPULATION_CAMPAGNE,
   marqueBoite,
+  motifPauseDe,
   type ContactCampagne,
   type Evenement,
   type StatutContactCampagne,
@@ -96,10 +97,20 @@ export interface FicheBoite {
   readonly marque: 'outlook' | 'gmail' | null;
 }
 
+export interface FichePause {
+  /** Motif brut (`stop_reason`, ou `'absence'` pour un `paused_absence` sans motif propre) — `libelleMotifPause` (apps/web) le traduit à l'écran. */
+  readonly motif: string;
+  /** `enrollments.resume_at` — `null` sauf une pause d'absence datée. */
+  readonly repriseLe: string | null;
+  readonly inscriptionId: string;
+}
+
 export interface FicheSequence {
   readonly etapes: FicheEtape[];
   /** Boîte du dernier envoi connu de cette inscription — `null` si rien n'est encore parti. */
   readonly boite: FicheBoite | null;
+  /** Inscription en pause (T29, R93) — `null` pour une inscription vivante (`active`) ou déjà terminée/arrêtée. */
+  readonly pause: FichePause | null;
 }
 
 /**
@@ -239,6 +250,8 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
   let currentStep: number | null = null;
   let enrollmentStatus: string | null = null;
   let enrollmentId: string | null = null;
+  let stopReason: string | null = null;
+  let resumeAt: string | null = null;
 
   if (campagneId) {
     const res = await ctx.ex.query<{
@@ -246,6 +259,8 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       enrollment_id: string | null;
       current_step: number | null;
       e_status: string | null;
+      stop_reason: string | null;
+      resume_at: string | null;
       signal_id: string | null;
       score: number | null;
       score_reason: string | null;
@@ -256,6 +271,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       raw: unknown;
     }>(
       `select ${CASE_STATUT_DERIVE} as statut, e.enrollment_id, e.current_step, e.status as e_status,
+              e.stop_reason, e.resume_at,
               s.id as signal_id, s.score, s.score_reason, s.title, s.provider_id, s.occurred_at, s.url, s.raw
          ${FROM_POPULATION_CAMPAGNE}
         where c.id = $2 /* jr:fiche_statut_campagne */`,
@@ -267,6 +283,8 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       currentStep = r.current_step;
       enrollmentStatus = r.e_status;
       enrollmentId = r.enrollment_id;
+      stopReason = r.stop_reason;
+      resumeAt = r.resume_at;
       if (r.signal_id) {
         signal = {
           id: r.signal_id,
@@ -327,6 +345,10 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
     sequence = {
       etapes,
       boite: b ? { identite: b.identity, marque: marqueBoite(b.identity, b.inbox_provider) } : null,
+      pause:
+        statut === 'en_pause'
+          ? { motif: motifPauseDe(enrollmentStatus, stopReason), repriseLe: resumeAt, inscriptionId: enrollmentId! }
+          : null,
     };
   }
 
@@ -673,7 +695,9 @@ export interface ContactGlobal extends ContactCampagne {
 }
 
 export const schemaListerContactsGlobal = z.object({
-  filtre: z.enum(['tous', 'a_contacter', 'sans_email', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'termine', 'rebond', 'ne_plus_contacter']).default('tous'),
+  filtre: z
+    .enum(['tous', 'a_contacter', 'sans_email', 'en_pause', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'termine', 'rebond', 'ne_plus_contacter'])
+    .default('tous'),
   campagneId: z.string().uuid().optional(),
   source: z.enum(['adzuna', 'francetravail', 'linkedin', 'manuel']).optional(),
   email: z.enum(['verifie', 'a_trouver']).optional(),
@@ -709,6 +733,10 @@ interface LigneContactGlobalBrut {
   pourquoi: string | null;
   provider_id: string | null;
   quand: string | null;
+  enrollment_id: string | null;
+  e_status: string | null;
+  stop_reason: string | null;
+  resume_at: string | null;
 }
 
 /** Campagnes ciblées par `listerContacts`/`exporterCsv` : une seule (filtre `campagneId`) ou toutes celles de l'organisation. */
@@ -759,7 +787,8 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
     if (toutes.length >= LIMITE_COLLECTE_GLOBALE) break;
 
     const res = await ctx.ex.query<LigneContactGlobalBrut>(
-      `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, provider_id, quand
+      `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, provider_id, quand,
+              enrollment_id, e_status, stop_reason, resume_at
          from (
            select
              s.id as signal_id,
@@ -771,6 +800,7 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
              s.title as pourquoi,
              s.provider_id,
              coalesce(s.occurred_at, e.started_at) as quand,
+             e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at,
              ${CASE_STATUT_DERIVE} as statut
            ${FROM_POPULATION_CAMPAGNE}
          ) x /* jr:lignes_contacts_globale */
@@ -801,6 +831,9 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
         etape: etapeAffichee(r.current_step, totalEtapes),
         score: r.score,
         pourquoi: r.pourquoi,
+        inscriptionId: r.enrollment_id,
+        motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
+        repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
         campagneId: campagne.id,
         campagneNom: campagne.nom,
         quand: r.quand,
@@ -1105,6 +1138,7 @@ const ENTETES_CSV = ['Nom', 'Poste', 'Entreprise', 'Email', 'État', 'Étape', '
 const LIBELLES_STATUT_CSV: Record<StatutContactCampagne, string> = {
   a_contacter: 'À contacter',
   sans_email: 'Sans email',
+  en_pause: 'En pause',
   en_sequence: 'En séquence',
   a_repondu: 'A répondu',
   interesse: 'Intéressé',

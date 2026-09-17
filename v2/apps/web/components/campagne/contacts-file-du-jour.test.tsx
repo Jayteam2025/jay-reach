@@ -8,6 +8,7 @@ import { grouperParHeure, intituleTrancheHoraire, TableFileDuJour, type LigneTab
 const STATUT_LIBELLES: Record<StatutContactCampagne, string> = {
   a_contacter: 'À contacter',
   sans_email: 'Sans email',
+  en_pause: 'En pause',
   en_sequence: 'En séquence',
   a_repondu: 'A répondu',
   interesse: 'Intéressé',
@@ -32,6 +33,8 @@ const LIBELLES: TableContactsLibelles = {
   chercherEmail: "Chercher l'email",
   coutChercherEmail: '1 crédit',
   ecarter: 'Écarter',
+  reprendre: 'Reprendre',
+  reprendreMaintenant: 'Reprendre maintenant',
   vide: 'Aucun contact pour ce filtre.',
 };
 
@@ -48,6 +51,10 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     etapeTexte: null,
     score: null,
     pourquoi: null,
+    inscriptionId: null,
+    motifPause: null,
+    repriseLe: null,
+    motifPauseAffiche: null,
     ...overrides,
   };
 }
@@ -91,6 +98,55 @@ describe('TableContacts', () => {
     // Email connu -> puce « Vérifié », jamais le bouton d'enrichissement.
     expect(html).toContain('Vérifié');
     expect(html).not.toContain("Chercher l&#x27;email");
+  });
+
+  // T29, partie B : une ligne `en_pause` montre la puce, le motif et le
+  // bouton Reprendre — jamais l'une des autres actions.
+  it('ligne « En pause » -> puce, motif du dessous et bouton Reprendre', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[
+          ligne({
+            statut: 'en_pause',
+            email: 'sami@exemple.fr',
+            inscriptionId: 'enr-1',
+            motifPause: 'email_gate:bouncer_invalid',
+            motifPauseAffiche: { texte: 'Email jugé non délivrable', title: null },
+          }),
+        ]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('jr-puce attention');
+    expect(html).toContain('En pause');
+    expect(html).toContain('Email jugé non délivrable');
+    expect(html).toContain('Reprendre');
+    expect(html).not.toContain('Écarter');
+    expect(html).not.toContain("Chercher l&#x27;email");
+  });
+
+  it('ligne « En pause » (absence) -> bouton « Reprendre maintenant »', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[
+          ligne({
+            statut: 'en_pause',
+            email: 'lea@exemple.fr',
+            inscriptionId: 'enr-2',
+            motifPause: 'absence',
+            motifPauseAffiche: { texte: 'Absent', title: null },
+          }),
+        ]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('Reprendre maintenant');
   });
 
   it('ligne « À contacter » -> bouton Écarter (pas encore d’inscription active)', () => {
@@ -198,6 +254,7 @@ describe('FiltresStatuts', () => {
       tous: 3,
       a_contacter: 1,
       sans_email: 0,
+      en_pause: 0,
       en_sequence: 1,
       a_repondu: 1,
       interesse: 0,
@@ -224,6 +281,7 @@ describe('FiltresStatuts', () => {
       tous: 1,
       a_contacter: 1,
       sans_email: 0,
+      en_pause: 0,
       en_sequence: 0,
       a_repondu: 0,
       interesse: 0,

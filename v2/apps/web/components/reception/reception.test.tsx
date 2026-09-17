@@ -56,6 +56,7 @@ const FICHE: Fiche = {
       { position: 4, etat: 'a_venir' },
     ],
     boite: null,
+    pause: null,
   },
   echanges: [],
   filId: 'fil-1',

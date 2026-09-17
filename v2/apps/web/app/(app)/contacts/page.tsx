@@ -14,6 +14,7 @@ import {
 import type { StatutContactCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../lib/contexte';
 import { texteEtape } from '../../../lib/etape-contact';
+import { libelleMotifPause } from '../../../lib/motif-pause';
 import { Carte, EnTetePage, Onglets } from '../../../components/ui';
 import { TableContacts, type LigneTableContacts } from '../../../components/campagne/TableContacts';
 import { TableEntreprises } from '../../../components/contact/TableEntreprises';
@@ -199,6 +200,10 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
       ...ligne,
       etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
+      motifPauseAffiche:
+        ligne.statut === 'en_pause' && ligne.motifPause
+          ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`pause.${cle}`, valeurs))
+          : null,
     }));
 
     const total = resultat.total;
@@ -305,6 +310,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 chercherEmail: t('actions.enrich'),
                 coutChercherEmail: t('actions.enrichCost'),
                 ecarter: t('actions.discard'),
+                reprendre: t('actions.resume'),
+                reprendreMaintenant: t('actions.resumeNow'),
                 vide: t('empty'),
               }}
             />

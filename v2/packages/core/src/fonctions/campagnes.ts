@@ -27,6 +27,7 @@ import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 export type StatutContactCampagne =
   | 'a_contacter'
   | 'sans_email'
+  | 'en_pause'
   | 'en_sequence'
   | 'a_repondu'
   | 'interesse'
@@ -43,6 +44,7 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
   'a_repondu',
   'ecarte',
   'termine',
+  'en_pause',
   'en_sequence',
   'sans_email',
   'a_contacter',
@@ -76,10 +78,24 @@ export const CASE_STATUT_DERIVE = `case
       when e.status = 'replied' then 'a_repondu'
       when s.status = 'discarded' or e.status = 'stopped' then 'ecarte'
       when e.status = 'completed' then 'termine'
-      when e.status in ('active', 'paused', 'paused_absence') then 'en_sequence'
+      when e.status in ('paused', 'paused_absence') then 'en_pause'
+      when e.status = 'active' then 'en_sequence'
       when c.email is null or c.email_status <> 'valid' then 'sans_email'
       else 'a_contacter'
     end`;
+
+/**
+ * Motif de pause affiché (T29, R93) : `stop_reason` s'il est posé (toujours
+ * le cas pour un `paused` — `mettreInscriptionEnPause`, `apps/worker/src/handlers/sequence.ts`,
+ * pose toujours un motif), sinon `'absence'` pour un `paused_absence` sans
+ * motif propre (posé par la Réception sur une réponse d'absence, sans passer
+ * par `mettreInscriptionEnPause`). `'inconnu'` est un repli défensif qui ne
+ * devrait jamais survenir en pratique. N'appeler qu'après avoir vérifié que
+ * le statut dérivé est bien `'en_pause'` — le résultat n'a pas de sens sinon.
+ */
+export function motifPauseDe(statutInscription: string | null, stopReason: string | null): string {
+  return stopReason ?? (statutInscription === 'paused_absence' ? 'absence' : 'inconnu');
+}
 
 /**
  * Population d'une campagne (onglet Contacts), R36 (tour de correction 1) :
@@ -117,7 +133,7 @@ export const FROM_POPULATION_CAMPAGNE = `from (
       join contacts c on c.id = pop.contact_id
       left join signals s on s.id = pop.signal_id
       left join lateral (
-        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at
+        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at, e2.stop_reason, e2.resume_at
           from enrollments e2
          where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc
@@ -306,6 +322,12 @@ export interface ContactCampagne {
   readonly score: number | null;
   /** `signals.title` du signal d'origine (R33, « Pourquoi lui ») — `null` sans signal. */
   readonly pourquoi: string | null;
+  /** Dernière inscription du contact dans cette campagne — `null` sans inscription. */
+  readonly inscriptionId: string | null;
+  /** Motif de pause (T29, R93) — non `null` seulement quand `statut === 'en_pause'` (`motifPauseDe`). */
+  readonly motifPause: string | null;
+  /** `enrollments.resume_at` — non `null` seulement pour une pause d'absence datée. */
+  readonly repriseLe: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -695,6 +717,10 @@ interface LigneContactCampagne {
   statut: StatutContactCampagne;
   score: number | null;
   pourquoi: string | null;
+  enrollment_id: string | null;
+  e_status: string | null;
+  stop_reason: string | null;
+  resume_at: string | null;
 }
 
 export async function listerContactsCampagne(
@@ -727,7 +753,8 @@ export async function listerContactsCampagne(
 
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
-    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi
+    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi,
+            enrollment_id, e_status, stop_reason, resume_at
        from (
          select
            s.id as signal_id,
@@ -737,6 +764,7 @@ export async function listerContactsCampagne(
            e.current_step,
            s.score,
            s.title as pourquoi,
+           e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at,
            ${CASE_STATUT_DERIVE} as statut
          ${FROM_POPULATION_CAMPAGNE}
        ) x /* jr:lignes_contacts_campagne */
@@ -768,6 +796,9 @@ export async function listerContactsCampagne(
     etape: etapeAffichee(r.current_step, totalEtapes),
     score: r.score,
     pourquoi: r.pourquoi,
+    inscriptionId: r.enrollment_id,
+    motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
+    repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
   }));
 
   return { total, compteurs, lignes };

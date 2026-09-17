@@ -8,6 +8,7 @@ import { Carte } from '../../../../../components/ui';
 import { FiltresStatuts } from '../../../../../components/campagne/FiltresStatuts';
 import { TableContacts, type LigneTableContacts } from '../../../../../components/campagne/TableContacts';
 import { texteEtape } from '../../../../../lib/etape-contact';
+import { libelleMotifPause } from '../../../../../lib/motif-pause';
 import { TiroirFiche } from '../../../../../components/contact/TiroirFiche';
 
 export const revalidate = 0;
@@ -75,6 +76,10 @@ export default async function CampagneContactsPage({
     etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], (cle, valeurs) =>
       t(`contacts.${cle}`, valeurs),
     ),
+    motifPauseAffiche:
+      ligne.statut === 'en_pause' && ligne.motifPause
+        ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`contacts.pause.${cle}`, valeurs))
+        : null,
   }));
 
   function lienPage(p: number): string {
@@ -150,6 +155,8 @@ export default async function CampagneContactsPage({
             chercherEmail: t('contacts.actions.enrich'),
             coutChercherEmail: t('contacts.actions.enrichCost'),
             ecarter: t('contacts.actions.discard'),
+            reprendre: t('contacts.actions.resume'),
+            reprendreMaintenant: t('contacts.actions.resumeNow'),
             vide: t('contacts.emptyFilter'),
           }} />
         )}
