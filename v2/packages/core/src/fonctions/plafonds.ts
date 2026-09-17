@@ -55,6 +55,37 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   { cle: 'fuseau', defaut: 'Europe/Paris' },
 ];
 
+/**
+ * Jour calendaire (AAAA-MM-JJ) d'un instant DANS un fuseau donné — copie locale
+ * volontaire du même utilitaire d'une ligne que `campagnes.ts`/`sources.ts`
+ * (`jourDansFuseau`, mêmes commentaires : pas de couplage cross-fichier pour un
+ * utilitaire de cette taille). Exportée ici (contrairement aux deux autres,
+ * qui restent privées à leur fichier) : le worker (`traitements.ts`,
+ * `producer.ts`) en a besoin pour poser `usage_date` dans le fuseau de
+ * l'organisation (#118), et n'a qu'un `Pool` brut, jamais les deux autres
+ * copies qui vivent dans `packages/core/src/fonctions`.
+ */
+export function jourCourantDansFuseau(fuseau: string, maintenant: Date = new Date()): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(maintenant);
+}
+
+/**
+ * Fuseau de l'organisation (`organization_settings.fuseau`), pour un appelant
+ * qui n'a qu'un `Executeur`/`Pool` brut et pas besoin des cinq autres réglages
+ * (#118) : le worker, qui consomme le crédit `provider_daily_usage` en dehors
+ * de tout `Contexte`. Même repli que `lireReglages` pour cette seule clé
+ * (`valeurTexteValide` puis le défaut de `CLES_REGLAGES`) — pas de repli
+ * d'environnement pour `fuseau`, elle n'en a jamais eu.
+ */
+export async function fuseauDeLOrganisation(ex: Executeur, organisationId: string): Promise<string> {
+  const res = await ex.query<{ value: unknown }>(
+    `select value from organization_settings where organization_id = $1 and key = 'fuseau'`,
+    [organisationId],
+  );
+  const defaut = CLES_REGLAGES.find((d) => d.cle === 'fuseau')!.defaut as string;
+  return valeurTexteValide(res.rows[0]?.value) ?? defaut;
+}
+
 /** Type attendu pour la `valeur` de chaque clé, dérivé du type de son défaut — sert au schéma d'écriture ci-dessous. */
 const TYPE_ATTENDU_PAR_CLE: Record<ClePlafond, 'number' | 'string'> = Object.fromEntries(
   CLES_REGLAGES.map(({ cle, defaut }) => [cle, typeof defaut === 'number' ? 'number' : 'string']),
@@ -306,10 +337,17 @@ export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number
  * dans `apps/worker/src/handlers/sequence.ts`), plafonnés par la somme des
  * quotas des expéditeurs email actifs.
  *
- * Chaque jauge garde la fraîcheur de son propre mécanisme d'origine (scoring et
- * enrichissement : `usage_date = current_date`, en UTC comme `provider_daily_usage` ;
- * envois : le fuseau de l'organisation) — décision du coordinateur, pas une omission.
+ * Scoring, enrichissement ET envois se remettent à zéro à minuit dans le
+ * fuseau de l'organisation (#118, tour de correction 5) : `usage_date` (scoring,
+ * enrichissement) et la borne du jour (envois) utilisent la même clé de jour
+ * (`jourCourantDansFuseau`). Avant ce correctif, scoring/enrichissement
+ * utilisaient `current_date` (UTC, le fuseau du serveur) — décision du
+ * coordinateur au 14/09, revenue avec l'exigence de JB du 17/09 (« tout doit
+ * être juste et cohérent ») : la page Plafonds affichait honnêtement « minuit
+ * UTC », mais un plafond qui « se remet à zéro » à une heure différente de
+ * celle de l'organisation reste une incohérence pour l'opérateur.
  *
+
  * `reglages` : à passer quand l'appelant les a déjà lus (`lireAujourdhui`, qui
  * en a aussi besoin pour son propre fuseau) — évite une deuxième lecture de
  * `organization_settings` dans le même appel. Absent, `lireReglages(ctx)` est
@@ -322,18 +360,24 @@ export async function lireConsommationDuJour(
 ): Promise<{ scoring: Jauge; enrichissement: Jauge; envois: Jauge }> {
   const reglagesResolus = reglages ?? (await lireReglages(ctx));
   const fuseau = String(reglagesResolus.fuseau);
+  // Même clé de jour que le worker (`app.consume_provider_credit`, appelé avec
+  // ce jour depuis `traiterScore`/`enqueueEnrichmentForQualified`) et que
+  // `chercherEmail` (`contacts.ts`) : sans ça, lire ce jour côté app pendant
+  // que le worker écrit celui d'un AUTRE jour (UTC) ferait retomber la jauge à
+  // zéro entre minuit UTC et minuit heure de l'organisation.
+  const jour = jourCourantDansFuseau(fuseau);
 
   const scoringRes = await ctx.ex.query<{ n: number }>(
     `select coalesce(used, 0)::int as n /* scored_today */
        from provider_daily_usage
-      where organization_id = $1 and provider_id = 'anthropic' and usage_date = current_date`,
-    [ctx.organisationId],
+      where organization_id = $1 and provider_id = 'anthropic' and usage_date = $2::date`,
+    [ctx.organisationId, jour],
   );
   const enrichRes = await ctx.ex.query<{ n: number }>(
     `select coalesce(used, 0)::int as n /* enrich_today */
        from provider_daily_usage
-      where organization_id = $1 and provider_id = 'fullenrich' and usage_date = current_date`,
-    [ctx.organisationId],
+      where organization_id = $1 and provider_id = 'fullenrich' and usage_date = $2::date`,
+    [ctx.organisationId, jour],
   );
   const envoisUtiliseRes = await ctx.ex.query<{ n: number }>(
     `select count(*)::int as n

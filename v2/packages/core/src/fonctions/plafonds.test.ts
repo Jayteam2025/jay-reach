@@ -5,6 +5,8 @@ import type { Contexte } from './contexte.js';
 import {
   CLES_REGLAGES,
   ecrireReglage,
+  fuseauDeLOrganisation,
+  jourCourantDansFuseau,
   lireConsommationDuJour,
   lireReglages,
   lireReglagesDetail,
@@ -112,6 +114,65 @@ describe('plafonds', () => {
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const sqlEnvois = appels.map((call) => String(call[0])).find((sql) => /from actions/i.test(sql));
     expect(sqlEnvois).toMatch(/date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
+  });
+
+  it('#118 : scoring et enrichissement se remettent à zéro à minuit heure de l’organisation, pas à minuit UTC', async () => {
+    vi.useFakeTimers();
+    // 23:30 UTC le 14/01 = 00:30 le 15/01 à Paris : les deux fuseaux désignent un jour différent.
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z'));
+    try {
+      const ctx = faux({
+        'from organization_settings': [],
+        scored_today: [{ n: 0 }],
+        enrich_today: [{ n: 0 }],
+        'from actions': [{ n: 0 }],
+        'from senders': [{ plafond: 90 }],
+      });
+      await lireConsommationDuJour(ctx);
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const appelScoring = appels.find((a) => /scored_today/i.test(String(a[0])));
+      const appelEnrich = appels.find((a) => /enrich_today/i.test(String(a[0])));
+      expect(appelScoring?.[1]).toEqual(['org-1', '2026-01-15']);
+      expect(appelEnrich?.[1]).toEqual(['org-1', '2026-01-15']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('jourCourantDansFuseau (#118)', () => {
+  it('sous TZ=UTC (process), un jour Europe/Paris après minuit local reste au bon jour', () => {
+    // 23:30 UTC le 14/01 = 00:30 le 15/01 à Paris.
+    const instant = new Date('2026-01-14T23:30:00.000Z');
+    expect(jourCourantDansFuseau('Europe/Paris', instant)).toBe('2026-01-15');
+    expect(jourCourantDansFuseau('UTC', instant)).toBe('2026-01-14');
+  });
+
+  it('par défaut (sans instant), utilise l’heure courante', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    try {
+      expect(jourCourantDansFuseau('Europe/Paris')).toBe('2026-09-17');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('fuseauDeLOrganisation (#118, worker sans Contexte)', () => {
+  it('lit le fuseau réglé en base', async () => {
+    const ex = faux({ 'from organization_settings': [{ value: 'Europe/Paris' }] }).ex;
+    await expect(fuseauDeLOrganisation(ex, 'org-1')).resolves.toBe('Europe/Paris');
+  });
+
+  it('retombe sur le défaut (Europe/Paris) sans ligne en base', async () => {
+    const ex = faux({ 'from organization_settings': [] }).ex;
+    await expect(fuseauDeLOrganisation(ex, 'org-1')).resolves.toBe('Europe/Paris');
+  });
+
+  it('ignore une valeur vide ou du mauvais type, retombe sur le défaut', async () => {
+    const ex = faux({ 'from organization_settings': [{ value: '' }] }).ex;
+    await expect(fuseauDeLOrganisation(ex, 'org-1')).resolves.toBe('Europe/Paris');
   });
 });
 
