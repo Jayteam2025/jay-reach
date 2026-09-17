@@ -786,4 +786,29 @@ describe('reprendreInscription', () => {
     expect(String(appelInscription?.[0])).toMatch(/organization_id\s*=\s*\$2/i);
     expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1']);
   });
+
+  // Tour de correction 1, Important (relecture) : `current_step` est un
+  // INDEX de tableau partout ailleurs (`composeTick` fait `steps[currentStep]`
+  // sur un tableau trié par `position asc`) — jamais une valeur de `position`
+  // à égaler. `supprimerEtape` ne renumérote pas les étapes restantes : une
+  // séquence à positions non contiguës (0, 2, 5…) doit quand même retrouver
+  // la bonne étape par RANG, pas par valeur.
+  it('retrouve l’étape par rang ordinal (order by position asc offset … limit 1), pas par égalité de position', async () => {
+    const ctx = faux({
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 1 }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_action': [],
+    });
+    await reprendreInscription(ctx, { inscriptionId });
+
+    const appelEtape = appelsDe(ctx).find((a) => /jr:reprendre_etape/i.test(String(a[0])));
+    expect(String(appelEtape?.[0])).toMatch(/order by position asc/i);
+    expect(String(appelEtape?.[0])).toMatch(/offset\s*\$2/i);
+    expect(String(appelEtape?.[0])).not.toMatch(/position\s*=\s*\$2/i);
+    // `current_step` (1) est passé tel quel comme décalage — un `current_step`
+    // de 1 avec des positions 0, 2, 5 (non contiguës) doit retrouver la
+    // DEUXIÈME étape par rang, jamais celle dont `position = 1` (qui
+    // n'existe pas dans cet exemple) : c'est exactement ce que fait `offset`.
+    expect(appelEtape?.[1]).toEqual([campagneId, 1]);
+  });
 });

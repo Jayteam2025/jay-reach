@@ -891,6 +891,17 @@ async function ecrireEvenementReprise(ctx: Contexte, contactId: string | null, c
  * (`apps/worker/src/handlers/email-salesblink.ts`) revérifie lui-même la
  * délivrabilité avant de pousser — une action `email_gate` remise `scheduled`
  * ici ne part donc pas forcément si l'adresse est toujours invalide.
+ *
+ * Étape courante par RANG ORDINAL, pas par égalité de `position` (tour de
+ * correction 1, Important de la relecture) : partout ailleurs, `current_step`
+ * est traité comme un INDEX de tableau — `composeTick`
+ * (`packages/core/src/sequencer/tick.ts`) fait `steps[currentStep]` sur un
+ * tableau construit par `order by position asc`. Les deux ne coïncident que
+ * si les `position` d'une campagne sont contiguës 0..N-1, ce que
+ * `supprimerEtape` (plus haut dans ce fichier) ne garantit pas — elle ne
+ * renumérote jamais les étapes restantes. `order by position asc offset $2
+ * limit 1` reproduit exactement `rows[current_step]` après le même tri,
+ * quelle que soit la contiguïté des `position`.
  */
 export async function reprendreInscription(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
@@ -907,7 +918,11 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
   if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
 
   const etapeRes = await ctx.ex.query<{ id: string }>(
-    `select id from sequence_steps /* jr:reprendre_etape */ where campaign_id = $1 and position = $2`,
+    `select id from sequence_steps /* jr:reprendre_etape */
+      where campaign_id = $1
+      order by position asc
+      offset $2
+      limit 1`,
     [ligne.campaign_id, ligne.current_step],
   );
   const etapeId = etapeRes.rows[0]?.id;
