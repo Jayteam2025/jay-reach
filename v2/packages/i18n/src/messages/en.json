@@ -29,14 +29,14 @@
     "apify": "Apify (LinkedIn jobs)",
     "field": {
       "apiKey": "API key",
-      "dailyCap": "Daily call cap — defaults to 20 (free tier)",
+      "dailyCap": "Daily call cap · defaults to 20 (free tier)",
       "apiToken": "API token",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
       "appKey": "App key",
-      "modelSmart": "Model (scoring) — default Sonnet",
-      "modelFast": "Model (light tasks) — default Haiku",
+      "modelSmart": "Model (scoring) · default Sonnet",
+      "modelFast": "Model (light tasks) · default Haiku",
       "enrichDailyCap": "Daily cap",
       "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
       "enrichDailyCapPlaceholder": "e.g. 50",
@@ -349,7 +349,8 @@
         "score": "Score",
         "email": "Email",
         "step": "Step",
-        "campaign": "Campaign"
+        "campaign": "Campaign",
+        "status": "Status"
       },
       "email": {
         "verified": "Verified",
@@ -575,7 +576,7 @@
         "active": "Active",
         "paused": "Paused",
         "toggleAriaLabel": "Activate or pause the source",
-        "pendingLot4": "Configured, awaiting batch 4",
+        "pendingLot4": "Configured, awaiting the LinkedIn channel",
         "everyNHours": "Every {n} hours",
         "schedule": "{cadence} · last {dernier} · next {prochain}",
         "scheduleNoLast": "{cadence} · next {prochain}",
@@ -613,7 +614,7 @@
         "save": "Save",
         "create": "Create the source",
         "cancel": "Cancel",
-        "linkedinPending": "Collection enabled in batch 4. You can already configure the source; profile reading will start with the LinkedIn batch.",
+        "linkedinPending": "Collection enabled with the LinkedIn channel. You can already configure the source; profile reading will start once it is active.",
         "postUrl": "Post address",
         "keepPeople": "We keep people who",
         "commented": "commented",
@@ -662,6 +663,11 @@
         "directoryNaf": "Activity code (NAF)",
         "directoryDepartment": "Department",
         "directoryEffectif": "Headcount",
+        "directoryEffectifAny": "All headcounts",
+        "directoryEffectifSmall": "1 to 9 employees",
+        "directoryEffectifMid": "10 to 49 employees",
+        "directoryEffectifLarge": "50 to 249 employees",
+        "directoryEffectifXl": "250 employees and more",
         "directorySearch": "Search",
         "directoryColCompany": "Company",
         "directoryColCity": "City",
@@ -829,7 +835,7 @@
         "menuFranceTravailTitle": "France Travail",
         "menuFranceTravailDescription": "Postings from the public employment agency.",
         "menuGroupLinkedin": "LinkedIn",
-        "menuLinkedinBadge": "Collection enabled in batch 4",
+        "menuLinkedinBadge": "Collection enabled with the LinkedIn channel",
         "menuLinkedinPostEngagersTitle": "Post engagers",
         "menuLinkedinPostEngagersDescription": "People who liked or commented on a post.",
         "menuLinkedinCompetitorFollowersTitle": "Competitor followers",
@@ -1149,7 +1155,7 @@
         "microsoft_graph": "Reply polling, mailbox by mailbox",
         "adzuna": "Job postings from French sites",
         "francetravail": "Postings from the public employment agency",
-        "apify": "Server-side LinkedIn reading · required for batch 4"
+        "apify": "Server-side LinkedIn reading · required for the LinkedIn channel"
       },
       "lien": {
         "reglerPlafond": "Set the limit",
@@ -1165,7 +1171,8 @@
         "envois": "{utilise} sends out of {plafond}"
       },
       "reglagesTitre": "Settings",
-      "enregistrerReglages": "Save"
+      "enregistrerReglages": "Save",
+      "champConfigDefaut": "Default: {defaut}."
     },
     "personas": {
       "title": "Personas",
@@ -1175,7 +1182,7 @@
       "archivedSection": "Archived ({n})",
       "reactivate": "Reactivate",
       "list": {
-        "draft": "draft · no campaign",
+        "draft": "no campaign",
         "summary": "{campaigns, plural, one {# campaign} other {# campaigns}} · {contacts, plural, one {# contact} other {# contacts}}",
         "summaryWithScore": "{campaigns, plural, one {# campaign} other {# campaigns}} · {contacts, plural, one {# contact} other {# contacts}} · average score {score}"
       },
@@ -1217,7 +1224,7 @@
     },
     "messages": {
       "title": "Messages",
-      "lead": "The template library. A sequence step points to a template; editing it here changes every campaign using it, starting with the next send.",
+      "lead": "The library of reusable templates. A sequence step can be poured into one; editing a template here changes every step linked to it, starting with the next send.",
       "new": "+ New template",
       "search": "Search a template…",
       "noResult": "No template matches this search.",
@@ -1283,7 +1290,7 @@
         "aucuneErreur": "None",
         "tachesEnAttente": "Pending tasks",
         "aucuneTache": "None",
-        "tachesEnAttenteGabarit": "{scoring} scoring(s) · {enrichissement} enrichment(s)"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}"
       },
       "pause": {
         "titre": "Global sending pause",
@@ -1305,17 +1312,17 @@
         "continuAideGabarit": "Runs continuously server-side, about every {minutes} minutes. No manual trigger is possible here.",
         "sources": {
           "titre": "Run all sources",
-          "detailGabarit": "{actives} active source(s) · last run {dernier}",
-          "detailAucunPassage": "{actives} active source(s) · no run yet"
+          "detailGabarit": "{actives, plural, one {# active source} other {# active sources}} · last run {dernier}",
+          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet"
         },
         "scoring": {
           "titre": "Score pending signals",
-          "detailGabarit": "{n} signal(s) pending",
+          "detailGabarit": "{n, plural, one {# signal pending} other {# signals pending}}",
           "detailVide": "no signal pending"
         },
         "enrichissement": {
           "titre": "Enrich contacts without email",
-          "detailGabarit": "{n} contact(s) pending",
+          "detailGabarit": "{n, plural, one {# contact pending} other {# contacts pending}}",
           "detailVide": "no contact pending"
         },
         "releve": {
@@ -1428,7 +1435,8 @@
       "score": "Score",
       "email": "Email",
       "step": "Step",
-      "campaign": "Campaign"
+      "campaign": "Campaign",
+      "status": "Status"
     },
     "status": {
       "a_contacter": "To contact",

@@ -29,14 +29,14 @@
     "apify": "Apify (LinkedIn-vacatures)",
     "field": {
       "apiKey": "API-sleutel",
-      "dailyCap": "Dagelijkse oproeplimiet — standaard 20 (gratis plan)",
+      "dailyCap": "Dagelijkse oproeplimiet · standaard 20 (gratis plan)",
       "apiToken": "API-token",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
       "appKey": "App key",
-      "modelSmart": "Model (scoring) — standaard Sonnet",
-      "modelFast": "Model (lichte taken) — standaard Haiku",
+      "modelSmart": "Model (scoring) · standaard Sonnet",
+      "modelFast": "Model (lichte taken) · standaard Haiku",
       "enrichDailyCap": "Daglimiet",
       "enrichDailyCapHint": "Maximaal verrijkte contacten per dag. Zet 0 om automatische verrijking te pauzeren en alleen handmatig te verrijken vanuit het scherm Signalen.",
       "enrichDailyCapPlaceholder": "bv. 50",
@@ -349,7 +349,8 @@
         "score": "Score",
         "email": "E-mail",
         "step": "Stap",
-        "campaign": "Campagne"
+        "campaign": "Campagne",
+        "status": "Status"
       },
       "email": {
         "verified": "Geverifieerd",
@@ -575,7 +576,7 @@
         "active": "Actief",
         "paused": "Gepauzeerd",
         "toggleAriaLabel": "Bron activeren of pauzeren",
-        "pendingLot4": "Ingesteld, wacht op fase 4",
+        "pendingLot4": "Ingesteld, wacht op het LinkedIn-kanaal",
         "everyNHours": "Elke {n} uur",
         "schedule": "{cadence} · laatste {dernier} · volgende {prochain}",
         "scheduleNoLast": "{cadence} · volgende {prochain}",
@@ -613,7 +614,7 @@
         "save": "Opslaan",
         "create": "Bron aanmaken",
         "cancel": "Annuleren",
-        "linkedinPending": "Verzameling geactiveerd in fase 4. Je kunt de bron al instellen; het lezen van profielen start met de LinkedIn-fase.",
+        "linkedinPending": "Verzameling geactiveerd met het LinkedIn-kanaal. Je kunt de bron al instellen; het lezen van profielen start zodra dat actief is.",
         "postUrl": "Adres van de post",
         "keepPeople": "We houden personen die",
         "commented": "hebben een reactie geplaatst",
@@ -662,6 +663,11 @@
         "directoryNaf": "Activiteitscode (NAF)",
         "directoryDepartment": "Departement",
         "directoryEffectif": "Personeelsbestand",
+        "directoryEffectifAny": "Alle personeelsomvang",
+        "directoryEffectifSmall": "1 tot 9 werknemers",
+        "directoryEffectifMid": "10 tot 49 werknemers",
+        "directoryEffectifLarge": "50 tot 249 werknemers",
+        "directoryEffectifXl": "250 werknemers en meer",
         "directorySearch": "Zoeken",
         "directoryColCompany": "Bedrijf",
         "directoryColCity": "Stad",
@@ -829,7 +835,7 @@
         "menuFranceTravailTitle": "France Travail",
         "menuFranceTravailDescription": "Vacatures van de overheidsinstantie voor werkgelegenheid.",
         "menuGroupLinkedin": "LinkedIn",
-        "menuLinkedinBadge": "Verzameling geactiveerd in fase 4",
+        "menuLinkedinBadge": "Verzameling geactiveerd met het LinkedIn-kanaal",
         "menuLinkedinPostEngagersTitle": "Engagers van een post",
         "menuLinkedinPostEngagersDescription": "Personen die een post hebben geliket of erop hebben gereageerd.",
         "menuLinkedinCompetitorFollowersTitle": "Volgers van een concurrent",
@@ -1149,7 +1155,7 @@
         "microsoft_graph": "Ophalen van reacties, mailbox per mailbox",
         "adzuna": "Vacatures van Franse sites",
         "francetravail": "Vacatures van de overheidsinstantie",
-        "apify": "Serverside lezen van LinkedIn · vereist voor fase 4"
+        "apify": "Serverside lezen van LinkedIn · vereist voor het LinkedIn-kanaal"
       },
       "lien": {
         "reglerPlafond": "Limiet instellen",
@@ -1165,7 +1171,8 @@
         "envois": "{utilise} verzendingen van {plafond}"
       },
       "reglagesTitre": "Instellingen",
-      "enregistrerReglages": "Opslaan"
+      "enregistrerReglages": "Opslaan",
+      "champConfigDefaut": "Standaard: {defaut}."
     },
     "personas": {
       "title": "Persona's",
@@ -1175,7 +1182,7 @@
       "archivedSection": "Gearchiveerd ({n})",
       "reactivate": "Heractiveren",
       "list": {
-        "draft": "concept · geen campagne",
+        "draft": "geen campagne",
         "summary": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacten}}",
         "summaryWithScore": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacten}} · gemiddelde score {score}"
       },
@@ -1217,7 +1224,7 @@
     },
     "messages": {
       "title": "Berichten",
-      "lead": "De bibliotheek met modellen. Een sequentiestap verwijst naar een model; het hier bewerken wijzigt alle campagnes die het gebruiken, vanaf de volgende verzending.",
+      "lead": "De bibliotheek met herbruikbare modellen. Een sequentiestap kan hierin worden ondergebracht; een model hier bewerken wijzigt alle stappen die eraan gekoppeld zijn, vanaf de volgende verzending.",
       "new": "+ Nieuw model",
       "search": "Een model zoeken…",
       "noResult": "Geen enkel model komt overeen met deze zoekopdracht.",
@@ -1283,7 +1290,7 @@
         "aucuneErreur": "Geen",
         "tachesEnAttente": "Wachtende taken",
         "aucuneTache": "Geen",
-        "tachesEnAttenteGabarit": "{scoring} scoring(s) · {enrichissement} verrijking(en)"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}"
       },
       "pause": {
         "titre": "Algemene verzendpauze",
@@ -1305,17 +1312,17 @@
         "continuAideGabarit": "Draait continu serverside, ongeveer elke {minutes} minuten. Hier is geen handmatige start mogelijk.",
         "sources": {
           "titre": "Alle bronnen uitvoeren",
-          "detailGabarit": "{actives} actieve bron(nen) · laatste run {dernier}",
-          "detailAucunPassage": "{actives} actieve bron(nen) · nog geen run"
+          "detailGabarit": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · laatste run {dernier}",
+          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run"
         },
         "scoring": {
           "titre": "Wachtende signalen scoren",
-          "detailGabarit": "{n} wachtend(e) signa(a)l(en)",
+          "detailGabarit": "{n, plural, one {# wachtend signaal} other {# wachtende signalen}}",
           "detailVide": "geen wachtend signaal"
         },
         "enrichissement": {
           "titre": "Contacten zonder e-mail verrijken",
-          "detailGabarit": "{n} wachtend(e) contact(en)",
+          "detailGabarit": "{n, plural, one {# wachtend contact} other {# wachtende contacten}}",
           "detailVide": "geen wachtend contact"
         },
         "releve": {
@@ -1428,7 +1435,8 @@
       "score": "Score",
       "email": "E-mail",
       "step": "Stap",
-      "campaign": "Campagne"
+      "campaign": "Campagne",
+      "status": "Status"
     },
     "status": {
       "a_contacter": "Te contacteren",

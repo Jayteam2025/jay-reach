@@ -29,14 +29,14 @@
     "apify": "Apify (offres LinkedIn)",
     "field": {
       "apiKey": "Clé d'API",
-      "dailyCap": "Plafond quotidien d'appels — défaut 20 (offre gratuite)",
+      "dailyCap": "Plafond quotidien d'appels · défaut 20 (offre gratuite)",
       "apiToken": "Jeton d'API",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
       "appKey": "App key",
-      "modelSmart": "Modèle (scoring) — défaut Sonnet",
-      "modelFast": "Modèle (tâches légères) — défaut Haiku",
+      "modelSmart": "Modèle (scoring) · défaut Sonnet",
+      "modelFast": "Modèle (tâches légères) · défaut Haiku",
       "enrichDailyCap": "Plafond quotidien",
       "enrichDailyCapHint": "Contacts enrichis par jour, au maximum. Mettez 0 pour mettre l'enrichissement automatique en pause et n'enrichir qu'à la main, depuis l'écran Signaux.",
       "enrichDailyCapPlaceholder": "ex. 50",
@@ -349,7 +349,8 @@
         "score": "Score",
         "email": "Email",
         "step": "Étape",
-        "campaign": "Campagne"
+        "campaign": "Campagne",
+        "status": "Statut"
       },
       "email": {
         "verified": "Vérifié",
@@ -575,7 +576,7 @@
         "active": "Active",
         "paused": "En pause",
         "toggleAriaLabel": "Activer ou mettre en pause la source",
-        "pendingLot4": "Réglée, en attente du lot 4",
+        "pendingLot4": "Réglée, en attente du canal LinkedIn",
         "everyNHours": "Toutes les {n} heures",
         "schedule": "{cadence} · dernier {dernier} · prochain {prochain}",
         "scheduleNoLast": "{cadence} · prochain {prochain}",
@@ -613,7 +614,7 @@
         "save": "Enregistrer",
         "create": "Créer la source",
         "cancel": "Annuler",
-        "linkedinPending": "Collecte activée au lot 4. Vous pouvez déjà régler la source ; la lecture des profils démarrera avec le lot LinkedIn.",
+        "linkedinPending": "Collecte activée avec le canal LinkedIn. Vous pouvez déjà régler la source ; la lecture des profils démarrera dès qu'il sera actif.",
         "postUrl": "Adresse du post",
         "keepPeople": "On garde les personnes qui",
         "commented": "ont commenté",
@@ -662,6 +663,11 @@
         "directoryNaf": "Code d'activité (NAF)",
         "directoryDepartment": "Département",
         "directoryEffectif": "Effectif",
+        "directoryEffectifAny": "Tous effectifs",
+        "directoryEffectifSmall": "1 à 9 salariés",
+        "directoryEffectifMid": "10 à 49 salariés",
+        "directoryEffectifLarge": "50 à 249 salariés",
+        "directoryEffectifXl": "250 salariés et plus",
         "directorySearch": "Rechercher",
         "directoryColCompany": "Entreprise",
         "directoryColCity": "Ville",
@@ -829,7 +835,7 @@
         "menuFranceTravailTitle": "France Travail",
         "menuFranceTravailDescription": "Offres de l'agence publique de l'emploi.",
         "menuGroupLinkedin": "LinkedIn",
-        "menuLinkedinBadge": "Collecte activée au lot 4",
+        "menuLinkedinBadge": "Collecte activée avec le canal LinkedIn",
         "menuLinkedinPostEngagersTitle": "Engageurs d'un post",
         "menuLinkedinPostEngagersDescription": "Les personnes qui ont aimé ou commenté un post.",
         "menuLinkedinCompetitorFollowersTitle": "Abonnés d'un concurrent",
@@ -1149,7 +1155,7 @@
         "microsoft_graph": "Relève des réponses, boîte par boîte",
         "adzuna": "Offres d'emploi des sites français",
         "francetravail": "Offres de l'agence publique",
-        "apify": "Lecture de LinkedIn côté serveur · nécessaire au lot 4"
+        "apify": "Lecture de LinkedIn côté serveur · nécessaire au canal LinkedIn"
       },
       "lien": {
         "reglerPlafond": "Régler le plafond",
@@ -1165,7 +1171,8 @@
         "envois": "{utilise} envois sur {plafond}"
       },
       "reglagesTitre": "Réglages",
-      "enregistrerReglages": "Enregistrer"
+      "enregistrerReglages": "Enregistrer",
+      "champConfigDefaut": "Défaut : {defaut}."
     },
     "personas": {
       "title": "Personas",
@@ -1175,7 +1182,7 @@
       "archivedSection": "Archivés ({n})",
       "reactivate": "Réactiver",
       "list": {
-        "draft": "brouillon · aucune campagne",
+        "draft": "aucune campagne",
         "summary": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}}",
         "summaryWithScore": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacts}} · score moyen {score}"
       },
@@ -1217,7 +1224,7 @@
     },
     "messages": {
       "title": "Messages",
-      "lead": "La bibliothèque des modèles. Une étape de séquence pointe vers un modèle ; le modifier ici change toutes les campagnes qui l'utilisent, à partir du prochain envoi.",
+      "lead": "La bibliothèque des modèles réutilisables. Une étape de séquence peut y être versée ; modifier un modèle ici change toutes les étapes qui y sont reliées, à partir du prochain envoi.",
       "new": "+ Nouveau modèle",
       "search": "Rechercher un modèle…",
       "noResult": "Aucun modèle ne correspond à cette recherche.",
@@ -1283,7 +1290,7 @@
         "aucuneErreur": "Aucune",
         "tachesEnAttente": "Tâches en attente",
         "aucuneTache": "Aucune",
-        "tachesEnAttenteGabarit": "{scoring} scoring(s) · {enrichissement} enrichissement(s)"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}"
       },
       "pause": {
         "titre": "Pause d'envoi globale",
@@ -1305,17 +1312,17 @@
         "continuAideGabarit": "Tourne en continu côté serveur, toutes les {minutes} minutes environ. Aucun déclenchement manuel possible ici.",
         "sources": {
           "titre": "Passage de toutes les sources",
-          "detailGabarit": "{actives} source(s) active(s) · dernier passage {dernier}",
-          "detailAucunPassage": "{actives} source(s) active(s) · aucun passage encore"
+          "detailGabarit": "{actives, plural, one {# source active} other {# sources actives}} · dernier passage {dernier}",
+          "detailAucunPassage": "{actives, plural, one {# source active} other {# sources actives}} · aucun passage encore"
         },
         "scoring": {
           "titre": "Scoring des signaux en attente",
-          "detailGabarit": "{n} signal(aux) en attente",
+          "detailGabarit": "{n, plural, one {# signal en attente} other {# signaux en attente}}",
           "detailVide": "aucun signal en attente"
         },
         "enrichissement": {
           "titre": "Enrichissement des contacts sans email",
-          "detailGabarit": "{n} contact(s) en attente",
+          "detailGabarit": "{n, plural, one {# contact en attente} other {# contacts en attente}}",
           "detailVide": "aucun contact en attente"
         },
         "releve": {
@@ -1428,7 +1435,8 @@
       "score": "Score",
       "email": "Email",
       "step": "Étape",
-      "campaign": "Campagne"
+      "campaign": "Campagne",
+      "status": "Statut"
     },
     "status": {
       "a_contacter": "À contacter",
