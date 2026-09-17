@@ -118,14 +118,19 @@ describe('catalogues de traduction fr/en/nl', () => {
     expect(invalides).toEqual([]);
   });
 
-  // Anti-français : 30 clés-repères (titres de page, entrées de menu, boutons
+  // Anti-français : clés-repères (titres de page, entrées de menu, boutons
   // principaux, libellés de statut) dont la traduction doit vraiment
   // s'écarter du français — repli le plus fréquent d'un traducteur pressé :
-  // recopier la valeur `fr` telle quelle. Liste fixe choisie parmi les clés
-  // du nouveau design dont la traduction en/nl diffère structurellement du
-  // français (les cognats stricts comme "Contacts"/"Contacts" ou
-  // "Personas"/"Personas" en sont volontairement absents : ils échoueraient
-  // le test sans être de mauvaises traductions).
+  // recopier la valeur `fr` telle quelle. Liste de base (30) choisie parmi
+  // les clés du nouveau design dont la traduction en/nl diffère
+  // structurellement du français (les cognats stricts comme "Contacts"/
+  // "Contacts" ou "Personas"/"Personas" en sont volontairement absents : ils
+  // échoueraient le test sans être de mauvaises traductions). Trois clés de
+  // vocabulaire métier LinkedIn s'y sont ajoutées après une relecture qui a
+  // trouvé « Engageurs » (français) laissé tel quel dans `nl.json` — la liste
+  // de base ne les couvrait pas (elle vise les repères d'écran, pas tout le
+  // vocabulaire) : les ajouter ici transforme le correctif ponctuel en garde
+  // non-régression.
   const CLES_ANTI_FRANCAIS = [
     'coquille.nav.today',
     'coquille.nav.inbox',
@@ -157,6 +162,9 @@ describe('catalogues de traduction fr/en/nl', () => {
     'campagne.contacts.actions.enrich',
     'reglages.compte.session.bouton',
     'campagne.file.actions.review',
+    'sources.fournisseurs.linkedin_post_engagers',
+    'campagne.sources.menu.linkedinPostEngagers.title',
+    'campagne.nouvelle.sources.menuLinkedinPostEngagersTitle',
   ] as const;
 
   const MOTS_FRANCAIS = [
@@ -175,6 +183,7 @@ describe('catalogues de traduction fr/en/nl', () => {
     'campagne',
     'contacts',
     'réglages',
+    'engageurs',
   ];
   // Bornés par des espaces ou une ponctuation (pas par \b, qui traiterait un
   // caractère accentué comme une frontière de mot et laisserait passer par

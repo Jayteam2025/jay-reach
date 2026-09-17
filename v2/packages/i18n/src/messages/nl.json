@@ -18,7 +18,7 @@
     "title": "Providers",
     "save": "Opslaan",
     "salesblink": "SalesBlink (e-mail)",
-    "microsoftGraph": "Microsoft 365 (antwoorden ophalen)",
+    "microsoftGraph": "Microsoft 365 (reacties ophalen)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
     "bouncer": "Bouncer (e-mailverificatie)",
@@ -47,7 +47,7 @@
       "emailDailyCapHint": "E-mails per dag naar SalesBlink, alle campagnes (0 = pauze, leeg = onbeperkt)",
       "emailDailyCapPlaceholder": "Aantal, leeg = onbeperkt",
       "syncIntervalMin": "Ophaalfrequentie (minuten)",
-      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, antwoorden en bounces bij SalesBlink leest (2 tot 60)",
+      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, reacties en bounces bij SalesBlink leest (2 tot 60)",
       "syncIntervalMinPlaceholder": "Minuten, standaard 5",
       "replyMaxDelayH": "Maximale vertraging van een opvolging (uren)",
       "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
@@ -75,7 +75,7 @@
     "fournisseurs": {
       "adzuna": "Adzuna",
       "francetravail": "France Travail",
-      "linkedin_post_engagers": "LinkedIn · engageurs van een post",
+      "linkedin_post_engagers": "LinkedIn · engagers van een post",
       "linkedin_competitor_followers": "LinkedIn · volgers van een concurrent",
       "linkedin_keywords": "LinkedIn · trefwoorden",
       "linkedin_job_change": "LinkedIn · functiewijziging",
@@ -109,8 +109,8 @@
       "rouvrir": "Heropenen",
       "campagne": "campagne {nom}",
       "etape": "stap {position} van {total}",
-      "sequenceArretee": "sequentie gestopt bij het antwoord",
-      "repondDepuis": "geantwoord vanaf {adresse}",
+      "sequenceArretee": "sequentie gestopt bij de reactie",
+      "repondDepuis": "gereageerd vanaf {adresse}",
       "raisonReponseImpossible": {
         "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat alleen voor e-mailgesprekken.",
         "messageOrigineInconnu": "Onbekend oorspronkelijk bericht: antwoorden vanuit de app is niet mogelijk."
@@ -184,7 +184,7 @@
       "human_reply": "Menselijke reactie",
       "auto_absence": "Automatische afwezigheidsmelding",
       "auto_left_company": "Heeft het bedrijf verlaten",
-      "auto_other": "Automatisch antwoord",
+      "auto_other": "Automatische reactie",
       "unclassified": "Niet geclassificeerd"
     },
     "queue": {
@@ -536,7 +536,7 @@
           "description": "Vacatures van de overheidsinstantie"
         },
         "linkedinPostEngagers": {
-          "title": "Engageurs van een post",
+          "title": "Engagers van een post",
           "description": "Personen die een post hebben geliket of erop hebben gereageerd"
         },
         "linkedinCompetitorFollowers": {
@@ -826,7 +826,7 @@
         "menuFranceTravailDescription": "Vacatures van de overheidsinstantie voor werkgelegenheid.",
         "menuGroupLinkedin": "LinkedIn",
         "menuLinkedinBadge": "Verzameling geactiveerd in fase 4",
-        "menuLinkedinPostEngagersTitle": "Engageurs van een post",
+        "menuLinkedinPostEngagersTitle": "Engagers van een post",
         "menuLinkedinPostEngagersDescription": "Personen die een post hebben geliket of erop hebben gereageerd.",
         "menuLinkedinCompetitorFollowersTitle": "Volgers van een concurrent",
         "menuLinkedinCompetitorFollowersDescription": "Personen actief rond een bedrijfspagina.",
