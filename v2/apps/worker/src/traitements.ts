@@ -21,6 +21,8 @@ import {
   ecrireEvenement,
   nettoyerMessageErreurJournal,
   plafondDuJour,
+  fuseauDeLOrganisation,
+  jourCourantDansFuseau,
 } from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
@@ -357,10 +359,15 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
   // et ignorait complètement ce réglage, si bien qu'un plafond de scoring
   // changé dans l'écran n'était jamais appliqué par le moteur.
   const plafond = await plafondDuJour(pool, data.organizationId, 'scoring_par_jour');
+  // #118 (tour de correction 5) : jour de l'ORGANISATION, pas `current_date`
+  // (le fuseau du serveur, UTC) — même clé de jour que la lecture de l'écran
+  // Plafonds (`lireConsommationDuJour`) et que le crédit consommé plus bas.
+  const fuseau = await fuseauDeLOrganisation(pool, data.organizationId);
+  const jour = jourCourantDansFuseau(fuseau);
   const usage = await pool.query<{ used: number }>(
     `select used from provider_daily_usage
-      where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
-    [data.organizationId, ANTHROPIC_PROVIDER],
+      where organization_id = $1 and provider_id = $2 and usage_date = $3::date`,
+    [data.organizationId, ANTHROPIC_PROVIDER, jour],
   );
   // Compte exactement ce que runScore sélectionnera ET scorera (même source
   // avec un prompt exploitable) : un signal dont la source n'a pas de prompt
@@ -382,8 +389,8 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
     return;
   }
   const credit = await pool.query<{ ok: boolean }>(
-    `select app.consume_provider_credit($1, $2, $3, $4) as ok`,
-    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot],
+    `select app.consume_provider_credit($1, $2, $3, $4, $5::date) as ok`,
+    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot, jour],
   );
   if (credit.rows[0]?.ok !== true) {
     console.warn(`[score] org ${data.organizationId} : credit de scoring refuse (plafond ${plafond}/jour)`);

@@ -14,7 +14,7 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
@@ -276,6 +276,11 @@ export async function enqueueEnrichmentForQualified(
   let enqueued = 0;
   // Un plafond par organisation, lu une seule fois pour tout le lot.
   const plafonds = new Map<string, number>();
+  // #118 (tour de correction 5) : le jour du crédit consommé doit être celui de
+  // l'ORGANISATION, pas `current_date` (le fuseau du serveur, UTC) — un
+  // fuseau par organisation, lu une seule fois pour tout le lot (même motif
+  // que `plafonds` ci-dessus).
+  const jours = new Map<string, string>();
   for (const row of res.rows) {
     // Un job déjà en file ne se paie pas deux fois.
     //
@@ -300,9 +305,14 @@ export async function enqueueEnrichmentForQualified(
     // à eux deux. L'ordre inverse laisserait passer un dépassement.
     const plafond = plafonds.get(row.organization_id) ?? (await plafondEnrichissement(pool, row.organization_id));
     plafonds.set(row.organization_id, plafond);
+    let jour = jours.get(row.organization_id);
+    if (!jour) {
+      jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, row.organization_id));
+      jours.set(row.organization_id, jour);
+    }
     const credit = await pool.query<{ ok: boolean }>(
-      `select app.consume_provider_credit($1, 'fullenrich', $2, 1) as ok`,
-      [row.organization_id, plafond],
+      `select app.consume_provider_credit($1, 'fullenrich', $2, 1, $3::date) as ok`,
+      [row.organization_id, plafond, jour],
     );
     if (credit.rows[0]?.ok !== true) {
       console.warn(
