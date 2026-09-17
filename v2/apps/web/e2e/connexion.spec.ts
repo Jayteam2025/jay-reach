@@ -9,11 +9,10 @@ import { test, expect } from '@playwright/test';
  * elle romprait la session des autres parcours.
  *
  * Déconnexion : `Réglages › Compte` (R89) — carte « Session », bouton
- * « Se déconnecter » relié à `signOut` (apps/web/app/actions/auth.ts). Pas de
- * lien de nav vers cet écran pour l'instant (`NavReglages.tsx` : entrée
- * `account` posée en `desactive`, pas encore câblée — hors périmètre de cette
- * tâche) : on y va par URL directe, comme `plafonds.spec.ts` le fait déjà
- * pour `/settings/limits`.
+ * « Se déconnecter » relié à `signOut` (apps/web/app/actions/auth.ts). On y
+ * va par URL directe (`NavReglages.tsx` relie désormais aussi cette entrée,
+ * mais ce parcours ne clique pas la sous-navigation Réglages), comme
+ * `plafonds.spec.ts` le fait déjà pour `/settings/limits`.
  */
 test('connexion : arrivée sur Aujourd\'hui avec le menu à cinq entrées', async ({ page }) => {
   const email = process.env.E2E_EMAIL;
