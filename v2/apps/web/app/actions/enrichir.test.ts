@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type * as JayReachCore from '@jay-reach/core';
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('../../lib/contexte', () => ({ contexteCourant: vi.fn() }));
 vi.mock('@jay-reach/core', async (importOriginal) => {
-  const reel = await importOriginal<typeof import('@jay-reach/core')>();
+  const reel = await importOriginal<typeof JayReachCore>();
   return { ...reel, chercherEmail: vi.fn() };
 });
 
