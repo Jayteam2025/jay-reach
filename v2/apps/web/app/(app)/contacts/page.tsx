@@ -302,7 +302,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 colonneEmail: t('columns.email'),
                 colonneEtape: t('columns.step'),
                 colonneCampagne: t('columns.campaign'),
-                colonneAction: '',
+                colonneAction: t('columns.status'),
                 emailVerifie: t('email.verified'),
                 emailATrouver: t('email.toFind'),
                 sansEtape: t('noStep'),

@@ -54,6 +54,13 @@ export interface TableContactsProps {
   /** Campagne courante — sert aux actions d'une ligne qui ne porte pas son propre `campagneId` (variante `campagne`). */
   campagneId?: string;
   libelles: TableContactsLibelles;
+  /**
+   * Masque « Pourquoi lui »/Score (tour de correction F6, point 20) : pour une campagne à liste
+   * (sans source de signaux), ces deux colonnes n'affichent que des tirets. La donnée qui dit si
+   * une campagne a une source vient du cœur (F5, en cours) : par défaut `false`, l'appelant la
+   * réglera une fois cette information exposée par `listerContactsCampagne`/`ContactCampagne`.
+   */
+  masquerScoring?: boolean;
 }
 
 /**
@@ -75,17 +82,20 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   a_contacter: 'gris',
 };
 
-export function TableContacts({ lignes, colonnes, organisationId, campagneId, libelles }: TableContactsProps) {
+export function TableContacts({ lignes, colonnes, organisationId, campagneId, libelles, masquerScoring }: TableContactsProps) {
   return (
     <Table
       colonnes={[
         { cle: 'contact', titre: libelles.colonneContact },
         ...(colonnes === 'global' ? [{ cle: 'campagne', titre: libelles.colonneCampagne }] : []),
-        { cle: 'pourquoi', titre: libelles.colonnePourquoi },
-        { cle: 'score', titre: libelles.colonneScore },
+        // Largeurs automatiques (tour de correction F6, point 20) : « Étape 2 » ne coupe plus sur
+        // deux lignes, et la colonne statut/action se réduit à son contenu (`largeur: '1%'`,
+        // astuce CSS courante pour une colonne « shrink-to-fit » sans mesure JS) plutôt que de
+        // s'étaler sur 335 px sans raison.
+        ...(masquerScoring ? [] : [{ cle: 'pourquoi', titre: libelles.colonnePourquoi }, { cle: 'score', titre: libelles.colonneScore }]),
         { cle: 'email', titre: libelles.colonneEmail },
-        { cle: 'etape', titre: libelles.colonneEtape },
-        { cle: 'action', titre: libelles.colonneAction },
+        { cle: 'etape', titre: libelles.colonneEtape, nowrap: true },
+        { cle: 'action', titre: libelles.colonneAction, nowrap: true, largeur: '1%' },
       ]}
       vide={libelles.vide}
       lignes={lignes.map((ligne) => {

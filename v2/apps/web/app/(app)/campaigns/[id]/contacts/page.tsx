@@ -147,7 +147,7 @@ export default async function CampagneContactsPage({
             colonneEmail: t('contacts.columns.email'),
             colonneEtape: t('contacts.columns.step'),
             colonneCampagne: t('contacts.columns.campaign'),
-            colonneAction: '',
+            colonneAction: t('contacts.columns.status'),
             emailVerifie: t('contacts.email.verified'),
             emailATrouver: t('contacts.email.toFind'),
             sansEtape: t('contacts.noStep'),
