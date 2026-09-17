@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 const ici = fileURLToPath(new URL('.', import.meta.url));
 const racine = join(ici, '../../..');
 const messages = JSON.parse(readFileSync(join(ici, 'messages/fr.json'), 'utf8')) as Record<string, unknown>;
+const AUTRES_CATALOGUES = ['en', 'nl'] as const;
 
 function existe(chemin: string): boolean {
   let node: unknown = messages;
@@ -24,6 +25,22 @@ function existe(chemin: string): boolean {
     node = (node as Record<string, unknown>)[part];
   }
   return true;
+}
+
+/** Chemins complets de toutes les clés feuilles d'un catalogue quelconque (pas seulement `fr.json`). */
+function toutesLesClesFeuilles(catalogue: Record<string, unknown>): string[] {
+  const feuilles: string[] = [];
+  function parcourir(node: unknown, chemin: string) {
+    if (typeof node === 'object' && node !== null) {
+      for (const [cle, valeur] of Object.entries(node as Record<string, unknown>)) {
+        parcourir(valeur, chemin ? `${chemin}.${cle}` : cle);
+      }
+    } else {
+      feuilles.push(chemin);
+    }
+  }
+  parcourir(catalogue, '');
+  return feuilles;
 }
 
 function fichiersTsx(dossier: string): string[] {
@@ -199,4 +216,20 @@ describe('clés de traduction', () => {
       expect(clesMortesSous(prefixe)).toEqual([]);
     },
   );
+
+  // Le garde-fou ci-dessus n'audite que fr.json : une clé morte présente
+  // seulement dans en.json/nl.json (jamais dans fr.json, donc jamais visitée
+  // par clesMortesSous) lui échappe entièrement. Constat de la relecture de
+  // la tâche 24 : 62 clés (inbox.*, campaignNew.*) ont survécu dans les deux
+  // catalogues sur cette base. Ce test comble l'angle mort dans un seul sens
+  // — toute clé d'en/nl doit exister dans fr — sans exiger l'inverse : la
+  // complétude des catalogues (fr → en/nl) reste hors périmètre, tâche 25.
+  it.each(AUTRES_CATALOGUES)('toutes les clés de %s.json existent dans fr.json', (langue) => {
+    const catalogue = JSON.parse(readFileSync(join(ici, `messages/${langue}.json`), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const orphelines = toutesLesClesFeuilles(catalogue).filter((cle) => !existe(cle));
+    expect(orphelines).toEqual([]);
+  });
 });
