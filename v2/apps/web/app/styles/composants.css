@@ -16,7 +16,16 @@
 .jr-libelle { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin: 0 0 5px; }
 
 /* Barre latérale */
-.jr-barre { width: var(--jr-barre-largeur); flex: none; background: var(--jr-surface); border-right: 1px solid var(--jr-filet); display: flex; flex-direction: column; padding: 16px 12px; }
+/* Fixée à la fenêtre plutôt que de défiler avec la page (tour de correction F6, point 29) : `.jr-app`
+   n'a qu'un `min-height: 100vh`, sa hauteur réelle suit celle du contenu principal (`.jr-principal`)
+   quand une page est longue (ex. /contacts à 926 lignes) — sans hauteur propre, la barre (un simple
+   enfant flex étiré par `align-items: stretch`) grandissait avec lui et défilait hors champ. `height`
+   posée deux fois (repli `100vh`, puis `100dvh` si le navigateur le comprend) rend la barre aussi
+   haute que la fenêtre, `position: sticky` la fixe pendant le défilement de la page, `overflow-y: auto`
+   lui donne son propre défilement si son propre contenu (nav + pied) dépasse une fenêtre basse
+   (≤ 700 px de haut) plutôt que de déborder de sa boîte. `align-self: flex-start` : garde cette
+   hauteur propre même si un futur voisin plus haut que le contenu réactivait le `stretch` du parent. */
+.jr-barre { width: var(--jr-barre-largeur); flex: none; background: var(--jr-surface); border-right: 1px solid var(--jr-filet); display: flex; flex-direction: column; padding: 16px 12px; position: sticky; top: 0; align-self: flex-start; height: 100vh; height: 100dvh; overflow-y: auto; }
 .jr-marque { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 4px 8px 18px; }
 .jr-logo { width: 26px; height: 26px; border-radius: 7px; background: var(--jr-accent); color: var(--jr-accent-encre); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
 .jr-nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--jr-rayon-controle); color: var(--jr-encre); font-weight: 500; margin-bottom: 2px; }
