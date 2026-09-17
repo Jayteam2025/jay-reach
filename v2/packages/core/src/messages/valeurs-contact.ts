@@ -127,6 +127,26 @@ export function construireValeursContact(
   return values;
 }
 
+/**
+ * Sous-ensemble de `construireValeursContact` calculable à partir des seules
+ * colonnes déjà présentes dans une requête qui liste des lignes en masse
+ * (`campagnes.ts::lireEnvoisDuJour`, colonne « Étape et objet » d'un envoi pas
+ * encore parti) — sans la requête par contact que `lireValeursContact` fait
+ * pour l'aperçu détaillé. Même règle « jamais {{prenom}}, » que
+ * `construireValeursContact` : `prenom`/`nom` restent `undefined` sans valeur,
+ * `salutation` retombe sur « Bonjour » seul.
+ */
+export function construireValeursMinimales(row: {
+  readonly first_name: string | null;
+  readonly last_name: string | null;
+}): Record<string, string | undefined> {
+  return {
+    prenom: row.first_name ?? undefined,
+    salutation: row.first_name ? `Bonjour ${row.first_name}` : 'Bonjour',
+    nom: row.last_name ?? undefined,
+  };
+}
+
 export interface ValeursContact {
   readonly valeurs: Record<string, string | undefined>;
   readonly email: string | null;

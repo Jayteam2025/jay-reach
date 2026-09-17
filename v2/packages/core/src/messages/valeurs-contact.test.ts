@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { construireValeursContact, lireValeursContact, type LigneValeursContact } from './valeurs-contact.js';
+import { construireValeursContact, construireValeursMinimales, lireValeursContact, type LigneValeursContact } from './valeurs-contact.js';
 
 function ligne(overrides: Partial<LigneValeursContact> = {}): LigneValeursContact {
   return {
@@ -145,6 +145,24 @@ describe('construireValeursContact — colonnes homonymes après normalisation',
     const v = construireValeursContact(ligne({ raw_row: { Poste: 'Commercial', POSTE: '' } }));
     expect(v.liste_poste).toBe('Commercial');
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('construireValeursMinimales (aperçu file du jour sans requête supplémentaire)', () => {
+  it('expose prénom, nom et salutation depuis les seules colonnes déjà en main', () => {
+    expect(construireValeursMinimales({ first_name: 'Nadia', last_name: 'Lemaire' })).toEqual({
+      prenom: 'Nadia',
+      salutation: 'Bonjour Nadia',
+      nom: 'Lemaire',
+    });
+  });
+
+  it('sans prénom connu, la salutation retombe sur "Bonjour" seul (jamais "Bonjour ,")', () => {
+    expect(construireValeursMinimales({ first_name: null, last_name: 'Lemaire' })).toEqual({
+      prenom: undefined,
+      salutation: 'Bonjour',
+      nom: 'Lemaire',
+    });
   });
 });
 
