@@ -9,6 +9,10 @@
  * part réellement.
  */
 import type { Executeur } from '../executeur.js';
+// Import interne au paquet (pas via le barrel `index.js`) : `valeurs-contact.ts`
+// EST une partie de ce que le barrel réexporte, un import par le barrel ici
+// créerait un cycle.
+import { normalizeListColumnName } from './variables.js';
 
 /**
  * Champs nécessaires à `construireValeursContact`, sous-ensemble volontaire
@@ -33,6 +37,13 @@ export interface LigneValeursContact {
   readonly postal_code: string | null;
   readonly country: string | null;
   readonly signal_occurred_at: string | null;
+  /**
+   * Ligne brute du CSV importé (`list_members.raw_row`), clés = en-têtes tels
+   * quels. Alimente les variables `{{liste_<colonne>}}` (spec import de
+   * listes). `null`/absente si l'inscription n'a pas de liste — jamais de
+   * repli sur une autre liste.
+   */
+  readonly raw_row?: Record<string, unknown> | null;
 }
 
 /**
@@ -66,6 +77,43 @@ export function construireValeursContact(
     departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
     pays: row.country ?? undefined,
   };
+  // Colonnes du CSV importé : chaque clé de `raw_row` devient
+  // `liste_<colonne normalisée>` (même règle que `validateTemplateVariables`,
+  // `normalizeListColumnName`). Une valeur vide, nulle ou blanche N'EST PAS
+  // ajoutée — la variable reste manquante, ce qui bloque l'envoi de CE
+  // contact plutôt que de partir avec un champ vide.
+  if (row.raw_row) {
+    // `parseCsv` garde les en-têtes sensibles à la casse (import/parse.ts) :
+    // deux colonnes distinctes (« Poste », « POSTE ») peuvent normaliser vers
+    // la même variable. On regroupe donc par nom de colonne AVANT d'écrire
+    // dans `values`, pour départager plutôt qu'écraser silencieusement.
+    const parColonne = new Map<string, string[]>();
+    for (const [cle, brut] of Object.entries(row.raw_row)) {
+      const colonne = normalizeListColumnName(cle);
+      if (!colonne) continue; // colonne qui normalise vers une clé vide : ignorée
+      // Seuls string/number/boolean se rendent en texte sans mentir : un
+      // objet ou un tableau donnerait littéralement « [object Object] ».
+      if (typeof brut !== 'string' && typeof brut !== 'number' && typeof brut !== 'boolean') continue;
+      const texte = String(brut).trim();
+      if (!texte) continue;
+      const valeurs = parColonne.get(colonne);
+      if (valeurs) valeurs.push(texte);
+      else parColonne.set(colonne, [texte]);
+    }
+    for (const [colonne, valeurs] of parColonne) {
+      const distinctes = new Set(valeurs);
+      if (distinctes.size > 1) {
+        // Colonnes homonymes qui se contredisent : impossible de choisir sans
+        // deviner, donc la variable reste manquante (bloque l'envoi de CE
+        // contact) plutôt que d'en retenir une arbitrairement. Jamais la
+        // valeur dans le journal — un CSV RH peut contenir des données
+        // personnelles.
+        console.warn(`[variables] colonnes homonymes après normalisation : liste_${colonne}`);
+        continue;
+      }
+      values[`liste_${colonne}`] = valeurs[0]!;
+    }
+  }
   // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
   // veut pas qu'un extrait nommé « prenom » masque le prospect.
   for (const [nom, texte] of extraits) {
@@ -111,7 +159,8 @@ export async function lireValeursContact(
             p.angle as persona_angle,
             sig.title as signal_title, sig.location as signal_location, sig.url as signal_url,
             sig.occurred_at as signal_occurred_at,
-            lst.context_note
+            lst.context_note,
+            lm.raw_row
        from contacts c /* jr:valeurs_contact */
        left join accounts a on a.id = c.account_id
        left join personas p on p.id = c.persona_id
@@ -119,6 +168,14 @@ export async function lireValeursContact(
        left join campaigns camp on camp.id = e.campaign_id
        left join lists lst on lst.id = camp.list_id
        left join signals sig on sig.id = coalesce(e.signal_id, c.source_signal_id)
+       -- Colonnes du CSV importé (variables liste_<colonne>) : jointe sur
+       -- l'inscription elle-même, jamais sur contacts.source_list_id — un
+       -- contact peut venir d'une liste et être réinscrit via une autre ;
+       -- seule la liste de CETTE inscription doit nourrir son rendu. e.list_id
+       -- nul (pas d'inscription retenue, ou campagne signal) laisse raw_row
+       -- nul, sans repli. Même règle que la requête du worker (message-values.ts) :
+       -- l'aperçu ne doit jamais diverger de l'email réellement envoyé.
+       left join list_members lm on lm.list_id = e.list_id and lm.contact_id = e.contact_id
       where c.id = $1 and c.organization_id = $2
       order by e.started_at desc nulls last
       limit 1`,
