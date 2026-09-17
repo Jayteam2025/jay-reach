@@ -811,4 +811,26 @@ describe('reprendreInscription', () => {
     // n'existe pas dans cet exemple) : c'est exactement ce que fait `offset`.
     expect(appelEtape?.[1]).toEqual([campagneId, 1]);
   });
+
+  // Mineur (relecture) : une pause `sender_unavailable` survient AVANT
+  // l'insertion de l'action de l'étape (`sequence.ts` du worker, chemin
+  // `resolveSender(...).paused`) — aucune action n'existe encore pour cette
+  // étape au moment de la pause. La reprise ne doit ni planter ni rien
+  // réinitialiser à tort : le tick suivant recrée normalement l'action.
+  it('reprend une pause sender_unavailable sans action existante pour l’étape (rien à rejouer, pas d’erreur)', async () => {
+    const ctx = faux({
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_action': [], // aucune ligne : l'UPDATE ne matche rien (0 ligne affectée), sans erreur
+    });
+    await expect(reprendreInscription(ctx, { inscriptionId })).resolves.toBeUndefined();
+
+    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+    expect(appelInscription).toBeDefined();
+    const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
+    // La requête de reset est bien tentée (elle ne matche simplement aucune
+    // ligne côté vraie base, puisqu'aucune action `blocked`/`failed` n'existe
+    // pour cette étape) — aucun comportement spécial à coder pour ce cas.
+    expect(appelAction).toBeDefined();
+  });
 });
