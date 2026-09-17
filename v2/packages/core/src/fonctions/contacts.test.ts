@@ -215,6 +215,41 @@ describe('lireFiche', () => {
     expect(fiche.campagnes).toEqual([{ id: campagneId, nom: 'Directeur commercial' }]);
   });
 
+  // F4 (recette visuelle du 17/09) : `threads.last_message_at` est un
+  // `timestamptz`, renvoyé par `pg` comme un objet `Date` — pas une chaîne
+  // malgré le type déclaré des lignes brutes. Avant correctif, le tri de
+  // `fils` (`(b.last_message_at ?? '').localeCompare(...)`) explose dès que
+  // le contact a deux fils.
+  it('sélectionne le fil le plus récent même quand `last_message_at` est un objet Date (comme le renvoie pg)', async () => {
+    const ctx = faux({
+      'jr:fiche_contact': [
+        {
+          id: contactId,
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: null,
+          email: null,
+          email_status: null,
+          linkedin_url: null,
+          photo_url: null,
+          account_id: null,
+          source_signal_id: null,
+          status: 'active',
+          entreprise: null,
+          ville: null,
+        },
+      ],
+      'jr:fiche_fils': [
+        { id: 'fil-ancien', last_message_at: new Date('2026-09-01T00:00:00.000Z') },
+        { id: 'fil-recent', last_message_at: new Date('2026-09-13T10:00:00.000Z') },
+      ],
+    });
+
+    const fiche = await lireFiche(ctx, { contactId });
+
+    expect(fiche.filId).toBe('fil-recent');
+  });
+
   it('sans inscription dans la campagne demandée, la séquence est nulle', async () => {
     const ctx = faux({
       'jr:fiche_contact': [
@@ -705,6 +740,64 @@ describe('listerContacts', () => {
     });
     const r = await listerContacts(ctx, {});
     expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-recent', 'contact-milieu', 'contact-ancien']);
+  });
+
+  // F4 (recette visuelle du 17/09, digest 3452353769) : `coalesce(s.occurred_at,
+  // e.started_at) as quand` est un `timestamptz`, renvoyé par `pg` comme un
+  // objet `Date` — pas une chaîne. Avant correctif, `toutes.sort((a, b) =>
+  // (b.quand ?? '').localeCompare(a.quand ?? ''))` explose dès que la page a
+  // au moins deux lignes (page Contacts en erreur serveur).
+  it('trie la liste fusionnée par instant décroissant même quand `quand` est un objet Date (comme le renvoie pg) — pas de TypeError', async () => {
+    const ligne = (id: string, quand: Date) => ({
+      signal_id: `sig-${id}`,
+      contact_id: `contact-${id}`,
+      first_name: 'Prénom',
+      last_name: id,
+      job_title: null,
+      email: null,
+      entreprise: null,
+      current_step: null,
+      statut: 'a_contacter' as const,
+      score: null,
+      pourquoi: null,
+      provider_id: null,
+      quand,
+    });
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
+      'jr:lignes_contacts_globale': [
+        ligne('ancien', new Date('2026-09-01T00:00:00.000Z')),
+        ligne('recent', new Date('2026-09-14T00:00:00.000Z')),
+        ligne('milieu', new Date('2026-09-07T00:00:00.000Z')),
+      ],
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-recent', 'contact-milieu', 'contact-ancien']);
+  });
+
+  it('départage par identifiant de contact (décroissant) quand deux instants sont identiques, comme la requête SQL (`order by quand desc nulls last, contact_id desc`)', async () => {
+    const meme = '2026-09-10T00:00:00.000Z';
+    const ligne = (id: string) => ({
+      signal_id: `sig-${id}`,
+      contact_id: `contact-${id}`,
+      first_name: 'Prénom',
+      last_name: id,
+      job_title: null,
+      email: null,
+      entreprise: null,
+      current_step: null,
+      statut: 'a_contacter' as const,
+      score: null,
+      pourquoi: null,
+      provider_id: null,
+      quand: meme,
+    });
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
+      'jr:lignes_contacts_globale': [ligne('aaa'), ligne('zzz'), ligne('mmm')],
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-zzz', 'contact-mmm', 'contact-aaa']);
   });
 });
 

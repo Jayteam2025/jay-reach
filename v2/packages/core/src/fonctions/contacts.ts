@@ -16,6 +16,7 @@ import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
 import { lireConsommationDuJour } from './plafonds.js';
+import { comparerInstantsDesc } from '../temps.js';
 import {
   CASE_STATUT_DERIVE,
   etapeAffichee,
@@ -360,14 +361,18 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
   }
 
   // Échanges : tous les fils du contact (email, LinkedIn…), messages fusionnés par date.
-  const filsRes = await ctx.ex.query<{ id: string; last_message_at: string | null }>(
+  // `last_message_at` (`threads`, `timestamptz`) revient de `pg` comme un objet
+  // `Date`, pas une chaîne : le type de la ligne brute le reflète, `comparerInstantsDesc`
+  // compare l'un ou l'autre. Départage par id de fil (desc) : aucun `order by` SQL ici,
+  // le tri est entièrement en mémoire.
+  const filsRes = await ctx.ex.query<{ id: string; last_message_at: string | Date | null }>(
     `select id, last_message_at from threads /* jr:fiche_fils */ where contact_id = $1 and organization_id = $2`,
     [contactId, ctx.organisationId],
   );
   const fils = filsRes.rows;
   const filId =
     fils.length > 0
-      ? [...fils].sort((a, b) => (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''))[0]!.id
+      ? [...fils].sort((a, b) => comparerInstantsDesc(a.last_message_at, b.last_message_at) || b.id.localeCompare(a.id))[0]!.id
       : null;
 
   let echanges: MessageFicheContact[] = [];
@@ -739,7 +744,8 @@ interface LigneContactGlobalBrut {
   score: number | null;
   pourquoi: string | null;
   provider_id: string | null;
-  quand: string | null;
+  /** `coalesce(s.occurred_at, e.started_at)`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne. */
+  quand: string | Date | null;
   enrollment_id: string | null;
   e_status: string | null;
   stop_reason: string | null;
@@ -788,7 +794,7 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
   if (campagnes.length === 0) return { lignes: [], tronque: false };
 
   const motif = motifRecherche(recherche);
-  const toutes: (ContactGlobal & { quand: string | null })[] = [];
+  const toutes: (ContactGlobal & { quand: string | Date | null })[] = [];
 
   for (const campagne of campagnes) {
     if (toutes.length >= LIMITE_COLLECTE_GLOBALE) break;
@@ -849,7 +855,11 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
     }
   }
 
-  toutes.sort((a, b) => (b.quand ?? '').localeCompare(a.quand ?? ''));
+  // `quand` (`timestamptz`, cf. `LigneContactGlobalBrut`) : `comparerInstantsDesc`
+  // accepte chaîne ou `Date`. Départage par `contactId` (desc), même critère que
+  // le `order by quand desc nulls last, contact_id desc` de chaque requête par
+  // campagne — nécessaire ici car cette fusion mélange plusieurs campagnes.
+  toutes.sort((a, b) => comparerInstantsDesc(a.quand, b.quand) || (b.contactId ?? '').localeCompare(a.contactId ?? ''));
   const tronque = toutes.length > LIMITE_CONTACTS_GLOBAL;
   const bornees = tronque ? toutes.slice(0, LIMITE_CONTACTS_GLOBAL) : toutes;
   return { lignes: bornees.map(({ quand: _quand, ...reste }) => reste), tronque };
