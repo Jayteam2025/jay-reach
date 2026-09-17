@@ -414,6 +414,15 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-journal .erreur { color: var(--jr-erreur); } .jr-journal .attention { color: var(--jr-attention); }
 .jr-texte-erreur { color: var(--jr-erreur); }
 
+/* Expéditeurs : quatre blocs d'une boîte (Aujourd'hui / Cadence / Heures d'envoi / Réponses),
+   tour de correction F6, point 21. `auto-fit` se repliait en 3 + 1 dès que la carte n'avait plus
+   la place pour quatre colonnes de 200 px : forcé en 2 × 2 à ≤ 1440 px plutôt que de laisser un
+   bloc seul sur sa ligne. */
+.jr-boite-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+@media (max-width: 1440px) {
+  .jr-boite-blocs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* Réglages : Moteur et Compte (tâche 23) */
 .jr-reglages-corps { display: grid; gap: 16px; align-content: start; min-width: 0; }
 .jr-etat-entete { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }

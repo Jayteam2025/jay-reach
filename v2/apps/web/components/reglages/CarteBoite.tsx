@@ -91,7 +91,7 @@ export function CarteBoite({ boite, creeLeTexte, derniereReleveTexte, peutModifi
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
+      <div className="jr-boite-blocs">
         <div>
           <span className="jr-libelle">{t('box.today')}</span>
           <b style={{ fontSize: 22 }}>
