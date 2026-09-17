@@ -30,6 +30,7 @@ import type { DispatchJob } from './dispatch.js';
 import {
   REQUETE_LIGNE_INSCRIPTION,
   buildMessageValues,
+  construireEntreeGate,
   resolveTemplate,
   loadSnippets,
   type DueRow,
@@ -770,21 +771,28 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (row.email) {
         // Gate de délivrabilité : un email non vérifié `valid` n'est JAMAIS poussé
         // (protection de la réputation du domaine). Le gate refuse par défaut
-        // tout ce qui n'est pas explicitement délivrable.
-        const gate = emailGateAllows({
-          email: row.email,
-          email_source: 'fullenrich',
-          email_validation_status: row.email_status,
-          deliverability_status: row.email_status ?? null,
-          deliverability_reason: null,
-          first_name: row.first_name ?? '',
-          last_name: row.last_name ?? '',
-          // Le pattern du domaine, quand on en a un. C'est lui qui permet au gate
-          // de laisser passer un email `risky` — un CATCH_ALL, par exemple — sur
-          // un domaine dont on connaît la convention d'adresse. Codé à `null`
-          // jusqu'ici, ce qui condamnait ces contacts sans les compter.
-          domain_pattern: patternsParOrg.get(row.organization_id)?.get(domainOf(row.email) ?? '') ?? null,
-        });
+        // tout ce qui n'est pas explicitement délivrable. `construireEntreeGate`
+        // (`message-values.ts`) est partagée avec l'envoi (`email-salesblink.ts`,
+        // B2, revue finale du 14/09) : les deux appelants ne peuvent plus
+        // diverger sur la construction de l'entrée du gate, seul le pattern de
+        // domaine change de source (ici, déjà chargé en lot pour tout le
+        // passage — pas de requête par ligne dans cette boucle).
+        const gate = emailGateAllows(
+          construireEntreeGate(
+            {
+              organizationId: row.organization_id,
+              email: row.email,
+              emailStatus: row.email_status,
+              firstName: row.first_name,
+              lastName: row.last_name,
+            },
+            // Le pattern du domaine, quand on en a un. C'est lui qui permet au gate
+            // de laisser passer un email `risky` — un CATCH_ALL, par exemple — sur
+            // un domaine dont on connaît la convention d'adresse. Codé à `null`
+            // jusqu'ici, ce qui condamnait ces contacts sans les compter.
+            patternsParOrg.get(row.organization_id)?.get(domainOf(row.email) ?? '') ?? null,
+          ),
+        );
         if (gate.allow) {
           jobs.push({
             organizationId: row.organization_id,

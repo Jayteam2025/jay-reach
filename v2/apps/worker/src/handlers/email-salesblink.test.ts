@@ -21,7 +21,7 @@ function ligneInscription(overrides: Record<string, unknown> = {}): Record<strin
     signal_id: null,
     current_step: 1,
     linkedin_url: null,
-    email: 'contact@exemple.fr',
+    email: 'marie.durand@exemple.fr',
     email_status: 'valid',
     account_id: null,
     persona_id: null,
@@ -132,6 +132,10 @@ const BINDING_INSERT = /insert into email_transport_bindings/i;
 const GABARIT_NEUTRE_LOOKUP = /select template_id from email_transport_bindings/i;
 const CAMPAGNE_NOM = /select name from campaigns/i;
 const ETAPE_POSITION = /from sequence_steps/i;
+// Motif de domaine (B2, revue finale du 14/09) : chargé par `deciderPorteEmail`
+// (`message-values.ts`) à chaque envoi, même porte que le tick — vide par
+// défaut (aucun pattern connu), surchargé par les tests qui en ont besoin.
+const DOMAIN_PATTERNS = /from domain_patterns/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
@@ -176,6 +180,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: PLAFOND, repondre: () => ligne([]) },
     { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
     { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
+    { motif: DOMAIN_PATTERNS, repondre: () => ligne([]) },
     {
       motif: TEMPLATE,
       repondre: () => ligne([{ id: 'gabarit-1', body: 'Bonjour {{prenom}}', subject: 'Objet {{prenom}}', name: 'Gabarit' }]),
@@ -397,7 +402,7 @@ describe('envoyerEmailSalesBlink', () => {
     expect(listeId).toBe('liste-1');
     expect(leads).toEqual([
       expect.objectContaining({
-        email: 'contact@exemple.fr',
+        email: 'marie.durand@exemple.fr',
         first_name: 'Marie',
         last_name: 'Durand',
         company_name: 'Acme',
@@ -636,8 +641,10 @@ describe('envoyerEmailSalesBlink', () => {
   // T29, partie B, point 6 : défense en profondeur — une action `blocked`/`failed`
   // remise `scheduled` par `reprendreInscription` (une reprise manuelle,
   // packages/core/src/fonctions/sequence.ts) ne doit jamais partir vers une
-  // adresse toujours invalide. Même règle que le tick (`sequence.ts`) :
-  // `email_status = 'valid'`, revérifiée ici au moment d'envoyer.
+  // adresse toujours invalide. Depuis B2 (revue finale du 14/09), la
+  // revérification appelle la MÊME porte que le tick (`deciderPorteEmail`,
+  // `emailGateAllows`) : le motif posé est celui rendu par la porte, pas le
+  // statut brut — `bouncer_invalid`, pas `invalid`.
   it('email_status non valide à l’envoi (défense en profondeur) : action bloquée et inscription mise en pause, aucun appel SalesBlink', async () => {
     const { pool, appels } = creerPoolFactice(
       avecBase(
@@ -653,11 +660,11 @@ describe('envoyerEmailSalesBlink', () => {
 
     const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
     expect(blocage).toBeDefined();
-    expect(blocage!.values[1]).toBe('email_gate:invalid');
+    expect(blocage!.values[1]).toBe('email_gate:bouncer_invalid');
 
     const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
     expect(pause).toBeDefined();
-    expect(pause!.values).toEqual([ENROLLMENT_ID, 1, 'email_gate:invalid']);
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 1, 'email_gate:bouncer_invalid']);
 
     expect(client.creerListe).not.toHaveBeenCalled();
     expect(client.pousserLeads).not.toHaveBeenCalled();
@@ -665,7 +672,7 @@ describe('envoyerEmailSalesBlink', () => {
     expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
   });
 
-  it('email_status null à l’envoi : même blocage, motif email_gate:unknown', async () => {
+  it('email_status null à l’envoi : même blocage, motif email_gate:pending_bouncer (motif rendu par la porte)', async () => {
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: null })]) },
@@ -678,7 +685,50 @@ describe('envoyerEmailSalesBlink', () => {
     await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
 
     const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
-    expect(blocage!.values[1]).toBe('email_gate:unknown');
+    expect(blocage!.values[1]).toBe('email_gate:pending_bouncer');
+  });
+
+  // B2 (Bloquant, revue finale du 14/09) : le tick autorise un `risky`/`unknown`
+  // dont le domaine a un motif d'adresse fort (FullEnrich, tier haut, confiance
+  // >= 0,85 — `fullenrich_risky_pattern_high`). Avant le correctif, la garde
+  // simplifiée de l'envoi (`email_status !== 'valid'`) bloquait ce même contact
+  // que le tick vient d'autoriser : test rouge tant que l'envoi n'appelle pas
+  // la même porte.
+  it('email risky avec motif de domaine fort (FullEnrich) : part quand même, comme le tick', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: 'risky' })]) },
+        {
+          motif: DOMAIN_PATTERNS,
+          repondre: () =>
+            ligne([
+              {
+                domain: 'exemple.fr',
+                pattern: 'prenom.nom',
+                confidence: 0.9,
+                tier: 'high',
+                sample_count: 25,
+                empirical_sends: 0,
+                empirical_bounces: 0,
+                downgraded_at: null,
+              },
+            ]),
+        },
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.pousserLeads).toHaveBeenCalledTimes(1);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql))).toBe(false);
+    const succes = appels.find((a) => UPDATE_SUCCES.test(a.sql));
+    expect(succes).toBeDefined();
   });
 
   it('mode_force = relance_repli force le repli et retire mode_force du payload', async () => {

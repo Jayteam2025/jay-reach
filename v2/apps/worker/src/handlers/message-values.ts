@@ -8,6 +8,8 @@
  */
 import type { Pool } from 'pg';
 import { construireValeursContact } from '@jay-reach/core';
+import { emailGateAllows, type GateDecision, type GateInput } from '@jay-reach/providers/email-validation';
+import { domainOf, loadDomainPatterns, type DomainPattern } from '../domain-patterns.js';
 import type { EmailStatus } from '../enrichment-persist.js';
 
 export interface DueRow {
@@ -194,4 +196,60 @@ export async function loadSnippets(
     parOrg.set(r.organization_id, m);
   }
   return parOrg;
+}
+
+// ---------------------------------------------------------------------------
+// Porte de délivrabilité — partagée entre le tick et l'envoi (B2, revue
+// finale du 14/09). Avant ce partage, l'envoi (`email-salesblink.ts`)
+// appliquait une règle simplifiée (`email_status !== 'valid'`) qui bloquait
+// des contacts `risky`/`unknown` que le tick (`sequence.ts`) vient pourtant
+// d'autoriser via `emailGateAllows` (motif de domaine fort, FullEnrich ou
+// déduit) — un envoi rejoué par une reprise manuelle d'inscription
+// (`reprendreInscription`, packages/core) partait donc au tick puis se
+// faisait bloquer à l'envoi, pour la même adresse.
+// ---------------------------------------------------------------------------
+
+/** Entrées minimales pour juger la délivrabilité d'un email — mêmes champs que ceux que le tick lit sur `DueRow`. */
+export interface EntreesPorteEmail {
+  readonly organizationId: string;
+  readonly email: string;
+  readonly emailStatus: EmailStatus | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+}
+
+/**
+ * Construit l'entrée de `emailGateAllows` — pure, sans requête. `email_source`
+ * reste `'fullenrich'` : la seule valeur déjà en usage dans tout le dépôt
+ * (`sequence.ts`), reprise à l'identique ici pour que les deux appelants ne
+ * puissent jamais diverger sur ce point (corriger ce hardcodage, s'il doit
+ * l'être, est hors de la portée de ce correctif).
+ */
+export function construireEntreeGate(entrees: EntreesPorteEmail, domainPattern: DomainPattern | null): GateInput {
+  return {
+    email: entrees.email,
+    email_source: 'fullenrich',
+    email_validation_status: entrees.emailStatus,
+    deliverability_status: entrees.emailStatus,
+    deliverability_reason: null,
+    first_name: entrees.firstName ?? '',
+    last_name: entrees.lastName ?? '',
+    domain_pattern: domainPattern,
+  };
+}
+
+/**
+ * Décide si un email peut être poussé — même porte, mêmes entrées que le tick.
+ * Appelée par l'envoi SalesBlink en défense en profondeur (une reprise
+ * manuelle peut remettre `scheduled` une action sans repasser par le tick),
+ * une requête de plus par envoi pour recharger le motif de domaine du contact
+ * (coût accepté, revue finale B2, option 1). Le tick, lui, appelle
+ * `construireEntreeGate` directement avec ses patterns déjà chargés en lot
+ * (`loadDomainPatterns` pour tout le passage) plutôt que cette fonction — pas
+ * de requête supplémentaire par ligne dans la boucle du tick.
+ */
+export async function deciderPorteEmail(pool: Pool, entrees: EntreesPorteEmail): Promise<GateDecision> {
+  const domaine = domainOf(entrees.email);
+  const pattern = domaine ? (await loadDomainPatterns(pool, entrees.organizationId, [domaine])).get(domaine) ?? null : null;
+  return emailGateAllows(construireEntreeGate(entrees, pattern));
 }

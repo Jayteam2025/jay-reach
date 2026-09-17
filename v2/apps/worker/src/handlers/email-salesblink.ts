@@ -36,7 +36,7 @@ import {
 } from '@jay-reach/providers/outreach';
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
-import { buildMessageValues, chargerLigneInscription, resolveTemplate } from './message-values.js';
+import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
 import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant } from './sequence.js';
 import type { DispatchJob } from './dispatch.js';
 
@@ -417,17 +417,25 @@ export async function envoyerEmailSalesBlink(
     return;
   }
 
-  // 3.5 Défense en profondeur, revérification de la délivrabilité (T29) :
-  // le tick (`sequence.ts`) vérifie le gate au moment de décider l'envoi,
-  // mais une action `blocked`/`failed` remise `scheduled` par une reprise
-  // manuelle d'inscription (`reprendreInscription`, packages/core) arrive ici
-  // SANS repasser par le tick — sans cette seconde vérification, elle
-  // partirait vers une adresse toujours invalide. Même règle simplifiée que
-  // le tick : `email_status = 'valid'` (pas le gate complet, qui a besoin du
-  // pattern de domaine et de la nature de la source — hors de portée d'une
-  // simple défense en profondeur ici).
-  if (ligne.email_status !== 'valid') {
-    const motif = `email_gate:${ligne.email_status ?? 'unknown'}`;
+  // 3.5 Défense en profondeur, revérification de la délivrabilité (T29,
+  // corrigé B2 — revue finale du 14/09) : le tick (`sequence.ts`) vérifie le
+  // gate au moment de décider l'envoi, mais une action `blocked`/`failed`
+  // remise `scheduled` par une reprise manuelle d'inscription
+  // (`reprendreInscription`, packages/core) arrive ici SANS repasser par le
+  // tick — sans cette seconde vérification, elle partirait vers une adresse
+  // toujours invalide. MÊME porte que le tick (`deciderPorteEmail`,
+  // `message-values.ts`), jamais une règle simplifiée : une règle qui ne
+  // regarderait que `email_status = 'valid'` bloquerait des envois `risky`
+  // que le tick vient pourtant d'autoriser (motif de domaine fort).
+  const decisionGate = await deciderPorteEmail(pool, {
+    organizationId: ligne.organization_id,
+    email: ligne.email,
+    emailStatus: ligne.email_status,
+    firstName: ligne.first_name,
+    lastName: ligne.last_name,
+  });
+  if (!decisionGate.allow) {
+    const motif = `email_gate:${decisionGate.reason}`;
     await bloquerAction(pool, actionId, motif);
     const etapeEnEchecGate = await pool.query<{ position: number }>(
       `select position from sequence_steps where id = $1`,
@@ -437,7 +445,7 @@ export async function envoyerEmailSalesBlink(
     if (positionEnEchecGate !== undefined) {
       await mettreInscriptionEnPause(pool, email.enrollmentId, positionEnEchecGate, motif);
     }
-    console.warn(`[email-salesblink] action ${actionId} bloquée : email non délivrable (${ligne.email_status ?? 'unknown'})`);
+    console.warn(`[email-salesblink] action ${actionId} bloquée : email non délivrable (${decisionGate.reason})`);
     return;
   }
 
