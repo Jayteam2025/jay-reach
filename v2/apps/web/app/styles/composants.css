@@ -201,6 +201,31 @@
 .jr-puces.variables { margin-top: 6px; }
 button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5px; cursor: pointer; }
 
+/* Personas : liste de gauche (tour de correction F6, point 3) — `.jr-source` sert d'ordinaire à
+   une simple ligne d'information (grille + filet), pas à un `<button>` : sans reset, le bouton
+   gardait le chrome natif du navigateur (fond, bordure), qui le faisait paraître décalé/imbriqué.
+   Une bordure gauche de 3 px, transparente au repos, réservée dans tous les cas : la sélection ne
+   décale jamais le contenu. */
+.jr-liste-personas button.jr-source {
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--jr-filet);
+  border-radius: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.jr-liste-personas button.jr-source:last-child { border-bottom: 0; }
+.jr-liste-personas button.jr-source:hover { background: var(--jr-fond); }
+.jr-liste-personas button.jr-source.selectionnee {
+  background: var(--jr-accent-doux);
+  border-left-color: var(--jr-accent);
+}
+.jr-liste-personas button.jr-source.selectionnee:hover { background: var(--jr-accent-doux); }
+
 /* Sources */
 .jr-source { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
 .jr-source:last-child { border-bottom: 0; }

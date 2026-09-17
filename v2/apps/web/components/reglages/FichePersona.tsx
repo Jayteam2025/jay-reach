@@ -52,16 +52,7 @@ function LignePersona({
   return (
     <button
       type="button"
-      className="jr-source"
-      style={{
-        cursor: 'pointer',
-        width: '100%',
-        textAlign: 'left',
-        background: selectionnee ? 'var(--jr-accent-doux)' : undefined,
-        margin: selectionnee ? '0 -18px' : undefined,
-        padding: selectionnee ? '12px 18px' : undefined,
-        borderRadius: selectionnee ? 'var(--jr-rayon-controle)' : undefined,
-      }}
+      className={`jr-source jr-persona${selectionnee ? ' selectionnee' : ''}`}
       aria-pressed={selectionnee}
       onClick={onSelectionner}
     >
@@ -450,7 +441,7 @@ export function FichePersona({ personas, campagnesDisponibles, peutModifier }: F
       <div className="jr-contenu jr-maitre-detail">
         <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
           <div className="jr-carte">
-            <div className="jr-corps" style={{ paddingTop: 10 }}>
+            <div className="jr-corps jr-liste-personas" style={{ paddingTop: 10 }}>
               {actifs.length === 0 ? (
                 <p className="jr-aide">{t('empty')}</p>
               ) : (
