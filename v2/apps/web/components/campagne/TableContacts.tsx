@@ -159,16 +159,18 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
             ) : ligne.statut === 'en_pause' ? (
               // Empilé plutôt que côte à côte (tour de correction F6, point 20) : un motif de
               // pause à côté du bouton Reprendre additionnait leurs deux largeurs et poussait la
-              // colonne Statut/Action bien au-delà de son contenu réel (motif le plus long mesuré :
-              // « Envoi refusé par le fournisseur d'email »). Le motif lui-même est tronqué
-              // (`jr-motif-pause`, ellipse + `title` avec le texte complet) : une phrase ne doit
-              // jamais, à elle seule, dicter la largeur de la colonne pour toutes les lignes.
+              // colonne Statut/Action bien au-delà de son contenu réel. Le motif s'écrit en entier
+              // sur une ou deux lignes (`jr-motif-pause`, `max-width` sans troncature, point 20 ter
+              // — la première version tronquait à l'ellipse, coupant l'information utile : « Absent,
+              // reprise le 24 s… » alors que la date EST le message). `title` repris tel quel avant
+              // ce correctif (`libelleMotifPause` : code brut du motif, seulement pour le repli
+              // générique non reconnu — jamais pour un motif su, jamais un doublon du texte visible).
               <div className="jr-action-empilee">
                 <Puce ton={TON_STATUT.en_pause} point>
                   {libelles.statut.en_pause}
                 </Puce>
                 {ligne.motifPauseAffiche && (
-                  <div className="jr-petit jr-motif-pause" title={ligne.motifPauseAffiche.title ?? ligne.motifPauseAffiche.texte}>
+                  <div className="jr-petit jr-motif-pause" title={ligne.motifPauseAffiche.title ?? undefined}>
                     {ligne.motifPauseAffiche.texte}
                   </div>
                 )}
