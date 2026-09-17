@@ -4,7 +4,7 @@ import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
-import { FUSEAU_PAR_DEFAUT, cleJourDansFuseau } from '../../lib/dates';
+import { FUSEAU_PAR_DEFAUT, quandRelatif } from '../../lib/dates';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -20,28 +20,6 @@ function formatHeure(iso: string | null): string {
   return iso
     ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso))
     : '—';
-}
-
-/**
- * HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » —
- * même logique que la Réception. `timeZone` posé sur l'heure affichée (R67) ;
- * la classification aujourd'hui/hier compare désormais des clés de jour
- * calendaire DANS `fuseau` (`cleJourDansFuseau`, `lib/dates.ts`), pas les
- * accesseurs locaux (`toDateString`) qui suivent le fuseau du PROCESS qui
- * exécute le rendu (I5, revue finale — même correctif que `heureAvecJour`).
- * `maintenant` en paramètre : testable sans horloge (`page.test.ts`).
- */
-export function quandRelatif(iso: string | null, maintenant: Date = new Date()): string {
-  if (!iso) return '';
-  const date = new Date(iso);
-  if (cleJourDansFuseau(date, FUSEAU_PAR_DEFAUT) === cleJourDansFuseau(maintenant, FUSEAU_PAR_DEFAUT)) {
-    return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(date);
-  }
-  // Absolu (pas un `setDate` local) : même raison que « demain » dans `heureAvecJour`.
-  const hier = new Date(maintenant.getTime() - 86_400_000);
-  if (cleJourDansFuseau(date, FUSEAU_PAR_DEFAUT) === cleJourDansFuseau(hier, FUSEAU_PAR_DEFAUT)) return 'hier';
-  const jours = Math.max(1, Math.round((maintenant.getTime() - date.getTime()) / 86_400_000));
-  return `il y a ${jours} j`;
 }
 
 function tonJauge(utilise: number, plafond: number): 'normal' | 'attention' | 'erreur' {

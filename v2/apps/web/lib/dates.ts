@@ -97,11 +97,9 @@ export function heureAvecJour(
  * Clé de jour calendaire d'un instant DANS un fuseau donné (« 2026-09-14 »),
  * pas dans le fuseau d'exécution du serveur — `en-CA` formate en Gregorian
  * ISO (année-mois-jour) quel que soit l'environnement, un simple artefact de
- * cette locale plutôt qu'un choix de langue. Exportée (I5, revue finale) :
- * `app/(app)/page.tsx` en a aussi besoin pour sa classification
- * aujourd'hui/hier, plutôt que de dupliquer un troisième `Intl.DateTimeFormat`.
+ * cette locale plutôt qu'un choix de langue.
  */
-export function cleJourDansFuseau(date: Date, fuseau: string): string {
+function cleJourDansFuseau(date: Date, fuseau: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
     date,
   );
@@ -129,6 +127,29 @@ export function dateCourte(iso: string, maintenant: Date = new Date(), fuseau: s
   const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
   if (cleDate === cleJourDansFuseau(veille, fuseau)) return `hier, ${heure}`;
   return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: fuseau }).format(date);
+}
+
+/**
+ * HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » —
+ * carte « À traiter » d'Aujourd'hui (`app/(app)/page.tsx`). Déplacée ici
+ * (I5, revue finale) : un export nommé quelconque depuis un `page.tsx` fait
+ * échouer `next build` (« is not a valid Page export field »), et cette
+ * fonction est de toute façon un formateur de date de plus, à sa place à
+ * côté de `dateCourte`/`heureAvecJour`. La classification aujourd'hui/hier
+ * compare des clés de jour calendaire DANS `fuseau` (pas `toDateString()`,
+ * qui suit le fuseau du PROCESS qui exécute le rendu) — même correctif que
+ * `heureAvecJour`. Fonction pure, même convention que `dateRelativeCourte`.
+ */
+export function quandRelatif(iso: string | null, maintenant: Date = new Date(), fuseau: string = FUSEAU_PAR_DEFAUT): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (cleJourDansFuseau(date, fuseau) === cleJourDansFuseau(maintenant, fuseau)) {
+    return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(date);
+  }
+  const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
+  if (cleJourDansFuseau(date, fuseau) === cleJourDansFuseau(veille, fuseau)) return 'hier';
+  const jours = Math.max(1, Math.round((maintenant.getTime() - date.getTime()) / UN_JOUR_MS));
+  return `il y a ${jours} j`;
 }
 
 export interface GroupeParJour<T> {
