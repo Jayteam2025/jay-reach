@@ -1003,6 +1003,14 @@ describe('evenementsEnvoisGroupes (point 3.a, fil d’activité, lignes simulée
     expect(r).toHaveLength(2);
     expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0', 'envois-2026-09-17T09:00:00.000Z-1']);
   });
+
+  // `date_trunc('hour', a.dispatched_at)` (`timestamptz`) revient de `pg` en objet `Date`, jamais
+  // une chaîne (F4, `temps.ts`) : `quand` doit rester une chaîne ISO honnête malgré cette entrée.
+  it('accepte un objet `Date` en provenance de `pg`, rend une chaîne ISO (F4, jamais l’objet tel quel)', () => {
+    const r = evenementsEnvoisGroupes([{ heure: new Date('2026-09-17T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }]);
+    expect(r[0]!.quand).toBe('2026-09-17T08:00:00.000Z');
+    expect(typeof r[0]!.quand).toBe('string');
+  });
 });
 
 describe('listerActivite', () => {
@@ -1022,7 +1030,7 @@ describe('listerActivite', () => {
       });
       const r = await listerActivite(ctx, { campagneId });
       expect(r.total).toBe(1);
-      expect(r.evenements[0]).toEqual({ id: 'ev-1', quand: '2026-09-14T08:00:00Z', type: 'campaign_activated', libelle: 'Campagne lancée', detail: null });
+      expect(r.evenements[0]).toEqual({ id: 'ev-1', quand: '2026-09-14T08:00:00.000Z', type: 'campaign_activated', libelle: 'Campagne lancée', detail: null });
     });
 
     it('reprend une réponse reçue, une pause et une reprise d’inscription (constat (ee), issue engine)', async () => {
@@ -1050,6 +1058,24 @@ describe('listerActivite', () => {
       // Le groupe d'envois (8h) est plus récent que le lancement (7h) : en tête.
       expect(r.evenements[0]!.libelle).toBe('24 email(s) envoyé(s) · étape 1 · 3 boîte(s)');
       expect(r.evenements[1]!.id).toBe('ev-1');
+    });
+
+    // `audit_events.created_at` et `date_trunc('hour', a.dispatched_at)` (`timestamptz`) reviennent
+    // de `pg` en objets `Date`, jamais des chaînes (F4, `temps.ts`) — un tri qui les comparerait
+    // avec `<`/`>` sans passer par `comparerInstantsDesc` resterait correct dans ce cas précis
+    // (deux `Date`), mais la forme publique doit rester une chaîne ISO honnête dans tous les cas.
+    it('trie correctement des lignes simulées en objets `Date` (pas des chaînes), rend une forme publique en chaîne', async () => {
+      const ctx = faux({
+        'jr:activite_campagne_tout_audit': [
+          { id: 'ev-1', created_at: new Date('2026-09-14T07:00:00.000Z'), entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée.' } },
+        ],
+        'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }],
+      });
+      const r = await listerActivite(ctx, { campagneId });
+      expect(r.evenements[0]!.libelle).toBe('24 email(s) envoyé(s) · étape 1 · 3 boîte(s)');
+      expect(r.evenements[1]!.id).toBe('ev-1');
+      expect(typeof r.evenements[0]!.quand).toBe('string');
+      expect(typeof r.evenements[1]!.quand).toBe('string');
     });
 
     it('jamais un `action_sent`/`action_delivered` individuel dans "tout" (superflu, doublonnerait le groupe)', async () => {

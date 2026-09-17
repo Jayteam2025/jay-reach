@@ -14,6 +14,7 @@ import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
+import { comparerInstantsDesc } from '../temps.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { construireValeursMinimales, normalizeListColumnName, renderTemplatePartial } from '../messages/index.js';
@@ -1182,7 +1183,8 @@ const ACTIONS_PAR_FILTRE: Partial<Record<FiltreActivite, ActionJournal[]>> = {
 
 interface LigneAuditEvenement {
   id: string;
-  created_at: string;
+  /** `audit_events.created_at`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne (F4, `temps.ts`). */
+  created_at: string | Date;
   entity_type: string;
   action: ActionJournal;
   diff: { libelle?: string; detail?: string } | null;
@@ -1191,7 +1193,8 @@ interface LigneAuditEvenement {
 function versEvenementAudit(r: LigneAuditEvenement): Evenement {
   return {
     id: r.id,
-    quand: r.created_at,
+    // Forme publique honnête (`Evenement.quand: string`) : jamais l'objet `Date` tel quel (F4).
+    quand: new Date(r.created_at).toISOString(),
     type: r.action,
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
@@ -1199,8 +1202,8 @@ function versEvenementAudit(r: LigneAuditEvenement): Evenement {
 }
 
 interface LigneEnvoiGroupe {
-  /** `date_trunc('hour', a.dispatched_at)`, ISO. */
-  heure: string;
+  /** `date_trunc('hour', a.dispatched_at)`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne (F4, `temps.ts`). */
+  heure: string | Date;
   /** `sequence_steps.position`, 0-based — `null` si l'action n'a plus d'étape rattachée (supprimée). */
   etape: number | null;
   n: number;
@@ -1219,13 +1222,17 @@ interface LigneEnvoiGroupe {
  * Fonction pure, testée sur des lignes simulées (brief).
  */
 export function evenementsEnvoisGroupes(lignes: readonly LigneEnvoiGroupe[]): Evenement[] {
-  return lignes.map((r) => ({
-    id: `envois-${r.heure}-${r.etape ?? 'x'}`,
-    quand: r.heure,
-    type: 'action_sent',
-    libelle: `${r.n} email(s) envoyé(s)${r.etape !== null ? ` · étape ${r.etape + 1}` : ''} · ${r.boites} boîte(s)`,
-    detail: null,
-  }));
+  return lignes.map((r) => {
+    // Forme publique honnête (`Evenement.quand: string`), même conversion que `versEvenementAudit`.
+    const heureIso = new Date(r.heure).toISOString();
+    return {
+      id: `envois-${heureIso}-${r.etape ?? 'x'}`,
+      quand: heureIso,
+      type: 'action_sent',
+      libelle: `${r.n} email(s) envoyé(s)${r.etape !== null ? ` · étape ${r.etape + 1}` : ''} · ${r.boites} boîte(s)`,
+      detail: null,
+    };
+  });
 }
 
 /**
@@ -1282,8 +1289,12 @@ async function listerActiviteTout(ctx: Contexte, campagneId: string, page: numbe
     ),
   ]);
 
-  const tous = [...auditRes.rows.map(versEvenementAudit), ...evenementsEnvoisGroupes(groupesRes.rows)].sort((a, b) =>
-    a.quand < b.quand ? 1 : a.quand > b.quand ? -1 : 0,
+  // `comparerInstantsDesc` (F4, `temps.ts`), jamais une comparaison de chaînes brute : `quand`
+  // est ici déjà une chaîne ISO canonique (conversion faite par `versEvenementAudit`/
+  // `evenementsEnvoisGroupes`), mais l'utilitaire reste la référence du projet pour cette
+  // comparaison — départage déterministe par `id` à instant égal.
+  const tous = [...auditRes.rows.map(versEvenementAudit), ...evenementsEnvoisGroupes(groupesRes.rows)].sort(
+    (a, b) => comparerInstantsDesc(a.quand, b.quand) || b.id.localeCompare(a.id),
   );
 
   const debut = (page - 1) * TAILLE_PAGE_ACTIVITE;
