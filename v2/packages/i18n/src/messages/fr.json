@@ -524,6 +524,7 @@
       "bodyPlaceholder": "Bonjour '{{'prenom'}}',",
       "variables": "Variables disponibles",
       "variablesHelp": "Cliquez pour insérer. Une variable sans valeur bloque l'envoi plutôt que de partir vide.",
+      "variablesListHelp": "Colonnes du CSV importé : '{{'liste_nom_de_colonne'}}'.",
       "insert": "Insérer",
       "saveMessage": "Enregistrer le message",
       "messageSaved": "Message enregistré",
