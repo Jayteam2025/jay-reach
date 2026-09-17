@@ -34,6 +34,19 @@ export interface ChampConfigFournisseur {
   libelle: string;
   valeurActuelle: string;
   aide?: string;
+  /**
+   * Défaut effectif du champ quand il est vide (tour de correction F6, point 12), lu depuis les
+   * constantes du cœur par la page (jamais recopié en dur ici) : affiché en `placeholder`.
+   */
+  placeholder?: string;
+}
+
+/** Identifiant et clé masquée d'un fournisseur (tour de correction F6, point 2), sur deux lignes
+ * distinctes plutôt que concaténés dans une seule chaîne : un identifiant long (client_id,
+ * tenant_id…) ne partage alors jamais sa ligne avec le masque, quelle que soit sa longueur. */
+export interface MasqueFournisseur {
+  identifiant: string | null;
+  masque: string;
 }
 
 export interface InfoFournisseur {
@@ -54,7 +67,7 @@ export interface CarteFournisseurProps {
   champsConfig: ChampConfigFournisseur[];
   presente: boolean;
   /** 4 derniers caractères connus, pour composer le masque « ••••1234 » — la page les lit dans `config`/`last4` si elle en a, sinon un masque générique. */
-  masque: string;
+  masque: MasqueFournisseur;
   infos: InfoFournisseur[];
   /** `ctx.role` au moins `admin` (brief : « rôle admin pour les écritures ») — sinon la carte est lecture seule, sans « Remplacer »/« Tester » ni formulaire. */
   peutModifier: boolean;
@@ -171,8 +184,15 @@ export function CarteFournisseur({
           <span className="jr-libelle">{libelles.champCle}</span>
           {!enEdition ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span className="jr-champ" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5, padding: '5px 10px' }}>
-                {presente ? masque : '—'}
+              <span className="jr-champ jr-champ-cle">
+                {presente ? (
+                  <>
+                    {masque.identifiant && <span className="identifiant">{masque.identifiant}</span>}
+                    <span>{masque.masque}</span>
+                  </>
+                ) : (
+                  '—'
+                )}
               </span>
               {peutModifier && (
                 <>
@@ -243,6 +263,7 @@ export function CarteFournisseur({
                     value={valeursConfig[champ.name] ?? champ.valeurActuelle}
                     onChange={(e) => setValeursConfig((v) => ({ ...v, [champ.name]: e.target.value }))}
                     disabled={!peutModifier || pendingConfig}
+                    placeholder={champ.placeholder}
                   />
                 </Champ>
                 {champ.aide && <div className="jr-aide">{champ.aide}</div>}

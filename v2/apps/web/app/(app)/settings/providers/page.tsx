@@ -1,5 +1,11 @@
 import { getTranslations } from 'next-intl/server';
-import { listerFournisseurs, type FournisseurVue } from '@jay-reach/core';
+import {
+  listerFournisseurs,
+  normaliserDelaiRelanceMax,
+  normaliserIntervalleReleve,
+  SCORING_MODELS,
+  type FournisseurVue,
+} from '@jay-reach/core';
 import { getProviderEntry } from '@jay-reach/providers';
 import { contexteCourant } from '../../../../lib/contexte';
 import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
@@ -8,6 +14,7 @@ import {
   type ChampCleFournisseur,
   type ChampConfigFournisseur,
   type InfoFournisseur,
+  type MasqueFournisseur,
 } from '../../../../components/reglages/CarteFournisseur';
 import type { PuceTon, TuileLogoMarque } from '../../../../components/ui';
 
@@ -27,12 +34,42 @@ const TUILES: Record<string, { marque: TuileLogoMarque; lettre?: string }> = {
   apify: { marque: 'lettre', lettre: 'Ap' },
 };
 
-function composerMasque(champsNonSecrets: ChampCleFournisseur[], config: Record<string, string> | null, dernierCaracteres: string | null): string {
-  const bullets = `••••••••••••${dernierCaracteres ?? ''}`;
+/**
+ * Identifiant et clé masquée séparés (tour de correction F6, point 2) : concaténer les deux dans
+ * une seule chaîne, comme avant, empêchait d'afficher l'identifiant sur sa propre ligne quand il
+ * est long (client_id France Travail, tenant_id Microsoft) — `CarteFournisseur` les place chacun
+ * sur sa ligne.
+ */
+function composerMasque(champsNonSecrets: ChampCleFournisseur[], config: Record<string, string> | null, dernierCaracteres: string | null): MasqueFournisseur {
+  const masque = `••••••••••••${dernierCaracteres ?? ''}`;
   const premier = champsNonSecrets[0];
   const valeurConnue = premier && config?.[premier.name];
-  return valeurConnue ? `${premier.name} ${valeurConnue} ${bullets}` : bullets;
+  return { identifiant: valeurConnue ? `${premier.name} ${valeurConnue}` : null, masque };
 }
+
+/**
+ * Défaut effectif des champs optionnels du catalogue qui n'en montraient aucun (tour de
+ * correction F6, point 12) : lu depuis les fonctions/constantes du cœur (jamais recopié en dur
+ * ici), affiché en `placeholder` tant que la valeur est vide. `sync_interval_min` de Microsoft
+ * Graph n'a pas de fonction dédiée dans le cœur (seul `entierBorne` générique, appelé avec un
+ * défaut en dur dans le worker) : on réutilise celui de SalesBlink, qui partage la même valeur
+ * (5 minutes) — à défaut d'une constante nommée côté cœur pour Graph spécifiquement.
+ */
+const DEFAUT_SYNC_INTERVAL_MIN = String(normaliserIntervalleReleve(undefined));
+const DEFAUT_REPLY_MAX_DELAY_H = String(normaliserDelaiRelanceMax(undefined));
+const DEFAUTS_CHAMPS_CONFIG: Partial<Record<string, Partial<Record<string, string>>>> = {
+  salesblink: {
+    sync_interval_min: DEFAUT_SYNC_INTERVAL_MIN,
+    reply_max_delay_h: DEFAUT_REPLY_MAX_DELAY_H,
+  },
+  microsoft_graph: {
+    sync_interval_min: DEFAUT_SYNC_INTERVAL_MIN,
+  },
+  anthropic: {
+    model_smart: SCORING_MODELS.smart,
+    model_fast: SCORING_MODELS.fast,
+  },
+};
 
 /**
  * Champs optionnels du catalogue à ne PAS montrer ici (relecture tâche 21,
@@ -139,12 +176,19 @@ export default async function ProvidersPage() {
           const exclus = new Set(CHAMPS_CONFIG_EXCLUS[f.providerId] ?? []);
           const champsConfig: ChampConfigFournisseur[] = (manifest?.fields ?? [])
             .filter((champ) => !champ.required && !champ.secret && !exclus.has(champ.name))
-            .map((champ) => ({
-              name: champ.name,
-              libelle: tChamps(champ.labelKey),
-              valeurActuelle: f.config?.[champ.name] ?? '',
-              aide: champ.hintKey ? tChamps(champ.hintKey) : undefined,
-            }));
+            .map((champ) => {
+              const defaut = DEFAUTS_CHAMPS_CONFIG[f.providerId]?.[champ.name];
+              const aide = [champ.hintKey ? tChamps(champ.hintKey) : undefined, defaut ? t('champConfigDefaut', { defaut }) : undefined]
+                .filter(Boolean)
+                .join(' ');
+              return {
+                name: champ.name,
+                libelle: tChamps(champ.labelKey),
+                valeurActuelle: f.config?.[champ.name] ?? '',
+                aide: aide || undefined,
+                placeholder: defaut,
+              };
+            });
 
           return (
             <CarteFournisseur
