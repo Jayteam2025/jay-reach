@@ -35,8 +35,9 @@
 .jr-contenu { padding: 20px 28px 28px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 340px; align-content: start; }
 .jr-contenu.une-colonne { grid-template-columns: minmax(0, 1fr); }
 .jr-contenu .pleine { grid-column: 1 / -1; }
-.jr-aujourdhui { padding: 22px 28px 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 320px; gap: 16px; align-content: start; }
+.jr-aujourdhui { padding: 22px 28px 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 320px; gap: 16px; align-content: start; align-items: start; }
 .jr-aujourdhui .pleine { grid-column: 1 / -1; }
+.jr-moteur-plafonds { display: grid; gap: 16px; align-content: start; }
 .jr-deux-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .jr-section-entete { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 0 0 12px; }
 .jr-section-entete h2 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -344,10 +345,19 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-message .entete > span { min-width: 0; overflow-wrap: anywhere; }
 .jr-conversations .etiquettes .jr-puce { white-space: normal; }
 @media (max-width: 1180px) {
-  .jr-aujourdhui { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .jr-contenu { grid-template-columns: minmax(0, 1fr) 300px; }
   .jr-reception { grid-template-columns: 280px minmax(0, 1fr); }
   .jr-reception .jr-colonne { display: none; } /* sous 1180 px, la fiche s'ouvre en tiroir */
+}
+/* Aujourd'hui à ≤ 1440 px (tour de correction F6, point 4) : la grille à trois colonnes ne se
+   replie pas d'elle-même (`minmax(0, 1fr)` n'empêche pas un contenu de rester lisible en dessous
+   de sa largeur naturelle) et la File du jour devenait trop étroite pour ses noms. Point de
+   rupture choisi à 1440 px (mesuré : c'est là que la colonne File commence à couper les noms).
+   Rangée 1 : À traiter (2fr) + File du jour (3fr, elle a plus à montrer) ; rangée 2 : Moteur et
+   Plafonds côte à côte, sur toute la largeur. */
+@media (max-width: 1440px) {
+  .jr-aujourdhui { grid-template-columns: 2fr 3fr; }
+  .jr-moteur-plafonds { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 .jr-flux { grid-template-columns: minmax(0, 1fr); } /* colonne définie : le max-width:100% des noeuds s'y réfère */
 .jr-puces .jr-puce { white-space: normal; text-align: left; }
@@ -428,6 +438,19 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-sans-retrait-droite { padding-right: 0; }
 /* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la largeur, ce bloc coupe proprement. */
 .jr-tronque { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* Cellule qui ne doit jamais couper au milieu d'un mot (tour de correction F6, point 4). */
+.jr-nowrap { white-space: nowrap; }
+/* `.jr-qui b, .jr-qui small` (règle du dessus, vérification 1024 px) posent `overflow-wrap:
+   anywhere`, plus spécifique que `.jr-tronque` seul (un nom se coupait alors lettre à lettre dans
+   la File du jour malgré `white-space: nowrap`, point 4) : contre-règle explicite, à spécificité
+   égale ou supérieure, pour les cas qui veulent une vraie troncature sur une ligne. */
+.jr-qui b.jr-tronque, .jr-qui small.jr-tronque { overflow-wrap: normal; }
+
+/* Ligne de tableau cliquable en plus de son lien (tour de correction F6, point 19) : le lien du
+   nom est étiré sur toute la ligne (« stretched link »), sans JavaScript ni <tr onClick> — un vrai
+   lien natif, donc déjà accessible au clavier (tabulation, Entrée). */
+.jr-table tr:has(.jr-lien-ligne) { position: relative; cursor: pointer; } /* la ligne se survole déjà (`.jr-table tbody tr:hover td` ci-dessus) */
+.jr-lien-ligne::after { content: ''; position: absolute; inset: 0; }
 
 /* États de chargement (squelette.tsx) : barre grise animée, reprise par chaque écran dans sa propre forme. */
 .jr-skel { display: inline-block; background: var(--jr-filet); border-radius: 4px; }

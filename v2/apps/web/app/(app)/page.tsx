@@ -144,7 +144,7 @@ export default async function AujourdhuiPage() {
                         <div className="jr-qui">
                           <Avatar nom={envoi.contactNom} canal={envoi.canal} />
                           <span>
-                            <b>{envoi.contactNom}</b>
+                            <b className="jr-tronque">{envoi.contactNom}</b>
                             <small>
                               {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
                               {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}
@@ -152,7 +152,7 @@ export default async function AujourdhuiPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="num jr-secondaire" style={{ paddingRight: 0 }}>
+                      <td className="num jr-secondaire jr-nowrap" style={{ paddingRight: 0 }}>
                         {logo && <i className={`jr-logo-inline jr-logo-${logo}`} />} {envoi.expediteur ?? '—'}
                       </td>
                     </tr>
@@ -170,7 +170,7 @@ export default async function AujourdhuiPage() {
           )}
         </Carte>
 
-        <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
+        <div className="jr-moteur-plafonds">
           <Carte titre={t('engine.title')} action={<Puce ton={a.moteur.enMarche ? 'bon' : 'erreur'} point>{a.moteur.enMarche ? t('engine.running') : t('engine.stopped')}</Puce>}>
             <CleValeur libelle={t('engine.last')} valeur={formatHeure(a.moteur.dernierPassage)} />
             <CleValeur libelle={t('engine.next')} valeur={formatHeure(a.moteur.prochainPassage)} />
@@ -225,7 +225,14 @@ export default async function AujourdhuiPage() {
                 <div className="jr-qui">
                   <TuileLogo marque="lettre" lettre={campagne.nom.charAt(0).toUpperCase()} />
                   <span>
-                    <b>{campagne.nom}</b>
+                    <b>
+                      {/* Toute la ligne mène à la campagne (tour de correction F6, point 19) : un
+                          vrai lien, étiré sur la ligne entière par CSS (`.jr-lien-ligne`) — déjà
+                          accessible au clavier, sans <tr onClick>. */}
+                      <Link href={`/campaigns/${campagne.id}`} className="jr-lien-ligne">
+                        {campagne.nom}
+                      </Link>
+                    </b>
                     <small>{t('campaigns.steps', { n: campagne.etapes, boites: campagne.boites })}</small>
                   </span>
                 </div>
