@@ -49,6 +49,14 @@ describe('listerBoites', () => {
     expect(boites).toHaveLength(1);
   });
 
+  it('point 4 (tour de correction 5) : trie par adresse, pas par date de création (même ordre que les autres pages)', async () => {
+    const ctx = faux({ 'jr:expediteurs_boites': [], 'jr:expediteurs_releve': [] });
+    await listerBoites(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appel = appels.find((a) => /jr:expediteurs_boites/i.test(String(a[0])));
+    expect(String(appel![0])).toMatch(/order by s\.identity asc/i);
+  });
+
   it('mappe la marque, les quotas et la fenêtre depuis les colonnes de la boîte', async () => {
     const ctx = faux({ 'jr:expediteurs_boites': [BOITE_BASE], 'jr:expediteurs_releve': [] });
     const [boite] = await listerBoites(ctx);

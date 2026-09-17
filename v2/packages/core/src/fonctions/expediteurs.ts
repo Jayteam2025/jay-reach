@@ -174,7 +174,12 @@ export async function listerBoites(ctx: Contexte, lireSante?: LecteurSanteBoite)
                   and act.dispatched_at >= date_trunc('day', now())) as used_today
          from senders s /* jr:expediteurs_boites */
         where s.organization_id = $1 and s.kind = 'email'
-        order by s.created_at asc`,
+        -- Point 4 (tour de correction 5) : un seul tri, par adresse, sur toute
+        -- liste d'expéditeurs — cette carte triait par date de création, un
+        -- ordre différent des puces « Envoie depuis » des pages campagne
+        -- (qui n'avaient elles-mêmes aucun tri), d'où un ordre incohérent
+        -- d'une page à l'autre pour les mêmes boîtes.
+        order by s.identity asc`,
       [ctx.organisationId],
     ),
     ctx.ex.query<LigneReleve>(
