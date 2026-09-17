@@ -19,11 +19,10 @@ function messageDErreur(err: unknown): string {
  * Exige le rôle operator. N'agit que sur les actions en `pending_approval`.
  *
  * Façade fine sur `approuverEnvoi`/`rejeterEnvoi`
- * (`packages/core/src/fonctions/file-du-jour.ts`, tâche 10) — cet écran
- * appelait Supabase directement jusqu'ici ; même signature et même
- * comportement observable, pour ne rien casser côté `/approvals`
- * (`approval-list.tsx`, écran hérité) ni côté tiroir « Relire avant envoi »
- * de la file du jour, qui réutilise cette même façade.
+ * (`packages/core/src/fonctions/file-du-jour.ts`, tâche 10), reprise par le
+ * tiroir « Relire avant envoi » de la file du jour (`TiroirRelecture.tsx`,
+ * nouveau design) — l'écran `/approvals` qui l'appelait à l'origine est
+ * retiré depuis la tâche 24.
  */
 export async function setActionApproval(
   organizationId: string,
@@ -40,7 +39,6 @@ export async function setActionApproval(
     } else {
       await rejeterEnvoi(ctx, { actionId });
     }
-    revalidatePath('/approvals');
     revalidatePath('/campaigns');
     return { ok: true };
   } catch (err) {

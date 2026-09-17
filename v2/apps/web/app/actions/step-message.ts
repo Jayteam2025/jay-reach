@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import {
   enregistrerVersionModele,
-  verserDansBibliotheque,
   lireCampagnePourEtape,
   enregistrerEtape,
   supprimerEtape,
@@ -102,34 +101,6 @@ export async function saveStepMessage(
     });
     revalidatePath(`/campaigns/${campaignId}`);
     return { ok: true, templateParentId: input.templateParentId ?? id };
-  } catch (err) {
-    return resultatDErreur(err);
-  }
-}
-
-/**
- * Verse dans la bibliothèque un message écrit dans une étape (retour 9.3).
- * Façade fine sur `verserDansBibliotheque`.
- */
-export async function promoteStepMessage(
-  organizationId: string,
-  campaignId: string,
-  templateParentId: string,
-  name: string,
-): Promise<SimpleResult> {
-  try {
-    const ctx = await contexteCourant();
-    if (ctx.organisationId !== organizationId) {
-      return { ok: false, error: 'Organisation invalide.' };
-    }
-    const nom = name.trim();
-    if (!nom) {
-      return { ok: false, error: 'Donnez un nom au modèle.' };
-    }
-    await verserDansBibliotheque(ctx, { campagneId: campaignId, templateParentId, nom });
-    revalidatePath(`/campaigns/${campaignId}`);
-    revalidatePath('/settings/templates');
-    return { ok: true };
   } catch (err) {
     return resultatDErreur(err);
   }
