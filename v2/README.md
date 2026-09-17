@@ -37,6 +37,8 @@ L'assistant s'ouvre sur `http://localhost:3000`.
 
 Prérequis : Docker, et une clé pour au moins un enrichisseur et un modèle de langage.
 
+Guide d'utilisation au quotidien : [`docs/14-guide-operateur.md`](docs/14-guide-operateur.md).
+
 ## Ce dont vous avez besoin
 
 Jay Reach n'inclut aucune donnée et aucun quota d'envoi. Vous branchez vos propres comptes.

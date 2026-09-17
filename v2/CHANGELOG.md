@@ -7,6 +7,113 @@ Versionnement sémantique.
 
 ## [Non publié]
 
+### Modifié
+- **L'application se pilote depuis cinq entrées : Aujourd'hui, Campagnes, Contacts, Réception, Réglages, à la place de dix-sept
+  routes éparses.** La barre latérale porte en permanence l'état du moteur (dernier et prochain passage) et les envois du jour ;
+  le badge de la Réception compte les fils à traiter. Les anciens écrans sont retirés (voir la section Retiré) et leurs URL
+  redirigent vers leur équivalent du nouveau design.
+- **Toute campagne se pilote depuis une fiche à sept onglets (Vue d'ensemble, Contacts, File du jour, Sources, Séquence,
+  Activité, Réglages), sous un en-tête qui reste affiché : logo, nom, état, boîtes d'envoi avec leur usage du jour, bouton
+  Lancer ou Mettre en pause.** Une campagne se crée désormais par un assistant en quatre étapes (Qui, Sources, Séquence, Envoi)
+  qui pose en une fois le persona, les sources, la séquence, les boîtes d'envoi et le plafond, puis propose « Enregistrer en
+  brouillon » ou « Créer et lancer » ; la garde qui empêche une campagne sans message ou sans expéditeur de partir s'affiche à
+  la dernière étape, plus après coup.
+- **Les Réglages se déclinent en sept pages**, chacune reprenant un réglage qui vivait avant sur un écran séparé : boîtes email
+  et comptes LinkedIn réunis dans Expéditeurs, tâches planifiées devenues Moteur, clients devenus Contacts › Clients et
+  exclusions, modèles de message répartis entre Messages (bibliothèque) et l'éditeur d'étape d'une séquence. Compte gagne un
+  bouton Se déconnecter, qui n'existait dans aucun écran.
+- **La Réception se lit en trois volets (liste des fils, conversation, résumé du contact), et répondre à un prospect se fait
+  désormais depuis l'application**, dans le même fil, par la boîte qui lui a écrit. Marquer un fil traité le sort de la liste
+  À traiter ; marquer un fil intéressé pose un drapeau qui le garde visible sous Intéressés sans l'y enfermer.
+
+### Ajouté
+- **Toute lecture et toute action affichées à l'écran passent désormais par une fonction de `packages/core/src/fonctions`**
+  (un module par domaine : campagnes, sources, contacts, sequence, expediteurs, plafonds, reception, moteur, fournisseurs,
+  personas, messages, aujourdhui), avec un contrôle d'accès posé dans la fonction plutôt que dans l'écran. Chaque écran de ce
+  lot n'est qu'une façade sur ces fonctions : le futur serveur MCP (issue #100) en sera la seconde, sans réécrire la logique
+  métier.
+- **Le moteur écrit un journal d'activité**, lu par l'onglet Activité de chaque campagne et par Aujourd'hui : passage d'une
+  source, lot de scoring ou d'enrichissement, envoi et sa livraison, réponse reçue ou envoyée, absence détectée, erreur de
+  cycle. Il tenait déjà ce registre pour lui-même ; rien à l'écran n'en montrait le contenu avant ce lot.
+- **La fiche contact réunit en un tiroir tout ce qu'on sait d'un contact**, ouvrable depuis n'importe quelle table : pourquoi
+  il a été retenu, où en est sa séquence, ce qu'on s'est dit, ses coordonnées, des notes libres et son historique. On l'écarte
+  de la campagne ou on le passe en « ne plus contacter » depuis le même tiroir.
+- **Une page Contacts réunit tous les contacts, les entreprises, et les clients et exclusions**, toutes campagnes confondues,
+  avec import CSV et export. Une entreprise cessée n'y entre jamais ; un domaine client ou une exclusion (email, domaine ou
+  adresse LinkedIn) s'y ajoute à la main.
+- **Les plafonds de l'organisation se règlent à l'écran, en base : l'environnement ne sert que si une ligne manque.** Scorings
+  et enrichissements par jour, score minimal d'entrée, relecture des premiers envois et âge maximal des offres ont chacun une
+  ligne éditable, avec leur valeur de repli, leur défaut et qui les a modifiées et quand ; les réglages qui vivent ailleurs
+  (boîte, campagne, source, pause globale) sont listés avec un lien vers le bon écran plutôt que dupliqués.
+- **Les sources LinkedIn se créent et se règlent dès ce lot** (engageurs d'un post, abonnés d'un concurrent, mots-clés,
+  changement de poste), avec la mention « collecte activée au lot 4 » tant que le moteur ne les exécute pas encore.
+- **Six parcours Playwright protègent les usages clés** : connexion, création et lancement d'une campagne complète, Aujourd'hui,
+  réponse dans la Réception, ajout d'une source et lancement d'un passage, modification d'un plafond retrouvée sur Aujourd'hui.
+  Une organisation de test dédiée les exécute contre SalesBlink simulé.
+- **Un garde-fou de traduction repère maintenant une clé oubliée, pas seulement une clé manquante.** Le contrôle existant
+  vérifiait qu'une clé utilisée à l'écran existe bien ; ce lot lui ajoute le sens inverse : une clé déclarée mais jamais
+  référencée, oubliée après une réécriture d'écran, ne passe plus inaperçue. Étendu aux nouveaux onglets de campagne (Sources,
+  Séquence, Activité, Réglages, assistant de création), à Contacts et aux Réglages, en tenant compte des sous-espaces qu'un
+  composant déclare et des accès dynamiques à une clé.
+- **Quatre migrations additives** posent le socle de données du lot : `organization_settings` (une ligne par réglage
+  d'organisation), `threads.handled_at` et `threads.interest` (marquage traité et intéressé d'un fil), `contact_notes` (notes
+  libres d'un contact), `accounts.logo_url` (logo d'entreprise, à côté de la photo de contact qui existait déjà).
+- **Un gabarit de message peut citer une colonne d'une liste importée**, avec la variable `{{liste_<colonne>}}` : une campagne
+  alimentée par un fichier CSV peut écrire `{{liste_poste}}` pour reprendre tel quel l'intitulé de sa colonne « Poste ». La
+  valeur est résolue à partir de la liste sur laquelle le contact a été inscrit ; une valeur vide est ignorée, et deux colonnes
+  qui normalisent vers le même nom avec des valeurs différentes laissent la variable manquante plutôt que d'en choisir une au
+  hasard, avec un avertissement journalisé sans les valeurs en clair. Le même moteur de résolution sert l'envoi réel et
+  l'aperçu avant envoi.
+- **Le tiroir d'une étape de séquence propose désormais les colonnes de la liste importée de la campagne**, sous les variables
+  standard : une puce par colonne (« Colonnes de la liste importée »), à cliquer pour l'insérer. Sans liste reliée, une ligne
+  d'aide rappelle que ces colonnes existent dès qu'une campagne est alimentée par un fichier importé. Dans l'aperçu, la valeur
+  d'une colonne que la campagne possède s'affiche entre crochets pour le contact fictif ; une variable de colonne que la
+  campagne ne possède pas reste signalée manquante, pour ne pas laisser croire qu'elle sera résolue à l'envoi.
+- **Une inscription en pause se voit et se reprend, dans l'onglet Contacts d'une campagne, la page Contacts et la fiche
+  contact.** Elle portait jusqu'ici le même badge « En séquence » qu'une inscription active, invisible parmi les autres.
+  Un badge « En pause » distinct affiche désormais le motif : email jugé non délivrable, envoi refusé par le fournisseur
+  d'email, aucune boîte d'envoi disponible, ou absence avec sa date de reprise. Le bouton **Reprendre** (« Reprendre
+  maintenant » pour une absence) rejoue l'étape sur laquelle l'inscription a buté ; pour un blocage lié à l'email, l'envoi
+  revérifie la délivrabilité avant de repartir plutôt que de retenter une adresse toujours invalide.
+
+### Corrigé
+- **Une inscription dont l'email ne partira jamais ne reste plus bloquée sans explication.** Un refus de la passerelle de
+  délivrabilité ou un échec définitif signalé par SalesBlink laissait l'inscription active indéfiniment, sans relance ni signe
+  visible. Elle passe désormais en pause, avec un motif conservé sur l'étape où elle a buté, et se montre à l'écran comme telle
+  (voir la section Ajouté).
+- **Les heures affichées suivent enfin le fuseau de l'organisation, plus celui du serveur.** Plusieurs écrans formataient une
+  date sans préciser de fuseau ; un serveur en UTC pouvait alors classer un envoi « demain » quand il tombait encore
+  aujourd'hui à Paris, ou l'inverse, près de minuit. Une constante d'organisation (`Europe/Paris` par défaut) est désormais
+  passée à chaque formatage, et la classification aujourd'hui/demain compare des journées dans ce fuseau plutôt que par les
+  accesseurs locaux du serveur.
+- **Une source ne se lance plus si aucune campagne active ne s'y rattache.** Elle continuait de tourner à son rythme propre
+  même détachée de toute campagne, ou rattachée seulement à des campagnes en pause ou en brouillon, ce qui produisait un
+  passage qui ne nourrissait jamais personne. Le producteur ignore désormais ces sources, et un lancement manuel les signale plutôt que de
+  les exécuter en silence ; mettre une campagne en pause suffit à arrêter ses sources sans les toucher une à une, et la
+  relancer déclenche à nouveau un premier passage immédiat.
+
+### Retiré
+- **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
+  LinkedIn, clients, tâches planifiées) sont retirés ; chaque ancienne adresse redirige de façon permanente vers son équivalent
+  du nouveau design.** Une adresse déjà en circulation (lien, favori, email envoyé) continue de fonctionner. La coquille qui
+  hébergeait ces écrans (navigation, icônes, cloche de notifications, bouton d'activation des notifications, champ de message)
+  part avec eux ; seul l'écran de connexion garde son habillage propre, hors périmètre.
+- **Le code que ces écrans étaient seuls à appeler part avec eux** : cinq jeux de données de démonstration, quatre façades
+  entières (clients, génération de message, signaux, extraits de message réutilisables) et les fonctions que plus aucun écran
+  n'appelait dans les façades restantes. Le CSS de l'ancien design part aussi (364 occurrences de classes préfixées `rs-`, hors
+  les 19 qui habillent encore l'écran de connexion).
+- **475 clés de traduction françaises et 561 clés anglaises et néerlandaises, orphelines depuis le retrait de ces écrans, sont
+  purgées des trois catalogues** (voir le garde-fou de traduction renforcé, section Ajouté).
+
+### Dettes connues
+- Les préférences de notification ne couvrent que la réception d'une réponse.
+- Un rôle ne se modifie pas depuis l'application, et un membre déjà accepté ne s'en retire pas : seule une invitation encore
+  en attente s'annule.
+- Le mot de passe ne se change pas depuis l'application.
+- Ni une campagne ni une source ne se suppriment : une campagne s'archive, une source se met en pause.
+- La cadence du moteur (fréquence des cycles, fenêtre et cadence de la relève) ne se règle pas à l'écran, seulement par
+  l'environnement du serveur.
+
 ### Corrigé
 - **Une réponse relevée par SalesBlink n'affiche plus un message vide dans la boîte de réception.**
   `/replies`, l'endpoint qui signale une réponse, ne porte jamais de corps ni l'heure réelle de la réponse
