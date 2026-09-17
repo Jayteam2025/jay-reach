@@ -57,7 +57,10 @@ d'envoi :
   envoi au lendemain ou écarter le contact.
 - **Sources** : les sources qui alimentent la campagne et leurs réglages ; ouvrez-en une pour lancer un
   passage tout de suite, sans attendre le prochain passage planifié.
-- **Séquence** : les étapes de la campagne, leur objet, leur corps et leur délai. Ajoutez ou modifiez une
+- **Séquence** : les étapes de la campagne, leur objet, leur corps et leur délai. Le délai d'une étape se
+  compte à partir de l'ENVOI RÉEL de l'étape précédente, jamais depuis sa mise en file : sur un lot volumineux
+  réparti sur plusieurs jours d'envoi, un contact voit toujours ses étapes s'enchaîner dans l'ordre voulu,
+  même si son tour arrive tard. Ajoutez ou modifiez une
   étape, et envoyez-vous un test avant de la publier. Si la campagne est alimentée par une liste
   importée, l'éditeur d'étape propose aussi les colonnes de cette liste en variables (« Colonnes de la
   liste importée ») : une variable de colonne que la campagne ne possède pas reste signalée manquante

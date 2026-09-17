@@ -92,6 +92,11 @@ Versionnement sémantique.
   passage qui ne nourrissait jamais personne. Le producteur ignore désormais ces sources, et un lancement manuel les signale plutôt que de
   les exécuter en silence ; mettre une campagne en pause suffit à arrêter ses sources sans les toucher une à une, et la
   relancer déclenche à nouveau un premier passage immédiat.
+- **L'échéance d'une étape ne se pose plus avant que l'étape précédente ne soit réellement partie.** Le moteur la posait dès la
+  création de l'action, en supposant un envoi immédiat ; dès qu'un lot se répartit sur plusieurs jours (boîtes d'envoi
+  saturées), l'étape suivante pouvait devenir due avant même que la précédente ne soit envoyée, ce qui a exigé une correction
+  manuelle en base sur une campagne réelle. L'échéance se pose désormais au départ réel de l'envoi (email par SalesBlink,
+  action LinkedIn confirmée par l'extension), avec le même espacement aléatoire qu'avant.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
