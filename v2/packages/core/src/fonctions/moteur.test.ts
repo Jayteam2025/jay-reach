@@ -8,6 +8,7 @@ import {
   lireEtatMoteur,
   basculerPauseEnvoi,
   lireEtatPauseEnvoi,
+  lireReglageReleve,
   listerErreursRecentes,
   listerTaches,
   lancerTache,
@@ -279,6 +280,50 @@ describe('listerTaches', () => {
     expect(taches.scoring).toEqual({ lancable: false, enAttente: 136 });
     expect(taches.enrichissement).toEqual({ lancable: false, enAttente: 2 });
     expect(taches.releve).toEqual({ lancable: false, dernierPassage: '2026-09-16T10:44:00.000Z' });
+  });
+
+  it('point 4 (tour de correction 5) : compte les sources actives de toute l’organisation, pas seulement celles d’une campagne active', async () => {
+    const queryMock = vi.fn(async (sql: string) => {
+      if (/jr:moteur_taches_sources/i.test(sql)) return { rows: [{ n: 5, dernier: '2026-09-17T14:34:00.000Z' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const query = queryMock as unknown as Executeur['query'];
+    const ctx = fauxExecuteur(query, 'viewer');
+
+    const taches = await listerTaches(ctx);
+
+    expect(taches.sources).toEqual({ lancable: true, actives: 5, dernierPassage: '2026-09-17T14:34:00.000Z' });
+    const appel = queryMock.mock.calls.find(([sql]) => /jr:moteur_taches_sources/i.test(String(sql)));
+    // La restriction « campagne active » reste le comportement de `lancerTache` (un besoin
+    // différent : quoi déclencher) — cette carte, elle, dit l'état de toutes les sources actives.
+    expect(String(appel![0])).not.toMatch(/campaign_sources/i);
+    expect(String(appel![0])).not.toMatch(/c\.status\s*=\s*'active'/i);
+  });
+});
+
+describe('lireReglageReleve (point 4, tour de correction 5 : carte « Relève des réponses »)', () => {
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireReglageReleve(faux({}, null))).rejects.toThrow(ForbiddenError);
+  });
+
+  it('lit la fréquence réglée dans Fournisseurs › SalesBlink (origine "reglee")', async () => {
+    const ctx = faux({ 'jr:moteur_reglage_releve': [{ config: { sync_interval_min: '10' } }] });
+    await expect(lireReglageReleve(ctx)).resolves.toEqual({ minutes: 10, origine: 'reglee' });
+  });
+
+  it('sans SalesBlink configuré, retombe sur le défaut (5 min, origine "defaut") — jamais "réglé par l’environnement"', async () => {
+    const ctx = faux({ 'jr:moteur_reglage_releve': [] });
+    await expect(lireReglageReleve(ctx)).resolves.toEqual({ minutes: 5, origine: 'defaut' });
+  });
+
+  it('une valeur vide en base compte comme non réglée (défaut, pas 0 minute)', async () => {
+    const ctx = faux({ 'jr:moteur_reglage_releve': [{ config: { sync_interval_min: '' } }] });
+    await expect(lireReglageReleve(ctx)).resolves.toEqual({ minutes: 5, origine: 'defaut' });
+  });
+
+  it('une valeur hors bornes est ramenée à la borne, mais reste "reglee" (l’opérateur l’a bien saisie)', async () => {
+    const ctx = faux({ 'jr:moteur_reglage_releve': [{ config: { sync_interval_min: '999' } }] });
+    await expect(lireReglageReleve(ctx)).resolves.toEqual({ minutes: 60, origine: 'reglee' });
   });
 });
 

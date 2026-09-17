@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
 import { ecrireEvenement } from '../journal.js';
+import { normaliserIntervalleReleve } from '../reglages-salesblink.js';
 
 /**
  * Intervalle entre deux tours de la boucle `sequence.tick` du worker.
@@ -292,19 +293,21 @@ export async function listerTaches(ctx: Contexte): Promise<EtatTachesMoteur> {
   exiger(ctx, 'viewer');
   const [sourcesRes, scoringRes, enrichissementRes, releveRes] = await Promise.all([
     ctx.ex.query<{ n: number; dernier: string | null }>(
-      // Même critère R72 que `lancerTache('sources')` et que le producteur
-      // (`apps/worker/src/producer.ts`, `enqueueDiscoverForActiveSources`) :
-      // une source sans campagne active rattachée ne compte pas.
-      `select count(distinct s.id)::int as n, max(sr.finished_at) as dernier /* jr:moteur_taches_sources */
-         from sources s
-         left join source_runs sr on sr.source_id = s.id and sr.status = 'success'
-        where s.organization_id = $1
-          and s.is_active = true
-          and exists (
-            select 1 from campaign_sources cs
-              join campaigns c on c.id = cs.campaign_id
-             where cs.source_id = s.id and c.status = 'active'
-          )`,
+      // Point 4 (tour de correction 5) : « 0 source(s) active(s) · aucun
+      // passage encore » alors que des sources avaient déjà tourné — cette
+      // carte compte les sources actives de TOUTE l'organisation (pas
+      // seulement celles rattachées à une campagne ACTIVE : `lancerTache`,
+      // lui, restreint volontairement à ce sous-ensemble déclenchable, un
+      // besoin différent de ce simple état des lieux) et prend le dernier
+      // passage RÉEL (`source_runs.started_at`, sans filtre de statut — même
+      // colonne que l'onglet Sources, `jr:sources_dernier_passage`), pas
+      // seulement les passages réussis.
+      `select
+          (select count(*)::int from sources s where s.organization_id = $1 and s.is_active) as n,
+          (select max(sr.started_at) from source_runs sr
+             join sources s2 on s2.id = sr.source_id
+            where s2.organization_id = $1) as dernier
+        /* jr:moteur_taches_sources */`,
       [ctx.organisationId],
     ),
     ctx.ex.query<{ n: number }>(
@@ -388,4 +391,37 @@ export async function lancerTache(ctx: Contexte, entree: unknown): Promise<{ sou
   }
 
   return { sourcesDeclenchees };
+}
+
+// ---------------------------------------------------------------------------
+// Réglage effectif de la relève des réponses (point 4, tour de correction 5)
+// ---------------------------------------------------------------------------
+
+export interface ReglageReleve {
+  minutes: number;
+  /** `'reglee'` : `sync_interval_min` posé dans Fournisseurs › SalesBlink. `'defaut'` : rien saisi, le worker applique 5 minutes. */
+  origine: 'reglee' | 'defaut';
+}
+
+/**
+ * Carte « Relève des réponses » de l'écran Moteur : disait « Réglé par
+ * l'environnement du serveur. Se change avec un redéploiement, pas ici. » —
+ * faux sur les deux points (aucune variable d'environnement n'existe pour ce
+ * réglage, `normaliserIntervalleReleve` retombe sur un défaut en dur) et
+ * contredisait Fournisseurs › SalesBlink, où « Fréquence de relève (minutes) »
+ * EST éditable (`modifierConfigFournisseur`, `credentials.config.sync_interval_min`,
+ * lu par `releve-salesblink.ts`/`releve-graph.ts` via `normaliserIntervalleReleve`).
+ * Lit le même champ, dans le même ordre de repli que le worker — jamais une
+ * valeur différente de celle réellement appliquée au prochain passage.
+ */
+export async function lireReglageReleve(ctx: Contexte): Promise<ReglageReleve> {
+  exiger(ctx, 'viewer');
+  const res = await ctx.ex.query<{ config: { sync_interval_min?: string } | null }>(
+    `select config from credentials /* jr:moteur_reglage_releve */
+      where organization_id = $1 and provider_id = 'salesblink' and status = 'configured'`,
+    [ctx.organisationId],
+  );
+  const brut = res.rows[0]?.config?.sync_interval_min;
+  const regle = typeof brut === 'string' && brut.trim() !== '';
+  return { minutes: normaliserIntervalleReleve(brut), origine: regle ? 'reglee' : 'defaut' };
 }
