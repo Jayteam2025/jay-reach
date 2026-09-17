@@ -101,17 +101,17 @@ export default async function ReglagesComptePage() {
         }}
       />
 
-      <div className="jr-deux-colonnes">
-        <PreferencesNotifications
-          preferences={preferences}
-          libelles={{
-            titre: t('notifications.titre'),
-            sousTitre: t('notifications.sousTitre'),
-            erreur: t('notifications.erreur'),
-            evenement: libellesEvenements(t),
-          }}
-        />
-      </div>
+      {/* Pleine largeur, comme les autres cartes de cette page (tour de correction F6, point 5) :
+          `.jr-deux-colonnes` avec un seul enfant ne laissait la carte occuper que la moitié. */}
+      <PreferencesNotifications
+        preferences={preferences}
+        libelles={{
+          titre: t('notifications.titre'),
+          sousTitre: t('notifications.sousTitre'),
+          erreur: t('notifications.erreur'),
+          evenement: libellesEvenements(t),
+        }}
+      />
 
       <DeconnexionCompte action={signOut} libelles={{ titre: t('session.titre'), bouton: t('session.bouton') }} />
     </div>

@@ -33,6 +33,14 @@ export interface CorpsFormulaireOrganisationProps {
   onLangueChange: (v: string) => void;
   disabled: boolean;
   libelles: FormulaireOrganisationLibelles;
+  /**
+   * Bouton « Enregistrer » dans le pied de CETTE carte (tour de correction F6, point 5) : posé
+   * ici plutôt qu'en dessous, entre deux cartes, comme il flottait avant — même pied de carte que
+   * les autres formulaires (`.jr-actions.fin`). Optionnel pour ne rien changer aux tests qui
+   * rendent `CorpsFormulaireOrganisation` seul, sans action de sauvegarde.
+   */
+  onEnregistrer?: () => void;
+  erreur?: string | null;
 }
 
 export function CorpsFormulaireOrganisation({
@@ -45,6 +53,8 @@ export function CorpsFormulaireOrganisation({
   onLangueChange,
   disabled,
   libelles,
+  onEnregistrer,
+  erreur,
 }: CorpsFormulaireOrganisationProps) {
   return (
     <Carte titre={libelles.titre}>
@@ -79,6 +89,18 @@ export function CorpsFormulaireOrganisation({
           </div>
         </div>
       </div>
+      {erreur && (
+        <div className="jr-notification erreur" role="alert">
+          {erreur}
+        </div>
+      )}
+      {onEnregistrer && (
+        <div className="jr-actions fin">
+          <Bouton variante="principal" onClick={onEnregistrer} disabled={disabled} aria-busy={disabled}>
+            {libelles.enregistrer}
+          </Bouton>
+        </div>
+      )}
     </Carte>
   );
 }
@@ -119,28 +141,18 @@ export function FormulaireOrganisation({ initial, libelles, erreurLibelle }: For
   }
 
   return (
-    <>
-      <CorpsFormulaireOrganisation
-        nom={nom}
-        onNomChange={setNom}
-        fuseau={fuseau}
-        onFuseauChange={setFuseau}
-        fuseaux={fuseaux}
-        langue={langue}
-        onLangueChange={setLangue}
-        disabled={pending}
-        libelles={libelles}
-      />
-      {erreur && (
-        <div className="jr-notification erreur" role="alert">
-          {erreur}
-        </div>
-      )}
-      <div className="jr-actions fin">
-        <Bouton variante="principal" onClick={enregistrer} disabled={pending} aria-busy={pending}>
-          {libelles.enregistrer}
-        </Bouton>
-      </div>
-    </>
+    <CorpsFormulaireOrganisation
+      nom={nom}
+      onNomChange={setNom}
+      fuseau={fuseau}
+      onFuseauChange={setFuseau}
+      fuseaux={fuseaux}
+      langue={langue}
+      onLangueChange={setLangue}
+      disabled={pending}
+      libelles={libelles}
+      onEnregistrer={enregistrer}
+      erreur={erreur}
+    />
   );
 }
