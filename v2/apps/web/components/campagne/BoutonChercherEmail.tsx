@@ -13,8 +13,8 @@ export interface BoutonChercherEmailProps {
 /**
  * Bouton « Chercher l'email » (onglets Contacts et File du jour d'une
  * campagne) : réutilise la façade existante `enrichirMaintenant`
- * (`apps/web/app/actions/enrichir.ts`), déjà branchée depuis l'écran
- * Prospects (`signals-board.tsx`).
+ * (`apps/web/app/actions/enrichir.ts`), déjà branchée depuis l'ancien écran
+ * Prospects (`signals-board.tsx`, retiré à la tâche 24).
  *
  * Pas de `useRouter`/`useTranslations` ici (labels reçus en props, un
  * rechargement complet plutôt que `router.refresh()`) : rendu dans une table

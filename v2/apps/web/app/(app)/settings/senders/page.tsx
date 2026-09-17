@@ -13,8 +13,7 @@ import { BoutonRelierBoite } from '../../../../components/reglages/BoutonRelierB
  * Réglages › Expéditeurs (tâche 20) : boîtes email (état SalesBlink,
  * plafonds, fenêtre d'envoi, relève des réponses) et comptes LinkedIn.
  * Reconstruite d'après la maquette de la tâche 3 ; remplace le contenu de
- * l'ancienne page (`senders-form.tsx`, désormais orpheline — nettoyage
- * laissé à la tâche 24).
+ * l'ancienne page (`senders-form.tsx`, retirée à la tâche 24).
  */
 export default async function ReglagesExpediteursPage() {
   const ctx = await contexteCourant();

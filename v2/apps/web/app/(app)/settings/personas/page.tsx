@@ -5,7 +5,7 @@ import { FichePersona } from '../../../../components/reglages/FichePersona';
 /**
  * Réglages › Personas (tâche 22), reconstruite d'après la maquette
  * `reglages-personas.html` — remplace le contenu de l'ancienne page
- * (`persona-board.tsx`, désormais orpheline, nettoyage laissé à la tâche 24).
+ * (`persona-board.tsx`, retirée à la tâche 24).
  * Lecture directe (`listerPersonas`), même motif que `lireFiche` dans
  * `contacts/[id]` : pas de façade pour un affichage server-only.
  */

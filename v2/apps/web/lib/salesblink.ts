@@ -35,8 +35,8 @@ export type ResultatBoitesSalesBlink = { ok: true; boites: BoiteSalesBlink[] } |
 
 /**
  * Résout la clé SalesBlink de l'organisation : coffre chiffré d'abord,
- * variable d'environnement en repli — même ordre que `resolveAnthropicKey`
- * (`apps/web/lib/anthropic.ts`).
+ * variable d'environnement en repli — même ordre que `resolveGraphConfig`
+ * (`apps/web/lib/graph.ts`).
  */
 export async function resolveSalesblinkKey(organizationId: string): Promise<string | null> {
   const encryptionKey = process.env.ENCRYPTION_KEY;

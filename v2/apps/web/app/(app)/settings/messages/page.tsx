@@ -6,8 +6,8 @@ import { TableModeles } from '../../../../components/reglages/TableModeles';
 /**
  * Réglages › Messages (tâche 22), nouvelle page d'après la maquette
  * `reglages-messages.html` — la bibliothèque des modèles, distincte de
- * l'ancienne `settings/templates` (laissée en place, plus liée depuis le
- * menu de Réglages depuis la tâche 20 ; retrait complet à la tâche 24).
+ * l'ancienne `settings/templates` (plus liée depuis le menu de Réglages
+ * depuis la tâche 20, retirée à la tâche 24).
  * Lecture directe (`listerModeles`), même motif que `lireFiche` dans
  * `contacts/[id]` : pas de façade pour un affichage server-only.
  */

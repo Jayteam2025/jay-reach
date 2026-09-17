@@ -17,6 +17,8 @@ const APP_ROUTES = [
   '/settings/senders',
   '/settings/messages',
   '/settings/limits',
+  '/settings/engine',
+  '/settings/account',
 ];
 
 describe('decideAccess — garde d’authentification du middleware', () => {
