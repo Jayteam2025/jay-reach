@@ -409,6 +409,34 @@ function graine(id: string): number {
 }
 
 /**
+ * Met en pause une inscription active : plus rien ne part tant qu'un
+ * opérateur ne l'a pas reprise. `currentStep` ramène l'inscription à
+ * l'étape qui vient d'échouer (gate de délivrabilité, échec d'envoi
+ * définitif) — elle n'a pas été jouée, une reprise doit la rejouer, pas la
+ * sauter. `stopReason` ne remplace jamais un motif déjà posé (`coalesce`) :
+ * la première cause d'arrêt est celle qui compte. Une inscription déjà
+ * `replied`, `stopped` ou `completed` n'est jamais modifiée par cet appel
+ * (`where … and status = 'active'`) : la garde vit dans le SQL lui-même,
+ * sans lecture préalable.
+ */
+export async function mettreInscriptionEnPause(
+  pool: Pool,
+  enrollmentId: string,
+  currentStep: number,
+  stopReason: string,
+): Promise<void> {
+  await pool.query(
+    `update enrollments
+        set status = 'paused',
+            next_action_at = null,
+            stop_reason = coalesce(stop_reason, $3),
+            current_step = $2
+      where id = $1 and status = 'active'`,
+    [enrollmentId, currentStep, stopReason],
+  );
+}
+
+/**
  * Traite les inscriptions actives dont `next_action_at <= now`. Pour chacune :
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
  * met à jour l'inscription, et — pour les envois LinkedIn autorisés — prépare un
@@ -773,12 +801,20 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
             },
           });
         } else {
-          // Email non délivrable → action bloquée, rien ne part.
+          // Email non délivrable → action bloquée, rien ne part. L'inscription
+          // est mise en pause SUR L'ÉTAPE BLOQUÉE (`row.current_step`, pas
+          // `result.nextStep` déjà écrit ci-dessus) : sans ça, le tick suivant
+          // tente l'étape suivante, bloquée à son tour, et ainsi de suite
+          // jusqu'à `completed` sans qu'un seul email ne parte jamais.
+          const motif = `email_gate:${gate.reason}`;
           await pool.query(
             `update actions set status = 'blocked', block_reason = $2 where idempotency_key = $1`,
-            [result.action.idempotencyKey, `email_gate:${gate.reason}`],
+            [result.action.idempotencyKey, motif],
           );
-          console.warn(`[tick] email du contact ${row.contact_id} NON poussé (gate: ${gate.reason})`);
+          await mettreInscriptionEnPause(pool, row.id, row.current_step, motif);
+          console.warn(
+            `[tick] email du contact ${row.contact_id} NON poussé (gate: ${gate.reason}) — inscription ${row.id} en pause`,
+          );
         }
       }
     }

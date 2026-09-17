@@ -524,6 +524,7 @@
       "bodyPlaceholder": "Hi '{{'prenom'}}',",
       "variables": "Available variables",
       "variablesHelp": "Click to insert. A variable with no value blocks the send rather than going out empty.",
+      "variablesListHelp": "Imported CSV columns: '{{'liste_nom_de_colonne'}}'.",
       "insert": "Insert",
       "saveMessage": "Save message",
       "messageSaved": "Message saved",
