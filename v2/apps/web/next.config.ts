@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import createNextIntlPlugin from 'next-intl/plugin';
 import type { NextConfig } from 'next';
+import { REDIRECTIONS } from './lib/redirections';
 
 // Le `.env` du projet vit à la racine du monorepo (voir `.env.example`), mais
 // Next ne cherche que dans le dossier de l'application. Sans ce chargement,
@@ -47,6 +48,12 @@ const config: NextConfig = {
   },
   // Les packages internes du monorepo sont transpilés par Next.
   transpilePackages: ['@jay-reach/core', '@jay-reach/i18n', '@jay-reach/ui', '@jay-reach/worker'],
+  // Anciens écrans retirés (tâche 24) : chaque ancienne route redirige (308,
+  // définitif) vers son équivalent dans le nouveau design. Table unique dans
+  // `lib/redirections.ts`, vérifiée par `redirections.test.ts`.
+  async redirects() {
+    return REDIRECTIONS.map((redirection) => ({ ...redirection, permanent: true }));
+  },
   webpack: (webpackConfig) => {
     // Les sources TS des packages internes utilisent des imports ESM explicites
     // (`./x.js`). On laisse webpack les résoudre vers les fichiers `.ts`.
