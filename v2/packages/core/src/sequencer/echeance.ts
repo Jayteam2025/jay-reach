@@ -10,6 +10,7 @@
  * de `pg` respecte déjà sans adaptateur.
  */
 import type { Executeur } from '../executeur.js';
+import { versInstant, type InstantPg } from '../temps.js';
 import { echeanceEtapeSuivante } from './scheduling.js';
 
 export interface ParamsEcheanceApresDepart {
@@ -76,4 +77,30 @@ export async function poserEcheanceApresDepart(
     [params.enrollmentId, new Date(echeance).toISOString(), params.currentStep],
   );
   return (ecrit.rowCount ?? 0) > 0;
+}
+
+/**
+ * Variante de `poserEcheanceApresDepart` pour le RATTRAPAGE
+ * (`rattraperEcheancesManquantes`, `apps/worker/src/handlers/sequence.ts`) :
+ * l'instant de départ n'est pas « maintenant », mais un `dispatched_at` déjà
+ * connu, relu en base. Une colonne `timestamptz` revient du pilote `pg` en
+ * objet `Date` (jamais une chaîne, malgré ce que déclarent souvent les types
+ * de lignes brutes) — `versInstant` (`../temps.js`) l'accepte indifféremment
+ * en `Date` ou en chaîne ISO. Import interne au paquet : l'appelant n'a
+ * besoin que de cette fonction, jamais de `versInstant` lui-même, donc rien à
+ * exporter de plus par l'index du cœur.
+ *
+ * `false` sans la moindre requête si `dispatchedAt` ne représente pas un
+ * instant valide (absent, ou valeur non parseable) — le rattrapage doit
+ * laisser l'inscription intacte plutôt que planifier depuis un instant
+ * inventé.
+ */
+export async function poserEcheanceDepuisDispatch(
+  ex: Executeur,
+  params: ParamsEcheanceApresDepart,
+  dispatchedAt: InstantPg,
+): Promise<boolean> {
+  const instant = versInstant(dispatchedAt);
+  if (instant === null) return false;
+  return poserEcheanceApresDepart(ex, params, new Date(instant));
 }

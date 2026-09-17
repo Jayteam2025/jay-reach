@@ -23,7 +23,6 @@ export * from './transaction.js';
 export * from './reglages-salesblink.js';
 export * from './email-transport/index.js';
 export * from './fonctions/index.js';
-export * from './temps.js';
 
 /** Version du paquet cœur — sert de sonde de santé au worker/web. */
 export const CORE_VERSION = '0.0.0';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { echeanceEtapeSuivante } from './scheduling.js';
-import { poserEcheanceApresDepart } from './echeance.js';
+import { poserEcheanceApresDepart, poserEcheanceDepuisDispatch } from './echeance.js';
 
 const ENROLLMENT_ID = 'enrollment-1';
 const CAMPAIGN_ID = 'campagne-1';
@@ -116,5 +116,56 @@ describe('poserEcheanceApresDepart (issue #111)', () => {
     const ecrit = await poserEcheanceApresDepart(ex, { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 1 }, MAINTENANT);
 
     expect(ecrit).toBe(false);
+  });
+});
+
+describe('poserEcheanceDepuisDispatch (rattrapage, tour de correction 1)', () => {
+  const PARAMS = { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 2 } as const;
+
+  it('dispatched_at en objet `Date` (forme réelle renvoyée par `pg`) : pose l’échéance depuis CET instant, pas `now`', async () => {
+    const dispatchedAt = new Date('2026-09-10T10:04:00.000Z'); // « J », pas « maintenant »
+    const { ex, appels } = creerExecuteurFactice([
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+
+    const ecrit = await poserEcheanceDepuisDispatch(ex, PARAMS, dispatchedAt);
+
+    expect(ecrit).toBe(true);
+    const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+    const attendu = echeanceEtapeSuivante(dispatchedAt.getTime(), ENROLLMENT_ID, 120);
+    expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 2]);
+  });
+
+  it('dispatched_at en chaîne ISO : même résultat qu’en `Date` (`versInstant` accepte les deux)', async () => {
+    const dispatchedAtIso = '2026-09-10T10:04:00.000Z';
+    const { ex: exDate } = creerExecuteurFactice([
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+    const { ex: exChaine, appels: appelsChaine } = creerExecuteurFactice([
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+
+    await poserEcheanceDepuisDispatch(exDate, PARAMS, new Date(dispatchedAtIso));
+    await poserEcheanceDepuisDispatch(exChaine, PARAMS, dispatchedAtIso);
+
+    const poseChaine = appelsChaine.find((a) => POSE_ECHEANCE.test(a.sql));
+    const attendu = echeanceEtapeSuivante(new Date(dispatchedAtIso).getTime(), ENROLLMENT_ID, 120);
+    expect(poseChaine!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 2]);
+  });
+
+  it('dispatched_at absent ou invalide : `false` sans la moindre requête (jamais d’échéance depuis un instant inventé)', async () => {
+    const { ex: exNull, appels: appelsNull } = creerExecuteurFactice([]);
+    const { ex: exInvalide, appels: appelsInvalide } = creerExecuteurFactice([]);
+
+    const ecritNull = await poserEcheanceDepuisDispatch(exNull, PARAMS, null);
+    const ecritInvalide = await poserEcheanceDepuisDispatch(exInvalide, PARAMS, 'pas-une-date');
+
+    expect(ecritNull).toBe(false);
+    expect(ecritInvalide).toBe(false);
+    expect(appelsNull).toHaveLength(0);
+    expect(appelsInvalide).toHaveLength(0);
   });
 });

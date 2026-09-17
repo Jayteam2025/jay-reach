@@ -17,13 +17,11 @@ import {
   resolveSender,
   shiftIntoBusinessHours,
   applyLeadTime,
-  poserEcheanceApresDepart,
-  versInstant,
+  poserEcheanceDepuisDispatch,
   plafondDuJour,
   relectureRequise,
   type BusinessHours,
   type Binding,
-  type InstantPg,
   type SenderInfo,
   type TickChannel,
   type TickStep,
@@ -486,8 +484,9 @@ export async function mettreInscriptionEnPause(
  * l'action précédente), jamais `now` — le résultat doit être identique à
  * celui qu'aurait posé le gestionnaire d'envoi s'il avait réussi du premier
  * coup. `dispatched_at` est un `timestamptz` renvoyé en objet `Date` par
- * `pg` : `versInstant` (`@jay-reach/core`) l'accepte indifféremment en
- * `Date` ou en chaîne.
+ * `pg` : `poserEcheanceDepuisDispatch` (`@jay-reach/core`) l'accepte
+ * indifféremment en `Date` ou en chaîne (`versInstant`, interne au cœur —
+ * cette fonction-ci suffit, rien d'autre à importer).
  *
  * Boucle bornée (`limit`) plutôt qu'une requête ensembliste : le calcul de
  * l'échéance (jitter déterministe) est une fonction JS pure
@@ -506,7 +505,7 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
     // L'action de l'étape PRÉCÉDENTE (rang `current_step - 1`), retrouvée par
     // rang ordinal (`offset`/`limit`), pas par égalité de `position` (issue
     // #115) — même défaut que corrigé dans `poserEcheanceApresDepart`.
-    const precedente = await pool.query<{ status: string; dispatched_at: InstantPg }>(
+    const precedente = await pool.query<{ status: string; dispatched_at: string | Date | null }>(
       `select a.status, a.dispatched_at
          from sequence_steps s
          join actions a on a.step_id = s.id and a.enrollment_id = $2
@@ -518,12 +517,10 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
     );
     const action = precedente.rows[0];
     if (!action || (action.status !== 'dispatched' && action.status !== 'delivered')) continue;
-    const instant = versInstant(action.dispatched_at);
-    if (instant === null) continue;
-    const ecrit = await poserEcheanceApresDepart(
+    const ecrit = await poserEcheanceDepuisDispatch(
       pool,
       { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
-      new Date(instant),
+      action.dispatched_at,
     );
     if (ecrit) rattrapees += 1;
   }
