@@ -833,4 +833,30 @@ describe('reprendreInscription', () => {
     // pour cette étape) — aucun comportement spécial à coder pour ce cas.
     expect(appelAction).toBeDefined();
   });
+
+  // M3 (Mineur, revue finale du 14/09) : rejouer une action qui porte déjà
+  // une preuve d'envoi (`payload->>'message_id'`, posée par la relève une
+  // fois SalesBlink confirmé) peut doubler l'email. La reprise réactive quand
+  // même l'inscription, mais ne remet PAS l'action `scheduled` — et le dit
+  // dans le journal plutôt que de rejouer silencieusement.
+  it('réactive l’inscription sans rejouer une action qui porte déjà une preuve d’envoi', async () => {
+    const ctx = faux({
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_verif_envoi': [{ id: 'action-deja-envoyee' }],
+    });
+
+    await reprendreInscription(ctx, { inscriptionId });
+
+    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+    expect(appelInscription).toBeDefined();
+
+    // L'action déjà partie n'est jamais rejouée.
+    const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
+    expect(appelAction).toBeUndefined();
+
+    const journal = appelsDe(ctx).find((a) => /insert into audit_events/i.test(String(a[0])));
+    expect(journal).toBeDefined();
+    expect(String((journal?.[1] as unknown[])[5])).toMatch(/déjà parti/i);
+  });
 });

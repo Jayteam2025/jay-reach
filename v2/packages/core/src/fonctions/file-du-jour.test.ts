@@ -3,6 +3,7 @@ import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurIntrouvable } from './contexte.js';
+import { ErreurConflit } from './campagnes.js';
 import {
   apercuEnvoi,
   approuverEnvoi,
@@ -249,6 +250,32 @@ describe('relancerEnvoi', () => {
       'action_retried',
       JSON.stringify({ libelle: 'Envoi relancé.' }),
     ]);
+  });
+
+  // M3 (Mineur, revue finale du 14/09) : rejouer une action qui porte déjà
+  // une preuve d'envoi (`payload->>'message_id'`, posée par la relève une
+  // fois SalesBlink confirmé) peut doubler l'email — issue #114. La requête
+  // de relance exclut donc ces actions, et une action trouvée mais déjà
+  // partie lève une erreur dédiée plutôt qu'ErreurIntrouvable (qui dirait
+  // à tort qu'il n'y a rien à relancer).
+  it('exclut du critère de relance une action qui porte déjà une preuve d’envoi', async () => {
+    const ctx = faux({ 'jr:relancer_envoi': [{ contact_id: contactId }] });
+    await relancerEnvoi(ctx, { actionId });
+    const ecriture = appelsDe(ctx).find((a) => /jr:relancer_envoi/i.test(String(a[0])));
+    expect(String(ecriture?.[0])).toMatch(/\(a\.payload ->> 'message_id'\) is null/);
+  });
+
+  it('lève ErreurConflit quand l’action trouvée porte déjà une preuve d’envoi', async () => {
+    const ctx = faux({
+      'jr:relancer_envoi': [], // exclue par le filtre payload->>message_id is null
+      'jr:relancer_deja_parti': [{ id: actionId }],
+    });
+    await expect(relancerEnvoi(ctx, { actionId })).rejects.toThrow(ErreurConflit);
+  });
+
+  it('lève toujours ErreurIntrouvable quand l’action n’existe vraiment pas (pas de preuve d’envoi non plus)', async () => {
+    const ctx = faux({ 'jr:relancer_envoi': [], 'jr:relancer_deja_parti': [] });
+    await expect(relancerEnvoi(ctx, { actionId })).rejects.toThrow(ErreurIntrouvable);
   });
 });
 

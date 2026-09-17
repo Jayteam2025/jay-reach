@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable } from './contexte.js';
+import { ErreurConflit } from './campagnes.js';
 import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
@@ -214,6 +215,13 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
  * l'organisation, la repasse `scheduled` (reprise par le prochain passage du
  * moteur), efface l'ancienne erreur et reprogramme `scheduled_for` à
  * maintenant.
+ *
+ * M3 (Mineur, revue finale du 14/09) : exclut une action qui porte déjà une
+ * preuve d'envoi (`payload->>'message_id'`, posée par la relève une fois
+ * SalesBlink confirmé) — la rejouer doublerait le message (issue #114). Si
+ * l'action existe mais porte cette preuve, `ErreurConflit` plutôt
+ * qu'`ErreurIntrouvable`, pour ne pas dire à tort qu'il n'y a rien à
+ * relancer.
  */
 export async function relancerEnvoi(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
@@ -224,11 +232,20 @@ export async function relancerEnvoi(ctx: Contexte, entree: unknown): Promise<voi
         set status = 'scheduled', scheduled_for = now(), error = null
        from enrollments e
       where a.id = $1 and a.organization_id = $2 and a.enrollment_id = e.id and a.status = 'failed'
+        and (a.payload ->> 'message_id') is null
       returning e.contact_id`,
     [actionId, ctx.organisationId],
   );
   const ligne = res.rows[0];
-  if (!ligne) throw new ErreurIntrouvable('Envoi en échec');
+  if (!ligne) {
+    const dejaParti = await ctx.ex.query<{ id: string }>(
+      `select id from actions /* jr:relancer_deja_parti */
+        where id = $1 and organization_id = $2 and status = 'failed' and (payload ->> 'message_id') is not null`,
+      [actionId, ctx.organisationId],
+    );
+    if ((dejaParti.rowCount ?? 0) > 0) throw new ErreurConflit('Cet envoi est déjà parti.');
+    throw new ErreurIntrouvable('Envoi en échec');
+  }
 
   await ecrireEvenementEnvoi(ctx, 'action_retried', ligne.contact_id, 'Envoi relancé.');
 }

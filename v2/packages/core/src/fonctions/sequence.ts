@@ -860,14 +860,19 @@ interface LigneInscriptionReprise {
   current_step: number;
 }
 
-async function ecrireEvenementReprise(ctx: Contexte, contactId: string | null, campagneId: string): Promise<void> {
+async function ecrireEvenementReprise(
+  ctx: Contexte,
+  contactId: string | null,
+  campagneId: string,
+  libelle: string = 'Inscription reprise.',
+): Promise<void> {
   try {
     await ecrireEvenement(ctx.ex, {
       organisationId: ctx.organisationId,
       entityType: 'contact',
       entityId: contactId,
       action: 'enrollment_resumed',
-      diff: { libelle: 'Inscription reprise.', campagneId },
+      diff: { libelle, campagneId },
       actorId: ctx.utilisateurId,
     });
   } catch (err) {
@@ -928,6 +933,28 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
   const etapeId = etapeRes.rows[0]?.id;
   if (etapeId) {
     const cle = actionIdempotencyKey(inscriptionId, etapeId);
+    // M3 (Mineur, revue finale du 14/09) : ne pas rejouer une action qui
+    // porte déjà une preuve d'envoi (`payload->>'message_id'`, posée par la
+    // relève une fois SalesBlink confirmé) — un envoi accepté par le
+    // transport mais dont la réponse HTTP se serait perdue avant que
+    // l'action soit marquée `failed`/`blocked` doublerait sinon le message.
+    // L'inscription est quand même réactivée (fait plus haut) ; seule
+    // l'action n'est pas rejouée, et le journal le dit.
+    const dejaEnvoyee = await ctx.ex.query<{ id: string }>(
+      `select id from actions /* jr:reprendre_verif_envoi */
+        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')
+          and (payload ->> 'message_id') is not null`,
+      [cle, ctx.organisationId],
+    );
+    if ((dejaEnvoyee.rowCount ?? 0) > 0) {
+      await ecrireEvenementReprise(
+        ctx,
+        ligne.contact_id,
+        ligne.campaign_id,
+        'Inscription reprise sans rejouer un envoi déjà parti.',
+      );
+      return;
+    }
     await ctx.ex.query(
       `update actions /* jr:reprendre_action */
           set status = 'scheduled', scheduled_for = now(), error = null, block_reason = null
