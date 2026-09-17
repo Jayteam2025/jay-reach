@@ -149,7 +149,14 @@ export function composeTick(input: ComposeTickInput): ComposeTickResult {
   }
 
   const nextStep = currentStep + 1;
-  const nextActionAtMs = isLast ? null : now + (steps[nextStep]?.delayHours ?? 0) * 3_600_000;
+  // L'échéance de l'étape suivante n'est plus posée ICI, à la création de
+  // l'action (issue #111) : elle attend le DÉPART RÉEL de cette action
+  // (transition `scheduled -> dispatched`), posée par le gestionnaire d'envoi
+  // concerné (`echeanceEtapeSuivante`, scheduling.ts). La poser à la création
+  // suppose que l'envoi part aussitôt ; quand un lot s'étale sur plusieurs
+  // jours (expéditeurs saturés), l'étape suivante devenait due avant même que
+  // celle-ci ne soit partie.
+  const nextActionAtMs = null;
   return {
     action: { ...base, status: 'scheduled' },
     nextStatus: isLast ? 'completed' : 'active',
