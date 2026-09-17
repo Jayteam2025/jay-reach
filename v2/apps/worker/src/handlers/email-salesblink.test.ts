@@ -136,6 +136,7 @@ const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
 const UPDATE_ECHEC = /status = 'failed'/i;
+const UPDATE_ENROLLMENT_PAUSE = /update enrollments\s+set status = 'paused'/i;
 const UPDATE_SKIPPED = /status = 'skipped'/i;
 const UPDATE_ESSAIS = /jsonb_build_object\('essais'/i;
 const SELECT_ESSAIS = /payload ->> 'essais'/i;
@@ -540,6 +541,9 @@ describe('envoyerEmailSalesBlink', () => {
     // L'action ne doit pas etre marquee bloquee ni echouee : elle reste pending.
     expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
     expect(appels.some((a) => UPDATE_ECHEC.test(a.sql))).toBe(false);
+    // Nouvel essai (pas un échec définitif) : l'inscription n'est pas touchée,
+    // elle continuera d'avancer normalement au prochain tick.
+    expect(appels.some((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql))).toBe(false);
   });
 
   it('une action déjà dispatched est ignorée (rejeu ou job concurrent)', async () => {
@@ -608,6 +612,69 @@ describe('envoyerEmailSalesBlink', () => {
     const payload = JSON.parse(succes!.values[2] as string) as Record<string, unknown>;
     expect(payload.mode).toBe('relance_repli');
     expect(payload.subject).toBe('Re: Sujet original');
+  });
+
+  it('erreur client (échec définitif) : action failed ET inscription mise en pause sur l’étape en échec', async () => {
+    const client = clientFactice({
+      creerListe: vi.fn(async () => {
+        throw new ErreurSalesBlink('client', 422, 'Adresse rejetée');
+      }),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 1 }]) },
+        { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: null }]) },
+        { motif: UPDATE_ECHEC, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const echec = appels.find((a) => UPDATE_ECHEC.test(a.sql));
+    expect(echec).toBeDefined();
+    expect(echec!.values[0]).toBe(ACTION_ID);
+
+    const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
+    expect(pause).toBeDefined();
+    // L'inscription est ramenée sur l'étape qui vient d'échouer (sa position),
+    // pas laissée sur l'étape suivante où le tick l'avait déjà avancée : sans
+    // ça, un second email pourrait partir alors que le premier n'est jamais
+    // sorti.
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 1, 'salesblink_client_error']);
+    // Une inscription déjà `replied`/`stopped`/`completed` ne doit jamais être
+    // rouverte par cette requête : la garde vit dans le SQL lui-même, pas dans
+    // une lecture préalable.
+    expect(pause!.sql).toMatch(/where id = \$1 and status = 'active'/i);
+    // `stop_reason` ne doit jamais écraser un motif déjà posé.
+    expect(pause!.sql).toMatch(/coalesce\(stop_reason, \$3\)/i);
+  });
+
+  it('erreur serveur épuisant les essais (échec définitif) : inscription mise en pause comme une erreur client', async () => {
+    const client = clientFactice({
+      creerListe: vi.fn(async () => {
+        throw new ErreurSalesBlink('serveur', 503, 'Indisponible');
+      }),
+    });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: 5 }]) },
+        { motif: UPDATE_ECHEC, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => UPDATE_ECHEC.test(a.sql))).toBe(true);
+    const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
+    expect(pause).toBeDefined();
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 0, 'salesblink_client_error']);
   });
 });
 
