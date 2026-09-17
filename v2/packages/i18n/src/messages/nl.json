@@ -725,6 +725,7 @@
         "delayHint": "Al geplande opvolgingen behouden de oude vertraging.",
         "delayUnitDays": "dagen",
         "delayUnitHours": "uur",
+        "delayUnit": "Eenheid van de vertraging",
         "subject": "Onderwerp",
         "body": "Inhoud",
         "bodyHint": "Variabelen: klik om op de cursorpositie in te voegen. Nooit een terugval op '{{'prenom'}}': zonder voornaam wordt de verzending geblokkeerd. De handtekening van de mailbox wordt aan de verzending toegevoegd.",

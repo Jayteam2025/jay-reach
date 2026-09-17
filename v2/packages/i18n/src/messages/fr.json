@@ -725,6 +725,7 @@
         "delayHint": "Les relances déjà planifiées gardent l'ancien délai.",
         "delayUnitDays": "jours",
         "delayUnitHours": "heures",
+        "delayUnit": "Unité du délai",
         "subject": "Objet",
         "body": "Corps",
         "bodyHint": "Variables : cliquez pour insérer au curseur. Jamais de repli sur '{{'prenom'}}' : sans prénom, l'envoi est bloqué. La signature de la boîte est ajoutée à l'envoi.",

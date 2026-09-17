@@ -725,6 +725,7 @@
         "delayHint": "Follow-ups already scheduled keep the old delay.",
         "delayUnitDays": "days",
         "delayUnitHours": "hours",
+        "delayUnit": "Delay unit",
         "subject": "Subject",
         "body": "Body",
         "bodyHint": "Variables: click to insert at the cursor. Never a fallback for '{{'prenom'}}': without a first name, the send is blocked. The mailbox signature is added to the send.",

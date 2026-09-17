@@ -239,18 +239,28 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
             </select>
           </Champ>
           <div>
+            {/* Le <span> ci-dessous reste purement visuel (un seul groupe pour les deux champs,
+                sur la même ligne) : chaque contrôle reçoit son propre `aria-label` (tour de
+                correction F6, point 26) plutôt qu'un `label[for]` par-dessus la mise en page en
+                grille des deux `Champ` — les poser côte à côte avec des hauteurs de libellé
+                différentes les aurait désalignés verticalement. */}
             <span className="jr-libelle">{t('drawer.delay')}</span>
             <div className="ligne">
               <Champ>
                 <input
                   type="number"
                   min={0}
+                  aria-label={t('drawer.delay')}
                   value={delaiValeur}
                   onChange={(e) => setDelaiValeur(e.target.value)}
                 />
               </Champ>
               <Champ>
-                <select value={delaiUnite} onChange={(e) => setDelaiUnite(e.target.value as 'heures' | 'jours')}>
+                <select
+                  aria-label={t('drawer.delayUnit')}
+                  value={delaiUnite}
+                  onChange={(e) => setDelaiUnite(e.target.value as 'heures' | 'jours')}
+                >
                   <option value="heures">{t('drawer.delayUnitHours')}</option>
                   <option value="jours">{t('drawer.delayUnitDays')}</option>
                 </select>
@@ -267,8 +277,10 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
         )}
 
         <div>
-          <span className="jr-libelle">{t('drawer.body')}</span>
-          <Champ>
+          {/* `Champ` porte désormais son propre libellé (tour de correction F6, point 26) : le
+              `<textarea>` avait un id (`useId()`) mais aucun `label[for]` réel, seulement ce
+              `<span>` visuel juste au-dessus. */}
+          <Champ libelle={t('drawer.body')}>
             <textarea
               ref={corpsRef}
               rows={9}
