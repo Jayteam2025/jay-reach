@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
-import { tickDueEnrollments, mettreInscriptionEnPause } from './sequence.js';
+import { echeanceEtapeSuivante } from '@jay-reach/core';
+import { tickDueEnrollments, mettreInscriptionEnPause, poserEcheanceApresDepart } from './sequence.js';
 
 const ORG_ID = 'org-1';
 const ENROLLMENT_ID = 'enrollment-1';
@@ -105,6 +106,11 @@ const UPDATE_PAUSE = /update enrollments\s+set status = 'paused'/i;
 // des envois déjà partis pour l'étape.
 const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and key = \$2/i;
 const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
+// Garde départ réel (issue #111) : statut de l'action de l'étape PRÉCÉDENTE.
+const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 and step_id = \$2/i;
+// `poserEcheanceApresDepart` (issue #111) : échéance posée au départ réel.
+const DELAI_ETAPE_SUIVANTE = /select delay_hours from sequence_steps where campaign_id = \$1 and position = \$2/i;
+const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
 /** Gestionnaires par défaut : une seule inscription due, une étape email, un
  * expéditeur actif disponible, rien qui défère ou bloque en amont du gate. */
@@ -142,6 +148,10 @@ function gestionnairesBase(overridesLigne: Record<string, unknown> = {}): Gestio
     // Défaut = 0 (aucune ligne en base) : court-circuite avant le comptage
     // des envois déjà partis, sans casser les tests qui ignorent I2.
     { motif: ORG_SETTINGS, repondre: () => ligne([]) },
+    // `current_step: 0` par défaut (`ligneDue()`) : jamais interrogée dans les
+    // tests existants (pas d'étape précédente), gardée pour les tests qui
+    // avancent `current_step` sans avoir à définir leur propre défaut « part ».
+    { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'dispatched' }]) },
     { motif: INSERT_ACTION, repondre: () => ({ rows: [{ id: ACTION_ID }], rowCount: 1 }) },
     { motif: INSERT_BINDING, repondre: () => ligne([]) },
     { motif: UPDATE_AVANCEMENT, repondre: () => ligne([]) },
@@ -277,5 +287,109 @@ describe('mettreInscriptionEnPause', () => {
     expect(appel.sql).toMatch(/current_step = \$2/i);
     expect(appel.sql).toMatch(/where id = \$1 and status = 'active'/i);
     expect(appel.values).toEqual([ENROLLMENT_ID, 2, 'salesblink_client_error']);
+  });
+});
+
+describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
+  /** Deux étapes : `etape-0` (censée être déjà partie) puis `STEP_ID` (courante). */
+  function deuxEtapes(): Reponse {
+    return ligne([
+      { id: 'etape-0', channel: 'email', delay_hours: 0, template_parent_id: null },
+      { id: STEP_ID, channel: 'email', delay_hours: 24, template_parent_id: null },
+    ]);
+  }
+
+  it('action précédente encore `scheduled` : l’inscription n’avance pas, un seul avertissement, aucune exception', async () => {
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'scheduled' }]) } : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_AVANCEMENT.test(a.sql))).toBe(false);
+    const requetePrecedente = appels.find((a) => ACTION_PRECEDENTE.test(a.sql));
+    expect(requetePrecedente).toBeDefined();
+    expect(requetePrecedente!.values).toEqual([ENROLLMENT_ID, 'etape-0']);
+    expect(avertissement).toHaveBeenCalledTimes(1);
+    expect(avertissement.mock.calls[0]![0]).toContain(ENROLLMENT_ID);
+
+    avertissement.mockRestore();
+  });
+
+  it('action précédente `failed` : même garde, même avertissement, aucune exception', async () => {
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'failed' }]) } : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(false);
+    expect(avertissement).toHaveBeenCalledTimes(1);
+
+    avertissement.mockRestore();
+  });
+
+  it('action précédente `dispatched` : la garde ne bloque pas le cas sain, l’inscription avance normalement', async () => {
+    const gestionnaires = gestionnairesBase({ current_step: 1 }).map((g) =>
+      g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g,
+    );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(true);
+    expect(appels.some((a) => UPDATE_AVANCEMENT.test(a.sql))).toBe(true);
+  });
+
+  it('`current_step` à 0 (première étape) : aucune étape précédente à vérifier, pas de requête émise', async () => {
+    const { pool, appels } = creerPoolFactice(gestionnairesBase());
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => ACTION_PRECEDENTE.test(a.sql))).toBe(false);
+  });
+});
+
+describe('poserEcheanceApresDepart (issue #111)', () => {
+  const MAINTENANT = new Date('2026-09-17T10:04:00.000Z');
+
+  it('étape suivante trouvée : pose l’échéance avec le même jitter/graine que le core', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ligne([]) },
+    ]);
+
+    await poserEcheanceApresDepart(pool, { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 2 }, MAINTENANT);
+
+    const requeteDelai = appels.find((a) => DELAI_ETAPE_SUIVANTE.test(a.sql));
+    expect(requeteDelai).toBeDefined();
+    expect(requeteDelai!.values).toEqual([CAMPAIGN_ID, 2]);
+
+    const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+    expect(pose).toBeDefined();
+    const attendu = echeanceEtapeSuivante(MAINTENANT.getTime(), ENROLLMENT_ID, 120);
+    expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 2]);
+    // Garde : jamais posée sur une inscription déjà repartie ailleurs.
+    expect(pose!.sql).toMatch(/status = 'active'/i);
+    expect(pose!.sql).toMatch(/next_action_at is null/i);
+    expect(pose!.sql).toMatch(/current_step = \$3/i);
+  });
+
+  it('dernière étape (aucune ligne trouvée en base) : n’écrit rien', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([]) }]);
+
+    await poserEcheanceApresDepart(pool, { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 5 }, MAINTENANT);
+
+    expect(appels).toHaveLength(1); // seule la lecture du délai, aucune écriture
   });
 });

@@ -37,7 +37,12 @@ import {
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
-import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant } from './sequence.js';
+import {
+  chargerContraintesSender,
+  mettreInscriptionEnPause,
+  poserEcheanceApresDepart,
+  quotaSenderRestant,
+} from './sequence.js';
 import type { DispatchJob } from './dispatch.js';
 
 export const SALESBLINK_PROVIDER = 'salesblink';
@@ -588,6 +593,13 @@ export async function envoyerEmailSalesBlink(
 
     // 7. Succès.
     await pool.query('select app.mark_action_dispatched($1)', [actionId]);
+    // Échéance de l'étape suivante posée au DÉPART RÉEL (issue #111), pas à la
+    // création de cette action : voir `poserEcheanceApresDepart`.
+    await poserEcheanceApresDepart(pool, {
+      enrollmentId: email.enrollmentId,
+      campaignId: ligne.campaign_id,
+      currentStep: ligne.current_step,
+    });
     await pool.query(
       `update actions set provider_ref = $2,
               payload = (coalesce(payload, '{}'::jsonb) - 'mode_force') || $3::jsonb

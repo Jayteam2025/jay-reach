@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
+import { echeanceEtapeSuivante } from '@jay-reach/core';
 import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
 import { envoyerEmailSalesBlink, assurerObjetsEtape, heuresEnvoiSalesBlink, type ClientSalesBlink } from './email-salesblink.js';
 import type { DispatchJob } from './dispatch.js';
@@ -148,6 +149,11 @@ const THREAD_LOOKUP = /select id from threads where/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const THREAD_UPDATE = /update threads set last_message_at/i;
 const AUDIT_INSERT = /insert into audit_events/i;
+// `poserEcheanceApresDepart` (issue #111) : posée au départ réel, pas à la
+// création de l'action. Motifs distincts de `ETAPE_POSITION` (mot-clé
+// `delay_hours`, jamais présent dans la requête de `assurerObjetsEtape`).
+const DELAI_ETAPE_SUIVANTE = /select delay_hours from sequence_steps where campaign_id = \$1 and position = \$2/i;
+const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -189,6 +195,8 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: null }]) },
     { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([]) },
     { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
+    { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 48 }]) },
+    { motif: POSE_ECHEANCE, repondre: () => ligne([]) },
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
     { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
     { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
@@ -570,6 +578,53 @@ describe('envoyerEmailSalesBlink', () => {
     const payload = JSON.parse(succes!.values[2] as string) as Record<string, unknown>;
     expect(payload.mode).toBe('relance');
     expect(payload.reply_task_id).toBe('tache-reponse-1');
+  });
+
+  it('échéance de l’étape suivante posée au DÉPART RÉEL (issue #111), même jitter que le tick', async () => {
+    const maintenant = new Date('2026-09-17T10:04:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(maintenant);
+    try {
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([{ message_id: 'msg-1', subject: 'Objet' }]) },
+          { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+        ),
+      );
+
+      await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+      const requeteDelai = appels.find((a) => DELAI_ETAPE_SUIVANTE.test(a.sql));
+      expect(requeteDelai).toBeDefined();
+      // `current_step` (déjà avancé par le tick, N+1) donne la POSITION de
+      // l'étape suivante — pas celle qui vient de partir.
+      expect(requeteDelai!.values).toEqual([CAMPAIGN_ID, 1]);
+
+      const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+      expect(pose).toBeDefined();
+      const attendu = echeanceEtapeSuivante(maintenant.getTime(), ENROLLMENT_ID, 120);
+      expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 1]);
+      // Garde (issue #111) : jamais posée sur une inscription déjà repartie
+      // ailleurs (échéance déjà présente, mise en pause, ou étape déplacée).
+      expect(pose!.sql).toMatch(/status = 'active'/i);
+      expect(pose!.sql).toMatch(/next_action_at is null/i);
+      expect(pose!.sql).toMatch(/current_step = \$3/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dernière étape : aucune étape suivante en base → aucune échéance posée', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([{ message_id: 'msg-1', subject: 'Objet' }]) },
+        { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    expect(appels.some((a) => POSE_ECHEANCE.test(a.sql))).toBe(false);
   });
 
   it('429 : l’action reste en attente et essais vaut 1', async () => {

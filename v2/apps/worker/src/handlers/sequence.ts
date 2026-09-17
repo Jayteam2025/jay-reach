@@ -17,7 +17,7 @@ import {
   resolveSender,
   shiftIntoBusinessHours,
   applyLeadTime,
-  jitterMs,
+  echeanceEtapeSuivante,
   plafondDuJour,
   relectureRequise,
   type BusinessHours,
@@ -442,20 +442,6 @@ const PERSONNES_PAR_ENTREPRISE_ET_PAR_JOUR = Number(process.env.ACCOUNT_PEOPLE_P
  */
 const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
 
-/** Espacement toléré autour de la date prévue : ±20 % (docs/04). */
-const RATIO_JITTER = 0.2;
-
-/**
- * Graine déterministe tirée d'un identifiant. Le jitter doit disperser les
- * envois sans être imprévisible : rejouer un tick doit redonner la même date,
- * sinon une reprise après incident déplacerait toutes les échéances.
- */
-function graine(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return h;
-}
-
 /**
  * Met en pause une inscription active : plus rien ne part tant qu'un
  * opérateur ne l'a pas reprise. `currentStep` ramène l'inscription à
@@ -481,6 +467,47 @@ export async function mettreInscriptionEnPause(
             current_step = $2
       where id = $1 and status = 'active'`,
     [enrollmentId, currentStep, stopReason],
+  );
+}
+
+/**
+ * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action qui vient
+ * d'être marquée `dispatched` (issue #111) : le tick ne la pose plus à la
+ * création (`composeTick`), pour ne pas fixer une échéance avant de savoir
+ * quand l'envoi partira vraiment — un lot peut s'étaler sur plusieurs jours
+ * quand les expéditeurs sont saturés, et l'étape suivante ne doit jamais
+ * devenir due avant que celle-ci ne soit réellement partie. Appelée par les
+ * deux gestionnaires d'envoi (SalesBlink ici, extension LinkedIn côté
+ * `apps/web/lib/linkedin/queue.ts`) juste après leur confirmation de départ.
+ *
+ * N'écrit rien si l'inscription n'est plus `active`, si une échéance est déjà
+ * posée (`next_action_at` non nul), ou si `currentStep` ne correspond plus à
+ * l'étape attendue : la garde vit dans le SQL lui-même (`where …`), sans
+ * lecture préalable, pour qu'un rejeu du dispatch (idempotent côté
+ * `mark_action_dispatched`) ne déplace jamais une échéance déjà calculée, et
+ * qu'une inscription mise en pause entre-temps ne soit pas reprogrammée dans
+ * son dos. Même jitter et même graine que l'ancien calcul du tick, à partir du
+ * même identifiant d'inscription (`echeanceEtapeSuivante`, `@jay-reach/core`).
+ */
+export async function poserEcheanceApresDepart(
+  pool: Pool,
+  params: { readonly enrollmentId: string; readonly campaignId: string; readonly currentStep: number },
+  now: Date = new Date(),
+): Promise<void> {
+  const etape = await pool.query<{ delay_hours: number }>(
+    `select delay_hours from sequence_steps where campaign_id = $1 and position = $2`,
+    [params.campaignId, params.currentStep],
+  );
+  const echeance = echeanceEtapeSuivante(now.getTime(), params.enrollmentId, etape.rows[0]?.delay_hours ?? null);
+  if (echeance === null) return; // dernière étape : rien à planifier, déjà `completed`.
+  await pool.query(
+    `update enrollments
+        set next_action_at = $2
+      where id = $1
+        and status = 'active'
+        and next_action_at is null
+        and current_step = $3`,
+    [params.enrollmentId, new Date(echeance).toISOString(), params.currentStep],
   );
 }
 
@@ -540,6 +567,30 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     );
     const steps: TickStep[] = stepsRes.rows.map((s) => ({ id: s.id, channel: s.channel, delayHours: s.delay_hours }));
     const step = stepsRes.rows[row.current_step];
+
+    // Garde (issue #111) : une inscription due dont l'action de l'étape
+    // PRÉCÉDENTE n'est encore ni `dispatched` ni `delivered` (encore
+    // `scheduled`, ou `failed`/`blocked`) n'avance pas. Ne doit plus se
+    // produire une fois l'échéance posée au départ réel (1 et 2 ci-dessus),
+    // mais protège les inscriptions déjà en base au déploiement (échéance
+    // posée à la création, avant ce correctif) et les rejeux — jamais
+    // d'exception, l'inscription est laissée telle quelle pour le prochain tick.
+    if (row.current_step > 0) {
+      const etapePrecedente = stepsRes.rows[row.current_step - 1];
+      if (etapePrecedente) {
+        const precedente = await pool.query<{ status: string }>(
+          `select status from actions where enrollment_id = $1 and step_id = $2`,
+          [row.id, etapePrecedente.id],
+        );
+        const statutPrecedent = precedente.rows[0]?.status;
+        if (statutPrecedent !== 'dispatched' && statutPrecedent !== 'delivered') {
+          console.warn(
+            `[tick] inscription ${row.id} due mais l'action de l'étape précédente n'est pas partie (statut ${statutPrecedent ?? 'introuvable'}) — ignorée`,
+          );
+          continue;
+        }
+      }
+    }
 
     // Envoyabilité + validation + suppression, selon le canal de l'étape courante.
     let sendable = true;
@@ -802,14 +853,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       continue; // déjà traité par un tick précédent
     }
 
-    // Jitter sur la prochaine échéance : sans lui, les relances d'une même
-    // campagne tombent toutes à la même minute, ce qui se voit. Déterministe,
-    // pour qu'un rejeu ne déplace pas les échéances déjà calculées.
-    const prochaineEcheance =
-      result.nextActionAtMs !== null
-        ? result.nextActionAtMs +
-          jitterMs(Math.max(0, result.nextActionAtMs - now.getTime()), RATIO_JITTER, graine(row.id))
-        : null;
+    // L'échéance de l'étape suivante n'est plus calculée ici (issue #111) :
+    // `composeTick` renvoie toujours `null` pour une action tout juste créée
+    // `scheduled` (branches `blocked`/`pending_approval`/dernière étape le
+    // valaient déjà) — elle attend le départ réel de CETTE action, posé par
+    // `poserEcheanceApresDepart` depuis le gestionnaire d'envoi concerné.
+    const prochaineEcheance = result.nextActionAtMs;
 
     // Avancement de l'inscription.
     const terminal = result.nextStatus === 'completed' || result.nextStatus === 'stopped';
