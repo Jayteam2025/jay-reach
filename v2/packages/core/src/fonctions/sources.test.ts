@@ -59,48 +59,58 @@ describe('listerSourcesCampagne', () => {
   });
 
   it('mappe une source adzuna (source_providers rattaché) et lit le dernier passage dans source_runs', async () => {
-    const aujourdhui = new Date().toISOString().slice(0, 10);
-    const { ctx } = faux(
-      {
-        'jr:sources_lister': [
-          {
-            id: 'src-1',
-            name: 'Adzuna · Test',
-            config: {
-              sourceType: 'adzuna',
-              motsCles: ['directeur commercial'],
-              lieux: [],
-              keywords: ['directeur commercial'],
+    // Horloge figée en milieu de journée UTC (Tour de correction 1, revue de F2) : le jour à
+    // Paris (fuseau par défaut de `listerSourcesCampagne` depuis I5) coïncide alors avec le jour
+    // UTC, sans ambiguïté possible — `new Date().toISOString()` non figé risquait de calculer un
+    // jour différent de celui que le code retient entre 23h et 1h UTC selon la saison.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-10T12:00:00.000Z'));
+    try {
+      const aujourdhui = '2026-09-10';
+      const { ctx } = faux(
+        {
+          'jr:sources_lister': [
+            {
+              id: 'src-1',
+              name: 'Adzuna · Test',
+              config: {
+                sourceType: 'adzuna',
+                motsCles: ['directeur commercial'],
+                lieux: [],
+                keywords: ['directeur commercial'],
+              },
+              is_active: true,
+              schedule: 'every 6h',
             },
-            is_active: true,
-            schedule: 'every 6h',
-          },
-        ],
-        'jr:sources_dernier_passage': [
-          {
-            source_id: 'src-1',
-            started_at: '2026-09-10T09:00:00.000Z',
-            items_found: 58,
-            items_new: 6,
-          },
-        ],
-        'jr:sources_retenus_7j': [{ source_id: 'src-1', jour: aujourdhui, n: 6 }],
-        'jr:sources_providers_rattaches': [{ source_id: 'src-1', provider_id: 'adzuna' }],
-      },
-      'viewer',
-    );
-    const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
-    expect(carte).toBeDefined();
-    expect(carte!.providerId).toBe('adzuna');
-    expect(carte!.collecteDisponible).toBe(true);
-    expect(carte!.dernierPassage).toEqual({
-      quand: '2026-09-10T09:00:00.000Z',
-      lus: 58,
-      retenus: 6,
-      ignores: 52,
-    });
-    expect(carte!.retenus7j).toHaveLength(7);
-    expect(carte!.retenus7j[6]).toBe(6);
+          ],
+          'jr:sources_dernier_passage': [
+            {
+              source_id: 'src-1',
+              started_at: '2026-09-10T09:00:00.000Z',
+              items_found: 58,
+              items_new: 6,
+            },
+          ],
+          'jr:sources_retenus_7j': [{ source_id: 'src-1', jour: aujourdhui, n: 6 }],
+          'jr:sources_providers_rattaches': [{ source_id: 'src-1', provider_id: 'adzuna' }],
+        },
+        'viewer',
+      );
+      const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+      expect(carte).toBeDefined();
+      expect(carte!.providerId).toBe('adzuna');
+      expect(carte!.collecteDisponible).toBe(true);
+      expect(carte!.dernierPassage).toEqual({
+        quand: '2026-09-10T09:00:00.000Z',
+        lus: 58,
+        retenus: 6,
+        ignores: 52,
+      });
+      expect(carte!.retenus7j).toHaveLength(7);
+      expect(carte!.retenus7j[6]).toBe(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('la tendance 7 jours groupe par jour de l’organisation, pas par jour UTC du serveur (I5, revue finale)', async () => {
