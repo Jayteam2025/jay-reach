@@ -80,6 +80,17 @@
 .jr-puce.accent { color: var(--jr-accent); border-color: transparent; background: var(--jr-accent-doux); }
 .jr-puce.li { color: var(--jr-linkedin); border-color: transparent; background: var(--jr-linkedin-doux); }
 .jr-puce.gris { color: var(--jr-secondaire); border-color: transparent; background: var(--jr-fond); }
+/* Un <select> en forme de puce (ex. sélecteur de campagne de la Réception) garde son look pilule
+   mais perd le chrome natif du navigateur (tour de correction F6, point 24). */
+select.jr-puce {
+  appearance: none;
+  padding-right: 22px;
+  background-image: var(--jr-chevron);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 11px;
+  cursor: pointer;
+}
 
 /* Boutons */
 .jr-bouton { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 600; font-size: var(--jr-corps); padding: 8px 14px; border-radius: var(--jr-rayon-controle); border: 1px solid var(--jr-filet); background: var(--jr-surface); color: var(--jr-encre); cursor: pointer; white-space: nowrap; }
@@ -276,6 +287,18 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-size: var(--jr-corps); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
 .jr-champ small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-champ input, .jr-champ select, .jr-champ textarea { border: 0; font: inherit; color: var(--jr-encre); background: transparent; width: 100%; outline: none; }
+/* Chevron dessiné plutôt que celui, natif, du navigateur (tour de correction F6, point 24) — que
+   le <select> soit enveloppé dans Champ ou porte lui-même la classe .jr-champ (barre de filtres,
+   sans libellé visuel individuel). */
+.jr-champ select, select.jr-champ {
+  appearance: none;
+  padding-right: 26px;
+  background-image: var(--jr-chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+  cursor: pointer;
+}
 .jr-champ.erreur { border-color: var(--jr-erreur); }
 .jr-aide-erreur { color: var(--jr-erreur); font-size: var(--jr-petit); margin-top: 4px; }
 /* Boîte de clé masquée des Fournisseurs (tour de correction F6, point 2) : un identifiant long
