@@ -18,6 +18,8 @@ import {
   shiftIntoBusinessHours,
   applyLeadTime,
   jitterMs,
+  plafondDuJour,
+  relectureRequise,
   type BusinessHours,
   type Binding,
   type SenderInfo,
@@ -309,6 +311,51 @@ function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean 
   return false;
 }
 
+/**
+ * L'étape doit-elle passer en relecture au titre du réglage « Relecture des
+ * premiers envois » (I2, revue finale du 17/09) ? Seuil : `entry_rules.
+ * relecturePremiersEnvois` de la campagne si posé, sinon le défaut
+ * d'organisation `relecture_premiers_envois_defaut` (`plafondDuJour`, même
+ * chaîne de repli que les autres réglages, R83). Le nombre déjà parti compte
+ * les actions de CETTE étape en `dispatched`/`delivered` — step_id identifie
+ * déjà la campagne, une seule requête par étape et par passage (mise en cache
+ * par l'appelant).
+ */
+async function relecturePremiersEnvoisRequise(
+  pool: Pool,
+  row: DueRow,
+  stepId: string,
+  seuilDefautParOrg: Map<string, number>,
+  dejaPartisParEtape: Map<string, number>,
+): Promise<boolean> {
+  const entryRules = (row.entry_rules ?? {}) as { relecturePremiersEnvois?: unknown };
+  let seuil: number;
+  if (typeof entryRules.relecturePremiersEnvois === 'number') {
+    seuil = entryRules.relecturePremiersEnvois;
+  } else {
+    let defaut = seuilDefautParOrg.get(row.organization_id);
+    if (defaut === undefined) {
+      defaut = await plafondDuJour(pool, row.organization_id, 'relecture_premiers_envois_defaut');
+      seuilDefautParOrg.set(row.organization_id, defaut);
+    }
+    seuil = defaut;
+  }
+  // 0 = tout part sans relecture (libellé des trois écrans) : inutile de
+  // compter les envois déjà partis pour le dire.
+  if (seuil <= 0) return false;
+
+  let dejaPartis = dejaPartisParEtape.get(stepId);
+  if (dejaPartis === undefined) {
+    const res = await pool.query<{ n: number }>(
+      `select count(*)::int as n from actions where step_id = $1 and status in ('dispatched', 'delivered')`,
+      [stepId],
+    );
+    dejaPartis = res.rows[0]?.n ?? 0;
+    dejaPartisParEtape.set(stepId, dejaPartis);
+  }
+  return relectureRequise({ seuil, dejaPartis });
+}
+
 /** Ce qu'on a déjà envoyé aujourd'hui chez un compte donné. */
 interface ToucheAujourdhui {
   /** Personnes distinctes touchées, toutes personas confondues. */
@@ -478,6 +525,13 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     patternsParOrg.set(org, await loadDomainPatterns(pool, org, domaines));
   }
 
+  // I2 (revue finale du 17/09) : le défaut d'organisation de la relecture des
+  // premiers envois ne change pas pendant un passage — une lecture par
+  // organisation suffit pour tout le lot. Le nombre déjà parti, lui, est par
+  // étape : plusieurs inscriptions dues partagent souvent la même étape.
+  const seuilDefautRelectureParOrg = new Map<string, number>();
+  const dejaPartisParEtape = new Map<string, number>();
+
   for (const row of due.rows) {
     const stepsRes = await pool.query<StepRow>(
       `select id, channel, delay_hours, template_parent_id
@@ -500,6 +554,19 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
         ch === 'letter' ||
         (isLinkedIn(ch) && row.lk_mode === 'manual') ||
         policyRequiresApproval(row.approval_policy, ch);
+      // I2 (revue finale du 17/09) : les deux mécanismes se cumulent — l'un OU
+      // l'autre suffit à mettre l'action en attente. Court-circuité si une
+      // approbation est déjà requise, pour ne pas compter les envois déjà
+      // partis en pure perte.
+      if (!requiresApproval) {
+        requiresApproval = await relecturePremiersEnvoisRequise(
+          pool,
+          row,
+          step.id,
+          seuilDefautRelectureParOrg,
+          dejaPartisParEtape,
+        );
+      }
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);
       // Rendu local des variables pour les canaux dont Jay Reach possède le corps

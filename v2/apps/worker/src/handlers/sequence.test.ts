@@ -34,6 +34,7 @@ function ligneDue(overrides: Record<string, unknown> = {}): Record<string, unkno
     locale: null,
     job_title: null,
     approval_policy: {},
+    entry_rules: null,
     sending_paused_at: null,
     company_name: null,
     domain: null,
@@ -100,6 +101,10 @@ const INSERT_BINDING = /insert into contact_sender_bindings/i;
 const UPDATE_AVANCEMENT = /update enrollments\s+set current_step/i;
 const UPDATE_BLOQUE = /update actions set status = 'blocked'/i;
 const UPDATE_PAUSE = /update enrollments\s+set status = 'paused'/i;
+// I2 (relecture des premiers envois) : défaut d'organisation, puis comptage
+// des envois déjà partis pour l'étape.
+const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and key = \$2/i;
+const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
 
 /** Gestionnaires par défaut : une seule inscription due, une étape email, un
  * expéditeur actif disponible, rien qui défère ou bloque en amont du gate. */
@@ -134,6 +139,9 @@ function gestionnairesBase(overridesLigne: Record<string, unknown> = {}): Gestio
         ligne([{ id: STEP_ID, channel: 'email', delay_hours: 24, template_parent_id: null }]),
     },
     { motif: SUPPRESSIONS, repondre: () => ligne([{ n: 0 }]) },
+    // Défaut = 0 (aucune ligne en base) : court-circuite avant le comptage
+    // des envois déjà partis, sans casser les tests qui ignorent I2.
+    { motif: ORG_SETTINGS, repondre: () => ligne([]) },
     { motif: INSERT_ACTION, repondre: () => ({ rows: [{ id: ACTION_ID }], rowCount: 1 }) },
     { motif: INSERT_BINDING, repondre: () => ligne([]) },
     { motif: UPDATE_AVANCEMENT, repondre: () => ligne([]) },
@@ -166,6 +174,68 @@ describe('tickDueEnrollments', () => {
     expect(pause).toBeDefined();
     expect(pause!.values).toEqual([ENROLLMENT_ID, 0, 'email_gate:pending_bouncer']);
     expect(pause!.sql).toMatch(/where id = \$1 and status = 'active'/i);
+  });
+});
+
+describe('tickDueEnrollments — relecture des premiers envois (I2)', () => {
+  /** Isole le statut posé par `INSERT_ACTION`, quel que soit ce qui suit (gate email, avancement…). */
+  function statutInsere(appels: Appel[]): unknown {
+    const insert = appels.find((a) => INSERT_ACTION.test(a.sql));
+    expect(insert).toBeDefined();
+    return insert!.values[4];
+  }
+
+  it('seuil de campagne 3, deux envois déjà partis pour l’étape → la troisième passe en relecture', async () => {
+    const gestionnaires = gestionnairesBase({ entry_rules: { relecturePremiersEnvois: 3 } });
+    // Sans ce gestionnaire, `creerPoolFactice` lèverait une erreur explicite :
+    // le comptage des déjà-partis doit bien être interrogé.
+    gestionnaires.push({ motif: DEJA_PARTIS, repondre: () => ligne([{ n: 2 }]) });
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(statutInsere(appels)).toBe('pending_approval');
+    expect(jobs).toEqual([]); // pas de dispatch tant que non approuvé
+
+    // L'inscription n'avance pas : elle reste sur l'étape courante, en attente.
+    const avancement = appels.find((a) => UPDATE_AVANCEMENT.test(a.sql));
+    expect(avancement).toBeDefined();
+    expect(avancement!.values[1]).toBe(0);
+  });
+
+  it('seuil de campagne 3, trois envois déjà partis → la quatrième part directement', async () => {
+    const gestionnaires = gestionnairesBase({ entry_rules: { relecturePremiersEnvois: 3 } });
+    gestionnaires.push({ motif: DEJA_PARTIS, repondre: () => ligne([{ n: 3 }]) });
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(statutInsere(appels)).toBe('scheduled');
+  });
+
+  it('seuil 0 sur la campagne → jamais de relecture par ce chemin, sans même compter les envois déjà partis', async () => {
+    const gestionnaires = gestionnairesBase({ entry_rules: { relecturePremiersEnvois: 0 } });
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(statutInsere(appels)).toBe('scheduled');
+    expect(appels.some((a) => DEJA_PARTIS.test(a.sql))).toBe(false);
+  });
+
+  it('campagne muette sur la relecture → défaut d’organisation lu (`relecture_premiers_envois_defaut`)', async () => {
+    const gestionnaires = gestionnairesBase({ entry_rules: null }).map((g) =>
+      g.motif === ORG_SETTINGS ? { motif: ORG_SETTINGS, repondre: () => ligne([{ value: 2 }]) } : g,
+    );
+    gestionnaires.push({ motif: DEJA_PARTIS, repondre: () => ligne([{ n: 1 }]) });
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(statutInsere(appels)).toBe('pending_approval');
+    const lectureDefaut = appels.find((a) => ORG_SETTINGS.test(a.sql));
+    expect(lectureDefaut).toBeDefined();
+    expect(lectureDefaut!.values).toEqual([ORG_ID, 'relecture_premiers_envois_defaut']);
   });
 });
 

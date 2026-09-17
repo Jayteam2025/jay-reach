@@ -25,6 +25,8 @@ export interface DueRow {
   readonly account_id: string | null;
   readonly persona_id: string | null;
   readonly approval_policy: unknown;
+  /** `{ relecturePremiersEnvois?: number, ... }` (I2, revue finale du 17/09). */
+  readonly entry_rules: unknown;
   /** Arrêt global des envois de l'organisation (garde-fou prioritaire). */
   readonly sending_paused_at: string | null;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
@@ -65,7 +67,7 @@ export const REQUETE_LIGNE_INSCRIPTION = `
   select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
          c.linkedin_url, c.email, c.email_status, c.account_id, c.persona_id, c.first_name, c.last_name,
          c.locale, c.job_title,
-         camp.approval_policy,
+         camp.approval_policy, camp.entry_rules,
          org.sending_paused_at,
          a.name as company_name, a.domain, a.city, a.headcount,
          a.postal_code, a.country,
