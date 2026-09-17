@@ -47,8 +47,9 @@ Versionnement sémantique.
   (boîte, campagne, source, pause globale) sont listés avec un lien vers le bon écran plutôt que dupliqués.
 - **Les sources LinkedIn se créent et se règlent dès ce lot** (engageurs d'un post, abonnés d'un concurrent, mots-clés,
   changement de poste), avec la mention « collecte activée au lot 4 » tant que le moteur ne les exécute pas encore.
-- **Six parcours Playwright protègent les usages clés** : connexion, création et lancement d'une campagne complète, Aujourd'hui,
-  réponse dans la Réception, ajout d'une source et lancement d'un passage, modification d'un plafond retrouvée sur Aujourd'hui.
+- **Six parcours Playwright protègent les usages clés** : connexion (avec le clic sur Réglages depuis Aujourd'hui), brouillon
+  d'une campagne avec une source puis archivage, Aujourd'hui, ouverture d'un fil dans la Réception (réponse refusée sans
+  transport), ajout d'une source et lancement d'un passage, modification d'un plafond retrouvée sur Aujourd'hui.
   Une organisation de test dédiée les exécute contre SalesBlink simulé.
 - **Un garde-fou de traduction repère maintenant une clé oubliée, pas seulement une clé manquante.** Le contrôle existant
   vérifiait qu'une clé utilisée à l'écran existe bien ; ce lot lui ajoute le sens inverse : une clé déclarée mais jamais
