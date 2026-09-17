@@ -87,7 +87,7 @@ describe('listerModeles', () => {
           subject: '{{prenom}}, question de DC à DC',
           body: 'Bonjour {{prenom}}…',
           created_at: '2026-09-11T10:00:00.000Z',
-          modifie_par: 'Alexandre',
+          modifie_par: 'Camille',
           campagnes: ['Directeur commercial', 'Engageurs post Christelle'],
           envois: 186,
         },
@@ -107,7 +107,7 @@ describe('listerModeles', () => {
         campagnes: ['Directeur commercial', 'Engageurs post Christelle'],
         envois: 186,
         modifieLe: '2026-09-11T10:00:00.000Z',
-        modifiePar: 'Alexandre',
+        modifiePar: 'Camille',
       },
     ]);
   });
@@ -247,6 +247,9 @@ describe('enregistrerModele', () => {
     const { ctx, appelsClient } = fauxConnectable({
       'jr:messages_organisation_locale': [{ default_locale: 'fr' }],
       'jr:sequence_extraits': [],
+      // M10 (revue finale du 14/09) : enregistrerVersionModele vérifie
+      // désormais que familyId appartient à l'organisation avant d'insérer.
+      'jr:sequence_modele_lignee': [{ id: familyId }],
       'jr:sequence_modele_prochaine_version': [{ next: 2 }],
       'jr:sequence_modele_versionner': [{ id: familyId }],
     });
