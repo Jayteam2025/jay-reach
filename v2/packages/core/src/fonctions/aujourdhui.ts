@@ -103,7 +103,8 @@ interface LigneFil {
   id: string;
   channel: string;
   classification: ClassificationFil;
-  last_message_at: string | null;
+  /** `threads.last_message_at`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne. */
+  last_message_at: string | Date | null;
   first_name: string | null;
   last_name: string | null;
   job_title: string | null;
@@ -238,7 +239,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     poste: r.job_title,
     entreprise: r.account_name,
     extrait: r.dernier_message ?? '',
-    quand: r.last_message_at,
+    // Forme publique honnête (`FilResume.quand: string | null`) : jamais l'objet `Date` tel quel.
+    quand: r.last_message_at === null ? null : new Date(r.last_message_at).toISOString(),
     canal: canalDe(r.channel),
     classification: r.classification,
   }));

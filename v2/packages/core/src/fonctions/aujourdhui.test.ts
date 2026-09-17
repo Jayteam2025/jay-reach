@@ -21,15 +21,17 @@ describe('lireAujourdhui', () => {
   it('compte les fils à traiter et en garde un aperçu', async () => {
     const ctx = faux({
       'jr:threads_a_traiter': [
-        { id: 't1', channel: 'email', classification: 'human_reply', last_message_at: '2026-09-14T09:22:00.000Z', first_name: 'Karim', last_name: 'Benali', job_title: 'Head of Sales', account_name: 'Woodpecker', dernier_message: 'On se cale jeudi ?' },
+        // `last_message_at` en objet Date (comme le renvoie pg pour ce timestamptz) : la forme
+        // publique `FilResume.quand` doit ressortir en chaîne ISO, jamais l'objet lui-même.
+        { id: 't1', channel: 'email', classification: 'human_reply', last_message_at: new Date('2026-09-14T09:22:00.000Z'), first_name: 'Karim', last_name: 'Benali', job_title: 'Head of Sales', account_name: 'Woodpecker', dernier_message: 'On se cale jeudi ?' },
         { id: 't2', channel: 'linkedin_message', classification: 'unclassified', last_message_at: '2026-09-14T08:51:00.000Z', first_name: 'Claire', last_name: 'Moreau', job_title: null, account_name: null, dernier_message: 'Pas le bon moment' },
       ],
     });
     const a = await lireAujourdhui(ctx);
     expect(a.aTraiter.total).toBe(2);
     expect(a.aTraiter.fils).toHaveLength(2);
-    expect(a.aTraiter.fils[0]).toMatchObject({ id: 't1', contactNom: 'Karim Benali', canal: 'email', classification: 'human_reply' });
-    expect(a.aTraiter.fils[1]).toMatchObject({ id: 't2', contactNom: 'Claire Moreau', canal: 'linkedin' });
+    expect(a.aTraiter.fils[0]).toMatchObject({ id: 't1', contactNom: 'Karim Benali', canal: 'email', classification: 'human_reply', quand: '2026-09-14T09:22:00.000Z' });
+    expect(a.aTraiter.fils[1]).toMatchObject({ id: 't2', contactNom: 'Claire Moreau', canal: 'linkedin', quand: '2026-09-14T08:51:00.000Z' });
   });
 
   it("n'attribue aucune pastille de canal au courrier ni à l'appel (pas de repli sur email)", async () => {
