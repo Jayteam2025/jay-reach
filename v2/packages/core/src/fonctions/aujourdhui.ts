@@ -10,6 +10,7 @@ import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
+import { versInstant } from '../temps.js';
 
 /** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
 export type CanalFil = 'email' | 'linkedin' | undefined;
@@ -115,7 +116,8 @@ interface LigneFil {
 interface LigneAction {
   id: string;
   status: string;
-  dispatched_at: string | null;
+  /** `actions.dispatched_at`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne. */
+  dispatched_at: string | Date | null;
   scheduled_for: string | null;
   dispatch_after: string | null;
   channel: string;
@@ -149,7 +151,10 @@ function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
 }
 
-function formatterHeure(iso: string, fuseau: string): string {
+// `new Date(iso)` accepte indifféremment une chaîne ISO ou un objet `Date` (le
+// constructeur traite spécialement un `Date` en argument) : accepter les deux
+// ici évite un cast quand l'appelant tient encore un horodatage `pg` brut.
+function formatterHeure(iso: string | Date, fuseau: string): string {
   return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
 
@@ -261,11 +266,19 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     };
   });
   const dejaPartis = actionsRes.rows.filter((r) => r.dispatched_at !== null).length;
-  const derniereEnvoyee = actionsRes.rows
-    .filter((r) => r.dispatched_at !== null)
-    .map((r) => r.dispatched_at as string)
-    .sort()
-    .at(-1);
+  // `dispatched_at` (`timestamptz`) peut être un objet `Date` (pilote `pg`) : un
+  // `.sort()` par défaut le compare via `Date.prototype.toString()`
+  // (« Thu Sep 17 2026 … »), lexicographiquement faux (un jeudi passerait
+  // devant un mardi pourtant plus récent). `versInstant` compare l'instant
+  // réel ; la valeur publique reste une chaîne ISO.
+  let derniereEnvoyeeMs: number | null = null;
+  for (const r of actionsRes.rows) {
+    const instant = versInstant(r.dispatched_at);
+    if (instant !== null && (derniereEnvoyeeMs === null || instant > derniereEnvoyeeMs)) {
+      derniereEnvoyeeMs = instant;
+    }
+  }
+  const derniereEnvoyee = derniereEnvoyeeMs !== null ? new Date(derniereEnvoyeeMs).toISOString() : null;
 
   const campagnes: CampagneResume[] = campagnesRes.rows.map((r) => ({
     id: r.id,

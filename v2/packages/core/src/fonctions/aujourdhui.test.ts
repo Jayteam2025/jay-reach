@@ -84,6 +84,62 @@ describe('lireAujourdhui', () => {
     expect(a.fileDuJour.total).toBe(2);
   });
 
+  // F4 (tour de correction 3) : `dispatched_at` (`timestamptz`) peut être un
+  // objet Date (pilote pg). Avant correctif, `derniereEnvoyee` triait ces
+  // valeurs avec `.sort()` par défaut, qui compare `Date.prototype.toString()`
+  // (« Mon Sep 21 2026 … » / « Tue Sep 08 2026 … ») : lexicographiquement,
+  // « Mon » < « Tue », donc le 21/09 (lundi, le plus récent) passait AVANT le
+  // 08/09 (mardi, plus ancien) — `.at(-1)` renvoyait alors le 08/09 (11:00
+  // Paris) au lieu du 21/09 (12:00 Paris), la mauvaise « dernière envoyée ».
+  it("calcule la dernière heure d'envoi même quand `dispatched_at` trierait mal lexicographiquement (objets Date, comme pg)", async () => {
+    const ctx = faux({
+      'jr:file_du_jour': [
+        {
+          id: 'a-milieu',
+          dispatched_at: '2026-09-14T08:00:00.000Z',
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Claire',
+          last_name: 'Moreau',
+          campagne_nom: 'Directeur commercial',
+          etape: 0,
+          expediteur: 'prospection@exemple.fr',
+        },
+        {
+          id: 'a-recent',
+          dispatched_at: new Date('2026-09-21T10:00:00.000Z'), // lundi : le plus récent
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          campagne_nom: 'Directeur commercial',
+          etape: 1,
+          expediteur: 'ventes@exemple.fr',
+        },
+        {
+          id: 'a-ancien',
+          dispatched_at: new Date('2026-09-08T09:00:00.000Z'), // mardi : le plus ancien, mais après « Mon » lexicographiquement
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Une',
+          last_name: 'Autre',
+          campagne_nom: 'Directeur commercial',
+          etape: 0,
+          expediteur: 'ventes@exemple.fr',
+        },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fileDuJour.derniereHeure).toBe('12:00');
+    expect(a.fileDuJour.dejaPartis).toBe(3);
+  });
+
   it("numérote l'étape à partir de 1 pour l'humain (position stockée à partir de 0)", async () => {
     const ctx = faux({
       'jr:file_du_jour': [
