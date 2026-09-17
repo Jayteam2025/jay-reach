@@ -545,12 +545,23 @@ export const schemaRepondre = z.object({
  * gardé séparé ici : celui-ci a besoin de renvoyer `ErreurIntrouvable` si la
  * ligne n'existe pas, ce que `repondre` n'a pas à revérifier (le fil vient
  * d'être lu avec succès par `repondreAuFil`).
+ *
+ * Appelé APRÈS l'envoi réussi, en dehors de toute transaction (`repondre` n'en
+ * ouvre aucune — une suite d'appels séquentiels sur `ctx.ex`, comme le reste
+ * de ce fichier). Si cette requête échoue, la réponse est déjà partie : une
+ * exception ici ne doit jamais la faire échouer aux yeux de l'appelant — même
+ * règle de tolérance que `journaliserReponseEnvoyee` ci-dessous. Un
+ * `marquerTraite` manuel corrige le fil resté visible dans « À traiter ».
  */
 async function marquerFilTraiteApresReponse(ctx: Contexte, filId: string): Promise<void> {
-  await ctx.ex.query(
-    `update threads /* jr:repondre_marquer_traite */ set handled_at = now() where id = $1 and organization_id = $2`,
-    [filId, ctx.organisationId],
-  );
+  try {
+    await ctx.ex.query(
+      `update threads /* jr:repondre_marquer_traite */ set handled_at = now() where id = $1 and organization_id = $2`,
+      [filId, ctx.organisationId],
+    );
+  } catch (err) {
+    console.warn('[reception] marquerFilTraiteApresReponse', err);
+  }
 }
 
 /** N'écrit jamais dans `audit_events` avant l'envoi réel : un journal qui échoue ne doit jamais faire échouer une réponse déjà partie (même règle que `ecrireEvenementCampagne`, `campagnes.ts`). */
