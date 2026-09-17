@@ -78,8 +78,10 @@ campagne si besoin.
 Ouvrez un fil pour lire la conversation. La zone de réponse indique la boîte depuis laquelle vous
 répondrez : le message part dans le même fil, par la boîte qui a écrit au contact. Répondre depuis
 l'application n'existe que pour les fils email ; un fil LinkedIn se lit ici mais s'y répond ailleurs.
-Deux boutons complètent la lecture : **Marquer intéressé** pose un drapeau et garde le fil visible sous
-Intéressés ; **Marquer traité** le sort de la liste À traiter (vous pouvez toujours le rouvrir).
+Envoyer une réponse sort déjà le fil de la liste À traiter, sans geste supplémentaire. Deux boutons
+complètent la lecture : **Marquer intéressé** pose un drapeau et garde le fil visible sous Intéressés ;
+**Marquer traité** fait la même chose à la main, pour un fil qu'on classe sans y répondre (vous pouvez
+toujours le rouvrir).
 
 La colonne de droite résume la fiche du contact, avec pourquoi lui, où en est-on, coordonnées et notes,
 et un lien pour ouvrir la fiche complète.

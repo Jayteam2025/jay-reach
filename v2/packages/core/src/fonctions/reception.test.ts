@@ -381,6 +381,36 @@ describe('repondre', () => {
       repondre(ctx, { filId: '11111111-1111-1111-1111-111111111111', corps: 'Bonjour Karim' }, transportsFactices()),
     ).resolves.toEqual({ messageId: 'message-sortant-1' });
   });
+
+  it('après un envoi réussi, le fil est marqué traité (M2, revue finale du 17/09) — sinon il reste dans « À traiter »', async () => {
+    const { ctx, appels } = contexteCapturant(({ text }) => {
+      if (text.trim().startsWith('select t.channel')) {
+        return { rows: [{ channel: 'email', transport: null, mailbox: null, salesblink_inbox_message_id: 'inbox-1' }], rowCount: 1 };
+      }
+      if (text.trim().startsWith('insert into thread_messages')) return { rows: [{ id: 'message-sortant-1' }], rowCount: 1 };
+      if (text.trim().startsWith('update threads')) return { rows: [], rowCount: 1 };
+      if (text.includes('jr:repondre_contact_pour_journal')) return { rows: [{ contact_id: 'contact-1' }], rowCount: 1 };
+      if (text.trim().startsWith('insert into audit_events')) return { rows: [], rowCount: 1 };
+      return undefined;
+    });
+
+    await repondre(ctx, { filId: '11111111-1111-1111-1111-111111111111', corps: 'Bonjour Karim' }, transportsFactices());
+
+    const marquage = appels.find((a) => a.text.includes('handled_at = now()'));
+    expect(marquage).toBeDefined();
+    expect(marquage!.values).toEqual(['11111111-1111-1111-1111-111111111111', 'org-1']);
+  });
+
+  it("fil non répondable : aucun envoi, donc jamais de marquage traité", async () => {
+    const { ctx, appels } = contexteCapturant(({ text }) => {
+      if (text.trim().startsWith('select t.channel')) return { rows: [], rowCount: 0 };
+      return undefined;
+    });
+    await expect(
+      repondre(ctx, { filId: '11111111-1111-1111-1111-111111111111', corps: 'bonjour' }, transportsFactices()),
+    ).rejects.toBeInstanceOf(ErreurReponseImpossible);
+    expect(appels.some((a) => a.text.includes('handled_at = now()'))).toBe(false);
+  });
 });
 
 describe('marquerTraite', () => {

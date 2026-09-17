@@ -537,6 +537,22 @@ export const schemaRepondre = z.object({
     .pipe(z.string().min(1).max(20000)),
 });
 
+/**
+ * Pose `handled_at = now()` sur le fil — M2 (revue finale du 17/09) : `repondre`
+ * écrivait le message et le journal sans jamais le faire, si bien qu'un fil
+ * auquel on venait de répondre restait dans « À traiter » et dans son badge.
+ * Même effet que `marquerTraite({ traite: true })` (bouton dédié de l'écran),
+ * gardé séparé ici : celui-ci a besoin de renvoyer `ErreurIntrouvable` si la
+ * ligne n'existe pas, ce que `repondre` n'a pas à revérifier (le fil vient
+ * d'être lu avec succès par `repondreAuFil`).
+ */
+async function marquerFilTraiteApresReponse(ctx: Contexte, filId: string): Promise<void> {
+  await ctx.ex.query(
+    `update threads /* jr:repondre_marquer_traite */ set handled_at = now() where id = $1 and organization_id = $2`,
+    [filId, ctx.organisationId],
+  );
+}
+
 /** N'écrit jamais dans `audit_events` avant l'envoi réel : un journal qui échoue ne doit jamais faire échouer une réponse déjà partie (même règle que `ecrireEvenementCampagne`, `campagnes.ts`). */
 async function journaliserReponseEnvoyee(
   ctx: Contexte,
@@ -580,6 +596,11 @@ export async function repondre(
   const { filId, corps } = valider(schemaRepondre, entree);
 
   const resultat = await repondreAuFil(ctx.ex, ctx.organisationId, { threadId: filId, corps }, transports);
+
+  // Une réponse envoyée sort le fil de « À traiter » sans geste supplémentaire
+  // de l'opérateur (M2) — après l'envoi réussi, jamais avant (un envoi qui
+  // lève ErreurReponseImpossible ne doit jamais poser handled_at).
+  await marquerFilTraiteApresReponse(ctx, filId);
 
   const filRes = await ctx.ex.query<{ contact_id: string | null }>(
     `select contact_id from threads /* jr:repondre_contact_pour_journal */ where id = $1`,
