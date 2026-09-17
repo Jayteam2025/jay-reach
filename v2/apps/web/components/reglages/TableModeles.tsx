@@ -270,12 +270,18 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
     return true;
   });
 
-  // Largeurs de contenu (tour de correction F6, point 25) : Canal / Utilisé par / Envois se
-  // réduisent à leur contenu (`largeur: '1%'`, même astuce que la colonne Statut des tableaux de
+  // Largeurs de contenu (tour de correction F6, points 25 et 25 bis) : Canal / Utilisé par / Envois
+  // se réduisent à leur contenu (`largeur: '1%'`, même astuce que la colonne Statut des tableaux de
   // contacts, point 20) pour laisser le plus d'espace possible à Modèle ; Modifié passe en nowrap
   // (l'auteur descend sur sa propre ligne, cf. plus bas) plutôt que de couper au milieu d'un mot.
+  // Modèle est la SEULE colonne compressible (`largeur: '40%'` + `largeurMax: '0'`, point 25 bis) :
+  // avec les cinq autres colonnes déjà `nowrap` (largeur minimale non négociable), l'aperçu du
+  // modèle forçait la sienne à 264 px (`max-width: 30ch` d'origine, ci-dessous, jamais compressible
+  // en `table-layout: auto`) — plus rien ne pouvait se compresser, la table débordait de son
+  // conteneur (835 px pour 782 px mesurés) et coupait le bouton Modifier. `largeurMax: '0'` retire
+  // ce plancher : Modèle prend ce qu'il reste une fois les cinq autres colonnes servies, jamais plus.
   const colonnes: ColonneTable[] = [
-    { cle: 'modele', titre: t('table.name') },
+    { cle: 'modele', titre: t('table.name'), largeur: '40%', largeurMax: '0' },
     { cle: 'canal', titre: t('table.channel'), nowrap: true, largeur: '1%' },
     { cle: 'utilisePar', titre: t('table.usedBy'), nowrap: true, largeur: '1%' },
     { cle: 'envois', titre: t('table.sent'), num: true, nowrap: true, largeur: '110px' },
@@ -292,22 +298,13 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
   };
 
   const lignes = modelesAffiches.map((m) => ({
+    // Titre et aperçu tronqués sur une ligne à la largeur RÉELLE de la cellule (tour de correction
+    // F6, point 25 bis), plus jamais à un nombre de caractères fixe (`max-width: 30ch` ci-avant) :
+    // c'est justement cette largeur en dur qui forçait la colonne Modèle à 264 px quoi qu'il arrive.
     modele: (
       <>
-        <b style={{ fontWeight: 600 }}>{m.nom}</b>
-        <small
-          className="jr-secondaire"
-          style={{
-            display: 'block',
-            fontSize: 12,
-            maxWidth: '30ch',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {m.sujet ?? m.corps}
-        </small>
+        <b className="jr-modele-titre">{m.nom}</b>
+        <small className="jr-secondaire jr-modele-apercu">{m.sujet ?? m.corps}</small>
       </>
     ),
     canal: <Puce ton={estLinkedin(m.canal) ? 'li' : undefined}>{libelleCanal(m.canal)}</Puce>,

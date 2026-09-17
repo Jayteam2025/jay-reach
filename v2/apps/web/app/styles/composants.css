@@ -503,6 +503,12 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
    (`.jr-puces` a déjà `flex-wrap: wrap`). Ciblé via la classe posée par `Table`/`nowrap`, pas de
    nouvelle classe à ajouter côté composant. */
 .jr-nowrap .jr-puces .jr-puce { white-space: nowrap; }
+/* Titre et aperçu d'un modèle de message (tour de correction F6, point 25 bis) : tronqués à la
+   largeur réelle de leur cellule (`width: auto`, héritée du conteneur), pas à un nombre de
+   caractères fixe — c'était justement `max-width: 30ch` sur l'aperçu qui empêchait la colonne
+   Modèle de se compresser (voir `largeurMax` sur la colonne, `TableModeles.tsx`). */
+.jr-modele-titre { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jr-modele-apercu { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* `.jr-qui b, .jr-qui small` (règle du dessus, vérification 1024 px) posent `overflow-wrap:
    anywhere`, plus spécifique que `.jr-tronque` seul (un nom se coupait alors lettre à lettre dans
    la File du jour malgré `white-space: nowrap`, point 4) : contre-règle explicite, à spécificité
