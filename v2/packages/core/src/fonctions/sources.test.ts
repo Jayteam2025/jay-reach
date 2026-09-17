@@ -103,6 +103,28 @@ describe('listerSourcesCampagne', () => {
     expect(carte!.retenus7j[6]).toBe(6);
   });
 
+  it('la tendance 7 jours groupe par jour de l’organisation, pas par jour UTC du serveur (I5, revue finale)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z')); // 00:30 à Paris le 15
+    try {
+      const { ctx, appels } = faux(
+        {
+          'jr:sources_lister': [
+            { id: 'src-1', name: 'Adzuna · Test', config: { sourceType: 'adzuna' }, is_active: true, schedule: 'every 6h' },
+          ],
+          'jr:sources_retenus_7j': [{ source_id: 'src-1', jour: '2026-01-15', n: 7 }],
+        },
+        'viewer',
+      );
+      const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
+      expect(carte!.retenus7j.at(-1)).toBe(7);
+      const appelTendance = appels.find(([sql]) => /jr:sources_retenus_7j/i.test(sql));
+      expect(appelTendance?.[1]).toEqual([['src-1'], 'Europe/Paris']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('une source linkedin_* sans source_providers reste identifiable par `config.sourceType`, collecte indisponible', async () => {
     const { ctx } = faux(
       {

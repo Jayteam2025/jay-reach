@@ -140,6 +140,39 @@ describe('listerCampagnes', () => {
     expect(r[0]!.derniereActivite).toBe('2026-09-14T10:00:00.000Z');
   });
 
+  it('la tendance 7 jours groupe par jour de l’organisation, pas par jour UTC du serveur (I5, revue finale)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z')); // 00:30 à Paris le 15
+    try {
+      const ctx = faux({
+        'jr:campagnes_liste': [
+          {
+            id: 'camp-1',
+            name: 'C',
+            status: 'active',
+            entry_rules: {},
+            sources: [],
+            qualifies: 0,
+            contacts: 0,
+            en_sequence: 0,
+            reponses: 0,
+            interesses: 0,
+            derniere_activite: null,
+          },
+        ],
+        'jr:boites_actives': [],
+        'jr:tendance_livraisons': [{ campaign_id: 'camp-1', jour: '2026-01-15', n: 5 }],
+      });
+      const r = await listerCampagnes(ctx);
+      expect(r[0]!.tendance7j.at(-1)).toBe(5);
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const appelTendance = appels.find((appel) => /jr:tendance_livraisons/i.test(String(appel[0])));
+      expect(appelTendance?.[1]).toEqual([['camp-1'], 'Europe/Paris']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('n’a pas de dernière activité (`derniereActivite: null`) quand `audit_events` n’a rien pour cette campagne', async () => {
     const ctx = faux({
       'jr:campagnes_liste': [
@@ -667,6 +700,24 @@ describe('listerFileDuJour', () => {
     });
     const r = await listerFileDuJour(ctx, { campagneId });
     expect(r.plafondDuJour).toBe(25);
+  });
+
+  it('à 00:30 Paris (23:30 UTC la veille), le jour retenu est celui de Paris, pas celui du serveur UTC (I5, revue finale)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z'));
+    try {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      await listerFileDuJour(ctx, {});
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const appelFile = appels.find((appel) => /jr:file_du_jour_campagne/i.test(String(appel[0])));
+      expect(appelFile?.[1]).toEqual(['org-1', '2026-01-15', 'Europe/Paris']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lève ErreurIntrouvable quand la campagne du plafond n’existe pas', async () => {

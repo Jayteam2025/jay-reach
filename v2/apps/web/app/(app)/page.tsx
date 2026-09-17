@@ -4,7 +4,7 @@ import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
-import { FUSEAU_PAR_DEFAUT } from '../../lib/dates';
+import { FUSEAU_PAR_DEFAUT, cleJourDansFuseau } from '../../lib/dates';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -25,22 +25,21 @@ function formatHeure(iso: string | null): string {
 /**
  * HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » —
  * même logique que la Réception. `timeZone` posé sur l'heure affichée (R67) ;
- * la classification aujourd'hui/hier ci-dessous compare encore `toDateString()`
- * (accesseurs locaux, donc le fuseau du PROCESS qui exécute le rendu, pas
- * celui de `FUSEAU_PAR_DEFAUT`) — même limite que celle corrigée dans
- * `heureAvecJour` (`lib/dates.ts`), pas reprise ici faute de couverture de
- * test sur cette page pour la prouver sans risque de régression.
+ * la classification aujourd'hui/hier compare désormais des clés de jour
+ * calendaire DANS `fuseau` (`cleJourDansFuseau`, `lib/dates.ts`), pas les
+ * accesseurs locaux (`toDateString`) qui suivent le fuseau du PROCESS qui
+ * exécute le rendu (I5, revue finale — même correctif que `heureAvecJour`).
+ * `maintenant` en paramètre : testable sans horloge (`page.test.ts`).
  */
-function quandRelatif(iso: string | null): string {
+export function quandRelatif(iso: string | null, maintenant: Date = new Date()): string {
   if (!iso) return '';
   const date = new Date(iso);
-  const maintenant = new Date();
-  if (date.toDateString() === maintenant.toDateString()) {
+  if (cleJourDansFuseau(date, FUSEAU_PAR_DEFAUT) === cleJourDansFuseau(maintenant, FUSEAU_PAR_DEFAUT)) {
     return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(date);
   }
-  const hier = new Date(maintenant);
-  hier.setDate(maintenant.getDate() - 1);
-  if (date.toDateString() === hier.toDateString()) return 'hier';
+  // Absolu (pas un `setDate` local) : même raison que « demain » dans `heureAvecJour`.
+  const hier = new Date(maintenant.getTime() - 86_400_000);
+  if (cleJourDansFuseau(date, FUSEAU_PAR_DEFAUT) === cleJourDansFuseau(hier, FUSEAU_PAR_DEFAUT)) return 'hier';
   const jours = Math.max(1, Math.round((maintenant.getTime() - date.getTime()) / 86_400_000));
   return `il y a ${jours} j`;
 }

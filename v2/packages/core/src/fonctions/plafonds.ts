@@ -341,7 +341,7 @@ export async function lireConsommationDuJour(
       where a.organization_id = $1
         and a.channel = 'email'
         and a.status in ('dispatched', 'delivered')
-        and a.dispatched_at >= date_trunc('day', now() at time zone $2)`,
+        and a.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2`,
     [ctx.organisationId, fuseau],
   );
   const envoisPlafondRes = await ctx.ex.query<{ plafond: number }>(

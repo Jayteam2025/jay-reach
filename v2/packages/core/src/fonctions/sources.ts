@@ -27,12 +27,23 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable, ErreurEntree } from './contexte.js';
 import { ecrireEvenement } from '../journal.js';
+import { lireReglages } from './plafonds.js';
 import {
   processImport,
   type ParsedRows,
   type ColumnMapping,
   type MappedRow,
 } from '../import/index.js';
+
+/**
+ * Jour calendaire (AAAA-MM-JJ) d'un instant DANS un fuseau donné, pas dans
+ * celui du process qui exécute le rendu (I5, revue finale — copie locale de
+ * `cleJourDansFuseau`, `apps/web/lib/dates.ts`, même utilitaire que
+ * `campagnes.ts` : pas de couplage cross-fichier pour une ligne).
+ */
+function jourDansFuseau(date: Date, fuseau: string): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
 
 // ---------------------------------------------------------------------------
 // Types de source
@@ -466,8 +477,11 @@ export async function listerSourcesCampagne(
       order by s.created_at asc`,
     [campagneId, ctx.organisationId],
   );
+  // Court-circuite avant `lireReglages` (deuxième requête) quand il n'y a rien à enrichir —
+  // même contrat qu'avant ce correctif (I5, revue finale) : aucune source, aucune requête de plus.
   if (res.rows.length === 0) return [];
   const ids = res.rows.map((r) => r.id);
+  const fuseau = String((await lireReglages(ctx)).fuseau);
 
   const [passages, resumes, tendances, providers, campagnesActives] = await Promise.all([
     ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
@@ -494,13 +508,14 @@ export async function listerSourcesCampagne(
         where src.id = any($1::uuid[])`,
       [ids],
     ),
+    // Groupé par jour DANS le fuseau de l'organisation, pas en UTC (I5, revue finale).
     ctx.ex.query<{ source_id: string; jour: string; n: number }>(
-      `select source_id, to_char(occurred_at, 'YYYY-MM-DD') as jour, count(*)::int as n
+      `select source_id, to_char(occurred_at at time zone $2, 'YYYY-MM-DD') as jour, count(*)::int as n
          from signals /* jr:sources_retenus_7j */
         where source_id = any($1::uuid[]) and status in ('qualified', 'enrolled')
           and occurred_at >= now() - interval '7 days'
         group by source_id, jour`,
-      [ids],
+      [ids, fuseau],
     ),
     // Requête à part (pas de jointure sur la sélection principale) : un thème
     // rattaché à plusieurs fournisseurs (R30 — cf. `resoudreProviders`)
@@ -535,6 +550,10 @@ export async function listerSourcesCampagne(
     parProvider.get(r.source_id)!.push(r.provider_id);
   }
   const idsAvecCampagneActive = new Set(campagnesActives.rows.map((r) => r.source_id));
+  // Ancré sur le jour calendaire du fuseau de l'organisation (I5, revue finale), pas
+  // `Date.now()` nu en UTC ; l'arithmétique en jours entiers qui suit reste ensuite en UTC pur,
+  // sans nouveau risque de décalage puisque l'ancre porte déjà le bon jour.
+  const ancreTendance = new Date(`${jourDansFuseau(new Date(), fuseau)}T00:00:00Z`);
 
   return res.rows.map((row) => {
     const config = (row.config ?? {}) as Record<string, unknown>;
@@ -559,8 +578,9 @@ export async function listerSourcesCampagne(
     const jours = parTendance.get(row.id) ?? new Map<string, number>();
     const retenus7j: number[] = [];
     for (let i = NOMBRE_JOURS_TENDANCE - 1; i >= 0; i -= 1) {
-      const jour = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
-      retenus7j.push(jours.get(jour) ?? 0);
+      const jour = new Date(ancreTendance);
+      jour.setUTCDate(jour.getUTCDate() - i);
+      retenus7j.push(jours.get(jour.toISOString().slice(0, 10)) ?? 0);
     }
 
     return {

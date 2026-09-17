@@ -161,6 +161,18 @@ function formatterHeure(iso: string, fuseau: string): string {
   return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
 
+/**
+ * Jour calendaire (AAAA-MM-JJ) d'un instant DANS un fuseau donné, pas dans
+ * celui du process qui exécute le rendu (I5, revue finale — copie locale de
+ * `cleJourDansFuseau`, `apps/web/lib/dates.ts` : pas de couplage cross-paquet
+ * pour un utilitaire d'une ligne, même convention que `motifRecherche`
+ * ci-dessous). `fr-CA` rend l'ISO (année-mois-jour) quel que soit
+ * l'environnement, un artefact de cette locale plutôt qu'un choix de langue.
+ */
+function jourDansFuseau(date: Date, fuseau: string): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
 /** Échappe `%`, `_` et `\` avant de les envelopper en motif `ilike` — un utilisateur qui tape un `%` ne doit pas élargir sa propre recherche. */
 function motifRecherche(recherche: string | undefined): string | null {
   if (!recherche) return null;
@@ -408,7 +420,8 @@ interface LigneCampagneListe {
 export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResume[]> {
   exiger(ctx, 'viewer');
 
-  const [campagnesRes, toutesBoites] = await Promise.all([
+  const [reglages, campagnesRes, toutesBoites] = await Promise.all([
+    lireReglages(ctx),
     ctx.ex.query<LigneCampagneListe>(
       `select c.id, c.name, c.status, c.entry_rules,
               coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
@@ -435,26 +448,32 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     boitesActivesDeLOrganisation(ctx),
   ]);
 
+  const fuseau = String(reglages.fuseau);
   const ids = campagnesRes.rows.map((r) => r.id);
   const tendanceParCampagne = new Map<string, number[]>();
   if (ids.length > 0) {
+    // Groupé par jour DANS le fuseau de l'organisation, pas en UTC (I5, revue finale) : un
+    // envoi livré après le décalage horaire tombait sinon dans la mauvaise barre du graphe.
     const tendanceRes = await ctx.ex.query<{ campaign_id: string; jour: string; n: number }>(
-      `select e.campaign_id, (a.dispatched_at at time zone 'UTC')::date::text as jour, count(*)::int as n
+      `select e.campaign_id, (a.dispatched_at at time zone $2)::date::text as jour, count(*)::int as n
          from actions a /* jr:tendance_livraisons */
          join enrollments e on e.id = a.enrollment_id
         where e.campaign_id = any($1::uuid[])
           and a.status = 'delivered'
           and a.dispatched_at >= now() - interval '${NB_JOURS_TENDANCE} days'
         group by 1, 2`,
-      [ids],
+      [ids, fuseau],
     );
     const parJourEtCampagne = new Map<string, number>();
     for (const r of tendanceRes.rows) parJourEtCampagne.set(`${r.campaign_id}|${r.jour}`, r.n);
-    const aujourdhui = new Date();
+    // Ancré sur le jour calendaire du fuseau de l'organisation (pas `new Date()` nu, en UTC) :
+    // l'arithmétique en jours entiers qui suit reste ensuite en UTC pur, sans nouveau risque de
+    // décalage puisque l'ancre porte déjà le bon jour.
+    const ancre = new Date(`${jourDansFuseau(new Date(), fuseau)}T00:00:00Z`);
     for (const id of ids) {
       const valeurs: number[] = [];
       for (let i = NB_JOURS_TENDANCE - 1; i >= 0; i--) {
-        const jour = new Date(aujourdhui);
+        const jour = new Date(ancre);
         jour.setUTCDate(jour.getUTCDate() - i);
         const cle = `${id}|${jour.toISOString().slice(0, 10)}`;
         valeurs.push(parJourEtCampagne.get(cle) ?? 0);
@@ -613,9 +632,12 @@ async function lireEnvoisDuJour(
 ): Promise<{ envois: EnvoiPrevu[]; fuseau: string }> {
   const reglages = await lireReglages(ctx);
   const fuseau = String(reglages.fuseau);
-  const jourRef = params.jour ?? new Date().toISOString().slice(0, 10);
+  // Jour calendaire À PARIS (ou le fuseau réglé), pas celui du serveur UTC qui exécute le
+  // rendu (I5, revue finale) : entre minuit et l'heure du décalage, l'écran « aujourd'hui »
+  // montrait sinon la veille.
+  const jourRef = params.jour ?? jourDansFuseau(new Date(), fuseau);
 
-  const valeurs: unknown[] = [ctx.organisationId, jourRef];
+  const valeurs: unknown[] = [ctx.organisationId, jourRef, fuseau];
   let filtreCampagne = '';
   if (params.campagneId) {
     valeurs.push(params.campagneId);
@@ -636,8 +658,8 @@ async function lireEnvoisDuJour(
        left join senders s on s.id = a.sender_id
       where camp.organization_id = $1
         and a.status <> 'cancelled'
-        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= $2::date
-        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < $2::date + interval '1 day'
+        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
+        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1) at time zone $3)
         ${filtreCampagne}
       order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
     valeurs,

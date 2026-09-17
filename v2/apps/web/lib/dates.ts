@@ -97,9 +97,11 @@ export function heureAvecJour(
  * Clé de jour calendaire d'un instant DANS un fuseau donné (« 2026-09-14 »),
  * pas dans le fuseau d'exécution du serveur — `en-CA` formate en Gregorian
  * ISO (année-mois-jour) quel que soit l'environnement, un simple artefact de
- * cette locale plutôt qu'un choix de langue.
+ * cette locale plutôt qu'un choix de langue. Exportée (I5, revue finale) :
+ * `app/(app)/page.tsx` en a aussi besoin pour sa classification
+ * aujourd'hui/hier, plutôt que de dupliquer un troisième `Intl.DateTimeFormat`.
  */
-function cleJourDansFuseau(date: Date, fuseau: string): string {
+export function cleJourDansFuseau(date: Date, fuseau: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
     date,
   );

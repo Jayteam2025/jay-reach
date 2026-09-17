@@ -1028,7 +1028,7 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Enrichments (FullEnrich)",
         "envois": "Sends",
-        "aide": "Resets to zero at midnight, Paris time. A reached limit puts the task on hold until the next day, nothing is lost."
+        "aide": "Scoring and enrichment reset to zero at midnight UTC (1am Paris time in winter, 2am in summer); sends follow the organization's time zone. A reached limit puts the task on hold until the next day, nothing is lost."
       },
       "protection": {
         "title": "What this protects",

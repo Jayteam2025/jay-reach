@@ -99,6 +99,20 @@ describe('plafonds', () => {
     const sqlEnvois = appels.map((call) => String(call[0])).find((sql) => /from actions/i.test(sql));
     expect(sqlEnvois).toMatch(/channel = 'email'/);
   });
+
+  it('la borne de la jauge d’envois revient en timestamptz avant comparaison (I5, revue finale) : le second `at time zone` manquait, la borne retombait sur minuit UTC', async () => {
+    const ctx = faux({
+      'from organization_settings': [],
+      scored_today: [{ n: 0 }],
+      enrich_today: [{ n: 0 }],
+      'from actions': [{ n: 0 }],
+      'from senders': [{ plafond: 90 }],
+    });
+    await lireConsommationDuJour(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const sqlEnvois = appels.map((call) => String(call[0])).find((sql) => /from actions/i.test(sql));
+    expect(sqlEnvois).toMatch(/date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
+  });
 });
 
 describe('plafondEnrichissementDuJour (R78, tour de correction 1 de la tâche 17)', () => {
