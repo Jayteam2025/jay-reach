@@ -270,12 +270,16 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
     return true;
   });
 
+  // Largeurs de contenu (tour de correction F6, point 25) : Canal / Utilisé par / Envois se
+  // réduisent à leur contenu (`largeur: '1%'`, même astuce que la colonne Statut des tableaux de
+  // contacts, point 20) pour laisser le plus d'espace possible à Modèle ; Modifié passe en nowrap
+  // (l'auteur descend sur sa propre ligne, cf. plus bas) plutôt que de couper au milieu d'un mot.
   const colonnes: ColonneTable[] = [
     { cle: 'modele', titre: t('table.name') },
-    { cle: 'canal', titre: t('table.channel') },
-    { cle: 'utilisePar', titre: t('table.usedBy') },
-    { cle: 'envois', titre: t('table.sent'), num: true, largeur: '110px' },
-    { cle: 'modifie', titre: t('table.modified'), largeur: '160px' },
+    { cle: 'canal', titre: t('table.channel'), nowrap: true, largeur: '1%' },
+    { cle: 'utilisePar', titre: t('table.usedBy'), nowrap: true, largeur: '1%' },
+    { cle: 'envois', titre: t('table.sent'), num: true, nowrap: true, largeur: '110px' },
+    { cle: 'modifie', titre: t('table.modified'), nowrap: true, largeur: '160px' },
     { cle: 'action', titre: '' },
   ];
 
@@ -322,10 +326,14 @@ export function TableModeles({ modeles, peutModifier }: TableModelesProps) {
         </div>
       ),
     envois: celluleEnvois(t, m.envois),
+    // Auteur en sous-ligne plutôt qu'accolé à la date (tour de correction F6, point 25) : les deux
+    // bout à bout (« renartjeanbaptiste · 28 août ») dépassaient la largeur de la colonne et
+    // coupaient sur deux lignes malgré le nowrap.
     modifie: (
-      <small className="jr-secondaire" style={{ fontSize: 12.5 }}>
-        {m.modifiePar ? `${m.modifiePar} · ${m.modifieLeTexte}` : m.modifieLeTexte}
-      </small>
+      <span className="jr-secondaire" style={{ fontSize: 12.5 }}>
+        {m.modifieLeTexte}
+        {m.modifiePar && <small className="jr-detail-ligne">{m.modifiePar}</small>}
+      </span>
     ),
     action: peutModifier ? (
       <Bouton taille="petit" onClick={() => setModeleOuvert(m)}>
