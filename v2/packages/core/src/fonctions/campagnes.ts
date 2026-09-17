@@ -16,6 +16,7 @@ import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
+import { construireValeursMinimales, normalizeListColumnName, renderTemplatePartial } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
@@ -142,6 +143,67 @@ export const FROM_POPULATION_CAMPAGNE = `from (
       left join accounts ac on ac.id = coalesce(s.account_id, c.account_id)`;
 
 // ---------------------------------------------------------------------------
+// Grandeurs communes d'une campagne (point 1, tour de correction 5) : une
+// seule définition par grandeur, portée ici, reprise par `listerCampagnes`,
+// `lireEntonnoir` et `aujourdhui.ts` (colonne « Contacts »). Chaque fragment
+// prend l'expression SQL qui désigne l'id de la campagne dans la requête
+// appelante — `$1` pour une fonction à une seule campagne (`lireEntonnoir`),
+// `c.id` pour une ligne corrélée dans une liste (`listerCampagnes`,
+// `aujourdhui.ts`) — jamais un second aller-retour pour reformuler la même
+// contrainte.
+// ---------------------------------------------------------------------------
+
+/**
+ * Grandeur « Contacts » (onglet Contacts, R31/R36) : personnes distinctes,
+ * même UNION que `FROM_POPULATION_CAMPAGNE` mais réduite à un compte — la
+ * colonne « Qualifiés » d'Aujourd'hui (qui comptait toutes les inscriptions,
+ * y compris terminées, jamais les mêmes personnes que l'onglet Contacts)
+ * disparaît au profit de cette même définition partout (point 1).
+ */
+export function sqlContactsCampagne(campagneIdExpr: string): string {
+  return `(select count(distinct contact_id)::int from (
+      select c0.id as contact_id from signals s0
+        join campaign_sources cs0 on cs0.source_id = s0.source_id
+        join contacts c0 on c0.source_signal_id = s0.id
+       where cs0.campaign_id = ${campagneIdExpr} and s0.status <> 'new'
+      union
+      select e1.contact_id from enrollments e1
+       where e1.campaign_id = ${campagneIdExpr}
+         and not exists (
+           select 1 from signals s2
+             join campaign_sources cs2 on cs2.source_id = s2.source_id
+             join contacts c2 on c2.source_signal_id = s2.id
+            where c2.id = e1.contact_id and cs2.campaign_id = ${campagneIdExpr} and s2.status <> 'new'
+         )
+    ) pop_contacts)`;
+}
+
+/** Grandeur « En séquence » (point 1) : inscriptions `active` SEULEMENT — `paused`/`paused_absence` sont comptées à part (`sqlEnPauseCampagne`). */
+export function sqlEnSequenceCampagne(campagneIdExpr: string): string {
+  return `(select count(*)::int from enrollments e where e.campaign_id = ${campagneIdExpr} and e.status = 'active')`;
+}
+
+/** Grandeur « En pause » (point 1) : inscriptions `paused` ou `paused_absence`. */
+export function sqlEnPauseCampagne(campagneIdExpr: string): string {
+  return `(select count(*)::int from enrollments e where e.campaign_id = ${campagneIdExpr} and e.status in ('paused', 'paused_absence'))`;
+}
+
+/** Emails effectivement partis (`dispatched` + `delivered`) — dénominateur commun des taux (point 1). */
+export function sqlPartisCampagne(campagneIdExpr: string): string {
+  return `(select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = ${campagneIdExpr} and a.status in ('dispatched', 'delivered'))`;
+}
+
+/**
+ * Taux (arrondi au dixième) sur les emails partis — jamais sur « en séquence »
+ * ni sur « contacts » (point 1). `null` (pas `0`) quand rien n'est parti
+ * encore : la page affiche alors « — », jamais une division par zéro déguisée
+ * en 0 %.
+ */
+export function tauxSurPartis(numerateur: number, partis: number): number | null {
+  return partis > 0 ? Math.round((numerateur / partis) * 1000) / 10 : null;
+}
+
+// ---------------------------------------------------------------------------
 // Petits utilitaires partagés (copies volontairement locales de celles
 // d'`aujourdhui.ts`, non exportées là-bas — éviter d'y toucher pendant que
 // d'autres tâches du lot y travaillent en parallèle).
@@ -177,6 +239,24 @@ function jourDansFuseau(date: Date, fuseau: string): string {
 function motifRecherche(recherche: string | undefined): string | null {
   if (!recherche) return null;
   return `%${recherche.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/** Noms de colonne (normalisés) qui désignent un intitulé de poste dans une liste importée (point 2). */
+const CIBLES_COLONNE_INTITULE_POSTE = new Set(['intitule_poste', 'job_title']);
+
+/**
+ * Cherche, dans une ligne brute de `list_members.raw_row`, la colonne du CSV
+ * importé qui désigne un intitulé de poste (point 2, onglet Contacts d'une
+ * campagne à liste) — `liste_intitule_poste`/`liste_job_title` une fois
+ * normalisée (`normalizeListColumnName`, même règle que les variables de
+ * message). Renvoie la clé BRUTE (casse d'origine du CSV), à utiliser telle
+ * quelle dans `raw_row ->> $n` — jamais la clé normalisée, absente de la ligne.
+ */
+export function trouverColonneIntitulePoste(rawRow: Record<string, unknown>): string | null {
+  for (const cle of Object.keys(rawRow)) {
+    if (CIBLES_COLONNE_INTITULE_POSTE.has(normalizeListColumnName(cle))) return cle;
+  }
+  return null;
 }
 
 /**
@@ -256,9 +336,13 @@ export interface CampagneListeResume {
   readonly qualifies: number;
   /** Personnes distinctes (pas des offres/signaux) reliées aux signaux retenus de la campagne — R31 : la colonne « Contacts » de la liste compte des personnes, pas des offres. */
   readonly contacts: number;
+  /** Inscriptions `active` SEULEMENT (point 1) — `paused`/`paused_absence` sont dans `enPause`. */
   readonly enSequence: number;
+  /** Inscriptions `paused` ou `paused_absence` (point 1) — distinctes d'`enSequence` depuis le tour de correction 5 (les deux étaient confondues, 167 affiché ici contre 165 sur Aujourd'hui pour la même campagne). */
+  readonly enPause: number;
   readonly reponses: number;
-  readonly tauxReponse: number;
+  /** Réponses / emails partis (`dispatched`+`delivered`), jamais / en séquence ni / contacts (point 1) — `null` (page : « — ») quand rien n'est encore parti. */
+  readonly tauxReponse: number | null;
   /** Livraisons par jour sur les 7 derniers jours (le plus ancien en premier) — sparkline de la liste des campagnes. */
   readonly tendance7j: number[];
   /** Fils dont l'intérêt est marqué, parmi les contacts inscrits dans cette campagne. */
@@ -277,20 +361,49 @@ export interface CampagneEnTete {
   readonly dailyCap: number | null;
 }
 
-export interface Entonnoir {
+/** Marches communes aux deux natures de campagne (point 1 et point 2, tour de correction 5). */
+export interface EntonnoirCommun {
+  /** Inscriptions `active` SEULEMENT — `paused`/`paused_absence` sont dans `enPause` (point 1). */
+  readonly enSequence: number;
+  readonly enPause: number;
+  readonly livres: number;
+  /** `livres` / emails partis — `null` (page : « — ») quand rien n'est encore parti (point 1). */
+  readonly tauxLivres: number | null;
+  readonly reponses: number;
+  /** `reponses` / emails partis, jamais / en séquence ni / contacts (point 1) — `null` sans envoi. */
+  readonly tauxReponses: number | null;
+  readonly interesses: number;
+}
+
+/** Entonnoir d'une campagne alimentée par un ou plusieurs thèmes de veille (`campaign_sources`). */
+export interface EntonnoirSources extends EntonnoirCommun {
+  readonly origine: 'sources';
   readonly trouves: number;
   readonly qualifies: number;
   /** Marche « Contacts identifiés » (R31) : personnes distinctes derrière les signaux qualifiés, pas les signaux eux-mêmes. */
   readonly contacts: number;
-  readonly enSequence: number;
-  readonly livres: number;
-  readonly tauxLivres: number;
-  readonly reponses: number;
-  readonly tauxReponses: number;
-  readonly interesses: number;
 }
 
+/**
+ * Entonnoir d'une campagne alimentée directement par une liste importée
+ * (`campaigns.list_id`, issue #120, point 2) : pas de « trouvés »/« qualifiés »
+ * (aucun signal), l'entonnoir part des contacts importés.
+ */
+export interface EntonnoirListe extends EntonnoirCommun {
+  readonly origine: 'liste';
+  /** Nombre de membres de la liste (`list_members`) — même valeur que `VueDEnsemble.listeSource.contacts`. */
+  readonly contactsImportes: number;
+  /** Membres de la liste dont le contact a un email `valid`. */
+  readonly emailVerifie: number;
+}
+
+/** Discriminée par `origine` (point 2) : la page choisit les marches selon la nature de la campagne. */
+export type Entonnoir = EntonnoirSources | EntonnoirListe;
+
 export interface SourceResume {
+  readonly id: string;
+  /** Nom de la source, tel que dans l'onglet Sources (ex. « Adzuna — maintenance industrielle »). */
+  readonly nom: string;
   /** `null` si le fournisseur réel n'a pu être résolu par aucun des trois repères (tour de correction 4, R70) — n'est jamais survenu en pratique mais reste possible sur une config disparue. */
   readonly providerId: string | null;
 }
@@ -318,6 +431,14 @@ export interface VueDEnsemble {
    */
   readonly nombreSources: number;
   readonly activite: Evenement[];
+  /** Liste qui alimente directement la campagne (`campaigns.list_id`, point 2, issue #120) — `null` pour une campagne à sources. */
+  readonly listeSource: ListeSourceResume | null;
+}
+
+export interface ListeSourceResume {
+  readonly nom: string;
+  readonly contacts: number;
+  readonly importeeLe: string;
 }
 
 export interface ContactCampagne {
@@ -340,6 +461,13 @@ export interface ContactCampagne {
   readonly motifPause: string | null;
   /** `enrollments.resume_at` — non `null` seulement pour une pause d'absence datée. */
   readonly repriseLe: string | null;
+  /**
+   * Intitulé de poste de la liste (point 2, campagne à liste) : valeur de la
+   * colonne du CSV importé qui normalise vers `intitule_poste` ou `job_title`
+   * (`normalizeListColumnName`) — `null` pour une campagne à sources, ou pour
+   * un contact dont la ligne importée n'a pas cette colonne renseignée.
+   */
+  readonly intitulePosteListe: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +486,12 @@ async function boitesActivesDeLOrganisation(
   ctx: Contexte,
 ): Promise<{ id: string; identite: string; inboxProvider: string | null }[]> {
   const res = await ctx.ex.query<{ id: string; identity: string; inbox_provider: string | null }>(
-    `select id, identity, inbox_provider from senders /* jr:boites_actives */ where organization_id = $1 and kind = 'email' and is_active`,
+    // Point 4 (tour de correction 5) : un seul tri, par adresse, dans toute requête qui
+    // liste des expéditeurs (« Envoie depuis », cartes Expéditeurs) — sans lui, l'ordre
+    // dépendait de l'exécution physique de la requête, différent d'une page à l'autre.
+    `select id, identity, inbox_provider from senders /* jr:boites_actives */
+      where organization_id = $1 and kind = 'email' and is_active
+      order by identity asc`,
     [ctx.organisationId],
   );
   return res.rows.map((r) => ({ id: r.id, identite: r.identity, inboxProvider: r.inbox_provider }));
@@ -390,7 +523,9 @@ export async function listerBoitesPourCampagne(ctx: Contexte, entree: unknown): 
   valider(z.object({}), entree);
 
   const res = await ctx.ex.query<{ id: string; identity: string; provider_id: string | null; inbox_provider: string | null }>(
-    `select id, identity, provider_id, inbox_provider from senders /* jr:boites_pour_campagne */ where organization_id = $1 and kind = 'email' and is_active`,
+    `select id, identity, provider_id, inbox_provider from senders /* jr:boites_pour_campagne */
+      where organization_id = $1 and kind = 'email' and is_active
+      order by identity asc`,
     [ctx.organisationId],
   );
   return res.rows.map((r) => ({ id: r.id, identite: r.identity, marque: marqueBoite(r.identity, r.inbox_provider) }));
@@ -412,6 +547,8 @@ interface LigneCampagneListe {
   qualifies: number;
   contacts: number;
   en_sequence: number;
+  en_pause: number;
+  partis: number;
   reponses: number;
   interesses: number;
   derniere_activite: string | null;
@@ -427,14 +564,10 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
               coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               (select count(*)::int from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
                 where cs2.campaign_id = c.id and s2.status in ('qualified', 'enrolled')) as qualifies,
-              (select count(distinct contact_id)::int from (
-                  select c3.id as contact_id from signals s3 join campaign_sources cs3 on cs3.source_id = s3.source_id
-                    join contacts c3 on c3.source_signal_id = s3.id
-                   where cs3.campaign_id = c.id and s3.status <> 'new'
-                  union
-                  select e3b.contact_id from enrollments e3b where e3b.campaign_id = c.id
-                ) pop3) as contacts,
-              (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
+              ${sqlContactsCampagne('c.id')} as contacts,
+              ${sqlEnSequenceCampagne('c.id')} as en_sequence,
+              ${sqlEnPauseCampagne('c.id')} as en_pause,
+              ${sqlPartisCampagne('c.id')} as partis,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
               (select count(distinct c4.id)::int from threads t4 join contacts c4 on c4.id = t4.contact_id join enrollments e4 on e4.contact_id = c4.id
                 where e4.campaign_id = c.id and t4.interest = 'interested') as interesses,
@@ -491,8 +624,9 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     qualifies: r.qualifies,
     contacts: r.contacts,
     enSequence: r.en_sequence,
+    enPause: r.en_pause,
     reponses: r.reponses,
-    tauxReponse: r.qualifies > 0 ? Math.round((r.reponses / r.qualifies) * 1000) / 10 : 0,
+    tauxReponse: tauxSurPartis(r.reponses, r.partis),
     tendance7j: tendanceParCampagne.get(r.id) ?? new Array(NB_JOURS_TENDANCE).fill(0),
     interesses: r.interesses,
     derniereActivite: r.derniere_activite,
@@ -540,46 +674,96 @@ async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<Ca
   };
 }
 
-async function lireEntonnoir(ctx: Contexte, campagneId: string): Promise<Entonnoir> {
-  const res = await ctx.ex.query<{
-    trouves: number;
-    qualifies: number;
-    contacts: number;
+/**
+ * Liste qui alimente directement la campagne (`campaigns.list_id`, point 2,
+ * issue #120) — `listId` renvoyé pour que `lireEntonnoir` (appelé juste après,
+ * dans le même `lireVueDEnsemble`) n'ait pas à relire `campaigns` une seconde
+ * fois pour la même information.
+ */
+async function lireListeSourceCampagne(
+  ctx: Contexte,
+  campagneId: string,
+): Promise<{ listId: string | null; listeSource: ListeSourceResume | null }> {
+  const res = await ctx.ex.query<{ list_id: string | null; nom: string | null; importee_le: string | null; contacts: number | null }>(
+    `select c.list_id, l.name as nom, l.created_at as importee_le,
+            (select count(*)::int from list_members lm where lm.list_id = l.id) as contacts
+       from campaigns c /* jr:campagne_liste_source */
+       left join lists l on l.id = c.list_id
+      where c.id = $1 and c.organization_id = $2`,
+    [campagneId, ctx.organisationId],
+  );
+  const r = res.rows[0];
+  if (!r?.list_id) return { listId: null, listeSource: null };
+  return {
+    listId: r.list_id,
+    listeSource: { nom: r.nom ?? '—', contacts: r.contacts ?? 0, importeeLe: r.importee_le ?? '' },
+  };
+}
+
+/**
+ * Vue d'ensemble (point 2, issue #120) : la nature de la campagne (`listId`
+ * posé ou non, cf. `campaigns_one_source`, `campagnes.ts`, résolu par
+ * `lireListeSourceCampagne` avant l'appel — pas de second aller-retour pour la
+ * même information) décide de la forme de l'entonnoir : une campagne à liste
+ * n'a ni signal ni thème de veille, un entonnoir qui commence par « 0 offres
+ * et profils trouvés » n'y a aucun sens. Les marches COMMUNES (en séquence/en
+ * pause/livrés/réponses/intéressés, point 1) sont lues une seule fois, dans
+ * une requête à part, jamais dupliquées entre les deux branches.
+ */
+async function lireEntonnoir(ctx: Contexte, campagneId: string, listId: string | null): Promise<Entonnoir> {
+  const communRes = await ctx.ex.query<{
     en_sequence: number;
+    en_pause: number;
     livres: number;
+    partis: number;
     reponses: number;
     interesses: number;
   }>(
     `select
-        (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1) as trouves,
-        (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1 and s.status in ('qualified', 'enrolled')) as qualifies,
-        (select count(distinct contact_id)::int from (
-            select c2.id as contact_id from signals s2 join campaign_sources cs2 on cs2.source_id = s2.source_id
-              join contacts c2 on c2.source_signal_id = s2.id
-             where cs2.campaign_id = $1 and s2.status <> 'new'
-            union
-            select e2b.contact_id from enrollments e2b where e2b.campaign_id = $1
-          ) pop2) as contacts,
-        (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status in ('active', 'paused', 'paused_absence')) as en_sequence,
+        ${sqlEnSequenceCampagne('$1')} as en_sequence,
+        ${sqlEnPauseCampagne('$1')} as en_pause,
         (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = $1 and a.status = 'delivered') as livres,
+        ${sqlPartisCampagne('$1')} as partis,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status = 'replied') as reponses,
         (select count(distinct c.id)::int from threads t join contacts c on c.id = t.contact_id join enrollments e on e.contact_id = c.id
           where e.campaign_id = $1 and t.interest = 'interested') as interesses
-      /* jr:entonnoir_campagne */`,
+      /* jr:entonnoir_commun */`,
     [campagneId],
   );
-  const r = res.rows[0] ?? { trouves: 0, qualifies: 0, contacts: 0, en_sequence: 0, livres: 0, reponses: 0, interesses: 0 };
-  return {
-    trouves: r.trouves,
-    qualifies: r.qualifies,
-    contacts: r.contacts,
-    enSequence: r.en_sequence,
-    livres: r.livres,
-    tauxLivres: r.qualifies > 0 ? Math.round((r.livres / r.qualifies) * 1000) / 10 : 0,
-    reponses: r.reponses,
-    tauxReponses: r.livres > 0 ? Math.round((r.reponses / r.livres) * 1000) / 10 : 0,
-    interesses: r.interesses,
+  const c = communRes.rows[0] ?? { en_sequence: 0, en_pause: 0, livres: 0, partis: 0, reponses: 0, interesses: 0 };
+  const commun: EntonnoirCommun = {
+    enSequence: c.en_sequence,
+    enPause: c.en_pause,
+    livres: c.livres,
+    tauxLivres: tauxSurPartis(c.livres, c.partis),
+    reponses: c.reponses,
+    tauxReponses: tauxSurPartis(c.reponses, c.partis),
+    interesses: c.interesses,
   };
+
+  if (listId) {
+    const listeRes = await ctx.ex.query<{ contacts_importes: number; email_verifie: number }>(
+      `select
+          (select count(*)::int from list_members lm where lm.list_id = $1) as contacts_importes,
+          (select count(*)::int from list_members lm join contacts co on co.id = lm.contact_id
+            where lm.list_id = $1 and co.email_status = 'valid') as email_verifie
+        /* jr:entonnoir_liste */`,
+      [listId],
+    );
+    const l = listeRes.rows[0] ?? { contacts_importes: 0, email_verifie: 0 };
+    return { origine: 'liste', contactsImportes: l.contacts_importes, emailVerifie: l.email_verifie, ...commun };
+  }
+
+  const sourcesRes = await ctx.ex.query<{ trouves: number; qualifies: number; contacts: number }>(
+    `select
+        (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1) as trouves,
+        (select count(*)::int from signals s join campaign_sources cs on cs.source_id = s.source_id where cs.campaign_id = $1 and s.status in ('qualified', 'enrolled')) as qualifies,
+        ${sqlContactsCampagne('$1')} as contacts
+      /* jr:entonnoir_sources */`,
+    [campagneId],
+  );
+  const s = sourcesRes.rows[0] ?? { trouves: 0, qualifies: 0, contacts: 0 };
+  return { origine: 'sources', trouves: s.trouves, qualifies: s.qualifies, contacts: s.contacts, ...commun };
 }
 
 interface LigneEnvoi {
@@ -603,6 +787,30 @@ interface LigneEnvoi {
   contact_id: string | null;
   sender_id: string | null;
   signal_id: string | null;
+  /**
+   * Objet du gabarit de l'étape (`message_templates.subject`), pour un envoi
+   * pas encore parti — `objet` (`a.payload ->> 'subject'`) ne se pose qu'à
+   * l'envoi réussi (`email-salesblink.ts`), donc reste `null` pour tout ce qui
+   * est `scheduled`/`pending_approval`/`approved`/`blocked` (point 5, tour de
+   * correction 5). `null` pour une étape LinkedIn (pas d'objet) ou sans
+   * gabarit actif.
+   */
+  etape_sujet: string | null;
+}
+
+/**
+ * Objet affiché en « Étape et objet » : celui déjà stocké sur l'action pour un
+ * envoi parti, sinon celui du gabarit de l'étape — rendu avec les seules
+ * valeurs déjà en main dans CETTE requête (`construireValeursMinimales` :
+ * prénom/nom), jamais une requête de plus par ligne (point 5). Une variable
+ * qu'on n'a pas cherchée ici (`{{liste_intitule_poste}}`, `{{entreprise}}`…)
+ * reste donc visible telle quelle plutôt que blanchie — `renderTemplatePartial`,
+ * pas `renderTemplate`.
+ */
+function objetAffiche(r: LigneEnvoi): string | null {
+  if (r.objet !== null) return r.objet;
+  if (!r.etape_sujet) return null;
+  return renderTemplatePartial(r.etape_sujet, construireValeursMinimales(r));
 }
 
 function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
@@ -618,7 +826,7 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
     expediteur: r.expediteur,
     canal: canalDe(r.channel),
     etatDetaille: r.status as EnvoiPrevu['etatDetaille'],
-    objet: r.objet,
+    objet: objetAffiche(r),
     contactId: r.contact_id,
     expediteurId: r.sender_id,
     signalId: r.signal_id,
@@ -649,13 +857,21 @@ async function lireEnvoisDuJour(
             a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
             c.first_name, c.last_name, c.source_signal_id as signal_id,
             camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
-            e.contact_id
+            e.contact_id, mt.subject as etape_sujet
        from actions a /* jr:file_du_jour_campagne */
        join enrollments e on e.id = a.enrollment_id
        join campaigns camp on camp.id = e.campaign_id
        left join contacts c on c.id = e.contact_id
        left join sequence_steps st on st.id = a.step_id
        left join senders s on s.id = a.sender_id
+       -- Gabarit de l'étape, pour l'objet d'un envoi pas encore parti
+       -- (objetAffiche) : une seule jointure ensembliste pour toute la
+       -- page, pas une requête par ligne (point 5). mt.is_active suffit à
+       -- désigner LA version en vigueur (au plus une par lignée+langue,
+       -- uq_message_templates_active_per_family_locale) ; la langue n'est
+       -- pas filtrée ici, comme la résolution déjà en place pour l'onglet
+       -- Séquence (lireSequence, même limite assumée).
+       left join message_templates mt on mt.is_active and coalesce(mt.parent_id, mt.id) = st.template_parent_id
       where camp.organization_id = $1
         and a.status <> 'cancelled'
         and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
@@ -667,15 +883,24 @@ async function lireEnvoisDuJour(
   return { envois: res.rows.map((r) => versEnvoiPrevu(r, fuseau)), fuseau };
 }
 
+/**
+ * Carte « Sources » de la vue d'ensemble (point 2, constat (x)) : disait
+ * « 1 active · Adzuna » alors que la source active était France Travail —
+ * `distinct provider_id` collapsait toutes les sources de la campagne
+ * (actives ou non) sur un seul fournisseur, au lieu de lister les sources
+ * ACTIVES par leur propre nom, comme l'onglet Sources. Une ligne par source
+ * active (jamais un fournisseur dédoublonné), triée par nom.
+ */
 async function listerSourcesCampagneResume(ctx: Contexte, campagneId: string): Promise<SourceResume[]> {
-  const res = await ctx.ex.query<{ provider_id: string | null }>(
-    `select distinct ${SQL_PROVIDER_ID_AFFICHAGE} as provider_id /* jr:sources_campagne_resume */
+  const res = await ctx.ex.query<{ id: string; nom: string; provider_id: string | null }>(
+    `select so.id, so.name as nom, ${SQL_PROVIDER_ID_AFFICHAGE} as provider_id /* jr:sources_campagne_resume */
        from campaign_sources cs
        join sources so on so.id = cs.source_id
-      where cs.campaign_id = $1`,
+      where cs.campaign_id = $1 and so.is_active
+      order by so.name asc`,
     [campagneId],
   );
-  return res.rows.map((r) => ({ providerId: r.provider_id }));
+  return res.rows.map((r) => ({ id: r.id, nom: r.nom, providerId: r.provider_id }));
 }
 
 /** Nombre réel de sources reliées (une ligne `campaign_sources` = une carte de l'onglet Sources, tâche 11). */
@@ -694,9 +919,15 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
   exiger(ctx, 'viewer');
   const { campagneId } = valider(schemaCampagneId, entree);
 
+  // Résolu avant le reste (pas dans le même `Promise.all`) : `lireEntonnoir` a
+  // besoin de `listId` pour choisir sa forme (point 2) — un aller-retour de
+  // plus, mais pas un second aller-retour, `listeSource` ET `listId` viennent
+  // de cette seule requête.
+  const { listId, listeSource } = await lireListeSourceCampagne(ctx, campagneId);
+
   const [campagne, entonnoir, { envois }, sources, nombreSources, { evenements }] = await Promise.all([
     lireCampagneEnTete(ctx, campagneId),
-    lireEntonnoir(ctx, campagneId),
+    lireEntonnoir(ctx, campagneId, listId),
     lireEnvoisDuJour(ctx, { campagneId }),
     listerSourcesCampagneResume(ctx, campagneId),
     compterSourcesCampagne(ctx, campagneId),
@@ -712,6 +943,7 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
     sources,
     nombreSources,
     activite: evenements.slice(0, NOMBRE_EVENEMENTS_APERCU),
+    listeSource,
   };
 }
 
@@ -743,12 +975,29 @@ interface LigneContactCampagne {
   e_status: string | null;
   stop_reason: string | null;
   resume_at: string | null;
+  intitule_poste_liste: string | null;
 }
 
 export async function listerContactsCampagne(
   ctx: Contexte,
   entree: unknown,
-): Promise<{ total: number; compteurs: Record<StatutContactCampagne | 'tous', number>; lignes: ContactCampagne[] }> {
+): Promise<{
+  total: number;
+  compteurs: Record<StatutContactCampagne | 'tous', number>;
+  lignes: ContactCampagne[];
+  /** `true` pour une campagne à liste (point 2, issue #120, `campaigns.list_id` posé) — `false` pour une campagne à sources. */
+  campagneAListe: boolean;
+  /**
+   * `true` seulement pour une campagne à liste (`campagneAListe`) DONT la
+   * colonne d'intitulé de poste a été trouvée dans le CSV importé
+   * (`trouverColonneIntitulePoste`) — la page remplace alors « Pourquoi lui »
+   * et « Score » (colonnes toujours vides sans signal) par cet intitulé.
+   * `false` pour une campagne à sources ET pour une campagne à liste sans
+   * cette colonne (colonnes simplement masquées, sans remplacement —
+   * décision page, pas ce module).
+   */
+  colonnePosteListe: boolean;
+}> {
   exiger(ctx, 'viewer');
   const { campagneId, filtre, recherche, page } = valider(schemaListerContacts, entree);
 
@@ -758,11 +1007,27 @@ export async function listerContactsCampagne(
   // scores et statuts de SA population aux trois requêtes ci-dessous, qui ne
   // filtrent que sur `campaign_id`. Vérifié AVANT toute autre requête, jamais
   // contourné par un futur appel MCP direct.
-  const campRes = await ctx.ex.query(
-    `select id from campaigns /* jr:contacts_campagne_verif */ where id = $1 and organization_id = $2`,
+  const campRes = await ctx.ex.query<{ id: string; list_id: string | null }>(
+    `select id, list_id from campaigns /* jr:contacts_campagne_verif */ where id = $1 and organization_id = $2`,
     [campagneId, ctx.organisationId],
   );
   if (campRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
+  const listId = campRes.rows[0]?.list_id ?? null;
+
+  // Point 2 (issue #120) : le nom BRUT de la colonne CSV qui désigne un
+  // intitulé de poste, cherché une seule fois sur un échantillon de la liste
+  // (les imports d'une même liste partagent tous les mêmes en-têtes) — jamais
+  // par ligne, `raw_row ->> $n` ci-dessous réutilise cette même clé pour
+  // toutes les lignes de la page.
+  let colonnePosteListe: string | null = null;
+  if (listId) {
+    const echantillonRes = await ctx.ex.query<{ raw_row: Record<string, unknown> | null }>(
+      `select raw_row from list_members /* jr:contacts_liste_echantillon */ where list_id = $1 and raw_row is not null limit 1`,
+      [listId],
+    );
+    const brut = echantillonRes.rows[0]?.raw_row;
+    if (brut) colonnePosteListe = trouverColonneIntitulePoste(brut);
+  }
 
   const compteursRes = await ctx.ex.query<{ statut: StatutContactCampagne; n: number }>(
     `select statut, count(*)::int as n
@@ -788,7 +1053,7 @@ export async function listerContactsCampagne(
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
     `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi,
-            enrollment_id, e_status, stop_reason, resume_at
+            enrollment_id, e_status, stop_reason, resume_at, intitule_poste_liste
        from (
          select
            s.id as signal_id,
@@ -799,14 +1064,20 @@ export async function listerContactsCampagne(
            s.score,
            s.title as pourquoi,
            e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at,
-           ${CASE_STATUT_DERIVE} as statut
+           ${CASE_STATUT_DERIVE} as statut,
+           -- Point 2 (issue #120) : intitulé de poste de la liste importée, une seule
+           -- colonne (repérée une fois plus haut) réutilisée pour toutes les lignes.
+           -- Jointure inoffensive quand $6/$7 sont nuls (campagne à sources) : ne
+           -- filtre rien, ne produit qu'une colonne vide.
+           lm.raw_row ->> $7 as intitule_poste_liste
          ${FROM_POPULATION_CAMPAGNE}
+         left join list_members lm on lm.list_id = $6 and lm.contact_id = c.id
        ) x /* jr:lignes_contacts_campagne */
       where ($2 = 'tous' or statut = $2)
         and ($3::text is null or first_name ilike $3 or last_name ilike $3 or entreprise ilike $3)
       order by signal_id desc nulls last, contact_id desc
       limit $4 offset $5`,
-    [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS],
+    [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS, listId, colonnePosteListe],
   );
 
   // Requête séparée (pas une sous-requête corrélée par ligne) : une seule campagne pour tout
@@ -833,9 +1104,10 @@ export async function listerContactsCampagne(
     inscriptionId: r.enrollment_id,
     motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
     repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
+    intitulePosteListe: r.intitule_poste_liste,
   }));
 
-  return { total, compteurs, lignes };
+  return { total, compteurs, lignes, campagneAListe: listId !== null, colonnePosteListe: colonnePosteListe !== null };
 }
 
 // ---------------------------------------------------------------------------
@@ -908,9 +1180,121 @@ const ACTIONS_PAR_FILTRE: Partial<Record<FiltreActivite, ActionJournal[]>> = {
   erreurs: ['engine_error'],
 };
 
+interface LigneAuditEvenement {
+  id: string;
+  created_at: string;
+  entity_type: string;
+  action: ActionJournal;
+  diff: { libelle?: string; detail?: string } | null;
+}
+
+function versEvenementAudit(r: LigneAuditEvenement): Evenement {
+  return {
+    id: r.id,
+    quand: r.created_at,
+    type: r.action,
+    libelle: r.diff?.libelle ?? '',
+    detail: r.diff?.detail ?? null,
+  };
+}
+
+interface LigneEnvoiGroupe {
+  /** `date_trunc('hour', a.dispatched_at)`, ISO. */
+  heure: string;
+  /** `sequence_steps.position`, 0-based — `null` si l'action n'a plus d'étape rattachée (supprimée). */
+  etape: number | null;
+  n: number;
+  /** Boîtes distinctes ayant servi à ce groupe (`count(distinct a.sender_id)`). */
+  boites: number;
+}
+
+/**
+ * Événements « envois » du fil d'activité (point 3.a, tour de correction 5) :
+ * une ligne par (heure, étape), jamais une par email — 110 envois dans une
+ * journée feraient sinon 110 lignes. Dérivés directement de `actions`, jamais
+ * des `audit_events` individuels (`action_sent`/`action_delivered`, qui
+ * restent la source des AUTRES filtres, `ACTIONS_PAR_FILTRE`) : le fil « tout »
+ * reste juste même quand le journal du moteur prend du retard ou n'a pas
+ * encore été redéployé — seule l'écriture réelle dans `actions` compte.
+ * Fonction pure, testée sur des lignes simulées (brief).
+ */
+export function evenementsEnvoisGroupes(lignes: readonly LigneEnvoiGroupe[]): Evenement[] {
+  return lignes.map((r) => ({
+    id: `envois-${r.heure}-${r.etape ?? 'x'}`,
+    quand: r.heure,
+    type: 'action_sent',
+    libelle: `${r.n} email(s) envoyé(s)${r.etape !== null ? ` · étape ${r.etape + 1}` : ''} · ${r.boites} boîte(s)`,
+    detail: null,
+  }));
+}
+
+/**
+ * Bornes du fil « tout » (point 3) : le total et la pagination sont calculés
+ * en mémoire sur ces deux fenêtres bornées, pas sur l'historique complet de la
+ * campagne — au-delà, une campagne ancienne verrait `total`/`dernierePage`
+ * légèrement sous-évalués plutôt qu'une troisième requête `count(*)` par
+ * source à maintenir en plus d'une vraie union SQL. Largement suffisant pour
+ * les derniers jours d'activité qu'un opérateur consulte réellement.
+ */
+const BORNE_AUDIT_TOUT = 300;
+const BORNE_ENVOIS_GROUPES_TOUT = 200;
+
+/**
+ * Fil « tout » (point 3, tour de correction 5) : unit `audit_events` (actions
+ * manuelles, campagne activée/mise en pause, lots de scoring/enrichissement,
+ * passages de source, erreurs moteur, réponses reçues, pauses/reprises
+ * d'inscription) avec les envois groupés par heure et étape
+ * (`evenementsEnvoisGroupes`, dérivés de `actions`) — jamais les
+ * `action_sent`/`action_delivered` INDIVIDUELS, qui feraient sinon doublon
+ * avec le groupe. Tri et pagination faits ici, sur l'union des deux fenêtres
+ * bornées.
+ */
+async function listerActiviteTout(ctx: Contexte, campagneId: string, page: number): Promise<{ total: number; evenements: Evenement[] }> {
+  const [auditRes, groupesRes] = await Promise.all([
+    ctx.ex.query<LigneAuditEvenement>(
+      `select id, created_at, entity_type, action, diff
+         from audit_events /* jr:activite_campagne_tout_audit */
+        where organization_id = $2
+          and (
+            (entity_type = 'campaign' and entity_id = $1::uuid)
+            or (entity_type = 'contact' and action in ('reply_received', 'absence_detected', 'enrollment_paused', 'enrollment_resumed') and diff ->> 'campagneId' = $1::text)
+            or (action in ('scoring_batch', 'enrichment_batch') and diff ->> 'campagneId' = $1::text)
+            or (entity_type = 'source' and action = 'source_run' and entity_id in (select source_id from campaign_sources where campaign_id = $1::uuid))
+            or (entity_type = 'engine' and action = 'engine_error')
+          )
+        order by created_at desc
+        limit $3`,
+      [campagneId, ctx.organisationId, BORNE_AUDIT_TOUT],
+    ),
+    ctx.ex.query<LigneEnvoiGroupe>(
+      `select date_trunc('hour', a.dispatched_at) as heure, st.position as etape,
+              count(*)::int as n, count(distinct a.sender_id)::int as boites
+         from actions a /* jr:activite_campagne_tout_envois */
+         join enrollments e on e.id = a.enrollment_id
+         left join sequence_steps st on st.id = a.step_id
+        where e.campaign_id = $1
+          and a.status in ('dispatched', 'delivered')
+          and a.dispatched_at is not null
+        group by 1, 2
+        order by 1 desc
+        limit $2`,
+      [campagneId, BORNE_ENVOIS_GROUPES_TOUT],
+    ),
+  ]);
+
+  const tous = [...auditRes.rows.map(versEvenementAudit), ...evenementsEnvoisGroupes(groupesRes.rows)].sort((a, b) =>
+    a.quand < b.quand ? 1 : a.quand > b.quand ? -1 : 0,
+  );
+
+  const debut = (page - 1) * TAILLE_PAGE_ACTIVITE;
+  return { total: tous.length, evenements: tous.slice(debut, debut + TAILLE_PAGE_ACTIVITE) };
+}
+
 export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ total: number; evenements: Evenement[] }> {
   exiger(ctx, 'viewer');
   const { campagneId, filtre, page } = valider(schemaActivite, entree);
+
+  if (filtre === 'tout') return listerActiviteTout(ctx, campagneId, page);
 
   const conditionTout = `(
       (entity_type = 'campaign' and entity_id = $1::uuid)
@@ -925,7 +1309,7 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
   // aucune fenêtre) pour une page au-delà de la dernière (tour de correction 1, relecture).
   const params: unknown[] = [campagneId, ctx.organisationId];
   let where = `organization_id = $2 and ${conditionTout}`;
-  const actionsFiltre = filtre === 'tout' ? undefined : ACTIONS_PAR_FILTRE[filtre];
+  const actionsFiltre = ACTIONS_PAR_FILTRE[filtre];
   if (actionsFiltre) {
     params.push(actionsFiltre);
     where += ` and action = any($${params.length}::text[])`;
@@ -937,13 +1321,7 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
   );
 
   const paramsPage = [...params, TAILLE_PAGE_ACTIVITE, (page - 1) * TAILLE_PAGE_ACTIVITE];
-  const res = await ctx.ex.query<{
-    id: string;
-    created_at: string;
-    entity_type: string;
-    action: ActionJournal;
-    diff: { libelle?: string; detail?: string } | null;
-  }>(
+  const res = await ctx.ex.query<LigneAuditEvenement>(
     `select id, created_at, entity_type, action, diff
        from audit_events /* jr:activite_campagne */
       where ${where}
@@ -952,14 +1330,7 @@ export async function listerActivite(ctx: Contexte, entree: unknown): Promise<{ 
     paramsPage,
   );
 
-  const evenements: Evenement[] = res.rows.map((r) => ({
-    id: r.id,
-    quand: r.created_at,
-    type: r.action,
-    libelle: r.diff?.libelle ?? '',
-    detail: r.diff?.detail ?? null,
-  }));
-  return { total: totalRes.rows[0]?.n ?? 0, evenements };
+  return { total: totalRes.rows[0]?.n ?? 0, evenements: res.rows.map(versEvenementAudit) };
 }
 
 // ---------------------------------------------------------------------------

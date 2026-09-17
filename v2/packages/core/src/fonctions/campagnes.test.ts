@@ -9,6 +9,9 @@ import {
   creerCampagne,
   ErreurConflit,
   etapeAffichee,
+  evenementsEnvoisGroupes,
+  tauxSurPartis,
+  trouverColonneIntitulePoste,
   lancer,
   lireVueDEnsemble,
   listerActivite,
@@ -39,6 +42,34 @@ function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'admin')
   }) as unknown as Executeur['query'];
   return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
 }
+
+describe('tauxSurPartis (point 1, définitions uniques)', () => {
+  it('arrondit au dixième', () => {
+    expect(tauxSurPartis(1, 3)).toBe(33.3);
+  });
+
+  it('rend `null` (jamais 0) quand rien n’est parti — la page affiche « — »', () => {
+    expect(tauxSurPartis(0, 0)).toBeNull();
+  });
+
+  it('100 % quand tout ce qui est parti a répondu/été livré', () => {
+    expect(tauxSurPartis(2, 2)).toBe(100);
+  });
+});
+
+describe('trouverColonneIntitulePoste (point 2, issue #120)', () => {
+  it('trouve la colonne « Intitulé Poste » (accent, espace) via la normalisation', () => {
+    expect(trouverColonneIntitulePoste({ 'Intitulé Poste': 'Responsable RH', Email: 'a@b.fr' })).toBe('Intitulé Poste');
+  });
+
+  it('trouve « Job Title » (déjà en anglais)', () => {
+    expect(trouverColonneIntitulePoste({ 'Job Title': 'HR Manager', Email: 'a@b.fr' })).toBe('Job Title');
+  });
+
+  it('rend `null` sans colonne correspondante', () => {
+    expect(trouverColonneIntitulePoste({ Nom: 'Dupont', Email: 'a@b.fr' })).toBeNull();
+  });
+});
 
 describe('ORDRE_STATUTS', () => {
   it('respecte l’ordre de priorité de la spec (ne_plus_contacter en tête, a_contacter en dernier)', () => {
@@ -119,6 +150,8 @@ describe('listerCampagnes', () => {
           qualifies: 20,
           contacts: 18,
           en_sequence: 5,
+          en_pause: 1,
+          partis: 20,
           reponses: 2,
           interesses: 1,
           derniere_activite: '2026-09-14T10:00:00.000Z',
@@ -131,7 +164,10 @@ describe('listerCampagnes', () => {
     expect(r).toHaveLength(1);
     expect(r[0]!.boites).toEqual([{ id: 'send-1', identite: 'camille@outlook.com', marque: 'outlook' }]);
     expect(r[0]!.sources).toEqual([{ providerId: 'adzuna' }]);
+    // Point 1 : taux sur les emails partis (dispatched+delivered), pas sur les contacts qualifiés.
     expect(r[0]!.tauxReponse).toBe(10);
+    expect(r[0]!.enSequence).toBe(5);
+    expect(r[0]!.enPause).toBe(1);
     expect(r[0]!.tendance7j).toHaveLength(7);
     expect(r[0]!.tendance7j.every((n) => n === 0)).toBe(true);
     // R31 : « Contacts » compte des personnes (`contacts`), pas les offres/signaux qualifiés (`qualifies`).
@@ -244,6 +280,40 @@ describe('listerCampagnes', () => {
     const r = await listerCampagnes(ctx);
     expect(r[0]!.boites.map((b) => b.id)).toEqual(['send-2']);
   });
+
+  it('point 1 (tour de correction 5) : zéro emails partis → tauxReponse `null` (jamais 0 %, jamais une division par zéro)', async () => {
+    const ctx = faux({
+      'jr:campagnes_liste': [
+        {
+          id: 'camp-1',
+          name: 'Recette SalesBlink',
+          status: 'active',
+          entry_rules: {},
+          sources: [],
+          qualifies: 4,
+          contacts: 2,
+          en_sequence: 2,
+          en_pause: 0,
+          partis: 0,
+          reponses: 1,
+          interesses: 0,
+          derniere_activite: null,
+        },
+      ],
+      'jr:boites_actives': [],
+    });
+    const r = await listerCampagnes(ctx);
+    expect(r[0]!.tauxReponse).toBeNull();
+    expect(r[0]!.reponses).toBe(1);
+  });
+
+  it('point 4 (tour de correction 5) : les boîtes de l’organisation sont triées par adresse', async () => {
+    const ctx = faux({ 'jr:campagnes_liste': [], 'jr:boites_actives': [] });
+    await listerCampagnes(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appel = appels.find((a) => /jr:boites_actives/i.test(String(a[0])));
+    expect(String(appel![0])).toMatch(/order by identity asc/i);
+  });
 });
 
 describe('lireVueDEnsemble', () => {
@@ -253,9 +323,10 @@ describe('lireVueDEnsemble', () => {
         'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40 }],
         'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
         'organization_settings': [],
-        'jr:entonnoir_campagne': [{ trouves: 100, qualifies: 40, contacts: 35, en_sequence: 10, livres: 20, reponses: 4, interesses: 2 }],
+        'jr:entonnoir_commun': [{ list_id: null, en_sequence: 10, en_pause: 1, livres: 20, partis: 40, reponses: 4, interesses: 2 }],
+        'jr:entonnoir_sources': [{ trouves: 100, qualifies: 40, contacts: 35 }],
         'jr:file_du_jour_campagne': [],
-        'jr:sources_campagne_resume': [{ provider_id: 'adzuna' }],
+        'jr:sources_campagne_resume': [{ id: 'src-1', nom: 'Adzuna', provider_id: 'adzuna' }],
         'jr:sources_campagne_compte': [{ n: 1 }],
         'jr:activite_campagne': [],
         scored_today: [],
@@ -284,13 +355,17 @@ describe('lireVueDEnsemble', () => {
     expect(v.campagne.nom).toBe('Directeur commercial');
     expect(v.campagne.scoreMin).toBe(80);
     expect(v.campagne.boites).toEqual([{ id: 'send-1', identite: 'camille@outlook.com', marque: 'outlook' }]);
+    expect(v.entonnoir.origine).toBe('sources');
+    if (v.entonnoir.origine !== 'sources') throw new Error('unreachable');
     expect(v.entonnoir.trouves).toBe(100);
     // Marche « Contacts identifiés » (R31), après « Contacts qualifiés » : des personnes, pas des offres.
     expect(v.entonnoir.contacts).toBe(35);
-    // tauxLivres = livres / qualifies = 20/40 = 50 % ; tauxReponses = reponses / livres = 4/20 = 20 %.
+    // Point 1 : tauxLivres = livres / partis = 20/40 = 50 % ; tauxReponses = reponses / partis = 4/40 = 10 %.
     expect(v.entonnoir.tauxLivres).toBe(50);
-    expect(v.entonnoir.tauxReponses).toBe(20);
-    expect(v.sources).toEqual([{ providerId: 'adzuna' }]);
+    expect(v.entonnoir.tauxReponses).toBe(10);
+    expect(v.entonnoir.enSequence).toBe(10);
+    expect(v.entonnoir.enPause).toBe(1);
+    expect(v.sources).toEqual([{ id: 'src-1', nom: 'Adzuna', providerId: 'adzuna' }]);
     // Compteur de l'onglet Sources (tâche 11) : nombre réel de lignes
     // `campaign_sources`, pas `sources.length` (distinct provider_id) — les
     // deux coïncident ici mais divergeraient avec deux thèmes du même
@@ -303,7 +378,8 @@ describe('lireVueDEnsemble', () => {
       'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null }],
       'jr:boites_actives': [],
       organization_settings: [],
-      'jr:entonnoir_campagne': [{ trouves: 0, qualifies: 0, contacts: 0, en_sequence: 0, livres: 0, reponses: 0, interesses: 0 }],
+      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, livres: 0, partis: 0, reponses: 0, interesses: 0 }],
+      'jr:entonnoir_sources': [{ trouves: 0, qualifies: 0, contacts: 0 }],
       'jr:file_du_jour_campagne': [],
       // `SQL_PROVIDER_ID_AFFICHAGE` rend `null` quand ni `source_providers`, ni
       // `config.sourceType`, ni la colonne héritée `sources.provider_id` n'ont
@@ -318,6 +394,46 @@ describe('lireVueDEnsemble', () => {
     });
     return expect(lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' })).resolves.toMatchObject({
       sources: [{ providerId: null }],
+    });
+  });
+
+  describe('campagne à liste (point 2, issue #120)', () => {
+    it('entonnoir "liste" (contacts importés → email vérifié), listeSource exposée, jamais "0 offres et profils trouvés"', async () => {
+      const ctx = faux({
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:boites_actives': [],
+        organization_settings: [],
+        'jr:campagne_liste_source': [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }],
+        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, livres: 105, partis: 110, reponses: 1, interesses: 0 }],
+        'jr:entonnoir_liste': [{ contacts_importes: 167, email_verifie: 160 }],
+        'jr:file_du_jour_campagne': [],
+        'jr:sources_campagne_resume': [],
+        'jr:sources_campagne_compte': [{ n: 0 }],
+        'jr:activite_campagne_tout_audit': [],
+        'jr:activite_campagne_tout_envois': [],
+        scored_today: [],
+        enrich_today: [],
+        'from actions': [],
+        'from senders': [],
+      });
+
+      const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
+
+      expect(v.listeSource).toEqual({ nom: 'RH avril 2026', contacts: 167, importeeLe: '2026-09-10T08:00:00.000Z' });
+      expect(v.entonnoir.origine).toBe('liste');
+      if (v.entonnoir.origine !== 'liste') throw new Error('unreachable');
+      expect(v.entonnoir.contactsImportes).toBe(167);
+      expect(v.entonnoir.emailVerifie).toBe(160);
+      expect(v.entonnoir.enSequence).toBe(165);
+      expect(v.entonnoir.enPause).toBe(2);
+      // 105 livrés / 110 partis, jamais un dénominateur à zéro (constat (dd)).
+      expect(v.entonnoir.tauxLivres).toBeCloseTo(95.5, 0);
+      expect(v.entonnoir.tauxReponses).toBeCloseTo(0.9, 0);
+    });
+
+    it('sans liste (campagne à sources) : listeSource est `null`', async () => {
+      const v = await lireVueDEnsemble(ctxComplet(), { campagneId: '11111111-1111-1111-1111-111111111111' });
+      expect(v.listeSource).toBeNull();
     });
   });
 });
@@ -613,7 +729,7 @@ describe('listerContactsCampagne', () => {
     await listerContactsCampagne(ctx, { campagneId, filtre: 'en_sequence', page: 2 });
     const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const appelLignes = appels.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
-    expect(appelLignes?.[1]).toEqual([campagneId, 'en_sequence', null, 50, 50]);
+    expect(appelLignes?.[1]).toEqual([campagneId, 'en_sequence', null, 50, 50, null, null]);
   });
 
   // R81 : `current_step` peut dépasser le nombre d'étapes une fois la séquence
@@ -667,6 +783,94 @@ describe('listerContactsCampagne', () => {
     });
     const r = await listerContactsCampagne(ctx, { campagneId });
     expect(r.lignes[0]!.etape).toBe(1);
+  });
+
+  describe('point 2 (issue #120) : colonne « Pourquoi lui »/« Score » remplacée par l’intitulé de poste de la liste', () => {
+    it('campagne à liste, colonne trouvée : `colonnePosteListe` à `true`, valeur par ligne, paramètres transmis à la requête', async () => {
+      const queryMock = vi.fn(async (sql: string, _values?: unknown[]) => {
+        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id: 'liste-1' }], rowCount: 1 };
+        if (/jr:contacts_liste_echantillon/i.test(sql)) return { rows: [{ raw_row: { 'Intitulé Poste': 'Responsable RH', Email: 'a@b.fr' } }], rowCount: 1 };
+        if (/jr:compteurs_contacts_campagne/i.test(sql)) return { rows: [{ statut: 'en_sequence', n: 1 }], rowCount: 1 };
+        if (/jr:lignes_contacts_campagne/i.test(sql)) {
+          return {
+            rows: [
+              {
+                signal_id: null,
+                contact_id: 'contact-1',
+                first_name: 'Karim',
+                last_name: 'Benali',
+                job_title: null,
+                email: 'karim@exemple.fr',
+                entreprise: null,
+                current_step: 0,
+                statut: 'en_sequence',
+                score: null,
+                pourquoi: null,
+                enrollment_id: 'enr-1',
+                e_status: 'active',
+                stop_reason: null,
+                resume_at: null,
+                intitule_poste_liste: 'Responsable RH',
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+      const query = queryMock as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      const r = await listerContactsCampagne(ctx, { campagneId });
+
+      expect(r.colonnePosteListe).toBe(true);
+      expect(r.lignes[0]!.intitulePosteListe).toBe('Responsable RH');
+      const appelLignes = queryMock.mock.calls.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
+      expect(appelLignes![1]).toEqual([campagneId, 'tous', null, 50, 0, 'liste-1', 'Intitulé Poste']);
+    });
+
+    it('campagne à liste, colonne absente du CSV : `colonnePosteListe` à `false`, `intitulePosteListe` à `null`', async () => {
+      const ctx = faux({
+        'jr:contacts_campagne_verif': [{ id: campagneId, list_id: 'liste-1' }],
+        'jr:contacts_liste_echantillon': [{ raw_row: { Nom: 'Dupont', Email: 'a@b.fr' } }],
+        'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
+        'jr:lignes_contacts_campagne': [
+          {
+            signal_id: null,
+            contact_id: 'contact-1',
+            first_name: 'Karim',
+            last_name: 'Benali',
+            job_title: null,
+            email: 'karim@exemple.fr',
+            entreprise: null,
+            current_step: 0,
+            statut: 'en_sequence',
+            score: null,
+            pourquoi: null,
+            intitule_poste_liste: null,
+          },
+        ],
+      });
+      const r = await listerContactsCampagne(ctx, { campagneId });
+      expect(r.colonnePosteListe).toBe(false);
+      expect(r.lignes[0]!.intitulePosteListe).toBeNull();
+    });
+
+    it('campagne à sources (sans liste) : jamais de requête d’échantillon, `colonnePosteListe` à `false`', async () => {
+      const queryMock = vi.fn(async (sql: string) => {
+        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id: null }], rowCount: 1 };
+        if (/jr:compteurs_contacts_campagne/i.test(sql)) return { rows: [], rowCount: 0 };
+        if (/jr:lignes_contacts_campagne/i.test(sql)) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 0 };
+      });
+      const query = queryMock as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      const r = await listerContactsCampagne(ctx, { campagneId });
+
+      expect(r.colonnePosteListe).toBe(false);
+      expect(queryMock.mock.calls.some((a) => /jr:contacts_liste_echantillon/i.test(String(a[0])))).toBe(false);
+    });
   });
 });
 
@@ -724,6 +928,81 @@ describe('listerFileDuJour', () => {
     const ctx = faux({ organization_settings: [], 'jr:file_du_jour_campagne': [], 'jr:file_du_jour_cap': [] });
     await expect(listerFileDuJour(ctx, { campagneId })).rejects.toThrow(ErreurIntrouvable);
   });
+
+  describe('objet d’un envoi (point 5, tour de correction 5)', () => {
+    it('un envoi parti garde l’objet déjà stocké sur l’action, jamais celui du gabarit', async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1', status: 'delivered', dispatched_at: '2026-09-14T08:00:00Z', scheduled_for: null, dispatch_after: null,
+            channel: 'email', first_name: 'Nadia', last_name: 'Lemaire', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr',
+            objet: 'Objet réellement envoyé', etape_sujet: 'Gabarit {{prenom}}',
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      expect(r.partis[0]!.objet).toBe('Objet réellement envoyé');
+    });
+
+    it('un envoi prévu sans objet stocké rend l’objet du gabarit, variables connues substituées', async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null,
+            channel: 'email', first_name: 'Nadia', last_name: 'Lemaire', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr',
+            objet: null, etape_sujet: 'Bonjour {{prenom}}, votre recrutement de {{liste_intitule_poste}}',
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      // `prenom` est connu (déjà dans la requête) : substitué. `liste_intitule_poste` ne l'est
+      // pas (pas de requête supplémentaire par ligne) : le gabarit brut reste visible.
+      expect(r.prevus[0]!.objet).toBe('Bonjour Nadia, votre recrutement de {{liste_intitule_poste}}');
+    });
+
+    it('un envoi prévu sans gabarit (étape LinkedIn, ou introuvable) n’a pas d’objet', async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null,
+            channel: 'linkedin_message', first_name: 'Nadia', last_name: 'Lemaire', campagne_nom: 'C', etape: 0, expediteur: null,
+            objet: null, etape_sujet: null,
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      expect(r.prevus[0]!.objet).toBeNull();
+    });
+  });
+});
+
+describe('evenementsEnvoisGroupes (point 3.a, fil d’activité, lignes simulées)', () => {
+  it('construit un libellé avec étape et nombre de boîtes', () => {
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 }]);
+    expect(r).toEqual([
+      { id: 'envois-2026-09-17T08:00:00.000Z-0', quand: '2026-09-17T08:00:00.000Z', type: 'action_sent', libelle: '24 email(s) envoyé(s) · étape 1 · 3 boîte(s)', detail: null },
+    ]);
+  });
+
+  it('sans étape connue (action orpheline), le libellé ne mentionne pas d’étape', () => {
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, n: 2, boites: 1 }]);
+    expect(r[0]!.libelle).toBe('2 email(s) envoyé(s) · 1 boîte(s)');
+  });
+
+  it('un groupe par ligne, plusieurs groupes restent distincts', () => {
+    const r = evenementsEnvoisGroupes([
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 },
+      { heure: '2026-09-17T09:00:00.000Z', etape: 1, n: 5, boites: 2 },
+    ]);
+    expect(r).toHaveLength(2);
+    expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0', 'envois-2026-09-17T09:00:00.000Z-1']);
+  });
 });
 
 describe('listerActivite', () => {
@@ -733,29 +1012,83 @@ describe('listerActivite', () => {
     await expect(listerActivite(faux({}, null), { campagneId })).rejects.toThrow(ForbiddenError);
   });
 
-  it('mappe libellé et détail depuis `diff`', async () => {
-    const ctx = faux({
-      'jr:activite_campagne_total': [{ n: 1 }],
-      'jr:activite_campagne': [
-        { id: 'ev-1', created_at: '2026-09-14T08:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée' } },
-      ],
+  describe('filtre "tout" (point 3, tour de correction 5) : unit audit_events et les envois groupés', () => {
+    it('mappe libellé et détail depuis `diff`, et les événements moteur (campagne activée)', async () => {
+      const ctx = faux({
+        'jr:activite_campagne_tout_audit': [
+          { id: 'ev-1', created_at: '2026-09-14T08:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée' } },
+        ],
+        'jr:activite_campagne_tout_envois': [],
+      });
+      const r = await listerActivite(ctx, { campagneId });
+      expect(r.total).toBe(1);
+      expect(r.evenements[0]).toEqual({ id: 'ev-1', quand: '2026-09-14T08:00:00Z', type: 'campaign_activated', libelle: 'Campagne lancée', detail: null });
     });
-    const r = await listerActivite(ctx, { campagneId });
-    expect(r.total).toBe(1);
-    expect(r.evenements[0]).toEqual({ id: 'ev-1', quand: '2026-09-14T08:00:00Z', type: 'campaign_activated', libelle: 'Campagne lancée', detail: null });
+
+    it('reprend une réponse reçue, une pause et une reprise d’inscription (constat (ee), issue engine)', async () => {
+      const ctx = faux({
+        'jr:activite_campagne_tout_audit': [
+          { id: 'ev-1', created_at: '2026-09-14T09:00:00Z', entity_type: 'contact', action: 'reply_received', diff: { libelle: 'Réponse reçue.' } },
+          { id: 'ev-2', created_at: '2026-09-14T09:05:00Z', entity_type: 'contact', action: 'enrollment_paused', diff: { libelle: 'Inscription mise en pause.' } },
+          { id: 'ev-3', created_at: '2026-09-14T09:10:00Z', entity_type: 'contact', action: 'enrollment_resumed', diff: { libelle: 'Inscription reprise.' } },
+        ],
+        'jr:activite_campagne_tout_envois': [],
+      });
+      const r = await listerActivite(ctx, { campagneId });
+      expect(r.evenements.map((e) => e.type)).toEqual(['enrollment_resumed', 'enrollment_paused', 'reply_received']);
+    });
+
+    it('unit les envois groupés (dérivés de `actions`) avec `audit_events`, triés par date décroissante', async () => {
+      const ctx = faux({
+        'jr:activite_campagne_tout_audit': [
+          { id: 'ev-1', created_at: '2026-09-14T07:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée à 10h04.' } },
+        ],
+        'jr:activite_campagne_tout_envois': [{ heure: '2026-09-14T08:00:00.000Z', etape: 0, n: 24, boites: 3 }],
+      });
+      const r = await listerActivite(ctx, { campagneId });
+      expect(r.total).toBe(2);
+      // Le groupe d'envois (8h) est plus récent que le lancement (7h) : en tête.
+      expect(r.evenements[0]!.libelle).toBe('24 email(s) envoyé(s) · étape 1 · 3 boîte(s)');
+      expect(r.evenements[1]!.id).toBe('ev-1');
+    });
+
+    it('jamais un `action_sent`/`action_delivered` individuel dans "tout" (superflu, doublonnerait le groupe)', async () => {
+      const query = vi.fn(async (sql: string) => {
+        if (/jr:activite_campagne_tout_audit/i.test(sql)) return { rows: [], rowCount: 0 };
+        if (/jr:activite_campagne_tout_envois/i.test(sql)) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+      await listerActivite(ctx, { campagneId });
+      const appelAudit = (query as unknown as ReturnType<typeof vi.fn>).mock.calls.find((a) =>
+        /jr:activite_campagne_tout_audit/i.test(String(a[0])),
+      );
+      expect(appelAudit![0]).not.toMatch(/'action_sent'/);
+      expect(appelAudit![0]).not.toMatch(/'action_delivered'/);
+    });
+
+    it('page 2 renvoie la tranche suivante du même ensemble trié', async () => {
+      const evenements = Array.from({ length: 25 }, (_, i) => ({
+        id: `ev-${i}`,
+        created_at: new Date(2026, 8, 14, 8, i).toISOString(),
+        entity_type: 'campaign' as const,
+        action: 'campaign_activated' as const,
+        diff: { libelle: `ev ${i}` },
+      }));
+      const ctx = faux({ 'jr:activite_campagne_tout_audit': evenements, 'jr:activite_campagne_tout_envois': [] });
+      const r1 = await listerActivite(ctx, { campagneId, page: 1 });
+      const r2 = await listerActivite(ctx, { campagneId, page: 2 });
+      expect(r1.evenements).toHaveLength(20);
+      expect(r2.evenements).toHaveLength(5);
+      expect(r1.total).toBe(25);
+      expect(r2.total).toBe(25);
+      // Le plus récent (i=24) en tête de la page 1, jamais répété en page 2.
+      expect(r1.evenements[0]!.id).toBe('ev-24');
+      expect(r2.evenements.map((e) => e.id)).not.toContain('ev-24');
+    });
   });
 
-  it('le total vient d’une requête `count(*)` séparée, pas de la page (une page vide garde le bon total)', async () => {
-    const ctx = faux({
-      'jr:activite_campagne_total': [{ n: 12 }],
-      'jr:activite_campagne': [], // page au-delà de la dernière : aucune ligne renvoyée
-    });
-    const r = await listerActivite(ctx, { campagneId, page: 50 });
-    expect(r.evenements).toHaveLength(0);
-    expect(r.total).toBe(12);
-  });
-
-  it('restreint aux actions du filtre demandé (compte et page)', async () => {
+  it('restreint aux actions du filtre demandé (compte et page), inchangé pour les autres filtres', async () => {
     const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerActivite(ctx, { campagneId, filtre: 'scoring' });
@@ -795,6 +1128,14 @@ describe('listerBoitesPourCampagne', () => {
     });
     const r = await listerBoitesPourCampagne(ctx, {});
     expect(r).toEqual([{ id: 'b1', identite: 'boite@exemple.fr', marque: 'outlook' }]);
+  });
+
+  it('point 4 (tour de correction 5) : trie par adresse, un seul ordre pour toutes les pages', async () => {
+    const queryMock = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const query = queryMock as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    await listerBoitesPourCampagne(ctx, {});
+    expect(String((queryMock.mock.calls[0] as unknown[])[0])).toMatch(/order by identity asc/i);
   });
 });
 
