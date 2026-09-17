@@ -25,9 +25,14 @@ body {
   margin: 0;
   padding: 0;
 }
+/* Fond de page clair par défaut (tour de correction F6, point 6) : l'application (`.jr-app`)
+   est claire et couvre déjà toute la fenêtre, mais un `body` sombre reste visible dès qu'un
+   conteneur ne la couvre pas tout à fait (transition de route, écran hors coquille…). Seule la
+   page de connexion (`.rs-auth`, ci-dessous) reste sur l'ancienne palette sombre, et porte donc
+   son propre fond plutôt que de compter sur celui du `body`. */
 body {
-  background: var(--ink);
-  color: var(--chalk);
+  background: var(--jr-fond);
+  color: var(--jr-encre);
   font-family: var(--font-body), system-ui, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -117,6 +122,8 @@ a {
   display: grid;
   place-items: center;
   padding: 24px;
+  background: var(--ink);
+  color: var(--chalk);
 }
 .rs-auth-card {
   width: 340px;
