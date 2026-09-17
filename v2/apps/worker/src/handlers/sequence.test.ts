@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante } from '@jay-reach/core';
-import { tickDueEnrollments, mettreInscriptionEnPause, poserEcheanceApresDepart } from './sequence.js';
+import { tickDueEnrollments, mettreInscriptionEnPause, rattraperEcheancesManquantes } from './sequence.js';
 
 const ORG_ID = 'org-1';
 const ENROLLMENT_ID = 'enrollment-1';
@@ -108,9 +108,10 @@ const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and
 const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
 // Garde départ réel (issue #111) : statut de l'action de l'étape PRÉCÉDENTE.
 const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 and step_id = \$2/i;
-// `poserEcheanceApresDepart` (issue #111) : échéance posée au départ réel.
-const DELAI_ETAPE_SUIVANTE = /select delay_hours from sequence_steps where campaign_id = \$1 and position = \$2/i;
-const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
+// `rattraperEcheancesManquantes` (tour de correction 1, issue #111).
+const RATTRAPAGE_CANDIDATS =
+  /select id, campaign_id, current_step\s+from enrollments\s+where status = 'active' and next_action_at is null and current_step > 0/i;
+const RATTRAPAGE_ACTION_PRECEDENTE = /select a\.status, a\.dispatched_at\s+from sequence_steps s\s+join actions a/i;
 
 /** Gestionnaires par défaut : une seule inscription due, une étape email, un
  * expéditeur actif disponible, rien qui défère ou bloque en amont du gate. */
@@ -152,6 +153,9 @@ function gestionnairesBase(overridesLigne: Record<string, unknown> = {}): Gestio
     // tests existants (pas d'étape précédente), gardée pour les tests qui
     // avancent `current_step` sans avoir à définir leur propre défaut « part ».
     { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'dispatched' }]) },
+    // Rattrapage (tour de correction 1) : tourne AVANT chaque `tickDueEnrollments`
+    // — aucun candidat par défaut, no-op pour tous les tests qui l'ignorent.
+    { motif: RATTRAPAGE_CANDIDATS, repondre: () => ligne([]) },
     { motif: INSERT_ACTION, repondre: () => ({ rows: [{ id: ACTION_ID }], rowCount: 1 }) },
     { motif: INSERT_BINDING, repondre: () => ligne([]) },
     { motif: UPDATE_AVANCEMENT, repondre: () => ligne([]) },
@@ -360,36 +364,78 @@ describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
   });
 });
 
-describe('poserEcheanceApresDepart (issue #111)', () => {
-  const MAINTENANT = new Date('2026-09-17T10:04:00.000Z');
+describe('rattraperEcheancesManquantes (tour de correction 1, issue #111)', () => {
+  // `poserEcheanceApresDepart` (partagée, @jay-reach/core) : lecture par rang
+  // ordinal (`offset`/`limit`), jamais par égalité de `position` (issue #115).
+  const DELAI_ETAPE_SUIVANTE =
+    /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
+  const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
-  it('étape suivante trouvée : pose l’échéance avec le même jitter/graine que le core', async () => {
+  it('action précédente dispatched à J : pose l’échéance à J + délai + jitter — IDENTIQUE à celle du gestionnaire d’envoi', async () => {
+    const dispatchedAt = new Date('2026-09-10T10:04:00.000Z'); // « J »
     const { pool, appels } = creerPoolFactice([
+      {
+        motif: RATTRAPAGE_CANDIDATS,
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2 }]),
+      },
+      {
+        motif: RATTRAPAGE_ACTION_PRECEDENTE,
+        repondre: () => ligne([{ status: 'dispatched', dispatched_at: dispatchedAt }]),
+      },
       { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
-      { motif: POSE_ECHEANCE, repondre: () => ligne([]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
     ]);
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    await poserEcheanceApresDepart(pool, { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 2 }, MAINTENANT);
+    await rattraperEcheancesManquantes(pool);
 
-    const requeteDelai = appels.find((a) => DELAI_ETAPE_SUIVANTE.test(a.sql));
-    expect(requeteDelai).toBeDefined();
-    expect(requeteDelai!.values).toEqual([CAMPAIGN_ID, 2]);
+    const requeteCandidats = appels.find((a) => RATTRAPAGE_CANDIDATS.test(a.sql));
+    expect(requeteCandidats).toBeDefined();
+    expect(requeteCandidats!.sql).toMatch(/status = 'active'/i);
+
+    // Le rang de l'étape PRÉCÉDENTE (`current_step - 1`), pas `current_step`.
+    const requetePrecedente = appels.find((a) => RATTRAPAGE_ACTION_PRECEDENTE.test(a.sql));
+    expect(requetePrecedente).toBeDefined();
+    expect(requetePrecedente!.values).toEqual([CAMPAIGN_ID, ENROLLMENT_ID, 1]);
 
     const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
     expect(pose).toBeDefined();
-    const attendu = echeanceEtapeSuivante(MAINTENANT.getTime(), ENROLLMENT_ID, 120);
+    // Calculée depuis `dispatched_at` (le DÉPART RÉEL déjà connu), jamais `now`.
+    const attendu = echeanceEtapeSuivante(dispatchedAt.getTime(), ENROLLMENT_ID, 120);
     expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 2]);
-    // Garde : jamais posée sur une inscription déjà repartie ailleurs.
-    expect(pose!.sql).toMatch(/status = 'active'/i);
-    expect(pose!.sql).toMatch(/next_action_at is null/i);
-    expect(pose!.sql).toMatch(/current_step = \$3/i);
+
+    expect(avertissement).toHaveBeenCalledTimes(1);
+    expect(avertissement.mock.calls[0]![0]).toContain('1');
+    avertissement.mockRestore();
   });
 
-  it('dernière étape (aucune ligne trouvée en base) : n’écrit rien', async () => {
-    const { pool, appels } = creerPoolFactice([{ motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([]) }]);
+  it('action précédente encore `scheduled` : inscription intacte, aucun avertissement', async () => {
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: RATTRAPAGE_CANDIDATS,
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2 }]),
+      },
+      { motif: RATTRAPAGE_ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'scheduled', dispatched_at: null }]) },
+    ]);
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    await poserEcheanceApresDepart(pool, { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 5 }, MAINTENANT);
+    await rattraperEcheancesManquantes(pool);
 
-    expect(appels).toHaveLength(1); // seule la lecture du délai, aucune écriture
+    expect(appels.some((a) => DELAI_ETAPE_SUIVANTE.test(a.sql))).toBe(false);
+    expect(appels.some((a) => POSE_ECHEANCE.test(a.sql))).toBe(false);
+    expect(avertissement).not.toHaveBeenCalled();
+    avertissement.mockRestore();
+  });
+
+  it('une inscription `completed` n’est jamais candidate : la garde `status = \'active\'` vit dans le SQL', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: RATTRAPAGE_CANDIDATS, repondre: () => ligne([]) }]);
+
+    await rattraperEcheancesManquantes(pool);
+
+    const requeteCandidats = appels.find((a) => RATTRAPAGE_CANDIDATS.test(a.sql));
+    expect(requeteCandidats!.sql).toMatch(/status = 'active'/i);
+    expect(requeteCandidats!.sql).toMatch(/next_action_at is null/i);
+    expect(requeteCandidats!.sql).toMatch(/current_step > 0/i);
+    expect(appels).toHaveLength(1); // aucun candidat : rien d'autre n'est interrogé
   });
 });

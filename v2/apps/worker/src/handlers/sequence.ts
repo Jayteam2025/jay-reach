@@ -17,11 +17,13 @@ import {
   resolveSender,
   shiftIntoBusinessHours,
   applyLeadTime,
-  echeanceEtapeSuivante,
+  poserEcheanceApresDepart,
+  versInstant,
   plafondDuJour,
   relectureRequise,
   type BusinessHours,
   type Binding,
+  type InstantPg,
   type SenderInfo,
   type TickChannel,
   type TickStep,
@@ -471,44 +473,63 @@ export async function mettreInscriptionEnPause(
 }
 
 /**
- * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action qui vient
- * d'être marquée `dispatched` (issue #111) : le tick ne la pose plus à la
- * création (`composeTick`), pour ne pas fixer une échéance avant de savoir
- * quand l'envoi partira vraiment — un lot peut s'étaler sur plusieurs jours
- * quand les expéditeurs sont saturés, et l'étape suivante ne doit jamais
- * devenir due avant que celle-ci ne soit réellement partie. Appelée par les
- * deux gestionnaires d'envoi (SalesBlink ici, extension LinkedIn côté
- * `apps/web/lib/linkedin/queue.ts`) juste après leur confirmation de départ.
+ * Rattrapage borné (tour de correction 1, revue du 17/09) : une inscription
+ * `active` dont l'action de l'étape PRÉCÉDENTE est bien partie
+ * (`dispatched`/`delivered`, `dispatched_at` connu) mais dont `next_action_at`
+ * est resté `null`. Ce cas se produit quand `mark_action_dispatched` réussit
+ * puis que la pose de l'échéance échoue juste après (panne base, redémarrage
+ * du worker) : sans ce rattrapage, le tick ne sélectionne plus jamais cette
+ * inscription (`next_action_at is not null` est la condition d'entrée de la
+ * requête `due` ci-dessous), et son étape suivante n'arrive jamais.
  *
- * N'écrit rien si l'inscription n'est plus `active`, si une échéance est déjà
- * posée (`next_action_at` non nul), ou si `currentStep` ne correspond plus à
- * l'étape attendue : la garde vit dans le SQL lui-même (`where …`), sans
- * lecture préalable, pour qu'un rejeu du dispatch (idempotent côté
- * `mark_action_dispatched`) ne déplace jamais une échéance déjà calculée, et
- * qu'une inscription mise en pause entre-temps ne soit pas reprogrammée dans
- * son dos. Même jitter et même graine que l'ancien calcul du tick, à partir du
- * même identifiant d'inscription (`echeanceEtapeSuivante`, `@jay-reach/core`).
+ * Pose l'échéance à partir du DÉPART RÉEL déjà connu (`dispatched_at` de
+ * l'action précédente), jamais `now` — le résultat doit être identique à
+ * celui qu'aurait posé le gestionnaire d'envoi s'il avait réussi du premier
+ * coup. `dispatched_at` est un `timestamptz` renvoyé en objet `Date` par
+ * `pg` : `versInstant` (`@jay-reach/core`) l'accepte indifféremment en
+ * `Date` ou en chaîne.
+ *
+ * Boucle bornée (`limit`) plutôt qu'une requête ensembliste : le calcul de
+ * l'échéance (jitter déterministe) est une fonction JS pure
+ * (`poserEcheanceApresDepart`, `@jay-reach/core`), pas transposable en SQL.
  */
-export async function poserEcheanceApresDepart(
-  pool: Pool,
-  params: { readonly enrollmentId: string; readonly campaignId: string; readonly currentStep: number },
-  now: Date = new Date(),
-): Promise<void> {
-  const etape = await pool.query<{ delay_hours: number }>(
-    `select delay_hours from sequence_steps where campaign_id = $1 and position = $2`,
-    [params.campaignId, params.currentStep],
+export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Promise<void> {
+  const candidats = await pool.query<{ id: string; campaign_id: string; current_step: number }>(
+    `select id, campaign_id, current_step
+       from enrollments
+      where status = 'active' and next_action_at is null and current_step > 0
+      limit $1`,
+    [limit],
   );
-  const echeance = echeanceEtapeSuivante(now.getTime(), params.enrollmentId, etape.rows[0]?.delay_hours ?? null);
-  if (echeance === null) return; // dernière étape : rien à planifier, déjà `completed`.
-  await pool.query(
-    `update enrollments
-        set next_action_at = $2
-      where id = $1
-        and status = 'active'
-        and next_action_at is null
-        and current_step = $3`,
-    [params.enrollmentId, new Date(echeance).toISOString(), params.currentStep],
-  );
+  let rattrapees = 0;
+  for (const candidat of candidats.rows) {
+    // L'action de l'étape PRÉCÉDENTE (rang `current_step - 1`), retrouvée par
+    // rang ordinal (`offset`/`limit`), pas par égalité de `position` (issue
+    // #115) — même défaut que corrigé dans `poserEcheanceApresDepart`.
+    const precedente = await pool.query<{ status: string; dispatched_at: InstantPg }>(
+      `select a.status, a.dispatched_at
+         from sequence_steps s
+         join actions a on a.step_id = s.id and a.enrollment_id = $2
+        where s.campaign_id = $1
+        order by s.position asc
+        offset $3
+        limit 1`,
+      [candidat.campaign_id, candidat.id, candidat.current_step - 1],
+    );
+    const action = precedente.rows[0];
+    if (!action || (action.status !== 'dispatched' && action.status !== 'delivered')) continue;
+    const instant = versInstant(action.dispatched_at);
+    if (instant === null) continue;
+    const ecrit = await poserEcheanceApresDepart(
+      pool,
+      { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
+      new Date(instant),
+    );
+    if (ecrit) rattrapees += 1;
+  }
+  if (rattrapees > 0) {
+    console.warn(`[tick] ${rattrapees} inscription(s) rattrapée(s) : échéance posée après coup (issue #111)`);
+  }
 }
 
 /**
@@ -518,6 +539,11 @@ export async function poserEcheanceApresDepart(
  * job `actions.dispatch`. Renvoie ces jobs (l'appelant les enfile).
  */
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
+  // Rattrapage (issue #111) AVANT la sélection des inscriptions dues : une
+  // inscription qu'il vient de réactiver peut devenir due dans ce même
+  // passage si son échéance rattrapée tombe déjà dans le passé.
+  await rattraperEcheancesManquantes(pool);
+
   const due = await pool.query<DueRow>(
     `${REQUETE_LIGNE_INSCRIPTION}
       where e.status = 'active' and e.next_action_at is not null and e.next_action_at <= $1
