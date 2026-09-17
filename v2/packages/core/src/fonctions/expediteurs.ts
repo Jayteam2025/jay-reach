@@ -450,10 +450,11 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
     id: j.user_id,
     nom: j.linkedin_profile_name ?? 'Compte LinkedIn',
     connecte: j.is_active && j.last_used_at !== null,
-    // Forme publique inchangée (`CompteLinkedIn.derniereActivite: string | null`) :
-    // le tri ci-dessous compare `j.last_used_at` (honnêtement `string | Date | null`)
-    // directement, ce cast ne change rien à la valeur portée par ce champ.
-    derniereActivite: j.last_used_at as string | null,
+    // Forme publique honnête (`CompteLinkedIn.derniereActivite: string | null`) :
+    // `j.last_used_at` peut être un objet `Date` (pilote `pg`), converti ici en
+    // chaîne ISO — jamais un cast, qui laisserait un `Date` sortir déguisé en
+    // `string`.
+    derniereActivite: j.last_used_at === null ? null : new Date(j.last_used_at).toISOString(),
     active: j.is_active,
     quotas: { parJour: r.daily_cap, parSemaine: r.weekly_cap },
     heures: {

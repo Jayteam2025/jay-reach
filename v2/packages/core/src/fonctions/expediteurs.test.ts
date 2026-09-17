@@ -343,6 +343,8 @@ describe('listerComptesLinkedIn', () => {
     });
     const comptes = await listerComptesLinkedIn(ctx);
     expect(comptes.map((c) => c.nom)).toEqual(['Récent', 'Ancien']);
+    // Forme publique honnête : un `Date` en entrée ressort en chaîne ISO, jamais l'objet lui-même.
+    expect(comptes.map((c) => c.derniereActivite)).toEqual(['2026-09-16T08:00:00.000Z', '2026-09-10T08:00:00.000Z']);
   });
 
   it('interroge token_hash, jamais la colonne token (retirée par la migration du 28/08)', async () => {
