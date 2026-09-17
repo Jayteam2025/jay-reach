@@ -311,13 +311,32 @@ describe('etapeAffichee', () => {
 
 describe('listerContactsCampagne', () => {
   const campagneId = '11111111-1111-1111-1111-111111111111';
+  /**
+   * I1 (Important, revue finale du 14/09) : `listerContactsCampagne` vérifie
+   * désormais que la campagne appartient à l'organisation AVANT toute autre
+   * requête — la plupart des tests de ce bloc portent sur autre chose, ce
+   * garde le leur fournit sans le répéter.
+   */
+  const verifieeDansLOrganisation = { 'jr:contacts_campagne_verif': [{ id: campagneId }] };
 
   it('refuse un rôle insuffisant (aucun rôle)', async () => {
     await expect(listerContactsCampagne(faux({}, null), { campagneId })).rejects.toThrow(ForbiddenError);
   });
 
+  // I1 (Important, revue finale du 14/09) : sans ce garde, une campagne d'une
+  // autre organisation aurait rendu les noms, postes, entreprises, adresses,
+  // scores et statuts de SA population — exactement le défaut que T29 avait
+  // déjà corrigé sur `colonnesDeListeCampagne` (`sequence.ts`).
+  it('lève ErreurIntrouvable pour une campagne d’une autre organisation, sans émettre les autres requêtes', async () => {
+    const ctx = faux({ 'jr:contacts_campagne_verif': [] });
+    await expect(listerContactsCampagne(ctx, { campagneId })).rejects.toThrow(ErreurIntrouvable);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels).toHaveLength(1);
+  });
+
   it('calcule les compteurs par statut, tous compris, et en fait le total (pas de la page)', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [
         { statut: 'en_sequence', n: 5 },
         { statut: 'a_repondu', n: 2 },
@@ -334,6 +353,7 @@ describe('listerContactsCampagne', () => {
 
   it('le total vient des compteurs, pas de la page demandée (une page au-delà de la dernière garde le bon total)', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 42 }],
       'jr:lignes_contacts_campagne': [], // page au-delà de la dernière : aucune ligne renvoyée
     });
@@ -342,30 +362,41 @@ describe('listerContactsCampagne', () => {
     expect(r.total).toBe(42);
   });
 
+  /** Même garde d'organisation que `verifieeDansLOrganisation`, pour un `vi.fn()` brut plutôt que `faux()`. */
+  function queryVerifiee(): Executeur['query'] {
+    return vi.fn(async (sql: string) => {
+      if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+  }
+
   it('la population est faite de personnes : jointure interne sur contacts, signaux non qualifiés exclus (R29)', async () => {
-    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const query = queryVerifiee();
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerContactsCampagne(ctx, { campagneId });
-    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const [sql] = appels.find((a) => /jr:compteurs_contacts_campagne/i.test(String(a[0]))) as [string];
     expect(sql).toMatch(/join contacts c on c\.id = pop\.contact_id/);
     expect(sql).not.toMatch(/left join contacts/);
     expect(sql).toMatch(/s0\.status <> 'new'/);
   });
 
   it('la population inclut aussi les contacts inscrits sans signal (R36, tour de correction 1)', async () => {
-    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const query = queryVerifiee();
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerContactsCampagne(ctx, { campagneId });
-    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const [sql] = appels.find((a) => /jr:compteurs_contacts_campagne/i.test(String(a[0]))) as [string];
     expect(sql).toMatch(/select e1\.contact_id, null::uuid\s+from enrollments e1/);
     expect(sql).toMatch(/left join signals s on s\.id = pop\.signal_id/);
   });
 
   it('la règle « sans email » couvre invalide, risqué et inconnu, pas seulement invalide (R27)', async () => {
-    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const query = queryVerifiee();
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerContactsCampagne(ctx, { campagneId });
-    const [sql] = (query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const [sql] = appels.find((a) => /jr:compteurs_contacts_campagne/i.test(String(a[0]))) as [string];
     expect(sql).toMatch(/c\.email_status <> 'valid'/);
     expect(sql).not.toMatch(/email_status = 'invalid'/);
   });
@@ -374,6 +405,7 @@ describe('listerContactsCampagne', () => {
     // Le mock ne rejoue pas le `case` SQL : il simule ce que la requête renverrait déjà pour
     // cette situation, ORDRE_STATUTS faisant foi sur la priorité (interesse avant a_repondu).
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'interesse', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -400,6 +432,7 @@ describe('listerContactsCampagne', () => {
 
   it('renseigne score et pourquoi depuis le signal d’origine (R33)', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'a_contacter', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -423,6 +456,7 @@ describe('listerContactsCampagne', () => {
 
   it('un contact inscrit sans signal (R36) a un signalId, un score et un pourquoi nuls', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -448,6 +482,7 @@ describe('listerContactsCampagne', () => {
   // pause (dérivé de `stop_reason`/`e_status`) et la date de reprise.
   it('une ligne en_pause (email_gate) expose inscriptionId, motifPause et repriseLe nul', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'en_pause', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -480,6 +515,7 @@ describe('listerContactsCampagne', () => {
 
   it('une ligne en_pause (paused_absence, datée) retombe sur motifPause "absence" et porte repriseLe', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'en_pause', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -512,6 +548,7 @@ describe('listerContactsCampagne', () => {
 
   it('une ligne hors pause a motifPause et repriseLe nuls même si l’inscription en porte', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
       'jr:lignes_contacts_campagne': [
         {
@@ -538,7 +575,7 @@ describe('listerContactsCampagne', () => {
   });
 
   it('passe la pagination et le filtre à la requête (page 2, filtre en_sequence)', async () => {
-    const query = vi.fn(async () => ({ rows: [], rowCount: 0 })) as unknown as Executeur['query'];
+    const query = queryVerifiee();
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
     await listerContactsCampagne(ctx, { campagneId, filtre: 'en_sequence', page: 2 });
     const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
@@ -551,6 +588,7 @@ describe('listerContactsCampagne', () => {
   // bornage, une campagne à une seule étape affichait « Étape 2 ».
   it('borne l’étape affichée au nombre d’étapes de la campagne (R81)', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:total_etapes_campagne': [{ n: 1 }],
       'jr:compteurs_contacts_campagne': [{ statut: 'termine', n: 1 }],
       'jr:lignes_contacts_campagne': [
@@ -575,6 +613,7 @@ describe('listerContactsCampagne', () => {
 
   it('ne borne pas quand la campagne n’a pas encore d’étape connue (totalEtapes à 0, calcul d’origine conservé)', async () => {
     const ctx = faux({
+      ...verifieeDansLOrganisation,
       'jr:total_etapes_campagne': [{ n: 0 }],
       'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
       'jr:lignes_contacts_campagne': [

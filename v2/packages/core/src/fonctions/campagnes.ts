@@ -730,6 +730,18 @@ export async function listerContactsCampagne(
   exiger(ctx, 'viewer');
   const { campagneId, filtre, recherche, page } = valider(schemaListerContacts, entree);
 
+  // I1 (Important, revue finale du 14/09) : ce pool n'a pas de RLS (rôle
+  // service, `apps/web/lib/contexte.ts`) — sans ce garde, une campagne d'une
+  // autre organisation aurait rendu les noms, postes, entreprises, adresses,
+  // scores et statuts de SA population aux trois requêtes ci-dessous, qui ne
+  // filtrent que sur `campaign_id`. Vérifié AVANT toute autre requête, jamais
+  // contourné par un futur appel MCP direct.
+  const campRes = await ctx.ex.query(
+    `select id from campaigns /* jr:contacts_campagne_verif */ where id = $1 and organization_id = $2`,
+    [campagneId, ctx.organisationId],
+  );
+  if (campRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
+
   const compteursRes = await ctx.ex.query<{ statut: StatutContactCampagne; n: number }>(
     `select statut, count(*)::int as n
        from (

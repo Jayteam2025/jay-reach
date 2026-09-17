@@ -315,9 +315,16 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
   // Séquence : seulement s'il existe une inscription réelle dans la campagne demandée.
   let sequence: FicheSequence | null = null;
   if (campagneId && enrollmentId) {
+    // M9 (Mineur, revue finale du 14/09) : le contact est vérifié plus haut,
+    // mais `campagneId` vient tel quel de l'appelant — sans cette jointure,
+    // une campagne d'une autre organisation aurait rendu son propre nombre
+    // d'étapes de séquence (aligné sur le correctif I1, `campagnes.ts`).
     const etapesRes = await ctx.ex.query<{ position: number }>(
-      `select position from sequence_steps /* jr:fiche_etapes */ where campaign_id = $1 order by position asc`,
-      [campagneId],
+      `select ss.position from sequence_steps ss /* jr:fiche_etapes */
+         join campaigns camp on camp.id = ss.campaign_id and camp.organization_id = $2
+        where ss.campaign_id = $1
+        order by ss.position asc`,
+      [campagneId, ctx.organisationId],
     );
     const enrollmentVivante = enrollmentStatus !== null && STATUTS_INSCRIPTION_VIVANTE.has(enrollmentStatus);
     const etapes: FicheEtape[] = etapesRes.rows.map((e) => ({

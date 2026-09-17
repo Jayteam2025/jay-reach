@@ -83,6 +83,57 @@ describe('lireFiche', () => {
     await expect(lireFiche(ctx, { contactId })).rejects.toThrow(ErreurIntrouvable);
   });
 
+  // M9 (Mineur, revue finale du 14/09) : le contact est vérifié
+  // (`jr:fiche_contact`), mais la campagne, elle, ne l'était pas — sans ce
+  // garde, une campagne d'une autre organisation aurait rendu son propre
+  // nombre d'étapes de séquence. Aligné sur le correctif I1
+  // (`listerContactsCampagne`, campagnes.ts).
+  it('filtre les étapes de séquence par organisation (jr:fiche_etapes joint campaigns.organization_id)', async () => {
+    const ctx = faux({
+      'jr:fiche_contact': [
+        {
+          id: contactId,
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: null,
+          email: 'karim@exemple.fr',
+          email_status: 'valid',
+          linkedin_url: null,
+          photo_url: null,
+          account_id: null,
+          source_signal_id: null,
+          status: 'active',
+          entreprise: null,
+          ville: null,
+        },
+      ],
+      'jr:fiche_statut_campagne': [
+        {
+          statut: 'en_sequence',
+          enrollment_id: enrollmentId,
+          current_step: 0,
+          e_status: 'active',
+          signal_id: null,
+          score: null,
+          score_reason: null,
+          title: null,
+          provider_id: null,
+          occurred_at: null,
+          url: null,
+          raw: null,
+        },
+      ],
+      'jr:fiche_etapes': [{ position: 0 }],
+    });
+
+    await lireFiche(ctx, { contactId, campagneId });
+
+    const appel = appelsDe(ctx).find((a) => /jr:fiche_etapes/i.test(a.sql));
+    expect(appel).toBeDefined();
+    expect(appel!.sql).toMatch(/join campaigns camp on camp\.id = ss\.campaign_id and camp\.organization_id = \$2/i);
+    expect(appel!.params).toEqual([campagneId, 'org-1']);
+  });
+
   it('assemble tous les blocs pour un contact en séquence dans une campagne', async () => {
     const ctx = faux({
       'jr:fiche_contact': [
