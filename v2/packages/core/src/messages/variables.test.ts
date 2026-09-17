@@ -242,4 +242,29 @@ describe('variables de colonnes importées {{liste_*}}', () => {
     expect(r.missing).toEqual(['liste_intitule_poste']);
     expect(r.text).toBe('');
   });
+
+  it('tolère l’accolade simple sur un nom liste_ bien formé, comme pour les variables standard', () => {
+    // Contresens trouvé en relecture : {liste_poste} tombait dans le message
+    // générique « retirez les accolades », alors qu'il en faut une de plus.
+    expect(normalizeVariableSyntax('Bonjour {liste_poste}')).toBe('Bonjour {{liste_poste}}');
+    expect(validateTemplateVariables('{liste_poste}', 'list')).toEqual([]);
+  });
+
+  it('un nom liste_ mal formé en accolade simple reste rejeté avec suggestion', () => {
+    const soucis = validateTemplateVariables('{liste-poste}', 'list');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.kind).toBe('unknown');
+    expect(soucis[0]?.suggestion).toBe('liste_poste');
+  });
+
+  it('{{liste_}} (préfixe seul, sans colonne) ne produit qu’un seul problème', () => {
+    expect(validateTemplateVariables('{{liste_}}', 'list')).toHaveLength(1);
+  });
+
+  it('signale l’espace, pas seulement l’accent et le tiret, dans le message d’un nom mal formé', () => {
+    const soucis = validateTemplateVariables('{{liste poste}}', 'list');
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]?.message).toContain('espace');
+    expect(soucis[0]?.suggestion).toBe('liste_poste');
+  });
 });

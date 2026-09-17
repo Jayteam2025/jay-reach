@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { buildMessageValues, type DueRow } from './message-values.js';
 
 const ORG_ID = 'org-1';
@@ -72,5 +72,52 @@ describe('buildMessageValues — colonnes du CSV importé (liste_*)', () => {
   it('coupe les espaces de tête et de queue de la valeur', () => {
     const values = buildMessageValues(ligne({ raw_row: { ville: '  Nantes  ' } }));
     expect(values.liste_ville).toBe('Nantes');
+  });
+});
+
+describe('buildMessageValues — colonnes homonymes après normalisation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('valeurs différentes : la variable reste absente (manquante → bloque l’envoi) et un avertissement est journalisé', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const values = buildMessageValues(ligne({ raw_row: { Poste: 'Commercial', POSTE: 'Directeur' } }));
+    expect(values.liste_poste).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('liste_poste'));
+    expect(warn.mock.calls[0]?.[0]).not.toContain('Commercial');
+    expect(warn.mock.calls[0]?.[0]).not.toContain('Directeur');
+  });
+
+  it('valeurs identiques : une seule variable posée, aucun avertissement', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const values = buildMessageValues(ligne({ raw_row: { Ville: 'Nantes', VILLE: 'Nantes' } }));
+    expect(values.liste_ville).toBe('Nantes');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('une seule des deux clés homonymes porte une valeur : pas une collision, la valeur est posée', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const values = buildMessageValues(ligne({ raw_row: { Poste: 'Commercial', POSTE: '' } }));
+    expect(values.liste_poste).toBe('Commercial');
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildMessageValues — types de valeur non exploitables (Mineur 5)', () => {
+  it('ignore un objet ou un tableau plutôt que de poser "[object Object]"', () => {
+    const values = buildMessageValues(
+      ligne({ raw_row: { meta: { a: 1 }, tags: ['a', 'b'], poste: 'CTO' } }),
+    );
+    expect(values.liste_meta).toBeUndefined();
+    expect(values.liste_tags).toBeUndefined();
+    expect(values.liste_poste).toBe('CTO');
+  });
+
+  it('accepte number et boolean, convertis en texte', () => {
+    const values = buildMessageValues(ligne({ raw_row: { nb: 3, actif: true } }));
+    expect(values.liste_nb).toBe('3');
+    expect(values.liste_actif).toBe('true');
   });
 });

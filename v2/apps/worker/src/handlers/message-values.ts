@@ -138,13 +138,35 @@ export function buildMessageValues(
   // ajoutée — la variable reste manquante, ce qui bloque l'envoi de CE
   // contact plutôt que de partir avec un champ vide.
   if (row.raw_row) {
+    // `parseCsv` garde les en-têtes sensibles à la casse (import/parse.ts) :
+    // deux colonnes distinctes (« Poste », « POSTE ») peuvent normaliser vers
+    // la même variable. On regroupe donc par nom de colonne AVANT d'écrire
+    // dans `values`, pour départager plutôt qu'écraser silencieusement.
+    const parColonne = new Map<string, string[]>();
     for (const [cle, brut] of Object.entries(row.raw_row)) {
       const colonne = normalizeListColumnName(cle);
       if (!colonne) continue; // colonne qui normalise vers une clé vide : ignorée
-      if (brut === null || brut === undefined) continue;
+      // Seuls string/number/boolean se rendent en texte sans mentir : un
+      // objet ou un tableau donnerait littéralement « [object Object] ».
+      if (typeof brut !== 'string' && typeof brut !== 'number' && typeof brut !== 'boolean') continue;
       const texte = String(brut).trim();
       if (!texte) continue;
-      values[`liste_${colonne}`] = texte;
+      const valeurs = parColonne.get(colonne);
+      if (valeurs) valeurs.push(texte);
+      else parColonne.set(colonne, [texte]);
+    }
+    for (const [colonne, valeurs] of parColonne) {
+      const distinctes = new Set(valeurs);
+      if (distinctes.size > 1) {
+        // Colonnes homonymes qui se contredisent : impossible de choisir sans
+        // deviner, donc la variable reste manquante (bloque l'envoi de CE
+        // contact) plutôt que d'en retenir une arbitrairement. Jamais la
+        // valeur dans le journal — un CSV RH peut contenir des données
+        // personnelles.
+        console.warn(`[variables] colonnes homonymes après normalisation : liste_${colonne}`);
+        continue;
+      }
+      values[`liste_${colonne}`] = valeurs[0]!;
     }
   }
   // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne

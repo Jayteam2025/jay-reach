@@ -134,7 +134,12 @@ export function normalizeVariableSyntax(body: string): string {
     // L'ancien vocabulaire est traduit avant d'être reconnu : les modèles
     // importés du socle v1 parlent encore anglais.
     const clef = VARIABLES_HERITEES[nom.toLowerCase()] ?? nom.toLowerCase();
-    if (!(clef in STANDARD_VARIABLES)) {
+    // Colonne du CSV importé, bien formée : même traitement que les variables
+    // standard. Sans risque de tronquer un nom accentué ou à tiret — si le
+    // motif n'a matché QUE grâce à un caractère invalide manquant à l'appel
+    // (accent, tiret), `TOKEN_TOLERANT_RE` n'aurait pas matché jusqu'à la
+    // fermeture de l'accolade, et `clef` ne serait jamais arrivé jusqu'ici.
+    if (!(clef in STANDARD_VARIABLES) && !LISTE_VARIABLE_RE.test(clef)) {
       return brut;
     }
     return repli === undefined ? `{{${clef}}}` : `{{${clef}|${repli}}}`;
@@ -291,12 +296,13 @@ export function validateTemplateVariables(
     const brut = (m[1] ?? '').toLowerCase();
     const nom = VARIABLES_HERITEES[brut] ?? brut;
     if (nom in STANDARD_VARIABLES || extraits.includes(nom) || seen.has(`unknown:${nom}`)) continue;
-    // Déjà accepté par la première boucle (double accolade, motif liste_ bien
-    // formé). En accolade simple, ce nom n'est pas reconnu par
-    // `normalizeVariableSyntax` (liste ouverte, pas de dictionnaire à
-    // consulter) : il reste donc signalé, pour ne pas laisser passer un jeton
-    // qui ne sera jamais substitué à l'envoi.
-    if (LISTE_VARIABLE_RE.test(nom) && m[0].startsWith('{{')) continue;
+    // Colonne bien formée : `normalizeVariableSyntax` la porte déjà à la
+    // forme canonique (accolade simple comprise, comme pour les variables
+    // standard), donc la première boucle l'a acceptée. Si `QUASI_VARIABLE_RE`
+    // a pu capturer ce nom EN ENTIER, c'est qu'aucun caractère invalide ne
+    // s'est glissé dedans (l'accent ou le tiret aurait empêché tout match) —
+    // pas de risque de valider un nom tronqué par erreur.
+    if (LISTE_VARIABLE_RE.test(nom)) continue;
     const proche = suggestVariable(nom);
     issues.push({
       variable: nom,
@@ -321,6 +327,10 @@ export function validateTemplateVariables(
     if (traitesListe.has(brutMinuscule)) continue;
     traitesListe.add(brutMinuscule);
     if (LISTE_VARIABLE_RE.test(brutMinuscule)) continue; // déjà bien formé
+    // Un préfixe seul (`{{liste_}}`, sans rien après) est déjà signalé par la
+    // première boucle comme variable inconnue générique — ni suggestion ni
+    // second message à ajouter ici, la même faute ne compte qu'une fois.
+    if (seen.has(`unknown:${brutMinuscule}`)) continue;
     const reste = /^liste[-_ ]?(.*)$/i.exec(brut)?.[1] ?? '';
     const colonne = normalizeListColumnName(reste);
     const suggestion = colonne ? `liste_${colonne}` : undefined;
@@ -328,10 +338,11 @@ export function validateTemplateVariables(
       variable: brutMinuscule,
       kind: 'unknown',
       message: suggestion
-        ? `Le nom de colonne « ${brut} » doit être en minuscules, sans accent ni tiret. Vouliez-vous dire « ${suggestion} » ?`
+        ? `Le nom de colonne « ${brut} » doit être en minuscules, sans accent, sans tiret ni espace. Vouliez-vous dire « ${suggestion} » ?`
         : `« ${brut} » n'est pas exploitable comme nom de colonne une fois normalisé.`,
       ...(suggestion ? { suggestion } : {}),
     });
+    seen.add(`unknown:${brutMinuscule}`);
   }
 
   return issues;
