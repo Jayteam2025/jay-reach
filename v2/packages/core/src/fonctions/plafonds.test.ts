@@ -215,6 +215,13 @@ describe('plafondDuJour (R83, relecture tâche 21 : une seule source de vérité
 });
 
 describe('lireReglagesDetail (tâche 21, écran Réglages › Plafonds)', () => {
+  // I7 (Important, revue finale du 14/09) : cette lecture expose le nom de
+  // l'auteur de chaque réglage et n'avait aucun contrôle de rôle.
+  it('refuse un rôle insuffisant (aucun rôle)', async () => {
+    const ctx: Contexte = { ...faux({}), role: null };
+    await expect(lireReglagesDetail(ctx)).rejects.toThrow(ForbiddenError);
+  });
+
   it('rend une entrée par clé de CLES_REGLAGES, avec le défaut et le repli quand aucune ligne n’existe', async () => {
     const ctx = faux({ 'from organization_settings': [] });
     const detail = await lireReglagesDetail(ctx);

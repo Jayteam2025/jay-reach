@@ -85,6 +85,10 @@ interface LigneSyncState {
 }
 
 export async function listerFournisseurs(ctx: Contexte): Promise<FournisseurVue[]> {
+  // I7 (Important, revue finale du 14/09) : seule lecture du module sans
+  // contrôle de rôle jusqu'ici — elle rend pourtant l'état de chaque clé de
+  // fournisseur, la date du dernier test et la consommation du jour.
+  exiger(ctx, 'viewer');
   const [credRes, syncRes, reglages] = await Promise.all([
     ctx.ex.query<LigneCredential>(
       `select provider_id, status, last_checked_at, config, last4

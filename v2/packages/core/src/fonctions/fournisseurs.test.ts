@@ -33,6 +33,14 @@ function appelsDe(ctx: Contexte): { sql: string; params: unknown[] }[] {
 }
 
 describe('listerFournisseurs', () => {
+  // I7 (Important, revue finale du 14/09) : seule lecture du module sans
+  // contrôle de rôle — elle rend pourtant l'état de chaque clé de
+  // fournisseur, la date du dernier test et la consommation du jour.
+  it('refuse un rôle insuffisant (aucun rôle)', async () => {
+    const ctx = faux({}, null);
+    await expect(listerFournisseurs(ctx)).rejects.toThrow(ForbiddenError);
+  });
+
   it('rend les dix fournisseurs connus, classés dans les six catégories de l’écran', async () => {
     const ctx = faux({
       'jr:lister_fournisseurs_credentials': [],

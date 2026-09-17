@@ -250,6 +250,9 @@ export async function lireReglagesDetail(
   ctx: Contexte,
   reglages?: Awaited<ReturnType<typeof lireReglages>>,
 ): Promise<DetailReglage[]> {
+  // I7 (Important, revue finale du 14/09) : expose le nom de l'auteur de
+  // chaque réglage, sans contrôle de rôle jusqu'ici.
+  exiger(ctx, 'viewer');
   const [valeurs, auditRes] = await Promise.all([
     reglages ?? lireReglages(ctx),
     ctx.ex.query<{ key: string; updated_at: string; nom: string | null }>(
