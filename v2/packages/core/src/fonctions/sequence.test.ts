@@ -647,6 +647,22 @@ describe('colonnesDeListeCampagne', () => {
     const ctx = faux({ 'jr:sequence_colonnes_liste': [] }, 'viewer');
     await expect(colonnesDeListeCampagne(ctx, { campagneId })).resolves.toEqual([]);
   });
+
+  // Tour de correction 1, Bloquant (relecture) : ce pool n'a pas de RLS
+  // (rôle service, `apps/web/lib/contexte.ts`) — l'isolation multi-tenant
+  // repose entièrement sur le filtrage applicatif. Sans lui, une campagne
+  // d'une autre organisation aurait rendu les noms de colonnes de SA liste
+  // importée. Même modèle qu'`apercuEtape`/`lireSequence` : `ctx.organisationId`
+  // en second paramètre, vérifié dans le `WHERE` lui-même — jamais une
+  // lecture préalable qui pourrait être contournée par un futur appelant
+  // (le principe « une fonction, deux façades » prévoit un appel MCP direct).
+  it('filtre par organisation : la requête vérifie c.organization_id = ctx.organisationId', async () => {
+    const ctx = faux({ 'jr:sequence_colonnes_liste': [] });
+    await colonnesDeListeCampagne(ctx, { campagneId });
+    const appel = appelsDe(ctx).find((a) => /jr:sequence_colonnes_liste/i.test(String(a[0])));
+    expect(String(appel?.[0])).toMatch(/organization_id\s*=\s*\$2/i);
+    expect(appel?.[1]).toEqual([campagneId, 'org-1']);
+  });
 });
 
 describe('envoyerTest', () => {

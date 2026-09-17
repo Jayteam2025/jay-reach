@@ -581,6 +581,17 @@ const MAX_LIGNES_ECHANTILLON_LISTE = 200;
  * `construireValeursContact`/`validateTemplateVariables`), clés qui
  * normalisent vers une chaîne vide ignorées, dédoublonnées, dans l'ordre de
  * première apparition. Sans liste reliée : `[]`.
+ *
+ * `c.organization_id = $2` (tour de correction 1, Bloquant de la relecture) :
+ * ce pool n'a pas de RLS (rôle service, `apps/web/lib/contexte.ts`) — sans ce
+ * garde, une campagne d'une autre organisation aurait rendu les noms de
+ * colonnes de SA liste importée. Même modèle qu'`apercuEtape`/`lireSequence`.
+ * Posé comme un `exists` PUR (rien d'autre n'en dépend) : une campagne hors
+ * organisation, ou inexistante, rend simplement `[]` — acceptable pour une
+ * fonction de suggestions (le seul appelant écran, `sequence/page.tsx`, tourne
+ * de toute façon en parallèle de `lireSequence`, qui rejette déjà pour ce cas ;
+ * un futur appel MCP direct reçoit une liste vide plutôt qu'une exception qui
+ * confirmerait l'existence d'une campagne hors de sa portée).
  */
 export async function colonnesDeListeCampagne(ctx: Contexte, entree: unknown): Promise<string[]> {
   exiger(ctx, 'viewer');
@@ -589,16 +600,19 @@ export async function colonnesDeListeCampagne(ctx: Contexte, entree: unknown): P
   const res = await ctx.ex.query<LigneRawRowListe>(
     `select lm.raw_row /* jr:sequence_colonnes_liste */
        from list_members lm
-      where lm.list_id in (
-        select distinct list_id from (
-          select list_id from enrollments where campaign_id = $1 and list_id is not null
-          union
-          select list_id from campaigns where id = $1 and list_id is not null
-        ) x
-      )
+      where exists (
+              select 1 from campaigns c where c.id = $1 and c.organization_id = $2
+            )
+        and lm.list_id in (
+          select distinct list_id from (
+            select list_id from enrollments where campaign_id = $1 and list_id is not null
+            union
+            select list_id from campaigns where id = $1 and list_id is not null
+          ) x
+        )
       order by lm.added_at desc
       limit ${MAX_LIGNES_ECHANTILLON_LISTE}`,
-    [campagneId],
+    [campagneId, ctx.organisationId],
   );
 
   const vues = new Set<string>();
