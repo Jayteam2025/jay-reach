@@ -170,13 +170,13 @@ describe('lireFiche', () => {
         },
       ],
       'jr:fiche_etapes': [{ position: 0 }, { position: 1 }, { position: 2 }, { position: 3 }],
-      'jr:fiche_boite': [{ identity: 'alex@exemple.fr', inbox_provider: 'microsoft_graph' }],
+      'jr:fiche_boite': [{ identity: 'camille@exemple.fr', inbox_provider: 'microsoft_graph' }],
       'jr:fiche_fils': [{ id: 'fil-1', last_message_at: '2026-09-13T10:00:00.000Z' }],
       'jr:fiche_messages': [
         { id: 'msg-1', direction: 'out', body: 'Bonjour Karim', sent_at: '2026-09-11T09:00:00.000Z' },
-        { id: 'msg-2', direction: 'in', body: 'Merci Alex', sent_at: '2026-09-13T10:22:00.000Z' },
+        { id: 'msg-2', direction: 'in', body: 'Merci Camille', sent_at: '2026-09-13T10:22:00.000Z' },
       ],
-      'jr:fiche_notes': [{ id: 'note-1', body: 'À relancer', created_at: '2026-09-12T08:00:00.000Z', auteur_nom: 'Alexandre' }],
+      'jr:fiche_notes': [{ id: 'note-1', body: 'À relancer', created_at: '2026-09-12T08:00:00.000Z', auteur_nom: 'Camille' }],
       'jr:fiche_historique': [{ id: 'evt-1', created_at: '2026-09-13T10:22:00.000Z', action: 'reply_received', diff: { libelle: 'Réponse reçue.' } }],
       'jr:fiche_campagnes': [{ id: campagneId, nom: 'Directeur commercial' }],
     });
@@ -202,15 +202,15 @@ describe('lireFiche', () => {
         { position: 3, etat: 'en_cours' },
         { position: 4, etat: 'a_venir' },
       ],
-      boite: { identite: 'alex@exemple.fr', marque: 'outlook' },
+      boite: { identite: 'camille@exemple.fr', marque: 'outlook' },
       pause: null,
     });
     expect(fiche.echanges).toEqual([
       { id: 'msg-1', direction: 'out', corps: 'Bonjour Karim', quand: '2026-09-11T09:00:00.000Z' },
-      { id: 'msg-2', direction: 'in', corps: 'Merci Alex', quand: '2026-09-13T10:22:00.000Z' },
+      { id: 'msg-2', direction: 'in', corps: 'Merci Camille', quand: '2026-09-13T10:22:00.000Z' },
     ]);
     expect(fiche.filId).toBe('fil-1');
-    expect(fiche.notes).toEqual([{ id: 'note-1', texte: 'À relancer', quand: '2026-09-12T08:00:00.000Z', auteurNom: 'Alexandre' }]);
+    expect(fiche.notes).toEqual([{ id: 'note-1', texte: 'À relancer', quand: '2026-09-12T08:00:00.000Z', auteurNom: 'Camille' }]);
     expect(fiche.historique).toEqual([{ id: 'evt-1', quand: '2026-09-13T10:22:00.000Z', type: 'reply_received', libelle: 'Réponse reçue.', detail: null }]);
     expect(fiche.campagnes).toEqual([{ id: campagneId, nom: 'Directeur commercial' }]);
   });

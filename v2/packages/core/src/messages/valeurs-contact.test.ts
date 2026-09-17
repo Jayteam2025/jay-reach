@@ -58,11 +58,11 @@ describe('construireValeursContact', () => {
 
   it('les extraits complètent sans écraser une valeur déjà connue', () => {
     const extraits = new Map([
-      ['signature', 'Alexandre'],
+      ['signature', 'Camille'],
       ['prenom', 'FANTOME'],
     ]);
     const v = construireValeursContact(ligne(), extraits);
-    expect(v.signature).toBe('Alexandre');
+    expect(v.signature).toBe('Camille');
     expect(v.prenom).toBe('Nadia');
   });
 
@@ -187,7 +187,7 @@ describe('lireValeursContact', () => {
           context_note: null,
         },
       ],
-      'jr:valeurs_contact_extraits': [{ name: 'signature', body: 'Alexandre' }],
+      'jr:valeurs_contact_extraits': [{ name: 'signature', body: 'Camille' }],
     });
     const r = await lireValeursContact(ex, 'org-1', 'contact-1', 'camp-1');
     expect(r).not.toBeNull();
@@ -195,7 +195,7 @@ describe('lireValeursContact', () => {
     expect(r?.email).toBe('n.lemaire@kairn.example');
     expect(r?.locale).toBe('fr');
     expect(r?.valeurs.prenom).toBe('Nadia');
-    expect(r?.valeurs.signature).toBe('Alexandre');
+    expect(r?.valeurs.signature).toBe('Camille');
   });
 
   it('passe `campagneId` en troisième paramètre de la requête (null par défaut)', async () => {

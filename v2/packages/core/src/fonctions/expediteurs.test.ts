@@ -25,7 +25,7 @@ function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'admin')
 
 const BOITE_BASE = {
   id: 'boite-1',
-  identity: 'alex@exemple.fr',
+  identity: 'camille@exemple.fr',
   display_name: null,
   daily_quota: 30,
   hourly_quota: 5,
@@ -54,7 +54,7 @@ describe('listerBoites', () => {
     const [boite] = await listerBoites(ctx);
     expect(boite).toMatchObject({
       id: 'boite-1',
-      identite: 'alex@exemple.fr',
+      identite: 'camille@exemple.fr',
       marque: 'autre',
       quotas: { jour: 30, heure: 5 },
       usageDuJour: 3,

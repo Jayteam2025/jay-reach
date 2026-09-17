@@ -72,7 +72,7 @@ const MESSAGES: MessageFilAffiche[] = [
     corps: 'Karim, une question sur ton équipe',
     quand: '2026-09-11T09:12:00.000Z',
     quandAffiche: '11 sept., 09:12',
-    expediteur: 'alex.dupont@exemple.fr',
+    expediteur: 'camille.martin@exemple.fr',
     destinataire: 'Karim Benali',
     objet: 'Karim, une question sur ton équipe',
     repondDepuis: null,
@@ -80,7 +80,7 @@ const MESSAGES: MessageFilAffiche[] = [
   {
     id: 'm2',
     direction: 'in',
-    corps: 'Merci Alex, ça me parle.',
+    corps: 'Merci Camille, ça me parle.',
     quand: '2026-09-16T10:22:00.000Z',
     quandAffiche: "aujourd'hui, 10:22",
     expediteur: 'Karim Benali',
@@ -98,7 +98,7 @@ describe('Réception — rendu des trois volets', () => {
         nom: 'Karim Benali',
         canal: 'email',
         classification: 'human_reply',
-        apercu: 'Merci Alex, ça me parle.',
+        apercu: 'Merci Camille, ça me parle.',
         quandAffiche: "aujourd'hui, 10:22",
         interet: 'interested',
         relanceLeAffiche: null,
@@ -159,7 +159,7 @@ describe('Réception — rendu des trois volets', () => {
         contact={CONTACT}
         canal="email"
         campagne={CAMPAGNE}
-        boite={{ id: 'boite-1', identite: 'alex.dupont@exemple.fr', marque: 'outlook' }}
+        boite={{ id: 'boite-1', identite: 'camille.martin@exemple.fr', marque: 'outlook' }}
         messages={MESSAGES}
         interet={null}
         traite={false}
@@ -177,7 +177,7 @@ describe('Réception — rendu des trois volets', () => {
     expect(html).toContain('séquence arrêtée à la réponse');
     expect(html).toContain('jr-message'); // cartes de messages
     expect(html).toContain('jr-reponse'); // zone de réponse toujours affichée
-    expect(html).toContain('alex.dupont@exemple.fr');
+    expect(html).toContain('camille.martin@exemple.fr');
     expect(html).toContain('SalesBlink');
   });
 
@@ -248,7 +248,7 @@ describe('Réception — rendu des trois volets', () => {
     const html = renderToStaticMarkup(
       <ColonneContact
         t={t}
-        fiche={{ ...FICHE, notes: [{ id: 'note-1', texte: 'À relancer jeudi', quand: '2026-09-12T08:00:00.000Z', auteurNom: 'Alexandre' }] }}
+        fiche={{ ...FICHE, notes: [{ id: 'note-1', texte: 'À relancer jeudi', quand: '2026-09-12T08:00:00.000Z', auteurNom: 'Camille' }] }}
         canal="email"
         campagneId="campagne-1"
         pourquoiQuandAffiche="4 sept."

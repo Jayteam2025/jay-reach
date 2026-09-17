@@ -73,24 +73,24 @@ describe('motifPauseDe', () => {
 
 describe('marqueBoite', () => {
   it('reconnaît un domaine outlook', () => {
-    expect(marqueBoite('alex@outlook.com')).toBe('outlook');
-    expect(marqueBoite('alex@hotmail.fr')).toBe('outlook');
+    expect(marqueBoite('camille@outlook.com')).toBe('outlook');
+    expect(marqueBoite('camille@hotmail.fr')).toBe('outlook');
   });
   it('reconnaît un domaine gmail', () => {
-    expect(marqueBoite('alex@gmail.com')).toBe('gmail');
+    expect(marqueBoite('camille@gmail.com')).toBe('gmail');
   });
   it('renvoie null pour un domaine propre à l’organisation', () => {
-    expect(marqueBoite('alex@exemple.fr')).toBeNull();
+    expect(marqueBoite('camille@exemple.fr')).toBeNull();
   });
   it('R63 (tour de correction 2) : inbox_provider microsoft_graph prime sur l’heuristique de domaine', () => {
     // Une boîte Microsoft 365 connectée en Graph a un domaine propre à
     // l'organisation (jamais outlook.com/hotmail.com), invisible à
     // l'heuristique seule — elle s'affichait en tuile « @ » avant ce correctif.
-    expect(marqueBoite('alex@exemple.fr', 'microsoft_graph')).toBe('outlook');
+    expect(marqueBoite('camille@exemple.fr', 'microsoft_graph')).toBe('outlook');
   });
   it('R63 : sans inbox_provider microsoft_graph, l’heuristique de domaine reste inchangée', () => {
-    expect(marqueBoite('alex@exemple.fr', null)).toBeNull();
-    expect(marqueBoite('alex@gmail.com', null)).toBe('gmail');
+    expect(marqueBoite('camille@exemple.fr', null)).toBeNull();
+    expect(marqueBoite('camille@gmail.com', null)).toBe('gmail');
   });
 });
 
@@ -124,12 +124,12 @@ describe('listerCampagnes', () => {
           derniere_activite: '2026-09-14T10:00:00.000Z',
         },
       ],
-      'jr:boites_actives': [{ id: 'send-1', identity: 'alex@outlook.com' }],
+      'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
       'jr:tendance_livraisons': [],
     });
     const r = await listerCampagnes(ctx);
     expect(r).toHaveLength(1);
-    expect(r[0]!.boites).toEqual([{ id: 'send-1', identite: 'alex@outlook.com', marque: 'outlook' }]);
+    expect(r[0]!.boites).toEqual([{ id: 'send-1', identite: 'camille@outlook.com', marque: 'outlook' }]);
     expect(r[0]!.sources).toEqual([{ providerId: 'adzuna' }]);
     expect(r[0]!.tauxReponse).toBe(10);
     expect(r[0]!.tendance7j).toHaveLength(7);
@@ -218,7 +218,7 @@ describe('lireVueDEnsemble', () => {
     return faux(
       {
         'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40 }],
-        'jr:boites_actives': [{ id: 'send-1', identity: 'alex@outlook.com' }],
+        'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
         'organization_settings': [],
         'jr:entonnoir_campagne': [{ trouves: 100, qualifies: 40, contacts: 35, en_sequence: 10, livres: 20, reponses: 4, interesses: 2 }],
         'jr:file_du_jour_campagne': [],
@@ -250,7 +250,7 @@ describe('lireVueDEnsemble', () => {
     const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
     expect(v.campagne.nom).toBe('Directeur commercial');
     expect(v.campagne.scoreMin).toBe(80);
-    expect(v.campagne.boites).toEqual([{ id: 'send-1', identite: 'alex@outlook.com', marque: 'outlook' }]);
+    expect(v.campagne.boites).toEqual([{ id: 'send-1', identite: 'camille@outlook.com', marque: 'outlook' }]);
     expect(v.entonnoir.trouves).toBe(100);
     // Marche « Contacts identifiés » (R31), après « Contacts qualifiés » : des personnes, pas des offres.
     expect(v.entonnoir.contacts).toBe(35);
@@ -462,10 +462,10 @@ describe('listerContactsCampagne', () => {
         {
           signal_id: null,
           contact_id: 'contact-2',
-          first_name: 'Alex',
+          first_name: 'Camille',
           last_name: 'Recette',
           job_title: null,
-          email: 'alex@exemple.fr',
+          email: 'camille@exemple.fr',
           entreprise: null,
           current_step: 0,
           statut: 'en_sequence',
@@ -725,14 +725,14 @@ describe('listerBoitesPourCampagne', () => {
   it('renvoie les boîtes email actives de l’organisation avec leur marque', async () => {
     const ctx = faux({
       'jr:boites_pour_campagne': [
-        { id: 'b1', identity: 'alex@outlook.com', provider_id: 'salesblink', inbox_provider: null },
-        { id: 'b2', identity: 'alex@exemple.fr', provider_id: null, inbox_provider: null },
+        { id: 'b1', identity: 'camille@outlook.com', provider_id: 'salesblink', inbox_provider: null },
+        { id: 'b2', identity: 'camille@exemple.fr', provider_id: null, inbox_provider: null },
       ],
     });
     const r = await listerBoitesPourCampagne(ctx, {});
     expect(r).toEqual([
-      { id: 'b1', identite: 'alex@outlook.com', marque: 'outlook' },
-      { id: 'b2', identite: 'alex@exemple.fr', marque: null },
+      { id: 'b1', identite: 'camille@outlook.com', marque: 'outlook' },
+      { id: 'b2', identite: 'camille@exemple.fr', marque: null },
     ]);
   });
 
