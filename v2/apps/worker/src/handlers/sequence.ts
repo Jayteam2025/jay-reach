@@ -559,13 +559,34 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       // approbation est déjà requise, pour ne pas compter les envois déjà
       // partis en pure perte.
       if (!requiresApproval) {
-        requiresApproval = await relecturePremiersEnvoisRequise(
+        const parRelecture = await relecturePremiersEnvoisRequise(
           pool,
           row,
           step.id,
           seuilDefautRelectureParOrg,
           dejaPartisParEtape,
         );
+        requiresApproval = parRelecture;
+        // Important (tour de correction 1, revue du 17/09) : CETTE inscription
+        // vient de consommer un des N premiers envois de l'étape (elle passe
+        // en relecture) — il faut le compter tout de suite pour les
+        // inscriptions SUIVANTES du même passage sur la même étape, sans
+        // attendre qu'un humain l'approuve et qu'elle atteigne réellement
+        // `dispatched`/`delivered` en base (qui n'arrive qu'au dispatch, plus
+        // tard — cf. `chargerContraintesSender` ci-dessus, même distinction
+        // pour un cache voisin). Sans cet incrément, un lancement de campagne
+        // où plusieurs inscriptions dues partagent la même étape ferait
+        // TOUTES passer en relecture, pas seulement les N premières. Jamais
+        // incrémenté pour une autre raison (lettre, LinkedIn manuel,
+        // politique d'approbation) : ces actions-là ne consomment pas le
+        // quota de relecture — la fonction n'est même pas appelée pour elles
+        // (court-circuitée juste au-dessus). Jamais incrémenté non plus
+        // quand l'étape est déjà au-delà du seuil (`parRelecture` faux) :
+        // le compteur est déjà à son maximum utile, l'incrémenter encore ne
+        // changerait aucune décision suivante.
+        if (parRelecture) {
+          dejaPartisParEtape.set(step.id, (dejaPartisParEtape.get(step.id) ?? 0) + 1);
+        }
       }
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);

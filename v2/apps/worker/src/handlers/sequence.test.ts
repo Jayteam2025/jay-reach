@@ -237,6 +237,30 @@ describe('tickDueEnrollments — relecture des premiers envois (I2)', () => {
     expect(lectureDefaut).toBeDefined();
     expect(lectureDefaut!.values).toEqual([ORG_ID, 'relecture_premiers_envois_defaut']);
   });
+
+  it('quatre inscriptions dues sur la MÊME étape dans le même passage, seuil 2, zéro déjà parti en base → seules les deux premières passent en relecture, les deux suivantes partent directement (Important, tour de correction 1)', async () => {
+    // Sans l'incrément local du cache, `dejaPartisParEtape` resterait figé à 0
+    // pendant tout le passage — les actions créées ici n'atteignent
+    // `dispatched`/`delivered` qu'au dispatch, plus tard — et les QUATRE
+    // inscriptions passeraient en relecture au lieu des deux premières
+    // seulement (« relecture des PREMIERS envois » : les plus anciennes du
+    // passage consomment le quota, les suivantes en profitent).
+    const quatreLignes = ['enrollment-a', 'enrollment-b', 'enrollment-c', 'enrollment-d'].map((id, i) =>
+      ligneDue({ id, contact_id: `contact-${i}`, entry_rules: { relecturePremiersEnvois: 2 } }),
+    );
+    const gestionnaires = gestionnairesBase().map((g) => (g.motif === DUE ? { motif: DUE, repondre: () => ligne(quatreLignes) } : g));
+    gestionnaires.push({ motif: DEJA_PARTIS, repondre: () => ligne([{ n: 0 }]) });
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    const statuts = appels.filter((a) => INSERT_ACTION.test(a.sql)).map((a) => a.values[4]);
+    expect(statuts).toEqual(['pending_approval', 'pending_approval', 'scheduled', 'scheduled']);
+
+    // Une seule lecture du nombre déjà parti en base pour toute l'étape (pas
+    // une par inscription) : le reste du décompte vient du cache local.
+    expect(appels.filter((a) => DEJA_PARTIS.test(a.sql))).toHaveLength(1);
+  });
 });
 
 describe('mettreInscriptionEnPause', () => {
