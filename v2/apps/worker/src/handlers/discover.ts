@@ -39,6 +39,12 @@ export interface DiscoverJob {
    * permanent n'en a pas.
    */
   readonly budgetMs?: number;
+  /**
+   * `sources.config.ageMaxJours` de CETTE source, s'il est réglé (I3, revue
+   * finale du 17/09). Absent → le persisteur des signaux (`insertSignals`)
+   * retombe sur le défaut d'organisation `age_max_offres_jours`.
+   */
+  readonly ageMaxJours?: number;
 }
 
 export async function runDiscover(

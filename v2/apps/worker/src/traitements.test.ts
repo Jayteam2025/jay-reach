@@ -164,6 +164,20 @@ describe('libelleSourceRun (journal, tâche 6)', () => {
   it('retombe sur l’id brut pour un connecteur non répertorié', () => {
     expect(libelleSourceRun('inconnu', 1, 1).libelle).toContain('Passage inconnu :');
   });
+
+  it('distingue les offres écartées pour âge des doublons déjà connus (I3)', () => {
+    expect(libelleSourceRun('adzuna', 10, 6, 3)).toEqual({
+      libelle: 'Passage Adzuna : 10 offre(s) lue(s), 6 retenue(s)',
+      detail: '1 offre(s) déjà connue(s) ignorée(s). 3 offre(s) trop ancienne(s) écartée(s).',
+    });
+  });
+
+  it('tout écarté pour âge, aucun doublon : pas de mention de « déjà connue »', () => {
+    expect(libelleSourceRun('adzuna', 5, 2, 3)).toEqual({
+      libelle: 'Passage Adzuna : 5 offre(s) lue(s), 2 retenue(s)',
+      detail: '3 offre(s) trop ancienne(s) écartée(s).',
+    });
+  });
 });
 
 describe('libelleScoringBatch (journal, tâche 6)', () => {
@@ -255,13 +269,18 @@ describe('traiterDiscover — journal d’activité (tâche 6)', () => {
     expect(diff.libelle).toContain('Adzuna indisponible');
   });
 
-  function signalOffre(company: string, title: string, location: string): ScrapedSignal {
+  function signalOffre(company: string, title: string, location: string, postedDate?: string): ScrapedSignal {
     return {
       signal_type: 'job_posting',
       source: 'adzuna',
       source_url: `https://api.adzuna.com/v1/job/${company}-${title}`,
       raw_content: '{}',
-      extracted_data: { company_name: company, job_title: title, location },
+      extracted_data: {
+        company_name: company,
+        job_title: title,
+        location,
+        ...(postedDate !== undefined ? { posted_date: postedDate } : {}),
+      },
     };
   }
 
@@ -280,6 +299,10 @@ describe('traiterDiscover — journal d’activité (tâche 6)', () => {
     const { pool, appels } = creerPoolGestionnaires([
       { motif: /select config from credentials/i, repondre: () => ligne([]) },
       { motif: /insert into source_runs/i, repondre: () => ligne([{ id: 'run-2' }]) },
+      // I3 : défaut d'organisation lu par `plafondDuJour` — aucune des offres
+      // du test n'a de `posted_date`, donc jamais écartée quelle que soit
+      // cette valeur (14 par défaut, faute de ligne).
+      { motif: /from organization_settings where organization_id = \$1 and key = \$2/i, repondre: () => ligne([]) },
       // Simule Postgres qui écarte une des trois offres comme déjà connue
       // (fingerprint récent) : 3 lues, 2 retenues — le mock ne rejoue pas le
       // vrai filtre SQL, seul le nombre de lignes rendues compte ici.
@@ -306,6 +329,49 @@ describe('traiterDiscover — journal d’activité (tâche 6)', () => {
     const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; detail?: string };
     expect(diff.libelle).toBe('Passage Adzuna : 3 offre(s) lue(s), 2 retenue(s)');
     expect(diff.detail).toBe('1 offre(s) déjà connue(s) ignorée(s).');
+  });
+
+  it('écarte une offre trop ancienne AVANT insertion, et le journal la compte séparément (I3)', async () => {
+    process.env.ADZUNA_APP_ID = 'id-test';
+    process.env.ADZUNA_APP_KEY = 'cle-test';
+    vi.mocked(adzunaScraper.fetch).mockResolvedValueOnce({
+      signals: [
+        signalOffre('Acme', 'Développeur', 'Paris', '2000-01-01T00:00:00.000Z'), // très ancienne
+        signalOffre('Beta', 'Commercial', 'Lyon'), // sans date : jamais écartée
+      ],
+      errors: [],
+      duration_ms: 90,
+    });
+    const { pool, appels } = creerPoolGestionnaires([
+      { motif: /select config from credentials/i, repondre: () => ligne([]) },
+      { motif: /insert into source_runs/i, repondre: () => ligne([{ id: 'run-3' }]) },
+      // Défaut d'organisation réglé à 14 jours (au lieu du repli sans ligne) :
+      // l'offre de l'an 2000 est écartée quelle que soit la date d'exécution du test.
+      {
+        motif: /from organization_settings where organization_id = \$1 and key = \$2/i,
+        repondre: () => ligne([{ value: 14 }]),
+      },
+      { motif: /insert into signals/i, repondre: () => ligne([{ id: 'signal-1', company_hint: null }]) },
+      { motif: /update source_runs/i, repondre: () => ligne([]) },
+      { motif: /insert into audit_events/i, repondre: () => ligne([]) },
+    ]);
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+
+    await traiterDiscover({ pool, boss }, JOB);
+
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+
+    // Un seul tuple envoyé à l'insertion (3 paramètres fixes + 7) : l'offre
+    // ancienne n'a jamais atteint la requête SQL.
+    const insert = appels.find((a) => /insert into signals/i.test(a.sql));
+    expect(insert).toBeDefined();
+    expect(insert!.values).toHaveLength(3 + 7);
+
+    const journal = appels.find((a) => /insert into audit_events/i.test(a.sql));
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; detail?: string };
+    expect(diff.libelle).toBe('Passage Adzuna : 2 offre(s) lue(s), 1 retenue(s)');
+    expect(diff.detail).toBe('1 offre(s) trop ancienne(s) écartée(s).');
   });
 });
 

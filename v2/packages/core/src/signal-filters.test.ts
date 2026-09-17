@@ -6,6 +6,7 @@ import {
   isRecruitmentAgency,
   normalizeLocation,
   signalFingerprint,
+  offreTropVieille,
 } from './signal-filters.js';
 
 describe('normalizeAgencyName — parité avec la fonction SQL', () => {
@@ -146,5 +147,33 @@ describe('empreinte — parité avec les fonctions SQL', () => {
     expect(signalFingerprint({ company: 'Acme', title: 'Technicien', location: '69003 Lyon' })).toBe(
       'acme|technicien|69003 lyon',
     );
+  });
+});
+
+describe('offreTropVieille', () => {
+  const now = new Date('2026-09-17T10:00:00.000Z');
+
+  it('offre de 20 jours avec le défaut (14) → écartée', () => {
+    const publieeIly20j = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    expect(offreTropVieille(publieeIly20j, 14, now)).toBe(true);
+  });
+
+  it('offre de 20 jours avec une source réglée à 30 → gardée', () => {
+    const publieeIly20j = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    expect(offreTropVieille(publieeIly20j, 30, now)).toBe(false);
+  });
+
+  it('sans date de publication → jamais écartée', () => {
+    expect(offreTropVieille(null, 14, now)).toBe(false);
+    expect(offreTropVieille(undefined, 14, now)).toBe(false);
+  });
+
+  it('date de publication illisible → jamais écartée (comme une date absente)', () => {
+    expect(offreTropVieille('pas une date', 14, now)).toBe(false);
+  });
+
+  it('offre plus récente que la limite → gardée', () => {
+    const publieeIlyA5j = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    expect(offreTropVieille(publieeIlyA5j, 14, now)).toBe(false);
   });
 });

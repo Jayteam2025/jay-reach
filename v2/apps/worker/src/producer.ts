@@ -25,7 +25,7 @@ interface SourceRow {
   readonly provider_id: string;
   /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
   readonly source_provider_id: string;
-  readonly config: { keywords?: unknown; location?: unknown } | null;
+  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown } | null;
 }
 
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
@@ -112,6 +112,7 @@ export async function enqueueDiscoverForActiveSources(
       sourceProviderId: src.source_provider_id,
       keywords,
       ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+      ...(typeof config.ageMaxJours === 'number' ? { ageMaxJours: config.ageMaxJours } : {}),
     };
     const id = deterministicUuid('discover', src.source_provider_id, bucket);
     await boss.insert([{ name: 'sources.discover', id, data: job }]);
@@ -509,6 +510,7 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
         sourceProviderId: rattachement.id,
         keywords,
         ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+        ...(typeof config.ageMaxJours === 'number' ? { ageMaxJours: config.ageMaxJours } : {}),
       };
       await boss.send('sources.discover', job);
       enqueued += 1;

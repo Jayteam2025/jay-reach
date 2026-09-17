@@ -4,7 +4,7 @@
  */
 import { Pool } from 'pg';
 import type { ScrapedSignal } from '@jay-reach/providers/signals';
-import { normalizeLocation, signalFingerprint } from '@jay-reach/core';
+import { normalizeLocation, signalFingerprint, offreTropVieille } from '@jay-reach/core';
 
 export function createPool(connectionString: string): Pool {
   // Le worker traite séquentiellement (batchSize 1) : quatre connexions
@@ -52,6 +52,14 @@ export interface InsertedSignal {
   readonly companyName: string | null;
 }
 
+/** Résultat d'un lot d'insertion : les signaux réellement insérés, et combien
+ * ont été écartés à la source pour cause d'âge (I3, revue finale du 17/09). */
+export interface InsertSignalsResult {
+  readonly inserted: InsertedSignal[];
+  /** Offres écartées parce que trop anciennes (`occurred_at` < `now() - ageMaxJours`). */
+  readonly ecartesAge: number;
+}
+
 /**
  * Écrit les signaux détectés (déduplication par (source, url) via l'index
  * unique). Ne garde que les `job_posting`. Retourne les NOUVEAUX signaux
@@ -87,11 +95,16 @@ export async function insertSignals(
   sourceId: string,
   providerId: string,
   signals: readonly ScrapedSignal[],
-): Promise<InsertedSignal[]> {
+  /** `source.config.ageMaxJours` si réglé, sinon le défaut d'organisation
+   * `age_max_offres_jours` — résolu par l'appelant (`traiterDiscover`). */
+  ageMaxJours: number,
+  now: Date = new Date(),
+): Promise<InsertSignalsResult> {
   // Empreintes déjà posées pendant ce lot : une même offre remontée deux fois
   // par le même appel n'a pas encore été écrite en base, donc la vérification
   // SQL ne la verrait pas.
   const vuesDansLeLot = new Set<string>();
+  let ecartesAge = 0;
   const aInserer: {
     externalId: string;
     occurredAt: string | null;
@@ -107,6 +120,15 @@ export async function insertSignals(
       continue;
     }
     const data = signal.extracted_data;
+    const occurredAt = (data.posted_date as string | null | undefined) ?? null;
+
+    // I3 (revue finale du 17/09) : écartée AVANT insertion, jamais après —
+    // une offre sans date connue n'est jamais écartée (`offreTropVieille`).
+    if (offreTropVieille(occurredAt, ageMaxJours, now)) {
+      ecartesAge += 1;
+      continue;
+    }
+
     const companyName = (data.company_name as string | null | undefined) ?? null;
     const title = (data.job_title as string | null | undefined) ?? null;
     const location = (data.location as string | null | undefined) ?? null;
@@ -135,7 +157,7 @@ export async function insertSignals(
 
     aInserer.push({
       externalId: signal.source_url,
-      occurredAt: (data.posted_date as string | null | undefined) ?? null,
+      occurredAt,
       raw: JSON.stringify(data),
       title,
       companyName,
@@ -179,7 +201,7 @@ export async function insertSignals(
     }
   }
 
-  return inserted;
+  return { inserted, ecartesAge };
 }
 
 /** Ouvre un enregistrement d'exécution de source (`source_runs`, statut `running`). */

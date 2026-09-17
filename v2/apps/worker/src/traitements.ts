@@ -121,12 +121,26 @@ const LIBELLES_PROVIDER_SOURCE: Record<string, string> = {
   apify: 'Apify',
 };
 
-/** Libellé + détail d'un passage de collecte, pour `ecrireEvenement` (action `source_run`). */
-export function libelleSourceRun(provider: string, found: number, added: number): { libelle: string; detail?: string } {
+/**
+ * Libellé + détail d'un passage de collecte, pour `ecrireEvenement` (action
+ * `source_run`). `ecartesAge` (I3, revue finale du 17/09) compte les offres
+ * écartées par `insertSignals` pour cause d'âge (`age_max_offres_jours` /
+ * `sources.config.ageMaxJours`) — distinct des doublons déjà connus, pour que
+ * l'opérateur voie CE QUI a filtré, pas un seul total opaque.
+ */
+export function libelleSourceRun(
+  provider: string,
+  found: number,
+  added: number,
+  ecartesAge = 0,
+): { libelle: string; detail?: string } {
   const nom = LIBELLES_PROVIDER_SOURCE[provider] ?? provider;
-  const ignorees = found - added;
+  const dejaConnues = Math.max(0, found - added - ecartesAge);
   const libelle = `Passage ${nom} : ${found} offre(s) lue(s), ${added} retenue(s)`;
-  return ignorees > 0 ? { libelle, detail: `${ignorees} offre(s) déjà connue(s) ignorée(s).` } : { libelle };
+  const details: string[] = [];
+  if (dejaConnues > 0) details.push(`${dejaConnues} offre(s) déjà connue(s) ignorée(s).`);
+  if (ecartesAge > 0) details.push(`${ecartesAge} offre(s) trop ancienne(s) écartée(s).`);
+  return details.length > 0 ? { libelle, detail: details.join(' ') } : { libelle };
 }
 
 /** Libellé + détail d'un lot de scoring, pour `ecrireEvenement` (action `scoring_batch`). */
@@ -223,7 +237,19 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
       ctx.budgetCollecteMs !== undefined ? { ...data, budgetMs: ctx.budgetCollecteMs } : data,
       credentials,
     );
-    const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);
+    // I3 (revue finale du 17/09) : réglage de la source si présent, sinon le
+    // défaut d'organisation — même chaîne de repli que les autres plafonds
+    // (R83). `insertSignals` écarte les offres plus vieilles AVANT insertion.
+    const ageMaxJours =
+      data.ageMaxJours ?? (await plafondDuJour(pool, data.organizationId, 'age_max_offres_jours'));
+    const { inserted, ecartesAge } = await insertSignals(
+      pool,
+      data.organizationId,
+      data.sourceId,
+      data.provider,
+      result.signals,
+      ageMaxJours,
+    );
     // Chaînage : chaque NOUVEAU signal (avec une entreprise) part en qualification.
     // Id déterministe par signal => un signal ne se qualifie qu'une fois.
     //
@@ -250,7 +276,7 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
     }
     await finishSourceRun(pool, runId, { found: result.signals.length, added: inserted.length, status: 'success' });
     console.log(
-      `[discover] ${result.signals.length} trouvés, ${inserted.length} nouveaux → qualif, ${result.errors.length} erreur(s) en ${result.duration_ms} ms`,
+      `[discover] ${result.signals.length} trouvés, ${inserted.length} nouveaux → qualif, ${ecartesAge} écarté(s) (âge), ${result.errors.length} erreur(s) en ${result.duration_ms} ms`,
     );
     try {
       await ecrireEvenement(pool, {
@@ -258,7 +284,7 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
         entityType: 'source',
         entityId: data.sourceId,
         action: 'source_run',
-        diff: libelleSourceRun(data.provider, result.signals.length, inserted.length),
+        diff: libelleSourceRun(data.provider, result.signals.length, inserted.length, ecartesAge),
       });
     } catch (err) {
       console.warn('[journal] source_run', err);
