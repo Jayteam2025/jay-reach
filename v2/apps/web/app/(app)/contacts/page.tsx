@@ -15,7 +15,7 @@ import type { StatutContactCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../lib/contexte';
 import { texteEtape } from '../../../lib/etape-contact';
 import { libelleMotifPause } from '../../../lib/motif-pause';
-import { Carte, EnTetePage, Onglets } from '../../../components/ui';
+import { Carte, Champ, EnTetePage, Onglets } from '../../../components/ui';
 import { TableContacts, type LigneTableContacts } from '../../../components/campagne/TableContacts';
 import { TableEntreprises } from '../../../components/contact/TableEntreprises';
 import { TableExclusions } from '../../../components/contact/TableExclusions';
@@ -235,56 +235,59 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     contenu = (
       <>
         {resultat.tronque && <p className="jr-secondaire">{t('truncated')}</p>}
-        <form method="get" className="jr-ligne-entre" style={{ flexWrap: 'wrap', gap: 8 }}>
+        {/* Une seule ligne de filtres (tour de correction F6, point 24) : sélecteurs à largeur
+            minimale cohérente + recherche + bouton, alignés sur le bas de chaque contrôle
+            (`align-items: flex-end`) puisque seuls les sélecteurs portent un libellé au-dessus ;
+            passe sur plusieurs lignes sans se coller sous 1280 px (`flex-wrap`). */}
+        <form method="get" className="jr-groupe-filtres">
           <input type="hidden" name="onglet" value="tous" />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <select name="campagne" defaultValue={campagneFiltre ?? ''} aria-label={t('filters.campaign')}>
-              <option value="">{t('filters.campaign')} : {t('filters.campaignAll')}</option>
+          <Champ libelle={t('filters.campaign')} className="jr-champ-filtre">
+            <select name="campagne" defaultValue={campagneFiltre ?? ''}>
+              <option value="">{t('filters.campaignAll')}</option>
               {campagnesOptions.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nom}
                 </option>
               ))}
             </select>
-            <select name="etat" defaultValue={filtre} aria-label={t('filters.status')}>
-              <option value="tous">
-                {t('filters.status')} : {t('filters.statusAll')}
-              </option>
+          </Champ>
+          <Champ libelle={t('filters.status')} className="jr-champ-filtre">
+            <select name="etat" defaultValue={filtre}>
+              <option value="tous">{t('filters.statusAll')}</option>
               {ORDRE_STATUTS.map((s) => (
                 <option key={s} value={s}>
                   {libellesStatut[s]}
                 </option>
               ))}
             </select>
-            <select name="email" defaultValue={emailFiltre ?? ''} aria-label={t('filters.email')}>
-              <option value="">
-                {t('filters.email')} : {t('filters.emailAll')}
-              </option>
+          </Champ>
+          <Champ libelle={t('filters.email')} className="jr-champ-filtre">
+            <select name="email" defaultValue={emailFiltre ?? ''}>
+              <option value="">{t('filters.emailAll')}</option>
               <option value="verifie">{t('email.verified')}</option>
               <option value="a_trouver">{t('email.toFind')}</option>
             </select>
-            <select name="source" defaultValue={sourceFiltre ?? ''} aria-label={t('filters.source')}>
-              <option value="">
-                {t('filters.source')} : {t('filters.sourceAll')}
-              </option>
+          </Champ>
+          <Champ libelle={t('filters.source')} className="jr-champ-filtre">
+            <select name="source" defaultValue={sourceFiltre ?? ''}>
+              <option value="">{t('filters.sourceAll')}</option>
               <option value="adzuna">{'Adzuna'}</option>
               <option value="francetravail">{'France Travail'}</option>
               <option value="linkedin">{'LinkedIn'}</option>
               <option value="manuel">{t('filters.sourceManual')}</option>
             </select>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="jr-champ jr-champ-recherche"
-              type="search"
-              name="q"
-              defaultValue={recherche ?? ''}
-              placeholder={t('filters.search')}
-            />
-            <button type="submit" className="jr-bouton petit">
-              {t('filters.apply')}
-            </button>
-          </div>
+          </Champ>
+          <input
+            className="jr-champ jr-champ-recherche"
+            type="search"
+            name="q"
+            autoComplete="off"
+            defaultValue={recherche ?? ''}
+            placeholder={t('filters.search')}
+          />
+          <button type="submit" className="jr-bouton petit">
+            {t('filters.apply')}
+          </button>
         </form>
 
         <Carte>

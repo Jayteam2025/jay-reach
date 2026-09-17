@@ -1418,13 +1418,13 @@
     },
     "filters": {
       "campaign": "Campaign",
-      "campaignAll": "all",
+      "campaignAll": "All campaigns",
       "status": "Status",
-      "statusAll": "all",
+      "statusAll": "All statuses",
       "email": "Email",
-      "emailAll": "all",
+      "emailAll": "All emails",
       "source": "Source",
-      "sourceAll": "all",
+      "sourceAll": "All sources",
       "sourceManual": "Manual",
       "search": "Search a name, a company, a job title…",
       "apply": "Filter"

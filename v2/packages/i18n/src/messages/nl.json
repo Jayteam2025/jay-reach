@@ -1418,13 +1418,13 @@
     },
     "filters": {
       "campaign": "Campagne",
-      "campaignAll": "alle",
+      "campaignAll": "Alle campagnes",
       "status": "Status",
-      "statusAll": "alle",
+      "statusAll": "Alle statussen",
       "email": "E-mail",
-      "emailAll": "alle",
+      "emailAll": "Alle e-mails",
       "source": "Bron",
-      "sourceAll": "alle",
+      "sourceAll": "Alle bronnen",
       "sourceManual": "Handmatig",
       "search": "Zoek een naam, een bedrijf, een functie…",
       "apply": "Filteren"

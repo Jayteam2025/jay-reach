@@ -1418,13 +1418,13 @@
     },
     "filters": {
       "campaign": "Campagne",
-      "campaignAll": "toutes",
+      "campaignAll": "Toutes les campagnes",
       "status": "État",
-      "statusAll": "tous",
+      "statusAll": "Tous les statuts",
       "email": "Email",
-      "emailAll": "tous",
+      "emailAll": "Tous les emails",
       "source": "Source",
-      "sourceAll": "toutes",
+      "sourceAll": "Toutes les sources",
       "sourceManual": "Manuel",
       "search": "Rechercher un nom, une entreprise, un poste…",
       "apply": "Filtrer"

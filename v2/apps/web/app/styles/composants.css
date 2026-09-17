@@ -457,6 +457,11 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 /* Tour de correction 1 (tâche 10) : classes utilitaires qui remplacent des `style={{ … }}` de mise en page (R37). */
 .jr-ligne-entre { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .jr-champ-recherche { width: 260px; }
+/* Barre de filtres (tour de correction F6, point 24) : largeur minimale cohérente entre les
+   sélecteurs, quel que soit le nombre de caractères de l'option choisie. */
+.jr-champ-filtre { min-width: 180px; }
+/* Groupe de champs de filtre : passe à la ligne sans se coller au champ suivant sous 1280 px. */
+.jr-groupe-filtres { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
 .jr-cell-heure { white-space: nowrap; }
 .jr-cell-actions { text-align: right; white-space: nowrap; }
 .jr-demi-gras { font-weight: 500; }
