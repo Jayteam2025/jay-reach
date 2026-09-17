@@ -29,9 +29,22 @@ describe('CorpsTableTaches', () => {
     const html = renderToStaticMarkup(
       <CorpsTableTaches lignes={LIGNES} enAttente={null} onLancer={() => {}} libelles={LIBELLES} />,
     );
-    // Quatre lignes, trois désactivées (scoring, enrichissement, relève) — seule « sources » est lançable.
+    // Quatre lignes : scoring et enrichissement portent une aide et n'ont pas de bouton (tour de
+    // correction F6, point 15 — un bouton grisé qui ne fera jamais rien n'a pas sa place) ; seules
+    // « sources » (lançable) et « relève » (désactivée, sans aide) gardent un bouton.
     expect(html).toContain('Passage de toutes les sources');
-    expect((html.match(/disabled=""/g) ?? []).length).toBe(3);
+    expect((html.match(/disabled=""/g) ?? []).length).toBe(1);
+  });
+
+  it('ne montre aucun bouton « Lancer » pour les tâches à traitement continu (scoring, enrichissement)', () => {
+    const html = renderToStaticMarkup(
+      <CorpsTableTaches lignes={LIGNES} enAttente={null} onLancer={() => {}} libelles={LIBELLES} />,
+    );
+    const indexScoring = html.indexOf('Scoring des signaux en attente');
+    const indexEnrichissement = html.indexOf('Enrichissement des contacts sans email');
+    const indexReleve = html.indexOf('Relève des réponses SalesBlink');
+    expect(html.slice(indexScoring, indexEnrichissement)).not.toContain('>Lancer<');
+    expect(html.slice(indexEnrichissement, indexReleve)).not.toContain('>Lancer<');
   });
 
   it('affiche la puce « En cours » pour la tâche déjà en cours', () => {
@@ -42,11 +55,12 @@ describe('CorpsTableTaches', () => {
     expect(html).toContain('En cours');
   });
 
-  it('désactive tous les boutons pendant qu’une tâche est en attente', () => {
+  it('désactive tous les boutons restants pendant qu’une tâche est en attente', () => {
     const html = renderToStaticMarkup(
       <CorpsTableTaches lignes={LIGNES} enAttente="sources" onLancer={() => {}} libelles={LIBELLES} />,
     );
-    expect((html.match(/disabled=""/g) ?? []).length).toBe(4);
+    // Seuls « sources » et « relève » ont un bouton (scoring/enrichissement n'en ont pas, aide n° 15).
+    expect((html.match(/disabled=""/g) ?? []).length).toBe(2);
   });
 
   it('affiche la ligne d’aide « traitement continu » pour scoring et enrichissement, jamais pour sources (tour de correction 1, Important n° 1)', () => {

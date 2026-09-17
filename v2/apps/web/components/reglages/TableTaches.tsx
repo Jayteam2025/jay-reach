@@ -58,14 +58,19 @@ export function CorpsTableTaches({ lignes, enAttente, onLancer, libelles }: Corp
               </span>
               <span className="jr-actions">
                 {ligne.enCours && <Puce ton="accent">{libelles.enCours}</Puce>}
-                <Bouton
-                  taille="petit"
-                  disabled={!ligne.lancable || enAttente !== null}
-                  aria-busy={enAttente === ligne.cle}
-                  onClick={() => onLancer(ligne.cle)}
-                >
-                  {libelles.lancer}
-                </Bouton>
+                {/* Tour de correction F6, point 15 : une tâche avec une aide (« aucun déclenchement
+                    manuel possible ici ») n'a pas de bouton — un bouton grisé qui ne fera jamais
+                    rien n'a pas sa place, la phrase suffit. */}
+                {!ligne.aide && (
+                  <Bouton
+                    taille="petit"
+                    disabled={!ligne.lancable || enAttente !== null}
+                    aria-busy={enAttente === ligne.cle}
+                    onClick={() => onLancer(ligne.cle)}
+                  >
+                    {libelles.lancer}
+                  </Bouton>
+                )}
               </span>
             </div>
             {ligne.aide && <p className="jr-aide jr-tache-aide">{ligne.aide}</p>}

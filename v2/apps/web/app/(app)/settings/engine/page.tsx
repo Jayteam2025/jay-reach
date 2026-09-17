@@ -110,7 +110,7 @@ export default async function ReglagesMoteurPage() {
             titre: t('etat.titre'),
             enMarche: t('etat.enMarche'),
             arrete: t('etat.arrete'),
-            version: t('etat.version'),
+            version: t.raw('etat.version'),
             dernierPassage: t('etat.dernierPassage'),
             prochainPassage: t('etat.prochainPassage'),
             aucunPassage: t('etat.aucunPassage'),
@@ -140,7 +140,7 @@ export default async function ReglagesMoteurPage() {
             active: t('pause.active'),
             dernierePause: t('pause.dernierePause'),
             aucunePause: t('pause.aucunePause'),
-            dernierePauseGabarit: t('pause.dernierePauseGabarit'),
+            dernierePauseGabarit: t.raw('pause.dernierePauseGabarit'),
           }}
         />
       </div>
