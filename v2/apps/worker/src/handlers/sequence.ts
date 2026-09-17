@@ -11,6 +11,7 @@ import type { Pool } from 'pg';
 import {
   actionIdempotencyKey,
   composeTick,
+  ecrireEvenement,
   placesRestantes,
   runGuards,
   renderTemplate,
@@ -452,6 +453,16 @@ const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
  * `replied`, `stopped` ou `completed` n'est jamais modifiée par cet appel
  * (`where … and status = 'active'`) : la garde vit dans le SQL lui-même,
  * sans lecture préalable.
+ *
+ * Journalise `enrollment_paused` (tour de correction 5, point 3, fil
+ * d'activité) — symétrique de `enrollment_resumed`
+ * (`fonctions/sequence.ts::reprendreInscription`), jusqu'ici jamais écrit
+ * côté pause, ce qui laissait le fil muet sur les inscriptions mises en pause
+ * par le moteur. `returning` porte directement de quoi journaliser (organisation,
+ * contact, campagne) sans requête supplémentaire ; `rows[0]` absent (garde déjà
+ * hors `'active'`) : rien n'a changé, rien à journaliser (idempotent, comme
+ * `basculerPauseEnvoi`). Jamais d'échec de CE handler pour le journal — l'inscription
+ * est déjà en pause, un journal qui ne s'écrit pas ne doit pas faire retenter pg-boss.
  */
 export async function mettreInscriptionEnPause(
   pool: Pool,
@@ -459,15 +470,30 @@ export async function mettreInscriptionEnPause(
   currentStep: number,
   stopReason: string,
 ): Promise<void> {
-  await pool.query(
+  const res = await pool.query<{ organization_id: string; contact_id: string; campaign_id: string }>(
     `update enrollments
         set status = 'paused',
             next_action_at = null,
             stop_reason = coalesce(stop_reason, $3),
             current_step = $2
-      where id = $1 and status = 'active'`,
+      where id = $1 and status = 'active'
+      returning organization_id, contact_id, campaign_id`,
     [enrollmentId, currentStep, stopReason],
   );
+  const ligne = res.rows[0];
+  if (!ligne) return;
+
+  try {
+    await ecrireEvenement(pool, {
+      organisationId: ligne.organization_id,
+      entityType: 'contact',
+      entityId: ligne.contact_id,
+      action: 'enrollment_paused',
+      diff: { libelle: 'Inscription mise en pause.', campagneId: ligne.campaign_id, motif: stopReason },
+    });
+  } catch (err) {
+    console.warn('[journal] enrollment_paused', err);
+  }
 }
 
 /**

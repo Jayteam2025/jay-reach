@@ -303,6 +303,32 @@ describe('mettreInscriptionEnPause', () => {
     expect(appel.sql).toMatch(/where id = \$1 and status = 'active'/i);
     expect(appel.values).toEqual([ENROLLMENT_ID, 2, 'salesblink_client_error']);
   });
+
+  it('journalise `enrollment_paused` quand l’inscription était bien active (point 3, fil d’activité)', async () => {
+    const INSERT_JOURNAL = /insert into audit_events/i;
+    const { pool, appels } = creerPoolFactice([
+      { motif: UPDATE_PAUSE, repondre: () => ligne([{ organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }]) },
+      { motif: INSERT_JOURNAL, repondre: () => ligne([]) },
+    ]);
+
+    await mettreInscriptionEnPause(pool, ENROLLMENT_ID, 2, 'salesblink_client_error');
+
+    const journal = appels.find((a) => INSERT_JOURNAL.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values[0]).toBe(ORG_ID);
+    expect(journal!.values[2]).toBe('contact');
+    expect(journal!.values[3]).toBe(CONTACT_ID);
+    expect(journal!.values[4]).toBe('enrollment_paused');
+    expect(JSON.parse(journal!.values[5] as string)).toMatchObject({ campagneId: CAMPAIGN_ID, motif: 'salesblink_client_error' });
+  });
+
+  it('déjà hors "active" (garde SQL) : rien à journaliser', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: UPDATE_PAUSE, repondre: () => ligne([]) }]);
+
+    await mettreInscriptionEnPause(pool, ENROLLMENT_ID, 2, 'salesblink_client_error');
+
+    expect(appels).toHaveLength(1); // aucune écriture de journal
+  });
 });
 
 describe('tickDueEnrollments — garde départ réel (issue #111)', () => {

@@ -74,7 +74,14 @@ export type ActionJournal =
   // `fonctions/sequence.ts::reprendreInscription`) — `audit_events.action`
   // est `text not null`, sans enum ni `check` (`20260817120000_init_schema.sql`) :
   // aucune migration n'est nécessaire pour cette nouvelle valeur.
-  | 'enrollment_resumed';
+  | 'enrollment_resumed'
+  // Mise en pause d'une inscription par le MOTEUR (tour de correction 5, point 3,
+  // fil d'activité) — `mettreInscriptionEnPause` (worker, `handlers/sequence.ts`),
+  // gate de délivrabilité ou échec définitif d'un envoi. Distincte
+  // d'`enrollment_resumed` (reprise par un opérateur) : symétrique côté
+  // écriture, jamais écrite jusqu'ici, ce qui laissait le fil d'activité muet
+  // sur les pauses malgré des inscriptions réellement mises en pause.
+  | 'enrollment_paused';
 
 export interface EvenementJournal {
   readonly organisationId: string;
