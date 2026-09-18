@@ -32,6 +32,17 @@ export function compterEnFile(fileDuJour: readonly Pick<EnvoiPrevu, 'envoye' | '
 }
 
 /**
+ * Ne garde que les segments dont le compte est non nul (retour produit, G2) : la carte « File du
+ * jour » d'une vue d'ensemble de campagne affichait ses quatre segments (partis/en file/possibles/
+ * reportés) même à zéro — « 0 parti · 0 encore possible · 0 reporté » au-dessus d'une liste de 47
+ * messages « en file ». Même principe que la jauge de la coquille (`CarteEnvois`), qui masque déjà
+ * la mention « en file » quand elle est nulle : n'aligner que ce qui a une valeur, jamais des zéros.
+ */
+export function segmentsNonNuls<T extends { compte: number }>(segments: readonly T[]): T[] {
+  return segments.filter((segment) => segment.compte > 0);
+}
+
+/**
  * État affiché d'un envoi (F13, décision du 18/09) : deux états réels, pas
  * trois. « Remis » (`dispatched`) et « Parti » (`delivered`) ne se lisent
  * JAMAIS sur le statut brut de la base pour ces deux-là — il ne dit rien du

@@ -323,7 +323,10 @@
       },
       "queue": {
         "title": "Wachtrij van vandaag",
-        "count": "{partis, plural, one {# verstuurd} other {# verstuurd}} · {enFile, plural, one {# in wachtrij} other {# in wachtrij}} · {possibles, plural, one {# nog mogelijk} other {# nog mogelijk}} · {reportes, plural, one {# uitgesteld} other {# uitgesteld}}",
+        "partis": "{n, plural, one {# verstuurd} other {# verstuurd}}",
+        "enFile": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
+        "possibles": "{n, plural, one {# nog mogelijk} other {# nog mogelijk}}",
+        "reportes": "{n, plural, one {# uitgesteld} other {# uitgesteld}}",
         "seeAll": "Wachtrij bekijken",
         "step": "Stap {n}",
         "andMore": "{n, plural, one {en # andere} other {en # andere}}",

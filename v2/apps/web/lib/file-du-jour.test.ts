@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compterEnFile, compterPartis, etatAffichage } from './file-du-jour';
+import { compterEnFile, compterPartis, etatAffichage, segmentsNonNuls } from './file-du-jour';
 
 describe('compterPartis', () => {
   it(
@@ -56,6 +56,39 @@ describe('compterEnFile (G2)', () => {
 
   it('file vide : zéro', () => {
     expect(compterEnFile([])).toBe(0);
+  });
+});
+
+describe('segmentsNonNuls (G2, retour produit)', () => {
+  it(
+    'le cas réel « Jay coach - RH » (0 parti, 47 en file, 0 possible, 0 reporté) ne garde ' +
+      'que le segment non nul — plus « 0 parti · 0 encore possible · 0 reporté » au-dessus de 47 messages',
+    () => {
+      const segments = segmentsNonNuls([
+        { compte: 0, nom: 'partis' },
+        { compte: 47, nom: 'enFile' },
+        { compte: 0, nom: 'possibles' },
+        { compte: 0, nom: 'reportes' },
+      ]);
+      expect(segments).toEqual([{ compte: 47, nom: 'enFile' }]);
+    },
+  );
+
+  it('garde l’ordre et tous les segments quand aucun n’est nul', () => {
+    const segments = segmentsNonNuls([
+      { compte: 3, nom: 'partis' },
+      { compte: 2, nom: 'enFile' },
+      { compte: 1, nom: 'possibles' },
+    ]);
+    expect(segments.map((s) => s.nom)).toEqual(['partis', 'enFile', 'possibles']);
+  });
+
+  it('tout à zéro : aucun segment (la carte doit dire « rien », pas aligner des zéros)', () => {
+    expect(segmentsNonNuls([{ compte: 0, nom: 'partis' }, { compte: 0, nom: 'enFile' }])).toEqual([]);
+  });
+
+  it('liste vide : aucun segment', () => {
+    expect(segmentsNonNuls([])).toEqual([]);
   });
 });
 
