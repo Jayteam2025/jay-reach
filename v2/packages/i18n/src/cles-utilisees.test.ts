@@ -87,6 +87,15 @@ describe('clés de traduction', () => {
       for (const m of src.matchAll(DECLARATION)) {
         namespaces.set(m[1]!, m[2] ?? '');
       }
+      // Revue F5 (tour de correction 2) : `DECLARATION` seule ratait toute page
+      // serveur qui déclare son traducteur par déstructuration d'un
+      // `Promise.all` (`namespacesPromiseAll`, voir son commentaire plus bas) —
+      // un angle mort qui aurait laissé passer une clé inexistante appelée
+      // depuis une de ces pages, exactement le motif du bug de
+      // `campagne.overview.queue.count` découvert par le test suivant.
+      for (const [nom, ns] of namespacesPromiseAll(src)) {
+        namespaces.set(nom, ns);
+      }
       for (const [variable, prefixe] of namespaces) {
         const usage = new RegExp(`\\b${variable}\\(\\s*'([^']+)'`, 'g');
         for (const m of src.matchAll(usage)) {
