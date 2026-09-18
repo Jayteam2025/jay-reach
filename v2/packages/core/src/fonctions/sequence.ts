@@ -918,17 +918,16 @@ async function ecrireEvenementReprise(
 
 /**
  * Reprend une inscription en pause (`paused`/`paused_absence`, R93) : remet
- * l'inscription `active` et REJOUE VRAIMENT l'étape qui vient d'échouer —
- * `mettreInscriptionEnPause` (worker) a ramené `current_step` sur elle, mais
- * l'action de cette étape existe déjà (`blocked`/`failed`, clé d'idempotence
- * `actionIdempotencyKey(enrollmentId, stepId)`) : sans la remettre
- * `scheduled` explicitement, le tick ne réinsérerait jamais une action dont
- * la clé est déjà prise (`on conflict (idempotency_key) do nothing`), et
- * l'inscription n'avancerait plus jamais. Même traitement que `relancerEnvoi`
- * (`fonctions/file-du-jour.ts`) applique à une action `failed` : `scheduled`,
- * `scheduled_for = now()`, `error = null` — étendu ici à `block_reason` (une
- * action peut aussi être `blocked`) ; le balayage `rejouerActionsEmailEnAttente`
- * (worker) reprend ensuite l'action `scheduled`. Le gestionnaire d'envoi
+ * l'inscription `active` et, si une action bloquée existe pour l'étape
+ * courante, la REJOUE VRAIMENT — `mettreInscriptionEnPause` (worker) a ramené
+ * `current_step` sur elle, mais l'action de cette étape existe déjà
+ * (`blocked`/`failed`, clé d'idempotence `actionIdempotencyKey(enrollmentId,
+ * stepId)`) : sans la remettre `scheduled` explicitement, le tick ne
+ * réinsérerait jamais une action dont la clé est déjà prise (`on conflict
+ * (idempotency_key) do nothing`), et l'inscription n'avancerait plus jamais.
+ * Étendu à `block_reason` (une action peut aussi être `blocked`, pas
+ * seulement `failed`) ; le balayage `rejouerActionsEmailEnAttente` (worker)
+ * reprend ensuite l'action `scheduled`. Le gestionnaire d'envoi
  * (`apps/worker/src/handlers/email-salesblink.ts`) revérifie lui-même la
  * délivrabilité avant de pousser — une action `email_gate` remise `scheduled`
  * ici ne part donc pas forcément si l'adresse est toujours invalide.
@@ -944,21 +943,40 @@ async function ecrireEvenementReprise(
  * limit 1` reproduit exactement `rows[current_step]` après le même tri,
  * quelle que soit la contiguïté des `position`.
  *
- * `next_action_at` distingue les deux motifs de pause (F10) : `paused`
- * (blocage : gate, expéditeur indisponible, échec d'envoi...) reste `now()`,
+ * **L'échéance de l'inscription (`next_action_at`) et le rejeu de l'action ne
+ * visent JAMAIS la même étape** (revue transversale, lot 2 — le défaut le
+ * plus grave qu'elle ait trouvé) : avant ce correctif, les deux s'appliquaient
+ * systématiquement, sans savoir si un rejeu allait réellement avoir lieu.
+ * Conséquence : au départ réel de l'action rejouée, `poserEcheanceApresDepart`
+ * (`sequencer/echeance.ts`, appelé par le gestionnaire d'envoi) refuse
+ * d'écrire l'échéance suivante — sa garde exige `next_action_at is null`,
+ * déjà pris par la pose d'ici — et le tick suivant, en tentant de recomposer
+ * la MÊME étape, bute sur la clé d'idempotence déjà prise et n'avance plus
+ * jamais l'inscription : elle revient en boucle, sans qu'aucune trace ne le
+ * signale. Décidé donc AVANT d'écrire quoi que ce soit (`ligneBloquee`) :
+ * - une action bloquée/en échec existe pour cette étape, sans preuve d'envoi
+ *   → elle est rejouée, `next_action_at` reste `null` (le départ réel de
+ *   cette action posera lui-même l'échéance suivante) ;
+ * - sinon (cas normal, ou l'action bloquée porte déjà une preuve d'envoi —
+ *   garde M3, aucun rejeu) → l'échéance se pose ici, comme avant, rien
+ *   d'autre n'ira jamais la poser pour cette inscription.
+ *
+ * L'INSTANT lui-même (posé sur `next_action_at` OU sur `scheduled_for` du
+ * rejeu, jamais les deux) distingue les deux motifs de pause (F10) : `paused`
+ * (blocage : gate, expéditeur indisponible, échec d'envoi...) reprend `now()`,
  * l'opérateur qui clique « Reprendre » attend un redémarrage immédiat, c'est
  * précisément le geste qu'il vient de faire ; `paused_absence` (réponse
- * d'absence automatique) pose `now() + le délai de l'étape EN ATTENTE` : le
- * délai entre deux mails ne court pas pendant l'absence, il repart
- * entièrement au retour, jamais « tout de suite » (le pire moment, une boîte
- * pleine le jour du retour de vacances). Même calcul que le départ réel d'un
- * envoi (`echeanceEtapeSuivante`, partagée avec `poserEcheanceApresDepart`,
- * `sequencer/echeance.ts`), ici depuis l'instant de la reprise plutôt qu'un
- * `dispatched_at` : il n'y a pas d'action en attente à faire partir,
- * l'inscription attend seulement son étape suivante. Le traitement
- * automatique d'une absence échue applique la même règle depuis `resume_at`
- * plutôt que `now` (`reprendreAbsencesEchues`,
- * `apps/worker/src/handlers/sequence.ts`).
+ * d'absence automatique) reprend `now() + le délai de l'étape` — action
+ * bloquée ou non, RIEN ne part le jour même (revue transversale, défaut 2 :
+ * remettre l'action bloquée à `scheduled_for = now()` contredisait cette
+ * règle produit) : le délai entre deux mails ne court pas pendant l'absence,
+ * il repart entièrement au retour, jamais « tout de suite » (le pire moment,
+ * une boîte pleine le jour du retour de vacances). Même calcul que le départ
+ * réel d'un envoi (`echeanceEtapeSuivante`, partagée avec
+ * `poserEcheanceApresDepart`, `sequencer/echeance.ts`), ici depuis l'instant
+ * de la reprise plutôt qu'un `dispatched_at`. Le traitement automatique d'une
+ * absence échue applique la même règle depuis `resume_at` plutôt que `now`
+ * (`reprendreAbsencesEchues`, `apps/worker/src/handlers/sequence.ts`).
  */
 export async function reprendreInscription(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
@@ -986,56 +1004,86 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
     [ligneAvant.campaign_id, ligneAvant.current_step],
   );
   const etape = etapeRes.rows[0];
+  const etapeId = etape?.id;
 
-  // Repli sur `Date.now()` si l'étape n'existe plus (séquence modifiée
-  // pendant l'absence) : jamais laisser `next_action_at` sans valeur, une
-  // inscription `active` sans échéance ne serait plus jamais reprise par le
-  // tick.
-  const nextActionAtMs =
+  // Instant de reprise de CETTE étape — repli sur `Date.now()` si l'étape
+  // n'existe plus (séquence modifiée pendant l'absence) : jamais laisser
+  // `next_action_at` sans valeur, une inscription `active` sans échéance ne
+  // serait plus jamais reprise par le tick. Sert aux DEUX issues possibles
+  // ci-dessous (poser l'échéance de l'inscription, ou le `scheduled_for` du
+  // rejeu) : même formule, seule sa cible change (voir docstring).
+  const instantDeReprise =
     ligneAvant.status === 'paused_absence'
       ? (echeanceEtapeSuivante(Date.now(), inscriptionId, etape?.delay_hours ?? null) ?? Date.now())
       : Date.now();
 
+  // Une action bloquée/en échec existe-t-elle pour cette étape ? Décidé ICI,
+  // avant d'écrire quoi que ce soit (voir docstring, « L'échéance… et le
+  // rejeu… ne visent JAMAIS la même étape »).
+  let ligneBloquee: { id: string; deja_envoyee: boolean } | undefined;
+  if (etapeId) {
+    const bloquee = await ctx.ex.query<{ id: string; deja_envoyee: boolean }>(
+      `select id, (payload ->> 'message_id') is not null as deja_envoyee from actions /* jr:reprendre_verif_envoi */
+        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+      [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId],
+    );
+    ligneBloquee = bloquee.rows[0];
+  }
+
+  // M3 (Mineur, revue finale du 14/09) : ne pas rejouer une action qui porte
+  // déjà une preuve d'envoi (`payload->>'message_id'`, posée par la relève une
+  // fois SalesBlink confirmé) — un envoi accepté par le transport mais dont la
+  // réponse HTTP se serait perdue avant que l'action soit marquée
+  // `failed`/`blocked` doublerait sinon le message. L'inscription est quand
+  // même réactivée, avec l'échéance normale (rien n'est rejoué pour elle) ;
+  // seul le journal le dit, et on sort avant le rejeu plus bas.
+  if (ligneBloquee?.deja_envoyee) {
+    const res = await ctx.ex.query<LigneInscriptionReprise>(
+      `update enrollments /* jr:reprendre_inscription */
+          set status = 'active', stop_reason = null, resume_at = null, ended_at = null, next_action_at = $3
+        where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')
+        returning contact_id, campaign_id`,
+      [inscriptionId, ctx.organisationId, new Date(instantDeReprise).toISOString()],
+    );
+    const ligne = res.rows[0];
+    if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
+    await ecrireEvenementReprise(
+      ctx,
+      ligne.contact_id,
+      ligne.campaign_id,
+      'Inscription reprise sans rejouer un envoi déjà parti.',
+    );
+    return;
+  }
+
+  // Rejeu attendu (une action bloquée/en échec existe, sans preuve d'envoi) :
+  // l'échéance de l'inscription reste `null`, volontairement — son départ réel
+  // la posera lui-même (`poserEcheanceApresDepart`). Sinon (cas normal, aucune
+  // action à rejouer) : l'échéance se pose ici, comme avant.
+  const rejoueAttendu = ligneBloquee !== undefined;
   const res = await ctx.ex.query<LigneInscriptionReprise>(
     `update enrollments /* jr:reprendre_inscription */
         set status = 'active', stop_reason = null, resume_at = null, ended_at = null, next_action_at = $3
       where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')
       returning contact_id, campaign_id`,
-    [inscriptionId, ctx.organisationId, new Date(nextActionAtMs).toISOString()],
+    [inscriptionId, ctx.organisationId, rejoueAttendu ? null : new Date(instantDeReprise).toISOString()],
   );
   const ligne = res.rows[0];
   if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
 
-  const etapeId = etape?.id;
   if (etapeId) {
-    const cle = actionIdempotencyKey(inscriptionId, etapeId);
-    // M3 (Mineur, revue finale du 14/09) : ne pas rejouer une action qui
-    // porte déjà une preuve d'envoi (`payload->>'message_id'`, posée par la
-    // relève une fois SalesBlink confirmé) — un envoi accepté par le
-    // transport mais dont la réponse HTTP se serait perdue avant que
-    // l'action soit marquée `failed`/`blocked` doublerait sinon le message.
-    // L'inscription est quand même réactivée (fait plus haut) ; seule
-    // l'action n'est pas rejouée, et le journal le dit.
-    const dejaEnvoyee = await ctx.ex.query<{ id: string }>(
-      `select id from actions /* jr:reprendre_verif_envoi */
-        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')
-          and (payload ->> 'message_id') is not null`,
-      [cle, ctx.organisationId],
-    );
-    if ((dejaEnvoyee.rowCount ?? 0) > 0) {
-      await ecrireEvenementReprise(
-        ctx,
-        ligne.contact_id,
-        ligne.campaign_id,
-        'Inscription reprise sans rejouer un envoi déjà parti.',
-      );
-      return;
-    }
+    // Rejeu de l'étape bloquée : `scheduled_for` porte le MÊME instant que
+    // l'échéance aurait porté (`instantDeReprise`) — jamais `now()` pour une
+    // absence (F10, la règle produit gagne : action bloquée ou non, rien ne
+    // part le jour du retour) ; `now()` reste correct pour une pause
+    // manuelle, c'est le redémarrage que l'opérateur vient de demander.
+    // Toujours tentée (aucun cas particulier à coder) : sans ligne bloquée à
+    // rejouer, elle ne matche simplement aucune ligne côté vraie base.
     await ctx.ex.query(
       `update actions /* jr:reprendre_action */
-          set status = 'scheduled', scheduled_for = now(), error = null, block_reason = null
+          set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
         where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
-      [cle, ctx.organisationId],
+      [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId, new Date(instantDeReprise).toISOString()],
     );
   }
 

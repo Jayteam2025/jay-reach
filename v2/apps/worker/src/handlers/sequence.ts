@@ -19,6 +19,7 @@ import {
   shiftIntoBusinessHours,
   applyLeadTime,
   poserEcheanceDepuisDispatch,
+  echeanceEtapeSuivante,
   plafondDuJour,
   relectureRequise,
   fuseauDeLOrganisation,
@@ -675,12 +676,29 @@ interface AbsenceEchueRow {
  * l'étape DÉJÀ TENTÉE — restée bloquée/non partie, action déjà en base — et
  * pas une étape en attente de composition. Même traitement que
  * `reprendreInscription` (pause MANUELLE, `fonctions/sequence.ts`) dans ce
- * cas : l'action `blocked`/`failed` de cette étape est remise `scheduled`
- * (rejouée immédiatement, comme un blocage qu'on vient de lever), sauf si
- * elle porte déjà une preuve d'envoi (`payload->>'message_id'`, même garde
- * M3). Sans ça, `composeTick` refuserait de recréer une action dont la clé
- * d'idempotence est déjà prise, et l'inscription resterait active sans jamais
- * avancer.
+ * cas : l'action `blocked`/`failed` de cette étape est remise `scheduled`,
+ * sauf si elle porte déjà une preuve d'envoi (`payload->>'message_id'`, même
+ * garde M3). Sans ça, `composeTick` refuserait de recréer une action dont la
+ * clé d'idempotence est déjà prise, et l'inscription resterait active sans
+ * jamais avancer.
+ *
+ * **L'échéance et le rejeu ne visent JAMAIS la même étape** (revue
+ * transversale, lot 2 — le défaut le plus grave qu'elle ait trouvé) : quand
+ * une action bloquée existe pour `current_step` et doit être rejouée, cette
+ * fonction NE pose PAS `next_action_at` — elle laisse le `null` de
+ * l'activation ci-dessus. Poser les deux à la fois faisait boucler
+ * l'inscription indéfiniment : au départ réel de l'action rejouée,
+ * `poserEcheanceApresDepart` (`sequencer/echeance.ts`) refuse d'écrire
+ * l'échéance suivante — sa garde exige `next_action_at is null`, déjà pris
+ * par la pose d'ici — puis le tick suivant tente de recomposer la MÊME étape,
+ * bute sur la clé d'idempotence déjà prise (`on conflict … do nothing`) et
+ * saute son avancement (`tickDueEnrollments`, plus bas) : l'inscription
+ * revient en tête du tri par `next_action_at` à chaque passage, sans plus
+ * jamais progresser, et rien ne le signale. Le rejeu pose donc lui-même le
+ * délai complet sur `scheduled_for` de l'action (même calcul,
+ * `echeanceEtapeSuivante` depuis `resume_at` — jamais `now()`, voir plus bas)
+ * et laisse le départ réel de cette action poser l'échéance suivante en toute
+ * sécurité, sa garde étant encore libre.
  *
  * Le passage `paused_absence -> active` est journalisé (`enrollment_resumed`,
  * même action que la reprise manuelle) : sans trace, personne ne peut
@@ -725,20 +743,13 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
     );
     if ((activee.rowCount ?? 0) === 0) continue; // déjà reprise entre-temps (idempotence)
 
-    const ecrit = await poserEcheanceDepuisDispatch(
-      pool,
-      { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
-      candidat.resume_at,
-    );
-
-    // Rejeu de l'étape bloquée (paused -> paused_absence direct, voir
-    // docstring) : indépendant de la pose d'échéance ci-dessus, comme dans
-    // `reprendreInscription` — les deux n'ont d'effet que sur des lignes
-    // différentes (l'inscription pour l'une, l'action pour l'autre), et une
-    // inscription `paused_absence` « normale » n'a ici aucune action
-    // bloquée à trouver (no-op silencieux).
-    const etape = await pool.query<{ id: string }>(
-      `select id from sequence_steps
+    // Étape EN ATTENTE (cas normal) OU étape DÉJÀ TENTÉE, bloquée (exception,
+    // voir docstring) : même requête pour les deux, `current_step` désigne
+    // l'une ou l'autre selon l'historique de l'inscription. `delay_hours` sert
+    // aux DEUX issues possibles ci-dessous (poser l'échéance, ou calculer le
+    // `scheduled_for` du rejeu) : même formule, seule sa cible change.
+    const etape = await pool.query<{ id: string; delay_hours: number }>(
+      `select id, delay_hours from sequence_steps
         where campaign_id = $1
         order by position asc
         offset $2
@@ -746,24 +757,54 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
       [candidat.campaign_id, candidat.current_step],
     );
     const etapeId = etape.rows[0]?.id;
-    let etapeRejouee = false;
+    const delayHeures = etape.rows[0]?.delay_hours;
+
+    // Existe-t-il une action bloquée/en échec à rejouer pour cette étape ?
+    // Décidé AVANT d'écrire quoi que ce soit (voir docstring, « L'échéance et
+    // le rejeu ne visent JAMAIS la même étape ») : une inscription
+    // `paused_absence` « normale » n'a ici aucune action bloquée à trouver.
+    let ligneBloquee: { id: string; deja_envoyee: boolean } | undefined;
     if (etapeId) {
       const cle = actionIdempotencyKey(candidat.id, etapeId);
-      const dejaEnvoyee = await pool.query<{ id: string }>(
-        `select id from actions
-          where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')
-            and (payload ->> 'message_id') is not null`,
+      const bloquee = await pool.query<{ id: string; deja_envoyee: boolean }>(
+        `select id, (payload ->> 'message_id') is not null as deja_envoyee
+           from actions
+          where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
         [cle, candidat.organization_id],
       );
-      if ((dejaEnvoyee.rowCount ?? 0) === 0) {
-        const rejeu = await pool.query(
-          `update actions
-              set status = 'scheduled', scheduled_for = now(), error = null, block_reason = null
-            where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
-          [cle, candidat.organization_id],
-        );
-        etapeRejouee = (rejeu.rowCount ?? 0) > 0;
-      }
+      ligneBloquee = bloquee.rows[0];
+    }
+
+    let ecrit = false;
+    let etapeRejouee = false;
+    if (etapeId && ligneBloquee && !ligneBloquee.deja_envoyee) {
+      // Rejeu de l'étape bloquée (paused -> paused_absence direct) : le délai
+      // repart entièrement depuis le retour (règle produit, F10) — jamais
+      // `now()`, qui ferait partir le message le jour même, exactement ce que
+      // l'absence devait empêcher (voir docstring, défaut 2 de la revue).
+      // L'échéance de l'inscription n'est PAS posée ici (défaut 1) : le
+      // départ réel de cette action, une fois `scheduled_for` atteint, la
+      // posera lui-même via `poserEcheanceApresDepart`.
+      const echeanceRejeu =
+        echeanceEtapeSuivante(new Date(candidat.resume_at).getTime(), candidat.id, delayHeures ?? 0) ??
+        new Date(candidat.resume_at).getTime();
+      const cle = actionIdempotencyKey(candidat.id, etapeId);
+      const rejeu = await pool.query(
+        `update actions
+            set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
+          where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+        [cle, candidat.organization_id, new Date(echeanceRejeu).toISOString()],
+      );
+      etapeRejouee = (rejeu.rowCount ?? 0) > 0;
+    } else if (etapeId) {
+      // Cas normal (aucune action bloquée à cette étape), ou l'action
+      // bloquée porte déjà une preuve d'envoi (garde M3) : rien à rejouer,
+      // l'échéance de l'inscription se pose comme avant.
+      ecrit = await poserEcheanceDepuisDispatch(
+        pool,
+        { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
+        candidat.resume_at,
+      );
     }
 
     try {
@@ -1177,6 +1218,15 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     }
 
     if (!inserted) {
+      // Garde-fou (revue transversale, lot 2) : une clé d'idempotence déjà
+      // prise pour `current_step` est normalement un rejeu bénin (tick
+      // concurrent). Mais c'est EXACTEMENT la signature d'une inscription
+      // restée bloquée sans progression (défaut 1 : `next_action_at` posé en
+      // double avec le rejeu d'une action) — sans trace, elle revenait ici en
+      // boucle, indéfiniment, sans qu'aucun journal ne le dise.
+      console.warn(
+        `[tick] inscription ${row.id} due mais l'action de l'étape ${row.current_step} existe déjà — ignorée (rejeu concurrent, ou inscription bloquée sans progression)`,
+      );
       continue; // déjà traité par un tick précédent
     }
 

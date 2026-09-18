@@ -120,6 +120,15 @@ Versionnement sémantique.
   en attente, décompté depuis la date de retour — jamais « tout de suite », qui enverrait dans une boîte encore pleine le
   jour même de la reprise du travail. Une reprise manuelle d'une pause **opérateur** (gate de délivrabilité, boîte d'envoi indisponible…), elle,
   redémarre toujours immédiatement : c'est le geste que l'opérateur vient de faire.
+- **Une inscription revenue de pause avec une étape restée bloquée (gate de délivrabilité, boîte d'envoi indisponible…) pouvait
+  se figer pour toujours, sans plus jamais avancer.** La reprise (automatique après une absence, ou manuelle depuis l'écran)
+  posait à la fois l'échéance de l'inscription et rejouait l'action bloquée pour la MÊME étape ; au départ réel de cette action,
+  le moteur refusait alors de poser l'échéance suivante (déjà posée en double), et le passage suivant butait sur une action déjà
+  existante sans jamais faire avancer l'inscription — elle revenait en tête de liste à chaque passage, indéfiniment, sans
+  qu'aucune trace ne le signale. Une inscription dans ce cas repart désormais soit par l'échéance, soit par le rejeu de l'action,
+  jamais les deux, et le moteur journalise le passage qui n'a rien pu faire avancer. Une reprise après absence dont l'étape était
+  restée bloquée ne repart plus non plus le jour même : elle attend, comme toute reprise d'absence, le délai complet de l'étape
+  depuis la date de retour.
 - **Une campagne brouillon ou mise en pause pouvait quand même envoyer, sur les deux canaux.** Le moteur ne regardait que le
   statut de l'inscription, jamais celui de sa campagne : un contact importé par CSV dans une campagne encore en brouillon
   partait dès le passage suivant, et mettre une campagne en pause n'arrêtait aucun envoi déjà en cours ou déjà en file — seul

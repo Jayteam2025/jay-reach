@@ -789,7 +789,7 @@ describe('reprendreInscription', () => {
     await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ForbiddenError);
   });
 
-  it('pause email_gate → reprise : inscription active, current_step inchangé, action bloquée rejouée, next_action_at immédiat', async () => {
+  it('pause email_gate → reprise : inscription active, current_step inchangé, action bloquée rejouée immédiatement, échéance de l’inscription laissée null (défaut 1 de la revue transversale)', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-18T10:00:00.000Z'));
     try {
@@ -797,15 +797,24 @@ describe('reprendreInscription', () => {
         'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 2, status: 'paused' }],
         'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
         'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
-        'jr:reprendre_action': [],
+        // Une action bloquée existe réellement pour cette étape (email_gate) :
+        // sans ce mock, `reprendreInscription` ne pourrait pas savoir qu'un
+        // rejeu va avoir lieu, et poserait l'échéance en plus de rejouer
+        // l'action — exactement le défaut 1 de la revue transversale.
+        'jr:reprendre_verif_envoi': [{ id: 'action-bloquee', deja_envoyee: false }],
+        'jr:reprendre_action': [{}],
         'jr:reprendre_evenement': [{}],
       });
       await reprendreInscription(ctx, { inscriptionId });
 
       const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
-      // Pause MANUELLE reprise à la main : redémarrage immédiat (`now()`),
-      // jamais le délai de l'étape — c'est le geste que l'opérateur vient de faire.
-      expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1', new Date().toISOString()]);
+      // L'échéance de l'inscription n'est PAS posée : une action va être
+      // rejouée pour cette étape, son départ réel posera lui-même l'échéance
+      // suivante (`poserEcheanceApresDepart`). La poser ICI EN PLUS ferait
+      // échouer cette garde au départ réel (`next_action_at is null` déjà
+      // pris) et figerait l'inscription — le défaut le plus grave trouvé par
+      // la revue transversale.
+      expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1', null]);
       // `current_step` n'est jamais réécrit ici : l'étape qui vient d'échouer
       // reste l'étape courante, une reprise doit la rejouer, pas la sauter.
       expect(String(appelInscription?.[0])).not.toMatch(/current_step\s*=/i);
@@ -814,7 +823,14 @@ describe('reprendreInscription', () => {
       expect(appelEtape?.[1]).toEqual([campagneId, 2]);
 
       const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
-      expect(appelAction?.[1]).toEqual([actionIdempotencyKey(inscriptionId, etapeIdBloquee), 'org-1']);
+      // Pause MANUELLE reprise à la main : le rejeu part immédiatement
+      // (`now()`), jamais le délai de l'étape — c'est le geste que
+      // l'opérateur vient de faire.
+      expect(appelAction?.[1]).toEqual([
+        actionIdempotencyKey(inscriptionId, etapeIdBloquee),
+        'org-1',
+        new Date().toISOString(),
+      ]);
       expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
       expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
     } finally {
@@ -854,6 +870,46 @@ describe('reprendreInscription', () => {
       expect(valeurs?.[2]).toEqual(new Date(attendu!).toISOString());
       // Le délai (4 jours) ne s'est pas envolé : la reprise n'est jamais immédiate.
       expect(valeurs?.[2]).not.toEqual(new Date().toISOString());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Revue transversale, lot 2 : le cas `paused -> paused_absence` direct
+  // (exception de la docstring) — une action bloquée existe pour l'étape
+  // ET l'inscription revient d'absence. Avant ce correctif : l'échéance se
+  // posait ICI en plus du rejeu plus bas (défaut 1, boucle), et le rejeu
+  // partait à `now()` (défaut 2, envoi le jour même du retour).
+  it('pause_absence avec une action bloquée à rejouer (paused -> paused_absence direct) : rejeu au délai complet depuis le retour, jamais `now()` (défaut 2), échéance de l’inscription laissée `null` (défaut 1)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T10:00:00.000Z'));
+    try {
+      const ctx = faux({
+        'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 3, status: 'paused_absence' }],
+        'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+        'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 96 }], // 4 jours
+        'jr:reprendre_verif_envoi': [{ id: 'action-bloquee', deja_envoyee: false }],
+        'jr:reprendre_action': [{}],
+      });
+      await reprendreInscription(ctx, { inscriptionId });
+
+      // Défaut 1 : l'échéance de l'inscription n'est PAS posée, une action va
+      // être rejouée pour cette étape — son départ réel la posera lui-même.
+      const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+      expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1', null]);
+
+      // Défaut 2 : le rejeu porte le délai complet depuis le retour (4 jours),
+      // jamais `now()` — sinon le message partirait le jour même de la
+      // reprise, exactement ce que l'absence devait empêcher.
+      const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
+      const valeursAction = appelAction?.[1] as unknown[] | undefined;
+      const attendu = echeanceEtapeSuivante(Date.now(), inscriptionId, 96);
+      expect(valeursAction).toEqual([
+        actionIdempotencyKey(inscriptionId, etapeIdBloquee),
+        'org-1',
+        new Date(attendu!).toISOString(),
+      ]);
+      expect(valeursAction?.[2]).not.toEqual(new Date().toISOString());
     } finally {
       vi.useRealTimers();
     }
@@ -931,7 +987,7 @@ describe('reprendreInscription', () => {
       'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0, status: 'paused' }],
       'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
       'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
-      'jr:reprendre_verif_envoi': [{ id: 'action-deja-envoyee' }],
+      'jr:reprendre_verif_envoi': [{ id: 'action-deja-envoyee', deja_envoyee: true }],
     });
 
     await reprendreInscription(ctx, { inscriptionId });

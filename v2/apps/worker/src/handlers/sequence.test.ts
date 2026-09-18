@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Pool } from 'pg';
-import { echeanceEtapeSuivante, actionIdempotencyKey } from '@jay-reach/core';
+import { echeanceEtapeSuivante, actionIdempotencyKey, poserEcheanceApresDepart } from '@jay-reach/core';
 import {
   tickDueEnrollments,
   mettreInscriptionEnPause,
@@ -547,6 +547,30 @@ describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
   });
 });
 
+describe("tickDueEnrollments — garde-fou clé d'idempotence déjà prise (revue transversale, lot 2)", () => {
+  it("l'action de l'étape courante existe déjà (`on conflict … do nothing`) : un avertissement nommant l'inscription, aucune exception, l'inscription n'avance pas", async () => {
+    // Reproduit la signature du défaut 1 (inscription figée) au niveau du
+    // tick lui-même : une clé d'idempotence déjà prise pour `current_step`
+    // est le plus souvent un rejeu bénin, mais c'est EXACTEMENT ce qui se
+    // reproduit à chaque passage pour une inscription restée bloquée sans
+    // progression — avant ce garde-fou, ce cas ne laissait aucune trace.
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const gestionnaires = gestionnairesBase().map((g) =>
+      g.motif === INSERT_ACTION ? { motif: INSERT_ACTION, repondre: () => ({ rows: [], rowCount: 0 }) } : g,
+    );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => UPDATE_AVANCEMENT.test(a.sql))).toBe(false);
+    expect(avertissement).toHaveBeenCalledTimes(1);
+    expect(avertissement.mock.calls[0]![0]).toContain(ENROLLMENT_ID);
+
+    avertissement.mockRestore();
+  });
+});
+
 describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () => {
   // `poserEcheanceApresDepart` (partagée, @jay-reach/core) : lecture par rang
   // ordinal (`offset`/`limit`), jamais par égalité de `position` (issue #115).
@@ -748,9 +772,18 @@ describe('reprendreAbsencesEchues (F10)', () => {
     const ACTIVATION = /update enrollments\s+set status = 'active'.*where id = \$1 and status = 'paused_absence'/is;
     const POSE =
       /update enrollments\s+set next_action_at = \$2\s+where id = \$1\s+and status = 'active'\s+and next_action_at is null\s+and current_step = \$3/i;
+    // Requête combinée (id + delay_hours) : sert aux DEUX issues, poser
+    // l'échéance ou calculer le `scheduled_for` du rejeu (voir le code).
+    const ETAPE = /select id, delay_hours from sequence_steps/i;
+    // Requête interne de `poserEcheanceApresDepart`/`poserEcheanceDepuisDispatch`
+    // (`sequencer/echeance.ts`, non modifiée) : ne sélectionne que `delay_hours`,
+    // jamais `id` — distincte de `ETAPE` ci-dessus (préfixe différent, aucun
+    // recouvrement possible).
     const DELAI_ETAPE = /select delay_hours from sequence_steps/i;
-    const ETAPE_ID = /select id from sequence_steps/i;
-    const DEJA_ENVOYEE = /select id from actions\s+where idempotency_key/i;
+    // Existence d'une action bloquée/en échec à rejouer, décidée AVANT toute
+    // écriture : `deja_envoyee` remplace l'ancien filtre SQL sur
+    // `message_id`, désormais une colonne calculée par ligne.
+    const LIGNE_BLOQUEE = /select id, \(payload ->> 'message_id'\) is not null as deja_envoyee/i;
     const REJEU_ACTION = /update actions\s+set status = 'scheduled'/i;
     const JOURNAL = /insert into audit_events/i;
     // Repli (étape supprimée pendant la pause) : ni délai à lire, ni action à
@@ -790,9 +823,19 @@ describe('reprendreAbsencesEchues (F10)', () => {
         etat = { ...etat, next_action_at: nextActionAt };
         return { rows: [], rowCount: 1 };
       }
-      if (DELAI_ETAPE.test(sql)) return ligne(reponses.etape ? [{ delay_hours: reponses.etape.delay_hours }] : []);
-      if (ETAPE_ID.test(sql)) return ligne(reponses.etape ? [{ id: reponses.etape.id }] : []);
-      if (DEJA_ENVOYEE.test(sql)) return ligne(reponses.actionBloquee?.messageId ? [{ id: 'action-deja-envoyee' }] : []);
+      if (ETAPE.test(sql)) {
+        return ligne(reponses.etape ? [{ id: reponses.etape.id, delay_hours: reponses.etape.delay_hours }] : []);
+      }
+      if (DELAI_ETAPE.test(sql)) {
+        return ligne(reponses.etape ? [{ delay_hours: reponses.etape.delay_hours }] : []);
+      }
+      if (LIGNE_BLOQUEE.test(sql)) {
+        return ligne(
+          reponses.actionBloquee
+            ? [{ id: 'action-bloquee', deja_envoyee: reponses.actionBloquee.messageId !== null }]
+            : [],
+        );
+      }
       if (REJEU_ACTION.test(sql)) {
         const rejouee = reponses.actionBloquee != null && reponses.actionBloquee.messageId === null;
         return { rows: [], rowCount: rejouee ? 1 : 0 };
@@ -885,8 +928,9 @@ describe('reprendreAbsencesEchues (F10)', () => {
     expect(etat().next_action_at).toEqual(new Date('2026-09-30T00:00:00.000Z'));
   });
 
-  it('pause -> paused_absence direct (LIVE_STATUSES accepte paused) : l’étape déjà tentée, bloquée en base, est rejouée', async () => {
+  it('pause -> paused_absence direct (LIVE_STATUSES accepte paused) : l’étape déjà tentée, bloquée en base, est rejouée — jamais `now()` (défaut 2 de la revue transversale)', async () => {
     const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const now = new Date('2026-09-15T10:00:00.000Z');
     const candidat: CandidatAbsence = {
       id: ENROLLMENT_ID,
       organization_id: ORG_ID,
@@ -895,20 +939,36 @@ describe('reprendreAbsencesEchues (F10)', () => {
       current_step: 3, // étape restée bloquée, pas encore partie
       resume_at: resumeAt,
     };
-    const { pool, appels } = creerPoolAbsence(
+    const { pool, appels, etat } = creerPoolAbsence(
       [candidat],
       { status: 'paused_absence', next_action_at: resumeAt, current_step: 3 },
       { etape: { id: STEP_ID_ABSENCE, delay_hours: 48 }, actionBloquee: { messageId: null } },
     );
 
-    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+    await reprendreAbsencesEchues(pool, now);
 
     const rejeu = appels.find((a) => /update actions\s+set status = 'scheduled'/i.test(a.sql));
     expect(rejeu).toBeDefined();
-    expect(rejeu!.values).toEqual([actionIdempotencyKey(ENROLLMENT_ID, STEP_ID_ABSENCE), ORG_ID]);
+    // Le délai (48h) repart depuis le RETOUR, jamais `now()` : sinon le
+    // message partirait le jour même de la reprise, exactement ce que la
+    // règle produit interdit (défaut 2).
+    const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 48);
+    expect(rejeu!.values).toEqual([
+      actionIdempotencyKey(ENROLLMENT_ID, STEP_ID_ABSENCE),
+      ORG_ID,
+      new Date(attendu!).toISOString(),
+    ]);
+    expect(rejeu!.values).not.toContain(now.toISOString());
+
+    // L'échéance de l'inscription n'est PAS posée en plus du rejeu (défaut 1) :
+    // sans ça, le départ réel de cette action ne pourrait plus jamais poser
+    // l'échéance suivante (garde `next_action_at is null` déjà consommée), et
+    // l'inscription boucle au tick sans avancer.
+    expect(appels.some((a) => /update enrollments\s+set next_action_at = \$2/i.test(a.sql))).toBe(false);
+    expect(etat().next_action_at).toBeNull();
   });
 
-  it('pause -> paused_absence direct, mais l’action bloquée porte déjà une preuve d’envoi : pas rejouée (même garde M3 que la reprise manuelle)', async () => {
+  it('pause -> paused_absence direct, mais l’action bloquée porte déjà une preuve d’envoi : pas rejouée (même garde M3 que la reprise manuelle), l’échéance se pose normalement', async () => {
     const resumeAt = new Date('2026-09-10T00:00:00.000Z');
     const candidat: CandidatAbsence = {
       id: ENROLLMENT_ID,
@@ -918,7 +978,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
       current_step: 3,
       resume_at: resumeAt,
     };
-    const { pool, appels } = creerPoolAbsence(
+    const { pool, appels, etat } = creerPoolAbsence(
       [candidat],
       { status: 'paused_absence', next_action_at: resumeAt, current_step: 3 },
       { etape: { id: STEP_ID_ABSENCE, delay_hours: 48 }, actionBloquee: { messageId: 'msg-deja-envoye' } },
@@ -928,6 +988,49 @@ describe('reprendreAbsencesEchues (F10)', () => {
 
     const rejeu = appels.find((a) => /update actions\s+set status = 'scheduled'/i.test(a.sql));
     expect(rejeu).toBeUndefined();
+    // Rien à rejouer : l'échéance se pose comme dans le cas normal.
+    const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 48);
+    expect(etat().next_action_at).toEqual(new Date(attendu!).toISOString());
+  });
+
+  it("la boucle du défaut 1 ne se reproduit plus : après le rejeu d'une étape bloquée, le départ réel de l'action peut poser l'échéance suivante (deux passages)", async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 3,
+      resume_at: resumeAt,
+    };
+    const { pool, etat } = creerPoolAbsence(
+      [candidat],
+      { status: 'paused_absence', next_action_at: resumeAt, current_step: 3 },
+      { etape: { id: STEP_ID_ABSENCE, delay_hours: 48 }, actionBloquee: { messageId: null } },
+    );
+
+    // Passage 1 : reprise après absence — l'étape bloquée est rejouée.
+    // Sans le correctif, `poserEcheanceDepuisDispatch` aurait déjà posé
+    // `next_action_at` ICI (appelé malgré le rejeu), et l'assertion suivante
+    // rougirait.
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+    expect(etat().next_action_at).toBeNull();
+
+    // Passage 2 : départ réel de l'action rejouée, simulé comme le ferait le
+    // gestionnaire d'envoi (`email-salesblink.ts`) via `poserEcheanceApresDepart`
+    // — sur le MÊME état, partagé avec le passage 1. Sans le correctif,
+    // `next_action_at` serait déjà non nul (posé au passage 1) et sa garde
+    // `next_action_at is null` échouerait : c'est exactement le blocage qui
+    // faisait boucler l'inscription indéfiniment au tick, sans plus jamais
+    // avancer.
+    const posee = await poserEcheanceApresDepart(
+      pool,
+      { enrollmentId: ENROLLMENT_ID, campaignId: CAMPAIGN_ID, currentStep: 3 },
+      new Date('2026-09-15T11:00:00.000Z'),
+    );
+
+    expect(posee).toBe(true);
+    expect(etat().next_action_at).not.toBeNull();
   });
 
   it('le passage paused_absence -> active est journalisé (enrollment_resumed)', async () => {
