@@ -1065,12 +1065,13 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Enrichissements demandés (FullEnrich)",
         "envois": "Envois",
-        "aide": "Les compteurs se remettent à zéro à minuit, heure de l'organisation ({fuseau}), envois compris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu."
+        "aide": "Les compteurs se remettent à zéro à minuit, heure de l'organisation ({fuseau}), envois compris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu.",
+        "valeur": "{enPause, select, oui {{utilise} · plafond à 0 (en pause)} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "Ce que ça protège",
         "scoringTitre": "Scorings",
-        "scoringTexte": "chaque offre ou profil lu par une source coûte un appel au modèle. {plafond} par jour absorbent une dizaine de passages.",
+        "scoringTexte": "{enPause, select, oui {chaque offre ou profil lu par une source coûte un appel au modèle. Le plafond est à 0 : le scoring est en pause, rien n'est noté.} other {chaque offre ou profil lu par une source coûte un appel au modèle. {plafond} par jour absorbent une dizaine de passages.}}",
         "enrichissementTitre": "Enrichissements",
         "enrichissementTexte": "un crédit FullEnrich par email cherché. Le moteur cherche d'abord pour les scores les plus hauts.",
         "defautsTitre": "Défauts",

@@ -1065,12 +1065,13 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Verrijkingen aangevraagd (FullEnrich)",
         "envois": "Verzendingen",
-        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren."
+        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren.",
+        "valeur": "{enPause, select, oui {{utilise} · limiet op 0 (gepauzeerd)} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "Wat dit beschermt",
         "scoringTitre": "Scorings",
-        "scoringTexte": "elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. {plafond} per dag is genoeg voor een tiental runs.",
+        "scoringTexte": "{enPause, select, oui {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. De limiet staat op 0: scoring is gepauzeerd, er wordt niets beoordeeld.} other {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. {plafond} per dag is genoeg voor een tiental runs.}}",
         "enrichissementTitre": "Verrijkingen",
         "enrichissementTexte": "één FullEnrich-credit per gezochte e-mail. De motor zoekt eerst voor de hoogste scores.",
         "defautsTitre": "Standaardwaarden",

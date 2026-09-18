@@ -151,6 +151,10 @@ Versionnement sémantique.
   « Aucun envoi ne partira » (recette du 18/09).** Même priorité que la carte d'une boîte email (F15, ci-dessus) : ce qui
   empêche réellement d'envoyer l'emporte désormais sur l'activation choisie par l'opérateur, dans une seule puce qui porte
   les deux faits.
+- **Un plafond remis à 0 rendait Réglages › Plafonds absurde : « 300 / 0 », et « 0 par jour absorbent une dizaine de
+  passages » (recette du 18/09).** Zéro n'a jamais été une limite illimitée dans ce produit (`placesRestantes` : « Un plafond
+  nul, negatif ou invalide vaut pause : zero place »), et l'écran ne le disait pas. Consommation du jour et le texte de
+  protection disent désormais explicitement la pause plutôt qu'un ratio ou une phrase qui n'ont plus de sens à zéro.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
