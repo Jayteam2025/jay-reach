@@ -48,6 +48,7 @@ echo "[verify] test exclusion clients…"; psql < "$DIR/test/pg-verify/customer-
 
 echo "[verify] test quota providers…"; psql < "$DIR/test/pg-verify/provider-quota.sql" || { echo "[verify] PROVIDER_QUOTA_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 16; }
 echo "[verify] test cache providers…"; bash "$DIR/test/pg-verify/provider-cache.sh" || { echo "[verify] PROVIDER_CACHE_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 15; }
+echo "[verify] test borne de journée par fuseau (F12)…"; psql < "$DIR/test/pg-verify/date-fuseau-borne.sql" || { echo "[verify] DATE_FUSEAU_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 17; }
 
 echo "[verify] comptage des tables + policies…"
 psql -c "select count(*) as tables from information_schema.tables where table_schema='public';"
