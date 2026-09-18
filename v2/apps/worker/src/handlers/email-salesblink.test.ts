@@ -504,12 +504,14 @@ describe('envoyerEmailSalesBlink', () => {
     expect(ecriture!.values[3]).toBe('contact-1');
     expect(ecriture!.values[4]).toBe('action_sent');
     const diff = JSON.parse(ecriture!.values[5] as string) as { libelle: string; campagneId: string };
-    expect(diff.libelle).toBe('Email envoyé : premier email.');
+    // F13 : « remis », pas « envoyé » — l'événement s'écrit à la remise à
+    // SalesBlink (`dispatched_at`), pas au départ réel (`delivered_at`, F12).
+    expect(diff.libelle).toBe('Email remis : premier email.');
     // R22 (tour de correction 1) : la campagne de l'étape, déjà connue du job, sans requête supplémentaire.
     expect(diff.campagneId).toBe(CAMPAIGN_ID);
   });
 
-  it('un échec au journal ne fait jamais échouer un envoi déjà parti (jamais de throw remonté)', async () => {
+  it('un échec au journal ne fait jamais échouer un envoi déjà remis (jamais de throw remonté)', async () => {
     const { pool } = creerPoolFactice(
       avecBase(
         { motif: BINDING_SELECT, repondre: () => ligne([]) },

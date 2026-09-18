@@ -634,7 +634,7 @@ export async function envoyerEmailSalesBlink(
 
     // Journal d'activité (tâche 6) : jamais d'échec du handler pour ça, l'envoi
     // a déjà eu lieu — un journal qui ne s'écrit pas ne doit pas faire échouer
-    // pg-boss et retenter un email déjà parti.
+    // pg-boss et retenter un email déjà remis.
     try {
       await ecrireEvenement(pool, {
         organisationId: job.organizationId,
@@ -643,7 +643,11 @@ export async function envoyerEmailSalesBlink(
         action: 'action_sent',
         // R22 (tour de correction 1) : `campagneId` connu directement, l'envoi
         // porte déjà la campagne de son étape — pas de requête supplémentaire.
-        diff: { libelle: `Email envoyé : ${libelleModeEnvoi(mode.mode)}.`, campagneId: email.campaignId },
+        // F13 : « remis », pas « envoyé » — cet événement s'écrit au moment où
+        // le worker remet le message à SalesBlink (`dispatched_at`), jamais au
+        // départ réel (`delivered_at`, F12) que seule la relève confirme
+        // (`releve-salesblink.ts::journaliserActionLivree`, « Email livré. »).
+        diff: { libelle: `Email remis : ${libelleModeEnvoi(mode.mode)}.`, campagneId: email.campaignId },
       });
     } catch (err) {
       console.warn('[journal] action_sent', err);
