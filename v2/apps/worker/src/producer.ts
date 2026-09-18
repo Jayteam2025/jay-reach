@@ -416,11 +416,17 @@ export async function enqueueEnrollments(
        -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
        -- Jour de l'organisation, pas celui du serveur (revue F5, point 1, tour 2) :
        -- même borne que compterEntreesDuJour, qui refait le contrôle autoritaire.
+       -- Relecture : cette requête balaie TOUTES les organisations d'un coup --
+       -- un fuseau invalide sur UNE SEULE ligne (schemaEcrireReglage le refuse
+       -- désormais à l'écriture, mais une ligne déjà fausse en base reste
+       -- possible) ferait échouer « invalid time zone » pour tout le monde.
+       -- Vérifié contre pg_timezone_names, repli sur Europe/Paris sinon --
+       -- une valeur absente ou invalide ne matche simplement aucune ligne.
         and (c.daily_cap is null
              or c.daily_cap > (select count(*) from enrollments e2
                                  where e2.campaign_id = c.id
-                                   and e2.started_at >= date_trunc('day', now() at time zone coalesce(nullif(ofz.value #>> '{}', ''), 'Europe/Paris'))
-                                                        at time zone coalesce(nullif(ofz.value #>> '{}', ''), 'Europe/Paris')))
+                                   and e2.started_at >= date_trunc('day', now() at time zone coalesce((select tz.name from pg_timezone_names tz where tz.name = ofz.value #>> '{}'), 'Europe/Paris'))
+                                                        at time zone coalesce((select tz.name from pg_timezone_names tz where tz.name = ofz.value #>> '{}'), 'Europe/Paris')))
         and not exists (
           select 1 from enrollments e
            where e.contact_id = ct.id

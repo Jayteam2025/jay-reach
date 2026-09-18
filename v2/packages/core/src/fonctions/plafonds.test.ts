@@ -370,4 +370,14 @@ describe('schemaEcrireReglage', () => {
   it('accepte une chaîne pour la clé texte (fuseau)', () => {
     expect(schemaEcrireReglage.safeParse({ cle: 'fuseau', valeur: 'Europe/Paris' }).success).toBe(true);
   });
+
+  it('revue F5 (relecture) : refuse un fuseau qui n’est pas un identifiant IANA réel', () => {
+    const r = schemaEcrireReglage.safeParse({ cle: 'fuseau', valeur: 'Paris' });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0]?.message).toContain('Paris');
+  });
+
+  it('revue F5 (relecture) : accepte un autre identifiant IANA valide que le défaut', () => {
+    expect(schemaEcrireReglage.safeParse({ cle: 'fuseau', valeur: 'Pacific/Kiritimati' }).success).toBe(true);
+  });
 });

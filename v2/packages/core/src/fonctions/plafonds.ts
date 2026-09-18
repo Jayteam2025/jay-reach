@@ -212,9 +212,31 @@ export async function plafondDuJour(ex: Executeur, organisationId: string, cle: 
 }
 
 /**
+ * `true` si `valeur` est un identifiant de fuseau IANA que le moteur JS
+ * reconnaît — le même format que celui attendu par Postgres (`at time zone`).
+ * `Intl.DateTimeFormat` lève sur un identifiant inconnu (« Paris » plutôt que
+ * « Europe/Paris ») ; construire le formateur suffit, pas besoin de l'utiliser.
+ */
+function fuseauValide(valeur: string): boolean {
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: valeur });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * La `valeur` doit correspondre au type attendu de la `cle` visée (un entier pour un plafond, une
  * chaîne non vide pour `fuseau`) — sinon `organization_settings` accumulerait des lignes du mauvais
  * type que `lireReglages` devrait ensuite écarter silencieusement.
+ *
+ * `fuseau` (revue F5, relecture) : une chaîne non vide ne suffit pas — « Paris » la satisferait
+ * alors que ni `Intl.DateTimeFormat` ni Postgres (`at time zone`) ne le reconnaissent. Le risque
+ * n'est pas seulement local : `enqueueEnrollments` (producer.ts) balaie TOUTES les organisations
+ * en une seule requête et interpole ce fuseau dans un `at time zone` — une valeur invalide sur une
+ * seule ligne y ferait échouer la requête entière (« invalid time zone »), bloquant les
+ * inscriptions de toutes les organisations, pas seulement celle qui l'a saisie.
  */
 export const schemaEcrireReglage = z
   .object({
@@ -231,6 +253,14 @@ export const schemaEcrireReglage = z
           attendu === 'number'
             ? `La clé « ${entree.cle} » attend un nombre entier positif ou nul, pas une chaîne.`
             : `La clé « ${entree.cle} » attend une chaîne non vide, pas un nombre.`,
+      });
+      return;
+    }
+    if (entree.cle === 'fuseau' && typeof entree.valeur === 'string' && !fuseauValide(entree.valeur)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['valeur'],
+        message: `« ${entree.valeur} » n'est pas un identifiant de fuseau horaire reconnu (ex. Europe/Paris).`,
       });
     }
   });

@@ -232,7 +232,9 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
 
     const candidats = appels.find((a) => CANDIDATS.test(a.sql));
     expect(candidats).toBeDefined();
-    expect(candidats!.sql).toMatch(/date_trunc\('day', now\(\) at time zone coalesce\(nullif\(ofz\.value/i);
+    expect(candidats!.sql).toMatch(
+      /date_trunc\('day', now\(\) at time zone coalesce\(\(select tz\.name from pg_timezone_names tz where tz\.name = ofz\.value/i,
+    );
     expect(candidats!.sql).not.toContain("date_trunc('day', now())");
 
     const requeteFuseau = appels.find((a) => FUSEAU_ORGANISATION.test(a.sql));
