@@ -233,8 +233,9 @@ export function sqlListeSourceResumeCampagne(campagneIdExpr: string): string {
 /**
  * Taux (arrondi au dixième) sur les emails partis — jamais sur « en séquence »
  * ni sur « contacts » (point 1). `null` (pas `0`) quand rien n'est parti
- * encore : la page affiche alors « — », jamais une division par zéro déguisée
- * en 0 %.
+ * encore : jamais une division par zéro déguisée en 0 % — les trois écrans
+ * (`campaigns/[id]/page.tsx`, `campaigns/page.tsx`, `(app)/page.tsx`)
+ * affichent alors « 0 » (revue F5, point 7), jamais un tiret.
  */
 export function tauxSurPartis(numerateur: number, partis: number): number | null {
   return partis > 0 ? Math.round((numerateur / partis) * 1000) / 10 : null;
