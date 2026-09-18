@@ -155,6 +155,10 @@ Versionnement sémantique.
   passages » (recette du 18/09).** Zéro n'a jamais été une limite illimitée dans ce produit (`placesRestantes` : « Un plafond
   nul, negatif ou invalide vaut pause : zero place »), et l'écran ne le disait pas. Consommation du jour et le texte de
   protection disent désormais explicitement la pause plutôt qu'un ratio ou une phrase qui n'ont plus de sens à zéro.
+- **L'onglet Sources d'une campagne alimentée par une liste importée affichait « Sources 0 », comme s'il manquait un réglage
+  (recette du 18/09).** Une campagne à liste n'a par construction aucune ligne dans `campaign_sources` (alimentée qu'elle est
+  par sa liste, un mécanisme distinct) ; l'onglet reste affiché (il sert aussi à rattacher une liste), mais son badge de
+  compteur, qui n'a pas de sens pour ce type de campagne, disparaît.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
