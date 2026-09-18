@@ -14,6 +14,9 @@
 .jr-secondaire { color: var(--jr-secondaire); }
 .jr-lien { color: var(--jr-accent); font-weight: 500; cursor: pointer; }
 .jr-libelle { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin: 0 0 5px; }
+/* Annotation courte sous un nombre dans une cellule de tableau (ex. « 2 en pause » sous un
+   effectif) : sur sa propre ligne et jamais coupée en deux, même quand la colonne se resserre. */
+.jr-sous-valeur { display: block; white-space: nowrap; }
 
 /* Barre latérale */
 /* Fixée à la fenêtre plutôt que de défiler avec la page (tour de correction F6, point 29) : `.jr-app`

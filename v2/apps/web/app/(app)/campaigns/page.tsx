@@ -156,10 +156,7 @@ export default async function CampagnesPage({
                     <>
                       {nf.format(campagne.enSequence)}
                       {campagne.enPause > 0 && (
-                        <>
-                          {' '}
-                          <small className="jr-secondaire">{t('list.pausedCount', { n: campagne.enPause })}</small>
-                        </>
+                        <small className="jr-secondaire jr-sous-valeur">{t('list.pausedCount', { n: campagne.enPause })}</small>
                       )}
                     </>
                   ),
