@@ -329,6 +329,28 @@ describe('mettreInscriptionEnPause', () => {
 
     expect(appels).toHaveLength(1); // aucune écriture de journal
   });
+
+  // Revue F5, correctif mineur : rapport précédent, comptage. Même garantie que la fonction
+  // sœur du cœur (`mettreEnPause`, `campagnes.test.ts`) — un journal qui échoue ne doit jamais
+  // faire échouer CE handler ni retenter pg-boss, l'inscription est déjà en pause en base.
+  it('un échec du journal n’empêche jamais la mise en pause de réussir', async () => {
+    const INSERT_JOURNAL = /insert into audit_events/i;
+    const { pool, appels } = creerPoolFactice([
+      { motif: UPDATE_PAUSE, repondre: () => ligne([{ organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }]) },
+      {
+        motif: INSERT_JOURNAL,
+        repondre: () => {
+          throw new Error('table audit_events indisponible');
+        },
+      },
+    ]);
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(mettreInscriptionEnPause(pool, ENROLLMENT_ID, 2, 'salesblink_client_error')).resolves.toBeUndefined();
+
+    expect(appels.some((a) => UPDATE_PAUSE.test(a.sql))).toBe(true);
+    expect(avertissement).toHaveBeenCalledWith('[journal] enrollment_paused', expect.any(Error));
+  });
 });
 
 describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
