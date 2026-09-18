@@ -559,6 +559,42 @@ describe('chercherEmail', () => {
     await expect(chercherEmail(ctx, { contactId })).rejects.toThrow(ErreurEnrichissementImpossible);
   });
 
+  // Constat produit (18/09, tour de correction G4) : avec `enrichissements_par_jour = 0`,
+  // l'utilisateur recevait « Sqwad a déjà été enrichie » — la mauvaise cause, puisque le
+  // plafond bloquait TOUT contact ce jour-là, pas seulement celui-ci. Le plafond (état de
+  // l'instance) doit être vérifié avant « déjà enrichie » (état de ce contact précis).
+  it('le plafond à 0 est vérifié avant « déjà enrichie » — nomme la bonne cause, sans même résoudre le contact', async () => {
+    const ctx = faux(
+      {
+        'from organization_settings': [{ key: 'enrichissements_par_jour', value: 0 }],
+        // Si l'ordre était resté celui d'avant, ces fixtures auraient laissé passer l'appel
+        // jusqu'à « déjà enrichie » : présentes pour prouver que ce n'est PAS cette branche qui
+        // répond, pas parce qu'elles seraient nécessaires ici.
+        'jr:chercher_email_contact': [{ id: contactId, account_id: accountId, persona_id: null, source_signal_id: null }],
+        'jr:chercher_email_compte': [{ id: accountId, name: 'Sqwad', domain: null, country: null, enriched_at: '2026-09-18T00:19:09.000Z' }],
+      },
+      'operator',
+    );
+    await expect(chercherEmail(ctx, { contactId })).rejects.toThrow(
+      'L’enrichissement est en pause (plafond à 0). Relevez-le dans Fournisseurs pour enrichir.',
+    );
+    // Fail-fast : le plafond (état de l'instance) tranche avant toute lecture propre à ce contact.
+    expect(appelsDe(ctx).some((a) => /jr:chercher_email_contact/i.test(a.sql))).toBe(false);
+  });
+
+  it('« déjà enrichie » nomme la cause pour CE contact, ne renvoie plus vers Contacts (constat produit, 18/09)', async () => {
+    const ctx = faux(
+      {
+        'jr:chercher_email_contact': [{ id: contactId, account_id: accountId, persona_id: null, source_signal_id: null }],
+        'jr:chercher_email_compte': [{ id: accountId, name: 'Sqwad', domain: null, country: null, enriched_at: '2026-09-18T00:19:09.000Z' }],
+      },
+      'operator',
+    );
+    await expect(chercherEmail(ctx, { contactId })).rejects.toThrow(
+      'Sqwad est déjà enrichie et n’a pas donné d’adresse pour ce contact : rien de plus à tenter aujourd’hui.',
+    );
+  });
+
   it('refuse sans persona active à intitulés de poste', async () => {
     const ctx = faux(
       {
