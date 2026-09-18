@@ -317,6 +317,7 @@
         "inSequence": "In sequentie",
         "pausedSuffix": "· {n} gepauzeerd",
         "delivered": "Verstuurde e-mails",
+        "awaitingSendSuffix": "· {n} wachten op verzending",
         "replies": "Reacties",
         "interested": "Geïnteresseerd"
       },

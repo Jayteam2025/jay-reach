@@ -515,6 +515,8 @@ describe('lireVueDEnsemble', () => {
     // tauxReponses = reponses / partis (au sens strict) = 4/25 = 16 %.
     expect(v.entonnoir.tauxLivres).toBe(50);
     expect(v.entonnoir.tauxReponses).toBe(16);
+    // Complément affiché sur la marche « Emails partis » (F13) : 40 engagés - 20 livrés = 20 en attente d'envoi.
+    expect(v.entonnoir.enAttenteEnvoi).toBe(20);
     expect(v.entonnoir.enSequence).toBe(10);
     expect(v.entonnoir.enPause).toBe(1);
     expect(v.sources).toEqual([{ id: 'src-1', nom: 'Adzuna', providerId: 'adzuna' }]);
@@ -607,6 +609,8 @@ describe('lireVueDEnsemble', () => {
       // du 18/09) : un email encore chez SalesBlink compte dans « engagés », pas dans « partis ».
       expect(v.entonnoir.tauxLivres).toBeCloseTo(95.5, 0);
       expect(v.entonnoir.tauxReponses).toBeCloseTo(0.9, 0);
+      // Annotation de la marche « Emails partis » (F13) : 110 engagés - 105 livrés = 5 en attente d'envoi.
+      expect(v.entonnoir.enAttenteEnvoi).toBe(5);
     });
 
     it('sans liste (campagne à sources) : listeSource est `null`', async () => {

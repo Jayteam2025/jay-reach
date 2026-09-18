@@ -317,6 +317,7 @@
         "inSequence": "En séquence",
         "pausedSuffix": "· {n} en pause",
         "delivered": "Emails partis",
+        "awaitingSendSuffix": "· {n} en attente d'envoi",
         "replies": "Réponses",
         "interested": "Intéressés"
       },

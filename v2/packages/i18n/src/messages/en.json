@@ -317,6 +317,7 @@
         "inSequence": "In sequence",
         "pausedSuffix": "· {n} paused",
         "delivered": "Emails sent",
+        "awaitingSendSuffix": "· {n} awaiting send",
         "replies": "Replies",
         "interested": "Interested"
       },

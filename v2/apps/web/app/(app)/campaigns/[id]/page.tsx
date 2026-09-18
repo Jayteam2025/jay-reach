@@ -9,6 +9,7 @@ import { marqueSource } from '../../../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { compterPartis } from '../../../../lib/file-du-jour';
+import { tauxLivresAffiche } from '../../../../lib/entonnoir';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -63,6 +64,10 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
   // encore parti), « 0 », jamais un tiret.
   const tauxOuZero = (taux: number | null) => (taux !== null ? formatPourcentage(taux, locale) : '0');
   const enPauseSuffixe = vue.entonnoir.enPause > 0 ? t('overview.funnel.pausedSuffix', { n: vue.entonnoir.enPause }) : undefined;
+  // F13 (décision du 18/09) : tauxLivres se lit sur les emails ENGAGÉS, pas sur la marche du
+  // dessus — l'annotation dit de quoi il est la part, dans le vocabulaire déjà fixé ailleurs.
+  // Absente quand tout ce qui est engagé est réellement parti (`tauxLivresAffiche`).
+  const tauxLivresTexte = tauxLivresAffiche(tauxOuZero(vue.entonnoir.tauxLivres), vue.entonnoir.enAttenteEnvoi, t);
 
   // Point 2 (issue #120) : une campagne à liste n'a ni signal ni thème de veille — l'entonnoir
   // part des contacts importés plutôt que de « 0 offres et profils trouvés ».
@@ -72,7 +77,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
           { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuZero(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ]
@@ -81,7 +86,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
           { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuZero(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ];

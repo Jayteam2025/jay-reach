@@ -467,8 +467,14 @@ export interface EntonnoirCommun {
   readonly enSequence: number;
   readonly enPause: number;
   readonly livres: number;
-  /** `livres` / emails partis — `null` (page : « — ») quand rien n'est encore parti (point 1). */
+  /** `livres` / emails ENGAGÉS (remis + partis, tous canaux) — `null` (page : « — ») quand rien
+   *  n'est encore engagé (point 1). Le dénominateur n'est pas la marche du dessus (`enSequence`) :
+   *  d'où `enAttenteEnvoi` ci-dessous, l'écran l'annote pour dire de quoi ce taux est la part. */
   readonly tauxLivres: number | null;
+  /** Engagés mais pas encore réellement partis (`engagés - livres`, F13, décision du 18/09) —
+   *  annotation « N en attente d'envoi » sur la marche « Emails partis », jamais affichée quand
+   *  elle vaut 0 (tout ce qui est engagé est réellement parti). */
+  readonly enAttenteEnvoi: number;
   readonly reponses: number;
   /** `reponses` / emails partis, jamais / en séquence ni / contacts (point 1) — `null` sans envoi. */
   readonly tauxReponses: number | null;
@@ -930,6 +936,9 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
     // 18/09) : dénominateur `engages` (remis + partis), jamais `partis` seul — un email encore
     // chez SalesBlink reste engagé, ce taux dit justement combien en attendent encore.
     tauxLivres: tauxSurPartis(c.livres, c.engages),
+    // Complément du taux ci-dessus, jamais négatif : `livres` est un sous-ensemble strict
+    // d'`engages` (même population de base, `delivered` ⊆ {`dispatched`,`delivered`}).
+    enAttenteEnvoi: c.engages - c.livres,
     reponses: c.reponses,
     // « Sur ce qui est réellement parti, quelle part a répondu ? » : dénominateur `partis` au
     // sens strict — un message encore chez SalesBlink ne peut pas avoir généré de réponse.
