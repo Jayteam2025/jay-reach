@@ -656,8 +656,16 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
               (select count(distinct c4.id)::int from threads t4 join contacts c4 on c4.id = t4.contact_id join enrollments e4 on e4.contact_id = c4.id
                 where e4.campaign_id = c.id and t4.interest = 'interested') as interesses,
-              (select max(ae.created_at) from audit_events ae
-                where (ae.entity_type = 'campaign' and ae.entity_id = c.id) or (ae.diff ->> 'campagneId' = c.id::text)) as derniere_activite,
+              -- Revue F5, point 5 : la seule dernière ligne d'audit_events ratait les campagnes
+              -- dont le moteur a tourné (envois, réponses) sans qu'aucun événement n'ait été
+              -- rejoué dans le journal (redéploiement, campagne créée avant son ajout) — les
+              -- trois sources réelles de « la campagne a bougé », la plus récente des trois.
+              greatest(
+                (select max(ae.created_at) from audit_events ae
+                  where (ae.entity_type = 'campaign' and ae.entity_id = c.id) or (ae.diff ->> 'campagneId' = c.id::text)),
+                (select max(a5.dispatched_at) from actions a5 join enrollments e5 on e5.id = a5.enrollment_id where e5.campaign_id = c.id),
+                (select max(e6.ended_at) from enrollments e6 where e6.campaign_id = c.id and e6.status = 'replied')
+              ) as derniere_activite,
               ${sqlListeSourceResumeCampagne('c.id')} as liste_source
          from campaigns c /* jr:campagnes_liste */
         where c.organization_id = $1

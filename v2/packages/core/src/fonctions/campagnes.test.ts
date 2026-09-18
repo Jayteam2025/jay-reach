@@ -302,6 +302,28 @@ describe('listerCampagnes', () => {
     expect(r[0]!.derniereActivite).toBeNull();
   });
 
+  it('la dernière activité prend le plus récent des trois : audit_events, envois (actions) et réponses (revue F5, point 5)', async () => {
+    const queryMock = vi.fn(async (sql: string) => {
+      if (/jr:campagnes_liste/i.test(sql)) return { rows: [], rowCount: 0 };
+      if (/jr:boites_actives/i.test(sql)) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    });
+    const query = queryMock as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await listerCampagnes(ctx);
+
+    const appel = queryMock.mock.calls.find((a) => /jr:campagnes_liste/i.test(String(a[0])));
+    const sql = String(appel![0]);
+    expect(sql).toMatch(/greatest\(/i);
+    // Une campagne sans aucun événement d'audit ne doit pas rester bloquée sur « jamais » si son
+    // moteur a déjà envoyé ou reçu une réponse : les trois sources sont bien indépendantes.
+    expect(sql).toMatch(/from actions a5 join enrollments e5 on e5\.id = a5\.enrollment_id/i);
+    expect(sql).toMatch(/max\(a5\.dispatched_at\)/i);
+    expect(sql).toMatch(/from enrollments e6 where e6\.campaign_id = c\.id and e6\.status = 'replied'/i);
+    expect(sql).toMatch(/max\(e6\.ended_at\)/i);
+  });
+
   it('R63 (tour de correction 2) : une boîte Microsoft 365 sur un domaine propre est marquée outlook via inbox_provider', async () => {
     const ctx = faux({
       'jr:campagnes_liste': [
