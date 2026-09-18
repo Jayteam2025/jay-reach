@@ -1465,6 +1465,7 @@
       "email": "Email",
       "step": "Étape",
       "campaign": "Campagne",
+      "campaignCount": "{count} campagnes",
       "status": "Statut"
     },
     "status": {

@@ -35,6 +35,26 @@ function appelsDe(ctx: Contexte): { sql: string; params: unknown[] }[] {
   }));
 }
 
+/**
+ * Comme `faux()`, mais distingue les fixtures par CAMPAGNE (`$1`, id de campagne, de
+ * `jr:lignes_contacts_globale`/`jr:total_etapes_campagne`) — nécessaire pour vérifier
+ * `collecterContactsGlobaux` avec des campagnes qui renvoient des contacts réellement
+ * différents (ou au contraire le MÊME contact) : `faux()` rejoue la même fixture pour
+ * chaque campagne, quel que soit le paramètre.
+ */
+function fauxParCampagne(parCampagne: Record<string, Record<string, unknown[]>>, campagnes: { id: string; nom: string }[]): Contexte {
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (/jr:contacts_globale_campagnes\b/.test(sql)) return { rows: campagnes, rowCount: campagnes.length };
+    const fixturesCampagne = parCampagne[params[0] as string];
+    if (!fixturesCampagne) return { rows: [], rowCount: 0 };
+    for (const [motif, r] of Object.entries(fixturesCampagne)) {
+      if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
+    }
+    return { rows: [], rowCount: 0 };
+  }) as unknown as Executeur['query'];
+  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+}
+
 /** Même convention que `assistant-campagne.test.ts` : un faux POOL, `connect()` compris (R47/R69). */
 function fauxConnectable(
   rows: Record<string, unknown[]>,
@@ -682,37 +702,96 @@ describe('listerContacts', () => {
     expect(r).toEqual({ total: 0, lignes: [], tronque: false });
   });
 
-  it('fusionne les lignes de plusieurs campagnes, chacune porte sa campagne d’origine et son étape bornée', async () => {
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [
+  it('fusionne les lignes de plusieurs campagnes avec des contacts distincts, chacune porte sa campagne d’origine et son étape bornée', async () => {
+    const ctx = fauxParCampagne(
+      {
+        'camp-1': {
+          'jr:lignes_contacts_globale': [
+            {
+              signal_id: 'sig-1',
+              contact_id: 'contact-1',
+              first_name: 'Karim',
+              last_name: 'Benali',
+              job_title: 'Head of Sales',
+              email: 'karim@exemple.fr',
+              entreprise: 'Woodpecker Studio',
+              current_step: 1,
+              statut: 'en_sequence',
+              score: 91,
+              pourquoi: 'Business developer senior',
+              provider_id: 'adzuna',
+              quand: '2026-09-10T00:00:00.000Z',
+            },
+          ],
+          'jr:total_etapes_campagne': [{ n: 3 }],
+        },
+        'camp-2': {
+          'jr:lignes_contacts_globale': [
+            {
+              signal_id: 'sig-2',
+              contact_id: 'contact-2',
+              first_name: 'Sophie',
+              last_name: 'Martin',
+              job_title: 'DRH',
+              email: 'sophie@exemple.fr',
+              entreprise: 'Exemple SAS',
+              current_step: 0,
+              statut: 'a_contacter',
+              score: 70,
+              pourquoi: 'DRH PME',
+              provider_id: 'adzuna',
+              quand: '2026-09-05T00:00:00.000Z',
+            },
+          ],
+          'jr:total_etapes_campagne': [{ n: 2 }],
+        },
+      },
+      [
         { id: 'camp-1', nom: 'Directeur commercial' },
         { id: 'camp-2', nom: 'DRH PME' },
       ],
-      'jr:lignes_contacts_globale': [
-        {
-          signal_id: 'sig-1',
-          contact_id: 'contact-1',
-          first_name: 'Karim',
-          last_name: 'Benali',
-          job_title: 'Head of Sales',
-          email: 'karim@exemple.fr',
-          entreprise: 'Woodpecker Studio',
-          current_step: 1,
-          statut: 'en_sequence',
-          score: 91,
-          pourquoi: 'Business developer senior',
-          provider_id: 'adzuna',
-          quand: '2026-09-10T00:00:00.000Z',
-        },
-      ],
-      'jr:total_etapes_campagne': [{ n: 3 }],
-    });
+    );
     const r = await listerContacts(ctx, {});
-    // Même fixture rejouée pour les deux campagnes (le double mock ne distingue pas par
-    // paramètre) : une ligne par campagne, chacune avec SA campagne d'origine.
     expect(r.total).toBe(2);
     expect(r.lignes.map((l) => l.campagneId).sort()).toEqual(['camp-1', 'camp-2']);
-    expect(r.lignes[0]).toMatchObject({ nom: 'Karim Benali', etape: 2 });
+    expect(r.lignes.every((l) => l.nombreCampagnes === 1)).toBe(true);
+    expect(r.lignes.find((l) => l.contactId === 'contact-1')).toMatchObject({ nom: 'Karim Benali', etape: 2 });
+  });
+
+  // G4 (responsable produit, 18/09) : 938 lignes pour 370 contacts distincts mesuré en base
+  // OSS — un contact CANDIDAT à plusieurs campagnes à la fois (pas seulement inscrit)
+  // traversait la boucle par campagne une fois par campagne. Une ligne par personne.
+  it('dédoublonne un contact candidat à deux campagnes à la fois : une seule ligne, la plus récente, nombreCampagnes = 2', async () => {
+    const ligne = (campagneId: string, quand: string) => ({
+      signal_id: `sig-${campagneId}`,
+      contact_id: 'contact-1',
+      first_name: 'Karim',
+      last_name: 'Benali',
+      job_title: null,
+      email: null,
+      entreprise: null,
+      current_step: null,
+      statut: 'a_contacter' as const,
+      score: null,
+      pourquoi: null,
+      provider_id: null,
+      quand,
+    });
+    const ctx = fauxParCampagne(
+      {
+        'camp-1': { 'jr:lignes_contacts_globale': [ligne('camp-1', '2026-09-10T00:00:00.000Z')] },
+        'camp-2': { 'jr:lignes_contacts_globale': [ligne('camp-2', '2026-09-14T00:00:00.000Z')] },
+      },
+      [
+        { id: 'camp-1', nom: 'Directeur commercial' },
+        { id: 'camp-2', nom: 'DRH PME' },
+      ],
+    );
+    const r = await listerContacts(ctx, {});
+    expect(r.total).toBe(1);
+    expect(r.lignes).toHaveLength(1);
+    // La ligne la plus récente (camp-2, 14/09) porte le statut/étape/action affichés.
+    expect(r.lignes[0]).toMatchObject({ contactId: 'contact-1', campagneId: 'camp-2', campagneNom: 'DRH PME', nombreCampagnes: 2 });
   });
 
   // F11 : même exposition que `listerContactsCampagne` — `next_action_at` devient
@@ -1103,5 +1182,51 @@ describe('exporterCsv', () => {
     expect(lignes[1]).toContain('"Direction commerciale; France"');
     expect(lignes[1]).toContain('"Karim Benali"');
     expect(lignes[1]).toContain('"À contacter"');
+  });
+
+  // G4 : même dédoublonnage que `listerContacts` (les deux appellent `collecterContactsGlobaux`)
+  // — le nom d'une seule campagne mentirait pour un contact candidat à plusieurs à la fois.
+  it('un contact dans deux campagnes : la colonne Campagne dit combien, pas le nom d’une seule', async () => {
+    const ligne = (campagneId: string, quand: string) => ({
+      signal_id: `sig-${campagneId}`,
+      contact_id: 'contact-1',
+      first_name: 'Karim',
+      last_name: 'Benali',
+      job_title: null,
+      email: null,
+      entreprise: null,
+      current_step: null,
+      statut: 'a_contacter' as const,
+      score: null,
+      pourquoi: null,
+      provider_id: null,
+      quand,
+    });
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (/jr:contacts_globale_campagnes\b/.test(sql)) {
+        return {
+          rows: [
+            { id: 'camp-1', nom: 'Directeur commercial' },
+            { id: 'camp-2', nom: 'DRH PME' },
+          ],
+          rowCount: 2,
+        };
+      }
+      if (/jr:lignes_contacts_globale/.test(sql)) {
+        const campagneId = params[0] as string;
+        return campagneId === 'camp-1'
+          ? { rows: [ligne('camp-1', '2026-09-10T00:00:00.000Z')], rowCount: 1 }
+          : { rows: [ligne('camp-2', '2026-09-14T00:00:00.000Z')], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    const csv = await exporterCsv(ctx, {});
+    const lignes = csv.slice(1).split('\r\n');
+    expect(lignes).toHaveLength(2);
+    expect(lignes[1]).toContain('"2 campagnes"');
+    expect(lignes[1]).not.toContain('DRH PME');
+    expect(lignes[1]).not.toContain('Directeur commercial');
   });
 });
