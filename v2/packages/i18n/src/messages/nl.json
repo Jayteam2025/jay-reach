@@ -1048,7 +1048,7 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Verrijkingen (FullEnrich)",
         "envois": "Verzendingen",
-        "aide": "Scoring en verrijking worden om middernacht UTC gereset (1 uur 's nachts in de Parijse wintertijd, 2 uur in de zomer); verzendingen volgen de tijdzone van de organisatie. Een bereikte limiet zet de taak in de wacht tot de volgende dag, er gaat niets verloren."
+        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren."
       },
       "protection": {
         "title": "Wat dit beschermt",

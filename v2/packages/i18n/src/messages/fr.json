@@ -1048,7 +1048,7 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Enrichissements (FullEnrich)",
         "envois": "Envois",
-        "aide": "Scorings et enrichissements se remettent à zéro à minuit UTC (1 h du matin à Paris l'hiver, 2 h l'été) ; les envois suivent le fuseau de l'organisation. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu."
+        "aide": "Les compteurs se remettent à zéro à minuit, heure de l'organisation ({fuseau}), envois compris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu."
       },
       "protection": {
         "title": "Ce que ça protège",

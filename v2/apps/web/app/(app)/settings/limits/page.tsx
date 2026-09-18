@@ -120,7 +120,7 @@ export default async function PlafondsPage() {
             ton={tonJauge(consommation.envois.utilise, consommation.envois.plafond)}
           />
           <p className="jr-aide" style={{ marginTop: 8 }}>
-            {t('consommation.aide')}
+            {t('consommation.aide', { fuseau })}
           </p>
         </Carte>
 
