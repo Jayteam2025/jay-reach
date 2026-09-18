@@ -18,6 +18,12 @@ export type ColonneTable = {
    * colonne, jamais littéralement 0.
    */
   largeurMax?: string;
+  /**
+   * Classe posée sur `<th>` ET `<td>` (tour de correction F6, point 31) : passe-plat générique pour
+   * une règle CSS propre à une colonne (ex. une largeur minimale garantie), plutôt qu'un style en
+   * ligne posé au cas par cas côté appelant.
+   */
+  classe?: string;
 };
 
 export type TableProps = {
@@ -27,7 +33,7 @@ export type TableProps = {
 };
 
 function classeColonne(colonne: ColonneTable): string | undefined {
-  return [colonne.num && 'num', colonne.nowrap && 'jr-nowrap'].filter(Boolean).join(' ') || undefined;
+  return [colonne.num && 'num', colonne.nowrap && 'jr-nowrap', colonne.classe].filter(Boolean).join(' ') || undefined;
 }
 
 function styleColonne(colonne: ColonneTable): { width?: string; maxWidth?: string } | undefined {

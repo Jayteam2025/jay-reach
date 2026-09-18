@@ -482,8 +482,16 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-colonne-cartes { display: grid; gap: 16px; align-content: start; }
 .jr-sans-retrait-gauche { padding-left: 0; }
 .jr-sans-retrait-droite { padding-right: 0; }
-/* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la largeur, ce bloc coupe proprement. */
-.jr-tronque { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la
+   largeur, ce bloc coupe proprement. `display: block` (tour de correction F6, point 31, était
+   `inline-block`) : en `inline-block` sans largeur posée dessus (seul `max-width: 100%`, sans effet
+   sans largeur de référence), la largeur intrinsèque du texte entier dictait la largeur minimale de
+   la colonne — jamais compressible même avec `largeurMax` posé côté `Table`. En `display: block`,
+   l'élément prend la largeur RENDUE de sa cellule (calculée par ailleurs), et l'ellipse fonctionne
+   enfin sur cette largeur-là. Sans effet sur l'autre usage (nom tronqué de la File du jour, dans
+   `.jr-qui`) : `.jr-qui b`/`.jr-qui small` y posent déjà `display: block` avec une spécificité
+   supérieure, qui l'emportait déjà quel que soit le `display` de `.jr-tronque`. */
+.jr-tronque { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Cellule qui ne doit jamais couper au milieu d'un mot (tour de correction F6, point 4). */
 .jr-nowrap { white-space: nowrap; }
 /* Action à deux niveaux empilée verticalement plutôt que côte à côte (tour de correction F6,
@@ -514,6 +522,17 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
    la File du jour malgré `white-space: nowrap`, point 4) : contre-règle explicite, à spécificité
    égale ou supérieure, pour les cas qui veulent une vraie troncature sur une ligne. */
 .jr-qui b.jr-tronque, .jr-qui small.jr-tronque { overflow-wrap: normal; }
+/* Dans un tableau (tour de correction F6, point 31), un nom de contact ne coupe qu'aux mots, jamais
+   lettre à lettre — même sans `.jr-tronque` : `overflow-wrap: anywhere` (règle ci-dessus) devient
+   dangereux dès qu'une colonne voisine peut lui voler sa largeur (colonne Pourquoi lui non bornée,
+   /contacts). Sans toucher `overflow-wrap: anywhere` hors tableau (en-tête de fiche, ailleurs), où
+   il reste voulu pour un nom vraiment trop long dans un espace fixe. */
+.jr-table .jr-qui b, .jr-table .jr-qui small { overflow-wrap: normal; }
+/* Plancher de largeur garanti pour la colonne Contact des tableaux de contacts (tour de correction
+   F6, point 31) : `largeur: '28%'` (côté composant) n'est qu'une cible, pas une borne — dans le pire
+   des cas (beaucoup de colonnes rivales), `min-width` est le seul mécanisme réellement respecté comme
+   plancher dur par `table-layout: auto`. */
+.jr-table td.jr-colonne-contact, .jr-table th.jr-colonne-contact { min-width: 200px; }
 
 /* Ligne de tableau cliquable en plus de son lien (tour de correction F6, point 19) : le lien du
    nom est étiré sur toute la ligne (« stretched link »), sans JavaScript ni <tr onClick> — un vrai

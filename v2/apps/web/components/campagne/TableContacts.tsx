@@ -86,13 +86,25 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
   return (
     <Table
       colonnes={[
-        { cle: 'contact', titre: libelles.colonneContact },
+        // Largeur de contenu cible + plancher garanti (tour de correction F6, point 31) : sur
+        // /contacts (colonnes « global », 7 colonnes rivales), Contact se réduisait à 77 px et les
+        // noms coupaient lettre à lettre — `largeur: '28%'` n'est qu'une CIBLE (pas de `largeurMax`,
+        // contrairement à `pourquoi`/`action` : Contact reste libre de grandir s'il reste de la
+        // place, comme sur l'onglet Contacts d'une campagne où il montait à 469 px hier), et
+        // `jr-colonne-contact` pose un plancher dur de 200 px en CSS pour le pire des cas.
+        { cle: 'contact', titre: libelles.colonneContact, largeur: '28%', classe: 'jr-colonne-contact' },
         ...(colonnes === 'global' ? [{ cle: 'campagne', titre: libelles.colonneCampagne }] : []),
-        // Largeurs automatiques (tour de correction F6, point 20) : « Étape 2 » ne coupe plus sur
-        // deux lignes, et la colonne statut/action se réduit à son contenu (`largeur: '1%'`,
-        // astuce CSS courante pour une colonne « shrink-to-fit » sans mesure JS) plutôt que de
-        // s'étaler sur 335 px sans raison.
-        ...(masquerScoring ? [] : [{ cle: 'pourquoi', titre: libelles.colonnePourquoi }, { cle: 'score', titre: libelles.colonneScore }]),
+        // Largeurs automatiques (tour de correction F6, points 20 et 31) : « Étape 2 » ne coupe
+        // plus sur deux lignes ; Pourquoi lui est la colonne compressible (même mécanisme que
+        // Modèle au point 25 bis, `largeurMax: '0'`) — sans lui, un texte long (« AGENT COMMERCIAL
+        // TERRAIN & TÉL... ») forçait sa largeur minimale à celle de sa propre phrase, jamais
+        // compressible en `table-layout: auto` malgré l'ellipse posée sur le `span.jr-tronque`.
+        ...(masquerScoring
+          ? []
+          : [
+              { cle: 'pourquoi', titre: libelles.colonnePourquoi, largeur: '30%', largeurMax: '0' },
+              { cle: 'score', titre: libelles.colonneScore },
+            ]),
         { cle: 'email', titre: libelles.colonneEmail },
         { cle: 'etape', titre: libelles.colonneEtape, nowrap: true },
         { cle: 'action', titre: libelles.colonneAction, nowrap: true, largeur: '1%' },
