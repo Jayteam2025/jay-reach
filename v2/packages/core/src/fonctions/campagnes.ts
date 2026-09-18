@@ -2023,7 +2023,11 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
   if (besoinEmail) {
     const [cleRes, boitesRes] = await Promise.all([
       ctx.ex.query<{ status: string }>(
-        `select status from credentials_public /* jr:manques_cle */ where organization_id = $1 and provider_id = 'salesblink'`,
+        // `credentials_public` filtre sur `app.user_orgs()` (donc `auth.uid()`),
+        // vide côté serveur : `ctx.ex` est un pool de service sans session
+        // Supabase Auth. On lit la table directement, avec le même filtre par
+        // organisation que la vue, sans jamais sélectionner `secret`.
+        `select status from credentials /* jr:manques_cle */ where organization_id = $1 and provider_id = 'salesblink'`,
         [ctx.organisationId],
       ),
       ctx.ex.query<{ provider_ref: string | null; provider_state: { sending_enabled?: boolean } | null }>(

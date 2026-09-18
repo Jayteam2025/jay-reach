@@ -80,6 +80,16 @@ Versionnement sémantique.
   revérifie la délivrabilité avant de repartir plutôt que de retenter une adresse toujours invalide.
 
 ### Corrigé
+- **« Créer et lancer » ne refuse plus une campagne dont la clé SalesBlink est pourtant configurée.** La garde de lancement
+  lisait le statut du fournisseur sur `credentials_public`, une vue filtrée par `app.user_orgs()` (donc par `auth.uid()`) :
+  vide pour le pool de service (`ctx.ex`), qui n'a jamais de session Supabase Auth, elle renvoyait toujours zéro ligne et le
+  refus « aucune clé SalesBlink configurée » s'affichait même clé enregistrée. La garde lit désormais la table `credentials`
+  directement (statut seulement, jamais le secret), avec le même filtre par organisation que la vue. Vérifié sur un vrai
+  Postgres, sans session : `credentials_public` rend 0 ligne quand `credentials` en rend 1, rouge sans le correctif, vert
+  avec (`test/pg-verify/manques-cle-transport.sh`). Balayage du reste du schéma : `credentials_public` est la seule vue
+  filtrée par `app.user_orgs()`/`auth.uid()` lue depuis le code serveur ; `campaign_stats` (statistiques par campagne)
+  s'appuie sur la RLS des tables sous-jacentes plutôt que sur un filtre explicite et n'est lue nulle part aujourd'hui, mais
+  resterait à filtrer explicitement par organisation le jour où elle serait interrogée depuis `ctx.ex`.
 - **Une inscription dont l'email ne partira jamais ne reste plus bloquée sans explication.** Un refus de la passerelle de
   délivrabilité ou un échec définitif signalé par SalesBlink laissait l'inscription active indéfiniment, sans relance ni signe
   visible. Elle passe désormais en pause, avec un motif conservé sur l'étape où elle a buté, et se montre à l'écran comme telle
