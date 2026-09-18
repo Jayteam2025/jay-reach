@@ -15,7 +15,13 @@ import { versInstant } from '../temps.js';
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
 // constat important 2). Une copie locale identique n'était donc pas justifiée.
-import { sqlContactsCampagne, sqlListeSourceResumeCampagne, tauxSurPartis } from './campagnes.js';
+import {
+  lireContraintesSendersDuJour,
+  projeterEnvoisDuJour,
+  sqlContactsCampagne,
+  sqlListeSourceResumeCampagne,
+  tauxSurPartis,
+} from './campagnes.js';
 
 /** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
 export type CanalFil = 'email' | 'linkedin' | undefined;
@@ -55,9 +61,11 @@ export interface EnvoiPrevu {
   canal: CanalFil;
   /**
    * Champs supplémentaires posés par la tâche 10 (onglet File du jour d'une
-   * campagne, `campagnes.ts::listerFileDuJour`) : tous optionnels et absents
-   * de la page Aujourd'hui (`lireAujourdhui`, cette même page), qui ne les
-   * lit pas et dont les tests restent inchangés.
+   * campagne, `campagnes.ts::listerFileDuJour`) : optionnels et absents de
+   * `lireAujourdhui` (cette même page), qui ne les lit pas et dont les tests
+   * restent inchangés — SAUF `expediteurId`, posé aussi par `lireAujourdhui`
+   * depuis la revue F5 (point 10) : c'est lui qui rattache un envoi pas
+   * encore parti à sa boîte pour `projeterEnvoisDuJour`.
    */
   etatDetaille?: EtatEnvoi;
   /** Objet du message, quand il est connu à moindre coût (déjà stocké après un envoi réussi) — `null`/absent sinon, pas re-rendu ici. */
@@ -108,7 +116,21 @@ export interface Alerte {
 
 export interface Aujourdhui {
   aTraiter: { total: number; fils: FilResume[] };
-  fileDuJour: { total: number; dejaPartis: number; derniereHeure: string | null; envois: EnvoiPrevu[] };
+  fileDuJour: {
+    total: number;
+    dejaPartis: number;
+    /**
+     * Parmi les envois pas encore partis, combien peuvent RÉELLEMENT encore
+     * sortir aujourd'hui compte tenu du plafond journalier restant de leur
+     * boîte (revue F5, point 10, `projeterEnvoisDuJour`) — `possiblesAujourdhui
+     * + reportesProchainCreneau === total - dejaPartis`.
+     */
+    possiblesAujourdhui: number;
+    /** Devraient logiquement partir aujourd'hui (même jour calendaire) mais leur boîte aura déjà atteint son plafond avant d'y arriver — reportés à demain par le moteur lui-même au moment de l'envoi. */
+    reportesProchainCreneau: number;
+    derniereHeure: string | null;
+    envois: EnvoiPrevu[];
+  };
   moteur: EtatMoteurResume;
   plafonds: Awaited<ReturnType<typeof lireConsommationDuJour>>;
   campagnes: CampagneResume[];
@@ -140,6 +162,7 @@ interface LigneAction {
   scheduled_for: string | null;
   dispatch_after: string | null;
   channel: string;
+  sender_id: string | null;
   first_name: string | null;
   last_name: string | null;
   campagne_nom: string | null;
@@ -173,6 +196,16 @@ function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
 }
 
+/**
+ * Jour calendaire dans un fuseau donné, pas celui du process qui exécute le rendu (I5, revue
+ * finale — copie locale de `cleJourDansFuseau`, `apps/web/lib/dates.ts`, même convention que
+ * `campagnes.ts`/`sources.ts` : pas de couplage cross-paquet pour un utilitaire d'une ligne).
+ * `fr-CA` rend l'ISO (année-mois-jour) quel que soit l'environnement.
+ */
+function jourDansFuseau(date: Date, fuseau: string): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: fuseau, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
 // `new Date(iso)` accepte indifféremment une chaîne ISO ou un objet `Date` (le
 // constructeur traite spécialement un `Date` en argument) : accepter les deux
 // ici évite un cast quand l'appelant tient encore un horodatage `pg` brut.
@@ -186,7 +219,12 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // plafonds), et lui repasser ceux-ci lui évite de relire lui-même
   // `organization_settings` une seconde fois dans le même appel.
   const reglages = await lireReglages(ctx);
-  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds] = await Promise.all([
+  const fuseau = String(reglages.fuseau);
+  // Jour calendaire dans le fuseau de l'organisation, pas celui du serveur UTC qui exécute le
+  // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
+  // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
+  const jourRef = jourDansFuseau(new Date(), fuseau);
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -200,7 +238,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       [ctx.organisationId],
     ),
     ctx.ex.query<LigneAction>(
-      `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
+      `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel, a.sender_id,
               c.first_name, c.last_name, camp.name as campagne_nom, st.position as etape, s.identity as expediteur
          from actions a /* jr:file_du_jour */
          join enrollments e on e.id = a.enrollment_id
@@ -210,10 +248,10 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
          left join senders s on s.id = a.sender_id
         where a.organization_id = $1
           and a.status <> 'cancelled'
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= date_trunc('day', now())
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < date_trunc('day', now()) + interval '1 day'
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1) at time zone $3)
         order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
-      [ctx.organisationId],
+      [ctx.organisationId, jourRef, fuseau],
     ),
     ctx.ex.query<LigneCampagne>(
       `select c.id, c.name, c.status,
@@ -265,9 +303,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     ),
     lireEtatMoteur(ctx),
     lireConsommationDuJour(ctx, reglages),
+    lireContraintesSendersDuJour(ctx, jourRef, fuseau),
   ]);
-
-  const fuseau = String(reglages.fuseau);
 
   const fils: FilResume[] = filsRes.rows.map((r) => ({
     id: r.id,
@@ -293,10 +330,15 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       etape: r.etape !== null ? r.etape + 1 : null,
       campagneNom: r.campagne_nom,
       expediteur: r.expediteur,
+      expediteurId: r.sender_id,
       canal: canalDe(r.channel),
     };
   });
   const dejaPartis = actionsRes.rows.filter((r) => r.dispatched_at !== null).length;
+  // Revue F5, point 10 : combien des envois pas encore partis peuvent RÉELLEMENT encore
+  // sortir aujourd'hui, compte tenu du plafond journalier restant de leur boîte — voir
+  // `VueDEnsemble.projectionFileDuJour` (même calcul, même sens, campagnes.ts).
+  const projectionFileDuJour = projeterEnvoisDuJour(envois.filter((e) => !e.envoye), contraintesParSender);
   // `dispatched_at` (`timestamptz`) peut être un objet `Date` (pilote `pg`) : un
   // `.sort()` par défaut le compare via `Date.prototype.toString()`
   // (« Thu Sep 17 2026 … »), lexicographiquement faux (un jeudi passerait
@@ -371,6 +413,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     fileDuJour: {
       total: envois.length,
       dejaPartis,
+      possiblesAujourdhui: projectionFileDuJour.possiblesAujourdhui,
+      reportesProchainCreneau: projectionFileDuJour.reportesProchainCreneau,
       derniereHeure: derniereEnvoyee ? formatterHeure(derniereEnvoyee, fuseau) : null,
       envois: envois.slice(0, NOMBRE_ENVOIS_APERCU),
     },

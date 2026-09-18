@@ -95,7 +95,16 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         titre={t('overview.queue.title')}
         action={
           <>
-            <small>{t('overview.queue.count', { envois: vue.fileDuJour.length, partis: dejaPartis })}</small>
+            <small>
+              {t('overview.queue.count', {
+                partis: dejaPartis,
+                // Revue F5, point 10 : « prévu » (juste le total du jour calendaire) confondait
+                // ce qui est réellement encore envoyable aujourd'hui avec ce que le plafond de la
+                // boîte va en réalité reporter à demain (`projeterEnvoisDuJour`).
+                possibles: vue.projectionFileDuJour?.possiblesAujourdhui ?? 0,
+                reportes: vue.projectionFileDuJour?.reportesProchainCreneau ?? 0,
+              })}
+            </small>
             <Link href={`/campaigns/${id}/queue`} className="jr-lien jr-lien-petit">
               {t('overview.queue.seeAll')}
             </Link>

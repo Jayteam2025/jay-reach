@@ -150,6 +150,76 @@ describe('lireAujourdhui', () => {
     expect(a.fileDuJour.envois[0]?.etape).toBe(1);
   });
 
+  it('la file du jour lit le jour calendaire dans le fuseau de l’organisation, plus jamais celui du serveur (revue F5, point 10)', async () => {
+    const appels: { text: string }[] = [];
+    const query = vi.fn(async (text: string) => {
+      appels.push({ text });
+      if (/from organization_settings/i.test(text)) return { rows: [{ key: 'fuseau', value: 'Europe/Paris' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    await lireAujourdhui(ctx);
+
+    const requete = appels.find((a) => /jr:file_du_jour\b/i.test(a.text))!.text;
+    expect(requete).toMatch(/\$2::date at time zone \$3/);
+    expect(requete).not.toContain("date_trunc('day', now())");
+  });
+
+  describe('projection de la file du jour (revue F5, point 10)', () => {
+    it('borne « possible aujourd’hui » au plafond journalier restant de la boîte, le reste est reporté', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+          { id: 'a2', dispatched_at: null, scheduled_for: '2026-09-14T10:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'B', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+          { id: 'a3', dispatched_at: null, scheduled_for: '2026-09-14T11:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'D', last_name: 'D', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 2, used_today: 1 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      // Plafond 2, déjà 1 utilisé aujourd'hui : une seule place restante pour trois envois pas encore partis.
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(2);
+    });
+
+    it('un canal sans boîte email suivie (LinkedIn) n’est jamais reporté par ce calcul', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'linkedin_message', sender_id: null, first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: null },
+        ],
+        'jr:contraintes_senders_jour': [],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+
+    it('une boîte sans plafond réglé (daily_quota nul) n’est jamais reportée par ce calcul', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: null, used_today: 5 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+
+    it('un envoi déjà parti n’entre jamais dans ce calcul (seuls les pas-encore-partis comptent)', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: '2026-09-14T08:00:00.000Z', scheduled_for: null, dispatch_after: null, status: 'dispatched', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 1 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.dejaPartis).toBe(1);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(0);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+  });
+
   it('lève une alerte moteur_silencieux quand le dernier tour date de plus de 15 minutes', async () => {
     const ctx = faux({
       'jr:engine_status': [{ version: 'abc', last_tick_at: new Date(Date.now() - 30 * 60_000).toISOString(), last_error: null }],

@@ -19,6 +19,7 @@ import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
+import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 
@@ -493,6 +494,14 @@ export interface VueDEnsemble {
   readonly campagne: CampagneEnTete;
   readonly entonnoir: Entonnoir;
   readonly fileDuJour: EnvoiPrevu[];
+  /**
+   * Combien des envois pas encore partis de `fileDuJour` peuvent RÉELLEMENT
+   * encore sortir aujourd'hui, compte tenu du plafond journalier restant de
+   * leur boîte (revue F5, point 10 ; `projeterEnvoisDuJour`) — `null` seulement
+   * si `fileDuJour` porte un autre jour que celui du jour courant (n'arrive pas
+   * depuis cette fonction, qui ne demande jamais un jour précis).
+   */
+  readonly projectionFileDuJour: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
   readonly plafonds: Awaited<ReturnType<typeof lireConsommationDuJour>>;
   readonly sources: SourceResume[];
   /**
@@ -999,16 +1008,93 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string, extraits: ReadonlyMap<str
   };
 }
 
+export interface ContrainteSenderJour {
+  /** `senders.daily_quota` — `null` = aucun plafond réglé pour cette boîte, jamais reportée par ce calcul. */
+  readonly dailyQuota: number | null;
+  readonly usedToday: number;
+}
+
+/**
+ * Charge, pour chaque boîte email active, son plafond journalier et ce
+ * qu'elle a déjà envoyé aujourd'hui (dans le fuseau de l'organisation, pas
+ * celui du serveur) — revue F5, point 10 : sert de base à `projeterEnvoisDuJour`.
+ */
+export async function lireContraintesSendersDuJour(
+  ctx: Contexte,
+  jour: string,
+  fuseau: string,
+): Promise<Map<string, ContrainteSenderJour>> {
+  const res = await ctx.ex.query<{ sender_id: string; daily_quota: number | null; used_today: number }>(
+    `select s.id as sender_id, s.daily_quota,
+            (select count(*)::int from actions act
+               where act.sender_id = s.id
+                 and act.status in ('dispatched', 'delivered')
+                 and act.dispatched_at >= ($1::date at time zone $2)
+                 and act.dispatched_at < (($1::date + 1) at time zone $2)) as used_today
+       from senders s /* jr:contraintes_senders_jour */
+      where s.organization_id = $3 and s.kind = 'email' and s.is_active`,
+    [jour, fuseau, ctx.organisationId],
+  );
+  return new Map(res.rows.map((r) => [r.sender_id, { dailyQuota: r.daily_quota, usedToday: r.used_today }]));
+}
+
+/**
+ * Projection de la file du jour (revue F5, point 10) : combien des envois pas
+ * encore partis peuvent RÉELLEMENT encore sortir aujourd'hui, compte tenu du
+ * plafond journalier restant de LEUR boîte, et combien sont en réalité
+ * reportés au prochain créneau (demain matin, le plus souvent) — jusqu'ici le
+ * total affiché à l'écran ne distinguait pas les deux, alors que le tick peut
+ * créer plus d'actions « prévues aujourd'hui » qu'une boîte n'a de places
+ * restantes, la vraie limite n'étant appliquée qu'au moment de l'envoi.
+ *
+ * Réutilise `allocateWithinQuota` (`packages/core/src/sequencer/quota.js`,
+ * déjà écrite pour le moteur mais jusqu'ici jamais appelée) — SANS son volet
+ * horaire : le quota horaire se libère chaque heure qui passe, il ne dit rien
+ * sur ce qui peut encore sortir d'ici la fin de la journée, seul le quota
+ * JOURNALIER borne réellement une projection à cet horizon.
+ */
+export function projeterEnvoisDuJour(
+  prevus: readonly EnvoiPrevu[],
+  contraintesParSender: ReadonlyMap<string, ContrainteSenderJour>,
+): { readonly possiblesAujourdhui: number; readonly reportesProchainCreneau: number } {
+  const parSender = new Map<string, EnvoiPrevu[]>();
+  let possibles = 0;
+  for (const p of prevus) {
+    const c = p.expediteurId ? contraintesParSender.get(p.expediteurId) : undefined;
+    if (!c || c.dailyQuota === null) {
+      // Pas de plafond suivi pour cette boîte (ou canal sans expéditeur email, ex. LinkedIn/courrier) :
+      // jamais reporté par CE calcul.
+      possibles++;
+      continue;
+    }
+    const liste = parSender.get(p.expediteurId!) ?? [];
+    liste.push(p);
+    parSender.set(p.expediteurId!, liste);
+  }
+  for (const [senderId, liste] of parSender) {
+    const c = contraintesParSender.get(senderId)!;
+    const { dispatch } = allocateWithinQuota(liste, { dailyQuota: c.dailyQuota!, usedToday: c.usedToday });
+    possibles += dispatch.length;
+  }
+  return { possiblesAujourdhui: possibles, reportesProchainCreneau: prevus.length - possibles };
+}
+
 async function lireEnvoisDuJour(
   ctx: Contexte,
   params: { campagneId?: string; jour?: string },
-): Promise<{ envois: EnvoiPrevu[]; fuseau: string }> {
+): Promise<{
+  envois: EnvoiPrevu[];
+  fuseau: string;
+  /** Revue F5, point 10 — `null` seulement le temps d'un jour explicitement passé dans le passé/futur (`params.jour`), la projection n'a de sens que pour aujourd'hui. */
+  projection: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
+}> {
   const reglages = await lireReglages(ctx);
   const fuseau = String(reglages.fuseau);
   // Jour calendaire À PARIS (ou le fuseau réglé), pas celui du serveur UTC qui exécute le
   // rendu (I5, revue finale) : entre minuit et l'heure du décalage, l'écran « aujourd'hui »
   // montrait sinon la veille.
   const jourRef = params.jour ?? jourDansFuseau(new Date(), fuseau);
+  const estAujourdhui = jourRef === jourDansFuseau(new Date(), fuseau);
 
   const valeurs: unknown[] = [ctx.organisationId, jourRef, fuseau];
   let filtreCampagne = '';
@@ -1017,7 +1103,7 @@ async function lireEnvoisDuJour(
     filtreCampagne = ` and e.campaign_id = $${valeurs.length}`;
   }
 
-  const [res, extraitsRes] = await Promise.all([
+  const [res, extraitsRes, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneEnvoi>(
       `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
               a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
@@ -1054,9 +1140,14 @@ async function lireEnvoisDuJour(
       `select name, body from message_snippets /* jr:file_du_jour_extraits */ where organization_id = $1`,
       [ctx.organisationId],
     ),
+    // Inutile pour un jour passé/futur explicitement demandé (`params.jour`) : la projection
+    // « peut encore sortir aujourd'hui » n'a de sens qu'au jour courant.
+    estAujourdhui ? lireContraintesSendersDuJour(ctx, jourRef, fuseau) : Promise.resolve(null),
   ]);
   const extraits = new Map(extraitsRes.rows.map((r) => [r.name, r.body]));
-  return { envois: res.rows.map((r) => versEnvoiPrevu(r, fuseau, extraits)), fuseau };
+  const envois = res.rows.map((r) => versEnvoiPrevu(r, fuseau, extraits));
+  const projection = contraintesParSender ? projeterEnvoisDuJour(envois.filter((e) => !e.envoye), contraintesParSender) : null;
+  return { envois, fuseau, projection };
 }
 
 /**
@@ -1101,7 +1192,7 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
   // de cette seule requête.
   const { listIds, listeSource } = await lireListeSourceCampagne(ctx, campagneId);
 
-  const [campagne, entonnoir, { envois }, sources, nombreSources, { evenements }] = await Promise.all([
+  const [campagne, entonnoir, { envois, projection: projectionFileDuJour }, sources, nombreSources, { evenements }] = await Promise.all([
     lireCampagneEnTete(ctx, campagneId),
     lireEntonnoir(ctx, campagneId, listIds),
     lireEnvoisDuJour(ctx, { campagneId }),
@@ -1114,6 +1205,7 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
   return {
     campagne,
     entonnoir,
+    projectionFileDuJour,
     fileDuJour: envois,
     plafonds,
     sources,
@@ -1323,11 +1415,17 @@ async function plafondEnvoisOrganisation(ctx: Contexte): Promise<number> {
 export async function listerFileDuJour(
   ctx: Contexte,
   entree: unknown,
-): Promise<{ prevus: EnvoiPrevu[]; partis: EnvoiPrevu[]; plafondDuJour: number }> {
+): Promise<{
+  prevus: EnvoiPrevu[];
+  partis: EnvoiPrevu[];
+  plafondDuJour: number;
+  /** Revue F5, point 10 — voir `VueDEnsemble.projectionFileDuJour` (même calcul, même sens). */
+  projection: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
+}> {
   exiger(ctx, 'viewer');
   const { campagneId, jour } = valider(schemaFileDuJour, entree);
 
-  const [{ envois }, plafondDuJour] = await Promise.all([
+  const [{ envois, projection }, plafondDuJour] = await Promise.all([
     lireEnvoisDuJour(ctx, { campagneId, jour }),
     (async () => {
       if (!campagneId) return plafondEnvoisOrganisation(ctx);
@@ -1344,6 +1442,7 @@ export async function listerFileDuJour(
     prevus: envois.filter((e) => !e.envoye),
     partis: envois.filter((e) => e.envoye),
     plafondDuJour,
+    projection,
   };
 }
 

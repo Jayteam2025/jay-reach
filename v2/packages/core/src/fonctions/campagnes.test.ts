@@ -10,6 +10,8 @@ import {
   ErreurConflit,
   etapeAffichee,
   evenementsEnvoisGroupes,
+  lireContraintesSendersDuJour,
+  projeterEnvoisDuJour,
   tauxSurPartis,
   trouverColonneIntitulePoste,
   lancer,
@@ -27,6 +29,7 @@ import {
   modifierReglagesCampagne,
   motifPauseDe,
 } from './campagnes.js';
+import type { EnvoiPrevu } from './aujourdhui.js';
 
 /**
  * Contexte factice : `rows` associe un motif (le tag `/* jr:nom *\/` de la requête, ou tout
@@ -463,6 +466,30 @@ describe('lireVueDEnsemble', () => {
     // deux coïncident ici mais divergeraient avec deux thèmes du même
     // fournisseur.
     expect(v.nombreSources).toBe(1);
+  });
+
+  it('expose la projection de la file du jour (revue F5, point 10)', async () => {
+    const ctx = faux({
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40 }],
+      'jr:boites_actives': [],
+      organization_settings: [],
+      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, livres: 0, partis: 0, reponses: 0, interesses: 0 }],
+      'jr:entonnoir_sources': [{ trouves: 0, qualifies: 0, contacts: 0 }],
+      'jr:file_du_jour_campagne': [
+        { id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
+        { id: 'a2', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T10:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'D', last_name: 'E', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
+      ],
+      'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 0 }],
+      'jr:sources_campagne_resume': [],
+      'jr:sources_campagne_compte': [{ n: 0 }],
+      'jr:activite_campagne': [],
+      scored_today: [],
+      enrich_today: [],
+      'from actions': [],
+      'from senders': [],
+    });
+    const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
+    expect(v.projectionFileDuJour).toEqual({ possiblesAujourdhui: 1, reportesProchainCreneau: 1 });
   });
 
   it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null (jamais un plantage)', () => {
@@ -1118,6 +1145,30 @@ describe('listerFileDuJour', () => {
     await expect(listerFileDuJour(ctx, { campagneId })).rejects.toThrow(ErreurIntrouvable);
   });
 
+  it('expose la projection (revue F5, point 10) : possibles aujourd’hui et reportés au prochain créneau', async () => {
+    const ctx = faux({
+      organization_settings: [],
+      'jr:file_du_jour_campagne': [
+        { id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
+        { id: 'a2', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T10:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'D', last_name: 'E', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
+      ],
+      'jr:plafond_envois_org': [{ plafond: 90 }],
+      'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 0 }],
+    });
+    const r = await listerFileDuJour(ctx, {});
+    expect(r.projection).toEqual({ possiblesAujourdhui: 1, reportesProchainCreneau: 1 });
+  });
+
+  it('la projection reste `null` pour un jour explicitement demandé autre qu’aujourd’hui (n’a de sens qu’au jour courant)', async () => {
+    const ctx = faux({
+      organization_settings: [],
+      'jr:file_du_jour_campagne': [],
+      'jr:plafond_envois_org': [{ plafond: 90 }],
+    });
+    const r = await listerFileDuJour(ctx, { jour: '2020-01-01' });
+    expect(r.projection).toBeNull();
+  });
+
   describe('objet d’un envoi (point 5, tour de correction 5)', () => {
     it('un envoi parti garde l’objet déjà stocké sur l’action, jamais celui du gabarit', async () => {
       const ctx = faux({
@@ -1203,6 +1254,84 @@ describe('listerFileDuJour', () => {
       const r = await listerFileDuJour(ctx, {});
       expect(r.prevus[0]!.objet).toBeNull();
     });
+  });
+});
+
+describe('projeterEnvoisDuJour (revue F5, point 10, fonction pure)', () => {
+  /** `EnvoiPrevu` minimal — seul `expediteurId` varie dans ces tests. */
+  function envoi(id: string, expediteurId: string | null): EnvoiPrevu {
+    return {
+      id,
+      heure: '09:00',
+      envoye: false,
+      contactNom: 'Un contact',
+      etape: 1,
+      campagneNom: 'C',
+      expediteur: null,
+      canal: 'email',
+      expediteurId,
+    };
+  }
+
+  it('borne les envois d’une même boîte à son plafond journalier restant, le reste est reporté', () => {
+    const prevus = [envoi('a1', 's1'), envoi('a2', 's1'), envoi('a3', 's1')];
+    const contraintes = new Map([['s1', { dailyQuota: 2, usedToday: 1 }]]);
+    expect(projeterEnvoisDuJour(prevus, contraintes)).toEqual({ possiblesAujourdhui: 1, reportesProchainCreneau: 2 });
+  });
+
+  it('un plafond déjà entièrement consommé aujourd’hui reporte tout, jamais un nombre négatif', () => {
+    const prevus = [envoi('a1', 's1'), envoi('a2', 's1')];
+    const contraintes = new Map([['s1', { dailyQuota: 3, usedToday: 5 }]]);
+    expect(projeterEnvoisDuJour(prevus, contraintes)).toEqual({ possiblesAujourdhui: 0, reportesProchainCreneau: 2 });
+  });
+
+  it('deux boîtes indépendantes : chacune ses places, jamais mutualisées', () => {
+    const prevus = [envoi('a1', 's1'), envoi('a2', 's1'), envoi('a3', 's2'), envoi('a4', 's2')];
+    const contraintes = new Map([
+      ['s1', { dailyQuota: 1, usedToday: 0 }],
+      ['s2', { dailyQuota: 5, usedToday: 0 }],
+    ]);
+    // s1 : 1 possible, 1 reporté. s2 : les deux possibles (largement sous son plafond).
+    expect(projeterEnvoisDuJour(prevus, contraintes)).toEqual({ possiblesAujourdhui: 3, reportesProchainCreneau: 1 });
+  });
+
+  it('une boîte sans plafond réglé (`dailyQuota: null`) n’est jamais reportée', () => {
+    const prevus = [envoi('a1', 's1'), envoi('a2', 's1')];
+    const contraintes = new Map([['s1', { dailyQuota: null, usedToday: 99 }]]);
+    expect(projeterEnvoisDuJour(prevus, contraintes)).toEqual({ possiblesAujourdhui: 2, reportesProchainCreneau: 0 });
+  });
+
+  it('un envoi sans expéditeur connu (canal sans boîte email, ex. LinkedIn) n’est jamais reporté', () => {
+    const prevus = [envoi('a1', null)];
+    expect(projeterEnvoisDuJour(prevus, new Map())).toEqual({ possiblesAujourdhui: 1, reportesProchainCreneau: 0 });
+  });
+
+  it('une liste vide rend deux zéros', () => {
+    expect(projeterEnvoisDuJour([], new Map())).toEqual({ possiblesAujourdhui: 0, reportesProchainCreneau: 0 });
+  });
+});
+
+describe('lireContraintesSendersDuJour (revue F5, point 10)', () => {
+  it('lit le jour calendaire par « at time zone », jamais `date_trunc(\'day\', now())` (fuseau de l’organisation, pas celui du serveur)', async () => {
+    const queryMock = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const query = queryMock as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    await lireContraintesSendersDuJour(ctx, '2026-09-14', 'Europe/Paris');
+
+    const appels = queryMock.mock.calls as unknown[][];
+    const appel = appels.find((a) => /jr:contraintes_senders_jour/i.test(String(a[0])));
+    expect(appel).toBeDefined();
+    const sql = String(appel![0]);
+    expect(sql).toMatch(/at time zone \$2/i);
+    expect(sql).not.toContain("date_trunc('day', now())");
+    expect(appel![1]).toEqual(['2026-09-14', 'Europe/Paris', 'org-1']);
+  });
+
+  it('rend une carte sender_id -> contraintes', async () => {
+    const ctx = faux({ 'jr:contraintes_senders_jour': [{ sender_id: 's1', daily_quota: 30, used_today: 12 }] });
+    const carte = await lireContraintesSendersDuJour(ctx, '2026-09-14', 'Europe/Paris');
+    expect(carte.get('s1')).toEqual({ dailyQuota: 30, usedToday: 12 });
   });
 });
 
