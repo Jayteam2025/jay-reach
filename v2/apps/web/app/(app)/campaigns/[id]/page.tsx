@@ -77,7 +77,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
           { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
+          { valeur: vue.entonnoir.partis, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ]
@@ -86,7 +86,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
           { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
+          { valeur: vue.entonnoir.partis, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ];

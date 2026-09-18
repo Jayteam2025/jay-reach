@@ -78,6 +78,72 @@ describe('sqlEngagesCampagne vs sqlPartisCampagne (F13, deux dénominateurs, pas
   });
 });
 
+describe(
+  'tauxLivres et enAttenteEnvoi calculés sur des actions réelles, canal LinkedIn compris ' +
+    '(bloquant du 18/09 : `livres` comptait `delivered` sans canal, sous-évaluait LinkedIn)',
+  () => {
+    /**
+     * Reproduit, sur des actions simulées, EXACTEMENT les deux conditions de
+     * `sqlEngagesCampagne`/`sqlPartisCampagne` (ci-dessus dans ce fichier) — pas
+     * une chaîne SQL vérifiée par regex, un calcul réel à partir de valeurs
+     * d'entrée. Doit rester en lockstep avec ces deux fonctions : toute
+     * modification de l'une doit se refléter ici.
+     */
+    function estEngage(a: { channel: string; status: string }): boolean {
+      return a.status === 'dispatched' || a.status === 'delivered';
+    }
+    function estParti(a: { channel: string; status: string }): boolean {
+      return a.channel === 'email' ? a.status === 'delivered' : a.status === 'dispatched' || a.status === 'delivered';
+    }
+
+    it(
+      'une campagne mixte email + LinkedIn : les actions LinkedIn `dispatched` comptent comme ' +
+        'PARTIES (F12, pas de transporteur asynchrone) — jamais comme « en attente d’envoi »',
+      () => {
+        const actions = [
+          { channel: 'email', status: 'dispatched' }, // remis à SalesBlink, pas encore réellement envoyé
+          { channel: 'email', status: 'dispatched' },
+          { channel: 'email', status: 'delivered' }, // réellement parti
+          { channel: 'email', status: 'delivered' },
+          { channel: 'email', status: 'delivered' },
+          { channel: 'linkedin', status: 'dispatched' }, // départ réel dès `dispatched` pour ce canal
+          { channel: 'linkedin', status: 'dispatched' },
+          { channel: 'linkedin', status: 'dispatched' },
+        ];
+
+        const engages = actions.filter(estEngage).length;
+        const partis = actions.filter(estParti).length;
+
+        // 8 actions engagées (dispatched ou delivered, tous canaux confondus) ; 6 réellement
+        // parties (3 emails delivered + 3 actions LinkedIn dispatched). AVANT le correctif du
+        // bloquant, `livres` (`a.status = 'delivered'` sans canal) n'en aurait compté que 3 — les
+        // 3 actions LinkedIn, pourtant parties, auraient gonflé « en attente d'envoi » à 5 au lieu
+        // de 2, et fait chuter tauxLivres à 37,5 % au lieu de 75 %.
+        expect(engages).toBe(8);
+        expect(partis).toBe(6);
+        expect(tauxSurPartis(partis, engages)).toBe(75);
+        // Seuls les 2 emails encore simplement remis restent en attente — les 3 actions LinkedIn
+        // parties n'y figurent plus.
+        expect(engages - partis).toBe(2);
+      },
+    );
+
+    it('tout est réellement parti (aucun email encore remis-seul, aucune action LinkedIn en cours) : pas d’attente, taux à 100 %', () => {
+      const actions = [
+        { channel: 'email', status: 'delivered' },
+        { channel: 'linkedin', status: 'dispatched' },
+      ];
+      const engages = actions.filter(estEngage).length;
+      const partis = actions.filter(estParti).length;
+
+      expect(engages).toBe(2);
+      expect(partis).toBe(2);
+      expect(tauxSurPartis(partis, engages)).toBe(100);
+      expect(engages - partis).toBe(0);
+    });
+  },
+);
+
 describe('tauxSurPartis (point 1, définitions uniques)', () => {
   it('arrondit au dixième', () => {
     expect(tauxSurPartis(1, 3)).toBe(33.3);
@@ -474,7 +540,7 @@ describe('lireVueDEnsemble', () => {
         // F13 (décision du 18/09) : `engages` (dénominateur de tauxLivres) et `partis` au sens
         // strict (dénominateur de tauxReponses) sont deux champs distincts — volontairement
         // des valeurs différentes ici pour vérifier que le code ne les confond pas.
-        'jr:entonnoir_commun': [{ list_id: null, en_sequence: 10, en_pause: 1, livres: 20, engages: 40, partis: 25, reponses: 4, interesses: 2 }],
+        'jr:entonnoir_commun': [{ list_id: null, en_sequence: 10, en_pause: 1, engages: 40, partis: 25, reponses: 4, interesses: 2 }],
         'jr:entonnoir_sources': [{ trouves: 100, qualifies: 40, contacts: 35 }],
         'jr:file_du_jour_campagne': [],
         'jr:sources_campagne_resume': [{ id: 'src-1', nom: 'Adzuna', provider_id: 'adzuna' }],
@@ -511,12 +577,13 @@ describe('lireVueDEnsemble', () => {
     expect(v.entonnoir.trouves).toBe(100);
     // Marche « Contacts identifiés » (R31), après « Contacts qualifiés » : des personnes, pas des offres.
     expect(v.entonnoir.contacts).toBe(35);
-    // Point 1, revu F13 (décision du 18/09) : tauxLivres = livres / engagés = 20/40 = 50 % ;
-    // tauxReponses = reponses / partis (au sens strict) = 4/25 = 16 %.
-    expect(v.entonnoir.tauxLivres).toBe(50);
+    // Point 1, revu F13 (décision du 18/09, bloquant du 18/09 corrigé) : plus de champ `livres`
+    // séparé, `partis` porte seul la marche « Emails partis ». tauxLivres = partis / engagés =
+    // 25/40 = 62,5 % ; tauxReponses = reponses / partis = 4/25 = 16 %.
+    expect(v.entonnoir.tauxLivres).toBe(62.5);
     expect(v.entonnoir.tauxReponses).toBe(16);
-    // Complément affiché sur la marche « Emails partis » (F13) : 40 engagés - 20 livrés = 20 en attente d'envoi.
-    expect(v.entonnoir.enAttenteEnvoi).toBe(20);
+    // Complément affiché sur la marche « Emails partis » (F13) : 40 engagés - 25 partis = 15 en attente d'envoi.
+    expect(v.entonnoir.enAttenteEnvoi).toBe(15);
     expect(v.entonnoir.enSequence).toBe(10);
     expect(v.entonnoir.enPause).toBe(1);
     expect(v.sources).toEqual([{ id: 'src-1', nom: 'Adzuna', providerId: 'adzuna' }]);
@@ -532,7 +599,7 @@ describe('lireVueDEnsemble', () => {
       'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40 }],
       'jr:boites_actives': [],
       organization_settings: [],
-      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, livres: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
+      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
       'jr:entonnoir_sources': [{ trouves: 0, qualifies: 0, contacts: 0 }],
       'jr:file_du_jour_campagne': [
         { id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
@@ -556,7 +623,7 @@ describe('lireVueDEnsemble', () => {
       'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null }],
       'jr:boites_actives': [],
       organization_settings: [],
-      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, livres: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
+      'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
       'jr:entonnoir_sources': [{ trouves: 0, qualifies: 0, contacts: 0 }],
       'jr:file_du_jour_campagne': [],
       // `SQL_PROVIDER_ID_AFFICHAGE` rend `null` quand ni `source_providers`, ni
@@ -582,7 +649,7 @@ describe('lireVueDEnsemble', () => {
         'jr:boites_actives': [],
         organization_settings: [],
         'jr:campagne_liste_source': [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }],
-        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, livres: 105, engages: 110, partis: 108, reponses: 1, interesses: 0 }],
+        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, engages: 110, partis: 108, reponses: 1, interesses: 0 }],
         'jr:entonnoir_liste': [{ contacts_importes: 167, email_verifie: 160 }],
         'jr:file_du_jour_campagne': [],
         'jr:sources_campagne_resume': [],
@@ -604,13 +671,13 @@ describe('lireVueDEnsemble', () => {
       expect(v.entonnoir.emailVerifie).toBe(160);
       expect(v.entonnoir.enSequence).toBe(165);
       expect(v.entonnoir.enPause).toBe(2);
-      // 105 livrés / 110 engagés (tauxLivres), 1 réponse / 108 réellement partis (tauxReponses) —
-      // jamais un dénominateur à zéro (constat (dd)), et deux dénominateurs distincts (F13, décision
-      // du 18/09) : un email encore chez SalesBlink compte dans « engagés », pas dans « partis ».
-      expect(v.entonnoir.tauxLivres).toBeCloseTo(95.5, 0);
+      // 108 réellement partis / 110 engagés (tauxLivres), 1 réponse / 108 partis (tauxReponses) —
+      // jamais un dénominateur à zéro (constat (dd)). Plus de champ `livres` séparé (bloquant du
+      // 18/09 corrigé) : `partis` porte seul la marche « Emails partis ».
+      expect(v.entonnoir.tauxLivres).toBeCloseTo(98.2, 0);
       expect(v.entonnoir.tauxReponses).toBeCloseTo(0.9, 0);
-      // Annotation de la marche « Emails partis » (F13) : 110 engagés - 105 livrés = 5 en attente d'envoi.
-      expect(v.entonnoir.enAttenteEnvoi).toBe(5);
+      // Annotation de la marche « Emails partis » (F13) : 110 engagés - 108 partis = 2 en attente d'envoi.
+      expect(v.entonnoir.enAttenteEnvoi).toBe(2);
     });
 
     it('sans liste (campagne à sources) : listeSource est `null`', async () => {
@@ -632,7 +699,7 @@ describe('lireVueDEnsemble', () => {
           { list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 },
           { list_id: 'liste-2', nom: 'RH complément mai', importee_le: '2026-09-15T08:00:00.000Z', contacts: 12 },
         ],
-        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, livres: 105, engages: 110, partis: 108, reponses: 1, interesses: 0 }],
+        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, engages: 110, partis: 108, reponses: 1, interesses: 0 }],
         'jr:entonnoir_liste': [{ contacts_importes: 179, email_verifie: 170 }],
         'jr:file_du_jour_campagne': [],
         'jr:sources_campagne_resume': [],
@@ -668,7 +735,7 @@ describe('lireVueDEnsemble', () => {
           return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }], rowCount: 1 };
         }
         if (/jr:entonnoir_commun/i.test(sql)) {
-          return { rows: [{ en_sequence: 165, en_pause: 2, livres: 105, partis: 110, reponses: 1, interesses: 0 }], rowCount: 1 };
+          return { rows: [{ en_sequence: 165, en_pause: 2, partis: 110, reponses: 1, interesses: 0 }], rowCount: 1 };
         }
         if (/jr:entonnoir_liste/i.test(sql)) return { rows: [{ contacts_importes: 167, email_verifie: 160 }], rowCount: 1 };
         if (/jr:sources_campagne_compte/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };

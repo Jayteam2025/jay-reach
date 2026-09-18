@@ -466,14 +466,23 @@ export interface EntonnoirCommun {
   /** Inscriptions `active` SEULEMENT — `paused`/`paused_absence` sont dans `enPause` (point 1). */
   readonly enSequence: number;
   readonly enPause: number;
-  readonly livres: number;
-  /** `livres` / emails ENGAGÉS (remis + partis, tous canaux) — `null` (page : « — ») quand rien
+  /** Actions réellement PARTIES — alimente la marche « Emails partis » (F13, décision du 18/09 :
+   *  deux états, pas trois, même population que `sqlPartisCampagne`). Il n'existe PLUS de champ
+   *  `livres` séparé : celui-là ne comptait que `a.status = 'delivered'` sans distinction de canal,
+   *  et sous-évaluait toute action LinkedIn réellement partie (qui n'atteint jamais `delivered`,
+   *  par construction) — bloquant trouvé en relecture, corrigé en fusionnant les deux champs. */
+  readonly partis: number;
+  /** `partis` / emails ENGAGÉS (remis + partis, tous canaux) — `null` (page : « — ») quand rien
    *  n'est encore engagé (point 1). Le dénominateur n'est pas la marche du dessus (`enSequence`) :
    *  d'où `enAttenteEnvoi` ci-dessous, l'écran l'annote pour dire de quoi ce taux est la part. */
   readonly tauxLivres: number | null;
-  /** Engagés mais pas encore réellement partis (`engagés - livres`, F13, décision du 18/09) —
+  /** Engagés mais pas encore réellement partis (`engagés - partis`, F13, décision du 18/09) —
    *  annotation « N en attente d'envoi » sur la marche « Emails partis », jamais affichée quand
-   *  elle vaut 0 (tout ce qui est engagé est réellement parti). */
+   *  elle vaut 0 (tout ce qui est engagé est réellement parti). Ne peut pas devenir négatif :
+   *  `sqlEngagesCampagne` compte `dispatched`+`delivered` tous canaux, `sqlPartisCampagne` en est
+   *  un sous-ensemble strict pour CHAQUE canal (email : `delivered` ⊆ {`dispatched`,`delivered`} ;
+   *  autres canaux : `dispatched` fait partie des deux ensembles à l'identique) — vérifié par le
+   *  test dédié (`campagnes.test.ts`, canal LinkedIn compris). */
   readonly enAttenteEnvoi: number;
   readonly reponses: number;
   /** `reponses` / emails partis, jamais / en séquence ni / contacts (point 1) — `null` sans envoi. */
@@ -901,7 +910,7 @@ export async function lireListeSourceCampagne(
  * second aller-retour pour la même information) décide de la forme de
  * l'entonnoir : une campagne à liste n'a ni signal ni thème de veille, un
  * entonnoir qui commence par « 0 offres et profils trouvés » n'y a aucun
- * sens. Les marches COMMUNES (en séquence/en pause/livrés/réponses/
+ * sens. Les marches COMMUNES (en séquence/en pause/partis/réponses/
  * intéressés, point 1) sont lues une seule fois, dans une requête à part,
  * jamais dupliquées entre les deux branches.
  */
@@ -909,7 +918,6 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
   const communRes = await ctx.ex.query<{
     en_sequence: number;
     en_pause: number;
-    livres: number;
     engages: number;
     partis: number;
     reponses: number;
@@ -918,7 +926,6 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
     `select
         ${sqlEnSequenceCampagne('$1')} as en_sequence,
         ${sqlEnPauseCampagne('$1')} as en_pause,
-        (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = $1 and a.status = 'delivered') as livres,
         ${sqlEngagesCampagne('$1')} as engages,
         ${sqlPartisCampagne('$1')} as partis,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status = 'replied') as reponses,
@@ -927,18 +934,19 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
       /* jr:entonnoir_commun */`,
     [campagneId],
   );
-  const c = communRes.rows[0] ?? { en_sequence: 0, en_pause: 0, livres: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 };
+  const c = communRes.rows[0] ?? { en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 };
   const commun: EntonnoirCommun = {
     enSequence: c.en_sequence,
     enPause: c.en_pause,
-    livres: c.livres,
+    partis: c.partis,
     // « Sur tout ce qu'on a engagé, quelle part est réellement partie ? » (F13, décision du
     // 18/09) : dénominateur `engages` (remis + partis), jamais `partis` seul — un email encore
     // chez SalesBlink reste engagé, ce taux dit justement combien en attendent encore.
-    tauxLivres: tauxSurPartis(c.livres, c.engages),
-    // Complément du taux ci-dessus, jamais négatif : `livres` est un sous-ensemble strict
-    // d'`engages` (même population de base, `delivered` ⊆ {`dispatched`,`delivered`}).
-    enAttenteEnvoi: c.engages - c.livres,
+    tauxLivres: tauxSurPartis(c.partis, c.engages),
+    // Complément du taux ci-dessus, jamais négatif : `partis` est un sous-ensemble strict
+    // d'`engages` pour chaque canal (email : `delivered` ⊆ {`dispatched`,`delivered`} ; les
+    // autres canaux partagent exactement la même condition dans les deux fragments).
+    enAttenteEnvoi: c.engages - c.partis,
     reponses: c.reponses,
     // « Sur ce qui est réellement parti, quelle part a répondu ? » : dénominateur `partis` au
     // sens strict — un message encore chez SalesBlink ne peut pas avoir généré de réponse.
