@@ -323,9 +323,43 @@ describe('listerComptesLinkedIn', () => {
       connecte: true,
       derniereActivite: '2026-09-16T08:00:00.000Z',
       active: true,
+      envoiPossible: false,
       quotas: { parJour: 25, parSemaine: 100 },
       heures: { debut: '09:00', fin: '18:00', jours: [1, 2, 3, 4, 5], fuseau: 'Europe/Paris' },
     });
+  });
+
+  // F15 : un jeton actif et connecté ne suffit pas à envoyer — il faut aussi
+  // un expéditeur `senders` (kind='linkedin') actif du même `provider_ref`,
+  // celui que lit réellement le séquenceur. Sans le correctif de
+  // `listerComptesLinkedIn` (ajout de la 3e requête), ce test échoue :
+  // `envoiPossible` vaudrait toujours `false`, même quand l'expéditeur existe.
+  it('F15 : envoiPossible est vrai quand un expéditeur LinkedIn actif porte le même provider_ref que le compte', async () => {
+    const ctx = faux({
+      'jr:expediteurs_comptes_linkedin': [
+        { user_id: UTILISATEUR_1, linkedin_profile_name: 'Camille Roussel', last_used_at: '2026-09-16T08:00:00.000Z', is_active: true },
+      ],
+      'jr:expediteurs_reglages_linkedin': [],
+      'jr:expediteurs_linkedin_actifs': [{ provider_ref: UTILISATEUR_1 }],
+    });
+    const [compte] = await listerComptesLinkedIn(ctx);
+    expect(compte!.envoiPossible).toBe(true);
+  });
+
+  // Les deux lignes orphelines constatées en base (provider_ref vide, kind
+  // linkedin) : un compte connecté mais dont aucun expéditeur actif ne porte
+  // son `provider_ref` doit rester `envoiPossible: false`, jamais `true` par
+  // simple présence d'UNE ligne active non reliée à lui.
+  it('F15 : envoiPossible reste faux si l’expéditeur actif appartient à un autre compte', async () => {
+    const ctx = faux({
+      'jr:expediteurs_comptes_linkedin': [
+        { user_id: UTILISATEUR_1, linkedin_profile_name: 'Camille Roussel', last_used_at: '2026-09-16T08:00:00.000Z', is_active: true },
+      ],
+      'jr:expediteurs_reglages_linkedin': [],
+      'jr:expediteurs_linkedin_actifs': [{ provider_ref: UTILISATEUR_2 }],
+    });
+    const [compte] = await listerComptesLinkedIn(ctx);
+    expect(compte!.envoiPossible).toBe(false);
   });
 
   it('un jeton jamais utilisé n’est pas « connecté »', async () => {
@@ -430,5 +464,63 @@ describe('modifierCompteLinkedIn', () => {
     expect(requeteJeton).toContain('user_id = $1');
     expect(requeteJeton).not.toMatch(/\btoken\b(?!_hash)\s*=/i);
     expect(appels.some((s) => /insert into linkedin_settings/i.test(s))).toBe(true);
+  });
+
+  // F15 : sans l'appel à `synchroniserExpediteurLinkedIn` dans
+  // `modifierCompteLinkedIn`, ce test échoue — aucun `insert into senders`
+  // n'est jamais émis, et `resolveSender` (worker) ne trouve alors jamais de
+  // candidat LinkedIn actif quel que soit l'état d'`extension_tokens`.
+  it('F15 : active le compte crée l’expéditeur LinkedIn (aucune ligne senders existante)', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      if (/update extension_tokens/i.test(sql)) return { rows: [{ linkedin_profile_name: 'Camille Roussel' }], rowCount: 1 };
+      if (/select id from senders.*kind = 'linkedin'/is.test(sql)) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await modifierCompteLinkedIn(ctx, { ...ENTREE, active: true });
+
+    const insertion = appels.find((a) => /insert into senders/i.test(a.sql));
+    expect(insertion).toBeDefined();
+    expect(insertion!.sql).toMatch(/'linkedin'/);
+    expect(insertion!.params).toEqual([
+      'org-1',
+      `linkedin:${UTILISATEUR_1}`,
+      'Camille Roussel',
+      20,
+      JSON.stringify({ startHour: 10, endHour: 17, days: [1, 2, 3] }),
+      'Europe/Paris',
+      true,
+      UTILISATEUR_1,
+    ]);
+  });
+
+  // F15 : symétrique — désactiver le compte doit désactiver l'expéditeur déjà
+  // relié, pas en créer un second (double ligne pour le même compte).
+  it('F15 : désactiver le compte désactive l’expéditeur LinkedIn existant (jamais une seconde ligne)', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      if (/update extension_tokens/i.test(sql)) return { rows: [{ linkedin_profile_name: null }], rowCount: 1 };
+      if (/select id from senders.*kind = 'linkedin'/is.test(sql)) return { rows: [{ id: 'sender-li-1' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await modifierCompteLinkedIn(ctx, { ...ENTREE, active: false });
+
+    expect(appels.some((a) => /insert into senders/i.test(a.sql))).toBe(false);
+    const maj = appels.find((a) => /update senders/i.test(a.sql));
+    expect(maj).toBeDefined();
+    expect(maj!.params).toEqual([
+      'sender-li-1',
+      false,
+      20,
+      JSON.stringify({ startHour: 10, endHour: 17, days: [1, 2, 3] }),
+      'Europe/Paris',
+      null,
+    ]);
   });
 });

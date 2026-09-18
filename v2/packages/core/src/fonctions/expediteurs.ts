@@ -396,6 +396,17 @@ export interface CompteLinkedIn {
   readonly connecte: boolean;
   readonly derniereActivite: string | null;
   readonly active: boolean;
+  /**
+   * F15 : un jeton actif et connecté (`connecte`) ne suffit pas à envoyer —
+   * il faut aussi un expéditeur (`senders`, kind='linkedin', même
+   * `provider_ref` que ce compte) actif, celui que lit réellement le
+   * séquenceur (`resolveSender`). `modifierCompteLinkedIn` le fait exister et
+   * le tient à jour à chaque enregistrement depuis cet écran, mais un compte
+   * connecté par un autre biais (jeton posé directement en base, jamais
+   * repassé par cet écran) peut rester sans expéditeur : `envoiPossible` le
+   * dit, pour que la carte ne prétende jamais « Connecté » à tort.
+   */
+  readonly envoiPossible: boolean;
   readonly quotas: { readonly parJour: number; readonly parSemaine: number };
   readonly heures: FenetreEnvoi;
 }
@@ -437,7 +448,7 @@ const REGLAGES_LINKEDIN_PAR_DEFAUT: LigneReglagesLinkedIn = {
 export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinkedIn[]> {
   exiger(ctx, 'viewer');
 
-  const [jetons, reglages] = await Promise.all([
+  const [jetons, reglages, expediteursActifs] = await Promise.all([
     ctx.ex.query<{
       user_id: string;
       linkedin_profile_name: string | null;
@@ -457,7 +468,17 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
         where organization_id = $1`,
       [ctx.organisationId],
     ),
+    // F15 : `provider_ref` d'un expéditeur LinkedIn actif porte le même
+    // `user_id` que `extension_tokens` (voir `synchroniserExpediteurLinkedIn`)
+    // — c'est ce que lit réellement le séquenceur, pas `extension_tokens.is_active`.
+    ctx.ex.query<{ provider_ref: string }>(
+      `select provider_ref from senders /* jr:expediteurs_linkedin_actifs */
+        where organization_id = $1 and kind = 'linkedin' and is_active and provider_ref is not null`,
+      [ctx.organisationId],
+    ),
   ]);
+
+  const idsAvecExpediteurActif = new Set(expediteursActifs.rows.map((r) => r.provider_ref));
 
   const r = reglages.rows[0] ?? REGLAGES_LINKEDIN_PAR_DEFAUT;
   const comptes = jetons.rows.map((j) => ({
@@ -470,6 +491,7 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
     // `string`.
     derniereActivite: j.last_used_at === null ? null : new Date(j.last_used_at).toISOString(),
     active: j.is_active,
+    envoiPossible: idsAvecExpediteurActif.has(j.user_id),
     quotas: { parJour: r.daily_cap, parSemaine: r.weekly_cap },
     heures: {
       debut: hhmmDepuisHeurePleine(r.send_from_hour),
@@ -485,6 +507,76 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
   // `.localeCompare()`, absent de `Date.prototype`) ; départage par id (desc)
   // pour un ordre déterministe entre deux comptes à la même dernière activité.
   return comptes.sort((a, b) => comparerInstantsDesc(a.derniereActivite, b.derniereActivite) || b.id.localeCompare(a.id));
+}
+
+/**
+ * Fait exister (ou met à jour) l'expéditeur `senders` (kind='linkedin') qui
+ * correspond au compte `compteId` (`extension_tokens.user_id`) — le même
+ * geste que `relierBoite` pour une boîte email, dont `senders` reste sans
+ * équivalent LinkedIn tant que cette fonction n'est jamais appelée : sans
+ * elle, `resolveSender` (worker, `sequence.ts`) ne trouve jamais de candidat
+ * actif et met toute inscription LinkedIn en pause
+ * (`sender_unavailable:linkedin`), quel que soit l'état d'`extension_tokens`.
+ *
+ * `provider_ref` porte `compteId`, jamais `token_hash` (qui change à chaque
+ * régénération de jeton — voir `CompteLinkedIn.id`), pour retrouver la même
+ * ligne à chaque appel plutôt que d'en recréer une nouvelle.
+ *
+ * Autorité des plafonds/heures : `senders.daily_quota`/`business_hours`/
+ * `timezone` DEVIENNENT UN MIROIR de ce que l'appelant vient d'écrire dans
+ * `linkedin_settings`, écrit par cette seule fonction. Deux lecteurs
+ * existent en aval et ne doivent jamais recevoir des chiffres différents :
+ * le séquenceur (`chargerContraintesSender`/`loadSenders`, décide si UNE
+ * ACTION PEUT ÊTRE CRÉÉE) lit `senders` ; le pacing de la file d'extension
+ * (`apps/web/lib/linkedin/queue.ts`, `decideCanSend`, décide si une action
+ * déjà créée PART MAINTENANT) lit `linkedin_settings`. Pas de plafond
+ * horaire côté LinkedIn : `hourly_quota` reste toujours `null`, le seul
+ * plafond glissant (`quotaSemaine`) est hebdomadaire et reste porté par
+ * `linkedin_settings` seul, hors de portée du schéma `senders` (colonnes
+ * journalière/horaire uniquement).
+ */
+async function synchroniserExpediteurLinkedIn(
+  ctx: Contexte,
+  compteId: string,
+  actif: boolean,
+  reglages: { readonly dailyQuota: number; readonly debut: number; readonly fin: number; readonly jours: readonly number[]; readonly fuseau: string },
+  nomAffiche: string | null,
+): Promise<void> {
+  const businessHours = JSON.stringify({ startHour: reglages.debut, endHour: reglages.fin, days: reglages.jours });
+
+  const existant = await ctx.ex.query<{ id: string }>(
+    `select id from senders /* jr:expediteurs_linkedin_existant */
+      where organization_id = $1 and kind = 'linkedin' and provider_ref = $2
+      limit 1`,
+    [ctx.organisationId, compteId],
+  );
+
+  if (existant.rows.length > 0) {
+    await ctx.ex.query(
+      `update senders /* jr:expediteurs_linkedin_sync */
+          set is_active = $2, daily_quota = $3, business_hours = $4::jsonb, timezone = $5,
+              display_name = coalesce($6, display_name)
+        where id = $1`,
+      [existant.rows[0]!.id, actif, reglages.dailyQuota, businessHours, reglages.fuseau, nomAffiche],
+    );
+    return;
+  }
+
+  await ctx.ex.query(
+    `insert into senders (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone,
+                           is_active, provider_id, provider_ref)
+     values ($1, 'linkedin', $2, $3, $4, $5::jsonb, $6, $7, 'extension', $8)`,
+    [
+      ctx.organisationId,
+      `linkedin:${compteId}`,
+      nomAffiche,
+      reglages.dailyQuota,
+      businessHours,
+      reglages.fuseau,
+      actif,
+      compteId,
+    ],
+  );
 }
 
 export const schemaModifierCompteLinkedIn = z.object({
@@ -511,6 +603,12 @@ export const schemaModifierCompteLinkedIn = z.object({
  * (`linkedin_settings`, voir `listerComptesLinkedIn`) — les modifier depuis
  * N'IMPORTE QUELLE carte les change pour tous les comptes, tant qu'un
  * plafond par compte n'existe pas.
+ *
+ * Répercute aussi l'activation, les plafonds et la fenêtre d'envoi sur
+ * l'expéditeur `senders` (kind='linkedin') du compte visé
+ * (`synchroniserExpediteurLinkedIn`) : c'est CETTE ligne, pas
+ * `extension_tokens.is_active`, que lit le séquenceur pour décider si une
+ * action LinkedIn peut être créée (F15).
  */
 export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'admin');
@@ -525,7 +623,7 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
     throw new Error("L'heure de fin doit venir après l'heure de début.");
   }
 
-  const jeton = await ctx.ex.query(
+  const jeton = await ctx.ex.query<{ linkedin_profile_name: string | null }>(
     `update extension_tokens /* jr:expediteurs_modifier_compte_li */
         set is_active = $3
       where organization_id = $2
@@ -534,12 +632,15 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
            where user_id = $1 and organization_id = $2
            order by last_used_at desc nulls last
            limit 1
-        )`,
+        )
+      returning linkedin_profile_name`,
     [e.compteId, ctx.organisationId, e.active],
   );
   if ((jeton.rowCount ?? 0) !== 1) {
     throw new ErreurIntrouvable('Compte LinkedIn');
   }
+
+  const jours = [...e.heures.jours].sort((a, b) => a - b);
 
   await ctx.ex.query(
     `insert into linkedin_settings (organization_id, daily_cap, weekly_cap, send_from_hour, send_to_hour, send_days, timezone, updated_at)
@@ -548,6 +649,17 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
        set daily_cap = excluded.daily_cap, weekly_cap = excluded.weekly_cap,
            send_from_hour = excluded.send_from_hour, send_to_hour = excluded.send_to_hour,
            send_days = excluded.send_days, timezone = excluded.timezone, updated_at = now()`,
-    [ctx.organisationId, e.quotaJour, e.quotaSemaine, debut, fin, [...e.heures.jours].sort((a, b) => a - b), e.heures.fuseau],
+    [ctx.organisationId, e.quotaJour, e.quotaSemaine, debut, fin, jours, e.heures.fuseau],
+  );
+
+  // F15 : sans cet expéditeur, l'activation ci-dessus (comme les plafonds et
+  // la fenêtre d'envoi tout juste écrits dans `linkedin_settings`) reste
+  // invisible du séquenceur — voir `synchroniserExpediteurLinkedIn`.
+  await synchroniserExpediteurLinkedIn(
+    ctx,
+    e.compteId,
+    e.active,
+    { dailyQuota: e.quotaJour, debut, fin, jours, fuseau: e.heures.fuseau },
+    jeton.rows[0]?.linkedin_profile_name ?? null,
   );
 }

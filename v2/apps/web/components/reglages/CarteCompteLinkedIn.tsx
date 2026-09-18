@@ -96,6 +96,19 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
             <Puce ton={compte.active && compte.connecte ? 'bon' : 'gris'} point>
               {t(compte.active ? 'active' : 'inactive')}
             </Puce>
+            {/*
+              F15 : un jeton connecté (et même actif) n'envoie rien tant que
+              son expéditeur (`senders`) ne l'est pas — voir le commentaire de
+              `CompteLinkedIn.envoiPossible`. Un compte relié par un autre
+              biais que cette carte (jeton posé directement en base) peut
+              rester dans cet état tant que personne n'a réenregistré depuis
+              ici : la carte le dit plutôt que d'afficher « Connecté » à tort.
+            */}
+            {compte.connecte && !compte.envoiPossible && (
+              <Puce ton="attention" point>
+                {t('senderMissing')}
+              </Puce>
+            )}
             {peutModifier && (
               <>
                 <Interrupteur

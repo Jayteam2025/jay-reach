@@ -1016,6 +1016,7 @@
         "empty": "No LinkedIn account connected.",
         "connected": "Connected",
         "notConnected": "Not connected",
+        "senderMissing": "Nothing will go out: sender not activated",
         "perDay": "{n} per day",
         "perWeek": "{n} per week",
         "edit": "Edit",

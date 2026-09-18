@@ -127,6 +127,13 @@ Versionnement sémantique.
   pour avancer une séquence, pour relancer un email resté en attente et pour réclamer une invitation ou un message LinkedIn
   déjà enfilé ; une reprise d'absence pendant qu'une campagne est archivée laisse elle aussi l'inscription en pause plutôt que
   de fausser les compteurs. L'écran d'import de contacts avertit en plus quand la campagne choisie n'est pas active.
+- **Relier un compte LinkedIn ne suffisait pas à pouvoir envoyer (F15).** L'écran Réglages › Expéditeurs n'écrivait que dans
+  `extension_tokens` (activation du jeton, plafonds, fenêtre d'envoi partagée) ; aucune fonction ne créait ni n'activait
+  l'expéditeur (`senders`, kind LinkedIn) que lit réellement le séquenceur pour choisir qui envoie — toute inscription
+  LinkedIn restait donc en pause (`sender_unavailable:linkedin`), quel que soit l'état du compte. Activer ou désactiver un
+  compte depuis cet écran fait désormais exister, met à jour ou désactive son expéditeur, plafonds et fenêtre d'envoi compris ;
+  la carte d'un compte connecté sans expéditeur actif (jeton posé directement en base, jamais repassé par cet écran) le
+  signale plutôt que d'afficher « Connecté ».
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
