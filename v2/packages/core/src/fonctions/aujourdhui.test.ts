@@ -341,4 +341,19 @@ describe('lireAujourdhui', () => {
     const appelsReglages = appels.filter((appel) => /from organization_settings/i.test(String(appel[0])));
     expect(appelsReglages).toHaveLength(1);
   });
+
+  // Correctif du 18/09 : la coquille et la page Aujourd'hui formataient « Dernier/prochain
+  // passage » du moteur avec `FUSEAU_PAR_DEFAUT` (constante `Europe/Paris`, apps/web), jamais le
+  // fuseau réel de l'organisation — `lireAujourdhui` le lisait déjà pour `jourRef`/`formatterHeure`
+  // sans jamais l'exposer. Rougirait si `fuseau` disparaissait du retour ou restait figé.
+  it('expose le fuseau de l’organisation déjà lu, pour que le web formate le moteur avec', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'fuseau', value: 'Pacific/Auckland' }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fuseau).toBe('Pacific/Auckland');
+  });
+
+  it('sans fuseau réglé en base : le défaut Europe/Paris', async () => {
+    const a = await lireAujourdhui(faux({}));
+    expect(a.fuseau).toBe('Europe/Paris');
+  });
 });

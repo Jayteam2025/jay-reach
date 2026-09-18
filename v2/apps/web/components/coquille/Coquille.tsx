@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import type { ContexteWeb } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
-import { FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
 import { CarteMoteur } from './CarteMoteur';
@@ -14,14 +13,17 @@ export interface CoquilleProps {
 }
 
 /**
- * HH:MM. Le commentaire d'origine (« fuseau du serveur, comme le reste du
- * chrome ») décrivait un choix qui allait justement à l'encontre de R67 :
- * sans `timeZone`, la même heure de dernier/prochain passage du moteur
- * s'affichait décalée de deux heures sur Vercel (serveur en UTC) par rapport
- * au Mac d'un développeur (déjà à Paris). `FUSEAU_PAR_DEFAUT`, faute de mieux.
+ * HH:MM dans le fuseau de l'organisation. Le commentaire d'origine (« fuseau du
+ * serveur, comme le reste du chrome ») décrivait un choix qui allait à
+ * l'encontre de R67 : sans `timeZone`, la même heure de dernier/prochain
+ * passage du moteur s'affichait décalée de deux heures sur Vercel (serveur en
+ * UTC) par rapport au Mac d'un développeur (déjà à Paris). `FUSEAU_PAR_DEFAUT`
+ * a fait le compte un temps, faute de mieux — corrigé le 18/09 : `a.fuseau`
+ * (`lireAujourdhuiCourant`, déjà lu pour la file du jour) coïncidait avec
+ * Paris tant que l'organisation n'avait réglé aucun autre fuseau.
  */
-function formatHeure(iso: string | null): string | null {
-  return iso ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso)) : null;
+function formatHeure(iso: string | null, fuseau: string): string | null {
+  return iso ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(new Date(iso)) : null;
 }
 
 export async function Coquille({ ctx, children }: CoquilleProps) {
@@ -32,8 +34,8 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
   const nomAffiche = ctx.utilisateur.nomAffiche;
   const roleLibelle = ctx.role ? t(`coquille.role.${ctx.role}`) : t('coquille.role.none');
 
-  const dernier = formatHeure(a.moteur.dernierPassage);
-  const prochain = formatHeure(a.moteur.prochainPassage);
+  const dernier = formatHeure(a.moteur.dernierPassage, a.fuseau);
+  const prochain = formatHeure(a.moteur.prochainPassage, a.fuseau);
   const detailMoteur = dernier && prochain ? t('coquille.engine.lastNext', { last: dernier, next: prochain }) : dernier ? t('coquille.engine.lastOnly', { last: dernier }) : t('coquille.engine.never');
 
   return (

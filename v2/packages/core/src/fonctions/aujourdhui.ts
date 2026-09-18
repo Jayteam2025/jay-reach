@@ -135,6 +135,15 @@ export interface Aujourdhui {
   plafonds: Awaited<ReturnType<typeof lireConsommationDuJour>>;
   campagnes: CampagneResume[];
   alertes: Alerte[];
+  /**
+   * Fuseau de l'organisation (correctif du 18/09) — déjà lu ci-dessous pour `jourRef`/`formatterHeure`,
+   * exposé ici pour que la coquille et la page Aujourd'hui (`apps/web`, toutes deux mémoïsées sur
+   * le même appel via `lireAujourdhuiCourant`) formatent « Dernier/prochain passage » du moteur
+   * dans ce fuseau sans relire `organization_settings` une seconde fois : `moteur.dernierPassage`/
+   * `prochainPassage` restent des ISO bruts (R30, pas reformatés ici, seul le texte de l'alerte
+   * `moteur_silencieux` l'est) — c'est au web de les formater, il lui fallait juste le fuseau.
+   */
+  fuseau: string;
 }
 
 /** Taille de l'aperçu affiché sur l'écran (le total, lui, porte toujours le compte réel). */
@@ -422,5 +431,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     plafonds,
     campagnes,
     alertes,
+    fuseau,
   };
 }

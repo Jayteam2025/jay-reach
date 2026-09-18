@@ -4,7 +4,7 @@ import type { CampagneResume } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
-import { FUSEAU_PAR_DEFAUT, quandRelatif } from '../../lib/dates';
+import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
@@ -15,9 +15,10 @@ function capitaliser(texte: string): string {
   return texte.charAt(0).toUpperCase() + texte.slice(1);
 }
 
-function formatHeure(iso: string | null): string {
+/** HH:MM dans le fuseau de l'organisation (correctif du 18/09 — `a.fuseau`, `lireAujourdhuiCourant`, jamais un fuseau fixe). */
+function formatHeure(iso: string | null, fuseau: string): string {
   return iso
-    ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso))
+    ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(new Date(iso))
     : '—';
 }
 
@@ -58,7 +59,7 @@ export default async function AujourdhuiPage() {
   const [t, locale, a] = await Promise.all([getTranslations('aujourdhui'), localeCourante(), lireAujourdhuiCourant(ctx)]);
 
   const jour = capitaliser(
-    new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FUSEAU_PAR_DEFAUT }).format(
+    new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: a.fuseau }).format(
       new Date(),
     ),
   );
@@ -171,8 +172,8 @@ export default async function AujourdhuiPage() {
 
         <div className="jr-moteur-plafonds">
           <Carte titre={t('engine.title')} action={<Puce ton={a.moteur.enMarche ? 'bon' : 'erreur'} point>{a.moteur.enMarche ? t('engine.running') : t('engine.stopped')}</Puce>}>
-            <CleValeur libelle={t('engine.last')} valeur={formatHeure(a.moteur.dernierPassage)} />
-            <CleValeur libelle={t('engine.next')} valeur={formatHeure(a.moteur.prochainPassage)} />
+            <CleValeur libelle={t('engine.last')} valeur={formatHeure(a.moteur.dernierPassage, a.fuseau)} />
+            <CleValeur libelle={t('engine.next')} valeur={formatHeure(a.moteur.prochainPassage, a.fuseau)} />
             <CleValeur libelle={t('engine.errors')} valeur={formatNombre(a.moteur.erreursDepuisMinuit, locale)} />
             <CleValeur libelle={t('engine.version')} valeur={a.moteur.version ?? '—'} />
           </Carte>
