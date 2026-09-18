@@ -234,11 +234,24 @@ export function classifyByHeaders(headers: Record<string, unknown> | null | unde
  * reconnaissable, l'en-tête ne sert que de repli quand le corps est muet (voir
  * le commentaire de module — POURQUOI cet ordre). Renvoie null si rien de sûr
  * (→ passer au modèle).
+ *
+ * Quand c'est l'en-tête qui décide (le corps n'a rien de reconnaissable pour
+ * `ABSENCE`/`LEFT_COMPANY` — une tournure d'absence que ces motifs ne
+ * couvrent pas, par exemple), on relit quand même le corps pour la date de
+ * reprise, avec la même fonction et les mêmes bornes que la passe corps :
+ * l'en-tête ne sait dire que « c'est automatique », jamais combien de temps,
+ * et ne doit donc jamais imposer 7 jours à la place d'une date que le message
+ * annonce réellement. `classifyByHeaders` reste pure et ignorante du corps ;
+ * c'est ici, où corps et en-tête sont déjà réunis, que la relecture est faite.
  */
 export function classifyReply(
   body: string,
   headers: Record<string, unknown> | null | undefined,
   referenceDate: Date,
 ): ClassifyResult | null {
-  return classifyByRules(body, referenceDate) ?? classifyByHeaders(headers);
+  const parCorps = classifyByRules(body, referenceDate);
+  if (parCorps) return parCorps;
+  const parEntetes = classifyByHeaders(headers);
+  if (!parEntetes) return null;
+  return { ...parEntetes, resumeInDays: resoudreReprise(body ?? '', referenceDate) };
 }

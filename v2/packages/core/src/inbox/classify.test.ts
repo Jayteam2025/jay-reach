@@ -127,6 +127,28 @@ describe('classification des réponses', () => {
     });
   });
 
+  describe('repli en-têtes : la date de reprise du corps garde la priorité sur le défaut de 7 jours', () => {
+    it('« away until October 6 » n’est pas couvert par ABSENCE, mais l’en-tête auto-reply + la date du corps donnent 20 jours', () => {
+      const resultat = classifyReply('I am away until October 6.', { 'auto-submitted': 'auto-replied' }, RECU_17_09);
+
+      // ABSENCE ne reconnaît pas « away until » (seulement « away from the/my office/desk ») :
+      // classifyByRules rend null, mais le repli en-têtes doit tout de même lire la date.
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 20 });
+    });
+
+    it('corps muet (ni motif d’absence, ni date) + en-tête auto-reply → repli à 7 jours (non-régression)', () => {
+      const resultat = classifyReply('Merci, transmis à mon assistante.', { 'auto-submitted': 'auto-replied' }, RECU_17_09);
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 7 });
+    });
+
+    it('corps sans motif d’absence dont la seule date ressemble à un horaire (« 10.12 - 18.00 ») + en-tête auto-reply → 7 jours', () => {
+      const corps = 'Kantooruren 10.12 - 18.00.\r\nGroeten';
+      const resultat = classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09);
+
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 7 });
+    });
+  });
+
   describe('combine le corps puis les en-têtes (repli seulement si le corps est muet)', () => {
     it('corps muet, en-tête auto-reply → absence 7 jours (non-régression)', () => {
       expect(classifyReply('Merci, transmis à mon assistante.', { 'auto-submitted': 'auto-generated' }, RECU_17_09)?.classification).toBe(
