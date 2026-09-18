@@ -225,6 +225,7 @@
       },
       "steps": "{n, plural, one {# étape email} other {# étapes email}} · {boites, plural, one {# boîte} other {# boîtes}}",
       "noSource": "aucune source",
+      "listSource": "{nom}{autres, plural, =0 {} one { et # autre} other { et # autres}}",
       "status": {
         "draft": "Brouillon",
         "active": "Active",
@@ -264,6 +265,7 @@
       "pausedCount": "{n} en pause",
       "noBoxes": "aucune",
       "noSource": "aucune source",
+      "listSource": "{nom}{autres, plural, =0 {} one { et # autre} other { et # autres}}",
       "open": "Ouvrir",
       "resume": "Reprendre",
       "empty": {

@@ -201,6 +201,35 @@ export function sqlPartisCampagne(campagneIdExpr: string): string {
 }
 
 /**
+ * Résumé de la liste DOMINANTE qui alimente la campagne, en JSON (revue F5,
+ * point 1) — `null` pour une campagne à sources. Même règle de détection que
+ * `lireListeSourceCampagne` (`enrollments.list_id` UNION `campaigns.list_id`,
+ * jamais `campaigns.list_id` seul), condensée en un seul objet pour tenir
+ * dans une colonne d'une requête « toutes les campagnes » : `listerCampagnes`
+ * et `aujourdhui.ts` (colonne « Sources ») en ont chacun besoin sur une ligne
+ * PAR CAMPAGNE, jamais une pour une seule campagne comme `lireVueDEnsemble`.
+ * `total` (nombre de listes distinctes, compté par une fenêtre sur le
+ * regroupement) donne `autres` une fois la dominante retirée.
+ */
+export function sqlListeSourceResumeCampagne(campagneIdExpr: string): string {
+  return `(select json_build_object('nom', l.name, 'autres', greatest(cd.total - 1, 0))
+      from (
+        select list_id, sum(n)::int as n, count(*) over ()::int as total
+          from (
+            select e.list_id, count(*) as n from enrollments e
+             where e.campaign_id = ${campagneIdExpr} and e.list_id is not null
+             group by e.list_id
+            union all
+            select list_id, 0 from campaigns where id = ${campagneIdExpr} and list_id is not null
+          ) u
+         group by list_id
+      ) cd
+      join lists l on l.id = cd.list_id
+     order by cd.n desc
+     limit 1)`;
+}
+
+/**
  * Taux (arrondi au dixième) sur les emails partis — jamais sur « en séquence »
  * ni sur « contacts » (point 1). `null` (pas `0`) quand rien n'est parti
  * encore : la page affiche alors « — », jamais une division par zéro déguisée
@@ -370,6 +399,13 @@ export interface CampagneListeResume {
   readonly interesses: number;
   /** Dernier événement du journal touchant cette campagne (`audit_events`), toutes natures confondues — `null` si aucun. */
   readonly derniereActivite: string | null;
+  /**
+   * Liste qui alimente la campagne (point 2, issue #120 ; revue F5, point 1)
+   * — `null` pour une campagne à sources. Forme réduite (juste le nom et le
+   * nombre d'autres listes) : cette ligne de tableau n'affiche qu'un
+   * sous-titre court, contrairement à `VueDEnsemble.listeSource`.
+   */
+  readonly listeSource: { readonly nom: string; readonly autresListes: number } | null;
 }
 
 export interface CampagneEnTete {
@@ -583,6 +619,8 @@ interface LigneCampagneListe {
   reponses: number;
   interesses: number;
   derniere_activite: string | null;
+  /** `sqlListeSourceResumeCampagne` (revue F5, point 1) — `null` pour une campagne à sources. */
+  liste_source: { nom: string; autres: number } | null;
 }
 
 export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResume[]> {
@@ -603,7 +641,8 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
               (select count(distinct c4.id)::int from threads t4 join contacts c4 on c4.id = t4.contact_id join enrollments e4 on e4.contact_id = c4.id
                 where e4.campaign_id = c.id and t4.interest = 'interested') as interesses,
               (select max(ae.created_at) from audit_events ae
-                where (ae.entity_type = 'campaign' and ae.entity_id = c.id) or (ae.diff ->> 'campagneId' = c.id::text)) as derniere_activite
+                where (ae.entity_type = 'campaign' and ae.entity_id = c.id) or (ae.diff ->> 'campagneId' = c.id::text)) as derniere_activite,
+              ${sqlListeSourceResumeCampagne('c.id')} as liste_source
          from campaigns c /* jr:campagnes_liste */
         where c.organization_id = $1
         order by c.created_at desc`,
@@ -661,6 +700,7 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     tendance7j: tendanceParCampagne.get(r.id) ?? new Array(NB_JOURS_TENDANCE).fill(0),
     interesses: r.interesses,
     derniereActivite: r.derniere_activite,
+    listeSource: r.liste_source ? { nom: r.liste_source.nom, autresListes: r.liste_source.autres } : null,
   }));
 }
 

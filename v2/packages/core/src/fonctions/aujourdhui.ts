@@ -15,7 +15,7 @@ import { versInstant } from '../temps.js';
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
 // constat important 2). Une copie locale identique n'était donc pas justifiée.
-import { sqlContactsCampagne, tauxSurPartis } from './campagnes.js';
+import { sqlContactsCampagne, sqlListeSourceResumeCampagne, tauxSurPartis } from './campagnes.js';
 
 /** `undefined` pour un canal qui n'a pas de pastille dans le kit (courrier, appel) — pas de repli sur email. */
 export type CanalFil = 'email' | 'linkedin' | undefined;
@@ -89,6 +89,13 @@ export interface CampagneResume {
   reponses: number;
   /** Réponses / emails partis (`dispatched`+`delivered`), jamais / en séquence ni / contacts (point 1) — `null` (page : « — ») sans envoi. */
   tauxReponse: number | null;
+  /**
+   * Liste qui alimente la campagne (point 2, issue #120 ; revue F5, point 1)
+   * — `null` pour une campagne à sources. Remplace « aucune source » quand la
+   * campagne n'a ni thème de veille ni liste au niveau de `campaigns` mais
+   * puise dans une liste via ses inscriptions.
+   */
+  listeSource: { nom: string; autresListes: number } | null;
 }
 
 export type TypeAlerte = 'pause_envoi' | 'boite_deconnectee' | 'fournisseur_sans_cle' | 'source_orpheline' | 'moteur_silencieux';
@@ -151,6 +158,8 @@ interface LigneCampagne {
   en_sequence: number;
   partis: number;
   reponses: number;
+  /** `sqlListeSourceResumeCampagne` (revue F5, point 1) — `null` pour une campagne à sources. */
+  liste_source: { nom: string; autres: number } | null;
 }
 
 /** Pas de pastille pour `letter`/`call` (le kit n'en a pas) — `undefined`, jamais un repli sur email. */
@@ -221,7 +230,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
               ${sqlContactsCampagne('c.id')} as contacts,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'active') as en_sequence,
               (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = c.id and a.status in ('dispatched', 'delivered')) as partis,
-              (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses
+              (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
+              ${sqlListeSourceResumeCampagne('c.id')} as liste_source
          from campaigns c /* jr:campagnes_resume */
         where c.organization_id = $1
         order by c.created_at desc`,
@@ -312,6 +322,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     enSequence: r.en_sequence,
     reponses: r.reponses,
     tauxReponse: tauxSurPartis(r.reponses, r.partis),
+    listeSource: r.liste_source ? { nom: r.liste_source.nom, autresListes: r.liste_source.autres } : null,
   }));
 
   const alertes: Alerte[] = [];

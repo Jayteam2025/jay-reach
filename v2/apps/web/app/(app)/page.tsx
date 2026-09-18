@@ -238,9 +238,7 @@ export default async function AujourdhuiPage() {
                 </div>
               ),
               sources:
-                campagne.sources.length === 0 ? (
-                  <span className="jr-secondaire">{t('campaigns.noSource')}</span>
-                ) : (
+                campagne.sources.length > 0 ? (
                   <span style={{ display: 'inline-flex', gap: 4 }}>
                     {campagne.sources.map((source, index) => (
                       <TuileLogo
@@ -250,6 +248,15 @@ export default async function AujourdhuiPage() {
                       />
                     ))}
                   </span>
+                ) : campagne.listeSource ? (
+                  // Campagne à liste (point 2, issue #120 ; revue F5, point 1) : le nom de la
+                  // liste remplace « aucune source », jamais « aucune source » alors qu'une
+                  // liste alimente réellement la campagne.
+                  <span className="jr-secondaire">
+                    {t('campaigns.listSource', { nom: campagne.listeSource.nom, autres: campagne.listeSource.autresListes })}
+                  </span>
+                ) : (
+                  <span className="jr-secondaire">{t('campaigns.noSource')}</span>
                 ),
               contacts: nf.format(campagne.contacts),
               sequence: nf.format(campagne.enSequence),

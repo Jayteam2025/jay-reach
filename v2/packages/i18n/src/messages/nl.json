@@ -225,6 +225,7 @@
       },
       "steps": "{n, plural, one {# e-mailstap} other {# e-mailstappen}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
       "noSource": "geen bron",
+      "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
       "status": {
         "draft": "Concept",
         "active": "Actief",
@@ -264,6 +265,7 @@
       "pausedCount": "{n} gepauzeerd",
       "noBoxes": "geen",
       "noSource": "geen bron",
+      "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
       "open": "Openen",
       "resume": "Hervatten",
       "empty": {

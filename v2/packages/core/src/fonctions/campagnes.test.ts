@@ -202,6 +202,50 @@ describe('listerCampagnes', () => {
     expect(r[0]!.derniereActivite).toBe('2026-09-14T10:00:00.000Z');
   });
 
+  // Revue F5, point 1 : la liste des campagnes montrait encore « aucune source » pour une
+  // campagne à liste, faute de regarder `enrollments.list_id`/`campaigns.list_id`.
+  it('point 1 (revue F5) : listeSource remplace « aucune source » pour une campagne à liste', async () => {
+    const ctx = faux({
+      'jr:campagnes_liste': [
+        {
+          id: 'camp-1',
+          name: 'Jay coach - RH',
+          status: 'active',
+          entry_rules: {},
+          sources: [],
+          qualifies: 0,
+          contacts: 167,
+          en_sequence: 165,
+          en_pause: 2,
+          partis: 110,
+          reponses: 1,
+          interesses: 0,
+          derniere_activite: null,
+          liste_source: { nom: 'RH avril 2026', autres: 0 },
+        },
+      ],
+      'jr:boites_actives': [],
+      'jr:tendance_livraisons': [],
+    });
+    const r = await listerCampagnes(ctx);
+    expect(r[0]!.listeSource).toEqual({ nom: 'RH avril 2026', autresListes: 0 });
+  });
+
+  it('sans liste (campagne à sources) : listeSource est `null`', async () => {
+    const ctx = faux({
+      'jr:campagnes_liste': [
+        {
+          id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: {}, sources: ['adzuna'],
+          qualifies: 20, contacts: 18, en_sequence: 5, en_pause: 1, partis: 20, reponses: 2, interesses: 1, derniere_activite: null,
+        },
+      ],
+      'jr:boites_actives': [],
+      'jr:tendance_livraisons': [],
+    });
+    const r = await listerCampagnes(ctx);
+    expect(r[0]!.listeSource).toBeNull();
+  });
+
   it('la tendance 7 jours groupe par jour de l’organisation, pas par jour UTC du serveur (I5, revue finale)', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z')); // 00:30 à Paris le 15

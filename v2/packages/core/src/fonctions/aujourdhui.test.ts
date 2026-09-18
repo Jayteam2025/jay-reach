@@ -236,6 +236,28 @@ describe('lireAujourdhui', () => {
     expect(a.campagnes[0]?.tauxReponse).toBeNull();
   });
 
+  // Revue F5, point 1 : la colonne Sources d'Aujourd'hui montrait encore « aucune source »
+  // pour une campagne à liste, faute de regarder `enrollments.list_id`/`campaigns.list_id`.
+  it('point 1 (revue F5) : listeSource remplace « aucune source » pour une campagne à liste', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Jay coach - RH', status: 'active', etapes: 4, boites: 3, sources: [], contacts: 167, en_sequence: 165, partis: 110, reponses: 1, liste_source: { nom: 'RH avril 2026', autres: 0 } },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]!.listeSource).toEqual({ nom: 'RH avril 2026', autresListes: 0 });
+  });
+
+  it('sans liste (campagne à sources) : listeSource est `null`', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]!.listeSource).toBeNull();
+  });
+
   it('renvoie une liste vide de campagnes sans compteur quand il n’y en a aucune', async () => {
     const a = await lireAujourdhui(faux({}));
     expect(a.campagnes).toEqual([]);

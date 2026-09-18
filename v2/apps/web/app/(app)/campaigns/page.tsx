@@ -129,7 +129,13 @@ export default async function CampagnesPage({
                         <small>
                           {t('list.persona', { nom: campagne.nom })}
                           {' · '}
-                          {campagne.sources.length > 0 ? t('list.sourcesCount', { n: campagne.sources.length }) : t('list.noSource')}
+                          {campagne.sources.length > 0
+                            ? t('list.sourcesCount', { n: campagne.sources.length })
+                            : campagne.listeSource
+                              // Campagne à liste (point 2, issue #120 ; revue F5, point 1) :
+                              // le nom de la liste remplace « aucune source ».
+                              ? t('list.listSource', { nom: campagne.listeSource.nom, autres: campagne.listeSource.autresListes })
+                              : t('list.noSource')}
                         </small>
                       </span>
                     </div>
