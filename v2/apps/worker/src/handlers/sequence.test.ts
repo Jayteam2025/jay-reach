@@ -7,6 +7,7 @@ import {
   rattraperEcheancesManquantes,
   chargerContraintesSender,
   compterEntreesDuJour,
+  reprendreAbsencesEchues,
 } from './sequence.js';
 
 // Restauration systématique après CHAQUE test du fichier (tour de correction 2,
@@ -133,6 +134,10 @@ const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 
 // seule requête (jointure latérale sur l'étape précédente puis sur `actions`)
 // renvoie déjà les vraies candidates, plus de requête par ligne.
 const RATTRAPAGE_CANDIDATS = /select e\.id, e\.campaign_id, e\.current_step, a\.dispatched_at\s+from enrollments e\s+join lateral/i;
+// `reprendreAbsencesEchues` (F10) : tourne AVANT le rattrapage, même motif de
+// défaut neutre — aucune candidate par défaut, no-op pour les tests qui
+// l'ignorent (voir la suite dédiée `reprendreAbsencesEchues (F10)`).
+const ABSENCE_CANDIDATS = /select id, campaign_id, current_step, resume_at\s+from enrollments\s+where status = 'paused_absence'/i;
 
 /** Gestionnaires par défaut : une seule inscription due, une étape email, un
  * expéditeur actif disponible, rien qui défère ou bloque en amont du gate. */
@@ -178,6 +183,8 @@ function gestionnairesBase(overridesLigne: Record<string, unknown> = {}): Gestio
     // Rattrapage (tour de correction 1) : tourne AVANT chaque `tickDueEnrollments`
     // — aucun candidat par défaut, no-op pour tous les tests qui l'ignorent.
     { motif: RATTRAPAGE_CANDIDATS, repondre: () => ligne([]) },
+    // Reprise d'absence (F10) : tourne encore avant — même défaut neutre.
+    { motif: ABSENCE_CANDIDATS, repondre: () => ligne([]) },
     { motif: INSERT_ACTION, repondre: () => ({ rows: [{ id: ACTION_ID }], rowCount: 1 }) },
     { motif: INSERT_BINDING, repondre: () => ligne([]) },
     { motif: UPDATE_AVANCEMENT, repondre: () => ligne([]) },
@@ -606,5 +613,92 @@ describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () =>
     expect(requeteCompte!.sql).not.toContain("date_trunc('day', now())");
     expect(requeteCompte!.values).toEqual([CAMPAIGN_ID, 'Pacific/Kiritimati']);
     expect(n).toBe(3);
+describe('reprendreAbsencesEchues (F10)', () => {
+  // Même mécanique de pose d'échéance que `poserEcheanceApresDepart`
+  // (@jay-reach/core, partagée) : lecture par rang ordinal, jamais par
+  // égalité de `position`.
+  const DELAI_ETAPE_SUIVANTE =
+    /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
+  const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
+  const ACTIVATION_ABSENCE =
+    /update enrollments\s+set status = 'active', resume_at = null, stop_reason = null\s+where id = \$1 and status = 'paused_absence'/i;
+
+  it("exemple de l'énoncé : étape partie le 1er, délai de l'étape suivante 4 jours (96h), absence jusqu'au 20 → prochain envoi le 24 (retour + délai), jamais le jour du retour", async () => {
+    const resumeAt = new Date('2026-09-20T00:00:00.000Z');
+    const now = new Date('2026-09-21T08:00:00.000Z'); // le moteur repasse après le retour
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: ABSENCE_CANDIDATS,
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2, resume_at: resumeAt }]),
+      },
+      { motif: ACTIVATION_ABSENCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 96 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+
+    await reprendreAbsencesEchues(pool, now);
+
+    const activation = appels.find((a) => ACTIVATION_ABSENCE.test(a.sql));
+    expect(activation).toBeDefined();
+    expect(activation!.values).toEqual([ENROLLMENT_ID]);
+
+    // Le rang de l'étape en attente (2) est passé tel quel : `current_step`
+    // d'une inscription `paused_absence` pointe déjà l'étape NON composée
+    // (la réponse d'absence arrive après un envoi réussi, qui a déjà avancé
+    // `current_step` à la création de son action) — jamais l'étape qui vient
+    // de partir.
+    const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+    expect(pose).toBeDefined();
+    const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 96);
+    expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 2]);
+    // Le 20 (retour) + 4 jours = le 24 — jamais le jour du retour lui-même
+    // (ce qu'aurait donné l'ancien comportement, `next_action_at = resume_at`).
+    expect(new Date(attendu!).getUTCDate()).toBe(24);
+  });
+
+  it('reprise échue depuis plusieurs jours : l’échéance se calcule depuis resume_at, jamais depuis now', async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const now = new Date('2026-09-15T10:00:00.000Z'); // 5 jours de retard (worker resté arrêté)
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: ABSENCE_CANDIDATS,
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 1, resume_at: resumeAt }]),
+      },
+      { motif: ACTIVATION_ABSENCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 24 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+
+    await reprendreAbsencesEchues(pool, now);
+
+    const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+    const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 24);
+    expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 1]);
+  });
+
+  it('idempotent : une candidate déjà réactivée entre-temps (activation à 0 ligne) ne pose aucune échéance', async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: ABSENCE_CANDIDATS,
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 1, resume_at: resumeAt }]),
+      },
+      { motif: ACTIVATION_ABSENCE, repondre: () => ({ rows: [], rowCount: 0 }) }, // déjà reprise par un passage précédent
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 24 }]) },
+      { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+
+    expect(appels.filter((a) => DELAI_ETAPE_SUIVANTE.test(a.sql))).toHaveLength(0);
+    expect(appels.filter((a) => POSE_ECHEANCE.test(a.sql))).toHaveLength(0);
+  });
+
+  it('aucune candidate (requête vide) : rien d’autre interrogé', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: ABSENCE_CANDIDATS, repondre: () => ligne([]) }]);
+
+    await reprendreAbsencesEchues(pool);
+
+    expect(appels).toHaveLength(1);
   });
 });

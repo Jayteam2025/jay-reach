@@ -623,6 +623,92 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
   }
 }
 
+interface AbsenceEchueRow {
+  id: string;
+  campaign_id: string;
+  current_step: number;
+  resume_at: string | Date;
+}
+
+/**
+ * Reprend les inscriptions `paused_absence` dont le retour (`resume_at`) est
+ * atteint (F10) : rien d'autre ne les reprend jamais — ni le tick (`due` ne
+ * sélectionne que `status = 'active'`), ni un événement `resume` de la
+ * machine à états (`applyEvent`, `sequencer/state-machine.ts`), qu'aucun code
+ * n'émet. Sans ce traitement, une inscription en pause pour absence le reste
+ * pour toujours une fois son retour dépassé.
+ *
+ * Règle produit : le délai d'attente entre deux mails ne court pas pendant
+ * l'absence, il repart entièrement au retour — jamais « tout de suite »,
+ * le pire moment (une boîte pleine le jour du retour de vacances).
+ * `poserEcheanceDepuisDispatch` (@jay-reach/core, partagée avec le rattrapage
+ * ci-dessus) porte déjà exactement ce calcul : poser l'échéance depuis un
+ * instant CONNU plutôt que `now` — ce n'est pas un dispatch ici, mais la même
+ * mécanique s'applique à l'identique, `resume_at` jouant le rôle de l'instant
+ * de départ.
+ *
+ * `current_step` d'une inscription `paused_absence` pointe déjà l'étape EN
+ * ATTENTE, jamais celle qui vient d'être envoyée : une réponse d'absence
+ * arrive après un envoi RÉUSSI, et `composeTick` (`sequencer/tick.ts`) avance
+ * `current_step` dès la CRÉATION de l'action de l'étape courante, avant même
+ * son départ réel (`nextStep = currentStep + 1`, écrit en base par le même
+ * appel qui insère l'action `scheduled`) — au moment de la pause,
+ * `current_step` vaut donc déjà le rang de l'étape suivante. C'est
+ * exactement le rang qu'attend `poserEcheanceApresDepart` (`offset
+ * current_step`) : aucune correction d'index à faire ici, contrairement à
+ * `reprendreInscription` (pause MANUELLE, `fonctions/sequence.ts`) qui
+ * rejoue l'étape À `current_step`, restée bloquée/non partie — une pause
+ * manuelle survient AVANT que `current_step` n'avance (blocage, gate,
+ * expéditeur indisponible), une absence APRÈS.
+ *
+ * Sélection puis activation individuelle (pas un `update ... returning`
+ * global) : l'activation sert aussi de garde d'idempotence — `and status =
+ * 'paused_absence'` dans son `where` ne matche plus rien pour une ligne déjà
+ * reprise par un passage précédent ou concurrent, et on n'écrit alors aucune
+ * échéance. Supporte un retard quelconque : l'échéance se calcule TOUJOURS
+ * depuis `resume_at`, jamais `now`, qu'il soit dépassé d'une minute ou de
+ * plusieurs jours (worker resté arrêté).
+ */
+export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date(), limit = 200): Promise<void> {
+  const candidats = await pool.query<AbsenceEchueRow>(
+    `select id, campaign_id, current_step, resume_at
+       from enrollments
+      where status = 'paused_absence'
+        and resume_at is not null
+        and resume_at <= $1
+      order by resume_at asc
+      limit $2`,
+    [now.toISOString(), limit],
+  );
+  let reprises = 0;
+  for (const candidat of candidats.rows) {
+    const activee = await pool.query(
+      `update enrollments
+          set status = 'active', resume_at = null, stop_reason = null
+        where id = $1 and status = 'paused_absence'`,
+      [candidat.id],
+    );
+    if ((activee.rowCount ?? 0) === 0) continue; // déjà reprise entre-temps (idempotence)
+    const ecrit = await poserEcheanceDepuisDispatch(
+      pool,
+      { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
+      candidat.resume_at,
+    );
+    if (ecrit) {
+      reprises += 1;
+    } else {
+      // Ne devrait pas se produire (une inscription `paused_absence` a
+      // toujours une étape en attente, cf. `LIVE_STATUSES` exclut
+      // `completed` — `record-reply.ts`) : signalé plutôt que masqué, au cas
+      // où la séquence aurait perdu des étapes pendant la pause.
+      console.warn(`[tick] absence ${candidat.id} réactivée sans échéance posée — étape en attente introuvable ?`);
+    }
+  }
+  if (reprises > 0) {
+    console.log(`[tick] ${reprises} inscription(s) reprise(s) après absence : échéance recalculée depuis le retour`);
+  }
+}
+
 /**
  * Traite les inscriptions actives dont `next_action_at <= now`. Pour chacune :
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
@@ -630,6 +716,13 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
  * job `actions.dispatch`. Renvoie ces jobs (l'appelant les enfile).
  */
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
+  // Reprise des absences échues (F10) AVANT la sélection des inscriptions
+  // dues, pour la même raison que le rattrapage juste en dessous : une
+  // inscription tout juste réactivée peut devenir due dans CE MÊME passage
+  // si son échéance (posée depuis `resume_at`, pas `now`) tombe déjà dans le
+  // passé — cas d'un worker resté arrêté pendant tout le retour d'absence.
+  await reprendreAbsencesEchues(pool, now);
+
   // Rattrapage (issue #111) AVANT la sélection des inscriptions dues : une
   // inscription qu'il vient de réactiver peut devenir due dans ce même
   // passage si son échéance rattrapée tombe déjà dans le passé.
