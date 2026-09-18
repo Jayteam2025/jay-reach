@@ -470,22 +470,27 @@ describe('modifierCompteLinkedIn', () => {
   // `modifierCompteLinkedIn`, ce test échoue — aucun `insert into senders`
   // n'est jamais émis, et `resolveSender` (worker) ne trouve alors jamais de
   // candidat LinkedIn actif quel que soit l'état d'`extension_tokens`.
-  it('F15 : active le compte crée l’expéditeur LinkedIn (aucune ligne senders existante)', async () => {
+  it('F15 (relecture) : active le compte fait exister l’expéditeur LinkedIn par un upsert atomique, jamais un select préalable', async () => {
     const appels: { sql: string; params: unknown[] }[] = [];
     const query = vi.fn(async (sql: string, params: unknown[] = []) => {
       appels.push({ sql, params });
       if (/update extension_tokens/i.test(sql)) return { rows: [{ linkedin_profile_name: 'Camille Roussel' }], rowCount: 1 };
-      if (/select id from senders.*kind = 'linkedin'/is.test(sql)) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
     }) as unknown as Executeur['query'];
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
 
     await modifierCompteLinkedIn(ctx, { ...ENTREE, active: true });
 
-    const insertion = appels.find((a) => /insert into senders/i.test(a.sql));
-    expect(insertion).toBeDefined();
-    expect(insertion!.sql).toMatch(/'linkedin'/);
-    expect(insertion!.params).toEqual([
+    // Un `select` préalable laisserait deux appels concurrents (double clic,
+    // deux onglets) se croire chacun seul et créer chacun sa ligne — la race
+    // que corrige l'upsert (voir le commentaire de `synchroniserExpediteurLinkedIn`).
+    expect(appels.some((a) => /select id from senders/i.test(a.sql))).toBe(false);
+
+    const upsert = appels.find((a) => /insert into senders/i.test(a.sql));
+    expect(upsert).toBeDefined();
+    expect(upsert!.sql).toMatch(/'linkedin'/);
+    expect(upsert!.sql).toMatch(/on conflict \(organization_id, kind, provider_ref\) do update/i);
+    expect(upsert!.params).toEqual([
       'org-1',
       `linkedin:${UTILISATEUR_1}`,
       'Camille Roussel',
@@ -497,30 +502,32 @@ describe('modifierCompteLinkedIn', () => {
     ]);
   });
 
-  // F15 : symétrique — désactiver le compte doit désactiver l'expéditeur déjà
-  // relié, pas en créer un second (double ligne pour le même compte).
-  it('F15 : désactiver le compte désactive l’expéditeur LinkedIn existant (jamais une seconde ligne)', async () => {
+  // F15 : symétrique — désactiver le compte doit faire passer le même
+  // expéditeur à inactif via le même upsert, jamais un second insert (double
+  // ligne pour le même compte).
+  it('F15 (relecture) : désactiver le compte fait passer l’expéditeur LinkedIn à inactif (même upsert)', async () => {
     const appels: { sql: string; params: unknown[] }[] = [];
     const query = vi.fn(async (sql: string, params: unknown[] = []) => {
       appels.push({ sql, params });
       if (/update extension_tokens/i.test(sql)) return { rows: [{ linkedin_profile_name: null }], rowCount: 1 };
-      if (/select id from senders.*kind = 'linkedin'/is.test(sql)) return { rows: [{ id: 'sender-li-1' }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     }) as unknown as Executeur['query'];
     const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
 
     await modifierCompteLinkedIn(ctx, { ...ENTREE, active: false });
 
-    expect(appels.some((a) => /insert into senders/i.test(a.sql))).toBe(false);
-    const maj = appels.find((a) => /update senders/i.test(a.sql));
-    expect(maj).toBeDefined();
-    expect(maj!.params).toEqual([
-      'sender-li-1',
-      false,
+    const upsert = appels.find((a) => /insert into senders/i.test(a.sql));
+    expect(upsert).toBeDefined();
+    expect(upsert!.sql).toMatch(/on conflict \(organization_id, kind, provider_ref\) do update/i);
+    expect(upsert!.params).toEqual([
+      'org-1',
+      `linkedin:${UTILISATEUR_1}`,
+      null,
       20,
       JSON.stringify({ startHour: 10, endHour: 17, days: [1, 2, 3] }),
       'Europe/Paris',
-      null,
+      false,
+      UTILISATEUR_1,
     ]);
   });
 });

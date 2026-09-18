@@ -1,0 +1,21 @@
+-- F15 (relecture) : rien n'empêchait deux lignes `senders` pour le même
+-- compte externe d'un même type — un double clic ou deux onglets ouverts sur
+-- Réglages > Expéditeurs pouvaient, sans transaction ni contrainte, faire
+-- passer deux appels concurrents de `synchroniserExpediteurLinkedIn`
+-- (packages/core/src/fonctions/expediteurs.ts) par le `select` (aucune ligne
+-- vue) puis chacun son `insert`. Le séquenceur y verrait alors deux
+-- expéditeurs actifs pour le même compte LinkedIn et doublerait de fait son
+-- quota journalier — même risque, en plus discret, pour `relierBoite`
+-- (boîte email).
+--
+-- NULL n'est jamais égal à NULL dans un index unique Postgres : les deux
+-- lignes `senders` orphelines déjà en base (`provider_ref` vide) ne se
+-- gênent pas et continueront de coexister sans que cet index les touche.
+--
+-- Vérifié le 18/09/2026 sur la base OSS avant de poser cette contrainte :
+-- aucun doublon sur (organization_id, kind, provider_ref) parmi les lignes à
+-- `provider_ref` renseigné (3 boîtes email, chacune son propre `provider_ref`
+-- SalesBlink ; les 2 lignes LinkedIn ont `provider_ref` vide). La création de
+-- l'index ne peut donc pas échouer sur les données actuelles.
+create unique index if not exists senders_org_kind_provider_ref_key
+  on senders (organization_id, kind, provider_ref);

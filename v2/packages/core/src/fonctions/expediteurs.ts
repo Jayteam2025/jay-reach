@@ -522,6 +522,17 @@ export async function listerComptesLinkedIn(ctx: Contexte): Promise<CompteLinked
  * régénération de jeton — voir `CompteLinkedIn.id`), pour retrouver la même
  * ligne à chaque appel plutôt que d'en recréer une nouvelle.
  *
+ * `insert ... on conflict` en une seule requête, jamais un `select` suivi
+ * d'un `insert`/`update` séparé (relecture F15) : deux appels concurrents
+ * (double clic, deux onglets sur cet écran) verraient tous les deux « aucune
+ * ligne » au `select` et créeraient chacun la sienne — deux expéditeurs actifs
+ * pour le même compte, que le séquenceur compterait comme deux quotas
+ * distincts pour un seul compte LinkedIn réel. L'unicité posée par
+ * `senders_org_kind_provider_ref_key`
+ * (`20260918140300_senders_provider_ref_unique.sql`) fait de cet upsert une
+ * opération atomique côté base — le second appel concurrent met à jour la
+ * ligne du premier plutôt que d'en créer une seconde.
+ *
  * Autorité des plafonds/heures : `senders.daily_quota`/`business_hours`/
  * `timezone` DEVIENNENT UN MIROIR de ce que l'appelant vient d'écrire dans
  * `linkedin_settings`, écrit par cette seule fonction. Deux lecteurs
@@ -544,28 +555,17 @@ async function synchroniserExpediteurLinkedIn(
 ): Promise<void> {
   const businessHours = JSON.stringify({ startHour: reglages.debut, endHour: reglages.fin, days: reglages.jours });
 
-  const existant = await ctx.ex.query<{ id: string }>(
-    `select id from senders /* jr:expediteurs_linkedin_existant */
-      where organization_id = $1 and kind = 'linkedin' and provider_ref = $2
-      limit 1`,
-    [ctx.organisationId, compteId],
-  );
-
-  if (existant.rows.length > 0) {
-    await ctx.ex.query(
-      `update senders /* jr:expediteurs_linkedin_sync */
-          set is_active = $2, daily_quota = $3, business_hours = $4::jsonb, timezone = $5,
-              display_name = coalesce($6, display_name)
-        where id = $1`,
-      [existant.rows[0]!.id, actif, reglages.dailyQuota, businessHours, reglages.fuseau, nomAffiche],
-    );
-    return;
-  }
-
   await ctx.ex.query(
-    `insert into senders (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone,
-                           is_active, provider_id, provider_ref)
-     values ($1, 'linkedin', $2, $3, $4, $5::jsonb, $6, $7, 'extension', $8)`,
+    `insert into senders /* jr:expediteurs_linkedin_sync */
+       (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone,
+        is_active, provider_id, provider_ref)
+     values ($1, 'linkedin', $2, $3, $4, $5::jsonb, $6, $7, 'extension', $8)
+     on conflict (organization_id, kind, provider_ref) do update
+        set is_active = excluded.is_active,
+            daily_quota = excluded.daily_quota,
+            business_hours = excluded.business_hours,
+            timezone = excluded.timezone,
+            display_name = coalesce(excluded.display_name, senders.display_name)`,
     [
       ctx.organisationId,
       `linkedin:${compteId}`,
