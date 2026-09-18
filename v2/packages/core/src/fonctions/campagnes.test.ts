@@ -66,6 +66,32 @@ describe('trouverColonneIntitulePoste (point 2, issue #120)', () => {
     expect(trouverColonneIntitulePoste({ 'Job Title': 'HR Manager', Email: 'a@b.fr' })).toBe('Job Title');
   });
 
+  // Revue F5, constat important 4 : produit trilingue (fr/en/nl, parité stricte testée) —
+  // un CSV importé avec un en-tête néerlandais ou anglais courant doit aussi être reconnu.
+  it('trouve « Functietitel » (néerlandais)', () => {
+    expect(trouverColonneIntitulePoste({ Functietitel: 'HR-manager', Email: 'a@b.fr' })).toBe('Functietitel');
+  });
+
+  it('trouve « Functie » (néerlandais, variante courte)', () => {
+    expect(trouverColonneIntitulePoste({ Functie: 'HR-manager', Email: 'a@b.fr' })).toBe('Functie');
+  });
+
+  it('trouve « Functienaam » (néerlandais, variante longue)', () => {
+    expect(trouverColonneIntitulePoste({ Functienaam: 'HR-manager', Email: 'a@b.fr' })).toBe('Functienaam');
+  });
+
+  it('trouve « Title » (anglais courant)', () => {
+    expect(trouverColonneIntitulePoste({ Title: 'HR Manager', Email: 'a@b.fr' })).toBe('Title');
+  });
+
+  it('trouve « Position » (anglais courant)', () => {
+    expect(trouverColonneIntitulePoste({ Position: 'HR Manager', Email: 'a@b.fr' })).toBe('Position');
+  });
+
+  it('trouve « Role » (anglais courant)', () => {
+    expect(trouverColonneIntitulePoste({ Role: 'HR Manager', Email: 'a@b.fr' })).toBe('Role');
+  });
+
   it('rend `null` sans colonne correspondante', () => {
     expect(trouverColonneIntitulePoste({ Nom: 'Dupont', Email: 'a@b.fr' })).toBeNull();
   });

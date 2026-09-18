@@ -241,8 +241,22 @@ function motifRecherche(recherche: string | undefined): string | null {
   return `%${recherche.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
-/** Noms de colonne (normalisés) qui désignent un intitulé de poste dans une liste importée (point 2). */
-const CIBLES_COLONNE_INTITULE_POSTE = new Set(['intitule_poste', 'job_title']);
+/**
+ * Noms de colonne (normalisés) qui désignent un intitulé de poste dans une
+ * liste importée (point 2). Couvre les trois langues du produit (revue F5,
+ * constat important 4) : français, anglais, néerlandais — plus quelques
+ * synonymes anglais courants dans un export CSV (title/position/role).
+ */
+const CIBLES_COLONNE_INTITULE_POSTE = new Set([
+  'intitule_poste',
+  'job_title',
+  'title',
+  'position',
+  'role',
+  'functietitel',
+  'functie',
+  'functienaam',
+]);
 
 /**
  * Cherche, dans une ligne brute de `list_members.raw_row`, la colonne du CSV
