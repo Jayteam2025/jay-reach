@@ -404,6 +404,7 @@
       "actions": {
         "enrich": "E-mail zoeken",
         "enrichCost": "1 credit",
+        "enrichPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers.",
         "discard": "Afwijzen",
         "resume": "Hervatten"
       },
@@ -449,7 +450,8 @@
         "phoneUnavailable": "—",
         "linkedin": "LinkedIn",
         "findEmail": "E-mail zoeken",
-        "findEmailCost": "1 FullEnrich-credit"
+        "findEmailCost": "1 FullEnrich-credit",
+        "findEmailPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers."
       },
       "notes": {
         "empty": "Geen notities. Wat je hier schrijft, blijft in het dossier.",
@@ -1501,6 +1503,7 @@
     "actions": {
       "enrich": "E-mail zoeken",
       "enrichCost": "1 credit",
+      "enrichPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers.",
       "discard": "Afwijzen",
       "resume": "Hervatten"
     },

@@ -7,9 +7,16 @@ import { BoutonChercherEmailContact } from './BoutonChercherEmailContact';
 
 export interface SectionCoordonneesProps {
   contact: FicheContact;
+  /**
+   * `true` quand `enrichissements_par_jour` (réglages de l'organisation) vaut 0 (constat
+   * produit, 18/09, tour de correction G4) : état de L'INSTANCE, chargé une fois par la page
+   * appelante (`lireReglages`, déjà lu pour le fuseau) et transmis ici — jamais une requête
+   * propre à cette section. Voir `BoutonChercherEmail.raisonIndisponible` (même garde-fou).
+   */
+  enrichissementEnPause: boolean;
 }
 
-export function SectionCoordonnees({ contact }: SectionCoordonneesProps) {
+export function SectionCoordonnees({ contact, enrichissementEnPause }: SectionCoordonneesProps) {
   const t = useTranslations('campagne.fiche');
 
   return (
@@ -28,7 +35,12 @@ export function SectionCoordonnees({ contact }: SectionCoordonneesProps) {
               )}
             </>
           ) : (
-            <BoutonChercherEmailContact contactId={contact.id} libelle={t('contactInfo.findEmail')} cout={t('contactInfo.findEmailCost')} />
+            <BoutonChercherEmailContact
+              contactId={contact.id}
+              libelle={t('contactInfo.findEmail')}
+              cout={t('contactInfo.findEmailCost')}
+              raisonIndisponible={enrichissementEnPause ? t('contactInfo.findEmailPaused') : null}
+            />
           )
         }
       />

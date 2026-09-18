@@ -404,6 +404,7 @@
       "actions": {
         "enrich": "Chercher l'email",
         "enrichCost": "1 crédit",
+        "enrichPaused": "Enrichissement en pause (plafond à 0) — à relever dans Fournisseurs.",
         "discard": "Écarter",
         "resume": "Reprendre"
       },
@@ -449,7 +450,8 @@
         "phoneUnavailable": "—",
         "linkedin": "LinkedIn",
         "findEmail": "Chercher l'email",
-        "findEmailCost": "1 crédit FullEnrich"
+        "findEmailCost": "1 crédit FullEnrich",
+        "findEmailPaused": "Enrichissement en pause (plafond à 0) — à relever dans Fournisseurs."
       },
       "notes": {
         "empty": "Aucune note. Ce que vous écrivez ici reste dans la fiche.",
@@ -1501,6 +1503,7 @@
     "actions": {
       "enrich": "Chercher l'email",
       "enrichCost": "1 crédit",
+      "enrichPaused": "Enrichissement en pause (plafond à 0) — à relever dans Fournisseurs.",
       "discard": "Écarter",
       "resume": "Reprendre"
     },

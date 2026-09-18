@@ -71,6 +71,15 @@ export interface TableContactsProps {
    * tâche suivante).
    */
   posteListe?: { trouve: boolean; titre: string };
+  /**
+   * Motif déjà traduit d'indisponibilité du bouton « Chercher l'email » — non `null`/absent
+   * quand `enrichissements_par_jour` (réglages de l'organisation) vaut 0 (constat produit,
+   * 18/09, tour de correction G4) : état de L'INSTANCE, identique pour toutes les lignes de
+   * cette table, donc chargé UNE FOIS par la page appelante (jamais une requête par ligne)
+   * et transmis tel quel ici. Absent (page qui n'affiche jamais ce bouton) : traité comme
+   * `null`, bouton actif.
+   */
+  raisonEnrichissementIndisponible?: string | null;
 }
 
 /**
@@ -92,7 +101,15 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   a_contacter: 'gris',
 };
 
-export function TableContacts({ lignes, colonnes, organisationId, campagneId, libelles, posteListe }: TableContactsProps) {
+export function TableContacts({
+  lignes,
+  colonnes,
+  organisationId,
+  campagneId,
+  libelles,
+  posteListe,
+  raisonEnrichissementIndisponible = null,
+}: TableContactsProps) {
   return (
     <Table
       colonnes={[
@@ -188,6 +205,7 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
                 signalId={ligne.signalId}
                 libelle={libelles.chercherEmail}
                 cout={libelles.coutChercherEmail}
+                raisonIndisponible={raisonEnrichissementIndisponible}
               />
             ) : ligne.statut === 'a_contacter' ? (
               ligne.contactId && campagneDeLaLigne ? (

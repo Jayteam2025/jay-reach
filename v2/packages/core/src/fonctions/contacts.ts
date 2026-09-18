@@ -604,6 +604,22 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
   exiger(ctx, 'operator');
   const { contactId } = valider(schemaChercherEmail, entree);
 
+  // Le plafond décrit l'état de L'INSTANCE (constat produit, 18/09, tour de correction G4) :
+  // s'il vaut 0, rien ne peut être enrichi pour AUCUN contact, avant même de savoir si celui-ci
+  // a un compte ou si son compte est déjà enrichi. Vérifié en premier — auparavant, un contact
+  // dont le compte était déjà enrichi recevait toujours « déjà enrichie », même le jour où
+  // c'est le plafond à 0 qui bloque réellement tout : la mauvaise cause était donnée en premier.
+  const reglages = await lireReglages(ctx);
+  const jour = jourCourantDansFuseau(String(reglages.fuseau));
+  const plafonds = await lireConsommationDuJour(ctx, reglages);
+  const plafond = plafonds.enrichissement.plafond;
+  if (plafond <= 0) {
+    throw new ErreurEnrichissementImpossible('L’enrichissement est en pause (plafond à 0). Relevez-le dans Fournisseurs pour enrichir.');
+  }
+  if (plafonds.enrichissement.utilise >= plafond) {
+    throw new ErreurEnrichissementImpossible(`Plafond du jour atteint (${plafond} par jour). Relevez-le dans Fournisseurs, ou réessayez demain.`);
+  }
+
   const contactRes = await ctx.ex.query<{ id: string; account_id: string | null; persona_id: string | null; source_signal_id: string | null }>(
     `select id, account_id, persona_id, source_signal_id from contacts /* jr:chercher_email_contact */ where id = $1 and organization_id = $2`,
     [contactId, ctx.organisationId],
@@ -621,7 +637,14 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
   const compte = accountRes.rows[0];
   if (!compte) throw new ErreurIntrouvable('Entreprise');
   if (compte.enriched_at) {
-    throw new ErreurEnrichissementImpossible(`${compte.name} a déjà été enrichie. Ses contacts sont dans Contacts.`);
+    // Nomme la cause plutôt que de renvoyer vers l'écran où l'opérateur est déjà (constat
+    // produit, 18/09) : ce contact précis vient d'un signal, jamais complété rétroactivement
+    // par l'enrichissement de son compte (qui INSÈRE de nouvelles lignes `contacts`, voir
+    // `apps/worker/src/enrichment-persist.ts::persistEnrichedContact`) — rien à tenter de plus
+    // aujourd'hui pour LUI, même si son compte a déjà été enrichi pour d'autres personnes.
+    throw new ErreurEnrichissementImpossible(
+      `${compte.name} est déjà enrichie et n’a pas donné d’adresse pour ce contact : rien de plus à tenter aujourd’hui.`,
+    );
   }
 
   let persona: LignePersona | undefined;
@@ -659,17 +682,10 @@ export async function chercherEmail(ctx: Contexte, entree: unknown): Promise<voi
   // appelé avec le jour de l'organisation) et l'écran (`lireConsommationDuJour`) — sinon ce
   // décompte manuel écrirait sur une ligne `usage_date` différente de celle que les deux autres
   // lisent, désynchronisant le plafond entre minuit UTC et minuit heure de l'organisation.
-  const reglages = await lireReglages(ctx);
-  const jour = jourCourantDansFuseau(String(reglages.fuseau));
-  const plafonds = await lireConsommationDuJour(ctx, reglages);
-  const plafond = plafonds.enrichissement.plafond;
-  if (plafond <= 0) {
-    throw new ErreurEnrichissementImpossible('L’enrichissement est en pause (plafond à 0). Relevez-le dans Fournisseurs pour enrichir.');
-  }
-  if (plafonds.enrichissement.utilise >= plafond) {
-    throw new ErreurEnrichissementImpossible(`Plafond du jour atteint (${plafond} par jour). Relevez-le dans Fournisseurs, ou réessayez demain.`);
-  }
-
+  // `jour`/`plafond` déjà lus en tête de fonction (vérification du plafond en premier, tour de
+  // correction G4) — pas une seconde lecture : la garde réelle contre une course reste l'update
+  // atomique ci-dessous (`used + 1 <= daily_cap`), pas la fraîcheur de cette valeur.
+  //
   // Décompte atomique du crédit (le plafond a pu être atteint entre-temps par
   // un autre appel) : même garde que `app.consume_provider_credit` — upsert du
   // compteur du jour, puis update conditionné par le plafond, en SQL direct.

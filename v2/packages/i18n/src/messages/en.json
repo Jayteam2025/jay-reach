@@ -404,6 +404,7 @@
       "actions": {
         "enrich": "Find the email",
         "enrichCost": "1 credit",
+        "enrichPaused": "Enrichment is paused (cap at 0) — raise it in Providers.",
         "discard": "Discard",
         "resume": "Resume"
       },
@@ -449,7 +450,8 @@
         "phoneUnavailable": "—",
         "linkedin": "LinkedIn",
         "findEmail": "Find the email",
-        "findEmailCost": "1 FullEnrich credit"
+        "findEmailCost": "1 FullEnrich credit",
+        "findEmailPaused": "Enrichment is paused (cap at 0) — raise it in Providers."
       },
       "notes": {
         "empty": "No notes. What you write here stays in the record.",
@@ -1501,6 +1503,7 @@
     "actions": {
       "enrich": "Find the email",
       "enrichCost": "1 credit",
+      "enrichPaused": "Enrichment is paused (cap at 0) — raise it in Providers.",
       "discard": "Discard",
       "resume": "Resume"
     },
