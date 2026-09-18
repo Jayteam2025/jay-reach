@@ -112,6 +112,14 @@ Versionnement sémantique.
   se fient désormais aux inscriptions, jamais à la seule campagne, avec le nom de la liste dominante affiché partout où
   l'origine s'affichait vide. La colonne d'intitulé de poste de l'onglet Contacts reconnaît par ailleurs les en-têtes anglais
   et néerlandais courants (`Title`, `Position`, `Functietitel`…), pas seulement les variantes françaises.
+- **Une inscription mise en pause pour absence ne redémarrait plus jamais une fois la date de retour dépassée.** Le moteur ne
+  relit que les inscriptions actives, et rien n'émettait l'événement de reprise de la machine à états : passé le retour
+  annoncé, l'inscription restait en pause pour toujours (deux inscriptions concernées en base, retour attendu le 24/09). Le
+  moteur reprend désormais automatiquement une inscription dès que sa date de retour est atteinte, quel que soit le retard.
+  Le compteur du délai entre deux messages repart de zéro le jour du retour : le prochain part au terme du délai de l'étape
+  en attente, décompté depuis la date de retour — jamais « tout de suite », qui enverrait dans une boîte encore pleine le
+  jour même de la reprise du travail. Une reprise manuelle d'une pause **opérateur** (gate de délivrabilité, boîte d'envoi indisponible…), elle,
+  redémarre toujours immédiatement : c'est le geste que l'opérateur vient de faire.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
