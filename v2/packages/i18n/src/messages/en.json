@@ -213,7 +213,7 @@
       "title": "Today's limits",
       "settings": "Configure",
       "scoring": "Scoring (Anthropic)",
-      "enrichment": "Enrichment (FullEnrich)",
+      "enrichment": "Enrichment requested (FullEnrich)",
       "sending": "Sends (SalesBlink)"
     },
     "campaigns": {
@@ -331,7 +331,7 @@
       "caps": {
         "title": "Today's limits",
         "scoring": "Scoring (Anthropic)",
-        "enrichment": "Enrichment (FullEnrich)",
+        "enrichment": "Enrichment requested (FullEnrich)",
         "sending": "{n, plural, one {Sends (SalesBlink, # mailbox)} other {Sends (SalesBlink, # mailboxes)}}",
         "settingsLink": "Configure limits"
       },
@@ -347,8 +347,8 @@
         "seeAll": "View all",
         "empty": "No activity yet.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email sent} other {# emails sent}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# email sent} other {# emails sent}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
         }
       }
     },
@@ -462,13 +462,13 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email goes out today} other {# emails go out today}}",
+      "title": "{n, plural, one {# email scheduled today} other {# emails scheduled today}}",
       "description": "Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".",
       "filters": {
         "all": "{n, plural, one {All #} other {All #}}",
         "scheduled": "{n, plural, one {Scheduled #} other {Scheduled #}}",
         "toReview": "{n, plural, one {To review #} other {To review #}}",
-        "dispatched": "{n, plural, one {Sent #} other {Sent #}}",
+        "dispatched": "{n, plural, one {Dispatched #} other {Dispatched #}}",
         "delivered": "{n, plural, one {Delivered #} other {Delivered #}}",
         "failed": "{n, plural, one {Failed #} other {Failed #}}",
         "blocked": "{n, plural, one {Blocked #} other {Blocked #}}"
@@ -488,7 +488,7 @@
         "scheduled": "Scheduled",
         "pending_approval": "To review",
         "approved": "Scheduled",
-        "dispatched": "Sent",
+        "dispatched": "Dispatched",
         "delivered": "Delivered",
         "failed": "Failed",
         "blocked": "Blocked",
@@ -525,7 +525,7 @@
         "alreadyProcessed": "This send is {statut}: nothing left to review.",
         "notReviewable": {
           "approved": "already approved",
-          "dispatched": "already sent",
+          "dispatched": "already dispatched",
           "delivered": "delivered",
           "failed": "failed",
           "blocked": "blocked",
@@ -781,8 +781,8 @@
       "previous": "Previous",
       "next": "Next",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email sent} other {# emails sent}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# email sent} other {# emails sent}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
       }
     },
     "reglages": {
@@ -1061,7 +1061,7 @@
       "consommation": {
         "title": "Today's usage",
         "scoring": "Scorings (Anthropic)",
-        "enrichissement": "Enrichments (FullEnrich)",
+        "enrichissement": "Enrichments requested (FullEnrich)",
         "envois": "Sends",
         "aide": "Counters reset to zero at midnight, organization time ({fuseau}), sends included. A cap once reached puts the task on hold until the next day, nothing is lost."
       },

@@ -213,7 +213,7 @@
       "title": "Plafonds du jour",
       "settings": "Régler",
       "scoring": "Scoring (Anthropic)",
-      "enrichment": "Enrichissement (FullEnrich)",
+      "enrichment": "Enrichissement demandé (FullEnrich)",
       "sending": "Envois (SalesBlink)"
     },
     "campaigns": {
@@ -331,7 +331,7 @@
       "caps": {
         "title": "Plafonds du jour",
         "scoring": "Scoring (Anthropic)",
-        "enrichment": "Enrichissement (FullEnrich)",
+        "enrichment": "Enrichissement demandé (FullEnrich)",
         "sending": "{n, plural, one {Envois (SalesBlink, # boîte)} other {Envois (SalesBlink, # boîtes)}}",
         "settingsLink": "Régler les plafonds"
       },
@@ -347,8 +347,8 @@
         "seeAll": "Tout voir",
         "empty": "Aucune activité pour le moment.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-          "withoutStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · {boites, plural, one {# boîte} other {# boîtes}}"
+          "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
+          "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
         }
       }
     },
@@ -462,13 +462,13 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email part aujourd'hui} other {# emails partent aujourd'hui}}",
+      "title": "{n, plural, one {# email prévu aujourd'hui} other {# emails prévus aujourd'hui}}",
       "description": "Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».",
       "filters": {
         "all": "{n, plural, one {Tous #} other {Tous #}}",
         "scheduled": "{n, plural, one {Prévu #} other {Prévus #}}",
         "toReview": "{n, plural, one {À relire #} other {À relire #}}",
-        "dispatched": "{n, plural, one {Parti #} other {Partis #}}",
+        "dispatched": "{n, plural, one {Remis #} other {Remis #}}",
         "delivered": "{n, plural, one {Livré #} other {Livrés #}}",
         "failed": "{n, plural, one {Échoué #} other {Échoués #}}",
         "blocked": "{n, plural, one {Bloqué #} other {Bloqués #}}"
@@ -488,7 +488,7 @@
         "scheduled": "Prévu",
         "pending_approval": "À relire",
         "approved": "Prévu",
-        "dispatched": "Parti",
+        "dispatched": "Remis",
         "delivered": "Livré",
         "failed": "Échoué",
         "blocked": "Bloqué",
@@ -525,7 +525,7 @@
         "alreadyProcessed": "Cet envoi est {statut} : plus rien à relire.",
         "notReviewable": {
           "approved": "déjà validé",
-          "dispatched": "déjà parti",
+          "dispatched": "déjà remis",
           "delivered": "livré",
           "failed": "échoué",
           "blocked": "bloqué",
@@ -781,8 +781,8 @@
       "previous": "Précédent",
       "next": "Suivant",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-        "withoutStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · {boites, plural, one {# boîte} other {# boîtes}}"
+        "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
+        "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
       }
     },
     "reglages": {
@@ -1061,7 +1061,7 @@
       "consommation": {
         "title": "Consommation du jour",
         "scoring": "Scorings (Anthropic)",
-        "enrichissement": "Enrichissements (FullEnrich)",
+        "enrichissement": "Enrichissements demandés (FullEnrich)",
         "envois": "Envois",
         "aide": "Les compteurs se remettent à zéro à minuit, heure de l'organisation ({fuseau}), envois compris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu."
       },

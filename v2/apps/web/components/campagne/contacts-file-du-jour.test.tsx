@@ -436,7 +436,7 @@ const ETAT_LIBELLES: Record<EtatEnvoi, string> = {
   scheduled: 'Prévu',
   pending_approval: 'À relire',
   approved: 'Prévu',
-  dispatched: 'Parti',
+  dispatched: 'Remis',
   delivered: 'Livré',
   failed: 'Échoué',
   blocked: 'Bloqué',

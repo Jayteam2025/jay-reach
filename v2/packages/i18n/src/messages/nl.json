@@ -213,7 +213,7 @@
       "title": "Limieten van vandaag",
       "settings": "Instellen",
       "scoring": "Scoring (Anthropic)",
-      "enrichment": "Verrijking (FullEnrich)",
+      "enrichment": "Verrijking aangevraagd (FullEnrich)",
       "sending": "Verzendingen (SalesBlink)"
     },
     "campaigns": {
@@ -331,7 +331,7 @@
       "caps": {
         "title": "Limieten van vandaag",
         "scoring": "Scoring (Anthropic)",
-        "enrichment": "Verrijking (FullEnrich)",
+        "enrichment": "Verrijking aangevraagd (FullEnrich)",
         "sending": "{n, plural, one {Verzendingen (SalesBlink, # mailbox)} other {Verzendingen (SalesBlink, # mailboxes)}}",
         "settingsLink": "Limieten instellen"
       },
@@ -347,8 +347,8 @@
         "seeAll": "Alles bekijken",
         "empty": "Nog geen activiteit.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
         }
       }
     },
@@ -462,13 +462,13 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# e-mail wordt vandaag verzonden} other {# e-mails worden vandaag verzonden}}",
+      "title": "{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}",
       "description": "Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".",
       "filters": {
         "all": "{n, plural, one {Alle #} other {Alle #}}",
         "scheduled": "{n, plural, one {Gepland #} other {Gepland #}}",
         "toReview": "{n, plural, one {Te herzien #} other {Te herzien #}}",
-        "dispatched": "{n, plural, one {Verzonden #} other {Verzonden #}}",
+        "dispatched": "{n, plural, one {Doorgestuurd #} other {Doorgestuurd #}}",
         "delivered": "{n, plural, one {Bezorgd #} other {Bezorgd #}}",
         "failed": "{n, plural, one {Mislukt #} other {Mislukt #}}",
         "blocked": "{n, plural, one {Geblokkeerd #} other {Geblokkeerd #}}"
@@ -488,7 +488,7 @@
         "scheduled": "Gepland",
         "pending_approval": "Te herzien",
         "approved": "Gepland",
-        "dispatched": "Verzonden",
+        "dispatched": "Doorgestuurd",
         "delivered": "Bezorgd",
         "failed": "Mislukt",
         "blocked": "Geblokkeerd",
@@ -525,7 +525,7 @@
         "alreadyProcessed": "Deze verzending is {statut}: niets meer te herzien.",
         "notReviewable": {
           "approved": "al goedgekeurd",
-          "dispatched": "al verzonden",
+          "dispatched": "al doorgestuurd",
           "delivered": "bezorgd",
           "failed": "mislukt",
           "blocked": "geblokkeerd",
@@ -781,8 +781,8 @@
       "previous": "Vorige",
       "next": "Volgende",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
       }
     },
     "reglages": {
@@ -1061,7 +1061,7 @@
       "consommation": {
         "title": "Verbruik van vandaag",
         "scoring": "Scorings (Anthropic)",
-        "enrichissement": "Verrijkingen (FullEnrich)",
+        "enrichissement": "Verrijkingen aangevraagd (FullEnrich)",
         "envois": "Verzendingen",
         "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren."
       },
