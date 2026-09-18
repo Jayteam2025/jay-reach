@@ -264,7 +264,9 @@ export default async function AujourdhuiPage() {
                 <>
                   {nf.format(campagne.reponses)}{' '}
                   <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>
-                    {campagne.tauxReponse !== null ? `${campagne.tauxReponse.toLocaleString('fr-FR')} %` : '—'}
+                    {/* Revue F5, point 7 : harmonisé avec Campagnes et la vue d'ensemble de
+                        campagne — sans base réelle (aucun envoi parti), « 0 », jamais un tiret. */}
+                    {campagne.tauxReponse !== null ? `${campagne.tauxReponse.toLocaleString('fr-FR')} %` : '0'}
                   </em>
                 </>
               ),

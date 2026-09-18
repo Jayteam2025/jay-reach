@@ -58,10 +58,11 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
   const resteFile = vue.fileDuJour.length - apercuFile.length;
   const dejaPartis = vue.fileDuJour.filter((envoi) => envoi.envoye).length;
 
-  // Point 1 : « — » plutôt qu'un 0 % quand rien n'est encore parti (jamais une division par
-  // zéro déguisée). Point 1 : la marche « En séquence » porte aussi le nombre en pause, en
-  // second libellé (même case `taux` que les pourcentages, réutilisée comme simple annotation).
-  const tauxOuTiret = (taux: number | null) => (taux !== null ? pourcentageTexte(taux) : '—');
+  // Point 1 : la marche « En séquence » porte aussi le nombre en pause, en second libellé
+  // (même case `taux` que les pourcentages, réutilisée comme simple annotation).
+  // Revue F5, point 7 : harmonisé avec Aujourd'hui et Campagnes — sans base réelle (rien
+  // encore parti), « 0 », jamais un tiret.
+  const tauxOuZero = (taux: number | null) => (taux !== null ? pourcentageTexte(taux) : '0');
   const enPauseSuffixe = vue.entonnoir.enPause > 0 ? t('overview.funnel.pausedSuffix', { n: vue.entonnoir.enPause }) : undefined;
 
   // Point 2 (issue #120) : une campagne à liste n'a ni signal ni thème de veille — l'entonnoir
@@ -72,8 +73,8 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
           { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuTiret(vue.entonnoir.tauxLivres) },
-          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuTiret(vue.entonnoir.tauxReponses) },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuZero(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ]
       : [
@@ -81,8 +82,8 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
           { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuTiret(vue.entonnoir.tauxLivres) },
-          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuTiret(vue.entonnoir.tauxReponses) },
+          { valeur: vue.entonnoir.livres, libelle: t('overview.funnel.delivered'), taux: tauxOuZero(vue.entonnoir.tauxLivres) },
+          { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ];
 

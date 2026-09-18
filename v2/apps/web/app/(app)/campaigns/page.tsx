@@ -19,6 +19,15 @@ const TON_STATUT_CAMPAGNE: Record<CampaignStatus, PuceTon> = {
   archived: 'gris',
 };
 
+/**
+ * Revue F5, point 7 : harmonisation avec Aujourd'hui et la vue d'ensemble de campagne — un
+ * taux sans base réelle (aucun envoi parti, `tauxSurPartis` rend `null`) affiche « 0 », jamais
+ * un tiret ni rien du tout (cette colonne ne montrait alors même plus le signe %).
+ */
+function tauxOuZero(taux: number | null): string {
+  return taux !== null ? `${taux.toLocaleString('fr-FR')} %` : '0';
+}
+
 /** `?etat=` : un statut connu, sinon aucun filtre (une valeur inconnue ne casse jamais la page). */
 function etatDemande(brut: string | string[] | undefined): CampaignStatus | undefined {
   const valeur = Array.isArray(brut) ? brut[0] : brut;
@@ -163,14 +172,8 @@ export default async function CampagnesPage({
                   reponses: (
                     <>
                       <b>{nf.format(campagne.reponses)}</b>
-                      {/* Point 1 : le pourcentage n'est montré que sur une base réelle
-                          (emails partis), jamais un « 0 0 % » qui suggérerait une mesure. */}
-                      {campagne.tauxReponse !== null && (
-                        <>
-                          {' '}
-                          <small className="jr-secondaire">{campagne.tauxReponse.toLocaleString('fr-FR')} %</small>
-                        </>
-                      )}
+                      {' '}
+                      <small className="jr-secondaire">{tauxOuZero(campagne.tauxReponse)}</small>
                     </>
                   ),
                   interesses: nf.format(campagne.interesses),
