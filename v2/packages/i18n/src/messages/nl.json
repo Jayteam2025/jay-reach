@@ -340,7 +340,11 @@
         "title": "Recente activiteit",
         "subtitle": "alles wat de motor voor deze campagne heeft gedaan",
         "seeAll": "Alles bekijken",
-        "empty": "Nog geen activiteit."
+        "empty": "Nog geen activiteit.",
+        "envoisGroupes": {
+          "withStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        }
       }
     },
     "notifications": {
@@ -769,7 +773,11 @@
       "pageRange": "{debut} tot {fin} van {total}",
       "pageOf": "Pagina {page} van {dernierePage}",
       "previous": "Vorige",
-      "next": "Volgende"
+      "next": "Volgende",
+      "envoisGroupes": {
+        "withStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# e-mail verzonden} other {# e-mails verzonden}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+      }
     },
     "reglages": {
       "identity": {

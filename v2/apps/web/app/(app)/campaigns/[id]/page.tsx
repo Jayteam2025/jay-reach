@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable } from '@jay-reach/core';
+import { ErreurIntrouvable, type Evenement } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
@@ -21,6 +21,19 @@ function formatHeure(iso: string): string {
 
 function pourcentageTexte(valeur: number): string {
   return `${valeur.toLocaleString('fr-FR')} %`;
+}
+
+// Revue F5, point 4 : le cœur ne construit plus le texte de l'événement synthétique
+// « envois groupés » (`Evenement.donneesEnvois`) — cette carte, rendue hors de
+// `JournalCampagne` (aperçu de l'onglet Vue d'ensemble), le rend via ses propres clés
+// ICU (`overview.activity.envoisGroupes.withStep`/`withoutStep`), avec ou sans étape connue.
+function libelleEnvoisGroupes(
+  t: Awaited<ReturnType<typeof getTranslations>>,
+  donnees: NonNullable<Evenement['donneesEnvois']>,
+): string {
+  return donnees.etape !== null
+    ? t('overview.activity.envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites })
+    : t('overview.activity.envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites });
 }
 
 export default async function CampagneVueDEnsemblePage({ params }: { params: Promise<{ id: string }> }) {
@@ -201,7 +214,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           <Journal
             entrees={vue.activite.map((evenement) => ({
               heure: formatHeure(evenement.quand),
-              texte: evenement.libelle,
+              texte: evenement.donneesEnvois ? libelleEnvoisGroupes(t, evenement.donneesEnvois) : evenement.libelle,
               note: evenement.detail,
               ton: evenement.type === 'engine_error' ? ('erreur' as const) : undefined,
             }))}

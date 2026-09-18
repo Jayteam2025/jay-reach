@@ -32,6 +32,14 @@ export interface JournalCampagneProps {
   /** Fuseau de l'organisation (R53) : le regroupement par jour et l'heure affichée suivent CE fuseau, pas celui du serveur qui exécute le rendu. */
   fuseau: string;
   libelles: JournalCampagneLibelles;
+  /**
+   * Rend le texte d'un événement « envois groupés » (revue F5, point 4) : le
+   * cœur ne fournit plus qu'une donnée structurée (`Evenement.donneesEnvois`)
+   * pour cet événement synthétique, la page la rend avec sa propre clé ICU
+   * (`t()`, non disponible ici). Absent, ou l'événement sans `donneesEnvois` :
+   * retombe sur `e.libelle`, déjà en français pour tout le reste (`diff.libelle`).
+   */
+  libelleEnvoisGroupes?: (donnees: NonNullable<Evenement['donneesEnvois']>) => string;
 }
 
 function lienFiltre(base: string, filtre: FiltreActiviteCampagne): string {
@@ -69,7 +77,15 @@ function tonEvenement(type: ActionJournal): 'erreur' | undefined {
  * l'intérieur de la carte — comportement pur, aucun hook, testable par
  * `renderToStaticMarkup`.
  */
-export function JournalCampagne({ base, filtreActif, evenements, maintenant, fuseau, libelles }: JournalCampagneProps) {
+export function JournalCampagne({
+  base,
+  filtreActif,
+  evenements,
+  maintenant,
+  fuseau,
+  libelles,
+  libelleEnvoisGroupes,
+}: JournalCampagneProps) {
   if (filtreActif === 'tout' && evenements.length === 0) {
     return <EtatVide titre={libelles.videTitre} texte={libelles.videTexte} />;
   }
@@ -92,7 +108,7 @@ export function JournalCampagne({ base, filtreActif, evenements, maintenant, fus
           groupes.map((groupe) => {
             const entrees: EntreeJournal[] = groupe.evenements.map((e) => ({
               heure: heureEvenement(e.quand, fuseau),
-              texte: e.libelle,
+              texte: e.donneesEnvois && libelleEnvoisGroupes ? libelleEnvoisGroupes(e.donneesEnvois) : e.libelle,
               note: e.detail ?? undefined,
               ton: tonEvenement(e.type),
             }));

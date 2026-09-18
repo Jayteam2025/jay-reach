@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable, lireReglages, listerActivite } from '@jay-reach/core';
+import { ErreurIntrouvable, lireReglages, listerActivite, type Evenement } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FILTRES_ACTIVITE, JournalCampagne, type FiltreActiviteCampagne } from '../../../../../components/campagne/JournalCampagne';
 
@@ -67,6 +67,15 @@ export default async function CampagneActivitePage({
     string
   >;
 
+  // Revue F5, point 4 : le cœur ne construit plus le texte de l'événement synthétique
+  // « envois groupés » (`Evenement.donneesEnvois`) — cette page le rend via ses propres
+  // clés ICU (`envoisGroupes.withStep`/`withoutStep`), avec ou sans étape connue.
+  function libelleEnvoisGroupes(donnees: NonNullable<Evenement['donneesEnvois']>): string {
+    return donnees.etape !== null
+      ? t('envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites })
+      : t('envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites });
+  }
+
   return (
     <section className="jr-contenu une-colonne">
       <JournalCampagne
@@ -81,6 +90,7 @@ export default async function CampagneActivitePage({
           videTexte: t('empty.text'),
           videFiltre: t('emptyFilter'),
         }}
+        libelleEnvoisGroupes={libelleEnvoisGroupes}
       />
 
       {total > 0 && (

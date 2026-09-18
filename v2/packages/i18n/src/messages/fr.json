@@ -340,7 +340,11 @@
         "title": "Activité récente",
         "subtitle": "tout ce que le moteur a fait sur cette campagne",
         "seeAll": "Tout voir",
-        "empty": "Aucune activité pour le moment."
+        "empty": "Aucune activité pour le moment.",
+        "envoisGroupes": {
+          "withStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
+          "withoutStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · {boites, plural, one {# boîte} other {# boîtes}}"
+        }
       }
     },
     "notifications": {
@@ -769,7 +773,11 @@
       "pageRange": "{debut} à {fin} sur {total}",
       "pageOf": "Page {page} sur {dernierePage}",
       "previous": "Précédent",
-      "next": "Suivant"
+      "next": "Suivant",
+      "envoisGroupes": {
+        "withStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
+        "withoutStep": "{n, plural, one {# email envoyé} other {# emails envoyés}} · {boites, plural, one {# boîte} other {# boîtes}}"
+      }
     },
     "reglages": {
       "identity": {

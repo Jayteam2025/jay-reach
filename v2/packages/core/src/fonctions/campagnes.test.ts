@@ -1185,16 +1185,24 @@ describe('listerFileDuJour', () => {
 });
 
 describe('evenementsEnvoisGroupes (point 3.a, fil d’activité, lignes simulées)', () => {
-  it('construit un libellé avec étape et nombre de boîtes', () => {
+  it('construit une donnée structurée avec étape (1-based) et nombre de boîtes, sans texte français (revue F5, point 4)', () => {
     const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 }]);
     expect(r).toEqual([
-      { id: 'envois-2026-09-17T08:00:00.000Z-0', quand: '2026-09-17T08:00:00.000Z', type: 'action_sent', libelle: '24 email(s) envoyé(s) · étape 1 · 3 boîte(s)', detail: null },
+      {
+        id: 'envois-2026-09-17T08:00:00.000Z-0',
+        quand: '2026-09-17T08:00:00.000Z',
+        type: 'action_sent',
+        libelle: null,
+        detail: null,
+        donneesEnvois: { n: 24, etape: 1, boites: 3 },
+      },
     ]);
   });
 
-  it('sans étape connue (action orpheline), le libellé ne mentionne pas d’étape', () => {
+  it('sans étape connue (action orpheline), `donneesEnvois.etape` reste `null`', () => {
     const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, n: 2, boites: 1 }]);
-    expect(r[0]!.libelle).toBe('2 email(s) envoyé(s) · 1 boîte(s)');
+    expect(r[0]!.libelle).toBeNull();
+    expect(r[0]!.donneesEnvois).toEqual({ n: 2, etape: null, boites: 1 });
   });
 
   it('un groupe par ligne, plusieurs groupes restent distincts', () => {
@@ -1258,7 +1266,8 @@ describe('listerActivite', () => {
       const r = await listerActivite(ctx, { campagneId });
       expect(r.total).toBe(2);
       // Le groupe d'envois (8h) est plus récent que le lancement (7h) : en tête.
-      expect(r.evenements[0]!.libelle).toBe('24 email(s) envoyé(s) · étape 1 · 3 boîte(s)');
+      expect(r.evenements[0]!.libelle).toBeNull();
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
       expect(r.evenements[1]!.id).toBe('ev-1');
     });
 
@@ -1274,7 +1283,8 @@ describe('listerActivite', () => {
         'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }],
       });
       const r = await listerActivite(ctx, { campagneId });
-      expect(r.evenements[0]!.libelle).toBe('24 email(s) envoyé(s) · étape 1 · 3 boîte(s)');
+      expect(r.evenements[0]!.libelle).toBeNull();
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
       expect(r.evenements[1]!.id).toBe('ev-1');
       expect(typeof r.evenements[0]!.quand).toBe('string');
       expect(typeof r.evenements[1]!.quand).toBe('string');

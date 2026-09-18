@@ -469,8 +469,24 @@ export interface Evenement {
   readonly id: string;
   readonly quand: string;
   readonly type: ActionJournal;
-  readonly libelle: string;
+  /**
+   * `null` seulement pour un événement « envois groupés » (`donneesEnvois`
+   * posé) — revue F5, point 4 : le cœur ne construit plus de texte français
+   * pour cet événement synthétique, la page le rend depuis `donneesEnvois`
+   * avec une clé ICU. Toujours une vraie chaîne pour les autres événements
+   * (`diff.libelle` de `audit_events`, déjà en français par décision
+   * antérieure de la tâche 13).
+   */
+  readonly libelle: string | null;
   readonly detail: string | null;
+  /**
+   * Donnée structurée d'un événement « envois groupés » (point 3.a, revue F5
+   * point 4) — `n` emails envoyés, `etape` (1-based, tel qu'affiché à
+   * l'écran ; `null` si l'action n'a plus d'étape rattachée), `boites`
+   * distinctes. Absent pour tout autre événement, qui garde son texte tel
+   * quel dans `libelle`.
+   */
+  readonly donneesEnvois?: { readonly n: number; readonly etape: number | null; readonly boites: number };
 }
 
 export interface VueDEnsemble {
@@ -1397,8 +1413,13 @@ export function evenementsEnvoisGroupes(lignes: readonly LigneEnvoiGroupe[]): Ev
       id: `envois-${heureIso}-${r.etape ?? 'x'}`,
       quand: heureIso,
       type: 'action_sent',
-      libelle: `${r.n} email(s) envoyé(s)${r.etape !== null ? ` · étape ${r.etape + 1}` : ''} · ${r.boites} boîte(s)`,
+      // Revue F5, point 4 : plus de texte français construit ici — `donneesEnvois` porte la
+      // donnée brute, la page la rend avec une clé ICU dans les trois catalogues.
+      libelle: null,
       detail: null,
+      // `sequence_steps.position` part de 0 — +1 pour l'affichage (même conversion que partout
+      // ailleurs dans ce fichier, ex. `versEnvoiPrevu`).
+      donneesEnvois: { n: r.n, etape: r.etape !== null ? r.etape + 1 : null, boites: r.boites },
     };
   });
 }
