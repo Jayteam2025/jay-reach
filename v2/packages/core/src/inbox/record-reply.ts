@@ -247,7 +247,12 @@ function enTeteTexte(headers: Record<string, unknown> | null, cle: string): stri
  * l'opérateur indéfiniment.
  */
 export async function recordInboundReply(ex: Executeur, org: string, reply: InboundReply): Promise<RecordedReply> {
-  const cls = classifyReply(reply.body, reply.headers ?? null) ?? { classification: 'human_reply' as const };
+  // Une seule lecture de l'horloge, réutilisée pour classer (date de reprise
+  // d'une absence, cf. classify.ts) et pour horodater le message : la date de
+  // RÉCEPTION du message doit primer sur l'instant du traitement quand les
+  // deux diffèrent (relève en retard, rattrapage après une pause du moteur).
+  const receivedAt = reply.receivedAt ?? new Date();
+  const cls = classifyReply(reply.body, reply.headers ?? null, receivedAt) ?? { classification: 'human_reply' as const };
 
   const headers = reply.headers ?? null;
   // Tous les identifiants sous lesquels ce message a pu être écrit par une
@@ -303,7 +308,7 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
       reply.providerMessageId ?? null,
       reply.headers ? JSON.stringify(reply.headers) : null,
       JSON.stringify(reply.raw ?? {}),
-      (reply.receivedAt ?? new Date()).toISOString(),
+      receivedAt.toISOString(),
     ],
   );
 
