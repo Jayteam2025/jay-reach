@@ -20,6 +20,7 @@ import {
   projeterEnvoisDuJour,
   sqlContactsCampagne,
   sqlListeSourceResumeCampagne,
+  sqlPartisCampagne,
   tauxSurPartis,
 } from './campagnes.js';
 
@@ -354,7 +355,9 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
               -- que l'onglet Contacts.
               ${sqlContactsCampagne('c.id')} as contacts,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'active') as en_sequence,
-              (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = c.id and a.status in ('dispatched', 'delivered')) as partis,
+              -- F13 (décision du 18/09) : même fragment que listerCampagnes/lireEntonnoir
+              -- (sqlPartisCampagne, campagnes.ts) — plus de troisième copie de la règle « parti ».
+              ${sqlPartisCampagne('c.id')} as partis,
               (select count(*)::int from enrollments e where e.campaign_id = c.id and e.status = 'replied') as reponses,
               ${sqlListeSourceResumeCampagne('c.id')} as liste_source
          from campaigns c /* jr:campagnes_resume */

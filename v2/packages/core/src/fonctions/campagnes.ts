@@ -196,9 +196,22 @@ export function sqlEnPauseCampagne(campagneIdExpr: string): string {
   return `(select count(*)::int from enrollments e where e.campaign_id = ${campagneIdExpr} and e.status in ('paused', 'paused_absence'))`;
 }
 
-/** Emails effectivement partis (`dispatched` + `delivered`) — dénominateur commun des taux (point 1). */
+/**
+ * Actions réellement PARTIES — dénominateur commun des taux (point 1). F13
+ * (décision du 18/09, deux états pas trois) : un email `dispatched` n'est que
+ * remis, SalesBlink ne l'a pas encore réellement envoyé — seul `delivered`
+ * compte pour lui. Les autres canaux (LinkedIn : posé par l'extension au
+ * moment réel de l'action, pas de transporteur asynchrone, F12) sont déjà
+ * partis dès `dispatched`. Même distinction que `estReellementParti` un peu
+ * plus haut dans ce fichier (pas réutilisable telle quelle : elle prend des
+ * colonnes déjà lues en JS, ici il faut un fragment SQL) — même motif que
+ * `jr:partis_aujourdhui` (`aujourdhui.ts`), qui l'appliquait déjà pour « déjà
+ * partis » du jour avant que cette fonction-ci ne le fasse pour le cumul.
+ */
 export function sqlPartisCampagne(campagneIdExpr: string): string {
-  return `(select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = ${campagneIdExpr} and a.status in ('dispatched', 'delivered'))`;
+  return `(select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id
+            where e.campaign_id = ${campagneIdExpr}
+              and ((a.channel = 'email' and a.status = 'delivered') or (a.channel <> 'email' and a.status in ('dispatched', 'delivered'))))`;
 }
 
 /**

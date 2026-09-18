@@ -28,6 +28,7 @@ import {
   mettreEnPause,
   modifierReglagesCampagne,
   motifPauseDe,
+  sqlPartisCampagne,
 } from './campagnes.js';
 import type { EnvoiPrevu } from './aujourdhui.js';
 
@@ -45,6 +46,22 @@ function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'admin')
   }) as unknown as Executeur['query'];
   return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
 }
+
+describe('sqlPartisCampagne (F13, décision du 18/09 : deux états, pas trois)', () => {
+  it('un email ne compte que `delivered` — `dispatched` seul n’est que remis, pas encore réellement parti', () => {
+    const sql = sqlPartisCampagne('$1');
+    expect(sql).toMatch(/a\.channel = 'email' and a\.status = 'delivered'/);
+  });
+
+  it(
+    'les autres canaux (LinkedIn) comptent dès `dispatched` — pas de transporteur asynchrone ' +
+      'entre l’extension et le départ (F12), jamais coincé sur « remis » à vie',
+    () => {
+      const sql = sqlPartisCampagne('$1');
+      expect(sql).toMatch(/a\.channel <> 'email' and a\.status in \('dispatched', 'delivered'\)/);
+    },
+  );
+});
 
 describe('tauxSurPartis (point 1, définitions uniques)', () => {
   it('arrondit au dixième', () => {
