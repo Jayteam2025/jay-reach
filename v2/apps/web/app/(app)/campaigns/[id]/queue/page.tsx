@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { apercuEnvoi, ErreurIntrouvable, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../../lib/dates';
+import { etatAffichage } from '../../../../../lib/file-du-jour';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
 import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
 import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
@@ -24,23 +25,33 @@ const ETATS_CONNUS: readonly EtatEnvoi[] = [
 /** Statuts pour lesquels le tiroir montre encore les trois actions (R39, D6) — tout le reste affiche la ligne discrète. */
 const STATUTS_A_RELIRE = new Set<EtatEnvoi>(['scheduled', 'pending_approval']);
 
+// F13 (décision 18/09) : compte sur l'état AFFICHÉ (`etatAffichage`, canal compris),
+// jamais le statut brut — une action LinkedIn `dispatched` est un départ réel, elle
+// doit tomber dans le même panier que les emails `delivered`, pas dans « remis ».
 function compter(envois: readonly EnvoiPrevu[], etats: readonly EtatEnvoi[]): number {
-  return envois.filter((e) => etats.includes(e.etatDetaille ?? 'scheduled')).length;
+  return envois.filter((e) => etats.includes(etatAffichage(e))).length;
 }
 
 /**
  * Construit les textes déjà composés du tiroir « Relire avant envoi » à
  * partir de l'aperçu (`apercuEnvoi`) et de l'éventuelle ligne de la file du
- * jour correspondante (pour l'heure, déjà formatée dans le fuseau de
- * l'organisation — même valeur que la colonne Heure de la table, R38/D1).
+ * jour correspondante — pour l'heure, déjà formatée dans le fuseau de
+ * l'organisation (même valeur que la colonne Heure de la table, R38/D1), et
+ * pour l'état affiché (F13, décision 18/09) : `apercuEnvoi` ne renvoie que le
+ * statut brut de la base (`ApercuEnvoi.statut`), sans canal — la ligne déjà
+ * chargée pour la file du jour, elle, porte `envoye`/`livre` et permet de
+ * calculer le même mot (« remis »/« parti ») que le badge de la table pour la
+ * MÊME action. Repli sur le statut brut seulement si la ligne est introuvable
+ * (lien vers une action hors de la file d'aujourd'hui).
  */
 function construireLibellesTiroir(
   t: Awaited<ReturnType<typeof getTranslations>>,
   apercu: Awaited<ReturnType<typeof apercuEnvoi>>,
-  heureDeLaLigne: string | null | undefined,
+  ligneDuJour: EnvoiPrevu | undefined,
 ): TiroirRelectureLibelles {
+  const etatEffectif: EtatEnvoi = ligneDuJour ? etatAffichage(ligneDuJour) : apercu.statut;
   const heureLibelle =
-    heureDeLaLigne ??
+    ligneDuJour?.heure ??
     (apercu.heurePrevue
       ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(
           new Date(apercu.heurePrevue),
@@ -69,8 +80,8 @@ function construireLibellesTiroir(
     fermer: t('file.drawer.close'),
     emailTitre: t('file.drawer.description'),
     heureLibelle,
-    statut: t(`file.status.${apercu.statut}`),
-    statutTon: TON_ETAT[apercu.statut],
+    statut: t(`file.status.${etatEffectif}`),
+    statutTon: TON_ETAT[etatEffectif],
     score: apercu.score != null ? t('file.drawer.score', { n: apercu.score }) : null,
     sousTitre: segments.join(' · '),
     pourquoi,
@@ -85,9 +96,9 @@ function construireLibellesTiroir(
     modifierLeTexte: t('file.drawer.editText'),
     bientot: t('file.drawer.soon'),
     envoyerTelQuel: t('file.drawer.sendAsIs'),
-    dejaTraite: STATUTS_A_RELIRE.has(apercu.statut)
+    dejaTraite: STATUTS_A_RELIRE.has(etatEffectif)
       ? null
-      : t('file.drawer.alreadyProcessed', { statut: t(`file.drawer.notReviewable.${apercu.statut}`) }),
+      : t('file.drawer.alreadyProcessed', { statut: t(`file.drawer.notReviewable.${etatEffectif}`) }),
   };
 }
 
@@ -124,8 +135,8 @@ export default async function CampagneFileDuJourPage({
     tous: envois.length,
     prevus: compter(envois, ['scheduled', 'approved']),
     aRelire: compter(envois, ['pending_approval']),
-    partis: compter(envois, ['dispatched']),
-    livres: compter(envois, ['delivered']),
+    remis: compter(envois, ['dispatched']),
+    partis: compter(envois, ['delivered']),
     echoues: compter(envois, ['failed']),
     bloques: compter(envois, ['blocked']),
   };
@@ -145,7 +156,7 @@ export default async function CampagneFileDuJourPage({
         actionId: brutRelire,
         contactId: envoi?.contactId ?? null,
         apercu,
-        libelles: construireLibellesTiroir(t, apercu, envoi?.heure),
+        libelles: construireLibellesTiroir(t, apercu, envoi),
       };
     } catch (err) {
       if (!(err instanceof ErreurIntrouvable)) throw err;
@@ -170,8 +181,8 @@ export default async function CampagneFileDuJourPage({
           <Puce ton="accent">{t('file.filters.all', { n: compteurs.tous })}</Puce>
           <Puce>{t('file.filters.scheduled', { n: compteurs.prevus })}</Puce>
           <Puce>{t('file.filters.toReview', { n: compteurs.aRelire })}</Puce>
-          <Puce>{t('file.filters.dispatched', { n: compteurs.partis })}</Puce>
-          <Puce>{t('file.filters.delivered', { n: compteurs.livres })}</Puce>
+          <Puce>{t('file.filters.dispatched', { n: compteurs.remis })}</Puce>
+          <Puce>{t('file.filters.delivered', { n: compteurs.partis })}</Puce>
           <Puce>{t('file.filters.failed', { n: compteurs.echoues })}</Puce>
           <Puce>{t('file.filters.blocked', { n: compteurs.bloques })}</Puce>
         </div>

@@ -1,23 +1,32 @@
 /**
  * F13 (tâche « vocabulaire ») : les mots des écrans doivent dire ce que les
- * chiffres comptent vraiment. Deux familles de bugs trouvées et corrigées ici,
- * dans les trois catalogues :
+ * chiffres comptent vraiment.
  *
- * 1. Le badge d'état « remis » (`dispatched`, `actions.dispatched_at` posé,
- *    PAS encore `delivered_at`) disait « Parti »/« Sent »/« Verzonden » — le
- *    même mot que le départ RÉEL (F12, `EnvoiPrevu.livre`). La ligne se
- *    contredisait elle-même : le badge affirmait un départ, le sous-texte
- *    juste en dessous (`pendingDelivery`) disait « livraison en attente ».
- *    Même bug dans le fil d'activité d'une campagne (`envoisGroupes`, compte
- *    des actions `dispatched`+`delivered` — « envoyés » surclassait les
- *    simplement remises).
- * 2. Le plafond d'enrichissement (FullEnrich) affichait « utilisé / plafond »
- *    sous un libellé nu (« Enrichissement (FullEnrich) ») qui laissait croire
- *    à des contacts TROUVÉS — `lireConsommationDuJour` compte des requêtes
- *    payées (`provider_daily_usage`), pas des succès : une requête peut ne
- *    rien ramener.
+ * Vocabulaire final (décision du 18/09, tranchée après relecture) : DEUX états,
+ * pas trois.
+ *   - « Remis » (fr) / « Dispatched » (en) / « Doorgegeven » (nl) : remis au
+ *     transporteur, pas encore réellement envoyé (email `dispatched`).
+ *   - « Parti » (fr) / « Sent » (en) / « Verstuurd » (nl) : réellement parti —
+ *     un email `delivered` (le `completed_time` de SalesBlink, il a fini
+ *     d'envoyer ; aucun accusé de réception ne revient, « livré » promettait
+ *     donc plus qu'on ne sait), ET une action LinkedIn dès `dispatched` (pas de
+ *     transporteur asynchrone entre l'extension et le départ, F12).
+ * Le badge dépend donc du CANAL, pas du seul statut brut — `etatAffichage`
+ * (`apps/web/lib/file-du-jour.ts`) le calcule, testé séparément là-bas.
  *
- * Ce test verrouille les valeurs corrigées : il rougit si on repasse aux
+ * Bugs trouvés et corrigés au passage :
+ *   - Le fil d'activité d'une campagne (`envoisGroupes`, compte des actions
+ *     `dispatched`+`delivered`) disait « envoyés » — surclassait les emails
+ *     simplement remis. Devenu « remis » (périmètre plus large que le badge,
+ *     volontairement laissé ainsi : le mot reste vrai pour les deux).
+ *   - Le plafond d'enrichissement (FullEnrich) affichait « utilisé / plafond »
+ *     sous un libellé nu qui laissait croire à des contacts TROUVÉS —
+ *     `lireConsommationDuJour` compte des requêtes payées, pas des succès.
+ *   - Le néerlandais disait « Doorgestuurd » pour « remis », qui veut dire
+ *     « transféré à un tiers » — mot totalement différent, corrigé en
+ *     « Doorgegeven ».
+ *
+ * Ce test verrouille les valeurs actuelles : il rougit si on repasse aux
  * anciens mots.
  */
 import { describe, it, expect } from 'vitest';
@@ -51,32 +60,41 @@ function valeur(langue: Langue, chemin: string): string {
   return node;
 }
 
-describe('vocabulaire « remis » vs « parti » (F13)', () => {
-  // Anciens mots fautifs, un par langue — le badge `dispatched` (remis, pas
-  // encore réellement parti) les réutilisait à tort, comme le mot déjà réservé
-  // au départ réel (`coquille.sent.gone`, `file.status.delivered`).
-  const ANCIEN_MOT_FAUTIF: Record<Langue, string> = { fr: 'Parti', en: 'Sent', nl: 'Verzonden' };
-  const NOUVEAU_MOT: Record<Langue, string> = { fr: 'Remis', en: 'Dispatched', nl: 'Doorgestuurd' };
+describe('vocabulaire « remis » vs « parti » (F13, décision finale du 18/09)', () => {
+  const MOT_REMIS: Record<Langue, string> = { fr: 'Remis', en: 'Dispatched', nl: 'Doorgegeven' };
+  const MOT_PARTI: Record<Langue, string> = { fr: 'Parti', en: 'Sent', nl: 'Verstuurd' };
 
-  it.each(LANGUES)("le badge d'état « remis » (%s) n'affirme plus un départ réel", (langue) => {
-    expect(valeur(langue, 'campagne.file.status.dispatched')).toBe(NOUVEAU_MOT[langue]);
-    expect(valeur(langue, 'campagne.file.status.dispatched')).not.toBe(ANCIEN_MOT_FAUTIF[langue]);
-    // Le badge et l'état « livré » (départ réel, F12) doivent rester deux mots
-    // distincts : sans ça la contradiction avec `pendingDelivery` reviendrait.
+  it.each(LANGUES)('le badge « remis » (%s) dit le mot retenu, distinct du badge « parti »', (langue) => {
+    expect(valeur(langue, 'campagne.file.status.dispatched')).toBe(MOT_REMIS[langue]);
+    // Sans cette distinction, la contradiction avec `pendingDelivery` (« livraison en
+    // attente » sous un badge qui affirmerait déjà un départ) reviendrait.
     expect(valeur(langue, 'campagne.file.status.dispatched')).not.toBe(valeur(langue, 'campagne.file.status.delivered'));
   });
 
-  it.each(LANGUES)('le filtre « remis » (%s) reprend le même mot que le badge', (langue) => {
-    expect(valeur(langue, 'campagne.file.filters.dispatched')).toContain(NOUVEAU_MOT[langue]);
-    expect(valeur(langue, 'campagne.file.filters.dispatched')).not.toContain(ANCIEN_MOT_FAUTIF[langue]);
+  it.each(LANGUES)(
+    'le badge « parti » (%s) dit le mot retenu — jamais « livré », qui promet un accusé de réception qu’on n’a pas',
+    (langue) => {
+      expect(valeur(langue, 'campagne.file.status.delivered')).toBe(MOT_PARTI[langue]);
+    },
+  );
+
+  it.each(LANGUES)('les filtres reprennent les mêmes mots que les badges (%s)', (langue) => {
+    expect(valeur(langue, 'campagne.file.filters.dispatched')).toContain(MOT_REMIS[langue]);
+    expect(valeur(langue, 'campagne.file.filters.delivered')).toContain(MOT_PARTI[langue]);
   });
 
-  it.each(LANGUES)("le tiroir « pas rejouable » (%s) dit « déjà remis », pas « déjà parti »", (langue) => {
-    const texte = valeur(langue, 'campagne.file.drawer.notReviewable.dispatched').toLowerCase();
-    expect(texte).not.toContain(ANCIEN_MOT_FAUTIF[langue].toLowerCase());
+  it.each(LANGUES)('le tiroir « pas rejouable » (%s) reprend les mêmes mots', (langue) => {
+    expect(valeur(langue, 'campagne.file.drawer.notReviewable.dispatched').toLowerCase()).toContain(
+      MOT_REMIS[langue].toLowerCase(),
+    );
+    expect(valeur(langue, 'campagne.file.drawer.notReviewable.delivered').toLowerCase()).toBe(MOT_PARTI[langue].toLowerCase());
   });
 
-  const MOT_REMIS_MINUSCULE: Record<Langue, string> = { fr: 'remis', en: 'dispatched', nl: 'doorgestuurd' };
+  it.each(LANGUES)('l’entonnoir de campagne (%s) dit « emails partis », jamais « livrés »', (langue) => {
+    expect(valeur(langue, 'campagne.overview.funnel.delivered').toLowerCase()).toContain(MOT_PARTI[langue].toLowerCase());
+  });
+
+  const MOT_REMIS_MINUSCULE: Record<Langue, string> = { fr: 'remis', en: 'dispatched', nl: 'doorgegeven' };
   const ANCIEN_MOT_GROUPE: Record<Langue, string> = { fr: 'envoyé', en: 'sent', nl: 'verzonden' };
 
   it.each(LANGUES)(

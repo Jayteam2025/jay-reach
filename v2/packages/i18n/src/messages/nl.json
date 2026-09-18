@@ -316,7 +316,7 @@
         "emailVerified": "E-mail geverifieerd",
         "inSequence": "In sequentie",
         "pausedSuffix": "· {n} gepauzeerd",
-        "delivered": "Bezorgde e-mails",
+        "delivered": "Verstuurde e-mails",
         "replies": "Reacties",
         "interested": "Geïnteresseerd"
       },
@@ -347,8 +347,8 @@
         "seeAll": "Alles bekijken",
         "empty": "Nog geen activiteit.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
         }
       }
     },
@@ -468,8 +468,8 @@
         "all": "{n, plural, one {Alle #} other {Alle #}}",
         "scheduled": "{n, plural, one {Gepland #} other {Gepland #}}",
         "toReview": "{n, plural, one {Te herzien #} other {Te herzien #}}",
-        "dispatched": "{n, plural, one {Doorgestuurd #} other {Doorgestuurd #}}",
-        "delivered": "{n, plural, one {Bezorgd #} other {Bezorgd #}}",
+        "dispatched": "{n, plural, one {Doorgegeven #} other {Doorgegeven #}}",
+        "delivered": "{n, plural, one {Verstuurd #} other {Verstuurd #}}",
         "failed": "{n, plural, one {Mislukt #} other {Mislukt #}}",
         "blocked": "{n, plural, one {Geblokkeerd #} other {Geblokkeerd #}}"
       },
@@ -488,8 +488,8 @@
         "scheduled": "Gepland",
         "pending_approval": "Te herzien",
         "approved": "Gepland",
-        "dispatched": "Doorgestuurd",
-        "delivered": "Bezorgd",
+        "dispatched": "Doorgegeven",
+        "delivered": "Verstuurd",
         "failed": "Mislukt",
         "blocked": "Geblokkeerd",
         "cancelled": "Geannuleerd",
@@ -525,8 +525,8 @@
         "alreadyProcessed": "Deze verzending is {statut}: niets meer te herzien.",
         "notReviewable": {
           "approved": "al goedgekeurd",
-          "dispatched": "al doorgestuurd",
-          "delivered": "bezorgd",
+          "dispatched": "al doorgegeven",
+          "delivered": "verstuurd",
           "failed": "mislukt",
           "blocked": "geblokkeerd",
           "cancelled": "geannuleerd",
@@ -781,8 +781,8 @@
       "previous": "Vorige",
       "next": "Volgende",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# e-mail doorgestuurd} other {# e-mails doorgestuurd}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
       }
     },
     "reglages": {

@@ -214,7 +214,10 @@ async function journaliserActionLivree(pool: Pool, org: string, email: string, a
       entityType: 'contact',
       entityId: contactId,
       action: 'action_delivered',
-      diff: { libelle: 'Email livré.', campagneId },
+      // F13 (décision 18/09) : « parti », pas « livré » — deux états, pas trois. `delivered`
+      // n'est que le `completed_time` de SalesBlink (il a fini d'envoyer), aucun accusé de
+      // réception ne revient ; « livré » promettait plus que ce qu'on sait.
+      diff: { libelle: 'Email parti.', campagneId },
     });
   } catch (err) {
     console.warn('[journal] action_delivered', err);

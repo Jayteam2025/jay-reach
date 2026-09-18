@@ -646,7 +646,7 @@ export async function envoyerEmailSalesBlink(
         // F13 : « remis », pas « envoyé » — cet événement s'écrit au moment où
         // le worker remet le message à SalesBlink (`dispatched_at`), jamais au
         // départ réel (`delivered_at`, F12) que seule la relève confirme
-        // (`releve-salesblink.ts::journaliserActionLivree`, « Email livré. »).
+        // (`releve-salesblink.ts::journaliserActionLivree`, « Email parti. »).
         diff: { libelle: `Email remis : ${libelleModeEnvoi(mode.mode)}.`, campagneId: email.campaignId },
       });
     } catch (err) {

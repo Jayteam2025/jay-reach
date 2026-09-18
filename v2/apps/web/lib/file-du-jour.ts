@@ -9,8 +9,29 @@
  * nombre de « partis » différent de celui de la page Aujourd'hui et de
  * l'onglet File du jour pour le même jour et la même campagne.
  */
-import type { EnvoiPrevu } from '@jay-reach/core';
+import type { EnvoiPrevu, EtatEnvoi } from '@jay-reach/core';
 
 export function compterPartis(fileDuJour: readonly Pick<EnvoiPrevu, 'livre'>[]): number {
   return fileDuJour.filter((envoi) => envoi.livre).length;
+}
+
+/**
+ * État affiché d'un envoi (F13, décision du 18/09) : deux états réels, pas
+ * trois. « Remis » (`dispatched`) et « Parti » (`delivered`) ne se lisent
+ * JAMAIS sur le statut brut de la base pour ces deux-là — il ne dit rien du
+ * canal. Un email `dispatched` n'est que remis : SalesBlink ne l'a pas encore
+ * réellement envoyé (`livre` faux). Une action LinkedIn `dispatched`, elle,
+ * EST son départ réel (`livre` vrai, F12 : pas de transporteur asynchrone
+ * entre l'extension et le départ) — elle ne doit jamais rester « Remis » à
+ * vie, ce canal n'atteint jamais le statut `delivered`. Réutilise les clés
+ * `EtatEnvoi` existantes (`dispatched`/`delivered`) comme représentation
+ * interne du mot affiché : seul le sens du libellé catalogue change, la table
+ * `TON_ETAT` et les dictionnaires de libellés restent valables tels quels.
+ * Les autres statuts (prévu, à relire, échoué, bloqué, annulé) ne dépendent
+ * pas du canal et passent inchangés.
+ */
+export function etatAffichage(envoi: Pick<EnvoiPrevu, 'etatDetaille' | 'envoye' | 'livre'>): EtatEnvoi {
+  const etat = envoi.etatDetaille ?? 'scheduled';
+  if (etat !== 'dispatched' && etat !== 'delivered') return etat;
+  return envoi.livre ? 'delivered' : 'dispatched';
 }

@@ -316,7 +316,7 @@
         "emailVerified": "Email vérifié",
         "inSequence": "En séquence",
         "pausedSuffix": "· {n} en pause",
-        "delivered": "Emails livrés",
+        "delivered": "Emails partis",
         "replies": "Réponses",
         "interested": "Intéressés"
       },
@@ -469,7 +469,7 @@
         "scheduled": "{n, plural, one {Prévu #} other {Prévus #}}",
         "toReview": "{n, plural, one {À relire #} other {À relire #}}",
         "dispatched": "{n, plural, one {Remis #} other {Remis #}}",
-        "delivered": "{n, plural, one {Livré #} other {Livrés #}}",
+        "delivered": "{n, plural, one {Parti #} other {Partis #}}",
         "failed": "{n, plural, one {Échoué #} other {Échoués #}}",
         "blocked": "{n, plural, one {Bloqué #} other {Bloqués #}}"
       },
@@ -489,7 +489,7 @@
         "pending_approval": "À relire",
         "approved": "Prévu",
         "dispatched": "Remis",
-        "delivered": "Livré",
+        "delivered": "Parti",
         "failed": "Échoué",
         "blocked": "Bloqué",
         "cancelled": "Annulé",
@@ -526,7 +526,7 @@
         "notReviewable": {
           "approved": "déjà validé",
           "dispatched": "déjà remis",
-          "delivered": "livré",
+          "delivered": "parti",
           "failed": "échoué",
           "blocked": "bloqué",
           "cancelled": "annulé",

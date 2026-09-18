@@ -178,8 +178,10 @@ describe('releverSalesBlink', () => {
     // R22 (tour de correction 1) : campagne résolue via l'action livrée ('action-livree-1').
     const campagneLookup = appels.find((a) => CAMPAGNE_PAR_ACTION.test(a.sql));
     expect(campagneLookup!.values).toEqual(['action-livree-1']);
-    const diff = JSON.parse(journal!.values[5] as string) as { campagneId: string | null };
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; campagneId: string | null };
     expect(diff.campagneId).toBe('campagne-9');
+    // F13 (décision 18/09) : « parti », pas « livré » — deux états, pas trois.
+    expect(diff.libelle).toBe('Email parti.');
   });
 
   it('un rapport Bounced ouvre une suppression et arrête l’inscription (rebond)', async () => {

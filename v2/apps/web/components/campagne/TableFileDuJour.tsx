@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import type { EnvoiPrevu, EtatEnvoi } from '@jay-reach/core';
+import { etatAffichage } from '../../lib/file-du-jour';
 import { Avatar, Puce } from '../ui';
 import type { PuceTon } from '../ui';
 import { BoutonChercherEmail } from './BoutonChercherEmail';
@@ -94,7 +95,9 @@ function LigneEnvoiRendue({
   campagneId: string;
   libelles: TableFileDuJourLibelles;
 }) {
-  const etat = envoi.etatDetaille ?? 'scheduled';
+  // F13 (décision 18/09) : « remis »/« parti » dépendent du canal (`etatAffichage`),
+  // jamais du statut brut — une action LinkedIn `dispatched` est un départ réel.
+  const etat = etatAffichage(envoi);
 
   return (
     <tr>
