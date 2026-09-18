@@ -99,6 +99,19 @@ Versionnement sémantique.
   saturées), l'étape suivante pouvait devenir due avant même que la précédente ne soit envoyée, ce qui a exigé une correction
   manuelle en base sur une campagne réelle. L'échéance se pose désormais au départ réel de l'envoi (email par SalesBlink,
   action LinkedIn confirmée par l'extension), avec le même espacement aléatoire qu'avant.
+- **Les plafonds quotidiens de scoring et d'enrichissement se remettent à zéro à l'heure de l'organisation, pas à minuit UTC
+  (#118).** Le jour du plafond restait toujours celui du serveur, quel que soit le fuseau réglé par l'organisation ; l'écran
+  Réglages › Plafonds l'affirmait d'ailleurs littéralement (« minuit UTC »), une heure sans rapport avec ce que montrent les
+  autres jauges. Le jour suit désormais le même fuseau que les envois et les tendances sur 7 jours, et l'aide de l'écran
+  affiche ce fuseau plutôt qu'une heure figée.
+- **Une campagne alimentée par une liste importée n'était reconnue nulle part comme telle (#120).** Le seul repère lu jusque-là
+  (`campaigns.list_id`) reste vide sur une campagne réelle : le lien à la liste ne vit que sur chaque inscription. L'entonnoir,
+  la carte Sources de la vue d'ensemble, le nœud Sources de l'onglet Séquence, la colonne Sources d'Aujourd'hui et de la liste
+  des campagnes affichaient tous « aucune source » malgré une campagne pleinement alimentée ; l'objet d'un envoi pas encore
+  parti restait brut, faute de rejoindre le fichier importé pour résoudre ses colonnes. Les quatre écrans et l'aperçu d'objet
+  se fient désormais aux inscriptions, jamais à la seule campagne, avec le nom de la liste dominante affiché partout où
+  l'origine s'affichait vide. La colonne d'intitulé de poste de l'onglet Contacts reconnaît par ailleurs les en-têtes anglais
+  et néerlandais courants (`Title`, `Position`, `Functietitel`…), pas seulement les variantes françaises.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
