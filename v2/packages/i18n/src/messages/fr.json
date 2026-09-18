@@ -177,7 +177,7 @@
     }
   },
   "aujourdhui": {
-    "resume": "{aTraiter, plural, one {# réponse} other {# réponses}} à traiter, {envois, plural, one {# envoi prévu} other {# envois prévus}}, {campagnes, plural, one {# campagne active} other {# campagnes actives}}.",
+    "resume": "{aTraiter, plural, one {# réponse} other {# réponses}} à traiter{absences, plural, =0 {} one { (+ # absence automatique)} other { (+ # absences automatiques)}}, {envois, plural, one {# envoi prévu} other {# envois prévus}}, {campagnes, plural, one {# campagne active} other {# campagnes actives}}.",
     "newCampaign": "Nouvelle campagne",
     "toProcess": {
       "title": "À traiter",

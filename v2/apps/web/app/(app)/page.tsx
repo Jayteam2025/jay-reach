@@ -80,7 +80,12 @@ export default async function AujourdhuiPage() {
 
       <EnTetePage
         titre={jour}
-        description={t('resume', { aTraiter: a.aTraiter.total, envois: a.fileDuJour.total, campagnes: campagnesActives })}
+        description={t('resume', {
+          aTraiter: a.aTraiter.total,
+          absences: a.absencesNonTraitees,
+          envois: a.fileDuJour.total,
+          campagnes: campagnesActives,
+        })}
         action={<Bouton variante="principal">{t('newCampaign')}</Bouton>}
       />
 

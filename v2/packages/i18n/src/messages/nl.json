@@ -177,7 +177,7 @@
     }
   },
   "aujourdhui": {
-    "resume": "{aTraiter, plural, one {# reactie} other {# reacties}} te behandelen, {envois, plural, one {# verzending gepland} other {# verzendingen gepland}}, {campagnes, plural, one {# actieve campagne} other {# actieve campagnes}}.",
+    "resume": "{aTraiter, plural, one {# reactie} other {# reacties}} te behandelen{absences, plural, =0 {} one { (+ # automatische afwezigheidsmelding)} other { (+ # automatische afwezigheidsmeldingen)}}, {envois, plural, one {# verzending gepland} other {# verzendingen gepland}}, {campagnes, plural, one {# actieve campagne} other {# actieve campagnes}}.",
     "newCampaign": "Nieuwe campagne",
     "toProcess": {
       "title": "Te behandelen",

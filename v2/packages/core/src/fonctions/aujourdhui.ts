@@ -134,6 +134,14 @@ export interface Alerte {
 
 export interface Aujourdhui {
   aTraiter: { total: number; fils: FilResume[] };
+  /**
+   * Absences automatiques encore non traitées (`classification = 'auto_absence' and
+   * handled_at is null`) — jamais additionnées à `aTraiter.total` ni au badge de la barre
+   * latérale, qui restent la définition canonique « à traiter » (une absence ne demande pas
+   * d'action). Sert uniquement à la phrase de résumé de l'écran Aujourd'hui, pour qu'une
+   * réponse reçue mais sans action requise ne reste pas totalement invisible.
+   */
+  absencesNonTraitees: number;
   fileDuJour: {
     /** Actions remises ou planifiées aujourd'hui (dans le fuseau de l'organisation), quel que soit leur départ réel. */
     total: number;
@@ -285,7 +293,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, partisAujourdhuiRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const [filsRes, actionsRes, partisAujourdhuiRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -389,6 +397,22 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and kind = 'email'
           and is_active
           and provider_state->>'sending_enabled' = 'false'`,
+      [ctx.organisationId],
+    ),
+    // Correctif du 18/09 (constat produit) : une absence automatique n'est pas « à traiter »
+    // (`jr:threads_a_traiter` ne la sélectionne pas, à raison — `SQL_CONDITION_A_TRAITER`),
+    // mais la phrase d'accueil ne mentionnait alors AUCUNE des réponses reçues hors « à
+    // traiter » : deux personnes avaient répondu (absence) sans que rien à l'écran ne le
+    // dise, lu comme des réponses perdues alors qu'elles étaient bien classées. Comptée à
+    // part, jamais mélangée à `aTraiter.total` ni au badge de la barre latérale (tous deux
+    // restent la définition canonique « à traiter », inchangée) — seulement mentionnée dans
+    // la phrase de résumé.
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:absences_non_traitees */
+         from threads t
+        where t.organization_id = $1
+          and t.classification = 'auto_absence'
+          and t.handled_at is null`,
       [ctx.organisationId],
     ),
     lireEtatMoteur(ctx, reglages),
@@ -506,6 +530,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
 
   return {
     aTraiter: { total: fils.length, fils: fils.slice(0, NOMBRE_FILS_APERCU) },
+    absencesNonTraitees: absencesNonTraiteesRes.rows[0]?.n ?? 0,
     fileDuJour: {
       total: envois.length,
       dejaPartis,

@@ -177,7 +177,7 @@
     }
   },
   "aujourdhui": {
-    "resume": "{aTraiter, plural, one {# reply} other {# replies}} to handle, {envois, plural, one {# send} other {# sends}} scheduled, {campagnes, plural, one {# active campaign} other {# active campaigns}}.",
+    "resume": "{aTraiter, plural, one {# reply} other {# replies}} to handle{absences, plural, =0 {} one { (+ # automatic out-of-office reply)} other { (+ # automatic out-of-office replies)}}, {envois, plural, one {# send} other {# sends}} scheduled, {campagnes, plural, one {# active campaign} other {# active campaigns}}.",
     "newCampaign": "New campaign",
     "toProcess": {
       "title": "To handle",
