@@ -142,25 +142,16 @@ export interface Aujourdhui {
      * — sous-ensemble strict : `partis + enFile === total`. C'est ce nombre
      * qui va avec `total`/le plafond du jour (jauge d'envois de la coquille,
      * G2) : un message remis hier mais parti aujourd'hui a consommé le quota
-     * D'HIER, il n'a pas sa place ici — voir `dejaPartis` pour ce cas-là.
+     * D'HIER, il n'a pas sa place ici.
+     *
+     * A remplacé `dejaPartis` (F12, retiré G2) : cette mesure d'ACTIVITÉ
+     * cross-jour (combien sont réellement sortis aujourd'hui, peu importe
+     * quand ils ont été remis) rejouait une requête à chaque chargement de
+     * l'accueil sans qu'aucun écran ne la lise plus une fois la jauge et les
+     * cartes basculées sur `partis` — si une mesure d'activité redevient utile,
+     * elle se réécrira en quelques lignes plutôt que de garder ce mort-vivant.
      */
     partis: number;
-    /**
-     * « Partis » (F12) : messages RÉELLEMENT envoyés aujourd'hui (dans le
-     * fuseau de l'organisation) — `livre` de chaque envoi, PAS `envoye`
-     * (simple remise au transporteur). Compte cross-jour (revue F12) : un
-     * message remis hier mais parti aujourd'hui compte ici, un message remis
-     * aujourd'hui mais pas encore parti n'y compte pas encore — voir `enFile`.
-     * N'est donc PAS un sous-ensemble de `envois`/`total` (qui ne portent que
-     * ce qui a été remis ou planifié AUJOURD'HUI), aucune relation arithmétique
-     * simple entre les deux depuis ce correctif.
-     *
-     * Mesure d'ACTIVITÉ (combien sont réellement sortis aujourd'hui, peu
-     * importe quand ils ont été remis), jamais de QUOTA (G2) : le quota du
-     * jour se consomme à la remise, pas au départ — utiliser `partis` (et non
-     * celui-ci) pour tout affichage à côté d'un plafond.
-     */
-    dejaPartis: number;
     /**
      * « En file » (F12) : parmi les actions de `total`, celles pas encore
      * RÉELLEMENT parties (`livre` faux) — remises au transporteur en attente
@@ -298,7 +289,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, partisAujourdhuiRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -331,27 +322,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date::timestamp at time zone $3)
           and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1)::timestamp at time zone $3)
         order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
-      [ctx.organisationId, jourRef, fuseau],
-    ),
-    // « Partis » (F12) : combien de messages sont RÉELLEMENT partis aujourd'hui, dans le fuseau
-    // de l'organisation — cross-jour à dessein (un message REMIS hier mais parti aujourd'hui
-    // compte ici), donc une requête à part de `jr:file_du_jour` ci-dessus, qui ne porte que ce
-    // qui a été remis OU planifié aujourd'hui. Email : `delivered_at` (l'instant où SalesBlink
-    // l'a réellement envoyé) ; autres canaux (LinkedIn) : `dispatched_at` est déjà cet instant
-    // réel, aucun transporteur asynchrone entre les deux (voir `estReellementParti`).
-    ctx.ex.query<{ n: number }>(
-      `select count(*)::int as n /* jr:partis_aujourdhui */
-         from actions a
-        where a.organization_id = $1
-          and (
-            -- Même remarque que ci-dessus sur ::date::timestamp at time zone (jamais
-            -- ::date at time zone seul).
-            (a.channel = 'email' and a.status = 'delivered'
-               and a.delivered_at >= ($2::date::timestamp at time zone $3) and a.delivered_at < (($2::date + 1)::timestamp at time zone $3))
-            or
-            (a.channel <> 'email' and a.status in ('dispatched', 'delivered')
-               and a.dispatched_at >= ($2::date::timestamp at time zone $3) and a.dispatched_at < (($2::date + 1)::timestamp at time zone $3))
-          )`,
       [ctx.organisationId, jourRef, fuseau],
     ),
     ctx.ex.query<LigneCampagne>(
@@ -438,9 +408,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       canal: canalDe(r.channel),
     };
   });
-  // « Partis » (F12) : requête à part (`jr:partis_aujourdhui`), cross-jour à dessein — voir sa
-  // définition ci-dessus et la doc de `Aujourdhui.fileDuJour.dejaPartis`.
-  const dejaPartis = partisAujourdhuiRes.rows[0]?.n ?? 0;
   // « En file » (F12) : parmi les actions remises OU planifiées aujourd'hui (`envois`), celles
   // pas encore réellement parties — remises en attente de départ, ou simplement planifiées.
   const enFile = envois.filter((e) => !e.livre).length;
@@ -525,7 +492,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     fileDuJour: {
       total: envois.length,
       partis,
-      dejaPartis,
       enFile,
       possiblesAujourdhui: projectionFileDuJour.possiblesAujourdhui,
       reportesProchainCreneau: projectionFileDuJour.reportesProchainCreneau,

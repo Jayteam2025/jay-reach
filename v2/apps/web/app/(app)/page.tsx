@@ -130,9 +130,9 @@ export default async function AujourdhuiPage() {
           titre={t('queue.title')}
           action={
             <>
-              {/* G2 : `dejaPartis` (F12) est cross-jour, pas un sous-ensemble de `total` — l'ancienne
-                  phrase pouvait dire « 0 envoi, 47 déjà partis ». `partis` (borné à `total`, comme
-                  la jauge de la coquille) garde une relation arithmétique vraie : partis + enFile === total. */}
+              {/* G2 : `partis`/`enFile`, bornés à `total` (`partis + enFile === total`) — l'ancienne
+                  phrase mélangeait `total` avec une mesure d'activité cross-jour depuis retirée
+                  (`dejaPartis`) et pouvait dire « 0 envoi, 47 déjà partis ». */}
               <small>{t('queue.count', { partis: a.fileDuJour.partis, enFile: a.fileDuJour.enFile })}</small>
               <Link href="/campaigns" className="jr-lien" style={{ fontSize: 13 }}>
                 {t('queue.seeAll')}
