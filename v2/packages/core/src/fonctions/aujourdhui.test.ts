@@ -79,22 +79,18 @@ describe('lireAujourdhui', () => {
         { id: 'a1', dispatched_at: '2026-09-14T08:30:00.000Z', delivered_at: '2026-09-14T08:31:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 0, expediteur: 'prospection@exemple.fr' },
         { id: 'a2', dispatched_at: '2026-09-14T10:05:00.000Z', delivered_at: '2026-09-14T10:06:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', first_name: 'Karim', last_name: 'Benali', campagne_nom: 'Directeur commercial', etape: 1, expediteur: 'ventes@exemple.fr' },
       ],
-      // F12 : requête séparée (cross-jour), plus dérivée de `jr:file_du_jour`.
-      'jr:partis_aujourdhui': [{ n: 2 }],
     });
     const a = await lireAujourdhui(ctx);
     // 2026-09-14T10:05:00Z est un lundi de septembre : Europe/Paris est alors en heure d'été (UTC+2) → 12:05.
     expect(a.fileDuJour.derniereHeure).toBe('12:05');
-    expect(a.fileDuJour.dejaPartis).toBe(2);
     expect(a.fileDuJour.partis).toBe(2);
     expect(a.fileDuJour.enFile).toBe(0);
     expect(a.fileDuJour.total).toBe(2);
   });
 
   it(
-    'G2 : `partis` (borné au jour, famille 2) diverge de `dejaPartis` (activité cross-jour, ' +
-      'famille 3) — le cas réel « Jay coach - RH » (47 remis aujourd’hui, aucun réellement parti ' +
-      "aujourd'hui, mais des messages remis d'autres jours sont partis aujourd'hui côté activité)",
+    'G2 : `partis` reste borné aux actions REMISES OU PLANIFIÉES AUJOURD’HUI — le cas réel ' +
+      '« Jay coach - RH » (47 remis aujourd’hui, aucun réellement parti aujourd’hui)',
     async () => {
       const remisAujourdhui = Array.from({ length: 47 }, (_, i) => ({
         id: `a${i}`,
@@ -110,20 +106,13 @@ describe('lireAujourdhui', () => {
         etape: 0,
         expediteur: 'rh@exemple.fr',
       }));
-      const ctx = faux({
-        'jr:file_du_jour': remisAujourdhui,
-        // Activité cross-jour (F12) : des messages remis un AUTRE jour sont réellement partis
-        // aujourd'hui — sans rapport avec le quota du jour des 47 remis ci-dessus.
-        'jr:partis_aujourdhui': [{ n: 12 }],
-      });
+      const ctx = faux({ 'jr:file_du_jour': remisAujourdhui });
       const a = await lireAujourdhui(ctx);
       expect(a.fileDuJour.total).toBe(47);
-      // Famille 2 : aucun des 47 remis aujourd'hui n'est réellement parti — c'est ce nombre qui
-      // doit accompagner le plafond du jour (jauge, G2), jamais `dejaPartis`.
+      // Aucun des 47 remis aujourd'hui n'est réellement parti — c'est ce nombre qui doit
+      // accompagner le plafond du jour (jauge, G2).
       expect(a.fileDuJour.partis).toBe(0);
       expect(a.fileDuJour.enFile).toBe(47);
-      // Famille 3 : mesure d'activité, sans lien arithmétique avec `total`/`partis` ci-dessus.
-      expect(a.fileDuJour.dejaPartis).toBe(12);
     },
   );
 
@@ -177,13 +166,9 @@ describe('lireAujourdhui', () => {
           expediteur: 'ventes@exemple.fr',
         },
       ],
-      // F12 : requête séparée (cross-jour), plus dérivée de `jr:file_du_jour` — ce test porte sur
-      // le tri des `Date`, pas sur le calcul du compteur, mocké ici indépendamment.
-      'jr:partis_aujourdhui': [{ n: 3 }],
     });
     const a = await lireAujourdhui(ctx);
     expect(a.fileDuJour.derniereHeure).toBe('12:00');
-    expect(a.fileDuJour.dejaPartis).toBe(3);
   });
 
   it("numérote l'étape à partir de 1 pour l'humain (position stockée à partir de 0)", async () => {
@@ -263,10 +248,9 @@ describe('lireAujourdhui', () => {
           { id: 'a1', dispatched_at: '2026-09-14T08:00:00.000Z', delivered_at: '2026-09-14T08:01:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
         ],
         'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 1 }],
-        'jr:partis_aujourdhui': [{ n: 1 }],
       });
       const a = await lireAujourdhui(ctx);
-      expect(a.fileDuJour.dejaPartis).toBe(1);
+      expect(a.fileDuJour.partis).toBe(1);
       expect(a.fileDuJour.enFile).toBe(0);
       expect(a.fileDuJour.possiblesAujourdhui).toBe(0);
       expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
@@ -274,23 +258,6 @@ describe('lireAujourdhui', () => {
   });
 
   describe('F12 : « partis » compte le départ RÉEL, pas la remise au transporteur', () => {
-    it(
-      'un email remis HIER mais parti AUJOURD’HUI compte dans les « partis » d’aujourd’hui, ' +
-        'même absent de la file du jour (remis hors de la fenêtre du jour)',
-      async () => {
-        const ctx = faux({
-          // Rien remis ni planifié aujourd'hui (l'action d'hier n'entre pas dans cette fenêtre) :
-          // seule la requête cross-jour dédiée peut donc rendre ce compte non nul.
-          'jr:file_du_jour': [],
-          'jr:partis_aujourdhui': [{ n: 1 }],
-        });
-        const a = await lireAujourdhui(ctx);
-        expect(a.fileDuJour.total).toBe(0);
-        expect(a.fileDuJour.dejaPartis).toBe(1);
-        expect(a.fileDuJour.enFile).toBe(0);
-      },
-    );
-
     it('un email remis AUJOURD’HUI mais pas encore parti (SalesBlink ne l’a pas encore envoyé) est « en file », pas « parti »', async () => {
       const ctx = faux({
         'jr:file_du_jour': [
@@ -309,12 +276,10 @@ describe('lireAujourdhui', () => {
             expediteur: 'prospection@exemple.fr',
           },
         ],
-        // Aucun `delivered_at` ne tombe aujourd'hui : la requête dédiée rend 0.
-        'jr:partis_aujourdhui': [{ n: 0 }],
       });
       const a = await lireAujourdhui(ctx);
       expect(a.fileDuJour.total).toBe(1);
-      expect(a.fileDuJour.dejaPartis).toBe(0);
+      expect(a.fileDuJour.partis).toBe(0);
       expect(a.fileDuJour.enFile).toBe(1);
       expect(a.fileDuJour.envois[0]?.envoye).toBe(true); // remis, pour le calcul de quota
       expect(a.fileDuJour.envois[0]?.livre).toBe(false); // pas réellement parti
@@ -339,35 +304,11 @@ describe('lireAujourdhui', () => {
             expediteur: null,
           },
         ],
-        'jr:partis_aujourdhui': [{ n: 1 }],
       });
       const a = await lireAujourdhui(ctx);
       expect(a.fileDuJour.envois[0]?.livre).toBe(true);
       expect(a.fileDuJour.enFile).toBe(0);
     });
-
-    it(
-      'la requête « partis » du jour reste bornée par le fuseau de l’organisation (mêmes bornes ' +
-        'que la file du jour), jamais `now()`/minuit UTC — un envoi à 23h50 doit tomber du bon côté',
-      async () => {
-        const appels: { text: string }[] = [];
-        const query = vi.fn(async (text: string) => {
-          appels.push({ text });
-          if (/from organization_settings/i.test(text)) return { rows: [{ key: 'fuseau', value: 'Europe/Paris' }], rowCount: 1 };
-          return { rows: [], rowCount: 0 };
-        }) as unknown as Executeur['query'];
-        const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
-
-        await lireAujourdhui(ctx);
-
-        const requete = appels.find((a) => /jr:partis_aujourdhui/i.test(a.text))!.text;
-        expect(requete).toMatch(/\$2::date::timestamp at time zone \$3/);
-        expect(requete).not.toContain('now()');
-        // Pis-aller texte (voir le test `jr:file_du_jour` ci-dessus pour le détail du bug réel,
-        // qui ne s'observe qu'à l'exécution contre un vrai Postgres, jamais sur ce mock).
-        expect(requete).not.toMatch(/\$2::date at time zone/);
-      },
-    );
   });
 
   it('lève une alerte moteur_silencieux quand le dernier tour date de plus de 15 minutes', async () => {
