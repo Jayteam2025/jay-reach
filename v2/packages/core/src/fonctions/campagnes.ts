@@ -143,7 +143,7 @@ export const FROM_POPULATION_CAMPAGNE = `from (
       join contacts c on c.id = pop.contact_id
       left join signals s on s.id = pop.signal_id
       left join lateral (
-        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at, e2.stop_reason, e2.resume_at, e2.list_id
+        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at, e2.stop_reason, e2.resume_at, e2.next_action_at, e2.list_id
           from enrollments e2
          where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc
