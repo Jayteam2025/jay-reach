@@ -2,25 +2,21 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { ErreurIntrouvable, type Evenement } from '@jay-reach/core';
+import type { Locale } from '@jay-reach/i18n';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
+import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
-
-const nf = new Intl.NumberFormat('fr-FR');
 
 /** Aperçu de la file du jour affiché sur cette carte — la file complète vit dans l'onglet File du jour (tâche 11). */
 const TAILLE_APERCU_FILE = 5;
 
 function formatHeure(iso: string): string {
   return new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: FUSEAU_PAR_DEFAUT }).format(new Date(iso));
-}
-
-function pourcentageTexte(valeur: number): string {
-  return `${valeur.toLocaleString('fr-FR')} %`;
 }
 
 // Revue F5, point 4 : le cœur ne construit plus le texte de l'événement synthétique
@@ -42,11 +38,13 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
 
   let t: Awaited<ReturnType<typeof getTranslations>>;
   let tSources: Awaited<ReturnType<typeof getTranslations>>;
+  let locale: Locale;
   let vue: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
   try {
-    [t, tSources, vue] = await Promise.all([
+    [t, tSources, locale, vue] = await Promise.all([
       getTranslations('campagne'),
       getTranslations('sources'),
+      localeCourante(),
       lireVueDEnsembleCourante(ctx, id),
     ]);
   } catch (err) {
@@ -62,7 +60,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
   // (même case `taux` que les pourcentages, réutilisée comme simple annotation).
   // Revue F5, point 7 : harmonisé avec Aujourd'hui et Campagnes — sans base réelle (rien
   // encore parti), « 0 », jamais un tiret.
-  const tauxOuZero = (taux: number | null) => (taux !== null ? pourcentageTexte(taux) : '0');
+  const tauxOuZero = (taux: number | null) => (taux !== null ? formatPourcentage(taux, locale) : '0');
   const enPauseSuffixe = vue.entonnoir.enPause > 0 ? t('overview.funnel.pausedSuffix', { n: vue.entonnoir.enPause }) : undefined;
 
   // Point 2 (issue #120) : une campagne à liste n'a ni signal ni thème de veille — l'entonnoir
@@ -142,15 +140,15 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         <Carte titre={t('overview.caps.title')}>
           <CleValeur
             libelle={t('overview.caps.scoring')}
-            valeur={`${nf.format(vue.plafonds.scoring.utilise)} / ${nf.format(vue.plafonds.scoring.plafond)}`}
+            valeur={`${formatNombre(vue.plafonds.scoring.utilise, locale)} / ${formatNombre(vue.plafonds.scoring.plafond, locale)}`}
           />
           <CleValeur
             libelle={t('overview.caps.enrichment')}
-            valeur={`${nf.format(vue.plafonds.enrichissement.utilise)} / ${nf.format(vue.plafonds.enrichissement.plafond)}`}
+            valeur={`${formatNombre(vue.plafonds.enrichissement.utilise, locale)} / ${formatNombre(vue.plafonds.enrichissement.plafond, locale)}`}
           />
           <CleValeur
             libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
-            valeur={`${nf.format(vue.plafonds.envois.utilise)} / ${nf.format(vue.plafonds.envois.plafond)}`}
+            valeur={`${formatNombre(vue.plafonds.envois.utilise, locale)} / ${formatNombre(vue.plafonds.envois.plafond, locale)}`}
           />
           <Link href="/settings" className="jr-lien jr-lien-petit jr-lien-pied">
             {t('overview.caps.settingsLink')}

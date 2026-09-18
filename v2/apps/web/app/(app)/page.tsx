@@ -5,12 +5,11 @@ import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, quandRelatif } from '../../lib/dates';
+import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
 import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
 export const revalidate = 60;
-
-const nf = new Intl.NumberFormat('fr-FR');
 
 function capitaliser(texte: string): string {
   return texte.charAt(0).toUpperCase() + texte.slice(1);
@@ -56,7 +55,7 @@ const TON_STATUT_CAMPAGNE: Record<CampagneResume['statut'], PuceTon> = {
 
 export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
-  const [t, a] = await Promise.all([getTranslations('aujourdhui'), lireAujourdhuiCourant(ctx)]);
+  const [t, locale, a] = await Promise.all([getTranslations('aujourdhui'), localeCourante(), lireAujourdhuiCourant(ctx)]);
 
   const jour = capitaliser(
     new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FUSEAU_PAR_DEFAUT }).format(
@@ -174,7 +173,7 @@ export default async function AujourdhuiPage() {
           <Carte titre={t('engine.title')} action={<Puce ton={a.moteur.enMarche ? 'bon' : 'erreur'} point>{a.moteur.enMarche ? t('engine.running') : t('engine.stopped')}</Puce>}>
             <CleValeur libelle={t('engine.last')} valeur={formatHeure(a.moteur.dernierPassage)} />
             <CleValeur libelle={t('engine.next')} valeur={formatHeure(a.moteur.prochainPassage)} />
-            <CleValeur libelle={t('engine.errors')} valeur={nf.format(a.moteur.erreursDepuisMinuit)} />
+            <CleValeur libelle={t('engine.errors')} valeur={formatNombre(a.moteur.erreursDepuisMinuit, locale)} />
             <CleValeur libelle={t('engine.version')} valeur={a.moteur.version ?? '—'} />
           </Carte>
 
@@ -186,14 +185,14 @@ export default async function AujourdhuiPage() {
               </Link>
             }
           >
-            <CleValeur libelle={t('caps.scoring')} valeur={`${nf.format(a.plafonds.scoring.utilise)} / ${nf.format(a.plafonds.scoring.plafond)}`} />
+            <CleValeur libelle={t('caps.scoring')} valeur={`${formatNombre(a.plafonds.scoring.utilise, locale)} / ${formatNombre(a.plafonds.scoring.plafond, locale)}`} />
             <BarreProgression valeur={pourcentageJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} ton={tonJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} />
-            <CleValeur libelle={t('caps.enrichment')} valeur={`${nf.format(a.plafonds.enrichissement.utilise)} / ${nf.format(a.plafonds.enrichissement.plafond)}`} />
+            <CleValeur libelle={t('caps.enrichment')} valeur={`${formatNombre(a.plafonds.enrichissement.utilise, locale)} / ${formatNombre(a.plafonds.enrichissement.plafond, locale)}`} />
             <BarreProgression
               valeur={pourcentageJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
               ton={tonJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
             />
-            <CleValeur libelle={t('caps.sending')} valeur={`${nf.format(a.plafonds.envois.utilise)} / ${nf.format(a.plafonds.envois.plafond)}`} />
+            <CleValeur libelle={t('caps.sending')} valeur={`${formatNombre(a.plafonds.envois.utilise, locale)} / ${formatNombre(a.plafonds.envois.plafond, locale)}`} />
             <BarreProgression valeur={pourcentageJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} ton={tonJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} />
           </Carte>
         </div>
@@ -258,15 +257,15 @@ export default async function AujourdhuiPage() {
                 ) : (
                   <span className="jr-secondaire">{t('campaigns.noSource')}</span>
                 ),
-              contacts: nf.format(campagne.contacts),
-              sequence: nf.format(campagne.enSequence),
+              contacts: formatNombre(campagne.contacts, locale),
+              sequence: formatNombre(campagne.enSequence, locale),
               reponses: (
                 <>
-                  {nf.format(campagne.reponses)}{' '}
+                  {formatNombre(campagne.reponses, locale)}{' '}
                   <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>
                     {/* Revue F5, point 7 : harmonisé avec Campagnes et la vue d'ensemble de
                         campagne — sans base réelle (aucun envoi parti), « 0 », jamais un tiret. */}
-                    {campagne.tauxReponse !== null ? `${campagne.tauxReponse.toLocaleString('fr-FR')} %` : '0'}
+                    {campagne.tauxReponse !== null ? formatPourcentage(campagne.tauxReponse, locale) : '0'}
                   </em>
                 </>
               ),

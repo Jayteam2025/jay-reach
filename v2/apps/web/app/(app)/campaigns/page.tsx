@@ -2,15 +2,15 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { listerCampagnes, campaignStatusSchema } from '@jay-reach/core';
 import type { CampaignStatus } from '@jay-reach/core';
+import type { Locale } from '@jay-reach/i18n';
 import { contexteCourant } from '../../../lib/contexte';
 import { dateRelativeCourte } from '../../../lib/dates';
+import { formatNombre, formatPourcentage, localeCourante } from '../../../lib/nombres';
 import { Carte, EnTetePage, EtatVide, Puce, Table, TuileLogo } from '../../../components/ui';
 import type { PuceTon } from '../../../components/ui';
 import { PileDeBoites } from '../../../components/campagne/PileDeBoites';
 
 export const revalidate = 60;
-
-const nf = new Intl.NumberFormat('fr-FR');
 
 const TON_STATUT_CAMPAGNE: Record<CampaignStatus, PuceTon> = {
   draft: 'gris',
@@ -24,8 +24,8 @@ const TON_STATUT_CAMPAGNE: Record<CampaignStatus, PuceTon> = {
  * taux sans base réelle (aucun envoi parti, `tauxSurPartis` rend `null`) affiche « 0 », jamais
  * un tiret ni rien du tout (cette colonne ne montrait alors même plus le signe %).
  */
-function tauxOuZero(taux: number | null): string {
-  return taux !== null ? `${taux.toLocaleString('fr-FR')} %` : '0';
+function tauxOuZero(taux: number | null, locale: Locale): string {
+  return taux !== null ? formatPourcentage(taux, locale) : '0';
 }
 
 /** `?etat=` : un statut connu, sinon aucun filtre (une valeur inconnue ne casse jamais la page). */
@@ -82,7 +82,12 @@ export default async function CampagnesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await contexteCourant();
-  const [t, sp, campagnes] = await Promise.all([getTranslations('campagne'), searchParams, listerCampagnes(ctx)]);
+  const [t, locale, sp, campagnes] = await Promise.all([
+    getTranslations('campagne'),
+    localeCourante(),
+    searchParams,
+    listerCampagnes(ctx),
+  ]);
   const etat = etatDemande(sp.etat);
   const campagnesAffichees = etat ? campagnes.filter((c) => c.statut === etat) : campagnes;
 
@@ -160,10 +165,10 @@ export default async function CampagnesPage({
                     ) : (
                       <PileDeBoites boites={campagne.boites} />
                     ),
-                  contacts: nf.format(campagne.contacts),
+                  contacts: formatNombre(campagne.contacts, locale),
                   sequence: (
                     <>
-                      {nf.format(campagne.enSequence)}
+                      {formatNombre(campagne.enSequence, locale)}
                       {campagne.enPause > 0 && (
                         <small className="jr-secondaire jr-sous-valeur">{t('list.pausedCount', { n: campagne.enPause })}</small>
                       )}
@@ -171,12 +176,12 @@ export default async function CampagnesPage({
                   ),
                   reponses: (
                     <>
-                      <b>{nf.format(campagne.reponses)}</b>
+                      <b>{formatNombre(campagne.reponses, locale)}</b>
                       {' '}
-                      <small className="jr-secondaire">{tauxOuZero(campagne.tauxReponse)}</small>
+                      <small className="jr-secondaire">{tauxOuZero(campagne.tauxReponse, locale)}</small>
                     </>
                   ),
-                  interesses: nf.format(campagne.interesses),
+                  interesses: formatNombre(campagne.interesses, locale),
                   activite: campagne.derniereActivite ? (
                     dateRelativeCourte(campagne.derniereActivite)
                   ) : (
