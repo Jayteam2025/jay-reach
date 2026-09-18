@@ -8,6 +8,7 @@ import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
+import { compterPartis } from '../../../../lib/file-du-jour';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -54,7 +55,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
 
   const apercuFile = vue.fileDuJour.slice(0, TAILLE_APERCU_FILE);
   const resteFile = vue.fileDuJour.length - apercuFile.length;
-  const dejaPartis = vue.fileDuJour.filter((envoi) => envoi.envoye).length;
+  const dejaPartis = compterPartis(vue.fileDuJour);
 
   // Point 1 : la marche « En séquence » porte aussi le nombre en pause, en second libellé
   // (même case `taux` que les pourcentages, réutilisée comme simple annotation).
