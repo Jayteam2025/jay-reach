@@ -19,6 +19,14 @@
 -- Ce test insère deux actions RÉELLES (table `actions`, migrées) et compare
 -- le compte rendu par les deux bornes — pas une preuve textuelle, une preuve
 -- d'exécution contre un vrai Postgres (`test/pg-verify/run.sh`).
+--
+-- PORTÉE (revue du 18/09) : ce test prouve le MÉCANISME du piège Postgres —
+-- une requête ad hoc réécrite ci-dessous avec les deux bornes, pas les cinq
+-- requêtes réelles du code (`lireContraintesSendersDuJour`, `lireEnvoisDuJour`,
+-- la file du jour et le comptage des « partis » d'`aujourdhui.ts`, `campagnes.ts`).
+-- Il ne rejoue pas leur SQL mot pour mot ni ne passe par le code TypeScript :
+-- c'est une preuve que le motif corrigé se comporte comme attendu contre un
+-- vrai Postgres, pas une preuve d'intégration des cinq call sites eux-mêmes.
 -- ============================================================================
 \set ON_ERROR_STOP on
 
