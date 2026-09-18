@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante } from '@jay-reach/core';
-import { recordResult } from './queue.js';
+import { claimNext, recordResult } from './queue.js';
 
 const ORG_ID = 'org-1';
 const QUEUE_ID = 'queue-1';
@@ -131,5 +131,103 @@ describe('recordResult — échéance de l’étape suivante au départ réel (i
 
     expect(ok).toBe(true);
     expect(appels).toHaveLength(1);
+  });
+});
+
+describe('claimNext — campagne non active (F14)', () => {
+  const QUEUE_ROW_ID = 'file-1';
+
+  interface LigneFile {
+    readonly id: string;
+    readonly kind: 'invite' | 'message';
+    readonly linkedinUrl: string;
+    readonly messageBody: string | null;
+    /** `null` = ligne sans action de séquenceur (`action_id` nul), jamais concernée par ce garde-fou. */
+    readonly campagneStatut: string | null;
+  }
+
+  // Mardi 15/09/2026 10:00 UTC (12:00 Paris, en semaine, dans la fenêtre
+  // ouvrée par défaut 8h-21h) : même date déterministe que les tests du tick
+  // (`sequence.test.ts`).
+  const NOW = new Date('2026-09-15T10:00:00.000Z');
+
+  const REQUEUE = /set status = 'pending', processing_started_at = null/i;
+  const SETTINGS = /from linkedin_settings/i;
+  const COUNTS = /count\(\*\) filter \(where sent_at >= \$2\) as last7/i;
+  const DERNIER_ENVOI = /select sent_at from linkedin_action_queue/i;
+  const CANDIDAT = /method = 'extension_auto'/i;
+  const CLAIM = /set status = 'processing'/i;
+
+  /**
+   * Pool factice AVEC ÉTAT, dédié à ce défaut : contrairement à un pool qui
+   * répondrait au TEXTE d'une requête sans jamais évaluer son `where` (donc
+   * renverrait la même candidate qu'on modélise une campagne en pause ou
+   * active), celui-ci décide RÉELLEMENT selon le SQL produit — la candidate
+   * n'est écartée que si la requête filtre elle-même sur `camp.status =
+   * 'active'` (correctif annulé : comportement d'avant, la ligne repart
+   * inconditionnellement) ET que sa campagne modélisée n'est pas `active`.
+   * Pacing neutre (aucun réglage en base → défauts `loadPaceStats`, jamais
+   * envoyé) pour que seul le garde-fou de campagne décide du résultat.
+   */
+  function creerPoolFile(candidats: LigneFile[]): { pool: Pool; appels: Appel[] } {
+    const appels: Appel[] = [];
+    const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+      appels.push({ sql, values });
+      if (REQUEUE.test(sql)) return { rows: [], rowCount: 0 };
+      if (SETTINGS.test(sql)) return ligne([]);
+      if (COUNTS.test(sql)) return ligne([{ last7: '0', today: '0' }]);
+      if (DERNIER_ENVOI.test(sql)) return ligne([]);
+      if (CANDIDAT.test(sql)) {
+        const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
+        const eligibles = candidats.filter(
+          (c) => !filtreCampagneActive || c.campagneStatut === null || c.campagneStatut === 'active',
+        );
+        return ligne(eligibles.length > 0 ? [{ id: eligibles[0]!.id }] : []);
+      }
+      if (CLAIM.test(sql)) {
+        const id = values[0] as string;
+        const c = candidats.find((x) => x.id === id);
+        if (!c) return { rows: [], rowCount: 0 };
+        return ligne([{ id: c.id, kind: c.kind, linkedinUrl: c.linkedinUrl, messageBody: c.messageBody }]);
+      }
+      throw new Error(`requete non prevue par le test :\n${sql}`);
+    });
+    const client = { query, release: vi.fn() };
+    const pool = { connect: vi.fn(async () => client) } as unknown as Pool;
+    return { pool, appels };
+  }
+
+  it('campagne mise en pause (ou archivée) : la ligne déjà en file n’est pas réclamée', async () => {
+    const { pool, appels } = creerPoolFile([
+      { id: QUEUE_ROW_ID, kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null, campagneStatut: 'paused' },
+    ]);
+
+    const resultat = await claimNext(pool, ORG_ID, NOW);
+
+    expect(resultat).toEqual({ action: null, reason: 'queue_empty' });
+    expect(appels.some((a) => CLAIM.test(a.sql))).toBe(false);
+  });
+
+  it('campagne active (non-régression) : la ligne est réclamée normalement', async () => {
+    const { pool } = creerPoolFile([
+      { id: QUEUE_ROW_ID, kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null, campagneStatut: 'active' },
+    ]);
+
+    const resultat = await claimNext(pool, ORG_ID, NOW);
+
+    expect(resultat).toEqual({
+      action: { id: QUEUE_ROW_ID, kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null },
+      reason: null,
+    });
+  });
+
+  it('ligne sans action de séquenceur (action_id nul) : jamais bloquée par ce garde-fou', async () => {
+    const { pool } = creerPoolFile([
+      { id: QUEUE_ROW_ID, kind: 'message', linkedinUrl: 'https://linkedin.com/in/y', messageBody: 'Bonjour', campagneStatut: null },
+    ]);
+
+    const resultat = await claimNext(pool, ORG_ID, NOW);
+
+    expect(resultat.action?.id).toBe(QUEUE_ROW_ID);
   });
 });

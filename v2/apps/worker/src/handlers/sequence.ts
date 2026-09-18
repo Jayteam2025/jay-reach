@@ -695,13 +695,23 @@ interface AbsenceEchueRow {
  * plusieurs jours (worker resté arrêté).
  */
 export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date(), limit = 200): Promise<void> {
+  // `camp.status = 'active'` (F14, mineur relevé à la revue) : sans ce filtre,
+  // une campagne mise en pause ou archivée PENDANT l'absence d'un contact
+  // faisait quand même repasser son inscription `active` au retour — aucun
+  // envoi ne suivait (le tick, désormais gardé lui aussi, l'aurait de toute
+  // façon ignorée), mais l'entonnoir comptait à tort un contact « en
+  // séquence » sur une campagne qui ne tourne plus. L'inscription reste
+  // `paused_absence` tant que la campagne n'est pas active : rien à perdre,
+  // le prochain passage la reconsidère telle quelle dès qu'elle le redevient.
   const candidats = await pool.query<AbsenceEchueRow>(
-    `select id, organization_id, contact_id, campaign_id, current_step, resume_at
-       from enrollments
-      where status = 'paused_absence'
-        and resume_at is not null
-        and resume_at <= $1
-      order by resume_at asc
+    `select e.id, e.organization_id, e.contact_id, e.campaign_id, e.current_step, e.resume_at
+       from enrollments e
+       join campaigns camp on camp.id = e.campaign_id
+      where e.status = 'paused_absence'
+        and e.resume_at is not null
+        and e.resume_at <= $1
+        and camp.status = 'active'
+      order by e.resume_at asc
       limit $2`,
     [now.toISOString(), limit],
   );

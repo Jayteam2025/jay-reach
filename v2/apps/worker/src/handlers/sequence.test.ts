@@ -136,8 +136,10 @@ const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 
 const RATTRAPAGE_CANDIDATS = /select e\.id, e\.campaign_id, e\.current_step, a\.dispatched_at\s+from enrollments e\s+join lateral/i;
 // `reprendreAbsencesEchues` (F10) : tourne AVANT le rattrapage, même motif de
 // défaut neutre — aucune candidate par défaut, no-op pour les tests qui
-// l'ignorent (voir la suite dédiée `reprendreAbsencesEchues (F10)`).
-const ABSENCE_CANDIDATS = /select id, organization_id, contact_id, campaign_id, current_step, resume_at\s+from enrollments\s+where status = 'paused_absence'/i;
+// l'ignorent (voir la suite dédiée `reprendreAbsencesEchues (F10)`). Jointure
+// `campaigns camp` ajoutée par le filtre de statut (F14, mineur) : le motif
+// matche sur les colonnes préfixées `e.`, qui ne sont apparues qu'avec elle.
+const ABSENCE_CANDIDATS = /select e\.id, e\.organization_id, e\.contact_id, e\.campaign_id, e\.current_step, e\.resume_at\s+from enrollments e\s+join campaigns camp on camp\.id = e\.campaign_id\s+where e\.status = 'paused_absence'/i;
 
 /** Gestionnaires par défaut : une seule inscription due, une étape email, un
  * expéditeur actif disponible, rien qui défère ou bloque en amont du gate. */
@@ -713,6 +715,8 @@ describe('reprendreAbsencesEchues (F10)', () => {
     campaign_id: string;
     current_step: number;
     resume_at: string | Date;
+    /** Statut modélisé de `campaign_id` — défaut `'active'` (F14, mineur). */
+    campaignStatus?: string;
   }
 
   interface ReponsesAbsence {
@@ -756,7 +760,17 @@ describe('reprendreAbsencesEchues (F10)', () => {
 
     const query = vi.fn(async (sql: string, values: unknown[] = []) => {
       appels.push({ sql, values });
-      if (ABSENCE_CANDIDATS.test(sql)) return ligne(candidats);
+      if (ABSENCE_CANDIDATS.test(sql)) {
+        // F14 (mineur) : décide RÉELLEMENT selon le SQL produit — une
+        // candidate dont la campagne modélisée n'est pas active n'est
+        // renvoyée que si la requête ne filtre PAS sur `camp.status =
+        // 'active'` (correctif annulé, comportement d'avant).
+        const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
+        const visibles = filtreCampagneActive
+          ? candidats.filter((c) => (c.campaignStatus ?? 'active') === 'active')
+          : candidats;
+        return ligne(visibles);
+      }
       if (ACTIVATION.test(sql)) {
         if (etat.status !== 'paused_absence') return { rows: [], rowCount: 0 };
         etat = {
@@ -975,5 +989,32 @@ describe('reprendreAbsencesEchues (F10)', () => {
     await reprendreAbsencesEchues(pool);
 
     expect(appels).toHaveLength(1);
+  });
+
+  it('campagne archivée pendant l’absence (F14, mineur) : l’inscription reste paused_absence, aucune reprise', async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 1,
+      resume_at: resumeAt,
+      campaignStatus: 'archived',
+    };
+    const { pool, appels, etat } = creerPoolAbsence(
+      [candidat],
+      { status: 'paused_absence', next_action_at: resumeAt, current_step: 1 },
+      { etape: { id: STEP_ID_ABSENCE, delay_hours: 24 } },
+    );
+
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+
+    // La campagne n'est plus active : la candidate n'est même pas sélectionnée
+    // par la requête (filtrée en SQL) — aucune activation, aucune pose
+    // d'échéance, aucun journal, l'inscription reste telle quelle.
+    expect(etat().status).toBe('paused_absence');
+    expect(appels.some((a) => /update enrollments\s+set status = 'active'/i.test(a.sql))).toBe(false);
+    expect(appels.some((a) => /insert into audit_events/i.test(a.sql))).toBe(false);
   });
 });
