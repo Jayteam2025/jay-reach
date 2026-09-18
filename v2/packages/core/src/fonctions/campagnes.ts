@@ -197,16 +197,31 @@ export function sqlEnPauseCampagne(campagneIdExpr: string): string {
 }
 
 /**
- * Actions réellement PARTIES — dénominateur commun des taux (point 1). F13
- * (décision du 18/09, deux états pas trois) : un email `dispatched` n'est que
- * remis, SalesBlink ne l'a pas encore réellement envoyé — seul `delivered`
- * compte pour lui. Les autres canaux (LinkedIn : posé par l'extension au
- * moment réel de l'action, pas de transporteur asynchrone, F12) sont déjà
- * partis dès `dispatched`. Même distinction que `estReellementParti` un peu
- * plus haut dans ce fichier (pas réutilisable telle quelle : elle prend des
- * colonnes déjà lues en JS, ici il faut un fragment SQL) — même motif que
- * `jr:partis_aujourdhui` (`aujourdhui.ts`), qui l'appliquait déjà pour « déjà
- * partis » du jour avant que cette fonction-ci ne le fasse pour le cumul.
+ * Actions ENGAGÉES (point 1) : remises OU réellement parties, tous canaux
+ * confondus (`dispatched` + `delivered`). Répond à « sur tout ce qu'on a
+ * engagé, quelle part est réellement partie ? » (F13, décision du 18/09) —
+ * dénominateur de `tauxLivres` (entonnoir) : un prospect dont le message dort
+ * encore chez SalesBlink compte ici (il EST engagé), mais pas dans
+ * `sqlPartisCampagne` ci-dessous. Ne jamais fusionner les deux sous un seul
+ * nom, c'est exactement ce qui a produit les défauts de vocabulaire du jour.
+ */
+export function sqlEngagesCampagne(campagneIdExpr: string): string {
+  return `(select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = ${campagneIdExpr} and a.status in ('dispatched', 'delivered'))`;
+}
+
+/**
+ * Actions réellement PARTIES — dénominateur de `tauxReponses`/`tauxReponse`.
+ * Répond à « sur ce qui est réellement parti, quelle part a répondu ? » (F13,
+ * décision du 18/09, deux états pas trois) : un email `dispatched` n'est que
+ * remis, SalesBlink ne l'a pas encore réellement envoyé — un prospect dont le
+ * message dort encore chez SalesBlink ne peut pas avoir répondu, il ne doit
+ * pas écraser artificiellement ce taux (contrairement à `sqlEngagesCampagne`,
+ * pertinent lui pour `tauxLivres`). Les autres canaux (LinkedIn : posé par
+ * l'extension au moment réel de l'action, pas de transporteur asynchrone,
+ * F12) sont déjà partis dès `dispatched`. Même distinction que
+ * `estReellementParti` un peu plus haut dans ce fichier (pas réutilisable
+ * telle quelle : elle prend des colonnes déjà lues en JS, ici il faut un
+ * fragment SQL) — même motif que `jr:partis_aujourdhui` (`aujourdhui.ts`).
  */
 export function sqlPartisCampagne(campagneIdExpr: string): string {
   return `(select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id
@@ -889,6 +904,7 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
     en_sequence: number;
     en_pause: number;
     livres: number;
+    engages: number;
     partis: number;
     reponses: number;
     interesses: number;
@@ -897,6 +913,7 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
         ${sqlEnSequenceCampagne('$1')} as en_sequence,
         ${sqlEnPauseCampagne('$1')} as en_pause,
         (select count(*)::int from actions a join enrollments e on e.id = a.enrollment_id where e.campaign_id = $1 and a.status = 'delivered') as livres,
+        ${sqlEngagesCampagne('$1')} as engages,
         ${sqlPartisCampagne('$1')} as partis,
         (select count(*)::int from enrollments e where e.campaign_id = $1 and e.status = 'replied') as reponses,
         (select count(distinct c.id)::int from threads t join contacts c on c.id = t.contact_id join enrollments e on e.contact_id = c.id
@@ -904,13 +921,18 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonl
       /* jr:entonnoir_commun */`,
     [campagneId],
   );
-  const c = communRes.rows[0] ?? { en_sequence: 0, en_pause: 0, livres: 0, partis: 0, reponses: 0, interesses: 0 };
+  const c = communRes.rows[0] ?? { en_sequence: 0, en_pause: 0, livres: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 };
   const commun: EntonnoirCommun = {
     enSequence: c.en_sequence,
     enPause: c.en_pause,
     livres: c.livres,
-    tauxLivres: tauxSurPartis(c.livres, c.partis),
+    // « Sur tout ce qu'on a engagé, quelle part est réellement partie ? » (F13, décision du
+    // 18/09) : dénominateur `engages` (remis + partis), jamais `partis` seul — un email encore
+    // chez SalesBlink reste engagé, ce taux dit justement combien en attendent encore.
+    tauxLivres: tauxSurPartis(c.livres, c.engages),
     reponses: c.reponses,
+    // « Sur ce qui est réellement parti, quelle part a répondu ? » : dénominateur `partis` au
+    // sens strict — un message encore chez SalesBlink ne peut pas avoir généré de réponse.
     tauxReponses: tauxSurPartis(c.reponses, c.partis),
     interesses: c.interesses,
   };
