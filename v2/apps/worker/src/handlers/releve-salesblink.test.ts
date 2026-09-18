@@ -161,6 +161,9 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => MAJ_LIVREE_SEQUENCE.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-1', new Date(2000).toISOString(), 'seq-1', 'marie@exemple.fr']);
+    // F12 : `delivered_at` posé EN COLONNE (pas seulement dans `payload`), avec le même
+    // paramètre `$3` que le `payload` — c'est elle que les compteurs « déjà partis » lisent.
+    expect(maj!.sql).toMatch(/delivered_at\s*=\s*\$3::timestamptz/);
     // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
     const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
     expect(filMaj).toBeDefined();
@@ -995,6 +998,8 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => MAJ_LIVREE_REPLY.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-repondu-1', new Date(9000).toISOString(), 'tache-3']);
+    // F12 : même chose pour la relance — `delivered_at` posé en colonne, pas seulement en payload.
+    expect(maj!.sql).toMatch(/delivered_at\s*=\s*\$3::timestamptz/);
     // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
     const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
     expect(filMaj).toBeDefined();

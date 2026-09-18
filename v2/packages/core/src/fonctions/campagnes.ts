@@ -257,6 +257,19 @@ function canalDe(channel: string): CanalFil {
   return undefined;
 }
 
+/**
+ * Départ RÉEL d'une action (F12, même copie locale qu'`aujourdhui.ts`) — voir
+ * `EnvoiPrevu.livre`. Un email n'est réellement parti qu'une fois SalesBlink
+ * l'a effectivement envoyé (`delivered_at`) ; les autres canaux (LinkedIn,
+ * posé par l'extension au moment réel de l'action) n'ont pas de transporteur
+ * asynchrone entre remise et départ — `dispatched_at` EST déjà ce départ réel.
+ */
+function estReellementParti(channel: string, dispatchedAt: unknown, deliveredAt: unknown): boolean {
+  // `!= null` (lâche) plutôt que `!== null` : couvre `undefined` comme `null`, au cas où un
+  // appelant (test compris) omet la colonne plutôt que de la poser explicitement à `null`.
+  return channel === 'email' ? deliveredAt != null : dispatchedAt != null;
+}
+
 function formatterHeure(iso: string, fuseau: string): string {
   return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
@@ -696,13 +709,16 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
   if (ids.length > 0) {
     // Groupé par jour DANS le fuseau de l'organisation, pas en UTC (I5, revue finale) : un
     // envoi livré après le décalage horaire tombait sinon dans la mauvaise barre du graphe.
+    // F12 : le jour de la barre (et la borne des 7 jours) se lit sur `delivered_at` (départ
+    // RÉEL), pas `dispatched_at` (simple remise à SalesBlink) — un email remis un jour mais
+    // parti le lendemain comptait sinon dans la mauvaise barre du graphe.
     const tendanceRes = await ctx.ex.query<{ campaign_id: string; jour: string; n: number }>(
-      `select e.campaign_id, (a.dispatched_at at time zone $2)::date::text as jour, count(*)::int as n
+      `select e.campaign_id, (a.delivered_at at time zone $2)::date::text as jour, count(*)::int as n
          from actions a /* jr:tendance_livraisons */
          join enrollments e on e.id = a.enrollment_id
         where e.campaign_id = any($1::uuid[])
           and a.status = 'delivered'
-          and a.dispatched_at >= now() - interval '${NB_JOURS_TENDANCE} days'
+          and a.delivered_at >= now() - interval '${NB_JOURS_TENDANCE} days'
         group by 1, 2`,
       [ids, fuseau],
     );
@@ -919,6 +935,8 @@ interface LigneEnvoi {
   id: string;
   status: string;
   dispatched_at: string | null;
+  /** `actions.delivered_at` (F12) — `null` tant que non réellement parti (ou canal non email). */
+  delivered_at: string | null;
   scheduled_for: string | null;
   dispatch_after: string | null;
   channel: string;
@@ -999,6 +1017,7 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string, extraits: ReadonlyMap<str
     id: r.id,
     heure: quand ? formatterHeure(quand, fuseau) : null,
     envoye: r.dispatched_at !== null,
+    livre: estReellementParti(r.channel, r.dispatched_at, r.delivered_at),
     contactNom: nomComplet(r.first_name, r.last_name),
     // `sequence_steps.position` part de 0 — +1 pour l'affichage (même conversion qu'`aujourdhui.ts`).
     etape: r.etape !== null ? r.etape + 1 : null,
@@ -1035,8 +1054,13 @@ export async function lireContraintesSendersDuJour(
             (select count(*)::int from actions act
                where act.sender_id = s.id
                  and act.status in ('dispatched', 'delivered')
-                 and act.dispatched_at >= ($1::date at time zone $2)
-                 and act.dispatched_at < (($1::date + 1) at time zone $2)) as used_today
+                 -- Le cast ::date::timestamp avant AT TIME ZONE est nécessaire : sans lui (un
+                 -- ::date suivi directement de AT TIME ZONE), Postgres résout le mauvais
+                 -- opérateur (celui de timestamptz) et repart du fuseau de LA SESSION, mesuré
+                 -- sur la base OSS le 18/09, un comptage du jour qui ratait la quasi-totalité
+                 -- des lignes.
+                 and act.dispatched_at >= ($1::date::timestamp at time zone $2)
+                 and act.dispatched_at < (($1::date + 1)::timestamp at time zone $2)) as used_today
        from senders s /* jr:contraintes_senders_jour */
       where s.organization_id = $3 and s.kind = 'email' and s.is_active`,
     [jour, fuseau, ctx.organisationId],
@@ -1111,7 +1135,7 @@ async function lireEnvoisDuJour(
 
   const [res, extraitsRes, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneEnvoi>(
-      `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
+      `select a.id, a.status, a.dispatched_at, a.delivered_at, a.scheduled_for, a.dispatch_after, a.channel,
               a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
               c.first_name, c.last_name, c.job_title, c.source_signal_id as signal_id,
               camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
@@ -1136,8 +1160,11 @@ async function lireEnvoisDuJour(
          left join list_members lm on lm.list_id = e.list_id and lm.contact_id = e.contact_id
         where camp.organization_id = $1
           and a.status <> 'cancelled'
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1) at time zone $3)
+          -- Cast ::date::timestamp avant AT TIME ZONE nécessaire, même piège que
+          -- lireContraintesSendersDuJour ci-dessus (sans lui, mauvaise surcharge AT TIME ZONE,
+          -- fuseau de la session au lieu de $3).
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date::timestamp at time zone $3)
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1)::timestamp at time zone $3)
           ${filtreCampagne}
         order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
       valeurs,
@@ -1447,8 +1474,11 @@ export async function listerFileDuJour(
   ]);
 
   return {
-    prevus: envois.filter((e) => !e.envoye),
-    partis: envois.filter((e) => e.envoye),
+    // F12 : le partage se fait sur le départ RÉEL (`livre`), pas sur la simple remise au
+    // transporteur (`envoye`) — un email remis à SalesBlink mais pas encore envoyé reste
+    // « prévu », il n'est pas encore « parti ».
+    prevus: envois.filter((e) => !e.livre),
+    partis: envois.filter((e) => e.livre),
     plafondDuJour,
     projection,
   };

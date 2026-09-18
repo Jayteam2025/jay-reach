@@ -282,6 +282,27 @@ describe('listerCampagnes', () => {
     }
   });
 
+  it(
+    'F12 : la tendance 7 jours groupe et borne sur `delivered_at` (départ réel), jamais ' +
+      '`dispatched_at` (simple remise) — un email remis un jour mais parti le lendemain irait sinon dans la mauvaise barre',
+    async () => {
+      const ctx = faux({
+        'jr:campagnes_liste': [
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+        ],
+        'jr:boites_actives': [],
+        'jr:tendance_livraisons': [],
+      });
+      await listerCampagnes(ctx);
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const appelTendance = appels.find((appel) => /jr:tendance_livraisons/i.test(String(appel[0])));
+      const sql = String(appelTendance![0]);
+      expect(sql).toMatch(/\(a\.delivered_at at time zone \$2\)::date::text as jour/);
+      expect(sql).toMatch(/a\.delivered_at >= now\(\)/);
+      expect(sql).not.toMatch(/a\.dispatched_at/);
+    },
+  );
+
   it('n’a pas de dernière activité (`derniereActivite: null`) quand `audit_events` n’a rien pour cette campagne', async () => {
     const ctx = faux({
       'jr:campagnes_liste': [
@@ -1139,7 +1160,8 @@ describe('listerFileDuJour', () => {
       'organization_settings': [],
       'jr:file_du_jour_campagne': [
         { id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null, channel: 'email', first_name: 'A', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' },
-        { id: 'a2', status: 'delivered', dispatched_at: '2026-09-14T08:00:00Z', scheduled_for: null, dispatch_after: null, channel: 'email', first_name: 'D', last_name: 'E', campagne_nom: 'C', etape: 1, expediteur: 'x@exemple.fr' },
+        // F12 : « parti » se lit sur `delivered_at` (départ réel), pas la seule remise (`dispatched_at`).
+        { id: 'a2', status: 'delivered', dispatched_at: '2026-09-14T08:00:00Z', delivered_at: '2026-09-14T08:05:00Z', scheduled_for: null, dispatch_after: null, channel: 'email', first_name: 'D', last_name: 'E', campagne_nom: 'C', etape: 1, expediteur: 'x@exemple.fr' },
       ],
       'jr:plafond_envois_org': [{ plafond: 90 }],
     });
@@ -1148,6 +1170,36 @@ describe('listerFileDuJour', () => {
     expect(r.partis).toHaveLength(1);
     expect(r.plafondDuJour).toBe(90);
   });
+
+  it(
+    'F12 : un email « dispatched » (remis à SalesBlink) mais sans `delivered_at` reste ' +
+      'parmi les « prévus », pas les « partis » — SalesBlink ne l’a pas encore réellement envoyé',
+    async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1',
+            status: 'dispatched',
+            dispatched_at: '2026-09-14T04:00:00Z',
+            delivered_at: null,
+            scheduled_for: null,
+            dispatch_after: null,
+            channel: 'email',
+            first_name: 'A',
+            last_name: 'B',
+            campagne_nom: 'C',
+            etape: 0,
+            expediteur: 'x@exemple.fr',
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      expect(r.prevus).toHaveLength(1);
+      expect(r.partis).toHaveLength(0);
+    },
+  );
 
   it('utilise le plafond propre de la campagne quand `daily_cap` est posé', async () => {
     const ctx = faux({
@@ -1176,6 +1228,28 @@ describe('listerFileDuJour', () => {
       vi.useRealTimers();
     }
   });
+
+  it(
+    'borne du jour : `$jour::date::timestamp at time zone $fuseau`, jamais `$jour::date at time zone $fuseau` ' +
+      'seul — mesuré sur la base OSS le 18/09 (bogue borne de journée), le cast intermédiaire vers `timestamp` ' +
+      'force la bonne surcharge d’`AT TIME ZONE` ; pis-aller texte, ce mock ne rejoue rien contre un vrai Postgres',
+    async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [{ id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null, channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr' }],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 0 }],
+      });
+      await listerFileDuJour(ctx, {});
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const sqlFile = String(appels.find((appel) => /jr:file_du_jour_campagne/i.test(String(appel[0])))![0]);
+      const sqlSenders = String(appels.find((appel) => /jr:contraintes_senders_jour/i.test(String(appel[0])))![0]);
+      expect(sqlFile).toMatch(/\$2::date::timestamp at time zone \$3/);
+      expect(sqlFile).not.toMatch(/\$2::date at time zone/);
+      expect(sqlSenders).toMatch(/\$1::date::timestamp at time zone \$2/);
+      expect(sqlSenders).not.toMatch(/\$1::date at time zone/);
+    },
+  );
 
   it('lève ErreurIntrouvable quand la campagne du plafond n’existe pas', async () => {
     const ctx = faux({ organization_settings: [], 'jr:file_du_jour_campagne': [], 'jr:file_du_jour_cap': [] });
@@ -1212,7 +1286,7 @@ describe('listerFileDuJour', () => {
         organization_settings: [],
         'jr:file_du_jour_campagne': [
           {
-            id: 'a1', status: 'delivered', dispatched_at: '2026-09-14T08:00:00Z', scheduled_for: null, dispatch_after: null,
+            id: 'a1', status: 'delivered', dispatched_at: '2026-09-14T08:00:00Z', delivered_at: '2026-09-14T08:05:00Z', scheduled_for: null, dispatch_after: null,
             channel: 'email', first_name: 'Nadia', last_name: 'Lemaire', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr',
             objet: 'Objet réellement envoyé', etape_sujet: 'Gabarit {{prenom}}',
           },
@@ -1301,6 +1375,7 @@ describe('projeterEnvoisDuJour (revue F5, point 10, fonction pure)', () => {
       id,
       heure: '09:00',
       envoye: false,
+      livre: false,
       contactNom: 'Un contact',
       etape: 1,
       campagneNom: 'C',

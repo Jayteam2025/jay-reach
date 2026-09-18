@@ -148,6 +148,11 @@ async function campagneIdParContact(pool: Pool, contactId: string): Promise<stri
  * (organisation, canal email, statut `dispatched`), seule la colonne de
  * rapprochement change : `sequence_id` + `email` pour un premier envoi,
  * `reply_task_id` pour une relance.
+ *
+ * `delivered_at` (colonne, F12) est posée EN PLUS du `payload` (qui la
+ * portait seul jusqu'ici) : c'est elle, pas `dispatched_at` (simple remise à
+ * SalesBlink, qui envoie ensuite dans SA fenêtre horaire), que les compteurs
+ * « déjà partis » du cœur (`aujourdhui.ts`, `campagnes.ts`) lisent désormais.
  */
 async function marquerActionLivreeParSequence(
   pool: Pool,
@@ -155,7 +160,7 @@ async function marquerActionLivreeParSequence(
   p: { readonly sequenceId: string | null; readonly email: string; readonly messageId: string | null; readonly aMs: number },
 ): Promise<void> {
   const res = await pool.query<{ id: string }>(
-    `update actions set status = 'delivered',
+    `update actions set status = 'delivered', delivered_at = $3::timestamptz,
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
         select id from actions
@@ -176,7 +181,7 @@ async function marquerActionLivreeParSequence(
 
 async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache: EnvoiSorti): Promise<void> {
   const res = await pool.query<{ id: string }>(
-    `update actions set status = 'delivered',
+    `update actions set status = 'delivered', delivered_at = $3::timestamptz,
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
         select id from actions

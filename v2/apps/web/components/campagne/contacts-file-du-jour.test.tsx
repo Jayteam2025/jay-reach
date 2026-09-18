@@ -421,6 +421,7 @@ function envoi(overrides: Partial<LigneTableFileDuJour> = {}): LigneTableFileDuJ
     id: 'a1',
     heure: '09:04',
     envoye: true,
+    livre: true,
     contactNom: 'Claire Moreau',
     etape: 0,
     campagneNom: 'Directeur commercial',
