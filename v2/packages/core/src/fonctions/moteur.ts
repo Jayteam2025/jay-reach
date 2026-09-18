@@ -12,6 +12,7 @@ import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
 import { ecrireEvenement } from '../journal.js';
 import { normaliserIntervalleReleve } from '../reglages-salesblink.js';
+import { lireReglages } from './plafonds.js';
 
 /**
  * Intervalle entre deux tours de la boucle `sequence.tick` du worker.
@@ -52,8 +53,16 @@ interface LigneEngineStatus {
   last_error: string | null;
 }
 
-export async function lireEtatMoteur(ctx: Contexte): Promise<EtatMoteurResume> {
+/**
+ * `reglages` : à passer quand l'appelant les a déjà lus (`lireAujourdhui`, qui
+ * en a besoin pour son propre fuseau) — évite une deuxième lecture de
+ * `organization_settings` dans le même appel, même motif que
+ * `lireConsommationDuJour`. Absent, `lireReglages(ctx)` est appelé ici.
+ */
+export async function lireEtatMoteur(ctx: Contexte, reglages?: Awaited<ReturnType<typeof lireReglages>>): Promise<EtatMoteurResume> {
   exiger(ctx, 'viewer');
+  const reglagesResolus = reglages ?? (await lireReglages(ctx));
+  const fuseau = String(reglagesResolus.fuseau);
   const [etatRes, erreursRes] = await Promise.all([
     ctx.ex.query<LigneEngineStatus>(
       `select version, last_tick_at, last_error /* jr:engine_status */
@@ -67,13 +76,17 @@ export async function lireEtatMoteur(ctx: Contexte): Promise<EtatMoteurResume> {
       // cet `entity_type` (pas de source/campagne unique à rattacher) — sans
       // le filtre sur `action`, un lot de scoring réussi gonflerait ce
       // compteur d'erreurs comme s'il en était une.
+      //
+      // « Depuis minuit » dans le fuseau de l'ORGANISATION, pas celui du
+      // serveur (`date_trunc('day', now())` seul, sans fuseau, comptait
+      // depuis minuit UTC) — même motif que `plafonds.ts::lireConsommationDuJour`.
       `select count(*)::int as n /* jr:engine_errors */
          from audit_events
         where organization_id = $1
           and entity_type = 'engine'
           and action = 'engine_error'
-          and created_at >= date_trunc('day', now())`,
-      [ctx.organisationId],
+          and created_at >= date_trunc('day', now() at time zone $2) at time zone $2`,
+      [ctx.organisationId, fuseau],
     ),
   ]);
 

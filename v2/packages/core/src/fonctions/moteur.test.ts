@@ -90,6 +90,38 @@ describe('lireEtatMoteur', () => {
     expect(sql).toContain("action = 'engine_error'");
   });
 
+  it(
+    "compte « depuis minuit » dans le fuseau de l'organisation, jamais celui du serveur " +
+      '(date_trunc(\'day\', now()) seul comptait depuis minuit UTC)',
+    async () => {
+      const appels: { text: string }[] = [];
+      const query = vi.fn(async (text: string) => {
+        appels.push({ text });
+        if (/from organization_settings/i.test(text)) return { rows: [{ key: 'fuseau', value: 'Europe/Paris' }], rowCount: 1 };
+        if (/jr:engine_errors/i.test(text)) return { rows: [{ n: 0 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+      await lireEtatMoteur(ctx);
+
+      const requete = appels.find((a) => /jr:engine_errors/i.test(a.text))!.text;
+      expect(requete).toMatch(/date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
+      expect(requete).not.toContain("date_trunc('day', now())");
+    },
+  );
+
+  it('accepte des réglages déjà lus (même motif que lireConsommationDuJour) : pas de second appel à organization_settings', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/from organization_settings/i.test(sql)) throw new Error('organization_settings ne devait pas être relu');
+      if (/jr:engine_errors/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await expect(lireEtatMoteur(ctx, { fuseau: 'Europe/Paris' } as Parameters<typeof lireEtatMoteur>[1])).resolves.toBeDefined();
+  });
+
   it("ne renvoie jamais hostname ni instance_id, même présents en base", async () => {
     const ctx = faux({
       'jr:engine_status': [
