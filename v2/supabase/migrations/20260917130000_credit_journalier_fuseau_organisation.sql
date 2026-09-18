@@ -1,11 +1,10 @@
 -- ============================================================================
--- #118 (tour de correction 5, lot 2) : le jour du plafond quotidien de
--- scoring/enrichissement (`provider_daily_usage.usage_date`) était toujours
--- `current_date` (le fuseau du SERVEUR, UTC) — la page Plafonds disait donc,
--- honnêtement mais de façon incohérente pour l'opérateur, que les jauges se
--- remettaient à zéro « à minuit UTC ». Décision de JB du 17/09 (« tout doit
--- être juste et cohérent ») : la journée doit suivre le fuseau de
--- l'organisation, comme toutes les autres jauges (envois, tendances 7 jours).
+-- #118 : le jour du plafond quotidien de scoring/enrichissement
+-- (`provider_daily_usage.usage_date`) était toujours `current_date` (le
+-- fuseau du SERVEUR, UTC) — la page Plafonds disait donc, honnêtement mais de
+-- façon incohérente pour l'opérateur, que les jauges se remettaient à zéro
+-- « à minuit UTC ». La journée doit suivre le fuseau de l'organisation,
+-- comme toutes les autres jauges (envois, tendances 7 jours).
 --
 -- `p_usage_date` est un paramètre optionnel additif (défaut `null`, résolu en
 -- `current_date` dans la fonction) : les appelants existants qui ne le
