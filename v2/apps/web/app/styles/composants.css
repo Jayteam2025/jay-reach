@@ -350,7 +350,15 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-menu-ancre .jr-menu { top: calc(100% + 8px); right: 0; }
 /* Zone transparente plein écran qui ferme le menu au clic à l'extérieur (sans voile visible, contrairement au tiroir). */
 .jr-menu-clic-exterieur { position: fixed; inset: 0; z-index: 2; background: transparent; border: 0; cursor: default; }
-.jr-menu { position: absolute; background: var(--jr-surface); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); box-shadow: var(--jr-ombre-menu); padding: 8px; width: 340px; z-index: 3; }
+/* Un menu déroulant n'est plus rogné par la carte qui le porte, ni coupé par le bas de la fenêtre
+   (recette du 18/09 : le menu « Ajouter une source » de l'assistant était coupé net au bord de la
+   carte, l'entrée CSV, plus bas dans la liste, restait inatteignable, et rien ne défilait).
+   `.jr-carte` porte `overflow: hidden` pour que son contenu respecte ses coins arrondis ; `:has()`
+   ne lève cette coupe que pendant qu'un menu est ouvert, et les menus ne sont montés dans le DOM
+   qu'à l'ouverture (`{ouvert && <Menu …>}`, ex. `MenuAjouterSource.tsx`) : les coins restent donc
+   nets le reste du temps. Le plafond de hauteur traite l'autre moitié du défaut, quand c'est le
+   menu lui-même qui dépasse la fenêtre : il défile alors dans sa propre boîte. */
+.jr-menu { position: absolute; background: var(--jr-surface); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); box-shadow: var(--jr-ombre-menu); padding: 8px; width: 340px; z-index: 3; max-height: min(60vh, 420px); overflow-y: auto; }
 .jr-menu h5 { margin: 6px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--jr-secondaire); letter-spacing: 0.02em; }
 .jr-menu .entree { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 8px; border-radius: var(--jr-rayon-controle); cursor: pointer; }
 .jr-menu .entree:hover, .jr-menu .entree.actif { background: var(--jr-accent-doux); }
@@ -443,6 +451,11 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-table tr.groupe td { background: var(--jr-fond); color: var(--jr-secondaire); font-size: var(--jr-petit); font-weight: 600; padding: 6px 12px; }
 .jr-bouton[disabled] { opacity: 0.5; cursor: not-allowed; }
 .jr-carte:has(> .jr-table) { overflow-x: auto; } /* une table posée directement dans une carte défile dans la carte */
+/* Déclarée APRÈS la règle ci-dessus, à spécificité égale : une carte qui porte à la fois une
+   table et un menu ouvert doit laisser sortir le menu, sinon `overflow-x: auto` force aussi
+   `overflow-y` à `auto` (règle CSS : deux axes ne peuvent pas être l'un `visible` et l'autre
+   non) et le menu se retrouve rogné comme avant. Voir le bloc `.jr-menu` plus haut. */
+.jr-carte:has(.jr-menu) { overflow: visible; }
 @media (max-width: 1180px) { .jr-table .masquable { display: none; } } /* colonnes secondaires masquées sous 1180 px */
 
 /* Réglages : menu secondaire (tâche 19) */
