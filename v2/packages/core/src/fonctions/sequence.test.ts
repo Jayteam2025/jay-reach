@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
+import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurIntrouvable, ErreurEntree } from './contexte.js';
@@ -788,34 +789,44 @@ describe('reprendreInscription', () => {
     await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ForbiddenError);
   });
 
-  it('pause email_gate → reprise : inscription active, current_step inchangé, action bloquée rejouée', async () => {
-    const ctx = faux({
-      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 2 }],
-      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
-      'jr:reprendre_action': [],
-      'jr:reprendre_evenement': [{}],
-    });
-    await reprendreInscription(ctx, { inscriptionId });
+  it('pause email_gate → reprise : inscription active, current_step inchangé, action bloquée rejouée, next_action_at immédiat', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T10:00:00.000Z'));
+    try {
+      const ctx = faux({
+        'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 2, status: 'paused' }],
+        'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+        'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
+        'jr:reprendre_action': [],
+        'jr:reprendre_evenement': [{}],
+      });
+      await reprendreInscription(ctx, { inscriptionId });
 
-    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
-    expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1']);
-    // `current_step` n'est jamais réécrit ici : l'étape qui vient d'échouer
-    // reste l'étape courante, une reprise doit la rejouer, pas la sauter.
-    expect(String(appelInscription?.[0])).not.toMatch(/current_step\s*=/i);
+      const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+      // Pause MANUELLE reprise à la main : redémarrage immédiat (`now()`),
+      // jamais le délai de l'étape — c'est le geste que l'opérateur vient de faire.
+      expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1', new Date().toISOString()]);
+      // `current_step` n'est jamais réécrit ici : l'étape qui vient d'échouer
+      // reste l'étape courante, une reprise doit la rejouer, pas la sauter.
+      expect(String(appelInscription?.[0])).not.toMatch(/current_step\s*=/i);
 
-    const appelEtape = appelsDe(ctx).find((a) => /jr:reprendre_etape/i.test(String(a[0])));
-    expect(appelEtape?.[1]).toEqual([campagneId, 2]);
+      const appelEtape = appelsDe(ctx).find((a) => /jr:reprendre_etape/i.test(String(a[0])));
+      expect(appelEtape?.[1]).toEqual([campagneId, 2]);
 
-    const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
-    expect(appelAction?.[1]).toEqual([actionIdempotencyKey(inscriptionId, etapeIdBloquee), 'org-1']);
-    expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
-    expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
+      const appelAction = appelsDe(ctx).find((a) => /jr:reprendre_action/i.test(String(a[0])));
+      expect(appelAction?.[1]).toEqual([actionIdempotencyKey(inscriptionId, etapeIdBloquee), 'org-1']);
+      expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
+      expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('pause paused_absence → reprise : resume_at posé à null par la même écriture', async () => {
     const ctx = faux({
-      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
-      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0, status: 'paused_absence' }],
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 96 }],
       'jr:reprendre_action': [],
     });
     await reprendreInscription(ctx, { inscriptionId });
@@ -825,17 +836,40 @@ describe('reprendreInscription', () => {
     expect(String(appelInscription?.[0])).toMatch(/status\s*in\s*\('paused',\s*'paused_absence'\)/i);
   });
 
+  it('pause paused_absence → reprise : next_action_at = maintenant + le délai de l’étape en attente, jamais immédiat (F10)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T10:00:00.000Z'));
+    try {
+      const ctx = faux({
+        'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 3, status: 'paused_absence' }],
+        'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+        'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 96 }], // 4 jours
+        'jr:reprendre_action': [],
+      });
+      await reprendreInscription(ctx, { inscriptionId });
+
+      const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
+      const valeurs = appelInscription?.[1] as unknown[] | undefined;
+      const attendu = echeanceEtapeSuivante(Date.now(), inscriptionId, 96);
+      expect(valeurs?.[2]).toEqual(new Date(attendu!).toISOString());
+      // Le délai (4 jours) ne s'est pas envolé : la reprise n'est jamais immédiate.
+      expect(valeurs?.[2]).not.toEqual(new Date().toISOString());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('lève ErreurIntrouvable pour une inscription qui n’est pas en pause (déjà active, terminée…)', async () => {
-    const ctx = faux({ 'jr:reprendre_inscription': [] });
+    const ctx = faux({ 'jr:reprendre_lecture': [] });
     await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ErreurIntrouvable);
   });
 
   it('filtre par organisation dans le WHERE (une inscription d’une autre organisation reste introuvable)', async () => {
-    const ctx = faux({ 'jr:reprendre_inscription': [] });
+    const ctx = faux({ 'jr:reprendre_lecture': [] });
     await expect(reprendreInscription(ctx, { inscriptionId })).rejects.toThrow(ErreurIntrouvable);
-    const appelInscription = appelsDe(ctx).find((a) => /jr:reprendre_inscription/i.test(String(a[0])));
-    expect(String(appelInscription?.[0])).toMatch(/organization_id\s*=\s*\$2/i);
-    expect(appelInscription?.[1]).toEqual([inscriptionId, 'org-1']);
+    const appelLecture = appelsDe(ctx).find((a) => /jr:reprendre_lecture/i.test(String(a[0])));
+    expect(String(appelLecture?.[0])).toMatch(/organization_id\s*=\s*\$2/i);
+    expect(appelLecture?.[1]).toEqual([inscriptionId, 'org-1']);
   });
 
   // Tour de correction 1, Important (relecture) : `current_step` est un
@@ -846,8 +880,9 @@ describe('reprendreInscription', () => {
   // la bonne étape par RANG, pas par valeur.
   it('retrouve l’étape par rang ordinal (order by position asc offset … limit 1), pas par égalité de position', async () => {
     const ctx = faux({
-      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 1 }],
-      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 1, status: 'paused' }],
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
       'jr:reprendre_action': [],
     });
     await reprendreInscription(ctx, { inscriptionId });
@@ -870,8 +905,9 @@ describe('reprendreInscription', () => {
   // réinitialiser à tort : le tick suivant recrée normalement l'action.
   it('reprend une pause sender_unavailable sans action existante pour l’étape (rien à rejouer, pas d’erreur)', async () => {
     const ctx = faux({
-      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
-      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0, status: 'paused' }],
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
       'jr:reprendre_action': [], // aucune ligne : l'UPDATE ne matche rien (0 ligne affectée), sans erreur
     });
     await expect(reprendreInscription(ctx, { inscriptionId })).resolves.toBeUndefined();
@@ -892,8 +928,9 @@ describe('reprendreInscription', () => {
   // dans le journal plutôt que de rejouer silencieusement.
   it('réactive l’inscription sans rejouer une action qui porte déjà une preuve d’envoi', async () => {
     const ctx = faux({
-      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0 }],
-      'jr:reprendre_etape': [{ id: etapeIdBloquee }],
+      'jr:reprendre_lecture': [{ contact_id: contactId, campaign_id: campagneId, current_step: 0, status: 'paused' }],
+      'jr:reprendre_inscription': [{ contact_id: contactId, campaign_id: campagneId }],
+      'jr:reprendre_etape': [{ id: etapeIdBloquee, delay_hours: 24 }],
       'jr:reprendre_verif_envoi': [{ id: 'action-deja-envoyee' }],
     });
 

@@ -36,6 +36,7 @@ import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } fro
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
+import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 
 // ---------------------------------------------------------------------------
 // lireSequence
@@ -883,10 +884,16 @@ export async function envoyerTest(ctx: Contexte, entree: unknown): Promise<void>
 
 export const schemaReprendreInscription = z.object({ inscriptionId: z.string().uuid() });
 
-interface LigneInscriptionReprise {
+interface LigneInscriptionAvant {
   contact_id: string | null;
   campaign_id: string;
   current_step: number;
+  status: string;
+}
+
+interface LigneInscriptionReprise {
+  contact_id: string | null;
+  campaign_id: string;
 }
 
 async function ecrireEvenementReprise(
@@ -936,30 +943,70 @@ async function ecrireEvenementReprise(
  * renumérote jamais les étapes restantes. `order by position asc offset $2
  * limit 1` reproduit exactement `rows[current_step]` après le même tri,
  * quelle que soit la contiguïté des `position`.
+ *
+ * `next_action_at` distingue les deux motifs de pause (F10) : `paused`
+ * (blocage : gate, expéditeur indisponible, échec d'envoi...) reste `now()`,
+ * l'opérateur qui clique « Reprendre » attend un redémarrage immédiat, c'est
+ * précisément le geste qu'il vient de faire ; `paused_absence` (réponse
+ * d'absence automatique) pose `now() + le délai de l'étape EN ATTENTE` : le
+ * délai entre deux mails ne court pas pendant l'absence, il repart
+ * entièrement au retour, jamais « tout de suite » (le pire moment, une boîte
+ * pleine le jour du retour de vacances). Même calcul que le départ réel d'un
+ * envoi (`echeanceEtapeSuivante`, partagée avec `poserEcheanceApresDepart`,
+ * `sequencer/echeance.ts`), ici depuis l'instant de la reprise plutôt qu'un
+ * `dispatched_at` : il n'y a pas d'action en attente à faire partir,
+ * l'inscription attend seulement son étape suivante. Le traitement
+ * automatique d'une absence échue applique la même règle depuis `resume_at`
+ * plutôt que `now` (`reprendreAbsencesEchues`,
+ * `apps/worker/src/handlers/sequence.ts`).
  */
 export async function reprendreInscription(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
   const { inscriptionId } = valider(schemaReprendreInscription, entree);
 
-  const res = await ctx.ex.query<LigneInscriptionReprise>(
-    `update enrollments /* jr:reprendre_inscription */
-        set status = 'active', stop_reason = null, resume_at = null, ended_at = null, next_action_at = now()
-      where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')
-      returning contact_id, campaign_id, current_step`,
+  const avant = await ctx.ex.query<LigneInscriptionAvant>(
+    `select contact_id, campaign_id, current_step, status from enrollments /* jr:reprendre_lecture */
+      where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')`,
     [inscriptionId, ctx.organisationId],
   );
-  const ligne = res.rows[0];
-  if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
+  const ligneAvant = avant.rows[0];
+  if (!ligneAvant) throw new ErreurIntrouvable('Inscription en pause');
 
-  const etapeRes = await ctx.ex.query<{ id: string }>(
-    `select id from sequence_steps /* jr:reprendre_etape */
+  // Étape EN ATTENTE : le rang stocké par une inscription en pause, qu'elle
+  // soit bloquée sur l'action de cette étape (`paused`) ou qu'elle n'ait
+  // encore rien émis pour elle (`paused_absence`, l'étape précédente est déjà
+  // partie). Même requête, réutilisée plus bas pour rejouer l'action bloquée
+  // ET pour le délai d'une reprise d'absence.
+  const etapeRes = await ctx.ex.query<{ id: string; delay_hours: number | null }>(
+    `select id, delay_hours from sequence_steps /* jr:reprendre_etape */
       where campaign_id = $1
       order by position asc
       offset $2
       limit 1`,
-    [ligne.campaign_id, ligne.current_step],
+    [ligneAvant.campaign_id, ligneAvant.current_step],
   );
-  const etapeId = etapeRes.rows[0]?.id;
+  const etape = etapeRes.rows[0];
+
+  // Repli sur `Date.now()` si l'étape n'existe plus (séquence modifiée
+  // pendant l'absence) : jamais laisser `next_action_at` sans valeur, une
+  // inscription `active` sans échéance ne serait plus jamais reprise par le
+  // tick.
+  const nextActionAtMs =
+    ligneAvant.status === 'paused_absence'
+      ? (echeanceEtapeSuivante(Date.now(), inscriptionId, etape?.delay_hours ?? null) ?? Date.now())
+      : Date.now();
+
+  const res = await ctx.ex.query<LigneInscriptionReprise>(
+    `update enrollments /* jr:reprendre_inscription */
+        set status = 'active', stop_reason = null, resume_at = null, ended_at = null, next_action_at = $3
+      where id = $1 and organization_id = $2 and status in ('paused', 'paused_absence')
+      returning contact_id, campaign_id`,
+    [inscriptionId, ctx.organisationId, new Date(nextActionAtMs).toISOString()],
+  );
+  const ligne = res.rows[0];
+  if (!ligne) throw new ErreurIntrouvable('Inscription en pause');
+
+  const etapeId = etape?.id;
   if (etapeId) {
     const cle = actionIdempotencyKey(inscriptionId, etapeId);
     // M3 (Mineur, revue finale du 14/09) : ne pas rejouer une action qui
