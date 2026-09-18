@@ -22,6 +22,7 @@ import {
   plafondDuJour,
   relectureRequise,
   fuseauDeLOrganisation,
+  ecrireEvenement,
   type BusinessHours,
   type Binding,
   type SenderInfo,
@@ -625,6 +626,8 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
 
 interface AbsenceEchueRow {
   id: string;
+  organization_id: string;
+  contact_id: string | null;
   campaign_id: string;
   current_step: number;
   resume_at: string | Date;
@@ -647,6 +650,15 @@ interface AbsenceEchueRow {
  * mécanique s'applique à l'identique, `resume_at` jouant le rôle de l'instant
  * de départ.
  *
+ * **`next_action_at = null` dans l'activation est OBLIGATOIRE** (trouvé à la
+ * relecture) : `record-reply.ts` pose `next_action_at = now() + N jours` au
+ * MÊME instant que `resume_at`, à la mise en pause. `poserEcheanceApresDepart`
+ * (`sequencer/echeance.ts`) exige `next_action_at is null` dans son `where` —
+ * sans le remettre à null ici, sa garde échoue toujours, l'échéance posée par
+ * ce traitement n'est jamais écrite, et l'inscription repart `active` avec
+ * l'échéance du JOUR DU RETOUR déjà posée par la pause : exactement le
+ * comportement que ce traitement doit supprimer.
+ *
  * `current_step` d'une inscription `paused_absence` pointe déjà l'étape EN
  * ATTENTE, jamais celle qui vient d'être envoyée : une réponse d'absence
  * arrive après un envoi RÉUSSI, et `composeTick` (`sequencer/tick.ts`) avance
@@ -655,11 +667,25 @@ interface AbsenceEchueRow {
  * appel qui insère l'action `scheduled`) — au moment de la pause,
  * `current_step` vaut donc déjà le rang de l'étape suivante. C'est
  * exactement le rang qu'attend `poserEcheanceApresDepart` (`offset
- * current_step`) : aucune correction d'index à faire ici, contrairement à
- * `reprendreInscription` (pause MANUELLE, `fonctions/sequence.ts`) qui
- * rejoue l'étape À `current_step`, restée bloquée/non partie — une pause
- * manuelle survient AVANT que `current_step` n'avance (blocage, gate,
- * expéditeur indisponible), une absence APRÈS.
+ * current_step`).
+ *
+ * **Exception** (trouvé à la relecture) : une inscription `paused` (blocage
+ * opérateur — gate, expéditeur indisponible…) peut basculer directement en
+ * `paused_absence` SANS jamais repasser par `active` (`LIVE_STATUSES` de
+ * `record-reply.ts` accepte `paused`). Son `current_step` pointe alors
+ * l'étape DÉJÀ TENTÉE — restée bloquée/non partie, action déjà en base — et
+ * pas une étape en attente de composition. Même traitement que
+ * `reprendreInscription` (pause MANUELLE, `fonctions/sequence.ts`) dans ce
+ * cas : l'action `blocked`/`failed` de cette étape est remise `scheduled`
+ * (rejouée immédiatement, comme un blocage qu'on vient de lever), sauf si
+ * elle porte déjà une preuve d'envoi (`payload->>'message_id'`, même garde
+ * M3). Sans ça, `composeTick` refuserait de recréer une action dont la clé
+ * d'idempotence est déjà prise, et l'inscription resterait active sans jamais
+ * avancer.
+ *
+ * Le passage `paused_absence -> active` est journalisé (`enrollment_resumed`,
+ * même action que la reprise manuelle) : sans trace, personne ne peut
+ * comprendre après coup pourquoi un message est reparti à telle date.
  *
  * Sélection puis activation individuelle (pas un `update ... returning`
  * global) : l'activation sert aussi de garde d'idempotence — `and status =
@@ -671,7 +697,7 @@ interface AbsenceEchueRow {
  */
 export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date(), limit = 200): Promise<void> {
   const candidats = await pool.query<AbsenceEchueRow>(
-    `select id, campaign_id, current_step, resume_at
+    `select id, organization_id, contact_id, campaign_id, current_step, resume_at
        from enrollments
       where status = 'paused_absence'
         and resume_at is not null
@@ -684,24 +710,72 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
   for (const candidat of candidats.rows) {
     const activee = await pool.query(
       `update enrollments
-          set status = 'active', resume_at = null, stop_reason = null
+          set status = 'active', resume_at = null, next_action_at = null, stop_reason = null
         where id = $1 and status = 'paused_absence'`,
       [candidat.id],
     );
     if ((activee.rowCount ?? 0) === 0) continue; // déjà reprise entre-temps (idempotence)
+
     const ecrit = await poserEcheanceDepuisDispatch(
       pool,
       { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
       candidat.resume_at,
     );
-    if (ecrit) {
+
+    // Rejeu de l'étape bloquée (paused -> paused_absence direct, voir
+    // docstring) : indépendant de la pose d'échéance ci-dessus, comme dans
+    // `reprendreInscription` — les deux n'ont d'effet que sur des lignes
+    // différentes (l'inscription pour l'une, l'action pour l'autre), et une
+    // inscription `paused_absence` « normale » n'a ici aucune action
+    // bloquée à trouver (no-op silencieux).
+    const etape = await pool.query<{ id: string }>(
+      `select id from sequence_steps
+        where campaign_id = $1
+        order by position asc
+        offset $2
+        limit 1`,
+      [candidat.campaign_id, candidat.current_step],
+    );
+    const etapeId = etape.rows[0]?.id;
+    let etapeRejouee = false;
+    if (etapeId) {
+      const cle = actionIdempotencyKey(candidat.id, etapeId);
+      const dejaEnvoyee = await pool.query<{ id: string }>(
+        `select id from actions
+          where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')
+            and (payload ->> 'message_id') is not null`,
+        [cle, candidat.organization_id],
+      );
+      if ((dejaEnvoyee.rowCount ?? 0) === 0) {
+        const rejeu = await pool.query(
+          `update actions
+              set status = 'scheduled', scheduled_for = now(), error = null, block_reason = null
+            where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+          [cle, candidat.organization_id],
+        );
+        etapeRejouee = (rejeu.rowCount ?? 0) > 0;
+      }
+    }
+
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: candidat.organization_id,
+        entityType: 'contact',
+        entityId: candidat.contact_id,
+        action: 'enrollment_resumed',
+        diff: { libelle: 'Inscription reprise après absence.', campagneId: candidat.campaign_id },
+      });
+    } catch (err) {
+      console.warn('[journal] enrollment_resumed', err);
+    }
+
+    if (ecrit || etapeRejouee) {
       reprises += 1;
     } else {
-      // Ne devrait pas se produire (une inscription `paused_absence` a
-      // toujours une étape en attente, cf. `LIVE_STATUSES` exclut
-      // `completed` — `record-reply.ts`) : signalé plutôt que masqué, au cas
-      // où la séquence aurait perdu des étapes pendant la pause.
-      console.warn(`[tick] absence ${candidat.id} réactivée sans échéance posée — étape en attente introuvable ?`);
+      // Ne devrait se produire que si la séquence a perdu des étapes pendant
+      // la pause (étape supprimée, campagne modifiée) : signalé plutôt que
+      // masqué.
+      console.warn(`[tick] absence ${candidat.id} réactivée sans échéance posée ni étape rejouée — étape en attente introuvable ?`);
     }
   }
   if (reprises > 0) {
