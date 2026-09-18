@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import type { VueSequence } from '@jay-reach/core';
 import { TuileLogo } from '../ui';
 import { marqueSource } from '../../lib/marque-source';
+import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { CarteEtape } from './CarteEtape';
 
 export interface FluxSequenceProps {
@@ -29,20 +30,40 @@ export function FluxSequence({ campagneId, vue }: FluxSequenceProps) {
 
   return (
     <section className="jr-flux">
-      <div className="jr-carte noeud">
-        <div className="jr-qui">
-          <TuileLogo marque="lettre" lettre="↓" />
-          <span>
-            <b>{t('flow.sourcesTitle')}</b>
-            <small>{t('flow.sourcesSubtitle', { n: providers.length, m: vue.qualifies })}</small>
+      {vue.listeSource ? (
+        // Campagne à liste (point 2, issue #120 ; revue F5, constat bloquant 1) : même texte
+        // que la carte Sources de la vue d'ensemble, jamais « 0 source alimente cette
+        // campagne, 0 contact qualifié » qui n'a aucun sens sans thème de veille.
+        <div className="jr-carte noeud">
+          <div className="jr-qui">
+            <TuileLogo marque="lettre" lettre={vue.listeSource.nom.charAt(0).toUpperCase()} />
+            <span>
+              <b>{vue.listeSource.nom}</b>
+              <small>
+                {t('flow.sourcesListSubtitle', {
+                  n: vue.listeSource.contacts,
+                  date: dateCourte(vue.listeSource.importeeLe, new Date(), FUSEAU_PAR_DEFAUT),
+                })}
+              </small>
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="jr-carte noeud">
+          <div className="jr-qui">
+            <TuileLogo marque="lettre" lettre="↓" />
+            <span>
+              <b>{t('flow.sourcesTitle')}</b>
+              <small>{t('flow.sourcesSubtitle', { n: providers.length, m: vue.qualifies })}</small>
+            </span>
+          </div>
+          <span className="jr-puces">
+            {providers.map((p, index) => (
+              <TuileLogo key={p ?? `inconnu-${index}`} marque={marqueSource(p)} lettre={p ? undefined : '?'} />
+            ))}
           </span>
         </div>
-        <span className="jr-puces">
-          {providers.map((p, index) => (
-            <TuileLogo key={p ?? `inconnu-${index}`} marque={marqueSource(p)} lettre={p ? undefined : '?'} />
-          ))}
-        </span>
-      </div>
+      )}
 
       <div className="fleche">{t('flow.intoSequence')}</div>
 

@@ -700,6 +700,7 @@
       "flow": {
         "sourcesTitle": "Bronnen",
         "sourcesSubtitle": "{n, plural, one {# bron voedt} other {# bronnen voeden}} deze campagne, {m, plural, one {# gekwalificeerd contact} other {# gekwalificeerde contacten}} tot nu toe",
+        "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}",
         "intoSequence": "Gekwalificeerde contacten met een geverifieerde e-mail komen in de sequentie",
         "delayDays": "{n, plural, one {# dag later} other {# dagen later}}",
         "delayHours": "{n, plural, one {# uur later} other {# uur later}}",

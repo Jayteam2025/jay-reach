@@ -32,7 +32,7 @@ import {
   normalizeListColumnName,
   type CampaignNature,
 } from '../messages/index.js';
-import { schemaCampagneId } from './campagnes.js';
+import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } from './campagnes.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
@@ -70,6 +70,15 @@ export interface VueSequence {
   readonly qualifies: number;
   readonly etapes: EtapeVue[];
   readonly finDeSequence: { readonly termines: number };
+  /**
+   * Liste qui alimente la campagne (point 2, issue #120 ; revue F5, constat
+   * bloquant 1) — `null` pour une campagne à sources. Même résolution et même
+   * forme que `VueDEnsemble.listeSource` (`campagnes.ts`, `lireListeSourceCampagne`,
+   * réutilisée ici) : le nœud Sources de l'onglet Séquence montrait encore
+   * « 0 source alimente cette campagne, 0 contact qualifié » pour une
+   * campagne à liste avant ce correctif.
+   */
+  readonly listeSource: ListeSourceResume | null;
 }
 
 interface LigneEtapeBrute {
@@ -121,6 +130,11 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
     [campagneId, ctx.organisationId],
   );
   if (!campRes.rows[0]) throw new ErreurIntrouvable('Campagne');
+
+  // Résolu avant le reste (revue F5, constat bloquant 1) : une campagne à liste n'a ni
+  // `campaign_sources` ni signal — `sourcesRes`/`qualifiesRes` y restent vides à raison,
+  // `listeSource` porte alors l'information réelle pour le nœud Sources du flux.
+  const { listeSource } = await lireListeSourceCampagne(ctx, campagneId);
 
   const [sourcesRes, qualifiesRes, etapesRes, finRes] = await Promise.all([
     ctx.ex.query<{ provider_id: string | null }>(
@@ -215,6 +229,7 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
     qualifies: qualifiesRes.rows[0]?.n ?? 0,
     etapes,
     finDeSequence: { termines: finRes.rows[0]?.n ?? 0 },
+    listeSource,
   };
 }
 

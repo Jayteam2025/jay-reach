@@ -114,6 +114,13 @@ export function motifPauseDe(statutInscription: string | null, stopReason: strin
  * `s.id`/`s.account_id` restent `null` pour un contact sans signal
  * qualifiant : `score`/`pourquoi` (R33) et l'entreprise via le signal
  * suivent, mais `ac` retombe alors sur le compte du contact lui-même.
+ *
+ * `e.list_id` (revue F5, point 1) : la liste précise dont vient CETTE
+ * inscription (`enrollments.list_id`, posé par `ajouterDepuisListe`,
+ * `sources.ts`) — jamais `campaigns.list_id`, qui ne dit rien de la
+ * campagne réelle « Jay coach - RH » (les deux colonnes nulles, l'inscription
+ * seule porte la liste). Sert `listerContactsCampagne` à joindre
+ * `list_members` sans second aller-retour.
  */
 export const FROM_POPULATION_CAMPAGNE = `from (
         select c0.id as contact_id, s0.id as signal_id
@@ -135,7 +142,7 @@ export const FROM_POPULATION_CAMPAGNE = `from (
       join contacts c on c.id = pop.contact_id
       left join signals s on s.id = pop.signal_id
       left join lateral (
-        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at, e2.stop_reason, e2.resume_at
+        select e2.id as enrollment_id, e2.status, e2.current_step, e2.started_at, e2.stop_reason, e2.resume_at, e2.list_id
           from enrollments e2
          where e2.contact_id = c.id and e2.campaign_id = $1
          order by e2.started_at desc
@@ -445,7 +452,15 @@ export interface VueDEnsemble {
    */
   readonly nombreSources: number;
   readonly activite: Evenement[];
-  /** Liste qui alimente directement la campagne (`campaigns.list_id`, point 2, issue #120) — `null` pour une campagne à sources. */
+  /**
+   * Liste qui alimente la campagne (point 2, issue #120) — `null` pour une
+   * campagne à sources. Résolue via `enrollments.list_id` (revue F5, point 1) :
+   * `campaigns.list_id` seul ne suffit pas, une campagne réelle peut n'avoir
+   * ni source ni liste posées à son propre niveau, la liste ne vivant que sur
+   * chaque inscription (`ajouterDepuisListe`, tiroir « Liste existante »).
+   * La liste DOMINANTE (le plus d'inscriptions) fait le texte ; `autresListes`
+   * compte les autres listes distinctes qui alimentent aussi la campagne.
+   */
   readonly listeSource: ListeSourceResume | null;
 }
 
@@ -453,6 +468,8 @@ export interface ListeSourceResume {
   readonly nom: string;
   readonly contacts: number;
   readonly importeeLe: string;
+  /** Nombre d'AUTRES listes distinctes qui alimentent aussi la campagne (0 si une seule liste). */
+  readonly autresListes: number;
 }
 
 export interface ContactCampagne {
@@ -689,42 +706,77 @@ async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<Ca
 }
 
 /**
- * Liste qui alimente directement la campagne (`campaigns.list_id`, point 2,
- * issue #120) — `listId` renvoyé pour que `lireEntonnoir` (appelé juste après,
- * dans le même `lireVueDEnsemble`) n'ait pas à relire `campaigns` une seconde
- * fois pour la même information.
+ * Listes qui alimentent la campagne (point 2, issue #120 ; revue F5, point 1) :
+ * `enrollments.list_id` (posé par `ajouterDepuisListe`, tiroir « Liste
+ * existante ») UNION `campaigns.list_id` s'il est posé — jamais
+ * `campaigns.list_id` SEUL, qui reste nul sur une campagne réelle (« Jay coach
+ * - RH ») dont la liste ne vit que sur chaque inscription. Une campagne peut
+ * puiser dans plusieurs listes distinctes au fil du temps : `listIds` les
+ * renvoie TOUTES, triées par nombre d'inscriptions décroissant (la dominante
+ * en tête), pour que `lireEntonnoir` (appelé juste après, dans le même
+ * `lireVueDEnsemble`) compte les membres de la ou des listes sans second
+ * aller-retour. `listeSource` ne décrit que la liste dominante ;
+ * `autresListes` porte le nombre de listes supplémentaires.
+ *
+ * Exportée : `lireSequence` (`sequence.ts`) réutilise cette même fonction
+ * pour le nœud Sources de l'onglet Séquence (revue F5, constat bloquant 1) —
+ * aucune copie, aucun cycle (`sequence.ts` importe déjà `schemaCampagneId`
+ * depuis ce fichier, jamais l'inverse).
  */
-async function lireListeSourceCampagne(
+export async function lireListeSourceCampagne(
   ctx: Contexte,
   campagneId: string,
-): Promise<{ listId: string | null; listeSource: ListeSourceResume | null }> {
-  const res = await ctx.ex.query<{ list_id: string | null; nom: string | null; importee_le: string | null; contacts: number | null }>(
-    `select c.list_id, l.name as nom, l.created_at as importee_le,
-            (select count(*)::int from list_members lm where lm.list_id = l.id) as contacts
-       from campaigns c /* jr:campagne_liste_source */
-       left join lists l on l.id = c.list_id
-      where c.id = $1 and c.organization_id = $2`,
+): Promise<{ listIds: string[]; listeSource: ListeSourceResume | null }> {
+  const res = await ctx.ex.query<{ list_id: string; nom: string; importee_le: string; contacts: number }>(
+    `with camp as (
+        select id, list_id from campaigns c where c.id = $1 and c.organization_id = $2
+      ),
+      candidats as (
+        select list_id, sum(n)::int as n
+          from (
+            select e.list_id, count(*) as n
+              from enrollments e
+              join camp on camp.id = e.campaign_id
+             where e.list_id is not null
+             group by e.list_id
+            union all
+            select camp.list_id, 0
+              from camp
+             where camp.list_id is not null
+          ) u
+         group by list_id
+      )
+      select l.id as list_id, l.name as nom, l.created_at as importee_le,
+             (select count(*)::int from list_members lm where lm.list_id = l.id) as contacts
+        from candidats cd
+        join lists l on l.id = cd.list_id /* jr:campagne_liste_source */
+       order by cd.n desc, l.created_at desc`,
     [campagneId, ctx.organisationId],
   );
-  const r = res.rows[0];
-  if (!r?.list_id) return { listId: null, listeSource: null };
+  if (res.rows.length === 0) return { listIds: [], listeSource: null };
+  const dominante = res.rows[0]!;
   return {
-    listId: r.list_id,
-    listeSource: { nom: r.nom ?? '—', contacts: r.contacts ?? 0, importeeLe: r.importee_le ?? '' },
+    listIds: res.rows.map((r) => r.list_id),
+    listeSource: {
+      nom: dominante.nom,
+      contacts: dominante.contacts,
+      importeeLe: dominante.importee_le,
+      autresListes: res.rows.length - 1,
+    },
   };
 }
 
 /**
- * Vue d'ensemble (point 2, issue #120) : la nature de la campagne (`listId`
- * posé ou non, cf. `campaigns_one_source`, `campagnes.ts`, résolu par
- * `lireListeSourceCampagne` avant l'appel — pas de second aller-retour pour la
- * même information) décide de la forme de l'entonnoir : une campagne à liste
- * n'a ni signal ni thème de veille, un entonnoir qui commence par « 0 offres
- * et profils trouvés » n'y a aucun sens. Les marches COMMUNES (en séquence/en
- * pause/livrés/réponses/intéressés, point 1) sont lues une seule fois, dans
- * une requête à part, jamais dupliquées entre les deux branches.
+ * Vue d'ensemble (point 2, issue #120) : la nature de la campagne (`listIds`
+ * non vide ou non, résolu par `lireListeSourceCampagne` avant l'appel — pas de
+ * second aller-retour pour la même information) décide de la forme de
+ * l'entonnoir : une campagne à liste n'a ni signal ni thème de veille, un
+ * entonnoir qui commence par « 0 offres et profils trouvés » n'y a aucun
+ * sens. Les marches COMMUNES (en séquence/en pause/livrés/réponses/
+ * intéressés, point 1) sont lues une seule fois, dans une requête à part,
+ * jamais dupliquées entre les deux branches.
  */
-async function lireEntonnoir(ctx: Contexte, campagneId: string, listId: string | null): Promise<Entonnoir> {
+async function lireEntonnoir(ctx: Contexte, campagneId: string, listIds: readonly string[]): Promise<Entonnoir> {
   const communRes = await ctx.ex.query<{
     en_sequence: number;
     en_pause: number;
@@ -755,14 +807,18 @@ async function lireEntonnoir(ctx: Contexte, campagneId: string, listId: string |
     interesses: c.interesses,
   };
 
-  if (listId) {
+  if (listIds.length > 0) {
+    // « Contacts importés »/« Email vérifié » (point 2) : membres de LA OU DES listes qui
+    // alimentent la campagne (revue F5, point 1) — `distinct` un contact membre de plusieurs
+    // de ces listes ne compte qu'une fois.
     const listeRes = await ctx.ex.query<{ contacts_importes: number; email_verifie: number }>(
       `select
-          (select count(*)::int from list_members lm where lm.list_id = $1) as contacts_importes,
-          (select count(*)::int from list_members lm join contacts co on co.id = lm.contact_id
-            where lm.list_id = $1 and co.email_status = 'valid') as email_verifie
-        /* jr:entonnoir_liste */`,
-      [listId],
+          count(distinct lm.contact_id)::int as contacts_importes,
+          count(distinct case when co.email_status = 'valid' then lm.contact_id end)::int as email_verifie
+        from list_members lm /* jr:entonnoir_liste */
+        join contacts co on co.id = lm.contact_id
+       where lm.list_id = any($1::uuid[])`,
+      [listIds],
     );
     const l = listeRes.rows[0] ?? { contacts_importes: 0, email_verifie: 0 };
     return { origine: 'liste', contactsImportes: l.contacts_importes, emailVerifie: l.email_verifie, ...commun };
@@ -934,14 +990,14 @@ export async function lireVueDEnsemble(ctx: Contexte, entree: unknown): Promise<
   const { campagneId } = valider(schemaCampagneId, entree);
 
   // Résolu avant le reste (pas dans le même `Promise.all`) : `lireEntonnoir` a
-  // besoin de `listId` pour choisir sa forme (point 2) — un aller-retour de
-  // plus, mais pas un second aller-retour, `listeSource` ET `listId` viennent
+  // besoin de `listIds` pour choisir sa forme (point 2) — un aller-retour de
+  // plus, mais pas un second aller-retour, `listeSource` ET `listIds` viennent
   // de cette seule requête.
-  const { listId, listeSource } = await lireListeSourceCampagne(ctx, campagneId);
+  const { listIds, listeSource } = await lireListeSourceCampagne(ctx, campagneId);
 
   const [campagne, entonnoir, { envois }, sources, nombreSources, { evenements }] = await Promise.all([
     lireCampagneEnTete(ctx, campagneId),
-    lireEntonnoir(ctx, campagneId, listId),
+    lireEntonnoir(ctx, campagneId, listIds),
     lireEnvoisDuJour(ctx, { campagneId }),
     listerSourcesCampagneResume(ctx, campagneId),
     compterSourcesCampagne(ctx, campagneId),
@@ -1021,23 +1077,38 @@ export async function listerContactsCampagne(
   // scores et statuts de SA population aux trois requêtes ci-dessous, qui ne
   // filtrent que sur `campaign_id`. Vérifié AVANT toute autre requête, jamais
   // contourné par un futur appel MCP direct.
-  const campRes = await ctx.ex.query<{ id: string; list_id: string | null }>(
-    `select id, list_id from campaigns /* jr:contacts_campagne_verif */ where id = $1 and organization_id = $2`,
+  // Une campagne est « à liste » si une de ses inscriptions porte un
+  // `list_id` (`enrollments.list_id`, posé par `ajouterDepuisListe`) — jamais
+  // `campaigns.list_id` seul (revue F5, point 1) : une campagne réelle peut
+  // n'avoir ni source ni liste à son propre niveau, la liste ne vivant que
+  // sur chaque inscription. `list_id_echantillon` sert seulement à choisir
+  // UNE ligne de `list_members` pour repérer la colonne d'intitulé de poste
+  // (les imports d'une même liste partagent tous les mêmes en-têtes) — la
+  // jointure de la requête principale, elle, se corrèle par inscription
+  // (`e.list_id`), pas par cette seule liste échantillon.
+  const campRes = await ctx.ex.query<{ id: string; list_id_echantillon: string | null }>(
+    `select c.id,
+            coalesce(
+              (select e.list_id from enrollments e where e.campaign_id = c.id and e.list_id is not null limit 1),
+              c.list_id
+            ) as list_id_echantillon
+       from campaigns c /* jr:contacts_campagne_verif */
+      where c.id = $1 and c.organization_id = $2`,
     [campagneId, ctx.organisationId],
   );
   if (campRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
-  const listId = campRes.rows[0]?.list_id ?? null;
+  const listIdEchantillon = campRes.rows[0]?.list_id_echantillon ?? null;
+  const campagneAListe = listIdEchantillon !== null;
 
   // Point 2 (issue #120) : le nom BRUT de la colonne CSV qui désigne un
   // intitulé de poste, cherché une seule fois sur un échantillon de la liste
-  // (les imports d'une même liste partagent tous les mêmes en-têtes) — jamais
-  // par ligne, `raw_row ->> $n` ci-dessous réutilise cette même clé pour
-  // toutes les lignes de la page.
+  // — jamais par ligne, `raw_row ->> $n` ci-dessous réutilise cette même clé
+  // pour toutes les lignes de la page.
   let colonnePosteListe: string | null = null;
-  if (listId) {
+  if (listIdEchantillon) {
     const echantillonRes = await ctx.ex.query<{ raw_row: Record<string, unknown> | null }>(
       `select raw_row from list_members /* jr:contacts_liste_echantillon */ where list_id = $1 and raw_row is not null limit 1`,
-      [listId],
+      [listIdEchantillon],
     );
     const brut = echantillonRes.rows[0]?.raw_row;
     if (brut) colonnePosteListe = trouverColonneIntitulePoste(brut);
@@ -1081,17 +1152,19 @@ export async function listerContactsCampagne(
            ${CASE_STATUT_DERIVE} as statut,
            -- Point 2 (issue #120) : intitulé de poste de la liste importée, une seule
            -- colonne (repérée une fois plus haut) réutilisée pour toutes les lignes.
-           -- Jointure inoffensive quand $6/$7 sont nuls (campagne à sources) : ne
-           -- filtre rien, ne produit qu'une colonne vide.
-           lm.raw_row ->> $7 as intitule_poste_liste
+           -- Jointure corrélée par INSCRIPTION (e.list_id, revue F5, point 1), jamais
+           -- par une seule liste échantillon : deux contacts de la même campagne peuvent
+           -- venir de deux listes différentes. Inoffensive quand e.list_id/$6 sont nuls
+           -- (campagne à sources) : ne filtre rien, ne produit qu'une colonne vide.
+           lm.raw_row ->> $6 as intitule_poste_liste
          ${FROM_POPULATION_CAMPAGNE}
-         left join list_members lm on lm.list_id = $6 and lm.contact_id = c.id
+         left join list_members lm on lm.list_id = e.list_id and lm.contact_id = c.id
        ) x /* jr:lignes_contacts_campagne */
       where ($2 = 'tous' or statut = $2)
         and ($3::text is null or first_name ilike $3 or last_name ilike $3 or entreprise ilike $3)
       order by signal_id desc nulls last, contact_id desc
       limit $4 offset $5`,
-    [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS, listId, colonnePosteListe],
+    [campagneId, filtre, motif, TAILLE_PAGE_CONTACTS, (page - 1) * TAILLE_PAGE_CONTACTS, colonnePosteListe],
   );
 
   // Requête séparée (pas une sous-requête corrélée par ligne) : une seule campagne pour tout
@@ -1121,7 +1194,7 @@ export async function listerContactsCampagne(
     intitulePosteListe: r.intitule_poste_liste,
   }));
 
-  return { total, compteurs, lignes, campagneAListe: listId !== null, colonnePosteListe: colonnePosteListe !== null };
+  return { total, compteurs, lignes, campagneAListe, colonnePosteListe: colonnePosteListe !== null };
 }
 
 // ---------------------------------------------------------------------------

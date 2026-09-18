@@ -191,6 +191,30 @@ describe('lireSequence', () => {
     const vue = await lireSequence(ctx, { campagneId });
     expect(vue.etapes[0]!.titre).toBe('Premier email');
   });
+
+  // Revue F5, constat bloquant 1 : le nœud Sources du flux affichait encore « 0 source
+  // alimente cette campagne, 0 contact qualifié » pour une campagne à liste, faute de
+  // regarder `enrollments.list_id` comme le fait maintenant la vue d'ensemble.
+  it('campagne à liste (point 2, issue #120) : listeSource exposée, sources/qualifies vides à raison', async () => {
+    const ctx = faux({
+      'jr:sequence_campagne\\b': [{ id: campagneId }],
+      'jr:campagne_liste_source': [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }],
+      'jr:sequence_etapes': [],
+    });
+    const vue = await lireSequence(ctx, { campagneId });
+    expect(vue.listeSource).toEqual({ nom: 'RH avril 2026', contacts: 167, importeeLe: '2026-09-10T08:00:00.000Z', autresListes: 0 });
+    expect(vue.sources).toEqual([]);
+    expect(vue.qualifies).toBe(0);
+  });
+
+  it('campagne à sources : listeSource est `null`', async () => {
+    const ctx = faux({
+      'jr:sequence_campagne\\b': [{ id: campagneId }],
+      'jr:sequence_etapes': [],
+    });
+    const vue = await lireSequence(ctx, { campagneId });
+    expect(vue.listeSource).toBeNull();
+  });
 });
 
 describe('lireCampagnePourEtape', () => {

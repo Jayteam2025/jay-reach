@@ -700,6 +700,7 @@
       "flow": {
         "sourcesTitle": "Sources",
         "sourcesSubtitle": "{n, plural, one {# source alimente} other {# sources alimentent}} cette campagne, {m, plural, one {# contact qualifié} other {# contacts qualifiés}} à ce jour",
+        "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · importée le {date}",
         "intoSequence": "Les contacts qualifiés avec un email vérifié entrent en séquence",
         "delayDays": "{n, plural, one {# jour après} other {# jours après}}",
         "delayHours": "{n, plural, one {# heure après} other {# heures après}}",

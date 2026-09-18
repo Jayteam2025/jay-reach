@@ -445,7 +445,7 @@ describe('lireVueDEnsemble', () => {
 
       const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
 
-      expect(v.listeSource).toEqual({ nom: 'RH avril 2026', contacts: 167, importeeLe: '2026-09-10T08:00:00.000Z' });
+      expect(v.listeSource).toEqual({ nom: 'RH avril 2026', contacts: 167, importeeLe: '2026-09-10T08:00:00.000Z', autresListes: 0 });
       expect(v.entonnoir.origine).toBe('liste');
       if (v.entonnoir.origine !== 'liste') throw new Error('unreachable');
       expect(v.entonnoir.contactsImportes).toBe(167);
@@ -460,6 +460,74 @@ describe('lireVueDEnsemble', () => {
     it('sans liste (campagne à sources) : listeSource est `null`', async () => {
       const v = await lireVueDEnsemble(ctxComplet(), { campagneId: '11111111-1111-1111-1111-111111111111' });
       expect(v.listeSource).toBeNull();
+    });
+
+    // Revue F5, point 1 : la campagne réelle « Jay coach - RH » a `campaigns.list_id` ET
+    // `campaigns.source_id` nuls — seules ses inscriptions portent `list_id`. Une campagne
+    // peut aussi puiser dans plusieurs listes distinctes (import successif) : la dominante
+    // (le plus d'inscriptions) fait le texte, les autres comptent dans `autresListes`.
+    it('plusieurs listes distinctes (deux imports successifs) : la dominante fait le texte, les autres comptent', async () => {
+      const ctx = faux({
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:boites_actives': [],
+        organization_settings: [],
+        // La requête réelle trie déjà par nombre d'inscriptions décroissant : la dominante en tête.
+        'jr:campagne_liste_source': [
+          { list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 },
+          { list_id: 'liste-2', nom: 'RH complément mai', importee_le: '2026-09-15T08:00:00.000Z', contacts: 12 },
+        ],
+        'jr:entonnoir_commun': [{ en_sequence: 165, en_pause: 2, livres: 105, partis: 110, reponses: 1, interesses: 0 }],
+        'jr:entonnoir_liste': [{ contacts_importes: 179, email_verifie: 170 }],
+        'jr:file_du_jour_campagne': [],
+        'jr:sources_campagne_resume': [],
+        'jr:sources_campagne_compte': [{ n: 0 }],
+        'jr:activite_campagne_tout_audit': [],
+        'jr:activite_campagne_tout_envois': [],
+        scored_today: [],
+        enrich_today: [],
+        'from actions': [],
+        'from senders': [],
+      });
+
+      const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
+
+      expect(v.listeSource).toEqual({ nom: 'RH avril 2026', contacts: 167, importeeLe: '2026-09-10T08:00:00.000Z', autresListes: 1 });
+      expect(v.entonnoir.origine).toBe('liste');
+      if (v.entonnoir.origine !== 'liste') throw new Error('unreachable');
+      // Membres des DEUX listes (179), pas seulement de la dominante (167).
+      expect(v.entonnoir.contactsImportes).toBe(179);
+    });
+
+    // Revue F5, point 1 : le bug réel corrigé — `campaigns.list_id` seul ne détecte rien sur
+    // la campagne de production (« Jay coach - RH », `list_id`/`source_id` nuls), dont seules
+    // les inscriptions portent `list_id`. Vérifie le TEXTE de la requête, pas seulement le
+    // résultat rejoué par `faux()` : sans ce test, retirer la jointure `enrollments` ne ferait
+    // échouer aucun autre test de ce bloc (tous rejouent une réponse déjà posée par le fixture).
+    it('la requête résout la liste via enrollments.list_id, pas seulement campaigns.list_id', async () => {
+      const queryMock = vi.fn(async (sql: string) => {
+        if (/jr:campagne_liste_source/i.test(sql)) {
+          return { rows: [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }], rowCount: 1 };
+        }
+        if (/jr:campagne_entete/i.test(sql)) {
+          return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }], rowCount: 1 };
+        }
+        if (/jr:entonnoir_commun/i.test(sql)) {
+          return { rows: [{ en_sequence: 165, en_pause: 2, livres: 105, partis: 110, reponses: 1, interesses: 0 }], rowCount: 1 };
+        }
+        if (/jr:entonnoir_liste/i.test(sql)) return { rows: [{ contacts_importes: 167, email_verifie: 160 }], rowCount: 1 };
+        if (/jr:sources_campagne_compte/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      });
+      const query = queryMock as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      const v = await lireVueDEnsemble(ctx, { campagneId: '11111111-1111-1111-1111-111111111111' });
+
+      expect(v.listeSource).not.toBeNull();
+      expect(v.entonnoir.origine).toBe('liste');
+      const appel = queryMock.mock.calls.find((a) => /jr:campagne_liste_source/i.test(String(a[0])));
+      expect(String(appel![0])).toMatch(/from enrollments e/i);
+      expect(String(appel![0])).toMatch(/e\.list_id is not null/i);
     });
   });
 });
@@ -755,7 +823,7 @@ describe('listerContactsCampagne', () => {
     await listerContactsCampagne(ctx, { campagneId, filtre: 'en_sequence', page: 2 });
     const appels = (query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const appelLignes = appels.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
-    expect(appelLignes?.[1]).toEqual([campagneId, 'en_sequence', null, 50, 50, null, null]);
+    expect(appelLignes?.[1]).toEqual([campagneId, 'en_sequence', null, 50, 50, null]);
   });
 
   // R81 : `current_step` peut dépasser le nombre d'étapes une fois la séquence
@@ -814,7 +882,7 @@ describe('listerContactsCampagne', () => {
   describe('point 2 (issue #120) : colonne « Pourquoi lui »/« Score » remplacée par l’intitulé de poste de la liste', () => {
     it('campagne à liste, colonne trouvée : `colonnePosteListe` à `true`, valeur par ligne, paramètres transmis à la requête', async () => {
       const queryMock = vi.fn(async (sql: string, _values?: unknown[]) => {
-        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id: 'liste-1' }], rowCount: 1 };
+        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id_echantillon: 'liste-1' }], rowCount: 1 };
         if (/jr:contacts_liste_echantillon/i.test(sql)) return { rows: [{ raw_row: { 'Intitulé Poste': 'Responsable RH', Email: 'a@b.fr' } }], rowCount: 1 };
         if (/jr:compteurs_contacts_campagne/i.test(sql)) return { rows: [{ statut: 'en_sequence', n: 1 }], rowCount: 1 };
         if (/jr:lignes_contacts_campagne/i.test(sql)) {
@@ -852,12 +920,12 @@ describe('listerContactsCampagne', () => {
       expect(r.colonnePosteListe).toBe(true);
       expect(r.lignes[0]!.intitulePosteListe).toBe('Responsable RH');
       const appelLignes = queryMock.mock.calls.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
-      expect(appelLignes![1]).toEqual([campagneId, 'tous', null, 50, 0, 'liste-1', 'Intitulé Poste']);
+      expect(appelLignes![1]).toEqual([campagneId, 'tous', null, 50, 0, 'Intitulé Poste']);
     });
 
     it('campagne à liste, colonne absente du CSV : `colonnePosteListe` à `false`, `intitulePosteListe` à `null`', async () => {
       const ctx = faux({
-        'jr:contacts_campagne_verif': [{ id: campagneId, list_id: 'liste-1' }],
+        'jr:contacts_campagne_verif': [{ id: campagneId, list_id_echantillon: 'liste-1' }],
         'jr:contacts_liste_echantillon': [{ raw_row: { Nom: 'Dupont', Email: 'a@b.fr' } }],
         'jr:compteurs_contacts_campagne': [{ statut: 'en_sequence', n: 1 }],
         'jr:lignes_contacts_campagne': [
@@ -884,7 +952,7 @@ describe('listerContactsCampagne', () => {
 
     it('campagne à sources (sans liste) : jamais de requête d’échantillon, `colonnePosteListe` à `false`', async () => {
       const queryMock = vi.fn(async (sql: string) => {
-        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id: null }], rowCount: 1 };
+        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id_echantillon: null }], rowCount: 1 };
         if (/jr:compteurs_contacts_campagne/i.test(sql)) return { rows: [], rowCount: 0 };
         if (/jr:lignes_contacts_campagne/i.test(sql)) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 0 };
@@ -896,6 +964,35 @@ describe('listerContactsCampagne', () => {
 
       expect(r.colonnePosteListe).toBe(false);
       expect(queryMock.mock.calls.some((a) => /jr:contacts_liste_echantillon/i.test(String(a[0])))).toBe(false);
+    });
+
+    // Revue F5, point 1 : deux contacts de la MÊME campagne peuvent venir de deux listes
+    // différentes — la jointure se corrèle par inscription (e.list_id), jamais par une
+    // seule liste échantillon repérée en tête de fonction.
+    it('deux contacts de deux listes différentes gardent chacun leur propre intitulé de poste', async () => {
+      const queryMock = vi.fn(async (sql: string) => {
+        if (/jr:contacts_campagne_verif/i.test(sql)) return { rows: [{ id: campagneId, list_id_echantillon: 'liste-1' }], rowCount: 1 };
+        if (/jr:contacts_liste_echantillon/i.test(sql)) return { rows: [{ raw_row: { 'Intitulé Poste': 'Responsable RH' } }], rowCount: 1 };
+        if (/jr:compteurs_contacts_campagne/i.test(sql)) return { rows: [], rowCount: 0 };
+        if (/jr:lignes_contacts_campagne/i.test(sql)) {
+          return {
+            rows: [
+              { signal_id: null, contact_id: 'c1', first_name: 'A', last_name: 'B', job_title: null, email: 'a@b.fr', entreprise: null, current_step: 0, statut: 'en_sequence', score: null, pourquoi: null, enrollment_id: 'e1', e_status: 'active', stop_reason: null, resume_at: null, intitule_poste_liste: 'Responsable RH' },
+              { signal_id: null, contact_id: 'c2', first_name: 'C', last_name: 'D', job_title: null, email: 'c@d.fr', entreprise: null, current_step: 0, statut: 'en_sequence', score: null, pourquoi: null, enrollment_id: 'e2', e_status: 'active', stop_reason: null, resume_at: null, intitule_poste_liste: 'Directeur commercial' },
+            ],
+            rowCount: 2,
+          };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+      const query = queryMock as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      const r = await listerContactsCampagne(ctx, { campagneId });
+
+      expect(r.lignes.map((l) => l.intitulePosteListe)).toEqual(['Responsable RH', 'Directeur commercial']);
+      const appelLignes = queryMock.mock.calls.find((a) => /jr:lignes_contacts_campagne/i.test(String(a[0])));
+      expect(String(appelLignes![0])).toMatch(/lm\.list_id = e\.list_id/);
     });
   });
 });
