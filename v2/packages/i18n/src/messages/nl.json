@@ -1080,6 +1080,7 @@
         "aucunRepli": "geen",
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
+        "modifieSansAuteur": "Gewijzigd op {date}",
         "erreurNombre": "Voer een geheel getal in, nul of positief."
       },
       "lignes": {

@@ -1080,6 +1080,7 @@
         "aucunRepli": "none",
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
+        "modifieSansAuteur": "Modified on {date}",
         "erreurNombre": "Enter a whole number, zero or positive."
       },
       "lignes": {

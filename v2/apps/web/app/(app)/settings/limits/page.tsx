@@ -1,7 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { lireConsommationDuJour, lireReglages, lireReglagesDetail, type ClePlafond } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
-import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { libelleModification } from '../../../../lib/libelle-modification';
 import { BarreProgression, Carte } from '../../../../components/ui';
 import { TablePlafonds, type LignePlafond } from '../../../../components/reglages/TablePlafonds';
 
@@ -69,10 +70,7 @@ export default async function PlafondsPage() {
       valeur: d.valeur,
       defaut: d.defaut,
       repli: d.repli,
-      modifie:
-        d.modifiePar && d.modifieLe
-          ? t('table.modifiePar', { nom: d.modifiePar, date: dateCourte(d.modifieLe, maintenant, fuseau) })
-          : t('table.jamaisModifie'),
+      modifie: libelleModification(d.modifiePar, d.modifieLe, (cle, valeurs) => t(`table.${cle}`, valeurs), maintenant, fuseau),
       type: 'nombre',
       suffixe: libelle.suffixe,
     };

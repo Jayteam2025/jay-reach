@@ -1080,6 +1080,7 @@
         "aucunRepli": "aucun",
         "jamaisModifie": "jamais",
         "modifiePar": "{nom} · {date}",
+        "modifieSansAuteur": "Modifié le {date}",
         "erreurNombre": "Entrez un nombre entier positif ou nul."
       },
       "lignes": {
