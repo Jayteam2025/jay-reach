@@ -1,3 +1,6 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { ForbiddenError } from '../roles.js';
@@ -502,5 +505,33 @@ describe('lireAujourdhui', () => {
   it('sans fuseau réglé en base : le défaut Europe/Paris', async () => {
     const a = await lireAujourdhui(faux({}));
     expect(a.fuseau).toBe('Europe/Paris');
+  });
+});
+
+/**
+ * G2 (audit demandé après le bouton mort « Nouvelle campagne », apps/web/app/(app)/page.tsx) :
+ * les bandeaux d'alerte de l'accueil sont de vrais liens (`<Link href={alerte.lien}>`), mais
+ * `alerte.lien` est un littéral posé ICI, dans `packages/core`, jamais vérifié contre les routes
+ * réelles de `apps/web`. Contrôle statique (même idiome que `page.test.tsx`, apps/web) : chaque
+ * route citée doit exister sous `apps/web/app/(app)`.
+ */
+describe('alertes — chaque `lien` pointe vers une route qui existe réellement', () => {
+  const ici = fileURLToPath(new URL('.', import.meta.url));
+  // packages/core/src/fonctions -> v2 (4 niveaux), puis apps/web/app/(app).
+  const appDir = join(ici, '../../../../apps/web/app/(app)');
+  const source = readFileSync(join(ici, 'aujourdhui.ts'), 'utf8');
+
+  it('le répertoire des routes existe bien à l’endroit attendu (garde-fou du test lui-même)', () => {
+    expect(existsSync(appDir)).toBe(true);
+  });
+
+  it('chaque `lien: \'...\'` littéral résout une route sous apps/web/app/(app)', () => {
+    const liens = [...source.matchAll(/lien: '([^']+)'/g)].map((m) => m[1]!);
+    // Garde-fou contre un test qui matcherait zéro alerte si le fichier changeait de forme.
+    expect(liens.length).toBeGreaterThanOrEqual(4);
+    for (const lien of liens) {
+      const segments = lien.split('/').filter(Boolean);
+      expect(existsSync(join(appDir, ...segments, 'page.tsx')), `route « ${lien} » introuvable`).toBe(true);
+    }
   });
 });

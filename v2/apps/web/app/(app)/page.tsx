@@ -6,7 +6,7 @@ import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
-import { Avatar, BarreProgression, Bouton, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
+import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
 export const revalidate = 60;
@@ -81,7 +81,16 @@ export default async function AujourdhuiPage() {
       <EnTetePage
         titre={jour}
         description={t('resume', { aTraiter: a.aTraiter.total, envois: a.fileDuJour.total, campagnes: campagnesActives })}
-        action={<Bouton variante="principal">{t('newCampaign')}</Bouton>}
+        // Bouton mort avant ce correctif (G2) : le composant `Bouton`, sans `onClick` ni `href`,
+        // rendait un simple bouton de formulaire hors formulaire, qui ne faisait rien au clic.
+        // Même route et même classe `jr-bouton` que `campaigns/page.tsx` (`list.new`/
+        // `list.empty.action`), qui y renvoie déjà correctement — seule la variante change
+        // (`principal`, pas `sombre`, pour garder l'apparence déjà en place ici).
+        action={
+          <Link href="/campaigns/new" className="jr-bouton principal">
+            {t('newCampaign')}
+          </Link>
+        }
       />
 
       <section className="jr-aujourdhui">
