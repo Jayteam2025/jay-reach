@@ -203,7 +203,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
       motifPauseAffiche:
         ligne.statut === 'en_pause' && ligne.motifPause
-          ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`pause.${cle}`, valeurs))
+          ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`pause.${cle}`, valeurs), fuseau)
           : null,
       prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(cle, valeurs), fuseau),
     }));

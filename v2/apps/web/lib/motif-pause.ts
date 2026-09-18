@@ -9,6 +9,13 @@
  * un cinquième, générique, couvre tout code non reconnu : jamais un chemin brut
  * (`campagne.contacts.pause.xxx`) affiché à l'opérateur, jamais un motif technique
  * caché non plus (le code brut reste visible en `title`, pour qui veut creuser).
+ *
+ * La date de reprise (« Absent, reprise le {date} ») prend `fuseau` (celui de
+ * l'organisation) depuis le correctif du 18/09 — avant, sans `timeZone`, elle
+ * suivait le fuseau du PROCESS qui exécute le rendu (`Europe/Paris` sur le Mac
+ * d'un développeur, `UTC` sur Vercel), juste au-dessus de la ligne « Prochain
+ * message » que `libelleProchainMessage` formate déjà correctement : deux
+ * dates voisines, l'une juste et l'autre fausse selon le fuseau réglé.
  */
 
 export interface LibelleMotifPause {
@@ -24,6 +31,7 @@ export function libelleMotifPause(
   motif: string,
   repriseLe: string | null,
   t: Traducteur,
+  fuseau: string,
   locale = 'fr-FR',
 ): LibelleMotifPause {
   if (motif.startsWith('email_gate:')) return { texte: t('emailGate'), title: null };
@@ -31,7 +39,7 @@ export function libelleMotifPause(
   if (motif.startsWith('sender_unavailable:')) return { texte: t('senderUnavailable'), title: null };
   if (motif === 'absence') {
     if (!repriseLe) return { texte: t('absenceNoDate'), title: null };
-    const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' }).format(new Date(repriseLe));
+    const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau }).format(new Date(repriseLe));
     return { texte: t('absence', { date }), title: null };
   }
   return { texte: t('generic'), title: motif };

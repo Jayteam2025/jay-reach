@@ -79,7 +79,7 @@ export default async function CampagneContactsPage({
     ),
     motifPauseAffiche:
       ligne.statut === 'en_pause' && ligne.motifPause
-        ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`contacts.pause.${cle}`, valeurs))
+        ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`contacts.pause.${cle}`, valeurs), fuseau)
         : null,
     prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(`contacts.${cle}`, valeurs), fuseau),
   }));

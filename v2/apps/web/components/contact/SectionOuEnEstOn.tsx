@@ -31,7 +31,7 @@ export function SectionOuEnEstOn({ sequence, campagneId, fuseau }: SectionOuEnEs
   const tActions = useTranslations('campagne.contacts.actions');
 
   const motifAffiche = sequence?.pause
-    ? libelleMotifPause(sequence.pause.motif, sequence.pause.repriseLe, (cle, valeurs) => tPause(cle, valeurs))
+    ? libelleMotifPause(sequence.pause.motif, sequence.pause.repriseLe, (cle, valeurs) => tPause(cle, valeurs), fuseau)
     : null;
 
   // `!sequence.pause` (pas seulement `prochainMessageLe` non nul, déjà garanti par `lireFiche`

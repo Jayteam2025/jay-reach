@@ -16,28 +16,28 @@ function fauxT() {
 describe('libelleMotifPause', () => {
   it('email_gate:* → clé emailGate, sans code en title', () => {
     const t = fauxT();
-    const r = libelleMotifPause('email_gate:bouncer_invalid', null, t);
+    const r = libelleMotifPause('email_gate:bouncer_invalid', null, t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('emailGate');
     expect(r).toEqual({ texte: 'emailGate', title: null });
   });
 
   it('salesblink_client_error → clé salesblinkError', () => {
     const t = fauxT();
-    const r = libelleMotifPause('salesblink_client_error', null, t);
+    const r = libelleMotifPause('salesblink_client_error', null, t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('salesblinkError');
     expect(r).toEqual({ texte: 'salesblinkError', title: null });
   });
 
   it('sender_unavailable:* → clé senderUnavailable', () => {
     const t = fauxT();
-    const r = libelleMotifPause('sender_unavailable:email', null, t);
+    const r = libelleMotifPause('sender_unavailable:email', null, t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('senderUnavailable');
     expect(r).toEqual({ texte: 'senderUnavailable', title: null });
   });
 
   it('absence avec une date de reprise : clé absence avec {date} formatée', () => {
     const t = fauxT();
-    const r = libelleMotifPause('absence', '2026-09-22T08:00:00.000Z', t, 'fr-FR');
+    const r = libelleMotifPause('absence', '2026-09-22T08:00:00.000Z', t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('absence', { date: expect.any(String) });
     expect(r.texte).toMatch(/^absence:date=/);
     expect(r.title).toBeNull();
@@ -45,16 +45,29 @@ describe('libelleMotifPause', () => {
 
   it('absence sans date de reprise : clé absenceNoDate, sans paramètre', () => {
     const t = fauxT();
-    const r = libelleMotifPause('absence', null, t);
+    const r = libelleMotifPause('absence', null, t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('absenceNoDate');
     expect(r).toEqual({ texte: 'absenceNoDate', title: null });
   });
 
   it('motif inconnu : clé generic, le code brut en title (jamais dans le texte)', () => {
     const t = fauxT();
-    const r = libelleMotifPause('un_code_jamais_vu', null, t);
+    const r = libelleMotifPause('un_code_jamais_vu', null, t, 'Europe/Paris');
     expect(t).toHaveBeenCalledWith('generic');
     expect(r).toEqual({ texte: 'generic', title: 'un_code_jamais_vu' });
+  });
+
+  // Correctif du 18/09 : la date de reprise vivait juste au-dessus de celle du prochain
+  // message (`libelleProchainMessage`, déjà correcte) et suivait encore le fuseau du process
+  // faute de `timeZone`. Rougirait si `fuseau` était ignoré (ou codé en dur) — même instant,
+  // deux jours calendaires différents selon le fuseau de l'organisation.
+  it('formate la date de reprise dans le fuseau donné, pas un fuseau fixe', () => {
+    const t = fauxT();
+    const instant = '2026-09-27T23:00:00.000Z';
+    const enParis = libelleMotifPause('absence', instant, t, 'Europe/Paris');
+    const enUtc = libelleMotifPause('absence', instant, t, 'UTC');
+    expect(enParis.texte).toContain('28 septembre');
+    expect(enUtc.texte).toContain('27 septembre');
   });
 });
 
