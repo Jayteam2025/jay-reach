@@ -163,6 +163,11 @@
       "never": "De motor heeft nog nooit gedraaid"
     },
     "sentToday": "Vandaag verzonden",
+    "sent": {
+      "gone": "{n, plural, one {# verstuurd} other {# verstuurd}}",
+      "queued": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
+      "none": "Geen verzendingen"
+    },
     "role": {
       "owner": "Eigenaar",
       "admin": "Beheerder",

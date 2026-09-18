@@ -163,6 +163,11 @@
       "never": "The engine has never run"
     },
     "sentToday": "Sent today",
+    "sent": {
+      "gone": "{n, plural, one {# sent} other {# sent}}",
+      "queued": "{n, plural, one {# queued} other {# queued}}",
+      "none": "No sends"
+    },
     "role": {
       "owner": "Owner",
       "admin": "Admin",

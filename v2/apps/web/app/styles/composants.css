@@ -160,10 +160,25 @@ select.jr-puce {
 .jr-etape-entonnoir i { position: absolute; right: 6px; top: 8px; color: var(--jr-filet); font-style: normal; font-size: 18px; }
 .jr-etape-entonnoir:last-child i { display: none; }
 .jr-etape-entonnoir em { font-style: normal; font-size: 12px; color: var(--jr-bon); font-weight: 600; margin-left: 6px; }
-.jr-barre-prog { height: 6px; border-radius: 3px; background: var(--jr-filet); overflow: hidden; }
-.jr-barre-prog i { display: block; height: 100%; background: var(--jr-accent); border-radius: 3px; }
+.jr-barre-prog { height: 6px; border-radius: 3px; background: var(--jr-filet); overflow: hidden; display: flex; }
+/* Pas de `border-radius` sur les segments : l'arrondi vient du conteneur (`overflow: hidden`).
+   En poser un ici creuserait la jonction entre le segment parti et le segment en file. */
+.jr-barre-prog i { display: block; height: 100%; background: var(--jr-accent); }
 .jr-barre-prog.attention i { background: var(--jr-attention); }
 .jr-barre-prog.erreur i { background: var(--jr-erreur); }
+/* Second segment : ce qui est remis au transporteur et attend sa fenêtre d'envoi. Même teinte
+   que le segment plein, très atténuée — c'est le même envoi, à une autre étape de sa vie. */
+.jr-barre-prog i.en-file { background: rgba(20, 108, 90, 0.34); }
+.jr-barre-prog.attention i.en-file { background: rgba(183, 121, 31, 0.34); }
+.jr-barre-prog.erreur i.en-file { background: rgba(180, 66, 58, 0.34); }
+
+/* Carte « Envois du jour » de la barre latérale (largeur utile 199 px) */
+.jr-envois-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--jr-petit); }
+.jr-envois-tete .jr-plafond { color: var(--jr-secondaire); white-space: nowrap; }
+.jr-envois-chiffres { font-size: var(--jr-petit); margin: 2px 0 6px; line-height: 1.35; }
+.jr-envois-chiffres b { font-weight: 600; }
+.jr-envois-chiffres .jr-file { color: var(--jr-secondaire); }
+.jr-envois-vide { font-size: var(--jr-petit); color: var(--jr-secondaire); margin: 2px 0 6px; }
 .jr-tendance { display: flex; align-items: flex-end; gap: 2px; height: 22px; }
 .jr-tendance i { display: block; width: 5px; background: var(--jr-accent); border-radius: 1px; opacity: 0.85; }
 .jr-score { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }

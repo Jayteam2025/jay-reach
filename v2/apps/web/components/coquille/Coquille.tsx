@@ -54,7 +54,15 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
             libelleEtat={a.moteur.enMarche ? t('coquille.engine.running') : t('coquille.engine.stopped')}
             detail={detailMoteur}
           />
-          <CarteEnvois libelle={t('coquille.sentToday')} utilise={a.plafonds.envois.utilise} plafond={a.plafonds.envois.plafond} />
+          <CarteEnvois
+            libelle={t('coquille.sentToday')}
+            partis={a.fileDuJour.dejaPartis}
+            enFile={a.fileDuJour.enFile}
+            plafond={a.plafonds.envois.plafond}
+            libellePartis={t('coquille.sent.gone', { n: a.fileDuJour.dejaPartis })}
+            libelleEnFile={t('coquille.sent.queued', { n: a.fileDuJour.enFile })}
+            libelleAucun={t('coquille.sent.none')}
+          />
           <div className="jr-qui" style={{ padding: '4px 6px' }}>
             <Avatar nom={nomAffiche} />
             <span>

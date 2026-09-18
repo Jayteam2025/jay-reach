@@ -163,6 +163,11 @@
       "never": "Le moteur n'a jamais tourné"
     },
     "sentToday": "Envois du jour",
+    "sent": {
+      "gone": "{n, plural, one {# parti} other {# partis}}",
+      "queued": "{n, plural, one {# en file} other {# en file}}",
+      "none": "Aucun envoi"
+    },
     "role": {
       "owner": "Propriétaire",
       "admin": "Administrateur",
