@@ -8,7 +8,7 @@ import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
-import { compterPartis } from '../../../../lib/file-du-jour';
+import { compterEnFile, compterPartis } from '../../../../lib/file-du-jour';
 import { tauxLivresAffiche } from '../../../../lib/entonnoir';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
@@ -56,7 +56,8 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
 
   const apercuFile = vue.fileDuJour.slice(0, TAILLE_APERCU_FILE);
   const resteFile = vue.fileDuJour.length - apercuFile.length;
-  const dejaPartis = compterPartis(vue.fileDuJour);
+  const partis = compterPartis(vue.fileDuJour);
+  const enFile = compterEnFile(vue.fileDuJour);
 
   // Point 1 : la marche « En séquence » porte aussi le nombre en pause, en second libellé
   // (même case `taux` que les pourcentages, réutilisée comme simple annotation).
@@ -103,7 +104,11 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           <>
             <small>
               {t('overview.queue.count', {
-                partis: dejaPartis,
+                partis,
+                // G2 : les envois remis au transporteur mais pas encore réellement partis —
+                // absents de `possibles`/`reportes`, qui ne portent que ce qui n'est même pas
+                // encore remis (voir le calcul d'`enFile` ci-dessus).
+                enFile,
                 // Revue F5, point 10 : « prévu » (juste le total du jour calendaire) confondait
                 // ce qui est réellement encore envoyable aujourd'hui avec ce que le plafond de la
                 // boîte va en réalité reporter à demain (`projeterEnvoisDuJour`).

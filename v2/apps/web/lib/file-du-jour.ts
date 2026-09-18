@@ -16,6 +16,22 @@ export function compterPartis(fileDuJour: readonly Pick<EnvoiPrevu, 'livre'>[]):
 }
 
 /**
+ * « En file » d'une file du jour (G2) : remis au transporteur (`envoye`) mais
+ * pas encore réellement parti (`livre` faux) — le bucket que la carte « File
+ * du jour » de la vue d'ensemble d'une campagne ne comptait nulle part avant
+ * ce correctif. `compterPartis` (`livre`) et `projeterEnvoisDuJour` (appelée
+ * sur `!envoye`, `possibles`/`reportes`) se partageaient déjà tout ce qui
+ * n'était PAS encore remis ou déjà parti — ce qui restait, remis mais en
+ * attente de départ réel chez le transporteur, n'avait sa place dans aucun
+ * des deux : une campagne entièrement remise mais pas encore partie (le cas
+ * réel « Jay coach - RH », 47 remis, 0 parti) affichait donc « 0 parti · 0
+ * encore possible · 0 reporté » au-dessus d'une liste de 47 messages.
+ */
+export function compterEnFile(fileDuJour: readonly Pick<EnvoiPrevu, 'envoye' | 'livre'>[]): number {
+  return fileDuJour.filter((envoi) => envoi.envoye && !envoi.livre).length;
+}
+
+/**
  * État affiché d'un envoi (F13, décision du 18/09) : deux états réels, pas
  * trois. « Remis » (`dispatched`) et « Parti » (`delivered`) ne se lisent
  * JAMAIS sur le statut brut de la base pour ces deux-là — il ne dit rien du
