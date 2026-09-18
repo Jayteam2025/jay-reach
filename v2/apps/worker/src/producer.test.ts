@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { enqueueDiscoverForActiveSources, enqueueRequestedRuns } from './producer.js';
+import { enqueueDiscoverForActiveSources, enqueueRequestedRuns, enqueueEnrollments } from './producer.js';
 
 /**
  * R72 : une source n'est due que si elle est active, son rattachement à un
@@ -186,5 +186,66 @@ describe('enqueueRequestedRuns (R72)', () => {
 
     expect(n).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
+  const ORG_ID = 'org-1';
+  const CAMPAIGN_ID = 'campagne-1';
+  const CONTACT_ID = 'contact-1';
+  const SIGNAL_ID = 'signal-1';
+
+  interface Appel {
+    readonly sql: string;
+    readonly values: unknown[];
+  }
+
+  /** Motifs des requêtes d'`enqueueEnrollments`. */
+  const CANDIDATS = /from contacts ct/i;
+  const CAPS = /select id, daily_cap from campaigns where id = any/i;
+  const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
+  const ENTREES_DU_JOUR = /from enrollments\s+where campaign_id/i;
+
+  function creerPoolFactice(dailyCap: number | null, entreesDuJour: number): { pool: Pool; appels: Appel[] } {
+    const appels: Appel[] = [];
+    const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+      appels.push({ sql, values });
+      if (CANDIDATS.test(sql)) {
+        return {
+          rows: [{ organization_id: ORG_ID, campaign_id: CAMPAIGN_ID, contact_id: CONTACT_ID, signal_id: SIGNAL_ID }],
+          rowCount: 1,
+        };
+      }
+      if (CAPS.test(sql)) return { rows: [{ id: CAMPAIGN_ID, daily_cap: dailyCap }], rowCount: 1 };
+      if (FUSEAU_ORGANISATION.test(sql)) return { rows: [{ value: 'Pacific/Kiritimati' }], rowCount: 1 };
+      if (ENTREES_DU_JOUR.test(sql)) return { rows: [{ n: String(entreesDuJour) }], rowCount: 1 };
+      throw new Error(`requête non prévue par le test :\n${sql}`);
+    });
+    return { pool: { query } as unknown as Pool, appels };
+  }
+
+  it('le pré-filtre de plafond ET le comptage qui suit lisent le jour de l’organisation, jamais celui du serveur', async () => {
+    const { pool, appels } = creerPoolFactice(5, 2);
+    const { boss, insert } = fauxBoss();
+
+    const n = await enqueueEnrollments(boss, pool);
+
+    const candidats = appels.find((a) => CANDIDATS.test(a.sql));
+    expect(candidats).toBeDefined();
+    expect(candidats!.sql).toMatch(/date_trunc\('day', now\(\) at time zone coalesce\(nullif\(ofz\.value/i);
+    expect(candidats!.sql).not.toContain("date_trunc('day', now())");
+
+    const requeteFuseau = appels.find((a) => FUSEAU_ORGANISATION.test(a.sql));
+    expect(requeteFuseau).toBeDefined();
+    expect(requeteFuseau!.values).toEqual([ORG_ID]);
+
+    const requeteCompte = appels.find((a) => ENTREES_DU_JOUR.test(a.sql));
+    expect(requeteCompte).toBeDefined();
+    expect(requeteCompte!.sql).toMatch(/started_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/i);
+    expect(requeteCompte!.values).toEqual([CAMPAIGN_ID, 'Pacific/Kiritimati']);
+
+    // Plafond 5, 2 déjà comptées : la place est encore disponible.
+    expect(n).toBe(1);
+    expect(insert).toHaveBeenCalledTimes(1);
   });
 });

@@ -404,13 +404,23 @@ export async function enqueueEnrollments(
         and c.entry_rules -> 'personas' ? ct.persona_id::text
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
+       -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
+       -- correction 2), pour le pré-filtre ci-dessous : cette requête mélange
+       -- potentiellement plusieurs organisations en un seul passage, contrairement
+       -- à compterEntreesDuJour (organisation connue par son appelant) -- jointure
+       -- plutôt qu'un paramètre JS, même repli (clé absente/vide -> Europe/Paris)
+       -- que fuseauDeLOrganisation.
+       left join organization_settings ofz on ofz.organization_id = c.organization_id and ofz.key = 'fuseau'
+      where ct.source_signal_id is not null
        -- Pré-filtre : une campagne dont le plafond du jour est déjà atteint
        -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
+       -- Jour de l'organisation, pas celui du serveur (revue F5, point 1, tour 2) :
+       -- même borne que compterEntreesDuJour, qui refait le contrôle autoritaire.
         and (c.daily_cap is null
              or c.daily_cap > (select count(*) from enrollments e2
                                  where e2.campaign_id = c.id
-                                   and e2.started_at >= date_trunc('day', now())))
-      where ct.source_signal_id is not null
+                                   and e2.started_at >= date_trunc('day', now() at time zone coalesce(nullif(ofz.value #>> '{}', ''), 'Europe/Paris'))
+                                                        at time zone coalesce(nullif(ofz.value #>> '{}', ''), 'Europe/Paris')))
         and not exists (
           select 1 from enrollments e
            where e.contact_id = ct.id
@@ -422,6 +432,10 @@ export async function enqueueEnrollments(
   );
 
   const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
+  // Une campagne appartient à une seule organisation : `res.rows` en porte déjà
+  // l'id, pas besoin de la relire (revue F5, point 1, tour de correction 2 —
+  // `compterEntreesDuJour` en a besoin pour son propre fuseau).
+  const orgParCampagne = new Map(res.rows.map((r) => [r.campaign_id, r.organization_id]));
   const places = new Map<string, number | null>();
   if (ids.length > 0) {
     const caps = await pool.query<{ id: string; daily_cap: number | null }>(
@@ -429,7 +443,10 @@ export async function enqueueEnrollments(
       [ids],
     );
     for (const c of caps.rows) {
-      places.set(c.id, c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id)));
+      places.set(
+        c.id,
+        c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id, orgParCampagne.get(c.id)!)),
+      );
     }
   }
   const { retenues, reportees } = bornerParCampagne(res.rows, places);

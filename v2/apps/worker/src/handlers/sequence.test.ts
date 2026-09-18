@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante } from '@jay-reach/core';
-import { tickDueEnrollments, mettreInscriptionEnPause, rattraperEcheancesManquantes, chargerContraintesSender } from './sequence.js';
+import {
+  tickDueEnrollments,
+  mettreInscriptionEnPause,
+  rattraperEcheancesManquantes,
+  chargerContraintesSender,
+  compterEntreesDuJour,
+} from './sequence.js';
 
 // Restauration systématique après CHAQUE test du fichier (tour de correction 2,
 // fiabilisation) : un `vi.spyOn(console, 'warn')` non restauré (test qui lance
@@ -570,5 +576,27 @@ describe('chargerContraintesSender (revue F5, point 2)', () => {
       usedToday: 4,
       usedThisHour: 1,
     });
+  });
+});
+
+describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () => {
+  it('lit le jour calendaire par « at time zone », jamais `date_trunc(\'day\', now())` (fuseau de l’organisation, pas celui du serveur)', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Pacific/Kiritimati' }]) },
+      { motif: /from enrollments\s+where campaign_id/i, repondre: () => ligne([{ n: '3' }]) },
+    ]);
+
+    const n = await compterEntreesDuJour(pool, CAMPAIGN_ID, ORG_ID);
+
+    const requeteFuseau = appels.find((a) => FUSEAU_ORGANISATION.test(a.sql));
+    expect(requeteFuseau).toBeDefined();
+    expect(requeteFuseau!.values).toEqual([ORG_ID]);
+
+    const requeteCompte = appels.find((a) => /from enrollments\s+where campaign_id/i.test(a.sql));
+    expect(requeteCompte).toBeDefined();
+    expect(requeteCompte!.sql).toMatch(/started_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/i);
+    expect(requeteCompte!.sql).not.toContain("date_trunc('day', now())");
+    expect(requeteCompte!.values).toEqual([CAMPAIGN_ID, 'Pacific/Kiritimati']);
+    expect(n).toBe(3);
   });
 });

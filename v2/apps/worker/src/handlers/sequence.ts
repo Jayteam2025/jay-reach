@@ -64,12 +64,19 @@ async function chargerPlafondCampagne(pool: Pool, campaignId: string): Promise<n
   return res.rows[0]?.daily_cap ?? null;
 }
 
-/** Nombre d'entrées déjà comptabilisées aujourd'hui (jour UTC) pour une campagne. */
-export async function compterEntreesDuJour(pool: Pool, campaignId: string): Promise<number> {
+/**
+ * Nombre d'entrées déjà comptabilisées aujourd'hui — jour de l'ORGANISATION
+ * (revue F5, point 1, tour de correction 2), pas celui du serveur : même
+ * fonction et même repli que `loadSenders`/`chargerContraintesSender`
+ * ci-dessous. C'est le plafond d'entrées en séquence par campagne, un chiffre
+ * que l'écran montre lui aussi.
+ */
+export async function compterEntreesDuJour(pool: Pool, campaignId: string, organizationId: string): Promise<number> {
+  const fuseau = await fuseauDeLOrganisation(pool, organizationId);
   const res = await pool.query<{ n: string }>(
     `select count(*)::text as n from enrollments
-      where campaign_id = $1 and started_at >= date_trunc('day', now())`,
-    [campaignId],
+      where campaign_id = $1 and started_at >= date_trunc('day', now() at time zone $2) at time zone $2`,
+    [campaignId, fuseau],
   );
   return Number(res.rows[0]?.n ?? 0);
 }
@@ -96,7 +103,7 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
   // dépasser le plafond d'une entrée par job concurrent sur la campagne.
   const plafond = await chargerPlafondCampagne(pool, job.campaignId);
   if (plafond !== null) {
-    const reste = placesRestantes(plafond, await compterEntreesDuJour(pool, job.campaignId));
+    const reste = placesRestantes(plafond, await compterEntreesDuJour(pool, job.campaignId, job.organizationId));
     if (reste === 0) {
       console.warn(`[enroll] plafond du jour atteint pour la campagne ${job.campaignId} (${plafond}/jour), contact ${job.contactId} reporte`);
       return null;
