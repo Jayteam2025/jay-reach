@@ -347,7 +347,6 @@ export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number
  * UTC », mais un plafond qui « se remet à zéro » à une heure différente de
  * celle de l'organisation reste une incohérence pour l'opérateur.
  *
-
  * `reglages` : à passer quand l'appelant les a déjà lus (`lireAujourdhui`, qui
  * en a aussi besoin pour son propre fuseau) — évite une deuxième lecture de
  * `organization_settings` dans le même appel. Absent, `lireReglages(ctx)` est
