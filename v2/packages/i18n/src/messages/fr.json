@@ -396,9 +396,9 @@
         "enrich": "Chercher l'email",
         "enrichCost": "1 crédit",
         "discard": "Écarter",
-        "resume": "Reprendre",
-        "resumeNow": "Reprendre maintenant"
+        "resume": "Reprendre"
       },
+      "nextMessage": "Prochain message le {date}",
       "empty": "Aucun contact pour l'instant : cette campagne n'a encore identifié personne.",
       "emptyFilter": "Aucun contact pour ce filtre.",
       "pageRange": "{debut} à {fin} sur {total}",
@@ -425,7 +425,8 @@
         "empty": "Cette campagne n'a pas encore contacté cette personne.",
         "sentBy": "Envoyé par {boite} · lié à cette boîte pour toute la séquence",
         "step": "{n}",
-        "pausedLine": "En pause : {motif}"
+        "pausedLine": "En pause : {motif}",
+        "nextMessage": "Prochain message le {date}"
       },
       "conversation": {
         "openInInbox": "Ouvrir dans la Réception",
@@ -1489,9 +1490,9 @@
       "enrich": "Chercher l'email",
       "enrichCost": "1 crédit",
       "discard": "Écarter",
-      "resume": "Reprendre",
-      "resumeNow": "Reprendre maintenant"
+      "resume": "Reprendre"
     },
+    "nextMessage": "Prochain message le {date}",
     "empty": "Aucun contact pour ce filtre.",
     "truncated": "Affichage limité aux 5 000 premiers résultats : affinez les filtres pour voir le reste.",
     "pageRange": "{debut} à {fin} sur {total}",

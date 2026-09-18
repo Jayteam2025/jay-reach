@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { libelleMotifPause } from './motif-pause';
+import { libelleMotifPause, libelleProchainMessage } from './motif-pause';
 
 /** Même patron que `etape-contact.test.tsx` : un faux `t` qui rend visible la clé ET les valeurs reçues. */
 function fauxT() {
@@ -55,5 +55,32 @@ describe('libelleMotifPause', () => {
     const r = libelleMotifPause('un_code_jamais_vu', null, t);
     expect(t).toHaveBeenCalledWith('generic');
     expect(r).toEqual({ texte: 'generic', title: 'un_code_jamais_vu' });
+  });
+});
+
+describe('libelleProchainMessage', () => {
+  it('sans échéance connue : null, sans appeler t (jamais un texte vide affiché)', () => {
+    const t = fauxT();
+    const r = libelleProchainMessage(null, t, 'Europe/Paris');
+    expect(r).toBeNull();
+    expect(t).not.toHaveBeenCalled();
+  });
+
+  it('clé nextMessage avec {date} formatée (jour numérique + mois en toutes lettres)', () => {
+    const t = fauxT();
+    const r = libelleProchainMessage('2026-09-28T08:00:00.000Z', t, 'Europe/Paris');
+    expect(t).toHaveBeenCalledWith('nextMessage', { date: expect.any(String) });
+    expect(r).toMatch(/^nextMessage:date=/);
+  });
+
+  // F11 : rougirait si `fuseau` était ignoré (ou codé en dur sur `Europe/Paris`) — même instant,
+  // deux jours calendaires différents selon le fuseau de l'organisation.
+  it('formate la date dans le fuseau donné, pas un fuseau fixe', () => {
+    const t = fauxT();
+    const instant = '2026-09-27T23:00:00.000Z';
+    const enParis = libelleProchainMessage(instant, t, 'Europe/Paris');
+    const enUtc = libelleProchainMessage(instant, t, 'UTC');
+    expect(enParis).toContain('28 septembre');
+    expect(enUtc).toContain('27 septembre');
   });
 });

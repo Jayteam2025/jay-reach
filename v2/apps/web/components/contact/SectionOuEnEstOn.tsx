@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import type { FicheSequence } from '@jay-reach/core';
-import { libelleMotifPause } from '../../lib/motif-pause';
+import { libelleMotifPause, libelleProchainMessage } from '../../lib/motif-pause';
 import { BoutonReprendre } from '../campagne/BoutonReprendre';
 
 export interface SectionOuEnEstOnProps {
@@ -14,6 +14,8 @@ export interface SectionOuEnEstOnProps {
    * toujours nul, donc le bouton ne s'affiche jamais dans ce cas).
    */
   campagneId: string | null;
+  /** Fuseau de l'organisation (F11) — formate la date du prochain message, jamais `Europe/Paris` en dur. */
+  fuseau: string;
 }
 
 /** `.jr-sequence-pilules .pilule[.faite|.en-cours]` — pas de puce dédiée pour « à venir » (classe nue), même kit que `CarteEtape` (tâche 12). */
@@ -23,7 +25,7 @@ function classePilule(etat: FicheSequence['etapes'][number]['etat']): string {
   return 'pilule';
 }
 
-export function SectionOuEnEstOn({ sequence, campagneId }: SectionOuEnEstOnProps) {
+export function SectionOuEnEstOn({ sequence, campagneId, fuseau }: SectionOuEnEstOnProps) {
   const t = useTranslations('campagne.fiche');
   const tPause = useTranslations('campagne.contacts.pause');
   const tActions = useTranslations('campagne.contacts.actions');
@@ -31,6 +33,14 @@ export function SectionOuEnEstOn({ sequence, campagneId }: SectionOuEnEstOnProps
   const motifAffiche = sequence?.pause
     ? libelleMotifPause(sequence.pause.motif, sequence.pause.repriseLe, (cle, valeurs) => tPause(cle, valeurs))
     : null;
+
+  // `!sequence.pause` (pas seulement `prochainMessageLe` non nul, déjà garanti par `lireFiche`
+  // — `FicheSequence.prochainMessageLe`) : la ligne de pause ci-dessous porte déjà l'échéance
+  // de reprise, jamais les deux lignes en même temps.
+  const prochainMessageAffiche =
+    sequence && !sequence.pause
+      ? libelleProchainMessage(sequence.prochainMessageLe, (cle, valeurs) => t(`sequence.${cle}`, valeurs), fuseau)
+      : null;
 
   return (
     <>
@@ -52,11 +62,12 @@ export function SectionOuEnEstOn({ sequence, campagneId }: SectionOuEnEstOnProps
           {sequence.pause && motifAffiche && campagneId && (
             <p className="jr-secondaire" style={{ margin: '8px 0 0', fontSize: 13.5 }}>
               {t('sequence.pausedLine', { motif: motifAffiche.texte })}{' '}
-              <BoutonReprendre
-                inscriptionId={sequence.pause.inscriptionId}
-                campagneId={campagneId}
-                libelle={sequence.pause.motif === 'absence' ? tActions('resumeNow') : tActions('resume')}
-              />
+              <BoutonReprendre inscriptionId={sequence.pause.inscriptionId} campagneId={campagneId} libelle={tActions('resume')} />
+            </p>
+          )}
+          {!sequence.pause && prochainMessageAffiche && (
+            <p className="jr-secondaire" style={{ margin: '8px 0 0', fontSize: 13.5 }}>
+              {prochainMessageAffiche}
             </p>
           )}
         </>

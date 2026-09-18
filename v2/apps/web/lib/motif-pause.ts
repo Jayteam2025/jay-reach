@@ -36,3 +36,24 @@ export function libelleMotifPause(
   }
   return { texte: t('generic'), title: motif };
 }
+
+/**
+ * Libellé de la date du prochain message d'une inscription active (F11, suite de la reprise
+ * d'absence) — même format que la date de reprise ci-dessus (jour numérique + mois en toutes
+ * lettres), dans `fuseau` (celui de l'organisation, jamais celui du process qui exécute le
+ * rendu — mêmes raisons que `apps/web/lib/dates.ts`). `null` sans échéance connue : l'appelant
+ * (`FicheSequence.prochainMessageLe`/`ContactCampagne.prochainMessageLe`, tous deux déjà `null`
+ * hors inscription `active`) n'affiche alors rien, jamais un texte vide.
+ */
+export function libelleProchainMessage(
+  prochainMessageLe: string | null,
+  t: Traducteur,
+  fuseau: string,
+  locale = 'fr-FR',
+): string | null {
+  if (!prochainMessageLe) return null;
+  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau }).format(
+    new Date(prochainMessageLe),
+  );
+  return t('nextMessage', { date });
+}

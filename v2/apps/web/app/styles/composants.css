@@ -507,6 +507,10 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
    `nowrap` (colonne Statut/Action, point 20), une propriété héritée qu'il faut annuler ici pour
    permettre le retour à la ligne sur une phrase complète. */
 .jr-motif-pause { display: block; max-width: 220px; white-space: normal; }
+/* Date du prochain message d'une inscription active (F11) — même borne que `.jr-motif-pause`
+   juste au-dessus (les deux ne s'affichent jamais sur la même ligne) : porté par la colonne
+   Statut/Action existante sans l'élargir. */
+.jr-prochain-message { display: block; max-width: 220px; white-space: normal; }
 /* `.jr-puces .jr-puce { white-space: normal }` (règle plus haut) veut qu'une puce enveloppe son
    texte dans les listes de tags habituelles ; dans une colonne « largeur de contenu » (tour de
    correction F6, point 25, colonne Utilisé par de Réglages > Messages), on veut l'effet inverse :

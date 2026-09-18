@@ -14,7 +14,7 @@ import {
 import type { StatutContactCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../lib/contexte';
 import { texteEtape } from '../../../lib/etape-contact';
-import { libelleMotifPause } from '../../../lib/motif-pause';
+import { libelleMotifPause, libelleProchainMessage } from '../../../lib/motif-pause';
 import { Carte, Champ, EnTetePage, Onglets } from '../../../components/ui';
 import { TableContacts, type LigneTableContacts } from '../../../components/campagne/TableContacts';
 import { TableEntreprises } from '../../../components/contact/TableEntreprises';
@@ -98,6 +98,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   ]);
 
   const onglet = ongletDemande(sp);
+  const fuseau = String(reglages.fuseau);
   const campagnesOptions = campagnesRes.map((c) => ({ id: c.id, nom: c.nom }));
   const peutAjouterClient = ctx.role === 'admin' || ctx.role === 'owner';
   const peutAjouterSuppression = ctx.role === 'operator' || ctx.role === 'admin' || ctx.role === 'owner';
@@ -204,6 +205,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         ligne.statut === 'en_pause' && ligne.motifPause
           ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`pause.${cle}`, valeurs))
           : null,
+      prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(cle, valeurs), fuseau),
     }));
 
     const total = resultat.total;
@@ -314,7 +316,6 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 coutChercherEmail: t('actions.enrichCost'),
                 ecarter: t('actions.discard'),
                 reprendre: t('actions.resume'),
-                reprendreMaintenant: t('actions.resumeNow'),
                 vide: t('empty'),
               }}
             />

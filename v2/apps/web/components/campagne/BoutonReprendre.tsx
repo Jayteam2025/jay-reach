@@ -15,8 +15,10 @@ export interface BoutonReprendreProps {
  * (`apps/web/app/actions/campaigns.ts`) → cœur `reprendreInscription`
  * (`packages/core/src/fonctions/sequence.ts`). Pas de `useRouter` :
  * rechargement complet après succès, utilisé pour une inscription
- * `paused`/`paused_absence` — le libellé (« Reprendre » ou « Reprendre
- * maintenant » pour une pause d'absence) est choisi par l'appelant.
+ * `paused`/`paused_absence` — le libellé (« Reprendre », toujours le même
+ * quel que soit le motif de pause depuis F11 : une pause d'absence ne reprend
+ * plus « maintenant », voir `SectionOuEnEstOn`/`TableContacts`) reste choisi
+ * par l'appelant.
  */
 export function BoutonReprendre({ inscriptionId, campagneId, libelle }: BoutonReprendreProps) {
   const [pending, startTransition] = useTransition();

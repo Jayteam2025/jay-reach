@@ -396,9 +396,9 @@
         "enrich": "E-mail zoeken",
         "enrichCost": "1 credit",
         "discard": "Afwijzen",
-        "resume": "Hervatten",
-        "resumeNow": "Nu hervatten"
+        "resume": "Hervatten"
       },
+      "nextMessage": "Volgend bericht op {date}",
       "empty": "Nog geen contact: deze campagne heeft nog niemand geïdentificeerd.",
       "emptyFilter": "Geen contact voor dit filter.",
       "pageRange": "{debut} tot {fin} van {total}",
@@ -425,7 +425,8 @@
         "empty": "Deze campagne heeft deze persoon nog niet gecontacteerd.",
         "sentBy": "Verzonden door {boite} · gekoppeld aan deze mailbox voor de hele sequentie",
         "step": "{n}",
-        "pausedLine": "Gepauzeerd: {motif}"
+        "pausedLine": "Gepauzeerd: {motif}",
+        "nextMessage": "Volgend bericht op {date}"
       },
       "conversation": {
         "openInInbox": "Openen in de Inbox",
@@ -1489,9 +1490,9 @@
       "enrich": "E-mail zoeken",
       "enrichCost": "1 credit",
       "discard": "Afwijzen",
-      "resume": "Hervatten",
-      "resumeNow": "Nu hervatten"
+      "resume": "Hervatten"
     },
+    "nextMessage": "Volgend bericht op {date}",
     "empty": "Geen contact voor dit filter.",
     "truncated": "Weergave beperkt tot de eerste 5.000 resultaten: verfijn de filters om de rest te zien.",
     "pageRange": "{debut} tot {fin} van {total}",

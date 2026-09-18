@@ -903,11 +903,48 @@ describe('listerContactsCampagne', () => {
           e_status: 'active',
           stop_reason: null,
           resume_at: null,
+          next_action_at: '2026-09-25T09:00:00.000Z',
         },
       ],
     });
     const r = await listerContactsCampagne(ctx, { campagneId });
-    expect(r.lignes[0]).toMatchObject({ statut: 'en_sequence', inscriptionId: 'enr-3', motifPause: null, repriseLe: null });
+    expect(r.lignes[0]).toMatchObject({
+      statut: 'en_sequence',
+      inscriptionId: 'enr-3',
+      motifPause: null,
+      repriseLe: null,
+      // F11 : `next_action_at` exposé comme `prochainMessageLe` pour une inscription active.
+      prochainMessageLe: '2026-09-25T09:00:00.000Z',
+    });
+  });
+
+  it('une ligne en_pause garde prochainMessageLe nul même si next_action_at est renseigné', async () => {
+    const ctx = faux({
+      ...verifieeDansLOrganisation,
+      'jr:compteurs_contacts_campagne': [{ statut: 'en_pause', n: 1 }],
+      'jr:lignes_contacts_campagne': [
+        {
+          signal_id: null,
+          contact_id: 'contact-6',
+          first_name: 'Nadia',
+          last_name: 'Lemaire',
+          job_title: null,
+          email: 'nadia@exemple.fr',
+          entreprise: null,
+          current_step: 1,
+          statut: 'en_pause',
+          score: null,
+          pourquoi: null,
+          enrollment_id: 'enr-4',
+          e_status: 'paused',
+          stop_reason: 'email_gate:bouncer_invalid',
+          resume_at: null,
+          next_action_at: '2026-09-19T09:00:00.000Z',
+        },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]).toMatchObject({ statut: 'en_pause', prochainMessageLe: null });
   });
 
   it('passe la pagination et le filtre à la requête (page 2, filtre en_sequence)', async () => {

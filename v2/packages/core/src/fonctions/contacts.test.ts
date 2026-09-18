@@ -167,6 +167,7 @@ describe('lireFiche', () => {
           occurred_at: '2026-09-04T00:00:00.000Z',
           url: 'https://exemple.fr/offre',
           raw: JSON.stringify({ description: 'Nous recrutons un profil commercial senior.' }),
+          next_action_at: '2026-09-20T09:00:00.000Z',
         },
       ],
       'jr:fiche_etapes': [{ position: 0 }, { position: 1 }, { position: 2 }, { position: 3 }],
@@ -204,6 +205,8 @@ describe('lireFiche', () => {
       ],
       boite: { identite: 'camille@exemple.fr', marque: 'outlook' },
       pause: null,
+      // F11 : `next_action_at` de l'inscription active exposé tel quel, apps/web le formate.
+      prochainMessageLe: '2026-09-20T09:00:00.000Z',
     });
     expect(fiche.echanges).toEqual([
       { id: 'msg-1', direction: 'out', corps: 'Bonjour Karim', quand: '2026-09-11T09:00:00.000Z' },
@@ -312,6 +315,9 @@ describe('lireFiche', () => {
           e_status: 'paused',
           stop_reason: 'email_gate:bouncer_invalid',
           resume_at: null,
+          // F11 : présent en base (le worker ne l'efface pas en posant la pause) mais sans
+          // signification pour une inscription en pause — ne doit jamais fuiter en `prochainMessageLe`.
+          next_action_at: '2026-09-19T09:00:00.000Z',
           signal_id: null,
           score: null,
           score_reason: null,
@@ -333,6 +339,7 @@ describe('lireFiche', () => {
       repriseLe: null,
       inscriptionId: enrollmentId,
     });
+    expect(fiche.sequence?.prochainMessageLe).toBeNull();
   });
 
   it('une inscription paused_absence sans stop_reason retombe sur le motif "absence", avec repriseLe', async () => {
@@ -706,6 +713,39 @@ describe('listerContacts', () => {
     expect(r.total).toBe(2);
     expect(r.lignes.map((l) => l.campagneId).sort()).toEqual(['camp-1', 'camp-2']);
     expect(r.lignes[0]).toMatchObject({ nom: 'Karim Benali', etape: 2 });
+  });
+
+  // F11 : même exposition que `listerContactsCampagne` — `next_action_at` devient
+  // `prochainMessageLe` seulement pour une ligne `en_sequence`.
+  it('expose next_action_at comme prochainMessageLe pour une ligne en_sequence', async () => {
+    const ctx = faux({
+      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Directeur commercial' }],
+      'jr:lignes_contacts_globale': [
+        {
+          signal_id: 'sig-1',
+          contact_id: 'contact-1',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          job_title: null,
+          email: 'karim@exemple.fr',
+          entreprise: null,
+          current_step: 1,
+          statut: 'en_sequence',
+          score: null,
+          pourquoi: null,
+          provider_id: 'adzuna',
+          quand: '2026-09-10T00:00:00.000Z',
+          enrollment_id: 'enr-1',
+          e_status: 'active',
+          stop_reason: null,
+          resume_at: null,
+          next_action_at: '2026-09-25T09:00:00.000Z',
+        },
+      ],
+      'jr:total_etapes_campagne': [{ n: 3 }],
+    });
+    const r = await listerContacts(ctx, {});
+    expect(r.lignes[0]).toMatchObject({ statut: 'en_sequence', prochainMessageLe: '2026-09-25T09:00:00.000Z' });
   });
 
   it('restreint à une seule campagne quand `campagneId` est fourni (pas de requête « toutes campagnes »)', async () => {

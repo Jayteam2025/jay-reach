@@ -24,6 +24,12 @@ export interface LigneTableContacts extends ContactCampagne {
    * calculé par l'appelant — `null` hors statut `en_pause`.
    */
   motifPauseAffiche: { texte: string; title: string | null } | null;
+  /**
+   * Libellé déjà traduit de la date du prochain message (`libelleProchainMessage`,
+   * `lib/motif-pause.ts`, F11), calculé par l'appelant — `null` hors statut `en_sequence`
+   * ou sans échéance connue.
+   */
+  prochainMessageAffiche: string | null;
 }
 
 export interface TableContactsLibelles {
@@ -41,9 +47,8 @@ export interface TableContactsLibelles {
   chercherEmail: string;
   coutChercherEmail: string;
   ecarter: string;
-  /** Libellé du bouton de reprise d'une inscription en pause (T29) — `paused_absence` (motif `absence`) utilise `reprendreMaintenant` à la place. */
+  /** Libellé du bouton de reprise d'une inscription en pause (T29) — même libellé quel que soit le motif depuis F11. */
   reprendre: string;
-  reprendreMaintenant: string;
   vide: string;
 }
 
@@ -211,12 +216,18 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
                   </div>
                 )}
                 {ligne.inscriptionId && campagneDeLaLigne && (
-                  <BoutonReprendre
-                    inscriptionId={ligne.inscriptionId}
-                    campagneId={campagneDeLaLigne}
-                    libelle={ligne.motifPause === 'absence' ? libelles.reprendreMaintenant : libelles.reprendre}
-                  />
+                  <BoutonReprendre inscriptionId={ligne.inscriptionId} campagneId={campagneDeLaLigne} libelle={libelles.reprendre} />
                 )}
+              </div>
+            ) : ligne.statut === 'en_sequence' && ligne.prochainMessageAffiche ? (
+              // Même empilement que la ligne « en pause » ci-dessus (F11) : la date du
+              // prochain message est bornée par `jr-prochain-message` (`max-width: 220px`,
+              // `composants.css`), donc portée par cette colonne existante sans l'élargir.
+              <div className="jr-action-empilee">
+                <Puce ton={TON_STATUT.en_sequence} point>
+                  {libelles.statut.en_sequence}
+                </Puce>
+                <div className="jr-petit jr-prochain-message">{ligne.prochainMessageAffiche}</div>
               </div>
             ) : (
               <Puce ton={TON_STATUT[ligne.statut]} point>

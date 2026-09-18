@@ -83,7 +83,7 @@ export function TiroirFiche({ fiche, campagneId, fuseau, fermerHref }: TiroirFic
       }
     >
       <SectionPourquoiLui pourquoi={fiche.pourquoi} score={fiche.score} fuseau={fuseau} />
-      <SectionOuEnEstOn sequence={fiche.sequence} campagneId={campagneId ?? null} />
+      <SectionOuEnEstOn sequence={fiche.sequence} campagneId={campagneId ?? null} fuseau={fuseau} />
       <SectionEchanges echanges={fiche.echanges} filId={fiche.filId} contactNom={nom} fuseau={fuseau} />
       <SectionCoordonnees contact={fiche.contact} />
       <SectionNotes notes={fiche.notes} contactId={fiche.contact.id} fuseau={fuseau} />

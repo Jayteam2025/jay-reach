@@ -396,9 +396,9 @@
         "enrich": "Find the email",
         "enrichCost": "1 credit",
         "discard": "Discard",
-        "resume": "Resume",
-        "resumeNow": "Resume now"
+        "resume": "Resume"
       },
+      "nextMessage": "Next message on {date}",
       "empty": "No contact yet: this campaign hasn't identified anyone yet.",
       "emptyFilter": "No contact for this filter.",
       "pageRange": "{debut} to {fin} of {total}",
@@ -425,7 +425,8 @@
         "empty": "This campaign hasn't contacted this person yet.",
         "sentBy": "Sent by {boite} · linked to this mailbox for the whole sequence",
         "step": "{n}",
-        "pausedLine": "Paused: {motif}"
+        "pausedLine": "Paused: {motif}",
+        "nextMessage": "Next message on {date}"
       },
       "conversation": {
         "openInInbox": "Open in the Inbox",
@@ -1489,9 +1490,9 @@
       "enrich": "Find the email",
       "enrichCost": "1 credit",
       "discard": "Discard",
-      "resume": "Resume",
-      "resumeNow": "Resume now"
+      "resume": "Resume"
     },
+    "nextMessage": "Next message on {date}",
     "empty": "No contact for this filter.",
     "truncated": "Display limited to the first 5,000 results: narrow the filters to see the rest.",
     "pageRange": "{debut} to {fin} of {total}",

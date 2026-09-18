@@ -34,7 +34,6 @@ const LIBELLES: TableContactsLibelles = {
   coutChercherEmail: '1 crédit',
   ecarter: 'Écarter',
   reprendre: 'Reprendre',
-  reprendreMaintenant: 'Reprendre maintenant',
   vide: 'Aucun contact pour ce filtre.',
 };
 
@@ -54,8 +53,10 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     inscriptionId: null,
     motifPause: null,
     repriseLe: null,
+    prochainMessageLe: null,
     intitulePosteListe: null,
     motifPauseAffiche: null,
+    prochainMessageAffiche: null,
     ...overrides,
   };
 }
@@ -129,7 +130,9 @@ describe('TableContacts', () => {
     expect(html).not.toContain("Chercher l&#x27;email");
   });
 
-  it('ligne « En pause » (absence) -> bouton « Reprendre maintenant »', () => {
+  // F11 : la copie ne distingue plus une pause d'absence des autres pauses — le bouton dit
+  // toujours « Reprendre » (rougirait si la clé `resumeNow`/le libellé distinct revenait).
+  it('ligne « En pause » (absence) -> bouton « Reprendre », jamais « Reprendre maintenant »', () => {
     const html = renderToStaticMarkup(
       <TableContacts
         lignes={[
@@ -147,7 +150,45 @@ describe('TableContacts', () => {
         libelles={LIBELLES}
       />,
     );
-    expect(html).toContain('Reprendre maintenant');
+    expect(html).toContain('Reprendre');
+    expect(html).not.toContain('Reprendre maintenant');
+  });
+
+  // F11 : une inscription active dont le prochain envoi est daté annonce cette date, sous la
+  // puce de statut — rougirait si `prochainMessageAffiche` cessait d'être rendu.
+  it('ligne « En séquence » avec une échéance -> puce et date du prochain message', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[
+          ligne({
+            statut: 'en_sequence',
+            email: 'yanis@exemple.fr',
+            inscriptionId: 'enr-3',
+            prochainMessageAffiche: 'Prochain message le 28 septembre',
+          }),
+        ]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('En séquence');
+    expect(html).toContain('Prochain message le 28 septembre');
+  });
+
+  it('ligne « En séquence » sans échéance connue -> pas de ligne de prochain message', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ statut: 'en_sequence', email: 'yanis@exemple.fr', inscriptionId: 'enr-3' })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('En séquence');
+    expect(html).not.toContain('Prochain message');
   });
 
   it('ligne « À contacter » -> bouton Écarter (pas encore d’inscription active)', () => {

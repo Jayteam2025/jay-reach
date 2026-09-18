@@ -555,6 +555,11 @@ export interface ContactCampagne {
   /** `enrollments.resume_at` — non `null` seulement pour une pause d'absence datée. */
   readonly repriseLe: string | null;
   /**
+   * `enrollments.next_action_at` (F11) — non `null` seulement quand `statut === 'en_sequence'` :
+   * une inscription en pause, arrêtée ou terminée n'a pas de « prochain message » à annoncer.
+   */
+  readonly prochainMessageLe: string | null;
+  /**
    * Intitulé de poste de la liste (point 2, campagne à liste) : valeur de la
    * colonne du CSV importé qui normalise vers `intitule_poste` ou `job_title`
    * (`normalizeListColumnName`) — `null` pour une campagne à sources, ou pour
@@ -1244,6 +1249,7 @@ interface LigneContactCampagne {
   e_status: string | null;
   stop_reason: string | null;
   resume_at: string | null;
+  next_action_at: string | null;
   intitule_poste_liste: string | null;
 }
 
@@ -1337,7 +1343,7 @@ export async function listerContactsCampagne(
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
     `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi,
-            enrollment_id, e_status, stop_reason, resume_at, intitule_poste_liste
+            enrollment_id, e_status, stop_reason, resume_at, next_action_at, intitule_poste_liste
        from (
          select
            s.id as signal_id,
@@ -1347,7 +1353,7 @@ export async function listerContactsCampagne(
            e.current_step,
            s.score,
            s.title as pourquoi,
-           e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at,
+           e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at, e.next_action_at,
            ${CASE_STATUT_DERIVE} as statut,
            -- Point 2 (issue #120) : intitulé de poste de la liste importée, une seule
            -- colonne (repérée une fois plus haut) réutilisée pour toutes les lignes.
@@ -1390,6 +1396,7 @@ export async function listerContactsCampagne(
     inscriptionId: r.enrollment_id,
     motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
     repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
+    prochainMessageLe: r.statut === 'en_sequence' ? r.next_action_at : null,
     intitulePosteListe: r.intitule_poste_liste,
   }));
 

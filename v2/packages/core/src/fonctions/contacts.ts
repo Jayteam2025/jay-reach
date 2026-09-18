@@ -112,6 +112,12 @@ export interface FicheSequence {
   readonly boite: FicheBoite | null;
   /** Inscription en pause (T29, R93) — `null` pour une inscription vivante (`active`) ou déjà terminée/arrêtée. */
   readonly pause: FichePause | null;
+  /**
+   * `enrollments.next_action_at` (F11) — non `null` seulement pour une inscription `active`
+   * (`pause` alors nul) : une inscription en pause, arrêtée ou terminée n'a pas de « prochain
+   * message » à annoncer, `pause` porte déjà sa propre échéance (`repriseLe`).
+   */
+  readonly prochainMessageLe: string | null;
 }
 
 /**
@@ -253,6 +259,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
   let enrollmentId: string | null = null;
   let stopReason: string | null = null;
   let resumeAt: string | null = null;
+  let nextActionAt: string | null = null;
 
   if (campagneId) {
     const res = await ctx.ex.query<{
@@ -262,6 +269,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       e_status: string | null;
       stop_reason: string | null;
       resume_at: string | null;
+      next_action_at: string | null;
       signal_id: string | null;
       score: number | null;
       score_reason: string | null;
@@ -272,7 +280,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       raw: unknown;
     }>(
       `select ${CASE_STATUT_DERIVE} as statut, e.enrollment_id, e.current_step, e.status as e_status,
-              e.stop_reason, e.resume_at,
+              e.stop_reason, e.resume_at, e.next_action_at,
               s.id as signal_id, s.score, s.score_reason, s.title, s.provider_id, s.occurred_at, s.url, s.raw
          ${FROM_POPULATION_CAMPAGNE}
         where c.id = $2 /* jr:fiche_statut_campagne */`,
@@ -286,6 +294,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       enrollmentId = r.enrollment_id;
       stopReason = r.stop_reason;
       resumeAt = r.resume_at;
+      nextActionAt = r.next_action_at;
       if (r.signal_id) {
         signal = {
           id: r.signal_id,
@@ -357,6 +366,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
         statut === 'en_pause'
           ? { motif: motifPauseDe(enrollmentStatus, stopReason), repriseLe: resumeAt, inscriptionId: enrollmentId! }
           : null,
+      prochainMessageLe: statut === 'en_sequence' ? nextActionAt : null,
     };
   }
 
@@ -756,6 +766,7 @@ interface LigneContactGlobalBrut {
   e_status: string | null;
   stop_reason: string | null;
   resume_at: string | null;
+  next_action_at: string | null;
 }
 
 /** Campagnes ciblées par `listerContacts`/`exporterCsv` : une seule (filtre `campagneId`) ou toutes celles de l'organisation. */
@@ -807,7 +818,7 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
 
     const res = await ctx.ex.query<LigneContactGlobalBrut>(
       `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, provider_id, quand,
-              enrollment_id, e_status, stop_reason, resume_at
+              enrollment_id, e_status, stop_reason, resume_at, next_action_at
          from (
            select
              s.id as signal_id,
@@ -819,7 +830,7 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
              s.title as pourquoi,
              s.provider_id,
              coalesce(s.occurred_at, e.started_at) as quand,
-             e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at,
+             e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at, e.next_action_at,
              ${CASE_STATUT_DERIVE} as statut
            ${FROM_POPULATION_CAMPAGNE}
          ) x /* jr:lignes_contacts_globale */
@@ -853,6 +864,7 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
         inscriptionId: r.enrollment_id,
         motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
         repriseLe: r.statut === 'en_pause' ? r.resume_at : null,
+        prochainMessageLe: r.statut === 'en_sequence' ? r.next_action_at : null,
         // Onglet Contacts GLOBAL (mélange campagnes à sources et à liste, point 2) : la
         // colonne d'intitulé de poste d'une liste n'a de sens que sur la page d'UNE
         // campagne (`listerContactsCampagne`), jamais ici.

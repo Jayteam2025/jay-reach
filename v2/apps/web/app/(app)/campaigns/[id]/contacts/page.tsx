@@ -8,7 +8,7 @@ import { Carte } from '../../../../../components/ui';
 import { FiltresStatuts } from '../../../../../components/campagne/FiltresStatuts';
 import { TableContacts, type LigneTableContacts } from '../../../../../components/campagne/TableContacts';
 import { texteEtape } from '../../../../../lib/etape-contact';
-import { libelleMotifPause } from '../../../../../lib/motif-pause';
+import { libelleMotifPause, libelleProchainMessage } from '../../../../../lib/motif-pause';
 import { TiroirFiche } from '../../../../../components/contact/TiroirFiche';
 
 export const revalidate = 0;
@@ -47,7 +47,8 @@ export default async function CampagneContactsPage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp] = await Promise.all([getTranslations('campagne'), searchParams]);
+  const [t, sp, reglages] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx)]);
+  const fuseau = String(reglages.fuseau);
 
   const filtre = filtreDemande(sp.filtre);
   const recherche = rechercheDemandee(sp.q);
@@ -80,6 +81,7 @@ export default async function CampagneContactsPage({
       ligne.statut === 'en_pause' && ligne.motifPause
         ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`contacts.pause.${cle}`, valeurs))
         : null,
+    prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(`contacts.${cle}`, valeurs), fuseau),
   }));
 
   function lienPage(p: number): string {
@@ -112,7 +114,6 @@ export default async function CampagneContactsPage({
     const suffixe = qs.toString();
     return `/campaigns/${id}/contacts${suffixe ? `?${suffixe}` : ''}`;
   })();
-  const reglages = fiche ? await lireReglages(ctx) : null;
 
   return (
     <section className="jr-contenu une-colonne">
@@ -167,7 +168,6 @@ export default async function CampagneContactsPage({
             coutChercherEmail: t('contacts.actions.enrichCost'),
             ecarter: t('contacts.actions.discard'),
             reprendre: t('contacts.actions.resume'),
-            reprendreMaintenant: t('contacts.actions.resumeNow'),
             vide: t('contacts.emptyFilter'),
           }} />
         )}
@@ -198,9 +198,7 @@ export default async function CampagneContactsPage({
         </div>
       )}
 
-      {fiche && reglages && (
-        <TiroirFiche fiche={fiche} campagneId={id} fuseau={String(reglages.fuseau)} fermerHref={fermerHref} />
-      )}
+      {fiche && <TiroirFiche fiche={fiche} campagneId={id} fuseau={fuseau} fermerHref={fermerHref} />}
     </section>
   );
 }

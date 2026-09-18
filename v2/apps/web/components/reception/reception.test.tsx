@@ -57,6 +57,7 @@ const FICHE: Fiche = {
     ],
     boite: null,
     pause: null,
+    prochainMessageLe: null,
   },
   echanges: [],
   filId: 'fil-1',
