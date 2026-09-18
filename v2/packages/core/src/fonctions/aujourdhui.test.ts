@@ -72,6 +72,28 @@ describe('lireAujourdhui', () => {
     },
   );
 
+  // Constat produit (18/09) : deux réponses classées `auto_absence` étaient réellement en
+  // base mais la phrase de résumé de l'écran ne mentionnait que « à traiter » — rien ne
+  // disait que quelqu'un avait répondu. `absencesNonTraitees` porte ce compte séparément,
+  // JAMAIS mélangé à `aTraiter` (une absence ne demande pas d'action).
+  it('absencesNonTraitees : compte les absences automatiques non traitées, distinctement de aTraiter', async () => {
+    const ctx = faux({
+      'jr:threads_a_traiter': [
+        { id: 't1', channel: 'email', classification: 'human_reply', last_message_at: '2026-09-17T09:00:00.000Z', first_name: 'Karim', last_name: 'Benali', job_title: null, account_name: null, dernier_message: 'Ça marche' },
+      ],
+      'jr:absences_non_traitees': [{ n: 2 }],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.aTraiter.total).toBe(1);
+    expect(a.absencesNonTraitees).toBe(2);
+  });
+
+  it('absencesNonTraitees : aucune ligne renvoyée — zéro, pas de TypeError', async () => {
+    const ctx = faux({});
+    const a = await lireAujourdhui(ctx);
+    expect(a.absencesNonTraitees).toBe(0);
+  });
+
   it("calcule la dernière heure d'envoi dans le fuseau de l'organisation", async () => {
     const ctx = faux({
       'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }],

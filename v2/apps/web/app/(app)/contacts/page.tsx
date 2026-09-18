@@ -204,6 +204,11 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     >;
     const lignes: LigneTableContacts[] = resultat.lignes.map((ligne) => ({
       ...ligne,
+      // Contact candidat/inscrit à plusieurs campagnes à la fois (G4) : la colonne dit
+      // combien plutôt que de n'en montrer qu'une seule, qui laisserait croire à tort que
+      // c'est la seule. `campagneId` (action des boutons) reste celui de la ligne la plus
+      // récente, inchangé — seul l'AFFICHAGE du nom de campagne change.
+      campagneNom: ligne.nombreCampagnes > 1 ? t('columns.campaignCount', { count: ligne.nombreCampagnes }) : ligne.campagneNom,
       etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
       motifPauseAffiche:
         ligne.statut === 'en_pause' && ligne.motifPause

@@ -80,7 +80,12 @@ export default async function AujourdhuiPage() {
 
       <EnTetePage
         titre={jour}
-        description={t('resume', { aTraiter: a.aTraiter.total, envois: a.fileDuJour.total, campagnes: campagnesActives })}
+        description={t('resume', {
+          aTraiter: a.aTraiter.total,
+          absences: a.absencesNonTraitees,
+          envois: a.fileDuJour.total,
+          campagnes: campagnesActives,
+        })}
         // Bouton mort avant ce correctif (G2) : le composant `Bouton`, sans `onClick` ni `href`,
         // rendait un simple bouton de formulaire hors formulaire, qui ne faisait rien au clic.
         // Même route et même classe `jr-bouton` que `campaigns/page.tsx` (`list.new`/

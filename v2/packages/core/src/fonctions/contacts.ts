@@ -716,10 +716,19 @@ function motifRecherche(recherche: string | undefined): string | null {
   return `%${recherche.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
-/** Même ligne que `ContactCampagne` (`campagnes.ts`, tâche 10) plus la campagne d'origine — toujours renseignée ici (contrairement à `LigneTableContacts.campagneId?`, optionnel côté web), une ligne globale vient toujours d'exactement une campagne. */
+/**
+ * Même ligne que `ContactCampagne` (`campagnes.ts`, tâche 10) plus la campagne d'origine —
+ * toujours renseignée ici (contrairement à `LigneTableContacts.campagneId?`, optionnel côté
+ * web). `campagneId`/`campagneNom` portent la campagne de la ligne LA PLUS RÉCENTE
+ * (`collecterContactsGlobaux` dédoublonne par contact, tour de correction G4) : c'est elle
+ * qui fixe le statut/étape/action affichés ; les autres campagnes du même contact ne
+ * comptent que dans `nombreCampagnes`.
+ */
 export interface ContactGlobal extends ContactCampagne {
   readonly campagneId: string;
   readonly campagneNom: string;
+  /** Nombre de campagnes distinctes où ce contact apparaît (candidat ou inscrit) — 1 le cas courant, davantage pour un contact candidat à plusieurs campagnes à la fois (mesuré le 18/09 : 2 contacts réellement inscrits ailleurs, le reste des doublons venait de là). */
+  readonly nombreCampagnes: number;
 }
 
 export const schemaListerContactsGlobal = z.object({
@@ -744,7 +753,15 @@ const TAILLE_PAGE_CONTACTS_GLOBAL = 50;
  */
 const LIMITE_CONTACTS_GLOBAL = 5000;
 
-/** Un de plus que `LIMITE_CONTACTS_GLOBAL` : collecter jusque-là (pas jusqu'au plafond pile) permet de distinguer « il y en a exactement 5000 » (rien de coupé) de « il y en a plus » (`tronque`), sans requête `count(*)` supplémentaire par campagne. */
+/**
+ * Un de plus que `LIMITE_CONTACTS_GLOBAL` : collecter jusque-là (pas jusqu'au plafond pile)
+ * permet de distinguer « il y en a exactement 5000 » (rien de coupé) de « il y en a plus »
+ * (`tronque`), sans requête `count(*)` supplémentaire par campagne. `tronque` se calcule
+ * après dédoublonnage par contact (tour de correction G4) sur ces lignes BRUTES collectées
+ * — approximation acceptée : si la collecte s'arrête pile ici, quelques contacts au-delà
+ * pourraient rester non comptés. Sans effet à l'échelle d'une organisation autohébergée
+ * (quelques centaines de lignes en pratique, mesuré le 18/09).
+ */
 const LIMITE_COLLECTE_GLOBALE = LIMITE_CONTACTS_GLOBAL + 1;
 
 interface LigneContactGlobalBrut {
@@ -811,7 +828,9 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
   if (campagnes.length === 0) return { lignes: [], tronque: false };
 
   const motif = motifRecherche(recherche);
-  const toutes: (ContactGlobal & { quand: string | Date | null })[] = [];
+  // `nombreCampagnes` n'est connu qu'après dédoublonnage (plus loin) : chaque ligne brute
+  // collectée ici vient d'exactement une campagne, elle ne le porte pas encore.
+  const toutes: (Omit<ContactGlobal, 'nombreCampagnes'> & { quand: string | Date | null })[] = [];
 
   for (const campagne of campagnes) {
     if (toutes.length >= LIMITE_COLLECTE_GLOBALE) break;
@@ -882,8 +901,38 @@ async function collecterContactsGlobaux(ctx: Contexte, filtres: FiltresContactsG
   // le `order by quand desc nulls last, contact_id desc` de chaque requête par
   // campagne — nécessaire ici car cette fusion mélange plusieurs campagnes.
   toutes.sort((a, b) => comparerInstantsDesc(a.quand, b.quand) || (b.contactId ?? '').localeCompare(a.contactId ?? ''));
-  const tronque = toutes.length > LIMITE_CONTACTS_GLOBAL;
-  const bornees = tronque ? toutes.slice(0, LIMITE_CONTACTS_GLOBAL) : toutes;
+
+  // Dédoublonnage par contact (tour de correction G4) : un contact candidat ("à
+  // contacter") ou inscrit dans plusieurs campagnes à la fois traversait cette boucle une
+  // fois par campagne — 938 lignes pour 370 contacts distincts, mesuré le 18/09 sur la base
+  // OSS (2 contacts seulement réellement inscrits dans plus d'une campagne, le reste vient
+  // de candidats à plusieurs campagnes). `toutes` est déjà triée du plus récent au plus
+  // ancien : la première occurrence d'un contact est donc SA ligne la plus récente — elle
+  // porte le statut/étape/action affichés, les occurrences suivantes n'alimentent que le
+  // compte de campagnes (`nombreCampagnes`). Un `Map` préserve l'ordre d'insertion, donc
+  // l'ordre trié survit au dédoublonnage sans second tri.
+  const premiereLigneParContact = new Map<string, Omit<ContactGlobal, 'nombreCampagnes'> & { quand: string | Date | null }>();
+  const campagnesParContact = new Map<string, Map<string, string>>();
+  for (const ligne of toutes) {
+    // `contactId` est toujours renseigné par `FROM_POPULATION_CAMPAGNE` (jointure interne
+    // sur `contacts`) — le repli ci-dessous ne sert qu'à ne jamais fusionner par erreur des
+    // lignes distinctes si cette garantie venait à changer un jour.
+    const cle = ligne.contactId ?? `${ligne.campagneId}:${ligne.signalId ?? ''}`;
+    let campagnes = campagnesParContact.get(cle);
+    if (!campagnes) {
+      campagnes = new Map();
+      campagnesParContact.set(cle, campagnes);
+      premiereLigneParContact.set(cle, ligne);
+    }
+    campagnes.set(ligne.campagneId, ligne.campagneNom);
+  }
+  const dedupliquees = [...premiereLigneParContact.entries()].map(([cle, ligne]) => ({
+    ...ligne,
+    nombreCampagnes: campagnesParContact.get(cle)!.size,
+  }));
+
+  const tronque = dedupliquees.length > LIMITE_CONTACTS_GLOBAL;
+  const bornees = tronque ? dedupliquees.slice(0, LIMITE_CONTACTS_GLOBAL) : dedupliquees;
   return { lignes: bornees.map(({ quand: _quand, ...reste }) => reste), tronque };
 }
 
@@ -1217,7 +1266,9 @@ export async function exporterCsv(ctx: Contexte, entree: unknown): Promise<strin
       l.email,
       LIBELLES_STATUT_CSV[l.statut],
       l.etape,
-      l.campagneNom,
+      // Contact candidat/inscrit à plusieurs campagnes à la fois (tour de correction G4) :
+      // le nom d'une seule campagne mentirait, le compte dit ce qui est réellement vrai.
+      l.nombreCampagnes > 1 ? `${l.nombreCampagnes} campagnes` : l.campagneNom,
       l.score,
       l.pourquoi,
     ]),
