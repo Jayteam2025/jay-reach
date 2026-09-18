@@ -162,6 +162,11 @@ export const FROM_POPULATION_CAMPAGNE = `from (
  * disparaît au profit de cette même définition partout (point 1).
  */
 export function sqlContactsCampagne(campagneIdExpr: string): string {
+  // Pas de `not exists` pour écarter de la branche « inscrit » les contacts déjà comptés par la
+  // branche « signal » (revue F5, constat mineur 6) : le `union` (jamais `union all`) déduplique
+  // déjà par `contact_id`, et `count(distinct contact_id)` dédoublonne une seconde fois en
+  // sortie — la clause ne changeait aucun résultat, seulement une sous-requête corrélée en plus
+  // par ligne d'`enrollments`.
   return `(select count(distinct contact_id)::int from (
       select c0.id as contact_id from signals s0
         join campaign_sources cs0 on cs0.source_id = s0.source_id
@@ -170,12 +175,6 @@ export function sqlContactsCampagne(campagneIdExpr: string): string {
       union
       select e1.contact_id from enrollments e1
        where e1.campaign_id = ${campagneIdExpr}
-         and not exists (
-           select 1 from signals s2
-             join campaign_sources cs2 on cs2.source_id = s2.source_id
-             join contacts c2 on c2.source_signal_id = s2.id
-            where c2.id = e1.contact_id and cs2.campaign_id = ${campagneIdExpr} and s2.status <> 'new'
-         )
     ) pop_contacts)`;
 }
 
