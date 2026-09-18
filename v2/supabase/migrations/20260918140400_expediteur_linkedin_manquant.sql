@@ -1,3 +1,18 @@
+-- EN ATTENTE (G6, 18/09) : NE PAS APPLIQUER telle quelle. Vérifié sur la base OSS
+-- (jstcgfgwaeesrqztsvhe, organisation « Jay Reach », eee8d760-63ed-4f14-8867-5d38c5602dc4) :
+-- deux `extension_tokens` distincts y sont actifs ET déjà utilisés (`last_used_at` non nul) —
+-- celui d'Alexandre De Clercq (hey@jay-assistant.fr, le compte de production) ET celui de
+-- JB (renartjeanbaptiste@gmail.com, un compte de test). La boucle `distinct on
+-- (organization_id, user_id)` ci-dessous traiterait les DEUX : les deux lignes `senders`
+-- LinkedIn déjà en base ont `provider_ref` NULL (`senders_org_kind_provider_ref_key` ne les
+-- matche jamais, NULL n'égale jamais NULL dans un index unique), donc l'upsert créerait DEUX
+-- lignes actives neuves plutôt que d'en réutiliser une — `linkedin_settings.daily_cap` valant
+-- 25 pour cette organisation, la campagne se retrouverait avec 2 x 25 = 50 envois/jour au lieu
+-- de 25, et le compte de test de JB serait activé comme expéditeur de production au passage.
+-- À décider avant d'appliquer : soit filtrer cette migration sur le seul compte de production
+-- (lequel ?), soit désactiver/retirer le jeton de test avant de la rejouer, soit ne rattraper
+-- qu'un seul compte par organisation par construction (le plus récemment utilisé, pas tous).
+--
 -- F15 : rattrape les comptes LinkedIn déjà connectés avant que
 -- `synchroniserExpediteurLinkedIn` (packages/core/src/fonctions/expediteurs.ts)
 -- n'existe. Le correctif applicatif ne répare que l'avenir : il ne s'exécute
