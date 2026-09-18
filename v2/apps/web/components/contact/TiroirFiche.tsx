@@ -22,13 +22,15 @@ export interface TiroirFicheProps {
   fuseau: string;
   /** URL de la page courante SANS `?contact=` — le bouton fermer/le voile y renvoient. */
   fermerHref: string;
+  /** Transmis tel quel à `SectionCoordonnees` — voir son commentaire. */
+  enrichissementEnPause: boolean;
 }
 
 function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
 }
 
-export function TiroirFiche({ fiche, campagneId, fuseau, fermerHref }: TiroirFicheProps) {
+export function TiroirFiche({ fiche, campagneId, fuseau, fermerHref, enrichissementEnPause }: TiroirFicheProps) {
   const router = useRouter();
   const t = useTranslations('campagne');
   const nom = nomComplet(fiche.contact.prenom, fiche.contact.nom);
@@ -85,7 +87,7 @@ export function TiroirFiche({ fiche, campagneId, fuseau, fermerHref }: TiroirFic
       <SectionPourquoiLui pourquoi={fiche.pourquoi} score={fiche.score} fuseau={fuseau} />
       <SectionOuEnEstOn sequence={fiche.sequence} campagneId={campagneId ?? null} fuseau={fuseau} />
       <SectionEchanges echanges={fiche.echanges} filId={fiche.filId} contactNom={nom} fuseau={fuseau} />
-      <SectionCoordonnees contact={fiche.contact} />
+      <SectionCoordonnees contact={fiche.contact} enrichissementEnPause={enrichissementEnPause} />
       <SectionNotes notes={fiche.notes} contactId={fiche.contact.id} fuseau={fuseau} />
       <SectionHistorique historique={fiche.historique} fuseau={fuseau} />
     </Tiroir>

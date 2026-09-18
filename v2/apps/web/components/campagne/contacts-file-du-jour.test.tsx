@@ -78,6 +78,26 @@ describe('TableContacts', () => {
     expect(html).not.toContain('Vérifié');
   });
 
+  // Constat produit (18/09, tour de correction G4) : le plafond à 0 est voulu (JB a débranché
+  // l'enrichissement), donc jamais annoncé avant le clic sur cet écran — le bouton doit
+  // rester visible mais désactivé, la raison lisible dessous, plutôt qu'un échec après coup.
+  it('ligne « Sans email », enrichissement en pause -> bouton désactivé avec la raison, pas le coût', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ statut: 'sans_email', email: null })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+        raisonEnrichissementIndisponible="Enrichissement en pause (plafond à 0) — à relever dans Fournisseurs."
+      />,
+    );
+    expect(html).toContain('disabled');
+    expect(html).toContain('jr-tache-aide');
+    expect(html).toContain('Enrichissement en pause (plafond à 0)');
+    expect(html).not.toContain('1 crédit');
+  });
+
   it('ligne « A répondu » -> puce de ton bon', () => {
     const html = renderToStaticMarkup(
       <TableContacts

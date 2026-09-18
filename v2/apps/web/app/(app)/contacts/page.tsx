@@ -99,6 +99,11 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
   const onglet = ongletDemande(sp);
   const fuseau = String(reglages.fuseau);
+  // Constat produit (18/09, tour de correction G4) : `enrichissements_par_jour` déjà lu
+  // ci-dessus (`reglages`) pour le fuseau — pas de requête de plus pour ce garde-fou, l'état
+  // (une seule valeur pour toute l'organisation) est calculé UNE FOIS ici, jamais par ligne
+  // de table (voir `TableContactsProps.raisonEnrichissementIndisponible`).
+  const enrichissementEnPause = Number(reglages.enrichissements_par_jour) <= 0;
   // `statut` (F14) : `ImportContacts` avertit quand la campagne choisie n'est
   // pas active — une inscription y entre `active` dès l'import, mais rien ne
   // partira tant que la campagne elle-même ne l'est pas (`tickDueEnrollments`,
@@ -327,6 +332,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 reprendre: t('actions.resume'),
                 vide: t('empty'),
               }}
+              raisonEnrichissementIndisponible={enrichissementEnPause ? t('actions.enrichPaused') : null}
             />
           )}
         </Carte>
@@ -388,7 +394,12 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       <section className="jr-contenu une-colonne">{contenu}</section>
 
       {onglet === 'tous' && fiche && (
-        <TiroirFiche fiche={fiche} fuseau={String(reglages.fuseau)} fermerHref={fermerHref} />
+        <TiroirFiche
+          fiche={fiche}
+          fuseau={String(reglages.fuseau)}
+          fermerHref={fermerHref}
+          enrichissementEnPause={enrichissementEnPause}
+        />
       )}
     </>
   );

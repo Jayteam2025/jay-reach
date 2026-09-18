@@ -89,11 +89,13 @@ function LigneEnvoiRendue({
   organisationId,
   campagneId,
   libelles,
+  raisonEnrichissementIndisponible,
 }: {
   envoi: LigneTableFileDuJour;
   organisationId: string;
   campagneId: string;
   libelles: TableFileDuJourLibelles;
+  raisonEnrichissementIndisponible: string | null;
 }) {
   // F13 (décision 18/09) : « remis »/« parti » dépendent du canal (`etatAffichage`),
   // jamais du statut brut — une action LinkedIn `dispatched` est un départ réel.
@@ -136,6 +138,7 @@ function LigneEnvoiRendue({
             signalId={envoi.signalId}
             libelle={libelles.chercherEmail}
             cout={libelles.coutChercherEmail}
+            raisonIndisponible={raisonEnrichissementIndisponible}
           />
         ) : ETATS_A_VENIR.has(etat) ? (
           <span className="jr-actions-en-ligne">
@@ -165,11 +168,14 @@ export function TableFileDuJour({
   organisationId,
   campagneId,
   libelles,
+  raisonEnrichissementIndisponible = null,
 }: {
   envois: readonly LigneTableFileDuJour[];
   organisationId: string;
   campagneId: string;
   libelles: TableFileDuJourLibelles;
+  /** Voir le commentaire de `TableContactsProps.raisonEnrichissementIndisponible` — même garde-fou, même provenance (chargé une fois par la page). */
+  raisonEnrichissementIndisponible?: string | null;
 }) {
   const groupes = grouperParHeure(envois);
   return (
@@ -199,6 +205,7 @@ export function TableFileDuJour({
                 organisationId={organisationId}
                 campagneId={campagneId}
                 libelles={libelles}
+                raisonEnrichissementIndisponible={raisonEnrichissementIndisponible}
               />
             ))}
           </Fragment>

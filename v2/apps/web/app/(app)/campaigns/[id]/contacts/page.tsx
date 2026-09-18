@@ -49,6 +49,9 @@ export default async function CampagneContactsPage({
   const ctx = await contexteCourant();
   const [t, sp, reglages] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx)]);
   const fuseau = String(reglages.fuseau);
+  // Constat produit (18/09, tour de correction G4) : voir le commentaire équivalent dans
+  // `contacts/page.tsx` — `reglages` déjà lu ci-dessus, aucune requête de plus.
+  const enrichissementEnPause = Number(reglages.enrichissements_par_jour) <= 0;
 
   const filtre = filtreDemande(sp.filtre);
   const recherche = rechercheDemandee(sp.q);
@@ -169,7 +172,9 @@ export default async function CampagneContactsPage({
             ecarter: t('contacts.actions.discard'),
             reprendre: t('contacts.actions.resume'),
             vide: t('contacts.emptyFilter'),
-          }} />
+          }}
+            raisonEnrichissementIndisponible={enrichissementEnPause ? t('contacts.actions.enrichPaused') : null}
+          />
         )}
       </Carte>
 
@@ -198,7 +203,15 @@ export default async function CampagneContactsPage({
         </div>
       )}
 
-      {fiche && <TiroirFiche fiche={fiche} campagneId={id} fuseau={fuseau} fermerHref={fermerHref} />}
+      {fiche && (
+        <TiroirFiche
+          fiche={fiche}
+          campagneId={id}
+          fuseau={fuseau}
+          fermerHref={fermerHref}
+          enrichissementEnPause={enrichissementEnPause}
+        />
+      )}
     </section>
   );
 }

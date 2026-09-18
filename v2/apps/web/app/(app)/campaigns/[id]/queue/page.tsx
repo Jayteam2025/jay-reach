@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { apercuEnvoi, ErreurIntrouvable, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
+import { apercuEnvoi, ErreurIntrouvable, lireReglages, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../../lib/dates';
 import { etatAffichage } from '../../../../../lib/file-du-jour';
@@ -111,7 +111,10 @@ export default async function CampagneFileDuJourPage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp] = await Promise.all([getTranslations('campagne'), searchParams]);
+  const [t, sp, reglages] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx)]);
+  // Constat produit (18/09, tour de correction G4) : voir le commentaire équivalent dans
+  // `contacts/page.tsx` — chargé une fois ici, jamais par ligne de `TableFileDuJour`.
+  const enrichissementEnPause = Number(reglages.enrichissements_par_jour) <= 0;
 
   let resultat: Awaited<ReturnType<typeof listerFileDuJour>>;
   try {
@@ -213,6 +216,7 @@ export default async function CampagneFileDuJourPage({
               coutChercherEmail: t('contacts.actions.enrichCost'),
               aucunePlaceholder: '—',
             }}
+            raisonEnrichissementIndisponible={enrichissementEnPause ? t('contacts.actions.enrichPaused') : null}
           />
         </Carte>
       )}
