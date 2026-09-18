@@ -571,3 +571,19 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
+
+/* Grilles de PAGE repliées en une colonne sous 1240 px (mesuré le 18/09). Les points de rupture
+   existants (1440 px, 1180 px) ne traitaient que les grilles INTERNES — colonnes secondaires d'un
+   tableau, fiche de la Réception, menu des Réglages — et aucun ne repliait les grilles de page :
+   de 1240 px jusqu'en bas, `.jr-aujourdhui` gardait ses deux colonnes et la File du jour n'avait
+   plus la largeur de son tableau (552 px demandés) — 542 px à 1200 px, donc 20 px coupés, et 435 px
+   à 1024 px, donc 125 px coupés et 17 éléments rognés sur le seul écran d'accueil. Seuil choisi par
+   mesure : à 1240 px la colonne fait 566 px, 14 px de marge seulement, trop peu dès qu'un nom
+   s'allonge. Bloc placé en fin de fichier pour l'emporter sur les `max-width: 1440px` ci-dessus,
+   qui s'appliquent aussi à ces largeurs et y reposeraient sinon leurs deux colonnes. */
+@media (max-width: 1240px) {
+  .jr-aujourdhui,
+  .jr-contenu,
+  .jr-moteur-plafonds,
+  .jr-boite-blocs { grid-template-columns: minmax(0, 1fr); }
+}

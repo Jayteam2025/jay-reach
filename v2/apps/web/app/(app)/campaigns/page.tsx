@@ -125,12 +125,12 @@ export default async function CampagnesPage({
               colonnes={[
                 { cle: 'campagne', titre: t('list.columns.campaign') },
                 { cle: 'statut', titre: t('list.columns.status') },
-                { cle: 'boites', titre: t('list.columns.boxes') },
+                { cle: 'boites', titre: t('list.columns.boxes'), classe: 'masquable' },
                 { cle: 'contacts', titre: t('list.columns.contacts'), num: true },
                 { cle: 'sequence', titre: t('list.columns.sequence'), num: true },
                 { cle: 'reponses', titre: t('list.columns.replies'), num: true },
                 { cle: 'interesses', titre: t('list.columns.interested'), num: true },
-                { cle: 'activite', titre: t('list.columns.lastActivity') },
+                { cle: 'activite', titre: t('list.columns.lastActivity'), classe: 'masquable' },
                 { cle: 'action', titre: '' },
               ]}
               lignes={campagnesAffichees.map((campagne) => {
