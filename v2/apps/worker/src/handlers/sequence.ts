@@ -193,9 +193,15 @@ async function loadSenders(
               where act.sender_id = s.id
                 and act.created_at >= date_trunc('day', now() at time zone ($2::jsonb ->> s.organization_id::text))
                                       at time zone ($2::jsonb ->> s.organization_id::text)) as used_today,
+            -- Revue F5 (relecture) : même fuseau que used_today ci-dessus, pas
+            -- l'heure du serveur — un décalage non entier (Inde +5:30, Népal
+            -- +5:45) faisait sinon tomber le plafond horaire hors de l'heure
+            -- murale de l'organisation alors que le plafond journalier, lui,
+            -- la respectait déjà.
             (select count(*)::int from actions act
               where act.sender_id = s.id
-                and act.created_at >= date_trunc('hour', now())) as used_this_hour
+                and act.created_at >= date_trunc('hour', now() at time zone ($2::jsonb ->> s.organization_id::text))
+                                       at time zone ($2::jsonb ->> s.organization_id::text)) as used_this_hour
        from senders s
       where s.organization_id = any($1::uuid[])`,
     [organizationIds, JSON.stringify(fuseauParOrg)],
@@ -278,10 +284,14 @@ export async function chargerContraintesSender(
               where act.sender_id = s.id
                 and act.status in ('dispatched', 'delivered')
                 and act.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2) as used_today,
+            -- Revue F5 (relecture) : même fuseau que used_today ci-dessus, pas
+            -- l'heure du serveur — un décalage non entier (Inde +5:30, Népal
+            -- +5:45) faisait sinon tomber le plafond horaire hors de l'heure
+            -- murale de l'organisation.
             (select count(*)::int from actions act
               where act.sender_id = s.id
                 and act.status in ('dispatched', 'delivered')
-                and act.dispatched_at >= date_trunc('hour', now())) as used_this_hour
+                and act.dispatched_at >= date_trunc('hour', now() at time zone $2) at time zone $2) as used_this_hour
        from senders s where s.id = $1`,
     [senderId, fuseau],
   );

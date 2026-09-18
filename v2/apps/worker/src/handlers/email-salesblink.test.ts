@@ -382,10 +382,12 @@ describe('envoyerEmailSalesBlink', () => {
     const requeteQuota = appels.find((a) => CONTRAINTES_SENDER.test(a.sql));
     expect(requeteQuota).toBeDefined();
     expect(requeteQuota!.sql).toMatch(/status in \('dispatched', 'delivered'\)/);
-    // Revue F5, point 2 : borné par le fuseau de l'organisation (`$2`), plus
-    // `date_trunc('day', now())` nu (fuseau du serveur).
+    // Revue F5, point 2 (puis relecture) : jour ET heure bornés par le fuseau
+    // de l'organisation (`$2`), plus `date_trunc(..., now())` nu (fuseau du
+    // serveur) — un décalage non entier (Inde, Népal) déréglerait sinon
+    // seulement le plafond horaire.
     expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
-    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\)\)/);
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\) at time zone \$2\) at time zone \$2/);
     // Une action encore `scheduled` (pas encore partie) n'a pas `dispatched_at`
     // renseigné : elle ne peut donc jamais matcher ce filtre, contrairement au
     // filtre par `created_at` du tick (`loadSenders`), qui l'aurait comptée.

@@ -223,8 +223,12 @@ describe('tickDueEnrollments', () => {
 
     const requeteSenders = appels.find((a) => SENDERS.test(a.sql));
     expect(requeteSenders).toBeDefined();
-    expect(requeteSenders!.sql).toMatch(/at time zone \(\$2::jsonb ->> s\.organization_id::text\)/i);
+    expect(requeteSenders!.sql).toMatch(/date_trunc\('day', now\(\) at time zone \(\$2::jsonb ->> s\.organization_id::text\)\)/i);
     expect(requeteSenders!.sql).not.toContain("date_trunc('day', now())");
+    // Relecture : `used_this_hour` doit suivre le même fuseau que `used_today`
+    // ci-dessus, pas l'heure du serveur (décalage non entier, Inde/Népal).
+    expect(requeteSenders!.sql).toMatch(/date_trunc\('hour', now\(\) at time zone \(\$2::jsonb ->> s\.organization_id::text\)\)/i);
+    expect(requeteSenders!.sql).not.toContain("date_trunc('hour', now())");
     // La carte {orgId -> fuseau} part en un seul paramètre jsonb (un lot de
     // tick peut mélanger plusieurs organisations) — ici une seule, résolue
     // via la requête `FUSEAU_ORGANISATION` ci-dessus.
@@ -566,6 +570,10 @@ describe('chargerContraintesSender (revue F5, point 2)', () => {
     expect(requeteSender).toBeDefined();
     expect(requeteSender!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/i);
     expect(requeteSender!.sql).not.toContain("date_trunc('day', now())");
+    // Relecture : `used_this_hour` doit suivre le même fuseau que `used_today`
+    // ci-dessus, pas l'heure du serveur (décalage non entier, Inde/Népal).
+    expect(requeteSender!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\) at time zone \$2\) at time zone \$2/i);
+    expect(requeteSender!.sql).not.toContain("date_trunc('hour', now())");
     expect(requeteSender!.values).toEqual([SENDER_ID, 'Pacific/Kiritimati']);
 
     expect(contraintes).toEqual({
