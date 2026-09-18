@@ -965,7 +965,7 @@
       "salesblinkNotLinked": "SalesBlink niet gekoppeld",
       "empty": "Geen e-mailmailbox. Koppel er een om te beginnen met verzenden.",
       "box": {
-        "createdOn": "Verbonden op {date}",
+        "createdOn": "{estRelatif, select, oui {Verbonden {date}} other {Verbonden op {date}}}",
         "today": "Vandaag",
         "cadence": "Tempo",
         "perDay": "{n} per dag",
@@ -1087,7 +1087,7 @@
         "aucunRepli": "geen",
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
-        "modifieSansAuteur": "Gewijzigd op {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
         "erreurNombre": "Voer een geheel getal in, nul of positief."
       },
       "lignes": {

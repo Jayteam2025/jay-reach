@@ -143,6 +143,10 @@ Versionnement sémantique.
   compte depuis cet écran fait désormais exister, met à jour ou désactive son expéditeur, plafonds et fenêtre d'envoi compris ;
   la carte d'un compte connecté sans expéditeur actif (jeton posé directement en base, jamais repassé par cet écran) le
   signale plutôt que d'afficher « Connecté ».
+- **Une date récente se lisait « Modifié le aujourd'hui, 09:59 » sur Réglages › Plafonds et Expéditeurs (défauts relevés en
+  recette le 18/09).** Le connecteur (« le »/« on »/« op ») était posé en dur devant la date, alors que le formateur commun
+  rend une valeur relative (« aujourd'hui »/« hier ») pour les deux derniers jours calendaires — une tournure fautive dans les
+  trois langues. Les gabarits choisissent désormais eux-mêmes le connecteur selon que la date est relative ou absolue.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,

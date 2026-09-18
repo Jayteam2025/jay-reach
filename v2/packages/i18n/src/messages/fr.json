@@ -965,7 +965,7 @@
       "salesblinkNotLinked": "SalesBlink non relié",
       "empty": "Aucune boîte email. Reliez-en une pour commencer à envoyer.",
       "box": {
-        "createdOn": "Connectée le {date}",
+        "createdOn": "{estRelatif, select, oui {Connectée {date}} other {Connectée le {date}}}",
         "today": "Aujourd'hui",
         "cadence": "Cadence",
         "perDay": "{n} par jour",
@@ -1087,7 +1087,7 @@
         "aucunRepli": "aucun",
         "jamaisModifie": "jamais",
         "modifiePar": "{nom} · {date}",
-        "modifieSansAuteur": "Modifié le {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Modifié {date}} other {Modifié le {date}}}",
         "erreurNombre": "Entrez un nombre entier positif ou nul."
       },
       "lignes": {

@@ -130,6 +130,23 @@ export function dateCourte(iso: string, maintenant: Date = new Date(), fuseau: s
 }
 
 /**
+ * Vrai quand `dateCourte` rendrait une valeur relative (« aujourd'hui, HH:MM »
+ * / « hier, HH:MM ») pour cet instant, faux pour une date absolue (« 4 sept. »).
+ * Sert aux gabarits qui préfixent la date d'un connecteur (« Modifié LE »,
+ * « Connectée LE ») : le connecteur n'a de sens que devant une date absolue —
+ * « Modifié le aujourd'hui » est fautif dans les trois langues (« le
+ * aujourd'hui », « on today », « op vandaag »), constat recette du 18/09 sur
+ * Réglages › Plafonds et Expéditeurs. Même frontière de jour DANS `fuseau` que
+ * le reste du fichier.
+ */
+export function estDateRelative(iso: string, maintenant: Date = new Date(), fuseau: string = FUSEAU_PAR_DEFAUT): boolean {
+  const cleDate = cleJourDansFuseau(new Date(iso), fuseau);
+  if (cleDate === cleJourDansFuseau(maintenant, fuseau)) return true;
+  const veille = new Date(maintenant.getTime() - UN_JOUR_MS);
+  return cleDate === cleJourDansFuseau(veille, fuseau);
+}
+
+/**
  * HH:MM pour aujourd'hui, « hier » pour la veille, sinon « il y a N j » —
  * carte « À traiter » d'Aujourd'hui (`app/(app)/page.tsx`). Déplacée ici
  * (I5, revue finale) : un export nommé quelconque depuis un `page.tsx` fait

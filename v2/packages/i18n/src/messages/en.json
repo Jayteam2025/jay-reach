@@ -965,7 +965,7 @@
       "salesblinkNotLinked": "SalesBlink not linked",
       "empty": "No email mailbox. Link one to start sending.",
       "box": {
-        "createdOn": "Connected on {date}",
+        "createdOn": "{estRelatif, select, oui {Connected {date}} other {Connected on {date}}}",
         "today": "Today",
         "cadence": "Pace",
         "perDay": "{n} per day",
@@ -1087,7 +1087,7 @@
         "aucunRepli": "none",
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
-        "modifieSansAuteur": "Modified on {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
         "erreurNombre": "Enter a whole number, zero or positive."
       },
       "lignes": {
