@@ -613,6 +613,9 @@ describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () =>
     expect(requeteCompte!.sql).not.toContain("date_trunc('day', now())");
     expect(requeteCompte!.values).toEqual([CAMPAIGN_ID, 'Pacific/Kiritimati']);
     expect(n).toBe(3);
+  });
+});
+
 describe('reprendreAbsencesEchues (F10)', () => {
   const STEP_ID_ABSENCE = 'etape-en-attente';
 
@@ -665,6 +668,10 @@ describe('reprendreAbsencesEchues (F10)', () => {
     const DEJA_ENVOYEE = /select id from actions\s+where idempotency_key/i;
     const REJEU_ACTION = /update actions\s+set status = 'scheduled'/i;
     const JOURNAL = /insert into audit_events/i;
+    // Repli (étape supprimée pendant la pause) : ni délai à lire, ni action à
+    // rejouer — sans lui, `next_action_at` resterait `null` pour toujours.
+    const REPLI =
+      /update enrollments\s+set next_action_at = now\(\)\s+where id = \$1 and status = 'active' and next_action_at is null/i;
 
     const query = vi.fn(async (sql: string, values: unknown[] = []) => {
       appels.push({ sql, values });
@@ -696,6 +703,12 @@ describe('reprendreAbsencesEchues (F10)', () => {
         return { rows: [], rowCount: rejouee ? 1 : 0 };
       }
       if (JOURNAL.test(sql)) return { rows: [{}], rowCount: 1 };
+      if (REPLI.test(sql)) {
+        const okGarde = etat.status === 'active' && etat.next_action_at === null;
+        if (!okGarde) return { rows: [], rowCount: 0 };
+        etat = { ...etat, next_action_at: 'now()' };
+        return { rows: [], rowCount: 1 };
+      }
       throw new Error(`requete non prevue par le test :\n${sql}`);
     });
     return { pool: { query } as unknown as Pool, appels, etat: () => etat };
@@ -845,6 +858,34 @@ describe('reprendreAbsencesEchues (F10)', () => {
     expect(String(journal!.values)).toMatch(/enrollment_resumed/);
     expect(String(journal!.values)).toContain(ORG_ID);
     expect(String(journal!.values)).toContain(CONTACT_ID);
+  });
+
+  it('étape supprimée pendant la pause (repli) : next_action_at reste rattrapable, jamais null pour toujours', async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 5, // rang qui n'existe plus dans sequence_steps
+      resume_at: resumeAt,
+    };
+    // Ni `etape` ni `actionBloquee` fournis : la séquence a perdu ce rang,
+    // `poserEcheanceDepuisDispatch` et le rejeu d'action ne peuvent rien
+    // écrire (aucune ligne trouvée par leurs deux lectures respectives).
+    const { pool, etat } = creerPoolAbsence([candidat], {
+      status: 'paused_absence',
+      next_action_at: resumeAt,
+      current_step: 5,
+    });
+
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+
+    // Sans repli, `next_action_at` resterait `null` (posé par l'activation) :
+    // invisible du tick (`next_action_at <= now` exclut NULL) et de
+    // `rattraperEcheancesManquantes` (même lecture d'étape, même échec).
+    expect(etat().next_action_at).not.toBeNull();
+    expect(etat().status).toBe('active');
   });
 
   it('aucune candidate (requête vide) : rien d’autre interrogé', async () => {

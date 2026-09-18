@@ -22,7 +22,6 @@ import {
   plafondDuJour,
   relectureRequise,
   fuseauDeLOrganisation,
-  ecrireEvenement,
   type BusinessHours,
   type Binding,
   type SenderInfo,
@@ -772,10 +771,29 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
     if (ecrit || etapeRejouee) {
       reprises += 1;
     } else {
-      // Ne devrait se produire que si la séquence a perdu des étapes pendant
-      // la pause (étape supprimée, campagne modifiée) : signalé plutôt que
-      // masqué.
-      console.warn(`[tick] absence ${candidat.id} réactivée sans échéance posée ni étape rejouée — étape en attente introuvable ?`);
+      // Repli (trouvé à la relecture) : la séquence a perdu l'étape attendue
+      // pendant la pause (étape supprimée de la campagne) — ni
+      // `poserEcheanceDepuisDispatch` (aucun `delay_hours` à lire) ni le
+      // rejeu ci-dessus (aucune action bloquée à cette étape) n'ont pu agir.
+      // Sans repli, l'inscription resterait `active` avec `next_action_at =
+      // null` : invisible du tick (`next_action_at <= now` exclut NULL en
+      // SQL) ET de `rattraperEcheancesManquantes` (qui bute sur le même
+      // problème en silence) — pire qu'en retard, elle disparaîtrait pour de
+      // bon. Même repli que `reprendreInscription` (`?? Date.now()`,
+      // `fonctions/sequence.ts`) : `next_action_at = now()` la rend à
+      // nouveau due, et le tick suivant la referme proprement via la borne
+      // déjà gérée par `composeTick` (`currentStep >= steps.length` ->
+      // `completed`) — aucun nouveau cas à traiter côté tick.
+      await pool.query(
+        `update enrollments
+            set next_action_at = now()
+          where id = $1 and status = 'active' and next_action_at is null`,
+        [candidat.id],
+      );
+      reprises += 1;
+      console.warn(
+        `[tick] absence ${candidat.id} réactivée sans échéance ni étape en attente (étape supprimée pendant la pause ?) — reprise immédiate pour rester rattrapable`,
+      );
     }
   }
   if (reprises > 0) {
