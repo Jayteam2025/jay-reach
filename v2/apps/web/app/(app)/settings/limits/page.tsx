@@ -3,6 +3,7 @@ import { lireConsommationDuJour, lireReglages, lireReglagesDetail, type ClePlafo
 import { contexteCourant } from '../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { libelleModification } from '../../../../lib/libelle-modification';
+import { parametresScoringTexte, parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
 import { BarreProgression, Carte } from '../../../../components/ui';
 import { TablePlafonds, type LignePlafond } from '../../../../components/reglages/TablePlafonds';
 
@@ -89,9 +90,7 @@ export default async function PlafondsPage() {
         <Carte titre={t('consommation.title')}>
           <div className="jr-cle-valeur">
             <span>{t('consommation.scoring')}</span>
-            <b>
-              {consommation.scoring.utilise} / {consommation.scoring.plafond}
-            </b>
+            <b>{t('consommation.valeur', parametresValeurConsommation(consommation.scoring.utilise, consommation.scoring.plafond))}</b>
           </div>
           <BarreProgression
             valeur={pourcentageJauge(consommation.scoring.utilise, consommation.scoring.plafond)}
@@ -100,7 +99,10 @@ export default async function PlafondsPage() {
           <div className="jr-cle-valeur">
             <span>{t('consommation.enrichissement')}</span>
             <b>
-              {consommation.enrichissement.utilise} / {consommation.enrichissement.plafond}
+              {t(
+                'consommation.valeur',
+                parametresValeurConsommation(consommation.enrichissement.utilise, consommation.enrichissement.plafond),
+              )}
             </b>
           </div>
           <BarreProgression
@@ -109,9 +111,7 @@ export default async function PlafondsPage() {
           />
           <div className="jr-cle-valeur">
             <span>{t('consommation.envois')}</span>
-            <b>
-              {consommation.envois.utilise} / {consommation.envois.plafond}
-            </b>
+            <b>{t('consommation.valeur', parametresValeurConsommation(consommation.envois.utilise, consommation.envois.plafond))}</b>
           </div>
           <BarreProgression
             valeur={pourcentageJauge(consommation.envois.utilise, consommation.envois.plafond)}
@@ -125,7 +125,7 @@ export default async function PlafondsPage() {
         <Carte titre={t('protection.title')}>
           <div style={{ fontSize: 13.5, display: 'grid', gap: 8 }}>
             <p style={{ margin: 0 }}>
-              <b>{t('protection.scoringTitre')}</b> : {t('protection.scoringTexte', { plafond: consommation.scoring.plafond })}
+              <b>{t('protection.scoringTitre')}</b> : {t('protection.scoringTexte', parametresScoringTexte(consommation.scoring.plafond))}
             </p>
             <p style={{ margin: 0 }}>
               <b>{t('protection.enrichissementTitre')}</b> : {t('protection.enrichissementTexte')}

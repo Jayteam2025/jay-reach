@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { hasMinRole, lireReglages } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
-import { dateCourte } from '../../../../lib/dates';
+import { dateCourte, estDateRelative } from '../../../../lib/dates';
 import { listerBoitesExpediteurs } from '../../../actions/senders';
 import { listerComptesLinkedInAction } from '../../../actions/linkedin';
 import { Puce } from '../../../../components/ui';
@@ -62,6 +62,10 @@ export default async function ReglagesExpediteursPage() {
             key={boite.id}
             boite={boite}
             creeLeTexte={dateCourte(boite.creeLe, maintenant, fuseau)}
+            // « Modifié le aujourd'hui » (constat recette du 18/09) : le gabarit `box.createdOn`
+            // choisit lui-même son connecteur, mais a besoin de savoir si `creeLeTexte` est une
+            // valeur relative (« aujourd'hui »/« hier ») ou une date absolue.
+            creeLeEstRelatif={estDateRelative(boite.creeLe, maintenant, fuseau)}
             derniereReleveTexte={boite.derniereReleve?.quand ? dateCourte(boite.derniereReleve.quand, maintenant, fuseau) : null}
             peutModifier={peutModifier}
           />

@@ -143,6 +143,22 @@ Versionnement sémantique.
   compte depuis cet écran fait désormais exister, met à jour ou désactive son expéditeur, plafonds et fenêtre d'envoi compris ;
   la carte d'un compte connecté sans expéditeur actif (jeton posé directement en base, jamais repassé par cet écran) le
   signale plutôt que d'afficher « Connecté ».
+- **Une date récente se lisait « Modifié le aujourd'hui, 09:59 » sur Réglages › Plafonds et Expéditeurs (défauts relevés en
+  recette le 18/09).** Le connecteur (« le »/« on »/« op ») était posé en dur devant la date, alors que le formateur commun
+  rend une valeur relative (« aujourd'hui »/« hier ») pour les deux derniers jours calendaires — une tournure fautive dans les
+  trois langues. Les gabarits choisissent désormais eux-mêmes le connecteur selon que la date est relative ou absolue.
+- **Un compte LinkedIn actif mais sans expéditeur activé affichait deux puces contradictoires côte à côte : « Active » et
+  « Aucun envoi ne partira » (recette du 18/09).** Même priorité que la carte d'une boîte email (F15, ci-dessus) : ce qui
+  empêche réellement d'envoyer l'emporte désormais sur l'activation choisie par l'opérateur, dans une seule puce qui porte
+  les deux faits.
+- **Un plafond remis à 0 rendait Réglages › Plafonds absurde : « 300 / 0 », et « 0 par jour absorbent une dizaine de
+  passages » (recette du 18/09).** Zéro n'a jamais été une limite illimitée dans ce produit (`placesRestantes` : « Un plafond
+  nul, negatif ou invalide vaut pause : zero place »), et l'écran ne le disait pas. Consommation du jour et le texte de
+  protection disent désormais explicitement la pause plutôt qu'un ratio ou une phrase qui n'ont plus de sens à zéro.
+- **L'onglet Sources d'une campagne alimentée par une liste importée affichait « Sources 0 », comme s'il manquait un réglage
+  (recette du 18/09).** Une campagne à liste n'a par construction aucune ligne dans `campaign_sources` (alimentée qu'elle est
+  par sa liste, un mécanisme distinct) ; l'onglet reste affiché (il sert aussi à rattacher une liste), mais son badge de
+  compteur, qui n'a pas de sens pour ce type de campagne, disparaît.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,

@@ -25,7 +25,8 @@ export function ongletActif(pathname: string, campagneId: string): string {
 export interface CompteursOngletsCampagne {
   contacts: number;
   fileDuJour: number;
-  sources: number;
+  /** `undefined` masque le badge (constat recette du 18/09, `compteurOngletSources`) : une campagne à liste n'a pas de « sources » à compter. */
+  sources: number | undefined;
 }
 
 export interface OngletsCampagneProps {

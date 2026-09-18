@@ -970,7 +970,7 @@
       "salesblinkNotLinked": "SalesBlink not linked",
       "empty": "No email mailbox. Link one to start sending.",
       "box": {
-        "createdOn": "Connected on {date}",
+        "createdOn": "{estRelatif, select, oui {Connected {date}} other {Connected on {date}}}",
         "today": "Today",
         "cadence": "Pace",
         "perDay": "{n} per day",
@@ -1023,6 +1023,7 @@
         "connected": "Connected",
         "notConnected": "Not connected",
         "senderMissing": "Nothing will go out: sender not activated",
+        "activeSenderMissing": "Active, but nothing will go out: sender not activated",
         "perDay": "{n} per day",
         "perWeek": "{n} per week",
         "edit": "Edit",
@@ -1069,12 +1070,13 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Enrichments requested (FullEnrich)",
         "envois": "Sends",
-        "aide": "Counters reset to zero at midnight, organization time ({fuseau}), sends included. A cap once reached puts the task on hold until the next day, nothing is lost."
+        "aide": "Counters reset to zero at midnight, organization time ({fuseau}), sends included. A cap once reached puts the task on hold until the next day, nothing is lost.",
+        "valeur": "{enPause, select, oui {{utilise} · cap at 0 (paused)} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "What this protects",
         "scoringTitre": "Scorings",
-        "scoringTexte": "each posting or profile read by a source costs a model call. {plafond} per day absorbs about a dozen runs.",
+        "scoringTexte": "{enPause, select, oui {each posting or profile read by a source costs a model call. The cap is at 0: scoring is paused, nothing gets scored.} other {each posting or profile read by a source costs a model call. {plafond} per day absorbs about a dozen runs.}}",
         "enrichissementTitre": "Enrichments",
         "enrichissementTexte": "one FullEnrich credit per email searched. The engine searches for the highest scores first.",
         "defautsTitre": "Defaults",
@@ -1092,7 +1094,7 @@
         "aucunRepli": "none",
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
-        "modifieSansAuteur": "Modified on {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
         "erreurNombre": "Enter a whole number, zero or positive."
       },
       "lignes": {

@@ -28,8 +28,22 @@ describe('libelleModification', () => {
   it('réglé hors écran sans auteur résoluble (modifiePar nul, modifieLe renseigné) : la date, jamais « jamais »', () => {
     const t = fauxT();
     const r = libelleModification(null, '2026-09-18T07:59:00.000Z', t, MAINTENANT, 'Europe/Paris');
-    expect(t).toHaveBeenCalledWith('modifieSansAuteur', { date: expect.any(String) });
-    expect(r).toMatch(/^modifieSansAuteur:date=/);
+    expect(t).toHaveBeenCalledWith('modifieSansAuteur', { date: expect.any(String), estRelatif: expect.any(String) });
+    expect(r).toMatch(/^modifieSansAuteur:/);
+  });
+
+  // Constat recette du 18/09 : « Modifié le aujourd'hui, 09:59 » — le gabarit ICU décide
+  // lui-même du connecteur, mais encore faut-il qu'il reçoive de quoi choisir.
+  it('modifié aujourd’hui : estRelatif vaut "oui"', () => {
+    const t = fauxT();
+    libelleModification(null, '2026-09-18T07:59:00.000Z', t, MAINTENANT, 'Europe/Paris');
+    expect(t).toHaveBeenCalledWith('modifieSansAuteur', { date: expect.any(String), estRelatif: 'oui' });
+  });
+
+  it('modifié il y a plusieurs jours : estRelatif vaut "non"', () => {
+    const t = fauxT();
+    libelleModification(null, '2026-09-01T07:59:00.000Z', t, MAINTENANT, 'Europe/Paris');
+    expect(t).toHaveBeenCalledWith('modifieSansAuteur', { date: expect.any(String), estRelatif: 'non' });
   });
 
   it('réglé depuis l’écran (auteur et date connus) : clé modifiePar avec le nom et la date', () => {

@@ -21,13 +21,15 @@ export interface CarteBoiteProps {
   boite: Boite;
   /** Date de connexion déjà formatée côté serveur (fuseau de l'organisation) — jamais `new Date()` dans un composant client. */
   creeLeTexte: string;
+  /** Vrai si `creeLeTexte` est une valeur relative (« aujourd'hui »/« hier ») — dit à `box.createdOn` (ICU `select`) s'il pose un connecteur devant la date (constat recette du 18/09, « Connectée le aujourd'hui »). */
+  creeLeEstRelatif: boolean;
   /** Heure de dernière relève déjà formatée côté serveur, ou `null` si jamais relevée. */
   derniereReleveTexte: string | null;
   /** `false` pour un rôle viewer/operator : l'interrupteur et « Modifier » se lisent, mais n'agissent pas. */
   peutModifier: boolean;
 }
 
-export function CarteBoite({ boite, creeLeTexte, derniereReleveTexte, peutModifier }: CarteBoiteProps) {
+export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereReleveTexte, peutModifier }: CarteBoiteProps) {
   const t = useTranslations('reglages.expediteurs');
   const tJours = useTranslations('reglages.days');
   const router = useRouter();
@@ -67,7 +69,7 @@ export function CarteBoite({ boite, creeLeTexte, derniereReleveTexte, peutModifi
             <TuileLogo marque={MARQUE_TUILE[boite.marque]} taille="grande" />
             <span>
               <b style={{ fontSize: 16 }}>{boite.nomAffiche ?? boite.identite}</b>
-              <small>{t('box.createdOn', { date: creeLeTexte })}</small>
+              <small>{t('box.createdOn', { date: creeLeTexte, estRelatif: creeLeEstRelatif ? 'oui' : 'non' })}</small>
             </span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

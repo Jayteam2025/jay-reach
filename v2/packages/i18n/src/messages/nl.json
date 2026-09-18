@@ -970,7 +970,7 @@
       "salesblinkNotLinked": "SalesBlink niet gekoppeld",
       "empty": "Geen e-mailmailbox. Koppel er een om te beginnen met verzenden.",
       "box": {
-        "createdOn": "Verbonden op {date}",
+        "createdOn": "{estRelatif, select, oui {Verbonden {date}} other {Verbonden op {date}}}",
         "today": "Vandaag",
         "cadence": "Tempo",
         "perDay": "{n} per dag",
@@ -1023,6 +1023,7 @@
         "connected": "Verbonden",
         "notConnected": "Niet verbonden",
         "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
+        "activeSenderMissing": "Actief, maar er wordt niets verstuurd: afzender niet geactiveerd",
         "perDay": "{n} per dag",
         "perWeek": "{n} per week",
         "edit": "Bewerken",
@@ -1069,12 +1070,13 @@
         "scoring": "Scorings (Anthropic)",
         "enrichissement": "Verrijkingen aangevraagd (FullEnrich)",
         "envois": "Verzendingen",
-        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren."
+        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren.",
+        "valeur": "{enPause, select, oui {{utilise} · limiet op 0 (gepauzeerd)} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "Wat dit beschermt",
         "scoringTitre": "Scorings",
-        "scoringTexte": "elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. {plafond} per dag is genoeg voor een tiental runs.",
+        "scoringTexte": "{enPause, select, oui {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. De limiet staat op 0: scoring is gepauzeerd, er wordt niets beoordeeld.} other {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. {plafond} per dag is genoeg voor een tiental runs.}}",
         "enrichissementTitre": "Verrijkingen",
         "enrichissementTexte": "één FullEnrich-credit per gezochte e-mail. De motor zoekt eerst voor de hoogste scores.",
         "defautsTitre": "Standaardwaarden",
@@ -1092,7 +1094,7 @@
         "aucunRepli": "geen",
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
-        "modifieSansAuteur": "Gewijzigd op {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
         "erreurNombre": "Voer een geheel getal in, nul of positief."
       },
       "lignes": {

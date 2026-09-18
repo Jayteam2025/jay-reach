@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import type { CompteLinkedIn } from '@jay-reach/core';
 import { Avatar, Bouton, Carte, Champ, Interrupteur, Puce, Tiroir } from '../ui';
 import { actionModifierCompteLinkedIn } from '../../app/actions/linkedin';
+import { puceEtatCompteLinkedIn } from './compte-linkedin-affichage';
 
 /** Même liste restreinte que `LinkedInPanel.tsx`. */
 const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
@@ -42,6 +43,7 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const etatCompte = puceEtatCompteLinkedIn(compte);
 
   const [quotaJour, setQuotaJour] = useState(compte.quotas.parJour);
   const [quotaSemaine, setQuotaSemaine] = useState(compte.quotas.parSemaine);
@@ -93,22 +95,18 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
             </span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Puce ton={compte.active && compte.connecte ? 'bon' : 'gris'} point>
-              {t(compte.active ? 'active' : 'inactive')}
-            </Puce>
             {/*
               F15 : un jeton connecté (et même actif) n'envoie rien tant que
               son expéditeur (`senders`) ne l'est pas — voir le commentaire de
-              `CompteLinkedIn.envoiPossible`. Un compte relié par un autre
-              biais que cette carte (jeton posé directement en base) peut
-              rester dans cet état tant que personne n'a réenregistré depuis
-              ici : la carte le dit plutôt que d'afficher « Connecté » à tort.
+              `CompteLinkedIn.envoiPossible`. Une puce unique (constat recette
+              du 18/09) : « Active » et « Aucun envoi ne partira » côte à côte
+              étaient deux affirmations contradictoires. `puceEtatCompteLinkedIn`
+              donne la priorité à ce qui empêche réellement d'envoyer, dans un
+              seul ton/texte qui porte les deux faits.
             */}
-            {compte.connecte && !compte.envoiPossible && (
-              <Puce ton="attention" point>
-                {t('senderMissing')}
-              </Puce>
-            )}
+            <Puce ton={etatCompte.ton} point>
+              {t(etatCompte.cle)}
+            </Puce>
             {peutModifier && (
               <>
                 <Interrupteur

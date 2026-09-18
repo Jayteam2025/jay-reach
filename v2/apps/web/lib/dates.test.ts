@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { dateCourte, dateHeureMessage, dateRelativeCourte, heureAvecJour, libelleJour, quandRelatif, regrouperParJour } from './dates';
+import {
+  dateCourte,
+  dateHeureMessage,
+  dateRelativeCourte,
+  estDateRelative,
+  heureAvecJour,
+  libelleJour,
+  quandRelatif,
+  regrouperParJour,
+} from './dates';
 
 describe('dateRelativeCourte', () => {
   const maintenant = new Date('2026-09-15T12:00:00.000Z');
@@ -145,6 +154,24 @@ describe('dateCourte', () => {
     const maintenantTard = new Date('2026-09-15T21:50:00.000Z');
     const instant = '2026-09-14T22:10:00.000Z';
     expect(dateCourte(instant, maintenantTard)).toBe("aujourd'hui, 00:10");
+  });
+});
+
+// Constat recette du 18/09 : « Modifié le aujourd'hui, 09:59 » sur Réglages › Plafonds et
+// Expéditeurs — un connecteur (« le »/« on »/« op ») ne se met que devant une date ABSOLUE.
+describe('estDateRelative', () => {
+  const maintenant = new Date('2026-09-15T10:00:00.000Z'); // 12:00 Paris
+
+  it('un instant d’aujourd’hui -> vrai', () => {
+    expect(estDateRelative('2026-09-15T08:22:00.000Z', maintenant)).toBe(true);
+  });
+
+  it('un instant d’hier -> vrai', () => {
+    expect(estDateRelative('2026-09-14T08:22:00.000Z', maintenant)).toBe(true);
+  });
+
+  it('un instant plus ancien -> faux (date absolue, le connecteur est correct)', () => {
+    expect(estDateRelative('2026-09-04T08:22:00.000Z', maintenant)).toBe(false);
   });
 });
 

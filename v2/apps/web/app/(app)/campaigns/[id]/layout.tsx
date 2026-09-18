@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { ErreurIntrouvable } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
-import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
+import { compteurOngletSources, lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { EnTeteCampagne } from '../../../../components/campagne/EnTeteCampagne';
 import { OngletsCampagne } from '../../../../components/campagne/OngletsCampagne';
 import { BoutonLancerPause } from '../../../../components/campagne/BoutonLancerPause';
@@ -57,7 +57,7 @@ export default async function CampagneLayout({ children, params }: { children: R
               // même population que l'onglet lui-même dans les deux cas.
               contacts: vue.entonnoir.origine === 'sources' ? vue.entonnoir.contacts : vue.entonnoir.contactsImportes,
               fileDuJour: vue.fileDuJour.length,
-              sources: vue.nombreSources,
+              sources: compteurOngletSources(vue.entonnoir.origine, vue.nombreSources),
             }}
           />
         }
