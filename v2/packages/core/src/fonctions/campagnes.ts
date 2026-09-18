@@ -17,7 +17,7 @@ import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
-import { construireValeursMinimales, normalizeListColumnName, renderTemplatePartial } from '../messages/index.js';
+import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
@@ -906,24 +906,55 @@ interface LigneEnvoi {
    * gabarit actif.
    */
   etape_sujet: string | null;
+  /** `contacts.job_title` — déjà sur la table jointe, sans coût de plus (revue F5, point 2). */
+  job_title: string | null;
+  /**
+   * `list_members.raw_row`, jointe par INSCRIPTION (`e.list_id`/`e.contact_id`,
+   * revue F5, point 2) : alimente les variables `{{liste_<colonne>}}` d'un
+   * gabarit encore non parti (« votre recrutement de {{liste_intitule_poste}} »
+   * resté brut faute de cette jointure). `null` sans liste pour cette
+   * inscription.
+   */
+  raw_row: Record<string, unknown> | null;
 }
 
 /**
  * Objet affiché en « Étape et objet » : celui déjà stocké sur l'action pour un
- * envoi parti, sinon celui du gabarit de l'étape — rendu avec les seules
- * valeurs déjà en main dans CETTE requête (`construireValeursMinimales` :
- * prénom/nom), jamais une requête de plus par ligne (point 5). Une variable
- * qu'on n'a pas cherchée ici (`{{liste_intitule_poste}}`, `{{entreprise}}`…)
- * reste donc visible telle quelle plutôt que blanchie — `renderTemplatePartial`,
- * pas `renderTemplate`.
+ * envoi parti, sinon celui du gabarit de l'étape — rendu avec les valeurs déjà
+ * en main dans CETTE requête (`construireValeursContact`, revue F5, point 2 :
+ * la même fonction qu'à l'envoi réel, pas une version appauvrie — seuls
+ * prénom/nom/poste/colonnes de liste sont résolus ici, le compte/la persona/le
+ * signal n'étant pas joints dans une requête qui liste beaucoup de lignes à
+ * la fois ; jamais une requête de plus par ligne, point 5). Une variable qui
+ * reste hors de ce sous-ensemble (`{{entreprise}}`, `{{ville}}`…) reste donc
+ * visible telle quelle plutôt que blanchie — `renderTemplatePartial`, pas
+ * `renderTemplate` : c'est la vérité de l'envoi à venir, pas un aperçu final.
  */
-function objetAffiche(r: LigneEnvoi): string | null {
+function objetAffiche(r: LigneEnvoi, extraits: ReadonlyMap<string, string>): string | null {
   if (r.objet !== null) return r.objet;
   if (!r.etape_sujet) return null;
-  return renderTemplatePartial(r.etape_sujet, construireValeursMinimales(r));
+  const ligne: LigneValeursContact = {
+    first_name: r.first_name,
+    last_name: r.last_name,
+    job_title: r.job_title,
+    company_name: null,
+    city: null,
+    headcount: null,
+    persona_angle: null,
+    signal_title: null,
+    signal_location: null,
+    signal_url: null,
+    context_note: null,
+    domain: null,
+    postal_code: null,
+    country: null,
+    signal_occurred_at: null,
+    raw_row: r.raw_row,
+  };
+  return renderTemplatePartial(r.etape_sujet, construireValeursContact(ligne, extraits));
 }
 
-function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
+function versEnvoiPrevu(r: LigneEnvoi, fuseau: string, extraits: ReadonlyMap<string, string>): EnvoiPrevu {
   const quand = r.dispatched_at ?? r.scheduled_for ?? r.dispatch_after;
   return {
     id: r.id,
@@ -936,7 +967,7 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string): EnvoiPrevu {
     expediteur: r.expediteur,
     canal: canalDe(r.channel),
     etatDetaille: r.status as EnvoiPrevu['etatDetaille'],
-    objet: objetAffiche(r),
+    objet: objetAffiche(r, extraits),
     contactId: r.contact_id,
     expediteurId: r.sender_id,
     signalId: r.signal_id,
@@ -962,35 +993,46 @@ async function lireEnvoisDuJour(
     filtreCampagne = ` and e.campaign_id = $${valeurs.length}`;
   }
 
-  const res = await ctx.ex.query<LigneEnvoi>(
-    `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
-            a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
-            c.first_name, c.last_name, c.source_signal_id as signal_id,
-            camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
-            e.contact_id, mt.subject as etape_sujet
-       from actions a /* jr:file_du_jour_campagne */
-       join enrollments e on e.id = a.enrollment_id
-       join campaigns camp on camp.id = e.campaign_id
-       left join contacts c on c.id = e.contact_id
-       left join sequence_steps st on st.id = a.step_id
-       left join senders s on s.id = a.sender_id
-       -- Gabarit de l'étape, pour l'objet d'un envoi pas encore parti
-       -- (objetAffiche) : une seule jointure ensembliste pour toute la
-       -- page, pas une requête par ligne (point 5). mt.is_active suffit à
-       -- désigner LA version en vigueur (au plus une par lignée+langue,
-       -- uq_message_templates_active_per_family_locale) ; la langue n'est
-       -- pas filtrée ici, comme la résolution déjà en place pour l'onglet
-       -- Séquence (lireSequence, même limite assumée).
-       left join message_templates mt on mt.is_active and coalesce(mt.parent_id, mt.id) = st.template_parent_id
-      where camp.organization_id = $1
-        and a.status <> 'cancelled'
-        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
-        and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1) at time zone $3)
-        ${filtreCampagne}
-      order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
-    valeurs,
-  );
-  return { envois: res.rows.map((r) => versEnvoiPrevu(r, fuseau)), fuseau };
+  const [res, extraitsRes] = await Promise.all([
+    ctx.ex.query<LigneEnvoi>(
+      `select a.id, a.status, a.dispatched_at, a.scheduled_for, a.dispatch_after, a.channel,
+              a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
+              c.first_name, c.last_name, c.job_title, c.source_signal_id as signal_id,
+              camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
+              e.contact_id, mt.subject as etape_sujet, lm.raw_row
+         from actions a /* jr:file_du_jour_campagne */
+         join enrollments e on e.id = a.enrollment_id
+         join campaigns camp on camp.id = e.campaign_id
+         left join contacts c on c.id = e.contact_id
+         left join sequence_steps st on st.id = a.step_id
+         left join senders s on s.id = a.sender_id
+         -- Gabarit de l'étape, pour l'objet d'un envoi pas encore parti
+         -- (objetAffiche) : une seule jointure ensembliste pour toute la
+         -- page, pas une requête par ligne (point 5). mt.is_active suffit à
+         -- désigner LA version en vigueur (au plus une par lignée+langue,
+         -- uq_message_templates_active_per_family_locale) ; la langue n'est
+         -- pas filtrée ici, comme la résolution déjà en place pour l'onglet
+         -- Séquence (lireSequence, même limite assumée).
+         left join message_templates mt on mt.is_active and coalesce(mt.parent_id, mt.id) = st.template_parent_id
+         -- Colonnes du CSV importé (variables liste_<colonne>, revue F5, point 2) : jointe par
+         -- INSCRIPTION (e.list_id/e.contact_id), même règle que lireValeursContact — jamais
+         -- contacts.source_list_id, une réinscription peut venir d'une autre liste.
+         left join list_members lm on lm.list_id = e.list_id and lm.contact_id = e.contact_id
+        where camp.organization_id = $1
+          and a.status <> 'cancelled'
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date at time zone $3)
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1) at time zone $3)
+          ${filtreCampagne}
+        order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
+      valeurs,
+    ),
+    ctx.ex.query<{ name: string; body: string }>(
+      `select name, body from message_snippets /* jr:file_du_jour_extraits */ where organization_id = $1`,
+      [ctx.organisationId],
+    ),
+  ]);
+  const extraits = new Map(extraitsRes.rows.map((r) => [r.name, r.body]));
+  return { envois: res.rows.map((r) => versEnvoiPrevu(r, fuseau, extraits)), fuseau };
 }
 
 /**

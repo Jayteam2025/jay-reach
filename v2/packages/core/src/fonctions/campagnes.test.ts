@@ -1131,6 +1131,41 @@ describe('listerFileDuJour', () => {
       expect(r.prevus[0]!.objet).toBe('Bonjour Nadia, votre recrutement de {{liste_intitule_poste}}');
     });
 
+    // Revue F5, point 2 : symptôme rapporté — « votre recrutement de {{liste_intitule_poste}} »
+    // restait brut sur les 47 envois prévus, faute de joindre `list_members.raw_row`.
+    it('la colonne du CSV importé (liste_<colonne>) se substitue désormais, jointe par inscription', async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null,
+            channel: 'email', first_name: 'Nadia', last_name: 'Lemaire', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr',
+            objet: null, etape_sujet: 'Bonjour {{prenom}}, votre recrutement de {{liste_intitule_poste}}',
+            raw_row: { 'Intitulé Poste': 'Responsable RH' },
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      expect(r.prevus[0]!.objet).toBe('Bonjour Nadia, votre recrutement de Responsable RH');
+    });
+
+    it('le poste du contact (contacts.job_title, déjà joint) se substitue aussi', async () => {
+      const ctx = faux({
+        organization_settings: [],
+        'jr:file_du_jour_campagne': [
+          {
+            id: 'a1', status: 'scheduled', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00Z', dispatch_after: null,
+            channel: 'email', first_name: 'Nadia', last_name: 'Lemaire', job_title: 'Directrice RH', campagne_nom: 'C', etape: 0, expediteur: 'x@exemple.fr',
+            objet: null, etape_sujet: 'Bonjour {{prenom}}, {{poste}} chez vous ?',
+          },
+        ],
+        'jr:plafond_envois_org': [{ plafond: 90 }],
+      });
+      const r = await listerFileDuJour(ctx, {});
+      expect(r.prevus[0]!.objet).toBe('Bonjour Nadia, Directrice RH chez vous ?');
+    });
+
     it('un envoi prévu sans gabarit (étape LinkedIn, ou introuvable) n’a pas d’objet', async () => {
       const ctx = faux({
         organization_settings: [],
