@@ -1018,6 +1018,7 @@
         "connected": "Connecté",
         "notConnected": "Non connecté",
         "senderMissing": "Aucun envoi ne partira : expéditeur non activé",
+        "activeSenderMissing": "Active, mais aucun envoi ne partira : expéditeur non activé",
         "perDay": "{n} par jour",
         "perWeek": "{n} par semaine",
         "edit": "Modifier",

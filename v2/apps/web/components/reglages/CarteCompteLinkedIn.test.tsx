@@ -49,11 +49,28 @@ describe('CarteCompteLinkedIn', () => {
   // condition (le cas qui compte : compte connecté, expéditeur pas encore
   // synchronisé — les deux jetons déjà actifs en base OSS avant la migration
   // de rattrapage).
-  it('compte connecté sans expéditeur actif -> puce d’alerte affichée', () => {
+  //
+  // Constat recette du 18/09 : ce fixture (`active: true` par défaut) affichait
+  // AUSSI une puce « Active » à côté — deux affirmations contradictoires côte à
+  // côte. Une seule puce combinée (`activeSenderMissing`) porte désormais les
+  // deux faits ; ce test rougirait si les deux puces séparées revenaient.
+  it('compte actif et connecté sans expéditeur actif -> une seule puce, combinant les deux faits', () => {
     const html = renderToStaticMarkup(
       <CarteCompteLinkedIn compte={compte({ connecte: true, envoiPossible: false })} peutModifier />,
     );
+    expect(html).toContain('reglages.expediteurs.linkedin.activeSenderMissing');
+    expect(html).toContain('jr-puce attention');
+    // Jamais les deux puces séparées : ni la clé « senderMissing » seule, ni « active » seule.
+    expect(html).not.toContain('reglages.expediteurs.linkedin.senderMissing:');
+    expect(html.match(/jr-puce (bon|attention|gris)"/g)).toEqual(['jr-puce attention"']);
+  });
+
+  it('compte inactif et connecté sans expéditeur actif -> puce « senderMissing » seule', () => {
+    const html = renderToStaticMarkup(
+      <CarteCompteLinkedIn compte={compte({ active: false, connecte: true, envoiPossible: false })} peutModifier />,
+    );
     expect(html).toContain('reglages.expediteurs.linkedin.senderMissing');
+    expect(html).not.toContain('activeSenderMissing');
     expect(html).toContain('jr-puce attention');
   });
 

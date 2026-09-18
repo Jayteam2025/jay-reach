@@ -1018,6 +1018,7 @@
         "connected": "Verbonden",
         "notConnected": "Niet verbonden",
         "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
+        "activeSenderMissing": "Actief, maar er wordt niets verstuurd: afzender niet geactiveerd",
         "perDay": "{n} per dag",
         "perWeek": "{n} per week",
         "edit": "Bewerken",

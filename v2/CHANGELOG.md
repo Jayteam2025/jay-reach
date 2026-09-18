@@ -147,6 +147,10 @@ Versionnement sémantique.
   recette le 18/09).** Le connecteur (« le »/« on »/« op ») était posé en dur devant la date, alors que le formateur commun
   rend une valeur relative (« aujourd'hui »/« hier ») pour les deux derniers jours calendaires — une tournure fautive dans les
   trois langues. Les gabarits choisissent désormais eux-mêmes le connecteur selon que la date est relative ou absolue.
+- **Un compte LinkedIn actif mais sans expéditeur activé affichait deux puces contradictoires côte à côte : « Active » et
+  « Aucun envoi ne partira » (recette du 18/09).** Même priorité que la carte d'une boîte email (F15, ci-dessus) : ce qui
+  empêche réellement d'envoyer l'emporte désormais sur l'activation choisie par l'opérateur, dans une seule puce qui porte
+  les deux faits.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,
