@@ -53,12 +53,34 @@ const MOIS_ALTERNATION = Object.keys(MOIS)
   .sort((a, b) => b.length - a.length)
   .join('|');
 
-/** « 23/09 » ou « 23/09/2026 » (jour/mois, séparateur `/` ou `.`). */
-const DATE_NUMERIQUE = /\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/;
+/**
+ * « 23/09 » ou « 23/09/2026 » (jour/mois). Séparateur `/` UNIQUEMENT : un `.`
+ * sépare aussi une heure (« 10.12 ») ou un numéro de téléphone (« 01.12.34.56.78»)
+ * en FR comme en NL — accepté un temps, ça a lu un horaire de bureau néerlandais
+ * comme un retour en décembre (faux positif constaté le 18/09 en relecture).
+ */
+const DATE_NUMERIQUE = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
 /** « 23 septembre », « 23 September », « 23 september » (jour puis mois en lettres — FR/NL, et EN « until 23 September »). */
 const DATE_JOUR_MOIS = new RegExp(`\\b(\\d{1,2})(?:er|st|nd|rd|th)?\\.?\\s+(${MOIS_ALTERNATION})\\b\\.?,?\\s*(\\d{4})?`, 'i');
 /** « September 23 », « September 23, 2026 » (mois puis jour — tournure EN la plus courante). */
 const DATE_MOIS_JOUR = new RegExp(`\\b(${MOIS_ALTERNATION})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b,?\\s*(\\d{4})?`, 'i');
+
+/**
+ * Marqueurs de retour FR/EN/NL : une date n'est cherchée que dans leur
+ * voisinage, jamais ailleurs dans le corps. Sans cette restriction, un
+ * horaire de bureau ou un numéro de téléphone en signature se lisait comme
+ * une date de reprise (faux positif constaté le 18/09 en relecture). Triés
+ * du plus long au plus court pour que « tot en met » l'emporte sur son
+ * préfixe « tot » quand les deux sont présents.
+ */
+const MARQUEURS_RETOUR = [
+  'upon my return on', 'returning on', 'à partir du', 'de retour le',
+  'tot en met', 'terug op', 'back from', "jusqu'au", 'back on', "jusqu'a",
+  'until', 'vanaf', 'till', 'tot',
+].sort((a, b) => b.length - a.length);
+
+/** Nombre de caractères regardés après un marqueur pour y chercher une date. */
+const FENETRE_APRES_MARQUEUR = 40;
 
 function normaliserAnnee(brut: string): number {
   const n = Number(brut);
@@ -72,11 +94,34 @@ interface DateLue {
   readonly annee: number | null;
 }
 
-/** Cherche une date de reprise dans le corps : numérique d'abord (sans ambiguïté), puis en lettres, jour-mois puis mois-jour. */
-function extraireDateRetour(body: string): DateLue | null {
-  const texte = body.toLowerCase();
+/** Vrai si le caractère est une lettre (accentuée comprise) — sert à vérifier qu'un marqueur n'est pas un fragment d'un mot plus long (« tot » dans « totaal »). */
+function estUneLettre(caractere: string | undefined): boolean {
+  return caractere !== undefined && /[a-zà-ÿ]/i.test(caractere);
+}
 
-  const numerique = texte.match(DATE_NUMERIQUE);
+/** Positions (fin de correspondance), triées par ordre d'apparition, de chaque marqueur de retour trouvé dans `texte`. */
+function trouverFinsMarqueurs(texte: string): number[] {
+  const occurrences: { debut: number; fin: number }[] = [];
+  for (const marqueur of MARQUEURS_RETOUR) {
+    let depuis = 0;
+    for (;;) {
+      const debut = texte.indexOf(marqueur, depuis);
+      if (debut === -1) break;
+      const fin = debut + marqueur.length;
+      // Le marqueur doit être un mot entier, pas le fragment d'un mot plus
+      // long (le NL « totaal » contient « tot », par exemple).
+      if (!estUneLettre(texte[debut - 1]) && !estUneLettre(texte[fin])) {
+        occurrences.push({ debut, fin });
+      }
+      depuis = debut + 1;
+    }
+  }
+  return occurrences.sort((a, b) => a.debut - b.debut).map((o) => o.fin);
+}
+
+/** Cherche une date dans une fenêtre de texte : numérique d'abord (sans ambiguïté), puis en lettres, jour-mois puis mois-jour. */
+function dateDansFenetre(fenetre: string): DateLue | null {
+  const numerique = fenetre.match(DATE_NUMERIQUE);
   if (numerique) {
     const jour = Number(numerique[1]);
     const mois = Number(numerique[2]);
@@ -85,16 +130,32 @@ function extraireDateRetour(body: string): DateLue | null {
     }
   }
 
-  const jourMois = texte.match(DATE_JOUR_MOIS);
+  const jourMois = fenetre.match(DATE_JOUR_MOIS);
   if (jourMois) {
     return { jour: Number(jourMois[1]), mois: MOIS[jourMois[2]!]!, annee: jourMois[3] ? Number(jourMois[3]) : null };
   }
 
-  const moisJour = texte.match(DATE_MOIS_JOUR);
+  const moisJour = fenetre.match(DATE_MOIS_JOUR);
   if (moisJour) {
     return { jour: Number(moisJour[2]), mois: MOIS[moisJour[1]!]!, annee: moisJour[3] ? Number(moisJour[3]) : null };
   }
 
+  return null;
+}
+
+/**
+ * Cherche une date de reprise dans le corps, dans les `FENETRE_APRES_MARQUEUR`
+ * caractères qui suivent un marqueur de retour — jamais ailleurs (signature,
+ * horaires, adresse). Plusieurs marqueurs peuvent se suivre (« absent jusqu'à
+ * nouvel ordre, de retour le 23 septembre ») : on essaie chaque fenêtre dans
+ * l'ordre du texte et on garde la première date trouvée.
+ */
+function extraireDateRetour(body: string): DateLue | null {
+  const texte = body.toLowerCase().replace(/’/g, "'");
+  for (const fin of trouverFinsMarqueurs(texte)) {
+    const lue = dateDansFenetre(texte.slice(fin, fin + FENETRE_APRES_MARQUEUR));
+    if (lue) return lue;
+  }
   return null;
 }
 

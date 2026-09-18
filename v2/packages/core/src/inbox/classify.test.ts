@@ -104,6 +104,27 @@ describe('classification des réponses', () => {
       const resultat = classifyByRules('Je suis en congés, de retour le 15 janvier 2027.', RECU_17_09);
       expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 7 });
     });
+
+    it('discrimine vraiment la date lue : reçu le 17/09, retour le 6 octobre → 20 jours (pas le défaut)', () => {
+      const resultat = classifyByRules('Je suis absent, de retour le 6 octobre.', RECU_17_09);
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 20 });
+    });
+  });
+
+  describe('faux positifs évités (relecture du 18/09) — une date ne se lit qu’au voisinage d’un marqueur de retour', () => {
+    it('horaires de bureau NL (« 10.12 - 18.00 ») ne sont pas lus comme une date', () => {
+      const corps = 'Ik ben afwezig.\r\nKantooruren 10.12 - 18.00\r\nGroeten';
+      const resultat = classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09);
+
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 7 });
+    });
+
+    it('numéro de téléphone en signature (« 01.12.34.56.78 ») n’est pas lu comme une date', () => {
+      const corps = "Je suis absent jusqu'a nouvel ordre. Tel : 01.12.34.56.78";
+      const resultat = classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09);
+
+      expect(resultat).toEqual({ classification: 'auto_absence', resumeInDays: 7 });
+    });
   });
 
   describe('combine le corps puis les en-têtes (repli seulement si le corps est muet)', () => {
