@@ -751,17 +751,27 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
   const tendanceParCampagne = new Map<string, number[]>();
   if (ids.length > 0) {
     // Groupé par jour DANS le fuseau de l'organisation, pas en UTC (I5, revue finale) : un
-    // envoi livré après le décalage horaire tombait sinon dans la mauvaise barre du graphe.
-    // F12 : le jour de la barre (et la borne des 7 jours) se lit sur `delivered_at` (départ
-    // RÉEL), pas `dispatched_at` (simple remise à SalesBlink) — un email remis un jour mais
-    // parti le lendemain comptait sinon dans la mauvaise barre du graphe.
+    // départ après le décalage horaire tombait sinon dans la mauvaise barre du graphe.
+    // G6 : cinquième copie divergente de « parti » (après `sqlEngagesCampagne`,
+    // `sqlPartisCampagne`, `lireEntonnoir` et le champ `livres`, tous corrigés) — celle-ci
+    // ne comptait que `a.status = 'delivered'`, daté sur `delivered_at`, TOUS CANAUX
+    // CONFONDUS. Un email suit ce chemin, mais LinkedIn n'a pas d'accusé de réception
+    // (F12, extension : `dispatched_at` EST déjà le départ réel, pas de transporteur
+    // asynchrone) — il n'atteint jamais `status = 'delivered'`, donc n'apparaissait
+    // JAMAIS dans le graphe de tendance, quelle que soit son activité réelle. Même
+    // distinction que `sqlPartisCampagne` ci-dessus : email daté/filtré sur
+    // `delivered_at`+`status = 'delivered'`, les autres canaux sur `dispatched_at`+
+    // `status in ('dispatched', 'delivered')`. Renommé `jr:tendance_partis` : « livraisons »
+    // contredisait le vocabulaire retenu (remis/parti, plus de « livré »).
     const tendanceRes = await ctx.ex.query<{ campaign_id: string; jour: string; n: number }>(
-      `select e.campaign_id, (a.delivered_at at time zone $2)::date::text as jour, count(*)::int as n
-         from actions a /* jr:tendance_livraisons */
+      `select e.campaign_id,
+              ((case when a.channel = 'email' then a.delivered_at else a.dispatched_at end) at time zone $2)::date::text as jour,
+              count(*)::int as n
+         from actions a /* jr:tendance_partis */
          join enrollments e on e.id = a.enrollment_id
         where e.campaign_id = any($1::uuid[])
-          and a.status = 'delivered'
-          and a.delivered_at >= now() - interval '${NB_JOURS_TENDANCE} days'
+          and ((a.channel = 'email' and a.status = 'delivered') or (a.channel <> 'email' and a.status in ('dispatched', 'delivered')))
+          and (case when a.channel = 'email' then a.delivered_at else a.dispatched_at end) >= now() - interval '${NB_JOURS_TENDANCE} days'
         group by 1, 2`,
       [ids, fuseau],
     );

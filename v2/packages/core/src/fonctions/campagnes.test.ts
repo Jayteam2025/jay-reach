@@ -285,7 +285,7 @@ describe('listerCampagnes', () => {
         },
       ],
       'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
-      'jr:tendance_livraisons': [],
+      'jr:tendance_partis': [],
     });
     const r = await listerCampagnes(ctx);
     expect(r).toHaveLength(1);
@@ -326,7 +326,7 @@ describe('listerCampagnes', () => {
         },
       ],
       'jr:boites_actives': [],
-      'jr:tendance_livraisons': [],
+      'jr:tendance_partis': [],
     });
     const r = await listerCampagnes(ctx);
     expect(r[0]!.listeSource).toEqual({ nom: 'RH avril 2026', autresListes: 0 });
@@ -341,7 +341,7 @@ describe('listerCampagnes', () => {
         },
       ],
       'jr:boites_actives': [],
-      'jr:tendance_livraisons': [],
+      'jr:tendance_partis': [],
     });
     const r = await listerCampagnes(ctx);
     expect(r[0]!.listeSource).toBeNull();
@@ -368,12 +368,12 @@ describe('listerCampagnes', () => {
           },
         ],
         'jr:boites_actives': [],
-        'jr:tendance_livraisons': [{ campaign_id: 'camp-1', jour: '2026-01-15', n: 5 }],
+        'jr:tendance_partis': [{ campaign_id: 'camp-1', jour: '2026-01-15', n: 5 }],
       });
       const r = await listerCampagnes(ctx);
       expect(r[0]!.tendance7j.at(-1)).toBe(5);
       const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-      const appelTendance = appels.find((appel) => /jr:tendance_livraisons/i.test(String(appel[0])));
+      const appelTendance = appels.find((appel) => /jr:tendance_partis/i.test(String(appel[0])));
       expect(appelTendance?.[1]).toEqual([['camp-1'], 'Europe/Paris']);
     } finally {
       vi.useRealTimers();
@@ -381,23 +381,47 @@ describe('listerCampagnes', () => {
   });
 
   it(
-    'F12 : la tendance 7 jours groupe et borne sur `delivered_at` (départ réel), jamais ' +
-      '`dispatched_at` (simple remise) — un email remis un jour mais parti le lendemain irait sinon dans la mauvaise barre',
+    'F12 : pour un email, la tendance 7 jours groupe et borne sur `delivered_at` (départ réel), ' +
+      'jamais `dispatched_at` (simple remise) — un email remis un jour mais parti le lendemain irait sinon dans la mauvaise barre',
     async () => {
       const ctx = faux({
         'jr:campagnes_liste': [
           { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
         ],
         'jr:boites_actives': [],
-        'jr:tendance_livraisons': [],
+        'jr:tendance_partis': [],
       });
       await listerCampagnes(ctx);
       const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-      const appelTendance = appels.find((appel) => /jr:tendance_livraisons/i.test(String(appel[0])));
+      const appelTendance = appels.find((appel) => /jr:tendance_partis/i.test(String(appel[0])));
       const sql = String(appelTendance![0]);
-      expect(sql).toMatch(/\(a\.delivered_at at time zone \$2\)::date::text as jour/);
-      expect(sql).toMatch(/a\.delivered_at >= now\(\)/);
-      expect(sql).not.toMatch(/a\.dispatched_at/);
+      expect(sql).toMatch(/a\.channel = 'email' and a\.status = 'delivered'/);
+    },
+  );
+
+  it(
+    'G6 (cinquième copie de « parti », après sqlEngagesCampagne/sqlPartisCampagne/lireEntonnoir/`livres`) : ' +
+      'la tendance compte aussi les départs LinkedIn, datés sur `dispatched_at` — `a.status = \'delivered\'` ' +
+      'seul (tous canaux confondus) ignorait purement et simplement tout départ LinkedIn, LinkedIn n’ayant pas ' +
+      'd’accusé de réception',
+    async () => {
+      const ctx = faux({
+        'jr:campagnes_liste': [
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+        ],
+        'jr:boites_actives': [],
+        'jr:tendance_partis': [],
+      });
+      await listerCampagnes(ctx);
+      const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+      const appelTendance = appels.find((appel) => /jr:tendance_partis/i.test(String(appel[0])));
+      const sql = String(appelTendance![0]);
+      // Même distinction canal que `sqlPartisCampagne` (F12/F13) : email sur `delivered_at`,
+      // les autres canaux (LinkedIn) sur `dispatched_at`, jamais un `a.status = 'delivered'`
+      // qui les exclurait tous.
+      expect(sql).toMatch(/a\.channel <> 'email' and a\.status in \('dispatched', 'delivered'\)/);
+      expect(sql).toMatch(/case when a\.channel = 'email' then a\.delivered_at else a\.dispatched_at end/i);
+      expect(sql).toMatch(/a\.dispatched_at/);
     },
   );
 
