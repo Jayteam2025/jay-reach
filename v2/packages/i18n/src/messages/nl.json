@@ -317,7 +317,7 @@
       },
       "queue": {
         "title": "Wachtrij van vandaag",
-        "count": "{envois, plural, one {# verzending gepland} other {# verzendingen gepland}}, {partis, plural, one {# al verzonden} other {# al verzonden}}",
+        "count": "{partis, plural, one {# verstuurd} other {# verstuurd}} · {possibles, plural, one {# nog mogelijk} other {# nog mogelijk}} · {reportes, plural, one {# uitgesteld} other {# uitgesteld}}",
         "seeAll": "Wachtrij bekijken",
         "step": "Stap {n}",
         "andMore": "{n, plural, one {en # andere} other {en # andere}}",

@@ -317,7 +317,7 @@
       },
       "queue": {
         "title": "File du jour",
-        "count": "{envois, plural, one {# envoi prévu} other {# envois prévus}}, {partis, plural, one {# déjà parti} other {# déjà partis}}",
+        "count": "{partis, plural, one {# parti} other {# partis}} · {possibles, plural, one {# encore possible} other {# encore possibles}} · {reportes, plural, one {# reporté} other {# reportés}}",
         "seeAll": "Voir la file",
         "step": "Étape {n}",
         "andMore": "{n, plural, one {et # autre} other {et # autres}}",

@@ -317,7 +317,7 @@
       },
       "queue": {
         "title": "Today's queue",
-        "count": "{envois, plural, one {# send scheduled} other {# sends scheduled}}, {partis, plural, one {# already sent} other {# already sent}}",
+        "count": "{partis, plural, one {# sent} other {# sent}} · {possibles, plural, one {# still possible} other {# still possible}} · {reportes, plural, one {# pushed back} other {# pushed back}}",
         "seeAll": "View queue",
         "step": "Step {n}",
         "andMore": "{n, plural, one {and # more} other {and # more}}",

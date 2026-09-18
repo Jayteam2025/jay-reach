@@ -104,6 +104,156 @@ describe('clés de traduction', () => {
     expect(manquantes).toEqual([]);
   });
 
+  /** Valeur brute (chaîne) d'une clé feuille, ou `undefined` si absente / pas une chaîne. */
+  function valeurDe(chemin: string): string | undefined {
+    let node: unknown = messages;
+    for (const part of chemin.split('.')) {
+      if (typeof node !== 'object' || node === null || !(part in node)) return undefined;
+      node = (node as Record<string, unknown>)[part];
+    }
+    return typeof node === 'string' ? node : undefined;
+  }
+
+  // Même regex que `messages.test.ts` : un nom de variable ICU est un
+  // identifiant juste après `{`, immédiatement suivi de `}` ou `,`.
+  const VARIABLE_ICU = /\{([a-zA-Z0-9_]+)(?=[,}])/g;
+
+  /**
+   * Clés (top-level) de l'objet littéral qui commence à l'accolade ouvrante
+   * `src[debut] === '{'`. Compte les accolades pour trouver la fin — pas une
+   * vraie analyse JS, mais suffisant ici : les appels `t('clé', { ... })`
+   * du dépôt passent des littéraux simples, sans accolade brute dans une
+   * chaîne. Une clé imbriquée capturée en trop est sans risque (elle ne fait
+   * qu'ajouter une variable « fournie » de plus) ; seule une variable
+   * manquante compte pour ce test.
+   *
+   * Deux formes de propriété reconnues : `clé: expression` et le raccourci
+   * ES6 `clé` seule (`{ fuseau }` équivaut à `{ fuseau: fuseau }`) — une
+   * première version ne reconnaissait que la première forme et signalait à
+   * tort `{ fuseau }`, `{ n }`, `{ persona }`… comme des variables absentes.
+   *
+   * Les commentaires `//` sont retirés avant l'extraction : le littéral réel
+   * de `campaigns/[id]/page.tsx` sépare deux propriétés par deux lignes de
+   * commentaire, et le texte du commentaire cassait le `\s*` qui doit relier
+   * la virgule précédente au nom de propriété suivant — `possibles` était
+   * alors, à tort, signalée comme absente.
+   */
+  function clesDeLObjet(src: string, debut: number): Set<string> {
+    let profondeur = 0;
+    let fin = src.length;
+    for (let i = debut; i < src.length; i++) {
+      if (src[i] === '{') profondeur++;
+      else if (src[i] === '}') {
+        profondeur--;
+        if (profondeur === 0) {
+          fin = i;
+          break;
+        }
+      }
+    }
+    const texte = src.slice(debut + 1, fin).replace(/\/\/[^\n]*/g, '');
+    const cles = new Set<string>();
+    for (const m of texte.matchAll(/(?:^|[,{])\s*([a-zA-Z_$][\w$]*)\s*(?=[:,}]|$)/g)) {
+      cles.add(m[1]!);
+    }
+    return cles;
+  }
+
+  /**
+   * Découpe une liste d'arguments au premier niveau de profondeur seulement
+   * (`a, f(b, c), d` → `['a', 'f(b, c)', 'd']`) : un simple `split(',')`
+   * casserait sur la virgule interne d'un appel comme `f(b, c)`.
+   */
+  function decouperArgsTopLevel(texte: string): string[] {
+    const parties: string[] = [];
+    let profondeur = 0;
+    let courant = '';
+    for (const c of texte) {
+      if (c === '(' || c === '[' || c === '{') profondeur++;
+      else if (c === ')' || c === ']' || c === '}') profondeur--;
+      if (c === ',' && profondeur === 0) {
+        parties.push(courant);
+        courant = '';
+      } else {
+        courant += c;
+      }
+    }
+    if (courant.trim() !== '') parties.push(courant);
+    return parties.map((p) => p.trim());
+  }
+
+  /**
+   * Deuxième façon de déclarer un traducteur dans ce dépôt, qui portait le
+   * bug d'origine (`campaigns/[id]/page.tsx`) : une page serveur déclare
+   * `let t: ...;` puis l'assigne par déstructuration d'un `Promise.all`,
+   * aux côtés d'autres promesses sans rapport (locale, lecture de vue…) —
+   * `[t, tSources, locale, vue] = await Promise.all([getTranslations('campagne'),
+   * getTranslations('sources'), localeCourante(), lireVue(...)])`. `DECLARATION`
+   * ci-dessus ne reconnaît que `const t = useTranslations('ns')` et ratait donc
+   * silencieusement CE fichier — exactement celui où la clé cassée était utilisée.
+   */
+  const PROMISE_ALL_TRADUCTEURS = /\[\s*([\w\s,]+?)\s*\]\s*=\s*await\s+Promise\.all\(\s*\[([\s\S]*?)\]\s*\)/g;
+
+  function namespacesPromiseAll(src: string): Map<string, string> {
+    const namespaces = new Map<string, string>();
+    for (const m of src.matchAll(PROMISE_ALL_TRADUCTEURS)) {
+      const noms = m[1]!
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean);
+      const elements = decouperArgsTopLevel(m[2]!);
+      noms.forEach((nom, i) => {
+        const nsMatch = /^getTranslations\(\s*'([^']*)'\s*\)$/.exec(elements[i] ?? '');
+        if (nsMatch) namespaces.set(nom, nsMatch[1]!);
+      });
+    }
+    return namespaces;
+  }
+
+  it('chaque appel t(clé, { ... }) fournit toutes les variables ICU exigées par le gabarit', () => {
+    // Reproduit le bug de `campagne.overview.queue.count` (revue F5, point 1) :
+    // le gabarit attendait `envois` alors que l'écran ne passait que `partis`,
+    // `possibles` et `reportes` — intl-messageformat lève à l'affichage, mais
+    // rien dans les 1419 tests existants ne rendait réellement ce message.
+    const manquantes: string[] = [];
+
+    for (const fichier of fichiersTsx(join(racine, 'apps/web'))) {
+      const src = readFileSync(fichier, 'utf8');
+      const namespaces = new Map<string, string>();
+      for (const m of src.matchAll(DECLARATION)) {
+        namespaces.set(m[1]!, m[2] ?? '');
+      }
+      for (const [nom, ns] of namespacesPromiseAll(src)) {
+        namespaces.set(nom, ns);
+      }
+      for (const [variable, prefixe] of namespaces) {
+        const usage = new RegExp(`\\b${variable}\\(\\s*'([^']+)'\\s*,\\s*\\{`, 'g');
+        for (const m of src.matchAll(usage)) {
+          const cle = m[1]!;
+          if (cle.includes('${') || cle.includes('{')) continue;
+          const complet = prefixe ? `${prefixe}.${cle}` : cle;
+          const gabarit = valeurDe(complet);
+          if (gabarit === undefined) continue; // clé absente déjà signalée par le test ci-dessus
+
+          const exigees = new Set([...gabarit.matchAll(VARIABLE_ICU)].map((v) => v[1]!));
+          if (exigees.size === 0) continue;
+
+          const indexAccolade = m.index! + m[0].length - 1;
+          const fournies = clesDeLObjet(src, indexAccolade);
+          for (const variableExigee of exigees) {
+            if (!fournies.has(variableExigee)) {
+              manquantes.push(
+                `${relative(racine, fichier)} : ${variable}('${cle}') n'envoie pas « ${variableExigee} » exigée par le gabarit ${complet}`,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    expect(manquantes).toEqual([]);
+  });
+
   // Sens inverse du test ci-dessus : une clé oubliée (jamais nettoyée après
   // une réécriture d'écran) ne casse aucun rendu, donc rien d'autre ne
   // l'attrape. Limité aux espaces ci-dessous (un par tâche qui les possède).
