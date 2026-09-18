@@ -282,6 +282,26 @@ describe('TableContacts', () => {
       expect(html).toContain('Responsable RH');
     });
 
+    it('point 3 (revue F5) : la colonne posteListe est calée comme `pourquoi` (largeur compressible + ellipse), sans réduire sa taille de police', () => {
+      const html = renderToStaticMarkup(
+        <TableContacts
+          lignes={[ligne({ pourquoi: null, score: null, intitulePosteListe: 'Responsable régional des ventes grands comptes' })]}
+          colonnes="campagne"
+          organisationId="org-1"
+          campagneId="camp-1"
+          posteListe={{ trouve: true, titre: 'Intitulé de poste' }}
+          libelles={LIBELLES}
+        />,
+      );
+      // Même calage que `pourquoi` (largeur cible + `largeurMax: '0'`, tour de correction F6, point
+      // 25 bis) : sans lui, un intitulé long forcerait la largeur minimale de toute la table.
+      expect(html).toContain('max-width:0');
+      // Ellipse posée, mais SANS `jr-petit` : l'intitulé de poste est une donnée principale, pas une
+      // justification, il garde sa taille de police normale (contrairement à `pourquoi`).
+      expect(html).toContain('<span class="jr-tronque">Responsable régional des ventes grands comptes</span>');
+      expect(html).not.toContain('jr-petit');
+    });
+
     it('`posteListe.trouve` à `false` : « Pourquoi lui »/« Score » masquées, sans remplacement', () => {
       const html = renderToStaticMarkup(
         <TableContacts

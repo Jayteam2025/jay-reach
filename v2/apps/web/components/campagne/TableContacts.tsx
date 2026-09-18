@@ -106,7 +106,10 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
         // compressible en `table-layout: auto` malgré l'ellipse posée sur le `span.jr-tronque`.
         ...(posteListe
           ? posteListe.trouve
-            ? [{ cle: 'posteListe', titre: posteListe.titre }]
+            ? // Même calage que `pourquoi` ci-dessous (point 3, tour de correction F5) : cette
+              // colonne affiche un intitulé de poste venu d'un CSV importé, potentiellement long,
+              // qui sans `largeurMax` forcerait la largeur minimale de toute la table.
+              [{ cle: 'posteListe', titre: posteListe.titre, largeur: '30%', largeurMax: '0' }]
             : []
           : [
               { cle: 'pourquoi', titre: libelles.colonnePourquoi, largeur: '30%', largeurMax: '0' },
@@ -142,7 +145,15 @@ export function TableContacts({ lignes, colonnes, organisationId, campagneId, li
           ...(colonnes === 'global' ? { campagne: ligne.campagneNom ?? '—' } : {}),
           ...(posteListe
             ? posteListe.trouve
-              ? { posteListe: ligne.intitulePosteListe ?? <span className="jr-secondaire">—</span> }
+              ? {
+                  // Pas `jr-petit` (contrairement à `pourquoi`) : l'intitulé de poste est une
+                  // donnée principale de la ligne, pas une justification, il garde sa taille normale.
+                  posteListe: ligne.intitulePosteListe ? (
+                    <span className="jr-tronque">{ligne.intitulePosteListe}</span>
+                  ) : (
+                    <span className="jr-secondaire">—</span>
+                  ),
+                }
               : {}
             : {
                 pourquoi: ligne.pourquoi ? (
