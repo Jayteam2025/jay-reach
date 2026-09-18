@@ -119,6 +119,9 @@ const SUPPRESSION_CHECK = /from suppressions/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
 const CONTRAINTES_SENDER = /from senders s where s\.id/i;
+// Revue F5, point 2 : `chargerContraintesSender` lit le fuseau de
+// l'organisation (`fuseauDeLOrganisation`) avant de compter les envois du jour.
+const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const PLAFOND = /daily_cap/i;
 const CREDIT = /consume_provider_credit/i;
 // Spécifique a `chargerLigneInscription` (message-values.ts) : la jointure
@@ -165,6 +168,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
     { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
     { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
+    { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Europe/Paris' }]) },
     {
       motif: SENDER,
       repondre: () =>
@@ -378,7 +382,9 @@ describe('envoyerEmailSalesBlink', () => {
     const requeteQuota = appels.find((a) => CONTRAINTES_SENDER.test(a.sql));
     expect(requeteQuota).toBeDefined();
     expect(requeteQuota!.sql).toMatch(/status in \('dispatched', 'delivered'\)/);
-    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\)\)/);
+    // Revue F5, point 2 : borné par le fuseau de l'organisation (`$2`), plus
+    // `date_trunc('day', now())` nu (fuseau du serveur).
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
     expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\)\)/);
     // Une action encore `scheduled` (pas encore partie) n'a pas `dispatched_at`
     // renseigné : elle ne peut donc jamais matcher ce filtre, contrairement au

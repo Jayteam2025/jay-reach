@@ -17,6 +17,7 @@ import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { fuseauDeLOrganisation } from './plafonds.js';
 
 // ---------------------------------------------------------------------------
 // Fenêtre d'envoi : conversion HH:MM ↔ heure pleine
@@ -164,6 +165,14 @@ function fenetreDepuisLigne(l: Pick<LigneBoite, 'business_hours' | 'timezone'>):
 export async function listerBoites(ctx: Contexte, lireSante?: LecteurSanteBoite): Promise<Boite[]> {
   exiger(ctx, 'viewer');
 
+  // Revue F5, point 2 : le jour compté (used_today) doit être celui de
+  // l'ORGANISATION, pas celui du serveur — même fonction et même repli
+  // (organization_settings.fuseau absent -> Europe/Paris) que
+  // `lireConsommationDuJour` (plafonds.ts) et le crédit de scoring/
+  // enrichissement (#118). Résolu avant le `Promise.all` ci-dessous : la
+  // requête des boîtes en a besoin comme paramètre.
+  const fuseau = await fuseauDeLOrganisation(ctx.ex, ctx.organisationId);
+
   const [boites, releve] = await Promise.all([
     ctx.ex.query<LigneBoite>(
       `select s.id, s.identity, s.display_name, s.daily_quota, s.hourly_quota, s.timezone, s.business_hours,
@@ -171,7 +180,7 @@ export async function listerBoites(ctx: Contexte, lireSante?: LecteurSanteBoite)
               (select count(*)::int from actions act
                 where act.sender_id = s.id
                   and act.status in ('dispatched', 'delivered')
-                  and act.dispatched_at >= date_trunc('day', now())) as used_today
+                  and act.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2) as used_today
          from senders s /* jr:expediteurs_boites */
         where s.organization_id = $1 and s.kind = 'email'
         -- Point 4 (tour de correction 5) : un seul tri, par adresse, sur toute
@@ -180,7 +189,7 @@ export async function listerBoites(ctx: Contexte, lireSante?: LecteurSanteBoite)
         -- (qui n'avaient elles-mêmes aucun tri), d'où un ordre incohérent
         -- d'une page à l'autre pour les mêmes boîtes.
         order by s.identity asc`,
-      [ctx.organisationId],
+      [ctx.organisationId, fuseau],
     ),
     ctx.ex.query<LigneReleve>(
       `select provider, last_run_at, last_error from provider_sync_state /* jr:expediteurs_releve */

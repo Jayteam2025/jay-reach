@@ -21,6 +21,7 @@ import {
   poserEcheanceDepuisDispatch,
   plafondDuJour,
   relectureRequise,
+  fuseauDeLOrganisation,
   type BusinessHours,
   type Binding,
   type SenderInfo,
@@ -150,6 +151,23 @@ async function loadSenders(
   const parOrg = new Map<string, SenderInfo[]>();
   const contraintes = new Map<string, ContraintesSender>();
   if (organizationIds.length === 0) return { parOrg, contraintes };
+
+  // Revue F5, point 2 : le jour compté (used_today) doit être celui de CHAQUE
+  // organisation, pas celui du serveur (`date_trunc('day', now())`, avant ce
+  // correctif) — même fonction et même repli (organization_settings.fuseau
+  // absent -> Europe/Paris) que le crédit de scoring/enrichissement (#118).
+  // `organizationIds` peut mélanger plusieurs organisations dans un même lot
+  // de tick ; la carte {orgId -> fuseau} part en un seul paramètre jsonb pour
+  // garder une requête unique sur `senders` (le commentaire de la fonction :
+  // « une requête par inscription serait 200 allers-retours » vaut aussi
+  // pour une requête par organisation).
+  const fuseauParOrg: Record<string, string> = {};
+  await Promise.all(
+    organizationIds.map(async (id) => {
+      fuseauParOrg[id] = await fuseauDeLOrganisation(pool, id);
+    }),
+  );
+
   const res = await pool.query<{
     organization_id: string;
     id: string;
@@ -166,13 +184,14 @@ async function loadSenders(
             s.daily_quota, s.hourly_quota, s.timezone, s.business_hours,
             (select count(*)::int from actions act
               where act.sender_id = s.id
-                and act.created_at >= date_trunc('day', now())) as used_today,
+                and act.created_at >= date_trunc('day', now() at time zone ($2::jsonb ->> s.organization_id::text))
+                                      at time zone ($2::jsonb ->> s.organization_id::text)) as used_today,
             (select count(*)::int from actions act
               where act.sender_id = s.id
                 and act.created_at >= date_trunc('hour', now())) as used_this_hour
        from senders s
       where s.organization_id = any($1::uuid[])`,
-    [organizationIds],
+    [organizationIds, JSON.stringify(fuseauParOrg)],
   );
   for (const r of res.rows) {
     const liste = parOrg.get(r.organization_id) ?? [];
@@ -227,8 +246,18 @@ export function quotaSenderRestant(c: ContraintesSender): number {
  * `dispatched_at`), pas les créations (`loadSenders` compte par `created_at`,
  * sans filtre de statut) : le tick planifie l'avenir, l'envoi vérifie ce qui
  * est effectivement sorti par cet expéditeur (fix round 2, 11/09).
+ *
+ * `organizationId` (revue F5, point 2) : le jour compté (used_today) doit
+ * être celui de CETTE organisation, pas celui du serveur — même fonction et
+ * même repli que `loadSenders` ci-dessus. Le seul appelant
+ * (`email-salesblink.ts`) l'a déjà à portée de main (`job.organizationId`).
  */
-export async function chargerContraintesSender(pool: Pool, senderId: string): Promise<ContraintesSender | null> {
+export async function chargerContraintesSender(
+  pool: Pool,
+  senderId: string,
+  organizationId: string,
+): Promise<ContraintesSender | null> {
+  const fuseau = await fuseauDeLOrganisation(pool, organizationId);
   const res = await pool.query<{
     daily_quota: number | null;
     hourly_quota: number | null;
@@ -241,13 +270,13 @@ export async function chargerContraintesSender(pool: Pool, senderId: string): Pr
             (select count(*)::int from actions act
               where act.sender_id = s.id
                 and act.status in ('dispatched', 'delivered')
-                and act.dispatched_at >= date_trunc('day', now())) as used_today,
+                and act.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2) as used_today,
             (select count(*)::int from actions act
               where act.sender_id = s.id
                 and act.status in ('dispatched', 'delivered')
                 and act.dispatched_at >= date_trunc('hour', now())) as used_this_hour
        from senders s where s.id = $1`,
-    [senderId],
+    [senderId, fuseau],
   );
   const r = res.rows[0];
   if (!r) return null;

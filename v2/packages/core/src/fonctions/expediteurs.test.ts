@@ -57,6 +57,22 @@ describe('listerBoites', () => {
     expect(String(appel![0])).toMatch(/order by s\.identity asc/i);
   });
 
+  it('revue F5, point 2 : le jour compté (used_today) suit le fuseau de l’organisation, jamais celui du serveur', async () => {
+    const ctx = faux({
+      'from organization_settings': [{ value: 'Pacific/Kiritimati' }],
+      'jr:expediteurs_boites': [],
+      'jr:expediteurs_releve': [],
+    });
+    await listerBoites(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appel = appels.find((a) => /jr:expediteurs_boites/i.test(String(a[0])));
+    expect(appel).toBeDefined();
+    const sql = String(appel![0]);
+    expect(sql).toMatch(/at time zone \$2/i);
+    expect(sql).not.toContain("date_trunc('day', now())");
+    expect(appel![1]).toEqual(['org-1', 'Pacific/Kiritimati']);
+  });
+
   it('mappe la marque, les quotas et la fenêtre depuis les colonnes de la boîte', async () => {
     const ctx = faux({ 'jr:expediteurs_boites': [BOITE_BASE], 'jr:expediteurs_releve': [] });
     const [boite] = await listerBoites(ctx);

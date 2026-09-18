@@ -516,7 +516,7 @@ export async function envoyerEmailSalesBlink(
   // blocage. `campaigns.daily_cap` gouverne les ENTRÉES en séquence
   // (`enrollContact`), pas les envois : il ne se revérifie pas ici (fix
   // round 2, 11/09 — retiré d'ici où il avait été ajouté par erreur).
-  const contraintesSender = await chargerContraintesSender(pool, sender.id);
+  const contraintesSender = await chargerContraintesSender(pool, sender.id, job.organizationId);
   if (contraintesSender && quotaSenderRestant(contraintesSender) <= 0) {
     console.warn(`[email-salesblink] action ${actionId} en attente : quota expéditeur épuisé (${sender.identity})`);
     return;

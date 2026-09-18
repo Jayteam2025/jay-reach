@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante } from '@jay-reach/core';
-import { tickDueEnrollments, mettreInscriptionEnPause, rattraperEcheancesManquantes } from './sequence.js';
+import { tickDueEnrollments, mettreInscriptionEnPause, rattraperEcheancesManquantes, chargerContraintesSender } from './sequence.js';
 
 // Restauration systématique après CHAQUE test du fichier (tour de correction 2,
 // fiabilisation) : un `vi.spyOn(console, 'warn')` non restauré (test qui lance
@@ -116,6 +116,10 @@ const UPDATE_PAUSE = /update enrollments\s+set status = 'paused'/i;
 // I2 (relecture des premiers envois) : défaut d'organisation, puis comptage
 // des envois déjà partis pour l'étape.
 const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and key = \$2/i;
+// Revue F5, point 2 : `loadSenders`/`chargerContraintesSender` lisent le
+// fuseau de l'organisation (`fuseauDeLOrganisation`, clé 'fuseau' en dur,
+// motif distinct de `ORG_SETTINGS` ci-dessus qui porte la clé en paramètre).
+const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
 // Garde départ réel (issue #111) : statut de l'action de l'étape PRÉCÉDENTE.
 const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 and step_id = \$2/i;
@@ -129,6 +133,7 @@ const RATTRAPAGE_CANDIDATS = /select e\.id, e\.campaign_id, e\.current_step, a\.
 function gestionnairesBase(overridesLigne: Record<string, unknown> = {}): Gestionnaire[] {
   return [
     { motif: DUE, repondre: () => ligne([ligneDue(overridesLigne)]) },
+    { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Europe/Paris' }]) },
     {
       motif: SENDERS,
       repondre: () =>
@@ -199,6 +204,25 @@ describe('tickDueEnrollments', () => {
     expect(pause).toBeDefined();
     expect(pause!.values).toEqual([ENROLLMENT_ID, 0, 'email_gate:pending_bouncer']);
     expect(pause!.sql).toMatch(/where id = \$1 and status = 'active'/i);
+  });
+
+  it('revue F5, point 2 : le jour compté (used_today) des expéditeurs suit le fuseau de l’organisation, pas celui du serveur', async () => {
+    const { pool, appels } = creerPoolFactice(gestionnairesBase());
+
+    await tickDueEnrollments(pool, NOW);
+
+    const requeteFuseau = appels.find((a) => FUSEAU_ORGANISATION.test(a.sql));
+    expect(requeteFuseau).toBeDefined();
+    expect(requeteFuseau!.values).toEqual([ORG_ID]);
+
+    const requeteSenders = appels.find((a) => SENDERS.test(a.sql));
+    expect(requeteSenders).toBeDefined();
+    expect(requeteSenders!.sql).toMatch(/at time zone \(\$2::jsonb ->> s\.organization_id::text\)/i);
+    expect(requeteSenders!.sql).not.toContain("date_trunc('day', now())");
+    // La carte {orgId -> fuseau} part en un seul paramètre jsonb (un lot de
+    // tick peut mélanger plusieurs organisations) — ici une seule, résolue
+    // via la requête `FUSEAU_ORGANISATION` ci-dessus.
+    expect(JSON.parse(requeteSenders!.values[1] as string)).toEqual({ [ORG_ID]: 'Europe/Paris' });
   });
 });
 
@@ -510,5 +534,41 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
     const appelAvertissement = avertissement.mock.calls.find((appel) => String(appel[0]).includes('rattrapée'));
     expect(appelAvertissement).toBeDefined();
     expect(String(appelAvertissement![0])).toContain('2');
+  });
+});
+
+describe('chargerContraintesSender (revue F5, point 2)', () => {
+  it('lit le jour calendaire par « at time zone », jamais `date_trunc(\'day\', now())` (fuseau de l’organisation, pas celui du serveur)', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Pacific/Kiritimati' }]) },
+      {
+        motif: /from senders s where s\.id/i,
+        repondre: () =>
+          ligne([
+            { daily_quota: 30, hourly_quota: 5, timezone: 'Europe/Paris', business_hours: null, used_today: 4, used_this_hour: 1 },
+          ]),
+      },
+    ]);
+
+    const contraintes = await chargerContraintesSender(pool, SENDER_ID, ORG_ID);
+
+    const requeteFuseau = appels.find((a) => FUSEAU_ORGANISATION.test(a.sql));
+    expect(requeteFuseau).toBeDefined();
+    expect(requeteFuseau!.values).toEqual([ORG_ID]);
+
+    const requeteSender = appels.find((a) => /from senders s where s\.id/i.test(a.sql));
+    expect(requeteSender).toBeDefined();
+    expect(requeteSender!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/i);
+    expect(requeteSender!.sql).not.toContain("date_trunc('day', now())");
+    expect(requeteSender!.values).toEqual([SENDER_ID, 'Pacific/Kiritimati']);
+
+    expect(contraintes).toEqual({
+      dailyQuota: 30,
+      hourlyQuota: 5,
+      timezone: 'Europe/Paris',
+      businessHours: null,
+      usedToday: 4,
+      usedThisHour: 1,
+    });
   });
 });
