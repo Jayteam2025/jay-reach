@@ -56,10 +56,10 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
           />
           <CarteEnvois
             libelle={t('coquille.sentToday')}
-            partis={a.fileDuJour.dejaPartis}
+            partis={a.fileDuJour.partis}
             enFile={a.fileDuJour.enFile}
             plafond={a.plafonds.envois.plafond}
-            libellePartis={t('coquille.sent.gone', { n: a.fileDuJour.dejaPartis })}
+            libellePartis={t('coquille.sent.gone', { n: a.fileDuJour.partis })}
             libelleEnFile={t('coquille.sent.queued', { n: a.fileDuJour.enFile })}
             libelleAucun={t('coquille.sent.none')}
           />

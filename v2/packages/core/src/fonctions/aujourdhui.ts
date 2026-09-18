@@ -138,6 +138,14 @@ export interface Aujourdhui {
     /** Actions remises ou planifiées aujourd'hui (dans le fuseau de l'organisation), quel que soit leur départ réel. */
     total: number;
     /**
+     * « Partis » parmi les actions REMISES OU PLANIFIÉES AUJOURD'HUI (`total`)
+     * — sous-ensemble strict : `partis + enFile === total`. C'est ce nombre
+     * qui va avec `total`/le plafond du jour (jauge d'envois de la coquille,
+     * G2) : un message remis hier mais parti aujourd'hui a consommé le quota
+     * D'HIER, il n'a pas sa place ici — voir `dejaPartis` pour ce cas-là.
+     */
+    partis: number;
+    /**
      * « Partis » (F12) : messages RÉELLEMENT envoyés aujourd'hui (dans le
      * fuseau de l'organisation) — `livre` de chaque envoi, PAS `envoye`
      * (simple remise au transporteur). Compte cross-jour (revue F12) : un
@@ -146,6 +154,11 @@ export interface Aujourdhui {
      * N'est donc PAS un sous-ensemble de `envois`/`total` (qui ne portent que
      * ce qui a été remis ou planifié AUJOURD'HUI), aucune relation arithmétique
      * simple entre les deux depuis ce correctif.
+     *
+     * Mesure d'ACTIVITÉ (combien sont réellement sortis aujourd'hui, peu
+     * importe quand ils ont été remis), jamais de QUOTA (G2) : le quota du
+     * jour se consomme à la remise, pas au départ — utiliser `partis` (et non
+     * celui-ci) pour tout affichage à côté d'un plafond.
      */
     dejaPartis: number;
     /**
@@ -431,6 +444,9 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // « En file » (F12) : parmi les actions remises OU planifiées aujourd'hui (`envois`), celles
   // pas encore réellement parties — remises en attente de départ, ou simplement planifiées.
   const enFile = envois.filter((e) => !e.livre).length;
+  // « Partis » bornés au jour (G2) : le complément de `enFile` dans `envois` — jamais un second
+  // filtre séparé, pour garantir `partis + enFile === total` par construction.
+  const partis = envois.length - enFile;
   // Revue F5, point 10 : combien des envois pas encore partis peuvent RÉELLEMENT encore
   // sortir aujourd'hui, compte tenu du plafond journalier restant de leur boîte — voir
   // `VueDEnsemble.projectionFileDuJour` (même calcul, même sens, campagnes.ts).
@@ -508,6 +524,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     aTraiter: { total: fils.length, fils: fils.slice(0, NOMBRE_FILS_APERCU) },
     fileDuJour: {
       total: envois.length,
+      partis,
       dejaPartis,
       enFile,
       possiblesAujourdhui: projectionFileDuJour.possiblesAujourdhui,

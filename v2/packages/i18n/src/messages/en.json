@@ -194,7 +194,7 @@
     },
     "queue": {
       "title": "Today's queue",
-      "count": "{envois, plural, one {# send} other {# sends}}, {partis, plural, one {# already sent} other {# already sent}}",
+      "count": "{partis, plural, one {# sent} other {# sent}} · {enFile, plural, one {# queued} other {# queued}}",
       "seeAll": "Full queue",
       "step": "Step {n}",
       "andMore": "{n, plural, one {and # more} other {and # more}}",
@@ -323,7 +323,7 @@
       },
       "queue": {
         "title": "Today's queue",
-        "count": "{partis, plural, one {# sent} other {# sent}} · {possibles, plural, one {# still possible} other {# still possible}} · {reportes, plural, one {# pushed back} other {# pushed back}}",
+        "count": "{partis, plural, one {# sent} other {# sent}} · {enFile, plural, one {# queued} other {# queued}} · {possibles, plural, one {# still possible} other {# still possible}} · {reportes, plural, one {# pushed back} other {# pushed back}}",
         "seeAll": "View queue",
         "step": "Step {n}",
         "andMore": "{n, plural, one {and # more} other {and # more}}",

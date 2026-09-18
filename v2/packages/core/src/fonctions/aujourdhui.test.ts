@@ -1,3 +1,6 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { ForbiddenError } from '../roles.js';
@@ -83,9 +86,46 @@ describe('lireAujourdhui', () => {
     // 2026-09-14T10:05:00Z est un lundi de septembre : Europe/Paris est alors en heure d'été (UTC+2) → 12:05.
     expect(a.fileDuJour.derniereHeure).toBe('12:05');
     expect(a.fileDuJour.dejaPartis).toBe(2);
+    expect(a.fileDuJour.partis).toBe(2);
     expect(a.fileDuJour.enFile).toBe(0);
     expect(a.fileDuJour.total).toBe(2);
   });
+
+  it(
+    'G2 : `partis` (borné au jour, famille 2) diverge de `dejaPartis` (activité cross-jour, ' +
+      'famille 3) — le cas réel « Jay coach - RH » (47 remis aujourd’hui, aucun réellement parti ' +
+      "aujourd'hui, mais des messages remis d'autres jours sont partis aujourd'hui côté activité)",
+    async () => {
+      const remisAujourdhui = Array.from({ length: 47 }, (_, i) => ({
+        id: `a${i}`,
+        dispatched_at: '2026-09-17T08:00:00.000Z',
+        delivered_at: null,
+        scheduled_for: null,
+        dispatch_after: null,
+        status: 'dispatched',
+        channel: 'email',
+        first_name: 'A',
+        last_name: 'A',
+        campagne_nom: 'Jay coach - RH',
+        etape: 0,
+        expediteur: 'rh@exemple.fr',
+      }));
+      const ctx = faux({
+        'jr:file_du_jour': remisAujourdhui,
+        // Activité cross-jour (F12) : des messages remis un AUTRE jour sont réellement partis
+        // aujourd'hui — sans rapport avec le quota du jour des 47 remis ci-dessus.
+        'jr:partis_aujourdhui': [{ n: 12 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.total).toBe(47);
+      // Famille 2 : aucun des 47 remis aujourd'hui n'est réellement parti — c'est ce nombre qui
+      // doit accompagner le plafond du jour (jauge, G2), jamais `dejaPartis`.
+      expect(a.fileDuJour.partis).toBe(0);
+      expect(a.fileDuJour.enFile).toBe(47);
+      // Famille 3 : mesure d'activité, sans lien arithmétique avec `total`/`partis` ci-dessus.
+      expect(a.fileDuJour.dejaPartis).toBe(12);
+    },
+  );
 
   // F4 (tour de correction 3) : `dispatched_at` (`timestamptz`) peut être un
   // objet Date (pilote pg). Avant correctif, `derniereEnvoyee` triait ces
@@ -465,5 +505,33 @@ describe('lireAujourdhui', () => {
   it('sans fuseau réglé en base : le défaut Europe/Paris', async () => {
     const a = await lireAujourdhui(faux({}));
     expect(a.fuseau).toBe('Europe/Paris');
+  });
+});
+
+/**
+ * G2 (audit demandé après le bouton mort « Nouvelle campagne », apps/web/app/(app)/page.tsx) :
+ * les bandeaux d'alerte de l'accueil sont de vrais liens (`<Link href={alerte.lien}>`), mais
+ * `alerte.lien` est un littéral posé ICI, dans `packages/core`, jamais vérifié contre les routes
+ * réelles de `apps/web`. Contrôle statique (même idiome que `page.test.tsx`, apps/web) : chaque
+ * route citée doit exister sous `apps/web/app/(app)`.
+ */
+describe('alertes — chaque `lien` pointe vers une route qui existe réellement', () => {
+  const ici = fileURLToPath(new URL('.', import.meta.url));
+  // packages/core/src/fonctions -> v2 (4 niveaux), puis apps/web/app/(app).
+  const appDir = join(ici, '../../../../apps/web/app/(app)');
+  const source = readFileSync(join(ici, 'aujourdhui.ts'), 'utf8');
+
+  it('le répertoire des routes existe bien à l’endroit attendu (garde-fou du test lui-même)', () => {
+    expect(existsSync(appDir)).toBe(true);
+  });
+
+  it('chaque `lien: \'...\'` littéral résout une route sous apps/web/app/(app)', () => {
+    const liens = [...source.matchAll(/lien: '([^']+)'/g)].map((m) => m[1]!);
+    // Garde-fou contre un test qui matcherait zéro alerte si le fichier changeait de forme.
+    expect(liens.length).toBeGreaterThanOrEqual(4);
+    for (const lien of liens) {
+      const segments = lien.split('/').filter(Boolean);
+      expect(existsSync(join(appDir, ...segments, 'page.tsx')), `route « ${lien} » introuvable`).toBe(true);
+    }
   });
 });

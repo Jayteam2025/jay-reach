@@ -194,7 +194,7 @@
     },
     "queue": {
       "title": "File du jour",
-      "count": "{envois, plural, one {# envoi} other {# envois}}, {partis, plural, one {# déjà parti} other {# déjà partis}}",
+      "count": "{partis, plural, one {# parti} other {# partis}} · {enFile, plural, one {# en file} other {# en file}}",
       "seeAll": "Toute la file",
       "step": "Étape {n}",
       "andMore": "{n, plural, one {et # autre} other {et # autres}}",
@@ -323,7 +323,7 @@
       },
       "queue": {
         "title": "File du jour",
-        "count": "{partis, plural, one {# parti} other {# partis}} · {possibles, plural, one {# encore possible} other {# encore possibles}} · {reportes, plural, one {# reporté} other {# reportés}}",
+        "count": "{partis, plural, one {# parti} other {# partis}} · {enFile, plural, one {# en file} other {# en file}} · {possibles, plural, one {# encore possible} other {# encore possibles}} · {reportes, plural, one {# reporté} other {# reportés}}",
         "seeAll": "Voir la file",
         "step": "Étape {n}",
         "andMore": "{n, plural, one {et # autre} other {et # autres}}",
