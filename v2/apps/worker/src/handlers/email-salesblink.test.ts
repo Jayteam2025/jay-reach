@@ -114,7 +114,7 @@ function clientFactice(overrides: Partial<ClientSalesBlink> = {}): ClientSalesBl
 
 // Motifs de requetes communs a plusieurs scenarios.
 const ETAT_ACTION = /select status from actions where id/i;
-const INSCRIPTION_ACTIVE = /select en\.status, c\.email from enrollments en/i;
+const INSCRIPTION_ACTIVE = /select en\.status, c\.email, camp\.status as campaign_status from enrollments en/i;
 const SUPPRESSION_CHECK = /from suppressions/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
@@ -124,10 +124,12 @@ const CONTRAINTES_SENDER = /from senders s where s\.id/i;
 const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const PLAFOND = /daily_cap/i;
 const CREDIT = /consume_provider_credit/i;
-// Spécifique a `chargerLigneInscription` (message-values.ts) : la jointure
-// jusqu'a `campaigns camp` la distingue de la requete de defense en profondeur
-// C1 ci-dessus, qui interroge aussi `enrollments`/`contacts` mais pas `campaigns`.
-const INSCRIPTION = /join campaigns camp/i;
+// Spécifique a `chargerLigneInscription` (message-values.ts) : depuis F14, la
+// requete de defense en profondeur C1 ci-dessus joint elle aussi `campaigns
+// camp` (alias `en` pour enrollments) — `e.campaign_id` (alias `e`, sans
+// second caractère) est le fragment qui ne matche QUE `REQUETE_LIGNE_INSCRIPTION`,
+// jamais `en.campaign_id`.
+const INSCRIPTION = /camp\.id = e\.campaign_id/i;
 const TEMPLATE = /from message_templates/i;
 const ENVOIS_ANTERIEURS = /payload ->> 'message_id'/i;
 const MODE_FORCE = /select payload ->> 'mode_force'/i;
@@ -165,7 +167,10 @@ const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id 
 function gestionnairesBase(): Gestionnaire[] {
   return [
     { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-    { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+    {
+      motif: INSCRIPTION_ACTIVE,
+      repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+    },
     { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
     { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
     { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Europe/Paris' }]) },
@@ -234,7 +239,10 @@ describe('envoyerEmailSalesBlink', () => {
   it('sans provider_ref l’action est bloquée sender_unbound', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+      },
       { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
       { motif: CONFIG_CREDENTIALS, repondre: () => ligne([]) },
       {
@@ -292,7 +300,10 @@ describe('envoyerEmailSalesBlink', () => {
     // dernier email d'une séquence ne part jamais.
     const { pool, appels } = creerPoolFactice(
       avecBase(
-        { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'completed', email: 'contact@exemple.fr' }]) },
+        {
+          motif: INSCRIPTION_ACTIVE,
+          repondre: () => ligne([{ status: 'completed', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+        },
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
@@ -330,10 +341,38 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.repondreDansLeFil).not.toHaveBeenCalled();
   });
 
+  it('campagne mise en pause ou jamais lancée (F14) : action laissée scheduled sans appel client', async () => {
+    // Défense en profondeur symétrique de `paused`/`paused_absence` ci-dessus :
+    // une campagne peut avoir été mise en pause (ou n'avoir jamais été
+    // lancée) après que cette action a été créée. L'action reste `scheduled`
+    // intacte — `rejouerActionsEmailEnAttente` (filtré sur `camp.status =
+    // 'active'`, F14) la reprendra une fois la campagne relancée.
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'draft' }]),
+      },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => UPDATE_SKIPPED.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+  });
+
   it('adresse supprimée entre l’enfilement et l’exécution : action ignorée sans aucun appel client (C1)', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+      },
       { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 1 }]) },
       { motif: UPDATE_SKIPPED, repondre: () => ligne([]) },
     ]);

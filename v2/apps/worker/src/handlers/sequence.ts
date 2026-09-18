@@ -806,6 +806,20 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
  * met à jour l'inscription, et — pour les envois LinkedIn autorisés — prépare un
  * job `actions.dispatch`. Renvoie ces jobs (l'appelant les enfile).
+ *
+ * `camp.status = 'active'` (F14) : seule porte d'entrée du moteur — une
+ * inscription peut exister (import CSV, liste, annuaire, producteur de
+ * signaux) sans que sa campagne ait jamais été lancée, ou après qu'elle a été
+ * mise en pause ou archivée (`mettreEnPause`/`archiver`, `fonctions/campagnes.ts`,
+ * ne touchent QUE `campaigns.status` — jamais les inscriptions elles-mêmes).
+ * Avant ce filtre, une campagne brouillon dont l'import venait de créer une
+ * inscription `active` avec `next_action_at = now()` (`sources.ts`) partait
+ * réellement dès le tick suivant, et une campagne mise en pause continuait
+ * d'avancer ses inscriptions déjà en cours. `camp` est déjà joint par
+ * `REQUETE_LIGNE_INSCRIPTION` : aucune jointure supplémentaire nécessaire.
+ * Les deux traitements ci-dessus (reprise d'absence, rattrapage) ne sont pas
+ * concernés : ils ne font que POSER une échéance, jamais envoyer — c'est
+ * cette sélection, juste en dessous, qui décide de ce qui part réellement.
  */
 export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), limit = 200): Promise<DispatchJob[]> {
   // Reprise des absences échues (F10) AVANT la sélection des inscriptions
@@ -822,7 +836,8 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
 
   const due = await pool.query<DueRow>(
     `${REQUETE_LIGNE_INSCRIPTION}
-      where e.status = 'active' and e.next_action_at is not null and e.next_action_at <= $1
+      where e.status = 'active' and camp.status = 'active'
+        and e.next_action_at is not null and e.next_action_at <= $1
       order by e.next_action_at asc
       limit $2`,
     [now.toISOString(), limit],

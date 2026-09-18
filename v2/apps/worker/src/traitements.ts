@@ -478,6 +478,13 @@ interface ActionEnAttenteRow {
  * que l'action ne soit envoyée — un email de dernière étape resterait sinon
  * `scheduled` sans jamais être repris. Même garde que `hasActiveSuppression`
  * (`sequence.ts`), portée sur l'adresse du contact déjà jointe ici.
+ *
+ * `camp.status = 'active'` (F14) : ce balayage enfile un job `actions.dispatch`
+ * SANS repasser par la sélection des inscriptions dues (`tickDueEnrollments`,
+ * `sequence.ts`) — sans ce même filtre ici, une action laissée `scheduled`
+ * (expéditeur coupé, plafond atteint) au moment où sa campagne est mise en
+ * pause ou archivée repartait quand même dès l'expéditeur ou le plafond
+ * rétabli, malgré le gate posé côté tick.
  */
 export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
@@ -487,6 +494,7 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
        from actions a
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
+       join campaigns camp on camp.id = e.campaign_id
        join sequence_steps s on s.id = a.step_id
        join organizations org on org.id = a.organization_id
       where a.channel = 'email'
@@ -495,6 +503,7 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
         and e.status in ('active', 'completed')
+        and camp.status = 'active'
         and not exists (
           select 1 from suppressions sup
            where sup.organization_id = a.organization_id

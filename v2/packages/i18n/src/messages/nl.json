@@ -1547,6 +1547,7 @@
       "campaign": "Campagne",
       "chooseCampaign": "Kies een campagne",
       "noCampaign": "Maak eerst een campagne aan om contacten te importeren.",
+      "draftCampaignWarning": "Deze campagne is niet actief: de contacten worden geïmporteerd, maar er wordt niets verstuurd voordat ze is gestart.",
       "listName": "Naam van de lijst",
       "file": "CSV-bestand",
       "mapping": "Kolomtoewijzing",

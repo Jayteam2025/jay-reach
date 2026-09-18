@@ -8,6 +8,7 @@ import {
   parseCsv,
   processImport,
   suggestMapping,
+  type CampagneListeResume,
   type ColumnMapping,
   type ImportField,
   type ParsedRows,
@@ -16,8 +17,14 @@ import { Bouton, Champ, CleValeur, Table, Tiroir } from '../ui';
 import { actionImporterCsvDansCampagne } from '../../app/actions/import';
 
 export interface ImportContactsProps {
-  /** Campagnes de l'organisation (id, nom) — l'import est toujours scopé à UNE campagne (`importerCsv`, tâche 11). */
-  campagnes: { id: string; nom: string }[];
+  /**
+   * Campagnes de l'organisation (id, nom, statut) — l'import est toujours
+   * scopé à UNE campagne (`importerCsv`, tâche 11). `statut` (F14) alimente
+   * l'avertissement affiché quand la campagne choisie n'est pas active :
+   * l'import y crée bien les inscriptions, mais rien ne partira tant qu'elle
+   * n'est pas lancée.
+   */
+  campagnes: { id: string; nom: string; statut: CampagneListeResume['statut'] }[];
 }
 
 /**
@@ -44,6 +51,8 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
   const [mapping, setMapping] = useState<ColumnMapping>({});
 
   const rapport = useMemo(() => (parsed ? processImport(parsed, mapping).report : null), [parsed, mapping]);
+  const campagneChoisie = campagnes.find((c) => c.id === campagneId);
+  const campagneNonActive = campagneChoisie !== undefined && campagneChoisie.statut !== 'active';
 
   function fermer() {
     setOuvert(false);
@@ -121,6 +130,7 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
                 ))}
               </select>
             </Champ>
+            {campagneNonActive && <div className="jr-bandeau attention">{t('importDialog.draftCampaignWarning')}</div>}
             <Champ libelle={t('importDialog.listName')} id="import-contacts-nom">
               <input id="import-contacts-nom" value={nom} onChange={(e) => setNom(e.target.value)} />
             </Champ>

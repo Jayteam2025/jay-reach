@@ -347,8 +347,11 @@ export async function envoyerEmailSalesBlink(
   // l'action `scheduled` intacte, le balayage de rejeu la reprendra une fois
   // l'inscription active de nouveau. Seuls `stopped`, `replied`, `bounced` ou
   // une inscription introuvable marquent l'action `skipped`.
-  const inscriptionRes = await pool.query<{ status: string; email: string | null }>(
-    `select en.status, c.email from enrollments en join contacts c on c.id = en.contact_id where en.id = $1`,
+  const inscriptionRes = await pool.query<{ status: string; email: string | null; campaign_status: string }>(
+    `select en.status, c.email, camp.status as campaign_status from enrollments en
+       join contacts c on c.id = en.contact_id
+       join campaigns camp on camp.id = en.campaign_id
+      where en.id = $1`,
     [email.enrollmentId],
   );
   const inscription = inscriptionRes.rows[0];
@@ -362,6 +365,15 @@ export async function envoyerEmailSalesBlink(
       'enrollment_inactive',
     ]);
     console.warn(`[email-salesblink] action ${actionId} ignorée : inscription non active`);
+    return;
+  }
+  // F14 : même traitement que `paused`/`paused_absence` ci-dessus — une
+  // campagne mise en pause ou jamais lancée après la création de cette action
+  // ne doit rien envoyer, mais l'action reste `scheduled` intacte (transitoire) :
+  // `rejouerActionsEmailEnAttente` (désormais filtré sur `camp.status = 'active'`)
+  // la reprendra une fois la campagne relancée.
+  if (inscription.campaign_status !== 'active') {
+    console.log(`[email-salesblink] action ${actionId} en attente : campagne ${inscription.campaign_status}`);
     return;
   }
   if (inscription.email) {

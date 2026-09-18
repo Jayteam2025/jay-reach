@@ -1547,6 +1547,7 @@
       "campaign": "Campagne",
       "chooseCampaign": "Choisir une campagne",
       "noCampaign": "Créez d'abord une campagne pour importer des contacts.",
+      "draftCampaignWarning": "Cette campagne n'est pas active : les contacts seront importés, mais aucun envoi ne partira tant qu'elle n'est pas lancée.",
       "listName": "Nom de la liste",
       "file": "Fichier CSV",
       "mapping": "Correspondance des colonnes",

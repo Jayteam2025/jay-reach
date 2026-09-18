@@ -145,6 +145,50 @@ describe('rejouerActionsEmailEnAttente', () => {
     const id2 = (insert2.mock.calls[0]![0] as { id: string }[])[0]!.id;
     expect(id1).toBe(id2);
   });
+
+  /**
+   * Pool factice AVEC ÉTAT, dédié au défaut F14 : contrairement à
+   * `creerPoolFactice` de ce fichier (qui renvoie toujours les mêmes lignes
+   * quelle que soit la requête), celui-ci décide RÉELLEMENT selon le SQL
+   * produit — la ligne n'est renvoyée que si la requête ne filtre PAS sur
+   * `camp.status = 'active'` (correctif annulé : comportement d'avant, la
+   * ligne repart inconditionnellement) OU que la campagne modélisée est bien
+   * `active`. Sans le correctif, les tests « brouillon »/« en pause »
+   * ci-dessous verraient l'action réenfilée quand même et rougiraient.
+   */
+  function creerContexteCampagneStatut(statutCampagne: string): { ctx: Contexte; insert: ReturnType<typeof vi.fn> } {
+    const insert = vi.fn(async () => undefined);
+    const boss = { insert } as unknown as PgBoss;
+    const query = vi.fn(async (sql: string) => {
+      const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
+      const renvoyer = !filtreCampagneActive || statutCampagne === 'active';
+      return { rows: renvoyer ? [ligneActionEnAttente()] : [], rowCount: renvoyer ? 1 : 0 };
+    });
+    const pool = { query } as unknown as Pool;
+    return { ctx: { pool, boss }, insert };
+  }
+
+  it('campagne en brouillon ou en pause (F14) : l’action reste en attente, aucun job réenfilé', async () => {
+    const { ctx: ctxBrouillon, insert: insertBrouillon } = creerContexteCampagneStatut('draft');
+    const { ctx: ctxPause, insert: insertPause } = creerContexteCampagneStatut('paused');
+
+    const rejoueesBrouillon = await rejouerActionsEmailEnAttente(ctxBrouillon);
+    const rejoueesPause = await rejouerActionsEmailEnAttente(ctxPause);
+
+    expect(rejoueesBrouillon).toBe(0);
+    expect(insertBrouillon).not.toHaveBeenCalled();
+    expect(rejoueesPause).toBe(0);
+    expect(insertPause).not.toHaveBeenCalled();
+  });
+
+  it('campagne active (F14, non-régression) : l’action réenfilée normalement', async () => {
+    const { ctx, insert } = creerContexteCampagneStatut('active');
+
+    const rejouees = await rejouerActionsEmailEnAttente(ctx);
+
+    expect(rejouees).toBe(1);
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('libelleSourceRun (journal, tâche 6)', () => {

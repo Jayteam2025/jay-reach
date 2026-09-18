@@ -120,6 +120,12 @@ Versionnement sémantique.
   en attente, décompté depuis la date de retour — jamais « tout de suite », qui enverrait dans une boîte encore pleine le
   jour même de la reprise du travail. Une reprise manuelle d'une pause **opérateur** (gate de délivrabilité, boîte d'envoi indisponible…), elle,
   redémarre toujours immédiatement : c'est le geste que l'opérateur vient de faire.
+- **Une campagne brouillon ou mise en pause pouvait quand même envoyer.** Le moteur ne regardait que le statut de
+  l'inscription, jamais celui de sa campagne : un contact importé par CSV dans une campagne encore en brouillon partait dès
+  le passage suivant, et mettre une campagne en pause n'arrêtait aucun envoi déjà en cours — seul le statut affiché à l'écran
+  changeait. Le moteur ne traite désormais que les inscriptions d'une campagne active, à la fois pour avancer une séquence et
+  pour relancer un email resté en attente ; l'écran d'import de contacts avertit en plus quand la campagne choisie n'est pas
+  active.
 
 ### Retiré
 - **Les dix anciens écrans (signaux, annuaire de prospects, recherche d'entreprises, validation, import, sources, modèles,

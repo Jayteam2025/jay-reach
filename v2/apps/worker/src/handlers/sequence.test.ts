@@ -243,6 +243,87 @@ describe('tickDueEnrollments', () => {
   });
 });
 
+describe('tickDueEnrollments — campagne non active (F14)', () => {
+  /**
+   * Pool factice AVEC ÉTAT, dédié à ce défaut : contrairement à
+   * `creerPoolFactice` (qui répond au TEXTE d'une requête sans jamais évaluer
+   * son `where`, donc renverrait la même ligne due qu'on modélise une
+   * campagne brouillon ou active), celui-ci décide RÉELLEMENT selon le SQL
+   * produit — la ligne due n'est renvoyée que si la requête ne filtre PAS sur
+   * `camp.status = 'active'` (correctif annulé : comportement d'avant, la
+   * ligne repart inconditionnellement) OU que la campagne modélisée est bien
+   * `active`. Sans le correctif, les tests « brouillon »/« en pause » ci-dessous
+   * verraient donc la ligne due traitée comme avant — exactement le défaut
+   * constaté (F14) — et rougiraient sur `expect(jobs).toEqual([])`.
+   */
+  function creerPoolAvecStatutCampagne(statutCampagne: string): { pool: Pool; appels: Appel[] } {
+    const base = gestionnairesBase();
+    const appels: Appel[] = [];
+    const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+      appels.push({ sql, values });
+      if (DUE.test(sql)) {
+        const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
+        const renvoyer = !filtreCampagneActive || statutCampagne === 'active';
+        return ligne(renvoyer ? [ligneDue()] : []);
+      }
+      const trouve = base.find((g) => g.motif.test(sql));
+      if (!trouve) throw new Error(`requete non prevue par le test :\n${sql}`);
+      return trouve.repondre(values);
+    });
+    return { pool: { query } as unknown as Pool, appels };
+  }
+
+  // `jobs` seul ne suffit pas à prouver que la ligne a été écartée : le socle
+  // par défaut (`ligneDue()`, `email_status: null`) fait déjà refuser le gate
+  // et renvoie `jobs: []` même quand la ligne EST traitée (voir le test
+  // « campagne active » ci-dessous, où `jobs` vaut aussi `[]`). La preuve
+  // réelle est qu'AUCUNE requête du corps de boucle (chargement de l'étape)
+  // n'a été tentée — sans ça, ces trois tests seraient verts même code annulé
+  // (constaté : ils passaient à tort avant cette relecture).
+  it('campagne en brouillon (jamais lancée) : l’inscription due n’est pas sélectionnée, aucun envoi', async () => {
+    const { pool, appels } = creerPoolAvecStatutCampagne('draft');
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => STEPS.test(a.sql))).toBe(false);
+  });
+
+  it('campagne mise en pause : l’inscription due n’est pas sélectionnée, aucun envoi', async () => {
+    const { pool, appels } = creerPoolAvecStatutCampagne('paused');
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => STEPS.test(a.sql))).toBe(false);
+  });
+
+  it('campagne archivée : l’inscription due n’est pas sélectionnée, aucun envoi', async () => {
+    const { pool, appels } = creerPoolAvecStatutCampagne('archived');
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => STEPS.test(a.sql))).toBe(false);
+  });
+
+  it('campagne active (non-régression) : l’inscription due est bien sélectionnée et traitée', async () => {
+    const { pool, appels } = creerPoolAvecStatutCampagne('active');
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    // Même comportement que le socle par défaut (`gestionnairesBase()` seul,
+    // gate email refusé faute d'`email_status`) : aucun job d'envoi, mais
+    // l'étape a été chargée et l'action bloquée prouvent que la ligne A ÉTÉ
+    // sélectionnée et traitée — contrairement aux trois tests ci-dessus où
+    // rien n'est même tenté.
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => STEPS.test(a.sql))).toBe(true);
+    const bloquee = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(bloquee).toBeDefined();
+  });
+});
+
 describe('tickDueEnrollments — relecture des premiers envois (I2)', () => {
   /** Isole le statut posé par `INSERT_ACTION`, quel que soit ce qui suit (gate email, avancement…). */
   function statutInsere(appels: Appel[]): unknown {

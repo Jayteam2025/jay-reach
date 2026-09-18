@@ -99,7 +99,11 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
   const onglet = ongletDemande(sp);
   const fuseau = String(reglages.fuseau);
-  const campagnesOptions = campagnesRes.map((c) => ({ id: c.id, nom: c.nom }));
+  // `statut` (F14) : `ImportContacts` avertit quand la campagne choisie n'est
+  // pas active — une inscription y entre `active` dès l'import, mais rien ne
+  // partira tant que la campagne elle-même ne l'est pas (`tickDueEnrollments`,
+  // `apps/worker/src/handlers/sequence.ts`).
+  const campagnesOptions = campagnesRes.map((c) => ({ id: c.id, nom: c.nom, statut: c.statut }));
   const peutAjouterClient = ctx.role === 'admin' || ctx.role === 'owner';
   const peutAjouterSuppression = ctx.role === 'operator' || ctx.role === 'admin' || ctx.role === 'owner';
 
