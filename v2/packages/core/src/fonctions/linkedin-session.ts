@@ -9,6 +9,7 @@
 import { notifier } from '../inbox/record-reply.js';
 import { dansUneTransaction } from '../transaction.js';
 import type { Contexte } from './contexte.js';
+import type { Sortie } from './linkedin-sortie.js';
 
 export type EtatSession = 'absente' | 'active' | 'bloquee';
 export type MotifBlocage = 'defi' | 'cookie_refuse' | 'sortie_inattendue' | 'disjoncteur' | 'revoquee';
@@ -117,6 +118,42 @@ export async function prendreVerrouLinkedIn(ctx: Contexte, proprietaire: string,
         set lock_owner = $2, lock_until = now() + ($3::int * interval '1 millisecond')
       where organization_id = $1 and (lock_until is null or lock_until < now() or lock_owner = $2)`,
     [ctx.organisationId, proprietaire, Math.trunc(dureeMs)],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Consigne la dernière sortie observée du navigateur (IP, opérateur, pays).
+ * N'écrit ni l'IP attendue ni l'état : c'est de l'observation, pas une décision.
+ * Crée la ligne si elle manque (statut `absente` par défaut) pour que l'écran
+ * ait quelque chose à afficher dès la première relève.
+ */
+export async function enregistrerObservationSortie(ctx: Contexte, sortie: Sortie): Promise<void> {
+  await ctx.ex.query(
+    `insert into linkedin_server_sessions (organization_id, last_egress_ip, last_egress_org, last_egress_country) /* jr:linkedin_session_observer */
+     values ($1, $2, $3, $4)
+     on conflict (organization_id) do update
+        set last_egress_ip = $2, last_egress_org = $3, last_egress_country = $4`,
+    [ctx.organisationId, sortie.ip, sortie.operateur ?? null, sortie.pays ?? null],
+  );
+}
+
+/**
+ * L'opérateur confirme la sortie observée comme la bonne (changement de proxy
+ * voulu). Remplace l'IP attendue ; si la session n'était bloquée que pour une
+ * sortie inattendue, ce blocage tombe avec : sa cause est levée. Les autres
+ * motifs (défi, cookie refusé…) restent, ils n'ont rien à voir avec l'IP.
+ * Rend false si la session n'existe pas.
+ */
+export async function confirmerIpAttendue(ctx: Contexte, ip: string): Promise<boolean> {
+  const res = await ctx.ex.query(
+    `update linkedin_server_sessions /* jr:linkedin_session_confirmer_ip */
+        set expected_egress_ip = $2,
+            status = case when status = 'bloquee' and blocked_reason = 'sortie_inattendue' then 'active' else status end,
+            blocked_at = case when status = 'bloquee' and blocked_reason = 'sortie_inattendue' then null else blocked_at end,
+            blocked_reason = case when status = 'bloquee' and blocked_reason = 'sortie_inattendue' then null else blocked_reason end
+      where organization_id = $1`,
+    [ctx.organisationId, ip],
   );
   return (res.rowCount ?? 0) > 0;
 }

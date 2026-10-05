@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { activerSessionLinkedIn, bloquerSessionLinkedIn, prendreVerrouLinkedIn } from './linkedin-session.js';
+import {
+  activerSessionLinkedIn,
+  bloquerSessionLinkedIn,
+  confirmerIpAttendue,
+  enregistrerObservationSortie,
+  prendreVerrouLinkedIn,
+} from './linkedin-session.js';
 
 interface Appel {
   sql: string;
@@ -70,5 +76,48 @@ describe('prendreVerrouLinkedIn', () => {
   it('rend true quand le verrou a expiré', async () => {
     const { ctx } = faux(1);
     expect(await prendreVerrouLinkedIn(ctx, 'worker-a', 60_000)).toBe(true);
+  });
+});
+
+describe('enregistrerObservationSortie', () => {
+  it("ecrit l'IP, l'operateur et le pays vus, sans toucher a l'IP attendue ni a l'etat", async () => {
+    const { ctx, appels } = faux();
+    await enregistrerObservationSortie(ctx, { ip: '203.0.113.7', operateur: 'AS64500 Exemple', pays: 'FR' });
+    const ecriture = appels.find((a) => /linkedin_server_sessions/i.test(a.sql));
+    expect(ecriture).toBeDefined();
+    expect(ecriture!.params).toEqual(['org-1', '203.0.113.7', 'AS64500 Exemple', 'FR']);
+    expect(ecriture!.sql).toMatch(/last_egress_ip\s*=\s*\$2/);
+    expect(ecriture!.sql).toMatch(/last_egress_org\s*=\s*\$3/);
+    expect(ecriture!.sql).toMatch(/last_egress_country\s*=\s*\$4/);
+    expect(ecriture!.sql).not.toMatch(/expected_egress_ip\s*=/);
+    expect(ecriture!.sql).not.toMatch(/status\s*=/);
+  });
+
+  it("ecrit null pour l'operateur et le pays quand ils manquent", async () => {
+    const { ctx, appels } = faux();
+    await enregistrerObservationSortie(ctx, { ip: '203.0.113.7' });
+    expect(appels.find((a) => /linkedin_server_sessions/i.test(a.sql))!.params).toEqual([
+      'org-1',
+      '203.0.113.7',
+      null,
+      null,
+    ]);
+  });
+});
+
+describe('confirmerIpAttendue', () => {
+  it("remplace l'IP attendue et ne leve que le blocage sortie_inattendue", async () => {
+    const { ctx, appels } = faux();
+    await confirmerIpAttendue(ctx, '198.51.100.9');
+    const ecriture = appels.find((a) => /linkedin_server_sessions/i.test(a.sql));
+    expect(ecriture!.params).toEqual(['org-1', '198.51.100.9']);
+    expect(ecriture!.sql).toMatch(/expected_egress_ip\s*=\s*\$2/);
+    expect(ecriture!.sql).toMatch(/blocked_reason\s*=\s*'sortie_inattendue'/);
+    expect(ecriture!.sql).toMatch(/where\s+organization_id\s*=\s*\$1/);
+  });
+
+  it("rend false quand la session n'existe pas", async () => {
+    const { ctx } = faux(0);
+    expect(await confirmerIpAttendue(ctx, '198.51.100.9')).toBe(false);
   });
 });
