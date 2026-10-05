@@ -7,6 +7,7 @@
  * organisation et lit la TABLE, jamais une vue soumise à RLS.
  */
 import { notifier } from '../inbox/record-reply.js';
+import { dansUneTransaction } from '../transaction.js';
 import type { Contexte } from './contexte.js';
 
 export type EtatSession = 'absente' | 'active' | 'bloquee';
@@ -88,20 +89,25 @@ const CORPS_BLOCAGE: Record<MotifBlocage, string> = {
  * une URL avec identifiants. Le motif est typé, l'IP vue vit dans `last_egress_ip`.
  */
 export async function bloquerSessionLinkedIn(ctx: Contexte, motif: MotifBlocage): Promise<void> {
-  const res = await ctx.ex.query(
-    `insert into linkedin_server_sessions (organization_id, status, blocked_at, blocked_reason) /* jr:linkedin_session_bloquer */
-     values ($1, 'bloquee', now(), $2)
-     on conflict (organization_id) do update
-        set status = 'bloquee', blocked_at = now(), blocked_reason = $2
-      where linkedin_server_sessions.status <> 'bloquee'`,
-    [ctx.organisationId, motif],
-  );
-  if (!res.rowCount) return;
-  await notifier(ctx.ex, ctx.organisationId, 'linkedin.session_blocked', TITRE_BLOCAGE, CORPS_BLOCAGE[motif]);
+  // Une seule transaction : si la notification échoue, le blocage est annulé et
+  // le rappel suivant retrouvera la session non bloquée, donc renotifiera.
+  await dansUneTransaction(ctx.ex, async (tx) => {
+    const res = await tx.query(
+      `insert into linkedin_server_sessions (organization_id, status, blocked_at, blocked_reason) /* jr:linkedin_session_bloquer */
+       values ($1, 'bloquee', now(), $2)
+       on conflict (organization_id) do update
+          set status = 'bloquee', blocked_at = now(), blocked_reason = $2
+        where linkedin_server_sessions.status <> 'bloquee'`,
+      [ctx.organisationId, motif],
+    );
+    if (!res.rowCount) return;
+    await notifier(tx, ctx.organisationId, 'linkedin.session_blocked', TITRE_BLOCAGE, CORPS_BLOCAGE[motif]);
+  });
 }
 
 /**
- * Prend le verrou en une seule instruction : libre (jamais pris) ou expiré.
+ * Prend le verrou en une seule instruction : libre (jamais pris), expiré, ou
+ * déjà au même propriétaire (renouvellement, reprise après redémarrage).
  * Rend false si un autre propriétaire le détient encore, ou si la session
  * n'existe pas.
  */
@@ -109,7 +115,7 @@ export async function prendreVerrouLinkedIn(ctx: Contexte, proprietaire: string,
   const res = await ctx.ex.query(
     `update linkedin_server_sessions /* jr:linkedin_session_verrou */
         set lock_owner = $2, lock_until = now() + ($3::int * interval '1 millisecond')
-      where organization_id = $1 and (lock_until is null or lock_until < now())`,
+      where organization_id = $1 and (lock_until is null or lock_until < now() or lock_owner = $2)`,
     [ctx.organisationId, proprietaire, Math.trunc(dureeMs)],
   );
   return (res.rowCount ?? 0) > 0;

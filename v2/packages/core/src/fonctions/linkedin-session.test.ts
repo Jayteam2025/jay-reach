@@ -64,7 +64,7 @@ describe('prendreVerrouLinkedIn', () => {
   it('rend false quand un verrou valide existe', async () => {
     const { ctx, appels } = faux(0);
     expect(await prendreVerrouLinkedIn(ctx, 'worker-a', 60_000)).toBe(false);
-    expect(appels[0]!.sql).toMatch(/lock_until is null or lock_until < now\(\)/i);
+    expect(appels[0]!.sql).toMatch(/lock_until is null or lock_until < now\(\) or lock_owner = \$2/i);
   });
 
   it('rend true quand le verrou a expiré', async () => {
