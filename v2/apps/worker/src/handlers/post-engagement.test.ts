@@ -10,6 +10,8 @@ import { normaliserUrlPost } from '@jay-reach/core';
 import { ecarterEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
 import { runQualify } from './qualify.js';
 import { runScore } from './score.js';
+import { persistEnrichedContact } from '../enrichment-persist.js';
+import { ecarterSignauxTropAnciens, enqueueEnrollments } from '../producer.js';
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -268,5 +270,57 @@ describe('score', () => {
     const selection = requetes.find((s) => /limit \$2/i.test(s)) ?? '';
     expect(selection).toMatch(/s\.kind = 'post_engagement'/);
     expect(selection).toMatch(/personas/);
+  });
+});
+
+describe('garde-fous du chemin entreprise et de la purge', () => {
+  it('enqueueEnrollments n\'inscrit pas un engageur sans email', async () => {
+    const requetes: string[] = [];
+    const pool = { query: vi.fn(async (sql: string) => { requetes.push(sql); return { rows: [], rowCount: 0 }; }) } as unknown as Pool;
+    await enqueueEnrollments({ insert: vi.fn() } as never, pool);
+    expect(requetes[0]).toMatch(/not \(s\.kind = 'post_engagement' and ct\.email is null\)/);
+  });
+
+  it('persistEnrichedContact rend null, sans lever, quand l\'adresse LinkedIn appartient deja a un autre contact', async () => {
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        if (/^\s*update contacts/i.test(sql)) return { rows: [], rowCount: 0 };
+        throw Object.assign(new Error('duplicate'), { code: '23505' });
+      }),
+    } as unknown as Pool;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const id = await persistEnrichedContact(pool, ORG, 'compte-1', { email: 'b@acme.fr', linkedinUrl: 'https://www.linkedin.com/in/l' });
+    expect(id).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.join(' '))).not.toContain('b@acme.fr');
+    warn.mockRestore();
+  });
+
+  it('persistEnrichedContact ramene l\'adresse rendue par le fournisseur a la forme canonique avant de chercher', async () => {
+    const valeurs: unknown[][] = [];
+    const pool = {
+      query: vi.fn(async (sql: string, v: unknown[] = []) => {
+        if (/^\s*update contacts/i.test(sql)) { valeurs.push(v); return { rows: [{ id: 'c1' }], rowCount: 1 }; }
+        return { rows: [], rowCount: 0 };
+      }),
+    } as unknown as Pool;
+    await persistEnrichedContact(pool, ORG, 'compte-1', { email: 'a@acme.fr', linkedinUrl: 'HTTPS://fr.linkedin.com/in/alice-1/?trk=x' });
+    expect(valeurs[0]).toContain('https://www.linkedin.com/in/alice-1');
+  });
+
+  it('la purge d\'anciennete efface un engageur, nom et adresse compris, au lieu de le passer en discarded', async () => {
+    const requetes: string[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        requetes.push(sql);
+        if (/select id, organization_id/i.test(sql)) return { rows: [{ id: 'sig-1', organization_id: ORG }], rowCount: 1 };
+        return { rows: [{ source_id: null }], rowCount: 1 };
+      }),
+    } as unknown as Pool;
+    await ecarterSignauxTropAnciens(pool, 14);
+    const maj = requetes.filter((r) => /^\s*update signals/i.test(r));
+    expect(maj).toHaveLength(2);
+    for (const r of maj) expect(r).toMatch(/kind <> 'post_engagement'|kind != 'post_engagement'/);
+    expect(requetes.some((r) => /delete from contacts/i.test(r))).toBe(true);
   });
 });

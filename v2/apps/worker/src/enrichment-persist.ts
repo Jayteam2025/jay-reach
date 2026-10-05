@@ -6,6 +6,7 @@
  * contacts (+ colonnes email/email_status/email_confidence) du cahier des charges.
  */
 import type { Pool } from 'pg';
+import { normaliserUrlProfil } from './handlers/post-engagement.js';
 
 /**
  * Verdict de délivrabilité stocké dans `contacts.email_status`, et lu par le gate.
@@ -131,12 +132,16 @@ export async function persistEnrichedContact(
   // FullEnrich : le premier a interrogé le serveur de messagerie, le second
   // rapporte ce qu'il croit savoir.
   const { status, confidence } = verified ?? mapEmailStatus(c.emailStatusRaw);
+  // L'adresse rendue par le fournisseur s'écrit de plusieurs façons : on la ramène
+  // à la forme des contacts avant de chercher ou d'insérer, sinon un engageur est
+  // manqué et doublé sous une autre graphie.
+  const urlProfil = c.linkedinUrl ? (normaliserUrlProfil(c.linkedinUrl) ?? c.linkedinUrl) : null;
 
   // Un engageur d'un post LinkedIn est déjà un contact, SANS email, identifié par
   // son adresse (index unique partiel org + linkedin_url). Le retrouver ici lui
   // donne son email ; l'insérer à côté se heurterait à cet index. Son signal
   // d'origine, lui, ne bouge pas.
-  if (c.linkedinUrl) {
+  if (urlProfil) {
     try {
       const rattache = await pool.query<{ id: string }>(
         `update contacts set
@@ -155,7 +160,7 @@ export async function persistEnrichedContact(
           confidence,
           c.personaId ?? null,
           c.linkedinProviderId ?? null,
-          c.linkedinUrl,
+          urlProfil,
         ],
       );
       if (rattache.rows[0]) return rattache.rows[0].id;
@@ -165,47 +170,60 @@ export async function persistEnrichedContact(
       if ((err as { code?: string }).code !== '23505') throw err;
     }
   }
-  const res = await pool.query<{ id: string }>(
-    `insert into contacts
-       (organization_id, account_id, persona_id, first_name, last_name, job_title,
-        email, email_status, email_confidence, linkedin_url, linkedin_provider_id,
-        enrichment, enriched_at, source_signal_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::email_status, $9, $10, $11, $12::jsonb, now(), $13)
-     on conflict (organization_id, lower(email)) where email is not null
-     do update set
-        account_id = coalesce(excluded.account_id, contacts.account_id),
-        persona_id = coalesce(excluded.persona_id, contacts.persona_id),
-        first_name = coalesce(excluded.first_name, contacts.first_name),
-        last_name = coalesce(excluded.last_name, contacts.last_name),
-        job_title = coalesce(excluded.job_title, contacts.job_title),
-        email_status = excluded.email_status,
-        email_confidence = excluded.email_confidence,
-        linkedin_url = coalesce(excluded.linkedin_url, contacts.linkedin_url),
-        linkedin_provider_id = coalesce(excluded.linkedin_provider_id, contacts.linkedin_provider_id),
-        -- L'origine reste celle du PREMIER signal qui a mené a ce contact :
-        -- c'est elle qui explique pourquoi on l'a prospecte. Le sens du
-        -- coalesce est donc inverse par rapport aux autres champs, qui eux se
-        -- laissent completer par la donnee la plus fraiche. Sans cette ligne,
-        -- un contact deja connu ne recevait jamais son origine.
-        source_signal_id = coalesce(contacts.source_signal_id, excluded.source_signal_id),
-        enriched_at = now()
-     returning id`,
-    [
-      organizationId,
-      accountId,
-      c.personaId ?? null,
-      c.firstName ?? null,
-      c.lastName ?? null,
-      c.jobTitle ?? null,
-      c.email,
-      status,
-      confidence,
-      c.linkedinUrl ?? null,
-      c.linkedinProviderId ?? null,
-      JSON.stringify({ emailStatusRaw: c.emailStatusRaw ?? null }),
-      c.sourceSignalId ?? null,
-    ],
-  );
+  let res: { rows: { id: string }[] };
+  try {
+    res = await pool.query<{ id: string }>(
+      `insert into contacts
+         (organization_id, account_id, persona_id, first_name, last_name, job_title,
+          email, email_status, email_confidence, linkedin_url, linkedin_provider_id,
+          enrichment, enriched_at, source_signal_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::email_status, $9, $10, $11, $12::jsonb, now(), $13)
+       on conflict (organization_id, lower(email)) where email is not null
+       do update set
+          account_id = coalesce(excluded.account_id, contacts.account_id),
+          persona_id = coalesce(excluded.persona_id, contacts.persona_id),
+          first_name = coalesce(excluded.first_name, contacts.first_name),
+          last_name = coalesce(excluded.last_name, contacts.last_name),
+          job_title = coalesce(excluded.job_title, contacts.job_title),
+          email_status = excluded.email_status,
+          email_confidence = excluded.email_confidence,
+          linkedin_url = coalesce(excluded.linkedin_url, contacts.linkedin_url),
+          linkedin_provider_id = coalesce(excluded.linkedin_provider_id, contacts.linkedin_provider_id),
+          -- L'origine reste celle du PREMIER signal qui a mené a ce contact :
+          -- c'est elle qui explique pourquoi on l'a prospecte. Le sens du
+          -- coalesce est donc inverse par rapport aux autres champs, qui eux se
+          -- laissent completer par la donnee la plus fraiche. Sans cette ligne,
+          -- un contact deja connu ne recevait jamais son origine.
+          source_signal_id = coalesce(contacts.source_signal_id, excluded.source_signal_id),
+          enriched_at = now()
+       returning id`,
+      [
+        organizationId,
+        accountId,
+        c.personaId ?? null,
+        c.firstName ?? null,
+        c.lastName ?? null,
+        c.jobTitle ?? null,
+        c.email,
+        status,
+        confidence,
+        urlProfil,
+        c.linkedinProviderId ?? null,
+        JSON.stringify({ emailStatusRaw: c.emailStatusRaw ?? null }),
+        c.sourceSignalId ?? null,
+      ],
+    );
+  } catch (err) {
+    // 23505 : l'adresse LinkedIn est déjà portée par un AUTRE contact (index unique
+    // org + linkedin_url) alors que cet email, lui, est nouveau ou différent. On ne
+    // fusionne pas deux fiches ici, et on ne fait pas échouer le job d'enrichissement
+    // entier (pg-boss le rejouerait à l'identique) : le contact est laissé de côté.
+    if ((err as { code?: string }).code === '23505') {
+      console.warn(`[enrich] contact non persisté : adresse LinkedIn déjà portée par une autre fiche (compte ${accountId})`);
+      return null;
+    }
+    throw err;
+  }
   return res.rows[0]?.id ?? null;
 }
 

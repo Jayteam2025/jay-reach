@@ -61,7 +61,7 @@ export function lienProfilDeduit(urn: string): string {
  * soient reconnues par l'index unique. Une adresse qui n'est pas un profil
  * LinkedIn est refusée (null) : elle ne doit pas devenir l'identité d'un contact.
  */
-function normaliserUrlProfil(url: string): string | null {
+export function normaliserUrlProfil(url: string): string | null {
   try {
     const u = new URL(url.trim());
     const hote = u.hostname.toLowerCase();

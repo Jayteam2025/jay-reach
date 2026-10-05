@@ -18,6 +18,7 @@ import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, f
 import type { DiscoverJob } from './handlers/discover.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
+import { ecarterEngageur } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -67,10 +68,22 @@ export async function ecarterSignauxTropAnciens(
   maxJours: number,
 ): Promise<{ nouveaux: number; qualifies: number }> {
   if (!Number.isFinite(maxJours) || maxJours <= 0) return { nouveaux: 0, qualifies: 0 };
+  // Une PERSONNE (`post_engagement`) ne passe jamais en `discarded` : son signal
+  // et son contact s'effacent (rien de personnel sur ce qui ne sert pas), par le
+  // même chemin que l'écart du scoring. Les deux mises à jour ci-dessous les
+  // excluent donc, et un engageur qualifié suit le sort de son contact, pas de
+  // l'ancienneté d'un compte qu'il n'a pas.
+  const personnes = await pool.query<{ id: string; organization_id: string }>(
+    `select id, organization_id from signals
+      where kind = 'post_engagement' and status = 'new' and score is null
+        and occurred_at < now() - make_interval(days => $1)`,
+    [maxJours],
+  );
+  for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id);
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
-      where status = 'new' and score is null
+      where status = 'new' and score is null and kind <> 'post_engagement'
         and occurred_at < now() - make_interval(days => $1)`,
     [maxJours],
   );
@@ -79,12 +92,12 @@ export async function ecarterSignauxTropAnciens(
   const qualifies = await pool.query(
     `update signals s
         set status = 'discarded', discard_reason = 'stale_unenriched'
-      where s.status = 'qualified'
+      where s.status = 'qualified' and s.kind <> 'post_engagement'
         and s.occurred_at < now() - make_interval(days => $1)
         and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
     [maxJours],
   );
-  return { nouveaux: nouveaux.rowCount ?? 0, qualifies: qualifies.rowCount ?? 0 };
+  return { nouveaux: (nouveaux.rowCount ?? 0) + personnes.rows.length, qualifies: qualifies.rowCount ?? 0 };
 }
 
 export async function enqueueDiscoverForActiveSources(
@@ -402,6 +415,11 @@ export async function enqueueEnrollments(
        -- La persona du contact doit être explicitement acceptée.
         and ct.persona_id is not null
         and c.entry_rules -> 'personas' ? ct.persona_id::text
+       -- Un engageur naît SANS email : l'inscrire maintenant brûlerait une place du
+       -- plafond du jour et le tick l'arrêterait (not_sendable), puis l'email
+       -- arrivé plus tard relancerait une seconde inscription. Restreint à ce kind
+       -- par construction : le chemin des offres d'emploi n'est pas touché.
+        and not (s.kind = 'post_engagement' and ct.email is null)
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de

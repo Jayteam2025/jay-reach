@@ -15,6 +15,7 @@
 import pg from 'pg';
 import {
   compterSignauxScorables,
+  ecarterSignauxTropAnciens,
   enqueueEnrollments,
   enregistrerEngageur,
   persistEnrichedContact,
@@ -196,13 +197,60 @@ async function chaine() {
   const r2 = await runScore({ pool, organizationId: m.org, scorer });
   check('24c. un second scoring n’a rien à juger', r2.considered === 0, JSON.stringify(r2));
 
-  // Le maillon final : enqueueEnrollments, NON modifié, inscrit le contact.
+  // Le maillon final : enqueueEnrollments. Un engageur naît SANS email ; l'inscrire
+  // maintenant brûlerait une place du plafond et le tick l'arrêterait (not_sendable).
   const jobs = [];
   const boss = { insert: async (lot) => { jobs.push(...lot); } };
-  await enqueueEnrollments(boss, pool);
   const contact = (await q(`select id from contacts where organization_id=$1`, [m.org])).rows[0].id;
-  check('25. enqueueEnrollments enfile l’inscription du contact scoré',
-    jobs.some((j) => j.name === 'sequence.enroll' && j.data.contactId === contact && j.data.campaignId === m.campagne), JSON.stringify(jobs.map((j) => j.data)));
+  const inscrit = () => jobs.some((j) => j.name === 'sequence.enroll' && j.data.contactId === contact && j.data.campaignId === m.campagne);
+  await enqueueEnrollments(boss, pool);
+  check('25. un engageur qualifié SANS email n’est pas inscrit', !inscrit(), JSON.stringify(jobs.filter((j) => j.data.organizationId === m.org).map((j) => j.data.contactId)));
+  await q(`update contacts set email = 'claire@acme.fr', email_status = 'valid' where id = $1`, [contact]);
+  await enqueueEnrollments(boss, pool);
+  check('25b. le même engageur, son email posé, est inscrit', inscrit());
+}
+
+async function purgeEtRegression() {
+  console.log('purge d’ancienneté, et chemin entreprise face à l’index des adresses');
+  const m = await monde({ avecPrompt: false });
+  const vieux = eng('vieux', 'Victor Vieux', 'Directeur commercial');
+  const recent = eng('recent', 'Rita Recente', 'Directrice commerciale');
+  await enregistrer(m, vieux);
+  await enregistrer(m, recent);
+  await q(`update signals set occurred_at = now() - interval '30 days' where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org]);
+  // Un engageur qualifié et ancien, et une offre d'emploi ancienne : le premier suit son contact, la seconde le chemin d'avant.
+  const qual = eng('qual', 'Quentin Qualifie', 'Directeur commercial');
+  await enregistrer(m, qual);
+  await q(`update signals set occurred_at = now() - interval '30 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org]);
+  await q(`insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, company_hint) values ($1,$2,'adzuna','adz:old','job_posting', now() - interval '30 days','Vieille PME')`, [m.org, m.source]);
+
+  await ecarterSignauxTropAnciens(pool, 14);
+  const sv = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
+  const cv = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Victor'`, [m.org])).rows[0].n;
+  const ev = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
+  check('38. l’engageur ancien resté `new` est effacé avec son contact', sv === 0 && cv === 0, `signal=${sv} contact=${cv}`);
+  check('39. sa mémoire d’écart est posée', ev === 1);
+  const sr = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAArecent'`, [m.org])).rows[0].n;
+  check('40. l’engageur récent est intact', sr === 1);
+  const sq = (await q(`select status from signals where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0];
+  const cq = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Quentin'`, [m.org])).rows[0].n;
+  check('41. l’engageur qualifié ancien n’est pas passé en `stale_unenriched`', sq?.status === 'qualified' && cq === 1, JSON.stringify(sq));
+  const so = (await q(`select status, discard_reason from signals where organization_id=$1 and external_id='adz:old'`, [m.org])).rows[0];
+  check('42. l’offre d’emploi ancienne suit toujours la règle d’avant (discarded / stale)', so?.status === 'discarded' && so?.discard_reason === 'stale', JSON.stringify(so));
+
+  // Chemin entreprise : le contact porte L et un email A ; FullEnrich rend L avec un email B.
+  const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  await q(`insert into contacts (organization_id, first_name, email, linkedin_url) values ($1,'Ada','a@acme.fr','https://www.linkedin.com/in/ada-1')`, [m.org]);
+  const r = await erreur(persistEnrichedContact(pool, m.org, compte, { email: 'b@acme.fr', linkedinUrl: 'https://www.linkedin.com/in/ada-1' }));
+  check('43. adresse déjà portée par un contact avec un autre email : le job ne tombe pas', r === null, String(r));
+  const nb = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Ada'`, [m.org])).rows[0].n;
+  check('43b. aucune fiche créée ni fusionnée', nb === 1);
+
+  // Autre graphie de la même adresse : le contact de l'engageur est retrouvé, pas doublé.
+  await enregistrer(m, { ...eng('zed', 'Zed Zan', 'Directeur commercial'), urlProfil: 'https://www.linkedin.com/in/zed-zan' });
+  const id = await persistEnrichedContact(pool, m.org, compte, { email: 'zed@acme.fr', linkedinUrl: 'https://fr.linkedin.com/in/zed-zan/?trk=x' });
+  const zz = (await q(`select count(*)::int n from contacts where organization_id=$1 and linkedin_url like '%zed-zan%'`, [m.org])).rows[0].n;
+  check('44. une autre graphie de l’adresse retrouve le contact de l’engageur', zz === 1 && id !== null, `n=${zz}`);
 }
 
 async function sansConsigne() {
@@ -303,6 +351,7 @@ try {
   await index();
   await rattachement();
   await chaine();
+  await purgeEtRegression();
   await sansConsigne();
   await entreprise();
   await enrichissement();
