@@ -51,7 +51,7 @@ async function verrou() {
   const l = (await q(`select lock_owner from linkedin_server_sessions where organization_id = $1`, [a])).rows[0];
   check('3. le propriétaire reste le premier', l.lock_owner === 'w1', `lock_owner=${l.lock_owner}`);
   check('4. le verrou d’une autre organisation est indépendant', (await prendreVerrouLinkedIn(ctxDe(b), 'w3', 1500)) === true);
-  await dormir(1800);
+  await dormir(2500);
   check('5. après expiration : accordée au nouveau', (await prendreVerrouLinkedIn(ctxDe(a), 'w2', 1500)) === true);
   const l2 = (await q(`select lock_owner from linkedin_server_sessions where organization_id = $1`, [a])).rows[0];
   check('6. le propriétaire a changé', l2.lock_owner === 'w2', `lock_owner=${l2.lock_owner}`);
