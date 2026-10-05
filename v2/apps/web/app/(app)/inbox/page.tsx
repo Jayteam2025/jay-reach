@@ -3,7 +3,7 @@ import {
   ErreurIntrouvable,
   lireFil,
   lireFiche,
-  listerCampagnes,
+  listerCampagnesPourFiltre,
   listerFils,
   type FiltreReception,
   type FilDetail,
@@ -62,7 +62,7 @@ export default async function ReceptionPage({
 
   const [resultat, campagnes] = await Promise.all([
     listerFils(ctx, { filtre, campagneId: campagneId ?? undefined, page: 1 }),
-    listerCampagnes(ctx),
+    listerCampagnesPourFiltre(ctx),
   ]);
 
   const maintenant = new Date();
@@ -123,7 +123,7 @@ export default async function ReceptionPage({
         compteurs={resultat.compteurs}
         filtreActif={filtre}
         campagneId={campagneId}
-        campagnes={campagnes.map((c) => ({ id: c.id, nom: c.nom }))}
+        campagnes={campagnes}
         filSelectionneId={filSelectionneId}
       />
       {filDetail && filSelectionneId ? (

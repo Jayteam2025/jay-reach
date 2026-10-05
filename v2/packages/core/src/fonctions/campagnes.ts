@@ -710,6 +710,31 @@ interface LigneCampagneListe {
   liste_source: { nom: string; autres: number } | null;
 }
 
+/** Une campagne réduite à ce qu'un menu déroulant affiche (`listerCampagnesPourFiltre`). */
+export interface CampagneFiltreOption {
+  readonly id: string;
+  readonly nom: string;
+  readonly statut: CampaignStatus;
+}
+
+/**
+ * Identifiant, nom et statut des campagnes, dans le même ordre que `listerCampagnes`, en UNE
+ * requête : pour remplir un `<select>` (filtre de Réception et de Contacts, import CSV), là où
+ * `listerCampagnes` lit les réglages, les boîtes et calcule une tendance sur 7 jours dont ces
+ * écrans n'affichent rien.
+ */
+export async function listerCampagnesPourFiltre(ctx: Contexte): Promise<CampagneFiltreOption[]> {
+  exiger(ctx, 'viewer');
+  const res = await ctx.ex.query<{ id: string; name: string; status: CampaignStatus }>(
+    `select c.id, c.name, c.status /* jr:campagnes_options */
+       from campaigns c
+      where c.organization_id = $1
+      order by c.created_at desc`,
+    [ctx.organisationId],
+  );
+  return res.rows.map((r) => ({ id: r.id, nom: r.name, statut: r.status }));
+}
+
 export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResume[]> {
   exiger(ctx, 'viewer');
 
