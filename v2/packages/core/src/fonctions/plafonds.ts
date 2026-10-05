@@ -358,6 +358,17 @@ export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number
   return plafondDuJour(ctx.ex, ctx.organisationId, 'enrichissements_par_jour');
 }
 
+/** Plafond d'envois du jour : somme des quotas journaliers des boîtes email actives (une seule définition, accueil et menu). */
+export async function lirePlafondEnvois(ctx: Contexte): Promise<number> {
+  const res = await ctx.ex.query<{ plafond: number }>(
+    `select coalesce(sum(daily_quota), 0)::int as plafond
+       from senders
+      where organization_id = $1 and kind = 'email' and is_active`,
+    [ctx.organisationId],
+  );
+  return res.rows[0]?.plafond ?? 0;
+}
+
 /**
  * Consommation du jour, pour l'écran comme pour le MCP : scoring et
  * enrichissement lus dans `provider_daily_usage` (le compteur atomique que le
@@ -417,19 +428,12 @@ export async function lireConsommationDuJour(
         and a.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2`,
     [ctx.organisationId, fuseau],
   );
-  const envoisPlafondRes = await ctx.ex.query<{ plafond: number }>(
-    `select coalesce(sum(daily_quota), 0)::int as plafond
-       from senders
-      where organization_id = $1 and kind = 'email' and is_active`,
-    [ctx.organisationId],
-  );
-
   return {
     scoring: { utilise: scoringRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.scoring_par_jour) },
     // `reglagesResolus.enrichissements_par_jour` porte déjà le repli R78
     // (`credentials.config.daily_cap`, cf. `lireReglages`) — même valeur que
     // `plafondEnrichissementDuJour(ctx)`, sans le relire.
     enrichissement: { utilise: enrichRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.enrichissements_par_jour) },
-    envois: { utilise: envoisUtiliseRes.rows[0]?.n ?? 0, plafond: envoisPlafondRes.rows[0]?.plafond ?? 0 },
+    envois: { utilise: envoisUtiliseRes.rows[0]?.n ?? 0, plafond: await lirePlafondEnvois(ctx) },
   };
 }
