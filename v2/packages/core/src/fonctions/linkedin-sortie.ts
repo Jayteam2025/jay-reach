@@ -16,10 +16,11 @@ export type Sortie = { ip: string; operateur?: string; pays?: string };
  * diffèrent. Seule l'égalité des IP décide ; l'opérateur et le pays sont
  * informatifs. Sans IP attendue (première connexion), rien à comparer : ok.
  *
- * Si la relève échoue, la sortie n'est pas prouvée : la session est bloquée
- * (motif `sortie_inattendue`) et l'erreur rendue est générique. L'erreur
- * d'origine peut porter l'URL du proxy avec ses identifiants : elle n'est ni
- * consignée ni chaînée en `cause`.
+ * Si la relève échoue, la sortie n'est pas établie : le passage échoue avec une
+ * erreur générique, sans toucher à la session (le motif `sortie_inattendue`
+ * affirmerait une IP qu'on n'a pas vue ; les échecs répétés relèvent du
+ * disjoncteur). L'erreur d'origine peut porter l'URL du proxy avec ses
+ * identifiants : elle n'est ni consignée ni chaînée en `cause`.
  */
 export async function verifierSortie(
   ctx: Contexte,
@@ -30,7 +31,6 @@ export async function verifierSortie(
   try {
     sortie = await releve();
   } catch {
-    await bloquerSessionLinkedIn(ctx, 'sortie_inattendue');
     throw new Error('Relève de la sortie LinkedIn impossible');
   }
   const ok = attendue === null || sortie.ip === attendue;

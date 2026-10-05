@@ -73,7 +73,17 @@ describe('verifierSortie', () => {
     ]);
     expect(consigne).not.toContain('motdepasse');
     expect(consigne).not.toContain('proxy.example');
-    // Relève impossible : on ne peut pas prouver la sortie, la session est bloquée.
-    expect(blocage(appels)?.params).toContain('sortie_inattendue');
+  });
+
+  it('ne bloque pas la session quand la relève échoue', async () => {
+    const { ctx, appels } = faux();
+    await expect(
+      verifierSortie(ctx, '203.0.113.7', async () => {
+        throw new Error('echo indisponible');
+      }),
+    ).rejects.toThrow('Relève de la sortie LinkedIn impossible');
+    // La sortie n'est pas établie : aucun constat « sortie inattendue » à écrire.
+    expect(blocage(appels)).toBeUndefined();
+    expect(appels).toHaveLength(0);
   });
 });
