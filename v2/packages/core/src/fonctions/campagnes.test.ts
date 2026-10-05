@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { ErreurIntrouvable } from './contexte.js';
+import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import {
   ORDRE_STATUTS,
   archiver,
@@ -1867,6 +1867,26 @@ describe('creerCampagne', () => {
     expect(appels.some((a) => /jr:creer_campagne_sources/i.test(String(a[0])))).toBe(false);
     const appelCreation = appels.find((a) => /jr:creer_campagne\b/i.test(String(a[0])));
     expect(appelCreation?.[1]).toEqual(['org-1', 'Sans thème', null, null, JSON.stringify({ personas: ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'] }), null]);
+  });
+
+  it('refuse de rattacher a une seconde campagne une source d\'engageurs deja prise (un post, une campagne)', async () => {
+    const ctx = faux(
+      {
+        'jr:creer_campagne_posts': [{ id: '22222222-2222-2222-2222-222222222222', url: 'https://www.linkedin.com/posts/x' }],
+        'jr:post_deja_pris': [{ url: 'https://www.linkedin.com/posts/x' }],
+        'jr:creer_campagne': [{ id: 'camp-1' }],
+      },
+      'operator',
+    );
+    await expect(
+      creerCampagne(ctx, {
+        name: 'Test',
+        entryKind: 'source',
+        entryId: '22222222-2222-2222-2222-222222222222',
+      }),
+    ).rejects.toThrow(ErreurEntree);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.some((a) => /insert into campaign/i.test(String(a[0])))).toBe(false);
   });
 
   it('refuse entryId sans entryKind (ErreurEntree)', async () => {

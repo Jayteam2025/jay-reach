@@ -8,6 +8,7 @@ import {
   ajouterDepuisListe,
   activerSource,
   configFormulaireDepuisStockee,
+  configLinkedInPost,
   construireConfigStocke,
   creerSource,
   importerCsv,
@@ -412,9 +413,63 @@ describe('creerSource', () => {
       campagneId: CAMPAGNE_ID,
       providerId: 'linkedin_post_engagers',
       nom: 'LinkedIn · Engageurs',
-      config: { urlPost: 'https://exemple.fr/post', garder: ['commente'], compteId: 'compte-1' },
+      config: { urlPost: 'https://exemple.fr/post', garder: ['commente'] },
     });
     expect(appels.some(([sql]) => /insert into source_providers/i.test(sql))).toBe(false);
+  });
+});
+
+describe('configLinkedInPost — la source d’engageurs ne garde que ce qui sert', () => {
+  const base = { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] };
+
+  it('le schema refuse compteId', () => {
+    expect(() => configLinkedInPost.parse({ ...base, compteId: 'c1' })).toThrow();
+  });
+  it('le schema refuse profilsParJour', () => {
+    expect(() => configLinkedInPost.parse({ ...base, profilsParJour: 40 })).toThrow();
+  });
+  it('le schema refuse exclurePremierDegre', () => {
+    expect(() => configLinkedInPost.parse({ ...base, exclurePremierDegre: true })).toThrow();
+  });
+  it('le schema accepte urlPost et garder seuls', () => {
+    expect(configLinkedInPost.parse(base)).toEqual(base);
+  });
+});
+
+describe('creerSource — engageurs d’un post : persona et unicité du post', () => {
+  const config = { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] };
+
+  it('une campagne a plusieurs personas rend personaId obligatoire', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1', 'p2'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    const entree = { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'Engageurs', config };
+    await expect(creerSource(ctx, entree)).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /insert into sources/i.test(sql))).toBe(false);
+    await expect(creerSource(ctx, { ...entree, config: { ...config, personaId: 'p2' } })).resolves.toEqual({ id: 'src-1' });
+  });
+
+  it('une campagne a un seul persona ne demande aucun personaId', async () => {
+    const { ctx } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).resolves.toEqual({ id: 'src-1' });
+  });
+
+  it('rattacher une source d\'engageurs a une seconde campagne est refuse cote serveur', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:post_deja_pris': [{ url: 'https://WWW.linkedin.com/posts/x/?utm_source=share' }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /insert into (sources|campaign_sources)/i.test(sql))).toBe(false);
   });
 });
 

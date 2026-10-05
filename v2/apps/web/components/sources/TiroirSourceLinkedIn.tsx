@@ -128,7 +128,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirS
             keepPeople: t('drawer.keepPeople'),
             commented: t('drawer.commented'),
             reacted: t('drawer.reacted'),
-            excludeFirstDegree: t('drawer.excludeFirstDegree'),
+            postOneCampaign: t('drawer.postOneCampaign'),
             competitorPages: t('drawer.competitorPages'),
             topics: t('drawer.topics'),
             sinceDays: t('drawer.sinceDays'),

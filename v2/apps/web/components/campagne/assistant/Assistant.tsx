@@ -261,7 +261,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             formLinkedinKeepPeople: t('sources.formLinkedinKeepPeople'),
             formLinkedinCommented: t('sources.formLinkedinCommented'),
             formLinkedinReacted: t('sources.formLinkedinReacted'),
-            formLinkedinExcludeFirstDegree: t('sources.formLinkedinExcludeFirstDegree'),
+            formLinkedinPostOneCampaign: t('sources.formLinkedinPostOneCampaign'),
             formLinkedinCompetitorPages: t('sources.formLinkedinCompetitorPages'),
             formLinkedinTopics: t('sources.formLinkedinTopics'),
             formLinkedinSinceDays: t('sources.formLinkedinSinceDays'),

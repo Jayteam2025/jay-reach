@@ -21,7 +21,7 @@ import { construireValeursContact, normalizeListColumnName, renderTemplatePartia
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
-import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, exigerPostLibre } from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -1912,6 +1912,19 @@ export async function creerCampagne(ctx: Contexte, entree: unknown): Promise<{ i
   exiger(ctx, 'operator');
   const { name, entryKind, entryId, sourceIds, minScore, personaIds, dailyCap } = valider(campaignCreateSchema, entree);
 
+  const themes = entryKind === 'source' ? (sourceIds ?? [entryId]) : [];
+  if (themes.length > 0) {
+    // Un post d'engageurs déjà relié à une campagne ne se rattache pas à une seconde (règle posée aussi dans `creerSource`).
+    const postsRes = await ctx.ex.query<{ id: string; url: string | null }>(
+      `select id, config->>'urlPost' as url from sources /* jr:creer_campagne_posts */
+        where organization_id = $1 and id = any($2::uuid[]) and config->>'sourceType' = 'linkedin_post_engagers'`,
+      [ctx.organisationId, themes],
+    );
+    for (const p of postsRes.rows) {
+      if (p.url) await exigerPostLibre(ctx, p.url, { campagneId: null, sourceId: null });
+    }
+  }
+
   const entryRules = toEntryRules({ minScore, personaIds });
   const res = await ctx.ex.query<{ id: string }>(
     `insert into campaigns /* jr:creer_campagne */ (organization_id, name, status, source_id, list_id, entry_rules, daily_cap)
@@ -1928,7 +1941,6 @@ export async function creerCampagne(ctx: Contexte, entree: unknown): Promise<{ i
   );
   const campagneId = res.rows[0]!.id;
 
-  const themes = entryKind === 'source' ? (sourceIds ?? [entryId]) : [];
   if (themes.length > 0) {
     const placeholders = themes.map((_, i) => `($1, $${i + 2})`).join(', ');
     await ctx.ex.query(

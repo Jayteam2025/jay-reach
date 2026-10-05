@@ -72,7 +72,7 @@ export interface EtapeSourcesLibelles {
   formLinkedinKeepPeople: string;
   formLinkedinCommented: string;
   formLinkedinReacted: string;
-  formLinkedinExcludeFirstDegree: string;
+  formLinkedinPostOneCampaign: string;
   formLinkedinCompetitorPages: string;
   formLinkedinTopics: string;
   formLinkedinSinceDays: string;
@@ -233,6 +233,9 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
     if (lieux.length > 0) morceaux.push(lieux.join(', '));
     return morceaux.join(' · ');
   }
+  if (source.providerId === 'linkedin_post_engagers') {
+    return typeof source.config.urlPost === 'string' ? source.config.urlPost : '';
+  }
   const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
   return libelles.resumeLinkedin(profilsParJour);
 }
@@ -381,7 +384,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               keepPeople: libelles.formLinkedinKeepPeople,
               commented: libelles.formLinkedinCommented,
               reacted: libelles.formLinkedinReacted,
-              excludeFirstDegree: libelles.formLinkedinExcludeFirstDegree,
+              postOneCampaign: libelles.formLinkedinPostOneCampaign,
               competitorPages: libelles.formLinkedinCompetitorPages,
               topics: libelles.formLinkedinTopics,
               sinceDays: libelles.formLinkedinSinceDays,

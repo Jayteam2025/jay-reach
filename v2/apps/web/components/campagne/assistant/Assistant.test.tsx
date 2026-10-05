@@ -56,7 +56,7 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinKeepPeople: 'On garde les personnes qui',
   formLinkedinCommented: 'ont commenté',
   formLinkedinReacted: 'ont réagi',
-  formLinkedinExcludeFirstDegree: 'hors relations de 1er degré',
+  formLinkedinPostOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
   formLinkedinCompetitorPages: 'Pages entreprise suivies',
   formLinkedinTopics: 'Sujets suivis',
   formLinkedinSinceDays: 'Poste pris depuis (jours)',
@@ -141,12 +141,10 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
   it('arrive dans l’entrée envoyée à creerCampagneComplete avec son providerId et sa config, valide contre le vrai schéma zod', () => {
     const config = construireConfigLinkedIn('linkedin_post_engagers', {
       ...etatChampsLinkedInDepuisConfig(),
-      compteId: 'compte-1',
       urlPost: 'https://exemple.fr/post',
     });
     expect(champsLinkedInValides('linkedin_post_engagers', {
       ...etatChampsLinkedInDepuisConfig(),
-      compteId: 'compte-1',
       urlPost: 'https://exemple.fr/post',
     })).toBe(true);
 
@@ -175,8 +173,7 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
     expect(entree.sources).toHaveLength(1);
     expect(entree.sources[0]!.providerId).toBe('linkedin_post_engagers');
     expect(entree.sources[0]!.nom).toBe("Engageurs d'un post");
-    expect(entree.sources[0]!.config).toMatchObject({
-      compteId: 'compte-1',
+    expect(entree.sources[0]!.config).toEqual({
       urlPost: 'https://exemple.fr/post',
       garder: ['commente', 'reagi'],
     });
@@ -532,7 +529,7 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     keepPeople: 'On garde les personnes qui',
     commented: 'ont commenté',
     reacted: 'ont réagi',
-    excludeFirstDegree: 'hors relations de 1er degré',
+    postOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
     competitorPages: 'Pages entreprise suivies',
     topics: 'Sujets suivis',
     sinceDays: 'Poste pris depuis (jours)',
@@ -570,5 +567,19 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
       />,
     );
     expect(html).toContain('id="linkedin-topics"');
+  });
+
+  it('les engageurs d\'un post n\'ont ni compte ni cadence, et affichent la règle « un post, une campagne »', () => {
+    const html = renderToStaticMarkup(
+      <ChampsSourceLinkedIn
+        providerId="linkedin_post_engagers"
+        etat={etatChampsLinkedInDepuisConfig()}
+        onChange={() => {}}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain('linkedin-account-id');
+    expect(html).not.toContain('linkedin-profiles-per-day');
+    expect(html).toContain('seule campagne');
   });
 });

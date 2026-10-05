@@ -116,7 +116,6 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
   const config = carte.config as {
     urlPost?: string;
     garder?: string[];
-    exclurePremierDegre?: boolean;
     comptesConcurrents?: string[];
     sujets?: string[];
     depuisJours?: number;
@@ -127,7 +126,6 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
     const garde = [
       config.garder?.includes('commente') ? t('drawer.commented') : null,
       config.garder?.includes('reagi') ? t('drawer.reacted') : null,
-      config.exclurePremierDegre ? t('drawer.excludeFirstDegree') : null,
     ].filter((v): v is string => Boolean(v));
     blocs.push({ libelle: t('card.keep'), contenu: <ListePuces valeurs={garde} /> });
   } else if (carte.providerId === 'linkedin_competitor_followers') {

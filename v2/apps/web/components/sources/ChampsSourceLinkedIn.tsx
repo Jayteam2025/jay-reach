@@ -16,7 +16,6 @@ export interface EtatChampsLinkedIn {
   readonly urlPost: string;
   readonly garderCommente: boolean;
   readonly garderReagi: boolean;
-  readonly exclurePremierDegre: boolean;
   readonly comptesConcurrents: string;
   readonly sujets: string;
   readonly depuisJours: string;
@@ -46,7 +45,6 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     urlPost: typeof config.urlPost === 'string' ? config.urlPost : '',
     garderCommente: Array.isArray(config.garder) ? config.garder.includes('commente') : true,
     garderReagi: Array.isArray(config.garder) ? config.garder.includes('reagi') : true,
-    exclurePremierDegre: config.exclurePremierDegre !== false,
     comptesConcurrents: listeVersTexte(config.comptesConcurrents),
     sujets: listeVersTexte(config.sujets),
     depuisJours: typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
@@ -61,7 +59,8 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       const garder: string[] = [];
       if (etat.garderCommente) garder.push('commente');
       if (etat.garderReagi) garder.push('reagi');
-      return { ...commun, urlPost: etat.urlPost, garder, exclurePremierDegre: etat.exclurePremierDegre };
+      // Ni compte ni cadence : l'exécution est côté serveur, le post suffit.
+      return { urlPost: etat.urlPost, garder };
     }
     case 'linkedin_competitor_followers':
       return { ...commun, comptesConcurrents: texteVersListe(etat.comptesConcurrents) };
@@ -72,9 +71,9 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
   }
 }
 
-/** Champ requis du sous-type (en plus du compte LinkedIn, commun aux quatre) rempli — condition d'activation du bouton d'enregistrement. */
+/** Champ requis du sous-type (en plus du compte LinkedIn, commun aux trois autres) rempli — condition d'activation du bouton d'enregistrement. */
 export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn): boolean {
-  if (!etat.compteId.trim()) return false;
+  if (providerId !== 'linkedin_post_engagers' && !etat.compteId.trim()) return false;
   switch (providerId) {
     case 'linkedin_post_engagers':
       return etat.urlPost.trim().length > 0 && (etat.garderCommente || etat.garderReagi);
@@ -92,7 +91,7 @@ export interface ChampsSourceLinkedInLibelles {
   readonly keepPeople: string;
   readonly commented: string;
   readonly reacted: string;
-  readonly excludeFirstDegree: string;
+  readonly postOneCampaign: string;
   readonly competitorPages: string;
   readonly topics: string;
   readonly sinceDays: string;
@@ -148,10 +147,8 @@ export function ChampsSourceLinkedIn({
             <CaseACocher coche={etat.garderReagi} onChange={(v) => onChange({ garderReagi: v })}>
               {libelles.reacted}
             </CaseACocher>
-            <CaseACocher coche={etat.exclurePremierDegre} onChange={(v) => onChange({ exclurePremierDegre: v })}>
-              {libelles.excludeFirstDegree}
-            </CaseACocher>
           </div>
+          <p className="jr-aide">{libelles.postOneCampaign}</p>
         </>
       )}
       {providerId === 'linkedin_competitor_followers' && (
@@ -190,6 +187,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       )}
+      {providerId !== 'linkedin_post_engagers' && (
       <div className="ligne">
         <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
           <input
@@ -211,6 +209,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       </div>
+      )}
     </>
   );
 }

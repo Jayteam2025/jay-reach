@@ -152,9 +152,8 @@ export const configLinkedInPost = z
   .object({
     urlPost: z.string().min(1),
     garder: z.array(z.enum(['commente', 'reagi'])).min(1),
-    exclurePremierDegre: z.boolean().default(true),
-    compteId: z.string().min(1),
-    profilsParJour: z.number().int().positive().max(200).default(40),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
   })
   .strict();
 export type ConfigLinkedInPost = z.infer<typeof configLinkedInPost>;
@@ -309,9 +308,7 @@ export function configFormulaireDepuisStockee(
       garder: tableauDeChaines(c.garder).filter(
         (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
       ),
-      exclurePremierDegre: typeof c.exclurePremierDegre === 'boolean' ? c.exclurePremierDegre : true,
-      compteId: chaineOuVide(c.compteId),
-      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+      personaId: chaineOuIndefinie(c.personaId),
     };
   }
   if (providerId === 'linkedin_competitor_followers') {
@@ -622,12 +619,58 @@ export const schemaCreerSource = z.object({
   schedule: schemaSchedule.default('every 6h'),
 });
 
-async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<void> {
-  const res = await ctx.ex.query<{ id: string }>(
-    `select id from campaigns /* jr:sources_campagne */ where id = $1 and organization_id = $2`,
+async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<{ personas: string[] }> {
+  const res = await ctx.ex.query<{ id: string; entry_rules: { personas?: unknown } | null }>(
+    `select id, entry_rules from campaigns /* jr:sources_campagne */ where id = $1 and organization_id = $2`,
     [campagneId, ctx.organisationId],
   );
   if (res.rowCount === 0) throw new ErreurIntrouvable('Campagne');
+  const personas = res.rows[0]?.entry_rules?.personas;
+  return { personas: Array.isArray(personas) ? personas.filter((p): p is string => typeof p === 'string') : [] };
+}
+
+/** Forme canonique d'une adresse de post : sans paramètres de partage, sans ancre, sans barre finale, hôte en minuscules. */
+export function normaliserUrlPost(url: string): string {
+  const brut = url.trim();
+  try {
+    const u = new URL(brut);
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return brut.toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+/**
+ * Règle « un post ne sert qu'à une seule campagne » : sans elle,
+ * `enqueueEnrollments` fait entrer la personne dans la campagne la plus
+ * ancienne, sans trace, et l'autre campagne affiche « 0 nouveau ».
+ * Les sources sont en N-N avec les campagnes (`campaign_sources`) : la règle
+ * se pose donc ici, dans les fonctions qui écrivent le lien, jamais dans l'écran.
+ *
+ * Refuse si une AUTRE source de l'organisation, sur le même post, est reliée à
+ * une campagne autre que `campagneId` (`null` : n'importe laquelle).
+ */
+export async function exigerPostLibre(
+  ctx: Contexte,
+  urlPost: string,
+  exceptions: { campagneId: string | null; sourceId: string | null },
+): Promise<void> {
+  const res = await ctx.ex.query<{ url: string | null }>(
+    `select s.config->>'urlPost' as url
+       from sources s join campaign_sources cs on cs.source_id = s.id /* jr:post_deja_pris */
+      where s.organization_id = $1
+        and s.config->>'sourceType' = 'linkedin_post_engagers'
+        and ($2::uuid is null or cs.campaign_id <> $2::uuid)
+        and ($3::uuid is null or s.id <> $3::uuid)`,
+    [ctx.organisationId, exceptions.campagneId, exceptions.sourceId],
+  );
+  const cible = normaliserUrlPost(urlPost);
+  if (res.rows.some((r) => r.url !== null && normaliserUrlPost(r.url) === cible)) {
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: { urlPost: ['Un post ne peut servir qu’à une seule campagne.'] },
+    });
+  }
 }
 
 /**
@@ -648,9 +691,20 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
       fieldErrors: { providerId: ['Ce type de source ne se crée pas par ce formulaire.'] },
     });
   }
-  await verifierCampagne(ctx, campagneId);
+  const { personas } = await verifierCampagne(ctx, campagneId);
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
+  if (providerId === 'linkedin_post_engagers') {
+    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
+    // Plusieurs personas : on demande lequel, sans choix arbitraire silencieux.
+    if (personas.length > 1 && (!personaId || !personas.includes(personaId))) {
+      throw new ErreurEntree({
+        formErrors: [],
+        fieldErrors: { personaId: ['Cette campagne porte plusieurs personas : choisissez celui de la source.'] },
+      });
+    }
+    await exigerPostLibre(ctx, urlPost, { campagneId, sourceId: null });
+  }
   const configStocke = construireConfigStocke(providerId, configValide);
   const collecteDisponible = !estTypeLinkedIn(providerId);
 
@@ -722,6 +776,9 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   )[0]!;
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
+  if (providerId === 'linkedin_post_engagers') {
+    await exigerPostLibre(ctx, (configValide as ConfigLinkedInPost).urlPost, { campagneId: null, sourceId });
+  }
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
   // créée avant ce lot porte des clés que ce formulaire ne gère pas
   // (`scoring_prompt`, `match_threshold`, `exclude_keywords` — R30, vérifié
