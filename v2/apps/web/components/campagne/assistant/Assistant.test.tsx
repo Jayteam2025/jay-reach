@@ -582,4 +582,34 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     expect(html).not.toContain('linkedin-profiles-per-day');
     expect(html).toContain('seule campagne');
   });
+
+  it('le choix du persona n\'apparait que si la campagne en porte plusieurs, et devient obligatoire', () => {
+    const personas = [
+      { id: 'p1', nom: 'Directeur commercial' },
+      { id: 'p2', nom: 'DRH' },
+    ];
+    const rendu = (liste: typeof personas) =>
+      renderToStaticMarkup(
+        <ChampsSourceLinkedIn
+          providerId="linkedin_post_engagers"
+          etat={etatChampsLinkedInDepuisConfig()}
+          onChange={() => {}}
+          libelles={{ ...LIBELLES, persona: 'Persona de la source', personaChoisir: 'Choisir' }}
+          personas={liste}
+        />,
+      );
+    expect(rendu(personas)).toContain('DRH');
+    expect(rendu(personas.slice(0, 1))).not.toContain('Persona de la source');
+    expect(rendu([])).not.toContain('Persona de la source');
+
+    const etat = { ...etatChampsLinkedInDepuisConfig(), urlPost: 'https://exemple.fr/p' };
+    expect(champsLinkedInValides('linkedin_post_engagers', etat, 2)).toBe(false);
+    expect(champsLinkedInValides('linkedin_post_engagers', { ...etat, personaId: 'p2' }, 2)).toBe(true);
+    expect(champsLinkedInValides('linkedin_post_engagers', etat, 1)).toBe(true);
+    expect(construireConfigLinkedIn('linkedin_post_engagers', { ...etat, personaId: 'p2' })).toEqual({
+      urlPost: 'https://exemple.fr/p',
+      garder: ['commente', 'reagi'],
+      personaId: 'p2',
+    });
+  });
 });

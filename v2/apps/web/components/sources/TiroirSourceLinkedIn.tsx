@@ -11,6 +11,7 @@ import {
   construireConfigLinkedIn,
   etatChampsLinkedInDepuisConfig,
   type EtatChampsLinkedIn,
+  type PersonaChoix,
   type TypeLinkedIn,
 } from './ChampsSourceLinkedIn';
 
@@ -31,6 +32,8 @@ export interface TiroirSourceLinkedInProps {
   readonly campagneId: string;
   readonly providerId: TypeLinkedIn;
   readonly source: SourceLinkedInExistante | null;
+  /** Personas de la campagne ; plusieurs → le persona de la source est à choisir. */
+  readonly personas?: readonly PersonaChoix[];
 }
 
 const CLE_TITRE: Record<TypeLinkedIn, string> = {
@@ -54,7 +57,7 @@ const CLE_TITRE: Record<TypeLinkedIn, string> = {
  * qu'attend `configLinkedIn*`). Ce fichier garde son propre nom de source, sa
  * cadence et son appel serveur (`actionCreerSource`/`actionModifierSourceCampagne`).
  */
-export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirSourceLinkedInProps) {
+export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas = [] }: TiroirSourceLinkedInProps) {
   const t = useTranslations('campagne.sources');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -74,6 +77,10 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirS
 
   function enregistrer() {
     setErreur(null);
+    if (providerId === 'linkedin_post_engagers' && personas.length > 1 && !etat.personaId) {
+      setErreur(t('drawer.personaRequis'));
+      return;
+    }
     const config = construireConfigLinkedIn(providerId, etat);
     startTransition(async () => {
       const res = source
@@ -123,6 +130,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirS
           providerId={providerId}
           etat={etat}
           onChange={modifierEtat}
+          personas={personas}
           libelles={{
             postUrl: t('drawer.postUrl'),
             keepPeople: t('drawer.keepPeople'),
@@ -134,6 +142,8 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirS
             sinceDays: t('drawer.sinceDays'),
             accountId: t('drawer.accountId'),
             profilesPerDay: t('drawer.profilesPerDay'),
+            persona: t('drawer.persona'),
+            personaChoisir: t('drawer.personaChoisir'),
           }}
         />
 

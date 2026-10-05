@@ -629,6 +629,16 @@ async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<{ pe
   return { personas: Array.isArray(personas) ? personas.filter((p): p is string => typeof p === 'string') : [] };
 }
 
+/** Plusieurs personas : on demande lequel, sans choix arbitraire silencieux (création comme modification). */
+function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
+  if (personas.length > 1 && (!personaId || !personas.includes(personaId))) {
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: { personaId: ['Cette campagne porte plusieurs personas : choisissez celui de la source.'] },
+    });
+  }
+}
+
 /** Forme canonique d'une adresse de post : sans paramètres de partage, sans ancre, sans barre finale, hôte en minuscules. */
 export function normaliserUrlPost(url: string): string {
   const brut = url.trim();
@@ -696,13 +706,7 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
   if (providerId === 'linkedin_post_engagers') {
     const { urlPost, personaId } = configValide as ConfigLinkedInPost;
-    // Plusieurs personas : on demande lequel, sans choix arbitraire silencieux.
-    if (personas.length > 1 && (!personaId || !personas.includes(personaId))) {
-      throw new ErreurEntree({
-        formErrors: [],
-        fieldErrors: { personaId: ['Cette campagne porte plusieurs personas : choisissez celui de la source.'] },
-      });
-    }
+    exigerPersonaSource(personas, personaId);
     await exigerPostLibre(ctx, urlPost, { campagneId, sourceId: null });
   }
   const configStocke = construireConfigStocke(providerId, configValide);
@@ -777,7 +781,20 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
   if (providerId === 'linkedin_post_engagers') {
-    await exigerPostLibre(ctx, (configValide as ConfigLinkedInPost).urlPost, { campagneId: null, sourceId });
+    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
+    const campagnesRes = await ctx.ex.query<{ personas: unknown }>(
+      `select c.entry_rules->'personas' as personas
+         from campaign_sources cs join campaigns c on c.id = cs.campaign_id /* jr:sources_personas_campagnes */
+        where cs.source_id = $1 and c.organization_id = $2`,
+      [sourceId, ctx.organisationId],
+    );
+    for (const c of campagnesRes.rows) {
+      exigerPersonaSource(
+        Array.isArray(c.personas) ? c.personas.filter((p): p is string => typeof p === 'string') : [],
+        personaId,
+      );
+    }
+    await exigerPostLibre(ctx, urlPost, { campagneId: null, sourceId });
   }
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
   // créée avant ce lot porte des clés que ce formulaire ne gère pas

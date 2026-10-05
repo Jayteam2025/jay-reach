@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import { listerListesOrganisation, listerSourcesCampagne, type ListeResume } from '@jay-reach/core';
+import { listerListesOrganisation, listerPersonasCampagne, listerSourcesCampagne, type ListeResume } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../../lib/campagne';
 import { EtatVide } from '../../../../../components/ui';
@@ -36,11 +36,12 @@ export default async function CampagneSourcesPage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp, sources, vue] = await Promise.all([
+  const [t, sp, sources, vue, personas] = await Promise.all([
     getTranslations('campagne.sources'),
     searchParams,
     listerSourcesCampagne(ctx, { campagneId: id }),
     lireVueDEnsembleCourante(ctx, id),
+    listerPersonasCampagne(ctx, { campagneId: id }),
   ]);
 
   const brutAjouter = Array.isArray(sp.ajouter) ? sp.ajouter[0] : sp.ajouter;
@@ -76,7 +77,7 @@ export default async function CampagneSourcesPage({
             persona={vue.campagne.nom}
           />
         ) : (
-          <TiroirSourceLinkedIn campagneId={id} providerId={carte.providerId} source={source} />
+          <TiroirSourceLinkedIn campagneId={id} providerId={carte.providerId} source={source} personas={personas} />
         );
     }
   } else if (brutAjouter === 'adzuna' || brutAjouter === 'france_travail') {
@@ -89,7 +90,7 @@ export default async function CampagneSourcesPage({
       />
     );
   } else if (brutAjouter && estLinkedIn(brutAjouter)) {
-    tiroir = <TiroirSourceLinkedIn campagneId={id} providerId={brutAjouter} source={null} />;
+    tiroir = <TiroirSourceLinkedIn campagneId={id} providerId={brutAjouter} source={null} personas={personas} />;
   } else if (brutAjouter === 'csv') {
     tiroir = <TiroirSourceCsv campagneId={id} />;
   } else if (brutAjouter === 'list') {

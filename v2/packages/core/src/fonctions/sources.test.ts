@@ -473,6 +473,34 @@ describe('creerSource — engageurs d’un post : persona et unicité du post', 
   });
 });
 
+describe('modifierSource — engageurs d’un post : le persona se revérifie', () => {
+  const stockee = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'] };
+  const campagnes = { 'jr:sources_personas_campagnes': [{ personas: ['p1', 'p2'] }] };
+
+  it('refuse une modification sans personaId quand la campagne porte plusieurs personas', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stockee }],
+      'jr:sources_modifier': [{}],
+      ...campagnes,
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stockee.urlPost, garder: ['reagi'] }, schedule: 'every 6h' }),
+    ).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /update sources/i.test(sql))).toBe(false);
+  });
+
+  it('accepte la modification avec un personaId de la campagne', async () => {
+    const { ctx } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stockee }],
+      'jr:sources_modifier': [{}],
+      ...campagnes,
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stockee.urlPost, garder: ['reagi'], personaId: 'p2' }, schedule: 'every 6h' }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('modifierSource', () => {
   it('refuse un rôle insuffisant', async () => {
     const { ctx } = faux({}, 'viewer');
