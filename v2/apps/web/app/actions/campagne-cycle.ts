@@ -10,6 +10,7 @@
 import { revalidatePath } from 'next/cache';
 import { lancer, mettreEnPause, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille, revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type ResultatCycleCampagne = { ok: true } | { ok: false; manques: string[] };
 
@@ -27,6 +28,8 @@ export async function actionLancer(campagneId: string): Promise<ResultatCycleCam
     if (resultat.ok) {
       revalidatePath(`/campaigns/${campagneId}`);
       revalidatePath('/campaigns');
+      revaliderLayoutCampagne(campagneId);
+      revaliderCoquille();
     }
     return resultat;
   } catch (err) {
@@ -40,6 +43,8 @@ export async function actionMettreEnPause(campagneId: string): Promise<ResultatC
     await mettreEnPause(ctx, { campagneId });
     revalidatePath(`/campaigns/${campagneId}`);
     revalidatePath('/campaigns');
+    revaliderLayoutCampagne(campagneId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, manques: [messageDErreur(err)] };
