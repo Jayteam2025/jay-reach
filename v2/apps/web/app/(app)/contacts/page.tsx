@@ -5,7 +5,7 @@ import {
   ErreurIntrouvable,
   lireFiche,
   lireReglages,
-  listerCampagnes,
+  listerCampagnesPourFiltre,
   listerClientsEtExclusions,
   listerContacts,
   listerEntreprises,
@@ -93,7 +93,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const [t, sp, campagnesRes, reglages] = await Promise.all([
     getTranslations('contacts'),
     searchParams,
-    listerCampagnes(ctx),
+    listerCampagnesPourFiltre(ctx),
     lireReglages(ctx),
   ]);
 
@@ -108,7 +108,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   // pas active — une inscription y entre `active` dès l'import, mais rien ne
   // partira tant que la campagne elle-même ne l'est pas (`tickDueEnrollments`,
   // `apps/worker/src/handlers/sequence.ts`).
-  const campagnesOptions = campagnesRes.map((c) => ({ id: c.id, nom: c.nom, statut: c.statut }));
+  const campagnesOptions = campagnesRes;
   const peutAjouterClient = ctx.role === 'admin' || ctx.role === 'owner';
   const peutAjouterSuppression = ctx.role === 'operator' || ctx.role === 'admin' || ctx.role === 'owner';
 

@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { ForbiddenError } from '../roles.js';
 import type { Contexte } from './contexte.js';
-import { lireAujourdhui } from './aujourdhui.js';
+import { lireAujourdhui, lireResumeCoquille, SQL_ACTION_DU_JOUR, SQL_ACTION_REELLEMENT_PARTIE } from './aujourdhui.js';
+import { SQL_CONDITION_A_TRAITER } from './reception.js';
 
 /** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
 function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'viewer'): Contexte {
@@ -496,5 +497,62 @@ describe('alertes — chaque `lien` pointe vers une route qui existe réellement
       const segments = lien.split('/').filter(Boolean);
       expect(existsSync(join(appDir, ...segments, 'page.tsx')), `route « ${lien} » introuvable`).toBe(true);
     }
+  });
+});
+
+describe('lireResumeCoquille (menu de gauche : compteurs seulement)', () => {
+  function espion(rows: Record<string, unknown[]> = {}) {
+    const appels: string[] = [];
+    const query = vi.fn(async (text: string) => {
+      appels.push(text);
+      for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(text)) return { rows: r, rowCount: r.length };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    return { ctx, appels };
+  }
+
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireResumeCoquille({ ...espion().ctx, role: null })).rejects.toThrow(ForbiddenError);
+  });
+
+  it("n'exécute aucune des requêtes de détail de l'accueil et reste à 6 requêtes au plus", async () => {
+    const { ctx, appels } = espion();
+    await lireResumeCoquille(ctx);
+    expect(appels.length).toBeLessThanOrEqual(6);
+    for (const lourd of ['jr:threads_a_traiter', 'jr:file_du_jour', 'jr:campagnes_resume', 'jr:sources_orphelines', 'thread_messages']) {
+      expect(appels.some((a) => a.includes(lourd))).toBe(false);
+    }
+  });
+
+  it("porte les mêmes définitions SQL que l'accueil (badge, file du jour, plafond)", async () => {
+    const light = espion();
+    await lireResumeCoquille(light.ctx);
+    const full = espion();
+    await lireAujourdhui(full.ctx);
+
+    const badge = light.appels.find((a) => a.includes('jr:coquille_a_traiter'))!;
+    expect(badge).toContain(SQL_CONDITION_A_TRAITER);
+    expect(full.appels.find((a) => a.includes('jr:threads_a_traiter'))!).toContain(SQL_CONDITION_A_TRAITER);
+
+    const jourMenu = light.appels.find((a) => a.includes('jr:coquille_file_du_jour'))!;
+    expect(jourMenu).toContain(SQL_ACTION_DU_JOUR);
+    expect(jourMenu).toContain(SQL_ACTION_REELLEMENT_PARTIE);
+    expect(full.appels.find((a) => a.includes('jr:file_du_jour'))!).toContain(SQL_ACTION_DU_JOUR);
+
+    // Même requête de plafond des deux côtés (`lirePlafondEnvois`).
+    const plafond = (appels: string[]) => appels.find((a) => /sum\(daily_quota\)/.test(a));
+    expect(plafond(light.appels)).toBeDefined();
+    expect(plafond(light.appels)).toBe(plafond(full.appels));
+  });
+
+  it('assemble partis = total - enFile et lit le plafond', async () => {
+    const { ctx } = espion({
+      'jr:coquille_a_traiter': [{ n: 3 }],
+      'jr:coquille_file_du_jour': [{ total: 10, en_file: 4 }],
+      'sum\\(daily_quota\\)': [{ plafond: 60 }],
+    });
+    const r = await lireResumeCoquille(ctx);
+    expect(r).toMatchObject({ aTraiterTotal: 3, fileDuJour: { partis: 6, enFile: 4 }, plafondEnvois: 60 });
   });
 });

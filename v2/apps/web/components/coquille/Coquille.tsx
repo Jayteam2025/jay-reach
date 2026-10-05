@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import type { ContexteWeb } from '../../lib/contexte';
-import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
+import { lireResumeCoquilleCourant } from '../../lib/aujourdhui';
 import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
 import { CarteMoteur } from './CarteMoteur';
@@ -19,7 +19,7 @@ export interface CoquilleProps {
  * passage du moteur s'affichait décalée de deux heures sur Vercel (serveur en
  * UTC) par rapport au Mac d'un développeur (déjà à Paris). `FUSEAU_PAR_DEFAUT`
  * a fait le compte un temps, faute de mieux — corrigé le 18/09 : `a.fuseau`
- * (`lireAujourdhuiCourant`, déjà lu pour la file du jour) coïncidait avec
+ * (`lireResumeCoquilleCourant`, déjà lu pour la file du jour) coïncidait avec
  * Paris tant que l'organisation n'avait réglé aucun autre fuseau.
  */
 function formatHeure(iso: string | null, fuseau: string): string | null {
@@ -29,7 +29,7 @@ function formatHeure(iso: string | null, fuseau: string): string | null {
 export async function Coquille({ ctx, children }: CoquilleProps) {
   // Une seule lecture de session par rendu : `contexteCourant()` (mémoïsée)
   // porte déjà le nom affiché, pas besoin d'un second appel à `getUser()`.
-  const [t, a] = await Promise.all([getTranslations(), lireAujourdhuiCourant(ctx)]);
+  const [t, a] = await Promise.all([getTranslations(), lireResumeCoquilleCourant(ctx)]);
 
   const nomAffiche = ctx.utilisateur.nomAffiche;
   const roleLibelle = ctx.role ? t(`coquille.role.${ctx.role}`) : t('coquille.role.none');
@@ -47,7 +47,7 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
           </span>{' '}
           {t('app.name')}
         </div>
-        <BarreLaterale aTraiterTotal={a.aTraiter.total} />
+        <BarreLaterale aTraiterTotal={a.aTraiterTotal} />
         <div className="jr-barre-pied">
           <CarteMoteur
             ton={a.moteur.enMarche ? 'bon' : 'erreur'}
@@ -58,7 +58,7 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
             libelle={t('coquille.sentToday')}
             partis={a.fileDuJour.partis}
             enFile={a.fileDuJour.enFile}
-            plafond={a.plafonds.envois.plafond}
+            plafond={a.plafondEnvois}
             libellePartis={t('coquille.sent.gone', { n: a.fileDuJour.partis })}
             libelleEnFile={t('coquille.sent.queued', { n: a.fileDuJour.enFile })}
             libelleAucun={t('coquille.sent.none')}

@@ -6,7 +6,7 @@
  */
 import type { Contexte } from './contexte.js';
 import { exiger } from './contexte.js';
-import { lireConsommationDuJour, lireReglages } from './plafonds.js';
+import { fuseauDeLOrganisation, lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
@@ -286,6 +286,26 @@ function formatterHeure(iso: string | Date, fuseau: string): string {
   return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
 
+/**
+ * Fragments SQL partagés entre `lireAujourdhui` (accueil, détail des envois du jour) et
+ * `lireResumeCoquille` (menu, simples compteurs) : une seule définition de « une action du jour »
+ * et de « réellement partie », pour que la jauge du menu et celle de l'accueil ne puissent pas
+ * diverger (même raison d'être que `SQL_CONDITION_A_TRAITER` pour le badge Réception).
+ * Alias imposé : `actions a` ; paramètres `$2` = jour calendaire (date), `$3` = fuseau.
+ */
+export const SQL_ACTION_DU_JOUR = `a.status <> 'cancelled'
+          -- Le cast ::date::timestamp avant AT TIME ZONE est nécessaire : sans lui (un ::date
+          -- suivi directement de AT TIME ZONE), Postgres résout le mauvais opérateur (celui de
+          -- timestamptz, pas celui de timestamp) et repart du fuseau de LA SESSION au lieu de
+          -- traiter $2 comme un jour local à $3, mesuré sur la base OSS le 18/09 : minuit Paris
+          -- rendu comme 2h ou 4h du matin selon le sens de la comparaison, un comptage du jour
+          -- qui ratait la quasi-totalité des lignes.
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date::timestamp at time zone $3)
+          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1)::timestamp at time zone $3)`;
+
+/** Miroir SQL de `estReellementParti` (ci-dessous) : email = `delivered_at`, autres canaux = `dispatched_at`. */
+export const SQL_ACTION_REELLEMENT_PARTIE = `(case when a.channel = 'email' then a.delivered_at is not null else a.dispatched_at is not null end)`;
+
 export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   exiger(ctx, 'viewer');
   // Lus d'abord, seuls : `lireConsommationDuJour` en a besoin aussi (fuseau,
@@ -320,15 +340,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
          left join sequence_steps st on st.id = a.step_id
          left join senders s on s.id = a.sender_id
         where a.organization_id = $1
-          and a.status <> 'cancelled'
-          -- Le cast ::date::timestamp avant AT TIME ZONE est nécessaire : sans lui (un ::date
-          -- suivi directement de AT TIME ZONE), Postgres résout le mauvais opérateur (celui de
-          -- timestamptz, pas celui de timestamp) et repart du fuseau de LA SESSION au lieu de
-          -- traiter $2 comme un jour local à $3, mesuré sur la base OSS le 18/09 : minuit Paris
-          -- rendu comme 2h ou 4h du matin selon le sens de la comparaison, un comptage du jour
-          -- qui ratait la quasi-totalité des lignes.
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date::timestamp at time zone $3)
-          and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1)::timestamp at time zone $3)
+          and ${SQL_ACTION_DU_JOUR}
         order by coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) asc`,
       [ctx.organisationId, jourRef, fuseau],
     ),
@@ -528,5 +540,58 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     campagnes,
     alertes,
     fuseau,
+  };
+}
+
+/**
+ * Ce que la coquille (menu de gauche) affiche : le badge Réception, la carte d'état du moteur et
+ * la jauge d'envois du jour — des COMPTEURS, jamais le détail des fils ni des actions. Avant
+ * cette fonction, la coquille appelait `lireAujourdhui` (≈ 15 requêtes, dont la liste de tous les
+ * fils à traiter avec sous-requête du dernier message) à chaque rendu de n'importe quelle page.
+ *
+ * Cohérence avec l'accueil (jamais deux nombres différents) : `SQL_CONDITION_A_TRAITER`,
+ * `SQL_ACTION_DU_JOUR`, `SQL_ACTION_REELLEMENT_PARTIE`, `lireEtatMoteur` et `lirePlafondEnvois`
+ * sont les mêmes définitions que `lireAujourdhui` — `test/pg-verify/coquille-coherence.sh`
+ * le prouve en exécutant les deux sur une vraie base.
+ */
+export interface ResumeCoquille {
+  aTraiterTotal: number;
+  moteur: EtatMoteurResume;
+  fuseau: string;
+  fileDuJour: { partis: number; enFile: number };
+  plafondEnvois: number;
+}
+
+export async function lireResumeCoquille(ctx: Contexte): Promise<ResumeCoquille> {
+  exiger(ctx, 'viewer');
+  const fuseau = await fuseauDeLOrganisation(ctx.ex, ctx.organisationId);
+  const jourRef = jourDansFuseau(new Date(), fuseau);
+  const [aTraiterRes, jourRes, moteur, plafondEnvois] = await Promise.all([
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:coquille_a_traiter */
+         from threads t
+        where t.organization_id = $1
+          and ${SQL_CONDITION_A_TRAITER}`,
+      [ctx.organisationId],
+    ),
+    ctx.ex.query<{ total: number; en_file: number }>(
+      `select count(*)::int as total,
+              count(*) filter (where not ${SQL_ACTION_REELLEMENT_PARTIE})::int as en_file /* jr:coquille_file_du_jour */
+         from actions a
+        where a.organization_id = $1
+          and ${SQL_ACTION_DU_JOUR}`,
+      [ctx.organisationId, jourRef, fuseau],
+    ),
+    lireEtatMoteur(ctx, { fuseau }),
+    lirePlafondEnvois(ctx),
+  ]);
+  const total = jourRes.rows[0]?.total ?? 0;
+  const enFile = jourRes.rows[0]?.en_file ?? 0;
+  return {
+    aTraiterTotal: aTraiterRes.rows[0]?.n ?? 0,
+    moteur,
+    fuseau,
+    fileDuJour: { partis: total - enFile, enFile },
+    plafondEnvois,
   };
 }

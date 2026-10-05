@@ -59,7 +59,7 @@ interface LigneEngineStatus {
  * `organization_settings` dans le même appel, même motif que
  * `lireConsommationDuJour`. Absent, `lireReglages(ctx)` est appelé ici.
  */
-export async function lireEtatMoteur(ctx: Contexte, reglages?: Awaited<ReturnType<typeof lireReglages>>): Promise<EtatMoteurResume> {
+export async function lireEtatMoteur(ctx: Contexte, reglages?: { fuseau: number | string }): Promise<EtatMoteurResume> {
   exiger(ctx, 'viewer');
   const reglagesResolus = reglages ?? (await lireReglages(ctx));
   const fuseau = String(reglagesResolus.fuseau);

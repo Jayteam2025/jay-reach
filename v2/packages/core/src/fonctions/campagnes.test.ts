@@ -19,6 +19,7 @@ import {
   listerActivite,
   listerBoitesPourCampagne,
   listerCampagnes,
+  listerCampagnesPourFiltre,
   listerContactsCampagne,
   listerFileDuJour,
   listerPersonasCampagne,
@@ -2128,5 +2129,29 @@ describe('archiver', () => {
     await archiver(ctx, { campagneId });
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     expect(appels.some((a) => /insert into audit_events/i.test(String(a[0])))).toBe(false);
+  });
+});
+
+describe('listerCampagnesPourFiltre (menus déroulants)', () => {
+  it('lit id, nom et statut en UNE requête, sans tendance ni réglages ni boîtes', async () => {
+    const appels: string[] = [];
+    const query = vi.fn(async (text: string) => {
+      appels.push(text);
+      return { rows: [{ id: 'c1', name: 'Directeurs commerciaux', status: 'active' }], rowCount: 1 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    const options = await listerCampagnesPourFiltre(ctx);
+
+    expect(options).toEqual([{ id: 'c1', nom: 'Directeurs commerciaux', statut: 'active' }]);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]).toContain('order by c.created_at desc');
+    expect(appels[0]).not.toContain('jr:tendance_partis');
+    expect(appels[0]).not.toContain('organization_settings');
+  });
+
+  it('refuse un contexte sans rôle', async () => {
+    const ctx: Contexte = { ex: { query: vi.fn() as unknown as Executeur['query'] }, organisationId: 'org-1', utilisateurId: 'user-1', role: null };
+    await expect(listerCampagnesPourFiltre(ctx)).rejects.toThrow(ForbiddenError);
   });
 });
