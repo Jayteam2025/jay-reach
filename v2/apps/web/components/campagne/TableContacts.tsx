@@ -101,6 +101,16 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   a_contacter: 'gris',
 };
 
+/**
+ * Clé stable d'une ligne : ses cellules portent des boutons à état local (erreur, « en cours »)
+ * qui ne doivent pas migrer sur la ligne voisine quand la liste se raccourcit. Une même
+ * personne peut figurer dans deux campagnes (variante `global`) : la campagne fait partie de la clé.
+ */
+export function cleLigneContact(ligne: LigneTableContacts, index: number): string {
+  const identite = ligne.inscriptionId ?? ligne.contactId ?? ligne.signalId;
+  return identite ? `${ligne.campagneId ?? ''}:${identite}` : `sans-id:${index}`;
+}
+
 export function TableContacts({
   lignes,
   colonnes,
@@ -142,6 +152,7 @@ export function TableContacts({
         { cle: 'action', titre: libelles.colonneAction, nowrap: true, largeur: '1%' },
       ]}
       vide={libelles.vide}
+      cles={lignes.map(cleLigneContact)}
       lignes={lignes.map((ligne) => {
         const campagneDeLaLigne = ligne.campagneId ?? campagneId;
         return {

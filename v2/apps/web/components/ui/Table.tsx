@@ -29,6 +29,14 @@ export type ColonneTable = {
 export type TableProps = {
   colonnes: ColonneTable[];
   lignes: Record<string, ReactNode>[];
+  /**
+   * Clé stable de chaque ligne, dans le même ordre que `lignes`. À fournir dès qu'une cellule
+   * porte un composant client avec un état local (erreur, « en cours »…) : sans elle la ligne est
+   * indexée par sa position, et quand la liste se raccourcit (un contact écarté au-dessus) l'état
+   * d'une ligne migre sur celle qui prend sa place. Le rechargement complet qui masquait ce défaut
+   * a disparu (P2). Sans `cles`, repli sur l'index (listes d'aperçu sans état).
+   */
+  cles?: readonly string[];
   vide?: ReactNode;
 };
 
@@ -41,7 +49,7 @@ function styleColonne(colonne: ColonneTable): { width?: string; maxWidth?: strin
   return { width: colonne.largeur, maxWidth: colonne.largeurMax };
 }
 
-export function Table({ colonnes, lignes, vide }: TableProps) {
+export function Table({ colonnes, lignes, cles, vide }: TableProps) {
   return (
     <table className="jr-table">
       <thead>
@@ -60,7 +68,7 @@ export function Table({ colonnes, lignes, vide }: TableProps) {
           </tr>
         ) : (
           lignes.map((ligne, index) => (
-            <tr key={index}>
+            <tr key={cles?.[index] ?? index}>
               {colonnes.map((colonne) => (
                 // `largeur`/`largeurMax` posées aussi sur la cellule, pas seulement l'en-tête
                 // (tour de correction F6, point 20) : suffisant dans la plupart des navigateurs en
