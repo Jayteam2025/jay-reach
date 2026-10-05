@@ -12,10 +12,10 @@
  * mémoire. Conservé comme ORACLE du test `contacts-globaux.pg.test.ts`, qui le compare à la
  * requête unique sur une vraie base. Ne sert à aucun chemin de production.
  */
-import { comparerInstantsDesc } from '../temps.js';
-import type { Contexte } from './contexte.js';
-import { CASE_STATUT_DERIVE, etapeAffichee, FROM_POPULATION_CAMPAGNE, motifPauseDe, type StatutContactCampagne } from './campagnes.js';
-import type { ContactGlobal } from './contacts.js';
+import { comparerInstantsDesc } from '../../packages/core/src/temps.js';
+import type { Contexte } from '../../packages/core/src/fonctions/contexte.js';
+import { CASE_STATUT_DERIVE, etapeAffichee, FROM_POPULATION_CAMPAGNE, motifPauseDe, type StatutContactCampagne } from '../../packages/core/src/fonctions/campagnes.js';
+import type { ContactGlobal } from '../../packages/core/src/fonctions/contacts.js';
 
 function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
