@@ -151,7 +151,7 @@ async function rls() {
     const autre = await refuse(c, `update linkedin_server_sessions set last_egress_country = 'XX' where organization_id = $1`, [B.id]);
     check('18. admin : n’écrit pas sur celle d’une autre organisation', autre.refuse || autre.n === 0, JSON.stringify(autre));
     const ins = await refuse(c, `insert into linkedin_server_sessions (organization_id) values ($1)`, [(await orgNeuve()).id]);
-    check('19. admin : n’insère pas pour une organisation qui n’est pas la sienne', ins.refuse, JSON.stringify(ins));
+    check('19. admin : n’insère pas pour une organisation qui n’est pas la sienne (42501)', ins.code === '42501', JSON.stringify(ins));
   });
 
   await commeUtilisateur(A.viewer, async (c) => {
@@ -161,8 +161,13 @@ async function rls() {
     check('21. viewer : update sans effet', u.rowCount === 0, `rowCount=${u.rowCount}`);
     const d = await c.query(`delete from linkedin_server_sessions where organization_id = $1`, [A.id]);
     check('22. viewer : delete sans effet', d.rowCount === 0, `rowCount=${d.rowCount}`);
-    const ins = await refuse(c, `insert into linkedin_server_sessions (organization_id) values ($1)`, [A.id]);
-    check('23. viewer : insert refusé', ins.refuse, JSON.stringify(ins));
+  });
+  // Les inserts se testent sur une organisation SANS ligne : sur une ligne existante,
+  // un insert échouerait en 23505 (clé unique) même avec une politique grande ouverte.
+  const C = await orgNeuve();
+  await commeUtilisateur(C.viewer, async (c) => {
+    const ins = await refuse(c, `insert into linkedin_server_sessions (organization_id) values ($1)`, [C.id]);
+    check('23. viewer : insert refusé par la RLS (42501, pas 23505)', ins.code === '42501', JSON.stringify(ins));
   });
 
   const dehors = await userNeuf();
@@ -171,8 +176,8 @@ async function rls() {
     check('24. non-membre : ne voit rien', vus.length === 0, `vus=${vus.length}`);
     const u = await c.query(`update linkedin_server_sessions set last_egress_country = 'ZZ'`);
     check('25. non-membre : update sans effet', u.rowCount === 0);
-    const ins = await refuse(c, `insert into linkedin_server_sessions (organization_id) values ($1)`, [A.id]);
-    check('26. non-membre : insert refusé', ins.refuse, JSON.stringify(ins));
+    const ins = await refuse(c, `insert into linkedin_server_sessions (organization_id) values ($1)`, [C.id]);
+    check('26. non-membre : insert refusé par la RLS (42501, pas 23505)', ins.code === '42501', JSON.stringify(ins));
   });
   const reste = (await q(`select last_egress_country from linkedin_server_sessions where organization_id = $1`, [A.id])).rows[0];
   check('27. rien n’a été écrit par le viewer ni le non-membre (les écritures de l’admin sont annulées par l’assistant)', reste.last_egress_country === null, `pays=${reste.last_egress_country}`);
