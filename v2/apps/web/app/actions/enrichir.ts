@@ -52,6 +52,8 @@ export async function enrichirMaintenant(organizationId: string, signalId: strin
 
     await chercherEmail(ctx, { contactId: contact.id });
     revalidatePath('/contacts');
+    revalidatePath('/campaigns/[id]/contacts', 'page');
+    revalidatePath('/campaigns/[id]/queue', 'page');
     return { ok: true, message: 'Recherche d’email lancée. Le contact apparaîtra dans Contacts d’ici quelques minutes.' };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

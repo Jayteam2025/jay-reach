@@ -28,7 +28,6 @@ export function SectionNotes({ notes, contactId, fuseau }: SectionNotesProps) {
       const res = await actionAjouterNote(contactId, valeur);
       if (res.ok) {
         setTexte('');
-        window.location.reload();
       } else {
         setErreur(res.error);
       }

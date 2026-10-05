@@ -40,6 +40,7 @@ export async function setActionApproval(
       await rejeterEnvoi(ctx, { actionId });
     }
     revalidatePath('/campaigns');
+    revalidatePath('/campaigns/[id]/queue', 'page');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

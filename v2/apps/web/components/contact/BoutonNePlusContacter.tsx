@@ -14,7 +14,7 @@ export interface BoutonNePlusContacterProps {
  * qui pose le statut, la suppression email et arrête les inscriptions
  * vivantes de TOUTES les campagnes du contact — pas seulement celle-ci.
  * Pas de confirmation (même convention que `BoutonEcarterContact` : un clic,
- * un rechargement).
+ * la Server Action revalide la page).
  */
 export function BoutonNePlusContacter({ contactId, libelle }: BoutonNePlusContacterProps) {
   const [pending, startTransition] = useTransition();
@@ -24,11 +24,7 @@ export function BoutonNePlusContacter({ contactId, libelle }: BoutonNePlusContac
     setErreur(null);
     startTransition(async () => {
       const res = await actionNePlusContacter(contactId);
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
   }
 
