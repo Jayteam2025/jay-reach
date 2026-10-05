@@ -140,8 +140,9 @@ docker compose -p jay-reach down
   mêmes files rendent les journaux illisibles.
 - **Ne pas remettre la planification Vercel en route** tant que ce worker
   tourne : les deux produiraient le même travail.
-- **Aucun port n'est publié** par ce compose : le worker n'expose aucun
-  service réseau, il ne fait que consommer des files d'attente.
+- **Le worker n'expose aucun service réseau**, il ne fait que consommer des
+  files d'attente. Seul le navigateur LinkedIn (section suivante, facultatif)
+  publie un port, sur `127.0.0.1` uniquement.
 - **Les plafonds quotidiens comptent en UTC**, le jour de la base Postgres,
   pas le fuseau du serveur ni celui d'un opérateur. C'est le comportement par
   défaut d'un projet Supabase ; à vérifier si le projet a été reconfiguré.
@@ -171,8 +172,66 @@ joignable : celle de Fournisseurs → Microsoft Graph, ou, à défaut, les trois
 variables ci-dessus **toutes les trois** présentes. Une seule manquante et rien
 ne tourne.
 
+| `JAY_REACH_LINKEDIN` | Optionnelle. `1` autorise les commandes `jay-reach linkedin ...` ; sinon `connecter`, `deconnecter` et `ip` refusent (`statut` reste lisible). |
+| `LINKEDIN_BROWSER_URL` | Adresse DevTools du service `navigateur` : `http://navigateur:9223`. |
+| `LINKEDIN_PROXY_URL` | Proxy résidentiel dédié, **sans identifiants** (`schéma://hôte:port`). Le navigateur refuse de démarrer sans lui. |
+| `LINKEDIN_PROXY_USER` / `LINKEDIN_PROXY_PASSWORD` | Identifiants du proxy, présentés par CDP : Chromium les refuse dans `--proxy-server`. |
+| `JAY_REACH_ORGANISATION_ID` | Optionnelle. À poser si la base porte plusieurs organisations (sinon l'organisation unique est prise). |
+
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
 `docker-compose.yml` : ils n'ont pas leur place dans `worker.env`.
+
+## Le navigateur LinkedIn (facultatif)
+
+Le canal LinkedIn exécuté côté serveur pilote un Chromium dans son propre
+conteneur (`navigateur`), derrière un proxy résidentiel dédié. Il est derrière
+un profil Compose : sans le réglage ci-dessous, `./deployer.sh` ne le construit
+ni ne le démarre.
+
+1. Remplir dans `/etc/jay-reach/worker.env` les clés `JAY_REACH_LINKEDIN=1`,
+   `LINKEDIN_BROWSER_URL`, `LINKEDIN_PROXY_URL`, `LINKEDIN_PROXY_USER`,
+   `LINKEDIN_PROXY_PASSWORD` (table ci-dessus).
+2. Activer le profil, une fois, dans `deploy/vps/.env` (fichier local, jamais commité) :
+
+   ```bash
+   echo 'COMPOSE_PROFILES=linkedin' > .env
+   ./deployer.sh --force-recreate
+   ```
+
+3. Installer la commande d'exploitation :
+
+   ```bash
+   sudo install -m 0755 jay-reach /usr/local/bin/jay-reach
+   ```
+
+   Le script suppose le dépôt dans `/opt/jay-reach` ; ailleurs, exporter
+   `JAY_REACH_DEPLOY_DIR` vers ce dossier (`deploy/vps`). Il est installé par
+   copie : après une mise à jour du dépôt, le réinstaller.
+4. Ouvrir la session, depuis un terminal (la saisie du mot de passe et du code
+   est masquée, rien ne passe par l'historique du shell) :
+
+   ```bash
+   jay-reach linkedin connecter
+   jay-reach linkedin statut
+   ```
+
+Autres commandes : `jay-reach linkedin deconnecter` (révoque la session) et
+`jay-reach linkedin ip [--confirmer]` (relève l'IP de sortie par le navigateur ;
+`--confirmer` la pose comme IP attendue après un changement de proxy voulu).
+
+Points à connaître :
+
+- **Le navigateur ne sort jamais par l'IP du VPS** : il refuse de démarrer sans
+  `LINKEDIN_PROXY_URL`, et l'IP de sortie est relevée **par le navigateur**,
+  jamais par le worker.
+- **Le port DevTools (`127.0.0.1:9222`) donne la main sur la session
+  LinkedIn.** Ne jamais le publier sur une autre interface ni le tunneler vers
+  un poste partagé.
+- Le conteneur reçoit le même fichier d'environnement que le worker ; Chromium
+  est lancé avec un environnement vidé, et seul le proxy lui parvient. Pour
+  aller plus loin, donner au service son propre fichier.
+- Le profil (cookies de la session) vit dans le volume `profil-navigateur` :
+  `docker compose -p jay-reach down -v` l'efface.
 
 ### Restreindre l'application Microsoft Graph à ses boîtes
 

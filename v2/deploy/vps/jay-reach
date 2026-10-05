@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Enveloppe des commandes d'exploitation de Jay Reach.
+# Installation : sudo install -m 0755 jay-reach /usr/local/bin/jay-reach
+# Usage : jay-reach linkedin <connecter|statut|deconnecter|ip>
+#
+# Le dépôt est retrouvé par le lien de ce script (installé par `install`, c'est
+# une copie : définir alors JAY_REACH_DEPLOY_DIR vers deploy/vps).
+set -euo pipefail
+
+main() {
+  local dossier="${JAY_REACH_DEPLOY_DIR:-/opt/jay-reach/v2/deploy/vps}"
+  cd "$dossier"
+  case "${1:-}" in
+    linkedin)
+      shift
+      # -it : la saisie masquée du mot de passe et du code exige un terminal.
+      exec docker compose -p jay-reach run --rm -it worker node apps/worker/dist/cli/linkedin.js "$@"
+      ;;
+    *)
+      echo "Usage : jay-reach linkedin <connecter|statut|deconnecter|ip>" >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
