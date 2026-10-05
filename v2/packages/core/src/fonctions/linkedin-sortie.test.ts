@@ -66,6 +66,7 @@ describe('verifierSortie', () => {
       () => null,
       (e: unknown) => e,
     );
+    expect(levee).toBeInstanceOf(Error);
     const consigne = JSON.stringify([
       appels,
       journaux.map((j) => j.mock.calls),
