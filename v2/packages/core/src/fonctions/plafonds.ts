@@ -560,3 +560,40 @@ export async function compterPostsLinkedInDuJour(ctx: Contexte, jour: string, fu
   );
   return res.rows[0]?.n ?? 0;
 }
+
+/** Fenêtre dans laquelle le serveur a le droit de toucher LinkedIn : jours ISO (1 = lundi), heures locales `HH:00`, fuseau IANA. */
+export interface FenetreLinkedIn {
+  jours: number[];
+  debut: string;
+  fin: string;
+  fuseau: string;
+}
+
+/** Valeurs des colonnes de `linkedin_settings` (migration 20260831160000) : ce que prend une organisation sans ligne. */
+const FENETRE_LINKEDIN_PAR_DEFAUT = { jours: [1, 2, 3, 4, 5], debutHeure: 9, finHeure: 18, fuseau: 'Europe/Paris' } as const;
+
+const heurePleine = (h: number): string => `${String(h).padStart(2, '0')}:00`;
+
+/**
+ * Fenêtre d'envoi LinkedIn de l'organisation, lue dans `linkedin_settings` —
+ * jamais redéfinie ailleurs : un collecteur qui tourne à trois heures du matin
+ * derrière une IP résidentielle française est un signal de détection. Sans
+ * ligne, ce sont les défauts de la table qui s'appliquent (comme un plafond
+ * absent retombe sur son défaut), pas un échec.
+ */
+export async function lireFenetreLinkedIn(ctx: Contexte): Promise<FenetreLinkedIn> {
+  const res = await ctx.ex.query<{ send_days: number[]; send_from_hour: number; send_to_hour: number; timezone: string }>(
+    `select send_days, send_from_hour, send_to_hour, timezone /* jr:linkedin_fenetre */
+       from linkedin_settings
+      where organization_id = $1`,
+    [ctx.organisationId],
+  );
+  const l = res.rows[0];
+  const d = FENETRE_LINKEDIN_PAR_DEFAUT;
+  return {
+    jours: l ? [...l.send_days] : [...d.jours],
+    debut: heurePleine(l?.send_from_hour ?? d.debutHeure),
+    fin: heurePleine(l?.send_to_hour ?? d.finHeure),
+    fuseau: l?.timezone ?? d.fuseau,
+  };
+}

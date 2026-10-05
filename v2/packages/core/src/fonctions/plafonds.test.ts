@@ -10,6 +10,7 @@ import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
   lireConsommationDuJour,
+  lireFenetreLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
   lireReglages,
@@ -439,5 +440,26 @@ describe('plafonds LinkedIn', () => {
   it('tracerRequeteLinkedIn refuse un passage d une autre organisation', async () => {
     const ctx = faux({});
     await expect(tracerRequeteLinkedIn(ctx, 'run-etranger')).rejects.toThrow(/introuvable/);
+  });
+});
+
+describe('fenetre d envoi LinkedIn', () => {
+  it('lireFenetreLinkedIn lit les jours, la plage et le fuseau de linkedin_settings', async () => {
+    const ctx = faux({
+      'from linkedin_settings': [{ send_days: [1, 3], send_from_hour: 8, send_to_hour: 24, timezone: 'Europe/Brussels' }],
+    });
+    expect(await lireFenetreLinkedIn(ctx)).toEqual({ jours: [1, 3], debut: '08:00', fin: '24:00', fuseau: 'Europe/Brussels' });
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/where organization_id = \$1/);
+    expect(params).toEqual(['org-1']);
+  });
+
+  it('lireFenetreLinkedIn sans ligne : les defauts de la table (lundi a vendredi, 9 h a 18 h, Europe/Paris)', async () => {
+    expect(await lireFenetreLinkedIn(faux({}))).toEqual({
+      jours: [1, 2, 3, 4, 5],
+      debut: '09:00',
+      fin: '18:00',
+      fuseau: 'Europe/Paris',
+    });
   });
 });

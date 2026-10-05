@@ -3,6 +3,7 @@
 export {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  lireFenetreLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
 } from '../../packages/core/src/fonctions/plafonds.js';
