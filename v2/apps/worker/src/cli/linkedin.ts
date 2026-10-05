@@ -11,8 +11,6 @@
  * Aucune erreur de navigateur ou de proxy n'est affichée telle quelle : elle peut
  * porter l'URL du proxy avec ses identifiants. On n'écrit que son type.
  */
-import { Writable } from 'node:stream';
-import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import {
   activerSessionLinkedIn,
@@ -26,6 +24,7 @@ import {
 } from '@jay-reach/core';
 import { createPool } from '../db.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
+import { demander, demanderMasque } from './saisie.js';
 import { ipDuProcessus } from '../linkedin/ip.js';
 // Type seul : effacé à la compilation. L'import réel du navigateur est dynamique (voir `dependancesReelles`).
 import type { Pilote } from '../linkedin/navigateur.js';
@@ -300,36 +299,6 @@ export async function executerCommande(argv: string[], d: Dependances): Promise<
     d.ecrire(`Échec (${typeErreur(e)}).`);
     return 1;
   }
-}
-
-/** Saisie visible (identifiant). */
-function demander(invite: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => rl.question(invite, (r) => (rl.close(), resolve(r.trim()))));
-}
-
-/** Saisie masquée : rien n'est écho sur le terminal. Exige un terminal interactif. */
-function demanderMasque(invite: string): Promise<string> {
-  if (!process.stdin.isTTY)
-    return Promise.reject(new Error('Terminal interactif requis (lancer avec -it)'));
-  let muet = false;
-  const sortie = new Writable({
-    write(morceau, encodage, suite) {
-      if (!muet) process.stdout.write(morceau, encodage);
-      suite();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output: sortie, terminal: true });
-  process.stdout.write(invite);
-  muet = true;
-  return new Promise((resolve) =>
-    rl.question('', (r) => {
-      muet = false;
-      rl.close();
-      process.stdout.write('\n');
-      resolve(r);
-    }),
-  );
 }
 
 async function organisationCourante(

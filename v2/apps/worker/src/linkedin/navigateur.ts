@@ -99,6 +99,53 @@ export async function releverSortie(pilote: Pilote): Promise<Sortie> {
 }
 
 /**
+ * Identité annoncée : Chrome sous Linux, à la version RÉELLE du binaire. Les
+ * en-têtes `Sec-CH-UA` doivent dire la même chose que le User-Agent : un
+ * `HeadlessChrome` dans l'un seulement serait pire qu'aucun. Les marques restent
+ * celles du binaire (Chromium), sans prétendre être Google Chrome.
+ * `null` si la version n'est pas lisible : on ne touche alors à rien.
+ */
+export function identiteNavigateur(versionBrute: string): {
+  userAgent: string;
+  userAgentMetadata: {
+    brands: { brand: string; version: string }[];
+    fullVersionList: { brand: string; version: string }[];
+    fullVersion: string;
+    platform: string;
+    platformVersion: string;
+    architecture: string;
+    bitness: string;
+    model: string;
+    mobile: boolean;
+  };
+} | null {
+  const m = /(\d+)(\.\d+\.\d+\.\d+)/.exec(versionBrute);
+  if (!m) return null;
+  const majeure = m[1]!;
+  const complete = `${majeure}${m[2]}`;
+  return {
+    userAgent: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${complete} Safari/537.36`,
+    userAgentMetadata: {
+      brands: [
+        { brand: 'Chromium', version: majeure },
+        { brand: 'Not?A_Brand', version: '99' },
+      ],
+      fullVersionList: [
+        { brand: 'Chromium', version: complete },
+        { brand: 'Not?A_Brand', version: '99.0.0.0' },
+      ],
+      fullVersion: complete,
+      platform: 'Linux',
+      platformVersion: '',
+      architecture: 'x86',
+      bitness: '64',
+      model: '',
+      mobile: false,
+    },
+  };
+}
+
+/**
  * Le serveur DevTools de Chromium refuse toute requête dont l'en-tête Host n'est
  * ni `localhost` ni une IP. Joindre `http://navigateur:9223` échouerait donc :
  * on résout le nom ici et on se connecte à l'IP.
@@ -141,6 +188,8 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
   // Le `about:blank` initial de Chromium reste ouvert et garde le navigateur vivant.
   const page = await browser.newPage();
   page.setDefaultTimeout(DELAI_ACTION_MS);
+  const identite = identiteNavigateur(await browser.version());
+  if (identite) await page.setUserAgent(identite);
   if (user && password) await page.authenticate({ username: user, password });
 
   return {

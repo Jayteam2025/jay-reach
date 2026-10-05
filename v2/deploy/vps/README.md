@@ -140,9 +140,9 @@ docker compose -p jay-reach down
   mêmes files rendent les journaux illisibles.
 - **Ne pas remettre la planification Vercel en route** tant que ce worker
   tourne : les deux produiraient le même travail.
-- **Le worker n'expose aucun service réseau**, il ne fait que consommer des
-  files d'attente. Seul le navigateur LinkedIn (section suivante, facultatif)
-  publie un port, sur `127.0.0.1` uniquement.
+- **Aucun port n'est publié** : le worker ne fait que consommer des files
+  d'attente, et le navigateur LinkedIn (section suivante, facultatif) n'est
+  joignable que par le réseau Compose.
 - **Les plafonds quotidiens comptent en UTC**, le jour de la base Postgres,
   pas le fuseau du serveur ni celui d'un opérateur. C'est le comportement par
   défaut d'un projet Supabase ; à vérifier si le projet a été reconfiguré.
@@ -202,7 +202,7 @@ ni ne le démarre.
 2. Activer le profil, une fois, dans `deploy/vps/.env` (fichier local, jamais commité) :
 
    ```bash
-   echo 'COMPOSE_PROFILES=linkedin' > .env
+   echo 'COMPOSE_PROFILES=linkedin' >> .env
    ./deployer.sh --force-recreate
    ```
 
@@ -232,9 +232,16 @@ Points à connaître :
 - **Le navigateur ne sort jamais par l'IP du VPS** : il refuse de démarrer sans
   `LINKEDIN_PROXY_URL`, et l'IP de sortie est relevée **par le navigateur**,
   jamais par le worker.
-- **Le port DevTools (`127.0.0.1:9222`) donne la main sur la session
-  LinkedIn.** Ne jamais le publier sur une autre interface ni le tunneler vers
-  un poste partagé.
+- **Le DevTools du navigateur donne la main sur la session LinkedIn**, c'est
+  pourquoi aucun port n'est publié, pas même sur `127.0.0.1` (tout processus
+  local ou conteneur en `network_mode: host` y accéderait). Ne jamais en
+  ajouter un, ni tunneler le port vers un poste partagé.
+- **Seul un proxy HTTP ou HTTPS convient.** Chromium ne sait pas authentifier
+  un proxy SOCKS5 : `page.authenticate` n'aurait aucun effet et l'erreur serait
+  illisible. L'entrypoint refuse toute autre forme.
+- **Limites du conteneur** : 1,5 Go de mémoire et 512 processus, car ce serveur
+  héberge aussi les bots de visioconférence de production. Un `docker stats`
+  qui colle au plafond se traite avant qu'il ne coûte la mémoire de ces bots.
 - **Le secret du proxy est réparti sur deux fichiers, exprès.** L'adresse
   `LINKEDIN_PROXY_URL` va dans `navigateur.env` (Chromium en a besoin pour
   `--proxy-server`) ; les identifiants `LINKEDIN_PROXY_USER` et

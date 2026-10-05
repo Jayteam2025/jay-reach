@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { adresseJoignable, releverSortie, type Pilote } from './navigateur.js';
+import { adresseJoignable, identiteNavigateur, releverSortie, type Pilote } from './navigateur.js';
 
 type Reponse = { statut: number; corps: string } | Error;
 
@@ -129,5 +129,23 @@ describe('adresseJoignable', () => {
   it('met une IPv6 resolue entre crochets', async () => {
     const lookup = vi.fn(async () => ({ address: 'fd00::4', family: 6 }));
     expect(await adresseJoignable('http://navigateur:9223', lookup)).toBe('http://[fd00::4]:9223');
+  });
+});
+
+describe('identiteNavigateur', () => {
+  it('annonce Chrome et la version reelle, jamais HeadlessChrome, en-tetes Sec-CH-UA compris', () => {
+    const id = identiteNavigateur('HeadlessChrome/129.0.6668.89');
+    expect(id?.userAgent).toMatch(/Chrome\/129\.0\.6668\.89 /);
+    expect(JSON.stringify(id)).not.toMatch(/Headless/i);
+    expect(id?.userAgentMetadata.brands[0]).toEqual({ brand: 'Chromium', version: '129' });
+    expect(id?.userAgentMetadata.fullVersionList[0]).toEqual({
+      brand: 'Chromium',
+      version: '129.0.6668.89',
+    });
+    expect(id?.userAgentMetadata.platform).toBe('Linux');
+  });
+
+  it('ne touche a rien quand la version est illisible', () => {
+    expect(identiteNavigateur('inconnu')).toBeNull();
   });
 });

@@ -356,6 +356,23 @@ describe('la commande connecter', () => {
     expect(appels.some((a) => /jr:linkedin_session_(activer|bloquer)/.test(a.sql))).toBe(false);
   });
 
+  it('libere le verrou quand la saisie est interrompue (Ctrl+C)', async () => {
+    const { p } = piloteFaux(['https://www.linkedin.com/login']);
+    const { d, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => {
+        throw new Error('Saisie interrompue');
+      },
+    });
+    expect(await executerCommande(['connecter'], d)).not.toBe(0);
+    const verrous = appels.filter((a) => /jr:linkedin_session_verrou/.test(a.sql));
+    expect(verrous.at(-1)?.params[2]).toBe(0);
+    expect(p.fermer).toHaveBeenCalled();
+  });
+
   it("libere le verrou et ferme le navigateur meme en cas d'echec", async () => {
     const { p } = piloteFaux(['https://www.linkedin.com/login'], ['#error-for-password']);
     const { d, appels } = dependances({

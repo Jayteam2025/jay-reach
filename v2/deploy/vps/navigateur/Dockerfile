@@ -7,7 +7,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends chromium socat curl ca-certificates fonts-liberation tini \
+ && apt-get install -y --no-install-recommends chromium socat curl ca-certificates fonts-liberation tini tzdata \
  && rm -rf /var/lib/apt/lists/*
 
 # Utilisateur non privilégié. Le volume du profil hérite de ce propriétaire à sa création.
