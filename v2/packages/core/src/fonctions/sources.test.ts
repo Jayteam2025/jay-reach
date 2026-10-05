@@ -16,6 +16,7 @@ import {
   listerListesOrganisation,
   listerSourcesCampagne,
   modifierSource,
+  normaliserUrlPost,
   sirensConnus,
   type ConfigAdzuna,
   type ConfigFranceTravail,
@@ -460,6 +461,28 @@ describe('creerSource — engageurs d’un post : persona et unicité du post', 
     ).resolves.toEqual({ id: 'src-1' });
   });
 
+  it('refuse un personaId étranger même quand la campagne n’a qu’un persona', async () => {
+    const { ctx } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config: { ...config, personaId: 'etranger' } }),
+    ).rejects.toThrow(ErreurEntree);
+  });
+
+  it('refuse un second exemplaire du même post dans la MÊME campagne (règle alignée sur modifierSource)', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:post_deja_pris': [{ url: config.urlPost }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).rejects.toThrow(ErreurEntree);
+    const requete = appels.find(([sql]) => /jr:post_deja_pris/.test(sql));
+    expect(requete![0]).not.toMatch(/campaign_id <>/);
+  });
+
   it('rattacher une source d\'engageurs a une seconde campagne est refuse cote serveur', async () => {
     const { ctx, appels } = faux({
       'jr:sources_campagne': [{ id: 'camp-1' }],
@@ -473,7 +496,46 @@ describe('creerSource — engageurs d’un post : persona et unicité du post', 
   });
 });
 
+describe('normaliserUrlPost — l’identité d’un post', () => {
+  it('reconnait le même post sous ses deux formes et ses sous-domaines de pays', () => {
+    const id = normaliserUrlPost('https://www.linkedin.com/posts/jean_cold-email-activity-7271234567890123456-abcd?utm_source=share');
+    expect(normaliserUrlPost('https://fr.linkedin.com/feed/update/urn:li:activity:7271234567890123456')).toBe(id);
+    expect(normaliserUrlPost('https://www.linkedin.com/feed/update/urn%3Ali%3Aactivity%3A7271234567890123456/')).toBe(id);
+  });
+  it('ne confond pas deux posts distincts, ni deux chemins sans identifiant', () => {
+    expect(normaliserUrlPost('https://www.linkedin.com/posts/a-activity-7271')).not.toBe(
+      normaliserUrlPost('https://www.linkedin.com/posts/a-activity-7272'),
+    );
+    expect(normaliserUrlPost('https://exemple.fr/Post/A')).not.toBe(normaliserUrlPost('https://exemple.fr/Post/a'));
+    expect(normaliserUrlPost('https://www.exemple.fr/post/a/')).toBe(normaliserUrlPost('https://exemple.fr/post/a'));
+  });
+});
+
 describe('modifierSource — engageurs d’un post : le persona se revérifie', () => {
+  it('refuse un personaId étranger à la campagne même quand elle n’a qu’un persona', async () => {
+    const stock = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'] };
+    const { ctx } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stock }],
+      'jr:sources_modifier': [{}],
+      'jr:sources_personas_campagnes': [{ personas: ['p1'] }],
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stock.urlPost, garder: ['reagi'], personaId: 'etranger' }, schedule: 'every 6h' }),
+    ).rejects.toThrow(ErreurEntree);
+  });
+
+  it('retire le personaId stocké quand le formulaire ne l’envoie plus (pas de fusion avec l’ancien)', async () => {
+    const stock = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'], personaId: 'p-ancien' };
+    const { ctx, appels } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stock }],
+      'jr:sources_modifier': [{ id: 'x' }],
+      'jr:sources_personas_campagnes': [{ personas: ['p1'] }],
+    });
+    await modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stock.urlPost, garder: ['reagi'] }, schedule: 'every 6h' });
+    const ecriture = appels.find(([sql]) => /jr:sources_modifier/.test(sql));
+    expect(JSON.parse((ecriture![1] as unknown[])[2] as string)).not.toHaveProperty('personaId');
+  });
+
   const stockee = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'] };
   const campagnes = { 'jr:sources_personas_campagnes': [{ personas: ['p1', 'p2'] }] };
 

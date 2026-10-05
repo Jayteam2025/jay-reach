@@ -21,7 +21,7 @@ import { construireValeursContact, normalizeListColumnName, renderTemplatePartia
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
-import { SQL_PROVIDER_ID_AFFICHAGE, exigerPostLibre } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, exigerPersonaSource, exigerPostLibre } from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -1915,13 +1915,14 @@ export async function creerCampagne(ctx: Contexte, entree: unknown): Promise<{ i
   const themes = entryKind === 'source' ? (sourceIds ?? [entryId]) : [];
   if (themes.length > 0) {
     // Un post d'engageurs déjà relié à une campagne ne se rattache pas à une seconde (règle posée aussi dans `creerSource`).
-    const postsRes = await ctx.ex.query<{ id: string; url: string | null }>(
-      `select id, config->>'urlPost' as url from sources /* jr:creer_campagne_posts */
+    const postsRes = await ctx.ex.query<{ id: string; url: string | null; persona_id: string | null }>(
+      `select id, config->>'urlPost' as url, config->>'personaId' as persona_id from sources /* jr:creer_campagne_posts */
         where organization_id = $1 and id = any($2::uuid[]) and config->>'sourceType' = 'linkedin_post_engagers'`,
       [ctx.organisationId, themes],
     );
     for (const p of postsRes.rows) {
-      if (p.url) await exigerPostLibre(ctx, p.url, { campagneId: null, sourceId: null });
+      exigerPersonaSource(personaIds ?? [], p.persona_id ?? undefined);
+      if (p.url) await exigerPostLibre(ctx, p.url, null);
     }
   }
 
@@ -1978,6 +1979,17 @@ export async function modifierReglagesCampagne(ctx: Contexte, entree: unknown): 
   if (e.personaIds !== undefined && e.personaIds.length > 0 && actuelle.status === 'active') {
     const collision = await collisionDePersona(ctx, e.campagneId, e.personaIds);
     if (collision) throw new ErreurConflit(collision);
+  }
+
+  // Changer les personas ne doit pas laisser une source d'engageurs sans persona valide, en silence.
+  if (e.personaIds !== undefined) {
+    const postsRes = await ctx.ex.query<{ persona_id: string | null }>(
+      `select s.config->>'personaId' as persona_id
+         from campaign_sources cs join sources s on s.id = cs.source_id /* jr:reglages_sources_post */
+        where cs.campaign_id = $1 and s.organization_id = $2 and s.config->>'sourceType' = 'linkedin_post_engagers'`,
+      [e.campagneId, ctx.organisationId],
+    );
+    for (const p of postsRes.rows) exigerPersonaSource(e.personaIds, p.persona_id ?? undefined);
   }
 
   const entryRules: Record<string, unknown> = { ...(actuelle.entry_rules ?? {}) };

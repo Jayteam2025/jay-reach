@@ -629,24 +629,53 @@ async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<{ pe
   return { personas: Array.isArray(personas) ? personas.filter((p): p is string => typeof p === 'string') : [] };
 }
 
-/** Plusieurs personas : on demande lequel, sans choix arbitraire silencieux (création comme modification). */
-function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
-  if (personas.length > 1 && (!personaId || !personas.includes(personaId))) {
-    throw new ErreurEntree({
-      formErrors: [],
-      fieldErrors: { personaId: ['Cette campagne porte plusieurs personas : choisissez celui de la source.'] },
-    });
+/**
+ * Identité d'un post, pour les comparer. LinkedIn sert le même post sous
+ * plusieurs formes (`/posts/…_activity-7271…`, `/feed/update/urn:li:activity:7271…`,
+ * `fr.linkedin.com`, `www.linkedin.com`) : quand l'adresse porte un identifiant
+ * d'activité, c'est lui qui fait foi. À défaut, adresse normalisée : hôte en
+ * minuscules sans `www.` (ni sous-domaine de pays pour LinkedIn), sans paramètres
+ * de partage, sans ancre, sans barre finale ; chemin et casse conservés, donc
+ * deux posts réellement distincts le restent.
+ */
+export function normaliserUrlPost(url: string): string {
+  const brut = url.trim();
+  let lisible = brut;
+  try {
+    lisible = decodeURIComponent(brut);
+  } catch {
+    // adresse mal encodée : on compare telle quelle
+  }
+  try {
+    const u = new URL(brut);
+    const hote = u.host.toLowerCase().replace(/^www\./, '');
+    const linkedin = hote === 'linkedin.com' || hote.endsWith('.linkedin.com');
+    if (linkedin) {
+      const activite = /(?:activity|ugcPost|share)[-:](\d+)/i.exec(lisible);
+      if (activite) return `linkedin:${activite[1]}`;
+    }
+    const hoteCanonique = linkedin ? 'linkedin.com' : hote;
+    return `${u.protocol}//${hoteCanonique}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return brut.toLowerCase().replace(/\/+$/, '');
   }
 }
 
-/** Forme canonique d'une adresse de post : sans paramètres de partage, sans ancre, sans barre finale, hôte en minuscules. */
-export function normaliserUrlPost(url: string): string {
-  const brut = url.trim();
-  try {
-    const u = new URL(brut);
-    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}`;
-  } catch {
-    return brut.toLowerCase().replace(/\/+$/, '');
+/** Plusieurs personas : on demande lequel ; un persona donné doit toujours appartenir à la campagne (création, modification, réglages). */
+export function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
+  const manquant = personas.length > 1 && !personaId;
+  const etranger = personaId !== undefined && !personas.includes(personaId);
+  if (manquant || etranger) {
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: {
+        personaId: [
+          manquant
+            ? 'Cette campagne porte plusieurs personas : choisissez celui de la source.'
+            : 'Ce persona ne fait pas partie de la campagne.',
+        ],
+      },
+    });
   }
 }
 
@@ -657,22 +686,22 @@ export function normaliserUrlPost(url: string): string {
  * Les sources sont en N-N avec les campagnes (`campaign_sources`) : la règle
  * se pose donc ici, dans les fonctions qui écrivent le lien, jamais dans l'écran.
  *
- * Refuse si une AUTRE source de l'organisation, sur le même post, est reliée à
- * une campagne autre que `campagneId` (`null` : n'importe laquelle).
+ * Refuse si une AUTRE source de l'organisation (`sourceIgnoree` : la source
+ * qu'on modifie) porte le même post et est reliée à une campagne, quelle
+ * qu'elle soit, la même comprise : même règle à la création et à la modification.
  */
 export async function exigerPostLibre(
   ctx: Contexte,
   urlPost: string,
-  exceptions: { campagneId: string | null; sourceId: string | null },
+  sourceIgnoree: string | null,
 ): Promise<void> {
   const res = await ctx.ex.query<{ url: string | null }>(
     `select s.config->>'urlPost' as url
        from sources s join campaign_sources cs on cs.source_id = s.id /* jr:post_deja_pris */
       where s.organization_id = $1
         and s.config->>'sourceType' = 'linkedin_post_engagers'
-        and ($2::uuid is null or cs.campaign_id <> $2::uuid)
-        and ($3::uuid is null or s.id <> $3::uuid)`,
-    [ctx.organisationId, exceptions.campagneId, exceptions.sourceId],
+        and ($2::uuid is null or s.id <> $2::uuid)`,
+    [ctx.organisationId, sourceIgnoree],
   );
   const cible = normaliserUrlPost(urlPost);
   if (res.rows.some((r) => r.url !== null && normaliserUrlPost(r.url) === cible)) {
@@ -707,7 +736,7 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
   if (providerId === 'linkedin_post_engagers') {
     const { urlPost, personaId } = configValide as ConfigLinkedInPost;
     exigerPersonaSource(personas, personaId);
-    await exigerPostLibre(ctx, urlPost, { campagneId, sourceId: null });
+    await exigerPostLibre(ctx, urlPost, null);
   }
   const configStocke = construireConfigStocke(providerId, configValide);
   const collecteDisponible = !estTypeLinkedIn(providerId);
@@ -794,7 +823,7 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
         personaId,
       );
     }
-    await exigerPostLibre(ctx, urlPost, { campagneId: null, sourceId });
+    await exigerPostLibre(ctx, urlPost, sourceId);
   }
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
   // créée avant ce lot porte des clés que ce formulaire ne gère pas
@@ -804,6 +833,10 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
     ...(ligne.config ?? {}),
     ...construireConfigStocke(providerId, configValide),
   };
+  // Le formulaire envoie la config complète : un `personaId` absent a été retiré, il ne doit pas survivre à la fusion.
+  if (providerId === 'linkedin_post_engagers' && (configValide as ConfigLinkedInPost).personaId === undefined) {
+    delete (configStocke as Record<string, unknown>).personaId;
+  }
 
   const ecriture = await ctx.ex.query(
     `update sources /* jr:sources_modifier */ set name = $2, config = $3::jsonb, schedule = $4

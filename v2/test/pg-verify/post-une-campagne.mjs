@@ -6,7 +6,7 @@
 //   normalisation : dans `normaliserUrlPost` (sources.ts), remplacer le corps du
 //   `try` par `return brut;` — les adresses équivalentes ne sont plus reconnues.
 import pg from 'pg';
-import { creerCampagne, creerSource, ErreurEntree, modifierSource } from './_post-une-campagne-bundle.mjs';
+import { creerCampagne, creerSource, ErreurEntree, modifierReglagesCampagne, modifierSource } from './_post-une-campagne-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -42,7 +42,7 @@ const lierPost = (ctx, campagneId, url, extra = {}) =>
 const nbLiens = async (campagneId) =>
   (await q(`select count(*)::int n from campaign_sources where campaign_id = $1`, [campagneId])).rows[0].n;
 
-const POST = 'https://www.linkedin.com/posts/jean-dupont_cold-email-activity-123-abcd';
+const POST = 'https://www.linkedin.com/posts/jean-dupont_cold-email-abcd';
 
 async function regle() {
   console.log('un post, une campagne');
@@ -63,7 +63,7 @@ async function regle() {
     `${POST}/`,
     `${POST}?utm_source=share&utm_medium=member_desktop`,
     `${POST}#commentaires`,
-    'HTTPS://WWW.LINKEDIN.COM/posts/jean-dupont_cold-email-activity-123-abcd',
+    'HTTPS://WWW.LINKEDIN.COM/posts/jean-dupont_cold-email-abcd',
     `  ${POST}?rcm=ACoAA  `,
   ];
   for (const [i, v] of variantes.entries()) {
@@ -129,12 +129,86 @@ async function creationDeCampagne() {
   check('14. aucune campagne créée par le refus', (await q(`select count(*)::int n from campaigns where organization_id = $1 and name = 'Seconde'`, [org])).rows[0].n === 0);
 }
 
+const ACTIVITE = '7271234567890123456';
+const FORME_POSTS = `https://www.linkedin.com/posts/marie-martin_prospection-activity-${ACTIVITE}-wxyz`;
+
+async function identiteDuPost() {
+  console.log('identité du post');
+  const org = await orgNeuve();
+  const ctx = ctxDe(org);
+  const c1 = await campagne(org, 'I1');
+  const c2 = await campagne(org, 'I2');
+  await lierPost(ctx, c1, FORME_POSTS);
+  const formes = [
+    `https://fr.linkedin.com/posts/marie-martin_prospection-activity-${ACTIVITE}-wxyz`,
+    `https://linkedin.com/feed/update/urn:li:activity:${ACTIVITE}`,
+    `https://www.linkedin.com/feed/update/urn%3Ali%3Aactivity%3A${ACTIVITE}/?utm_source=share`,
+    `https://www.linkedin.com/posts/autre-slug_titre-activity-${ACTIVITE}-qrst`,
+  ];
+  for (const [i, f] of formes.entries()) {
+    const e = await refus(lierPost(ctx, c2, f));
+    check(`15.${i + 1} même post sous une autre forme d'adresse : refusé`, e instanceof ErreurEntree, f);
+  }
+  // Dans l'autre sens : rien n'est confondu.
+  await lierPost(ctx, c2, `https://www.linkedin.com/posts/marie-martin_prospection-activity-7271234567890123457-wxyz`);
+  check('16. un identifiant d\'activité voisin est un autre post : accepté', (await nbLiens(c2)) === 1);
+  const c3 = await campagne(org, 'I3');
+  await lierPost(ctx, c3, 'https://exemple.fr/Page/Alpha');
+  const c4 = await campagne(org, 'I4');
+  await lierPost(ctx, c4, 'https://exemple.fr/Page/alpha');
+  check('17. sans identifiant, la casse du chemin est respectée : deux posts distincts', (await nbLiens(c4)) === 1);
+  const c5 = await campagne(org, 'I5');
+  const e5 = await refus(lierPost(ctx, c5, 'https://www.exemple.fr/Page/Alpha/?utm=1'));
+  check('18. sans identifiant, www., barre finale et paramètres sont ignorés : refusé', e5 instanceof ErreurEntree);
+  const e6 = await refus(lierPost(ctx, c1, `https://linkedin.com/feed/update/urn:li:activity:${ACTIVITE}`));
+  check('19. même post dans la MÊME campagne : refusé (règle alignée sur la modification)', e6 instanceof ErreurEntree);
+}
+
+async function personasTrous() {
+  console.log('personas : les trous fermés');
+  const org = await orgNeuve();
+  const ctx = ctxDe(org);
+  const mk = async (n) => (await q(`insert into personas (organization_id, name) values ($1, $2) returning id`, [org, n])).rows[0].id;
+  const [p1, p2, p3] = [await mk('A'), await mk('B'), await mk('C')];
+  // a. changer les personas d'une campagne revérifie ses sources.
+  const ca = await campagne(org, 'Réglages', [p1]);
+  const { id: sa } = await lierPost(ctx, ca, `${POST}-a`);
+  const ea = await refus(modifierReglagesCampagne(ctx, { campagneId: ca, personaIds: [p1, p2] }));
+  check('20. passer à deux personas avec une source sans personaId : refusé', ea instanceof ErreurEntree, String(ea));
+  check('21. les personas de la campagne n\'ont pas bougé', (await q(`select entry_rules->'personas' p from campaigns where id = $1`, [ca])).rows[0].p.length === 1);
+  await modifierSource(ctx, { sourceId: sa, nom: 'E', schedule: 'every 24h', config: { urlPost: `${POST}-a`, garder: ['commente'] } });
+  // b. creerCampagne contrôle le persona de la source rattachée.
+  const sOrpheline = (await q(`insert into sources (organization_id, name, config) values ($1, 'orph', $2::jsonb) returning id`,
+    [org, JSON.stringify({ sourceType: 'linkedin_post_engagers', urlPost: `${POST}-orph`, garder: ['commente'] })])).rows[0].id;
+  const eb = await refus(creerCampagne(ctx, { name: 'B1', entryKind: 'source', entryId: sOrpheline, sourceIds: [sOrpheline], personaIds: [p1, p2] }));
+  check('22. source orpheline sans personaId vers une campagne à deux personas : refusé', eb instanceof ErreurEntree, String(eb));
+  const sEtrangere = (await q(`insert into sources (organization_id, name, config) values ($1, 'etr', $2::jsonb) returning id`,
+    [org, JSON.stringify({ sourceType: 'linkedin_post_engagers', urlPost: `${POST}-etr`, garder: ['commente'], personaId: p3 })])).rows[0].id;
+  const ec = await refus(creerCampagne(ctx, { name: 'B2', entryKind: 'source', entryId: sEtrangere, sourceIds: [sEtrangere], personaIds: [p1, p2] }));
+  check('23. personaId étranger à la liste de la nouvelle campagne : refusé', ec instanceof ErreurEntree, String(ec));
+  const okc = await creerCampagne(ctx, { name: 'B3', entryKind: 'source', entryId: sEtrangere, sourceIds: [sEtrangere], personaIds: [p1, p3] });
+  check('24. personaId présent dans la liste : accepté', typeof okc.id === 'string');
+  // c. un personaId retiré du formulaire ne survit pas à la fusion.
+  const cc = await campagne(org, 'Retrait', [p1, p2]);
+  const { id: sc } = await lierPost(ctx, cc, `${POST}-c`, { personaId: p2 });
+  await q(`update campaigns set entry_rules = '{"personas": []}'::jsonb || jsonb_build_object('personas', jsonb_build_array($2::text)) where id = $1`, [cc, p1]);
+  await modifierSource(ctx, { sourceId: sc, nom: 'E', schedule: 'every 24h', config: { urlPost: `${POST}-c`, garder: ['commente'] } });
+  const cfg = (await q(`select config from sources where id = $1`, [sc])).rows[0].config;
+  check('25. personaId retiré du formulaire : retiré du stockage', !('personaId' in cfg), JSON.stringify(cfg));
+  // d. un personaId étranger est refusé même avec un seul persona.
+  const cd = await campagne(org, 'Un seul', [p1]);
+  const ed = await refus(lierPost(ctx, cd, `${POST}-d`, { personaId: p3 }));
+  check('26. personaId étranger, campagne à un persona : refusé', ed instanceof ErreurEntree);
+}
+
 try {
   await q('truncate organizations cascade');
   await regle();
   await modification();
   await personas();
   await creationDeCampagne();
+  await identiteDuPost();
+  await personasTrous();
 } finally {
   await pool.end();
 }

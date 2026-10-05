@@ -1889,6 +1889,17 @@ describe('creerCampagne', () => {
     expect(appels.some((a) => /insert into campaign/i.test(String(a[0])))).toBe(false);
   });
 
+  it('refuse de rattacher une source d\'engageurs orpheline sans personaId a une campagne a plusieurs personas', async () => {
+    const [p1, p2] = ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cccccccc-cccc-cccc-cccc-cccccccccccc'];
+    const sid = '22222222-2222-2222-2222-222222222222';
+    const ctx = faux({ 'jr:creer_campagne_posts': [{ id: sid, url: 'https://www.linkedin.com/posts/x', persona_id: null }], 'jr:creer_campagne': [{ id: 'camp-1' }] }, 'operator');
+    await expect(creerCampagne(ctx, { name: 'T', entryKind: 'source', entryId: sid, personaIds: [p1, p2] })).rejects.toThrow(ErreurEntree);
+    const ok = faux({ 'jr:creer_campagne_posts': [{ id: sid, url: 'https://www.linkedin.com/posts/x', persona_id: p2 }], 'jr:creer_campagne': [{ id: 'camp-1' }] }, 'operator');
+    await expect(creerCampagne(ok, { name: 'T', entryKind: 'source', entryId: sid, personaIds: [p1, p2] })).resolves.toEqual({ id: 'camp-1' });
+    const etranger = faux({ 'jr:creer_campagne_posts': [{ id: sid, url: 'https://www.linkedin.com/posts/x', persona_id: 'inconnu' }], 'jr:creer_campagne': [{ id: 'camp-1' }] }, 'operator');
+    await expect(creerCampagne(etranger, { name: 'T', entryKind: 'source', entryId: sid, personaIds: [p1] })).rejects.toThrow(ErreurEntree);
+  });
+
   it('refuse entryId sans entryKind (ErreurEntree)', async () => {
     const ctx = faux({}, 'operator');
     await expect(
@@ -1923,6 +1934,21 @@ describe('modifierReglagesCampagne', () => {
     const ecriture = appels.find((a) => /jr:reglages_ecrire/i.test(String(a[0])));
     const entryRulesEcrites = JSON.parse((ecriture?.[1] as unknown[])[2] as string);
     expect(entryRulesEcrites).toEqual({ min_score: 70, autreCle: 'x', relecturePremiersEnvois: 3, boiteIds: [boiteId] });
+  });
+
+  it('refuse de passer a plusieurs personas quand une source d\'engageurs de la campagne n\'a pas de personaId', async () => {
+    const [p1, p2] = ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cccccccc-cccc-cccc-cccc-cccccccccccc'];
+    const ctx = faux(
+      {
+        'jr:reglages_lire': [{ entry_rules: { personas: [p1] }, status: 'draft' }],
+        'jr:reglages_sources_post': [{ persona_id: null }],
+        'jr:reglages_ecrire': [{ id: campagneId }],
+      },
+      'operator',
+    );
+    await expect(modifierReglagesCampagne(ctx, { campagneId, personaIds: [p1, p2] })).rejects.toThrow(ErreurEntree);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(appels.some((a) => /jr:reglages_ecrire/.test(String(a[0])))).toBe(false);
   });
 
   it('refuse en ErreurConflit un changement de persona qui collide sur une campagne active', async () => {
