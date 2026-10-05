@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { approuverEnvoi, rejeterEnvoi, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille, revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type ApprovalResult = { ok: true } | { ok: false; error: string };
 
@@ -41,6 +42,8 @@ export async function setActionApproval(
     }
     revalidatePath('/campaigns');
     revalidatePath('/campaigns/[id]/queue', 'page');
+    revaliderLayoutCampagne('[id]');
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

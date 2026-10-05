@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { ajouterDepuisAnnuaire, sirensConnus, ErreurEntree, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 import { searchCompanies, type DirectoryParams, type DirectoryResult } from '../../lib/directory';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,7 @@ export async function actionAjouterDepuisAnnuaire(
     const r = await ajouterDepuisAnnuaire(ctx, { campagneId, entreprises });
     revalidatePath(`/campaigns/${campagneId}/sources`);
     revalidatePath(`/campaigns/${campagneId}`);
+    revaliderLayoutCampagne(campagneId);
     return { ok: true, ...r };
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, error: 'Droit opérateur requis.' };

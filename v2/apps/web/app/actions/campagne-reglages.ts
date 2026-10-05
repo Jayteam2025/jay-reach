@@ -16,6 +16,7 @@ import {
   modifierReglagesCampagne,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type ResultatReglagesCampagne = { ok: true } | { ok: false; error: string; issues?: string[] };
 
@@ -44,6 +45,7 @@ function revaliderOngletReglages(campagneId: string): void {
   revalidatePath(`/campaigns/${campagneId}/settings`);
   revalidatePath(`/campaigns/${campagneId}`);
   revalidatePath('/campaigns');
+  revaliderLayoutCampagne(campagneId);
 }
 
 export async function actionModifierReglagesCampagne(

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { importerCsv, ErreurEntree, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 // ---------------------------------------------------------------------------
 // Source « Fichier CSV » de l'onglet Sources d'une campagne (tâche 11, lot 2).
@@ -36,6 +37,7 @@ export async function actionImporterCsvDansCampagne(
     revalidatePath(`/campaigns/${campagneId}/contacts`);
     revalidatePath(`/campaigns/${campagneId}`);
     revalidatePath('/contacts');
+    revaliderLayoutCampagne(campagneId);
     return { ok: true, ...r };
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, error: 'Droit opérateur requis.' };

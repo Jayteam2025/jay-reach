@@ -10,6 +10,7 @@
 import { revalidatePath } from 'next/cache';
 import { reporterEnvoi, ecarterDuneCampagne, relancerEnvoi, ErreurIntrouvable, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille, revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type ResultatFileDuJour = { ok: true } | { ok: false; error: string };
 
@@ -25,6 +26,8 @@ export async function actionReporterEnvoi(actionId: string, campagneId: string):
     await reporterEnvoi(ctx, { actionId });
     revalidatePath(`/campaigns/${campagneId}/queue`);
     revalidatePath(`/campaigns/${campagneId}`);
+    revaliderLayoutCampagne(campagneId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
@@ -38,6 +41,8 @@ export async function actionEcarterDuneCampagne(contactId: string, campagneId: s
     revalidatePath(`/campaigns/${campagneId}/queue`);
     revalidatePath(`/campaigns/${campagneId}/contacts`);
     revalidatePath(`/campaigns/${campagneId}`);
+    revaliderLayoutCampagne(campagneId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
@@ -54,6 +59,8 @@ export async function actionRelancerEnvoi(actionId: string, campagneId: string):
     await relancerEnvoi(ctx, { actionId });
     revalidatePath(`/campaigns/${campagneId}/queue`);
     revalidatePath(`/campaigns/${campagneId}`);
+    revaliderLayoutCampagne(campagneId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

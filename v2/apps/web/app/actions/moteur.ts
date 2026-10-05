@@ -8,6 +8,7 @@
 import { revalidatePath } from 'next/cache';
 import { basculerPauseEnvoi, ErreurEntree, ForbiddenError, lancerTache } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille } from '../../lib/revalidation-layouts';
 
 export type ResultatMoteur = { ok: true } | { ok: false; error: string };
 export type ResultatLancerTache = { ok: true; sourcesDeclenchees: number } | { ok: false; error: string };
@@ -24,6 +25,8 @@ export async function actionBasculerPauseEnvoi(pause: boolean): Promise<Resultat
     await basculerPauseEnvoi(ctx, { pause });
     revalidatePath('/settings/engine');
     revalidatePath('/');
+    // Carte Moteur de la barre latérale.
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return resultatDErreur(err);
@@ -35,6 +38,8 @@ export async function actionLancerTache(tache: string): Promise<ResultatLancerTa
     const ctx = await contexteCourant();
     const resultat = await lancerTache(ctx, { tache });
     revalidatePath('/settings/engine');
+    // Carte Moteur de la barre latérale (dernier/prochain passage).
+    revaliderCoquille();
     return { ok: true, sourcesDeclenchees: resultat.sourcesDeclenchees };
   } catch (err) {
     return resultatDErreur(err);

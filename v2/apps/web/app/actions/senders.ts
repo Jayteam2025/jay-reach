@@ -14,6 +14,7 @@ import {
 } from '@jay-reach/core';
 import { activerLectureBoite, santeBoite } from '@jay-reach/providers/outreach';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille } from '../../lib/revalidation-layouts';
 import { listerBoitesSalesBlink, resolveSalesblinkKey } from '../../lib/salesblink';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,8 @@ export async function actionModifierBoite(entree: unknown): Promise<ResultatExpe
     const ctx = await contexteCourant();
     await modifierBoiteCoeur(ctx, entree);
     revalidatePath('/settings/senders');
+    // Plafond de la jauge de la barre latérale = somme des quotas des boîtes email actives.
+    revaliderCoquille();
     return { ok: true, valeur: undefined };
   } catch (err) {
     return resultatDErreur<void>(err);
@@ -104,6 +107,8 @@ export async function actionRelierBoite(entree: unknown): Promise<ResultatExpedi
       await activerLectureBoite(providerRef, cle);
     });
     revalidatePath('/settings/senders');
+    // Plafond de la jauge de la barre latérale = somme des quotas des boîtes email actives.
+    revaliderCoquille();
     return { ok: true, valeur: resultat };
   } catch (err) {
     return resultatDErreur<{ id: string }>(err);

@@ -8,6 +8,7 @@
 import { revalidatePath } from 'next/cache';
 import { ecrireReglage, ErreurEntree, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille } from '../../lib/revalidation-layouts';
 
 export type ResultatPlafond = { ok: true } | { ok: false; error: string };
 
@@ -28,6 +29,10 @@ export async function actionEcrireReglage(cle: string, valeur: number | string):
     const ctx = await contexteCourant();
     await ecrireReglage(ctx, { cle, valeur });
     revalidatePath('/settings/limits');
+    // Seul le fuseau est lu par le layout (bornes du jour de la jauge, heures de la carte Moteur) :
+    // les autres réglages (scoring, enrichissement, âge des offres…) n'y apparaissent pas, et la
+    // jauge de gauche suit les quotas des boîtes (`senders`), pas cette table.
+    if (cle === 'fuseau') revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

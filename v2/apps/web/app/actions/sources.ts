@@ -12,6 +12,7 @@ import {
   ForbiddenError,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 // ---------------------------------------------------------------------------
 // Onglet Sources d'UNE campagne (tâche 11, lot 2). Façade fine sur
@@ -50,6 +51,7 @@ function resultatDErreurSource(err: unknown): { ok: false; error: string; issues
 function revaliderOngletSources(campagneId: string): void {
   revalidatePath(`/campaigns/${campagneId}/sources`);
   revalidatePath(`/campaigns/${campagneId}`);
+  revaliderLayoutCampagne(campagneId);
 }
 
 export async function actionCreerSource(

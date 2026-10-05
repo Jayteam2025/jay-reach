@@ -14,6 +14,7 @@ import {
   ForbiddenError,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille, revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type SimpleResult = { ok: true } | { ok: false; error: string; issues?: string[] };
 
@@ -79,6 +80,8 @@ export async function setCampaignStatus(organizationId: string, campaignId: stri
     }
 
     revalidatePath(`/campaigns/${campaignId}`);
+    revaliderLayoutCampagne(campaignId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return resultatDErreur(err);
@@ -102,6 +105,8 @@ export async function reprendreInscription(inscriptionId: string, campagneId: st
     revalidatePath(`/campaigns/${campagneId}`);
     revalidatePath('/contacts');
     revalidatePath('/inbox');
+    revaliderLayoutCampagne(campagneId);
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return resultatDErreur(err);

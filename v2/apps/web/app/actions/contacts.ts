@@ -20,6 +20,7 @@ import {
   ForbiddenError,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
+import { revaliderCoquille, revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 /**
  * La fiche (tiroir) s'ouvre sur `/contacts` ET sur l'onglet Contacts d'une
@@ -60,6 +61,10 @@ export async function actionNePlusContacter(contactId: string): Promise<Resultat
     const ctx = await contexteCourant();
     await nePlusContacter(ctx, { contactId });
     revaliderFiche();
+    // Arrête les inscriptions vivantes de TOUTES les campagnes : envois planifiés
+    // (badge File du jour, jauge « en file ») modifiés.
+    revaliderLayoutCampagne('[id]');
+    revaliderCoquille();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
