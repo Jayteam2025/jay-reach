@@ -164,9 +164,10 @@
     },
     "sentToday": "Sent today",
     "sent": {
-      "gone": "{n, plural, one {# sent} other {# sent}}",
+      "gone": "{n, plural, one {# handed over} other {# handed over}}",
       "queued": "{n, plural, one {# queued} other {# queued}}",
-      "none": "No sends"
+      "none": "No sends",
+      "cap": "{etat, select, pause {on hold} sansLimite {no cap} other {/ {plafond}}}"
     },
     "role": {
       "owner": "Owner",
@@ -1071,7 +1072,7 @@
         "enrichissement": "Enrichments requested (FullEnrich)",
         "envois": "Sends",
         "aide": "Counters reset to zero at midnight, organization time ({fuseau}), sends included. A cap once reached puts the task on hold until the next day, nothing is lost.",
-        "valeur": "{enPause, select, oui {{utilise} · cap at 0 (paused)} other {{utilise} / {plafond}}}"
+        "valeur": "{etat, select, pause {{utilise} · cap at 0 (paused)} sansLimite {{utilise} · no cap set} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "What this protects",

@@ -10,6 +10,7 @@ import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { compterEnFile, compterPartis, segmentsNonNuls } from '../../../../lib/file-du-jour';
 import { tauxLivresAffiche } from '../../../../lib/entonnoir';
+import { parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
 export const revalidate = 60;
@@ -40,12 +41,16 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
 
   let t: Awaited<ReturnType<typeof getTranslations>>;
   let tSources: Awaited<ReturnType<typeof getTranslations>>;
+  // Même gabarit de jauge que l'accueil et que Réglages › Plafonds : ce plafond peut être
+  // nul (pause) ou absent (aucune limite réglée), et « 128 / 0 » ne dit ni l'un ni l'autre.
+  let tPlafonds: Awaited<ReturnType<typeof getTranslations>>;
   let locale: Locale;
   let vue: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
   try {
-    [t, tSources, locale, vue] = await Promise.all([
+    [t, tSources, tPlafonds, locale, vue] = await Promise.all([
       getTranslations('campagne'),
       getTranslations('sources'),
+      getTranslations('reglages.plafonds'),
       localeCourante(),
       lireVueDEnsembleCourante(ctx, id),
     ]);
@@ -171,7 +176,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           />
           <CleValeur
             libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
-            valeur={`${formatNombre(vue.plafonds.envois.utilise, locale)} / ${formatNombre(vue.plafonds.envois.plafond, locale)}`}
+            valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.envois.utilise, vue.plafonds.envois.plafond))}
           />
           <Link href="/settings" className="jr-lien jr-lien-petit jr-lien-pied">
             {t('overview.caps.settingsLink')}

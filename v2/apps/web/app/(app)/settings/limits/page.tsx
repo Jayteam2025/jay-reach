@@ -3,7 +3,12 @@ import { lireConsommationDuJour, lireReglages, lireReglagesDetail, type ClePlafo
 import { contexteCourant } from '../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { libelleModification } from '../../../../lib/libelle-modification';
-import { parametresScoringTexte, parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
+import {
+  parametresScoringTexte,
+  parametresValeurConsommation,
+  pourcentageJauge,
+  tonJauge,
+} from '../../../../lib/plafonds-affichage';
 import { BarreProgression, Carte } from '../../../../components/ui';
 import { TablePlafonds, type LignePlafond } from '../../../../components/reglages/TablePlafonds';
 
@@ -17,16 +22,6 @@ const ORDRE_LIGNES: readonly ClePlafond[] = [
   'relecture_premiers_envois_defaut',
   'age_max_offres_jours',
 ];
-
-function tonJauge(utilise: number, plafond: number): 'normal' | 'attention' | 'erreur' {
-  if (plafond <= 0) return utilise > 0 ? 'erreur' : 'normal';
-  const pourcentage = (utilise / plafond) * 100;
-  return pourcentage >= 100 ? 'erreur' : pourcentage >= 90 ? 'attention' : 'normal';
-}
-
-function pourcentageJauge(utilise: number, plafond: number): number {
-  return plafond > 0 ? Math.min(100, Math.round((utilise / plafond) * 100)) : 0;
-}
 
 export default async function PlafondsPage() {
   const t = await getTranslations('reglages.plafonds');

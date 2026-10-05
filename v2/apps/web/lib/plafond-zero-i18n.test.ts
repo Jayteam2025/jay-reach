@@ -33,14 +33,24 @@ describe('plafond à 0 (Réglages › Plafonds)', () => {
   for (const langue of LANGUES) {
     it(`${langue} · consommation.valeur · plafond nul -> pas de « / 0 »`, () => {
       const gabarit = chemin(messages(langue), 'reglages.plafonds.consommation.valeur');
-      const rendu = new IntlMessageFormat(gabarit, langue).format({ utilise: 300, plafond: 0, enPause: 'oui' }) as string;
+      const rendu = new IntlMessageFormat(gabarit, langue).format({ utilise: 300, plafond: 0, etat: 'pause' }) as string;
       expect(rendu).not.toMatch(/\/\s*0\b/);
       expect(rendu).toContain('300');
     });
 
+    // Revue de cohérence du lot 2 : `senders.daily_quota` est nullable et le moteur lit ce NULL
+    // comme « aucune limite ». Le rendu ne doit ni annoncer une pause, ni montrer un « / 0 ».
+    it(`${langue} · consommation.valeur · aucun plafond réglé -> ni « / 0 » ni pause`, () => {
+      const gabarit = chemin(messages(langue), 'reglages.plafonds.consommation.valeur');
+      const rendu = new IntlMessageFormat(gabarit, langue).format({ utilise: 42, plafond: 0, etat: 'sansLimite' }) as string;
+      expect(rendu).not.toMatch(/\/\s*0\b/);
+      expect(rendu).toContain('42');
+      expect(rendu).not.toMatch(/pause|paused|gepauzeerd/i);
+    });
+
     it(`${langue} · consommation.valeur · plafond positif -> garde le ratio`, () => {
       const gabarit = chemin(messages(langue), 'reglages.plafonds.consommation.valeur');
-      const rendu = new IntlMessageFormat(gabarit, langue).format({ utilise: 128, plafond: 300, enPause: 'non' }) as string;
+      const rendu = new IntlMessageFormat(gabarit, langue).format({ utilise: 128, plafond: 300, etat: 'regle' }) as string;
       expect(rendu).toContain('128');
       expect(rendu).toContain('300');
       expect(rendu).toMatch(/128\s*\/\s*300/);

@@ -164,9 +164,10 @@
     },
     "sentToday": "Vandaag verzonden",
     "sent": {
-      "gone": "{n, plural, one {# verstuurd} other {# verstuurd}}",
+      "gone": "{n, plural, one {# overgedragen} other {# overgedragen}}",
       "queued": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
-      "none": "Geen verzendingen"
+      "none": "Geen verzendingen",
+      "cap": "{etat, select, pause {op pauze} sansLimite {geen limiet} other {/ {plafond}}}"
     },
     "role": {
       "owner": "Eigenaar",
@@ -1071,7 +1072,7 @@
         "enrichissement": "Verrijkingen aangevraagd (FullEnrich)",
         "envois": "Verzendingen",
         "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren.",
-        "valeur": "{enPause, select, oui {{utilise} · limiet op 0 (gepauzeerd)} other {{utilise} / {plafond}}}"
+        "valeur": "{etat, select, pause {{utilise} · limiet op 0 (gepauzeerd)} sansLimite {{utilise} · geen limiet ingesteld} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "Wat dit beschermt",

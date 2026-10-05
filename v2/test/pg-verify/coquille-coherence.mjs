@@ -29,13 +29,15 @@ for (const org of orgs) {
   const c = await lireResumeCoquille(leger.ctx);
   const tag = `[${org.name}]`;
 
-  console.log(`${tag} accueil: aTraiter=${a.aTraiter.total} partis=${a.fileDuJour.partis} enFile=${a.fileDuJour.enFile} plafond=${a.plafonds.envois.plafond} | menu: aTraiter=${c.aTraiterTotal} partis=${c.fileDuJour.partis} enFile=${c.fileDuJour.enFile} plafond=${c.plafondEnvois}`);
+  console.log(`${tag} accueil: aTraiter=${a.aTraiter.total} envois=${a.plafonds.envois.utilise} plafond=${a.plafonds.envois.plafond} | menu: aTraiter=${c.aTraiterTotal} envois=${c.quotaEnvois.utilise} enFile=${c.quotaEnvois.enFile} plafond=${c.quotaEnvois.plafond}`);
   console.log(`${tag} requetes: accueil=${plein.state.n} menu=${leger.state.n}`);
 
   check(`${tag} badge-egal-accueil`, c.aTraiterTotal === a.aTraiter.total);
-  check(`${tag} partis-egal-accueil`, c.fileDuJour.partis === a.fileDuJour.partis);
-  check(`${tag} enFile-egal-accueil`, c.fileDuJour.enFile === a.fileDuJour.enFile);
-  check(`${tag} plafond-egal-accueil`, c.plafondEnvois === a.plafonds.envois.plafond);
+  // La jauge du menu porte sur le quota EMAIL, exactement comme la page Plafonds : même
+  // numérateur, même plafond. La file tous canaux reste sur l'accueil, sans plafond en regard.
+  check(`${tag} envois-egal-accueil`, c.quotaEnvois.utilise === a.plafonds.envois.utilise, `menu=${c.quotaEnvois.utilise} accueil=${a.plafonds.envois.utilise}`);
+  check(`${tag} plafond-egal-accueil`, c.quotaEnvois.plafond === a.plafonds.envois.plafond);
+  check(`${tag} jauge-email-sous-la-file`, c.quotaEnvois.utilise <= a.fileDuJour.total, `jauge=${c.quotaEnvois.utilise} file=${a.fileDuJour.total}`);
   check(`${tag} fuseau-egal-accueil`, c.fuseau === a.fuseau);
   check(`${tag} moteur-egal-accueil`, c.moteur.enMarche === a.moteur.enMarche && String(c.moteur.dernierPassage) === String(a.moteur.dernierPassage));
   check(`${tag} menu-bien-plus-leger`, leger.state.n <= 6 && leger.state.n < plein.state.n);

@@ -15,7 +15,7 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
-import { lireConsommationDuJour, lireReglages } from './plafonds.js';
+import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
@@ -1526,21 +1526,20 @@ export const schemaFileDuJour = z.object({
   jour: z.string().date().optional(),
 });
 
-async function plafondEnvoisOrganisation(ctx: Contexte): Promise<number> {
-  const res = await ctx.ex.query<{ plafond: number }>(
-    `select coalesce(sum(daily_quota), 0)::int as plafond /* jr:plafond_envois_org */ from senders where organization_id = $1 and kind = 'email' and is_active`,
-    [ctx.organisationId],
-  );
-  return res.rows[0]?.plafond ?? 0;
-}
-
 export async function listerFileDuJour(
   ctx: Contexte,
   entree: unknown,
 ): Promise<{
   prevus: EnvoiPrevu[];
   partis: EnvoiPrevu[];
-  plafondDuJour: number;
+  /**
+   * Plafond applicable à la file affichée : celui de la campagne (`daily_cap`)
+   * si elle en a un, sinon celui de l'organisation. `null` = aucune limite
+   * réglée, jamais zéro (voir `lirePlafondEnvois`) : la deuxième copie de ce
+   * calcul vivait ici et confondait les deux, alors que son commentaire
+   * annonçait « une seule définition ».
+   */
+  plafondDuJour: number | null;
   /** Revue F5, point 10 — voir `VueDEnsemble.projectionFileDuJour` (même calcul, même sens). */
   projection: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
 }> {
@@ -1550,13 +1549,13 @@ export async function listerFileDuJour(
   const [{ envois, projection }, plafondDuJour] = await Promise.all([
     lireEnvoisDuJour(ctx, { campagneId, jour }),
     (async () => {
-      if (!campagneId) return plafondEnvoisOrganisation(ctx);
+      if (!campagneId) return lirePlafondEnvois(ctx);
       const capRes = await ctx.ex.query<{ daily_cap: number | null }>(
         `select daily_cap from campaigns /* jr:file_du_jour_cap */ where id = $1 and organization_id = $2`,
         [campagneId, ctx.organisationId],
       );
       if (capRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
-      return capRes.rows[0]!.daily_cap ?? (await plafondEnvoisOrganisation(ctx));
+      return capRes.rows[0]!.daily_cap ?? (await lirePlafondEnvois(ctx));
     })(),
   ]);
 

@@ -6,7 +6,14 @@
  */
 import type { Contexte } from './contexte.js';
 import { exiger } from './contexte.js';
-import { fuseauDeLOrganisation, lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
+import {
+  fuseauDeLOrganisation,
+  lireConsommationDuJour,
+  lirePlafondEnvois,
+  lireReglages,
+  SQL_EMAIL_CONSOMME_LE_QUOTA,
+  type JaugeEnvois,
+} from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
@@ -287,10 +294,15 @@ function formatterHeure(iso: string | Date, fuseau: string): string {
 }
 
 /**
- * Fragments SQL partagés entre `lireAujourdhui` (accueil, détail des envois du jour) et
- * `lireResumeCoquille` (menu, simples compteurs) : une seule définition de « une action du jour »
- * et de « réellement partie », pour que la jauge du menu et celle de l'accueil ne puissent pas
- * diverger (même raison d'être que `SQL_CONDITION_A_TRAITER` pour le badge Réception).
+ * Fragment SQL partagé entre `lireAujourdhui` (accueil, détail des envois du jour) et
+ * `lireResumeCoquille` (menu, simples compteurs) : une seule définition de « une action du
+ * jour », pour que les deux écrans ne puissent pas diverger (même raison d'être que
+ * `SQL_CONDITION_A_TRAITER` pour le badge Réception). Le quota d'envois, lui, a son propre
+ * fragment, `SQL_EMAIL_CONSOMME_LE_QUOTA` (`plafonds.js`).
+ *
+ * Il exista un `SQL_ACTION_REELLEMENT_PARTIE`, miroir SQL de `estReellementParti` ci-dessous :
+ * il ne servait qu'à la jauge du menu, qui porte désormais sur le quota email et non sur la
+ * file tous canaux. Retiré avec son dernier appelant plutôt que laissé en double définition.
  * Alias imposé : `actions a` ; paramètres `$2` = jour calendaire (date), `$3` = fuseau.
  */
 export const SQL_ACTION_DU_JOUR = `a.status <> 'cancelled'
@@ -302,9 +314,6 @@ export const SQL_ACTION_DU_JOUR = `a.status <> 'cancelled'
           -- qui ratait la quasi-totalité des lignes.
           and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) >= ($2::date::timestamp at time zone $3)
           and coalesce(a.dispatched_at, a.scheduled_for, a.dispatch_after) < (($2::date + 1)::timestamp at time zone $3)`;
-
-/** Miroir SQL de `estReellementParti` (ci-dessous) : email = `delivered_at`, autres canaux = `dispatched_at`. */
-export const SQL_ACTION_REELLEMENT_PARTIE = `(case when a.channel = 'email' then a.delivered_at is not null else a.dispatched_at is not null end)`;
 
 export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   exiger(ctx, 'viewer');
@@ -550,7 +559,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
  * fils à traiter avec sous-requête du dernier message) à chaque rendu de n'importe quelle page.
  *
  * Cohérence avec l'accueil (jamais deux nombres différents) : `SQL_CONDITION_A_TRAITER`,
- * `SQL_ACTION_DU_JOUR`, `SQL_ACTION_REELLEMENT_PARTIE`, `lireEtatMoteur` et `lirePlafondEnvois`
+ * `SQL_ACTION_DU_JOUR`, `SQL_EMAIL_CONSOMME_LE_QUOTA`, `lireEtatMoteur` et `lirePlafondEnvois`
  * sont les mêmes définitions que `lireAujourdhui` — `test/pg-verify/coquille-coherence.sh`
  * le prouve en exécutant les deux sur une vraie base.
  */
@@ -558,15 +567,27 @@ export interface ResumeCoquille {
   aTraiterTotal: number;
   moteur: EtatMoteurResume;
   fuseau: string;
-  fileDuJour: { partis: number; enFile: number };
-  plafondEnvois: number;
+  /**
+   * La jauge d'envois du menu. Elle porte sur l'EMAIL, le seul canal dont le
+   * plafond vient des boîtes d'envoi : avant la revue de cohérence du lot 2,
+   * son numérateur comptait tous les canaux (`SQL_ACTION_DU_JOUR`, sans filtre)
+   * et son dénominateur l'email seul — une action LinkedIn gonflait une barre
+   * qu'elle ne consomme pas. Le canal LinkedIn aura sa propre jauge, avec son
+   * propre quota d'expéditeur.
+   *
+   * `utilise` = remis aujourd'hui (consomme le quota) ; `enFile` = prévu
+   * aujourd'hui, pas encore remis (le consommera avant ce soir) ;
+   * `plafond` = `null` quand aucune limite n'est réglée (voir
+   * `lirePlafondEnvois`), à ne jamais confondre avec zéro.
+   */
+  quotaEnvois: JaugeEnvois & { enFile: number };
 }
 
 export async function lireResumeCoquille(ctx: Contexte): Promise<ResumeCoquille> {
   exiger(ctx, 'viewer');
   const fuseau = await fuseauDeLOrganisation(ctx.ex, ctx.organisationId);
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [aTraiterRes, jourRes, moteur, plafondEnvois] = await Promise.all([
+  const [aTraiterRes, jourRes, moteur, plafond] = await Promise.all([
     ctx.ex.query<{ n: number }>(
       `select count(*)::int as n /* jr:coquille_a_traiter */
          from threads t
@@ -574,9 +595,18 @@ export async function lireResumeCoquille(ctx: Contexte): Promise<ResumeCoquille>
           and ${SQL_CONDITION_A_TRAITER}`,
       [ctx.organisationId],
     ),
-    ctx.ex.query<{ total: number; en_file: number }>(
-      `select count(*)::int as total,
-              count(*) filter (where not ${SQL_ACTION_REELLEMENT_PARTIE})::int as en_file /* jr:coquille_file_du_jour */
+    // Une seule requête pour les deux segments de la jauge : les deux fragments emploient les
+    // mêmes paramètres ($2 jour, $3 fuseau), et le menu doit rester sous six requêtes
+    // (`coquille-coherence.sh`).
+    //
+    // La borne du jour reste dans le `where`, jamais seulement dans les `filter` : sans elle,
+    // cette requête scanne toutes les actions de l'organisation à chaque rendu de n'importe
+    // quelle page. `SQL_ACTION_DU_JOUR` borne sur `coalesce(dispatched_at, scheduled_for,
+    // dispatch_after)`, qui couvre les deux segments — un email remis aujourd'hui a son
+    // `dispatched_at` dans le jour, donc le `coalesce` aussi.
+    ctx.ex.query<{ remis: number; en_file: number }>(
+      `select count(*) filter (where ${SQL_EMAIL_CONSOMME_LE_QUOTA})::int as remis,
+              count(*) filter (where a.channel = 'email' and a.dispatched_at is null)::int as en_file /* jr:coquille_quota_envois */
          from actions a
         where a.organization_id = $1
           and ${SQL_ACTION_DU_JOUR}`,
@@ -585,13 +615,14 @@ export async function lireResumeCoquille(ctx: Contexte): Promise<ResumeCoquille>
     lireEtatMoteur(ctx, { fuseau }),
     lirePlafondEnvois(ctx),
   ]);
-  const total = jourRes.rows[0]?.total ?? 0;
-  const enFile = jourRes.rows[0]?.en_file ?? 0;
   return {
     aTraiterTotal: aTraiterRes.rows[0]?.n ?? 0,
     moteur,
     fuseau,
-    fileDuJour: { partis: total - enFile, enFile },
-    plafondEnvois,
+    quotaEnvois: {
+      utilise: jourRes.rows[0]?.remis ?? 0,
+      enFile: jourRes.rows[0]?.en_file ?? 0,
+      plafond,
+    },
   };
 }

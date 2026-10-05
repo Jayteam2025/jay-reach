@@ -175,6 +175,12 @@ select.jr-puce {
 /* Carte « Envois du jour » de la barre latérale (largeur utile 199 px) */
 .jr-envois-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--jr-petit); }
 .jr-envois-tete .jr-plafond { color: var(--jr-secondaire); white-space: nowrap; }
+/* Le coin droit ne dit pas toujours « / 135 » : il peut dire « sans limite » ou « en pause »
+   (jauge sans plafond réglé, jauge en pause). Mesuré le 05/10 dans les trois langues : en
+   néerlandais, « Vandaag verzonden » + « geen limiet » dépassent les 173 px utiles de la barre
+   latérale et faisaient passer la carte sur deux lignes. Le titre s'élide, le coin droit reste
+   entier : c'est lui qui porte l'information. */
+.jr-envois-tete > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jr-envois-chiffres { font-size: var(--jr-petit); margin: 2px 0 6px; line-height: 1.35; }
 .jr-envois-chiffres b { font-weight: 600; }
 .jr-envois-chiffres .jr-file { color: var(--jr-secondaire); }

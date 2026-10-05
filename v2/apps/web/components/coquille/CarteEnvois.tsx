@@ -2,15 +2,22 @@ import { BarreProgression } from '../ui';
 
 export interface CarteEnvoisProps {
   libelle: string;
-  /** Messages réellement partis aujourd'hui (pour un email : envoyés par le transporteur, pas remis). */
+  /** Emails remis au transporteur aujourd'hui : ce qui a consommé le quota. */
   partis: number;
-  /** Remis ou planifiés pour aujourd'hui, pas encore partis. */
+  /** Emails prévus aujourd'hui, pas encore remis : ce qui le consommera avant ce soir. */
   enFile: number;
-  plafond: number;
-  /** Rendus par l'écran (pluriels ICU) : « 0 parti », « 47 en file », « Aucun envoi ». */
+  /**
+   * `null` = aucune limite réglée, et surtout pas zéro : `senders.daily_quota` est nullable, et
+   * le moteur lit ce NULL comme « pas de limite » (`quotaSenderRestant`,
+   * `apps/worker/src/handlers/sequence.ts`) là où zéro vaut pause.
+   */
+  plafond: number | null;
+  /** Rendus par l'écran (pluriels ICU) : « 0 remis », « 47 en file », « Aucun envoi ». */
   libellePartis: string;
   libelleEnFile: string;
   libelleAucun: string;
+  /** Le coin droit : « / 135 », « sans limite » ou « en pause » — rendu par l'écran (ICU `select`). */
+  libellePlafond: string;
 }
 
 /**
@@ -34,18 +41,28 @@ export function CarteEnvois({
   libellePartis,
   libelleEnFile,
   libelleAucun,
+  libellePlafond,
 }: CarteEnvoisProps) {
-  const plafondAtteint = plafond > 0 && partis >= plafond;
-  const base = plafondAtteint ? partis + enFile : plafond;
+  // Sans limite réglée, il n'y a aucune proportion à montrer : barre vide et ton neutre. Une
+  // barre pleine, ou une alerte, annoncerait une limite que le moteur ne respecte pas.
+  const sansLimite = plafond === null;
+  const plafondAtteint = plafond !== null && plafond > 0 && partis >= plafond;
+  const base = sansLimite ? 0 : plafondAtteint ? partis + enFile : plafond;
   const part = (n: number) => (base > 0 ? (n / base) * 100 : 0);
   const placeRestante = Math.max(0, base - partis);
-  const ton = plafondAtteint ? 'erreur' : plafond > 0 && partis >= plafond * 0.9 ? 'attention' : 'normal';
+  // En pause (plafond à zéro) avec des envois déjà partis : anomalie, ton d'erreur — même règle
+  // que `tonJauge` (`lib/plafonds-affichage.ts`), qui sert les trois autres écrans.
+  const ton = plafondAtteint || (plafond === 0 && partis > 0)
+    ? 'erreur'
+    : plafond !== null && plafond > 0 && partis >= plafond * 0.9
+      ? 'attention'
+      : 'normal';
 
   return (
     <div className="jr-carte">
       <div className="jr-envois-tete">
         <span>{libelle}</span>
-        <span className="jr-plafond">/ {plafond}</span>
+        <span className="jr-plafond">{libellePlafond}</span>
       </div>
       {partis === 0 && enFile === 0 ? (
         <div className="jr-envois-vide">{libelleAucun}</div>

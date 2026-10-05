@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import { ForbiddenError } from '../roles.js';
 import type { Contexte } from './contexte.js';
-import { lireAujourdhui, lireResumeCoquille, SQL_ACTION_DU_JOUR, SQL_ACTION_REELLEMENT_PARTIE } from './aujourdhui.js';
+import { lireAujourdhui, lireResumeCoquille, SQL_ACTION_DU_JOUR } from './aujourdhui.js';
+import { SQL_EMAIL_CONSOMME_LE_QUOTA } from './plafonds.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 
 /** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
@@ -535,24 +536,44 @@ describe('lireResumeCoquille (menu de gauche : compteurs seulement)', () => {
     expect(badge).toContain(SQL_CONDITION_A_TRAITER);
     expect(full.appels.find((a) => a.includes('jr:threads_a_traiter'))!).toContain(SQL_CONDITION_A_TRAITER);
 
-    const jourMenu = light.appels.find((a) => a.includes('jr:coquille_file_du_jour'))!;
+    // La jauge du menu : même définition du quota email que la page Plafonds
+    // (`SQL_EMAIL_CONSOMME_LE_QUOTA`), et même borne de journée que l'accueil pour son second
+    // segment. Revue de cohérence du lot 2 : le menu comptait tous les canaux au numérateur et
+    // l'email seul au dénominateur.
+    const jourMenu = light.appels.find((a) => a.includes('jr:coquille_quota_envois'))!;
+    expect(jourMenu).toContain(SQL_EMAIL_CONSOMME_LE_QUOTA);
     expect(jourMenu).toContain(SQL_ACTION_DU_JOUR);
-    expect(jourMenu).toContain(SQL_ACTION_REELLEMENT_PARTIE);
     expect(full.appels.find((a) => a.includes('jr:file_du_jour'))!).toContain(SQL_ACTION_DU_JOUR);
+    // La borne du jour dans le `where`, pas seulement dans un `filter` : sinon la requête du
+    // menu scanne toutes les actions de l'organisation à chaque rendu de page. Aucune valeur
+    // de retour ne distingue les deux — seule la forme le dit.
+    expect(jourMenu.slice(jourMenu.indexOf('where'))).toContain(SQL_ACTION_DU_JOUR);
 
-    // Même requête de plafond des deux côtés (`lirePlafondEnvois`).
-    const plafond = (appels: string[]) => appels.find((a) => /sum\(daily_quota\)/.test(a));
+    // Même requête de plafond des deux côtés (`lirePlafondEnvois`), une seule définition.
+    const plafond = (appels: string[]) => appels.find((a) => /jr:plafond_envois_org/.test(a));
     expect(plafond(light.appels)).toBeDefined();
     expect(plafond(light.appels)).toBe(plafond(full.appels));
   });
 
-  it('assemble partis = total - enFile et lit le plafond', async () => {
+  it('assemble la jauge email : remis, en file, plafond', async () => {
     const { ctx } = espion({
       'jr:coquille_a_traiter': [{ n: 3 }],
-      'jr:coquille_file_du_jour': [{ total: 10, en_file: 4 }],
-      'sum\\(daily_quota\\)': [{ plafond: 60 }],
+      'jr:coquille_quota_envois': [{ remis: 6, en_file: 4 }],
+      'jr:plafond_envois_org': [{ plafond: 60 }],
     });
     const r = await lireResumeCoquille(ctx);
-    expect(r).toMatchObject({ aTraiterTotal: 3, fileDuJour: { partis: 6, enFile: 4 }, plafondEnvois: 60 });
+    expect(r).toMatchObject({ aTraiterTotal: 3, quotaEnvois: { utilise: 6, enFile: 4, plafond: 60 } });
+  });
+
+  // `null` = aucune limite réglée, et surtout pas zéro : le moteur lit ce NULL comme « pas de
+  // limite » (`quotaSenderRestant`), là où zéro vaut pause partout dans le produit.
+  it('un plafond absent remonte tel quel, jamais converti en zéro', async () => {
+    const { ctx } = espion({
+      'jr:coquille_a_traiter': [{ n: 0 }],
+      'jr:coquille_quota_envois': [{ remis: 12, en_file: 0 }],
+      'jr:plafond_envois_org': [{ plafond: null }],
+    });
+    const r = await lireResumeCoquille(ctx);
+    expect(r.quotaEnvois.plafond).toBeNull();
   });
 });

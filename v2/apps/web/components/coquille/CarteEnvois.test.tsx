@@ -7,7 +7,7 @@ function segments(html: string): number[] {
   return [...html.matchAll(/width:\s*([\d.]+)%/g)].map((m) => Number(m[1]));
 }
 
-function rendre(partis: number, enFile: number, plafond: number): string {
+function rendre(partis: number, enFile: number, plafond: number | null): string {
   return renderToStaticMarkup(
     <CarteEnvois
       libelle="Envois du jour"
@@ -17,6 +17,7 @@ function rendre(partis: number, enFile: number, plafond: number): string {
       libellePartis={`${partis} partis`}
       libelleEnFile={`${enFile} en file`}
       libelleAucun="Aucun envoi"
+      libellePlafond={plafond === null ? 'sans limite' : plafond <= 0 ? 'en pause' : `/ ${plafond}`}
     />,
   );
 }
@@ -76,5 +77,26 @@ describe('CarteEnvois — les six états de la maquette validée (18/09)', () =>
     const html = rendre(0, 0, 0);
     expect(html).toContain('Aucun envoi');
     expect(html).not.toContain('NaN');
+  });
+
+  // Revue de cohérence du lot 2 : `senders.daily_quota` est nullable, et le moteur lit ce NULL
+  // comme « aucune limite » (`quotaSenderRestant` rend Infinity). La carte affichait « / 0 »,
+  // c'est-à-dire une pause, pendant que le moteur envoyait sans limite.
+  it("sans plafond réglé : la carte le dit, et n'invente ni « / 0 » ni alerte", () => {
+    const html = rendre(42, 3, null);
+    expect(html).toContain('sans limite');
+    expect(html).not.toContain('/ 0');
+    expect(html).not.toContain('erreur');
+    expect(html).not.toContain('NaN');
+  });
+
+  it("sans plafond réglé : la barre reste vide, il n'y a pas de proportion à montrer", () => {
+    expect(segments(rendre(42, 3, null)).filter((n) => n > 0)).toHaveLength(0);
+  });
+
+  it('plafond à zéro avec des envois déjà partis : la pause est dite, et le ton alerte', () => {
+    const html = rendre(7, 0, 0);
+    expect(html).toContain('en pause');
+    expect(html).toContain('erreur');
   });
 });

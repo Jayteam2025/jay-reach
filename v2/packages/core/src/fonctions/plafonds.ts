@@ -347,6 +347,38 @@ export interface Jauge {
 }
 
 /**
+ * La jauge des envois, seule à distinguer « aucun plafond réglé » (`null`) de
+ * « plafond à zéro » (`0`, qui vaut pause dans ce produit, cf. `placesRestantes`
+ * dans `packages/core/src/plafonds.ts`). Les autres plafonds ont toujours une
+ * valeur : ils viennent d'un réglage d'organisation, pas d'une colonne nullable.
+ */
+export interface JaugeEnvois {
+  utilise: number;
+  plafond: number | null;
+}
+
+/**
+ * Les emails qui consomment le quota du jour : REMIS au transporteur
+ * (`dispatched`, ou `delivered` une fois réellement parti), dans le jour de
+ * l'organisation. Mêmes lignes que celles comptées par le moteur
+ * (`chargerContraintesSender`, `apps/worker/src/handlers/sequence.ts`) — une
+ * jauge qui ne compterait pas la même chose que lui pourrait annoncer de la
+ * place restante alors qu'il a atteint son quota.
+ *
+ * Alias imposé : `actions a` ; paramètres `$2` = jour calendaire (date),
+ * `$3` = fuseau — mêmes positions que `SQL_ACTION_DU_JOUR` (`aujourdhui.ts`),
+ * pour que les deux tiennent dans une seule requête du menu.
+ *
+ * Le cast `::date::timestamp` avant `at time zone` est obligatoire, pour la
+ * raison détaillée dans `SQL_ACTION_DU_JOUR` : sans lui, Postgres repart du
+ * fuseau de la session et le comptage du jour rate presque toutes les lignes.
+ */
+export const SQL_EMAIL_CONSOMME_LE_QUOTA = `a.channel = 'email'
+          and a.status in ('dispatched', 'delivered')
+          and a.dispatched_at >= ($2::date::timestamp at time zone $3)
+          and a.dispatched_at < (($2::date + 1)::timestamp at time zone $3)`;
+
+/**
  * Plafond d'enrichissement du jour — SEULE source de vérité pour les deux
  * boutons « Chercher l'email » (tâche 8 par signal, `apps/web/app/actions/enrichir.ts` ;
  * tâche 17 par contact, `fonctions/contacts.ts`), qui partagent le même
@@ -358,15 +390,34 @@ export async function plafondEnrichissementDuJour(ctx: Contexte): Promise<number
   return plafondDuJour(ctx.ex, ctx.organisationId, 'enrichissements_par_jour');
 }
 
-/** Plafond d'envois du jour : somme des quotas journaliers des boîtes email actives (une seule définition, accueil et menu). */
-export async function lirePlafondEnvois(ctx: Contexte): Promise<number> {
-  const res = await ctx.ex.query<{ plafond: number }>(
-    `select coalesce(sum(daily_quota), 0)::int as plafond
+/**
+ * Plafond d'envois du jour : somme des quotas journaliers des boîtes email
+ * actives. SEULE définition du plafond d'organisation — le menu, l'accueil, la
+ * page Plafonds et la file du jour (`listerFileDuJour`, `campagnes.ts`)
+ * l'appellent tous.
+ *
+ * `null` = AUCUNE LIMITE RÉGLÉE, et ce n'est pas la même chose que zéro.
+ * `senders.daily_quota` est nullable, et le moteur lit ce `null` comme « pas de
+ * limite » (`quotaSenderRestant` rend `Infinity`,
+ * `apps/worker/src/handlers/sequence.ts`), tandis que zéro vaut pause partout
+ * dans le produit (`placesRestantes`). Un `coalesce(sum(...), 0)` confondait les
+ * deux : la jauge annonçait « en pause » pendant que le moteur envoyait sans
+ * limite — relevé par la revue de cohérence du lot 2, prouvé par
+ * `test/pg-verify/jauge-envois.sh`.
+ *
+ * Une seule boîte active sans quota suffit à rendre `null` : `sum` ignore les
+ * NULL, donc additionner les autres annoncerait un plafond que le moteur ne
+ * respecte pas. Aucune boîte active rend bien `0` — rien ne peut partir.
+ */
+export async function lirePlafondEnvois(ctx: Contexte): Promise<number | null> {
+  const res = await ctx.ex.query<{ plafond: number | null }>(
+    `select case when count(*) filter (where daily_quota is null) > 0 then null
+                 else coalesce(sum(daily_quota), 0)::int end as plafond /* jr:plafond_envois_org */
        from senders
       where organization_id = $1 and kind = 'email' and is_active`,
     [ctx.organisationId],
   );
-  return res.rows[0]?.plafond ?? 0;
+  return res.rows[0]?.plafond ?? null;
 }
 
 /**
@@ -397,7 +448,7 @@ export async function lirePlafondEnvois(ctx: Contexte): Promise<number> {
 export async function lireConsommationDuJour(
   ctx: Contexte,
   reglages?: Awaited<ReturnType<typeof lireReglages>>,
-): Promise<{ scoring: Jauge; enrichissement: Jauge; envois: Jauge }> {
+): Promise<{ scoring: Jauge; enrichissement: Jauge; envois: JaugeEnvois }> {
   const reglagesResolus = reglages ?? (await lireReglages(ctx));
   const fuseau = String(reglagesResolus.fuseau);
   // Même clé de jour que le worker (`app.consume_provider_credit`, appelé avec
@@ -419,14 +470,15 @@ export async function lireConsommationDuJour(
       where organization_id = $1 and provider_id = 'fullenrich' and usage_date = $2::date`,
     [ctx.organisationId, jour],
   );
+  // Même fragment que le menu (`lireResumeCoquille`, `aujourdhui.ts`) : sans
+  // définition partagée, les deux écrans ont déjà affiché deux nombres
+  // différents pour « envois du jour ».
   const envoisUtiliseRes = await ctx.ex.query<{ n: number }>(
-    `select count(*)::int as n
+    `select count(*)::int as n /* jr:envois_du_jour */
        from actions a
       where a.organization_id = $1
-        and a.channel = 'email'
-        and a.status in ('dispatched', 'delivered')
-        and a.dispatched_at >= date_trunc('day', now() at time zone $2) at time zone $2`,
-    [ctx.organisationId, fuseau],
+        and ${SQL_EMAIL_CONSOMME_LE_QUOTA}`,
+    [ctx.organisationId, jour, fuseau],
   );
   return {
     scoring: { utilise: scoringRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.scoring_par_jour) },

@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
-import { lireConsommationDuJour, lireReglages, type Jauge } from './plafonds.js';
+import { lireConsommationDuJour, lireReglages, type JaugeEnvois } from './plafonds.js';
 
 export type CategorieFournisseur = 'ia' | 'enrichissement' | 'envoi' | 'offres' | 'linkedin' | 'reception';
 export type StatutCle = 'a_renseigner' | 'valide' | 'echec';
@@ -63,7 +63,11 @@ export interface FournisseurVue {
   /** Config non secrète déjà enregistrée (app_id, tenant_id…) — jamais le secret. */
   config: Record<string, string> | null;
   /** Jauge du jour, seulement pour les trois fournisseurs qui portent un plafond organisation (anthropic, fullenrich, salesblink) — `null` sinon. */
-  consommationDuJour: Jauge | null;
+  /**
+   * `plafond` nul = aucune limite réglée, pas une pause — seul SalesBlink
+   * (les envois) peut le rendre, son plafond venant des boîtes d'envoi.
+   */
+  consommationDuJour: JaugeEnvois | null;
   /** Dernier passage / dernière erreur de la relève — seulement SalesBlink et Microsoft Graph, `null` pour les fournisseurs qui ne relèvent rien. */
   releve: { dernierPassage: string | null; derniereErreur: string | null } | null;
   /** Route de l'écran Plafonds quand ce fournisseur y a une ligne éditable (anthropic, fullenrich), `null` sinon. */
@@ -116,7 +120,7 @@ export async function listerFournisseurs(ctx: Contexte): Promise<FournisseurVue[
 
     const statut: StatutCle = !presente ? 'a_renseigner' : sync?.last_error ? 'echec' : 'valide';
 
-    const consommationDuJour: Jauge | null =
+    const consommationDuJour: JaugeEnvois | null =
       def.id === 'anthropic'
         ? consommation.scoring
         : def.id === 'fullenrich'

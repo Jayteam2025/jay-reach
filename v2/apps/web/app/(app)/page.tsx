@@ -6,6 +6,7 @@ import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
+import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../lib/plafonds-affichage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -20,16 +21,6 @@ function formatHeure(iso: string | null, fuseau: string): string {
   return iso
     ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(new Date(iso))
     : '—';
-}
-
-function tonJauge(utilise: number, plafond: number): 'normal' | 'attention' | 'erreur' {
-  if (plafond <= 0) return utilise > 0 ? 'erreur' : 'normal';
-  const pourcentage = (utilise / plafond) * 100;
-  return pourcentage >= 100 ? 'erreur' : pourcentage >= 90 ? 'attention' : 'normal';
-}
-
-function pourcentageJauge(utilise: number, plafond: number): number {
-  return plafond > 0 ? Math.min(100, Math.round((utilise / plafond) * 100)) : 0;
 }
 
 /**
@@ -56,7 +47,14 @@ const TON_STATUT_CAMPAGNE: Record<CampagneResume['statut'], PuceTon> = {
 
 export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
-  const [t, locale, a] = await Promise.all([getTranslations('aujourdhui'), localeCourante(), lireAujourdhuiCourant(ctx)]);
+  // `tPlafonds` : le gabarit des jauges vit avec l'écran Plafonds, et les trois écrans qui
+  // montrent ces jauges le partagent plutôt que d'en recopier chacun une variante.
+  const [t, tPlafonds, locale, a] = await Promise.all([
+    getTranslations('aujourdhui'),
+    getTranslations('reglages.plafonds'),
+    localeCourante(),
+    lireAujourdhuiCourant(ctx),
+  ]);
 
   const jour = capitaliser(
     new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: a.fuseau }).format(
@@ -210,7 +208,9 @@ export default async function AujourdhuiPage() {
               valeur={pourcentageJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
               ton={tonJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
             />
-            <CleValeur libelle={t('caps.sending')} valeur={`${formatNombre(a.plafonds.envois.utilise, locale)} / ${formatNombre(a.plafonds.envois.plafond, locale)}`} />
+            {/* Le gabarit partagé, jamais le brut : ce plafond peut être nul (pause) ou absent
+                (aucune limite réglée), et « 128 / 0 » ne dit ni l'un ni l'autre. */}
+            <CleValeur libelle={t('caps.sending')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.envois.utilise, a.plafonds.envois.plafond))} />
             <BarreProgression valeur={pourcentageJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} ton={tonJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} />
           </Carte>
         </div>

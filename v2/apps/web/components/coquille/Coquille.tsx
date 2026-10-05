@@ -6,6 +6,7 @@ import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
 import { CarteMoteur } from './CarteMoteur';
 import { CarteEnvois } from './CarteEnvois';
+import { parametresValeurConsommation } from '../../lib/plafonds-affichage';
 
 export interface CoquilleProps {
   ctx: ContexteWeb;
@@ -54,14 +55,19 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
             libelleEtat={a.moteur.enMarche ? t('coquille.engine.running') : t('coquille.engine.stopped')}
             detail={detailMoteur}
           />
+          {/* La jauge porte sur l'EMAIL, numérateur ET dénominateur : avant la revue de
+              cohérence du lot 2, elle comptait tous les canaux au numérateur et l'email seul au
+              dénominateur, si bien qu'une action LinkedIn gonflait une barre qu'elle ne consomme
+              pas. Le canal LinkedIn aura sa propre jauge, avec son propre quota d'expéditeur. */}
           <CarteEnvois
             libelle={t('coquille.sentToday')}
-            partis={a.fileDuJour.partis}
-            enFile={a.fileDuJour.enFile}
-            plafond={a.plafondEnvois}
-            libellePartis={t('coquille.sent.gone', { n: a.fileDuJour.partis })}
-            libelleEnFile={t('coquille.sent.queued', { n: a.fileDuJour.enFile })}
+            partis={a.quotaEnvois.utilise}
+            enFile={a.quotaEnvois.enFile}
+            plafond={a.quotaEnvois.plafond}
+            libellePartis={t('coquille.sent.gone', { n: a.quotaEnvois.utilise })}
+            libelleEnFile={t('coquille.sent.queued', { n: a.quotaEnvois.enFile })}
             libelleAucun={t('coquille.sent.none')}
+            libellePlafond={t('coquille.sent.cap', parametresValeurConsommation(a.quotaEnvois.utilise, a.quotaEnvois.plafond))}
           />
           <div className="jr-qui" style={{ padding: '4px 6px' }}>
             <Avatar nom={nomAffiche} />

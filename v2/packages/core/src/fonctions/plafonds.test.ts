@@ -113,7 +113,12 @@ describe('plafonds', () => {
     await lireConsommationDuJour(ctx);
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const sqlEnvois = appels.map((call) => String(call[0])).find((sql) => /from actions/i.test(sql));
-    expect(sqlEnvois).toMatch(/date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
+    // La borne revient en `timestamptz` par un `::date::timestamp at time zone` — jamais un
+    // `::date at time zone` nu, qui résout le mauvais opérateur et repart du fuseau de la
+    // SESSION (mesuré sur la base OSS le 18/09 : 6 lignes affichées contre 47 réelles).
+    expect(sqlEnvois).toMatch(/\$2::date::timestamp at time zone \$3/);
+    expect(sqlEnvois).toMatch(/\(\$2::date \+ 1\)::timestamp at time zone \$3/);
+    expect(sqlEnvois).not.toMatch(/::date at time zone/);
   });
 
   it('#118 : scoring et enrichissement se remettent à zéro à minuit heure de l’organisation, pas à minuit UTC', async () => {

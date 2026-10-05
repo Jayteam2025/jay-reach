@@ -164,9 +164,10 @@
     },
     "sentToday": "Envois du jour",
     "sent": {
-      "gone": "{n, plural, one {# parti} other {# partis}}",
+      "gone": "{n, plural, one {# remis} other {# remis}}",
       "queued": "{n, plural, one {# en file} other {# en file}}",
-      "none": "Aucun envoi"
+      "none": "Aucun envoi",
+      "cap": "{etat, select, pause {en pause} sansLimite {sans limite} other {/ {plafond}}}"
     },
     "role": {
       "owner": "Propriétaire",
@@ -1071,7 +1072,7 @@
         "enrichissement": "Enrichissements demandés (FullEnrich)",
         "envois": "Envois",
         "aide": "Les compteurs se remettent à zéro à minuit, heure de l'organisation ({fuseau}), envois compris. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu.",
-        "valeur": "{enPause, select, oui {{utilise} · plafond à 0 (en pause)} other {{utilise} / {plafond}}}"
+        "valeur": "{etat, select, pause {{utilise} · plafond à 0 (en pause)} sansLimite {{utilise} · aucune limite réglée} other {{utilise} / {plafond}}}"
       },
       "protection": {
         "title": "Ce que ça protège",
