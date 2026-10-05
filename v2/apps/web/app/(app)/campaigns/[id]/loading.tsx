@@ -1,6 +1,10 @@
-import { SqueletteListe } from '../../squelette';
+import { SqueletteFicheCampagne } from '../../squelette';
 
-/** Fiche de campagne : en-tête chiffré, onglets, séquence. */
+/**
+ * Fiche de campagne et ses six sous-pages (contacts, file, activité, séquence,
+ * sources, réglages) : toutes partagent l'en-tête, la barre d'onglets et la
+ * grille `.jr-contenu`, donc le même squelette.
+ */
 export default function Chargement() {
-  return <SqueletteListe cartes={3} />;
+  return <SqueletteFicheCampagne />;
 }

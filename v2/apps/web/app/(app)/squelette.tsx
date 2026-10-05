@@ -4,13 +4,21 @@
  * La coquille (barre latérale, carte Moteur, jauge d'envois) vient du
  * `layout.tsx` du groupe de routes (`components/coquille/Coquille`), qui
  * enveloppe déjà `loading.tsx` comme il enveloppe `page.tsx` — ces squelettes
- * ne rendent donc plus qu'un contenu, jamais une coquille dupliquée. Jusqu'à
- * la tâche 24, un second exemplaire de la barre latérale (jetons `rs-*`,
- * routes d'avant la refonte) s'affichait par-dessus la vraie le temps du
- * chargement.
+ * ne rendent donc qu'un contenu, jamais une coquille dupliquée.
  *
- * Chaque écran garde SA forme : un squelette générique ferait sauter la mise
- * en page au remplacement, ce qui est plus désagréable qu'un écran vide.
+ * RÈGLE DE CE FICHIER, posée le 05/10 après un audit : un squelette REPREND LES
+ * CLASSES DE MISE EN PAGE DE SON ÉCRAN (`.jr-aujourdhui`, `.jr-contenu`,
+ * `.jr-reception`, `.jr-table`…), il ne les redessine pas en style en ligne.
+ * Les squelettes précédents décrivaient des écrans d'avant la refonte — quatre
+ * cartes d'indicateurs puis deux colonnes `1.6fr 1fr` pour un accueil qui est en
+ * réalité une grille `1fr 1fr 320px`, une grille de cartes 2×2 pour une liste de
+ * campagnes qui est un tableau — d'où un saut de mise en page à chaque
+ * remplacement. Réutiliser la classe réelle rend la divergence impossible, et
+ * fait suivre gratuitement les points de rupture (le repli en une colonne sous
+ * 1240 px vaut aussi pour le squelette).
+ *
+ * Les largeurs des barres sont volontairement irrégulières : une colonne de
+ * barres identiques se lit comme un tableau vide, pas comme du texte qui arrive.
  */
 
 /** Barre grise animée (classe `.jr-skel`, `apps/web/app/styles/composants.css`). */
@@ -18,155 +26,214 @@ function Barre({ l, h = 13, mb }: { l: string | number; h?: number; mb?: number 
   return <span className="jr-skel" style={{ width: l, height: h, marginBottom: mb }} />;
 }
 
-/** Surtitre, titre, chapô : toutes les pages ouvrent pareil. */
-function EnTete({ chapo = 2 }: { chapo?: number }) {
+/**
+ * Choisit une largeur dans un cycle. `noUncheckedIndexedAccess` est actif : un
+ * accès indexé rend `string | undefined` même quand le modulo le rend
+ * impossible, et le compilateur a raison de ne pas en juger. Cette fonction
+ * porte la garantie une fois pour toutes plutôt que de semer des `??` partout.
+ */
+function cycle(largeurs: readonly string[], i: number): string {
+  return largeurs[i % largeurs.length] ?? largeurs[0] ?? '50%';
+}
+
+/**
+ * En-tête de page : même boîte que `EnTetePage` (`.jr-entete-page`, flex avec
+ * l'action poussée à droite), pour que le titre ne se déplace pas d'un pixel
+ * quand le contenu réel arrive.
+ */
+function EnTete({ action = false }: { action?: boolean }) {
+  return (
+    <div className="jr-entete-page">
+      <div style={{ display: 'grid', gap: 6 }}>
+        <Barre l={190} h={26} />
+        <Barre l={320} h={15} />
+      </div>
+      {action ? <Barre l={148} h={34} /> : null}
+    </div>
+  );
+}
+
+/** Carte au titre suivi de quelques lignes : la forme la plus courante. */
+function Carte({ lignes = 4, hauteurLigne = 14 }: { lignes?: number; hauteurLigne?: number }) {
+  const largeurs = ['62%', '48%', '70%', '54%', '66%', '44%'];
+  return (
+    <section className="jr-carte" style={{ display: 'grid', gap: 12, padding: 16 }}>
+      <Barre l="38%" h={15} />
+      {Array.from({ length: lignes }, (_, i) => (
+        <Barre key={i} l={cycle(largeurs, i)} h={hauteurLigne} />
+      ))}
+    </section>
+  );
+}
+
+/**
+ * Tableau : vraies balises `<table className="jr-table">` plutôt qu'une pile de
+ * barres, pour hériter des hauteurs de cellule et des filets réels du tableau
+ * qui va le remplacer.
+ */
+function Tableau({ colonnes = 5, lignes = 8 }: { colonnes?: number; lignes?: number }) {
+  return (
+    <div className="jr-carte">
+      <table className="jr-table">
+        <thead>
+          <tr>
+            {Array.from({ length: colonnes }, (_, i) => (
+              <th key={i}>
+                <Barre l={i === 0 ? 96 : 64} h={11} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: lignes }, (_, i) => (
+            <tr key={i}>
+              {Array.from({ length: colonnes }, (_, j) => (
+                <td key={j}>
+                  {j === 0 ? (
+                    <div style={{ display: 'grid', gap: 5 }}>
+                      <Barre l={cycle(['64%', '52%', '72%', '58%'], i)} h={13} />
+                      <Barre l="44%" h={11} />
+                    </div>
+                  ) : (
+                    <Barre l={cycle(['38%', '52%', '30%', '46%'], i + j)} h={12} />
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Aujourd'hui : `.jr-aujourdhui`, deux colonnes souples puis une colonne fixe de
+ * 320 px (à traiter, file du jour, moteur et plafonds), et le tableau des
+ * campagnes en pleine largeur.
+ */
+export function SqueletteTableauDeBord() {
   return (
     <>
-      <Barre l={90} h={11} mb={10} />
-      <Barre l="42%" h={32} mb={14} />
-      {Array.from({ length: chapo }, (_, i) => (
-        <Barre key={i} l={i === 0 ? '68%' : '44%'} h={15} mb={i === chapo - 1 ? 24 : 6} />
-      ))}
+      <EnTete action />
+      <div className="jr-aujourdhui">
+        <Carte lignes={5} />
+        <Carte lignes={5} />
+        <div className="jr-moteur-plafonds">
+          <Carte lignes={3} />
+          <Carte lignes={3} />
+        </div>
+        <div className="pleine">
+          <Tableau colonnes={6} lignes={4} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Campagnes : `.jr-contenu`, le tableau des campagnes en pleine largeur. */
+export function SqueletteCampagnes() {
+  return (
+    <>
+      <EnTete action />
+      <div className="jr-contenu">
+        <div className="pleine">
+          <Tableau colonnes={7} lignes={6} />
+        </div>
+      </div>
     </>
   );
 }
 
 /**
- * Aujourd'hui : quatre indicateurs, deux panneaux côte à côte, puis les deux
- * listes du bas.
+ * Réception : `.jr-reception`, trois colonnes (liste des fils, fil, fiche du
+ * contact). La colonne de droite disparaît sous 1180 px, comme sur l'écran réel,
+ * puisque c'est la même classe qui porte la règle.
  */
-export function SqueletteTableauDeBord() {
-  return (
-    <div style={{ padding: '22px 28px 28px' }}>
-      <EnTete />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="jr-carte" style={{ display: 'grid', gap: 8, padding: 14 }}>
-            <Barre l="62%" h={17} />
-            <Barre l={64} h={33} />
-            <Barre l="48%" h={18} />
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, marginTop: 16 }}>
-        <section className="jr-carte" style={{ display: 'grid', gap: 12, padding: 16 }}>
-          <Barre l="30%" h={11} />
-          <span className="jr-skel" style={{ height: 210, borderRadius: 6 }} />
-        </section>
-        <section className="jr-carte" style={{ display: 'grid', gap: 12, padding: 16 }}>
-          <Barre l="52%" h={11} />
-          <span className="jr-skel" style={{ height: 210, borderRadius: 6 }} />
-        </section>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, marginTop: 16 }}>
-        <section className="jr-carte" style={{ display: 'grid', gap: 14, padding: 16 }}>
-          <Barre l="36%" h={11} />
-          {['52%', '44%', '58%', '40%', '50%'].map((l, i) => (
-            <div key={i} style={{ display: 'grid', gap: 6 }}>
-              <Barre l={l} h={14} />
-              <Barre l="70%" h={11} />
-            </div>
-          ))}
-        </section>
-        <section className="jr-carte" style={{ display: 'grid', gap: 10, padding: 16 }}>
-          <Barre l="46%" h={11} />
-          <Barre l="80%" h={13} />
-        </section>
-      </div>
-    </div>
-  );
-}
-
-/** Campagnes : en-tête à deux boutons, puis la grille de deux colonnes. */
-export function SqueletteCampagnes() {
-  return (
-    <div style={{ padding: '22px 28px 28px' }}>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1 }}>
-          <EnTete chapo={1} />
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Barre l={132} h={34} />
-          <Barre l={148} h={34} />
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginTop: 18 }}>
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="jr-carte" style={{ display: 'grid', gap: 12, padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <Barre l="46%" h={15} />
-              <span className="jr-skel" style={{ width: 58, height: 20, borderRadius: 999 }} />
-            </div>
-            <Barre l="100%" h={6} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', rowGap: 12, columnGap: 12 }}>
-              {Array.from({ length: 4 }, (_, j) => (
-                <div key={j} style={{ display: 'grid', gap: 5 }}>
-                  <Barre l={46} h={20} />
-                  <Barre l="66%" h={11} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Réception : une liste de conversations, deux lignes et une pastille chacune. */
 export function SqueletteReception() {
-  const gauche = ['38%', '30%', '44%', '34%', '40%', '28%'];
-  const droite = ['72%', '64%', '80%', '58%', '70%', '66%'];
+  const largeurs = ['38%', '30%', '44%', '34%', '40%', '28%', '36%'];
   return (
-    <div style={{ padding: '22px 28px 28px' }}>
-      <EnTete />
-      <div style={{ display: 'grid', gap: 0 }}>
-        {gauche.map((l, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto',
-              gap: 12,
-              padding: '14px 0',
-              borderTop: '1px solid var(--jr-filet)',
-            }}
-          >
-            <div style={{ display: 'grid', gap: 7 }}>
-              <Barre l={l} h={14} />
-              <Barre l={droite[i] ?? '70%'} h={12} />
-            </div>
-            <span className="jr-skel" style={{ width: 64, height: 20, borderRadius: 999 }} />
+    <div className="jr-reception">
+      <div style={{ borderRight: '1px solid var(--jr-filet)', padding: '14px 12px', display: 'grid', gap: 2, alignContent: 'start' }}>
+        {largeurs.map((l, i) => (
+          <div key={i} style={{ display: 'grid', gap: 7, padding: '12px 8px', borderBottom: '1px solid var(--jr-filet)' }}>
+            <Barre l={l} h={14} />
+            <Barre l={cycle(['72%', '64%', '80%', '58%'], i)} h={12} />
           </div>
         ))}
+      </div>
+      <div style={{ padding: '18px 20px', display: 'grid', gap: 14, alignContent: 'start' }}>
+        <Barre l="46%" h={17} />
+        {[180, 120, 200].map((h, i) => (
+          <span key={i} className="jr-skel" style={{ height: h, borderRadius: 8 }} />
+        ))}
+      </div>
+      <div style={{ borderLeft: '1px solid var(--jr-filet)', padding: '18px 16px', display: 'grid', gap: 12, alignContent: 'start' }}>
+        <Barre l="70%" h={15} />
+        <Barre l="52%" h={12} />
+        <Barre l="64%" h={12} />
       </div>
     </div>
   );
 }
 
-/** Écrans en liste de cartes : campagne (nouvelle/fiche), personas, expéditeurs. */
+/**
+ * Fiche de campagne : en-tête, barre d'onglets, puis `.jr-contenu` (colonne
+ * principale et colonne latérale de 340 px). Sert aussi à ses six sous-pages,
+ * qui partagent exactement cette ossature.
+ */
+export function SqueletteFicheCampagne() {
+  return (
+    <>
+      <EnTete action />
+      <div style={{ padding: '10px 28px 0' }}>
+        <div className="jr-onglets">
+          {[86, 74, 96, 68, 80, 92, 70].map((l, i) => (
+            <span key={i} style={{ padding: '9px 12px' }}>
+              <Barre l={l} h={13} />
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="jr-contenu">
+        <Carte lignes={6} />
+        <Carte lignes={4} />
+      </div>
+    </>
+  );
+}
+
+/** Écrans à filtres puis tableau : Contacts et ses onglets. */
+export function SqueletteTableauFiltre() {
+  return (
+    <>
+      <EnTete />
+      <div className="jr-contenu">
+        <div className="pleine" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[92, 116, 84, 104].map((l, i) => (
+            <Barre key={i} l={l} h={30} />
+          ))}
+        </div>
+        <div className="pleine">
+          <Tableau colonnes={6} lignes={10} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Écrans en liste de cartes : réglages, personas, expéditeurs, assistant. */
 export function SqueletteListe({ cartes = 4, entete = false }: { cartes?: number; entete?: boolean }) {
   return (
-    <div style={{ padding: '22px 28px 28px' }}>
-      {entete ? (
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <EnTete chapo={1} />
-          </div>
-          <Barre l={148} h={34} />
+    <>
+      <EnTete action={entete} />
+      <div className="jr-contenu">
+        <div className="pleine" style={{ display: 'grid', gap: 14 }}>
+          {Array.from({ length: cartes }, (_, i) => (
+            <Carte key={i} lignes={3} />
+          ))}
         </div>
-      ) : (
-        <EnTete />
-      )}
-      <div style={{ display: 'grid', gap: 14, marginTop: entete ? 4 : 0 }}>
-        {Array.from({ length: cartes }, (_, i) => (
-          <section key={i} className="jr-carte" style={{ display: 'grid', gap: 10, padding: 16 }}>
-            <Barre l={['42%', '34%', '48%', '38%', '44%'][i % 5] ?? '40%'} h={15} />
-            <Barre l="86%" h={13} />
-            <Barre l="62%" h={13} />
-          </section>
-        ))}
       </div>
-    </div>
+    </>
   );
 }
