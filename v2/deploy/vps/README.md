@@ -174,8 +174,8 @@ ne tourne.
 
 | `JAY_REACH_LINKEDIN` | Optionnelle. `1` autorise les commandes `jay-reach linkedin ...` ; sinon `connecter`, `deconnecter` et `ip` refusent (`statut` reste lisible). |
 | `LINKEDIN_BROWSER_URL` | Adresse DevTools du service `navigateur` : `http://navigateur:9223`. |
-| `LINKEDIN_PROXY_URL` (`navigateur.env`) | Proxy résidentiel dédié, **sans identifiants** (`schéma://hôte:port`). Le navigateur refuse de démarrer sans lui. |
-| `LINKEDIN_PROXY_USER` / `LINKEDIN_PROXY_PASSWORD` (`navigateur.env`) | Identifiants du proxy, présentés par CDP : Chromium les refuse dans `--proxy-server`. |
+| `LINKEDIN_PROXY_URL` (**`navigateur.env`**) | Adresse du proxy résidentiel dédié, **sans identifiants** (`schéma://hôte:port`). Le navigateur refuse de démarrer sans elle. |
+| `LINKEDIN_PROXY_USER` / `LINKEDIN_PROXY_PASSWORD` (`worker.env`) | Identifiants du proxy, présentés par CDP : Chromium les refuse dans `--proxy-server`. |
 | `JAY_REACH_ORGANISATION_ID` | Optionnelle. À poser si la base porte plusieurs organisations (sinon l'organisation unique est prise). |
 
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
@@ -188,9 +188,10 @@ conteneur (`navigateur`), derrière un proxy résidentiel dédié. Il est derri�
 un profil Compose : sans le réglage ci-dessous, `./deployer.sh` ne le construit
 ni ne le démarre.
 
-1. Dans `/etc/jay-reach/worker.env`, poser `JAY_REACH_LINKEDIN=1` et
-   `LINKEDIN_BROWSER_URL`. Le proxy va dans un **fichier à part**, que seul le
-   navigateur charge (avec le worker, qui y lit les identifiants du proxy) :
+1. Dans `/etc/jay-reach/worker.env`, poser `JAY_REACH_LINKEDIN=1`,
+   `LINKEDIN_BROWSER_URL`, `LINKEDIN_PROXY_USER` et `LINKEDIN_PROXY_PASSWORD`.
+   **L'adresse du proxy va dans un fichier à part**, que seul le navigateur
+   charge :
 
    ```bash
    sudo cp deploy/vps/navigateur.env.example /etc/jay-reach/navigateur.env
@@ -234,9 +235,13 @@ Points à connaître :
 - **Le port DevTools (`127.0.0.1:9222`) donne la main sur la session
   LinkedIn.** Ne jamais le publier sur une autre interface ni le tunneler vers
   un poste partagé.
-- Le conteneur `navigateur` ne charge que `navigateur.env` (le proxy) : il
-  exécute le JavaScript de pages tierces et ne voit aucune clé du worker.
-  `LINKEDIN_PROXY_*` ne se met donc pas dans `worker.env`.
+- **Le secret du proxy est réparti sur deux fichiers, exprès.** L'adresse
+  `LINKEDIN_PROXY_URL` va dans `navigateur.env` (Chromium en a besoin pour
+  `--proxy-server`) ; les identifiants `LINKEDIN_PROXY_USER` et
+  `LINKEDIN_PROXY_PASSWORD` vont dans `worker.env` (le worker les présente par
+  CDP). Le conteneur `navigateur`, qui exécute le JavaScript de pages tierces,
+  ne voit ainsi ni clé du worker ni identifiant de proxy. Ne pas tout remettre
+  dans un seul fichier.
 - Le profil (cookies de la session) vit dans le volume `profil-navigateur` :
   `docker compose -p jay-reach down -v` l'efface.
 
