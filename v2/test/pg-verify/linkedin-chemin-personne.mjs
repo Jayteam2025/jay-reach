@@ -14,7 +14,6 @@
 import pg from 'pg';
 import {
   compterSignauxScorables,
-  ecarterEngageur,
   enqueueEnrollments,
   enregistrerEngageur,
   persistEnrichedContact,
