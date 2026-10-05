@@ -14,7 +14,7 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { deterministicUuid } from './ids.js';
@@ -25,7 +25,7 @@ interface SourceRow {
   readonly provider_id: string;
   /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
   readonly source_provider_id: string;
-  readonly config: { keywords?: unknown; location?: unknown } | null;
+  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown } | null;
 }
 
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
@@ -44,6 +44,18 @@ function lireAgeMaxSignalJours(): number {
  * Au-delà de ce nombre de jours, un signal ne vaut plus ni scoring ni
  * enrichissement : la base contient des milliers de signaux de juillet et
  * août jamais traités, et les faire scorer coûterait du crédit IA pour rien.
+ *
+ * Coexiste avec le réglage `age_max_offres_jours` / `sources.config.ageMaxJours`
+ * (I3, revue finale du 17/09, filtre appliqué par `insertSignals`,
+ * `apps/worker/src/db.ts`) — les deux tombent souvent sur 14 jours par
+ * défaut, mais ce n'est PAS le même mécanisme : celui-ci PURGE APRÈS COUP,
+ * globalement pour toutes les organisations, un signal déjà en base et jamais
+ * traité (variable d'environnement `SIGNAL_MAX_AGE_DAYS`, non réglable par
+ * organisation) ; I3 ÉCARTE AVANT INSERTION, par organisation/source, une
+ * offre trop vieille au moment même où le connecteur la remonte (réglable en
+ * base, réglage par défaut de l'écran Plafonds). Une offre qui passe I3 (donc
+ * insérée) peut donc encore être purgée plus tard par celui-ci si elle reste
+ * `new`/`qualified` sans jamais être scorée ni enrichie.
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
 
@@ -81,11 +93,20 @@ export async function enqueueDiscoverForActiveSources(
   opts: { bucket?: string } = {},
 ): Promise<number> {
   const bucket = opts.bucket ?? 'once';
+  // R72 : une source rattachée à AUCUNE campagne active ne tourne pas, même
+  // active elle-même — une campagne encore en brouillon (ou en pause/archivée)
+  // ne doit produire aucune collecte. Une source liée à plusieurs campagnes
+  // dont une seule active reste due (l'`exists` évite de la dupliquer).
   const res = await pool.query<SourceRow>(
     `select s.id, s.organization_id, sp.provider_id, sp.id as source_provider_id, s.config
        from sources s
        join source_providers sp on sp.source_id = s.id
-      where s.is_active = true and sp.is_active = true`,
+      where s.is_active = true and sp.is_active = true
+        and exists (
+          select 1 from campaign_sources cs
+            join campaigns c on c.id = cs.campaign_id
+           where cs.source_id = s.id and c.status = 'active'
+        )`,
   );
 
   let enqueued = 0;
@@ -103,6 +124,7 @@ export async function enqueueDiscoverForActiveSources(
       sourceProviderId: src.source_provider_id,
       keywords,
       ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+      ...(typeof config.ageMaxJours === 'number' ? { ageMaxJours: config.ageMaxJours } : {}),
     };
     const id = deterministicUuid('discover', src.source_provider_id, bucket);
     await boss.insert([{ name: 'sources.discover', id, data: job }]);
@@ -173,17 +195,28 @@ export async function enqueueScoringForOrgs(
  * soixante fois ce qu'une capacité d'envoi de cent trente-cinq courriels par
  * jour peut consommer. La valeur est donc dérivée de la sortie, pas de ce que
  * le moteur sait faire.
+ *
+ * R83 (relecture tâche 21) : ce plafond passait par `lirePlafondFournisseur`
+ * ci-dessous, qui lit `credentials.config.daily_cap` en ignorant complètement
+ * `organization_settings` — le réglage que pose l'écran Réglages › Plafonds.
+ * Un opérateur qui y changeait « Enrichissements par jour » ne voyait donc
+ * JAMAIS son changement appliqué par le moteur. `plafondDuJour`
+ * (`@jay-reach/core`) est désormais l'unique source : `organization_settings`
+ * d'abord, `credentials.config.daily_cap` en repli historique, puis
+ * l'environnement, puis un défaut — la même chaîne que l'écran.
  */
-const PLAFOND_ENRICHISSEMENT_PAR_DEFAUT = Number(process.env.ENRICH_DAILY_CAP ?? 50);
+async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
+  return plafondDuJour(pool, organizationId, 'enrichissements_par_jour');
+}
 
 /**
- * Plafond de l'organisation, tel qu'elle l'a saisi dans l'écran Fournisseurs.
- *
- * Une variable d'environnement ne se règle pas depuis l'application : personne
- * ne voyait ce plafond, et un opérateur cherchait où borner sa dépense sans
- * rien trouver. Le réglage vit maintenant à côté de la clé du fournisseur,
- * comme celui de Reoon. L'environnement reste le repli, pour une instance qui
- * n'a rien saisi.
+ * Plafond de l'organisation, tel qu'elle l'a saisi dans l'écran Fournisseurs —
+ * pour un fournisseur SANS équivalent dans `organization_settings` (SalesBlink :
+ * son plafond d'envoi n'est pas un plafond d'organisation, cf.
+ * `apps/worker/src/handlers/email-salesblink.ts`). Pour `anthropic` et
+ * `fullenrich`, qui ONT une clé `organization_settings`, utiliser `plafondDuJour`
+ * (`@jay-reach/core`) à la place — celui-ci lit `organization_settings` en
+ * premier, ce que cette fonction ne fait pas.
  */
 export async function lirePlafondFournisseur(
   pool: Pool,
@@ -199,12 +232,6 @@ export async function lirePlafondFournisseur(
     [organizationId, providerId],
   );
   return normaliserPlafond(res.rows[0]?.daily_cap, defaut);
-}
-
-export const PLAFOND_SCORING_PAR_DEFAUT = Number(process.env.SCORE_DAILY_CAP ?? 300);
-
-async function plafondEnrichissement(pool: Pool, organizationId: string): Promise<number> {
-  return lirePlafondFournisseur(pool, organizationId, 'fullenrich', PLAFOND_ENRICHISSEMENT_PAR_DEFAUT);
 }
 
 export async function enqueueEnrichmentForQualified(
@@ -249,6 +276,11 @@ export async function enqueueEnrichmentForQualified(
   let enqueued = 0;
   // Un plafond par organisation, lu une seule fois pour tout le lot.
   const plafonds = new Map<string, number>();
+  // #118 (tour de correction 5) : le jour du crédit consommé doit être celui de
+  // l'ORGANISATION, pas `current_date` (le fuseau du serveur, UTC) — un
+  // fuseau par organisation, lu une seule fois pour tout le lot (même motif
+  // que `plafonds` ci-dessus).
+  const jours = new Map<string, string>();
   for (const row of res.rows) {
     // Un job déjà en file ne se paie pas deux fois.
     //
@@ -273,9 +305,14 @@ export async function enqueueEnrichmentForQualified(
     // à eux deux. L'ordre inverse laisserait passer un dépassement.
     const plafond = plafonds.get(row.organization_id) ?? (await plafondEnrichissement(pool, row.organization_id));
     plafonds.set(row.organization_id, plafond);
+    let jour = jours.get(row.organization_id);
+    if (!jour) {
+      jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, row.organization_id));
+      jours.set(row.organization_id, jour);
+    }
     const credit = await pool.query<{ ok: boolean }>(
-      `select app.consume_provider_credit($1, 'fullenrich', $2, 1) as ok`,
-      [row.organization_id, plafond],
+      `select app.consume_provider_credit($1, 'fullenrich', $2, 1, $3::date) as ok`,
+      [row.organization_id, plafond, jour],
     );
     if (credit.rows[0]?.ok !== true) {
       console.warn(
@@ -367,13 +404,29 @@ export async function enqueueEnrollments(
         and c.entry_rules -> 'personas' ? ct.persona_id::text
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
+       -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
+       -- correction 2), pour le pré-filtre ci-dessous : cette requête mélange
+       -- potentiellement plusieurs organisations en un seul passage, contrairement
+       -- à compterEntreesDuJour (organisation connue par son appelant) -- jointure
+       -- plutôt qu'un paramètre JS, même repli (clé absente/vide -> Europe/Paris)
+       -- que fuseauDeLOrganisation.
+       left join organization_settings ofz on ofz.organization_id = c.organization_id and ofz.key = 'fuseau'
+      where ct.source_signal_id is not null
        -- Pré-filtre : une campagne dont le plafond du jour est déjà atteint
        -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
+       -- Jour de l'organisation, pas celui du serveur (revue F5, point 1, tour 2) :
+       -- même borne que compterEntreesDuJour, qui refait le contrôle autoritaire.
+       -- Relecture : cette requête balaie TOUTES les organisations d'un coup --
+       -- un fuseau invalide sur UNE SEULE ligne (schemaEcrireReglage le refuse
+       -- désormais à l'écriture, mais une ligne déjà fausse en base reste
+       -- possible) ferait échouer « invalid time zone » pour tout le monde.
+       -- Vérifié contre pg_timezone_names, repli sur Europe/Paris sinon --
+       -- une valeur absente ou invalide ne matche simplement aucune ligne.
         and (c.daily_cap is null
              or c.daily_cap > (select count(*) from enrollments e2
                                  where e2.campaign_id = c.id
-                                   and e2.started_at >= date_trunc('day', now())))
-      where ct.source_signal_id is not null
+                                   and e2.started_at >= date_trunc('day', now() at time zone coalesce((select tz.name from pg_timezone_names tz where tz.name = ofz.value #>> '{}'), 'Europe/Paris'))
+                                                        at time zone coalesce((select tz.name from pg_timezone_names tz where tz.name = ofz.value #>> '{}'), 'Europe/Paris')))
         and not exists (
           select 1 from enrollments e
            where e.contact_id = ct.id
@@ -385,6 +438,10 @@ export async function enqueueEnrollments(
   );
 
   const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
+  // Une campagne appartient à une seule organisation : `res.rows` en porte déjà
+  // l'id, pas besoin de la relire (revue F5, point 1, tour de correction 2 —
+  // `compterEntreesDuJour` en a besoin pour son propre fuseau).
+  const orgParCampagne = new Map(res.rows.map((r) => [r.campaign_id, r.organization_id]));
   const places = new Map<string, number | null>();
   if (ids.length > 0) {
     const caps = await pool.query<{ id: string; daily_cap: number | null }>(
@@ -392,7 +449,10 @@ export async function enqueueEnrollments(
       [ids],
     );
     for (const c of caps.rows) {
-      places.set(c.id, c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id)));
+      places.set(
+        c.id,
+        c.daily_cap === null ? null : placesRestantes(c.daily_cap, await compterEntreesDuJour(pool, c.id, orgParCampagne.get(c.id)!)),
+      );
     }
   }
   const { retenues, reportees } = bornerParCampagne(res.rows, places);
@@ -440,19 +500,39 @@ export async function enqueueEnrollments(
  *
  * Demander une collecte sur un thème la demande chez tous ses fournisseurs :
  * c'est la veille qu'on relance, pas un connecteur en particulier.
+ *
+ * R72 : un passage demandé à la main obéit à la même règle que la
+ * planification périodique — aucune campagne rattachée active, aucune
+ * collecte. La demande est quand même consommée (`run_requested_at` remis à
+ * `null`) pour ne pas relever indéfiniment la même demande orpheline ; seule
+ * une ligne de journal courte le dit, sans nom ni config de la source.
  */
 export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<number> {
   // `returning` sous le UPDATE : la demande est consommée et lue d'un seul geste,
   // donc deux workers ne peuvent pas enfiler la même collecte.
-  const demandes = await pool.query<{ id: string; organization_id: string; config: SourceRow['config'] }>(
-    `update sources
+  const demandes = await pool.query<{
+    id: string;
+    organization_id: string;
+    config: SourceRow['config'];
+    has_active_campaign: boolean;
+  }>(
+    `update sources s
         set run_requested_at = null
       where run_requested_at is not null
-      returning id, organization_id, config`,
+      returning id, organization_id, config,
+        exists (
+          select 1 from campaign_sources cs
+            join campaigns c on c.id = cs.campaign_id
+           where cs.source_id = s.id and c.status = 'active'
+        ) as has_active_campaign`,
   );
 
   let enqueued = 0;
   for (const src of demandes.rows) {
+    if (!src.has_active_campaign) {
+      console.warn(`[producer] passage demandé ignoré : aucune campagne active`);
+      continue;
+    }
     const config = src.config ?? {};
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {
@@ -475,6 +555,7 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
         sourceProviderId: rattachement.id,
         keywords,
         ...(typeof config.location === 'string' && config.location ? { location: config.location } : {}),
+        ...(typeof config.ageMaxJours === 'number' ? { ageMaxJours: config.ageMaxJours } : {}),
       };
       await boss.send('sources.discover', job);
       enqueued += 1;

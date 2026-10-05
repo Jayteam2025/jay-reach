@@ -22,10 +22,10 @@ export type TransportReponse = 'microsoft_graph' | 'salesblink';
  * pour lui répondre). Ne porte jamais de secret ni de clé — uniquement un
  * message d'explication destiné à l'opérateur.
  */
-export class ErreurEntree extends Error {
+export class ErreurReponseImpossible extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'ErreurEntree';
+    this.name = 'ErreurReponseImpossible';
   }
 }
 
@@ -40,7 +40,7 @@ export interface OrigineMessage {
  * `thread_messages` en direction `in` du fil (filtré par organisation).
  *
  * `null` quand le fil n'a encore reçu aucun message : on ne sait alors pas
- * répondre. `ErreurEntree` quand le fil n'est pas un fil email : le canal
+ * répondre. `ErreurReponseImpossible` quand le fil n'est pas un fil email : le canal
  * porte la règle, pas les en-têtes du message. Les en-têtes (`headers->>'transport'`, posés par la
  * relève Graph de la tâche 2) priment ; leur absence signifie un message venu
  * de SalesBlink, dont l'identifiant de tâche `/inbox` est le seul que
@@ -80,12 +80,12 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
   // SalesBlink, sur un identifiant qu'il ne connaît pas. LinkedIn reste à
   // venir (lot 4).
   if (dernier.channel !== 'email') {
-    throw new ErreurEntree("la réponse depuis Jay Reach n'existe que pour les fils email");
+    throw new ErreurReponseImpossible("la réponse depuis Jay Reach n'existe que pour les fils email");
   }
 
   if (dernier.transport === 'microsoft_graph') {
     if (!dernier.graph_message_id) {
-      throw new ErreurEntree(
+      throw new ErreurReponseImpossible(
         "impossible de répondre : identifiant Microsoft Graph du message d'origine manquant",
       );
     }
@@ -102,7 +102,7 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
   // vaut le dire à l'opérateur.
   const identifiantTache = dernier.salesblink_inbox_message_id ?? null;
   if (!identifiantTache) {
-    throw new ErreurEntree("impossible de répondre : message d'origine inconnu");
+    throw new ErreurReponseImpossible("impossible de répondre : message d'origine inconnu");
   }
   return { transport: 'salesblink', messageId: identifiantTache, mailbox: null };
 }
@@ -131,7 +131,7 @@ export async function repondreAuFil(
 ): Promise<ReponseEnvoyee> {
   const origine = await choisirTransport(ex, org, p.threadId);
   if (!origine) {
-    throw new ErreurEntree("impossible de répondre : message d'origine inconnu");
+    throw new ErreurReponseImpossible("impossible de répondre : message d'origine inconnu");
   }
 
   // Le HTML n'est jamais persisté : il ne sert qu'à porter le texte saisi
@@ -143,7 +143,7 @@ export async function repondreAuFil(
   const headers: Record<string, unknown> = { transport: origine.transport };
   if (origine.transport === 'microsoft_graph') {
     if (!origine.mailbox) {
-      throw new ErreurEntree("impossible de répondre : boîte Microsoft Graph du message d'origine manquante");
+      throw new ErreurReponseImpossible("impossible de répondre : boîte Microsoft Graph du message d'origine manquante");
     }
     await transports.graph(origine.mailbox, origine.messageId, corpsHtml);
     providerMessageId = null;

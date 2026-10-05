@@ -1,0 +1,32 @@
+/* Jay Reach, jetons du design system (décision 29, direction A, palette sobre).
+   Une seule source de couleur : aucun composant ne porte de valeur hexadécimale. */
+:root {
+  --jr-police: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --jr-fond: #F3F5F3;
+  --jr-surface: #FFFFFF;
+  --jr-encre: #1A2622;
+  --jr-secondaire: #63736D;
+  --jr-filet: #DCE2DE;
+  --jr-accent: #146C5A;
+  --jr-accent-doux: #E2F0EA;
+  --jr-accent-encre: #FFFFFF;
+  --jr-bon: #1F7A4D;
+  --jr-bon-doux: #E6F3EC;
+  --jr-attention: #B7791F;
+  --jr-attention-doux: #FBF1DE;
+  --jr-erreur: #B4423A;
+  --jr-erreur-doux: #F9E6E4;
+  --jr-linkedin: #0A66C2;
+  --jr-linkedin-doux: #E7EEF9;
+  --jr-voile: rgba(20, 30, 26, 0.28);
+  --jr-ombre-tiroir: -16px 0 40px rgba(0, 0, 0, 0.12);
+  --jr-ombre-menu: 0 12px 32px rgba(0, 0, 0, 0.14);
+  --jr-rayon: 10px;
+  --jr-rayon-controle: 6px;
+  --jr-corps: 14px;
+  --jr-petit: 12.5px;
+  --jr-titre: 24px;
+  --jr-barre-largeur: 224px;
+  /* Chevron dessiné des <select> (tour de correction F6, point 24) — même couleur que --jr-secondaire. */
+  --jr-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2363736D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}

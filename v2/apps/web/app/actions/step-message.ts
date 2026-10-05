@@ -1,12 +1,49 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireRole } from '../../lib/auth';
-import { createClient } from '../../lib/supabase/server';
-import { normalizeVariableSyntax, validateTemplateVariables } from '@jay-reach/core';
+import {
+  enregistrerVersionModele,
+  lireCampagnePourEtape,
+  enregistrerEtape,
+  supprimerEtape,
+  envoyerTest,
+  ErreurEntree,
+  ErreurIntrouvable,
+  ForbiddenError,
+} from '@jay-reach/core';
+import { contexteCourant } from '../../lib/contexte';
 
-export type StepMessageResult = { ok: true; templateParentId: string } | { ok: false; error: string };
-export type SimpleResult = { ok: true } | { ok: false; error: string };
+export type StepMessageResult =
+  | { ok: true; templateParentId: string }
+  | { ok: false; error: string; issues?: string[] };
+export type SimpleResult = { ok: true } | { ok: false; error: string; issues?: string[] };
+export type EnregistrerEtapeResult = { ok: true; etapeId: string } | { ok: false; error: string; issues?: string[] };
+
+/**
+ * Traduit une erreur des fonctions de `packages/core/src/fonctions/sequence.ts`
+ * en résultat de façade — jamais une exception qui ferait tomber la Server
+ * Action (même convention que `apps/web/app/actions/sources.ts`).
+ */
+function resultatDErreur(err: unknown): { ok: false; error: string; issues?: string[] } {
+  if (err instanceof ForbiddenError) {
+    return { ok: false, error: 'Droit administrateur requis.' };
+  }
+  if (err instanceof ErreurEntree) {
+    const details = err.details as {
+      formErrors?: string[];
+      fieldErrors?: Record<string, string[] | undefined>;
+    };
+    const issues = [
+      ...(details.formErrors ?? []),
+      ...Object.values(details.fieldErrors ?? {}).flat(),
+    ].filter((m): m is string => typeof m === 'string');
+    return { ok: false, error: 'Entrée invalide.', issues: issues.length > 0 ? issues : undefined };
+  }
+  if (err instanceof ErreurIntrouvable) {
+    return { ok: false, error: err.message };
+  }
+  return { ok: false, error: err instanceof Error ? err.message : 'Erreur inconnue.' };
+}
 
 /** Message écrit directement dans une étape de séquence. */
 export interface StepMessageInput {
@@ -22,18 +59,17 @@ export interface StepMessageInput {
 }
 
 /**
- * Enregistre le message d'une étape.
+ * Enregistre le message d'une étape (canal quelconque). Façade fine sur
+ * `enregistrerVersionModele` (`packages/core/src/fonctions/sequence.ts`,
+ * origin `step`) : la validation des variables, le versionnage (nouvelle
+ * version plutôt qu'écrasement — des envois déjà partis pointent sur la
+ * version en cours) et l'écriture vivent désormais dans core, appelables à
+ * l'identique par le futur serveur MCP.
  *
- * Le message reste un `message_templates` : c'est lui qui porte le versionnage,
- * la résolution des variables et la validation, et une seconde façon de stocker
- * un corps aurait dupliqué tout ça. Il naît avec `origin = 'step'`, donc
- * invisible dans la bibliothèque — sinon chaque brouillon écrit dans une
- * campagne viendrait polluer une liste censée contenir des modèles qu'on
- * réutilise.
- *
- * Réécrire un message existant crée une VERSION plutôt que d'écraser : des
- * envois déjà partis pointent sur la version en cours, et les écraser ferait
- * mentir la mesure sur ce qui a réellement été envoyé.
+ * Historique : `saveStepMessage` n'a aujourd'hui aucun appelant dans
+ * l'écran (l'onglet Séquence de la tâche 12 appelle `actionEnregistrerEtape`
+ * ci-dessous, qui écrit modèle ET étape ensemble) — conservée telle quelle
+ * pour ne pas casser un futur appelant de cette façade.
  */
 export async function saveStepMessage(
   organizationId: string,
@@ -41,108 +77,76 @@ export async function saveStepMessage(
   input: StepMessageInput,
 ): Promise<StepMessageResult> {
   try {
-    await requireRole(organizationId, 'admin');
-  } catch {
-    return { ok: false, error: 'Droit administrateur requis.' };
-  }
+    const ctx = await contexteCourant();
+    if (ctx.organisationId !== organizationId) {
+      return { ok: false, error: 'Organisation invalide.' };
+    }
+    if (!input.body.trim()) {
+      return { ok: false, error: 'Le message est vide.' };
+    }
+    if (input.channel === 'email' && !input.subject.trim()) {
+      return { ok: false, error: 'Un email a besoin d’un objet.' };
+    }
 
-  const corps = input.body.trim();
-  if (!corps) {
-    // Une invitation LinkedIn part sans note : c'est ce que fait l'extension,
-    // qui n'envoie que le profil à inviter. Exiger un message ici obligeait à
-    // en écrire un qui n'était jamais envoyé.
-    return { ok: false, error: 'Le message est vide.' };
+    const campagne = await lireCampagnePourEtape(ctx, campaignId);
+    const { id } = await enregistrerVersionModele(ctx, {
+      familyId: input.templateParentId,
+      nom: campagne.name,
+      canal: input.channel,
+      locale: input.locale,
+      sujet: input.channel === 'email' ? input.subject.trim() : null,
+      corps: input.body.trim(),
+      nature: input.nature,
+      origin: 'step',
+    });
+    revalidatePath(`/campaigns/${campaignId}`);
+    return { ok: true, templateParentId: input.templateParentId ?? id };
+  } catch (err) {
+    return resultatDErreur(err);
   }
-  if (input.channel === 'email' && !input.subject.trim()) {
-    return { ok: false, error: 'Un email a besoin d’un objet.' };
-  }
-
-  // Une variable inconnue bloquerait l'envoi bien plus tard, au moment où le
-  // message devait partir. On refuse ici, pendant qu'on l'écrit.
-  // Même normalisation qu'à la bibliothèque de messages : ce qui est tapé est
-  // ramené à la forme que le moteur sait résoudre.
-  const corpsNormalise = normalizeVariableSyntax(corps);
-  const client = await createClient();
-  const { data: extraits } = await client
-    .from('message_snippets')
-    .select('name')
-    .eq('organization_id', organizationId);
-  const nomsExtraits = ((extraits ?? []) as { name: string }[]).map((e) => e.name);
-  const problemes = validateTemplateVariables(corpsNormalise, input.nature, nomsExtraits);
-  if (problemes.length > 0) {
-    return { ok: false, error: problemes.map((p) => p.message).join(' ') };
-  }
-
-  const supabase = await createClient();
-
-  // Une seule fonction de versionnage pour toute l'application : elle calcule
-  // la version suivante, désactive l'active et insère la nouvelle d'un bloc.
-  // Un index n'autorise qu'une version active par (famille, langue), et le
-  // faire en deux écritures laisserait la famille sans version active entre les
-  // deux — donc l'étape sans message si la seconde échouait.
-  const { data: campagne } = await supabase
-    .from('campaigns')
-    .select('name')
-    .eq('id', campaignId)
-    .eq('organization_id', organizationId)
-    .maybeSingle();
-
-  const { data, error } = await supabase.rpc('save_message_template_version', {
-    p_org: organizationId,
-    p_family: input.templateParentId,
-    // Le nom reprend celui de la campagne : il n'a pas vocation à être choisi,
-    // seulement à rester reconnaissable si on verse le message plus tard.
-    p_name: (campagne as { name?: string } | null)?.name ?? 'Message',
-    p_channel: input.channel,
-    p_locale: input.locale,
-    p_subject: input.channel === 'email' ? input.subject.trim() : null,
-    p_body: corpsNormalise,
-    // Un message écrit dans une étape appartient à sa campagne. Une version
-    // suivante hérite de l'origine de sa famille, donc réécrire un modèle de
-    // bibliothèque ne le fait pas basculer.
-    p_origin: 'step',
-  });
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-  revalidatePath(`/campaigns/${campaignId}`);
-  return { ok: true, templateParentId: input.templateParentId ?? String(data) };
 }
 
-/**
- * Verse dans la bibliothèque un message écrit dans une étape (retour 9.3).
- *
- * Le flux marche donc dans les deux sens : on pioche un modèle depuis la
- * séquence, et on y renvoie un message qui a fait ses preuves.
- */
-export async function promoteStepMessage(
-  organizationId: string,
-  campaignId: string,
-  templateParentId: string,
-  name: string,
-): Promise<SimpleResult> {
-  try {
-    await requireRole(organizationId, 'admin');
-  } catch {
-    return { ok: false, error: 'Droit administrateur requis.' };
-  }
-  const nom = name.trim();
-  if (!nom) {
-    return { ok: false, error: 'Donnez un nom au modèle.' };
-  }
+// ---------------------------------------------------------------------------
+// Onglet Séquence (tâche 12) : tiroir d'étape — écrit modèle ET étape ensemble.
+// ---------------------------------------------------------------------------
 
-  const supabase = await createClient();
-  // Toute la famille bascule : les versions d'un même modèle ne peuvent pas
-  // être moitié dans la bibliothèque, moitié hors d'elle.
-  const { error } = await supabase
-    .from('message_templates')
-    .update({ origin: 'library', name: nom })
-    .eq('organization_id', organizationId)
-    .or(`id.eq.${templateParentId},parent_id.eq.${templateParentId}`);
-  if (error) {
-    return { ok: false, error: error.message };
+function revaliderOngletSequence(campagneId: string): void {
+  revalidatePath(`/campaigns/${campagneId}/sequence`);
+  revalidatePath(`/campaigns/${campagneId}`);
+}
+
+/** Crée (`etapeId` absent) ou réécrit une étape email de la séquence. */
+export async function actionEnregistrerEtape(campagneId: string, input: unknown): Promise<EnregistrerEtapeResult> {
+  try {
+    const ctx = await contexteCourant();
+    const entree = typeof input === 'object' && input !== null ? { ...input, campagneId } : { campagneId };
+    const { etapeId } = await enregistrerEtape(ctx, entree);
+    revaliderOngletSequence(campagneId);
+    return { ok: true, etapeId };
+  } catch (err) {
+    return resultatDErreur(err);
   }
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath('/settings/templates');
-  return { ok: true };
+}
+
+export async function actionSupprimerEtape(campagneId: string, etapeId: string): Promise<SimpleResult> {
+  try {
+    const ctx = await contexteCourant();
+    await supprimerEtape(ctx, { campagneId, etapeId });
+    revaliderOngletSequence(campagneId);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
+  }
+}
+
+/** « M'envoyer un test » (tiroir d'étape) : n'appelle jamais SalesBlink directement, le moteur envoie par le chemin normal. */
+export async function actionEnvoyerTest(campagneId: string, etapeId: string): Promise<SimpleResult> {
+  try {
+    const ctx = await contexteCourant();
+    await envoyerTest(ctx, { etapeId });
+    revaliderOngletSequence(campagneId);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
+  }
 }

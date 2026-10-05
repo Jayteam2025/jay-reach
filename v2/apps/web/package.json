@@ -6,11 +6,14 @@
   "scripts": {
     "predev": "node ../../scripts/package-extension.mjs",
     "dev": "next dev --port 3000",
+    "dev:e2e": "next dev --port 3100",
     "prebuild": "node ../../scripts/package-extension.mjs",
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
@@ -29,6 +32,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "@types/react": "^19.0.2",

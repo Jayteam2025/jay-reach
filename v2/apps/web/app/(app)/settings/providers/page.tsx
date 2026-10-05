@@ -1,0 +1,224 @@
+import { getTranslations } from 'next-intl/server';
+import {
+  listerFournisseurs,
+  normaliserDelaiRelanceMax,
+  normaliserIntervalleReleve,
+  SCORING_MODELS,
+  type FournisseurVue,
+} from '@jay-reach/core';
+import { getProviderEntry } from '@jay-reach/providers';
+import { contexteCourant } from '../../../../lib/contexte';
+import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import {
+  CarteFournisseur,
+  type ChampCleFournisseur,
+  type ChampConfigFournisseur,
+  type InfoFournisseur,
+  type MasqueFournisseur,
+} from '../../../../components/reglages/CarteFournisseur';
+import type { PuceTon, TuileLogoMarque } from '../../../../components/ui';
+
+export const revalidate = 0;
+
+/** Tuile de logo par fournisseur — les trois marques réelles du kit (`TuileLogo`), une lettre pour les sept autres (brief tâche 21 : « logo ou initiales »). */
+const TUILES: Record<string, { marque: TuileLogoMarque; lettre?: string }> = {
+  anthropic: { marque: 'lettre', lettre: 'A' },
+  fullenrich: { marque: 'lettre', lettre: 'F' },
+  dropcontact: { marque: 'lettre', lettre: 'D' },
+  bouncer: { marque: 'lettre', lettre: 'B' },
+  reoon: { marque: 'lettre', lettre: 'R' },
+  salesblink: { marque: 'lettre', lettre: 'S' },
+  microsoft_graph: { marque: 'microsoft' },
+  adzuna: { marque: 'adzuna' },
+  francetravail: { marque: 'francetravail' },
+  apify: { marque: 'lettre', lettre: 'Ap' },
+};
+
+/**
+ * Identifiant et clé masquée séparés (tour de correction F6, point 2) : concaténer les deux dans
+ * une seule chaîne, comme avant, empêchait d'afficher l'identifiant sur sa propre ligne quand il
+ * est long (client_id France Travail, tenant_id Microsoft) — `CarteFournisseur` les place chacun
+ * sur sa ligne.
+ */
+function composerMasque(champsNonSecrets: ChampCleFournisseur[], config: Record<string, string> | null, dernierCaracteres: string | null): MasqueFournisseur {
+  const masque = `••••••••••••${dernierCaracteres ?? ''}`;
+  const premier = champsNonSecrets[0];
+  const valeurConnue = premier && config?.[premier.name];
+  return { identifiant: valeurConnue ? `${premier.name} ${valeurConnue}` : null, masque };
+}
+
+/**
+ * Défaut effectif des champs optionnels du catalogue qui n'en montraient aucun (tour de
+ * correction F6, point 12) : lu depuis les fonctions/constantes du cœur (jamais recopié en dur
+ * ici), affiché en `placeholder` tant que la valeur est vide. `sync_interval_min` de Microsoft
+ * Graph n'a pas de fonction dédiée dans le cœur (seul `entierBorne` générique, appelé avec un
+ * défaut en dur dans le worker) : on réutilise celui de SalesBlink, qui partage la même valeur
+ * (5 minutes) — à défaut d'une constante nommée côté cœur pour Graph spécifiquement.
+ */
+const DEFAUT_SYNC_INTERVAL_MIN = String(normaliserIntervalleReleve(undefined));
+const DEFAUT_REPLY_MAX_DELAY_H = String(normaliserDelaiRelanceMax(undefined));
+const DEFAUTS_CHAMPS_CONFIG: Partial<Record<string, Partial<Record<string, string>>>> = {
+  salesblink: {
+    sync_interval_min: DEFAUT_SYNC_INTERVAL_MIN,
+    reply_max_delay_h: DEFAUT_REPLY_MAX_DELAY_H,
+  },
+  microsoft_graph: {
+    sync_interval_min: DEFAUT_SYNC_INTERVAL_MIN,
+  },
+  anthropic: {
+    model_smart: SCORING_MODELS.smart,
+    model_fast: SCORING_MODELS.fast,
+  },
+};
+
+/**
+ * Champs optionnels du catalogue à ne PAS montrer ici (relecture tâche 21,
+ * point 2) : `daily_cap` d'anthropic et de fullenrich a désormais son unique
+ * source de vérité dans Réglages › Plafonds (R83, `organization_settings`,
+ * `credentials.config.daily_cap` n'en est plus qu'un repli historique) — le
+ * montrer aussi ici rouvrirait exactement la confusion à deux endroits que
+ * R83 vient de fermer. Les autres champs optionnels (sync_interval_min,
+ * reply_max_delay_h, model_smart, model_fast, le daily_cap de reoon/salesblink
+ * qui n'a pas d'équivalent Plafonds) restent montrés normalement.
+ */
+const CHAMPS_CONFIG_EXCLUS: Partial<Record<string, string[]>> = {
+  anthropic: ['daily_cap'],
+  fullenrich: ['daily_cap'],
+};
+
+export default async function ProvidersPage() {
+  const t = await getTranslations('reglages.fournisseurs');
+  // Traducteur racine (sans namespace) : `PROVIDER_CATALOG` (@jay-reach/providers) porte des
+  // `labelKey`/`hintKey` en chemin complet depuis la racine des messages (`providers.field.apiKey`),
+  // déjà traduits pour l'ancien écran — réutilisés tels quels, pas de doublon sous `reglages.fournisseurs`.
+  const tChamps = await getTranslations();
+  const ctx = await contexteCourant();
+  const fournisseurs = await listerFournisseurs(ctx);
+  const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
+  const maintenant = new Date();
+  // `reglages.fuseau` n'est pas relu ici (dette R67 bis, `lireReglages` non appelé sur cet
+  // écran) : cette page ne montre pas de date propre à l'organisation à part « Dernier
+  // test »/« relève », déjà en UTC côté source — le fuseau par défaut suffit tant qu'aucun
+  // texte de cet écran n'en dépend réellement.
+  const fuseau = FUSEAU_PAR_DEFAUT;
+
+  function libelleEtat(f: FournisseurVue): { ton: PuceTon; texte: string } {
+    if (!f.cle.presente) return { ton: 'gris', texte: t('etat.aRenseigner') };
+    if (f.cle.statut === 'echec') return { ton: 'attention', texte: t('etat.echec') };
+    const connecte = f.categorie === 'envoi' || f.categorie === 'reception';
+    return { ton: 'bon', texte: connecte ? t('etat.connecte') : t('etat.cleValide') };
+  }
+
+  function infosDuFournisseur(f: FournisseurVue): InfoFournisseur[] {
+    const infos: InfoFournisseur[] = [];
+
+    if (f.releve) {
+      infos.push({
+        libelle: t('colDernierTest'),
+        valeur: f.releve.derniereErreur
+          ? t('echec', { date: dateCourte(f.releve.dernierPassage ?? new Date().toISOString(), maintenant, fuseau) })
+          : f.releve.dernierPassage
+            ? t('reussi', { date: dateCourte(f.releve.dernierPassage, maintenant, fuseau) })
+            : t('jamaisTeste'),
+      });
+    } else {
+      infos.push({
+        libelle: t('colDernierTest'),
+        valeur: f.cle.testeeLe ? t('reussi', { date: dateCourte(f.cle.testeeLe, maintenant, fuseau) }) : t('jamaisTeste'),
+      });
+    }
+
+    let valeurAujourdhui: string = t('sansDonnee');
+    if (f.consommationDuJour) {
+      const cle = f.providerId === 'anthropic' ? 'scorings' : f.providerId === 'fullenrich' ? 'enrichissements' : 'envois';
+      valeurAujourdhui = t(`consommation.${cle}`, {
+        utilise: f.consommationDuJour.utilise,
+        plafond: f.consommationDuJour.plafond,
+      });
+    }
+    const lien =
+      f.lienPlafond != null
+        ? { href: f.lienPlafond, texte: t('lien.reglerPlafond') }
+        : f.providerId === 'salesblink'
+          ? { href: '/settings/senders', texte: t('lien.voirLesBoites') }
+          : f.providerId === 'adzuna' || f.providerId === 'francetravail'
+            ? { href: '/campaigns', texte: t('lien.voirLesCampagnes') }
+            : undefined;
+    infos.push({ libelle: t('colAujourdhui'), valeur: valeurAujourdhui, lien });
+
+    return infos;
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
+      <div className="jr-section-entete">
+        <div>
+          <h2>{t('title')}</h2>
+          <p>{t('lead')}</p>
+        </div>
+      </div>
+
+      <div className="jr-deux-colonnes">
+        {fournisseurs.map((f) => {
+          const manifest = getProviderEntry(f.providerId);
+          const champs: ChampCleFournisseur[] = (manifest?.fields ?? [])
+            .filter((champ) => champ.required)
+            .map((champ) => ({
+              name: champ.name,
+              libelle: tChamps(champ.labelKey),
+              secret: champ.secret,
+              required: champ.required,
+              aide: champ.hintKey ? tChamps(champ.hintKey) : undefined,
+            }));
+
+          const champsNonSecrets = champs.filter((c) => !c.secret);
+
+          const exclus = new Set(CHAMPS_CONFIG_EXCLUS[f.providerId] ?? []);
+          const champsConfig: ChampConfigFournisseur[] = (manifest?.fields ?? [])
+            .filter((champ) => !champ.required && !champ.secret && !exclus.has(champ.name))
+            .map((champ) => {
+              const defaut = DEFAUTS_CHAMPS_CONFIG[f.providerId]?.[champ.name];
+              const aide = [champ.hintKey ? tChamps(champ.hintKey) : undefined, defaut ? t('champConfigDefaut', { defaut }) : undefined]
+                .filter(Boolean)
+                .join(' ');
+              return {
+                name: champ.name,
+                libelle: tChamps(champ.labelKey),
+                valeurActuelle: f.config?.[champ.name] ?? '',
+                aide: aide || undefined,
+                placeholder: defaut,
+              };
+            });
+
+          return (
+            <CarteFournisseur
+              key={f.providerId}
+              providerId={f.providerId}
+              nom={t(`nom.${f.providerId}`)}
+              description={t(`description.${f.providerId}`)}
+              tuile={TUILES[f.providerId] ?? { marque: 'lettre', lettre: '?' }}
+              etat={libelleEtat(f)}
+              champs={champs}
+              champsConfig={champsConfig}
+              presente={f.cle.presente}
+              masque={composerMasque(champsNonSecrets, f.config, f.cle.dernierCaracteres)}
+              infos={infosDuFournisseur(f)}
+              peutModifier={peutModifier}
+              libelles={{
+                champCle: t('champCle'),
+                remplacer: t('remplacer'),
+                enregistrer: t('enregistrer'),
+                annuler: t('annuler'),
+                tester: t('tester'),
+                enregistrementEnCours: t('enregistrementEnCours'),
+                placeholderSecret: t('placeholderSecret'),
+                reglagesTitre: t('reglagesTitre'),
+                enregistrerReglages: t('enregistrerReglages'),
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}

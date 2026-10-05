@@ -10,6 +10,7 @@
 import type { Pool, PoolClient } from 'pg';
 import {
   decideCanSend,
+  poserEcheanceApresDepart,
   heureLocale,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
@@ -161,6 +162,20 @@ async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Prom
  * curseur, intervalle). Requeue d'abord les lignes bloquées en `processing`.
  * Le claim pending→processing est atomique (anti double-envoi).
  *
+ * F14 (symétrique du garde-fou email, `sequence.ts`/`traitements.ts`) : la
+ * réclamation (étape 5) ignore une ligne dont la campagne n'est pas active —
+ * une invitation ou un message déjà enfilé avant une mise en pause ou un
+ * archivage repartait sinon quand même, dès que l'extension revenait
+ * l'exécuter. La ligne reste `pending`, jamais annulée : relancer la
+ * campagne (`lancer`, `fonctions/campagnes.ts`) suffit à la rendre de nouveau
+ * réclamable, sans qu'aucune inscription n'ait besoin d'être retouchée — même
+ * logique que côté email. `q.action_id is null` couvre les lignes qui ne
+ * viennent pas du séquenceur (jamais rattachées à une campagne, donc jamais
+ * concernées par ce garde-fou) — en pratique aucune aujourd'hui (seul
+ * `enqueueLinkedInAction`, toujours avec `actionId`, alimente la file), mais
+ * la colonne elle-même est nullable (`references actions(id) on delete set
+ * null`), donc pas de garantie NOT NULL à s'appuyer dessus.
+ *
  * `now` est injectable pour les tests hermétiques.
  */
 export async function claimNext(pool: Pool, orgId: string, now: Date = new Date()): Promise<ClaimResult> {
@@ -211,10 +226,15 @@ export async function claimNext(pool: Pool, orgId: string, now: Date = new Date(
 
     // 5. Prochaine ligne pending (la plus ancienne planifiée), claim atomique.
     const candidate = await client.query<{ id: string }>(
-      `select id from linkedin_action_queue
-       where organization_id = $1 and status = 'pending'
-         and method = 'extension_auto' and scheduled_for <= $2
-       order by scheduled_for asc limit 1`,
+      `select q.id
+         from linkedin_action_queue q
+         left join actions a on a.id = q.action_id
+         left join enrollments e on e.id = a.enrollment_id
+         left join campaigns camp on camp.id = e.campaign_id
+        where q.organization_id = $1 and q.status = 'pending'
+          and q.method = 'extension_auto' and q.scheduled_for <= $2
+          and (q.action_id is null or camp.status = 'active')
+        order by q.scheduled_for asc limit 1`,
       [orgId, now.toISOString()],
     );
     const id = candidate.rows[0]?.id;
@@ -253,6 +273,35 @@ export interface RecordInput {
 }
 
 /**
+ * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action LinkedIn
+ * (transition `processing -> sent`, confirmée par l'extension) — même point,
+ * même calcul et même garde que côté SalesBlink (issue #111) : les deux
+ * transports appellent la même implémentation partagée,
+ * `poserEcheanceApresDepart` de `@jay-reach/core` (tour de correction 1,
+ * revue du 17/09 — auparavant dupliquée ici avec le même SQL).
+ *
+ * Cette fonction ne fait que la résolution propre à LinkedIn : retrouver
+ * l'inscription (`campaign_id`, `current_step`) à partir de l'`actionId` posé
+ * sur la ligne de file.
+ */
+async function poserEcheanceApresDepartDepuisAction(pool: Pool, actionId: string, now: Date): Promise<void> {
+  const inscription = await pool.query<{ enrollment_id: string; campaign_id: string; current_step: number }>(
+    `select en.id as enrollment_id, en.campaign_id, en.current_step
+       from actions a
+       join enrollments en on en.id = a.enrollment_id
+      where a.id = $1`,
+    [actionId],
+  );
+  const ligne = inscription.rows[0];
+  if (!ligne) return;
+  await poserEcheanceApresDepart(
+    pool,
+    { enrollmentId: ligne.enrollment_id, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
+    now,
+  );
+}
+
+/**
  * Enregistre le résultat d'une action (renvoyé par l'extension). Transition
  * autorisée uniquement depuis `processing` (sinon 0 ligne → l'appelant renvoie 409).
  * Renvoie true si la transition a eu lieu.
@@ -283,6 +332,7 @@ export async function recordResult(pool: Pool, input: RecordInput): Promise<bool
   const actionId = r.rows[0]?.action_id;
   if (transitionFaite && input.status === 'sent' && actionId) {
     await pool.query('select app.mark_action_dispatched($1)', [actionId]);
+    await poserEcheanceApresDepartDepuisAction(pool, actionId, now);
   }
 
   return transitionFaite;

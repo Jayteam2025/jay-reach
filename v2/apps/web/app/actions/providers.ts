@@ -1,60 +1,80 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
-
-import { getProviderEntry } from '@jay-reach/providers';
-import { requireEnv } from '../../lib/env';
-import { requireRole } from '../../lib/auth';
-import { createServiceClient } from '../../lib/supabase/service';
-
-export type ProviderActionResult = { ok: true } | { ok: false; error: string };
-
 /**
- * Enregistre le secret d'un provider, chiffré côté base (pgcrypto). La clé de
- * chiffrement vient de l'environnement serveur ; le secret ne repart jamais
- * vers le navigateur. Exige le rôle admin sur l'organisation.
+ * Façades fines sur `packages/core/src/fonctions/fournisseurs.ts` (tâche 21) :
+ * enregistrer une clé, tester une connexion — pour l'écran Réglages ›
+ * Fournisseurs. La lecture (`listerFournisseurs`) n'a pas de façade ici : elle
+ * est appelée directement, côté serveur, par `settings/providers/page.tsx`
+ * (même motif que `contacts.ts`/`lireFiche`).
+ *
+ * Remplace les anciennes `setProviderCredential`/`testProviderConnection`
+ * (lot 3 bis) : elles n'avaient plus qu'un seul appelant, `provider-form.tsx`,
+ * supprimé avec l'ancien écran (tâche 21, brief : « remplace-la par la
+ * nouvelle »). `setProviderCredential` acceptait en outre un secret VIDE et
+ * l'envoyait quand même à la base — un opérateur modifiant un seul réglage
+ * sans retaper sa clé l'aurait écrasée par une chaîne vide ; `enregistrerCle`
+ * (schéma `schemaEnregistrerCle`, `packages/core`) l'exige non vide.
  */
-export async function setProviderCredential(
-  organizationId: string,
+import { revalidatePath } from 'next/cache';
+import {
+  enregistrerCle,
+  ErreurEntree,
+  ErreurFournisseurNonConfigure,
+  ForbiddenError,
+  modifierConfigFournisseur,
+  testerFournisseur,
+} from '@jay-reach/core';
+import { contexteCourant } from '../../lib/contexte';
+
+export type ResultatFournisseur = { ok: true } | { ok: false; error: string };
+export type ResultatTestFournisseur = { ok: true; testeeLe: string } | { ok: false; error: string };
+
+function messageDErreur(err: unknown): string {
+  if (err instanceof ForbiddenError) return 'Droit administrateur requis.';
+  if (err instanceof ErreurEntree) return 'Entrée invalide.';
+  if (err instanceof ErreurFournisseurNonConfigure) return err.message;
+  return err instanceof Error ? err.message : 'Erreur inconnue.';
+}
+
+export async function actionEnregistrerCle(
   providerId: string,
   secret: string,
-  config: Record<string, unknown> = {},
-): Promise<ProviderActionResult> {
+  config?: Record<string, string>,
+): Promise<ResultatFournisseur> {
   try {
-    await requireRole(organizationId, 'admin');
-  } catch {
-    return { ok: false, error: 'Droit administrateur requis.' };
+    const ctx = await contexteCourant();
+    await enregistrerCle(ctx, { providerId, secret, config });
+    revalidatePath('/settings/providers');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
   }
-  if (!getProviderEntry(providerId)) {
-    return { ok: false, error: `Provider inconnu : ${providerId}` };
-  }
-
-  const service = createServiceClient();
-  const { error } = await service.rpc('set_provider_credential', {
-    p_org: organizationId,
-    p_provider: providerId,
-    p_secret: secret,
-    p_key: requireEnv('ENCRYPTION_KEY'),
-    p_config: config,
-  });
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-  revalidatePath('/settings/providers');
-  return { ok: true };
 }
 
 /**
- * Test de connexion. Le test réel par provider arrive avec chaque
- * implémentation (SalesBlink, LinkedIn…). Ici on valide que le
- * provider est connu.
+ * Modifie un ou plusieurs champs non secrets (sync_interval_min, model_smart…)
+ * sans passer par `enregistrerCle` — relecture tâche 21, point 2 : un
+ * opérateur qui ne change que l'intervalle de relève de Microsoft Graph ne
+ * doit pas devoir retaper le secret du client.
  */
-export async function testProviderConnection(
-  _organizationId: string,
-  providerId: string,
-): Promise<ProviderActionResult> {
-  if (!getProviderEntry(providerId)) {
-    return { ok: false, error: `Provider inconnu : ${providerId}` };
+export async function actionModifierConfigFournisseur(providerId: string, config: Record<string, string>): Promise<ResultatFournisseur> {
+  try {
+    const ctx = await contexteCourant();
+    await modifierConfigFournisseur(ctx, { providerId, config });
+    revalidatePath('/settings/providers');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
   }
-  return { ok: true };
+}
+
+export async function actionTesterFournisseur(providerId: string): Promise<ResultatTestFournisseur> {
+  try {
+    const ctx = await contexteCourant();
+    const { testeeLe } = await testerFournisseur(ctx, { providerId });
+    revalidatePath('/settings/providers');
+    return { ok: true, testeeLe };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
+  }
 }

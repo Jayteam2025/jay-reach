@@ -13,10 +13,20 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES, resolveScoringModel, placesRestantes, reduireLotAuReste } from '@jay-reach/core';
+import {
+  QUEUES,
+  resolveScoringModel,
+  placesRestantes,
+  reduireLotAuReste,
+  ecrireEvenement,
+  nettoyerMessageErreurJournal,
+  plafondDuJour,
+  fuseauDeLOrganisation,
+  jourCourantDansFuseau,
+} from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
-import { runScore, DEFAULT_BATCH, compterSignauxScorables } from './handlers/score.js';
+import { runScore, DEFAULT_BATCH, compterSignauxScorables, type ScoreSummary } from './handlers/score.js';
 import { createAnthropicScorer } from './scorer-anthropic.js';
 import { runLinkedInDispatch, isLinkedInChannel, type DispatchJob } from './handlers/dispatch.js';
 import { envoyerEmailSalesBlink } from './handlers/email-salesblink.js';
@@ -52,8 +62,6 @@ import {
   enqueueEnrichmentForQualified,
   enqueueEnrollments,
   enqueueRequestedRuns,
-  lirePlafondFournisseur,
-  PLAFOND_SCORING_PAR_DEFAUT,
 } from './producer.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -106,6 +114,116 @@ export const TICK_INTERVAL_MS = Number(process.env.TICK_INTERVAL_MS ?? 60 * 1000
  */
 export const REJEU_ACTIONS_EMAIL_MS = 5 * 60 * 1000;
 
+// --------------------------------------------------- journal d'activité (T6)
+
+/** Noms d'affichage des connecteurs de signaux, pour le libellé `source_run` du journal. */
+const LIBELLES_PROVIDER_SOURCE: Record<string, string> = {
+  adzuna: 'Adzuna',
+  francetravail: 'France Travail',
+  apify: 'Apify',
+};
+
+/**
+ * Libellé + détail d'un passage de collecte, pour `ecrireEvenement` (action
+ * `source_run`). `ecartesAge` (I3, revue finale du 17/09) compte les offres
+ * écartées par `insertSignals` pour cause d'âge (`age_max_offres_jours` /
+ * `sources.config.ageMaxJours`) — distinct des doublons déjà connus, pour que
+ * l'opérateur voie CE QUI a filtré, pas un seul total opaque.
+ */
+export function libelleSourceRun(
+  provider: string,
+  found: number,
+  added: number,
+  ecartesAge = 0,
+): { libelle: string; detail?: string } {
+  const nom = LIBELLES_PROVIDER_SOURCE[provider] ?? provider;
+  const dejaConnues = Math.max(0, found - added - ecartesAge);
+  const libelle = `Passage ${nom} : ${found} offre(s) lue(s), ${added} retenue(s)`;
+  const details: string[] = [];
+  if (dejaConnues > 0) details.push(`${dejaConnues} offre(s) déjà connue(s) ignorée(s).`);
+  if (ecartesAge > 0) details.push(`${ecartesAge} offre(s) trop ancienne(s) écartée(s).`);
+  return details.length > 0 ? { libelle, detail: details.join(' ') } : { libelle };
+}
+
+/** Libellé + détail d'un lot de scoring, pour `ecrireEvenement` (action `scoring_batch`). */
+export function libelleScoringBatch(resume: { scored: number; qualified: number; learned: number }): {
+  libelle: string;
+  detail?: string;
+} {
+  const libelle = `Scoring : ${resume.scored} signal(aux) noté(s), ${resume.qualified} retenu(s) au-dessus du seuil`;
+  return resume.learned > 0
+    ? { libelle, detail: `${resume.learned} entreprise(s) appris(e)(s) comme cabinet(s) de recrutement.` }
+    : { libelle };
+}
+
+/**
+ * Libellé + détail d'un lot d'enrichissement, pour `ecrireEvenement` (action
+ * `enrichment_batch`). Le crédit FullEnrich est fixé à 1 : il a déjà été
+ * consommé par paire compte/persona AVANT l'enfilement de ce job
+ * (`app.consume_provider_credit`, `enqueueEnrichmentForQualified` dans
+ * `producer.ts`) — jamais reconsommé ici, ce lot en représente donc toujours
+ * exactement un.
+ */
+export function libelleEnrichmentBatch(
+  companyName: string,
+  contactsTraites: number,
+  emailsTrouves: number,
+): { libelle: string; detail: string } {
+  return {
+    // R24 (tour de correction 1) : `contactsTraites` est le nombre de contacts
+    // réellement passés dans le lot (`contacts.length` de `runFindContacts`),
+    // jamais `maxContacts` — ce que le lot a demandé n'est pas ce qu'il a reçu.
+    libelle: `Enrichissement ${companyName} : ${emailsTrouves} email(s) trouvé(s) sur ${contactsTraites} contact(s) traité(s)`,
+    detail: '1 crédit FullEnrich consommé.',
+  };
+}
+
+/**
+ * Écrit `scoring_batch` dans le journal. Isolée de `traiterScore` (tour de
+ * correction 1, point 5) : `runScore` dépend d'un scorer LLM sans harnais de
+ * test existant, cette fonction reste testable seule avec un pool factice.
+ * N'échoue jamais le handler appelant.
+ */
+export async function journaliserScoringBatch(pool: Pool, organisationId: string, resume: ScoreSummary): Promise<void> {
+  try {
+    await ecrireEvenement(pool, {
+      organisationId,
+      // Voir le commentaire au point d'appel : même `entityType` qu'`engine_error`.
+      entityType: 'engine',
+      entityId: null,
+      action: 'scoring_batch',
+      diff: libelleScoringBatch(resume),
+    });
+  } catch (err) {
+    console.warn('[journal] scoring_batch', err);
+  }
+}
+
+/**
+ * Écrit `enrichment_batch` dans le journal. Isolée de `traiterEnrichContacts`
+ * pour la même raison (dépendance FullEnrich sans harnais de test). N'échoue
+ * jamais le handler appelant.
+ */
+export async function journaliserEnrichmentBatch(
+  pool: Pool,
+  organisationId: string,
+  companyName: string,
+  contactsTraites: number,
+  emailsTrouves: number,
+): Promise<void> {
+  try {
+    await ecrireEvenement(pool, {
+      organisationId,
+      entityType: 'engine',
+      entityId: null,
+      action: 'enrichment_batch',
+      diff: libelleEnrichmentBatch(companyName, contactsTraites, emailsTrouves),
+    });
+  } catch (err) {
+    console.warn('[journal] enrichment_batch', err);
+  }
+}
+
 // ---------------------------------------------------------------- collecte
 
 export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise<void> {
@@ -121,7 +239,19 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
       ctx.budgetCollecteMs !== undefined ? { ...data, budgetMs: ctx.budgetCollecteMs } : data,
       credentials,
     );
-    const inserted = await insertSignals(pool, data.organizationId, data.sourceId, data.provider, result.signals);
+    // I3 (revue finale du 17/09) : réglage de la source si présent, sinon le
+    // défaut d'organisation — même chaîne de repli que les autres plafonds
+    // (R83). `insertSignals` écarte les offres plus vieilles AVANT insertion.
+    const ageMaxJours =
+      data.ageMaxJours ?? (await plafondDuJour(pool, data.organizationId, 'age_max_offres_jours'));
+    const { inserted, ecartesAge } = await insertSignals(
+      pool,
+      data.organizationId,
+      data.sourceId,
+      data.provider,
+      result.signals,
+      ageMaxJours,
+    );
     // Chaînage : chaque NOUVEAU signal (avec une entreprise) part en qualification.
     // Id déterministe par signal => un signal ne se qualifie qu'une fois.
     //
@@ -148,10 +278,32 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
     }
     await finishSourceRun(pool, runId, { found: result.signals.length, added: inserted.length, status: 'success' });
     console.log(
-      `[discover] ${result.signals.length} trouvés, ${inserted.length} nouveaux → qualif, ${result.errors.length} erreur(s) en ${result.duration_ms} ms`,
+      `[discover] ${result.signals.length} trouvés, ${inserted.length} nouveaux → qualif, ${ecartesAge} écarté(s) (âge), ${result.errors.length} erreur(s) en ${result.duration_ms} ms`,
     );
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: data.organizationId,
+        entityType: 'source',
+        entityId: data.sourceId,
+        action: 'source_run',
+        diff: libelleSourceRun(data.provider, result.signals.length, inserted.length, ecartesAge),
+      });
+    } catch (err) {
+      console.warn('[journal] source_run', err);
+    }
   } catch (err) {
     await finishSourceRun(pool, runId, { found: 0, added: 0, status: 'error', error: String(err) });
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: data.organizationId,
+        entityType: 'engine',
+        entityId: null,
+        action: 'engine_error',
+        diff: { libelle: nettoyerMessageErreurJournal(err instanceof Error ? err.message : String(err)) },
+      });
+    } catch (err2) {
+      console.warn('[journal] engine_error', err2);
+    }
     throw err; // laisse pg-boss appliquer le backoff/reprise
   }
 }
@@ -201,11 +353,21 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
   // Niveau `smart` (Sonnet par défaut), surchargeable par org via la config du
   // provider (`model_smart`) — jamais par variable d'env.
   console.log(`[score] org ${data.organizationId} : modèle ${resolveScoringModel('smart', credentials)}`);
-  const plafond = await lirePlafondFournisseur(pool, data.organizationId, ANTHROPIC_PROVIDER, PLAFOND_SCORING_PAR_DEFAUT);
+  // R83 (relecture tâche 21) : `plafondDuJour` lit `organization_settings` (le
+  // réglage posé dans l'écran Réglages › Plafonds) avant tout repli — avant ce
+  // correctif, `lirePlafondFournisseur` lisait `credentials.config.daily_cap`
+  // et ignorait complètement ce réglage, si bien qu'un plafond de scoring
+  // changé dans l'écran n'était jamais appliqué par le moteur.
+  const plafond = await plafondDuJour(pool, data.organizationId, 'scoring_par_jour');
+  // #118 (tour de correction 5) : jour de l'ORGANISATION, pas `current_date`
+  // (le fuseau du serveur, UTC) — même clé de jour que la lecture de l'écran
+  // Plafonds (`lireConsommationDuJour`) et que le crédit consommé plus bas.
+  const fuseau = await fuseauDeLOrganisation(pool, data.organizationId);
+  const jour = jourCourantDansFuseau(fuseau);
   const usage = await pool.query<{ used: number }>(
     `select used from provider_daily_usage
-      where organization_id = $1 and provider_id = $2 and usage_date = current_date`,
-    [data.organizationId, ANTHROPIC_PROVIDER],
+      where organization_id = $1 and provider_id = $2 and usage_date = $3::date`,
+    [data.organizationId, ANTHROPIC_PROVIDER, jour],
   );
   // Compte exactement ce que runScore sélectionnera ET scorera (même source
   // avec un prompt exploitable) : un signal dont la source n'a pas de prompt
@@ -227,8 +389,8 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
     return;
   }
   const credit = await pool.query<{ ok: boolean }>(
-    `select app.consume_provider_credit($1, $2, $3, $4) as ok`,
-    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot],
+    `select app.consume_provider_credit($1, $2, $3, $4, $5::date) as ok`,
+    [data.organizationId, ANTHROPIC_PROVIDER, plafond, lot, jour],
   );
   if (credit.rows[0]?.ok !== true) {
     console.warn(`[score] org ${data.organizationId} : credit de scoring refuse (plafond ${plafond}/jour)`);
@@ -243,6 +405,7 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
     `[score] org ${data.organizationId} : ${summary.considered} examinés, ${summary.prefiltered} pré-filtrés, ` +
       `${summary.qualified} qualifiés, ${summary.discarded} écartés, ${summary.learned} appris`,
   );
+  await journaliserScoringBatch(pool, data.organizationId, summary);
 }
 
 // -------------------------------------------------------------------- envoi
@@ -315,6 +478,13 @@ interface ActionEnAttenteRow {
  * que l'action ne soit envoyée — un email de dernière étape resterait sinon
  * `scheduled` sans jamais être repris. Même garde que `hasActiveSuppression`
  * (`sequence.ts`), portée sur l'adresse du contact déjà jointe ici.
+ *
+ * `camp.status = 'active'` (F14) : ce balayage enfile un job `actions.dispatch`
+ * SANS repasser par la sélection des inscriptions dues (`tickDueEnrollments`,
+ * `sequence.ts`) — sans ce même filtre ici, une action laissée `scheduled`
+ * (expéditeur coupé, plafond atteint) au moment où sa campagne est mise en
+ * pause ou archivée repartait quand même dès l'expéditeur ou le plafond
+ * rétabli, malgré le gate posé côté tick.
  */
 export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<number> {
   const { pool, boss } = ctx;
@@ -324,6 +494,7 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
        from actions a
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
+       join campaigns camp on camp.id = e.campaign_id
        join sequence_steps s on s.id = a.step_id
        join organizations org on org.id = a.organization_id
       where a.channel = 'email'
@@ -332,6 +503,7 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
         and e.status in ('active', 'completed')
+        and camp.status = 'active'
         and not exists (
           select 1 from suppressions sup
            where sup.organization_id = a.organization_id
@@ -477,6 +649,7 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
     console.log(`[enrich-contacts] ${patterns} pattern(s) de domaine recalculé(s)`);
   }
   console.log(`[enrich-contacts] ${data.companyName} → ${saved} contact(s) avec email persisté(s)`);
+  await journaliserEnrichmentBatch(pool, data.organizationId, data.companyName, contacts.length, saved);
 }
 
 // ------------------------------------------------------------- production

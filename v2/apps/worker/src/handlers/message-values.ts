@@ -7,7 +7,9 @@
  * rendu depuis le tick jusqu'à la file de dispatch.
  */
 import type { Pool } from 'pg';
-import { normalizeListColumnName } from '@jay-reach/core';
+import { construireValeursContact } from '@jay-reach/core';
+import { emailGateAllows, type GateDecision, type GateInput } from '@jay-reach/providers/email-validation';
+import { domainOf, loadDomainPatterns, type DomainPattern } from '../domain-patterns.js';
 import type { EmailStatus } from '../enrichment-persist.js';
 
 export interface DueRow {
@@ -23,6 +25,8 @@ export interface DueRow {
   readonly account_id: string | null;
   readonly persona_id: string | null;
   readonly approval_policy: unknown;
+  /** `{ relecturePremiersEnvois?: number, ... }` (I2, revue finale du 17/09). */
+  readonly entry_rules: unknown;
   /** Arrêt global des envois de l'organisation (garde-fou prioritaire). */
   readonly sending_paused_at: string | null;
   readonly lk_mode: 'auto' | 'hybrid' | 'manual' | null;
@@ -63,7 +67,7 @@ export const REQUETE_LIGNE_INSCRIPTION = `
   select e.id, e.organization_id, e.campaign_id, e.contact_id, e.signal_id, e.current_step,
          c.linkedin_url, c.email, c.email_status, c.account_id, c.persona_id, c.first_name, c.last_name,
          c.locale, c.job_title,
-         camp.approval_policy,
+         camp.approval_policy, camp.entry_rules,
          org.sending_paused_at,
          a.name as company_name, a.domain, a.city, a.headcount,
          a.postal_code, a.country,
@@ -103,83 +107,22 @@ export async function chargerLigneInscription(pool: Pool, enrollmentId: string):
 
 /**
  * Table des valeurs pour le rendu des variables d'un message, assemblée depuis le
- * contact, son compte, sa persona, le signal et la liste. Une valeur absente reste
- * `undefined` → `renderTemplate` la remonte dans `missing` (→ blocage, jamais un
- * champ vide envoyé). Dates via `Intl` (spec §90).
+ * contact, son compte, sa persona, le signal et la liste.
+ *
+ * Simple délégation à `construireValeursContact` (`@jay-reach/core`, tâche 10,
+ * R32) : la logique elle-même a déménagé dans `packages/core` pour être
+ * partagée avec `apercuEnvoi` (relecture avant envoi, `fonctions/file-du-jour.ts`)
+ * — même rendu des deux côtés, jamais un aperçu qui divergerait de l'email
+ * réellement envoyé. `DueRow` porte plus de colonnes que ce que la fonction
+ * partagée exige : assignable telle quelle (typage structurel), rien d'autre
+ * à faire ici.
  */
 export function buildMessageValues(
   row: DueRow,
   /** Extraits de l'organisation, résolus comme des variables. */
   extraits: ReadonlyMap<string, string> = new Map(),
 ): Record<string, string | undefined> {
-  const values: Record<string, string | undefined> = {
-    prenom: row.first_name ?? undefined,
-    // Porte le cas que `prenom` refuse d'affronter : sans prénom connu, on
-    // salue quand même, au lieu de bloquer l'envoi.
-    salutation: row.first_name ? `Bonjour ${row.first_name}` : 'Bonjour',
-    nom: row.last_name ?? undefined,
-    poste: row.job_title ?? undefined,
-    entreprise: row.company_name ?? undefined,
-    ville: row.city ?? undefined,
-    effectif: row.headcount != null ? String(row.headcount) : undefined,
-    persona_angle: row.persona_angle ?? undefined,
-    signal_titre: row.signal_title ?? undefined,
-    signal_zone: row.signal_location ?? undefined,
-    lien_offre: row.signal_url ?? undefined,
-    contexte: row.context_note ?? undefined,
-    site: row.domain ?? undefined,
-    // Le département se lit sur les deux premiers chiffres du code postal.
-    departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
-    pays: row.country ?? undefined,
-  };
-  // Colonnes du CSV importé : chaque clé de `raw_row` devient
-  // `liste_<colonne normalisée>` (même règle que `validateTemplateVariables`,
-  // `normalizeListColumnName`). Une valeur vide, nulle ou blanche N'EST PAS
-  // ajoutée — la variable reste manquante, ce qui bloque l'envoi de CE
-  // contact plutôt que de partir avec un champ vide.
-  if (row.raw_row) {
-    // `parseCsv` garde les en-têtes sensibles à la casse (import/parse.ts) :
-    // deux colonnes distinctes (« Poste », « POSTE ») peuvent normaliser vers
-    // la même variable. On regroupe donc par nom de colonne AVANT d'écrire
-    // dans `values`, pour départager plutôt qu'écraser silencieusement.
-    const parColonne = new Map<string, string[]>();
-    for (const [cle, brut] of Object.entries(row.raw_row)) {
-      const colonne = normalizeListColumnName(cle);
-      if (!colonne) continue; // colonne qui normalise vers une clé vide : ignorée
-      // Seuls string/number/boolean se rendent en texte sans mentir : un
-      // objet ou un tableau donnerait littéralement « [object Object] ».
-      if (typeof brut !== 'string' && typeof brut !== 'number' && typeof brut !== 'boolean') continue;
-      const texte = String(brut).trim();
-      if (!texte) continue;
-      const valeurs = parColonne.get(colonne);
-      if (valeurs) valeurs.push(texte);
-      else parColonne.set(colonne, [texte]);
-    }
-    for (const [colonne, valeurs] of parColonne) {
-      const distinctes = new Set(valeurs);
-      if (distinctes.size > 1) {
-        // Colonnes homonymes qui se contredisent : impossible de choisir sans
-        // deviner, donc la variable reste manquante (bloque l'envoi de CE
-        // contact) plutôt que d'en retenir une arbitrairement. Jamais la
-        // valeur dans le journal — un CSV RH peut contenir des données
-        // personnelles.
-        console.warn(`[variables] colonnes homonymes après normalisation : liste_${colonne}`);
-        continue;
-      }
-      values[`liste_${colonne}`] = valeurs[0]!;
-    }
-  }
-  // Les extraits en dernier : leur valeur vient de l'organisation, et l'on ne
-  // veut pas qu'un extrait nommé « prenom » masque le prospect.
-  for (const [nom, texte] of extraits) {
-    if (!(nom in values)) values[nom] = texte;
-  }
-  if (row.signal_occurred_at) {
-    const d = new Date(row.signal_occurred_at);
-    values.signal_date = d.toLocaleDateString('fr-FR');
-    values.signal_mois = d.toLocaleDateString('fr-FR', { month: 'long' });
-  }
-  return values;
+  return construireValeursContact(row, extraits);
 }
 
 export interface TemplateResolu {
@@ -255,4 +198,60 @@ export async function loadSnippets(
     parOrg.set(r.organization_id, m);
   }
   return parOrg;
+}
+
+// ---------------------------------------------------------------------------
+// Porte de délivrabilité — partagée entre le tick et l'envoi (B2, revue
+// finale du 14/09). Avant ce partage, l'envoi (`email-salesblink.ts`)
+// appliquait une règle simplifiée (`email_status !== 'valid'`) qui bloquait
+// des contacts `risky`/`unknown` que le tick (`sequence.ts`) vient pourtant
+// d'autoriser via `emailGateAllows` (motif de domaine fort, FullEnrich ou
+// déduit) — un envoi rejoué par une reprise manuelle d'inscription
+// (`reprendreInscription`, packages/core) partait donc au tick puis se
+// faisait bloquer à l'envoi, pour la même adresse.
+// ---------------------------------------------------------------------------
+
+/** Entrées minimales pour juger la délivrabilité d'un email — mêmes champs que ceux que le tick lit sur `DueRow`. */
+export interface EntreesPorteEmail {
+  readonly organizationId: string;
+  readonly email: string;
+  readonly emailStatus: EmailStatus | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+}
+
+/**
+ * Construit l'entrée de `emailGateAllows` — pure, sans requête. `email_source`
+ * reste `'fullenrich'` : la seule valeur déjà en usage dans tout le dépôt
+ * (`sequence.ts`), reprise à l'identique ici pour que les deux appelants ne
+ * puissent jamais diverger sur ce point (corriger ce hardcodage, s'il doit
+ * l'être, est hors de la portée de ce correctif).
+ */
+export function construireEntreeGate(entrees: EntreesPorteEmail, domainPattern: DomainPattern | null): GateInput {
+  return {
+    email: entrees.email,
+    email_source: 'fullenrich',
+    email_validation_status: entrees.emailStatus,
+    deliverability_status: entrees.emailStatus,
+    deliverability_reason: null,
+    first_name: entrees.firstName ?? '',
+    last_name: entrees.lastName ?? '',
+    domain_pattern: domainPattern,
+  };
+}
+
+/**
+ * Décide si un email peut être poussé — même porte, mêmes entrées que le tick.
+ * Appelée par l'envoi SalesBlink en défense en profondeur (une reprise
+ * manuelle peut remettre `scheduled` une action sans repasser par le tick),
+ * une requête de plus par envoi pour recharger le motif de domaine du contact
+ * (coût accepté, revue finale B2, option 1). Le tick, lui, appelle
+ * `construireEntreeGate` directement avec ses patterns déjà chargés en lot
+ * (`loadDomainPatterns` pour tout le passage) plutôt que cette fonction — pas
+ * de requête supplémentaire par ligne dans la boucle du tick.
+ */
+export async function deciderPorteEmail(pool: Pool, entrees: EntreesPorteEmail): Promise<GateDecision> {
+  const domaine = domainOf(entrees.email);
+  const pattern = domaine ? (await loadDomainPatterns(pool, entrees.organizationId, [domaine])).get(domaine) ?? null : null;
+  return emailGateAllows(construireEntreeGate(entrees, pattern));
 }

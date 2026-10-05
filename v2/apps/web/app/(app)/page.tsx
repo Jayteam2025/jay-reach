@@ -1,0 +1,304 @@
+import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
+import type { CampagneResume } from '@jay-reach/core';
+import { contexteCourant } from '../../lib/contexte';
+import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
+import { marqueSource } from '../../lib/marque-source';
+import { quandRelatif } from '../../lib/dates';
+import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
+import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../lib/plafonds-affichage';
+import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
+import type { PuceTon } from '../../components/ui';
+
+export const revalidate = 60;
+
+function capitaliser(texte: string): string {
+  return texte.charAt(0).toUpperCase() + texte.slice(1);
+}
+
+/** HH:MM dans le fuseau de l'organisation (correctif du 18/09 — `a.fuseau`, `lireAujourdhuiCourant`, jamais un fuseau fixe). */
+function formatHeure(iso: string | null, fuseau: string): string {
+  return iso
+    ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: fuseau }).format(new Date(iso))
+    : '—';
+}
+
+/**
+ * Logo de la boîte d'envoi, déduit du domaine de son adresse — `senders` ne
+ * porte aucune colonne « type de boîte » (son seul `provider_id` désigne le
+ * transport, SalesBlink, pas la messagerie). Une adresse sur un domaine
+ * personnalisé (le cas réel de production) ne matche aucun des deux motifs :
+ * pas de logo, comme le prévoit le kit.
+ */
+function logoBoiteEnvoi(identite: string | null): 'outlook' | 'gmail' | null {
+  const domaine = identite?.split('@')[1]?.toLowerCase();
+  if (!domaine) return null;
+  if (['outlook.com', 'hotmail.com', 'live.com', 'office365.com'].some((d) => domaine.endsWith(d)) || domaine.includes('microsoft')) return 'outlook';
+  if (domaine.endsWith('gmail.com') || domaine.endsWith('googlemail.com')) return 'gmail';
+  return null;
+}
+
+const TON_STATUT_CAMPAGNE: Record<CampagneResume['statut'], PuceTon> = {
+  draft: 'gris',
+  active: 'bon',
+  paused: 'attention',
+  archived: 'gris',
+};
+
+export default async function AujourdhuiPage() {
+  const ctx = await contexteCourant();
+  // `tPlafonds` : le gabarit des jauges vit avec l'écran Plafonds, et les trois écrans qui
+  // montrent ces jauges le partagent plutôt que d'en recopier chacun une variante.
+  const [t, tPlafonds, locale, a] = await Promise.all([
+    getTranslations('aujourdhui'),
+    getTranslations('reglages.plafonds'),
+    localeCourante(),
+    lireAujourdhuiCourant(ctx),
+  ]);
+
+  const jour = capitaliser(
+    new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: a.fuseau }).format(
+      new Date(),
+    ),
+  );
+  const campagnesActives = a.campagnes.filter((c) => c.statut === 'active').length;
+  const nbAutresEnvois = a.fileDuJour.total - a.fileDuJour.envois.length;
+
+  return (
+    <>
+      {a.alertes.map((alerte, index) => (
+        // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
+        <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
+          <span>{alerte.texte}</span>
+          <Link href={alerte.lien} className="jr-lien">
+            {t('alerts.action')}
+          </Link>
+        </div>
+      ))}
+
+      <EnTetePage
+        titre={jour}
+        description={t('resume', {
+          aTraiter: a.aTraiter.total,
+          absences: a.absencesNonTraitees,
+          envois: a.fileDuJour.total,
+          campagnes: campagnesActives,
+        })}
+        // Bouton mort avant ce correctif (G2) : le composant `Bouton`, sans `onClick` ni `href`,
+        // rendait un simple bouton de formulaire hors formulaire, qui ne faisait rien au clic.
+        // Même route et même classe `jr-bouton` que `campaigns/page.tsx` (`list.new`/
+        // `list.empty.action`), qui y renvoie déjà correctement — seule la variante change
+        // (`principal`, pas `sombre`, pour garder l'apparence déjà en place ici).
+        action={
+          <Link href="/campaigns/new" className="jr-bouton principal">
+            {t('newCampaign')}
+          </Link>
+        }
+      />
+
+      <section className="jr-aujourdhui">
+        <Carte
+          titre={t('toProcess.title')}
+          action={
+            <>
+              <small>{t('toProcess.count', { n: a.aTraiter.total })}</small>
+              <Link href="/inbox" className="jr-lien" style={{ fontSize: 13 }}>
+                {t('toProcess.open')}
+              </Link>
+            </>
+          }
+        >
+          {a.aTraiter.fils.length === 0 ? (
+            <p className="jr-secondaire">{t('toProcess.empty')}</p>
+          ) : (
+            <ul className="jr-conversations" style={{ margin: '0 -18px' }}>
+              {a.aTraiter.fils.map((fil) => (
+                <li key={fil.id}>
+                  <Avatar nom={fil.contactNom} canal={fil.canal} />
+                  <span>
+                    <b>{fil.contactNom}</b>
+                    <p>{fil.extrait}</p>
+                  </span>
+                  <time>{quandRelatif(fil.quand)}</time>
+                  <span className="etiquettes">
+                    <Puce ton="gris">{t(`classification.${fil.classification}`)}</Puce>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Carte>
+
+        <Carte
+          titre={t('queue.title')}
+          action={
+            <>
+              {/* G2 : `partis`/`enFile`, bornés à `total` (`partis + enFile === total`) — l'ancienne
+                  phrase mélangeait `total` avec une mesure d'activité cross-jour depuis retirée
+                  (`dejaPartis`) et pouvait dire « 0 envoi, 47 déjà partis ». */}
+              <small>{t('queue.count', { partis: a.fileDuJour.partis, enFile: a.fileDuJour.enFile })}</small>
+              <Link href="/campaigns" className="jr-lien" style={{ fontSize: 13 }}>
+                {t('queue.seeAll')}
+              </Link>
+            </>
+          }
+        >
+          {/* Pas de Table (kit) ici : la maquette ne pose aucun en-tête sur cette table, un `<thead>`
+              même vide y ajouterait une ligne bordée que la maquette n'a pas. */}
+          {a.fileDuJour.envois.length === 0 ? (
+            <div className="jr-vide">{t('queue.empty')}</div>
+          ) : (
+            <table className="jr-table">
+              <tbody>
+                {a.fileDuJour.envois.map((envoi) => {
+                  const logo = logoBoiteEnvoi(envoi.expediteur);
+                  return (
+                    <tr key={envoi.id}>
+                      <td style={{ paddingLeft: 0 }}>{envoi.heure ?? '—'}</td>
+                      <td>
+                        <div className="jr-qui">
+                          <Avatar nom={envoi.contactNom} canal={envoi.canal} />
+                          <span>
+                            <b className="jr-tronque">{envoi.contactNom}</b>
+                            <small>
+                              {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
+                              {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}
+                            </small>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="num jr-secondaire jr-nowrap" style={{ paddingRight: 0 }}>
+                        {logo && <i className={`jr-logo-inline jr-logo-${logo}`} />} {envoi.expediteur ?? '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {nbAutresEnvois > 0 && (
+                  <tr>
+                    <td colSpan={3} className="jr-secondaire" style={{ paddingLeft: 0 }}>
+                      {t('queue.andMore', { n: nbAutresEnvois })}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </Carte>
+
+        <div className="jr-moteur-plafonds">
+          <Carte titre={t('engine.title')} action={<Puce ton={a.moteur.enMarche ? 'bon' : 'erreur'} point>{a.moteur.enMarche ? t('engine.running') : t('engine.stopped')}</Puce>}>
+            <CleValeur libelle={t('engine.last')} valeur={formatHeure(a.moteur.dernierPassage, a.fuseau)} />
+            <CleValeur libelle={t('engine.next')} valeur={formatHeure(a.moteur.prochainPassage, a.fuseau)} />
+            <CleValeur libelle={t('engine.errors')} valeur={formatNombre(a.moteur.erreursDepuisMinuit, locale)} />
+            <CleValeur libelle={t('engine.version')} valeur={a.moteur.version ?? '—'} />
+          </Carte>
+
+          <Carte
+            titre={t('caps.title')}
+            action={
+              <Link href="/settings" className="jr-lien" style={{ fontSize: 13 }}>
+                {t('caps.settings')}
+              </Link>
+            }
+          >
+            <CleValeur libelle={t('caps.scoring')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond))} />
+            <BarreProgression valeur={pourcentageJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} ton={tonJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} />
+            <CleValeur libelle={t('caps.enrichment')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond))} />
+            <BarreProgression
+              valeur={pourcentageJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
+              ton={tonJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
+            />
+            {/* Le gabarit partagé, jamais le brut : un plafond peut être nul (pause) ou, pour
+                les envois, absent (aucune limite réglée). « 128 / 0 » ne dit ni l'un ni l'autre,
+                et c'est ce que cet écran affichait encore le 05/10 quand Réglages › Plafonds
+                disait déjà « en pause » pour les mêmes nombres. */}
+            <CleValeur libelle={t('caps.sending')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.envois.utilise, a.plafonds.envois.plafond))} />
+            <BarreProgression valeur={pourcentageJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} ton={tonJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} />
+          </Carte>
+        </div>
+
+        <Carte
+          className="pleine"
+          titre={t('campaigns.title')}
+          action={
+            <>
+              <small>{t('campaigns.count', { n: campagnesActives })}</small>
+              <Link href="/campaigns" className="jr-lien" style={{ fontSize: 13 }}>
+                {t('campaigns.seeAll')}
+              </Link>
+            </>
+          }
+        >
+          <Table
+            colonnes={[
+              { cle: 'campagne', titre: t('campaigns.columns.campaign') },
+              { cle: 'sources', titre: t('campaigns.columns.sources') },
+              { cle: 'contacts', titre: t('campaigns.columns.contacts'), num: true },
+              { cle: 'sequence', titre: t('campaigns.columns.sequence'), num: true },
+              { cle: 'reponses', titre: t('campaigns.columns.replies'), num: true },
+              { cle: 'semaine', titre: t('campaigns.columns.week') },
+              { cle: 'statut', titre: '' },
+            ]}
+            lignes={a.campagnes.map((campagne) => ({
+              campagne: (
+                <div className="jr-qui">
+                  <TuileLogo marque="lettre" lettre={campagne.nom.charAt(0).toUpperCase()} />
+                  <span>
+                    <b>
+                      {/* Toute la ligne mène à la campagne (tour de correction F6, point 19) : un
+                          vrai lien, étiré sur la ligne entière par CSS (`.jr-lien-ligne`) — déjà
+                          accessible au clavier, sans <tr onClick>. */}
+                      <Link href={`/campaigns/${campagne.id}`} className="jr-lien-ligne">
+                        {campagne.nom}
+                      </Link>
+                    </b>
+                    <small>{t('campaigns.steps', { n: campagne.etapes, boites: campagne.boites })}</small>
+                  </span>
+                </div>
+              ),
+              sources:
+                campagne.sources.length > 0 ? (
+                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                    {campagne.sources.map((source, index) => (
+                      <TuileLogo
+                        key={source ?? `inconnu-${index}`}
+                        marque={marqueSource(source)}
+                        lettre={(source ?? '?').charAt(0).toUpperCase()}
+                      />
+                    ))}
+                  </span>
+                ) : campagne.listeSource ? (
+                  // Campagne à liste (point 2, issue #120 ; revue F5, point 1) : le nom de la
+                  // liste remplace « aucune source », jamais « aucune source » alors qu'une
+                  // liste alimente réellement la campagne.
+                  <span className="jr-secondaire">
+                    {t('campaigns.listSource', { nom: campagne.listeSource.nom, autres: campagne.listeSource.autresListes })}
+                  </span>
+                ) : (
+                  <span className="jr-secondaire">{t('campaigns.noSource')}</span>
+                ),
+              contacts: formatNombre(campagne.contacts, locale),
+              sequence: formatNombre(campagne.enSequence, locale),
+              reponses: (
+                <>
+                  {formatNombre(campagne.reponses, locale)}{' '}
+                  <em className="jr-secondaire" style={{ fontStyle: 'normal', fontSize: 12 }}>
+                    {/* Revue F5, point 7 : harmonisé avec Campagnes et la vue d'ensemble de
+                        campagne — sans base réelle (aucun envoi parti), « 0 », jamais un tiret. */}
+                    {campagne.tauxReponse !== null ? formatPourcentage(campagne.tauxReponse, locale) : '0'}
+                  </em>
+                </>
+              ),
+              // Tendance 7 jours non calculée (demanderait une requête groupée par jour, hors
+              // périmètre de cette tâche) : un tiret plutôt qu'une jauge vide qui suggérerait une
+              // vraie mesure à zéro.
+              semaine: <span className="jr-secondaire">—</span>,
+              statut: <Puce ton={TON_STATUT_CAMPAGNE[campagne.statut]} point>{t(`campaigns.status.${campagne.statut}`)}</Puce>,
+            }))}
+            vide={<div className="jr-vide">{t('campaigns.empty')}</div>}
+          />
+        </Carte>
+      </section>
+    </>
+  );
+}

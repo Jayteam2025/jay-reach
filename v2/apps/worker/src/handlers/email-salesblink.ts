@@ -21,6 +21,8 @@ import {
   corpsPourSalesBlink,
   objetPourSalesBlink,
   assurerFil,
+  ecrireEvenement,
+  poserEcheanceApresDepart,
   type ModeEnvoi,
 } from '@jay-reach/core';
 import {
@@ -35,7 +37,7 @@ import {
 } from '@jay-reach/providers/outreach';
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
-import { buildMessageValues, chargerLigneInscription, resolveTemplate } from './message-values.js';
+import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
 import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant } from './sequence.js';
 import type { DispatchJob } from './dispatch.js';
 
@@ -292,6 +294,13 @@ function messageErreurGenerique(err: ErreurSalesBlink): string {
   return `Envoi SalesBlink en échec (${err.code}${statut}) : ${err.message}`;
 }
 
+/** Libellé du mode d'envoi, pour le journal d'activité (tâche 6). */
+export function libelleModeEnvoi(mode: ModeEnvoi['mode']): string {
+  if (mode === 'relance') return 'réponse dans le fil';
+  if (mode === 'relance_repli') return 'relance en nouveau fil';
+  return 'premier email';
+}
+
 /**
  * Envoie l'email d'une action de séquence par SalesBlink. `client` est
  * injectable pour les tests (Pool factice + client factice) ; en production,
@@ -338,8 +347,11 @@ export async function envoyerEmailSalesBlink(
   // l'action `scheduled` intacte, le balayage de rejeu la reprendra une fois
   // l'inscription active de nouveau. Seuls `stopped`, `replied`, `bounced` ou
   // une inscription introuvable marquent l'action `skipped`.
-  const inscriptionRes = await pool.query<{ status: string; email: string | null }>(
-    `select en.status, c.email from enrollments en join contacts c on c.id = en.contact_id where en.id = $1`,
+  const inscriptionRes = await pool.query<{ status: string; email: string | null; campaign_status: string }>(
+    `select en.status, c.email, camp.status as campaign_status from enrollments en
+       join contacts c on c.id = en.contact_id
+       join campaigns camp on camp.id = en.campaign_id
+      where en.id = $1`,
     [email.enrollmentId],
   );
   const inscription = inscriptionRes.rows[0];
@@ -353,6 +365,15 @@ export async function envoyerEmailSalesBlink(
       'enrollment_inactive',
     ]);
     console.warn(`[email-salesblink] action ${actionId} ignorée : inscription non active`);
+    return;
+  }
+  // F14 : même traitement que `paused`/`paused_absence` ci-dessus — une
+  // campagne mise en pause ou jamais lancée après la création de cette action
+  // ne doit rien envoyer, mais l'action reste `scheduled` intacte (transitoire) :
+  // `rejouerActionsEmailEnAttente` (désormais filtré sur `camp.status = 'active'`)
+  // la reprendra une fois la campagne relancée.
+  if (inscription.campaign_status !== 'active') {
+    console.log(`[email-salesblink] action ${actionId} en attente : campagne ${inscription.campaign_status}`);
     return;
   }
   if (inscription.email) {
@@ -408,6 +429,39 @@ export async function envoyerEmailSalesBlink(
     console.warn(`[email-salesblink] action ${actionId} : inscription ${email.enrollmentId} sans adresse`);
     return;
   }
+
+  // 3.5 Défense en profondeur, revérification de la délivrabilité (T29,
+  // corrigé B2 — revue finale du 14/09) : le tick (`sequence.ts`) vérifie le
+  // gate au moment de décider l'envoi, mais une action `blocked`/`failed`
+  // remise `scheduled` par une reprise manuelle d'inscription
+  // (`reprendreInscription`, packages/core) arrive ici SANS repasser par le
+  // tick — sans cette seconde vérification, elle partirait vers une adresse
+  // toujours invalide. MÊME porte que le tick (`deciderPorteEmail`,
+  // `message-values.ts`), jamais une règle simplifiée : une règle qui ne
+  // regarderait que `email_status = 'valid'` bloquerait des envois `risky`
+  // que le tick vient pourtant d'autoriser (motif de domaine fort).
+  const decisionGate = await deciderPorteEmail(pool, {
+    organizationId: ligne.organization_id,
+    email: ligne.email,
+    emailStatus: ligne.email_status,
+    firstName: ligne.first_name,
+    lastName: ligne.last_name,
+  });
+  if (!decisionGate.allow) {
+    const motif = `email_gate:${decisionGate.reason}`;
+    await bloquerAction(pool, actionId, motif);
+    const etapeEnEchecGate = await pool.query<{ position: number }>(
+      `select position from sequence_steps where id = $1`,
+      [email.stepId],
+    );
+    const positionEnEchecGate = etapeEnEchecGate.rows[0]?.position;
+    if (positionEnEchecGate !== undefined) {
+      await mettreInscriptionEnPause(pool, email.enrollmentId, positionEnEchecGate, motif);
+    }
+    console.warn(`[email-salesblink] action ${actionId} bloquée : email non délivrable (${decisionGate.reason})`);
+    return;
+  }
+
   if (!email.templateParentId) {
     await bloquerAction(pool, actionId, 'missing_template');
     console.warn(`[email-salesblink] action ${actionId} bloquée : aucun gabarit assigné à l’étape`);
@@ -474,7 +528,7 @@ export async function envoyerEmailSalesBlink(
   // blocage. `campaigns.daily_cap` gouverne les ENTRÉES en séquence
   // (`enrollContact`), pas les envois : il ne se revérifie pas ici (fix
   // round 2, 11/09 — retiré d'ici où il avait été ajouté par erreur).
-  const contraintesSender = await chargerContraintesSender(pool, sender.id);
+  const contraintesSender = await chargerContraintesSender(pool, sender.id, job.organizationId);
   if (contraintesSender && quotaSenderRestant(contraintesSender) <= 0) {
     console.warn(`[email-salesblink] action ${actionId} en attente : quota expéditeur épuisé (${sender.identity})`);
     return;
@@ -547,6 +601,13 @@ export async function envoyerEmailSalesBlink(
 
     // 7. Succès.
     await pool.query('select app.mark_action_dispatched($1)', [actionId]);
+    // Échéance de l'étape suivante posée au DÉPART RÉEL (issue #111), pas à la
+    // création de cette action : voir `poserEcheanceApresDepart` (@jay-reach/core).
+    await poserEcheanceApresDepart(
+      pool,
+      { enrollmentId: email.enrollmentId, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
+      new Date(),
+    );
     await pool.query(
       `update actions set provider_ref = $2,
               payload = (coalesce(payload, '{}'::jsonb) - 'mode_force') || $3::jsonb
@@ -570,6 +631,27 @@ export async function envoyerEmailSalesBlink(
     // entrant plutôt que de refléter cette relance sortante.
     await pool.query(`update threads set last_message_at = now() where id = $1`, [filId]);
     console.log(`[email-salesblink] action ${actionId} envoyée (${mode.mode})`);
+
+    // Journal d'activité (tâche 6) : jamais d'échec du handler pour ça, l'envoi
+    // a déjà eu lieu — un journal qui ne s'écrit pas ne doit pas faire échouer
+    // pg-boss et retenter un email déjà remis.
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: job.organizationId,
+        entityType: 'contact',
+        entityId: email.contactId,
+        action: 'action_sent',
+        // R22 (tour de correction 1) : `campagneId` connu directement, l'envoi
+        // porte déjà la campagne de son étape — pas de requête supplémentaire.
+        // F13 : « remis », pas « envoyé » — cet événement s'écrit au moment où
+        // le worker remet le message à SalesBlink (`dispatched_at`), jamais au
+        // départ réel (`delivered_at`, F12) que seule la relève confirme
+        // (`releve-salesblink.ts::journaliserActionLivree`, « Email parti. »).
+        diff: { libelle: `Email remis : ${libelleModeEnvoi(mode.mode)}.`, campagneId: email.campaignId },
+      });
+    } catch (err) {
+      console.warn('[journal] action_sent', err);
+    }
   } catch (err) {
     // 8. Erreur SalesBlink : nouvel essai ou échec définitif selon le code et
     // le nombre d'essais déjà comptés. Toute autre erreur (SQL, bug) remonte

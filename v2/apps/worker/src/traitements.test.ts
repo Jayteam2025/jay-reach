@@ -1,8 +1,36 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { rejouerActionsEmailEnAttente, REJEU_ACTIONS_EMAIL_MS, type Contexte } from './traitements.js';
+import {
+  rejouerActionsEmailEnAttente,
+  REJEU_ACTIONS_EMAIL_MS,
+  traiterDiscover,
+  libelleSourceRun,
+  libelleScoringBatch,
+  libelleEnrichmentBatch,
+  journaliserScoringBatch,
+  journaliserEnrichmentBatch,
+  type Contexte,
+} from './traitements.js';
 import { deterministicUuid, currentBucket } from './ids.js';
+import type { DiscoverJob } from './handlers/discover.js';
+import type { ScoreSummary } from './handlers/score.js';
+import { adzunaScraper } from '@jay-reach/providers/signals';
+import type { ScrapedSignal } from '@jay-reach/providers/signals';
+
+// Le connecteur Adzuna ferait un vrai appel HTTP : mocké pour ne tester ici
+// que le journal d'activité (tâche 6), pas le scraping lui-même.
+vi.mock('@jay-reach/providers/signals', () => ({
+  adzunaScraper: {
+    fetch: vi.fn(async () => {
+      throw new Error(
+        'Adzuna indisponible : https://api.adzuna.com/v1/api/jobs/fr/search/1?app_id=id-test&app_key=secret123',
+      );
+    }),
+  },
+  franceTravailScraper: { fetch: vi.fn() },
+  apifyScraper: { fetch: vi.fn() },
+}));
 
 const ACTION_ID = 'action-en-attente-1';
 const ORG_ID = 'org-1';
@@ -116,5 +144,352 @@ describe('rejouerActionsEmailEnAttente', () => {
     const id1 = (insert1.mock.calls[0]![0] as { id: string }[])[0]!.id;
     const id2 = (insert2.mock.calls[0]![0] as { id: string }[])[0]!.id;
     expect(id1).toBe(id2);
+  });
+
+  /**
+   * Pool factice AVEC ÉTAT, dédié au défaut F14 : contrairement à
+   * `creerPoolFactice` de ce fichier (qui renvoie toujours les mêmes lignes
+   * quelle que soit la requête), celui-ci décide RÉELLEMENT selon le SQL
+   * produit — la ligne n'est renvoyée que si la requête ne filtre PAS sur
+   * `camp.status = 'active'` (correctif annulé : comportement d'avant, la
+   * ligne repart inconditionnellement) OU que la campagne modélisée est bien
+   * `active`. Sans le correctif, les tests « brouillon »/« en pause »
+   * ci-dessous verraient l'action réenfilée quand même et rougiraient.
+   */
+  function creerContexteCampagneStatut(statutCampagne: string): { ctx: Contexte; insert: ReturnType<typeof vi.fn> } {
+    const insert = vi.fn(async () => undefined);
+    const boss = { insert } as unknown as PgBoss;
+    const query = vi.fn(async (sql: string) => {
+      const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
+      const renvoyer = !filtreCampagneActive || statutCampagne === 'active';
+      return { rows: renvoyer ? [ligneActionEnAttente()] : [], rowCount: renvoyer ? 1 : 0 };
+    });
+    const pool = { query } as unknown as Pool;
+    return { ctx: { pool, boss }, insert };
+  }
+
+  it('campagne en brouillon ou en pause (F14) : l’action reste en attente, aucun job réenfilé', async () => {
+    const { ctx: ctxBrouillon, insert: insertBrouillon } = creerContexteCampagneStatut('draft');
+    const { ctx: ctxPause, insert: insertPause } = creerContexteCampagneStatut('paused');
+
+    const rejoueesBrouillon = await rejouerActionsEmailEnAttente(ctxBrouillon);
+    const rejoueesPause = await rejouerActionsEmailEnAttente(ctxPause);
+
+    expect(rejoueesBrouillon).toBe(0);
+    expect(insertBrouillon).not.toHaveBeenCalled();
+    expect(rejoueesPause).toBe(0);
+    expect(insertPause).not.toHaveBeenCalled();
+  });
+
+  it('campagne active (F14, non-régression) : l’action réenfilée normalement', async () => {
+    const { ctx, insert } = creerContexteCampagneStatut('active');
+
+    const rejouees = await rejouerActionsEmailEnAttente(ctx);
+
+    expect(rejouees).toBe(1);
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('libelleSourceRun (journal, tâche 6)', () => {
+  it('nomme le connecteur et compte les offres lues/retenues', () => {
+    expect(libelleSourceRun('adzuna', 58, 6)).toEqual({
+      libelle: 'Passage Adzuna : 58 offre(s) lue(s), 6 retenue(s)',
+      detail: '52 offre(s) déjà connue(s) ignorée(s).',
+    });
+  });
+
+  it('ne pose pas de detail quand rien n’a été ignoré', () => {
+    expect(libelleSourceRun('francetravail', 10, 10)).toEqual({
+      libelle: 'Passage France Travail : 10 offre(s) lue(s), 10 retenue(s)',
+    });
+  });
+
+  it('retombe sur l’id brut pour un connecteur non répertorié', () => {
+    expect(libelleSourceRun('inconnu', 1, 1).libelle).toContain('Passage inconnu :');
+  });
+
+  it('distingue les offres écartées pour âge des doublons déjà connus (I3)', () => {
+    expect(libelleSourceRun('adzuna', 10, 6, 3)).toEqual({
+      libelle: 'Passage Adzuna : 10 offre(s) lue(s), 6 retenue(s)',
+      detail: '1 offre(s) déjà connue(s) ignorée(s). 3 offre(s) trop ancienne(s) écartée(s).',
+    });
+  });
+
+  it('tout écarté pour âge, aucun doublon : pas de mention de « déjà connue »', () => {
+    expect(libelleSourceRun('adzuna', 5, 2, 3)).toEqual({
+      libelle: 'Passage Adzuna : 5 offre(s) lue(s), 2 retenue(s)',
+      detail: '3 offre(s) trop ancienne(s) écartée(s).',
+    });
+  });
+});
+
+describe('libelleScoringBatch (journal, tâche 6)', () => {
+  it('compte les signaux notés et retenus, sans detail sans auto-apprentissage', () => {
+    expect(libelleScoringBatch({ scored: 12, qualified: 3, learned: 0 })).toEqual({
+      libelle: 'Scoring : 12 signal(aux) noté(s), 3 retenu(s) au-dessus du seuil',
+    });
+  });
+
+  it('ajoute un detail quand la blacklist de cabinets a appris', () => {
+    expect(libelleScoringBatch({ scored: 12, qualified: 3, learned: 2 })).toEqual({
+      libelle: 'Scoring : 12 signal(aux) noté(s), 3 retenu(s) au-dessus du seuil',
+      detail: '2 entreprise(s) appris(e)(s) comme cabinet(s) de recrutement.',
+    });
+  });
+});
+
+describe('libelleEnrichmentBatch (journal, tâche 6 ; libellé ajusté au tour de correction 1, R24)', () => {
+  it('nomme l’entreprise et compte emails trouvés sur contacts réellement traités', () => {
+    // R24 : le 2e argument est le nombre de contacts réellement passés dans le
+    // lot (`contacts.length`), jamais `maxContacts` — ce qui a été demandé au
+    // FullEnrich n'est pas ce qui a été mesuré.
+    expect(libelleEnrichmentBatch('Acme', 10, 3)).toEqual({
+      libelle: 'Enrichissement Acme : 3 email(s) trouvé(s) sur 10 contact(s) traité(s)',
+      detail: '1 crédit FullEnrich consommé.',
+    });
+  });
+});
+
+describe('traiterDiscover — journal d’activité (tâche 6)', () => {
+  const JOB: DiscoverJob = {
+    organizationId: 'org-1',
+    sourceId: 'source-1',
+    provider: 'adzuna',
+    keywords: ['développeur'],
+  };
+
+  interface Reponse {
+    readonly rows: unknown[];
+    readonly rowCount: number;
+  }
+  interface Gestionnaire {
+    readonly motif: RegExp;
+    readonly repondre: () => Reponse;
+  }
+
+  function ligne(rows: unknown[] = []): Reponse {
+    return { rows, rowCount: rows.length };
+  }
+
+  function creerPoolGestionnaires(gestionnaires: Gestionnaire[]): { pool: Pool; appels: { sql: string; values: unknown[] }[] } {
+    const appels: { sql: string; values: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+      appels.push({ sql, values });
+      const trouve = gestionnaires.find((g) => g.motif.test(sql));
+      if (!trouve) {
+        throw new Error(`requete non prevue par le test :\n${sql}`);
+      }
+      return trouve.repondre();
+    });
+    return { pool: { query } as unknown as Pool, appels };
+  }
+
+  it("une collecte en échec écrit engine_error, nettoyé, puis relance l'erreur", async () => {
+    process.env.ADZUNA_APP_ID = 'id-test';
+    process.env.ADZUNA_APP_KEY = 'cle-test';
+    const { pool, appels } = creerPoolGestionnaires([
+      { motif: /select config from credentials/i, repondre: () => ligne([]) },
+      { motif: /insert into source_runs/i, repondre: () => ligne([{ id: 'run-1' }]) },
+      { motif: /update source_runs/i, repondre: () => ligne([]) },
+      { motif: /insert into audit_events/i, repondre: () => ligne([]) },
+    ]);
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+
+    await expect(traiterDiscover({ pool, boss }, JOB)).rejects.toThrow();
+
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+
+    const journal = appels.find((a) => /insert into audit_events/i.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values[0]).toBe('org-1');
+    expect(journal!.values[2]).toBe('engine');
+    expect(journal!.values[3]).toBeNull();
+    expect(journal!.values[4]).toBe('engine_error');
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string };
+    // Ni la clé (`api_key=secret123`) ni l'adresse ne doivent fuiter dans le journal.
+    expect(diff.libelle).not.toContain('secret123');
+    expect(diff.libelle).toContain('Adzuna indisponible');
+  });
+
+  function signalOffre(company: string, title: string, location: string, postedDate?: string): ScrapedSignal {
+    return {
+      signal_type: 'job_posting',
+      source: 'adzuna',
+      source_url: `https://api.adzuna.com/v1/job/${company}-${title}`,
+      raw_content: '{}',
+      extracted_data: {
+        company_name: company,
+        job_title: title,
+        location,
+        ...(postedDate !== undefined ? { posted_date: postedDate } : {}),
+      },
+    };
+  }
+
+  it('une collecte réussie écrit source_run avec les bons compteurs (tour de correction 1, point 5)', async () => {
+    process.env.ADZUNA_APP_ID = 'id-test';
+    process.env.ADZUNA_APP_KEY = 'cle-test';
+    vi.mocked(adzunaScraper.fetch).mockResolvedValueOnce({
+      signals: [
+        signalOffre('Acme', 'Développeur', 'Paris'),
+        signalOffre('Beta', 'Commercial', 'Lyon'),
+        signalOffre('Gamma', 'Designer', 'Nantes'),
+      ],
+      errors: [],
+      duration_ms: 120,
+    });
+    const { pool, appels } = creerPoolGestionnaires([
+      { motif: /select config from credentials/i, repondre: () => ligne([]) },
+      { motif: /insert into source_runs/i, repondre: () => ligne([{ id: 'run-2' }]) },
+      // I3 : défaut d'organisation lu par `plafondDuJour` — aucune des offres
+      // du test n'a de `posted_date`, donc jamais écartée quelle que soit
+      // cette valeur (14 par défaut, faute de ligne).
+      { motif: /from organization_settings where organization_id = \$1 and key = \$2/i, repondre: () => ligne([]) },
+      // Simule Postgres qui écarte une des trois offres comme déjà connue
+      // (fingerprint récent) : 3 lues, 2 retenues — le mock ne rejoue pas le
+      // vrai filtre SQL, seul le nombre de lignes rendues compte ici.
+      {
+        motif: /insert into signals/i,
+        repondre: () => ligne([{ id: 'signal-1', company_hint: null }, { id: 'signal-2', company_hint: null }]),
+      },
+      { motif: /update source_runs/i, repondre: () => ligne([]) },
+      { motif: /insert into audit_events/i, repondre: () => ligne([]) },
+    ]);
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+
+    await traiterDiscover({ pool, boss }, JOB);
+
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+
+    const journal = appels.find((a) => /insert into audit_events/i.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values[0]).toBe('org-1');
+    expect(journal!.values[2]).toBe('source');
+    expect(journal!.values[3]).toBe('source-1');
+    expect(journal!.values[4]).toBe('source_run');
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; detail?: string };
+    expect(diff.libelle).toBe('Passage Adzuna : 3 offre(s) lue(s), 2 retenue(s)');
+    expect(diff.detail).toBe('1 offre(s) déjà connue(s) ignorée(s).');
+  });
+
+  it('écarte une offre trop ancienne AVANT insertion, et le journal la compte séparément (I3)', async () => {
+    process.env.ADZUNA_APP_ID = 'id-test';
+    process.env.ADZUNA_APP_KEY = 'cle-test';
+    vi.mocked(adzunaScraper.fetch).mockResolvedValueOnce({
+      signals: [
+        signalOffre('Acme', 'Développeur', 'Paris', '2000-01-01T00:00:00.000Z'), // très ancienne
+        signalOffre('Beta', 'Commercial', 'Lyon'), // sans date : jamais écartée
+      ],
+      errors: [],
+      duration_ms: 90,
+    });
+    const { pool, appels } = creerPoolGestionnaires([
+      { motif: /select config from credentials/i, repondre: () => ligne([]) },
+      { motif: /insert into source_runs/i, repondre: () => ligne([{ id: 'run-3' }]) },
+      // Défaut d'organisation réglé à 14 jours (au lieu du repli sans ligne) :
+      // l'offre de l'an 2000 est écartée quelle que soit la date d'exécution du test.
+      {
+        motif: /from organization_settings where organization_id = \$1 and key = \$2/i,
+        repondre: () => ligne([{ value: 14 }]),
+      },
+      { motif: /insert into signals/i, repondre: () => ligne([{ id: 'signal-1', company_hint: null }]) },
+      { motif: /update source_runs/i, repondre: () => ligne([]) },
+      { motif: /insert into audit_events/i, repondre: () => ligne([]) },
+    ]);
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+
+    await traiterDiscover({ pool, boss }, JOB);
+
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+
+    // Un seul tuple envoyé à l'insertion (3 paramètres fixes + 7) : l'offre
+    // ancienne n'a jamais atteint la requête SQL.
+    const insert = appels.find((a) => /insert into signals/i.test(a.sql));
+    expect(insert).toBeDefined();
+    expect(insert!.values).toHaveLength(3 + 7);
+
+    const journal = appels.find((a) => /insert into audit_events/i.test(a.sql));
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; detail?: string };
+    expect(diff.libelle).toBe('Passage Adzuna : 2 offre(s) lue(s), 1 retenue(s)');
+    expect(diff.detail).toBe('1 offre(s) trop ancienne(s) écartée(s).');
+  });
+});
+
+/** Fixture minimale d'un `ScoreSummary` complet, seuls `scored`/`qualified`/`learned` variant selon le test. */
+function scoreSummary(overrides: Partial<ScoreSummary> = {}): ScoreSummary {
+  return {
+    considered: 0,
+    prefiltered: 0,
+    scored: 0,
+    qualified: 0,
+    discarded: 0,
+    learned: 0,
+    skippedNoPrompt: false,
+    ...overrides,
+  };
+}
+
+describe('journaliserScoringBatch (journal, tâche 6, tour de correction 1 — point 5)', () => {
+  it("écrit scoring_batch avec entityType 'engine' et entityId null", async () => {
+    const query = vi.fn(async (_sql: string, _values?: unknown[]) => ({ rows: [] as unknown[], rowCount: 0 }));
+    const pool = { query } as unknown as Pool;
+
+    await journaliserScoringBatch(pool, 'org-1', scoreSummary({ scored: 12, qualified: 3 }));
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, valeurs] = query.mock.calls[0]!;
+    expect(sql).toMatch(/insert into audit_events/i);
+    const v = valeurs as unknown[];
+    expect(v[0]).toBe('org-1');
+    expect(v[2]).toBe('engine');
+    expect(v[3]).toBeNull();
+    expect(v[4]).toBe('scoring_batch');
+    const diff = JSON.parse(v[5] as string) as { libelle: string };
+    expect(diff.libelle).toBe('Scoring : 12 signal(aux) noté(s), 3 retenu(s) au-dessus du seuil');
+  });
+
+  it("n'échoue jamais si l'écriture échoue", async () => {
+    const query = vi.fn(async () => {
+      throw new Error('panne base');
+    });
+    const pool = { query } as unknown as Pool;
+
+    await expect(
+      journaliserScoringBatch(pool, 'org-1', scoreSummary({ scored: 1 })),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('journaliserEnrichmentBatch (journal, tâche 6, tour de correction 1 — points 4 et 5)', () => {
+  it("écrit enrichment_batch avec entityType 'engine', entityId null, et le libellé ajusté (R24)", async () => {
+    const query = vi.fn(async (_sql: string, _values?: unknown[]) => ({ rows: [] as unknown[], rowCount: 0 }));
+    const pool = { query } as unknown as Pool;
+
+    await journaliserEnrichmentBatch(pool, 'org-1', 'Acme', 10, 3);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, valeurs] = query.mock.calls[0]!;
+    expect(sql).toMatch(/insert into audit_events/i);
+    const v = valeurs as unknown[];
+    expect(v[0]).toBe('org-1');
+    expect(v[2]).toBe('engine');
+    expect(v[3]).toBeNull();
+    expect(v[4]).toBe('enrichment_batch');
+    const diff = JSON.parse(v[5] as string) as { libelle: string; detail: string };
+    expect(diff.libelle).toBe('Enrichissement Acme : 3 email(s) trouvé(s) sur 10 contact(s) traité(s)');
+    expect(diff.detail).toBe('1 crédit FullEnrich consommé.');
+  });
+
+  it("n'échoue jamais si l'écriture échoue", async () => {
+    const query = vi.fn(async () => {
+      throw new Error('panne base');
+    });
+    const pool = { query } as unknown as Pool;
+
+    await expect(journaliserEnrichmentBatch(pool, 'org-1', 'Acme', 10, 3)).resolves.toBeUndefined();
   });
 });

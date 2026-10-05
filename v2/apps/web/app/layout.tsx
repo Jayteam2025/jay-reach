@@ -1,4 +1,6 @@
 import './globals.css';
+import './styles/jetons.css';
+import './styles/composants.css';
 import type { ReactNode } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';

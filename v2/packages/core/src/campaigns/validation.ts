@@ -21,24 +21,37 @@ export type StepCondition = (typeof STEP_CONDITION_VALUES)[number];
 const uuid = z.string().uuid();
 
 /**
- * Création de campagne : nom + point d'entrée + règles.
+ * Création de campagne : nom + point d'entrée (facultatif) + règles.
  *
  * Une campagne alimentée par des thèmes de veille peut en croiser plusieurs —
  * les offres commerciales et les nominations, par exemple. Une liste importée
  * reste unique : c'est un fichier.
+ *
+ * `entryKind`/`entryId` sont facultatifs (migration `20260831230000`, qui a
+ * relâché `campaigns_one_source` à `<= 1` justement pour ça) : l'assistant de
+ * création (tâche 14, `fonctions/assistant-campagne.ts`) crée la campagne
+ * AVANT ses sources — celles-ci n'existent pas encore, `entryId` ne peut donc
+ * pas les référencer. Une campagne née de l'assistant vit entièrement par
+ * `campaign_sources` (peuplée ensuite par `creerSource`), jamais par ces deux
+ * colonnes dépréciées. Les deux restent réunies : fournir l'un sans l'autre
+ * n'a pas de sens (thème ou liste, jamais l'un sans son id).
  */
 export const campaignCreateSchema = z
   .object({
     name: z.string().trim().min(1, 'Nom requis.').max(120),
-    entryKind: z.enum(['source', 'list']),
-    entryId: uuid,
+    entryKind: z.enum(['source', 'list']).optional(),
+    entryId: uuid.optional(),
     /** Thèmes retenus quand `entryKind` vaut `source`. `entryId` en reprend le premier. */
     sourceIds: z.array(uuid).min(1).max(50).optional(),
     minScore: z.number().int().min(0).max(100).optional(),
     personaIds: z.array(uuid).max(50).optional(),
     dailyCap: z.number().int().min(1).max(10_000).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => (v.entryKind === undefined) === (v.entryId === undefined), {
+    message: "entryKind et entryId doivent être fournis ensemble, ou absents tous les deux.",
+    path: ['entryId'],
+  });
 
 export type CampaignCreateInput = z.infer<typeof campaignCreateSchema>;
 

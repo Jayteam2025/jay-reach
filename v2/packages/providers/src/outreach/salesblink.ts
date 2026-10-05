@@ -131,6 +131,60 @@ interface OptionsAppel {
 }
 
 /**
+ * Mode fake (tâche 26, parcours Playwright) : `SALESBLINK_FAKE=1` court-
+ * circuite tout appel HTTP à SalesBlink, jamais posé en production (le
+ * worker ne le lit jamais). N'existe que pour un serveur de dev lancé par les
+ * parcours e2e.
+ */
+function modeFakeActif(): boolean {
+  return process.env.SALESBLINK_FAKE === '1';
+}
+
+/**
+ * Réponses canoniques du mode fake — enveloppe `{ success, data, message }`
+ * comme la vraie API, pour traverser exactement le même code de dépliage
+ * (`donnees()`, `versDerniereErreur()`, etc.) que le trafic réel. Ne couvre
+ * QUE les trois appels que l'app web déclenche en direct (liste des
+ * expéditeurs, santé d'une boîte, réponse dans un fil) : tout autre chemin
+ * (séquences, contacts, rapports — appels du moteur, jamais du web pendant un
+ * parcours e2e) échoue fort plutôt que de risquer un vrai appel réseau ou une
+ * réponse fake trompeuse.
+ */
+function reponseFake(methode: string, chemin: string): unknown {
+  if (methode === 'GET' && chemin === '/senders') {
+    return {
+      success: true,
+      data: [
+        {
+          id: 'e2e-fake-boite',
+          alias: 'boite-e2e@example.com',
+          senderName: 'Boîte e2e (fake)',
+          sendingEnabled: true,
+          receivingEnabled: true,
+          sequence_max_daily_frequency: 30,
+        },
+      ],
+    };
+  }
+  if (methode === 'GET' && /^\/senders\/[^/]+\/health$/.test(chemin)) {
+    return {
+      success: true,
+      data: {
+        connected: true,
+        sending_enabled: true,
+        receiving_enabled: true,
+        health_score: 100,
+        error: null,
+      },
+    };
+  }
+  if (methode === 'POST' && /^\/inbox\/[^/]+\/reply$/.test(chemin)) {
+    return { success: true, data: { id: 'e2e-fake-tache-reponse' }, message: 'ok' };
+  }
+  throw new Error(`Mode SALESBLINK_FAKE actif : chemin non couvert par le fake (${methode} ${chemin}).`);
+}
+
+/**
  * Fait l'appel HTTP, deplie le JSON et normalise les erreurs SalesBlink en
  * `ErreurSalesBlink`. Ne jamais faire fuiter `cle` ni l'URL complete.
  */
@@ -140,6 +194,10 @@ async function appeler(
   options: OptionsAppel,
   cle: string,
 ): Promise<unknown> {
+  if (modeFakeActif()) {
+    return reponseFake(methode, chemin);
+  }
+
   const url = new URL(`${BASE_SALESBLINK}${chemin}`);
   for (const [nom, valeur] of Object.entries(options.parametres ?? {})) {
     if (valeur !== undefined) url.searchParams.set(nom, String(valeur));
@@ -314,6 +372,22 @@ export async function santeBoite(idBoite: string, cle: string): Promise<SanteBoi
 
 export async function reconnecterBoite(idBoite: string, cle: string): Promise<void> {
   await appeler('POST', `/senders/${idBoite}/reconnect`, {}, cle);
+}
+
+/**
+ * Active la lecture directe des réponses côté SalesBlink pour une boîte tout
+ * juste reliée (tâche 20, écran Réglages › Expéditeurs).
+ *
+ * Toute boîte Outlook ajoutée à SalesBlink a `inbox_enabled` à `false` par
+ * défaut : sans ce PATCH, `GET /senders` répond normalement mais aucune
+ * réponse ne remonte jamais dans `/inbox` — constat du 11/09 (passation du
+ * lot 3, posé alors à la main pour les trois boîtes de production). Cette
+ * fonction n'existait pas encore dans ce client : `relierBoite`
+ * (`packages/core/src/fonctions/expediteurs.ts`) en avait besoin pour ne pas
+ * reproduire cette étape manuelle à chaque nouvelle boîte reliée.
+ */
+export async function activerLectureBoite(idBoite: string, cle: string): Promise<void> {
+  await appeler('PATCH', `/senders/${idBoite}`, { corps: { inbox_enabled: true } }, cle);
 }
 
 // --- Gabarits et listes ------------------------------------------------------

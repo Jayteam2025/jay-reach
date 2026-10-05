@@ -6,6 +6,9 @@ export default defineConfig({
   // l'arborescence et attrape celle du legacy (le jour où v2/ est un sous-dossier
   // de jay-reach), faisant échouer `pnpm test` pour quiconque clone le dépôt.
   css: { postcss: { plugins: [] } },
+  // Runtime JSX automatique : les *.tsx du kit de composants n'importent pas
+  // React explicitement (JSX transform moderne, comme Next.js le fait déjà).
+  esbuild: { jsx: 'automatic' },
   // Un paquet workspace importé par son nom (`@jay-reach/core`, jamais un
   // chemin relatif) résout par défaut vers son `dist/` (package.json
   // `exports`) — construit par `pnpm build`, qui tourne APRÈS `pnpm test` en
@@ -15,8 +18,8 @@ export default defineConfig({
   // restent `dist/` pour le build de production.
   plugins: [tsconfigPaths({ projects: ['tsconfig.base.json'] })],
   test: {
-    // Chaque package fournit ses tests *.test.ts ; on les ramasse à la racine.
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
+    // Chaque package fournit ses tests *.test.ts (et *.test.tsx côté web) ; on les ramasse à la racine.
+    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts', 'apps/**/*.test.tsx'],
     environment: 'node',
     passWithNoTests: true,
   },

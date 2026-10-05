@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
+import { echeanceEtapeSuivante } from '@jay-reach/core';
 import { ErreurSalesBlink } from '@jay-reach/providers/outreach';
 import { envoyerEmailSalesBlink, assurerObjetsEtape, heuresEnvoiSalesBlink, type ClientSalesBlink } from './email-salesblink.js';
 import type { DispatchJob } from './dispatch.js';
@@ -21,7 +22,7 @@ function ligneInscription(overrides: Record<string, unknown> = {}): Record<strin
     signal_id: null,
     current_step: 1,
     linkedin_url: null,
-    email: 'contact@exemple.fr',
+    email: 'marie.durand@exemple.fr',
     email_status: 'valid',
     account_id: null,
     persona_id: null,
@@ -113,17 +114,22 @@ function clientFactice(overrides: Partial<ClientSalesBlink> = {}): ClientSalesBl
 
 // Motifs de requetes communs a plusieurs scenarios.
 const ETAT_ACTION = /select status from actions where id/i;
-const INSCRIPTION_ACTIVE = /select en\.status, c\.email from enrollments en/i;
+const INSCRIPTION_ACTIVE = /select en\.status, c\.email, camp\.status as campaign_status from enrollments en/i;
 const SUPPRESSION_CHECK = /from suppressions/i;
 const CONFIG_CREDENTIALS = /select config from credentials/i;
 const SENDER = /from senders where id/i;
 const CONTRAINTES_SENDER = /from senders s where s\.id/i;
+// Revue F5, point 2 : `chargerContraintesSender` lit le fuseau de
+// l'organisation (`fuseauDeLOrganisation`) avant de compter les envois du jour.
+const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const PLAFOND = /daily_cap/i;
 const CREDIT = /consume_provider_credit/i;
-// Spécifique a `chargerLigneInscription` (message-values.ts) : la jointure
-// jusqu'a `campaigns camp` la distingue de la requete de defense en profondeur
-// C1 ci-dessus, qui interroge aussi `enrollments`/`contacts` mais pas `campaigns`.
-const INSCRIPTION = /join campaigns camp/i;
+// Spécifique a `chargerLigneInscription` (message-values.ts) : depuis F14, la
+// requete de defense en profondeur C1 ci-dessus joint elle aussi `campaigns
+// camp` (alias `en` pour enrollments) — `e.campaign_id` (alias `e`, sans
+// second caractère) est le fragment qui ne matche QUE `REQUETE_LIGNE_INSCRIPTION`,
+// jamais `en.campaign_id`.
+const INSCRIPTION = /camp\.id = e\.campaign_id/i;
 const TEMPLATE = /from message_templates/i;
 const ENVOIS_ANTERIEURS = /payload ->> 'message_id'/i;
 const MODE_FORCE = /select payload ->> 'mode_force'/i;
@@ -132,6 +138,10 @@ const BINDING_INSERT = /insert into email_transport_bindings/i;
 const GABARIT_NEUTRE_LOOKUP = /select template_id from email_transport_bindings/i;
 const CAMPAGNE_NOM = /select name from campaigns/i;
 const ETAPE_POSITION = /from sequence_steps/i;
+// Motif de domaine (B2, revue finale du 14/09) : chargé par `deciderPorteEmail`
+// (`message-values.ts`) à chaque envoi, même porte que le tick — vide par
+// défaut (aucun pattern connu), surchargé par les tests qui en ont besoin.
+const DOMAIN_PATTERNS = /from domain_patterns/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
@@ -143,14 +153,27 @@ const SELECT_ESSAIS = /payload ->> 'essais'/i;
 const THREAD_LOOKUP = /select id from threads where/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const THREAD_UPDATE = /update threads set last_message_at/i;
+const AUDIT_INSERT = /insert into audit_events/i;
+// `poserEcheanceApresDepart` (@jay-reach/core, issue #111) : posée au départ
+// réel, pas à la création de l'action. Lecture par RANG ORDINAL (`offset`/
+// `limit`), jamais par égalité de `position` (issue #115). Motifs distincts de
+// `ETAPE_POSITION` (mot-clé `delay_hours`, jamais présent dans la requête de
+// `assurerObjetsEtape`).
+const DELAI_ETAPE_SUIVANTE =
+  /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
+const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
   return [
     { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-    { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+    {
+      motif: INSCRIPTION_ACTIVE,
+      repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+    },
     { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
     { motif: CONFIG_CREDENTIALS, repondre: () => ligne([{ config: {} }]) },
+    { motif: FUSEAU_ORGANISATION, repondre: () => ligne([{ value: 'Europe/Paris' }]) },
     {
       motif: SENDER,
       repondre: () =>
@@ -175,6 +198,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: PLAFOND, repondre: () => ligne([]) },
     { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
     { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
+    { motif: DOMAIN_PATTERNS, repondre: () => ligne([]) },
     {
       motif: TEMPLATE,
       repondre: () => ligne([{ id: 'gabarit-1', body: 'Bonjour {{prenom}}', subject: 'Objet {{prenom}}', name: 'Gabarit' }]),
@@ -183,10 +207,13 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: null }]) },
     { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([]) },
     { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
+    { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 48 }]) },
+    { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },
     { motif: THREAD_LOOKUP, repondre: () => ligne([{ id: 'fil-1' }]) },
     { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
     { motif: THREAD_UPDATE, repondre: () => ligne([]) },
+    { motif: AUDIT_INSERT, repondre: () => ligne([]) },
   ];
 }
 
@@ -212,7 +239,10 @@ describe('envoyerEmailSalesBlink', () => {
   it('sans provider_ref l’action est bloquée sender_unbound', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+      },
       { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 0 }]) },
       { motif: CONFIG_CREDENTIALS, repondre: () => ligne([]) },
       {
@@ -270,7 +300,10 @@ describe('envoyerEmailSalesBlink', () => {
     // dernier email d'une séquence ne part jamais.
     const { pool, appels } = creerPoolFactice(
       avecBase(
-        { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'completed', email: 'contact@exemple.fr' }]) },
+        {
+          motif: INSCRIPTION_ACTIVE,
+          repondre: () => ligne([{ status: 'completed', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+        },
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
@@ -308,10 +341,38 @@ describe('envoyerEmailSalesBlink', () => {
     expect(client.repondreDansLeFil).not.toHaveBeenCalled();
   });
 
+  it('campagne mise en pause ou jamais lancée (F14) : action laissée scheduled sans appel client', async () => {
+    // Défense en profondeur symétrique de `paused`/`paused_absence` ci-dessus :
+    // une campagne peut avoir été mise en pause (ou n'avoir jamais été
+    // lancée) après que cette action a été créée. L'action reste `scheduled`
+    // intacte — `rejouerActionsEmailEnAttente` (filtré sur `camp.status =
+    // 'active'`, F14) la reprendra une fois la campagne relancée.
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'draft' }]),
+      },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(appels.some((a) => UPDATE_SKIPPED.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_SUCCES.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+  });
+
   it('adresse supprimée entre l’enfilement et l’exécution : action ignorée sans aucun appel client (C1)', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
-      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr' }]) },
+      {
+        motif: INSCRIPTION_ACTIVE,
+        repondre: () => ligne([{ status: 'active', email: 'contact@exemple.fr', campaign_status: 'active' }]),
+      },
       { motif: SUPPRESSION_CHECK, repondre: () => ligne([{ n: 1 }]) },
       { motif: UPDATE_SKIPPED, repondre: () => ligne([]) },
     ]);
@@ -360,8 +421,12 @@ describe('envoyerEmailSalesBlink', () => {
     const requeteQuota = appels.find((a) => CONTRAINTES_SENDER.test(a.sql));
     expect(requeteQuota).toBeDefined();
     expect(requeteQuota!.sql).toMatch(/status in \('dispatched', 'delivered'\)/);
-    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\)\)/);
-    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\)\)/);
+    // Revue F5, point 2 (puis relecture) : jour ET heure bornés par le fuseau
+    // de l'organisation (`$2`), plus `date_trunc(..., now())` nu (fuseau du
+    // serveur) — un décalage non entier (Inde, Népal) déréglerait sinon
+    // seulement le plafond horaire.
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('day', now\(\) at time zone \$2\) at time zone \$2/);
+    expect(requeteQuota!.sql).toMatch(/dispatched_at >= date_trunc\('hour', now\(\) at time zone \$2\) at time zone \$2/);
     // Une action encore `scheduled` (pas encore partie) n'a pas `dispatched_at`
     // renseigné : elle ne peut donc jamais matcher ce filtre, contrairement au
     // filtre par `created_at` du tick (`loadSenders`), qui l'aurait comptée.
@@ -395,7 +460,7 @@ describe('envoyerEmailSalesBlink', () => {
     expect(listeId).toBe('liste-1');
     expect(leads).toEqual([
       expect.objectContaining({
-        email: 'contact@exemple.fr',
+        email: 'marie.durand@exemple.fr',
         first_name: 'Marie',
         last_name: 'Durand',
         company_name: 'Acme',
@@ -417,6 +482,56 @@ describe('envoyerEmailSalesBlink', () => {
     const filUpdate = appels.find((a) => THREAD_UPDATE.test(a.sql));
     expect(filUpdate).toBeDefined();
     expect(filUpdate!.values[0]).toBe('fil-1');
+  });
+
+  it('un envoi réussi écrit un événement action_sent dans le journal (tâche 6)', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    const ecriture = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(ecriture).toBeDefined();
+    expect(ecriture!.values[0]).toBe(ORG_ID);
+    expect(ecriture!.values[1]).toBeNull(); // actor_id : jamais un utilisateur pour un envoi du moteur
+    expect(ecriture!.values[2]).toBe('contact');
+    expect(ecriture!.values[3]).toBe('contact-1');
+    expect(ecriture!.values[4]).toBe('action_sent');
+    const diff = JSON.parse(ecriture!.values[5] as string) as { libelle: string; campagneId: string };
+    // F13 : « remis », pas « envoyé » — l'événement s'écrit à la remise à
+    // SalesBlink (`dispatched_at`), pas au départ réel (`delivered_at`, F12).
+    expect(diff.libelle).toBe('Email remis : premier email.');
+    // R22 (tour de correction 1) : la campagne de l'étape, déjà connue du job, sans requête supplémentaire.
+    expect(diff.campagneId).toBe(CAMPAIGN_ID);
+  });
+
+  it('un échec au journal ne fait jamais échouer un envoi déjà remis (jamais de throw remonté)', async () => {
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        {
+          motif: AUDIT_INSERT,
+          repondre: () => {
+            throw new Error('panne base — table audit_events indisponible');
+          },
+        },
+      ),
+    );
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice())).resolves.toBeUndefined();
+    expect(avertissement).toHaveBeenCalledWith('[journal] action_sent', expect.any(Error));
+
+    avertissement.mockRestore();
   });
 
   it('gabarit neutre réutilisé s’il existe déjà dans une liaison de l’organisation (minor)', async () => {
@@ -517,6 +632,53 @@ describe('envoyerEmailSalesBlink', () => {
     expect(payload.reply_task_id).toBe('tache-reponse-1');
   });
 
+  it('échéance de l’étape suivante posée au DÉPART RÉEL (issue #111), même jitter que le tick', async () => {
+    const maintenant = new Date('2026-09-17T10:04:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(maintenant);
+    try {
+      const { pool, appels } = creerPoolFactice(
+        avecBase(
+          { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([{ message_id: 'msg-1', subject: 'Objet' }]) },
+          { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
+        ),
+      );
+
+      await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+      const requeteDelai = appels.find((a) => DELAI_ETAPE_SUIVANTE.test(a.sql));
+      expect(requeteDelai).toBeDefined();
+      // `current_step` (déjà avancé par le tick, N+1) donne la POSITION de
+      // l'étape suivante — pas celle qui vient de partir.
+      expect(requeteDelai!.values).toEqual([CAMPAIGN_ID, 1]);
+
+      const pose = appels.find((a) => POSE_ECHEANCE.test(a.sql));
+      expect(pose).toBeDefined();
+      const attendu = echeanceEtapeSuivante(maintenant.getTime(), ENROLLMENT_ID, 120);
+      expect(pose!.values).toEqual([ENROLLMENT_ID, new Date(attendu!).toISOString(), 1]);
+      // Garde (issue #111) : jamais posée sur une inscription déjà repartie
+      // ailleurs (échéance déjà présente, mise en pause, ou étape déplacée).
+      expect(pose!.sql).toMatch(/status = 'active'/i);
+      expect(pose!.sql).toMatch(/next_action_at is null/i);
+      expect(pose!.sql).toMatch(/current_step = \$3/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dernière étape : aucune étape suivante en base → aucune échéance posée', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: ENVOIS_ANTERIEURS, repondre: () => ligne([{ message_id: 'msg-1', subject: 'Objet' }]) },
+        { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    expect(appels.some((a) => POSE_ECHEANCE.test(a.sql))).toBe(false);
+  });
+
   it('429 : l’action reste en attente et essais vaut 1', async () => {
     const client = clientFactice({
       creerListe: vi.fn(async () => {
@@ -581,6 +743,99 @@ describe('envoyerEmailSalesBlink', () => {
     // qui n'aura jamais lieu.
     expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
     expect(client.creerListe).not.toHaveBeenCalled();
+  });
+
+  // T29, partie B, point 6 : défense en profondeur — une action `blocked`/`failed`
+  // remise `scheduled` par `reprendreInscription` (une reprise manuelle,
+  // packages/core/src/fonctions/sequence.ts) ne doit jamais partir vers une
+  // adresse toujours invalide. Depuis B2 (revue finale du 14/09), la
+  // revérification appelle la MÊME porte que le tick (`deciderPorteEmail`,
+  // `emailGateAllows`) : le motif posé est celui rendu par la porte, pas le
+  // statut brut — `bouncer_invalid`, pas `invalid`.
+  it('email_status non valide à l’envoi (défense en profondeur) : action bloquée et inscription mise en pause, aucun appel SalesBlink', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: 'invalid' })]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 1 }]) },
+        { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage).toBeDefined();
+    expect(blocage!.values[1]).toBe('email_gate:bouncer_invalid');
+
+    const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
+    expect(pause).toBeDefined();
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 1, 'email_gate:bouncer_invalid']);
+
+    expect(client.creerListe).not.toHaveBeenCalled();
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.repondreDansLeFil).not.toHaveBeenCalled();
+    expect(appels.some((a) => CREDIT.test(a.sql))).toBe(false);
+  });
+
+  it('email_status null à l’envoi : même blocage, motif email_gate:pending_bouncer (motif rendu par la porte)', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: null })]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+        { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage!.values[1]).toBe('email_gate:pending_bouncer');
+  });
+
+  // B2 (Bloquant, revue finale du 14/09) : le tick autorise un `risky`/`unknown`
+  // dont le domaine a un motif d'adresse fort (FullEnrich, tier haut, confiance
+  // >= 0,85 — `fullenrich_risky_pattern_high`). Avant le correctif, la garde
+  // simplifiée de l'envoi (`email_status !== 'valid'`) bloquait ce même contact
+  // que le tick vient d'autoriser : test rouge tant que l'envoi n'appelle pas
+  // la même porte.
+  it('email risky avec motif de domaine fort (FullEnrich) : part quand même, comme le tick', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: 'risky' })]) },
+        {
+          motif: DOMAIN_PATTERNS,
+          repondre: () =>
+            ligne([
+              {
+                domain: 'exemple.fr',
+                pattern: 'prenom.nom',
+                confidence: 0.9,
+                tier: 'high',
+                sample_count: 25,
+                empirical_sends: 0,
+                empirical_bounces: 0,
+                downgraded_at: null,
+              },
+            ]),
+        },
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    expect(client.pousserLeads).toHaveBeenCalledTimes(1);
+    expect(appels.some((a) => UPDATE_BLOQUE.test(a.sql))).toBe(false);
+    expect(appels.some((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql))).toBe(false);
+    const succes = appels.find((a) => UPDATE_SUCCES.test(a.sql));
+    expect(succes).toBeDefined();
   });
 
   it('mode_force = relance_repli force le repli et retire mode_force du payload', async () => {

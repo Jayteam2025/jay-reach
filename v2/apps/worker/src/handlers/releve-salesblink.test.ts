@@ -86,6 +86,12 @@ const THREAD_SELECT = /select id from threads where/i;
 const THREAD_INSERT = /insert into threads/i;
 const THREAD_MESSAGE_INSERT = /insert into thread_messages/i;
 const OUTCOME_INSERT = /insert into outcomes/i;
+const AUDIT_INSERT = /insert into audit_events/i;
+// R22 (tour de correction 1) : résolution de la campagne pour diff.campagneId
+// des quatre événements de contact — motif par défaut vide (campagneId reste
+// null), remplaçable au cas par cas pour prouver la résolution.
+const CAMPAGNE_PAR_ACTION = /select e\.campaign_id from actions a join enrollments e/i;
+const CAMPAGNE_PAR_CONTACT = /select campaign_id from enrollments where contact_id/i;
 
 /** Gestionnaires par defaut : chemin neutre, aucune ligne nulle part. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -94,6 +100,9 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: CURSEUR_SELECT, repondre: () => ligne([]) },
     { motif: SENDERS_SELECT, repondre: () => ligne([]) },
     { motif: CURSEUR_UPSERT, repondre: () => ligne([]) },
+    { motif: AUDIT_INSERT, repondre: () => ligne([]) },
+    { motif: CAMPAGNE_PAR_ACTION, repondre: () => ligne([]) },
+    { motif: CAMPAGNE_PAR_CONTACT, repondre: () => ligne([]) },
   ];
 }
 
@@ -142,6 +151,8 @@ describe('releverSalesBlink', () => {
       avecBase(
         { motif: MAJ_LIVREE_SEQUENCE, repondre: () => ligne([{ id: 'action-livree-1' }]) },
         { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: CAMPAGNE_PAR_ACTION, repondre: () => ligne([{ campaign_id: 'campagne-9' }]) },
       ),
     );
 
@@ -150,6 +161,9 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => MAJ_LIVREE_SEQUENCE.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-1', new Date(2000).toISOString(), 'seq-1', 'marie@exemple.fr']);
+    // F12 : `delivered_at` posé EN COLONNE (pas seulement dans `payload`), avec le même
+    // paramètre `$3` que le `payload` — c'est elle que les compteurs « déjà partis » lisent.
+    expect(maj!.sql).toMatch(/delivered_at\s*=\s*\$3::timestamptz/);
     // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
     const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
     expect(filMaj).toBeDefined();
@@ -157,6 +171,17 @@ describe('releverSalesBlink', () => {
     // Fenêtre non saturée : last_error reste null.
     const curseur = appels.find((a) => CURSEUR_UPSERT.test(a.sql));
     expect(curseur!.values[3]).toBeNull();
+    // Tâche 6 : le journal d'activité écrit action_delivered, rattaché au contact.
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'action_delivered']);
+    // R22 (tour de correction 1) : campagne résolue via l'action livrée ('action-livree-1').
+    const campagneLookup = appels.find((a) => CAMPAGNE_PAR_ACTION.test(a.sql));
+    expect(campagneLookup!.values).toEqual(['action-livree-1']);
+    const diff = JSON.parse(journal!.values[5] as string) as { libelle: string; campagneId: string | null };
+    expect(diff.campagneId).toBe('campagne-9');
+    // F13 (décision 18/09) : « parti », pas « livré » — deux états, pas trois.
+    expect(diff.libelle).toBe('Email parti.');
   });
 
   it('un rapport Bounced ouvre une suppression et arrête l’inscription (rebond)', async () => {
@@ -965,6 +990,8 @@ describe('releverSalesBlink', () => {
       avecBase(
         { motif: MAJ_LIVREE_REPLY, repondre: () => ligne([{ id: 'action-livree-2' }]) },
         { motif: MAJ_PROVIDER_MESSAGE_ID, repondre: () => ligne([]) },
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: CAMPAGNE_PAR_ACTION, repondre: () => ligne([{ campaign_id: 'campagne-relance' }]) },
       ),
     );
 
@@ -973,10 +1000,95 @@ describe('releverSalesBlink', () => {
     const maj = appels.find((a) => MAJ_LIVREE_REPLY.test(a.sql));
     expect(maj).toBeDefined();
     expect(maj!.values).toEqual([ORG_ID, 'msg-repondu-1', new Date(9000).toISOString(), 'tache-3']);
+    // F12 : même chose pour la relance — `delivered_at` posé en colonne, pas seulement en payload.
+    expect(maj!.sql).toMatch(/delivered_at\s*=\s*\$3::timestamptz/);
     // I4 : provider_message_id se pose sur le fil, rattaché par l'action livrée.
     const filMaj = appels.find((a) => MAJ_PROVIDER_MESSAGE_ID.test(a.sql));
     expect(filMaj).toBeDefined();
     expect(filMaj!.values).toEqual(['action-livree-2', 'msg-repondu-1']);
+    // Tâche 6 : le journal d'activité écrit action_delivered pour cette relance aussi.
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'action_delivered']);
+    // R22 (tour de correction 1) : même résolution de campagne pour une relance.
+    const campagneLookup = appels.find((a) => CAMPAGNE_PAR_ACTION.test(a.sql));
+    expect(campagneLookup!.values).toEqual(['action-livree-2']);
+    const diff = JSON.parse(journal!.values[5] as string) as { campagneId: string | null };
+    expect(diff.campagneId).toBe('campagne-relance');
+  });
+
+  it('une réponse humaine écrit reply_received dans le journal (tâche 6)', async () => {
+    const rapport: Rapport = {
+      id: 'r-humain-1',
+      horodatageMs: 4000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: 'Oui, ça m’intéresse, pouvez-vous m’en dire plus ?',
+    };
+    const client = clientFactice({ listerReponses: vi.fn(async () => [rapport]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: /status = 'skipped'/i, repondre: () => ligne([]) },
+        { motif: CAMPAGNE_PAR_CONTACT, repondre: () => ligne([{ campaign_id: 'campagne-prospect' }]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'reply_received']);
+    // R22 (tour de correction 1) : campagne résolue via l'inscription du contact.
+    const campagneLookup = appels.find((a) => CAMPAGNE_PAR_CONTACT.test(a.sql));
+    expect(campagneLookup!.values).toEqual(['contact-1']);
+    const diff = JSON.parse(journal!.values[5] as string) as { campagneId: string | null };
+    expect(diff.campagneId).toBe('campagne-prospect');
+  });
+
+  it('une réponse automatique d’absence écrit absence_detected, jamais reply_received', async () => {
+    const rapport: Rapport = {
+      id: 'r-absence-1',
+      horodatageMs: 4000,
+      type: 'reply',
+      message: 'Replied',
+      email: 'prospect@exemple.test',
+      sequenceId: 'seq-1',
+      corps: 'Je suis actuellement en congés jusqu’au 20 septembre, réponse à mon retour.',
+    };
+    const client = clientFactice({ listerReponses: vi.fn(async () => [rapport]) });
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: CONTACT_LOOKUP, repondre: () => ligne([{ id: 'contact-1' }]) },
+        { motif: DEDUP_LOOKUP, repondre: () => ligne([]) },
+        { motif: THREAD_SELECT, repondre: () => ligne([]) },
+        { motif: THREAD_INSERT, repondre: () => ligne([{ id: 'thread-1' }]) },
+        { motif: THREAD_MESSAGE_INSERT, repondre: () => ligne([]) },
+        { motif: ENROLLMENT_UPDATE, repondre: () => ligne([]) },
+        { motif: OUTCOME_INSERT, repondre: () => ligne([]) },
+        { motif: NOTIFICATIONS_INSERT, repondre: () => ligne([]) },
+        { motif: /status = 'skipped'/i, repondre: () => ligne([]) },
+      ),
+    );
+
+    await releverSalesBlink({ pool }, { organizationId: ORG_ID }, client);
+
+    const journal = appels.find((a) => AUDIT_INSERT.test(a.sql));
+    expect(journal).toBeDefined();
+    expect(journal!.values.slice(0, 5)).toEqual([ORG_ID, null, 'contact', 'contact-1', 'absence_detected']);
+    // R22 (tour de correction 1) : aucune inscription trouvée (gestionnaire par
+    // défaut, vide) → campagneId reste null, jamais d'échec.
+    const diff = JSON.parse(journal!.values[5] as string) as { campagneId: string | null };
+    expect(diff.campagneId).toBeNull();
   });
 
   it('une boîte envoiActif=false déclenche reconnecterBoite puis, toujours inactive, notifie une fois', async () => {

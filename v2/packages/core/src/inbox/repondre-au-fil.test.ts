@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { ErreurEntree, choisirTransport, repondreAuFil, texteVersHtml } from './repondre-au-fil.js';
+import { ErreurReponseImpossible, choisirTransport, repondreAuFil, texteVersHtml } from './repondre-au-fil.js';
 
 interface LigneDernierEntrant {
   transport?: string | null;
@@ -65,14 +65,14 @@ describe('choisirTransport', () => {
     });
   });
 
-  it("salesblink : provider_message_id seul, sans identifiant de tâche /inbox (ligne d'avant la relève appariée) → ErreurEntree", async () => {
+  it("salesblink : provider_message_id seul, sans identifiant de tâche /inbox (ligne d'avant la relève appariée) → ErreurReponseImpossible", async () => {
     const { ex } = creerExecuteurFactice({ provider_message_id: 'sb-msg-1' });
-    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurReponseImpossible);
   });
 
-  it('salesblink sans provider_message_id : ErreurEntree', async () => {
+  it('salesblink sans provider_message_id : ErreurReponseImpossible', async () => {
     const { ex } = creerExecuteurFactice({ provider_message_id: null });
-    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurReponseImpossible);
   });
 
   it("salesblink : l'identifiant de la tâche /inbox prime sur provider_message_id", async () => {
@@ -88,42 +88,42 @@ describe('choisirTransport', () => {
     });
   });
 
-  it("fil LinkedIn : ErreurEntree, la réponse depuis Jay Reach n'existe que pour l'email", async () => {
+  it("fil LinkedIn : ErreurReponseImpossible, la réponse depuis Jay Reach n'existe que pour l'email", async () => {
     const { ex } = creerExecuteurFactice({ channel: 'linkedin_message', provider_message_id: 'li-msg-1' });
-    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurReponseImpossible);
   });
 
-  it("salesblink : sans tâche /inbox appariée, provider_message_id n'est que l'identifiant du journal → ErreurEntree", async () => {
+  it("salesblink : sans tâche /inbox appariée, provider_message_id n'est que l'identifiant du journal → ErreurReponseImpossible", async () => {
     const { ex } = creerExecuteurFactice({
       provider_message_id: 'r-1',
       salesblink_inbox_message_id: null,
       salesblink_reply_id: 'r-1',
     });
-    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(choisirTransport(ex, 'org-1', 'fil-1')).rejects.toBeInstanceOf(ErreurReponseImpossible);
   });
 });
 
 describe('repondreAuFil', () => {
-  it("fil sans message entrant : ErreurEntree, aucun insert ni transport appelé", async () => {
+  it("fil sans message entrant : ErreurReponseImpossible, aucun insert ni transport appelé", async () => {
     const { ex, appels } = creerExecuteurFactice(null);
     const transports = creerTransportsFactices();
 
     await expect(
       repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports),
-    ).rejects.toBeInstanceOf(ErreurEntree);
+    ).rejects.toBeInstanceOf(ErreurReponseImpossible);
 
     expect(appels.some((a) => a.text.trim().startsWith('insert into thread_messages'))).toBe(false);
     expect(transports.graph).not.toHaveBeenCalled();
     expect(transports.salesblink).not.toHaveBeenCalled();
   });
 
-  it('fil LinkedIn : ErreurEntree, aucun transport appelé, aucun insert', async () => {
+  it('fil LinkedIn : ErreurReponseImpossible, aucun transport appelé, aucun insert', async () => {
     const { ex, appels } = creerExecuteurFactice({ channel: 'linkedin_message', provider_message_id: 'li-msg-1' });
     const transports = creerTransportsFactices();
 
     await expect(
       repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports),
-    ).rejects.toBeInstanceOf(ErreurEntree);
+    ).rejects.toBeInstanceOf(ErreurReponseImpossible);
 
     expect(transports.graph).not.toHaveBeenCalled();
     expect(transports.salesblink).not.toHaveBeenCalled();

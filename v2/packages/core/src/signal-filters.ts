@@ -131,6 +131,23 @@ export function signalFingerprint(input: FingerprintInput): string {
   return [normalizeText(input.company), normalizeText(input.title), lieu].join('|');
 }
 
+/**
+ * Une offre est-elle trop ancienne pour être retenue par le collecteur ?
+ * Sans date de publication connue, l'offre n'est JAMAIS écartée — mieux vaut
+ * la garder que perdre une offre réelle faute de métadonnée du fournisseur.
+ *
+ * I3 (revue finale du 17/09) : `age_max_offres_jours` (et sa variante par
+ * source, `sources.config.ageMaxJours`) s'affichaient dans l'écran Plafonds
+ * et les tiroirs de source sans qu'aucun collecteur ne les lise jamais.
+ */
+export function offreTropVieille(occurredAt: string | null | undefined, ageMaxJours: number, now: Date): boolean {
+  if (!occurredAt) return false;
+  const publiee = new Date(occurredAt).getTime();
+  if (Number.isNaN(publiee)) return false;
+  const limite = now.getTime() - ageMaxJours * 24 * 60 * 60 * 1000;
+  return publiee < limite;
+}
+
 /** Déduplique une même offre publiée sur plusieurs agrégateurs. */
 export function dedupeByFingerprint<T extends FingerprintInput>(items: readonly T[]): T[] {
   const seen = new Set<string>();

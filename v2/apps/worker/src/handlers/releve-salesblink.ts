@@ -45,6 +45,7 @@ import {
   normaliserDelaiRelanceMax,
   normaliserIntervalleReleve,
   texteDepuisHtml,
+  ecrireEvenement,
   type EvenementEmail,
 } from '@jay-reach/core';
 import {
@@ -99,11 +100,59 @@ const clientReleveSalesBlinkReel: ClientReleveSalesBlink = {
 };
 
 /**
+ * Contact d'une organisation par adresse email (insensible à la casse) — sert
+ * uniquement à rattacher un événement du journal d'activité (tâche 6) à sa
+ * fiche (`entityId`) ; jamais utilisé pour la logique métier elle-même,
+ * qui rattache déjà ses propres lignes par action/inscription.
+ */
+async function contactIdParEmail(pool: Pool, org: string, email: string): Promise<string | null> {
+  const res = await pool.query<{ id: string }>(
+    `select id from contacts where organization_id = $1 and lower(email) = lower($2) limit 1`,
+    [org, email],
+  );
+  return res.rows[0]?.id ?? null;
+}
+
+/**
+ * Campagne d'une action déjà rattachée à une inscription — sert uniquement à
+ * enrichir `diff.campagneId` du journal d'activité (tâche 6, tour de
+ * correction 1, R22) ; jamais utilisé pour la logique métier, qui a déjà
+ * marqué l'action livrée avant cet appel. `null` si rien n'est trouvé, jamais
+ * d'échec pour l'appelant (voir `journaliserActionLivree`).
+ */
+async function campagneIdParAction(pool: Pool, actionId: string): Promise<string | null> {
+  const res = await pool.query<{ campaign_id: string }>(
+    `select e.campaign_id from actions a join enrollments e on e.id = a.enrollment_id where a.id = $1`,
+    [actionId],
+  );
+  return res.rows[0]?.campaign_id ?? null;
+}
+
+/**
+ * Campagne d'un contact, via son inscription vivante ou, à défaut, la plus
+ * récente — même usage que `campagneIdParAction`, pour une réponse ou une
+ * absence où l'on ne connaît que le contact, pas l'action. `null` si le
+ * contact n'a aucune inscription (ou n'a pas été résolu du tout).
+ */
+async function campagneIdParContact(pool: Pool, contactId: string): Promise<string | null> {
+  const res = await pool.query<{ campaign_id: string }>(
+    `select campaign_id from enrollments where contact_id = $1 order by created_at desc limit 1`,
+    [contactId],
+  );
+  return res.rows[0]?.campaign_id ?? null;
+}
+
+/**
  * Un envoi (premier email) ou une tâche `reply` terminée marque l'action
  * `dispatched` correspondante `delivered`. Même appariement dans les deux cas
  * (organisation, canal email, statut `dispatched`), seule la colonne de
  * rapprochement change : `sequence_id` + `email` pour un premier envoi,
  * `reply_task_id` pour une relance.
+ *
+ * `delivered_at` (colonne, F12) est posée EN PLUS du `payload` (qui la
+ * portait seul jusqu'ici) : c'est elle, pas `dispatched_at` (simple remise à
+ * SalesBlink, qui envoie ensuite dans SA fenêtre horaire), que les compteurs
+ * « déjà partis » du cœur (`aujourdhui.ts`, `campagnes.ts`) lisent désormais.
  */
 async function marquerActionLivreeParSequence(
   pool: Pool,
@@ -111,7 +160,7 @@ async function marquerActionLivreeParSequence(
   p: { readonly sequenceId: string | null; readonly email: string; readonly messageId: string | null; readonly aMs: number },
 ): Promise<void> {
   const res = await pool.query<{ id: string }>(
-    `update actions set status = 'delivered',
+    `update actions set status = 'delivered', delivered_at = $3::timestamptz,
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
         select id from actions
@@ -123,14 +172,16 @@ async function marquerActionLivreeParSequence(
     [org, p.messageId, new Date(p.aMs).toISOString(), p.sequenceId, p.email],
   );
   const actionId = res.rows[0]?.id;
-  if (actionId && p.messageId) {
+  if (!actionId) return;
+  if (p.messageId) {
     await poserProviderMessageId(pool, actionId, p.messageId);
   }
+  await journaliserActionLivree(pool, org, p.email, actionId);
 }
 
 async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache: EnvoiSorti): Promise<void> {
   const res = await pool.query<{ id: string }>(
-    `update actions set status = 'delivered',
+    `update actions set status = 'delivered', delivered_at = $3::timestamptz,
             payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('message_id', $2::text, 'delivered_at', $3::timestamptz)
       where id = (
         select id from actions
@@ -142,8 +193,65 @@ async function marquerActionLivreeParTacheReponse(pool: Pool, org: string, tache
     [org, tache.messageId, new Date(tache.termineMs ?? Date.now()).toISOString(), tache.id],
   );
   const actionId = res.rows[0]?.id;
-  if (actionId && tache.messageId) {
+  if (!actionId) return;
+  if (tache.messageId) {
     await poserProviderMessageId(pool, actionId, tache.messageId);
+  }
+  await journaliserActionLivree(pool, org, tache.email, actionId);
+}
+
+/**
+ * Journal d'activité (tâche 6) : une action marquée `delivered` par la
+ * relève. N'échoue jamais le handler — l'action est déjà livrée, un journal
+ * qui échoue ne doit pas faire retenter pg-boss sur un envoi déjà parti.
+ */
+async function journaliserActionLivree(pool: Pool, org: string, email: string, actionId: string): Promise<void> {
+  try {
+    const contactId = await contactIdParEmail(pool, org, email);
+    const campagneId = await campagneIdParAction(pool, actionId);
+    await ecrireEvenement(pool, {
+      organisationId: org,
+      entityType: 'contact',
+      entityId: contactId,
+      action: 'action_delivered',
+      // F13 (décision 18/09) : « parti », pas « livré » — deux états, pas trois. `delivered`
+      // n'est que le `completed_time` de SalesBlink (il a fini d'envoyer), aucun accusé de
+      // réception ne revient ; « livré » promettait plus que ce qu'on sait.
+      diff: { libelle: 'Email parti.', campagneId },
+    });
+  } catch (err) {
+    console.warn('[journal] action_delivered', err);
+  }
+}
+
+/**
+ * Journal d'activité (tâche 6) : une réponse traitée par
+ * `traiterEvenementEmail` — `absence_detected` pour une auto-réponse
+ * d'absence, `reply_received` pour tout le reste (réponse humaine, personne
+ * partie de l'entreprise, autre réponse automatique, non classée). Jamais le
+ * corps du message ni le nom du contact — seuls `entityType: 'contact'` et
+ * `entityId` permettent à l'interface d'ouvrir la fiche.
+ */
+async function journaliserReponse(
+  pool: Pool,
+  org: string,
+  email: string,
+  classification: string | undefined,
+): Promise<void> {
+  const estAbsence = classification === 'auto_absence';
+  const action = estAbsence ? 'absence_detected' : 'reply_received';
+  try {
+    const contactId = await contactIdParEmail(pool, org, email);
+    const campagneId = contactId ? await campagneIdParContact(pool, contactId) : null;
+    await ecrireEvenement(pool, {
+      organisationId: org,
+      entityType: 'contact',
+      entityId: contactId,
+      action,
+      diff: { libelle: estAbsence ? 'Absence détectée (réponse automatique).' : 'Réponse reçue.', campagneId },
+    });
+  } catch (err) {
+    console.warn(`[journal] ${action}`, err);
   }
 }
 
@@ -520,7 +628,10 @@ export async function releverSalesBlink(
       if (s2) fluxSatures.push(s2);
       const evRepondus = versEvenementsRepondus(reponses, taches, org);
       for (const ev of evRepondus) {
-        await traiterEvenementEmail(pool, org, ev, 'salesblink');
+        const resultat = await traiterEvenementEmail(pool, org, ev, 'salesblink');
+        if (resultat.stored && resultat.effect === 'reply') {
+          await journaliserReponse(pool, org, ev.email, resultat.classification);
+        }
       }
 
       // 4. Rebonds et désinscriptions : suppriment l'adresse, arrêtent la séquence.

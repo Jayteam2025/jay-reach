@@ -1,16 +1,10 @@
 {
   "app": {
-    "name": "Jay Reach",
-    "tagline": "Multichannel outbound-engine"
+    "name": "Jay Reach"
   },
   "common": {
     "loading": "Laden…",
     "language": "Taal"
-  },
-  "home": {
-    "title": "Jay Reach",
-    "subtitle": "Multichannel outbound-engine, self-hosted.",
-    "coreVersion": "core v{version}"
   },
   "login": {
     "title": "Inloggen",
@@ -20,22 +14,11 @@
     "pending": "Bezig met inloggen…"
   },
   "providers": {
-    "eyebrow": "Integraties",
     "lead": "Je API-sleutels, versleuteld en gebonden aan je organisatie. Eén service per rij.",
-    "category": {
-      "email": "Verzending",
-      "enrichment": "Verrijking",
-      "ai": "AI-model",
-      "signals": "Signaalbronnen"
-    },
     "title": "Providers",
-    "configured": "Geconfigureerd",
-    "notConfigured": "Niet geconfigureerd",
-    "secretHidden": "sleutel eindigend op {last4}",
     "save": "Opslaan",
-    "saved": "Opgeslagen",
     "salesblink": "SalesBlink (e-mail)",
-    "microsoftGraph": "Microsoft 365 (antwoorden ophalen)",
+    "microsoftGraph": "Microsoft 365 (reacties ophalen)",
     "fullenrich": "FullEnrich (verrijking)",
     "dropcontact": "Dropcontact (verrijking)",
     "bouncer": "Bouncer (e-mailverificatie)",
@@ -46,14 +29,14 @@
     "apify": "Apify (LinkedIn-vacatures)",
     "field": {
       "apiKey": "API-sleutel",
-      "dailyCap": "Dagelijkse oproeplimiet — standaard 20 (gratis plan)",
+      "dailyCap": "Dagelijkse oproeplimiet · standaard 20 (gratis plan)",
       "apiToken": "API-token",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
       "appKey": "App key",
-      "modelSmart": "Model (scoring) — standaard Sonnet",
-      "modelFast": "Model (lichte taken) — standaard Haiku",
+      "modelSmart": "Model (scoring) · standaard Sonnet",
+      "modelFast": "Model (lichte taken) · standaard Haiku",
       "enrichDailyCap": "Daglimiet",
       "enrichDailyCapHint": "Maximaal verrijkte contacten per dag. Zet 0 om automatische verrijking te pauzeren en alleen handmatig te verrijken vanuit het scherm Signalen.",
       "enrichDailyCapPlaceholder": "bv. 50",
@@ -64,7 +47,7 @@
       "emailDailyCapHint": "E-mails per dag naar SalesBlink, alle campagnes (0 = pauze, leeg = onbeperkt)",
       "emailDailyCapPlaceholder": "Aantal, leeg = onbeperkt",
       "syncIntervalMin": "Ophaalfrequentie (minuten)",
-      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, antwoorden en bounces bij SalesBlink leest (2 tot 60)",
+      "syncIntervalMinHint": "Hoe vaak Jay Reach verzendingen, reacties en bounces bij SalesBlink leest (2 tot 60)",
       "syncIntervalMinPlaceholder": "Minuten, standaard 5",
       "replyMaxDelayH": "Maximale vertraging van een opvolging (uren)",
       "replyMaxDelayHHint": "Daarna wordt een opvolging die bij SalesBlink in de wacht staat opnieuw verzonden als nieuwe \"Re:\"-e-mail (1 tot 72)",
@@ -72,755 +55,1525 @@
       "tenantId": "Tenant-ID",
       "graphSyncIntervalMin": "Ophaalfrequentie (minuten)",
       "graphSyncIntervalMinPlaceholder": "5"
-    },
-    "secretUnchanged": "Laat leeg om de huidige sleutel te behouden",
-    "todayUsage": "vandaag: {used} / {cap}",
-    "lastSync": "{ago, select, never {Laatste controle: nooit} other {Laatste controle: {ago}}}",
-    "lastSyncError": "Laatste fout: {error}"
-  },
-  "jobs": {
-    "title": "Achtergrondwachtrijen",
-    "queue": "Wachtrij",
-    "description": "Rol",
-    "retries": "Nieuwe pogingen",
-    "q": {
-      "sourcesDiscover": "Bronnen ontdekken",
-      "signalsQualify": "Signalen kwalificeren",
-      "signalsScore": "Signalen scoren",
-      "importsProcess": "Imports verwerken",
-      "enrichmentCompany": "Bedrijfsverrijking",
-      "enrichmentContacts": "Contactverrijking",
-      "sequenceEnroll": "Sequentie-inschrijving",
-      "sequenceTick": "Sequentievoortgang",
-      "actionsDispatch": "Acties verzenden",
-      "outcomesPoll": "Resultaten ophalen",
-      "inboxSync": "Inbox synchroniseren",
-      "inboxSyncGraph": "Reacties ophalen (Microsoft Graph)",
-      "crmPush": "CRM-push",
-      "retentionPurge": "Retentie opschonen"
     }
   },
-  "personas": {
-    "eyebrow": "Wie contacteren",
-    "title": "Persona's",
-    "lead": "Wie u benadert binnen gedetecteerde bedrijven: functietitels, senioriteit en de instructie om contacten te scoren.",
-    "name": "Naam",
-    "description": "Beschrijving",
-    "patterns": "Beoogde functietitels (komma gescheiden)",
-    "excludeTitles": "Uit te sluiten titels (komma gescheiden)",
-    "seniority": "Senioriteit",
-    "scoringPrompt": "Scoringsinstructie (AI)",
-    "titlesLabel": "Titels:",
-    "seniorityLevel": {
-      "executive": "Directie",
-      "director": "Directeur",
-      "manager": "Manager",
-      "individual": "Medewerker"
-    },
-    "statsTotal": "Persona's",
-    "statsActive": "Actief",
-    "newPersona": "Nieuwe persona",
-    "editTitle": "Persona bewerken",
-    "edit": "Bewerken",
-    "delete": "Verwijderen",
-    "deleteConfirm": "Deze persona verwijderen?",
-    "activate": "Activeren",
-    "deactivate": "Deactiveren",
-    "active": "Persona actief",
-    "inactive": "Inactief",
-    "cancel": "Annuleren",
-    "create": "Aanmaken",
-    "update": "Bijwerken",
-    "created": "Persona aangemaakt",
-    "empty": "Geen persona gedefinieerd. Maak er een om te starten.",
-    "demoNote": "Demogegevens — je wijzigingen blijven lokaal (niet opgeslagen).",
-    "patternsCount": "{n} titels",
-    "patternsPlaceholder": "inkoopmanager, afdelingshoofd, schooldirecteur",
-    "exclusionsPlaceholder": "stagiair, leerling, assistent",
-    "scoringPromptPlaceholder": "Bv. score inkoopmanagers bij bedrijven met meer dan 50 medewerkers en meerdere vestigingen hoog. Score ondersteunende functies en bedrijven onder 10 medewerkers laag.",
-    "scoringPromptHelp": "De AI leest het contact en zijn bedrijf en geeft een score van 0 tot 100 volgens deze instructie. Die score vergelijkt de “minimumscore” van een campagne: zonder instructie wordt niets gekwalificeerd."
-  },
-  "signals": {
-    "nav": {
-      "signals": "Signalen",
-      "personas": "Persona's",
-      "providers": "Providers"
-    },
-    "eyebrow": "Ruwe feed",
-    "title": "Signalen",
-    "lead": "Alle campagnes, inclusief afgewezen, zonder campagne en te arbitreren.",
-    "empty": "Nog geen signaal. Voeg een bron toe om detectie te starten.",
-    "state": {
-      "todo": "Te behandelen",
-      "validated": "Gevalideerd",
-      "discarded": "Afgewezen",
-      "arbitrate": "Te arbitreren"
-    },
-    "daysAgo": "{n}d geleden",
-    "detail": {
-      "source": "Bron",
-      "siren": "SIREN",
-      "noSiren": "onopgelost",
-      "location": "Locatie",
-      "score": "Score",
-      "age": "Gedetecteerd",
-      "reason": "Reden"
-    },
-    "validate": "Signaal valideren",
-    "discard": "Afwijzen",
-    "reason": {
-      "recruiter": "Wervingsbureau",
-      "customer": "Klant in uw lijst",
-      "manual": "Handmatig afgewezen",
-      "opposition": "Verzet tegen prospectie (wettelijk register)"
-    },
-    "enrich": "Dit bedrijf verrijken",
-    "enrichHint": "Zoekt nu zijn contacten, zonder op de automatische ronde te wachten. Telt mee voor het daglimiet."
-  },
-  "nav": {
-    "dashboard": "Dashboard",
-    "signals": "Signalen",
-    "prospects": "Prospects",
-    "campaigns": "Campagnes",
-    "inbox": "Inbox",
-    "import": "Import",
-    "sources": "Monitoringthema's",
-    "personas": "Persona's",
-    "providers": "Providers",
-    "senders": "Afzenders",
-    "linkedin": "LinkedIn",
-    "annuaire": "Gids",
-    "approvals": "Goedkeuringen",
-    "customers": "Klanten",
-    "templates": "Berichten"
-  },
   "sources": {
-    "eyebrow": "Detectie",
     "title": "Monitoringthema's",
     "lead": "Wat u volgt, en waar. Trefwoorden voert u één keer per thema in en gelden voor al zijn providers.",
-    "provider": "Provider",
     "keywords": "Trefwoorden",
     "location": "Gebied",
     "active": "Actief",
     "paused": "Gepauzeerd",
-    "history": "Uitvoeringsgeschiedenis",
     "empty": "Nog geen monitoringthema. Maak er een aan om signalen te detecteren.",
-    "neverRan": "Nooit uitgevoerd.",
-    "found": "gevonden",
     "new": "nieuw",
     "status": {
       "success": "OK",
       "error": "Mislukt",
       "running": "Bezig"
     },
-    "runNow": "Verzameling starten",
-    "runRequested": "Verzameling aangevraagd. Start over enkele seconden.",
-    "pause": "Pauzeren",
     "resume": "Hervatten",
-    "form": {
-      "add": "Thema toevoegen",
-      "create": "Thema aanmaken",
-      "save": "Opslaan",
-      "edit": "Bewerken",
-      "cancel": "Annuleren",
-      "saved": "Opgeslagen",
-      "name": "Naam",
-      "namePlaceholder": "France Travail — commerciële functies",
-      "keywordsPlaceholder": "salesmanager, accountmanager",
-      "locationPlaceholder": "Lyon (69) — leeg laten voor heel Frankrijk",
-      "qualification": "KWALIFICATIE",
-      "qualificationHelp": "Wat bepaalt of een signaal het bewerken waard is. Zonder instructie blijven verzamelde signalen in afwachting.",
-      "scoringPrompt": "Kwalificatie-instructie",
-      "scoringPromptPlaceholder": "Beoordeel of het bedrijf past bij wat u zoekt, en waarom. Bv. kmo’s met meer dan 50 medewerkers en meerdere vestigingen. Sluit tussenpersonen en bedrijven onder 10 medewerkers uit.",
-      "threshold": "Minimumscore",
-      "active": "Actief thema",
-      "description": "Omschrijving",
-      "descriptionPlaceholder": "Waar deze monitoring voor dient, in één zin",
-      "providers": "Bevraagde providers",
-      "providersHelp": "De trefwoorden hieronder gelden voor elke aangevinkte provider.",
-      "noProviderWarning": "Zonder provider verzamelt dit thema niets."
-    },
-    "noProvider": "geen provider",
-    "providerPause": "Pauzeren",
-    "providerResume": "Hervatten",
-    "beforeProviders": "Eerdere runs (provider niet bijgehouden)"
-  },
-  "inbox": {
-    "eyebrow": "Antwoorden",
-    "title": "Inbox",
-    "lead": "Antwoord op het juiste moment — en weet of je elders al hebt geantwoord.",
-    "filter": {
-      "all": "Alles",
-      "todo": "Te doen",
-      "in_progress": "Bezig",
-      "done": "Afgehandeld",
-      "later": "Later"
-    },
-    "class": {
-      "human_reply": "Menselijk antwoord",
-      "auto_absence": "Automatische afwezigheid",
-      "auto_left_company": "Bedrijf verlaten",
-      "auto_other": "Automatisch",
-      "unclassified": "Niet geclassificeerd"
-    },
-    "treatment": {
-      "todo": "Te doen",
-      "in_progress": "Bezig",
-      "done": "Afgehandeld",
-      "later": "Later"
-    },
-    "channel": {
-      "email": "E-mail",
-      "linkedin": "LinkedIn"
-    },
-    "via": "via {sender}",
-    "you": "Jij",
-    "reply": "Antwoorden",
-    "replyPlaceholder": "Je antwoord…",
-    "replyNote": "Verzenden gaat altijd via het kanaal van het ontvangen bericht — nooit een andere.",
-    "replySent": "Antwoord verzonden.",
-    "replySending": "Verzenden…",
-    "replyImpossible": "Antwoorden niet mogelijk: geen ontvangen bericht in deze thread.",
-    "replyEmailOnly": "Antwoorden vanuit Jay Reach kan alleen in e-mailthreads. LinkedIn volgt later.",
-    "buySignal": "Koopsignaal: vertrek gedetecteerd → het account komt terug om de opvolger te vinden.",
-    "state": "Threadstatus",
-    "empty": "Kies een thread om te lezen.",
-    "emptyList": "Niets in deze weergave.",
-    "sortAuto": "Automatisch sorteren",
-    "sorting": "Sorteren…",
-    "sorted": "{n, plural, one {# antwoord gesorteerd} other {# antwoorden gesorteerd}}",
-    "suggest": "Antwoord voorstellen",
-    "suggesting": "Opstellen…"
-  },
-  "import": {
-    "eyebrow": "Bestand",
-    "title": "Contacten importeren",
-    "lead": "Het overzicht en de kosten worden getoond VOOR je bevestigt — nooit een verrassing achteraf.",
-    "drop": "Sleep hier een CSV-bestand, of klik om te kiezen",
-    "dropHint": "CSV — komma, puntkomma of tab als scheidingsteken, automatisch herkend",
-    "change": "Bestand wijzigen",
-    "mapping": "Kolomkoppeling",
-    "mappingHint": "Een niet-herkende kolom wordt genegeerd, nooit geraden.",
-    "column": "Bestandskolom",
-    "sampleValue": "Voorbeeld",
-    "mapTo": "Jay Reach-veld",
-    "ignore": "— negeren —",
-    "field": {
-      "first_name": "Voornaam",
-      "last_name": "Achternaam",
-      "email": "E-mail",
-      "job_title": "Functie",
-      "company": "Bedrijf",
-      "linkedin_url": "LinkedIn",
-      "phone": "Telefoon",
-      "city": "Stad",
-      "postal_code": "Postcode",
-      "country": "Land",
-      "siren": "SIREN",
-      "website": "Website"
-    },
-    "report": "Overzicht — voor bevestiging",
-    "rowsTotal": "Gelezen rijen",
-    "rowsUnique": "Unieke contacten",
-    "rowsMerged": "Samengevoegde duplicaten",
-    "rowsRejected": "Geweigerde rijen",
-    "emailsMissing": "Zonder e-mail (te verrijken)",
-    "cost": "Geschatte verrijkingskosten",
-    "costValue": "≈ {n, plural, one {# contact} other {# contacten}} te verrijken",
-    "costHint": "Alleen contacten zonder e-mail verbruiken credits.",
-    "destination": "Bestemming",
-    "dest": {
-      "list": "Nieuwe lijst",
-      "existing": "Bestaande lijst",
-      "campaign": "Campagne"
-    },
-    "validate": "Import van {n, plural, one {# contact} other {# contacten}} bevestigen",
-    "ready": "{n, plural, one {# contact} other {# contacten}} klaar om te importeren naar „{dest}”.",
-    "empty": "Kies een bestand om te beginnen.",
-    "imported": "{n, plural, one {# contact geïmporteerd} other {# contacten geïmporteerd}} ✓",
-    "importing": "Importeren…",
-    "listName": "Lijstnaam",
-    "contextNote": "Contextnotitie (verplicht)",
-    "pickList": "Kies een lijst…",
-    "pickCampaign": "Kies een campagne…"
-  },
-  "dashboard": {
-    "eyebrow": "Overzicht",
-    "title": "Dashboard",
-    "lead": "De enige maatstaf die telt: de vertraging tussen het signaal en het eerste contact.",
-    "period": "Laatste 30 dagen",
-    "kpi": {
-      "replies": "Antwoorden",
-      "positives": "Uitnodigingen geaccepteerd",
-      "qualified": "Gekwalificeerde signalen",
-      "median": "Mediane vertraging signaal → 1e contact"
-    },
-    "days": "{n} d",
-    "trend": "{delta} t.o.v. vorige periode",
-    "activity": "Activiteit",
-    "legend": {
-      "signals": "Gekwalificeerde signalen",
-      "replies": "Antwoorden"
-    },
-    "byChannel": "Per kanaal",
-    "channel": {
-      "email": "E-mail",
-      "linkedin": "LinkedIn",
-      "courrier": "Post"
-    },
-    "noCampaign": "Signalen zonder campagne",
-    "noCampaignSub": "Goed gescoord, nog geen campagne heeft ze opgepakt.",
-    "replied": "Hebben geantwoord",
-    "repliedSub": "Laatste gekwalificeerde antwoorden.",
-    "atStep": "stap {n}",
-    "engine": {
-      "title": "Status van de motor",
-      "unknown": "Geen hartslag ontvangen. De motor heeft nooit op deze database gedraaid.",
-      "active": "Motor actief · laatste ronde {ago} · versie {version}",
-      "stopped": "Motor gestopt · laatste ronde {ago}",
-      "lastError": "Laatste fout: {message}",
-      "caps": "Limieten van vandaag",
-      "usage": "vandaag {used} / {cap}",
-      "paused": "gepauzeerd",
-      "reached": "limiet bereikt",
-      "campaigns": "Instroom per campagne",
-      "entries": "{used} / {cap} vandaag",
-      "entriesUnlimited": "{used} vandaag, geen limiet",
-      "noCaps": "Geen limiet ingesteld en geen verbruik vandaag",
-      "noCampaigns": "Geen actieve campagne"
+    "fournisseurs": {
+      "adzuna": "Adzuna",
+      "francetravail": "France Travail",
+      "linkedin_post_engagers": "LinkedIn · engagers van een post",
+      "linkedin_competitor_followers": "LinkedIn · volgers van een concurrent",
+      "linkedin_keywords": "LinkedIn · trefwoorden",
+      "linkedin_job_change": "LinkedIn · functiewijziging",
+      "csv": "CSV-bestand",
+      "directory": "Gids"
     }
   },
-  "prospects": {
-    "eyebrow": "Bedrijfsprofiel",
-    "headcount": "{n, number} medewerkers",
-    "signals": "Gerelateerde signalen",
-    "sequence": "Sequentietabel",
-    "contacts": "Contacten",
-    "linkedin": "in ↗",
-    "noProfile": "geen profiel",
-    "noSequence": "Nog niet in een reeks."
+  "reception": {
+    "title": "Inbox",
+    "toutesLesCampagnes": "Alle campagnes",
+    "filtres": {
+      "a_traiter": "Te behandelen",
+      "interesses": "Geïnteresseerd",
+      "absences": "Afwezig",
+      "traites": "Behandeld",
+      "tous": "Alle",
+      "puceInteresse": "Geïnteresseerd",
+      "puceNonInteresse": "Niet geïnteresseerd",
+      "puceAbsence": "Afwezig",
+      "puceAbsenceAvecDate": "Afwezig, opvolgen op {date}",
+      "puceLinkedin": "LinkedIn"
+    },
+    "liste": {
+      "videTitre": "Niets in deze weergave",
+      "videTexte": "Geen enkel gesprek komt nu overeen met dit filter."
+    },
+    "fil": {
+      "choisirTitre": "Kies een gesprek",
+      "choisirTexte": "Selecteer een gesprek in de lijst om het te lezen.",
+      "marquerTraite": "Als behandeld markeren",
+      "rouvrir": "Heropenen",
+      "campagne": "campagne {nom}",
+      "etape": "stap {position} van {total}",
+      "sequenceArretee": "sequentie gestopt bij de reactie",
+      "repondDepuis": "gereageerd vanaf {adresse}",
+      "raisonReponseImpossible": {
+        "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat alleen voor e-mailgesprekken.",
+        "messageOrigineInconnu": "Onbekend oorspronkelijk bericht: antwoorden vanuit de app is niet mogelijk."
+      }
+    },
+    "reponse": {
+      "depuis": "Antwoorden vanaf {boite}",
+      "depuisSansBoite": "Antwoorden",
+      "via": "via {transport}, in hetzelfde gesprek",
+      "placeholder": "Je antwoord…",
+      "note": "Opgeslagen in het gesprek van het contact en in de Inbox",
+      "marquerInteresse": "Als geïnteresseerd markeren",
+      "retirerInteret": "Interesse verwijderen",
+      "envoyer": "Verzenden",
+      "envoiEnCours": "Verzenden…",
+      "envoyee": "Antwoord verzonden."
+    },
+    "colonne": {
+      "pourquoiLui": "Waarom deze persoon",
+      "score": "score {valeur}",
+      "aucunSignal": "Geen oorspronkelijk signaal.",
+      "ouEnEstOn": "Stand van zaken",
+      "etapeResume": "Stap {position} van {total}",
+      "aucuneSequence": "Dit contact zit in geen enkele sequentie.",
+      "coordonnees": "Contactgegevens",
+      "emailAbsent": "Geen bekend e-mailadres.",
+      "emailVerifie": "geverifieerd",
+      "emailRisque": "risicovol",
+      "emailInvalide": "ongeldig",
+      "profilLinkedin": "LinkedIn-profiel",
+      "notes": "Notities",
+      "aucuneNote": "Geen notities.",
+      "ouvrirFiche": "Volledig dossier openen"
+    }
   },
-  "campaigns": {
-    "eyebrow": "Overzicht",
-    "title": "Campagnes",
-    "subtitle": "Een campagne koppelt een contactbron, persona's en een multichannel-sequentie.",
-    "lead": "Eén kaart per campagne: pool, gecontacteerd, antwoorden.",
+  "coquille": {
+    "nav": {
+      "today": "Vandaag",
+      "campaigns": "Campagnes",
+      "contacts": "Contacten",
+      "inbox": "Inbox",
+      "settings": "Instellingen",
+      "ariaLabel": "Hoofdnavigatie"
+    },
+    "engine": {
+      "running": "Motor draait",
+      "stopped": "Motor gestopt",
+      "lastNext": "Laatste run {last}, volgende {next}",
+      "lastOnly": "Laatste run {last}",
+      "never": "De motor heeft nog nooit gedraaid"
+    },
+    "sentToday": "Vandaag verzonden",
+    "sent": {
+      "gone": "{n, plural, one {# overgedragen} other {# overgedragen}}",
+      "queued": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
+      "none": "Geen verzendingen",
+      "cap": "{etat, select, pause {op pauze} sansLimite {geen limiet} other {/ {plafond}}}"
+    },
+    "role": {
+      "owner": "Eigenaar",
+      "admin": "Beheerder",
+      "operator": "Operator",
+      "viewer": "Lezer",
+      "none": "Geen rol"
+    }
+  },
+  "aujourdhui": {
+    "resume": "{aTraiter, plural, one {# reactie} other {# reacties}} te behandelen{absences, plural, =0 {} one { (+ # automatische afwezigheidsmelding)} other { (+ # automatische afwezigheidsmeldingen)}}, {envois, plural, one {# verzending gepland} other {# verzendingen gepland}}, {campagnes, plural, one {# actieve campagne} other {# actieve campagnes}}.",
     "newCampaign": "Nieuwe campagne",
-    "importFile": "Bestand importeren",
+    "toProcess": {
+      "title": "Te behandelen",
+      "count": "{n, plural, one {# reactie} other {# reacties}}",
+      "open": "Inbox openen",
+      "empty": "Nog geen reactie te behandelen."
+    },
+    "classification": {
+      "human_reply": "Menselijke reactie",
+      "auto_absence": "Automatische afwezigheidsmelding",
+      "auto_left_company": "Heeft het bedrijf verlaten",
+      "auto_other": "Automatische reactie",
+      "unclassified": "Niet geclassificeerd"
+    },
+    "queue": {
+      "title": "Wachtrij van vandaag",
+      "count": "{partis, plural, one {# verstuurd} other {# verstuurd}} · {enFile, plural, one {# in wachtrij} other {# in wachtrij}}",
+      "seeAll": "Volledige wachtrij",
+      "step": "Stap {n}",
+      "andMore": "{n, plural, one {en # andere} other {en # andere}}",
+      "empty": "Niets om vandaag te versturen."
+    },
+    "engine": {
+      "title": "Motor",
+      "running": "Draait",
+      "stopped": "Gestopt",
+      "last": "Laatste run",
+      "next": "Volgende run",
+      "errors": "Fouten sinds middernacht",
+      "version": "Versie"
+    },
+    "caps": {
+      "title": "Limieten van vandaag",
+      "settings": "Instellen",
+      "scoring": "Scoring (Anthropic)",
+      "enrichment": "Verrijking aangevraagd (FullEnrich)",
+      "sending": "Verzendingen (SalesBlink)"
+    },
+    "campaigns": {
+      "title": "Campagnes",
+      "count": "{n, plural, one {# actief} other {# actieve}}",
+      "seeAll": "Alle campagnes",
+      "columns": {
+        "campaign": "Campagne",
+        "sources": "Bronnen",
+        "contacts": "Contacten",
+        "sequence": "In sequentie",
+        "replies": "Reacties",
+        "week": "Deze week"
+      },
+      "steps": "{n, plural, one {# e-mailstap} other {# e-mailstappen}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSource": "geen bron",
+      "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
+      "status": {
+        "draft": "Concept",
+        "active": "Actief",
+        "paused": "Gepauzeerd",
+        "archived": "Gearchiveerd"
+      },
+      "empty": "Nog geen campagne."
+    },
+    "alerts": {
+      "action": "Instellen"
+    }
+  },
+  "campagne": {
+    "list": {
+      "title": "Campagnes",
+      "description": "Een campagne = een persona, zijn bronnen, zijn sequentie en zijn verzendmailboxes. De motor doet de rest.",
+      "new": "+ Nieuwe campagne",
+      "filters": {
+        "all": "{n, plural, one {Alle #} other {Alle #}}",
+        "active": "{n, plural, one {Actief #} other {Actief #}}",
+        "paused": "{n, plural, one {Gepauzeerd #} other {Gepauzeerd #}}",
+        "draft": "{n, plural, one {Concept #} other {Concept #}}",
+        "archived": "{n, plural, one {Gearchiveerd #} other {Gearchiveerd #}}"
+      },
+      "columns": {
+        "campaign": "Campagne",
+        "status": "Status",
+        "boxes": "Mailboxes",
+        "contacts": "Contacten",
+        "sequence": "In sequentie",
+        "replies": "Reacties",
+        "interested": "Geïnteresseerd",
+        "lastActivity": "Laatste activiteit"
+      },
+      "persona": "Persona {nom}",
+      "sourcesCount": "{n, plural, one {# bron} other {# bronnen}}",
+      "pausedCount": "{n} gepauzeerd",
+      "noBoxes": "geen",
+      "noSource": "geen bron",
+      "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
+      "open": "Openen",
+      "resume": "Hervatten",
+      "empty": {
+        "title": "Nog geen campagne",
+        "text": "Een campagne brengt een persona, bronnen, een sequentie en verzendmailboxes samen. Reken vijf minuten voor de eerste.",
+        "action": "+ Mijn eerste campagne aanmaken"
+      },
+      "emptyFilter": "Geen campagne voor deze status."
+    },
+    "notFound": {
+      "title": "Campagne niet gevonden",
+      "text": "Deze campagne bestaat niet, bestaat niet meer, of behoort niet tot je organisatie.",
+      "action": "Terug naar campagnes"
+    },
     "status": {
+      "draft": "Concept",
       "active": "Actief",
       "paused": "Gepauzeerd",
-      "draft": "Concept"
+      "archived": "Gearchiveerd"
     },
-    "fig": {
-      "vivier": "Pool",
-      "contacted": "Gecontacteerd",
-      "sent": "Verzonden",
-      "accepted": "Geaccepteerd",
-      "replies": "Antwoorden",
-      "positives": "Positief"
+    "header": {
+      "breadcrumb": "Campagnes",
+      "edit": "Bewerken",
+      "launch": "Starten",
+      "pause": "Pauzeren",
+      "sendingFrom": "Verzendt vanaf"
     },
-    "treated": "{pct}% verwerkt",
-    "channelsN": "{n} kanalen",
-    "linkedinInvites": "LinkedIn-uitnodigingen",
-    "replyRateSub": "{pct}% antwoordpercentage",
-    "source": "Bron",
-    "open": "Openen →",
-    "importCard": {
-      "title": "Bestand importeren",
-      "desc": "CSV of XLSX. Nieuwe campagne, of toevoegen aan een bestaande."
-    },
-    "progress": "{pct}% van pool gecontacteerd",
-    "back": "← Campagnes",
-    "detailSub": "{days} d geleden aangemaakt · volgende verzending over {next} · {contacts, plural, one {# contact} other {# contacten}} · {steps, plural, one {# stap} other {# stappen}}",
-    "perDayUsed": "vandaag {used} / {n}",
-    "perDayUnlimited": "geen limiet",
-    "addContacts": "Contacten toevoegen",
-    "pause": "Pauzeren",
     "tabs": {
       "overview": "Overzicht",
       "contacts": "Contacten",
-      "queue": "Wachtrij",
-      "sourcesPersonas": "Bronnen & persona's",
+      "queue": "Wachtrij van vandaag",
+      "sources": "Bronnen",
       "sequence": "Sequentie",
       "activity": "Activiteit",
       "settings": "Instellingen"
     },
-    "soon": "Binnenkort beschikbaar.",
-    "channel": {
-      "email": "E-mail",
-      "linkedin_invite": "LinkedIn-uitnodiging",
-      "linkedin_message": "LinkedIn-bericht",
-      "letter": "Brief",
-      "call": "Telefoon"
-    },
-    "wait": "wacht",
-    "dayUnit": "{n} {n, plural, one {dag} other {dagen}}",
-    "noCondition": "geen voorwaarde",
-    "validation": "Goedkeuring",
-    "editRule": "Wijzigen",
-    "addStep": "+ Stap toevoegen",
-    "stopNote": "Elk antwoord stopt de sequentie, op elk kanaal.",
-    "showPhone": "Telefoon tonen",
-    "viaFullenrich": "via FullEnrich",
-    "replied": "Hebben geantwoord",
-    "exited": "Campagne verlaten · {pct}% van gecontacteerd",
-    "viewContacts": "Contacten bekijken →",
-    "lastReplies": "Laatste antwoorden",
-    "sentiment": {
-      "positive": "Positief",
-      "later": "Later opvolgen",
-      "negative": "Negatief"
-    },
-    "funnel": "Trechter per stap",
-    "eligible": "{n} in aanmerking",
-    "step": "Stap {n}",
-    "overviewLead": "De twee cijfers die aangeven of het werkt: antwoordpercentage en positieve antwoorden.",
-    "rate": "Antwoordpercentage",
-    "modal": {
-      "subject": "Onderwerp",
-      "message": "Bericht",
-      "variables": "Variabelen",
-      "condition": "Triggervoorwaarde",
-      "maxLength": "Max. lengte",
-      "stats": "Stapstatistieken",
-      "sent": "Verzonden",
-      "opened": "Geopend",
-      "replied": "Antwoorden",
-      "close": "Sluiten",
-      "approval": "Goedkeuring",
-      "chars": "max. {n} tekens"
-    },
-    "activate": "Activeren",
-    "stepEd": {
-      "new": "Nieuwe stap",
-      "edit": "Stap bewerken",
-      "channel": "Kanaal",
-      "template": "Bericht (sjabloon)",
-      "noTemplate": "Geen bericht gekoppeld",
-      "noneForChannel": "Geen sjabloon voor dit kanaal — maak er een in Berichten.",
-      "editInLibrary": "Bewerken in Berichten ↗",
-      "delayDays": "Vertraging (dagen) vanaf vorige stap",
-      "condition": "Triggervoorwaarde",
-      "cond": {
-        "none": "Altijd",
-        "previous_opened": "Als vorige e-mail geopend",
-        "previous_accepted": "Als uitnodiging geaccepteerd",
-        "no_reply": "Als geen antwoord"
+    "overview": {
+      "funnel": {
+        "found": "Gevonden vacatures en profielen",
+        "qualified": "Gekwalificeerde contacten",
+        "contactsIdentified": "Geïdentificeerde contacten",
+        "imported": "Geïmporteerde contacten",
+        "emailVerified": "E-mail geverifieerd",
+        "inSequence": "In sequentie",
+        "pausedSuffix": "· {n} gepauzeerd",
+        "delivered": "Verstuurde e-mails",
+        "awaitingSendSuffix": "· {n} wachten op verzending",
+        "replies": "Reacties",
+        "interested": "Geïnteresseerd"
       },
-      "save": "Stap opslaan",
-      "del": "Stap verwijderen",
-      "delConfirm": "Deze stap verwijderen?",
-      "up": "Omhoog",
-      "down": "Omlaag",
-      "noMessageYet": "Bericht koppelen",
-      "empty": "Nog geen stap — voeg er een toe.",
-      "noRule": "Geen ingangsregel.",
-      "callNote": "Het kanaal Bellen maakt een gedateerde taak, zonder verzending of bericht.",
-      "letterNote": "Brieven gaan altijd via de goedkeuringswachtrij.",
-      "subject": "Onderwerp",
-      "subjectPlaceholder": "Wat de ontvanger leest voor het openen",
-      "body": "Bericht",
-      "bodyPlaceholder": "Hallo '{{'prenom'}}',",
-      "variables": "Beschikbare variabelen",
-      "variablesHelp": "Klik om in te voegen. Een variabele zonder waarde blokkeert de verzending in plaats van leeg te vertrekken.",
-      "variablesListHelp": "Kolommen uit het geïmporteerde CSV-bestand: '{{'liste_nom_de_colonne'}}'.",
-      "insert": "Invoegen",
-      "saveMessage": "Bericht opslaan",
-      "messageSaved": "Bericht opgeslagen",
-      "promote": "Als sjabloon opslaan",
-      "promoteName": "Sjabloonnaam",
-      "promoteNamePlaceholder": "Opvolging na beurs",
-      "promoteConfirm": "Aan bibliotheek toevoegen",
-      "promoted": "Toegevoegd aan de bibliotheek",
-      "generate": "Een eerste versie voorstellen",
-      "generating": "Schrijven…",
-      "generateHint": "Een instructie, als u er een hebt (optioneel)",
-      "useThis": "Deze gebruiken",
-      "inviteNoMessage": "Een LinkedIn-uitnodiging vertrekt zonder notitie: hier valt niets te schrijven. Wilt u toch tekst sturen, voeg dan na aanvaarding een stap “LinkedIn-bericht” toe.",
-      "subjectRequired": "Een e-mail heeft een onderwerp nodig om te worden opgeslagen.",
-      "closeUnsaved": "Dit bericht is niet opgeslagen. Nu sluiten betekent verlies."
-    },
-    "watchThemes": "Monitoringthema's"
-  },
-  "linkedin": {
-    "eyebrow": "Kanaal",
-    "title": "LinkedIn",
-    "lead": "Uitnodigingen en berichten verstuurd vanuit uw eigen LinkedIn-sessie, via de Chrome-extensie.",
-    "connect": {
-      "title": "De Chrome-extensie",
-      "install": "Extensie installeren",
-      "installHint": "Opent de Chrome Web Store. Deze pagina werkt zichzelf daarna bij.",
-      "notPublished": "De extensie staat nog niet in de Chrome Web Store. Tot dan installeert u ze handmatig.",
-      "manualTitle": "Handmatige installatie (tijdelijk)",
-      "download": "Extensie downloaden (.zip)",
-      "step1": "Download het pakket en pak het uit.",
-      "step2": "Open in Chrome chrome://extensions.",
-      "step3": "Zet “Ontwikkelaarsmodus” aan, rechtsboven.",
-      "step4": "Klik “Uitgepakte extensie laden” en kies de uitgepakte map.",
-      "button": "Extensie verbinden",
-      "notDetected": "De extensie antwoordde niet. Controleer of ze is ingeschakeld in Chrome.",
-      "regenerate": "Extensie opnieuw verbinden",
-      "stateMissing": "Extensie niet geïnstalleerd",
-      "stateInstalled": "Extensie geïnstalleerd, nog niet verbonden",
-      "stateConnected": "Extensie verbonden",
-      "stateConnectedTo": "Verbonden met {profile}",
-      "wrongOrigin": "De extensie herkent dit adres niet. Ze werkt alleen op https://jay-reach.vercel.app — een deployment-URL, met een identificatie na de projectnaam, activeert haar nooit.",
-      "staleVersion": "Extensie versie {installee}, maar deze app verwacht {attendue}. Download het pakket hieronder opnieuw en herlaad de extensie: het oude uitgepakte mapje herladen installeert de oude versie terug.",
-      "reinstall": "De extensie opnieuw installeren of bijwerken"
-    },
-    "stats": {
-      "title": "Activiteit",
-      "pending": "In wachtrij",
-      "sent7d": "Verzonden (7d)",
-      "today": "Vandaag"
-    },
-    "alerts": {
-      "title": "Meldingen",
-      "accountRestricted": "LinkedIn-account beperkt of afgemeld: verzenden is gepauzeerd. Log opnieuw in op LinkedIn — het hervat automatisch.",
-      "weeklyCapNear": "Weeklimiet bijna bereikt ({sent}/{cap} over 7 dagen).",
-      "manyFailures": "{count} verzendingen mislukt in de laatste 24u. Controleer je LinkedIn-verbinding."
-    },
-    "sending": {
-      "title": "Verzendinstellingen",
-      "help": "Wanneer en hoe snel berichten vertrekken. De tussentijd wordt automatisch geregeld.",
-      "weekly": "Berichten per week",
-      "perWeek": "{count} / week",
-      "days": "Verzenddagen",
-      "day": {
-        "1": "Ma",
-        "2": "Di",
-        "3": "Wo",
-        "4": "Do",
-        "5": "Vr",
-        "6": "Za",
-        "7": "Zo"
+      "queue": {
+        "title": "Wachtrij van vandaag",
+        "partis": "{n, plural, one {# verstuurd} other {# verstuurd}}",
+        "enFile": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
+        "possibles": "{n, plural, one {# nog mogelijk} other {# nog mogelijk}}",
+        "reportes": "{n, plural, one {# uitgesteld} other {# uitgesteld}}",
+        "seeAll": "Wachtrij bekijken",
+        "step": "Stap {n}",
+        "andMore": "{n, plural, one {en # andere} other {en # andere}}",
+        "empty": "Niets om vandaag te versturen voor deze campagne."
       },
-      "from": "Vanaf",
-      "to": "Tot",
-      "timezone": "Tijdzone",
+      "caps": {
+        "title": "Limieten van vandaag",
+        "scoring": "Scoring (Anthropic)",
+        "enrichment": "Verrijking aangevraagd (FullEnrich)",
+        "sending": "{n, plural, one {Verzendingen (SalesBlink, # mailbox)} other {Verzendingen (SalesBlink, # mailboxes)}}",
+        "settingsLink": "Limieten instellen"
+      },
+      "sources": {
+        "title": "Bronnen",
+        "count": "{n, plural, one {# actief} other {# actieve}}",
+        "empty": "Geen bron gekoppeld aan deze campagne.",
+        "listSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}"
+      },
+      "activity": {
+        "title": "Recente activiteit",
+        "subtitle": "alles wat de motor voor deze campagne heeft gedaan",
+        "seeAll": "Alles bekijken",
+        "empty": "Nog geen activiteit.",
+        "envoisGroupes": {
+          "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        }
+      }
+    },
+    "notifications": {
+      "launchBlocked": "Niet mogelijk: {liste}."
+    },
+    "contacts": {
+      "filters": {
+        "all": "Alle"
+      },
+      "columns": {
+        "contact": "Contact",
+        "why": "Waarom deze persoon",
+        "score": "Score",
+        "listJobTitle": "Functietitel",
+        "email": "E-mail",
+        "step": "Stap",
+        "campaign": "Campagne",
+        "status": "Status"
+      },
+      "email": {
+        "verified": "Geverifieerd",
+        "toFind": "Nog te vinden"
+      },
+      "status": {
+        "a_contacter": "Te contacteren",
+        "sans_email": "Geen e-mail",
+        "en_pause": "Gepauzeerd",
+        "en_sequence": "In sequentie",
+        "a_repondu": "Heeft gereageerd",
+        "interesse": "Geïnteresseerd",
+        "ecarte": "Afgewezen",
+        "termine": "Afgerond",
+        "rebond": "Bounce",
+        "ne_plus_contacter": "Niet meer contacteren"
+      },
+      "pause": {
+        "emailGate": "E-mail als onbestelbaar beoordeeld",
+        "salesblinkError": "Verzending geweigerd door de e-mailprovider",
+        "senderUnavailable": "Geen verzendmailbox beschikbaar",
+        "absence": "Afwezig, hervat op {date}",
+        "absenceNoDate": "Afwezig",
+        "generic": "Gepauzeerd"
+      },
+      "step": "Stap {n}",
+      "stepEnded": "{n} · {libelle}",
+      "noStep": "te contacteren",
+      "search": "Zoek een naam, een bedrijf…",
+      "actions": {
+        "enrich": "E-mail zoeken",
+        "enrichCost": "1 credit",
+        "enrichPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers.",
+        "discard": "Afwijzen",
+        "resume": "Hervatten"
+      },
+      "nextMessage": "Volgend bericht op {date}",
+      "empty": "Nog geen contact: deze campagne heeft nog niemand geïdentificeerd.",
+      "emptyFilter": "Geen contact voor dit filter.",
+      "pageRange": "{debut} tot {fin} van {total}",
+      "pageOf": "Pagina {page} van {dernierePage}",
+      "previous": "Vorige",
+      "next": "Volgende"
+    },
+    "fiche": {
+      "close": "Dossier sluiten",
+      "score": "Score {n}",
+      "sections": {
+        "why": "Waarom deze persoon",
+        "whereAreWe": "Stand van zaken",
+        "conversation": "Wat er is gezegd",
+        "contactInfo": "Contactgegevens",
+        "notes": "Notities",
+        "history": "Geschiedenis"
+      },
+      "why": {
+        "empty": "Geen bekende herkomst voor dit contact.",
+        "link": "vacature bekijken"
+      },
+      "sequence": {
+        "empty": "Deze campagne heeft deze persoon nog niet gecontacteerd.",
+        "sentBy": "Verzonden door {boite} · gekoppeld aan deze mailbox voor de hele sequentie",
+        "step": "{n}",
+        "pausedLine": "Gepauzeerd: {motif}",
+        "nextMessage": "Volgend bericht op {date}"
+      },
+      "conversation": {
+        "openInInbox": "Openen in de Inbox",
+        "empty": "Nog geen uitwisseling.",
+        "outbound": "Bericht verzonden"
+      },
+      "contactInfo": {
+        "email": "E-mail",
+        "emailVerified": "geverifieerd",
+        "phone": "Telefoon",
+        "phoneUnavailable": "—",
+        "linkedin": "LinkedIn",
+        "findEmail": "E-mail zoeken",
+        "findEmailCost": "1 FullEnrich-credit",
+        "findEmailPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers."
+      },
+      "notes": {
+        "empty": "Geen notities. Wat je hier schrijft, blijft in het dossier.",
+        "newLabel": "Nieuwe notitie",
+        "placeholder": "Notitie toevoegen…",
+        "add": "Toevoegen"
+      },
+      "history": {
+        "empty": "Geen gebeurtenis voor dit contact."
+      },
+      "actions": {
+        "discardFromCampaign": "Uit campagne verwijderen",
+        "doNotContact": "Niet meer contacteren"
+      }
+    },
+    "file": {
+      "title": "{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}",
+      "description": "Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".",
+      "filters": {
+        "all": "{n, plural, one {Alle #} other {Alle #}}",
+        "scheduled": "{n, plural, one {Gepland #} other {Gepland #}}",
+        "toReview": "{n, plural, one {Te herzien #} other {Te herzien #}}",
+        "dispatched": "{n, plural, one {Doorgegeven #} other {Doorgegeven #}}",
+        "delivered": "{n, plural, one {Verstuurd #} other {Verstuurd #}}",
+        "failed": "{n, plural, one {Mislukt #} other {Mislukt #}}",
+        "blocked": "{n, plural, one {Geblokkeerd #} other {Geblokkeerd #}}"
+      },
+      "columns": {
+        "time": "Tijd",
+        "contact": "Contact",
+        "stepAndSubject": "Stap en onderwerp",
+        "from": "Vanaf",
+        "status": "Status"
+      },
+      "group": {
+        "count": "{n, plural, one {# e-mail} other {# e-mails}}"
+      },
+      "step": "Stap {n}",
+      "status": {
+        "scheduled": "Gepland",
+        "pending_approval": "Te herzien",
+        "approved": "Gepland",
+        "dispatched": "Doorgegeven",
+        "delivered": "Verstuurd",
+        "failed": "Mislukt",
+        "blocked": "Geblokkeerd",
+        "cancelled": "Geannuleerd",
+        "skipped": "Geannuleerd"
+      },
+      "pendingDelivery": "bezorging in behandeling",
+      "actions": {
+        "review": "Herzien",
+        "postpone": "Uitstellen",
+        "discard": "Afwijzen",
+        "findEmail": "E-mail zoeken",
+        "retry": "Opnieuw proberen"
+      },
+      "empty": {
+        "title": "Niets om vandaag te versturen",
+        "text": "Alle gekwalificeerde contacten zitten in een sequentie of hebben gereageerd. De wachtrij vult zich zodra een bron nieuwe contacten oplevert of een opvolgtermijn verstrijkt."
+      },
+      "drawer": {
+        "title": "Herzien vóór verzending",
+        "description": "E-mail zoals hij verzonden zal worden",
+        "close": "Sluiten",
+        "why": "Waarom dit contact",
+        "score": "Score {n}",
+        "scoreDetail": "score {n}",
+        "scheduledFor": "gepland om {heure}",
+        "from": "vanaf {expediteur}",
+        "step": "stap {n} · {nom}",
+        "missingVariables": "Variabelen zonder waarde: {liste}. De verzending blijft geblokkeerd tot ze zijn ingevuld.",
+        "hint": "Tekst gegenereerd door Jay Reach op basis van stap {n} en het dossier van {prenom}. Wijzigen hier verandert alleen deze verzending.",
+        "editText": "Tekst bewerken",
+        "soon": "Binnenkort",
+        "sendAsIs": "Ongewijzigd verzenden",
+        "alreadyProcessed": "Deze verzending is {statut}: niets meer te herzien.",
+        "notReviewable": {
+          "approved": "al goedgekeurd",
+          "dispatched": "al doorgegeven",
+          "delivered": "verstuurd",
+          "failed": "mislukt",
+          "blocked": "geblokkeerd",
+          "cancelled": "geannuleerd",
+          "skipped": "overgeslagen"
+        }
+      }
+    },
+    "sources": {
+      "title": "Bronnen",
+      "description": "Elke bron zoekt vacatures of profielen, de motor scoort ze en houdt de personen die overeenkomen met de persona \"{persona}\".",
+      "add": "+ Bron toevoegen",
+      "empty": {
+        "title": "Nog geen bron",
+        "text": "Voeg een eerste bron toe zodat de motor contacten kan gaan vinden."
+      },
+      "menu": {
+        "jobs": "Vacatures",
+        "linkedin": "LinkedIn",
+        "manual": "Handmatig",
+        "adzuna": {
+          "title": "Adzuna",
+          "description": "Vacatures gepubliceerd op Franse vacaturesites"
+        },
+        "franceTravail": {
+          "title": "France Travail",
+          "description": "Vacatures van de overheidsinstantie"
+        },
+        "linkedinPostEngagers": {
+          "title": "Engagers van een post",
+          "description": "Personen die een post hebben geliket of erop hebben gereageerd"
+        },
+        "linkedinCompetitorFollowers": {
+          "title": "Volgers van een concurrent",
+          "description": "Personen actief rond een bedrijfspagina"
+        },
+        "linkedinKeywords": {
+          "title": "Trefwoorden",
+          "description": "Personen die over een onderwerp publiceren"
+        },
+        "linkedinJobChange": {
+          "title": "Functiewijziging",
+          "description": "Persona-profielen die recent een nieuwe functie zijn begonnen"
+        },
+        "csv": {
+          "title": "CSV-bestand",
+          "description": "Contacten importeren uit een bestand"
+        },
+        "list": {
+          "title": "Bestaande lijst",
+          "description": "Contacten uit een al samengestelde lijst overnemen"
+        },
+        "directory": {
+          "title": "Bedrijvengids",
+          "description": "Franse bedrijven zoeken"
+        }
+      },
+      "card": {
+        "query": "Zoekopdracht",
+        "filters": "Filters",
+        "passages": "Runs",
+        "postFollowed": "Gevolgde post",
+        "keep": "We houden",
+        "trend7d": "Behouden over 7 dagen",
+        "modify": "Bewerken",
+        "active": "Actief",
+        "paused": "Gepauzeerd",
+        "toggleAriaLabel": "Bron activeren of pauzeren",
+        "pendingLot4": "Ingesteld, wacht op het LinkedIn-kanaal",
+        "everyNHours": "Elke {n} uur",
+        "schedule": "{cadence} · laatste {dernier} · volgende {prochain}",
+        "scheduleNoLast": "{cadence} · volgende {prochain}",
+        "neverRun": "Nog nooit uitgevoerd",
+        "dailySchedule": "Eén keer per dag",
+        "franceEntiere": "Heel Frankrijk",
+        "readAndKept": "{lus, plural, one {# vacature gelezen} other {# vacatures gelezen}}, {retenus, plural, one {# behouden} other {# behouden}} bij de laatste run",
+        "nextPaused": "gepauzeerd",
+        "nextOnLaunch": "bij het starten"
+      },
+      "drawer": {
+        "close": "Sluiten",
+        "name": "Naam van de bron",
+        "keywords": "Gezochte functietitels",
+        "keywordsHint": "Eén titel per regel.",
+        "keywordsPlaceholder": "sales director, hoofd verkoop",
+        "locations": "Locaties",
+        "locationsPlaceholder": "Île-de-France, Lyon",
+        "contract": "Contract",
+        "contractAll": "Alle contracten",
+        "contractCdi": "Alleen vast contract",
+        "companySize": "Bedrijfsgrootte",
+        "companySizePlaceholder": "10 tot 250 werknemers",
+        "department": "Departement",
+        "exclusions": "We negeren",
+        "exclusionsPlaceholder": "wervingsbureau, uitzendwerk",
+        "maxAgeDays": "Maximale leeftijd van vacatures",
+        "maxAgeDaysHint": "dagen (terugval: instelling van de organisatie)",
+        "schedule": "Runs",
+        "offresTitle": "{provider} · vacatures",
+        "offresSubtitle": "De bron leest gepubliceerde vacatures, de motor scoort ze tegen de persona \"{persona}\".",
+        "readSince": "{n, plural, one {# vacature gevonden} other {# vacatures gevonden}} sinds {date}",
+        "alsoProvider": "ook {provider}",
+        "runNow": "Nu uitvoeren",
+        "save": "Opslaan",
+        "create": "Bron aanmaken",
+        "cancel": "Annuleren",
+        "linkedinPending": "Verzameling geactiveerd met het LinkedIn-kanaal. Je kunt de bron al instellen; het lezen van profielen start zodra dat actief is.",
+        "postUrl": "Adres van de post",
+        "keepPeople": "We houden personen die",
+        "commented": "hebben een reactie geplaatst",
+        "reacted": "hebben gereageerd",
+        "excludeFirstDegree": "buiten 1e-graadsverbindingen",
+        "accountId": "LinkedIn-account",
+        "profilesPerDay": "Profielen gelezen per dag",
+        "competitorPages": "Gevolgde bedrijfspagina's",
+        "topics": "Gevolgde onderwerpen",
+        "sinceDays": "Functie aangetreden sinds (dagen)",
+        "csvIntro": "Contacten uit het bestand komen de campagne binnen als al gekwalificeerde personen: geen scoring.",
+        "csvFile": "Bestand",
+        "csvMapping": "Kolomtoewijzing",
+        "csvColColumn": "Kolom van het bestand",
+        "csvColExample": "Voorbeeld",
+        "csvColField": "Jay Reach-veld",
+        "csvColIgnore": "— negeren —",
+        "csvFields": {
+          "first_name": "Voornaam",
+          "last_name": "Achternaam",
+          "email": "E-mail",
+          "job_title": "Functie",
+          "company": "Bedrijf",
+          "linkedin_url": "LinkedIn",
+          "phone": "Telefoon",
+          "city": "Stad",
+          "postal_code": "Postcode",
+          "country": "Land",
+          "siren": "SIREN",
+          "website": "Website"
+        },
+        "csvBefore": "Voor het bevestigen",
+        "csvRowsRead": "Gelezen rijen",
+        "csvNew": "Nieuwe contacten",
+        "csvKnown": "Al bekend, bijgewerkt",
+        "csvMissingEmail": "Zonder geldige e-mail",
+        "csvImport": "{n} contacten importeren",
+        "listSelect": "Lijst",
+        "listName": "Naam van de bron",
+        "listOnlyVerified": "Alleen contacten met een geverifieerde e-mail",
+        "listIgnoreContacted": "Contacten die al door een andere campagne zijn benaderd negeren",
+        "listResult": "Resultaat",
+        "directoryIntro": "Zoek Franse bedrijven op activiteit, departement en personeelsbestand, en voeg ze toe aan je bedrijvendatabase. Gestopte bedrijven zijn uitgesloten.",
+        "directoryPublicData": "Openbare gegevens · bedrijven-API",
+        "directoryQuery": "Trefwoord of naam",
+        "directoryNaf": "Activiteitscode (NAF)",
+        "directoryDepartment": "Departement",
+        "directoryEffectif": "Personeelsbestand",
+        "directoryEffectifAny": "Alle personeelsomvang",
+        "directoryEffectifSmall": "1 tot 9 werknemers",
+        "directoryEffectifMid": "10 tot 49 werknemers",
+        "directoryEffectifLarge": "50 tot 499 werknemers",
+        "directoryEffectifXl": "500 werknemers en meer",
+        "directorySearch": "Zoeken",
+        "directoryColCompany": "Bedrijf",
+        "directoryColCity": "Stad",
+        "directoryColHeadcount": "Personeelsbestand",
+        "directoryFound": "{n} bedrijven gevonden",
+        "directoryAlreadyKnown": "al in je database",
+        "directoryProduces": "Wat dit oplevert",
+        "directoryRetained": "Bedrijven toegevoegd aan je database",
+        "directoryKnown": "Al bekend, bijgewerkt",
+        "directoryContactsCreated": "Aangemaakte contacten",
+        "directoryNone": "geen",
+        "directoryHint": "De bedrijvengids levert bedrijven, geen personen: contacten komen uit vacatures, LinkedIn of een import. Toegevoegde bedrijven verschijnen in Contacten › Bedrijven.",
+        "directoryRetain": "{n} bedrijven toevoegen"
+      }
+    },
+    "sequence": {
+      "title": "Sequentie",
+      "description": "De stappen die automatisch worden verzonden naar de gekwalificeerde contacten van deze campagne.",
+      "add": "+ Stap toevoegen",
+      "empty": {
+        "title": "Nog geen stap",
+        "text": "Voeg een eerste stap toe zodat de motor kan beginnen met schrijven naar gekwalificeerde contacten."
+      },
+      "flow": {
+        "sourcesTitle": "Bronnen",
+        "sourcesSubtitle": "{n, plural, one {# bron voedt} other {# bronnen voeden}} deze campagne, {m, plural, one {# gekwalificeerd contact} other {# gekwalificeerde contacten}} tot nu toe",
+        "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}",
+        "intoSequence": "Gekwalificeerde contacten met een geverifieerde e-mail komen in de sequentie",
+        "delayDays": "{n, plural, one {# dag later} other {# dagen later}}",
+        "delayHours": "{n, plural, one {# uur later} other {# uur later}}",
+        "endTitle": "Einde van de sequentie",
+        "endText": "{n, plural, one {# contact heeft de sequentie doorlopen zonder te reageren en blijft} other {# contacten hebben de sequentie doorlopen zonder te reageren en blijven}} in de campagne: ze worden niet opnieuw gecontacteerd."
+      },
+      "card": {
+        "step": "Stap {n}",
+        "passedThrough": "{n, plural, one {# contact heeft deze stap doorlopen} other {# contacten hebben deze stap doorlopen}}",
+        "noMessage": "Geen bericht geschreven voor deze stap.",
+        "modify": "Bewerken",
+        "repliedHere": "Hebben hier gereageerd",
+        "leftSequence": "{n, plural, one {# heeft de sequentie verlaten} other {# hebben de sequentie verlaten}}",
+        "linkedinNotice": "de verzending draait serverside (binnenkort)",
+        "salesblinkNotice": "De SalesBlink-sequentie wordt aangemaakt bij de eerste verzending."
+      },
+      "preview": {
+        "missing": "{n, plural, one {Variabele zonder waarde: {liste}.} other {Variabelen zonder waarde: {liste}.}} De verzending blijft geblokkeerd tot ze zijn ingevuld."
+      },
+      "drawer": {
+        "close": "Sluiten",
+        "titleNew": "Nieuwe stap",
+        "titleEdit": "Stap {n} · {titre}",
+        "channel": "Kanaal",
+        "channelEmail": "E-mail",
+        "channelLinkedin": "LinkedIn",
+        "stats": "{passes, plural, one {# verzonden} other {# verzonden}} · {repondus, plural, one {# reactie} other {# reacties}}",
+        "delay": "Vertraging na de vorige stap",
+        "delayHint": "Al geplande opvolgingen behouden de oude vertraging.",
+        "delayUnitDays": "dagen",
+        "delayUnitHours": "uur",
+        "delayUnit": "Eenheid van de vertraging",
+        "subject": "Onderwerp",
+        "body": "Inhoud",
+        "bodyHint": "Variabelen: klik om op de cursorpositie in te voegen. Nooit een terugval op '{{'prenom'}}': zonder voornaam wordt de verzending geblokkeerd. De handtekening van de mailbox wordt aan de verzending toegevoegd.",
+        "preview": "Voorbeeld",
+        "previewCaption": "weergegeven met een fictief contact",
+        "save": "Opslaan",
+        "create": "Stap aanmaken",
+        "cancel": "Annuleren",
+        "delete": "Stap verwijderen",
+        "deleteConfirm": "Deze stap uit de sequentie verwijderen?",
+        "sendTest": "Stuur mij een test",
+        "testSent": "Test verzonden: hij verschijnt binnenkort in de wachtrij van vandaag.",
+        "testNote": "\"Stuur mij een test\" schrijft je adres in als testcontact van de campagne: de e-mail volgt het normale pad en verschijnt in de wachtrij van vandaag.",
+        "listVariables": "Kolommen van de geïmporteerde lijst",
+        "listVariablesEmpty": "Een campagne die door een geïmporteerd bestand wordt gevoed, biedt ook zijn kolommen aan: '{{'liste_nom_de_la_colonne'}}'."
+      }
+    },
+    "activite": {
+      "filters": {
+        "tout": "Alles",
+        "sources": "Bronnen",
+        "scoring": "Scoring",
+        "envois": "Verzendingen",
+        "reponses": "Reacties",
+        "erreurs": "Fouten"
+      },
+      "empty": {
+        "title": "Nog geen activiteit",
+        "text": "Zodra de campagne start, wordt elke bronrun, scoring, verzending, reactie of wijziging hier tot op de minuut vastgelegd."
+      },
+      "emptyFilter": "Geen activiteit voor dit filter.",
+      "pageRange": "{debut} tot {fin} van {total}",
+      "pageOf": "Pagina {page} van {dernierePage}",
+      "previous": "Vorige",
+      "next": "Volgende",
+      "envoisGroupes": {
+        "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+      }
+    },
+    "reglages": {
+      "identity": {
+        "title": "Identiteit",
+        "name": "Naam van de campagne",
+        "personasTitle": "Beoogde persona",
+        "personasEmpty": "Geen beoogde persona.",
+        "personasHint": "Persona's worden bewerkt in",
+        "personasLink": "Persona's"
+      },
+      "targeting": {
+        "title": "Targeting en tempo",
+        "minScore": "Minimale score",
+        "minScoreSuffix": "/ 100",
+        "minScoreHint": "van 0 tot 100 · leeg = volgt de standaard van de organisatie",
+        "dailyCap": "Nieuwe contacten per dag",
+        "dailyCapSuffix": "contacten",
+        "dailyCapHint": "limiet van de campagne, bovenop de limieten van de mailboxes · leeg = geen eigen limiet",
+        "review": "Herziening van de eerste verzendingen",
+        "reviewSuffix": "verzendingen",
+        "reviewHint": "0 = alles gaat zonder herziening"
+      },
+      "senders": {
+        "title": "Verzendmailboxes",
+        "hint": "elk contact blijft gekoppeld aan de mailbox die het als eerste heeft geschreven",
+        "noteHint": "Tempo, verzenduren en -dagen worden per mailbox ingesteld in",
+        "noteLink": "Instellingen › Afzenders",
+        "empty": "Nog geen actieve e-mailmailbox."
+      },
+      "cancel": "Annuleren",
       "save": "Opslaan",
-      "saved": "Opgeslagen"
+      "archive": {
+        "title": "Stoppen",
+        "warning": "{count, plural, one {Archiveren stopt de sequentie voor het contact dat nu loopt} other {Archiveren stopt de sequentie voor de # contacten die nu lopen}}, behoudt de geschiedenis en gesprekken, en haalt de campagne uit de lijst. Contacten blijven in de gids.",
+        "button": "Campagne archiveren",
+        "confirmText": "Archivering van deze campagne bevestigen? Deze actie is onomkeerbaar.",
+        "cancel": "Annuleren",
+        "confirmButton": "Archivering bevestigen"
+      }
+    },
+    "nouvelle": {
+      "steps": {
+        "qui": "Wie",
+        "sources": "Bronnen",
+        "sequence": "Sequentie",
+        "envoi": "Verzending"
+      },
+      "who": {
+        "errorName": "Geef de campagne een naam.",
+        "name": "Naam van de campagne",
+        "namePlaceholder": "Opvolging salesdirecteuren",
+        "personaTitle": "Wie zoek je?",
+        "personaEmpty": "Geen actieve persona. Maak er een aan in Instellingen › Persona's.",
+        "personaNew": "+ Nieuwe persona",
+        "personaNewHint": "Functie, bedrijfsgrootte, beoordelingsinstructies: in Instellingen › Persona's.",
+        "minScore": "Minimale score",
+        "minScoreSuffix": "/ 100",
+        "minScoreHint": "Onder deze drempel wordt het contact afgewezen vóór verrijking.",
+        "dailyCap": "Nieuwe contacten per dag",
+        "dailyCapSuffix": "contacten",
+        "dailyCapHint": "Limiet van de campagne, over alle kanalen samen."
+      },
+      "sources": {
+        "title": "Bronnen van de campagne",
+        "description": "Waar de contacten vandaan zullen komen.",
+        "add": "+ Bron toevoegen",
+        "emptyTitle": "Nog geen bron",
+        "hint": "Je kunt op elk moment een bron toevoegen, instellen of uitschakelen in het tabblad Bronnen van de campagne. Een CSV-bestand wordt op dezelfde manier gekoppeld, zodra de campagne is aangemaakt.",
+        "remove": "Verwijderen",
+        "menuGroupJobs": "Vacatures",
+        "menuAdzunaTitle": "Adzuna",
+        "menuAdzunaDescription": "Vacatures gepubliceerd op Franse vacaturesites.",
+        "menuFranceTravailTitle": "France Travail",
+        "menuFranceTravailDescription": "Vacatures van de overheidsinstantie voor werkgelegenheid.",
+        "menuGroupLinkedin": "LinkedIn",
+        "menuLinkedinBadge": "Verzameling geactiveerd met het LinkedIn-kanaal",
+        "menuLinkedinPostEngagersTitle": "Engagers van een post",
+        "menuLinkedinPostEngagersDescription": "Personen die een post hebben geliket of erop hebben gereageerd.",
+        "menuLinkedinCompetitorFollowersTitle": "Volgers van een concurrent",
+        "menuLinkedinCompetitorFollowersDescription": "Personen actief rond een bedrijfspagina.",
+        "menuLinkedinKeywordsTitle": "Trefwoorden",
+        "menuLinkedinKeywordsDescription": "Personen die over een onderwerp publiceren.",
+        "menuLinkedinJobChangeTitle": "Functiewijziging",
+        "menuLinkedinJobChangeDescription": "Persona-profielen die recent een nieuwe functie zijn begonnen.",
+        "menuGroupManual": "Handmatig",
+        "menuCsvTitle": "CSV-bestand",
+        "menuCsvDisabledNote": "Na het aanmaken, in het tabblad Bronnen.",
+        "formName": "Naam van de bron",
+        "formKeywords": "Trefwoorden",
+        "formKeywordsHint": "Gescheiden door komma's, bijvoorbeeld \"CEO, oprichter, algemeen directeur\".",
+        "formLocations": "Locaties",
+        "formContract": "Type contract",
+        "formContractAll": "Alle",
+        "formContractPermanent": "Alleen vast contract",
+        "formLinkedinPostUrl": "Adres van de post",
+        "formLinkedinKeepPeople": "We houden personen die",
+        "formLinkedinCommented": "hebben een reactie geplaatst",
+        "formLinkedinReacted": "hebben gereageerd",
+        "formLinkedinExcludeFirstDegree": "buiten 1e-graadsverbindingen",
+        "formLinkedinCompetitorPages": "Gevolgde bedrijfspagina's",
+        "formLinkedinTopics": "Gevolgde onderwerpen",
+        "formLinkedinSinceDays": "Functie aangetreden sinds (dagen)",
+        "formLinkedinAccountId": "LinkedIn-account",
+        "formLinkedinProfilesPerDay": "Profielen gelezen per dag",
+        "formLinkedinError": "Het LinkedIn-account en het veld dat specifiek is voor dit brontype zijn vereist.",
+        "summaryLinkedin": "{n, plural, one {# profiel per dag} other {# profielen per dag}}",
+        "formSubmit": "Toevoegen",
+        "formCancel": "Annuleren",
+        "formError": "Er is minstens één trefwoord vereist."
+      },
+      "sequence": {
+        "startFrom": "Beginnen vanaf",
+        "emptyModelName": "Leeg",
+        "emptyModelDescription": "Elke stap zelf schrijven.",
+        "preview": "Voorbeeld van de sequentie",
+        "addStep": "+ Stap toevoegen",
+        "step": "Stap",
+        "channel": "Kanaal",
+        "channelEmail": "E-mail",
+        "channelLinkedin": "LinkedIn",
+        "subject": "Onderwerp",
+        "body": "Inhoud",
+        "delay": "Vertraging sinds de vorige stap",
+        "delaySuffix": "dagen",
+        "delaiPilule": "+{n} d",
+        "sentAtLaunch": "Verzonden bij het starten van de campagne.",
+        "remove": "Stap verwijderen",
+        "variablesHint": "Beschikbare variabelen: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
+        "empty": "Geen stap. Kies een model of voeg er een toe.",
+        "errorEmpty": "De sequentie heeft minstens één stap nodig."
+      },
+      "send": {
+        "recapPersonaValue": "{persona} · score ≥ {score}",
+        "recapSourcesEmpty": "Geen bron: contacten worden handmatig toegevoegd.",
+        "recapSequenceValue": "{n} e-mails over {jours} dagen",
+        "recapEnvoiValue": "{n} mailboxes · maximaal {plafond} nieuwe contacten per dag",
+        "boxesTitle": "Verzendende mailboxes",
+        "boxesEmpty": "Geen actieve verzendmailbox. Koppel er een in Instellingen › Afzenders.",
+        "boxesNoneActive": "Kies minstens één mailbox.",
+        "review": "Herziening van de eerste verzendingen",
+        "reviewSuffix": "verzendingen",
+        "reviewHint": "De eerste verzendingen wachten op handmatige goedkeuring voordat ze verstuurd worden.",
+        "summaryTitle": "Samenvatting",
+        "summaryPersona": "Persona",
+        "summarySources": "Bronnen",
+        "summarySequence": "Sequentie",
+        "summarySend": "Verzending",
+        "summaryFirstPass": "Eerste run van de bronnen",
+        "summaryFirstPassValue": "Meteen bij het starten, daarna volgens het tempo dat voor elke bron is ingesteld.",
+        "launchError": "Het starten is geweigerd:"
+      },
+      "actions": {
+        "viewCampaign": "Campagne bekijken",
+        "cancel": "Annuleren",
+        "back": "Terug",
+        "saveDraft": "Als concept opslaan",
+        "createAndLaunch": "Aanmaken en starten",
+        "continue": "Doorgaan"
+      }
     }
   },
-  "directory": {
-    "eyebrow": "Zoeken",
-    "title": "Bedrijvengids",
-    "lead": "Zoek Franse bedrijven op activiteit, departement en personeelsbestand. Beëindigde bedrijven worden uitgesloten.",
-    "search": "Zoeken",
-    "count": "{n, plural, one {# bedrijf gevonden} other {# bedrijven gevonden}}",
-    "none": "Geen bedrijf voor deze criteria.",
-    "hint": "Vul minstens één criterium in en start de zoekopdracht.",
-    "add": "Toevoegen aan mijn basis",
-    "added": "Toegevoegd ✓",
-    "headcount": "personeel",
-    "field": {
-      "q": "Trefwoord / naam",
-      "qPlaceholder": "bv. software, transport…",
-      "naf": "Activiteitscode (NAF)",
-      "department": "Departement van vestiging",
-      "effectif": "Personeel"
+  "reglages": {
+    "title": "Instellingen",
+    "lead": "Afzenders, limieten, providers, persona's, berichten, motor, account.",
+    "nav": {
+      "senders": "Afzenders",
+      "limits": "Limieten",
+      "providers": "Providers",
+      "personas": "Persona's",
+      "messages": "Berichten",
+      "engine": "Motor",
+      "account": "Account"
     },
-    "bucket": {
-      "all": "Alle",
-      "small": "1 tot 9",
-      "mid": "10 tot 49",
-      "large": "50 tot 499",
-      "xl": "500+"
+    "expediteurs": {
+      "boxesTitle": "E-mailmailboxes",
+      "boxesLead": "Verzendingen verlopen via SalesBlink. Elk contact blijft voorgoed gekoppeld aan de mailbox die het als eerste heeft geschreven.",
+      "salesblinkLinked": "SalesBlink gekoppeld",
+      "salesblinkNotLinked": "SalesBlink niet gekoppeld",
+      "empty": "Geen e-mailmailbox. Koppel er een om te beginnen met verzenden.",
+      "box": {
+        "createdOn": "{estRelatif, select, oui {Verbonden {date}} other {Verbonden op {date}}}",
+        "today": "Vandaag",
+        "cadence": "Tempo",
+        "perDay": "{n} per dag",
+        "perDayNoLimit": "geen daglimiet",
+        "perHour": "{n} per uur",
+        "perHourNoLimit": "geen uurlimiet",
+        "hours": "Verzenduren",
+        "hoursValue": "{debut} tot {fin}, {jours}",
+        "replies": "Reacties",
+        "repliesOk": "Opgehaald",
+        "repliesLast": "laatst opgehaald {heure}",
+        "repliesNever": "nog nooit opgehaald",
+        "repliesError": "Fout bij ophalen",
+        "repliesNone": "Geen ophalen ingesteld",
+        "edit": "Bewerken",
+        "active": "Actief",
+        "inactive": "Inactief",
+        "disconnected": "Losgekoppeld van SalesBlink",
+        "healthUnavailable": "SalesBlink-status niet beschikbaar",
+        "notLinked": "Niet gekoppeld aan SalesBlink",
+        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}"
+      },
+      "drawer": {
+        "title": "{identite} bewerken",
+        "dailyQuota": "Daglimiet",
+        "hourlyQuota": "Uurlimiet",
+        "noLimit": "Geen limiet",
+        "hoursFrom": "Vanaf",
+        "hoursTo": "Tot",
+        "timezone": "Tijdzone",
+        "days": "Verzenddagen",
+        "inboxProvider": "Reacties rechtstreeks in deze mailbox lezen",
+        "inboxProviderHint": "Jay Reach haalt deze mailbox elke paar minuten op via Microsoft Graph, zodra dit is geconfigureerd in Providers. SalesBlink blijft je berichten verzenden.",
+        "save": "Opslaan",
+        "saving": "Bezig met opslaan",
+        "cancel": "Annuleren",
+        "close": "Sluiten"
+      },
+      "linkDrawer": {
+        "title": "Een mailbox koppelen",
+        "description": "Kies een mailbox uit de SalesBlink-workspace die nog niet aan een afzender is gekoppeld.",
+        "empty": "Momenteel geen SalesBlink-mailbox beschikbaar. Controleer de sleutel in Providers.",
+        "link": "Koppelen",
+        "linking": "Bezig met koppelen",
+        "close": "Sluiten"
+      },
+      "linkedin": {
+        "title": "LinkedIn-accounts",
+        "lead": "LinkedIn-acties vertrekken vanaf een toegewijd residentieel IP-adres, nooit vanaf de server.",
+        "empty": "Geen LinkedIn-account verbonden.",
+        "connected": "Verbonden",
+        "notConnected": "Niet verbonden",
+        "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
+        "activeSenderMissing": "Actief, maar er wordt niets verstuurd: afzender niet geactiveerd",
+        "perDay": "{n} per dag",
+        "perWeek": "{n} per week",
+        "edit": "Bewerken",
+        "active": "Actief",
+        "inactive": "Inactief",
+        "drawerTitle": "{nom} bewerken",
+        "save": "Opslaan",
+        "saving": "Bezig met opslaan",
+        "cancel": "Annuleren",
+        "close": "Sluiten",
+        "drawerDailyQuota": "Gelezen profielen en acties per dag",
+        "drawerWeeklyQuota": "Weeklimiet",
+        "drawerHoursFrom": "Vanaf",
+        "drawerHoursTo": "Tot",
+        "drawerDays": "Verzenddagen",
+        "drawerTimezone": "Tijdzone"
+      }
     },
-    "countTruncated": "Meer dan {n, number} bedrijven gevonden",
-    "bulk": {
-      "addPage": "Deze pagina toevoegen ({count})",
-      "addAll": "Alle {count, number} resultaten toevoegen",
-      "addAllTruncated": "De resultaten toevoegen (max. {count, number})",
-      "confirm": "{count, number} bedrijven aan uw bestand toevoegen?",
-      "starting": "Starten…",
-      "progress": "{done, number} / {total, number}",
+    "days": {
+      "mon": "maandag",
+      "tue": "dinsdag",
+      "wed": "woensdag",
+      "thu": "donderdag",
+      "fri": "vrijdag",
+      "sat": "zaterdag",
+      "sun": "zondag",
+      "weekdays": "maandag tot vrijdag",
+      "everyDay": "elke dag",
+      "short": {
+        "mon": "M",
+        "tue": "D",
+        "wed": "W",
+        "thu": "D",
+        "fri": "V",
+        "sat": "Z",
+        "sun": "Z"
+      }
+    },
+    "plafonds": {
+      "title": "Limieten en standaardwaarden van de organisatie",
+      "lead": "Alles wordt hier ingesteld, in de database. De omgeving wordt alleen gebruikt als een regel ontbreekt: de kolom \"terugval\" zegt welke.",
+      "consommation": {
+        "title": "Verbruik van vandaag",
+        "scoring": "Scorings (Anthropic)",
+        "enrichissement": "Verrijkingen aangevraagd (FullEnrich)",
+        "envois": "Verzendingen",
+        "aide": "De tellers gaan om middernacht terug naar nul, tijd van de organisatie ({fuseau}), verzendingen inbegrepen. Een bereikt plafond zet de taak in wachtstand tot de volgende dag, er gaat niets verloren.",
+        "valeur": "{etat, select, pause {{utilise} · limiet op 0 (gepauzeerd)} sansLimite {{utilise} · geen limiet ingesteld} other {{utilise} / {plafond}}}"
+      },
+      "protection": {
+        "title": "Wat dit beschermt",
+        "scoringTitre": "Scorings",
+        "scoringTexte": "{enPause, select, oui {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. De limiet staat op 0: scoring is gepauzeerd, er wordt niets beoordeeld.} other {elke vacature of elk profiel dat door een bron wordt gelezen, kost een modelaanroep. {plafond} per dag is genoeg voor een tiental runs.}}",
+        "enrichissementTitre": "Verrijkingen",
+        "enrichissementTexte": "één FullEnrich-credit per gezochte e-mail. De motor zoekt eerst voor de hoogste scores.",
+        "defautsTitre": "Standaardwaarden",
+        "defautsTexte": "een campagne of bron die niets specificeert, erft de onderstaande waarde."
+      },
+      "table": {
+        "colReglage": "Instelling",
+        "colValeur": "Waarde",
+        "colDefaut": "Standaard",
+        "colRepli": "Terugval",
+        "colModifie": "Gewijzigd",
+        "modifier": "Bewerken",
+        "enregistrer": "Opslaan",
+        "annuler": "Annuleren",
+        "aucunRepli": "geen",
+        "jamaisModifie": "nooit",
+        "modifiePar": "{nom} · {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
+        "erreurNombre": "Voer een geheel getal in, nul of positief."
+      },
+      "lignes": {
+        "scoringParJour": {
+          "nom": "Scorings per dag",
+          "description": "modelaanroepen om vacatures en profielen te beoordelen"
+        },
+        "enrichissementsParJour": {
+          "nom": "Verrijkingen per dag",
+          "description": "FullEnrich-credits om e-mails te vinden"
+        },
+        "scoreMinDefaut": {
+          "nom": "Minimale instapscore",
+          "description": "standaard voor campagnes die er geen opgeven"
+        },
+        "relecturePremiersEnvoisDefaut": {
+          "nom": "Herziening van de eerste verzendingen",
+          "description": "standaard voor campagnes · 0 = alles gaat zonder herziening"
+        },
+        "ageMaxOffresJours": {
+          "nom": "Maximale leeftijd van vacatures",
+          "description": "standaard voor bronnen · in dagen",
+          "suffixe": "dagen"
+        }
+      },
+      "ailleurs": {
+        "title": "Elders ingesteld",
+        "lead": "Deze waarden leven op het niveau van de mailbox, de campagne of de bron; de link leidt naar het juiste scherm.",
+        "colReglage": "Instelling",
+        "colNiveau": "Niveau",
+        "colOu": "Waar",
+        "boites": {
+          "reglage": "Verzendingen per dag en per uur, verzenduren en -dagen, tijdzone",
+          "niveau": "mailbox",
+          "lien": "Afzenders"
+        },
+        "campagnes": {
+          "reglage": "Dagelijkse limiet van nieuwe contacten, minimale score, herziening",
+          "niveau": "campagne",
+          "lien": "Campagnes"
+        },
+        "sources": {
+          "reglage": "Frequentie van de runs, leeftijd van vacatures, profielquota",
+          "niveau": "bron",
+          "lien": "Campagnes"
+        },
+        "pause": {
+          "reglage": "Algemene verzendpauze",
+          "niveau": "organisatie",
+          "lien": "Motor"
+        }
+      }
+    },
+    "fournisseurs": {
+      "title": "Providers",
+      "lead": "De sleutels zijn versleuteld in de database en worden nooit in leesbare vorm getoond.",
+      "champCle": "Sleutel",
+      "remplacer": "Vervangen",
+      "enregistrer": "Opslaan",
+      "enregistrementEnCours": "Bezig met opslaan…",
+      "annuler": "Annuleren",
+      "tester": "Testen",
+      "placeholderSecret": "Plak de sleutel",
+      "jamaisTeste": "—",
+      "reussi": "Geslaagd · {date}",
+      "echec": "Mislukt · {date}",
+      "etat": {
+        "cleValide": "Geldige sleutel",
+        "connecte": "Verbonden",
+        "aRenseigner": "In te vullen",
+        "echec": "Verbindingsfout"
+      },
+      "nom": {
+        "anthropic": "Anthropic",
+        "fullenrich": "FullEnrich",
+        "dropcontact": "Dropcontact",
+        "bouncer": "Bouncer",
+        "reoon": "Reoon",
+        "salesblink": "SalesBlink",
+        "microsoft_graph": "Microsoft 365",
+        "adzuna": "Adzuna",
+        "francetravail": "France Travail",
+        "apify": "Apify"
+      },
+      "description": {
+        "anthropic": "Beoordeling van vacatures en profielen",
+        "fullenrich": "Zoeken naar geverifieerde zakelijke e-mailadressen",
+        "dropcontact": "Verrijking van contacten",
+        "bouncer": "Verificatie van e-mailaflevering",
+        "reoon": "Verificatie van e-mailaflevering",
+        "salesblink": "Verzenden van e-mails",
+        "microsoft_graph": "Ophalen van reacties, mailbox per mailbox",
+        "adzuna": "Vacatures van Franse sites",
+        "francetravail": "Vacatures van de overheidsinstantie",
+        "apify": "Serverside lezen van LinkedIn · vereist voor het LinkedIn-kanaal"
+      },
+      "lien": {
+        "reglerPlafond": "Limiet instellen",
+        "voirLesBoites": "Mailboxes bekijken",
+        "voirLesCampagnes": "Campagnes bekijken"
+      },
+      "colDernierTest": "Laatste test",
+      "colAujourdhui": "Vandaag",
+      "sansDonnee": "—",
+      "consommation": {
+        "scorings": "{utilise} scorings van {plafond}",
+        "enrichissements": "{utilise} credits van {plafond}",
+        "envois": "{utilise} verzendingen van {plafond}"
+      },
+      "reglagesTitre": "Instellingen",
+      "enregistrerReglages": "Opslaan",
+      "champConfigDefaut": "Standaard: {defaut}."
+    },
+    "personas": {
+      "title": "Persona's",
+      "lead": "Wie je zoekt, en hoe de motor beslist dat een vacature of profiel overeenkomt.",
+      "new": "+ Nieuwe persona",
+      "empty": "Nog geen actieve persona.",
+      "archivedSection": "Gearchiveerd ({n})",
+      "reactivate": "Heractiveren",
+      "list": {
+        "draft": "geen campagne",
+        "summary": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacten}}",
+        "summaryWithScore": "{campaigns, plural, one {# campagne} other {# campagnes}} · {contacts, plural, one {# contact} other {# contacten}} · gemiddelde score {score}"
+      },
+      "form": {
+        "titleNew": "Nieuwe persona",
+        "usedBy": "gebruikt door {campagnes}",
+        "notUsed": "door geen enkele campagne gebruikt",
+        "name": "Naam",
+        "defaultCampaign": "Standaardcampagne",
+        "defaultCampaignNone": "Geen",
+        "defaultCampaignHint": "waar contacten die door een bron zonder campagne zijn gevonden naartoe gaan",
+        "titles": "Herkende functietitels",
+        "titlesAdd": "Toevoegen…",
+        "titlesRemove": "\"{intitule}\" verwijderen",
+        "titlesHint": "De motor herkent ook vergelijkbare varianten; de test hieronder toont dit.",
+        "seniority": "Senioriteit",
+        "seniorityNone": "Niet gespecificeerd",
+        "seniority_executive": "Algemene directie",
+        "seniority_director": "Directie en management",
+        "seniority_manager": "Middenmanagement",
+        "seniority_individual": "Individuele bijdrager",
+        "scoringPrompt": "Beoordelingsinstructies (gelezen door het model)",
+        "angle": "Wat Jay hen brengt",
+        "archive": "Archiveren",
+        "cancel": "Annuleren",
+        "save": "Opslaan",
+        "archiveConfirm": "Deze persona archiveren? Hij verdwijnt uit de selector voor nieuwe campagnes, maar reeds gekoppelde contacten en campagnes veranderen niet."
+      },
+      "test": {
+        "title": "Overeenkomst testen",
+        "lead": "overeenkomst op functietitel, op basis van actieve persona's",
+        "placeholder": "Een functietitel…",
+        "button": "Testen",
+        "testing": "Bezig met testen…",
+        "matched": "Komt overeen met {persona}",
+        "ambiguous": "Dubbelzinnig tussen {personas}",
+        "none": "Komt met geen enkele persona overeen"
+      }
+    },
+    "messages": {
+      "title": "Berichten",
+      "lead": "De bibliotheek met herbruikbare modellen. Een sequentiestap kan hierin worden ondergebracht; een model hier bewerken wijzigt alle stappen die eraan gekoppeld zijn, vanaf de volgende verzending.",
+      "new": "+ Nieuw model",
+      "search": "Een model zoeken…",
+      "noResult": "Geen enkel model komt overeen met deze zoekopdracht.",
+      "filters": {
+        "all": "Alle {n}",
+        "email": "E-mail {n}",
+        "linkedin": "LinkedIn {n}",
+        "unused": "Ongebruikt {n}"
+      },
+      "table": {
+        "name": "Model",
+        "channel": "Kanaal",
+        "usedBy": "Gebruikt door",
+        "sent": "Verzendingen",
+        "sentCount": "{n, plural, =0 {Geen verzending} one {# verzending} other {# verzendingen}}",
+        "modified": "Gewijzigd",
+        "edit": "Bewerken",
+        "unusedBy": "geen",
+        "channelEmail": "E-mail",
+        "channelLinkedin": "LinkedIn",
+        "channelLetter": "Brief",
+        "channelCall": "Telefoongesprek"
+      },
+      "empty": {
+        "title": "Nog geen model",
+        "text": "Modellen worden hier of vanuit een sequentiestap aangemaakt. Eén model kan voor zoveel campagnes worden gebruikt als je wilt.",
+        "action": "+ Nieuw model"
+      },
+      "drawer": {
+        "titleNew": "Nieuw model",
+        "titleEdit": "{nom} bewerken",
+        "close": "Sluiten",
+        "cancel": "Annuleren",
+        "save": "Opslaan",
+        "name": "Naam",
+        "channel": "Kanaal",
+        "channelEmail": "E-mail",
+        "channelLinkedinInvite": "LinkedIn (uitnodiging)",
+        "channelLinkedinMessage": "LinkedIn (bericht)",
+        "channelLetter": "Brief",
+        "channelCall": "Telefoongesprek",
+        "nature": "Beoogd type campagne",
+        "natureSignal": "Gevoed door een signaal",
+        "natureList": "Gevoed door een lijst",
+        "natureHint": "Bepaalt welke variabelen beschikbaar zijn in de inhoud (bijv. '{{'signal_titre'}}' bestaat alleen voor een campagne die door een signaal wordt gevoed).",
+        "subject": "Onderwerp",
+        "body": "Inhoud",
+        "bodyHint": "Variabelen: klik om op de cursorpositie in te voegen."
+      }
+    },
+    "moteur": {
+      "titre": "Motor",
+      "description": "De motor draait continu op de server van Jay Reach. Hij loopt elke minuut; bronnen, scoring, verrijking, verzendingen en het ophalen van reacties zijn zijn taken.",
+      "etat": {
+        "titre": "Status",
+        "enMarche": "Draait",
+        "arrete": "Gestopt",
+        "version": "versie {version}",
+        "dernierPassage": "Laatste run",
+        "prochainPassage": "Volgende",
+        "aucunPassage": "—",
+        "derniereErreur": "Laatste fout",
+        "aucuneErreur": "Geen",
+        "tachesEnAttente": "Wachtende taken",
+        "aucuneTache": "Geen",
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}"
+      },
+      "pause": {
+        "titre": "Algemene verzendpauze",
+        "description": "Onderbreekt alle verzendingen van alle campagnes, zonder iets te annuleren: de e-mails gaan uit zodra de pauze is opgeheven. Bronnen, scoring en ophalen blijven doorgaan.",
+        "etat": "Status",
+        "levee": "opgeheven",
+        "active": "actief",
+        "dernierePause": "Laatste pauze",
+        "aucunePause": "Geen pauze geregistreerd.",
+        "dernierePauseGabarit": "{depuis} tot {jusqua} · {parQui}",
+        "erreur": "De pauze kon niet worden gewijzigd."
+      },
+      "taches": {
+        "titre": "Nu een taak uitvoeren",
+        "sousTitre": "zonder te wachten op de volgende geplande run",
+        "lancer": "Uitvoeren",
+        "enCours": "Bezig",
+        "erreur": "De taak kon niet worden gestart.",
+        "continuAideGabarit": "Draait continu serverside, ongeveer elke {minutes} minuten. Hier is geen handmatige start mogelijk.",
+        "sources": {
+          "titre": "Alle bronnen uitvoeren",
+          "detailGabarit": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · laatste run {dernier}",
+          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run"
+        },
+        "scoring": {
+          "titre": "Wachtende signalen scoren",
+          "detailGabarit": "{n, plural, one {# wachtend signaal} other {# wachtende signalen}}",
+          "detailVide": "geen wachtend signaal"
+        },
+        "enrichissement": {
+          "titre": "Contacten zonder e-mail verrijken",
+          "detailGabarit": "{n, plural, one {# wachtend contact} other {# wachtende contacten}}",
+          "detailVide": "geen wachtend contact"
+        },
+        "releve": {
+          "titre": "Ophalen van SalesBlink-reacties",
+          "detailGabarit": "laatst opgehaald {quand}",
+          "detailJamais": "nog nooit opgehaald"
+        }
+      },
+      "erreurs": {
+        "titre": "Recente fouten",
+        "sousTitre": "7 dagen",
+        "vide": "Geen fouten in de afgelopen zeven dagen."
+      },
+      "releveLectureSeule": {
+        "titre": "Ophalen van reacties",
+        "sousTitre": "alleen-lezen",
+        "cadence": "Tempo",
+        "cadenceValeurGabarit": "elke {minutes} min",
+        "derniere": "Laatst opgehaald",
+        "jamais": "nooit",
+        "aideReglee": "Ingesteld bij Providers › SalesBlink.",
+        "aideDefaut": "Geen tempo ingesteld: de standaardwaarde geldt. In te stellen bij Providers › SalesBlink.",
+        "lienFournisseurs": "Providers openen"
+      },
+      "bandeauPause": {
+        "texteGabarit": "Verzendpauze actief sinds {depuis} ({parQui}): er gaat geen e-mail uit.",
+        "auteurInconnu": "onbekende auteur"
+      },
+      "bandeauSilencieux": {
+        "texteGabarit": "De motor heeft sinds de laatste run ({dernier}) geen teken van leven gegeven. Geplande verzendingen wachten.",
+        "texteJamaisDemarre": "De motor heeft nog nooit gedraaid op deze instantie.",
+        "lien": "Fouten bekijken"
+      }
+    },
+    "compte": {
+      "titre": "Account",
+      "description": "De organisatie, haar leden en je meldingen.",
+      "organisation": {
+        "titre": "Organisatie",
+        "nom": "Naam",
+        "fuseau": "Tijdzone",
+        "fuseauAide": "weergegeven tijden en standaard verzendvensters",
+        "langue": "Taal van de interface",
+        "langueAide": "ook beschikbaar in het Engels en Nederlands",
+        "enregistrer": "Opslaan",
+        "erreur": "De organisatie kon niet worden opgeslagen."
+      },
+      "membres": {
+        "titre": "Leden",
+        "compteGabarit": "{count} · minstens één eigenaar",
+        "inviter": "+ Uitnodigen per e-mail",
+        "colonneMembre": "Lid",
+        "colonneEmail": "E-mail",
+        "colonneRole": "Rol",
+        "colonneDepuis": "Sinds",
+        "vous": "jij",
+        "retirer": "Verwijderen",
+        "enAttenteSuffixe": "in afwachting",
+        "role": {
+          "owner": "Eigenaar",
+          "admin": "Beheerder",
+          "operator": "Operator",
+          "viewer": "Alleen-lezen"
+        },
+        "aide": "Eigenaar en beheerder regelen alles. Operator stuurt campagnes en de Inbox aan. Alleen-lezen kijkt zonder te wijzigen.",
+        "erreur": "De actie kon niet worden uitgevoerd."
+      },
+      "notifications": {
+        "titre": "Mijn meldingen",
+        "sousTitre": "per e-mail en in de app",
+        "erreur": "De voorkeur kon niet worden opgeslagen.",
+        "evenement": {
+          "contact": {
+            "replied": {
+              "titre": "Er komt een reactie binnen",
+              "detail": "bij elke gedetecteerde menselijke reactie"
+            }
+          }
+        }
+      },
+      "session": {
+        "titre": "Sessie",
+        "bouton": "Afmelden"
+      }
+    }
+  },
+  "contacts": {
+    "title": "Contacten",
+    "description": "Alle contacten gevonden door je bronnen, over alle campagnes heen, met bedrijven en je uitsluitingen.",
+    "export": "Exporteren",
+    "tabs": {
+      "all": "Alle contacten",
+      "companies": "Bedrijven",
+      "customers": "Klanten en uitsluitingen"
+    },
+    "filters": {
+      "campaign": "Campagne",
+      "campaignAll": "Alle campagnes",
+      "status": "Status",
+      "statusAll": "Alle statussen",
+      "email": "E-mail",
+      "emailAll": "Alle e-mails",
+      "source": "Bron",
+      "sourceAll": "Alle bronnen",
+      "sourceManual": "Handmatig",
+      "search": "Zoek een naam, een bedrijf, een functie…",
+      "apply": "Filteren"
+    },
+    "columns": {
+      "contact": "Contact",
+      "why": "Waarom deze persoon",
+      "score": "Score",
+      "email": "E-mail",
+      "step": "Stap",
+      "campaign": "Campagne",
+      "campaignCount": "{count} campagnes",
+      "status": "Status"
+    },
+    "status": {
+      "a_contacter": "Te contacteren",
+      "sans_email": "Geen e-mail",
+      "en_pause": "Gepauzeerd",
+      "en_sequence": "In sequentie",
+      "a_repondu": "Heeft gereageerd",
+      "interesse": "Geïnteresseerd",
+      "ecarte": "Afgewezen",
+      "termine": "Afgerond",
+      "rebond": "Bounce",
+      "ne_plus_contacter": "Niet meer contacteren"
+    },
+    "pause": {
+      "emailGate": "E-mail als onbestelbaar beoordeeld",
+      "salesblinkError": "Verzending geweigerd door de e-mailprovider",
+      "senderUnavailable": "Geen verzendmailbox beschikbaar",
+      "absence": "Afwezig, hervat op {date}",
+      "absenceNoDate": "Afwezig",
+      "generic": "Gepauzeerd"
+    },
+    "step": "Stap {n}",
+    "stepEnded": "{n} · {libelle}",
+    "noStep": "te contacteren",
+    "email": {
+      "verified": "Geverifieerd",
+      "toFind": "Nog te vinden"
+    },
+    "actions": {
+      "enrich": "E-mail zoeken",
+      "enrichCost": "1 credit",
+      "enrichPaused": "Verrijking gepauzeerd (limiet op 0) — verhoog dit bij Providers.",
+      "discard": "Afwijzen",
+      "resume": "Hervatten"
+    },
+    "nextMessage": "Volgend bericht op {date}",
+    "empty": "Geen contact voor dit filter.",
+    "truncated": "Weergave beperkt tot de eerste 5.000 resultaten: verfijn de filters om de rest te zien.",
+    "pageRange": "{debut} tot {fin} van {total}",
+    "pageOf": "Pagina {page} van {dernierePage}",
+    "previous": "Vorige",
+    "next": "Volgende",
+    "companies": {
+      "columns": {
+        "company": "Bedrijf",
+        "sector": "Sector",
+        "size": "Grootte",
+        "city": "Stad",
+        "contacts": "Bekende contacten",
+        "links": "Links"
+      },
+      "site": "website",
+      "unknown": "—",
+      "empty": "Nog geen bedrijf.",
+      "pageRange": "{debut} tot {fin} van {total}",
+      "pageOf": "Pagina {page} van {dernierePage}",
+      "previous": "Vorige",
+      "next": "Volgende"
+    },
+    "customers": {
+      "clientsTitle": "Jay-klanten",
+      "clientsCount": "{n} domeinen",
+      "clientsEmpty": "Nog geen klantendomein.",
+      "addDomainPlaceholder": "Domein toevoegen",
+      "add": "Toevoegen",
+      "adminRequired": "Beheerdersrecht vereist om een klant toe te voegen.",
+      "exclusionsTitle": "Niet meer contacteren",
+      "exclusionsCount": "{n} items",
+      "exclusionsEmpty": "Nog geen uitsluiting.",
+      "addExclusionPlaceholder": "E-mail, domein of LinkedIn-adres",
+      "scopeEmail": "E-mail",
+      "scopeDomain": "Domein",
+      "scopeLinkedin": "LinkedIn",
+      "operatorRequired": "Operatorrecht vereist om een uitsluiting toe te voegen."
+    },
+    "importDialog": {
+      "open": "Een CSV importeren",
+      "close": "Sluiten",
       "cancel": "Annuleren",
-      "cancelled": "Geannuleerd — {added} bedrijf(ven) toegevoegd voor de stop.",
-      "done": "{added} toegevoegd, {existing} al aanwezig."
-    }
-  },
-  "notifications": {
-    "title": "Meldingen",
-    "markAll": "Alles als gelezen",
-    "empty": "Geen meldingen.",
-    "pushEnable": "Bureaumeldingen inschakelen",
-    "pushTest": "Test versturen",
-    "pushEnabled": "Bureaumeldingen ingeschakeld ✓",
-    "pushSent": "Test verzonden ({n})",
-    "pushDenied": "Toestemming geweigerd",
-    "pushUnsupported": "Niet ondersteund door deze browser"
-  },
-  "approvals": {
-    "eyebrow": "Validatie",
-    "title": "Goedkeuringswachtrij",
-    "lead": "Verzendingen die menselijke validatie vereisen (brief, budgetoverschrijding, handmatige modus). Niets vertrekt zonder jouw goedkeuring.",
-    "empty": "Geen verzending in afwachting van goedkeuring.",
-    "approve": "Goedkeuren",
-    "reject": "Afwijzen",
-    "channel": {
-      "email": "E-mail",
-      "linkedin_invite": "LinkedIn-uitnodiging",
-      "linkedin_message": "LinkedIn-bericht",
-      "letter": "Brief",
-      "call": "Telefoon"
-    },
-    "reason": {
-      "letter": "Brief — verificatie vereist",
-      "budget": "Budget overschreden",
-      "manual": "Handmatige modus",
-      "sender_unbound": "Geen afzender gekoppeld",
-      "missing_locale": "Taal van contact onbekend",
-      "missing_template": "Geen bericht gekoppeld aan de stap",
-      "missing_variable": "Niet-opgeloste berichtvariabele"
-    }
-  },
-  "customers": {
-    "eyebrow": "Uitsluiting",
-    "title": "Huidige klanten",
-    "lead": "Importeer je huidige klanten: ze worden uitgesloten van prospectie op bedrijfsniveau (SIREN, domein of naam). Echte afmeldingen blijven ongemoeid.",
-    "drop": "Kies een bestand (CSV / Excel)",
-    "detected": "{n, plural, one {# bedrijf gedetecteerd} other {# bedrijven gedetecteerd}}",
-    "listName": "Lijstnaam (bv. CRM-klanten 2026)",
-    "import": "Importeren en uitsluiten",
-    "importing": "Importeren…",
-    "done": "{n, plural, one {# klant geïmporteerd} other {# klanten geïmporteerd}} — uitsluitingen aangemaakt ✓",
-    "listsTitle": "Klantenlijsten",
-    "entries": "{n, plural, one {# vermelding} other {# vermeldingen}}"
-  },
-  "templates": {
-    "eyebrow": "Bibliotheek",
-    "title": "Berichten",
-    "lead": "Sjablonen die u hergebruikt in uw campagnes, zonder ze telkens te herschrijven.",
-    "new": "Nieuw bericht",
-    "demoNotice": "Verbind Supabase om te bewerken.",
-    "empty": "Nog geen berichten.",
-    "edit": "Bewerken",
-    "versionsCount": "{n, plural, one {# versie} other {# versies}}",
-    "editTitle": "Bericht bewerken",
-    "newTitle": "Nieuw bericht",
-    "close": "Sluiten",
-    "name": "Naam",
-    "namePlaceholder": "Commerciële opvolging",
-    "channel": {
-      "label": "Kanaal",
-      "email": "E-mail",
-      "linkedin_invite": "LinkedIn-uitnodiging",
-      "linkedin_message": "LinkedIn-bericht",
-      "letter": "Brief"
-    },
-    "nature": {
-      "label": "Campagnetype",
-      "signal": "Signaal",
-      "list": "Lijst"
-    },
-    "subject": "Onderwerp",
-    "message": "Bericht",
-    "messagePlaceholder": "Hallo '{{'prenom'}}', …",
-    "wordCount": "{n} / {max} woorden",
-    "insertVar": "Invoegen:",
-    "fixVariables": "Corrigeer de variabelen voor het opslaan.",
-    "versionHistory": "Versiegeschiedenis",
-    "active": "Actief",
-    "reactivate": "Heractiveren",
-    "sentCount": "{n, plural, one {# verzending} other {# verzendingen}}",
-    "noVersionYet": "Geen versie voor deze taal.",
-    "cancel": "Annuleren",
-    "saveVersion": "Opslaan (nieuwe versie)"
-  },
-  "campaignNew": {
-    "back": "← Campagnes",
-    "eyebrow": "Nieuwe campagne",
-    "title": "Campagne aanmaken",
-    "lead": "Waar prospects vandaan komen, wie te benaderen en in welk tempo. De sequentie bouw je daarna.",
-    "demoNotice": "Verbind Supabase om een campagne aan te maken.",
-    "name": "Naam",
-    "namePlaceholder": "Opvolging buitendienst",
-    "entryKind": "Ingang",
-    "kind": {
-      "source": "Signaalbron",
-      "list": "Geïmporteerde lijst"
-    },
-    "pickSource": "Monitoringthema's",
-    "pickList": "Lijst",
-    "choose": "Kiezen…",
-    "noneAvailable": "Geen optie beschikbaar.",
-    "personas": "Doelpersona's",
-    "noPersona": "Geen actieve persona.",
-    "minScore": "Minimumscore",
-    "dailyCap": "Daglimiet",
-    "dailyCapPlaceholder": "bv. 50",
-    "cancel": "Annuleren",
-    "create": "Campagne aanmaken",
-    "minScoreHelp": "Score die de AI elk contact geeft, 0 tot 100, volgens de scoringsinstructie van zijn persona. Onder deze drempel komt het contact er niet in.",
-    "minScoreLink": "De scoringsinstructies instellen",
-    "dailyCapHelp": "Alle kanalen samen. Zijn de LinkedIn-instellingen strenger, dan gelden die: de strengste limiet wint altijd.",
-    "dailyCapLink": "De LinkedIn-instellingen bekijken"
-  },
-  "senders": {
-    "eyebrow": "Wie verstuurt",
-    "title": "Afzenders",
-    "lead": "De accounts waarvandaan uw berichten vertrekken. De weergavenaam is wat de ontvanger ziet; de limieten begrenzen wat elke afzender verstuurt.",
-    "kind": {
-      "email": "E-mail",
-      "linkedin": "LinkedIn",
-      "postal": "Brief"
-    },
-    "displayName": "Weergavenaam",
-    "displayNamePlaceholder": "De naam die de ontvanger ziet",
-    "dailyQuota": "Daglimiet",
-    "hourlyQuota": "Uurlimiet",
-    "noLimit": "Geen limiet",
-    "active": "Verstuur vanaf deze afzender",
-    "save": "Opslaan",
-    "saving": "Opslaan",
-    "saved": "Opgeslagen",
-    "empty": "Nog geen afzenders. Koppel een account onder Providers om uw eerste berichten te versturen.",
-    "sendDays": "Verzenddagen",
-    "sendFrom": "Vanaf",
-    "sendTo": "Tot",
-    "timezone": "Tijdzone",
-    "sendHoursSalesBlinkHint": "Deze uren worden naar SalesBlink gestuurd zodra de sequentie van de stap wordt aangemaakt. Een latere wijziging wordt niet automatisch doorgevoerd naar SalesBlink.",
-    "form": {
-      "add": "Afzender toevoegen",
-      "cancel": "Annuleren",
-      "create": "Afzender aanmaken",
-      "creating": "Aanmaken",
-      "channel": "Kanaal",
-      "emailIdentity": "Verzendadres",
-      "linkedinIdentity": "LinkedIn-gebruikersnaam",
-      "emailPlaceholder": "voornaam@uw-domein.nl",
-      "linkedinPlaceholder": "uw-profiel",
-      "identityHint": "Wordt bij het aanmaken vastgelegd. Het benoemt het account bij de provider, dus later wijzigen verandert niet wat er werkelijk uitgaat."
-    },
-    "salesblinkBox": "SalesBlink-postbus",
-    "salesblinkBoxNone": "Nu geen SalesBlink-postbus beschikbaar. Controleer de sleutel onder Providers.",
-    "salesblinkHealth": "{etat, select, actif {Verzending actief} coupe {Verbroken: {message}} other {Nog nooit gecontroleerd}}",
-    "salesblinkCap": "SalesBlink-limiet",
-    "lowestApplies": "de laagste geldt",
-    "inboxProvider": "Reacties rechtstreeks in deze postbus lezen",
-    "inboxProviderHint": "Jay Reach controleert deze postbus elke paar minuten via Microsoft Graph, zodra Microsoft Graph is ingesteld onder Providers. SalesBlink blijft uw berichten verzenden."
-  },
-  "snippets": {
-    "title": "Herbruikbare teksten",
-    "lead": "Tekst die u één keer schrijft en als een variabele in uw berichten invoegt. Wijzig hem hier en elk bericht volgt.",
-    "add": "Tekst toevoegen",
-    "name": "Naam",
-    "namePlaceholder": "signature",
-    "nameHint": "Wordt '{{'{exemple}'}}' in uw berichten. Kleine letters, zonder accenten of spaties.",
-    "body": "Inhoud",
-    "bodyPlaceholder": "Marie Dupont\nCommercieel directeur, Acme",
-    "save": "Opslaan",
-    "cancel": "Annuleren",
-    "delete": "Verwijderen",
-    "empty": "Nog geen. Een handtekening, juridische vermeldingen: wat zich van bericht tot bericht herhaalt."
-  },
-  "campaign": {
-    "guard": {
-      "noSalesBlinkKey": "geen SalesBlink-sleutel ingesteld",
-      "noBoundEmailSender": "geen e-mailafzender gekoppeld aan een SalesBlink-postbus",
-      "emailSenderDisconnected": "de aan SalesBlink gekoppelde e-mailafzender heeft geen actieve verzending"
+      "title": "Contacten importeren",
+      "intro": "Kies de campagne waarin deze contacten terechtkomen.",
+      "campaign": "Campagne",
+      "chooseCampaign": "Kies een campagne",
+      "noCampaign": "Maak eerst een campagne aan om contacten te importeren.",
+      "draftCampaignWarning": "Deze campagne is niet actief: de contacten worden geïmporteerd, maar er wordt niets verstuurd voordat ze is gestart.",
+      "listName": "Naam van de lijst",
+      "file": "CSV-bestand",
+      "mapping": "Kolomtoewijzing",
+      "colColumn": "Kolom",
+      "colExample": "Voorbeeld",
+      "colField": "Veld",
+      "colIgnore": "Negeren",
+      "before": "Voor import",
+      "rowsRead": "Gelezen rijen",
+      "new": "Nieuwe contacten",
+      "known": "Al bekend",
+      "missingEmail": "Zonder e-mail",
+      "submit": "{n} contacten importeren"
     }
   }
 }

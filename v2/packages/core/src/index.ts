@@ -18,8 +18,11 @@ export * from './inbox/index.js';
 export * from './messages/index.js';
 export * from './campaigns/index.js';
 export * from './plafonds.js';
+export * from './journal.js';
+export * from './transaction.js';
 export * from './reglages-salesblink.js';
 export * from './email-transport/index.js';
+export * from './fonctions/index.js';
 
 /** Version du paquet cœur — sert de sonde de santé au worker/web. */
 export const CORE_VERSION = '0.0.0';

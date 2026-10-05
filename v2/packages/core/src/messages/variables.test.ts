@@ -6,6 +6,7 @@ import {
   normalizeListColumnName,
   parseTemplateTokens,
   renderTemplate,
+  renderTemplatePartial,
   validateTemplateVariables,
   normalizeVariableSyntax,
 } from './variables.js';
@@ -91,6 +92,33 @@ describe('rendu et variables manquantes (blocage)', () => {
   it('remonte plusieurs manquantes, distinctes', () => {
     const r = renderTemplate('{{prenom}} {{entreprise}} {{prenom}}', {});
     expect(r.missing).toEqual(['prenom', 'entreprise']);
+  });
+});
+
+describe('renderTemplatePartial (aperçu sans requête supplémentaire, file du jour)', () => {
+  it('substitue une variable dont la valeur est disponible', () => {
+    const r = renderTemplatePartial('Bonjour {{prenom}}', { prenom: 'Alice' });
+    expect(r).toBe('Bonjour Alice');
+  });
+
+  it('laisse le gabarit brut pour une variable non cherchée à cet appel (jamais blanchie)', () => {
+    const r = renderTemplatePartial('votre recrutement de {{liste_intitule_poste}}', { prenom: 'Alice' });
+    expect(r).toBe('votre recrutement de {{liste_intitule_poste}}');
+  });
+
+  it('mélange substitution et gabarit brut dans le même texte', () => {
+    const r = renderTemplatePartial('{{prenom}}, poste : {{liste_intitule_poste}}', { prenom: 'Alice', nom: undefined });
+    expect(r).toBe('Alice, poste : {{liste_intitule_poste}}');
+  });
+
+  it('applique le repli quand la valeur cherchée est vide', () => {
+    const r = renderTemplatePartial('Bonjour {{prenom|là}}', { prenom: undefined });
+    expect(r).toBe('Bonjour là');
+  });
+
+  it('sans repli, une valeur cherchée mais vide garde le gabarit brut (aperçu, pas un envoi)', () => {
+    const r = renderTemplatePartial('Bonjour {{prenom}}', { prenom: undefined });
+    expect(r).toBe('Bonjour {{prenom}}');
   });
 });
 

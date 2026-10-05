@@ -19,6 +19,7 @@ function ligne(overrides: Partial<DueRow> = {}): DueRow {
     account_id: null,
     persona_id: null,
     approval_policy: {},
+    entry_rules: null,
     sending_paused_at: null,
     lk_mode: null,
     first_name: 'Marie',

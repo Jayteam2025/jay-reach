@@ -37,7 +37,14 @@ async function main() {
   // Jeton d'extension.
   const token = 'tok_fictif_lkq_0001';
   await pool.query(
-    `insert into extension_tokens (token, organization_id, user_id, label) values ($1, $2, $3, 'test')`,
+    // La colonne porte une EMPREINTE depuis `20260828140000_extension_token_hash.sql`
+    // (`token` renommée `token_hash`) : on y écrit le SHA-256, et c'est le jeton en clair
+    // qu'on donne ensuite à `validateToken`, comme le fait l'extension. Ce harnais écrivait
+    // encore en clair dans une colonne nommée `token`, et ne l'avait jamais su — cette
+    // migration ne s'appliquait pas sur la base de développement, faute de `pgcrypto` dans
+    // le schéma `extensions` (corrigé dans `auth-shim.sql` le 05/10).
+    `insert into extension_tokens (token_hash, organization_id, user_id, label)
+     values (encode(extensions.digest($1, 'sha256'), 'hex'), $2, $3, 'test')`,
     [token, ORG, USER],
   );
   // Deux contacts fictifs.

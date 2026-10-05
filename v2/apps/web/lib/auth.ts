@@ -1,13 +1,19 @@
 import { requireRole as coreRequireRole, type MembershipRole } from '@jay-reach/core';
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 import { createClient } from './supabase/server';
 
-/** Utilisateur connecté, ou null. */
-export async function getUser() {
+/**
+ * Utilisateur connecté, ou null. Mémoïsé pour la durée du rendu : chaque
+ * `supabase.auth.getUser()` est un aller-retour réseau vers Supabase Auth
+ * (le SDK ne mémoïse rien), et un chargement de page l'appelait jusqu'à cinq
+ * fois. Tout ce qui a besoin de l'utilisateur passe par ici.
+ */
+export const getUser = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   return data.user;
-}
+});
 
 /** Exige un utilisateur connecté, sinon redirige vers /login. */
 export async function requireUser() {
@@ -20,16 +26,16 @@ export async function requireUser() {
 
 /** Rôle de l'utilisateur courant dans une organisation (null si non-membre). */
 export async function getMembershipRole(organizationId: string): Promise<MembershipRole | null> {
-  const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) {
+  const user = await getUser();
+  if (!user) {
     return null;
   }
+  const supabase = await createClient();
   const { data } = await supabase
     .from('memberships')
     .select('role')
     .eq('organization_id', organizationId)
-    .eq('user_id', userData.user.id)
+    .eq('user_id', user.id)
     .maybeSingle();
   const role = (data as { role?: string } | null)?.role;
   return (role as MembershipRole | undefined) ?? null;
@@ -57,9 +63,9 @@ export async function requireRole(
  * paramètre depuis un écran qui la connaît déjà.
  */
 export async function getCurrentOrganizationId(): Promise<string | null> {
+  const user = await getUser();
+  if (!user) return null;
   const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return null;
   // Tri explicite : sans lui, « la première adhésion » dépend de l'ordre que
   // la base juge commode, et deux appels successifs peuvent désigner deux
   // organisations différentes. L'adhésion la plus ancienne gagne, l'identifiant
@@ -67,7 +73,7 @@ export async function getCurrentOrganizationId(): Promise<string | null> {
   const { data } = await supabase
     .from('memberships')
     .select('organization_id')
-    .eq('user_id', userData.user.id)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
     .order('organization_id', { ascending: true })
     .limit(1);

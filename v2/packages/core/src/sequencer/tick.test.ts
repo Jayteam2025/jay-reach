@@ -17,7 +17,7 @@ const base: ComposeTickInput = {
 };
 
 describe('composeTick', () => {
-  it('émet la 1re étape, avance, planifie la suivante avec le délai', () => {
+  it('émet la 1re étape, avance, mais NE planifie PAS la suivante (issue #111 : elle attend le départ réel)', () => {
     const r = composeTick(base);
     expect(r.action?.status).toBe('scheduled');
     expect(r.action?.channel).toBe('linkedin_invite');
@@ -25,7 +25,11 @@ describe('composeTick', () => {
     expect(r.dispatch).toBe(true);
     expect(r.nextStep).toBe(1);
     expect(r.nextStatus).toBe('active');
-    expect(r.nextActionAtMs).toBe(base.now + 48 * 3_600_000);
+    // Et non `base.now + 48 * 3_600_000` : poser l'échéance à la création
+    // suppose que l'envoi part aussitôt, ce qui est faux dès qu'un lot
+    // s'étale sur plusieurs jours (expéditeurs saturés). L'échéance est
+    // posée au départ réel par le gestionnaire d'envoi (`echeanceEtapeSuivante`).
+    expect(r.nextActionAtMs).toBeNull();
   });
 
   it('dernière étape → completed, plus de prochaine action', () => {

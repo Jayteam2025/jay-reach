@@ -1,0 +1,608 @@
+/* Jay Reach, composants du design system (direction A, palette sobre). Dépend de jetons.css.
+   Règles : aucune couleur en dur ; colonnes de grille bornées minmax(0,1fr) ; cartes min-width:0 ; texte qui replie. */
+
+/* Base */
+.jr-app { font-family: var(--jr-police); font-size: var(--jr-corps); line-height: 1.45; color: var(--jr-encre); background: var(--jr-fond); font-variant-numeric: tabular-nums; display: flex; min-height: 100vh; position: relative; }
+.jr-app *, .jr-app *::before, .jr-app *::after { box-sizing: border-box; }
+.jr-app a { color: inherit; text-decoration: none; }
+.jr-app svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.jr-app svg.plein { fill: currentColor; stroke: none; }
+.jr-app :focus-visible { outline: 2px solid var(--jr-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .jr-app * { transition: none !important; animation: none !important; } }
+
+/* Texte */
+.jr-secondaire { color: var(--jr-secondaire); }
+.jr-lien { color: var(--jr-accent); font-weight: 500; cursor: pointer; }
+.jr-libelle { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin: 0 0 5px; }
+/* Annotation courte sous un nombre dans une cellule de tableau (ex. « 2 en pause » sous un
+   effectif) : sur sa propre ligne et jamais coupée en deux, même quand la colonne se resserre. */
+.jr-sous-valeur { display: block; white-space: nowrap; }
+
+/* Barre latérale */
+/* Fixée à la fenêtre plutôt que de défiler avec la page (tour de correction F6, point 29) : `.jr-app`
+   n'a qu'un `min-height: 100vh`, sa hauteur réelle suit celle du contenu principal (`.jr-principal`)
+   quand une page est longue (ex. /contacts à 926 lignes) — sans hauteur propre, la barre (un simple
+   enfant flex étiré par `align-items: stretch`) grandissait avec lui et défilait hors champ. `height`
+   posée deux fois (repli `100vh`, puis `100dvh` si le navigateur le comprend) rend la barre aussi
+   haute que la fenêtre, `position: sticky` la fixe pendant le défilement de la page, `overflow-y: auto`
+   lui donne son propre défilement si son propre contenu (nav + pied) dépasse une fenêtre basse
+   (≤ 700 px de haut) plutôt que de déborder de sa boîte. `align-self: flex-start` : garde cette
+   hauteur propre même si un futur voisin plus haut que le contenu réactivait le `stretch` du parent. */
+.jr-barre { width: var(--jr-barre-largeur); flex: none; background: var(--jr-surface); border-right: 1px solid var(--jr-filet); display: flex; flex-direction: column; padding: 16px 12px; position: sticky; top: 0; align-self: flex-start; height: 100vh; height: 100dvh; overflow-y: auto; }
+.jr-marque { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 4px 8px 18px; }
+.jr-logo { width: 26px; height: 26px; border-radius: 7px; background: var(--jr-accent); color: var(--jr-accent-encre); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+.jr-nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--jr-rayon-controle); color: var(--jr-encre); font-weight: 500; margin-bottom: 2px; }
+.jr-nav a:hover { background: var(--jr-fond); }
+.jr-nav a.actif { background: var(--jr-accent-doux); color: var(--jr-accent); font-weight: 600; }
+.jr-badge { margin-left: auto; background: var(--jr-accent); color: var(--jr-accent-encre); border-radius: 999px; font-size: 11px; padding: 1px 7px; font-weight: 600; line-height: 1.5; }
+.jr-barre-pied { margin-top: auto; display: grid; gap: 10px; font-size: var(--jr-petit); }
+.jr-barre-pied .jr-carte { padding: 10px 12px; }
+.jr-barre-pied b { font-weight: 600; }
+
+/* Zone principale */
+.jr-principal { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.jr-entete-page { padding: 22px 28px 0; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.jr-entete-page h1 { margin: 0; font-size: var(--jr-titre); font-weight: 600; letter-spacing: -0.01em; }
+.jr-entete-page p { margin: 4px 0 0; color: var(--jr-secondaire); }
+.jr-contenu { padding: 20px 28px 28px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 340px; align-content: start; }
+.jr-contenu.une-colonne { grid-template-columns: minmax(0, 1fr); }
+.jr-contenu .pleine { grid-column: 1 / -1; }
+.jr-aujourdhui { padding: 22px 28px 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 320px; gap: 16px; align-content: start; align-items: start; }
+.jr-aujourdhui .pleine { grid-column: 1 / -1; }
+.jr-moteur-plafonds { display: grid; gap: 16px; align-content: start; }
+.jr-deux-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.jr-section-entete { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 0 0 12px; }
+.jr-section-entete h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.jr-section-entete p { margin: 2px 0 0; color: var(--jr-secondaire); font-size: 13.5px; max-width: 72ch; }
+
+/* En-tête de campagne et onglets */
+.jr-entete-campagne { background: var(--jr-surface); border-bottom: 1px solid var(--jr-filet); padding: 16px 28px 0; }
+.jr-fil-ariane { font-size: var(--jr-petit); color: var(--jr-secondaire); margin-bottom: 6px; }
+.jr-titre { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.jr-titre h1 { margin: 0; font-size: var(--jr-titre); font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.jr-expediteurs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px; align-items: center; font-size: 13px; color: var(--jr-secondaire); }
+.jr-onglets { display: flex; gap: 4px; overflow-x: auto; }
+.jr-onglets a { padding: 9px 12px; font-weight: 500; color: var(--jr-secondaire); border-bottom: 2px solid transparent; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.jr-onglets a:hover { color: var(--jr-encre); }
+.jr-onglets a.actif { color: var(--jr-accent); border-color: var(--jr-accent); font-weight: 600; }
+.jr-compteur { font-size: 11.5px; background: var(--jr-fond); border: 1px solid var(--jr-filet); border-radius: 999px; padding: 0 6px; color: var(--jr-encre); }
+
+/* Cartes */
+.jr-carte { background: var(--jr-surface); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); min-width: 0; overflow: hidden; }
+.jr-carte > h3, .jr-carte-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 14px 18px 0; font-size: 15px; font-weight: 600; }
+.jr-carte > h3 small, .jr-carte-h small { font-weight: 400; color: var(--jr-secondaire); font-size: 13px; }
+.jr-carte .jr-corps { padding: 12px 18px 16px; min-width: 0; }
+/* Zone d'archivage de l'onglet Réglages d'une campagne (bordure d'avertissement). */
+.jr-carte.danger { border-color: var(--jr-erreur-doux); }
+/* Actions à droite d'un en-tête de carte (statut, interrupteur, bouton Modifier). */
+.jr-carte-h-actions { display: flex; gap: 10px; align-items: center; }
+/* Grille de petites fiches d'information dans le corps d'une carte (ex. Requête/Filtres/Passages d'une source). */
+.jr-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px; padding-top: 14px; }
+/* Grand chiffre + mini-graphe de tendance côte à côte. */
+.jr-valeur-tendance { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.jr-valeur-tendance b { font-size: 26px; line-height: 1; }
+
+/* Puces d'état */
+.jr-puce { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; border: 1px solid var(--jr-filet); background: var(--jr-surface); white-space: nowrap; line-height: 1.4; }
+.jr-puce .point { width: 7px; height: 7px; border-radius: 50%; background: var(--jr-secondaire); flex: none; }
+.jr-puce img, .jr-puce .jr-logo-inline { width: 14px; height: 14px; }
+.jr-puce.bon { color: var(--jr-bon); border-color: transparent; background: var(--jr-bon-doux); } .jr-puce.bon .point { background: var(--jr-bon); }
+.jr-puce.attention { color: var(--jr-attention); border-color: transparent; background: var(--jr-attention-doux); } .jr-puce.attention .point { background: var(--jr-attention); }
+.jr-puce.erreur { color: var(--jr-erreur); border-color: transparent; background: var(--jr-erreur-doux); } .jr-puce.erreur .point { background: var(--jr-erreur); }
+.jr-puce.accent { color: var(--jr-accent); border-color: transparent; background: var(--jr-accent-doux); }
+.jr-puce.li { color: var(--jr-linkedin); border-color: transparent; background: var(--jr-linkedin-doux); }
+.jr-puce.gris { color: var(--jr-secondaire); border-color: transparent; background: var(--jr-fond); }
+/* Un <select> en forme de puce (ex. sélecteur de campagne de la Réception) garde son look pilule
+   mais perd le chrome natif du navigateur (tour de correction F6, point 24). */
+select.jr-puce {
+  appearance: none;
+  padding-right: 22px;
+  background-image: var(--jr-chevron);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 11px;
+  cursor: pointer;
+}
+
+/* Boutons */
+.jr-bouton { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 600; font-size: var(--jr-corps); padding: 8px 14px; border-radius: var(--jr-rayon-controle); border: 1px solid var(--jr-filet); background: var(--jr-surface); color: var(--jr-encre); cursor: pointer; white-space: nowrap; }
+.jr-bouton:hover { background: var(--jr-fond); }
+.jr-bouton.principal { background: var(--jr-accent); color: var(--jr-accent-encre); border-color: var(--jr-accent); }
+.jr-bouton.principal:hover { filter: brightness(0.94); }
+.jr-bouton.sombre { background: var(--jr-encre); color: var(--jr-surface); border-color: var(--jr-encre); }
+.jr-bouton.danger { color: var(--jr-erreur); border-color: var(--jr-erreur-doux); background: var(--jr-erreur-doux); }
+.jr-bouton.petit { font-size: 13px; padding: 5px 10px; font-weight: 500; }
+.jr-bouton:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Avatars et logos */
+.jr-qui { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.jr-qui b { font-weight: 600; display: block; }
+.jr-qui small { display: block; color: var(--jr-secondaire); font-size: 12px; }
+.jr-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--jr-accent-doux); color: var(--jr-accent); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; position: relative; }
+.jr-avatar.photo { background-size: cover; background-position: center; color: transparent; }
+.jr-avatar.grand { width: 44px; height: 44px; font-size: 15px; }
+.jr-avatar.xl { width: 56px; height: 56px; font-size: 18px; }
+.jr-canal { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid var(--jr-surface); font-style: normal; font-size: 8px; font-weight: 700; line-height: 1; }
+.jr-avatar.grand .jr-canal { width: 18px; height: 18px; font-size: 10px; }
+.jr-canal.li { background: var(--jr-linkedin); color: var(--jr-accent-encre); } .jr-canal.li svg { width: 8px; height: 8px; fill: var(--jr-accent-encre); stroke: none; }
+.jr-avatar.grand .jr-canal.li svg { width: 10px; height: 10px; }
+.jr-canal.em { background: var(--jr-encre); color: var(--jr-surface); }
+.jr-pile { display: flex; }
+.jr-pile .jr-avatar { width: 26px; height: 26px; margin-left: -8px; border: 2px solid var(--jr-surface); font-size: 10px; }
+.jr-pile .jr-avatar:first-child { margin-left: 0; }
+.jr-tuile-logo { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--jr-filet); background: var(--jr-surface); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.jr-tuile-logo img, .jr-tuile-logo .jr-logo-inline { width: 20px; height: 20px; }
+.jr-tuile-logo.li { background: var(--jr-linkedin); border-color: var(--jr-linkedin); } .jr-tuile-logo.li svg { width: 18px; height: 18px; fill: var(--jr-accent-encre); stroke: none; }
+.jr-tuile-logo.em { background: var(--jr-accent-doux); border-color: transparent; color: var(--jr-accent); font-weight: 700; font-size: 15px; }
+.jr-tuile-logo.grande { width: 44px; height: 44px; border-radius: 10px; } .jr-tuile-logo.grande img, .jr-tuile-logo.grande .jr-logo-inline { width: 26px; height: 26px; } .jr-tuile-logo.grande.li svg { width: 24px; height: 24px; }
+.jr-logo-inline { display: inline-block; width: 16px; height: 16px; background-size: contain; background-repeat: no-repeat; background-position: center; vertical-align: -3px; flex: none; }
+.jr-logo-outlook { background-image: url(/logos/outlook.svg); }
+.jr-logo-gmail { background-image: url(/logos/gmail.svg); }
+.jr-logo-adzuna { background-image: url(/logos/adzuna.svg); }
+.jr-logo-francetravail { background-image: url(/logos/francetravail.svg); }
+.jr-logo-microsoft { background-image: url(/logos/microsoft.svg); }
+.jr-ico-li { width: 14px; height: 14px; fill: var(--jr-linkedin); stroke: none; vertical-align: -2px; }
+
+/* Tables */
+.jr-table { width: 100%; border-collapse: collapse; font-size: 13.5px; color: var(--jr-encre); font-family: inherit; table-layout: auto; }
+.jr-table th { text-align: left; font-weight: 500; color: var(--jr-secondaire); font-size: 12px; padding: 8px 12px; border-bottom: 1px solid var(--jr-filet); white-space: nowrap; }
+.jr-table td { padding: 10px 12px; border-bottom: 1px solid var(--jr-filet); vertical-align: middle; min-width: 0; }
+.jr-table tr:last-child td { border-bottom: 0; }
+.jr-table tr.selectionnee td { background: var(--jr-accent-doux); }
+.jr-table td.num, .jr-table th.num { text-align: right; }
+.jr-table tbody tr:hover td { background: var(--jr-fond); }
+
+/* Entonnoir, jauges, tendance */
+.jr-entonnoir { display: flex; align-items: stretch; padding: 16px 18px 18px; }
+.jr-etape-entonnoir { flex: 1; position: relative; padding: 0 14px 0 0; min-width: 0; }
+.jr-etape-entonnoir b { display: block; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+.jr-etape-entonnoir span { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); margin-top: 3px; }
+.jr-etape-entonnoir i { position: absolute; right: 6px; top: 8px; color: var(--jr-filet); font-style: normal; font-size: 18px; }
+.jr-etape-entonnoir:last-child i { display: none; }
+.jr-etape-entonnoir em { font-style: normal; font-size: 12px; color: var(--jr-bon); font-weight: 600; margin-left: 6px; }
+.jr-barre-prog { height: 6px; border-radius: 3px; background: var(--jr-filet); overflow: hidden; display: flex; }
+/* Pas de `border-radius` sur les segments : l'arrondi vient du conteneur (`overflow: hidden`).
+   En poser un ici creuserait la jonction entre le segment parti et le segment en file. */
+.jr-barre-prog i { display: block; height: 100%; background: var(--jr-accent); }
+.jr-barre-prog.attention i { background: var(--jr-attention); }
+.jr-barre-prog.erreur i { background: var(--jr-erreur); }
+/* Second segment : ce qui est remis au transporteur et attend sa fenêtre d'envoi. Même teinte
+   que le segment plein, très atténuée — c'est le même envoi, à une autre étape de sa vie. */
+.jr-barre-prog i.en-file { background: rgba(20, 108, 90, 0.34); }
+.jr-barre-prog.attention i.en-file { background: rgba(183, 121, 31, 0.34); }
+.jr-barre-prog.erreur i.en-file { background: rgba(180, 66, 58, 0.34); }
+
+/* Carte « Envois du jour » de la barre latérale (largeur utile 199 px) */
+.jr-envois-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--jr-petit); }
+.jr-envois-tete .jr-plafond { color: var(--jr-secondaire); white-space: nowrap; }
+/* Le coin droit ne dit pas toujours « / 135 » : il peut dire « sans limite » ou « en pause »
+   (jauge sans plafond réglé, jauge en pause). Mesuré le 05/10 dans les trois langues : en
+   néerlandais, « Vandaag verzonden » + « geen limiet » dépassent les 173 px utiles de la barre
+   latérale et faisaient passer la carte sur deux lignes. Le titre s'élide, le coin droit reste
+   entier : c'est lui qui porte l'information. */
+.jr-envois-tete > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jr-envois-chiffres { font-size: var(--jr-petit); margin: 2px 0 6px; line-height: 1.35; }
+.jr-envois-chiffres b { font-weight: 600; }
+.jr-envois-chiffres .jr-file { color: var(--jr-secondaire); }
+.jr-envois-vide { font-size: var(--jr-petit); color: var(--jr-secondaire); margin: 2px 0 6px; }
+.jr-tendance { display: flex; align-items: flex-end; gap: 2px; height: 22px; }
+.jr-tendance i { display: block; width: 5px; background: var(--jr-accent); border-radius: 1px; opacity: 0.85; }
+.jr-score { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.jr-score .jr-barre-prog { width: 44px; height: 5px; }
+
+/* Listes clé-valeur, journal */
+.jr-cle-valeur { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--jr-filet); font-size: 13.5px; align-items: center; }
+.jr-cle-valeur:last-child { border-bottom: 0; }
+.jr-cle-valeur b { font-weight: 600; text-align: right; }
+.jr-journal { list-style: none; margin: 0; padding: 0; }
+.jr-journal li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--jr-filet); font-size: 13.5px; }
+.jr-journal li:last-child { border-bottom: 0; }
+.jr-journal time { color: var(--jr-secondaire); font-size: var(--jr-petit); padding-top: 2px; }
+.jr-journal small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-jour { margin: 14px 0 6px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); }
+
+/* Messages et réponse */
+.jr-message { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); background: var(--jr-surface); margin: 0 0 12px; overflow: hidden; }
+.jr-message .entete { display: flex; justify-content: space-between; gap: 10px; padding: 9px 14px; font-size: var(--jr-petit); color: var(--jr-secondaire); border-bottom: 1px solid var(--jr-filet); align-items: center; }
+.jr-message .entete b { color: var(--jr-encre); font-weight: 600; }
+.jr-message .corps { padding: 12px 14px 14px; font-size: var(--jr-corps); max-width: 68ch; white-space: pre-line; }
+.jr-message.entrant { border-left: 3px solid var(--jr-accent); }
+.jr-message.sortant { background: color-mix(in srgb, var(--jr-surface) 60%, var(--jr-fond)); }
+/* Destinataire complet du message (R38, tour de correction 1) : sa propre ligne, jamais glissé dans l'heure. */
+.jr-message-destinataire { padding: 6px 14px; border-bottom: 1px solid var(--jr-filet); font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-message-objet { display: block; margin-bottom: 8px; }
+.jr-message .jr-bandeau { margin: 10px 14px 0; }
+.jr-reponse { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); background: var(--jr-surface); }
+.jr-reponse .depuis { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--jr-filet); font-size: 13px; color: var(--jr-secondaire); flex-wrap: wrap; }
+.jr-reponse .depuis b { color: var(--jr-encre); font-weight: 600; }
+.jr-reponse .zone { padding: 12px 14px; min-height: 74px; color: var(--jr-secondaire); font-size: var(--jr-corps); }
+.jr-reponse textarea { width: 100%; border: 0; padding: 12px 14px; min-height: 90px; font: inherit; color: var(--jr-encre); resize: vertical; background: transparent; }
+.jr-reponse .pied { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--jr-filet); }
+
+/* Réception : liste et fil */
+.jr-reception { flex: 1; display: grid; grid-template-columns: 320px minmax(0, 1fr) 300px; }
+.jr-liste { background: var(--jr-surface); border-right: 1px solid var(--jr-filet); display: flex; flex-direction: column; min-width: 0; }
+.jr-liste h2 { margin: 0; padding: 18px 14px 10px; font-size: 18px; font-weight: 600; }
+.jr-fil { display: flex; flex-direction: column; min-width: 0; }
+.jr-fil-entete { padding: 14px 24px; background: var(--jr-surface); border-bottom: 1px solid var(--jr-filet); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.jr-fil-entete .jr-qui { min-width: 0; flex: 1; }
+.jr-fil-corps { padding: 20px 24px; overflow: hidden; }
+.jr-colonne { background: var(--jr-surface); border-left: 1px solid var(--jr-filet); padding: 18px; min-width: 0; }
+.jr-colonne h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.jr-colonne h4 { margin: 16px 0 6px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); }
+.jr-colonne p { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.jr-conversations { list-style: none; margin: 0; padding: 0; }
+.jr-conversations li { border-bottom: 1px solid var(--jr-filet); }
+/* Ligne cliquable = un vrai lien (tâche 16, Réception) : la grille de la maquette portait sur le `li`, mais un `<li>` nu n'est pas navigable/accessible au clavier — le `<a>` porte donc la grille à sa place, `li` ne garde que le filet. */
+.jr-conversations li > a { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; padding: 11px 14px; align-items: start; cursor: pointer; color: inherit; text-decoration: none; }
+.jr-conversations li > a:hover { background: var(--jr-fond); }
+.jr-conversations li.actif > a { background: var(--jr-accent-doux); }
+.jr-conversations b { font-weight: 600; font-size: 13.5px; display: block; }
+.jr-conversations p { margin: 2px 0 0; font-size: var(--jr-petit); color: var(--jr-secondaire); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jr-conversations time { font-size: 11.5px; color: var(--jr-secondaire); white-space: nowrap; }
+.jr-conversations .etiquettes { grid-column: 2 / 4; display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.jr-filtres { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--jr-filet); }
+.jr-puces { display: flex; gap: 6px; flex-wrap: wrap; }
+.jr-puces.variables { margin-top: 6px; }
+button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5px; cursor: pointer; }
+
+/* Personas : liste de gauche (tour de correction F6, point 3) — `.jr-source` sert d'ordinaire à
+   une simple ligne d'information (grille + filet), pas à un `<button>` : sans reset, le bouton
+   gardait le chrome natif du navigateur (fond, bordure), qui le faisait paraître décalé/imbriqué.
+   Une bordure gauche de 3 px, transparente au repos, réservée dans tous les cas : la sélection ne
+   décale jamais le contenu. */
+.jr-liste-personas button.jr-source {
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--jr-filet);
+  border-radius: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.jr-liste-personas button.jr-source:last-child { border-bottom: 0; }
+.jr-liste-personas button.jr-source:hover { background: var(--jr-fond); }
+.jr-liste-personas button.jr-source.selectionnee {
+  background: var(--jr-accent-doux);
+  border-left-color: var(--jr-accent);
+}
+.jr-liste-personas button.jr-source.selectionnee:hover { background: var(--jr-accent-doux); }
+
+/* Sources */
+.jr-source { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
+.jr-source:last-child { border-bottom: 0; }
+.jr-source b { display: block; font-weight: 600; }
+.jr-boite { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--jr-filet); }
+.jr-boite:last-child { border-bottom: 0; }
+.jr-boite b { font-weight: 600; overflow-wrap: anywhere; }
+/* Trois enfants (tuile, adresse, interrupteur) au lieu de deux (tour de correction 2, R62) : une colonne de plus pour la tuile, sinon l'interrupteur passe sous elle à la ligne suivante. */
+.jr-boite.avec-logo { grid-template-columns: auto minmax(0, 1fr) auto; }
+.jr-source small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-source .jr-n { text-align: right; font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-source .jr-n b { font-size: 15px; }
+
+/* Séquence : pilules et flux */
+.jr-sequence-pilules { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--jr-petit); }
+/* Groupe délai + pilule (tour de correction 2, R65) : inline-flex explicite, jamais scindé par le passage à la ligne du conteneur — sans ça, le délai pouvait se retrouver seul en bout de ligne. */
+.jr-sequence-pilules .jr-etape-pilule { display: inline-flex; align-items: center; gap: 6px; }
+.jr-sequence-pilules .pilule { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--jr-filet); border-radius: 999px; background: var(--jr-surface); }
+.jr-sequence-pilules .pilule.faite { border-color: var(--jr-bon); color: var(--jr-bon); }
+.jr-sequence-pilules .pilule.en-cours { border-color: var(--jr-accent); background: var(--jr-accent-doux); color: var(--jr-accent); font-weight: 600; }
+.jr-sequence-pilules .delai { color: var(--jr-secondaire); white-space: nowrap; }
+.jr-flux { padding: 24px 28px 32px; background-image: radial-gradient(var(--jr-filet) 1px, transparent 1px); background-size: 18px 18px; display: grid; justify-items: center; gap: 0; }
+.jr-flux .noeud { width: 720px; max-width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; }
+.jr-flux .noeud.fin { border-color: var(--jr-bon-doux); }
+.jr-tuile-logo.fin { color: var(--jr-bon); border-color: var(--jr-bon-doux); background: var(--jr-bon-doux); }
+.jr-flux-entete { padding: 20px 28px 0; }
+.jr-flux .fleche { color: var(--jr-secondaire); font-size: var(--jr-petit); padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.jr-flux .fleche::after { content: ""; width: 1px; height: 16px; background: var(--jr-filet); }
+.jr-etape { display: grid; grid-template-columns: 40px 560px 200px; gap: 14px; align-items: start; width: 840px; max-width: 100%; }
+.jr-etape .numero { width: 28px; height: 28px; border-radius: 50%; background: var(--jr-accent); color: var(--jr-accent-encre); font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 12px; font-size: 13px; }
+.jr-etape .carte .entete { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; }
+.jr-etape .carte .entete b { display: block; font-weight: 600; font-size: 15px; }
+.jr-etape .carte .entete small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-etape .carte .apercu { margin: 0 16px; background: var(--jr-fond); border-radius: var(--jr-rayon-controle); padding: 10px 12px; font-size: 13px; }
+.jr-etape .carte .apercu b { display: block; font-weight: 600; margin-bottom: 3px; }
+.jr-etape .carte .pied { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px 12px; font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-etape .sorties { border-color: var(--jr-bon-doux); background: var(--jr-bon-doux); padding: 12px 14px; font-size: var(--jr-petit); color: var(--jr-bon); }
+.jr-etape .sorties b { display: block; font-size: 20px; color: var(--jr-encre); font-weight: 600; margin-top: 8px; }
+.jr-etape .sorties .jr-pile { margin-top: 6px; }
+.jr-delai-ligne { display: grid; grid-template-columns: 40px 560px 200px; gap: 14px; width: 840px; max-width: 100%; }
+.jr-delai { display: inline-flex; align-items: center; gap: 6px; border: 1px dashed var(--jr-attention); color: var(--jr-attention); background: var(--jr-attention-doux); border-radius: 999px; padding: 3px 12px; font-size: var(--jr-petit); font-weight: 600; margin: 8px 0; grid-column: 2; justify-self: start; }
+
+/* Contrôles */
+.jr-interrupteur { width: 34px; height: 20px; border-radius: 999px; background: var(--jr-accent); position: relative; display: inline-block; flex: none; border: 0; cursor: pointer; }
+.jr-interrupteur::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--jr-surface); }
+.jr-interrupteur.eteint { background: var(--jr-filet); } .jr-interrupteur.eteint::after { right: auto; left: 2px; }
+.jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-size: var(--jr-corps); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+.jr-champ small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-champ input, .jr-champ select, .jr-champ textarea { border: 0; font: inherit; color: var(--jr-encre); background: transparent; width: 100%; outline: none; }
+/* Chevron dessiné plutôt que celui, natif, du navigateur (tour de correction F6, point 24) — que
+   le <select> soit enveloppé dans Champ ou porte lui-même la classe .jr-champ (barre de filtres,
+   sans libellé visuel individuel). */
+.jr-champ select, select.jr-champ {
+  appearance: none;
+  padding-right: 26px;
+  background-image: var(--jr-chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+  cursor: pointer;
+}
+.jr-champ.erreur { border-color: var(--jr-erreur); }
+.jr-aide-erreur { color: var(--jr-erreur); font-size: var(--jr-petit); margin-top: 4px; }
+/* Boîte de clé masquée des Fournisseurs (tour de correction F6, point 2) : un identifiant long
+   (ex. `client_id` France Travail, 78 caractères) débordait de la boîte à largeur fixe. Passe en
+   colonne (identifiant sur sa ligne, clé masquée sur la sienne), replie n'importe où plutôt que de
+   déborder. */
+.jr-champ-cle {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0; /* un enfant flex ne rétrécit pas sous son mot le plus long sans ce reset */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.jr-champ-cle .identifiant { color: var(--jr-secondaire); }
+
+/* Menu, tiroir, voile, état vide, notification */
+/* Ancre d'un menu ouvert sous un bouton déclencheur (ex. « + Ajouter une source ») : le menu se positionne sous SON conteneur direct, jamais par un style de mise en page en ligne. */
+.jr-menu-ancre { position: relative; display: inline-flex; }
+.jr-menu-ancre .jr-menu { top: calc(100% + 8px); right: 0; }
+/* Zone transparente plein écran qui ferme le menu au clic à l'extérieur (sans voile visible, contrairement au tiroir). */
+.jr-menu-clic-exterieur { position: fixed; inset: 0; z-index: 2; background: transparent; border: 0; cursor: default; }
+/* Un menu déroulant n'est plus rogné par la carte qui le porte, ni coupé par le bas de la fenêtre
+   (recette du 18/09 : le menu « Ajouter une source » de l'assistant était coupé net au bord de la
+   carte, l'entrée CSV, plus bas dans la liste, restait inatteignable, et rien ne défilait).
+   `.jr-carte` porte `overflow: hidden` pour que son contenu respecte ses coins arrondis ; `:has()`
+   ne lève cette coupe que pendant qu'un menu est ouvert, et les menus ne sont montés dans le DOM
+   qu'à l'ouverture (`{ouvert && <Menu …>}`, ex. `MenuAjouterSource.tsx`) : les coins restent donc
+   nets le reste du temps. Le plafond de hauteur traite l'autre moitié du défaut, quand c'est le
+   menu lui-même qui dépasse la fenêtre : il défile alors dans sa propre boîte. */
+.jr-menu { position: absolute; background: var(--jr-surface); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); box-shadow: var(--jr-ombre-menu); padding: 8px; width: 340px; z-index: 3; max-height: min(60vh, 420px); overflow-y: auto; }
+.jr-menu h5 { margin: 6px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--jr-secondaire); letter-spacing: 0.02em; }
+.jr-menu .entree { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 8px; border-radius: var(--jr-rayon-controle); cursor: pointer; }
+.jr-menu .entree:hover, .jr-menu .entree.actif { background: var(--jr-accent-doux); }
+.jr-menu .entree b { display: block; font-weight: 600; font-size: 13.5px; }
+.jr-menu .entree small { display: block; color: var(--jr-secondaire); font-size: 12px; }
+/* Entrée inerte (ex. « Fichier CSV » de l'assistant, dispo seulement après la création) : pas de survol, pas de curseur pointeur. */
+.jr-menu .entree.desactive { cursor: default; color: var(--jr-secondaire); }
+.jr-menu .entree.desactive:hover { background: none; }
+.jr-voile { position: fixed; inset: 0; background: var(--jr-voile); z-index: 3; }
+.jr-tiroir { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--jr-surface); border-left: 1px solid var(--jr-filet); box-shadow: var(--jr-ombre-tiroir); display: flex; flex-direction: column; z-index: 4; }
+.jr-tiroir.large { width: 600px; }
+.jr-tiroir .entete { padding: 20px 24px 16px; border-bottom: 1px solid var(--jr-filet); display: flex; gap: 14px; align-items: flex-start; }
+.jr-tiroir .entete h2 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.jr-tiroir .entete p { margin: 2px 0 8px; color: var(--jr-secondaire); font-size: 13.5px; }
+.jr-tiroir .fermer { margin-left: auto; font-size: 20px; line-height: 1; color: var(--jr-secondaire); background: none; border: 0; cursor: pointer; }
+.jr-tiroir > .corps { padding: 0 24px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.jr-tiroir h4 { margin: 18px 0 8px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); display: flex; justify-content: space-between; align-items: center; }
+.jr-tiroir h4 span { font-weight: 500; }
+.jr-tiroir .pied { padding: 12px 24px; border-top: 1px solid var(--jr-filet); display: flex; justify-content: space-between; gap: 8px; background: var(--jr-surface); }
+.jr-vide { padding: 48px 24px; text-align: center; color: var(--jr-secondaire); display: grid; gap: 8px; justify-items: center; }
+.jr-vide b { color: var(--jr-encre); font-size: 16px; font-weight: 600; }
+.jr-vide p { margin: 0; max-width: 46ch; }
+.jr-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--jr-encre); color: var(--jr-surface); border-radius: var(--jr-rayon); padding: 10px 16px; font-size: 13.5px; box-shadow: var(--jr-ombre-menu); z-index: 9; }
+.jr-notification.erreur { background: var(--jr-erreur); }
+.jr-notification.bon { background: var(--jr-bon); }
+.jr-bandeau { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--jr-rayon-controle); font-size: 13.5px; border: 1px solid transparent; }
+.jr-bandeau.attention { background: var(--jr-attention-doux); color: var(--jr-attention); }
+.jr-bandeau.erreur { background: var(--jr-erreur-doux); color: var(--jr-erreur); }
+.jr-bandeau a { font-weight: 600; margin-left: auto; white-space: nowrap; }
+
+
+/* Ajustements après vérification à 1024 px (14/09) : rien ne déborde de sa carte, les tables défilent dans leur carte. */
+.jr-onglets { gap: 2px; }
+.jr-onglets a { padding: 9px 10px; }
+.jr-carte > h3, .jr-carte-h { flex-wrap: wrap; }
+.jr-carte-h > .jr-qui { flex: 1; min-width: 0; }
+.jr-qui > span { min-width: 0; }
+.jr-qui b, .jr-qui small { overflow-wrap: anywhere; }
+.jr-carte .jr-corps { overflow-x: auto; }
+.jr-etape, .jr-delai-ligne { grid-template-columns: 40px minmax(0, 1fr) minmax(160px, 200px); }
+.jr-etape .carte { min-width: 0; }
+.jr-message .entete > span { min-width: 0; overflow-wrap: anywhere; }
+.jr-conversations .etiquettes .jr-puce { white-space: normal; }
+@media (max-width: 1180px) {
+  .jr-contenu { grid-template-columns: minmax(0, 1fr) 300px; }
+  .jr-reception { grid-template-columns: 280px minmax(0, 1fr); }
+  .jr-reception .jr-colonne { display: none; } /* sous 1180 px, la fiche s'ouvre en tiroir */
+}
+/* Aujourd'hui à ≤ 1440 px (tour de correction F6, point 4) : la grille à trois colonnes ne se
+   replie pas d'elle-même (`minmax(0, 1fr)` n'empêche pas un contenu de rester lisible en dessous
+   de sa largeur naturelle) et la File du jour devenait trop étroite pour ses noms. Point de
+   rupture choisi à 1440 px (mesuré : c'est là que la colonne File commence à couper les noms).
+   Rangée 1 : À traiter (2fr) + File du jour (3fr, elle a plus à montrer) ; rangée 2 : Moteur et
+   Plafonds côte à côte, sur toute la largeur. */
+@media (max-width: 1440px) {
+  .jr-aujourdhui { grid-template-columns: 2fr 3fr; }
+  .jr-moteur-plafonds { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.jr-flux { grid-template-columns: minmax(0, 1fr); } /* colonne définie : le max-width:100% des noeuds s'y réfère */
+.jr-puces .jr-puce { white-space: normal; text-align: left; }
+
+/* Assistant, formulaires et cases (tâche 8) */
+.jr-assistant { max-width: 800px; margin: 0 auto; padding: 20px 28px 48px; display: grid; gap: 16px; width: 100%; }
+.jr-etapes { display: flex; gap: 10px; align-items: center; font-size: var(--jr-petit); color: var(--jr-secondaire); padding: 0 4px; }
+.jr-etapes .etape { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.jr-etapes .etape i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--jr-filet); display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-weight: 600; font-size: 11.5px; background: var(--jr-surface); }
+.jr-etapes .etape.faite i { background: var(--jr-bon); border-color: var(--jr-bon); color: var(--jr-accent-encre); }
+.jr-etapes .etape.en-cours { color: var(--jr-encre); font-weight: 600; }
+.jr-etapes .etape.en-cours i { background: var(--jr-accent); border-color: var(--jr-accent); color: var(--jr-accent-encre); }
+.jr-etapes .sep { flex: 1; height: 1px; background: var(--jr-filet); min-width: 12px; }
+.jr-formulaire { display: grid; gap: 14px; }
+.jr-formulaire .ligne { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.jr-aide { font-size: var(--jr-petit); color: var(--jr-secondaire); margin-top: 4px; }
+.jr-champ textarea { border: 0; font: inherit; color: var(--jr-encre); background: transparent; width: 100%; outline: none; line-height: 1.45; }
+.jr-choix { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.jr-choix .option { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); padding: 12px 14px; background: var(--jr-surface); cursor: pointer; display: grid; gap: 4px; min-width: 0; }
+.jr-choix .option:hover { border-color: var(--jr-secondaire); }
+.jr-choix .option.actif { border-color: var(--jr-accent); box-shadow: inset 0 0 0 1px var(--jr-accent); background: var(--jr-accent-doux); }
+.jr-choix .option b { font-weight: 600; }
+.jr-choix .option small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-choix .option.pointille { border-style: dashed; text-decoration: none; color: inherit; }
+/* `.option`/`.pilule` sont de vrais <button> (R59, tour de correction 1) : reset du seul chrome que le navigateur ajoute pour un bouton, rien d'autre — le reste (bordure, fond, alignement) vient des règles ci-dessus/ci-dessous, identiques à avant. */
+button.option, button.pilule { background: none; border: 0; font: inherit; text-align: inherit; }
+.jr-actions.entre { justify-content: space-between; }
+.jr-case { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
+.jr-case i { width: 16px; height: 16px; border: 1px solid var(--jr-filet); border-radius: 4px; background: var(--jr-surface); display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 11px; flex: none; }
+.jr-case.coche i { background: var(--jr-accent); border-color: var(--jr-accent); color: var(--jr-accent-encre); }
+/* Reset du chrome natif d'un <button class="jr-case"> (composant CaseACocher, correctement focusable) : ne change rien pour un <label class="jr-case"> (maquette). */
+button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; color: inherit; text-align: left; }
+.jr-table tr.groupe td { background: var(--jr-fond); color: var(--jr-secondaire); font-size: var(--jr-petit); font-weight: 600; padding: 6px 12px; }
+.jr-bouton[disabled] { opacity: 0.5; cursor: not-allowed; }
+.jr-carte:has(> .jr-table) { overflow-x: auto; } /* une table posée directement dans une carte défile dans la carte */
+/* Déclarée APRÈS la règle ci-dessus, à spécificité égale : une carte qui porte à la fois une
+   table et un menu ouvert doit laisser sortir le menu, sinon `overflow-x: auto` force aussi
+   `overflow-y` à `auto` (règle CSS : deux axes ne peuvent pas être l'un `visible` et l'autre
+   non) et le menu se retrouve rogné comme avant. Voir le bloc `.jr-menu` plus haut. */
+.jr-carte:has(.jr-menu) { overflow: visible; }
+@media (max-width: 1180px) { .jr-table .masquable { display: none; } } /* colonnes secondaires masquées sous 1180 px */
+
+/* Réglages : menu secondaire (tâche 19) */
+.jr-reglages { grid-template-columns: 200px minmax(0, 1fr); padding-top: 16px; }
+.jr-nav-reglages { display: grid; gap: 2px; align-content: start; font-size: 13.5px; }
+.jr-nav-reglages a { padding: 7px 10px; border-radius: var(--jr-rayon-controle); color: var(--jr-secondaire); }
+.jr-nav-reglages a:hover { color: var(--jr-encre); background: var(--jr-surface); }
+.jr-nav-reglages a.actif { background: var(--jr-accent-doux); color: var(--jr-accent); font-weight: 600; }
+.jr-bouton.petit.danger { padding: 5px 10px; }
+@media (max-width: 1180px) { .jr-reglages { grid-template-columns: 160px minmax(0, 1fr); } }
+.jr-maitre-detail { padding: 0; grid-template-columns: 300px minmax(0, 1fr); }
+@media (max-width: 1180px) { .jr-maitre-detail { grid-template-columns: minmax(0, 1fr); } }
+
+/* Actions : regroupe des boutons côte à côte (pied de ZoneReponse, pied de Tiroir) */
+.jr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.jr-actions.large { gap: 12px; }
+.jr-actions.fin { justify-content: flex-end; }
+.jr-petit { font-size: var(--jr-petit); }
+.jr-journal .erreur { color: var(--jr-erreur); } .jr-journal .attention { color: var(--jr-attention); }
+.jr-texte-erreur { color: var(--jr-erreur); }
+
+/* Expéditeurs : quatre blocs d'une boîte (Aujourd'hui / Cadence / Heures d'envoi / Réponses),
+   tour de correction F6, point 21. `auto-fit` se repliait en 3 + 1 dès que la carte n'avait plus
+   la place pour quatre colonnes de 200 px : forcé en 2 × 2 à ≤ 1440 px plutôt que de laisser un
+   bloc seul sur sa ligne. */
+.jr-boite-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+@media (max-width: 1440px) {
+  .jr-boite-blocs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Réglages : Moteur et Compte (tâche 23) */
+.jr-reglages-corps { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.jr-etat-entete { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.jr-pause-ligne { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.jr-pause-ligne .texte { font-size: 13.5px; max-width: 48ch; }
+/* Ligne d'aide sous une tâche à bouton désactivé (tour de correction 1) : collée à sa ligne, espace avant la suivante. */
+.jr-tache-aide { margin: -4px 0 12px; }
+
+/* Tour de correction 1 (tâche 10) : classes utilitaires qui remplacent des `style={{ … }}` de mise en page (R37). */
+.jr-ligne-entre { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.jr-champ-recherche { width: 260px; }
+/* Barre de filtres (tour de correction F6, point 24) : largeur minimale cohérente entre les
+   sélecteurs, quel que soit le nombre de caractères de l'option choisie. */
+.jr-champ-filtre { min-width: 180px; }
+/* Groupe de champs de filtre : passe à la ligne sans se coller au champ suivant sous 1280 px. */
+.jr-groupe-filtres { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.jr-cell-heure { white-space: nowrap; }
+.jr-cell-actions { text-align: right; white-space: nowrap; }
+.jr-demi-gras { font-weight: 500; }
+.jr-detail-ligne { display: block; font-size: 12px; }
+.jr-detail-ligne.avec-marge { margin-top: 2px; }
+.jr-actions-en-ligne { display: inline-flex; align-items: center; gap: 6px; }
+.jr-lien-petit { font-size: 13px; }
+.jr-lien-pied { display: block; margin-top: 10px; }
+.jr-colonne-cartes { display: grid; gap: 16px; align-content: start; }
+.jr-sans-retrait-gauche { padding-left: 0; }
+.jr-sans-retrait-droite { padding-right: 0; }
+/* Texte tronqué sur une ligne (colonne « Pourquoi lui », tableau des contacts) : la cellule fixe la
+   largeur, ce bloc coupe proprement. `display: block` (tour de correction F6, point 31, était
+   `inline-block`) : en `inline-block` sans largeur posée dessus (seul `max-width: 100%`, sans effet
+   sans largeur de référence), la largeur intrinsèque du texte entier dictait la largeur minimale de
+   la colonne — jamais compressible même avec `largeurMax` posé côté `Table`. En `display: block`,
+   l'élément prend la largeur RENDUE de sa cellule (calculée par ailleurs), et l'ellipse fonctionne
+   enfin sur cette largeur-là. Sans effet sur l'autre usage (nom tronqué de la File du jour, dans
+   `.jr-qui`) : `.jr-qui b`/`.jr-qui small` y posent déjà `display: block` avec une spécificité
+   supérieure, qui l'emportait déjà quel que soit le `display` de `.jr-tronque`. */
+.jr-tronque { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Cellule qui ne doit jamais couper au milieu d'un mot (tour de correction F6, point 4). */
+.jr-nowrap { white-space: nowrap; }
+/* Action à deux niveaux empilée verticalement plutôt que côte à côte (tour de correction F6,
+   point 20) : un bouton et son détail (coût, motif de pause) juxtaposés additionnaient leurs
+   largeurs et forçaient toute la colonne Statut/Action au-delà de son contenu réel. */
+.jr-action-empilee { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+/* Motif de pause (tour de correction F6, point 20 ter) : `max-width` borne la largeur sans tronquer
+   le texte — une première version coupait à l'ellipse (« Absent, reprise le 24 s… »), perdant
+   justement l'information utile (la date). `white-space: normal` explicite : le `<td>` ancêtre est
+   `nowrap` (colonne Statut/Action, point 20), une propriété héritée qu'il faut annuler ici pour
+   permettre le retour à la ligne sur une phrase complète. */
+.jr-motif-pause { display: block; max-width: 220px; white-space: normal; }
+/* Date du prochain message d'une inscription active (F11) — même borne que `.jr-motif-pause`
+   juste au-dessus (les deux ne s'affichent jamais sur la même ligne) : porté par la colonne
+   Statut/Action existante sans l'élargir. */
+.jr-prochain-message { display: block; max-width: 220px; white-space: normal; }
+/* `.jr-puces .jr-puce { white-space: normal }` (règle plus haut) veut qu'une puce enveloppe son
+   texte dans les listes de tags habituelles ; dans une colonne « largeur de contenu » (tour de
+   correction F6, point 25, colonne Utilisé par de Réglages > Messages), on veut l'effet inverse :
+   chaque puce reste sur une ligne, et c'est le groupe entier qui passe à la ligne suivante
+   (`.jr-puces` a déjà `flex-wrap: wrap`). Ciblé via la classe posée par `Table`/`nowrap`, pas de
+   nouvelle classe à ajouter côté composant. */
+.jr-nowrap .jr-puces .jr-puce { white-space: nowrap; }
+/* Titre et aperçu d'un modèle de message (tour de correction F6, point 25 bis) : tronqués à la
+   largeur réelle de leur cellule (`width: auto`, héritée du conteneur), pas à un nombre de
+   caractères fixe — c'était justement `max-width: 30ch` sur l'aperçu qui empêchait la colonne
+   Modèle de se compresser (voir `largeurMax` sur la colonne, `TableModeles.tsx`). */
+.jr-modele-titre { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jr-modele-apercu { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* `.jr-qui b, .jr-qui small` (règle du dessus, vérification 1024 px) posent `overflow-wrap:
+   anywhere`, plus spécifique que `.jr-tronque` seul (un nom se coupait alors lettre à lettre dans
+   la File du jour malgré `white-space: nowrap`, point 4) : contre-règle explicite, à spécificité
+   égale ou supérieure, pour les cas qui veulent une vraie troncature sur une ligne. */
+.jr-qui b.jr-tronque, .jr-qui small.jr-tronque { overflow-wrap: normal; }
+/* Dans un tableau (tour de correction F6, point 31), un nom de contact ne coupe qu'aux mots, jamais
+   lettre à lettre — même sans `.jr-tronque` : `overflow-wrap: anywhere` (règle ci-dessus) devient
+   dangereux dès qu'une colonne voisine peut lui voler sa largeur (colonne Pourquoi lui non bornée,
+   /contacts). Sans toucher `overflow-wrap: anywhere` hors tableau (en-tête de fiche, ailleurs), où
+   il reste voulu pour un nom vraiment trop long dans un espace fixe. */
+.jr-table .jr-qui b, .jr-table .jr-qui small { overflow-wrap: normal; }
+/* Plancher de largeur garanti pour la colonne Contact des tableaux de contacts (tour de correction
+   F6, point 31) : `largeur: '28%'` (côté composant) n'est qu'une cible, pas une borne — dans le pire
+   des cas (beaucoup de colonnes rivales), `min-width` est le seul mécanisme réellement respecté comme
+   plancher dur par `table-layout: auto`. */
+.jr-table td.jr-colonne-contact, .jr-table th.jr-colonne-contact { min-width: 200px; }
+
+/* Ligne de tableau cliquable en plus de son lien (tour de correction F6, point 19) : le lien du
+   nom est étiré sur toute la ligne (« stretched link »), sans JavaScript ni <tr onClick> — un vrai
+   lien natif, donc déjà accessible au clavier (tabulation, Entrée). */
+.jr-table tr:has(.jr-lien-ligne) { position: relative; cursor: pointer; } /* la ligne se survole déjà (`.jr-table tbody tr:hover td` ci-dessus) */
+.jr-lien-ligne::after { content: ''; position: absolute; inset: 0; }
+
+/* États de chargement (squelette.tsx) : barre grise animée, reprise par chaque écran dans sa propre forme. */
+.jr-skel { display: inline-block; background: var(--jr-filet); border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .jr-skel { animation: jr-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes jr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Grilles de PAGE repliées en une colonne sous 1240 px (mesuré le 18/09). Les points de rupture
+   existants (1440 px, 1180 px) ne traitaient que les grilles INTERNES — colonnes secondaires d'un
+   tableau, fiche de la Réception, menu des Réglages — et aucun ne repliait les grilles de page :
+   de 1240 px jusqu'en bas, `.jr-aujourdhui` gardait ses deux colonnes et la File du jour n'avait
+   plus la largeur de son tableau (552 px demandés) — 542 px à 1200 px, donc 20 px coupés, et 435 px
+   à 1024 px, donc 125 px coupés et 17 éléments rognés sur le seul écran d'accueil. Seuil choisi par
+   mesure : à 1240 px la colonne fait 566 px, 14 px de marge seulement, trop peu dès qu'un nom
+   s'allonge. Bloc placé en fin de fichier pour l'emporter sur les `max-width: 1440px` ci-dessus,
+   qui s'appliquent aussi à ces largeurs et y reposeraient sinon leurs deux colonnes. */
+@media (max-width: 1240px) {
+  .jr-aujourdhui,
+  .jr-contenu,
+  .jr-moteur-plafonds,
+  .jr-boite-blocs { grid-template-columns: minmax(0, 1fr); }
+}

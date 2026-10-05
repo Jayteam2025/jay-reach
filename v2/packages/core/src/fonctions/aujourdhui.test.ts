@@ -1,0 +1,579 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+import type { Executeur } from '../executeur.js';
+import { ForbiddenError } from '../roles.js';
+import type { Contexte } from './contexte.js';
+import { lireAujourdhui, lireResumeCoquille, SQL_ACTION_DU_JOUR } from './aujourdhui.js';
+import { SQL_EMAIL_CONSOMME_LE_QUOTA } from './plafonds.js';
+import { SQL_CONDITION_A_TRAITER } from './reception.js';
+
+/** Même fabrique de contexte factice que plafonds.test.ts : un motif (regex) par requête attendue. */
+function faux(rows: Record<string, unknown[]>, role: Contexte['role'] = 'viewer'): Contexte {
+  const query = vi.fn(async (sql: string) => {
+    for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
+    return { rows: [], rowCount: 0 };
+  }) as unknown as Executeur['query'];
+  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role };
+}
+
+describe('lireAujourdhui', () => {
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireAujourdhui(faux({}, null))).rejects.toThrow(ForbiddenError);
+  });
+
+  it('compte les fils à traiter et en garde un aperçu', async () => {
+    const ctx = faux({
+      'jr:threads_a_traiter': [
+        // `last_message_at` en objet Date (comme le renvoie pg pour ce timestamptz) : la forme
+        // publique `FilResume.quand` doit ressortir en chaîne ISO, jamais l'objet lui-même.
+        { id: 't1', channel: 'email', classification: 'human_reply', last_message_at: new Date('2026-09-14T09:22:00.000Z'), first_name: 'Karim', last_name: 'Benali', job_title: 'Head of Sales', account_name: 'Woodpecker', dernier_message: 'On se cale jeudi ?' },
+        { id: 't2', channel: 'linkedin_message', classification: 'unclassified', last_message_at: '2026-09-14T08:51:00.000Z', first_name: 'Claire', last_name: 'Moreau', job_title: null, account_name: null, dernier_message: 'Pas le bon moment' },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.aTraiter.total).toBe(2);
+    expect(a.aTraiter.fils).toHaveLength(2);
+    expect(a.aTraiter.fils[0]).toMatchObject({ id: 't1', contactNom: 'Karim Benali', canal: 'email', classification: 'human_reply', quand: '2026-09-14T09:22:00.000Z' });
+    expect(a.aTraiter.fils[1]).toMatchObject({ id: 't2', contactNom: 'Claire Moreau', canal: 'linkedin', quand: '2026-09-14T08:51:00.000Z' });
+  });
+
+  it("n'attribue aucune pastille de canal au courrier ni à l'appel (pas de repli sur email)", async () => {
+    const ctx = faux({
+      'jr:threads_a_traiter': [
+        { id: 't3', channel: 'letter', classification: 'unclassified', last_message_at: null, first_name: 'Une', last_name: 'Entreprise', job_title: null, account_name: null, dernier_message: null },
+        { id: 't4', channel: 'call', classification: 'unclassified', last_message_at: null, first_name: 'Une', last_name: 'Autre', job_title: null, account_name: null, dernier_message: null },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.aTraiter.fils[0]?.canal).toBeUndefined();
+    expect(a.aTraiter.fils[1]?.canal).toBeUndefined();
+  });
+
+  it(
+    "R77 (tour de correction 1) : compte « à traiter » avec la règle canonique de la Réception " +
+      "(classification = 'human_reply' et handled_at nul) — un fil marqué traité par marquerTraite " +
+      'en sort donc, ce que is_read/resume_at (l’ancienne condition) ne garantissait pas',
+    async () => {
+      const appels: { text: string }[] = [];
+      const query = vi.fn(async (text: string) => {
+        appels.push({ text });
+        if (/jr:threads_a_traiter/i.test(text)) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+      await lireAujourdhui(ctx);
+
+      const requete = appels.find((a) => /jr:threads_a_traiter/i.test(a.text))!.text;
+      expect(requete).toContain("t.classification = 'human_reply'");
+      expect(requete).toContain('t.handled_at is null');
+      expect(requete).not.toContain('is_read');
+      expect(requete).not.toContain('resume_at');
+    },
+  );
+
+  // Constat produit (18/09) : deux réponses classées `auto_absence` étaient réellement en
+  // base mais la phrase de résumé de l'écran ne mentionnait que « à traiter » — rien ne
+  // disait que quelqu'un avait répondu. `absencesNonTraitees` porte ce compte séparément,
+  // JAMAIS mélangé à `aTraiter` (une absence ne demande pas d'action).
+  it('absencesNonTraitees : compte les absences automatiques non traitées, distinctement de aTraiter', async () => {
+    const ctx = faux({
+      'jr:threads_a_traiter': [
+        { id: 't1', channel: 'email', classification: 'human_reply', last_message_at: '2026-09-17T09:00:00.000Z', first_name: 'Karim', last_name: 'Benali', job_title: null, account_name: null, dernier_message: 'Ça marche' },
+      ],
+      'jr:absences_non_traitees': [{ n: 2 }],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.aTraiter.total).toBe(1);
+    expect(a.absencesNonTraitees).toBe(2);
+  });
+
+  it('absencesNonTraitees : aucune ligne renvoyée — zéro, pas de TypeError', async () => {
+    const ctx = faux({});
+    const a = await lireAujourdhui(ctx);
+    expect(a.absencesNonTraitees).toBe(0);
+  });
+
+  it("calcule la dernière heure d'envoi dans le fuseau de l'organisation", async () => {
+    const ctx = faux({
+      'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }],
+      'jr:file_du_jour': [
+        { id: 'a1', dispatched_at: '2026-09-14T08:30:00.000Z', delivered_at: '2026-09-14T08:31:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 0, expediteur: 'prospection@exemple.fr' },
+        { id: 'a2', dispatched_at: '2026-09-14T10:05:00.000Z', delivered_at: '2026-09-14T10:06:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', first_name: 'Karim', last_name: 'Benali', campagne_nom: 'Directeur commercial', etape: 1, expediteur: 'ventes@exemple.fr' },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    // 2026-09-14T10:05:00Z est un lundi de septembre : Europe/Paris est alors en heure d'été (UTC+2) → 12:05.
+    expect(a.fileDuJour.derniereHeure).toBe('12:05');
+    expect(a.fileDuJour.partis).toBe(2);
+    expect(a.fileDuJour.enFile).toBe(0);
+    expect(a.fileDuJour.total).toBe(2);
+  });
+
+  it(
+    'G2 : `partis` reste borné aux actions REMISES OU PLANIFIÉES AUJOURD’HUI — le cas réel ' +
+      '« Jay coach - RH » (47 remis aujourd’hui, aucun réellement parti aujourd’hui)',
+    async () => {
+      const remisAujourdhui = Array.from({ length: 47 }, (_, i) => ({
+        id: `a${i}`,
+        dispatched_at: '2026-09-17T08:00:00.000Z',
+        delivered_at: null,
+        scheduled_for: null,
+        dispatch_after: null,
+        status: 'dispatched',
+        channel: 'email',
+        first_name: 'A',
+        last_name: 'A',
+        campagne_nom: 'Jay coach - RH',
+        etape: 0,
+        expediteur: 'rh@exemple.fr',
+      }));
+      const ctx = faux({ 'jr:file_du_jour': remisAujourdhui });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.total).toBe(47);
+      // Aucun des 47 remis aujourd'hui n'est réellement parti — c'est ce nombre qui doit
+      // accompagner le plafond du jour (jauge, G2).
+      expect(a.fileDuJour.partis).toBe(0);
+      expect(a.fileDuJour.enFile).toBe(47);
+    },
+  );
+
+  // F4 (tour de correction 3) : `dispatched_at` (`timestamptz`) peut être un
+  // objet Date (pilote pg). Avant correctif, `derniereEnvoyee` triait ces
+  // valeurs avec `.sort()` par défaut, qui compare `Date.prototype.toString()`
+  // (« Mon Sep 21 2026 … » / « Tue Sep 08 2026 … ») : lexicographiquement,
+  // « Mon » < « Tue », donc le 21/09 (lundi, le plus récent) passait AVANT le
+  // 08/09 (mardi, plus ancien) — `.at(-1)` renvoyait alors le 08/09 (11:00
+  // Paris) au lieu du 21/09 (12:00 Paris), la mauvaise « dernière envoyée ».
+  it("calcule la dernière heure d'envoi même quand `dispatched_at` trierait mal lexicographiquement (objets Date, comme pg)", async () => {
+    const ctx = faux({
+      'jr:file_du_jour': [
+        {
+          id: 'a-milieu',
+          dispatched_at: '2026-09-14T08:00:00.000Z',
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Claire',
+          last_name: 'Moreau',
+          campagne_nom: 'Directeur commercial',
+          etape: 0,
+          expediteur: 'prospection@exemple.fr',
+        },
+        {
+          id: 'a-recent',
+          dispatched_at: new Date('2026-09-21T10:00:00.000Z'), // lundi : le plus récent
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Karim',
+          last_name: 'Benali',
+          campagne_nom: 'Directeur commercial',
+          etape: 1,
+          expediteur: 'ventes@exemple.fr',
+        },
+        {
+          id: 'a-ancien',
+          dispatched_at: new Date('2026-09-08T09:00:00.000Z'), // mardi : le plus ancien, mais après « Mon » lexicographiquement
+          scheduled_for: null,
+          dispatch_after: null,
+          status: 'dispatched',
+          channel: 'email',
+          first_name: 'Une',
+          last_name: 'Autre',
+          campagne_nom: 'Directeur commercial',
+          etape: 0,
+          expediteur: 'ventes@exemple.fr',
+        },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fileDuJour.derniereHeure).toBe('12:00');
+  });
+
+  it("numérote l'étape à partir de 1 pour l'humain (position stockée à partir de 0)", async () => {
+    const ctx = faux({
+      'jr:file_du_jour': [
+        { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', first_name: 'Claire', last_name: 'Moreau', campagne_nom: 'Directeur commercial', etape: 0, expediteur: 'prospection@exemple.fr' },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fileDuJour.envois[0]?.etape).toBe(1);
+  });
+
+  it('la file du jour lit le jour calendaire dans le fuseau de l’organisation, plus jamais celui du serveur (revue F5, point 10)', async () => {
+    const appels: { text: string }[] = [];
+    const query = vi.fn(async (text: string) => {
+      appels.push({ text });
+      if (/from organization_settings/i.test(text)) return { rows: [{ key: 'fuseau', value: 'Europe/Paris' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+
+    await lireAujourdhui(ctx);
+
+    const requete = appels.find((a) => /jr:file_du_jour\b/i.test(a.text))!.text;
+    expect(requete).toMatch(/\$2::date::timestamp at time zone \$3/);
+    expect(requete).not.toContain("date_trunc('day', now())");
+    // Pis-aller texte, pas une preuve (ce mock ne rejoue rien contre un vrai Postgres) : mesuré
+    // sur la base OSS le 18/09, `$jour::date at time zone $fuseau` SANS le cast intermédiaire
+    // vers `timestamp` résout la mauvaise surcharge d'`AT TIME ZONE` (celle de `timestamptz`) et
+    // repart du fuseau de la session — 6 lignes comptées au lieu de 47 sur un jour réel.
+    expect(requete).not.toMatch(/\$2::date at time zone/);
+  });
+
+  describe('projection de la file du jour (revue F5, point 10)', () => {
+    it('borne « possible aujourd’hui » au plafond journalier restant de la boîte, le reste est reporté', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+          { id: 'a2', dispatched_at: null, scheduled_for: '2026-09-14T10:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'B', last_name: 'B', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+          { id: 'a3', dispatched_at: null, scheduled_for: '2026-09-14T11:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'D', last_name: 'D', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 2, used_today: 1 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      // Plafond 2, déjà 1 utilisé aujourd'hui : une seule place restante pour trois envois pas encore partis.
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(2);
+    });
+
+    it('un canal sans boîte email suivie (LinkedIn) n’est jamais reporté par ce calcul', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'linkedin_message', sender_id: null, first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: null },
+        ],
+        'jr:contraintes_senders_jour': [],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+
+    it('une boîte sans plafond réglé (daily_quota nul) n’est jamais reportée par ce calcul', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: null, scheduled_for: '2026-09-14T09:00:00.000Z', dispatch_after: null, status: 'scheduled', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: null, used_today: 5 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(1);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+
+    it('un envoi déjà parti (remis) n’entre jamais dans ce calcul (seuls les pas-encore-remis comptent)', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          { id: 'a1', dispatched_at: '2026-09-14T08:00:00.000Z', delivered_at: '2026-09-14T08:01:00.000Z', scheduled_for: null, dispatch_after: null, status: 'delivered', channel: 'email', sender_id: 'sender-1', first_name: 'A', last_name: 'A', campagne_nom: 'C', etape: 0, expediteur: 'a@exemple.fr' },
+        ],
+        'jr:contraintes_senders_jour': [{ sender_id: 'sender-1', daily_quota: 1, used_today: 1 }],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.partis).toBe(1);
+      expect(a.fileDuJour.enFile).toBe(0);
+      expect(a.fileDuJour.possiblesAujourdhui).toBe(0);
+      expect(a.fileDuJour.reportesProchainCreneau).toBe(0);
+    });
+  });
+
+  describe('F12 : « partis » compte le départ RÉEL, pas la remise au transporteur', () => {
+    it('un email remis AUJOURD’HUI mais pas encore parti (SalesBlink ne l’a pas encore envoyé) est « en file », pas « parti »', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          {
+            id: 'a1',
+            dispatched_at: '2026-09-14T04:00:00.000Z',
+            delivered_at: null,
+            scheduled_for: null,
+            dispatch_after: null,
+            status: 'dispatched',
+            channel: 'email',
+            first_name: 'Claire',
+            last_name: 'Moreau',
+            campagne_nom: 'C',
+            etape: 0,
+            expediteur: 'prospection@exemple.fr',
+          },
+        ],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.total).toBe(1);
+      expect(a.fileDuJour.partis).toBe(0);
+      expect(a.fileDuJour.enFile).toBe(1);
+      expect(a.fileDuJour.envois[0]?.envoye).toBe(true); // remis, pour le calcul de quota
+      expect(a.fileDuJour.envois[0]?.livre).toBe(false); // pas réellement parti
+    });
+
+    it('un canal sans transporteur asynchrone (LinkedIn) est réellement parti dès la remise (`dispatched_at`), jamais bloqué « en file »', async () => {
+      const ctx = faux({
+        'jr:file_du_jour': [
+          {
+            id: 'a1',
+            dispatched_at: '2026-09-14T09:00:00.000Z',
+            delivered_at: null,
+            scheduled_for: null,
+            dispatch_after: null,
+            status: 'dispatched',
+            channel: 'linkedin_message',
+            sender_id: null,
+            first_name: 'Karim',
+            last_name: 'Benali',
+            campagne_nom: 'C',
+            etape: 0,
+            expediteur: null,
+          },
+        ],
+      });
+      const a = await lireAujourdhui(ctx);
+      expect(a.fileDuJour.envois[0]?.livre).toBe(true);
+      expect(a.fileDuJour.enFile).toBe(0);
+    });
+  });
+
+  it('lève une alerte moteur_silencieux quand le dernier tour date de plus de 15 minutes', async () => {
+    const ctx = faux({
+      'jr:engine_status': [{ version: 'abc', last_tick_at: new Date(Date.now() - 30 * 60_000).toISOString(), last_error: null }],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.moteur.enMarche).toBe(false);
+    expect(a.alertes.some((al) => al.type === 'moteur_silencieux')).toBe(true);
+  });
+
+  it('ne lève pas d’alerte moteur_silencieux quand le dernier tour est récent', async () => {
+    const ctx = faux({
+      'jr:engine_status': [{ version: 'abc', last_tick_at: new Date(Date.now() - 60_000).toISOString(), last_error: null }],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.moteur.enMarche).toBe(true);
+    expect(a.alertes.some((al) => al.type === 'moteur_silencieux')).toBe(false);
+  });
+
+  it("lève une alerte source_orpheline quand une source active n'alimente aucune campagne", async () => {
+    const ctx = faux({ 'jr:sources_orphelines': [{ n: 1 }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'source_orpheline')).toBe(true);
+  });
+
+  it("ne lève pas d'alerte source_orpheline quand toutes les sources actives alimentent une campagne", async () => {
+    const ctx = faux({ 'jr:sources_orphelines': [{ n: 0 }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'source_orpheline')).toBe(false);
+  });
+
+  it("lève une alerte pause_envoi quand l'organisation a un arrêt global des envois", async () => {
+    const ctx = faux({
+      'jr:pause_envoi': [{ sending_paused_at: '2026-09-14T08:00:00.000Z', sending_paused_reason: 'import douteux' }],
+    });
+    const a = await lireAujourdhui(ctx);
+    const alerte = a.alertes.find((al) => al.type === 'pause_envoi');
+    expect(alerte).toBeDefined();
+    expect(alerte?.texte).toContain('import douteux');
+  });
+
+  it("ne lève pas d'alerte pause_envoi quand les envois ne sont pas en pause", async () => {
+    const ctx = faux({ 'jr:pause_envoi': [{ sending_paused_at: null, sending_paused_reason: null }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'pause_envoi')).toBe(false);
+  });
+
+  it('lève une alerte boite_deconnectee par boîte email active dont l’envoi est coupé', async () => {
+    const ctx = faux({
+      'jr:boites_deconnectees': [{ identity: 'prospection@exemple.fr' }, { identity: 'ventes@exemple.fr' }],
+    });
+    const a = await lireAujourdhui(ctx);
+    const alertesBoites = a.alertes.filter((al) => al.type === 'boite_deconnectee');
+    expect(alertesBoites).toHaveLength(2);
+    expect(alertesBoites[0]?.texte).toContain('prospection@exemple.fr');
+    expect(alertesBoites[1]?.texte).toContain('ventes@exemple.fr');
+  });
+
+  it("ne lève pas d'alerte boite_deconnectee quand aucune boîte active n'est coupée", async () => {
+    const ctx = faux({ 'jr:boites_deconnectees': [] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.alertes.some((al) => al.type === 'boite_deconnectee')).toBe(false);
+  });
+
+  it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna', 'francetravail'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes).toHaveLength(1);
+    expect(a.campagnes[0]).toMatchObject({ id: 'c1', nom: 'Directeur commercial', statut: 'active', contacts: 412, enSequence: 186, reponses: 9 });
+    // Point 1 : taux de réponse = réponses / emails PARTIS, arrondi à une décimale.
+    expect(a.campagnes[0]?.tauxReponse).toBeCloseTo(2.2, 1);
+  });
+
+  it('point 1 (tour de correction 5) : zéro email parti → tauxReponse `null`, jamais 0 %', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Recette SalesBlink', status: 'active', etapes: 1, boites: 1, sources: [], contacts: 2, en_sequence: 2, partis: 0, reponses: 1 },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]?.tauxReponse).toBeNull();
+  });
+
+  // Revue F5, point 1 : la colonne Sources d'Aujourd'hui montrait encore « aucune source »
+  // pour une campagne à liste, faute de regarder `enrollments.list_id`/`campaigns.list_id`.
+  it('point 1 (revue F5) : listeSource remplace « aucune source » pour une campagne à liste', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Jay coach - RH', status: 'active', etapes: 4, boites: 3, sources: [], contacts: 167, en_sequence: 165, partis: 110, reponses: 1, liste_source: { nom: 'RH avril 2026', autres: 0 } },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]!.listeSource).toEqual({ nom: 'RH avril 2026', autresListes: 0 });
+  });
+
+  it('sans liste (campagne à sources) : listeSource est `null`', async () => {
+    const ctx = faux({
+      'jr:campagnes_resume': [
+        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
+      ],
+    });
+    const a = await lireAujourdhui(ctx);
+    expect(a.campagnes[0]!.listeSource).toBeNull();
+  });
+
+  it('renvoie une liste vide de campagnes sans compteur quand il n’y en a aucune', async () => {
+    const a = await lireAujourdhui(faux({}));
+    expect(a.campagnes).toEqual([]);
+    expect(a.aTraiter).toEqual({ total: 0, fils: [] });
+  });
+
+  it('ne lit `organization_settings` qu’une seule fois (réglages passés à lireConsommationDuJour, pas relus)', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'fuseau', value: 'Europe/Paris' }] });
+    await lireAujourdhui(ctx);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const appelsReglages = appels.filter((appel) => /from organization_settings/i.test(String(appel[0])));
+    expect(appelsReglages).toHaveLength(1);
+  });
+
+  // Correctif du 18/09 : la coquille et la page Aujourd'hui formataient « Dernier/prochain
+  // passage » du moteur avec `FUSEAU_PAR_DEFAUT` (constante `Europe/Paris`, apps/web), jamais le
+  // fuseau réel de l'organisation — `lireAujourdhui` le lisait déjà pour `jourRef`/`formatterHeure`
+  // sans jamais l'exposer. Rougirait si `fuseau` disparaissait du retour ou restait figé.
+  it('expose le fuseau de l’organisation déjà lu, pour que le web formate le moteur avec', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: 'fuseau', value: 'Pacific/Auckland' }] });
+    const a = await lireAujourdhui(ctx);
+    expect(a.fuseau).toBe('Pacific/Auckland');
+  });
+
+  it('sans fuseau réglé en base : le défaut Europe/Paris', async () => {
+    const a = await lireAujourdhui(faux({}));
+    expect(a.fuseau).toBe('Europe/Paris');
+  });
+});
+
+/**
+ * G2 (audit demandé après le bouton mort « Nouvelle campagne », apps/web/app/(app)/page.tsx) :
+ * les bandeaux d'alerte de l'accueil sont de vrais liens (`<Link href={alerte.lien}>`), mais
+ * `alerte.lien` est un littéral posé ICI, dans `packages/core`, jamais vérifié contre les routes
+ * réelles de `apps/web`. Contrôle statique (même idiome que `page.test.tsx`, apps/web) : chaque
+ * route citée doit exister sous `apps/web/app/(app)`.
+ */
+describe('alertes — chaque `lien` pointe vers une route qui existe réellement', () => {
+  const ici = fileURLToPath(new URL('.', import.meta.url));
+  // packages/core/src/fonctions -> v2 (4 niveaux), puis apps/web/app/(app).
+  const appDir = join(ici, '../../../../apps/web/app/(app)');
+  const source = readFileSync(join(ici, 'aujourdhui.ts'), 'utf8');
+
+  it('le répertoire des routes existe bien à l’endroit attendu (garde-fou du test lui-même)', () => {
+    expect(existsSync(appDir)).toBe(true);
+  });
+
+  it('chaque `lien: \'...\'` littéral résout une route sous apps/web/app/(app)', () => {
+    const liens = [...source.matchAll(/lien: '([^']+)'/g)].map((m) => m[1]!);
+    // Garde-fou contre un test qui matcherait zéro alerte si le fichier changeait de forme.
+    expect(liens.length).toBeGreaterThanOrEqual(4);
+    for (const lien of liens) {
+      const segments = lien.split('/').filter(Boolean);
+      expect(existsSync(join(appDir, ...segments, 'page.tsx')), `route « ${lien} » introuvable`).toBe(true);
+    }
+  });
+});
+
+describe('lireResumeCoquille (menu de gauche : compteurs seulement)', () => {
+  function espion(rows: Record<string, unknown[]> = {}) {
+    const appels: string[] = [];
+    const query = vi.fn(async (text: string) => {
+      appels.push(text);
+      for (const [motif, r] of Object.entries(rows)) if (new RegExp(motif, 'i').test(text)) return { rows: r, rowCount: r.length };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+    return { ctx, appels };
+  }
+
+  it('refuse un contexte sans rôle', async () => {
+    await expect(lireResumeCoquille({ ...espion().ctx, role: null })).rejects.toThrow(ForbiddenError);
+  });
+
+  it("n'exécute aucune des requêtes de détail de l'accueil et reste à 6 requêtes au plus", async () => {
+    const { ctx, appels } = espion();
+    await lireResumeCoquille(ctx);
+    expect(appels.length).toBeLessThanOrEqual(6);
+    for (const lourd of ['jr:threads_a_traiter', 'jr:file_du_jour', 'jr:campagnes_resume', 'jr:sources_orphelines', 'thread_messages']) {
+      expect(appels.some((a) => a.includes(lourd))).toBe(false);
+    }
+  });
+
+  it("porte les mêmes définitions SQL que l'accueil (badge, file du jour, plafond)", async () => {
+    const light = espion();
+    await lireResumeCoquille(light.ctx);
+    const full = espion();
+    await lireAujourdhui(full.ctx);
+
+    const badge = light.appels.find((a) => a.includes('jr:coquille_a_traiter'))!;
+    expect(badge).toContain(SQL_CONDITION_A_TRAITER);
+    expect(full.appels.find((a) => a.includes('jr:threads_a_traiter'))!).toContain(SQL_CONDITION_A_TRAITER);
+
+    // La jauge du menu : même définition du quota email que la page Plafonds
+    // (`SQL_EMAIL_CONSOMME_LE_QUOTA`), et même borne de journée que l'accueil pour son second
+    // segment. Revue de cohérence du lot 2 : le menu comptait tous les canaux au numérateur et
+    // l'email seul au dénominateur.
+    const jourMenu = light.appels.find((a) => a.includes('jr:coquille_quota_envois'))!;
+    expect(jourMenu).toContain(SQL_EMAIL_CONSOMME_LE_QUOTA);
+    expect(jourMenu).toContain(SQL_ACTION_DU_JOUR);
+    expect(full.appels.find((a) => a.includes('jr:file_du_jour'))!).toContain(SQL_ACTION_DU_JOUR);
+    // La borne du jour dans le `where`, pas seulement dans un `filter` : sinon la requête du
+    // menu scanne toutes les actions de l'organisation à chaque rendu de page. Aucune valeur
+    // de retour ne distingue les deux — seule la forme le dit.
+    expect(jourMenu.slice(jourMenu.indexOf('where'))).toContain(SQL_ACTION_DU_JOUR);
+
+    // Même requête de plafond des deux côtés (`lirePlafondEnvois`), une seule définition.
+    const plafond = (appels: string[]) => appels.find((a) => /jr:plafond_envois_org/.test(a));
+    expect(plafond(light.appels)).toBeDefined();
+    expect(plafond(light.appels)).toBe(plafond(full.appels));
+  });
+
+  it('assemble la jauge email : remis, en file, plafond', async () => {
+    const { ctx } = espion({
+      'jr:coquille_a_traiter': [{ n: 3 }],
+      'jr:coquille_quota_envois': [{ remis: 6, en_file: 4 }],
+      'jr:plafond_envois_org': [{ plafond: 60 }],
+    });
+    const r = await lireResumeCoquille(ctx);
+    expect(r).toMatchObject({ aTraiterTotal: 3, quotaEnvois: { utilise: 6, enFile: 4, plafond: 60 } });
+  });
+
+  // `null` = aucune limite réglée, et surtout pas zéro : le moteur lit ce NULL comme « pas de
+  // limite » (`quotaSenderRestant`), là où zéro vaut pause partout dans le produit.
+  it('un plafond absent remonte tel quel, jamais converti en zéro', async () => {
+    const { ctx } = espion({
+      'jr:coquille_a_traiter': [{ n: 0 }],
+      'jr:coquille_quota_envois': [{ remis: 12, en_file: 0 }],
+      'jr:plafond_envois_org': [{ plafond: null }],
+    });
+    const r = await lireResumeCoquille(ctx);
+    expect(r.quotaEnvois.plafond).toBeNull();
+  });
+});

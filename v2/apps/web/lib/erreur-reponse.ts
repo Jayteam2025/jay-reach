@@ -1,5 +1,7 @@
 /**
- * Traduction d'un échec d'envoi de réponse en message d'écran.
+ * Traduction d'un échec des actions de la Réception (répondre, marquer
+ * traité, marquer intérêt — `apps/web/app/actions/inbox.ts`) en message
+ * d'écran.
  *
  * Vit hors du fichier d'actions serveur : Next n'y accepte que des fonctions
  * asynchrones exportées. Sépare aussi la règle du transport, ce qui la rend
@@ -10,18 +12,22 @@
  * du fournisseur, qui peut contenir une adresse, un identifiant de tenant ou
  * une portion d'URL.
  */
-import { ErreurEntree } from '@jay-reach/core';
+import { ErreurEntree, ErreurIntrouvable, ErreurReponseImpossible, ForbiddenError } from '@jay-reach/core';
 import { ErreurGraph } from '@jay-reach/providers/mail';
 
 /** Message générique : rien d'actionnable, rien de sensible. */
 const ENVOI_IMPOSSIBLE = 'Envoi impossible pour le moment.';
 
 export function messageErreurReponse(err: unknown): string {
-  // `ErreurEntree` est écrite pour l'opérateur (fil sans message reçu, fil non
+  // `ErreurReponseImpossible` est écrite pour l'opérateur (fil sans message reçu, fil non
   // email, fournisseur non configuré) : son message est le bon.
-  if (err instanceof ErreurEntree) return err.message;
+  if (err instanceof ErreurReponseImpossible) return err.message;
   // Un refus de la boîte Microsoft se soigne autrement qu'une panne : c'est en
   // général la politique d'accès Exchange ou un secret expiré, côté tenant.
   if (err instanceof ErreurGraph) return "La boîte Microsoft a refusé l'envoi de la réponse.";
+  // Rôle insuffisant (`marquerTraite`/`marquerInteret` exigent operator) ou fil hors organisation.
+  if (err instanceof ForbiddenError) return 'Droit opérateur requis.';
+  if (err instanceof ErreurIntrouvable) return 'Fil introuvable.';
+  if (err instanceof ErreurEntree) return 'Entrée invalide.';
   return ENVOI_IMPOSSIBLE;
 }

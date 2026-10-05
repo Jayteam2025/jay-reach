@@ -378,6 +378,31 @@ export function renderTemplate(body: string, values: Record<string, string | nul
 }
 
 /**
+ * Rend un corps en ne substituant QUE les variables dont le nom est une clé de
+ * `disponibles` — contrairement à `renderTemplate`, une variable absente de cet
+ * ensemble reste écrite telle quelle (`{{liste_intitule_poste}}`), jamais
+ * blanchie : elle désigne une donnée qu'on n'a simplement pas cherchée à cet
+ * appel (pas une valeur manquante côté contact).
+ *
+ * Sert à un aperçu partiel construit SANS requête supplémentaire (file du jour
+ * d'une campagne, `campagnes.ts::lireEnvoisDuJour`) : seules `prenom`/`nom`/
+ * `salutation` y sont déjà connues (`construireValeursMinimales`), tout le
+ * reste du gabarit (entreprise, colonnes de liste…) resterait donc visible en
+ * clair plutôt que vidé — un aperçu tronqué mentirait moins bien qu'un gabarit
+ * brut assumé comme tel.
+ */
+export function renderTemplatePartial(body: string, disponibles: Record<string, string | undefined>): string {
+  return body.replace(TOKEN_RE, (full, rawName: string, rawFallback?: string) => {
+    const name = rawName.toLowerCase();
+    if (!(name in disponibles)) return full; // valeur non cherchée à cet appel : gabarit brut
+    const value = disponibles[name];
+    if (!isBlank(value)) return String(value);
+    if (rawFallback !== undefined) return rawFallback; // repli (éventuellement vide)
+    return full; // valeur cherchée mais vide, sans repli : garder le gabarit brut (aperçu, pas un envoi)
+  });
+}
+
+/**
  * Rôle d'un message pour la contrainte de longueur (spec §44-54). Un email
  * d'ouverture et une relance n'ont pas le même plafond, d'où la distinction.
  */

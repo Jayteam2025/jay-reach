@@ -1,16 +1,10 @@
 {
   "app": {
-    "name": "Jay Reach",
-    "tagline": "Multichannel outbound engine"
+    "name": "Jay Reach"
   },
   "common": {
     "loading": "Loading…",
     "language": "Language"
-  },
-  "home": {
-    "title": "Jay Reach",
-    "subtitle": "Multichannel outbound engine, self-hosted.",
-    "coreVersion": "core v{version}"
   },
   "login": {
     "title": "Sign in",
@@ -20,20 +14,9 @@
     "pending": "Signing in…"
   },
   "providers": {
-    "eyebrow": "Integrations",
     "lead": "Your API keys, encrypted and scoped to your organization. One service per row.",
-    "category": {
-      "email": "Outreach",
-      "enrichment": "Enrichment",
-      "ai": "AI model",
-      "signals": "Signal sources"
-    },
     "title": "Providers",
-    "configured": "Configured",
-    "notConfigured": "Not configured",
-    "secretHidden": "key ending in {last4}",
     "save": "Save",
-    "saved": "Saved",
     "salesblink": "SalesBlink (email)",
     "microsoftGraph": "Microsoft 365 (reply retrieval)",
     "fullenrich": "FullEnrich (enrichment)",
@@ -46,14 +29,14 @@
     "apify": "Apify (LinkedIn jobs)",
     "field": {
       "apiKey": "API key",
-      "dailyCap": "Daily call cap — defaults to 20 (free tier)",
+      "dailyCap": "Daily call cap · defaults to 20 (free tier)",
       "apiToken": "API token",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
       "appId": "App ID",
       "appKey": "App key",
-      "modelSmart": "Model (scoring) — default Sonnet",
-      "modelFast": "Model (light tasks) — default Haiku",
+      "modelSmart": "Model (scoring) · default Sonnet",
+      "modelFast": "Model (light tasks) · default Haiku",
       "enrichDailyCap": "Daily cap",
       "enrichDailyCapHint": "Contacts enriched per day, at most. Set 0 to pause automatic enrichment and enrich by hand only, from the Signals screen.",
       "enrichDailyCapPlaceholder": "e.g. 50",
@@ -72,755 +55,1525 @@
       "tenantId": "Tenant ID",
       "graphSyncIntervalMin": "Sync interval (minutes)",
       "graphSyncIntervalMinPlaceholder": "5"
-    },
-    "secretUnchanged": "Leave empty to keep the current key",
-    "todayUsage": "today: {used} / {cap}",
-    "lastSync": "{ago, select, never {Last sync: never} other {Last sync: {ago}}}",
-    "lastSyncError": "Last error: {error}"
-  },
-  "jobs": {
-    "title": "Background queues",
-    "queue": "Queue",
-    "description": "Role",
-    "retries": "Retries",
-    "q": {
-      "sourcesDiscover": "Source discovery",
-      "signalsQualify": "Signal qualification",
-      "signalsScore": "Signal scoring",
-      "importsProcess": "Import processing",
-      "enrichmentCompany": "Company enrichment",
-      "enrichmentContacts": "Contact enrichment",
-      "sequenceEnroll": "Sequence enrollment",
-      "sequenceTick": "Sequence advancement",
-      "actionsDispatch": "Action dispatch",
-      "outcomesPoll": "Outcome polling",
-      "inboxSync": "Inbox sync",
-      "inboxSyncGraph": "Reply sync (Microsoft Graph)",
-      "crmPush": "CRM push",
-      "retentionPurge": "Retention purge"
     }
   },
-  "personas": {
-    "eyebrow": "Who to contact",
-    "title": "Personas",
-    "lead": "Who to target inside detected companies: job titles, seniority, and the brief used to score contacts.",
-    "name": "Name",
-    "description": "Description",
-    "patterns": "Target job titles (comma separated)",
-    "excludeTitles": "Titles to exclude (comma separated)",
-    "seniority": "Seniority",
-    "scoringPrompt": "Scoring brief (AI)",
-    "titlesLabel": "Titles:",
-    "seniorityLevel": {
-      "executive": "Executive",
-      "director": "Director",
-      "manager": "Manager",
-      "individual": "Individual"
-    },
-    "statsTotal": "Personas",
-    "statsActive": "Active",
-    "newPersona": "New persona",
-    "editTitle": "Edit persona",
-    "edit": "Edit",
-    "delete": "Delete",
-    "deleteConfirm": "Delete this persona?",
-    "activate": "Activate",
-    "deactivate": "Deactivate",
-    "active": "Persona active",
-    "inactive": "Inactive",
-    "cancel": "Cancel",
-    "create": "Create",
-    "update": "Update",
-    "created": "Persona created",
-    "empty": "No persona defined. Create one to start.",
-    "demoNote": "Demo data — your changes stay local (not saved).",
-    "patternsCount": "{n} titles",
-    "patternsPlaceholder": "purchasing manager, store manager, head teacher",
-    "exclusionsPlaceholder": "intern, trainee, assistant",
-    "scoringPromptPlaceholder": "E.g. score high purchasing managers at companies over 50 staff running several sites. Score low support roles and companies under 10 staff.",
-    "scoringPromptHelp": "The AI reads the contact and their company, then gives a score from 0 to 100 against this brief. That score is what a campaign’s “minimum score” compares against: without a brief, nothing gets qualified."
-  },
-  "signals": {
-    "nav": {
-      "signals": "Signals",
-      "personas": "Personas",
-      "providers": "Providers"
-    },
-    "eyebrow": "Raw feed",
-    "title": "Signals",
-    "lead": "All campaigns, including discarded, without a campaign, and to arbitrate.",
-    "empty": "No signal yet. Add a source to start detection.",
-    "state": {
-      "todo": "To handle",
-      "validated": "Validated",
-      "discarded": "Discarded",
-      "arbitrate": "To arbitrate"
-    },
-    "daysAgo": "{n}d ago",
-    "detail": {
-      "source": "Source",
-      "siren": "SIREN",
-      "noSiren": "unresolved",
-      "location": "Location",
-      "score": "Score",
-      "age": "Detected",
-      "reason": "Reason"
-    },
-    "validate": "Validate the signal",
-    "discard": "Discard",
-    "reason": {
-      "recruiter": "Recruitment agency",
-      "customer": "Customer in your list",
-      "manual": "Manually discarded",
-      "opposition": "Opted out of prospecting (legal registry)"
-    },
-    "enrich": "Enrich this company",
-    "enrichHint": "Looks for its contacts now, without waiting for the automatic pass. Counts against today’s cap."
-  },
-  "nav": {
-    "dashboard": "Dashboard",
-    "signals": "Signals",
-    "prospects": "Prospects",
-    "campaigns": "Campaigns",
-    "inbox": "Inbox",
-    "import": "Import",
-    "sources": "Watch themes",
-    "personas": "Personas",
-    "providers": "Providers",
-    "senders": "Senders",
-    "linkedin": "LinkedIn",
-    "annuaire": "Directory",
-    "approvals": "Approvals",
-    "customers": "Customers",
-    "templates": "Messages"
-  },
   "sources": {
-    "eyebrow": "Detection",
     "title": "Watch themes",
     "lead": "What you watch, and where. Keywords are entered once per theme and apply to all its providers.",
-    "provider": "Provider",
     "keywords": "Keywords",
     "location": "Area",
     "active": "Active",
     "paused": "Paused",
-    "history": "Run history",
     "empty": "No watch theme yet. Create one to start detecting signals.",
-    "neverRan": "Never ran.",
-    "found": "found",
     "new": "new",
     "status": {
       "success": "OK",
       "error": "Failed",
       "running": "Running"
     },
-    "runNow": "Run collection",
-    "runRequested": "Collection requested. It starts in a few seconds.",
-    "pause": "Pause",
     "resume": "Resume",
-    "form": {
-      "add": "Add a theme",
-      "create": "Create theme",
-      "save": "Save",
-      "edit": "Edit",
-      "cancel": "Cancel",
-      "saved": "Saved",
-      "name": "Name",
-      "namePlaceholder": "France Travail — sales roles",
-      "keywordsPlaceholder": "sales manager, account executive",
-      "locationPlaceholder": "Lyon (69) — leave empty for all of France",
-      "qualification": "QUALIFICATION",
-      "qualificationHelp": "What decides a signal is worth working. Without a brief, collected signals stay pending.",
-      "scoringPrompt": "Qualification brief",
-      "scoringPromptPlaceholder": "Assess whether the company matches what you look for, and why. E.g. SMEs over 50 staff, running several sites. Rule out intermediaries and companies under 10 staff.",
-      "threshold": "Minimum score",
-      "active": "Active theme",
-      "description": "Description",
-      "descriptionPlaceholder": "What this watch is for, in one sentence",
-      "providers": "Providers queried",
-      "providersHelp": "The keywords below apply to every provider you tick.",
-      "noProviderWarning": "Without a provider, this theme will collect nothing."
-    },
-    "noProvider": "no provider",
-    "providerPause": "Pause",
-    "providerResume": "Resume",
-    "beforeProviders": "Earlier runs (provider not tracked)"
-  },
-  "inbox": {
-    "eyebrow": "Replies",
-    "title": "Inbox",
-    "lead": "Reply at the right moment — and know whether you already replied elsewhere.",
-    "filter": {
-      "all": "All",
-      "todo": "To do",
-      "in_progress": "In progress",
-      "done": "Done",
-      "later": "Later"
-    },
-    "class": {
-      "human_reply": "Human reply",
-      "auto_absence": "Auto absence",
-      "auto_left_company": "Left company",
-      "auto_other": "Auto",
-      "unclassified": "Unclassified"
-    },
-    "treatment": {
-      "todo": "To do",
-      "in_progress": "In progress",
-      "done": "Done",
-      "later": "Later"
-    },
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn"
-    },
-    "via": "via {sender}",
-    "you": "You",
-    "reply": "Reply",
-    "replyPlaceholder": "Your reply…",
-    "replyNote": "Sending always goes through the channel of the received message — never another.",
-    "replySent": "Reply sent.",
-    "replySending": "Sending…",
-    "replyImpossible": "Can't reply: no received message on this thread.",
-    "replyEmailOnly": "Replying from Jay Reach only works on email threads. LinkedIn is coming later.",
-    "buySignal": "Buy signal: departure detected → the account resurfaces to find the successor.",
-    "state": "Thread state",
-    "empty": "Choose a thread to read it.",
-    "emptyList": "Nothing in this view.",
-    "sortAuto": "Auto-sort",
-    "sorting": "Sorting…",
-    "sorted": "{n, plural, one {# reply sorted} other {# replies sorted}}",
-    "suggest": "Suggest a reply",
-    "suggesting": "Drafting…"
-  },
-  "import": {
-    "eyebrow": "File",
-    "title": "Import contacts",
-    "lead": "The report and cost are shown BEFORE you validate — never a surprise afterwards.",
-    "drop": "Drop a CSV file here, or click to choose",
-    "dropHint": "CSV — comma, semicolon or tab separator, auto-detected",
-    "change": "Change file",
-    "mapping": "Column mapping",
-    "mappingHint": "An unrecognized column is ignored, never guessed.",
-    "column": "File column",
-    "sampleValue": "Sample",
-    "mapTo": "Jay Reach field",
-    "ignore": "— ignore —",
-    "field": {
-      "first_name": "First name",
-      "last_name": "Last name",
-      "email": "Email",
-      "job_title": "Job title",
-      "company": "Company",
-      "linkedin_url": "LinkedIn",
-      "phone": "Phone",
-      "city": "City",
-      "postal_code": "Postal code",
-      "country": "Country",
-      "siren": "SIREN",
-      "website": "Website"
-    },
-    "report": "Report — before validation",
-    "rowsTotal": "Rows read",
-    "rowsUnique": "Unique contacts",
-    "rowsMerged": "Duplicates merged",
-    "rowsRejected": "Rows rejected",
-    "emailsMissing": "Without email (to enrich)",
-    "cost": "Estimated enrichment cost",
-    "costValue": "≈ {n, plural, one {# contact} other {# contacts}} to enrich",
-    "costHint": "Only contacts without an email consume credits.",
-    "destination": "Destination",
-    "dest": {
-      "list": "New list",
-      "existing": "Existing list",
-      "campaign": "Campaign"
-    },
-    "validate": "Import {n, plural, one {# contact} other {# contacts}}",
-    "ready": "{n, plural, one {# contact} other {# contacts}} ready to import into “{dest}”.",
-    "empty": "Choose a file to start.",
-    "imported": "{n, plural, one {# contact imported} other {# contacts imported}} ✓",
-    "importing": "Importing…",
-    "listName": "List name",
-    "contextNote": "Context note (required)",
-    "pickList": "Pick a list…",
-    "pickCampaign": "Pick a campaign…"
-  },
-  "dashboard": {
-    "eyebrow": "Overview",
-    "title": "Dashboard",
-    "lead": "The only metric that matters: the delay between the signal and the first contact.",
-    "period": "Last 30 days",
-    "kpi": {
-      "replies": "Replies",
-      "positives": "Invitations accepted",
-      "qualified": "Qualified signals",
-      "median": "Median delay signal → 1st contact"
-    },
-    "days": "{n} d",
-    "trend": "{delta} vs previous period",
-    "activity": "Activity",
-    "legend": {
-      "signals": "Qualified signals",
-      "replies": "Replies"
-    },
-    "byChannel": "By channel",
-    "channel": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "courrier": "Mail"
-    },
-    "noCampaign": "Signals without a campaign",
-    "noCampaignSub": "Well-scored, no campaign has picked them up yet.",
-    "replied": "Replied",
-    "repliedSub": "Latest qualified replies.",
-    "atStep": "step {n}",
-    "engine": {
-      "title": "Engine status",
-      "unknown": "No heartbeat received. The engine has never run on this database.",
-      "active": "Engine running · last cycle {ago} · version {version}",
-      "stopped": "Engine stopped · last cycle {ago}",
-      "lastError": "Last error: {message}",
-      "caps": "Today's caps",
-      "usage": "today {used} / {cap}",
-      "paused": "paused",
-      "reached": "cap reached",
-      "campaigns": "Campaign entries",
-      "entries": "{used} / {cap} today",
-      "entriesUnlimited": "{used} today, no cap",
-      "noCaps": "No cap configured and no usage today",
-      "noCampaigns": "No active campaign"
+    "fournisseurs": {
+      "adzuna": "Adzuna",
+      "francetravail": "France Travail",
+      "linkedin_post_engagers": "LinkedIn · post engagers",
+      "linkedin_competitor_followers": "LinkedIn · competitor followers",
+      "linkedin_keywords": "LinkedIn · keywords",
+      "linkedin_job_change": "LinkedIn · job change",
+      "csv": "CSV file",
+      "directory": "Directory"
     }
   },
-  "prospects": {
-    "eyebrow": "Company profile",
-    "headcount": "{n, number} employees",
-    "signals": "Related signals",
-    "sequence": "Sequence table",
-    "contacts": "Contacts",
-    "linkedin": "in ↗",
-    "noProfile": "no profile",
-    "noSequence": "Not in a sequence yet."
+  "reception": {
+    "title": "Inbox",
+    "toutesLesCampagnes": "All campaigns",
+    "filtres": {
+      "a_traiter": "To handle",
+      "interesses": "Interested",
+      "absences": "Out of office",
+      "traites": "Handled",
+      "tous": "All",
+      "puceInteresse": "Interested",
+      "puceNonInteresse": "Not interested",
+      "puceAbsence": "Out of office",
+      "puceAbsenceAvecDate": "Out of office, follow up on {date}",
+      "puceLinkedin": "LinkedIn"
+    },
+    "liste": {
+      "videTitre": "Nothing in this view",
+      "videTexte": "No thread matches this filter right now."
+    },
+    "fil": {
+      "choisirTitre": "Choose a thread",
+      "choisirTexte": "Select a thread from the list to read it.",
+      "marquerTraite": "Mark handled",
+      "rouvrir": "Reopen",
+      "campagne": "campaign {nom}",
+      "etape": "step {position} of {total}",
+      "sequenceArretee": "sequence stopped at the reply",
+      "repondDepuis": "replied from {adresse}",
+      "raisonReponseImpossible": {
+        "canalNonEmail": "Replying from Jay Reach only exists for email threads.",
+        "messageOrigineInconnu": "Unknown source message: cannot reply from the app."
+      }
+    },
+    "reponse": {
+      "depuis": "Reply from {boite}",
+      "depuisSansBoite": "Reply",
+      "via": "via {transport}, in the same thread",
+      "placeholder": "Your reply…",
+      "note": "Saved in the contact's thread and in the Inbox",
+      "marquerInteresse": "Mark interested",
+      "retirerInteret": "Remove interest",
+      "envoyer": "Send",
+      "envoiEnCours": "Sending…",
+      "envoyee": "Reply sent."
+    },
+    "colonne": {
+      "pourquoiLui": "Why them",
+      "score": "score {valeur}",
+      "aucunSignal": "No source signal.",
+      "ouEnEstOn": "Where things stand",
+      "etapeResume": "Step {position} of {total}",
+      "aucuneSequence": "This contact isn't enrolled in any sequence.",
+      "coordonnees": "Contact info",
+      "emailAbsent": "No known email.",
+      "emailVerifie": "verified",
+      "emailRisque": "risky",
+      "emailInvalide": "invalid",
+      "profilLinkedin": "LinkedIn profile",
+      "notes": "Notes",
+      "aucuneNote": "No notes.",
+      "ouvrirFiche": "Open the full record"
+    }
   },
-  "campaigns": {
-    "eyebrow": "Overview",
-    "title": "Campaigns",
-    "subtitle": "A campaign links a contact source, personas and a multichannel sequence.",
-    "lead": "One card per campaign: pool, contacted, replies.",
+  "coquille": {
+    "nav": {
+      "today": "Today",
+      "campaigns": "Campaigns",
+      "contacts": "Contacts",
+      "inbox": "Inbox",
+      "settings": "Settings",
+      "ariaLabel": "Main navigation"
+    },
+    "engine": {
+      "running": "Engine running",
+      "stopped": "Engine stopped",
+      "lastNext": "Last run {last}, next {next}",
+      "lastOnly": "Last run {last}",
+      "never": "The engine has never run"
+    },
+    "sentToday": "Sent today",
+    "sent": {
+      "gone": "{n, plural, one {# handed over} other {# handed over}}",
+      "queued": "{n, plural, one {# queued} other {# queued}}",
+      "none": "No sends",
+      "cap": "{etat, select, pause {on hold} sansLimite {no cap} other {/ {plafond}}}"
+    },
+    "role": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "operator": "Operator",
+      "viewer": "Viewer",
+      "none": "No role"
+    }
+  },
+  "aujourdhui": {
+    "resume": "{aTraiter, plural, one {# reply} other {# replies}} to handle{absences, plural, =0 {} one { (+ # automatic out-of-office reply)} other { (+ # automatic out-of-office replies)}}, {envois, plural, one {# send} other {# sends}} scheduled, {campagnes, plural, one {# active campaign} other {# active campaigns}}.",
     "newCampaign": "New campaign",
-    "importFile": "Import a file",
+    "toProcess": {
+      "title": "To handle",
+      "count": "{n, plural, one {# reply} other {# replies}}",
+      "open": "Open the Inbox",
+      "empty": "No reply to handle right now."
+    },
+    "classification": {
+      "human_reply": "Human reply",
+      "auto_absence": "Automatic out of office",
+      "auto_left_company": "Left the company",
+      "auto_other": "Automatic reply",
+      "unclassified": "Unclassified"
+    },
+    "queue": {
+      "title": "Today's queue",
+      "count": "{partis, plural, one {# sent} other {# sent}} · {enFile, plural, one {# queued} other {# queued}}",
+      "seeAll": "Full queue",
+      "step": "Step {n}",
+      "andMore": "{n, plural, one {and # more} other {and # more}}",
+      "empty": "Nothing to send today."
+    },
+    "engine": {
+      "title": "Engine",
+      "running": "Running",
+      "stopped": "Stopped",
+      "last": "Last run",
+      "next": "Next run",
+      "errors": "Errors since midnight",
+      "version": "Version"
+    },
+    "caps": {
+      "title": "Today's limits",
+      "settings": "Configure",
+      "scoring": "Scoring (Anthropic)",
+      "enrichment": "Enrichment requested (FullEnrich)",
+      "sending": "Sends (SalesBlink)"
+    },
+    "campaigns": {
+      "title": "Campaigns",
+      "count": "{n, plural, one {# active} other {# active}}",
+      "seeAll": "All campaigns",
+      "columns": {
+        "campaign": "Campaign",
+        "sources": "Sources",
+        "contacts": "Contacts",
+        "sequence": "In sequence",
+        "replies": "Replies",
+        "week": "This week"
+      },
+      "steps": "{n, plural, one {# email step} other {# email steps}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSource": "no source",
+      "listSource": "{nom}{autres, plural, =0 {} one { and # other} other { and # others}}",
+      "status": {
+        "draft": "Draft",
+        "active": "Active",
+        "paused": "Paused",
+        "archived": "Archived"
+      },
+      "empty": "No campaign yet."
+    },
+    "alerts": {
+      "action": "Configure"
+    }
+  },
+  "campagne": {
+    "list": {
+      "title": "Campaigns",
+      "description": "A campaign = a persona, its sources, its sequence and its sending mailboxes. The engine does the rest.",
+      "new": "+ New campaign",
+      "filters": {
+        "all": "{n, plural, one {All #} other {All #}}",
+        "active": "{n, plural, one {Active #} other {Active #}}",
+        "paused": "{n, plural, one {Paused #} other {Paused #}}",
+        "draft": "{n, plural, one {Draft #} other {Draft #}}",
+        "archived": "{n, plural, one {Archived #} other {Archived #}}"
+      },
+      "columns": {
+        "campaign": "Campaign",
+        "status": "Status",
+        "boxes": "Mailboxes",
+        "contacts": "Contacts",
+        "sequence": "In sequence",
+        "replies": "Replies",
+        "interested": "Interested",
+        "lastActivity": "Last activity"
+      },
+      "persona": "Persona {nom}",
+      "sourcesCount": "{n, plural, one {# source} other {# sources}}",
+      "pausedCount": "{n} paused",
+      "noBoxes": "none",
+      "noSource": "no source",
+      "listSource": "{nom}{autres, plural, =0 {} one { and # other} other { and # others}}",
+      "open": "Open",
+      "resume": "Resume",
+      "empty": {
+        "title": "No campaign yet",
+        "text": "A campaign brings together a persona, sources, a sequence and sending mailboxes. Allow five minutes for your first one.",
+        "action": "+ Create my first campaign"
+      },
+      "emptyFilter": "No campaign for this status."
+    },
+    "notFound": {
+      "title": "Campaign not found",
+      "text": "This campaign doesn't exist, no longer exists, or doesn't belong to your organization.",
+      "action": "Back to campaigns"
+    },
     "status": {
+      "draft": "Draft",
       "active": "Active",
       "paused": "Paused",
-      "draft": "Draft"
+      "archived": "Archived"
     },
-    "fig": {
-      "vivier": "Pool",
-      "contacted": "Contacted",
-      "sent": "Sent",
-      "accepted": "Accepted",
-      "replies": "Replies",
-      "positives": "Positive"
+    "header": {
+      "breadcrumb": "Campaigns",
+      "edit": "Edit",
+      "launch": "Launch",
+      "pause": "Pause",
+      "sendingFrom": "Sending from"
     },
-    "treated": "{pct}% processed",
-    "channelsN": "{n} channels",
-    "linkedinInvites": "LinkedIn invites",
-    "replyRateSub": "{pct}% reply rate",
-    "source": "Source",
-    "open": "Open →",
-    "importCard": {
-      "title": "Import a file",
-      "desc": "CSV or XLSX. New campaign, or add to an existing one."
-    },
-    "progress": "{pct}% of pool contacted",
-    "back": "← Campaigns",
-    "detailSub": "Created {days} d ago · next send in {next} · {contacts, plural, one {# contact} other {# contacts}} · {steps, plural, one {# step} other {# steps}}",
-    "perDayUsed": "today {used} / {n}",
-    "perDayUnlimited": "no cap",
-    "addContacts": "Add contacts",
-    "pause": "Pause",
     "tabs": {
       "overview": "Overview",
       "contacts": "Contacts",
-      "queue": "Queue",
-      "sourcesPersonas": "Sources & personas",
+      "queue": "Today's queue",
+      "sources": "Sources",
       "sequence": "Sequence",
       "activity": "Activity",
       "settings": "Settings"
     },
-    "soon": "Coming soon.",
-    "channel": {
-      "email": "Email",
-      "linkedin_invite": "LinkedIn invite",
-      "linkedin_message": "LinkedIn message",
-      "letter": "Letter",
-      "call": "Call"
-    },
-    "wait": "wait",
-    "dayUnit": "{n} {n, plural, one {day} other {days}}",
-    "noCondition": "no condition",
-    "validation": "Approval",
-    "editRule": "Edit",
-    "addStep": "+ Add a step",
-    "stopNote": "Any reply stops the sequence, on any channel.",
-    "showPhone": "Show phone",
-    "viaFullenrich": "via FullEnrich",
-    "replied": "Replied",
-    "exited": "Left the campaign · {pct}% of contacted",
-    "viewContacts": "View contacts →",
-    "lastReplies": "Latest replies",
-    "sentiment": {
-      "positive": "Positive",
-      "later": "Follow up later",
-      "negative": "Negative"
-    },
-    "funnel": "Funnel by step",
-    "eligible": "{n} eligible",
-    "step": "Step {n}",
-    "overviewLead": "The two figures that say whether it works: reply rate and positive replies.",
-    "rate": "Reply rate",
-    "modal": {
-      "subject": "Subject",
-      "message": "Message",
-      "variables": "Variables",
-      "condition": "Trigger condition",
-      "maxLength": "Max length",
-      "stats": "Step statistics",
-      "sent": "Sent",
-      "opened": "Opened",
-      "replied": "Replies",
-      "close": "Close",
-      "approval": "Approval",
-      "chars": "{n} chars max"
-    },
-    "activate": "Activate",
-    "stepEd": {
-      "new": "New step",
-      "edit": "Edit step",
-      "channel": "Channel",
-      "template": "Message (template)",
-      "noTemplate": "No message linked",
-      "noneForChannel": "No template for this channel — create one in Messages.",
-      "editInLibrary": "Edit in Messages ↗",
-      "delayDays": "Delay (days) from previous step",
-      "condition": "Trigger condition",
-      "cond": {
-        "none": "Always",
-        "previous_opened": "If previous email opened",
-        "previous_accepted": "If invite accepted",
-        "no_reply": "If no reply"
+    "overview": {
+      "funnel": {
+        "found": "Postings and profiles found",
+        "qualified": "Qualified contacts",
+        "contactsIdentified": "Contacts identified",
+        "imported": "Imported contacts",
+        "emailVerified": "Email verified",
+        "inSequence": "In sequence",
+        "pausedSuffix": "· {n} paused",
+        "delivered": "Emails sent",
+        "awaitingSendSuffix": "· {n} awaiting send",
+        "replies": "Replies",
+        "interested": "Interested"
       },
-      "save": "Save step",
-      "del": "Delete step",
-      "delConfirm": "Delete this step?",
-      "up": "Move up",
-      "down": "Move down",
-      "noMessageYet": "Link a message",
-      "empty": "No step yet — add one.",
-      "noRule": "No entry rule.",
-      "callNote": "The Call channel creates a dated task, no send or message.",
-      "letterNote": "Letters always go through the approval queue.",
-      "subject": "Subject",
-      "subjectPlaceholder": "What the recipient reads before opening",
-      "body": "Message",
-      "bodyPlaceholder": "Hi '{{'prenom'}}',",
-      "variables": "Available variables",
-      "variablesHelp": "Click to insert. A variable with no value blocks the send rather than going out empty.",
-      "variablesListHelp": "Imported CSV columns: '{{'liste_nom_de_colonne'}}'.",
-      "insert": "Insert",
-      "saveMessage": "Save message",
-      "messageSaved": "Message saved",
-      "promote": "Save as template",
-      "promoteName": "Template name",
-      "promoteNamePlaceholder": "Post-trade-show follow-up",
-      "promoteConfirm": "Add to library",
-      "promoted": "Added to the library",
-      "generate": "Draft a first version",
-      "generating": "Writing…",
-      "generateHint": "A brief, if you have one (optional)",
-      "useThis": "Use this one",
-      "inviteNoMessage": "A LinkedIn invitation goes out without a note: nothing to write here. To send text as well, add a “LinkedIn message” step after acceptance.",
-      "subjectRequired": "An email needs a subject before it can be saved.",
-      "closeUnsaved": "This message is not saved. Closing now will lose it."
-    },
-    "watchThemes": "Watch themes"
-  },
-  "linkedin": {
-    "eyebrow": "Channel",
-    "title": "LinkedIn",
-    "lead": "Invitations and messages sent from your own LinkedIn session, through the Chrome extension.",
-    "connect": {
-      "title": "The Chrome extension",
-      "install": "Install the extension",
-      "installHint": "Opens the Chrome Web Store. This page updates on its own afterwards.",
-      "notPublished": "The extension is not on the Chrome Web Store yet. In the meantime, it installs by hand.",
-      "manualTitle": "Manual install (temporary)",
-      "download": "Download the extension (.zip)",
-      "step1": "Download the package, then unzip it.",
-      "step2": "In Chrome, open chrome://extensions.",
-      "step3": "Turn on “Developer mode”, top right.",
-      "step4": "Click “Load unpacked” and pick the unzipped folder.",
-      "button": "Connect the extension",
-      "notDetected": "The extension did not answer. Check that it is enabled in Chrome.",
-      "regenerate": "Reconnect the extension",
-      "stateMissing": "Extension not installed",
-      "stateInstalled": "Extension installed, not connected yet",
-      "stateConnected": "Extension connected",
-      "stateConnectedTo": "Connected to {profile}",
-      "wrongOrigin": "The extension does not recognise this address. It only activates on https://jay-reach.vercel.app — a deployment URL, the one with an identifier after the project name, never wakes it up.",
-      "staleVersion": "Extension version {installee}, but this app expects {attendue}. Download the package below again and reload the extension: reloading your old unzipped folder reinstalls the old version.",
-      "reinstall": "Reinstall or update the extension"
-    },
-    "stats": {
-      "title": "Activity",
-      "pending": "Pending",
-      "sent7d": "Sent (7d)",
-      "today": "Today"
-    },
-    "alerts": {
-      "title": "Alerts",
-      "accountRestricted": "LinkedIn account restricted or signed out: sending is paused. Sign back in to LinkedIn — it resumes automatically.",
-      "weeklyCapNear": "Weekly limit almost reached ({sent}/{cap} over 7 days).",
-      "manyFailures": "{count} sends failed in the last 24h. Check your LinkedIn connection."
-    },
-    "sending": {
-      "title": "Sending settings",
-      "help": "When and how fast messages go out. The delay between two actions is handled automatically.",
-      "weekly": "Messages per week",
-      "perWeek": "{count} / week",
-      "days": "Sending days",
-      "day": {
-        "1": "Mon",
-        "2": "Tue",
-        "3": "Wed",
-        "4": "Thu",
-        "5": "Fri",
-        "6": "Sat",
-        "7": "Sun"
+      "queue": {
+        "title": "Today's queue",
+        "partis": "{n, plural, one {# sent} other {# sent}}",
+        "enFile": "{n, plural, one {# queued} other {# queued}}",
+        "possibles": "{n, plural, one {# still possible} other {# still possible}}",
+        "reportes": "{n, plural, one {# pushed back} other {# pushed back}}",
+        "seeAll": "View queue",
+        "step": "Step {n}",
+        "andMore": "{n, plural, one {and # more} other {and # more}}",
+        "empty": "Nothing to send today for this campaign."
       },
-      "from": "From",
-      "to": "Until",
-      "timezone": "Time zone",
+      "caps": {
+        "title": "Today's limits",
+        "scoring": "Scoring (Anthropic)",
+        "enrichment": "Enrichment requested (FullEnrich)",
+        "sending": "{n, plural, one {Sends (SalesBlink, # mailbox)} other {Sends (SalesBlink, # mailboxes)}}",
+        "settingsLink": "Configure limits"
+      },
+      "sources": {
+        "title": "Sources",
+        "count": "{n, plural, one {# active} other {# active}}",
+        "empty": "No source linked to this campaign.",
+        "listSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}"
+      },
+      "activity": {
+        "title": "Recent activity",
+        "subtitle": "everything the engine has done on this campaign",
+        "seeAll": "View all",
+        "empty": "No activity yet.",
+        "envoisGroupes": {
+          "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+          "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        }
+      }
+    },
+    "notifications": {
+      "launchBlocked": "Not possible: {liste}."
+    },
+    "contacts": {
+      "filters": {
+        "all": "All"
+      },
+      "columns": {
+        "contact": "Contact",
+        "why": "Why them",
+        "score": "Score",
+        "listJobTitle": "Job title",
+        "email": "Email",
+        "step": "Step",
+        "campaign": "Campaign",
+        "status": "Status"
+      },
+      "email": {
+        "verified": "Verified",
+        "toFind": "To find"
+      },
+      "status": {
+        "a_contacter": "To contact",
+        "sans_email": "No email",
+        "en_pause": "Paused",
+        "en_sequence": "In sequence",
+        "a_repondu": "Replied",
+        "interesse": "Interested",
+        "ecarte": "Discarded",
+        "termine": "Finished",
+        "rebond": "Bounced",
+        "ne_plus_contacter": "Do not contact"
+      },
+      "pause": {
+        "emailGate": "Email deemed undeliverable",
+        "salesblinkError": "Send refused by the email provider",
+        "senderUnavailable": "No sending mailbox available",
+        "absence": "Away, resuming on {date}",
+        "absenceNoDate": "Away",
+        "generic": "Paused"
+      },
+      "step": "Step {n}",
+      "stepEnded": "{n} · {libelle}",
+      "noStep": "to contact",
+      "search": "Search a name, a company…",
+      "actions": {
+        "enrich": "Find the email",
+        "enrichCost": "1 credit",
+        "enrichPaused": "Enrichment is paused (cap at 0) — raise it in Providers.",
+        "discard": "Discard",
+        "resume": "Resume"
+      },
+      "nextMessage": "Next message on {date}",
+      "empty": "No contact yet: this campaign hasn't identified anyone yet.",
+      "emptyFilter": "No contact for this filter.",
+      "pageRange": "{debut} to {fin} of {total}",
+      "pageOf": "Page {page} of {dernierePage}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "fiche": {
+      "close": "Close the record",
+      "score": "Score {n}",
+      "sections": {
+        "why": "Why them",
+        "whereAreWe": "Where things stand",
+        "conversation": "What was said",
+        "contactInfo": "Contact info",
+        "notes": "Notes",
+        "history": "History"
+      },
+      "why": {
+        "empty": "No known origin for this contact.",
+        "link": "view the posting"
+      },
+      "sequence": {
+        "empty": "This campaign hasn't contacted this person yet.",
+        "sentBy": "Sent by {boite} · linked to this mailbox for the whole sequence",
+        "step": "{n}",
+        "pausedLine": "Paused: {motif}",
+        "nextMessage": "Next message on {date}"
+      },
+      "conversation": {
+        "openInInbox": "Open in the Inbox",
+        "empty": "No exchange yet.",
+        "outbound": "Message sent"
+      },
+      "contactInfo": {
+        "email": "Email",
+        "emailVerified": "verified",
+        "phone": "Phone",
+        "phoneUnavailable": "—",
+        "linkedin": "LinkedIn",
+        "findEmail": "Find the email",
+        "findEmailCost": "1 FullEnrich credit",
+        "findEmailPaused": "Enrichment is paused (cap at 0) — raise it in Providers."
+      },
+      "notes": {
+        "empty": "No notes. What you write here stays in the record.",
+        "newLabel": "New note",
+        "placeholder": "Add a note…",
+        "add": "Add"
+      },
+      "history": {
+        "empty": "No event for this contact."
+      },
+      "actions": {
+        "discardFromCampaign": "Discard from campaign",
+        "doNotContact": "Do not contact"
+      }
+    },
+    "file": {
+      "title": "{n, plural, one {# email scheduled today} other {# emails scheduled today}}",
+      "description": "Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".",
+      "filters": {
+        "all": "{n, plural, one {All #} other {All #}}",
+        "scheduled": "{n, plural, one {Scheduled #} other {Scheduled #}}",
+        "toReview": "{n, plural, one {To review #} other {To review #}}",
+        "dispatched": "{n, plural, one {Dispatched #} other {Dispatched #}}",
+        "delivered": "{n, plural, one {Sent #} other {Sent #}}",
+        "failed": "{n, plural, one {Failed #} other {Failed #}}",
+        "blocked": "{n, plural, one {Blocked #} other {Blocked #}}"
+      },
+      "columns": {
+        "time": "Time",
+        "contact": "Contact",
+        "stepAndSubject": "Step and subject",
+        "from": "From",
+        "status": "Status"
+      },
+      "group": {
+        "count": "{n, plural, one {# email} other {# emails}}"
+      },
+      "step": "Step {n}",
+      "status": {
+        "scheduled": "Scheduled",
+        "pending_approval": "To review",
+        "approved": "Scheduled",
+        "dispatched": "Dispatched",
+        "delivered": "Sent",
+        "failed": "Failed",
+        "blocked": "Blocked",
+        "cancelled": "Cancelled",
+        "skipped": "Cancelled"
+      },
+      "pendingDelivery": "delivery pending",
+      "actions": {
+        "review": "Review",
+        "postpone": "Postpone",
+        "discard": "Discard",
+        "findEmail": "Find the email",
+        "retry": "Retry"
+      },
+      "empty": {
+        "title": "Nothing to send today",
+        "text": "All qualified contacts are in sequence or have replied. The queue will fill up as soon as a source picks up new contacts or a follow-up delay elapses."
+      },
+      "drawer": {
+        "title": "Review before sending",
+        "description": "Email as it will be sent",
+        "close": "Close",
+        "why": "Why this contact",
+        "score": "Score {n}",
+        "scoreDetail": "score {n}",
+        "scheduledFor": "scheduled {heure}",
+        "from": "from {expediteur}",
+        "step": "step {n} · {nom}",
+        "missingVariables": "Variables without a value: {liste}. The send will be blocked until they're filled in.",
+        "hint": "Text rendered by Jay Reach from step {n} and {prenom}'s record. Editing it here only changes this send.",
+        "editText": "Edit the text",
+        "soon": "Coming soon",
+        "sendAsIs": "Send as is",
+        "alreadyProcessed": "This send is {statut}: nothing left to review.",
+        "notReviewable": {
+          "approved": "already approved",
+          "dispatched": "already dispatched",
+          "delivered": "sent",
+          "failed": "failed",
+          "blocked": "blocked",
+          "cancelled": "cancelled",
+          "skipped": "skipped"
+        }
+      }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Each source looks for job postings or profiles, the engine scores them and keeps the ones matching the \"{persona}\" persona.",
+      "add": "+ Add a source",
+      "empty": {
+        "title": "No source yet",
+        "text": "Add a first source so the engine can start finding contacts."
+      },
+      "menu": {
+        "jobs": "Job postings",
+        "linkedin": "LinkedIn",
+        "manual": "Manual",
+        "adzuna": {
+          "title": "Adzuna",
+          "description": "Postings published on French job sites"
+        },
+        "franceTravail": {
+          "title": "France Travail",
+          "description": "Postings from the public employment agency"
+        },
+        "linkedinPostEngagers": {
+          "title": "Post engagers",
+          "description": "People who liked or commented on a post"
+        },
+        "linkedinCompetitorFollowers": {
+          "title": "Competitor followers",
+          "description": "People active around a company page"
+        },
+        "linkedinKeywords": {
+          "title": "Keywords",
+          "description": "People who post about a topic"
+        },
+        "linkedinJobChange": {
+          "title": "Job change",
+          "description": "Persona profiles who recently started a new role"
+        },
+        "csv": {
+          "title": "CSV file",
+          "description": "Import contacts from a file"
+        },
+        "list": {
+          "title": "Existing list",
+          "description": "Pour in contacts from an already built list"
+        },
+        "directory": {
+          "title": "Company directory",
+          "description": "Search for French companies"
+        }
+      },
+      "card": {
+        "query": "Query",
+        "filters": "Filters",
+        "passages": "Runs",
+        "postFollowed": "Post followed",
+        "keep": "We keep",
+        "trend7d": "Kept over 7 days",
+        "modify": "Edit",
+        "active": "Active",
+        "paused": "Paused",
+        "toggleAriaLabel": "Activate or pause the source",
+        "pendingLot4": "Configured, awaiting the LinkedIn channel",
+        "everyNHours": "Every {n} hours",
+        "schedule": "{cadence} · last {dernier} · next {prochain}",
+        "scheduleNoLast": "{cadence} · next {prochain}",
+        "neverRun": "Never run",
+        "dailySchedule": "Once a day",
+        "franceEntiere": "All of France",
+        "readAndKept": "{lus, plural, one {# posting read} other {# postings read}}, {retenus, plural, one {# kept} other {# kept}} on the last run",
+        "nextPaused": "paused",
+        "nextOnLaunch": "at launch"
+      },
+      "drawer": {
+        "close": "Close",
+        "name": "Source name",
+        "keywords": "Job titles searched",
+        "keywordsHint": "One title per line.",
+        "keywordsPlaceholder": "sales director, head of sales",
+        "locations": "Locations",
+        "locationsPlaceholder": "Île-de-France, Lyon",
+        "contract": "Contract",
+        "contractAll": "All contracts",
+        "contractCdi": "Permanent contract only",
+        "companySize": "Company size",
+        "companySizePlaceholder": "10 to 250 employees",
+        "department": "Department",
+        "exclusions": "We ignore",
+        "exclusionsPlaceholder": "recruitment agency, temp staffing",
+        "maxAgeDays": "Maximum posting age",
+        "maxAgeDaysHint": "days (fallback: organization setting)",
+        "schedule": "Runs",
+        "offresTitle": "{provider} · job postings",
+        "offresSubtitle": "The source reads published postings, the engine scores them against the \"{persona}\" persona.",
+        "readSince": "{n, plural, one {# posting found} other {# postings found}} since {date}",
+        "alsoProvider": "also {provider}",
+        "runNow": "Run now",
+        "save": "Save",
+        "create": "Create the source",
+        "cancel": "Cancel",
+        "linkedinPending": "Collection enabled with the LinkedIn channel. You can already configure the source; profile reading will start once it is active.",
+        "postUrl": "Post address",
+        "keepPeople": "We keep people who",
+        "commented": "commented",
+        "reacted": "reacted",
+        "excludeFirstDegree": "excluding 1st-degree connections",
+        "accountId": "LinkedIn account",
+        "profilesPerDay": "Profiles read per day",
+        "competitorPages": "Company pages followed",
+        "topics": "Topics followed",
+        "sinceDays": "Started role since (days)",
+        "csvIntro": "Contacts from the file enter the campaign as already qualified people: no scoring.",
+        "csvFile": "File",
+        "csvMapping": "Column mapping",
+        "csvColColumn": "File column",
+        "csvColExample": "Example",
+        "csvColField": "Jay Reach field",
+        "csvColIgnore": "— ignore —",
+        "csvFields": {
+          "first_name": "First name",
+          "last_name": "Last name",
+          "email": "Email",
+          "job_title": "Job title",
+          "company": "Company",
+          "linkedin_url": "LinkedIn",
+          "phone": "Phone",
+          "city": "City",
+          "postal_code": "Postal code",
+          "country": "Country",
+          "siren": "SIREN",
+          "website": "Website"
+        },
+        "csvBefore": "Before confirming",
+        "csvRowsRead": "Rows read",
+        "csvNew": "New contacts",
+        "csvKnown": "Already known, updated",
+        "csvMissingEmail": "Without a valid email",
+        "csvImport": "Import {n} contacts",
+        "listSelect": "List",
+        "listName": "Source name",
+        "listOnlyVerified": "Only contacts with a verified email",
+        "listIgnoreContacted": "Ignore those another campaign has already contacted",
+        "listResult": "Result",
+        "directoryIntro": "Search French companies by activity, department and headcount, then add them to your company database. Closed companies are excluded.",
+        "directoryPublicData": "Public data · company API",
+        "directoryQuery": "Keyword or name",
+        "directoryNaf": "Activity code (NAF)",
+        "directoryDepartment": "Department",
+        "directoryEffectif": "Headcount",
+        "directoryEffectifAny": "All headcounts",
+        "directoryEffectifSmall": "1 to 9 employees",
+        "directoryEffectifMid": "10 to 49 employees",
+        "directoryEffectifLarge": "50 to 499 employees",
+        "directoryEffectifXl": "500 employees and more",
+        "directorySearch": "Search",
+        "directoryColCompany": "Company",
+        "directoryColCity": "City",
+        "directoryColHeadcount": "Headcount",
+        "directoryFound": "{n} companies found",
+        "directoryAlreadyKnown": "already in your database",
+        "directoryProduces": "What this produces",
+        "directoryRetained": "Companies added to your database",
+        "directoryKnown": "Already known, updated",
+        "directoryContactsCreated": "Contacts created",
+        "directoryNone": "none",
+        "directoryHint": "The directory gives companies, not people: contacts will come from postings, LinkedIn or an import. Added companies appear in Contacts › Companies.",
+        "directoryRetain": "Add {n} companies"
+      }
+    },
+    "sequence": {
+      "title": "Sequence",
+      "description": "The steps sent automatically to this campaign's qualified contacts.",
+      "add": "+ Add a step",
+      "empty": {
+        "title": "No step yet",
+        "text": "Add a first step so the engine can start writing to qualified contacts."
+      },
+      "flow": {
+        "sourcesTitle": "Sources",
+        "sourcesSubtitle": "{n, plural, one {# source feeds} other {# sources feed}} this campaign, {m, plural, one {# qualified contact} other {# qualified contacts}} to date",
+        "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}",
+        "intoSequence": "Qualified contacts with a verified email enter the sequence",
+        "delayDays": "{n, plural, one {# day after} other {# days after}}",
+        "delayHours": "{n, plural, one {# hour after} other {# hours after}}",
+        "endTitle": "End of sequence",
+        "endText": "{n, plural, one {# contact went through without replying and remains} other {# contacts went through without replying and remain}} in the campaign: they aren't recontacted."
+      },
+      "card": {
+        "step": "Step {n}",
+        "passedThrough": "{n, plural, one {# contact went through this step} other {# contacts went through this step}}",
+        "noMessage": "No message written for this step.",
+        "modify": "Edit",
+        "repliedHere": "Replied here",
+        "leftSequence": "{n, plural, one {# left the sequence} other {# left the sequence}}",
+        "linkedinNotice": "the send runs server-side (coming soon)",
+        "salesblinkNotice": "The SalesBlink sequence is created on the first send."
+      },
+      "preview": {
+        "missing": "{n, plural, one {Variable without a value: {liste}.} other {Variables without a value: {liste}.}} The send will be blocked until they're filled in."
+      },
+      "drawer": {
+        "close": "Close",
+        "titleNew": "New step",
+        "titleEdit": "Step {n} · {titre}",
+        "channel": "Channel",
+        "channelEmail": "Email",
+        "channelLinkedin": "LinkedIn",
+        "stats": "{passes, plural, one {# sent} other {# sent}} · {repondus, plural, one {# reply} other {# replies}}",
+        "delay": "Delay after the previous step",
+        "delayHint": "Follow-ups already scheduled keep the old delay.",
+        "delayUnitDays": "days",
+        "delayUnitHours": "hours",
+        "delayUnit": "Delay unit",
+        "subject": "Subject",
+        "body": "Body",
+        "bodyHint": "Variables: click to insert at the cursor. Never a fallback for '{{'prenom'}}': without a first name, the send is blocked. The mailbox signature is added to the send.",
+        "preview": "Preview",
+        "previewCaption": "rendered with a fictional contact",
+        "save": "Save",
+        "create": "Create the step",
+        "cancel": "Cancel",
+        "delete": "Delete the step",
+        "deleteConfirm": "Delete this step from the sequence?",
+        "sendTest": "Send me a test",
+        "testSent": "Test sent: it will appear soon in Today's queue.",
+        "testNote": "\"Send me a test\" enrolls your address as the campaign's test contact: the email goes out through the normal path and appears in Today's queue.",
+        "listVariables": "Imported list columns",
+        "listVariablesEmpty": "A campaign fed by an imported file also offers its columns: '{{'liste_nom_de_la_colonne'}}'."
+      }
+    },
+    "activite": {
+      "filters": {
+        "tout": "All",
+        "sources": "Sources",
+        "scoring": "Scoring",
+        "envois": "Sends",
+        "reponses": "Replies",
+        "erreurs": "Errors"
+      },
+      "empty": {
+        "title": "No activity yet",
+        "text": "Once launched, every source run, scoring, send, reply or change will be logged here, to the minute."
+      },
+      "emptyFilter": "No activity for this filter.",
+      "pageRange": "{debut} to {fin} of {total}",
+      "pageOf": "Page {page} of {dernierePage}",
+      "previous": "Previous",
+      "next": "Next",
+      "envoisGroupes": {
+        "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+        "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+      }
+    },
+    "reglages": {
+      "identity": {
+        "title": "Identity",
+        "name": "Campaign name",
+        "personasTitle": "Targeted persona",
+        "personasEmpty": "No targeted persona.",
+        "personasHint": "Personas are edited in",
+        "personasLink": "Personas"
+      },
+      "targeting": {
+        "title": "Targeting and pace",
+        "minScore": "Minimum score",
+        "minScoreSuffix": "/ 100",
+        "minScoreHint": "0 to 100 · empty = follows the organization default",
+        "dailyCap": "New contacts per day",
+        "dailyCapSuffix": "contacts",
+        "dailyCapHint": "campaign limit, on top of mailbox limits · empty = no campaign-specific limit",
+        "review": "Review of first sends",
+        "reviewSuffix": "sends",
+        "reviewHint": "0 = everything goes out without review"
+      },
+      "senders": {
+        "title": "Sending mailboxes",
+        "hint": "each contact stays linked to the mailbox that first wrote to them",
+        "noteHint": "Pace, sending hours and days are set per mailbox in",
+        "noteLink": "Settings › Senders",
+        "empty": "No active email mailbox yet."
+      },
+      "cancel": "Cancel",
       "save": "Save",
-      "saved": "Saved"
+      "archive": {
+        "title": "Stop",
+        "warning": "{count, plural, one {Archiving stops the sequence for the contact currently in progress} other {Archiving stops the sequence for the # contacts currently in progress}}, keeps the history and threads, and removes the campaign from the list. Contacts stay in the directory.",
+        "button": "Archive the campaign",
+        "confirmText": "Confirm archiving this campaign? This action is irreversible.",
+        "cancel": "Cancel",
+        "confirmButton": "Confirm archiving"
+      }
+    },
+    "nouvelle": {
+      "steps": {
+        "qui": "Who",
+        "sources": "Sources",
+        "sequence": "Sequence",
+        "envoi": "Send"
+      },
+      "who": {
+        "errorName": "Give the campaign a name.",
+        "name": "Campaign name",
+        "namePlaceholder": "Follow-up with sales directors",
+        "personaTitle": "Who are you looking for?",
+        "personaEmpty": "No active persona. Create one in Settings › Personas.",
+        "personaNew": "+ New persona",
+        "personaNewHint": "Job title, company size, scoring instructions: in Settings › Personas.",
+        "minScore": "Minimum score",
+        "minScoreSuffix": "/ 100",
+        "minScoreHint": "Below this threshold, the contact is discarded before enrichment.",
+        "dailyCap": "New contacts per day",
+        "dailyCapSuffix": "contacts",
+        "dailyCapHint": "Campaign limit, across all channels."
+      },
+      "sources": {
+        "title": "Campaign sources",
+        "description": "Where the contacts will come from.",
+        "add": "+ Add a source",
+        "emptyTitle": "No source yet",
+        "hint": "You'll be able to add, configure or turn off a source at any time in the campaign's Sources tab. A CSV file connects the same way, once the campaign is created.",
+        "remove": "Remove",
+        "menuGroupJobs": "Job postings",
+        "menuAdzunaTitle": "Adzuna",
+        "menuAdzunaDescription": "Postings published on French job sites.",
+        "menuFranceTravailTitle": "France Travail",
+        "menuFranceTravailDescription": "Postings from the public employment agency.",
+        "menuGroupLinkedin": "LinkedIn",
+        "menuLinkedinBadge": "Collection enabled with the LinkedIn channel",
+        "menuLinkedinPostEngagersTitle": "Post engagers",
+        "menuLinkedinPostEngagersDescription": "People who liked or commented on a post.",
+        "menuLinkedinCompetitorFollowersTitle": "Competitor followers",
+        "menuLinkedinCompetitorFollowersDescription": "People active around a company page.",
+        "menuLinkedinKeywordsTitle": "Keywords",
+        "menuLinkedinKeywordsDescription": "People who post about a topic.",
+        "menuLinkedinJobChangeTitle": "Job change",
+        "menuLinkedinJobChangeDescription": "Persona profiles who recently started a new role.",
+        "menuGroupManual": "Manual",
+        "menuCsvTitle": "CSV file",
+        "menuCsvDisabledNote": "After creation, in the Sources tab.",
+        "formName": "Source name",
+        "formKeywords": "Keywords",
+        "formKeywordsHint": "Comma-separated, for example \"CEO, founder, managing director\".",
+        "formLocations": "Locations",
+        "formContract": "Contract type",
+        "formContractAll": "All",
+        "formContractPermanent": "Permanent contract only",
+        "formLinkedinPostUrl": "Post address",
+        "formLinkedinKeepPeople": "We keep people who",
+        "formLinkedinCommented": "commented",
+        "formLinkedinReacted": "reacted",
+        "formLinkedinExcludeFirstDegree": "excluding 1st-degree connections",
+        "formLinkedinCompetitorPages": "Company pages followed",
+        "formLinkedinTopics": "Topics followed",
+        "formLinkedinSinceDays": "Started role since (days)",
+        "formLinkedinAccountId": "LinkedIn account",
+        "formLinkedinProfilesPerDay": "Profiles read per day",
+        "formLinkedinError": "The LinkedIn account and the field specific to this source type are required.",
+        "summaryLinkedin": "{n, plural, one {# profile per day} other {# profiles per day}}",
+        "formSubmit": "Add",
+        "formCancel": "Cancel",
+        "formError": "At least one keyword is required."
+      },
+      "sequence": {
+        "startFrom": "Start from",
+        "emptyModelName": "Empty",
+        "emptyModelDescription": "Write each step yourself.",
+        "preview": "Sequence preview",
+        "addStep": "+ Add a step",
+        "step": "Step",
+        "channel": "Channel",
+        "channelEmail": "Email",
+        "channelLinkedin": "LinkedIn",
+        "subject": "Subject",
+        "body": "Body",
+        "delay": "Delay since the previous step",
+        "delaySuffix": "days",
+        "delaiPilule": "+{n} d",
+        "sentAtLaunch": "Sent when the campaign launches.",
+        "remove": "Delete the step",
+        "variablesHint": "Available variables: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
+        "empty": "No step. Choose a model or add one.",
+        "errorEmpty": "The sequence needs at least one step."
+      },
+      "send": {
+        "recapPersonaValue": "{persona} · score ≥ {score}",
+        "recapSourcesEmpty": "No source: contacts will be added manually.",
+        "recapSequenceValue": "{n} emails over {jours} days",
+        "recapEnvoiValue": "{n} mailboxes · {plafond} new contacts per day at most",
+        "boxesTitle": "Sending mailboxes",
+        "boxesEmpty": "No active sending mailbox. Connect one in Settings › Senders.",
+        "boxesNoneActive": "Choose at least one mailbox.",
+        "review": "Review of first sends",
+        "reviewSuffix": "sends",
+        "reviewHint": "The first sends wait for manual approval before going out.",
+        "summaryTitle": "Summary",
+        "summaryPersona": "Persona",
+        "summarySources": "Sources",
+        "summarySequence": "Sequence",
+        "summarySend": "Send",
+        "summaryFirstPass": "First source run",
+        "summaryFirstPassValue": "As soon as it launches, then at the pace set for each source.",
+        "launchError": "The launch was refused:"
+      },
+      "actions": {
+        "viewCampaign": "View campaign",
+        "cancel": "Cancel",
+        "back": "Back",
+        "saveDraft": "Save as draft",
+        "createAndLaunch": "Create and launch",
+        "continue": "Continue"
+      }
     }
   },
-  "directory": {
-    "eyebrow": "Search",
-    "title": "Company directory",
-    "lead": "Search French companies by activity, department and headcount. Ceased companies are excluded.",
-    "search": "Search",
-    "count": "{n, plural, one {# company found} other {# companies found}}",
-    "none": "No company for these criteria.",
-    "hint": "Fill at least one criterion then run the search.",
-    "add": "Add to my base",
-    "added": "Added ✓",
-    "headcount": "headcount",
-    "field": {
-      "q": "Keyword / name",
-      "qPlaceholder": "e.g. software, transport…",
-      "naf": "Activity code (NAF)",
-      "department": "Department of operation",
-      "effectif": "Headcount"
+  "reglages": {
+    "title": "Settings",
+    "lead": "Senders, limits, providers, personas, messages, engine, account.",
+    "nav": {
+      "senders": "Senders",
+      "limits": "Limits",
+      "providers": "Providers",
+      "personas": "Personas",
+      "messages": "Messages",
+      "engine": "Engine",
+      "account": "Account"
     },
-    "bucket": {
-      "all": "All",
-      "small": "1 to 9",
-      "mid": "10 to 49",
-      "large": "50 to 499",
-      "xl": "500+"
+    "expediteurs": {
+      "boxesTitle": "Email mailboxes",
+      "boxesLead": "Sends go through SalesBlink. Each contact is linked for life to the mailbox that first wrote to them.",
+      "salesblinkLinked": "SalesBlink linked",
+      "salesblinkNotLinked": "SalesBlink not linked",
+      "empty": "No email mailbox. Link one to start sending.",
+      "box": {
+        "createdOn": "{estRelatif, select, oui {Connected {date}} other {Connected on {date}}}",
+        "today": "Today",
+        "cadence": "Pace",
+        "perDay": "{n} per day",
+        "perDayNoLimit": "no daily limit",
+        "perHour": "{n} per hour",
+        "perHourNoLimit": "no hourly limit",
+        "hours": "Sending hours",
+        "hoursValue": "{debut} to {fin}, {jours}",
+        "replies": "Replies",
+        "repliesOk": "Polled",
+        "repliesLast": "last poll {heure}",
+        "repliesNever": "never polled",
+        "repliesError": "Polling error",
+        "repliesNone": "No polling configured",
+        "edit": "Edit",
+        "active": "Active",
+        "inactive": "Inactive",
+        "disconnected": "Disconnected from SalesBlink",
+        "healthUnavailable": "SalesBlink status unavailable",
+        "notLinked": "Not linked to SalesBlink",
+        "todayValue": "{etat, select, pause {{utilise} · on hold} sansLimite {{utilise} · no cap} other {{utilise} / {plafond}}}"
+      },
+      "drawer": {
+        "title": "Edit {identite}",
+        "dailyQuota": "Daily limit",
+        "hourlyQuota": "Hourly limit",
+        "noLimit": "No limit",
+        "hoursFrom": "From",
+        "hoursTo": "To",
+        "timezone": "Time zone",
+        "days": "Sending days",
+        "inboxProvider": "Read replies directly in this mailbox",
+        "inboxProviderHint": "Jay Reach polls this mailbox every few minutes via Microsoft Graph, once it's configured in Providers. SalesBlink keeps sending your messages.",
+        "save": "Save",
+        "saving": "Saving",
+        "cancel": "Cancel",
+        "close": "Close"
+      },
+      "linkDrawer": {
+        "title": "Link a mailbox",
+        "description": "Choose a mailbox from the SalesBlink workspace not yet linked to a sender.",
+        "empty": "No SalesBlink mailbox available right now. Check the key in Providers.",
+        "link": "Link",
+        "linking": "Linking",
+        "close": "Close"
+      },
+      "linkedin": {
+        "title": "LinkedIn accounts",
+        "lead": "LinkedIn actions go out from a dedicated residential IP, never from the server.",
+        "empty": "No LinkedIn account connected.",
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "senderMissing": "Nothing will go out: sender not activated",
+        "activeSenderMissing": "Active, but nothing will go out: sender not activated",
+        "perDay": "{n} per day",
+        "perWeek": "{n} per week",
+        "edit": "Edit",
+        "active": "Active",
+        "inactive": "Inactive",
+        "drawerTitle": "Edit {nom}",
+        "save": "Save",
+        "saving": "Saving",
+        "cancel": "Cancel",
+        "close": "Close",
+        "drawerDailyQuota": "Profiles read and actions per day",
+        "drawerWeeklyQuota": "Weekly limit",
+        "drawerHoursFrom": "From",
+        "drawerHoursTo": "To",
+        "drawerDays": "Sending days",
+        "drawerTimezone": "Time zone"
+      }
     },
-    "countTruncated": "More than {n, number} companies found",
-    "bulk": {
-      "addPage": "Add this page ({count})",
-      "addAll": "Add all {count, number} results",
-      "addAllTruncated": "Add the results ({count, number} max)",
-      "confirm": "Add {count, number} companies to your base?",
-      "starting": "Starting…",
-      "progress": "{done, number} / {total, number}",
+    "days": {
+      "mon": "Monday",
+      "tue": "Tuesday",
+      "wed": "Wednesday",
+      "thu": "Thursday",
+      "fri": "Friday",
+      "sat": "Saturday",
+      "sun": "Sunday",
+      "weekdays": "Monday to Friday",
+      "everyDay": "every day",
+      "short": {
+        "mon": "M",
+        "tue": "T",
+        "wed": "W",
+        "thu": "T",
+        "fri": "F",
+        "sat": "S",
+        "sun": "S"
+      }
+    },
+    "plafonds": {
+      "title": "Organization limits and defaults",
+      "lead": "Everything is set here, in the database. The environment only kicks in if a row is missing: the \"fallback\" column says which.",
+      "consommation": {
+        "title": "Today's usage",
+        "scoring": "Scorings (Anthropic)",
+        "enrichissement": "Enrichments requested (FullEnrich)",
+        "envois": "Sends",
+        "aide": "Counters reset to zero at midnight, organization time ({fuseau}), sends included. A cap once reached puts the task on hold until the next day, nothing is lost.",
+        "valeur": "{etat, select, pause {{utilise} · cap at 0 (paused)} sansLimite {{utilise} · no cap set} other {{utilise} / {plafond}}}"
+      },
+      "protection": {
+        "title": "What this protects",
+        "scoringTitre": "Scorings",
+        "scoringTexte": "{enPause, select, oui {each posting or profile read by a source costs a model call. The cap is at 0: scoring is paused, nothing gets scored.} other {each posting or profile read by a source costs a model call. {plafond} per day absorbs about a dozen runs.}}",
+        "enrichissementTitre": "Enrichments",
+        "enrichissementTexte": "one FullEnrich credit per email searched. The engine searches for the highest scores first.",
+        "defautsTitre": "Defaults",
+        "defautsTexte": "a campaign or source that doesn't specify anything inherits the value below."
+      },
+      "table": {
+        "colReglage": "Setting",
+        "colValeur": "Value",
+        "colDefaut": "Default",
+        "colRepli": "Fallback",
+        "colModifie": "Modified",
+        "modifier": "Edit",
+        "enregistrer": "Save",
+        "annuler": "Cancel",
+        "aucunRepli": "none",
+        "jamaisModifie": "never",
+        "modifiePar": "{nom} · {date}",
+        "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
+        "erreurNombre": "Enter a whole number, zero or positive."
+      },
+      "lignes": {
+        "scoringParJour": {
+          "nom": "Scorings per day",
+          "description": "model calls to score postings and profiles"
+        },
+        "enrichissementsParJour": {
+          "nom": "Enrichments per day",
+          "description": "FullEnrich credits to find emails"
+        },
+        "scoreMinDefaut": {
+          "nom": "Minimum entry score",
+          "description": "default for campaigns that don't specify one"
+        },
+        "relecturePremiersEnvoisDefaut": {
+          "nom": "Review of first sends",
+          "description": "default for campaigns · 0 = everything goes out without review"
+        },
+        "ageMaxOffresJours": {
+          "nom": "Maximum posting age",
+          "description": "default for sources · in days",
+          "suffixe": "days"
+        }
+      },
+      "ailleurs": {
+        "title": "Set elsewhere",
+        "lead": "These values live at the mailbox, campaign or source level; the link takes you to the right screen.",
+        "colReglage": "Setting",
+        "colNiveau": "Level",
+        "colOu": "Where",
+        "boites": {
+          "reglage": "Sends per day and per hour, sending hours and days, time zone",
+          "niveau": "mailbox",
+          "lien": "Senders"
+        },
+        "campagnes": {
+          "reglage": "Daily limit of new contacts, minimum score, review",
+          "niveau": "campaign",
+          "lien": "Campaigns"
+        },
+        "sources": {
+          "reglage": "Run frequency, posting age, profile quota",
+          "niveau": "source",
+          "lien": "Campaigns"
+        },
+        "pause": {
+          "reglage": "Global sending pause",
+          "niveau": "organization",
+          "lien": "Engine"
+        }
+      }
+    },
+    "fournisseurs": {
+      "title": "Providers",
+      "lead": "Keys are encrypted in the database and never shown in clear text.",
+      "champCle": "Key",
+      "remplacer": "Replace",
+      "enregistrer": "Save",
+      "enregistrementEnCours": "Saving…",
+      "annuler": "Cancel",
+      "tester": "Test",
+      "placeholderSecret": "Paste the key",
+      "jamaisTeste": "—",
+      "reussi": "Succeeded · {date}",
+      "echec": "Failed · {date}",
+      "etat": {
+        "cleValide": "Valid key",
+        "connecte": "Connected",
+        "aRenseigner": "To fill in",
+        "echec": "Connection error"
+      },
+      "nom": {
+        "anthropic": "Anthropic",
+        "fullenrich": "FullEnrich",
+        "dropcontact": "Dropcontact",
+        "bouncer": "Bouncer",
+        "reoon": "Reoon",
+        "salesblink": "SalesBlink",
+        "microsoft_graph": "Microsoft 365",
+        "adzuna": "Adzuna",
+        "francetravail": "France Travail",
+        "apify": "Apify"
+      },
+      "description": {
+        "anthropic": "Scoring of postings and profiles",
+        "fullenrich": "Search for verified professional emails",
+        "dropcontact": "Contact enrichment",
+        "bouncer": "Email deliverability verification",
+        "reoon": "Email deliverability verification",
+        "salesblink": "Email sending",
+        "microsoft_graph": "Reply polling, mailbox by mailbox",
+        "adzuna": "Job postings from French sites",
+        "francetravail": "Postings from the public employment agency",
+        "apify": "Server-side LinkedIn reading · required for the LinkedIn channel"
+      },
+      "lien": {
+        "reglerPlafond": "Set the limit",
+        "voirLesBoites": "View mailboxes",
+        "voirLesCampagnes": "View campaigns"
+      },
+      "colDernierTest": "Last test",
+      "colAujourdhui": "Today",
+      "sansDonnee": "—",
+      "consommation": {
+        "scorings": "{utilise} scorings out of {plafond}",
+        "enrichissements": "{utilise} credits out of {plafond}",
+        "envois": "{utilise} sends out of {plafond}"
+      },
+      "reglagesTitre": "Settings",
+      "enregistrerReglages": "Save",
+      "champConfigDefaut": "Default: {defaut}."
+    },
+    "personas": {
+      "title": "Personas",
+      "lead": "Who you're looking for, and how the engine decides a posting or profile matches.",
+      "new": "+ New persona",
+      "empty": "No active persona yet.",
+      "archivedSection": "Archived ({n})",
+      "reactivate": "Reactivate",
+      "list": {
+        "draft": "no campaign",
+        "summary": "{campaigns, plural, one {# campaign} other {# campaigns}} · {contacts, plural, one {# contact} other {# contacts}}",
+        "summaryWithScore": "{campaigns, plural, one {# campaign} other {# campaigns}} · {contacts, plural, one {# contact} other {# contacts}} · average score {score}"
+      },
+      "form": {
+        "titleNew": "New persona",
+        "usedBy": "used by {campagnes}",
+        "notUsed": "used by no campaign",
+        "name": "Name",
+        "defaultCampaign": "Default campaign",
+        "defaultCampaignNone": "None",
+        "defaultCampaignHint": "where contacts found by a source without a campaign go",
+        "titles": "Recognized job titles",
+        "titlesAdd": "Add…",
+        "titlesRemove": "Remove \"{intitule}\"",
+        "titlesHint": "The engine also recognizes close variants; the test below shows it.",
+        "seniority": "Seniority",
+        "seniorityNone": "Not specified",
+        "seniority_executive": "Executive management",
+        "seniority_director": "Director and management",
+        "seniority_manager": "Middle management",
+        "seniority_individual": "Individual contributor",
+        "scoringPrompt": "Scoring instructions (read by the model)",
+        "angle": "What Jay brings them",
+        "archive": "Archive",
+        "cancel": "Cancel",
+        "save": "Save",
+        "archiveConfirm": "Archive this persona? It disappears from the new campaign selector, but contacts and campaigns already linked don't change."
+      },
+      "test": {
+        "title": "Test matching",
+        "lead": "matching by job title, against active personas",
+        "placeholder": "A job title…",
+        "button": "Test",
+        "testing": "Testing…",
+        "matched": "Matches {persona}",
+        "ambiguous": "Ambiguous between {personas}",
+        "none": "Matches no persona"
+      }
+    },
+    "messages": {
+      "title": "Messages",
+      "lead": "The library of reusable templates. A sequence step can be poured into one; editing a template here changes every step linked to it, starting with the next send.",
+      "new": "+ New template",
+      "search": "Search a template…",
+      "noResult": "No template matches this search.",
+      "filters": {
+        "all": "All {n}",
+        "email": "Email {n}",
+        "linkedin": "LinkedIn {n}",
+        "unused": "Unused {n}"
+      },
+      "table": {
+        "name": "Template",
+        "channel": "Channel",
+        "usedBy": "Used by",
+        "sent": "Sends",
+        "sentCount": "{n, plural, =0 {No send} one {# send} other {# sends}}",
+        "modified": "Modified",
+        "edit": "Edit",
+        "unusedBy": "none",
+        "channelEmail": "Email",
+        "channelLinkedin": "LinkedIn",
+        "channelLetter": "Letter",
+        "channelCall": "Call"
+      },
+      "empty": {
+        "title": "No template yet",
+        "text": "Templates are created here or from a sequence step. A template can serve as many campaigns as you want.",
+        "action": "+ New template"
+      },
+      "drawer": {
+        "titleNew": "New template",
+        "titleEdit": "Edit {nom}",
+        "close": "Close",
+        "cancel": "Cancel",
+        "save": "Save",
+        "name": "Name",
+        "channel": "Channel",
+        "channelEmail": "Email",
+        "channelLinkedinInvite": "LinkedIn (invitation)",
+        "channelLinkedinMessage": "LinkedIn (message)",
+        "channelLetter": "Letter",
+        "channelCall": "Call",
+        "nature": "Targeted campaign type",
+        "natureSignal": "Fed by a signal",
+        "natureList": "Fed by a list",
+        "natureHint": "Determines which variables are available in the body (e.g. '{{'signal_titre'}}' only exists for a campaign fed by a signal).",
+        "subject": "Subject",
+        "body": "Body",
+        "bodyHint": "Variables: click to insert at the cursor."
+      }
+    },
+    "moteur": {
+      "titre": "Engine",
+      "description": "The engine runs continuously on the Jay Reach server. It runs every minute; sources, scoring, enrichment, sends and reply polling are its tasks.",
+      "etat": {
+        "titre": "Status",
+        "enMarche": "Running",
+        "arrete": "Stopped",
+        "version": "version {version}",
+        "dernierPassage": "Last run",
+        "prochainPassage": "Next",
+        "aucunPassage": "—",
+        "derniereErreur": "Last error",
+        "aucuneErreur": "None",
+        "tachesEnAttente": "Pending tasks",
+        "aucuneTache": "None",
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}"
+      },
+      "pause": {
+        "titre": "Global sending pause",
+        "description": "Cuts off all sends for all campaigns, without cancelling anything: emails will go out once the pause is lifted. Sources, scoring and polling keep running.",
+        "etat": "Status",
+        "levee": "lifted",
+        "active": "active",
+        "dernierePause": "Last pause",
+        "aucunePause": "No pause recorded.",
+        "dernierePauseGabarit": "{depuis} to {jusqua} · {parQui}",
+        "erreur": "The pause could not be changed."
+      },
+      "taches": {
+        "titre": "Run a task now",
+        "sousTitre": "without waiting for the next scheduled run",
+        "lancer": "Run",
+        "enCours": "Running",
+        "erreur": "The task could not be started.",
+        "continuAideGabarit": "Runs continuously server-side, about every {minutes} minutes. No manual trigger is possible here.",
+        "sources": {
+          "titre": "Run all sources",
+          "detailGabarit": "{actives, plural, one {# active source} other {# active sources}} · last run {dernier}",
+          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet"
+        },
+        "scoring": {
+          "titre": "Score pending signals",
+          "detailGabarit": "{n, plural, one {# signal pending} other {# signals pending}}",
+          "detailVide": "no signal pending"
+        },
+        "enrichissement": {
+          "titre": "Enrich contacts without email",
+          "detailGabarit": "{n, plural, one {# contact pending} other {# contacts pending}}",
+          "detailVide": "no contact pending"
+        },
+        "releve": {
+          "titre": "SalesBlink reply polling",
+          "detailGabarit": "last poll {quand}",
+          "detailJamais": "never polled yet"
+        }
+      },
+      "erreurs": {
+        "titre": "Recent errors",
+        "sousTitre": "7 days",
+        "vide": "No errors in the past seven days."
+      },
+      "releveLectureSeule": {
+        "titre": "Reply polling",
+        "sousTitre": "read-only",
+        "cadence": "Pace",
+        "cadenceValeurGabarit": "every {minutes} min",
+        "derniere": "Last poll",
+        "jamais": "never",
+        "aideReglee": "Set in Providers › SalesBlink.",
+        "aideDefaut": "No pace entered: the default value applies. Set it in Providers › SalesBlink.",
+        "lienFournisseurs": "Open Providers"
+      },
+      "bandeauPause": {
+        "texteGabarit": "Sending pause active since {depuis} ({parQui}): no email goes out.",
+        "auteurInconnu": "unknown author"
+      },
+      "bandeauSilencieux": {
+        "texteGabarit": "The engine hasn't shown signs of life since its last run ({dernier}). Scheduled sends are waiting.",
+        "texteJamaisDemarre": "The engine has never run on this instance.",
+        "lien": "View errors"
+      }
+    },
+    "compte": {
+      "titre": "Account",
+      "description": "The organization, its members and your notifications.",
+      "organisation": {
+        "titre": "Organization",
+        "nom": "Name",
+        "fuseau": "Time zone",
+        "fuseauAide": "displayed times and default sending windows",
+        "langue": "Interface language",
+        "langueAide": "also available in English and Dutch",
+        "enregistrer": "Save",
+        "erreur": "The organization could not be saved."
+      },
+      "membres": {
+        "titre": "Members",
+        "compteGabarit": "{count} · at least one owner",
+        "inviter": "+ Invite by email",
+        "colonneMembre": "Member",
+        "colonneEmail": "Email",
+        "colonneRole": "Role",
+        "colonneDepuis": "Since",
+        "vous": "you",
+        "retirer": "Remove",
+        "enAttenteSuffixe": "pending",
+        "role": {
+          "owner": "Owner",
+          "admin": "Admin",
+          "operator": "Operator",
+          "viewer": "Read-only"
+        },
+        "aide": "Owner and admin control everything. Operator drives campaigns and the Inbox. Read-only sees without touching.",
+        "erreur": "The action could not be completed."
+      },
+      "notifications": {
+        "titre": "My notifications",
+        "sousTitre": "by email and in the app",
+        "erreur": "The preference could not be saved.",
+        "evenement": {
+          "contact": {
+            "replied": {
+              "titre": "A reply arrives",
+              "detail": "for every human reply detected"
+            }
+          }
+        }
+      },
+      "session": {
+        "titre": "Session",
+        "bouton": "Sign out"
+      }
+    }
+  },
+  "contacts": {
+    "title": "Contacts",
+    "description": "All contacts found by your sources, across all campaigns, along with companies and your exclusions.",
+    "export": "Export",
+    "tabs": {
+      "all": "All contacts",
+      "companies": "Companies",
+      "customers": "Customers and exclusions"
+    },
+    "filters": {
+      "campaign": "Campaign",
+      "campaignAll": "All campaigns",
+      "status": "Status",
+      "statusAll": "All statuses",
+      "email": "Email",
+      "emailAll": "All emails",
+      "source": "Source",
+      "sourceAll": "All sources",
+      "sourceManual": "Manual",
+      "search": "Search a name, a company, a job title…",
+      "apply": "Filter"
+    },
+    "columns": {
+      "contact": "Contact",
+      "why": "Why them",
+      "score": "Score",
+      "email": "Email",
+      "step": "Step",
+      "campaign": "Campaign",
+      "campaignCount": "{count} campaigns",
+      "status": "Status"
+    },
+    "status": {
+      "a_contacter": "To contact",
+      "sans_email": "No email",
+      "en_pause": "Paused",
+      "en_sequence": "In sequence",
+      "a_repondu": "Replied",
+      "interesse": "Interested",
+      "ecarte": "Discarded",
+      "termine": "Finished",
+      "rebond": "Bounced",
+      "ne_plus_contacter": "Do not contact"
+    },
+    "pause": {
+      "emailGate": "Email deemed undeliverable",
+      "salesblinkError": "Send refused by the email provider",
+      "senderUnavailable": "No sending mailbox available",
+      "absence": "Away, resuming on {date}",
+      "absenceNoDate": "Away",
+      "generic": "Paused"
+    },
+    "step": "Step {n}",
+    "stepEnded": "{n} · {libelle}",
+    "noStep": "to contact",
+    "email": {
+      "verified": "Verified",
+      "toFind": "To find"
+    },
+    "actions": {
+      "enrich": "Find the email",
+      "enrichCost": "1 credit",
+      "enrichPaused": "Enrichment is paused (cap at 0) — raise it in Providers.",
+      "discard": "Discard",
+      "resume": "Resume"
+    },
+    "nextMessage": "Next message on {date}",
+    "empty": "No contact for this filter.",
+    "truncated": "Display limited to the first 5,000 results: narrow the filters to see the rest.",
+    "pageRange": "{debut} to {fin} of {total}",
+    "pageOf": "Page {page} of {dernierePage}",
+    "previous": "Previous",
+    "next": "Next",
+    "companies": {
+      "columns": {
+        "company": "Company",
+        "sector": "Sector",
+        "size": "Size",
+        "city": "City",
+        "contacts": "Known contacts",
+        "links": "Links"
+      },
+      "site": "website",
+      "unknown": "—",
+      "empty": "No company yet.",
+      "pageRange": "{debut} to {fin} of {total}",
+      "pageOf": "Page {page} of {dernierePage}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "customers": {
+      "clientsTitle": "Jay customers",
+      "clientsCount": "{n} domains",
+      "clientsEmpty": "No customer domain yet.",
+      "addDomainPlaceholder": "Add a domain",
+      "add": "Add",
+      "adminRequired": "Admin rights required to add a customer.",
+      "exclusionsTitle": "Do not contact",
+      "exclusionsCount": "{n} entries",
+      "exclusionsEmpty": "No exclusion yet.",
+      "addExclusionPlaceholder": "Email, domain or LinkedIn address",
+      "scopeEmail": "Email",
+      "scopeDomain": "Domain",
+      "scopeLinkedin": "LinkedIn",
+      "operatorRequired": "Operator rights required to add an exclusion."
+    },
+    "importDialog": {
+      "open": "Import a CSV",
+      "close": "Close",
       "cancel": "Cancel",
-      "cancelled": "Cancelled — {added} company(ies) added before stopping.",
-      "done": "{added} added, {existing} already there."
-    }
-  },
-  "notifications": {
-    "title": "Notifications",
-    "markAll": "Mark all read",
-    "empty": "No notifications.",
-    "pushEnable": "Enable desktop notifications",
-    "pushTest": "Send a test",
-    "pushEnabled": "Desktop notifications enabled ✓",
-    "pushSent": "Test sent ({n})",
-    "pushDenied": "Permission denied",
-    "pushUnsupported": "Not supported by this browser"
-  },
-  "approvals": {
-    "eyebrow": "Validation",
-    "title": "Approval queue",
-    "lead": "Sends that need human validation (letter, budget overrun, manual mode). Nothing goes out without your approval.",
-    "empty": "No send awaiting approval.",
-    "approve": "Approve",
-    "reject": "Reject",
-    "channel": {
-      "email": "Email",
-      "linkedin_invite": "LinkedIn invite",
-      "linkedin_message": "LinkedIn message",
-      "letter": "Letter",
-      "call": "Call"
-    },
-    "reason": {
-      "letter": "Letter — verification required",
-      "budget": "Budget exceeded",
-      "manual": "Manual mode",
-      "sender_unbound": "No sender bound",
-      "missing_locale": "Contact locale unknown",
-      "missing_template": "No message linked to the step",
-      "missing_variable": "Unresolved message variable"
-    }
-  },
-  "customers": {
-    "eyebrow": "Exclusion",
-    "title": "Current customers",
-    "lead": "Import your current customers: they are excluded from prospecting at the company level (SIREN, domain or name). Real unsubscribes are untouched.",
-    "drop": "Choose a file (CSV / Excel)",
-    "detected": "{n, plural, one {# company detected} other {# companies detected}}",
-    "listName": "List name (e.g. CRM customers 2026)",
-    "import": "Import and exclude",
-    "importing": "Importing…",
-    "done": "{n, plural, one {# customer imported} other {# customers imported}} — exclusions created ✓",
-    "listsTitle": "Customer lists",
-    "entries": "{n, plural, one {# entry} other {# entries}}"
-  },
-  "templates": {
-    "eyebrow": "Library",
-    "title": "Messages",
-    "lead": "Templates you reuse across campaigns, instead of rewriting them every time.",
-    "new": "New message",
-    "demoNotice": "Connect Supabase to edit.",
-    "empty": "No messages yet.",
-    "edit": "Edit",
-    "versionsCount": "{n, plural, one {# version} other {# versions}}",
-    "editTitle": "Edit message",
-    "newTitle": "New message",
-    "close": "Close",
-    "name": "Name",
-    "namePlaceholder": "Sales follow-up",
-    "channel": {
-      "label": "Channel",
-      "email": "Email",
-      "linkedin_invite": "LinkedIn invite",
-      "linkedin_message": "LinkedIn message",
-      "letter": "Letter"
-    },
-    "nature": {
-      "label": "Campaign type",
-      "signal": "Signal",
-      "list": "List"
-    },
-    "subject": "Subject",
-    "message": "Message",
-    "messagePlaceholder": "Hi '{{'prenom'}}', …",
-    "wordCount": "{n} / {max} words",
-    "insertVar": "Insert:",
-    "fixVariables": "Fix the variables before saving.",
-    "versionHistory": "Version history",
-    "active": "Active",
-    "reactivate": "Reactivate",
-    "sentCount": "{n, plural, one {# send} other {# sends}}",
-    "noVersionYet": "No version for this language.",
-    "cancel": "Cancel",
-    "saveVersion": "Save (new version)"
-  },
-  "campaignNew": {
-    "back": "← Campaigns",
-    "eyebrow": "New campaign",
-    "title": "Create a campaign",
-    "lead": "Where prospects come from, who to target, and at what pace. The sequence is built next.",
-    "demoNotice": "Connect Supabase to create a campaign.",
-    "name": "Name",
-    "namePlaceholder": "Field sales follow-up",
-    "entryKind": "Entry point",
-    "kind": {
-      "source": "Signal source",
-      "list": "Imported list"
-    },
-    "pickSource": "Watch themes",
-    "pickList": "List",
-    "choose": "Choose…",
-    "noneAvailable": "No option available.",
-    "personas": "Target personas",
-    "noPersona": "No active persona.",
-    "minScore": "Minimum score",
-    "dailyCap": "Daily cap",
-    "dailyCapPlaceholder": "e.g. 50",
-    "cancel": "Cancel",
-    "create": "Create campaign",
-    "minScoreHelp": "Score the AI gives each contact, 0 to 100, following their persona’s scoring brief. Below this threshold, the contact does not enter.",
-    "minScoreLink": "Set the scoring briefs",
-    "dailyCapHelp": "All channels combined. If the LinkedIn settings are stricter, those apply: the tighter limit always wins.",
-    "dailyCapLink": "See the LinkedIn settings"
-  },
-  "senders": {
-    "eyebrow": "Who sends",
-    "title": "Senders",
-    "lead": "The accounts your messages go out from. The display name is what the recipient sees; the caps limit what each sender sends.",
-    "kind": {
-      "email": "Email",
-      "linkedin": "LinkedIn",
-      "postal": "Letter"
-    },
-    "displayName": "Display name",
-    "displayNamePlaceholder": "The name the recipient sees",
-    "dailyQuota": "Daily cap",
-    "hourlyQuota": "Hourly cap",
-    "noLimit": "No cap",
-    "active": "Send from this sender",
-    "save": "Save",
-    "saving": "Saving",
-    "saved": "Saved",
-    "empty": "No senders yet. Connect an account under Providers to send your first messages.",
-    "sendDays": "Sending days",
-    "sendFrom": "From",
-    "sendTo": "Until",
-    "timezone": "Time zone",
-    "sendHoursSalesBlinkHint": "These hours are sent to SalesBlink when the step's sequence is created. A later change does not propagate to SalesBlink automatically.",
-    "form": {
-      "add": "Add a sender",
-      "cancel": "Cancel",
-      "create": "Create sender",
-      "creating": "Creating",
-      "channel": "Channel",
-      "emailIdentity": "Sending address",
-      "linkedinIdentity": "LinkedIn handle",
-      "emailPlaceholder": "first@your-domain.com",
-      "linkedinPlaceholder": "your-profile",
-      "identityHint": "Set once, at creation. It names the account connected at the provider, so changing it later would not change what actually goes out."
-    },
-    "salesblinkBox": "SalesBlink mailbox",
-    "salesblinkBoxNone": "No SalesBlink mailbox available right now. Check the key under Providers.",
-    "salesblinkHealth": "{etat, select, actif {Sending active} coupe {Disconnected: {message}} other {Never checked}}",
-    "salesblinkCap": "SalesBlink cap",
-    "lowestApplies": "the lowest one applies",
-    "inboxProvider": "Read replies directly in this mailbox",
-    "inboxProviderHint": "Jay Reach checks this mailbox every few minutes via Microsoft Graph, as soon as Microsoft Graph is configured under Providers. SalesBlink still sends your messages."
-  },
-  "snippets": {
-    "title": "Reusable text",
-    "lead": "Text written once, inserted into your messages like a variable. Change it here and every message using it follows.",
-    "add": "Add a text",
-    "name": "Name",
-    "namePlaceholder": "signature",
-    "nameHint": "Will be written '{{'{exemple}'}}' in your messages. Lowercase, no accents or spaces.",
-    "body": "Content",
-    "bodyPlaceholder": "Marie Dupont\nHead of Sales, Acme",
-    "save": "Save",
-    "cancel": "Cancel",
-    "delete": "Delete",
-    "empty": "None yet. A signature, legal notices: whatever repeats from one message to the next."
-  },
-  "campaign": {
-    "guard": {
-      "noSalesBlinkKey": "no SalesBlink key configured",
-      "noBoundEmailSender": "no email sender bound to a SalesBlink mailbox",
-      "emailSenderDisconnected": "the email sender bound to SalesBlink does not have sending active"
+      "title": "Import contacts",
+      "intro": "Choose the campaign these contacts will enter.",
+      "campaign": "Campaign",
+      "chooseCampaign": "Choose a campaign",
+      "noCampaign": "Create a campaign first to import contacts.",
+      "draftCampaignWarning": "This campaign isn't active: the contacts will be imported, but nothing will be sent until it's launched.",
+      "listName": "List name",
+      "file": "CSV file",
+      "mapping": "Column mapping",
+      "colColumn": "Column",
+      "colExample": "Example",
+      "colField": "Field",
+      "colIgnore": "Ignore",
+      "before": "Before import",
+      "rowsRead": "Rows read",
+      "new": "New contacts",
+      "known": "Already known",
+      "missingEmail": "Without email",
+      "submit": "Import {n} contacts"
     }
   }
 }
