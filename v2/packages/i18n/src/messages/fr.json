@@ -1108,6 +1108,14 @@
           "nom": "Enrichissements par jour",
           "description": "crédits FullEnrich pour trouver des emails"
         },
+        "linkedinPostsParJour": {
+          "nom": "Posts LinkedIn par jour",
+          "description": "posts dont on collecte les engageurs, par jour"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "Requêtes LinkedIn par heure",
+          "description": "requêtes réellement émises vers LinkedIn, toutes collectes confondues"
+        },
         "scoreMinDefaut": {
           "nom": "Score minimal d'entrée",
           "description": "défaut des campagnes qui ne le précisent pas"

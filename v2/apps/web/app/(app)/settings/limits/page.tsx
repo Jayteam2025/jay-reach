@@ -14,10 +14,12 @@ import { TablePlafonds, type LignePlafond } from '../../../../components/reglage
 
 export const revalidate = 0;
 
-/** Les cinq lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
+/** Les sept lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
 const ORDRE_LIGNES: readonly ClePlafond[] = [
   'scoring_par_jour',
   'enrichissements_par_jour',
+  'linkedin_posts_par_jour',
+  'linkedin_requetes_par_heure',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
   'age_max_offres_jours',
@@ -43,6 +45,14 @@ export default async function PlafondsPage() {
     enrichissements_par_jour: {
       nom: t('lignes.enrichissementsParJour.nom'),
       description: t('lignes.enrichissementsParJour.description'),
+    },
+    linkedin_posts_par_jour: {
+      nom: t('lignes.linkedinPostsParJour.nom'),
+      description: t('lignes.linkedinPostsParJour.description'),
+    },
+    linkedin_requetes_par_heure: {
+      nom: t('lignes.linkedinRequetesParHeure.nom'),
+      description: t('lignes.linkedinRequetesParHeure.description'),
     },
     score_min_defaut: { nom: t('lignes.scoreMinDefaut.nom'), description: t('lignes.scoreMinDefaut.description') },
     relecture_premiers_envois_defaut: {

@@ -1108,6 +1108,14 @@
           "nom": "Verrijkingen per dag",
           "description": "FullEnrich-credits om e-mails te vinden"
         },
+        "linkedinPostsParJour": {
+          "nom": "LinkedIn-posts per dag",
+          "description": "posts waarvan de reageerders per dag worden verzameld"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "LinkedIn-verzoeken per uur",
+          "description": "daadwerkelijk naar LinkedIn verstuurde verzoeken, alle verzamelingen samen"
+        },
         "scoreMinDefaut": {
           "nom": "Minimale instapscore",
           "description": "standaard voor campagnes die er geen opgeven"

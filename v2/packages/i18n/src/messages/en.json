@@ -1108,6 +1108,14 @@
           "nom": "Enrichments per day",
           "description": "FullEnrich credits to find emails"
         },
+        "linkedinPostsParJour": {
+          "nom": "LinkedIn posts per day",
+          "description": "posts whose engagers are collected, per day"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "LinkedIn requests per hour",
+          "description": "requests actually sent to LinkedIn, across all collections"
+        },
         "scoreMinDefaut": {
           "nom": "Minimum entry score",
           "description": "default for campaigns that don't specify one"

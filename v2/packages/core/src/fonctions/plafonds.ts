@@ -32,6 +32,8 @@ import type { Executeur } from '../executeur.js';
 export type ClePlafond =
   | 'scoring_par_jour'
   | 'enrichissements_par_jour'
+  | 'linkedin_posts_par_jour'
+  | 'linkedin_requetes_par_heure'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -40,6 +42,8 @@ export type ClePlafond =
 const CLE_PLAFOND_VALUES = [
   'scoring_par_jour',
   'enrichissements_par_jour',
+  'linkedin_posts_par_jour',
+  'linkedin_requetes_par_heure',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -49,6 +53,8 @@ const CLE_PLAFOND_VALUES = [
 export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string; env?: string }[] = [
   { cle: 'scoring_par_jour', defaut: 300, env: 'SCORE_DAILY_CAP' },
   { cle: 'enrichissements_par_jour', defaut: 30, env: 'ENRICH_DAILY_CAP' },
+  { cle: 'linkedin_posts_par_jour', defaut: 3, env: 'LINKEDIN_POSTS_DAILY_CAP' },
+  { cle: 'linkedin_requetes_par_heure', defaut: 60, env: 'LINKEDIN_REQUESTS_HOURLY_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -488,4 +494,69 @@ export async function lireConsommationDuJour(
     enrichissement: { utilise: enrichRes.rows[0]?.n ?? 0, plafond: Number(reglagesResolus.enrichissements_par_jour) },
     envois: { utilise: envoisUtiliseRes.rows[0]?.n ?? 0, plafond: await lirePlafondEnvois(ctx) },
   };
+}
+
+/** Les deux plafonds qui bornent la collecte LinkedIn du serveur (lot 4a). */
+export type ClePlafondLinkedIn = 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure';
+
+/** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
+export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
+  return plafondDuJour(ctx.ex, ctx.organisationId, cle);
+}
+
+/**
+ * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
+ * doit appartenir à l'organisation : sans cette jointure, un identifiant de
+ * passage d'une autre organisation serait accepté (le worker écrit avec la clé
+ * de service, que la RLS ne borne pas).
+ */
+export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, source_run_id) /* jr:linkedin_requete_tracer */
+     select so.organization_id, sr.id
+       from source_runs sr
+       join sources so on so.id = sr.source_id
+      where sr.id = $2 and so.organization_id = $1`,
+    [ctx.organisationId, sourceRunId],
+  );
+  if (res.rowCount === 0) throw new Error("Passage de collecte introuvable pour cette organisation.");
+}
+
+/**
+ * Requêtes émises vers LinkedIn depuis `depuis` (inclus), jusqu'à `jusqua`
+ * (exclu) si fourni. Compte l'horodatage de CHAQUE requête, jamais le
+ * démarrage du passage : une collecte ouverte à 23 h 55 dont une requête part
+ * à 00 h 05 compte une requête de chaque côté de minuit.
+ */
+export async function compterRequetesLinkedIn(ctx: Contexte, depuis: Date, jusqua?: Date): Promise<number> {
+  const res = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n /* jr:linkedin_requetes_compter */
+       from linkedin_requetes
+      where organization_id = $1
+        and requested_at >= $2
+        and ($3::timestamptz is null or requested_at < $3)`,
+    [ctx.organisationId, depuis, jusqua ?? null],
+  );
+  return res.rows[0]?.n ?? 0;
+}
+
+/**
+ * Passages des sources `linkedin_post_engagers` ouverts pendant `jour`
+ * (AAAA-MM-JJ) dans `fuseau`. Une source n'a pas de ligne `source_providers`
+ * pour ce type : le repère est `config.sourceType` (cf. `construireConfigStocke`,
+ * `sources.ts`). La borne s'écrit `::date::timestamp at time zone` : sans le
+ * cast intermédiaire, Postgres repart du fuseau de la session.
+ */
+export async function compterPostsLinkedInDuJour(ctx: Contexte, jour: string, fuseau: string): Promise<number> {
+  const res = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n /* jr:linkedin_posts_du_jour */
+       from source_runs sr
+       join sources so on so.id = sr.source_id
+      where so.organization_id = $1
+        and so.config->>'sourceType' = 'linkedin_post_engagers'
+        and sr.started_at >= ($2::date::timestamp at time zone $3)
+        and sr.started_at < (($2::date + 1)::timestamp at time zone $3)`,
+    [ctx.organisationId, jour, fuseau],
+  );
+  return res.rows[0]?.n ?? 0;
 }
