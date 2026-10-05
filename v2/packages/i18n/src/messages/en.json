@@ -796,6 +796,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "The source “{nom}” has no persona, but this campaign now has several. Open it to pick one.",
+        "personaSourcePerime": "The source “{nom}” is tied to a persona that is no longer part of this campaign. Open it to pick another."
+      },
       "identity": {
         "title": "Identity",
         "name": "Campaign name",

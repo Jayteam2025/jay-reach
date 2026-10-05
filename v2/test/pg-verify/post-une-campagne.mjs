@@ -176,7 +176,20 @@ async function personasTrous() {
   const ea = await refus(modifierReglagesCampagne(ctx, { campagneId: ca, personaIds: [p1, p2] }));
   check('20. passer à deux personas avec une source sans personaId : refusé', ea instanceof ErreurEntree, String(ea));
   check('21. les personas de la campagne n\'ont pas bougé', (await q(`select entry_rules->'personas' p from campaigns where id = $1`, [ca])).rows[0].p.length === 1);
+  const da = ea?.details;
+  check('21b. le refus est une erreur de formulaire qui nomme la source (aucun champ)',
+    da?.fieldErrors && Object.keys(da.fieldErrors).length === 0 &&
+    da.formErrors?.[0]?.includes('« Engageurs »') &&
+    JSON.stringify(da.sourcesSansPersona) === JSON.stringify([{ nom: 'Engageurs', cas: 'absent' }]), JSON.stringify(da));
   await modifierSource(ctx, { sourceId: sa, nom: 'E', schedule: 'every 24h', config: { urlPost: `${POST}-a`, garder: ['commente'] } });
+  // a'. persona périmé : la source garde un persona qui sort de la campagne.
+  const cp = await campagne(org, 'Périmé', [p1, p2]);
+  await creerSource(ctx, { campagneId: cp, providerId: 'linkedin_post_engagers', nom: 'Engageurs de Dupont',
+    config: { urlPost: `${POST}-p`, garder: ['commente'], personaId: p1 } });
+  const ep = await refus(modifierReglagesCampagne(ctx, { campagneId: cp, personaIds: [p2] }));
+  check('21c. persona périmé : refus nommant la source, cas « perime »',
+    ep instanceof ErreurEntree && ep.details.formErrors?.[0]?.includes('« Engageurs de Dupont »') &&
+    JSON.stringify(ep.details.sourcesSansPersona) === JSON.stringify([{ nom: 'Engageurs de Dupont', cas: 'perime' }]), JSON.stringify(ep?.details));
   // b. creerCampagne contrôle le persona de la source rattachée.
   const sOrpheline = (await q(`insert into sources (organization_id, name, config) values ($1, 'orph', $2::jsonb) returning id`,
     [org, JSON.stringify({ sourceType: 'linkedin_post_engagers', urlPost: `${POST}-orph`, garder: ['commente'] })])).rows[0].id;

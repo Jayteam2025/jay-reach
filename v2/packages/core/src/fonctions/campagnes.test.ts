@@ -1941,12 +1941,18 @@ describe('modifierReglagesCampagne', () => {
     const ctx = faux(
       {
         'jr:reglages_lire': [{ entry_rules: { personas: [p1] }, status: 'draft' }],
-        'jr:reglages_sources_post': [{ persona_id: null }],
+        'jr:reglages_sources_post': [{ nom: 'Engageurs du post de Dupont', persona_id: null }],
         'jr:reglages_ecrire': [{ id: campagneId }],
       },
       'operator',
     );
-    await expect(modifierReglagesCampagne(ctx, { campagneId, personaIds: [p1, p2] })).rejects.toThrow(ErreurEntree);
+    const erreur = await modifierReglagesCampagne(ctx, { campagneId, personaIds: [p1, p2] }).catch((e: unknown) => e);
+    expect(erreur).toBeInstanceOf(ErreurEntree);
+    // Erreur de formulaire (l'écran des réglages n'a pas de champ personaId) qui nomme la source.
+    const d = (erreur as ErreurEntree).details as { formErrors: string[]; fieldErrors: Record<string, unknown>; sourcesSansPersona: Array<{ nom: string; cas: string }> };
+    expect(d.fieldErrors).toEqual({});
+    expect(d.formErrors[0]).toContain('Engageurs du post de Dupont');
+    expect(d.sourcesSansPersona).toEqual([{ nom: 'Engageurs du post de Dupont', cas: 'absent' }]);
     const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     expect(appels.some((a) => /jr:reglages_ecrire/.test(String(a[0])))).toBe(false);
   });

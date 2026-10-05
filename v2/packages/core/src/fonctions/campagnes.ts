@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
-import { exiger, valider, ErreurIntrouvable } from './contexte.js';
+import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
@@ -21,7 +21,7 @@ import { construireValeursContact, normalizeListColumnName, renderTemplatePartia
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
-import { SQL_PROVIDER_ID_AFFICHAGE, exigerPersonaSource, exigerPostLibre } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, exigerPersonaSource, exigerPostLibre, personaSourceValide } from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -1983,13 +1983,28 @@ export async function modifierReglagesCampagne(ctx: Contexte, entree: unknown): 
 
   // Changer les personas ne doit pas laisser une source d'engageurs sans persona valide, en silence.
   if (e.personaIds !== undefined) {
-    const postsRes = await ctx.ex.query<{ persona_id: string | null }>(
-      `select s.config->>'personaId' as persona_id
+    const postsRes = await ctx.ex.query<{ nom: string; persona_id: string | null }>(
+      `select s.name as nom, s.config->>'personaId' as persona_id
          from campaign_sources cs join sources s on s.id = cs.source_id /* jr:reglages_sources_post */
         where cs.campaign_id = $1 and s.organization_id = $2 and s.config->>'sourceType' = 'linkedin_post_engagers'`,
       [e.campagneId, ctx.organisationId],
     );
-    for (const p of postsRes.rows) exigerPersonaSource(e.personaIds, p.persona_id ?? undefined);
+    // Refus de formulaire, pas de champ : cet écran n'a pas de `personaId`. Il nomme chaque source
+    // bloquante ; `sourcesSansPersona` laisse la façade traduire sans relire le texte.
+    const bloquantes = postsRes.rows
+      .filter((p) => !personaSourceValide(e.personaIds!, p.persona_id ?? undefined))
+      .map((p) => ({ nom: p.nom, cas: p.persona_id === null ? ('absent' as const) : ('perime' as const) }));
+    if (bloquantes.length > 0) {
+      throw new ErreurEntree({
+        formErrors: bloquantes.map((b) =>
+          b.cas === 'absent'
+            ? `La source « ${b.nom} » n’a pas de persona, or cette campagne en porte plusieurs. Ouvrez-la pour en choisir un.`
+            : `La source « ${b.nom} » est rattachée à un persona qui ne fait plus partie de cette campagne. Ouvrez-la pour en choisir un autre.`,
+        ),
+        fieldErrors: {},
+        sourcesSansPersona: bloquantes,
+      });
+    }
   }
 
   const entryRules: Record<string, unknown> = { ...(actuelle.entry_rules ?? {}) };

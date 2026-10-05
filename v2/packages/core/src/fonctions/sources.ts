@@ -662,10 +662,15 @@ export function normaliserUrlPost(url: string): string {
 }
 
 /** Plusieurs personas : on demande lequel ; un persona donné doit toujours appartenir à la campagne (création, modification, réglages). */
-export function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
+export function personaSourceValide(personas: readonly string[], personaId: string | undefined): boolean {
   const manquant = personas.length > 1 && !personaId;
   const etranger = personaId !== undefined && !personas.includes(personaId);
-  if (manquant || etranger) {
+  return !manquant && !etranger;
+}
+
+export function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
+  if (!personaSourceValide(personas, personaId)) {
+    const manquant = personas.length > 1 && !personaId;
     throw new ErreurEntree({
       formErrors: [],
       fieldErrors: {

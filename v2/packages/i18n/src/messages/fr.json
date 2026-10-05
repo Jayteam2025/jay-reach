@@ -796,6 +796,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "La source « {nom} » n’a pas de persona, or cette campagne en porte plusieurs. Ouvrez-la pour en choisir un.",
+        "personaSourcePerime": "La source « {nom} » est rattachée à un persona qui ne fait plus partie de cette campagne. Ouvrez-la pour en choisir un autre."
+      },
       "identity": {
         "title": "Identité",
         "name": "Nom de la campagne",

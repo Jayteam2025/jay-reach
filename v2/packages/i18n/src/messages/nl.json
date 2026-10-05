@@ -796,6 +796,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "De bron “{nom}” heeft geen persona, maar deze campagne heeft er nu meerdere. Open de bron om er een te kiezen.",
+        "personaSourcePerime": "De bron “{nom}” hoort bij een persona die niet meer bij deze campagne hoort. Open de bron om een andere te kiezen."
+      },
       "identity": {
         "title": "Identiteit",
         "name": "Naam van de campagne",

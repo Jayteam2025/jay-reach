@@ -7,6 +7,7 @@
  * fichier séparé de `actions/campagns.ts`, hérité de l'ancien écran.
  */
 import { revalidatePath } from 'next/cache';
+import { getTranslations } from 'next-intl/server';
 import {
   archiver,
   ErreurConflit,
@@ -20,7 +21,7 @@ import { revaliderLayoutCampagne } from '../../lib/revalidation-layouts';
 
 export type ResultatReglagesCampagne = { ok: true } | { ok: false; error: string; issues?: string[] };
 
-function resultatDErreur(err: unknown): ResultatReglagesCampagne {
+async function resultatDErreur(err: unknown): Promise<ResultatReglagesCampagne> {
   if (err instanceof ForbiddenError) {
     return { ok: false, error: 'Droit insuffisant pour cette action.' };
   }
@@ -28,7 +29,16 @@ function resultatDErreur(err: unknown): ResultatReglagesCampagne {
     const details = err.details as {
       formErrors?: string[];
       fieldErrors?: Record<string, string[] | undefined>;
+      sourcesSansPersona?: Array<{ nom: string; cas: 'absent' | 'perime' }>;
     };
+    if (details.sourcesSansPersona && details.sourcesSansPersona.length > 0) {
+      // Une source d'engageurs bloque le changement de personas : on la nomme, dans la langue de l'opérateur.
+      const t = await getTranslations('campagne.reglages.errors');
+      const messages = details.sourcesSansPersona.map((b) =>
+        t(b.cas === 'absent' ? 'personaSourceAbsent' : 'personaSourcePerime', { nom: b.nom }),
+      );
+      return { ok: false, error: 'Entrée invalide.', issues: messages };
+    }
     const issues = [
       ...(details.formErrors ?? []),
       ...Object.values(details.fieldErrors ?? {}).flat(),
@@ -58,7 +68,7 @@ export async function actionModifierReglagesCampagne(
     revaliderOngletReglages(campagneId);
     return { ok: true };
   } catch (err) {
-    return resultatDErreur(err);
+    return await resultatDErreur(err);
   }
 }
 
@@ -69,6 +79,6 @@ export async function actionArchiverCampagne(campagneId: string): Promise<Result
     revalidatePath('/campaigns');
     return { ok: true };
   } catch (err) {
-    return resultatDErreur(err);
+    return await resultatDErreur(err);
   }
 }
