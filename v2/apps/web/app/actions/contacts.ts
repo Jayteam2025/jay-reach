@@ -21,6 +21,17 @@ import {
 } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 
+/**
+ * La fiche (tiroir) s'ouvre sur `/contacts` ET sur l'onglet Contacts d'une
+ * campagne : les deux pages sont revalidées, faute de quoi l'action ne
+ * rafraîchirait que l'une des deux (le rechargement complet qu'elle
+ * remplace masquait ce défaut).
+ */
+function revaliderFiche(): void {
+  revalidatePath('/contacts');
+  revalidatePath('/campaigns/[id]/contacts', 'page');
+}
+
 export type ResultatFiche = { ok: true } | { ok: false; error: string };
 export type ResultatNote = { ok: true; id: string } | { ok: false; error: string };
 
@@ -37,7 +48,7 @@ export async function actionAjouterNote(contactId: string, texte: string): Promi
   try {
     const ctx = await contexteCourant();
     const { id } = await ajouterNote(ctx, { contactId, texte });
-    revalidatePath('/contacts');
+    revaliderFiche();
     return { ok: true, id };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
@@ -48,7 +59,7 @@ export async function actionNePlusContacter(contactId: string): Promise<Resultat
   try {
     const ctx = await contexteCourant();
     await nePlusContacter(ctx, { contactId });
-    revalidatePath('/contacts');
+    revaliderFiche();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };
@@ -59,7 +70,7 @@ export async function actionChercherEmailContact(contactId: string): Promise<Res
   try {
     const ctx = await contexteCourant();
     await chercherEmail(ctx, { contactId });
-    revalidatePath('/contacts');
+    revaliderFiche();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

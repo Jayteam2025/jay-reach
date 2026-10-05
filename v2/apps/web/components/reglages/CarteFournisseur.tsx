@@ -9,7 +9,6 @@
  * sa propre combinaison de chiffres, pas de forme unique à standardiser ici.
  */
 import { useState, useTransition, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import { Bouton, Carte, Champ, Puce, TuileLogo } from '../ui';
 import type { PuceTon, TuileLogoMarque } from '../ui';
 import { actionEnregistrerCle, actionModifierConfigFournisseur, actionTesterFournisseur } from '../../app/actions/providers';
@@ -98,7 +97,6 @@ export function CarteFournisseur({
   peutModifier,
   libelles,
 }: CarteFournisseurProps) {
-  const router = useRouter();
   const [enEdition, setEnEdition] = useState(peutModifier && !presente);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   const [valeursConfig, setValeursConfig] = useState<Record<string, string>>({});
@@ -127,7 +125,6 @@ export function CarteFournisseur({
       if (res.ok) {
         setValeurs({});
         setEnEdition(false);
-        router.refresh();
       } else {
         setErreur(res.error);
       }
@@ -144,7 +141,6 @@ export function CarteFournisseur({
       const res = await actionModifierConfigFournisseur(providerId, config);
       if (res.ok) {
         setValeursConfig({});
-        router.refresh();
       } else {
         setErreur(res.error);
       }
@@ -156,7 +152,6 @@ export function CarteFournisseur({
     startTest(async () => {
       const res = await actionTesterFournisseur(providerId);
       if (!res.ok) setErreur(res.error);
-      else router.refresh();
     });
   }
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   IMPORT_FIELDS,
@@ -39,7 +38,6 @@ export interface ImportContactsProps {
 export function ImportContacts({ campagnes }: ImportContactsProps) {
   const t = useTranslations('contacts');
   const tChamps = useTranslations('campagne.sources');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [ouvert, setOuvert] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -85,7 +83,6 @@ export function ImportContacts({ campagnes }: ImportContactsProps) {
     startTransition(async () => {
       const res = await actionImporterCsvDansCampagne(campagneId, { nom, fileName, parsed, mapping });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);

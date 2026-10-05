@@ -26,31 +26,21 @@ export interface BoutonChercherEmailProps {
  * (`apps/web/app/actions/enrichir.ts`), déjà branchée depuis l'ancien écran
  * Prospects (`signals-board.tsx`, retiré à la tâche 24).
  *
- * Pas de `useRouter`/`useTranslations` ici (labels reçus en props, un
- * rechargement complet plutôt que `router.refresh()`) : rendu dans une table
+ * Pas de `useRouter`/`useTranslations` ici (labels reçus en props, la
+ * Server Action revalide les pages concernées) : rendu dans une table
  * testée par `renderToStaticMarkup`, sans contexte App Router ni next-intl —
  * même contrainte que documentée sur `BoutonLancerPause`, résolue autrement.
  */
 export function BoutonChercherEmail({ organisationId, signalId, libelle, cout, raisonIndisponible }: BoutonChercherEmailProps) {
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
-  const [fait, setFait] = useState(false);
 
   function lancer() {
     setErreur(null);
     startTransition(async () => {
       const res = await enrichirMaintenant(organisationId, signalId);
-      if (res.ok) {
-        setFait(true);
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
-  }
-
-  if (fait) {
-    return <span className="jr-secondaire">{cout}</span>;
   }
 
   // Plafond à 0 (constat produit, 18/09) : bouton visible mais désactivé, avec la raison

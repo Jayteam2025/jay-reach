@@ -18,11 +18,7 @@ export function BoutonReessayer({ actionId, campagneId, libelle }: BoutonReessay
     setErreur(null);
     startTransition(async () => {
       const res = await actionRelancerEnvoi(actionId, campagneId);
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
   }
 

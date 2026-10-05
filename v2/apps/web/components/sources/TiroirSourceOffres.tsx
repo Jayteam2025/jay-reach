@@ -138,7 +138,6 @@ export function TiroirSourceOffres({
             schedule,
           });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);
@@ -151,8 +150,7 @@ export function TiroirSourceOffres({
     setErreur(null);
     startTransition(async () => {
       const res = await actionLancerPassageCampagne(campagneId, source.id);
-      if (res.ok) router.refresh();
-      else setErreur(res.error);
+      if (!res.ok) setErreur(res.error);
     });
   }
 

@@ -55,8 +55,9 @@ export function ZoneReponseFil({
     startEnvoi(async () => {
       const res = await repondre(filId, texte);
       if (res.ok) {
+        // Le rechargement complet vidait le champ ; sans lui il faut le faire ici.
+        setCorps('');
         setMessage(libelleEnvoyee);
-        window.location.reload();
       } else {
         setMessage(res.error);
       }
@@ -67,11 +68,7 @@ export function ZoneReponseFil({
     setMessage(null);
     startMarquage(async () => {
       const res = await marquerInteret(filId, interet === 'interested' ? null : 'interested');
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setMessage(res.error);
-      }
+      if (!res.ok) setMessage(res.error);
     });
   }
 

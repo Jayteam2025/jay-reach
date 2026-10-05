@@ -16,6 +16,16 @@ import { resolveSalesblinkKey } from '../../lib/salesblink';
 import { repondreDansLeFil } from '@jay-reach/providers/outreach';
 import { contexteCourant } from '../../lib/contexte';
 
+/**
+ * Une mutation de la Réception change aussi le badge « à traiter » de la barre
+ * latérale, rendu par le LAYOUT du groupe `(app)` : `revalidatePath('/inbox')`
+ * seul ne vise que la page. Le layout est donc revalidé explicitement.
+ */
+function revaliderReception(): void {
+  revalidatePath('/inbox');
+  revalidatePath('/', 'layout');
+}
+
 export type RepondreResult = { ok: true } | { ok: false; error: string };
 
 /**
@@ -57,7 +67,7 @@ export async function repondre(threadId: string, corps: string): Promise<Repondr
     return { ok: false, error: messageErreurReponse(err) };
   }
 
-  revalidatePath('/inbox');
+  revaliderReception();
   return { ok: true };
 }
 
@@ -71,7 +81,7 @@ export async function marquerTraite(threadId: string, traite: boolean): Promise<
   } catch (err) {
     return { ok: false, error: messageErreurReponse(err) };
   }
-  revalidatePath('/inbox');
+  revaliderReception();
   return { ok: true };
 }
 
@@ -83,6 +93,6 @@ export async function marquerInteret(threadId: string, interet: InteretFil): Pro
   } catch (err) {
     return { ok: false, error: messageErreurReponse(err) };
   }
-  revalidatePath('/inbox');
+  revaliderReception();
   return { ok: true };
 }

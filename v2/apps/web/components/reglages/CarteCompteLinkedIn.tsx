@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { CompteLinkedIn } from '@jay-reach/core';
 import { Avatar, Bouton, Carte, Champ, Interrupteur, Puce, Tiroir } from '../ui';
@@ -39,7 +38,6 @@ export interface CarteCompteLinkedInProps {
 export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedInProps) {
   const t = useTranslations('reglages.expediteurs.linkedin');
   const tJours = useTranslations('reglages.days.short');
-  const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -71,7 +69,6 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
       });
       if (resultat.ok) {
         setOuvert(false);
-        router.refresh();
       } else {
         setErreur(resultat.error);
       }

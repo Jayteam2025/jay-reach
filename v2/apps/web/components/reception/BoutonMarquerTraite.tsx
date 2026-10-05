@@ -14,10 +14,10 @@ export interface BoutonMarquerTraiteProps {
 /**
  * Bascule `handled_at` (posé/retiré) — façade `marquerTraite`
  * (`app/actions/inbox.ts` → `packages/core/src/fonctions/reception.ts`).
- * Rechargement complet après succès, même convention que
- * `BoutonEcarterContact` (tâche 11/13) : pas de `router.refresh`, la Réception
- * n'a pas besoin de préserver un état client au-delà de ce que l'URL porte
- * déjà (filtre, campagne, fil sélectionné).
+ * La Server Action `marquerTraite` revalide `/inbox` ET le layout
+ * (le badge de la barre latérale en dépend) : pas de rechargement complet ni de
+ * `router.refresh`, l'état que l'URL porte (filtre, campagne, fil sélectionné)
+ * est conservé.
  */
 export function BoutonMarquerTraite({ filId, traite, libelleMarquer, libelleRouvrir }: BoutonMarquerTraiteProps) {
   const [pending, startTransition] = useTransition();
@@ -27,11 +27,7 @@ export function BoutonMarquerTraite({ filId, traite, libelleMarquer, libelleRouv
     setErreur(null);
     startTransition(async () => {
       const res = await marquerTraite(filId, !traite);
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
   }
 

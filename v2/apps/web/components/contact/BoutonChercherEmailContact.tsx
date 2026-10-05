@@ -25,23 +25,13 @@ export interface BoutonChercherEmailContactProps {
 export function BoutonChercherEmailContact({ contactId, libelle, cout, raisonIndisponible }: BoutonChercherEmailContactProps) {
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
-  const [fait, setFait] = useState(false);
 
   function lancer() {
     setErreur(null);
     startTransition(async () => {
       const res = await actionChercherEmailContact(contactId);
-      if (res.ok) {
-        setFait(true);
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
-  }
-
-  if (fait) {
-    return <span className="jr-secondaire">{cout}</span>;
   }
 
   // Plafond à 0 (constat produit, 18/09) : même traitement que `BoutonChercherEmail`, voir

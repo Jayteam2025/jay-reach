@@ -13,7 +13,7 @@ export interface BoutonEcarterContactProps {
  * Bouton « Écarter » (onglets Contacts et File du jour, tiroir de relecture) :
  * façade `actionEcarterDuneCampagne` → `ecarterDuneCampagne`
  * (`packages/core/src/fonctions/file-du-jour.ts`). Pas de `useRouter` (voir
- * `BoutonChercherEmail`) : rechargement complet après succès.
+ * `BoutonChercherEmail`) : la Server Action revalide les pages après succès.
  */
 export function BoutonEcarterContact({ contactId, campagneId, libelle }: BoutonEcarterContactProps) {
   const [pending, startTransition] = useTransition();
@@ -23,11 +23,7 @@ export function BoutonEcarterContact({ contactId, campagneId, libelle }: BoutonE
     setErreur(null);
     startTransition(async () => {
       const res = await actionEcarterDuneCampagne(contactId, campagneId);
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
   }
 

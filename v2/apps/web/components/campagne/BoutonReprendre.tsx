@@ -14,7 +14,7 @@ export interface BoutonReprendreProps {
  * `BoutonEcarterContact` : façade `reprendreInscription`
  * (`apps/web/app/actions/campaigns.ts`) → cœur `reprendreInscription`
  * (`packages/core/src/fonctions/sequence.ts`). Pas de `useRouter` :
- * rechargement complet après succès, utilisé pour une inscription
+ * la Server Action revalide les pages, utilisé pour une inscription
  * `paused`/`paused_absence` — le libellé (« Reprendre », toujours le même
  * quel que soit le motif de pause depuis F11 : une pause d'absence ne reprend
  * plus « maintenant », voir `SectionOuEnEstOn`/`TableContacts`) reste choisi
@@ -28,11 +28,7 @@ export function BoutonReprendre({ inscriptionId, campagneId, libelle }: BoutonRe
     setErreur(null);
     startTransition(async () => {
       const res = await reprendreInscription(inscriptionId, campagneId);
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        setErreur(res.error);
-      }
+      if (!res.ok) setErreur(res.error);
     });
   }
 

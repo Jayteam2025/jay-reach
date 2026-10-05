@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { Carte, CleValeur, Interrupteur, Puce } from '../ui';
 import { actionBasculerPauseEnvoi } from '../../app/actions/moteur';
 
@@ -68,7 +67,6 @@ export interface PauseEnvoiProps {
 }
 
 export function PauseEnvoi({ actif, dernierePause, libelles, erreurLibelle }: PauseEnvoiProps) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [actifLocal, setActifLocal] = useState(actif);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -79,7 +77,6 @@ export function PauseEnvoi({ actif, dernierePause, libelles, erreurLibelle }: Pa
       const res = await actionBasculerPauseEnvoi(prochainActif);
       if (res.ok) {
         setActifLocal(prochainActif);
-        router.refresh();
       } else {
         setErreur(res.error ?? erreurLibelle);
       }

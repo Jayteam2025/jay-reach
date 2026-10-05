@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { CampagneOption, PersonaDetail, SenioritePersona } from '@jay-reach/core';
 import { Bouton, Carte, Champ, TuileLogo } from '../ui';
@@ -137,7 +136,6 @@ function FormulairePersona({
   onEnregistre: (id: string) => void;
 }) {
   const tForm = useTranslations('reglages.personas.form');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const [etat, setEtat] = useState<EtatFormulaire>(() => etatInitial(persona));
@@ -171,7 +169,6 @@ function FormulairePersona({
         campagneParDefautId: etat.campagneParDefautId || null,
       });
       if (res.ok) {
-        router.refresh();
         onEnregistre(res.id);
       } else {
         setErreur(res.error);
@@ -194,8 +191,7 @@ function FormulairePersona({
         campagneParDefautId: persona.campagneParDefautId,
         estActif: false,
       });
-      if (res.ok) router.refresh();
-      else setErreur(res.error);
+      if (!res.ok) setErreur(res.error);
     });
   }
 
@@ -378,13 +374,12 @@ function FormulairePersona({
 /**
  * Réglages › Personas (maquette `reglages-personas.html`) : liste maître à
  * gauche, fiche à droite. La sélection et la création sont purement locales
- * (`useState`) — `router.refresh()` rapatrie les données serveur après une
+ * (`useState`) — la Server Action revalide la page et rapatrie les données serveur après une
  * écriture, `onEnregistre` (via la `key` du formulaire) suit la sélection sur
  * le persona qui vient d'être créé/modifié.
  */
 export function FichePersona({ personas, campagnesDisponibles, peutModifier }: FichePersonaProps) {
   const t = useTranslations('reglages.personas');
-  const router = useRouter();
   const actifs = personas.filter((p) => p.estActif);
   const archives = personas.filter((p) => !p.estActif);
 
@@ -414,7 +409,6 @@ export function FichePersona({ personas, campagnesDisponibles, peutModifier }: F
       setReactivationEnCours(null);
       if (res.ok) {
         setSelectionId(res.id);
-        router.refresh();
       } else {
         setErreurReactivation(res.error);
       }

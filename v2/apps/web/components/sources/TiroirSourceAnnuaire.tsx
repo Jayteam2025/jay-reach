@@ -147,7 +147,6 @@ export function TiroirSourceAnnuaire({ campagneId }: TiroirSourceAnnuaireProps) 
     startTransition(async () => {
       const res = await actionAjouterDepuisAnnuaire(campagneId, entreprises);
       if (res.ok) {
-        router.refresh();
         setResultat({ entreprisesRetenues: res.entreprisesRetenues, dejaConnues: res.dejaConnues });
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);

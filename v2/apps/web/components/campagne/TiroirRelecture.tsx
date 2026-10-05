@@ -95,7 +95,7 @@ export function PiedTiroirRelecture({
  * du jour. `apercu` et tous les textes composés (`libelles`) sont déjà résolus
  * côté serveur par la page (`apercuEnvoi` + `getTranslations`) : ce composant
  * client ne fait qu'afficher et brancher les actions. `useRouter` ici
- * (fermeture, `router.refresh()`) : ce composant n'entre pas dans le
+ * (fermeture ; la Server Action revalide déjà la page) : ce composant n'entre pas dans le
  * périmètre du test de rendu demandé par le brief (contrairement à
  * `TableContacts`/`PiedTiroirRelecture`), même contrainte que `BoutonLancerPause`.
  */
@@ -114,7 +114,6 @@ export function TiroirRelecture({ actionId, contactId, campagneId, organisationI
     startTransition(async () => {
       const res = await actionEcarterDuneCampagne(contactId, campagneId);
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.error);
@@ -127,7 +126,6 @@ export function TiroirRelecture({ actionId, contactId, campagneId, organisationI
     startTransition(async () => {
       const res = await setActionApproval(organisationId, actionId, 'approve');
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.error);

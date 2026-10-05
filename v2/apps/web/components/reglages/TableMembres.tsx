@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import type { MembershipRole } from '@jay-reach/core';
 import { Avatar, Bouton, Carte, Champ, Table } from '../ui';
 import { actionRevoquerInvitation, inviteMember } from '../../app/actions/org';
@@ -88,7 +87,6 @@ export interface TableMembresProps {
 }
 
 export function TableMembres({ organizationId, membres, libelles, erreurLibelle }: TableMembresProps) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [formulaireOuvert, setFormulaireOuvert] = useState(false);
   const [email, setEmail] = useState('');
@@ -102,7 +100,6 @@ export function TableMembres({ organizationId, membres, libelles, erreurLibelle 
       if (res.ok) {
         setEmail('');
         setFormulaireOuvert(false);
-        router.refresh();
       } else {
         setErreur(res.error ?? erreurLibelle);
       }
@@ -113,8 +110,7 @@ export function TableMembres({ organizationId, membres, libelles, erreurLibelle 
     setErreur(null);
     startTransition(async () => {
       const res = await actionRevoquerInvitation(invitationId);
-      if (res.ok) router.refresh();
-      else setErreur(res.error ?? erreurLibelle);
+      if (!res.ok) setErreur(res.error ?? erreurLibelle);
     });
   }
 

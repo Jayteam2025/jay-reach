@@ -149,7 +149,6 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
         delaiHeures,
       });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.error);
@@ -165,7 +164,6 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
     startTransition(async () => {
       const res = await actionSupprimerEtape(campagneId, etape.id);
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.error);

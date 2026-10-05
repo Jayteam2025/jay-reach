@@ -29,6 +29,8 @@ export async function actionModifierOrganisation(input: { nom: string; fuseau: s
     const ctx = await contexteCourant();
     await modifierOrganisation(ctx, input);
     revalidatePath('/settings/account');
+    // Nom d'organisation et langue sont rendus par le layout.
+    revalidatePath('/', 'layout');
     return { ok: true, data: undefined };
   } catch (err) {
     return resultatDErreur(err);
@@ -81,6 +83,7 @@ export async function inviteMember(
     return { ok: false, error: error.message };
   }
   revalidatePath('/');
+  revalidatePath('/settings/account');
   return { ok: true, data: undefined };
 }
 
