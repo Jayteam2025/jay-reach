@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { CampaignStatus } from '@jay-reach/core';
 import { Bouton } from '../ui';
@@ -32,7 +31,6 @@ function IconePause() {
  * coordinateur couvre ce composant.
  */
 export function BoutonLancerPause({ campagneId, statut }: BoutonLancerPauseProps) {
-  const router = useRouter();
   const t = useTranslations('campagne');
   const [enCours, setEnCours] = useState(false);
   const [manques, setManques] = useState<string[] | null>(null);
@@ -49,7 +47,6 @@ export function BoutonLancerPause({ campagneId, statut }: BoutonLancerPauseProps
     try {
       const resultat = enAttenteDeLancement ? await actionLancer(campagneId) : await actionMettreEnPause(campagneId);
       if (resultat.ok) {
-        router.refresh();
       } else {
         setManques(resultat.manques);
         setTimeout(() => setManques(null), DUREE_NOTIFICATION_MS);

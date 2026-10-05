@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { Boite } from '@jay-reach/core';
 import { BarreProgression, Bouton, Carte, Interrupteur, Puce, TuileLogo } from '../ui';
@@ -32,7 +31,6 @@ export interface CarteBoiteProps {
 export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereReleveTexte, peutModifier }: CarteBoiteProps) {
   const t = useTranslations('reglages.expediteurs');
   const tJours = useTranslations('reglages.days');
-  const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -51,8 +49,7 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
         active: nouveauActif,
         inboxProvider: boite.inboxProvider,
       });
-      if (resultat.ok) router.refresh();
-      else setErreur(resultat.error);
+      if (!resultat.ok) setErreur(resultat.error);
     } finally {
       setEnCours(false);
     }
@@ -151,7 +148,6 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
         onFermer={() => setOuvert(false)}
         onEnregistre={() => {
           setOuvert(false);
-          router.refresh();
         }}
       />
     </Carte>

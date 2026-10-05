@@ -90,7 +90,6 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source }: TiroirS
             schedule,
           });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);

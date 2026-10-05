@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { Bouton, Carte, Champ } from '../ui';
 import { actionModifierOrganisation } from '../../app/actions/org';
 
@@ -112,7 +111,6 @@ export interface FormulaireOrganisationProps {
 }
 
 export function FormulaireOrganisation({ initial, libelles, erreurLibelle }: FormulaireOrganisationProps) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [nom, setNom] = useState(initial.nom);
   const [fuseau, setFuseau] = useState(initial.fuseau);
@@ -133,7 +131,6 @@ export function FormulaireOrganisation({ initial, libelles, erreurLibelle }: For
     startTransition(async () => {
       const res = await actionModifierOrganisation({ nom: nom.trim(), fuseau, langue });
       if (res.ok) {
-        router.refresh();
       } else {
         setErreur(res.error ?? erreurLibelle);
       }

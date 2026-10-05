@@ -78,7 +78,6 @@ export function TiroirSourceCsv({ campagneId }: TiroirSourceCsvProps) {
         mapping,
       });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);

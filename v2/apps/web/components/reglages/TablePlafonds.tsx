@@ -8,7 +8,6 @@
  * déjà posé par `composants.css`).
  */
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { Bouton, Champ } from '../ui';
 import { actionEcrireReglage } from '../../app/actions/plafonds';
 
@@ -44,7 +43,6 @@ export interface TablePlafondsProps {
 }
 
 export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsProps) {
-  const router = useRouter();
   const [cleEnEdition, setCleEnEdition] = useState<string | null>(null);
   const [saisie, setSaisie] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
@@ -72,7 +70,6 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
       const res = await actionEcrireReglage(ligne.cle, valeur);
       if (res.ok) {
         setCleEnEdition(null);
-        router.refresh();
       } else {
         setErreur(res.error);
       }

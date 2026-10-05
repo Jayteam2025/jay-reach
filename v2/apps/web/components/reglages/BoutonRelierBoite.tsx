@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { BoiteSalesBlinkDistante } from '@jay-reach/core';
 import { Bouton, EtatVide, Tiroir } from '../ui';
@@ -15,7 +14,6 @@ import { actionBoitesSalesBlinkNonReliees, actionRelierBoite } from '../../app/a
 export function BoutonRelierBoite() {
   const t = useTranslations('reglages.expediteurs.linkDrawer');
   const tCommun = useTranslations('common');
-  const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
   const [chargement, setChargement] = useState(false);
   const [distantes, setDistantes] = useState<BoiteSalesBlinkDistante[] | null>(null);
@@ -42,7 +40,6 @@ export function BoutonRelierBoite() {
       const resultat = await actionRelierBoite({ providerRef: boite.providerRef, identite: boite.email });
       if (resultat.ok) {
         setOuvert(false);
-        router.refresh();
       } else {
         setErreur(resultat.error);
       }

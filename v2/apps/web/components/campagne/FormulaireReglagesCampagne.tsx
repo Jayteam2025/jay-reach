@@ -287,7 +287,6 @@ export function FormulaireReglagesCampagne({
         boiteIds: toutesActives ? [] : [...actives],
       });
       if (res.ok) {
-        router.refresh();
       } else {
         setErreur(res.error);
         setIssues(res.issues);

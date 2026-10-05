@@ -45,7 +45,6 @@ export function TiroirSourceListe({ campagneId, listes }: TiroirSourceListeProps
         ignorerDejaContactes,
       });
       if (res.ok) {
-        router.refresh();
         fermer();
       } else {
         setErreur(res.issues?.join(' ') ?? res.error);

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { CanalModele, ModeleMessage } from '@jay-reach/core';
 import { Bouton, Champ, EtatVide, Puce, Table, Tiroir, TuileLogo, type ColonneTable } from '../ui';
@@ -83,7 +82,6 @@ function TiroirModele({
   onFermer: () => void;
 }) {
   const tDrawer = useTranslations('reglages.messages.drawer');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const [issues, setIssues] = useState<string[] | undefined>(undefined);
@@ -119,7 +117,6 @@ function TiroirModele({
         nature: etat.nature,
       });
       if (res.ok) {
-        router.refresh();
         onFermer();
       } else {
         setErreur(res.error);

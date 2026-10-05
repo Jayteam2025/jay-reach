@@ -1,7 +1,6 @@
 'use client';
 
 import { Fragment, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { Bouton, Carte, Puce } from '../ui';
 import { actionLancerTache } from '../../app/actions/moteur';
 
@@ -88,7 +87,6 @@ export interface TableTachesProps {
 }
 
 export function TableTaches({ lignes, libelles, erreurLibelle }: TableTachesProps) {
-  const router = useRouter();
   const [, startTransition] = useTransition();
   const [enAttente, setEnAttente] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -100,7 +98,6 @@ export function TableTaches({ lignes, libelles, erreurLibelle }: TableTachesProp
       const res = await actionLancerTache(cle);
       setEnAttente(null);
       if (res.ok) {
-        router.refresh();
       } else {
         setErreur(res.error ?? erreurLibelle);
       }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { LigneClientExclusion } from '@jay-reach/core';
 import { Bouton, Carte, Champ, Journal, Puce } from '../ui';
@@ -45,7 +44,6 @@ const SCOPES: { valeur: 'email' | 'domain' | 'linkedin'; cle: 'scopeEmail' | 'sc
  */
 export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppression, tronque, fuseau }: TableExclusionsProps) {
   const t = useTranslations('contacts');
-  const router = useRouter();
 
   const clients = lignes.filter((l) => l.type === 'client');
   const exclusions = lignes.filter((l) => l.type !== 'client');
@@ -71,7 +69,6 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
         )}
         {peutAjouterClient ? (
           <FormulaireAjouterClient
-            onAjoute={() => router.refresh()}
             libelle={t('customers.addDomainPlaceholder')}
             libelleAjouter={t('customers.add')}
           />
@@ -102,7 +99,6 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
         )}
         {peutAjouterSuppression ? (
           <FormulaireAjouterSuppression
-            onAjoute={() => router.refresh()}
             libelle={t('customers.addExclusionPlaceholder')}
             libelleAjouter={t('customers.add')}
             libellesScope={{
@@ -122,11 +118,9 @@ export function TableExclusions({ lignes, peutAjouterClient, peutAjouterSuppress
 }
 
 function FormulaireAjouterClient({
-  onAjoute,
   libelle,
   libelleAjouter,
 }: {
-  onAjoute: () => void;
   libelle: string;
   libelleAjouter: string;
 }) {
@@ -141,7 +135,6 @@ function FormulaireAjouterClient({
       const res = await actionAjouterAListe(valeur.trim());
       if (res.ok) {
         setValeur('');
-        onAjoute();
       } else {
         setErreur(res.error);
       }
@@ -164,12 +157,10 @@ function FormulaireAjouterClient({
 }
 
 function FormulaireAjouterSuppression({
-  onAjoute,
   libelle,
   libelleAjouter,
   libellesScope,
 }: {
-  onAjoute: () => void;
   libelle: string;
   libelleAjouter: string;
   libellesScope: Record<'email' | 'domain' | 'linkedin', string>;
@@ -186,7 +177,6 @@ function FormulaireAjouterSuppression({
       const res = await actionAjouterSuppression(scope, valeur.trim());
       if (res.ok) {
         setValeur('');
-        onAjoute();
       } else {
         setErreur(res.error);
       }
