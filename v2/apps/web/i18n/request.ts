@@ -5,6 +5,7 @@ import fr from '@jay-reach/i18n/messages/fr.json';
 import en from '@jay-reach/i18n/messages/en.json';
 import nl from '@jay-reach/i18n/messages/nl.json';
 import { createClientOrNull } from '../lib/supabase/server';
+import { getUser } from '../lib/auth';
 
 const MESSAGES = { fr, en, nl } satisfies Record<Locale, unknown>;
 
@@ -13,12 +14,13 @@ async function orgDefaultLocale(): Promise<Locale | null> {
   try {
     const supabase = await createClientOrNull();
     if (!supabase) return null;
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return null;
+    // `getUser` mémoïsé : la page le redemandera, un seul aller-retour réseau.
+    const user = await getUser();
+    if (!user) return null;
     const { data } = await supabase
       .from('memberships')
       .select('organizations(default_locale)')
-      .eq('user_id', userData.user.id)
+      .eq('user_id', user.id)
       .limit(1)
       .maybeSingle();
     const dl = (data as { organizations?: { default_locale?: string } | null } | null)?.organizations?.default_locale;
