@@ -6,6 +6,7 @@ vi.mock('@jay-reach/providers/enrichment', () => ({
 }));
 
 import { resolveCompanyNaf } from '@jay-reach/providers/enrichment';
+import { normaliserUrlPost } from '@jay-reach/core';
 import { ecarterEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
 import { runQualify } from './qualify.js';
 import { runScore } from './score.js';
@@ -173,6 +174,35 @@ describe('enregistrerEngageur', () => {
   });
 });
 
+describe('normalisation et adresse de profil', () => {
+  it('deux ecritures du meme post donnent un seul signal', async () => {
+    const m = modele();
+    const c = ctxDe(m.pool);
+    const brut = `${URL_POST}/?utm_source=share`;
+    expect(await enregistrerEngageur(c, ALICE, CAMPAGNE, URL_POST)).toBe('nouveau');
+    expect(await enregistrerEngageur(c, ALICE, CAMPAGNE, brut)).toBe('doublon');
+    expect(m.etat.insertsSignal).toBe(1);
+    // L'external_id est construit sur l'adresse normalisée, jamais sur la brute.
+    expect([...m.etat.signals.keys()][0]).toBe(`${normaliserUrlPost(URL_POST)}:${ALICE.urn}`);
+  });
+
+  it('une adresse de profil fournie est utilisee telle quelle', async () => {
+    const m = modele();
+    const e: Engageur = { ...ALICE, urlProfil: 'https://www.linkedin.com/in/alice-martin-123' };
+    await enregistrerEngageur(ctxDe(m.pool), e, CAMPAGNE, URL_POST);
+    expect(m.etat.contacts[0]?.linkedin_url).toBe('https://www.linkedin.com/in/alice-martin-123');
+    // Le rattachement garde l'identifiant de membre tiré de l'URN.
+    expect(m.etat.contacts[0]?.linkedin_provider_id).toBe('ACoAAalice');
+  });
+
+  it('une adresse fournie sous une autre forme est ramenee a la forme canonique', async () => {
+    const m = modele();
+    const e: Engageur = { ...ALICE, urlProfil: 'HTTPS://fr.linkedin.com/in/alice-martin-123/?trk=x' };
+    await enregistrerEngageur(ctxDe(m.pool), e, CAMPAGNE, URL_POST);
+    expect(m.etat.contacts[0]?.linkedin_url).toBe('https://www.linkedin.com/in/alice-martin-123');
+  });
+});
+
 describe('ecarterEngageur', () => {
   it('un engageur ecarte est efface avec son contact, et son external_id reste dans linkedin_engageurs_ecartes', async () => {
     const m = modele();
@@ -189,7 +219,7 @@ describe('ecarterEngageur', () => {
     expect(ordre.findIndex((o) => o.includes('into linkedin_engageurs_ecartes'))).toBeLessThan(
       ordre.findIndex((o) => /^delete from signals/.test(o)),
     );
-    expect([...m.etat.ecartes]).toEqual([`${URL_POST}:${ALICE.urn}`]);
+    expect([...m.etat.ecartes]).toEqual([`${normaliserUrlPost(URL_POST)}:${ALICE.urn}`]);
   });
 });
 

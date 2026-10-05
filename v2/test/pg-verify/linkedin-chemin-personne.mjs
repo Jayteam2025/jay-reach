@@ -6,6 +6,7 @@
 //      l'index des signaux (et son contrôle) — le test 2 rougit ;
 //   2. score.ts : mettre `case when false` dans CONSIGNE_DE_SCORING — les signaux
 //      restent `new` et les tests 18 à 29 rougissent ;
+//   4. post-engagement.ts : remplacer `normaliserUrlPost(urlPost)` par `urlPost` — 15b rougit.
 //   3. post-engagement.ts : ne plus lire `existant` — le contact connu est
 //      dupliqué (10, 13, 16).
 // NB : retirer `where linkedin_url is not null` de l'index des contacts ne fait
@@ -141,6 +142,21 @@ async function rattachement() {
   check('15. second passage, même post : doublon', (await enregistrer(m, bob)) === 'doublon');
   const nb = (await q(`select (select count(*)::int from signals where organization_id=$1 and kind='post_engagement') s, (select count(*)::int from contacts where organization_id=$1) c`, [m.org])).rows[0];
   check('16. un signal par engageur, deux contacts au total', nb.s === 2 && nb.c === 2, JSON.stringify(nb));
+
+  // Le même post écrit autrement n'est pas un autre post.
+  const variante = await enregistrerEngageur(m.ctx, bob, { id: m.campagne, personaId: m.persona }, `${POST}/?utm_source=share#c`);
+  check('15b. même post sous une autre écriture : doublon (normalisé par la fonction)', variante === 'doublon', variante);
+  const sb = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAAbob'`, [m.org])).rows[0].n;
+  check('15c. un seul signal pour Bob', sb === 1, String(sb));
+
+  // Adresse de profil fournie : elle prime sur la déduction de l'URN.
+  const fred = { ...eng('fred', 'Fred Noir', 'Directeur commercial'), urlProfil: 'https://fr.linkedin.com/in/fred-noir-42/?trk=x' };
+  await enregistrer(m, fred);
+  const uf = (await q(`select linkedin_url, linkedin_provider_id from contacts where organization_id=$1 and first_name='Fred'`, [m.org])).rows[0];
+  check('15d. l’adresse fournie est celle du contact, en forme canonique', uf?.linkedin_url === 'https://www.linkedin.com/in/fred-noir-42', uf?.linkedin_url);
+  check('15e. l’identifiant de membre reste celui de l’URN', uf?.linkedin_provider_id === 'ACoAAfred');
+  const fred2 = await enregistrer(m, { ...fred, urlProfil: 'https://www.linkedin.com/in/fred-noir-42' });
+  check('15f. même personne, même post : doublon', fred2 === 'doublon', fred2);
 
   // Déjà en campagne : une inscription vivante sur son adresse.
   const eve = eng('eve', 'Eve Roux', 'Directrice commerciale');

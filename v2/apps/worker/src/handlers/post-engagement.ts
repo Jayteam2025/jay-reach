@@ -13,8 +13,19 @@
  * organisation.
  */
 import type { Pool } from 'pg';
+import { normaliserUrlPost } from '@jay-reach/core';
 
-export type Engageur = { urn: string; nom: string; intitule: string; entreprise?: string };
+export type Engageur = {
+  urn: string;
+  nom: string;
+  intitule: string;
+  entreprise?: string;
+  /**
+   * Adresse publique du profil (`/in/<nom public>`), quand le collecteur la lit
+   * dans la réponse Voyager. Sans elle, `lienProfil` en déduit une de l'URN.
+   */
+  urlProfil?: string;
+};
 
 export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte';
 
@@ -33,13 +44,38 @@ function identifiantMembre(urn: string): string {
 }
 
 /**
- * Adresse de profil déduite de l'URN : LinkedIn résout `/in/<identifiant de
- * membre>` vers le profil. Le collecteur ne visite aucun profil, c'est la seule
- * adresse qu'il puisse poser, et elle est stable d'un passage à l'autre : c'est
- * ce qui permet à l'index unique des contacts de reconnaître la même personne.
+ * Adresse de profil déduite de l'URN : REPLI, et HYPOTHÈSE non vérifiée. Le
+ * dernier segment d'un URN de profil est un identifiant interne, pas le nom
+ * public qui compose d'ordinaire les adresses `/in/` : LinkedIn peut ne pas la
+ * résoudre. Elle reste stable d'un passage à l'autre, ce qui suffit à l'index
+ * unique des contacts, mais l'enrichissement (tâche 8) ne doit pas compter
+ * dessus : le collecteur fournit `urlProfil` dès qu'il le peut.
  */
-export function lienProfil(urn: string): string {
+export function lienProfilDeduit(urn: string): string {
   return `https://www.linkedin.com/in/${identifiantMembre(urn)}`;
+}
+
+/**
+ * Forme canonique d'une adresse de profil fournie (hôte `www.linkedin.com`, sans
+ * paramètres, ancre ni barre finale), pour que deux écritures de la même adresse
+ * soient reconnues par l'index unique. Une adresse qui n'est pas un profil
+ * LinkedIn est refusée (null) : elle ne doit pas devenir l'identité d'un contact.
+ */
+function normaliserUrlProfil(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    const hote = u.hostname.toLowerCase();
+    if (hote !== 'linkedin.com' && !hote.endsWith('.linkedin.com')) return null;
+    const m = /^\/in\/([^/]+)/.exec(u.pathname);
+    return m?.[1] ? `https://www.linkedin.com/in/${m[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** L'adresse fournie quand elle est exploitable, le repli déduit sinon. */
+export function lienProfil(engageur: Pick<Engageur, 'urn' | 'urlProfil'>): string {
+  return (engageur.urlProfil ? normaliserUrlProfil(engageur.urlProfil) : null) ?? lienProfilDeduit(engageur.urn);
 }
 
 function separerNom(nom: string): { prenom: string | null; nomFamille: string | null } {
@@ -57,8 +93,10 @@ export async function enregistrerEngageur(
   urlPost: string,
 ): Promise<IssueEngageur> {
   const { pool, organizationId: org } = ctx;
-  const externalId = `${urlPost}:${engageur.urn}`;
-  const url = lienProfil(engageur.urn);
+  // Normalisée ICI : l'unicité d'un engageur ne doit pas dépendre de la forme
+  // sous laquelle l'appelant écrit l'adresse du post.
+  const externalId = `${normaliserUrlPost(urlPost)}:${engageur.urn}`;
+  const url = lienProfil(engageur);
   const membre = identifiantMembre(engageur.urn);
 
   // 1) Déjà écarté par le scoring : ni recréé, ni rescoré, donc jamais repayé.
