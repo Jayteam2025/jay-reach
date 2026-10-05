@@ -97,8 +97,7 @@ export function TableTaches({ lignes, libelles, erreurLibelle }: TableTachesProp
     startTransition(async () => {
       const res = await actionLancerTache(cle);
       setEnAttente(null);
-      if (res.ok) {
-      } else {
+      if (!res.ok) {
         setErreur(res.error ?? erreurLibelle);
       }
     });

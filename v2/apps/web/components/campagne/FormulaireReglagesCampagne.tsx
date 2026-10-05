@@ -286,8 +286,7 @@ export function FormulaireReglagesCampagne({
         relecturePremiersEnvois: versEntier(relecture),
         boiteIds: toutesActives ? [] : [...actives],
       });
-      if (res.ok) {
-      } else {
+      if (!res.ok) {
         setErreur(res.error);
         setIssues(res.issues);
       }

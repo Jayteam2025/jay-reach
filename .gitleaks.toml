@@ -19,5 +19,13 @@ paths = [
   "supabase/functions/regenerate-prospect-messages-from-template/index.ts",
   # Lockfiles : hashes d'integrite de dependances (faux positifs generic-api-key)
   "deno.lock",
-  "pnpm-lock.yaml"
+  "pnpm-lock.yaml",
+  # Catalogues de traductions : des libelles d'interface, jamais un secret. La regle
+  # linkedin-client-secret s'y declenche sur des CLES qui contiennent « Linkedin » suivies de
+  # leur libelle — par exemple "menuLinkedinJobChangeTitle": "Functiewijziging" (neerlandais).
+  "v2/packages/i18n/src/messages/.*\\.json",
+  # Harnais du chiffrement des credentials : des valeurs factices ecrites en clair
+  # (« sk-secret-ABCD », « clef-chiffrement-32-octets-xxxxx »), c'est sa raison d'etre — il
+  # verifie justement qu'une mauvaise cle ne dechiffre pas.
+  "v2/test/pg-verify/credentials\\.sql"
 ]

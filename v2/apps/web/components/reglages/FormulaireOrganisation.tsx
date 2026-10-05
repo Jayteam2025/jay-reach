@@ -130,8 +130,7 @@ export function FormulaireOrganisation({ initial, libelles, erreurLibelle }: For
     setErreur(null);
     startTransition(async () => {
       const res = await actionModifierOrganisation({ nom: nom.trim(), fuseau, langue });
-      if (res.ok) {
-      } else {
+      if (!res.ok) {
         setErreur(res.error ?? erreurLibelle);
       }
     });
