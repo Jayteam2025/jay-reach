@@ -13,6 +13,7 @@ import {
   lireFiche,
   listerClientsEtExclusions,
   listerContacts,
+  SQL_CONTACTS_GLOBAUX,
   listerEntreprises,
   nePlusContacter,
 } from './contacts.js';
@@ -33,26 +34,6 @@ function appelsDe(ctx: Contexte): { sql: string; params: unknown[] }[] {
     sql: String((a as unknown[])[0]),
     params: ((a as unknown[])[1] as unknown[]) ?? [],
   }));
-}
-
-/**
- * Comme `faux()`, mais distingue les fixtures par CAMPAGNE (`$1`, id de campagne, de
- * `jr:lignes_contacts_globale`/`jr:total_etapes_campagne`) — nécessaire pour vérifier
- * `collecterContactsGlobaux` avec des campagnes qui renvoient des contacts réellement
- * différents (ou au contraire le MÊME contact) : `faux()` rejoue la même fixture pour
- * chaque campagne, quel que soit le paramètre.
- */
-function fauxParCampagne(parCampagne: Record<string, Record<string, unknown[]>>, campagnes: { id: string; nom: string }[]): Contexte {
-  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
-    if (/jr:contacts_globale_campagnes\b/.test(sql)) return { rows: campagnes, rowCount: campagnes.length };
-    const fixturesCampagne = parCampagne[params[0] as string];
-    if (!fixturesCampagne) return { rows: [], rowCount: 0 };
-    for (const [motif, r] of Object.entries(fixturesCampagne)) {
-      if (new RegExp(motif, 'i').test(sql)) return { rows: r, rowCount: r.length };
-    }
-    return { rows: [], rowCount: 0 };
-  }) as unknown as Executeur['query'];
-  return { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
 }
 
 /** Même convention que `assistant-campagne.test.ts` : un faux POOL, `connect()` compris (R47/R69). */
@@ -709,12 +690,24 @@ describe('chercherEmail', () => {
   });
 });
 
-function ligneGlobaleMinimale(id: string): Record<string, unknown> {
+/**
+ * Ligne telle que la requête unique `SQL_CONTACTS_GLOBAUX` la renvoie. Dédoublonnage, tri, total et
+ * pagination sont faits par Postgres : ces tests (faux pool, le SQL n'y est pas exécuté) vérifient
+ * le MAPPAGE, la fenêtre demandée et le nombre de requêtes. Que le SQL dédoublonne et trie comme
+ * l'ancienne boucle en mémoire est prouvé sur une vraie base par
+ * `test/pg-verify/contacts-globaux.sh` (comparaison ancien / nouveau, preuve par retrait).
+ */
+function ligneSql(id: string, surcharge: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    signal_id: null,
+    total_contacts: 1,
+    campagne_id: 'camp-1',
+    campagne_nom: 'Directeur commercial',
+    total_etapes: 3,
+    nombre_campagnes: 1,
+    signal_id: `sig-${id}`,
     contact_id: `contact-${id}`,
-    first_name: 'Prénom',
-    last_name: id,
+    first_name: 'Karim',
+    last_name: 'Benali',
     job_title: null,
     email: null,
     entreprise: null,
@@ -723,7 +716,13 @@ function ligneGlobaleMinimale(id: string): Record<string, unknown> {
     score: null,
     pourquoi: null,
     provider_id: null,
-    quand: null,
+    quand: '2026-09-10T00:00:00.000Z',
+    enrollment_id: null,
+    e_status: null,
+    stop_reason: null,
+    resume_at: null,
+    next_action_at: null,
+    ...surcharge,
   };
 }
 
@@ -732,255 +731,101 @@ describe('listerContacts', () => {
     await expect(listerContacts(faux({}, null), {})).rejects.toThrow(ForbiddenError);
   });
 
-  it('organisation sans campagne : total 0, aucune ligne, aucune requête de lignes', async () => {
-    const ctx = faux({ 'jr:contacts_globale_campagnes': [] });
-    const r = await listerContacts(ctx, {});
-    expect(r).toEqual({ total: 0, lignes: [], tronque: false });
+  it('aucun contact : la ligne vide de la jointure externe n’est pas une ligne', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [{ total_contacts: 0, contact_id: null, campagne_id: null }] });
+    expect(await listerContacts(ctx, {})).toEqual({ total: 0, lignes: [], tronque: false });
   });
 
-  it('fusionne les lignes de plusieurs campagnes avec des contacts distincts, chacune porte sa campagne d’origine et son étape bornée', async () => {
-    const ctx = fauxParCampagne(
-      {
-        'camp-1': {
-          'jr:lignes_contacts_globale': [
-            {
-              signal_id: 'sig-1',
-              contact_id: 'contact-1',
-              first_name: 'Karim',
-              last_name: 'Benali',
-              job_title: 'Head of Sales',
-              email: 'karim@exemple.fr',
-              entreprise: 'Woodpecker Studio',
-              current_step: 1,
-              statut: 'en_sequence',
-              score: 91,
-              pourquoi: 'Business developer senior',
-              provider_id: 'adzuna',
-              quand: '2026-09-10T00:00:00.000Z',
-            },
-          ],
-          'jr:total_etapes_campagne': [{ n: 3 }],
-        },
-        'camp-2': {
-          'jr:lignes_contacts_globale': [
-            {
-              signal_id: 'sig-2',
-              contact_id: 'contact-2',
-              first_name: 'Sophie',
-              last_name: 'Martin',
-              job_title: 'DRH',
-              email: 'sophie@exemple.fr',
-              entreprise: 'Exemple SAS',
-              current_step: 0,
-              statut: 'a_contacter',
-              score: 70,
-              pourquoi: 'DRH PME',
-              provider_id: 'adzuna',
-              quand: '2026-09-05T00:00:00.000Z',
-            },
-          ],
-          'jr:total_etapes_campagne': [{ n: 2 }],
-        },
-      },
-      [
-        { id: 'camp-1', nom: 'Directeur commercial' },
-        { id: 'camp-2', nom: 'DRH PME' },
+  it('UNE seule requête, quel que soit le nombre de campagnes (plus de boucle par campagne)', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1')] });
+    await listerContacts(ctx, {});
+    const appels = appelsDe(ctx);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.sql).toMatch(/jr:contacts_globaux_page/);
+  });
+
+  it('mappe la ligne : campagne représentative, étape bornée par SES étapes, nombreCampagnes, nom complet', async () => {
+    const ctx = faux({
+      'jr:contacts_globaux_page': [
+        ligneSql('1', { total_contacts: 2, current_step: 1, total_etapes: 3, nombre_campagnes: 2, campagne_id: 'camp-2', campagne_nom: 'DRH PME' }),
+        ligneSql('2', { total_contacts: 2, current_step: 5, total_etapes: 2, first_name: null, last_name: null }),
       ],
-    );
+    });
     const r = await listerContacts(ctx, {});
     expect(r.total).toBe(2);
-    expect(r.lignes.map((l) => l.campagneId).sort()).toEqual(['camp-1', 'camp-2']);
-    expect(r.lignes.every((l) => l.nombreCampagnes === 1)).toBe(true);
-    expect(r.lignes.find((l) => l.contactId === 'contact-1')).toMatchObject({ nom: 'Karim Benali', etape: 2 });
-  });
-
-  // G4 (responsable produit, 18/09) : 938 lignes pour 370 contacts distincts mesuré en base
-  // OSS — un contact CANDIDAT à plusieurs campagnes à la fois (pas seulement inscrit)
-  // traversait la boucle par campagne une fois par campagne. Une ligne par personne.
-  it('dédoublonne un contact candidat à deux campagnes à la fois : une seule ligne, la plus récente, nombreCampagnes = 2', async () => {
-    const ligne = (campagneId: string, quand: string) => ({
-      signal_id: `sig-${campagneId}`,
-      contact_id: 'contact-1',
-      first_name: 'Karim',
-      last_name: 'Benali',
-      job_title: null,
-      email: null,
-      entreprise: null,
-      current_step: null,
-      statut: 'a_contacter' as const,
-      score: null,
-      pourquoi: null,
-      provider_id: null,
-      quand,
+    expect(r.lignes[0]).toMatchObject({
+      contactId: 'contact-1',
+      nom: 'Karim Benali',
+      campagneId: 'camp-2',
+      campagneNom: 'DRH PME',
+      nombreCampagnes: 2,
+      etape: 2,
+      intitulePosteListe: null,
     });
-    const ctx = fauxParCampagne(
-      {
-        'camp-1': { 'jr:lignes_contacts_globale': [ligne('camp-1', '2026-09-10T00:00:00.000Z')] },
-        'camp-2': { 'jr:lignes_contacts_globale': [ligne('camp-2', '2026-09-14T00:00:00.000Z')] },
-      },
-      [
-        { id: 'camp-1', nom: 'Directeur commercial' },
-        { id: 'camp-2', nom: 'DRH PME' },
-      ],
-    );
-    const r = await listerContacts(ctx, {});
-    expect(r.total).toBe(1);
-    expect(r.lignes).toHaveLength(1);
-    // La ligne la plus récente (camp-2, 14/09) porte le statut/étape/action affichés.
-    expect(r.lignes[0]).toMatchObject({ contactId: 'contact-1', campagneId: 'camp-2', campagneNom: 'DRH PME', nombreCampagnes: 2 });
+    // `etapeAffichee` : 5 + 1 borné au nombre d'étapes de la campagne (2).
+    expect(r.lignes[1]).toMatchObject({ nom: '—', etape: 2, nombreCampagnes: 1 });
   });
 
-  // F11 : même exposition que `listerContactsCampagne` — `next_action_at` devient
-  // `prochainMessageLe` seulement pour une ligne `en_sequence`.
-  it('expose next_action_at comme prochainMessageLe pour une ligne en_sequence', async () => {
+  // F11 : `next_action_at` devient `prochainMessageLe` seulement pour une ligne `en_sequence` ;
+  // le motif et la reprise ne sortent que pour `en_pause`.
+  it('expose prochainMessageLe pour en_sequence, motifPause et repriseLe pour en_pause', async () => {
     const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Directeur commercial' }],
-      'jr:lignes_contacts_globale': [
-        {
-          signal_id: 'sig-1',
-          contact_id: 'contact-1',
-          first_name: 'Karim',
-          last_name: 'Benali',
-          job_title: null,
-          email: 'karim@exemple.fr',
-          entreprise: null,
-          current_step: 1,
-          statut: 'en_sequence',
-          score: null,
-          pourquoi: null,
-          provider_id: 'adzuna',
-          quand: '2026-09-10T00:00:00.000Z',
-          enrollment_id: 'enr-1',
-          e_status: 'active',
-          stop_reason: null,
-          resume_at: null,
-          next_action_at: '2026-09-25T09:00:00.000Z',
-        },
+      'jr:contacts_globaux_page': [
+        ligneSql('1', { total_contacts: 2, statut: 'en_sequence', e_status: 'active', next_action_at: '2026-09-25T09:00:00.000Z', resume_at: '2026-10-01T00:00:00.000Z' }),
+        ligneSql('2', { total_contacts: 2, statut: 'en_pause', e_status: 'paused_absence', stop_reason: null, next_action_at: '2026-09-25T09:00:00.000Z', resume_at: '2026-10-01T00:00:00.000Z' }),
       ],
-      'jr:total_etapes_campagne': [{ n: 3 }],
     });
     const r = await listerContacts(ctx, {});
-    expect(r.lignes[0]).toMatchObject({ statut: 'en_sequence', prochainMessageLe: '2026-09-25T09:00:00.000Z' });
+    expect(r.lignes[0]).toMatchObject({ prochainMessageLe: '2026-09-25T09:00:00.000Z', motifPause: null, repriseLe: null });
+    expect(r.lignes[1]).toMatchObject({ prochainMessageLe: null, motifPause: 'absence', repriseLe: '2026-10-01T00:00:00.000Z' });
   });
 
-  it('restreint à une seule campagne quand `campagneId` est fourni (pas de requête « toutes campagnes »)', async () => {
-    const ctx = faux({
-      'jr:contacts_globale_campagne_unique': [{ id: campagneId, nom: 'Directeur commercial' }],
-      'jr:lignes_contacts_globale': [],
-    });
-    const r = await listerContacts(ctx, { campagneId });
-    expect(r).toEqual({ total: 0, lignes: [], tronque: false });
-    const appels = appelsDe(ctx);
-    expect(appels.some((a) => /jr:contacts_globale_campagne_unique/.test(a.sql))).toBe(true);
-    expect(appels.some((a) => /jr:contacts_globale_campagnes\b/.test(a.sql))).toBe(false);
+  it('demande la fenêtre de la page à Postgres (offset/limit) et transmet les filtres comme paramètres', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1', { total_contacts: 130 })] });
+    await listerContacts(ctx, { page: 3, filtre: 'en_sequence', campagneId, source: 'adzuna', email: 'verifie', recherche: '50%' });
+    const [appel] = appelsDe(ctx);
+    expect(appel!.params).toEqual(['org-1', campagneId, 'en_sequence', '%50\\%%', 'adzuna', 'verifie', 100, 50]);
   });
 
-  it('LIMITE_CONTACTS_GLOBAL (5 000, tour de correction 1, mineur 6) : au-delà, `tronque` est vrai et `total` s’arrête au plafond (fixture générée, pas de base réelle)', async () => {
-    const lignes = Array.from({ length: 5001 }, (_, i) => ligneGlobaleMinimale(String(i)));
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: campagneId, nom: 'Campagne' }],
-      'jr:lignes_contacts_globale': lignes,
-    });
+  it('sans filtre : campagne, recherche, source et email valent null, page 1 = offset 0 limit 50', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1')] });
+    await listerContacts(ctx, {});
+    expect(appelsDe(ctx)[0]!.params).toEqual(['org-1', null, 'tous', null, null, null, 0, 50]);
+  });
+
+  // LIMITE_CONTACTS_GLOBAL (tour de correction 1, mineur 6) : `total` s'arrête au plafond, `tronque`
+  // dit qu'il y en a davantage, et aucune page ne va au-delà des 5 000 premiers contacts.
+  it('au-delà de 5 000 contacts distincts : tronque vrai, total plafonné', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1', { total_contacts: 5001 })] });
     const r = await listerContacts(ctx, {});
     expect(r.tronque).toBe(true);
     expect(r.total).toBe(5000);
   });
 
-  it('sous le plafond : `tronque` est faux', async () => {
-    const lignes = Array.from({ length: 3 }, (_, i) => ligneGlobaleMinimale(String(i)));
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: campagneId, nom: 'Campagne' }],
-      'jr:lignes_contacts_globale': lignes,
-    });
+  it('exactement 5 000 contacts : rien de coupé', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1', { total_contacts: 5000 })] });
     const r = await listerContacts(ctx, {});
     expect(r.tronque).toBe(false);
-    expect(r.total).toBe(3);
+    expect(r.total).toBe(5000);
   });
 
-  it('trie la liste fusionnée par instant décroissant (plus récent d’abord)', async () => {
-    const ligne = (id: string, quand: string) => ({
-      signal_id: `sig-${id}`,
-      contact_id: `contact-${id}`,
-      first_name: 'Prénom',
-      last_name: id,
-      job_title: null,
-      email: null,
-      entreprise: null,
-      current_step: null,
-      statut: 'a_contacter' as const,
-      score: null,
-      pourquoi: null,
-      provider_id: null,
-      quand,
-    });
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
-      'jr:lignes_contacts_globale': [
-        ligne('ancien', '2026-09-01T00:00:00.000Z'),
-        ligne('recent', '2026-09-14T00:00:00.000Z'),
-        ligne('milieu', '2026-09-07T00:00:00.000Z'),
-      ],
-    });
-    const r = await listerContacts(ctx, {});
-    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-recent', 'contact-milieu', 'contact-ancien']);
+  it('la dernière page atteignable (100) s’arrête au 5 000e contact ; la 101e demande zéro ligne', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1', { total_contacts: 9000 })] });
+    await listerContacts(ctx, { page: 100 });
+    await listerContacts(ctx, { page: 101 });
+    const [p100, p101] = appelsDe(ctx);
+    expect(p100!.params.slice(-2)).toEqual([4950, 50]);
+    expect(p101!.params.slice(-2)).toEqual([5000, 0]);
   });
 
-  // F4 (recette visuelle du 17/09, digest 3452353769) : `coalesce(s.occurred_at,
-  // e.started_at) as quand` est un `timestamptz`, renvoyé par `pg` comme un
-  // objet `Date` — pas une chaîne. Avant correctif, `toutes.sort((a, b) =>
-  // (b.quand ?? '').localeCompare(a.quand ?? ''))` explose dès que la page a
-  // au moins deux lignes (page Contacts en erreur serveur).
-  it('trie la liste fusionnée par instant décroissant même quand `quand` est un objet Date (comme le renvoie pg) — pas de TypeError', async () => {
-    const ligne = (id: string, quand: Date) => ({
-      signal_id: `sig-${id}`,
-      contact_id: `contact-${id}`,
-      first_name: 'Prénom',
-      last_name: id,
-      job_title: null,
-      email: null,
-      entreprise: null,
-      current_step: null,
-      statut: 'a_contacter' as const,
-      score: null,
-      pourquoi: null,
-      provider_id: null,
-      quand,
-    });
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
-      'jr:lignes_contacts_globale': [
-        ligne('ancien', new Date('2026-09-01T00:00:00.000Z')),
-        ligne('recent', new Date('2026-09-14T00:00:00.000Z')),
-        ligne('milieu', new Date('2026-09-07T00:00:00.000Z')),
-      ],
-    });
-    const r = await listerContacts(ctx, {});
-    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-recent', 'contact-milieu', 'contact-ancien']);
-  });
-
-  it('départage par identifiant de contact (décroissant) quand deux instants sont identiques, comme la requête SQL (`order by quand desc nulls last, contact_id desc`)', async () => {
-    const meme = '2026-09-10T00:00:00.000Z';
-    const ligne = (id: string) => ({
-      signal_id: `sig-${id}`,
-      contact_id: `contact-${id}`,
-      first_name: 'Prénom',
-      last_name: id,
-      job_title: null,
-      email: null,
-      entreprise: null,
-      current_step: null,
-      statut: 'a_contacter' as const,
-      score: null,
-      pourquoi: null,
-      provider_id: null,
-      quand: meme,
-    });
-    const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Campagne' }],
-      'jr:lignes_contacts_globale': [ligne('aaa'), ligne('zzz'), ligne('mmm')],
-    });
-    const r = await listerContacts(ctx, {});
-    expect(r.lignes.map((l) => l.contactId)).toEqual(['contact-zzz', 'contact-mmm', 'contact-aaa']);
+  // Garde-fou de la requête elle-même (le faux pool ne l'exécute pas, `contacts-globaux.sh` si).
+  it('SQL_CONTACTS_GLOBAUX rejoue la population par campagne via camp.id et ne garde qu’un `$1` (l’organisation)', () => {
+    expect(SQL_CONTACTS_GLOBAUX).toMatch(/cs0\.campaign_id = camp\.id/);
+    expect(SQL_CONTACTS_GLOBAUX).toMatch(/e2\.campaign_id = camp\.id/);
+    expect(SQL_CONTACTS_GLOBAUX.match(/\$1\b/g)).toHaveLength(1);
+    expect(SQL_CONTACTS_GLOBAUX).toMatch(/distinct on \(contact_id\)/);
+    // Ordre total (pagination stable) : instant décroissant puis identifiant du contact.
+    expect(SQL_CONTACTS_GLOBAUX).toMatch(/order by d\.quand desc nulls last, d\.contact_id desc/);
   });
 });
 
@@ -1190,25 +1035,19 @@ describe('exporterCsv', () => {
 
   it('BOM en tête, en-têtes français, séparateur `;`, guillemets doublés (`;` et `"` dans un champ)', async () => {
     const ctx = faux({
-      'jr:contacts_globale_campagnes': [{ id: 'camp-1', nom: 'Direction commerciale; France' }],
-      'jr:lignes_contacts_globale': [
-        {
-          signal_id: 'sig-1',
-          contact_id: 'contact-1',
-          first_name: 'Karim',
-          last_name: 'Benali',
+      'jr:contacts_globaux_page': [
+        ligneSql('1', {
+          campagne_nom: 'Direction commerciale; France',
           job_title: 'Head of Sales',
           email: 'karim@exemple.fr',
           entreprise: 'Woodpecker Studio',
           current_step: 0,
-          statut: 'a_contacter',
+          total_etapes: 0,
           score: 91,
           pourquoi: 'Recrute "vite"; profil senior',
           provider_id: 'adzuna',
-          quand: '2026-09-10T00:00:00.000Z',
-        },
+        }),
       ],
-      'jr:total_etapes_campagne': [{ n: 0 }],
     });
     const csv = await exporterCsv(ctx, {});
     expect(csv.charCodeAt(0)).toBe(0xfeff);
@@ -1220,49 +1059,22 @@ describe('exporterCsv', () => {
     expect(lignes[1]).toContain('"À contacter"');
   });
 
-  // G4 : même dédoublonnage que `listerContacts` (les deux appellent `collecterContactsGlobaux`)
-  // — le nom d'une seule campagne mentirait pour un contact candidat à plusieurs à la fois.
+  // G4 : le nom d'une seule campagne mentirait pour un contact candidat à plusieurs à la fois.
   it('un contact dans deux campagnes : la colonne Campagne dit combien, pas le nom d’une seule', async () => {
-    const ligne = (campagneId: string, quand: string) => ({
-      signal_id: `sig-${campagneId}`,
-      contact_id: 'contact-1',
-      first_name: 'Karim',
-      last_name: 'Benali',
-      job_title: null,
-      email: null,
-      entreprise: null,
-      current_step: null,
-      statut: 'a_contacter' as const,
-      score: null,
-      pourquoi: null,
-      provider_id: null,
-      quand,
-    });
-    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (/jr:contacts_globale_campagnes\b/.test(sql)) {
-        return {
-          rows: [
-            { id: 'camp-1', nom: 'Directeur commercial' },
-            { id: 'camp-2', nom: 'DRH PME' },
-          ],
-          rowCount: 2,
-        };
-      }
-      if (/jr:lignes_contacts_globale/.test(sql)) {
-        const campagneId = params[0] as string;
-        return campagneId === 'camp-1'
-          ? { rows: [ligne('camp-1', '2026-09-10T00:00:00.000Z')], rowCount: 1 }
-          : { rows: [ligne('camp-2', '2026-09-14T00:00:00.000Z')], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    }) as unknown as Executeur['query'];
-    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
-
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1', { campagne_nom: 'DRH PME', nombre_campagnes: 2 })] });
     const csv = await exporterCsv(ctx, {});
     const lignes = csv.slice(1).split('\r\n');
     expect(lignes).toHaveLength(2);
     expect(lignes[1]).toContain('"2 campagnes"');
     expect(lignes[1]).not.toContain('DRH PME');
-    expect(lignes[1]).not.toContain('Directeur commercial');
+  });
+
+  // L'export veut TOUT (jusqu'au plafond), pas une page : une seule requête, fenêtre 0..5 000.
+  it('ne pagine pas : une seule requête qui demande les 5 000 premiers contacts', async () => {
+    const ctx = faux({ 'jr:contacts_globaux_page': [ligneSql('1'), ligneSql('2')] });
+    await exporterCsv(ctx, {});
+    const appels = appelsDe(ctx);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.params.slice(-2)).toEqual([0, 5000]);
   });
 });
