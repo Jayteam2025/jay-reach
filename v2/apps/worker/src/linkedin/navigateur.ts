@@ -14,6 +14,7 @@
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { normaliserIp } from './ip.js';
 import { z } from 'zod';
 import type { Sortie } from '@jay-reach/core';
 
@@ -31,27 +32,6 @@ export type Pilote = {
 const ECHO_IP = 'https://api.ipify.org?format=json';
 const PAGE_NEUTRE = 'about:blank';
 const DELAI_ACTION_MS = 30_000;
-
-/**
- * Rend l'IP sous sa graphie canonique, ou `null` si ce n'en est pas une.
- * La comparaison de `verifierSortie` est stricte : « 2001:0DB8::1 » et
- * « 2001:db8::1 » doivent devenir la même chaîne. IPv4 : `isIP` refuse les
- * zéros de tête et les octets hors plage. IPv6 : le parseur d'URL compresse et
- * met en minuscules.
- */
-function normaliserIp(brut: string): string | null {
-  const ip = brut.trim();
-  const famille = isIP(ip);
-  if (famille === 4) return ip;
-  if (famille === 6) {
-    try {
-      return new URL(`http://[${ip}]/`).hostname.slice(1, -1);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
 
 const SchemaEcho = z.object({
   ip: z.string().transform((s, ctx) => {
@@ -157,7 +137,9 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
   } catch {
     throw new Error('Connexion au navigateur impossible');
   }
-  const page = (await browser.pages())[0] ?? (await browser.newPage());
+  // Une page par client : deux commandes (ou une commande et la collecte) ne se piétinent pas.
+  // Le `about:blank` initial de Chromium reste ouvert et garde le navigateur vivant.
+  const page = await browser.newPage();
   page.setDefaultTimeout(DELAI_ACTION_MS);
   if (user && password) await page.authenticate({ username: user, password });
 
@@ -190,8 +172,9 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
         const r = await fetch(u);
         return { statut: r.status, corps: await r.text() };
       }, url),
-    // On se détache sans fermer : le Chromium du conteneur garde le profil et ses cookies.
+    // On ferme NOTRE page puis on se détache sans fermer le navigateur : il garde le profil et ses cookies.
     fermer: async () => {
+      await page.close().catch(() => undefined);
       await browser.disconnect();
     },
   };

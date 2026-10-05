@@ -26,6 +26,7 @@ import {
 } from '@jay-reach/core';
 import { createPool } from '../db.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
+import { ipDuProcessus } from '../linkedin/ip.js';
 // Type seul : effacé à la compilation. L'import réel du navigateur est dynamique (voir `dependancesReelles`).
 import type { Pilote } from '../linkedin/navigateur.js';
 
@@ -35,6 +36,8 @@ export interface Dependances {
   contexte(): Promise<Contexte>;
   ouvrirNavigateur(): Promise<Pilote>;
   releverSortie(pilote: Pilote): Promise<Sortie>;
+  /** IP publique du processus worker, donc du VPS (voir `ip.ts`). */
+  ipDuProcessus(): Promise<string>;
   demander(invite: string): Promise<string>;
   demanderMasque(invite: string): Promise<string>;
   pause(ms: number): Promise<void>;
@@ -61,6 +64,8 @@ const DUREE_VERROU_MS = 15 * 60_000;
 const ATTENTE_MAX_CONNEXION_MS = 90_000;
 const PAS_MS = 1_000;
 const DELAI_APRES_CODE_MS = 20_000;
+// Un proxy résidentiel est lent : 1,5 s faisait conclure à un défi sur une simple lenteur.
+const DELAI_CHAMP_CODE_MS = 10_000;
 
 /** Nom du type de l'erreur, jamais son message. */
 function typeErreur(e: unknown): string {
@@ -98,29 +103,42 @@ async function statut(ctx: Contexte, d: Dependances): Promise<number> {
   return 0;
 }
 
+type Issue = { issue: 'connecte' | 'refuse' | 'defi' } | { issue: 'delai'; chemin: string };
+
+/** Chemin seul : la requête d'une URL LinkedIn peut porter des jetons. */
+function cheminDe(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '?';
+  }
+}
+
 /**
- * Résultat de la saisie des identifiants : connecté, refusé, ou bloqué par une
- * vérification que le terminal ne sait pas passer.
+ * Résultat de la saisie des identifiants : connecté, refusé, bloqué par une
+ * vérification que le terminal ne sait pas passer, ou délai dépassé (avec le
+ * chemin atteint, sans diagnostic inventé).
  */
-async function ouvrirLinkedIn(
-  ctx: Contexte,
-  pilote: Pilote,
-  d: Dependances,
-): Promise<'connecte' | 'refuse' | 'defi'> {
+async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Promise<Issue> {
+  // On navigue d'abord : un profil déjà connecté est redirigé vers /feed, sans rien à saisir.
+  await pilote.aller(URL_CONNEXION);
+  if (surLinkedIn(await pilote.url(), '/feed')) return { issue: 'connecte' };
+
   const identifiant = await d.demander('Identifiant LinkedIn : ');
   const motDePasse = await d.demanderMasque('Mot de passe : ');
-  await pilote.aller(URL_CONNEXION);
   await pilote.saisir(SEL.identifiant, identifiant);
   await pilote.saisir(SEL.motDePasse, motDePasse);
   await pilote.cliquer(SEL.envoyer);
 
   // Après l'envoi du code, LinkedIn met quelques secondes à quitter le défi : on patiente avant de conclure.
   let codeEnvoyeA: number | null = null;
+  let dernierChemin = '?';
   for (let ecoule = 0; ecoule < ATTENTE_MAX_CONNEXION_MS; ecoule += PAS_MS) {
     const url = await pilote.url();
-    if (surLinkedIn(url, '/feed')) return 'connecte';
+    dernierChemin = cheminDe(url);
+    if (surLinkedIn(url, '/feed')) return { issue: 'connecte' };
     if (surLinkedIn(url, '/checkpoint')) {
-      if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, 1_500))) {
+      if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
         const code = await d.demanderMasque('Code reçu de LinkedIn : ');
         await pilote.saisir(SEL.code, code);
         await pilote.cliquer(SEL.envoyer);
@@ -128,14 +146,27 @@ async function ouvrirLinkedIn(
       } else if (codeEnvoyeA === null || ecoule - codeEnvoyeA >= DELAI_APRES_CODE_MS) {
         // Captcha, validation sur l'application mobile, ou code refusé : rien que ce terminal sache passer.
         await bloquerSessionLinkedIn(ctx, 'defi');
-        return 'defi';
+        return { issue: 'defi' };
       }
     } else if (await pilote.attendre(SEL.erreurMotDePasse, 500)) {
-      return 'refuse';
+      return { issue: 'refuse' };
     }
     await d.pause(PAS_MS);
   }
-  return 'refuse';
+  return { issue: 'delai', chemin: dernierChemin };
+}
+
+/**
+ * Refuse de figer, ou de confirmer, l'IP du VPS comme IP attendue. Si le proxy est
+ * mal formé (Chromium ignore alors la règle) ou n'anonymise pas, la sortie vue EST
+ * l'IP du serveur : la figer rendrait le contrôle « conforme » pour toujours.
+ */
+async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<boolean> {
+  if (ipVue !== (await d.ipDuProcessus())) return false;
+  d.ecrire(
+    'Le navigateur sort par l’IP du serveur, pas par le proxy : vérifier LINKEDIN_PROXY_URL (navigateur.env). Rien n’est enregistré.',
+  );
+  return true;
 }
 
 async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
@@ -156,6 +187,7 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
       return 1;
     }
     d.ecrire(`Sortie du navigateur : ${libelleSortie(sortie)}`);
+    if (await sortieEstCelleDuServeur(d, sortie.ip)) return 1;
 
     // Le verrou suppose la ligne de session : l'observation ci-dessus l'a créée au besoin.
     verrouPris = await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_MS);
@@ -164,17 +196,19 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
       return 1;
     }
 
-    const issue = await ouvrirLinkedIn(ctx, pilote, d);
-    if (issue === 'connecte') {
+    const resultat = await ouvrirLinkedIn(ctx, pilote, d);
+    if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
       await activerSessionLinkedIn(ctx, session?.ipAttendue ?? sortie.ip);
       d.ecrire('Session LinkedIn active.');
       return 0;
     }
     d.ecrire(
-      issue === 'defi'
+      resultat.issue === 'defi'
         ? 'LinkedIn demande une vérification que ce terminal ne sait pas passer : session bloquée.'
-        : 'Connexion refusée : identifiant ou mot de passe incorrect.',
+        : resultat.issue === 'delai'
+          ? `Délai dépassé : LinkedIn est resté sur ${resultat.chemin}. Rien n’est enregistré.`
+          : 'Connexion refusée : identifiant ou mot de passe incorrect.',
     );
     return 1;
   } finally {
@@ -220,6 +254,7 @@ async function ip(ctx: Contexte, d: Dependances, confirmer: boolean): Promise<nu
       }
       return 0;
     }
+    if (await sortieEstCelleDuServeur(d, sortie.ip)) return 1;
     if (!(await confirmerIpAttendue(ctx, sortie.ip))) {
       d.ecrire('Aucune session : lancer d’abord « jay-reach linkedin connecter ».');
       return 1;
@@ -324,6 +359,7 @@ async function main(): Promise<void> {
     // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
     ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
     releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
+    ipDuProcessus,
     demander,
     demanderMasque,
     pause: (ms) => new Promise((r) => setTimeout(r, ms)),

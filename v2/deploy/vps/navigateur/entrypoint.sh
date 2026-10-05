@@ -8,10 +8,11 @@ if [[ -z "${LINKEDIN_PROXY_URL:-}" ]]; then
   echo "LINKEDIN_PROXY_URL absent : le navigateur ne démarre pas sans proxy." >&2
   exit 1
 fi
-# Chromium refuse `user:pass@hôte` dans --proxy-server : les identifiants passent
-# par CDP côté worker (LINKEDIN_PROXY_USER / LINKEDIN_PROXY_PASSWORD).
-if [[ "$LINKEDIN_PROXY_URL" == *@* ]]; then
-  echo "LINKEDIN_PROXY_URL ne doit pas porter d'identifiants (pas de user:pass@)." >&2
+# Forme stricte schéma://hôte:port. Une URL qui s'en écarte (schéma inconnu, identifiants,
+# chemin) ferait ignorer la règle par Chromium, qui sortirait alors en direct par l'IP du VPS.
+# Chromium refuse de toute façon `user:pass@hôte` : les identifiants passent par CDP côté worker.
+if ! [[ "$LINKEDIN_PROXY_URL" =~ ^(https?)://[^/@:]+:[0-9]+$ ]]; then
+  echo "LINKEDIN_PROXY_URL doit être de la forme schéma://hôte:port (http ou https), sans identifiants." >&2
   exit 1
 fi
 

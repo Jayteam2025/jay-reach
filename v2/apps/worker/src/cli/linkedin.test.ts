@@ -70,6 +70,7 @@ function dependances(o: {
   session?: Ligne | null;
   pilote?: Pilote;
   sortie?: Sortie;
+  ipServeur?: string;
   demander?: (i: string) => Promise<string>;
   demanderMasque?: (i: string) => Promise<string>;
 }): {
@@ -96,6 +97,7 @@ function dependances(o: {
       contexte,
       ouvrirNavigateur: ouvrir,
       releverSortie: async () => o.sortie ?? { ip: '203.0.113.7' },
+      ipDuProcessus: async () => o.ipServeur ?? '10.255.255.1',
       demander: o.demander ?? interdit('demander'),
       demanderMasque: o.demanderMasque ?? interdit('demanderMasque'),
       pause: async () => undefined,
@@ -153,7 +155,10 @@ describe('la commande connecter', () => {
   });
 
   it("fige l'IP attendue sur la sortie vue quand elle est vide, et n'ecrit aucun secret", async () => {
-    const { p, saisies } = piloteFaux(['https://www.linkedin.com/feed/']);
+    const { p, saisies } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/feed/',
+    ]);
     const { d, sortie, appels } = dependances({
       env: ACTIF,
       session: null,
@@ -182,7 +187,7 @@ describe('la commande connecter', () => {
   });
 
   it("garde l'IP attendue existante quand la sortie est conforme", async () => {
-    const { p } = piloteFaux(['https://www.linkedin.com/feed/']);
+    const { p } = piloteFaux(['https://www.linkedin.com/login', 'https://www.linkedin.com/feed/']);
     const { d, appels } = dependances({
       env: ACTIF,
       session: ligneSession({
@@ -202,8 +207,82 @@ describe('la commande connecter', () => {
     ]);
   });
 
-  it("n'ouvre pas LinkedIn quand la sortie n'est pas celle attendue, et bloque la session", async () => {
+  it("refuse de figer l'IP du serveur : le navigateur sort en direct, pas par le proxy", async () => {
+    const { p, saisies } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/feed/',
+    ]);
+    const { d, sortie, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      sortie: { ip: '198.51.100.9' },
+      ipServeur: '198.51.100.9',
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'x',
+    });
+    expect(await executerCommande(['connecter'], d)).not.toBe(0);
+    expect(saisies).toEqual([]);
+    expect(appels.some((a) => /jr:linkedin_session_activer/.test(a.sql))).toBe(false);
+    expect(sortie.join('\n')).toMatch(/IP du serveur/);
+  });
+
+  it("n'ouvre ni ne demande rien quand le profil est deja connecte", async () => {
     const { p, saisies } = piloteFaux(['https://www.linkedin.com/feed/']);
+    const { d, appels } = dependances({ env: ACTIF, session: null, pilote: p });
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(saisies).toEqual([]);
+    expect(appels.some((a) => /jr:linkedin_session_activer/.test(a.sql))).toBe(true);
+  });
+
+  it('au delai, annonce le chemin atteint et non un mot de passe incorrect', async () => {
+    const { p } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/check/add-phone?token=secret',
+    ]);
+    const { d, sortie, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'x',
+    });
+    expect(await executerCommande(['connecter'], d)).not.toBe(0);
+    const texte = sortie.join('\n');
+    expect(texte).toMatch(/\/check\/add-phone/);
+    expect(texte).not.toMatch(/incorrect/);
+    expect(texte).not.toMatch(/secret/);
+    expect(appels.some((a) => /jr:linkedin_session_(activer|bloquer)/.test(a.sql))).toBe(false);
+  });
+
+  it('laisse dix secondes au champ du code avant de conclure a un defi', async () => {
+    const delais: number[] = [];
+    const { p } = piloteFaux(
+      [
+        'https://www.linkedin.com/login',
+        'https://www.linkedin.com/checkpoint/x',
+        'https://www.linkedin.com/feed/',
+      ],
+      ['input[name="pin"]'],
+    );
+    const attendre = p.attendre;
+    p.attendre = async (s, ms) => (delais.push(ms), attendre(s, ms));
+    const { d } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => '1',
+    });
+    await executerCommande(['connecter'], d);
+    expect(delais).toContain(10_000);
+  });
+
+  it("n'ouvre pas LinkedIn quand la sortie n'est pas celle attendue, et bloque la session", async () => {
+    const { p, saisies } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/feed/',
+    ]);
     const { d, appels } = dependances({
       env: ACTIF,
       session: ligneSession({ expected_egress_ip: '203.0.113.7' }),
@@ -226,6 +305,7 @@ describe('la commande connecter', () => {
   it('demande le code masque quand LinkedIn en reclame un, puis aboutit', async () => {
     const { p, saisies } = piloteFaux(
       [
+        'https://www.linkedin.com/login',
         'https://www.linkedin.com/checkpoint/challenge/abc',
         'https://www.linkedin.com/checkpoint/challenge/abc',
         'https://www.linkedin.com/feed/',
@@ -246,7 +326,10 @@ describe('la commande connecter', () => {
   });
 
   it('bloque en defi quand LinkedIn pose une verification que le terminal ne sait pas passer', async () => {
-    const { p } = piloteFaux(['https://www.linkedin.com/checkpoint/challenge/abc']);
+    const { p } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/checkpoint/challenge/abc',
+    ]);
     const { d, appels } = dependances({
       env: ACTIF,
       session: null,
@@ -316,6 +399,19 @@ describe('la commande ip', () => {
       'org-1',
       '192.0.2.55',
     ]);
+  });
+
+  it("refuse de confirmer l'IP du serveur comme IP attendue", async () => {
+    const { p } = piloteFaux();
+    const { d, appels } = dependances({
+      env: ACTIF,
+      session: ligneSession(),
+      pilote: p,
+      sortie: { ip: '192.0.2.55' },
+      ipServeur: '192.0.2.55',
+    });
+    expect(await executerCommande(['ip', '--confirmer'], d)).not.toBe(0);
+    expect(appels.some((a) => /jr:linkedin_session_confirmer_ip/.test(a.sql))).toBe(false);
   });
 
   it("consigne l'observation dans les deux cas", async () => {

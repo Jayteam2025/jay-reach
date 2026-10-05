@@ -50,7 +50,8 @@ services:
       - profil-navigateur:/profil
     shm_size: 1gb
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9222/json/version"]
+      # 9223 : traverse le relais socat, pas seulement Chromium.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9223/json/version"]
       interval: 60s
       timeout: 10s
       retries: 3
