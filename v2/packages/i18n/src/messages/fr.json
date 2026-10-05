@@ -1436,6 +1436,12 @@
               "titre": "Une réponse arrive",
               "detail": "à chaque réponse humaine détectée"
             }
+          },
+          "linkedin": {
+            "session_blocked": {
+              "titre": "Votre session LinkedIn est bloquée",
+              "detail": "quand la collecte LinkedIn s’arrête et demande une reconnexion"
+            }
           }
         }
       },

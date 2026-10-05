@@ -1436,6 +1436,12 @@
               "titre": "Er komt een reactie binnen",
               "detail": "bij elke gedetecteerde menselijke reactie"
             }
+          },
+          "linkedin": {
+            "session_blocked": {
+              "titre": "Uw LinkedIn-sessie is geblokkeerd",
+              "detail": "wanneer de LinkedIn-verzameling stopt en opnieuw verbinden vraagt"
+            }
           }
         }
       },
