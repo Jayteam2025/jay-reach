@@ -92,6 +92,7 @@ export function Fil({
           </span>
         </div>
         <BoutonMarquerTraite
+          key={filId}
           filId={filId}
           traite={traite}
           libelleMarquer={t('fil.marquerTraite')}
@@ -113,7 +114,9 @@ export function Fil({
             }
           />
         ))}
+        {/* key : sans rechargement complet, le brouillon, le message « Envoyée » et l'erreur d'un fil ne doivent pas survivre au passage à un autre fil. */}
         <ZoneReponseFil
+          key={filId}
           filId={filId}
           depuis={depuis}
           placeholder={t('reponse.placeholder')}

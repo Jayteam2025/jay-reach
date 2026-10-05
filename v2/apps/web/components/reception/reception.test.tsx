@@ -1,10 +1,13 @@
 import { createTranslator } from 'next-intl';
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
 import type { CampagneFil, Fiche, ResumeContactFil } from '@jay-reach/core';
 import { ListeFils, type LigneFilAffichage } from './ListeFils';
 import { Fil, type MessageFilAffiche } from './Fil';
+import { ZoneReponseFil } from './ZoneReponseFil';
+import { BoutonMarquerTraite } from './BoutonMarquerTraite';
 import { ColonneContact } from './ColonneContact';
 
 // Traducteur réel (vraies clés `fr.json`, namespace `reception`) plutôt qu'un
@@ -288,5 +291,50 @@ describe('Réception — rendu des trois volets', () => {
       />,
     );
     expect(html).not.toContain('séquence arrêtée à la réponse');
+  });
+});
+
+/**
+ * P2 : sans rechargement complet après une action, le composant client de la
+ * zone de réponse n'est plus remonté. Sans `key={filId}`, passer d'un fil à un
+ * autre garderait le brouillon (et le message « Envoyée ») du fil précédent :
+ * on répondrait à quelqu'un avec un texte écrit pour un autre.
+ */
+describe('Fil : l\'état local de la zone de réponse ne survit pas à un changement de fil', () => {
+  function trouver(noeud: ReactNode, type: unknown, trouves: ReactElement[] = []): ReactElement[] {
+    if (Array.isArray(noeud)) noeud.forEach((n) => trouver(n, type, trouves));
+    else if (isValidElement(noeud)) {
+      const el = noeud as ReactElement<{ children?: ReactNode }>;
+      if (el.type === type) trouves.push(el);
+      trouver(el.props.children, type, trouves);
+    }
+    return trouves;
+  }
+  const arbre = (filId: string) =>
+    Fil({
+      t,
+      filId,
+      contact: CONTACT,
+      canal: 'email',
+      campagne: CAMPAGNE,
+      boite: null,
+      messages: MESSAGES,
+      interet: null,
+      traite: false,
+      reponsePossible: true,
+      raisonReponseImpossible: null,
+      transportReponse: 'salesblink',
+    });
+
+  it.each([
+    ['ZoneReponseFil', ZoneReponseFil],
+    ['BoutonMarquerTraite', BoutonMarquerTraite],
+  ])('%s est clé par filId : deux fils différents ne partagent pas le même état', (_nom, composant) => {
+    const a = trouver(arbre('fil-A'), composant);
+    const b = trouver(arbre('fil-B'), composant);
+    expect(a).toHaveLength(1);
+    expect(a[0]!.key).toBe('fil-A');
+    expect(b[0]!.key).toBe('fil-B');
+    expect(a[0]!.key).not.toBe(b[0]!.key);
   });
 });
