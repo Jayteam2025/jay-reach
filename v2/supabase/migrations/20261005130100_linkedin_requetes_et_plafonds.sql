@@ -28,7 +28,11 @@ create index linkedin_requetes_org_date_idx on linkedin_requetes (organization_i
 alter table linkedin_requetes enable row level security;
 alter table linkedin_requetes force row level security;
 
-select app._gen_org_policies('linkedin_requetes', 'admin');
+-- Un journal, pas un réglage : les membres le LISENT, personne ne l'écrit à la
+-- main. Seule la clé de service (le worker), qui contourne la RLS, y inscrit.
+-- Un compteur que la personne contrainte peut remettre à zéro ne contraint rien.
+create policy linkedin_requetes_read on public.linkedin_requetes for select to authenticated
+  using (organization_id in (select app.user_orgs('viewer')));
 
 -- Contrôle : la migration échoue si l'objet attendu est absent.
 do $$
@@ -58,8 +62,16 @@ begin
   ) then
     raise exception 'index manquant : linkedin_requetes_org_date_idx';
   end if;
-  if (select count(*) from pg_policies
-       where schemaname = 'public' and tablename = 'linkedin_requetes') < 2 then
-    raise exception 'politiques RLS manquantes sur linkedin_requetes';
+  if not exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'linkedin_requetes' and cmd = 'SELECT'
+  ) then
+    raise exception 'politique de lecture manquante sur linkedin_requetes';
+  end if;
+  if exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'linkedin_requetes' and cmd <> 'SELECT'
+  ) then
+    raise exception 'linkedin_requetes ne doit avoir aucune politique d''écriture';
   end if;
 end $$;

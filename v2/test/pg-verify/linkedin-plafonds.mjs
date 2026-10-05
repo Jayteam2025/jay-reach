@@ -213,10 +213,24 @@ async function rls() {
   await commeUtilisateur(A.admin, async (c) => {
     const vus = await lire(c);
     check('24. admin : voit ses requêtes et aucune autre', vus.length === 1 && vus[0] === A.id, `vus=${vus.length}`);
-    const ok = await refuse(c, `insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [A.id, sA]);
-    check('25. admin : insère pour sa propre organisation', !ok.refuse, JSON.stringify(ok));
+    // Le journal n'est pas un réglage : même un admin ne l'écrit pas (seule la clé de service, qui contourne la RLS, le fait).
+    const insA = await refuse(c, `insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [A.id, sA]);
+    check('25. admin : n’insère pas, même pour sa propre organisation (42501)', insA.code === '42501', JSON.stringify(insA));
+    const u = await c.query(`update linkedin_requetes set requested_at = now() - interval '1 day' where organization_id = $1`, [A.id]);
+    check('25b. admin : ne modifie aucune ligne', u.rowCount === 0, `rowCount=${u.rowCount}`);
+    const dl = await c.query(`delete from linkedin_requetes where organization_id = $1`, [A.id]);
+    check('25c. admin : ne supprime aucune ligne', dl.rowCount === 0, `rowCount=${dl.rowCount}`);
     const ins = await refuse(c, `insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [B.id, sB]);
     check('26. admin : n’insère pas pour une autre organisation (42501)', ins.code === '42501', JSON.stringify(ins));
+  });
+  const intacte = (await q(`select count(*)::int n, bool_and(requested_at > now() - interval '1 hour') recent from linkedin_requetes where organization_id = $1`, [A.id])).rows[0];
+  check('26b. la trace de l’admin est intacte (1 ligne, horodatage inchangé)', intacte.n === 1 && intacte.recent === true, JSON.stringify(intacte));
+  // Insertion pour une organisation SANS ligne : le refus ne peut venir que de la RLS, jamais d'une clé unique.
+  const C = await orgNeuve();
+  const sC = await passage(await sourceNeuve(C.id, 'linkedin_post_engagers'), '2026-10-04T21:55:00Z');
+  await commeUtilisateur(C.admin, async (c) => {
+    const ins = await refuse(c, `insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [C.id, sC]);
+    check('26c. admin d’une organisation sans ligne : insert refusé par la RLS (42501)', ins.code === '42501', JSON.stringify(ins));
   });
   await commeUtilisateur(A.viewer, async (c) => {
     const vus = await lire(c);

@@ -561,7 +561,11 @@ export async function compterPostsLinkedInDuJour(ctx: Contexte, jour: string, fu
   return res.rows[0]?.n ?? 0;
 }
 
-/** Fenêtre dans laquelle le serveur a le droit de toucher LinkedIn : jours ISO (1 = lundi), heures locales `HH:00`, fuseau IANA. */
+/**
+ * Fenêtre dans laquelle le serveur a le droit de toucher LinkedIn : jours ISO (1 = lundi), heures locales `HH:00`, fuseau IANA.
+ * Attention : `fin` peut valoir `'24:00'` (la contrainte de plage autorise `send_to_hour = 24`), ce qu'un parseur d'heure
+ * strict refuserait. Comparer en heures entières, ou traiter `24:00` comme minuit du lendemain.
+ */
 export interface FenetreLinkedIn {
   jours: number[];
   debut: string;
