@@ -1,7 +1,7 @@
 // Point d'entrée bundlé (esbuild) pour `contacts-globaux.mjs` : la nouvelle implémentation
 // (une requête Postgres) face à l'oracle (ancienne boucle en mémoire).
 import { exporterCsv, listerContacts } from '../../packages/core/src/fonctions/contacts.js';
-import { collecterContactsGlobauxAncien } from '../../packages/core/src/fonctions/contacts-globaux.oracle.js';
+import { collecterContactsGlobauxAncien } from './contacts-globaux.oracle.js';
 import type { Contexte } from '../../packages/core/src/fonctions/contexte.js';
 
 export const nouveau = { listerContacts, exporterCsv };

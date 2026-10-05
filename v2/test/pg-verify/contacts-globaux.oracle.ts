@@ -1,4 +1,11 @@
 /**
+ * ORACLE DE COMPARAISON, hors production. Copie de l'ancienne collecte en
+ * mémoire (boucle par campagne, dédoublonnage et pagination côté application),
+ * conservée pour prouver que la version SQL rend exactement les mêmes pages.
+ * Vit sous `test/` et non sous `packages/core/src/` : placé là, il serait
+ * compilé dans `dist/` et livré alors qu'aucun chemin de production ne l'appelle.
+ */
+/**
  * Référence « ancienne implémentation » de la population globale des contacts (lot 2, P4) :
  * le calcul tel qu'il était avant d'être confié à Postgres — une requête de population et un
  * comptage d'étapes par campagne, en série, puis fusion, tri, dédoublonnage et plafonnement en
