@@ -84,11 +84,10 @@ const CORPS_BLOCAGE: Record<MotifBlocage, string> = {
  * Bloque la session et prévient les membres, une seule fois par blocage : si
  * elle l'est déjà, rien n'est réécrit et personne n'est renotifié.
  *
- * `detail` est réservé à l'appelant (ses propres journaux) : il n'est ni
- * stocké ni envoyé, parce qu'une erreur de navigateur ou de proxy peut porter
- * une URL avec identifiants.
+ * Pas de paramètre de détail : une erreur de navigateur ou de proxy peut porter
+ * une URL avec identifiants. Le motif est typé, l'IP vue vit dans `last_egress_ip`.
  */
-export async function bloquerSessionLinkedIn(ctx: Contexte, motif: MotifBlocage, _detail?: string): Promise<void> {
+export async function bloquerSessionLinkedIn(ctx: Contexte, motif: MotifBlocage): Promise<void> {
   const res = await ctx.ex.query(
     `insert into linkedin_server_sessions (organization_id, status, blocked_at, blocked_reason) /* jr:linkedin_session_bloquer */
      values ($1, 'bloquee', now(), $2)

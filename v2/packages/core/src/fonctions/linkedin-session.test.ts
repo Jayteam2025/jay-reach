@@ -46,12 +46,6 @@ describe('bloquerSessionLinkedIn', () => {
     await bloquerSessionLinkedIn(ctx, 'defi');
     expect(appels.some((a) => /into notifications/i.test(a.sql))).toBe(false);
   });
-
-  it('ne met jamais le détail dans la notification', async () => {
-    const { ctx, appels } = faux();
-    await bloquerSessionLinkedIn(ctx, 'sortie_inattendue', 'http://user:secret@proxy:8080');
-    expect(JSON.stringify(appels)).not.toContain('secret');
-  });
 });
 
 describe('activerSessionLinkedIn', () => {

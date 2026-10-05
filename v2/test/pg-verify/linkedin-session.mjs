@@ -64,27 +64,26 @@ async function etat() {
   check('9. activée : état active, IP attendue posée, pas de motif',
     s.etat === 'active' && s.ipAttendue === '203.0.113.7' && s.motif === null && s.connecteeLe instanceof Date);
 
-  await bloquerSessionLinkedIn(ctxDe(org), 'defi', 'http://u:secret@proxy:1');
+  await bloquerSessionLinkedIn(ctxDe(org), 'defi');
   s = await lireSessionLinkedIn(ctxDe(org));
   check('10. bloquée : motif et date posés', s.etat === 'bloquee' && s.motif === 'defi' && s.bloqueeLe instanceof Date);
   const notifs = () => q(`select event, payload from notifications where organization_id = $1 and event = 'linkedin.session_blocked'`, [org]);
   const n1 = (await notifs()).rows;
   check('11. une notification par membre', n1.length === 1, `n=${n1.length}`);
-  check('12. aucun détail ni secret dans la notification', !JSON.stringify(n1).includes('secret'));
-
+  
   await bloquerSessionLinkedIn(ctxDe(org), 'disjoncteur');
   const n2 = (await notifs()).rows;
   s = await lireSessionLinkedIn(ctxDe(org));
-  check('13. second blocage : pas de renotification, motif d’origine conservé', n2.length === 1 && s.motif === 'defi', `n=${n2.length} motif=${s.motif}`);
+  check('12. second blocage : pas de renotification, motif d’origine conservé', n2.length === 1 && s.motif === 'defi', `n=${n2.length} motif=${s.motif}`);
 
   await activerSessionLinkedIn(ctxDe(org), '203.0.113.9');
   s = await lireSessionLinkedIn(ctxDe(org));
-  check('14. réactivée : motif et date effacés', s.etat === 'active' && s.motif === null && s.bloqueeLe === null && s.ipAttendue === '203.0.113.9');
+  check('13. réactivée : motif et date effacés', s.etat === 'active' && s.motif === null && s.bloqueeLe === null && s.ipAttendue === '203.0.113.9');
 
   const vierge = await orgNeuve();
   await bloquerSessionLinkedIn(ctxDe(vierge), 'cookie_refuse');
   s = await lireSessionLinkedIn(ctxDe(vierge));
-  check('15. blocage d’une organisation sans ligne : la ligne est créée', s.etat === 'bloquee' && s.motif === 'cookie_refuse');
+  check('14. blocage d’une organisation sans ligne : la ligne est créée', s.etat === 'bloquee' && s.motif === 'cookie_refuse');
 }
 
 try {
