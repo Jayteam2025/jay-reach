@@ -9,6 +9,8 @@
 //   4. post-engagement.ts : remplacer `normaliserUrlPost(urlPost)` par `urlPost` — 15b rougit.
 //   3. post-engagement.ts : ne plus lire `existant` — le contact connu est
 //      dupliqué (10, 13, 16).
+//   5. post-engagement.ts : retirer le coalesce de source_signal_id (rattachement), le ou-membre de deja_en_campagne,
+//      le parse du schéma, ou la clause « juge » — 15a2, 17c, 15g, 41b/39 rougissent.
 // NB : retirer `where linkedin_url is not null` de l'index des contacts ne fait
 // PAS rougir le test 4 : Postgres traite les NULL comme distincts dans un index
 // unique, la clause est donc de l'hygiène (index plus petit), pas une garantie.
@@ -70,7 +72,7 @@ async function monde({ avecPrompt = true, personaDansSource = true } = {}) {
   )).rows[0].id;
   await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [campagne, source]);
   const run = (await q(`insert into source_runs (source_id) values ($1) returning id`, [source])).rows[0].id;
-  return { org, admin, viewer, persona, source, campagne, run, ctx: { pool, organizationId: org, sourceId: source } };
+  return { org, admin, viewer, persona, source, campagne, run, ctx: { pool, organizationId: org, sourceId: source, sourceRunId: run } };
 }
 
 const POST = 'https://www.linkedin.com/posts/x_y-1';
@@ -130,7 +132,9 @@ async function rattachement() {
   )).rows[0].id;
 
   const r = await enregistrer(m, alice);
-  check('9. l’engageur connu est enregistré', r === 'nouveau', r);
+  check('9. l’engageur connu (signal d’origine existant) rend doublon, sans second signal', r === 'doublon', r);
+  const sa = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAAalice'`, [m.org])).rows[0].n;
+  check('9b. aucun signal créé pour lui (il serait scoré pour rien)', sa === 0, String(sa));
   const rows = (await q(`select id, email, source_signal_id, linkedin_url from contacts where organization_id = $1`, [m.org])).rows;
   check('10. aucun contact dupliqué', rows.length === 1, `n=${rows.length}`);
   check('11. le contact garde son email', rows[0]?.email === 'alice@acme.fr');
@@ -142,7 +146,21 @@ async function rattachement() {
   check('14. premier passage : nouveau', (await enregistrer(m, bob)) === 'nouveau');
   check('15. second passage, même post : doublon', (await enregistrer(m, bob)) === 'doublon');
   const nb = (await q(`select (select count(*)::int from signals where organization_id=$1 and kind='post_engagement') s, (select count(*)::int from contacts where organization_id=$1) c`, [m.org])).rows[0];
-  check('16. un signal par engageur, deux contacts au total', nb.s === 2 && nb.c === 2, JSON.stringify(nb));
+  check('16. un signal par engageur nouveau (Bob), deux contacts au total', nb.s === 1 && nb.c === 2, JSON.stringify(nb));
+
+  // Contact connu SANS signal d'origine (import manuel, signal effacé) : il reçoit le nouveau.
+  const orph = (await q(`insert into contacts (organization_id, first_name, email, linkedin_provider_id) values ($1,'Odile','odile@acme.fr','ACoAAodile') returning id`, [m.org])).rows[0].id;
+  check('15a. contact sans origine rattaché : nouveau', (await enregistrer(m, eng('odile', 'Odile Roche', 'Directrice commerciale'))) === 'nouveau');
+  const so0 = (await q(`select c.email, c.source_signal_id, s.external_id from contacts c left join signals s on s.id = c.source_signal_id where c.id=$1`, [orph])).rows[0];
+  check('15a2. son origine est comblée par le nouveau signal, son email est intact', so0.email === 'odile@acme.fr' && so0.external_id?.endsWith('ACoAAodile') === true, JSON.stringify(so0));
+  const nOdile = (await q(`select count(*)::int n from contacts where organization_id=$1 and (first_name='Odile' or linkedin_provider_id='ACoAAodile')`, [m.org])).rows[0].n;
+  check('15a3. aucun doublon de contact', nOdile === 1);
+
+  // Un urn vide est refusé avant toute écriture.
+  const avant = (await q(`select (select count(*) from contacts where organization_id=$1)::int c, (select count(*) from signals where organization_id=$1)::int s`, [m.org])).rows[0];
+  const vide = await erreur(enregistrerEngageur(m.ctx, { urn: '', nom: 'Sans Urn', intitule: 'x' }, { id: m.campagne, personaId: m.persona }, POST));
+  const apres = (await q(`select (select count(*) from contacts where organization_id=$1)::int c, (select count(*) from signals where organization_id=$1)::int s`, [m.org])).rows[0];
+  check('15g. un urn vide est refusé, rien n’est écrit', vide !== null && avant.c === apres.c && avant.s === apres.s, String(vide));
 
   // Le même post écrit autrement n'est pas un autre post.
   const variante = await enregistrerEngageur(m.ctx, bob, { id: m.campagne, personaId: m.persona }, `${POST}/?utm_source=share#c`);
@@ -158,6 +176,11 @@ async function rattachement() {
   check('15e. l’identifiant de membre reste celui de l’URN', uf?.linkedin_provider_id === 'ACoAAfred');
   const fred2 = await enregistrer(m, { ...fred, urlProfil: 'https://www.linkedin.com/in/fred-noir-42' });
   check('15f. même personne, même post : doublon', fred2 === 'doublon', fred2);
+
+  // Déjà en campagne, reconnue par son SEUL identifiant de membre.
+  const gus = (await q(`insert into contacts (organization_id, email, linkedin_provider_id) values ($1,'gus@acme.fr','ACoAAgus') returning id`, [m.org])).rows[0].id;
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active')`, [m.org, m.campagne, gus]);
+  check('17c. inscrit, connu par son seul identifiant de membre : deja_en_campagne', (await enregistrer(m, eng('gus', 'Gus Fort', 'Directeur'))) === 'deja_en_campagne');
 
   // Déjà en campagne : une inscription vivante sur son adresse.
   const eve = eng('eve', 'Eve Roux', 'Directrice commerciale');
@@ -190,6 +213,14 @@ async function chaine() {
   check('22. son external_id reste dans linkedin_engageurs_ecartes', ec.length === 1 && ec[0].external_id.endsWith('mauvaise'), JSON.stringify(ec));
   const run = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0];
   check('23. source_runs.ecartes est incrémenté', run.ecartes === 1, JSON.stringify(run));
+  const run2 = (await q(`insert into source_runs (source_id) values ($1) returning id`, [m.source])).rows[0].id;
+  const autreProfil = eng('tard', 'Tardif Retard', 'Stagiaire');
+  await enregistrerEngageur({ ...m.ctx, sourceRunId: m.run }, autreProfil, { id: m.campagne, personaId: m.persona }, POST);
+  // Un passage plus récent existe quand le scoring juge : l'écart va à celui qui a COLLECTÉ.
+  await runScore({ pool, organizationId: m.org, scorer });
+  const rc1 = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0].ecartes;
+  const rc2 = (await q(`select ecartes from source_runs where id=$1`, [run2])).rows[0].ecartes;
+  check('23b. l’écart est compté sur le passage collecteur (2), pas sur le plus récent (0)', rc1 === 2 && rc2 === 0, `collecteur=${rc1} recent=${rc2}`);
 
   check('24. l’écarté n’est pas recréé ni rescoré au passage suivant', (await enregistrer(m, mauvaise)) === 'ecarte');
   const encore = (await q(`select count(*)::int n from signals where organization_id=$1`, [m.org])).rows[0].n;
@@ -229,7 +260,7 @@ async function purgeEtRegression() {
   const cv = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Victor'`, [m.org])).rows[0].n;
   const ev = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
   check('38. l’engageur ancien resté `new` est effacé avec son contact', sv === 0 && cv === 0, `signal=${sv} contact=${cv}`);
-  check('39. sa mémoire d’écart est posée', ev === 1);
+  check('39. périmé AVANT jugement : aucune mémoire d’écart (il pourra être recollecté)', ev === 0, String(ev));
   const sr = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAArecent'`, [m.org])).rows[0].n;
   check('40. l’engageur récent est intact', sr === 1);
   const sq = (await q(`select status from signals where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0];
@@ -237,6 +268,14 @@ async function purgeEtRegression() {
   check('41. l’engageur qualifié ancien n’est pas passé en `stale_unenriched`', sq?.status === 'qualified' && cq === 1, JSON.stringify(sq));
   const so = (await q(`select status, discard_reason from signals where organization_id=$1 and external_id='adz:old'`, [m.org])).rows[0];
   check('42. l’offre d’emploi ancienne suit toujours la règle d’avant (discarded / stale)', so?.status === 'discarded' && so?.discard_reason === 'stale', JSON.stringify(so));
+
+  // Périmé au pré-filtre du scoring : jamais jugé, donc jamais mémorisé non plus.
+  const p = await monde();
+  await enregistrer(p, eng('perime', 'Paul Perime', 'Directeur commercial'));
+  await q(`update signals set occurred_at = now() - interval '90 days' where organization_id=$1`, [p.org]);
+  const rp = await runScore({ pool, organizationId: p.org, scorer });
+  const sp = (await q(`select (select count(*)::int from signals where organization_id=$1) s, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1) e, (select ecartes from source_runs where id=$2) r`, [p.org, p.run])).rows[0];
+  check('41b. périmé au pré-filtre : effacé, sans mémoire d’écart ni compteur d’écart', rp.scored === 0 && sp.s === 0 && sp.e === 0 && sp.r === 0, JSON.stringify(sp));
 
   // Chemin entreprise : le contact porte L et un email A ; FullEnrich rend L avec un email B.
   const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
@@ -297,7 +336,8 @@ async function enrichissement() {
   });
   const rows = (await q(`select id, email, source_signal_id from contacts where organization_id=$1`, [m.org])).rows;
   check('32. un seul contact, il porte l’email', rows.length === 1 && rows[0].email === 'zoe@acme.fr' && rows[0].id === id, JSON.stringify(rows));
-  check('33. son signal d’origine est intact', rows[0]?.source_signal_id !== null);
+  const sigZoe = (await q(`select id from signals where organization_id=$1 and external_id like '%ACoAAzoe'`, [m.org])).rows[0]?.id;
+  check('33. son signal d’origine est exactement celui de départ', sigZoe !== undefined && rows[0]?.source_signal_id === sigZoe, `${rows[0]?.source_signal_id} / ${sigZoe}`);
 }
 
 async function commeUtilisateur(userId, fn) {

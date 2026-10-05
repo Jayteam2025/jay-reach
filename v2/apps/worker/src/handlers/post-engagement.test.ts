@@ -38,18 +38,21 @@ interface Contact {
  * ne prouve que l'enchaînement des décisions : le SQL lui-même est exécuté sur
  * Postgres par test/pg-verify/linkedin-chemin-personne.sh.
  */
-function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: string[] } = {}) {
+function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: string[]; enrolledMembres?: string[] } = {}) {
   const etat = {
     contacts: [...(init.contacts ?? [])],
     signals: new Map<string, string>(), // external_id -> id
     ecartes: new Set(init.ecartes ?? []),
     enrolled: new Set(init.enrolled ?? []), // linkedin_url déjà en campagne
-    suppressions: [] as string[],
+    enrolledMembres: new Set(init.enrolledMembres ?? []),
+    runsIncrementes: [] as string[],
+    sql: [] as string[],
     insertsContact: 0,
     insertsSignal: 0,
   };
   let n = 0;
   const query = vi.fn(async (sql: string, p: unknown[] = []) => {
+    etat.sql.push(sql);
     if (/from linkedin_engageurs_ecartes/i.test(sql)) {
       return { rows: etat.ecartes.has(String(p[1])) ? [{ one: 1 }] : [], rowCount: 0 };
     }
@@ -58,7 +61,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       return { rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 };
     }
     if (/from enrollments/i.test(sql)) {
-      return { rows: etat.enrolled.has(String(p[1])) ? [{ one: 1 }] : [], rowCount: 0 };
+      return { rows: etat.enrolled.has(String(p[1])) || etat.enrolledMembres.has(String(p[3])) ? [{ one: 1 }] : [], rowCount: 0 };
     }
     if (/insert into signals/i.test(sql)) {
       etat.insertsSignal++;
@@ -68,13 +71,14 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
     }
     if (/^\s*select[\s\S]*from contacts/i.test(sql)) {
       const c = etat.contacts.find((x) => x.linkedin_url === p[1] || (p[2] && x.linkedin_provider_id === p[2]));
-      return { rows: c ? [{ id: c.id }] : [], rowCount: c ? 1 : 0 };
+      return { rows: c ? [{ id: c.id, source_signal_id: c.source_signal_id }] : [], rowCount: c ? 1 : 0 };
     }
     if (/update contacts/i.test(sql)) {
       const c = etat.contacts.find((x) => x.id === p[1]);
       if (c) {
         c.linkedin_url = c.linkedin_url ?? String(p[2]);
         c.linkedin_provider_id = c.linkedin_provider_id ?? String(p[3]);
+        c.source_signal_id = c.source_signal_id ?? (p[8] ? String(p[8]) : null);
       }
       return { rows: [], rowCount: 1 };
     }
@@ -97,14 +101,17 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
     }
     if (/delete from signals/i.test(sql)) {
       for (const [ext, id] of etat.signals) if (id === p[1]) etat.signals.delete(ext);
-      return { rows: [{ source_id: SOURCE }], rowCount: 1 };
+      return { rows: [{ source_run_id: 'run-1' }], rowCount: 1 };
     }
     if (/insert into linkedin_engageurs_ecartes/i.test(sql)) {
       // Forme insert ... select : l'external_id est lu sur le signal, par son id.
       for (const [ext, id] of etat.signals) if (id === p[1]) etat.ecartes.add(ext);
       return { rows: [], rowCount: 1 };
     }
-    if (/update source_runs/i.test(sql)) return { rows: [], rowCount: 1 };
+    if (/update source_runs/i.test(sql)) {
+      etat.runsIncrementes.push(String(p[0]));
+      return { rows: [], rowCount: 1 };
+    }
     throw new Error(`requête non prévue par le test :\n${sql}`);
   });
   return { etat, query, pool: { query } as unknown as Pool };
@@ -140,7 +147,10 @@ describe('enregistrerEngageur', () => {
     };
     const m = modele({ contacts: [connu] });
     const r = await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
-    expect(r).toBe('nouveau');
+    // Son signal d'origine porte déjà l'inscription : un second signal ne
+    // porterait rien et serait scoré (donc payé) pour rien. Aucun signal créé.
+    expect(r).toBe('doublon');
+    expect(m.etat.insertsSignal).toBe(0);
     expect(m.etat.insertsContact).toBe(0);
     expect(m.etat.contacts).toHaveLength(1);
     expect(m.etat.contacts[0]).toMatchObject({
@@ -148,6 +158,42 @@ describe('enregistrerEngageur', () => {
       source_signal_id: 'signal-entreprise',
     });
     expect(m.etat.contacts[0]?.linkedin_url).toContain('ACoAAalice');
+  });
+
+  it('un contact connu SANS signal d origine recoit le nouveau signal pour origine, sinon il serait inscriptible jamais', async () => {
+    const orphelin: Contact = {
+      id: 'contact-0', email: 'alice@acme.fr', linkedin_url: null, linkedin_provider_id: 'ACoAAalice',
+      source_signal_id: null, persona_id: 'persona-1', first_name: 'Alice',
+    };
+    const m = modele({ contacts: [orphelin] });
+    const r = await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
+    expect(r).toBe('nouveau');
+    expect(m.etat.insertsSignal).toBe(1);
+    expect(m.etat.contacts).toHaveLength(1);
+    expect(m.etat.contacts[0]?.source_signal_id).toBe('signal-1');
+    expect(m.etat.contacts[0]?.email).toBe('alice@acme.fr');
+  });
+
+  it('une personne connue par son seul identifiant de membre et deja inscrite n est pas recreee', async () => {
+    const m = modele({ enrolledMembres: ['ACoAAalice'] });
+    expect(await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST)).toBe('deja_en_campagne');
+    expect(m.etat.insertsSignal).toBe(0);
+  });
+
+  it('un urn vide ou un nom vide est refuse avant toute ecriture', async () => {
+    const m = modele();
+    await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, urn: '' }, CAMPAGNE, URL_POST)).rejects.toThrow();
+    await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, urn: 'urn:li:fsd_profile:' }, CAMPAGNE, URL_POST)).rejects.toThrow();
+    await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, urn: 'ACoAAalice' }, CAMPAGNE, URL_POST)).rejects.toThrow();
+    await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, nom: '   ' }, CAMPAGNE, URL_POST)).rejects.toThrow();
+    expect(m.query).not.toHaveBeenCalled();
+  });
+
+  it('le signal porte le passage qui l a collecte', async () => {
+    const m = modele();
+    await enregistrerEngageur({ ...ctxDe(m.pool), sourceRunId: 'run-42' }, ALICE, CAMPAGNE, URL_POST);
+    const insertion = m.query.mock.calls.find((c) => /insert into signals/i.test(String(c[0])));
+    expect(insertion?.[1]).toContain('run-42');
   });
 
   it('le meme engageur sur le meme post rend doublon au second passage', async () => {
@@ -222,6 +268,38 @@ describe('ecarterEngageur', () => {
       ordre.findIndex((o) => /^delete from signals/.test(o)),
     );
     expect([...m.etat.ecartes]).toEqual([`${normaliserUrlPost(URL_POST)}:${ALICE.urn}`]);
+  });
+});
+
+describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
+  it('un ecart par le scoring incremente le passage qui a collecte la personne', async () => {
+    const m = modele();
+    await enregistrerEngageur({ ...ctxDe(m.pool), sourceRunId: 'run-1' }, ALICE, CAMPAGNE, URL_POST);
+    await ecarterEngageur(m.pool, ORG, 'signal-1');
+    expect(m.etat.runsIncrementes).toEqual(['run-1']);
+  });
+
+  it('un ecart pour peremption n est ni memorise ni compte comme ecart du scoring', async () => {
+    const m = modele();
+    await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
+    await ecarterEngageur(m.pool, ORG, 'signal-1', { juge: false });
+    expect(m.etat.contacts).toHaveLength(0);
+    expect(m.etat.signals.size).toBe(0);
+    expect(m.etat.ecartes.size).toBe(0);
+    expect(m.etat.runsIncrementes).toEqual([]);
+  });
+
+  it('les quatre ecritures se font dans une seule transaction', async () => {
+    const appels: string[] = [];
+    const client = {
+      query: vi.fn(async (sql: string) => { appels.push(sql.trim().split(/\s+/)[0]!.toLowerCase()); return { rows: [{ source_run_id: 'r' }], rowCount: 1 }; }),
+      release: vi.fn(),
+    };
+    const pool = { connect: vi.fn(async () => client), query: vi.fn() } as unknown as Pool;
+    await ecarterEngageur(pool, ORG, 'signal-1');
+    expect(appels[0]).toBe('begin');
+    expect(appels[appels.length - 1]).toBe('commit');
+    expect((pool as unknown as { query: ReturnType<typeof vi.fn> }).query).not.toHaveBeenCalled();
   });
 });
 
@@ -322,5 +400,33 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
     expect(maj).toHaveLength(2);
     for (const r of maj) expect(r).toMatch(/kind <> 'post_engagement'|kind != 'post_engagement'/);
     expect(requetes.some((r) => /delete from contacts/i.test(r))).toBe(true);
+  });
+});
+
+describe('score : peremption avant jugement', () => {
+  it('un engageur perime avant d etre juge est efface sans entrer dans la memoire des ecartes', async () => {
+    const requetes: string[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        requetes.push(sql);
+        if (/limit \$2/i.test(sql)) {
+          return {
+            rows: [{
+              id: 'signal-1', company: null, title: 'Directeur', location: null, description: null,
+              occurred_at: new Date(Date.now() - 200 * 86_400_000).toISOString(), naf_code: null, opposition: null,
+              source_id: SOURCE, kind: 'post_engagement', scoring_prompt: 'x'.repeat(300), match_threshold: null,
+            }],
+            rowCount: 1,
+          };
+        }
+        return { rows: [{ source_run_id: 'r' }], rowCount: 1 };
+      }),
+    } as unknown as Pool;
+    const scorer = vi.fn(async () => []);
+    await runScore({ pool, organizationId: ORG, scorer });
+    expect(scorer).not.toHaveBeenCalled();
+    expect(requetes.some((r) => /delete from signals/i.test(r))).toBe(true);
+    expect(requetes.some((r) => /insert into linkedin_engageurs_ecartes/i.test(r))).toBe(false);
+    expect(requetes.some((r) => /update source_runs/i.test(r))).toBe(false);
   });
 });

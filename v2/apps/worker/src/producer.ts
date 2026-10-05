@@ -79,7 +79,7 @@ export async function ecarterSignauxTropAnciens(
         and occurred_at < now() - make_interval(days => $1)`,
     [maxJours],
   );
-  for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id);
+  for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: false });
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())

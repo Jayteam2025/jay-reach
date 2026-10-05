@@ -13,7 +13,8 @@
  * organisation.
  */
 import type { Pool } from 'pg';
-import { normaliserUrlPost } from '@jay-reach/core';
+import { z } from 'zod';
+import { dansUneTransaction, normaliserUrlPost, type Executeur } from '@jay-reach/core';
 
 export type Engageur = {
   urn: string;
@@ -29,12 +30,31 @@ export type Engageur = {
 
 export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte';
 
+/**
+ * Validation à l'entrée : un `urn` vide donnerait la même adresse de profil à
+ * tout le monde (collisions de contacts, signaux sans contact), un nom vide un
+ * contact anonyme. Le collecteur doit écarter ce qui ne passe pas ce schéma.
+ */
+export const engageurSchema = z.object({
+  urn: z
+    .string()
+    .refine((v) => v.startsWith('urn:li:') && (v.split(':').pop() ?? '').trim().length > 0, {
+      message: 'urn LinkedIn attendu (urn:li:<type>:<identifiant>)',
+    }),
+  nom: z.string().trim().min(1),
+  intitule: z.string(),
+  entreprise: z.string().optional(),
+  urlProfil: z.string().optional(),
+}) satisfies z.ZodType<Engageur>;
+
 /** Ce que l'enregistrement a besoin de connaître du passage en cours. */
 export interface ContexteEngageur {
   readonly pool: Pool;
   readonly organizationId: string;
   /** Source d'engageurs qui porte le signal (sources.id). */
   readonly sourceId: string;
+  /** Passage de collecte en cours : c'est lui que l'écart par le scoring incrémentera. */
+  readonly sourceRunId?: string;
 }
 
 /** La partie stable d'un URN (`urn:li:fsd_profile:ACoAA…` -> `ACoAA…`). */
@@ -88,10 +108,11 @@ const STATUTS_VIVANTS = ['active', 'paused', 'paused_absence'];
 
 export async function enregistrerEngageur(
   ctx: ContexteEngageur,
-  engageur: Engageur,
+  entree: Engageur,
   campagne: { id: string; personaId: string },
   urlPost: string,
 ): Promise<IssueEngageur> {
+  const engageur = engageurSchema.parse(entree);
   const { pool, organizationId: org } = ctx;
   // Normalisée ICI : l'unicité d'un engageur ne doit pas dépendre de la forme
   // sous laquelle l'appelant écrit l'adresse du post.
@@ -113,43 +134,35 @@ export async function enregistrerEngageur(
   );
   if (connu.rows.length > 0) return 'doublon';
 
-  // 3) Déjà dans une séquence vivante (par un autre post, ou un signal d'entreprise).
+  // 3) Déjà dans une séquence vivante (par un autre post, ou un signal d'entreprise),
+  //    reconnue par son adresse OU par son identifiant de membre.
   const inscrit = await pool.query(
     `select 1 as one
        from enrollments e
        join contacts c on c.id = e.contact_id
-      where c.organization_id = $1 and c.linkedin_url = $2 and e.status = any($3::enrollment_status[])
+      where c.organization_id = $1 and (c.linkedin_url = $2 or c.linkedin_provider_id = $4)
+        and e.status = any($3::enrollment_status[])
       limit 1`,
-    [org, url, STATUTS_VIVANTS],
+    [org, url, STATUTS_VIVANTS, membre],
   );
   if (inscrit.rows.length > 0) return 'deja_en_campagne';
-
-  // 4) Nouveau : le signal est créé SANS raw (rien de plus que ce qui sert).
-  const signal = await pool.query<{ id: string }>(
-    `insert into signals
-       (organization_id, source_id, provider_id, external_id, kind, occurred_at, title, url, status)
-     values ($1, $2, 'linkedin', $3, 'post_engagement', now(), $4, $5, 'new')
-     on conflict (organization_id, external_id) where kind = 'post_engagement' do nothing
-     returning id`,
-    [org, ctx.sourceId, externalId, engageur.intitule, urlPost],
-  );
-  const signalId = signal.rows[0]?.id;
-  if (!signalId) return 'doublon'; // course : un autre passage vient de l'insérer
 
   const { prenom, nomFamille } = separerNom(engageur.nom);
 
   // Un contact peut déjà exister, né d'un signal d'entreprise, avec son email :
   // on le RATTACHE. Il garde son email et son signal d'origine (l'historique de
   // ses messages en dépend) ; il ne reçoit que ce qui lui manque.
-  const existant = await pool.query<{ id: string }>(
-    `select id from contacts
+  const existant = await pool.query<{ id: string; source_signal_id: string | null }>(
+    `select id, source_signal_id from contacts
       where organization_id = $1 and (linkedin_url = $2 or linkedin_provider_id = $3)
       order by (linkedin_url = $2) desc nulls last
       limit 1`,
     [org, url, membre],
   );
-  const contactId = existant.rows[0]?.id;
-  if (contactId) {
+  const contact = existant.rows[0];
+
+  const rattacher = async (signalId: string | null): Promise<void> => {
+    if (!contact) return;
     try {
       await pool.query(
         `update contacts set
@@ -158,15 +171,43 @@ export async function enregistrerEngageur(
             persona_id = coalesce(persona_id, $5),
             first_name = coalesce(first_name, $6),
             last_name = coalesce(last_name, $7),
-            job_title = coalesce(job_title, $8)
+            job_title = coalesce(job_title, $8),
+            -- L'origine existante est préservée ; un VIDE (import manuel, signal
+            -- d'origine effacé) est comblé, sinon le contact ne serait jamais
+            -- inscriptible (enqueueEnrollments joint sur source_signal_id).
+            source_signal_id = coalesce(source_signal_id, $9)
           where id = $2 and organization_id = $1`,
-        [org, contactId, url, membre, campagne.personaId, prenom, nomFamille, engageur.intitule],
+        [org, contact.id, url, membre, campagne.personaId, prenom, nomFamille, engageur.intitule, signalId],
       );
     } catch (err) {
       // 23505 : l'adresse est déjà portée par un autre contact. On ne fusionne pas
       // deux fiches ici ; le contact rattaché garde ce qu'il a.
       if ((err as { code?: string }).code !== '23505') throw err;
     }
+  };
+
+  // Son signal d'origine existe : c'est lui qui porte l'inscription. Un second
+  // signal ne porterait rien et serait scoré, donc payé, pour rien. On complète
+  // la fiche et on rend `doublon` : la personne est déjà connue.
+  if (contact && contact.source_signal_id !== null) {
+    await rattacher(null);
+    return 'doublon';
+  }
+
+  // 4) Nouveau : le signal est créé SANS raw (rien de plus que ce qui sert).
+  const signal = await pool.query<{ id: string }>(
+    `insert into signals
+       (organization_id, source_id, source_run_id, provider_id, external_id, kind, occurred_at, title, url, status)
+     values ($1, $2, $6, 'linkedin', $3, 'post_engagement', now(), $4, $5, 'new')
+     on conflict (organization_id, external_id) where kind = 'post_engagement' do nothing
+     returning id`,
+    [org, ctx.sourceId, externalId, engageur.intitule, urlPost, ctx.sourceRunId ?? null],
+  );
+  const signalId = signal.rows[0]?.id;
+  if (!signalId) return 'doublon'; // course : un autre passage vient de l'insérer
+
+  if (contact) {
+    await rattacher(signalId);
     return 'nouveau';
   }
 
@@ -193,41 +234,55 @@ export async function enregistrerEngageur(
 }
 
 /**
- * Efface un engageur que le scoring a écarté : son signal et le contact né de
- * ce signal. On ne garde pas de données personnelles sur ce qui ne sert pas ;
- * seul l'external_id survit dans `linkedin_engageurs_ecartes`, pour que le
- * collecteur ne le recrée pas au passage suivant.
+ * Efface un engageur : son signal et le contact né de ce signal. On ne garde pas
+ * de données personnelles sur ce qui ne sert pas.
  *
- * La mémoire d'écart est posée AVANT l'effacement : une interruption entre les
- * deux laisse un signal à rescorer, jamais une personne recréée et repayée.
- * Un contact rattaché (né d'un autre signal, avec son email) n'est pas touché.
+ * `juge` distingue deux cas qu'il ne faut pas confondre :
+ *  - écarté PAR LE SCORING (`juge: true`, défaut) : l'external_id est mémorisé
+ *    dans `linkedin_engageurs_ecartes` pour que le collecteur ne recrée pas, ne
+ *    rescore pas, donc ne repaie pas ce qu'on a déjà jugé ; le passage qui a
+ *    collecté la personne compte un écart de plus ;
+ *  - effacé AVANT jugement (péremption, `juge: false`) : rien n'a été évalué, la
+ *    personne peut être recollectée plus tard, et aucun compteur n'est touché.
+ *
+ * Les écritures se font dans UNE transaction : une coupure ne laisse ni un
+ * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse. Un
+ * contact rattaché (né d'un autre signal, avec son email) n'est pas touché.
  */
-export async function ecarterEngageur(pool: Pool, organizationId: string, signalId: string): Promise<void> {
-  await pool.query(
-    `insert into linkedin_engageurs_ecartes (organization_id, external_id)
-     select organization_id, external_id from signals
-      where id = $2 and organization_id = $1 and kind = 'post_engagement'
-     on conflict do nothing`,
-    [organizationId, signalId],
-  );
-  await pool.query(`delete from contacts where organization_id = $1 and source_signal_id = $2`, [
-    organizationId,
-    signalId,
-  ]);
-  const supprime = await pool.query<{ source_id: string | null }>(
-    `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement' returning source_id`,
-    [organizationId, signalId],
-  );
-  const sourceId = supprime.rows[0]?.source_id;
-  if (sourceId) {
-    // Le passage qui a collecté cette personne est le dernier de sa source : le
-    // scoring tourne après la collecte, pas pendant.
-    await pool.query(
-      `update source_runs set ecartes = ecartes + 1
-        where id = (select r.id from source_runs r
-                      join sources so on so.id = r.source_id and so.organization_id = $2
-                     where r.source_id = $1 order by r.started_at desc limit 1)`,
-      [sourceId, organizationId],
+export async function ecarterEngageur(
+  pool: Pool,
+  organizationId: string,
+  signalId: string,
+  opts: { juge?: boolean } = {},
+): Promise<void> {
+  const juge = opts.juge ?? true;
+  await dansUneTransaction(pool as unknown as Executeur, async (tx) => {
+    if (juge) {
+      await tx.query(
+        `insert into linkedin_engageurs_ecartes (organization_id, external_id)
+         select organization_id, external_id from signals
+          where id = $2 and organization_id = $1 and kind = 'post_engagement'
+         on conflict do nothing`,
+        [organizationId, signalId],
+      );
+    }
+    await tx.query(`delete from contacts where organization_id = $1 and source_signal_id = $2`, [
+      organizationId,
+      signalId,
+    ]);
+    const supprime = await tx.query<{ source_run_id: string | null }>(
+      `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement' returning source_run_id`,
+      [organizationId, signalId],
     );
-  }
+    const runId = supprime.rows[0]?.source_run_id;
+    if (juge && runId) {
+      // Le passage qui a COLLECTÉ la personne, pas le dernier de la source : avec
+      // un scoring plafonné, le jugement arrive souvent des passages plus tard.
+      await tx.query(
+        `update source_runs set ecartes = ecartes + 1
+          where id = $1 and source_id in (select id from sources where organization_id = $2)`,
+        [runId, organizationId],
+      );
+    }
+  });
 }
