@@ -22,7 +22,11 @@ test('Aujourd\'hui affiche le bloc Moteur, les plafonds et la campagne de la fix
 
   await expect(page.getByText('Plafonds du jour')).toBeVisible();
   await expect(page.getByText('Scoring (Anthropic)')).toBeVisible();
-  await expect(page.getByText('Enrichissement (FullEnrich)')).toBeVisible();
+  // Expression plutôt que libellé figé : ce plafond compte les enrichissements
+  // DEMANDÉS, et le libellé l'a précisé au passage au vocabulaire remis/parti
+  // (a658a23). Ce que le test doit prouver est que la ligne du plafond
+  // d'enrichissement est rendue, pas la formulation exacte retenue ce jour-là.
+  await expect(page.getByText(/Enrichissement.*\(FullEnrich\)/)).toBeVisible();
   await expect(page.getByText('Envois (SalesBlink)')).toBeVisible();
 
   const ligneCampagne = page.getByRole('row', { name: /Campagne e2e/ });
