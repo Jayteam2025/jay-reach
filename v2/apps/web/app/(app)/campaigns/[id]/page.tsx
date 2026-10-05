@@ -7,7 +7,7 @@ import { contexteCourant } from '../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { marqueSource } from '../../../../lib/marque-source';
 import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
-import { formatNombre, formatPourcentage, localeCourante } from '../../../../lib/nombres';
+import { formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { compterEnFile, compterPartis, segmentsNonNuls } from '../../../../lib/file-du-jour';
 import { tauxLivresAffiche } from '../../../../lib/entonnoir';
 import { parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
@@ -168,11 +168,11 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
         <Carte titre={t('overview.caps.title')}>
           <CleValeur
             libelle={t('overview.caps.scoring')}
-            valeur={`${formatNombre(vue.plafonds.scoring.utilise, locale)} / ${formatNombre(vue.plafonds.scoring.plafond, locale)}`}
+            valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.scoring.utilise, vue.plafonds.scoring.plafond))}
           />
           <CleValeur
             libelle={t('overview.caps.enrichment')}
-            valeur={`${formatNombre(vue.plafonds.enrichissement.utilise, locale)} / ${formatNombre(vue.plafonds.enrichissement.plafond, locale)}`}
+            valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.enrichissement.utilise, vue.plafonds.enrichissement.plafond))}
           />
           <CleValeur
             libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}

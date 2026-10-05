@@ -991,7 +991,8 @@
         "inactive": "Inactief",
         "disconnected": "Losgekoppeld van SalesBlink",
         "healthUnavailable": "SalesBlink-status niet beschikbaar",
-        "notLinked": "Niet gekoppeld aan SalesBlink"
+        "notLinked": "Niet gekoppeld aan SalesBlink",
+        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}"
       },
       "drawer": {
         "title": "{identite} bewerken",

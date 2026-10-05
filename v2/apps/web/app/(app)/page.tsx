@@ -201,15 +201,17 @@ export default async function AujourdhuiPage() {
               </Link>
             }
           >
-            <CleValeur libelle={t('caps.scoring')} valeur={`${formatNombre(a.plafonds.scoring.utilise, locale)} / ${formatNombre(a.plafonds.scoring.plafond, locale)}`} />
+            <CleValeur libelle={t('caps.scoring')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond))} />
             <BarreProgression valeur={pourcentageJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} ton={tonJauge(a.plafonds.scoring.utilise, a.plafonds.scoring.plafond)} />
-            <CleValeur libelle={t('caps.enrichment')} valeur={`${formatNombre(a.plafonds.enrichissement.utilise, locale)} / ${formatNombre(a.plafonds.enrichissement.plafond, locale)}`} />
+            <CleValeur libelle={t('caps.enrichment')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond))} />
             <BarreProgression
               valeur={pourcentageJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
               ton={tonJauge(a.plafonds.enrichissement.utilise, a.plafonds.enrichissement.plafond)}
             />
-            {/* Le gabarit partagé, jamais le brut : ce plafond peut être nul (pause) ou absent
-                (aucune limite réglée), et « 128 / 0 » ne dit ni l'un ni l'autre. */}
+            {/* Le gabarit partagé, jamais le brut : un plafond peut être nul (pause) ou, pour
+                les envois, absent (aucune limite réglée). « 128 / 0 » ne dit ni l'un ni l'autre,
+                et c'est ce que cet écran affichait encore le 05/10 quand Réglages › Plafonds
+                disait déjà « en pause » pour les mêmes nombres. */}
             <CleValeur libelle={t('caps.sending')} valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(a.plafonds.envois.utilise, a.plafonds.envois.plafond))} />
             <BarreProgression valeur={pourcentageJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} ton={tonJauge(a.plafonds.envois.utilise, a.plafonds.envois.plafond)} />
           </Carte>

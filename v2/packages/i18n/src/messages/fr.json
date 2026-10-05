@@ -991,7 +991,8 @@
         "inactive": "Inactive",
         "disconnected": "Déconnectée de SalesBlink",
         "healthUnavailable": "État SalesBlink indisponible",
-        "notLinked": "Non reliée à SalesBlink"
+        "notLinked": "Non reliée à SalesBlink",
+        "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}"
       },
       "drawer": {
         "title": "Modifier {identite}",

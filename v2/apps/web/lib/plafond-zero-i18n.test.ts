@@ -69,3 +69,36 @@ describe('plafond à 0 (Réglages › Plafonds)', () => {
     });
   }
 });
+
+/**
+ * Les deux autres gabarits qui portent un plafond : le coin droit de la carte du menu et le
+ * compteur du jour d'une boîte d'envoi. Même `select` à trois états, mêmes pièges — un gabarit
+ * qui oublierait une branche afficherait le mot clé brut (« sansLimite ») à l'écran.
+ */
+describe('les trois états d’un plafond, dans les gabarits de la carte du menu et des boîtes', () => {
+  const CAS = [
+    { gabarit: 'coquille.sent.cap', valeurs: { plafond: 135, utilise: 12 } },
+    { gabarit: 'reglages.expediteurs.box.todayValue', valeurs: { plafond: 135, utilise: 12 } },
+  ];
+
+  for (const langue of LANGUES) {
+    for (const { gabarit, valeurs } of CAS) {
+      it(`${langue} · ${gabarit} · rend les trois états sans laisser fuir un mot clé`, () => {
+        const modele = chemin(messages(langue), gabarit);
+        const rendus = (['pause', 'sansLimite', 'regle'] as const).map(
+          (etat) => new IntlMessageFormat(modele, langue).format({ ...valeurs, etat }) as string,
+        );
+        for (const rendu of rendus) {
+          expect(rendu).not.toMatch(/sansLimite|regle|\{/);
+          expect(rendu.trim()).not.toBe('');
+        }
+        // Les trois états disent trois choses différentes : sans quoi l'un d'eux serait muet.
+        expect(new Set(rendus).size).toBe(3);
+        // Et aucun des deux états sans ratio ne montre le plafond, qui ne veut alors rien dire.
+        expect(rendus[0]).not.toContain('135');
+        expect(rendus[1]).not.toContain('135');
+        expect(rendus[2]).toContain('135');
+      });
+    }
+  }
+});

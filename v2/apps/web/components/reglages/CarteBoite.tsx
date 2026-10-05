@@ -6,6 +6,7 @@ import type { Boite } from '@jay-reach/core';
 import { BarreProgression, Bouton, Carte, Interrupteur, Puce, TuileLogo } from '../ui';
 import type { TuileLogoMarque } from '../ui';
 import { actionModifierBoite } from '../../app/actions/senders';
+import { parametresValeurConsommation } from '../../lib/plafonds-affichage';
 import { libelleJoursEnvoi } from '../../lib/jours-envoi';
 import { puceEtatBoite } from './boite-affichage';
 import { TiroirBoite } from './TiroirBoite';
@@ -93,8 +94,12 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
       <div className="jr-boite-blocs">
         <div>
           <span className="jr-libelle">{t('box.today')}</span>
+          {/* Le gabarit partagé, jamais un ratio composé ici : `senders.daily_quota` est
+              nullable (aucune limite réglée, le moteur envoie sans plafond) et peut valoir zéro
+              (pause). Cette carte affichait « 0 / ∞ », un symbole en dur hors du catalogue de
+              libellés, là où les trois autres écrans disent « sans limite ». */}
           <b style={{ fontSize: 22 }}>
-            {boite.usageDuJour} / {boite.quotas.jour ?? '∞'}
+            {t('box.todayValue', parametresValeurConsommation(boite.usageDuJour, boite.quotas.jour))}
           </b>
           {boite.quotas.jour !== null && boite.quotas.jour > 0 && (
             <BarreProgression valeur={(boite.usageDuJour / boite.quotas.jour) * 100} />
