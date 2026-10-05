@@ -34,13 +34,20 @@ async function main() {
   }
   check('source ET liste → rejeté (campaigns_one_source)', bothRejected);
 
-  let noneRejected = false;
+  // « Ni source ni liste » est ACCEPTÉ en base depuis `20260831230000_campagne_plusieurs_themes`
+  // (05/10 : ce test attendait encore un rejet, et ne l'avait jamais su parce que la base de
+  // développement n'avait jamais rejoué cette migration). Les thèmes d'une campagne vivent
+  // maintenant dans `campaign_sources`, et une contrainte CHECK ne peut pas regarder une autre
+  // table : la règle « au moins une entrée » est vérifiée côté applicatif, où le message est
+  // lisible. La contrainte ne dit donc plus que « au plus une entrée héritée ».
+  let noneAccepte = false;
   try {
     await q(`insert into campaigns (organization_id, name, status) values ($1,'CAMPVERIF none','draft')`, [ORG]);
-  } catch (e) {
-    noneRejected = e.code === '23514';
+    noneAccepte = true;
+  } catch {
+    noneAccepte = false;
   }
-  check('ni source ni liste → rejeté', noneRejected);
+  check('ni source ni liste → accepté en base, la règle vit côté applicatif', noneAccepte);
 
   console.log('\n[camp] 2. Création + entry_rules jsonb');
   const camp = (

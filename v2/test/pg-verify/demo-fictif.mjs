@@ -50,8 +50,12 @@ async function main() {
   log('[1/4] Détection  : 5 offres simulées (scraper mocké, pas de clé)');
   const runId = await startSourceRun(pool, SOURCE);
   const signals = fakeSignals();
-  const inserted = await insertSignals(pool, ORG, SOURCE, 'francetravail', signals);
-  log(`[2/4] Signaux    : ${inserted.length} nouveaux écrits en base (dédup incluse)`);
+  // `insertSignals` rend `{ inserted, ecartesAge }` depuis que les offres trop anciennes sont
+  // comptées à part — pas un tableau. Ce harnais le déstructurait encore comme un tableau et
+  // s'arrêtait sur « inserted is not iterable » ; il ne l'avait jamais su, faute d'être lancé
+  // par quoi que ce soit avant `tous.sh` (05/10).
+  const { inserted, ecartesAge } = await insertSignals(pool, ORG, SOURCE, 'francetravail', signals);
+  log(`[2/4] Signaux    : ${inserted.length} nouveaux écrits en base (dédup incluse), ${ecartesAge} écarté(s) sur l’âge`);
 
   // 2. Qualification (SIREN/NAF fictifs) → comptes résolus (vrai code + chaînage).
   let resolved = 0;
