@@ -312,6 +312,8 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
 
 export async function traiterQualify(ctx: Contexte, data: QualifyJob): Promise<void> {
   const { pool } = ctx;
+  // Un engageur est une personne : ni résolution, ni compte créé à son nom.
+  if (data.kind === 'post_engagement') return;
   const resolved = await runQualify(data);
   const accountId = await upsertResolvedAccount(pool, {
     organizationId: data.organizationId,

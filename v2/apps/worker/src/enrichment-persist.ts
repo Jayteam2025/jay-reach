@@ -131,6 +131,40 @@ export async function persistEnrichedContact(
   // FullEnrich : le premier a interrogé le serveur de messagerie, le second
   // rapporte ce qu'il croit savoir.
   const { status, confidence } = verified ?? mapEmailStatus(c.emailStatusRaw);
+
+  // Un engageur d'un post LinkedIn est déjà un contact, SANS email, identifié par
+  // son adresse (index unique partiel org + linkedin_url). Le retrouver ici lui
+  // donne son email ; l'insérer à côté se heurterait à cet index. Son signal
+  // d'origine, lui, ne bouge pas.
+  if (c.linkedinUrl) {
+    try {
+      const rattache = await pool.query<{ id: string }>(
+        `update contacts set
+            email = $3, email_status = $4::email_status, email_confidence = $5,
+            account_id = coalesce(account_id, $2),
+            persona_id = coalesce(persona_id, $6),
+            linkedin_provider_id = coalesce(linkedin_provider_id, $7),
+            enriched_at = now()
+          where organization_id = $1 and linkedin_url = $8 and email is null
+          returning id`,
+        [
+          organizationId,
+          accountId,
+          c.email,
+          status,
+          confidence,
+          c.personaId ?? null,
+          c.linkedinProviderId ?? null,
+          c.linkedinUrl,
+        ],
+      );
+      if (rattache.rows[0]) return rattache.rows[0].id;
+    } catch (err) {
+      // 23505 : l'adresse email appartient déjà à une autre fiche. On laisse
+      // l'insertion ci-dessous la retrouver par son email.
+      if ((err as { code?: string }).code !== '23505') throw err;
+    }
+  }
   const res = await pool.query<{ id: string }>(
     `insert into contacts
        (organization_id, account_id, persona_id, first_name, last_name, job_title,

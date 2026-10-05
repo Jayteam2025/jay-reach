@@ -13,8 +13,14 @@ export interface QualifyJob {
    * d'opposition au démarchage lisent tous deux le compte À TRAVERS le signal.
    */
   readonly signalId: string;
+  /**
+   * Nature du signal. `post_engagement` décrit une PERSONNE, pas une
+   * entreprise : il n'y a rien à résoudre auprès de l'annuaire légal.
+   */
+  readonly kind?: string;
 }
 
 export async function runQualify(job: QualifyJob): Promise<CompanyNafResolution | null> {
+  if (job.kind === 'post_engagement') return null;
   return resolveCompanyNaf(job.companyName);
 }

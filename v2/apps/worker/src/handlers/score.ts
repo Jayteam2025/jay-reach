@@ -21,6 +21,7 @@ import {
   type ScoringProspect,
 } from '@jay-reach/core';
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
+import { ecarterEngageur } from './post-engagement.js';
 
 /**
  * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
@@ -70,13 +71,18 @@ interface CandidateRow {
   occurred_at: string;
   naf_code: string | null;
   opposition: boolean | null;
-  // Config de scoring portée par la source du signal (sources.config).
+  kind: string;
+  // Config de scoring portée par la source du signal (sources.config) ; pour un
+  // `post_engagement`, la consigne du PERSONA (voir `consigneDeScoring`).
   source_id: string | null;
   scoring_prompt: string | null;
   match_threshold: number | null;
 }
 
-async function markDiscarded(pool: Pool, id: string, reason: string): Promise<void> {
+async function markDiscarded(pool: Pool, org: string, c: CandidateRow, reason: string): Promise<void> {
+  const id = c.id;
+  // Une personne écartée s'efface avec son contact : ne reste que sa mémoire d'écart.
+  if (c.kind === 'post_engagement') return ecarterEngageur(pool, org, id);
   await pool.query(
     `update public.signals
         set status = 'discarded', discard_reason = $2, scored_at = now()
@@ -87,12 +93,15 @@ async function markDiscarded(pool: Pool, id: string, reason: string): Promise<vo
 
 async function persistScore(
   pool: Pool,
-  id: string,
+  org: string,
+  c: CandidateRow,
   score: number,
   reason: string,
   status: 'qualified' | 'discarded',
   discardReason: string | null,
 ): Promise<void> {
+  const id = c.id;
+  if (status === 'discarded' && c.kind === 'post_engagement') return ecarterEngageur(pool, org, id);
   await pool.query(
     `update public.signals
         set score = $2, score_reason = $3, status = $4, discard_reason = $5, scored_at = now()
@@ -102,21 +111,52 @@ async function persistScore(
 }
 
 /**
- * Fragment SQL : la source jointe (alias `so`, sur `sources.id = signals.source_id`)
- * porte un prompt de scoring exploitable — même seuil que le pré-filtre par
- * source de `runScore`. Partagé par `compterSignauxScorables` et par la
- * sélection de `runScore` : le crédit est décompté sur le premier compte AVANT
- * l'appel au modèle, donc les deux requêtes doivent isoler EXACTEMENT le même
- * ensemble de signaux, sous peine de créditer un lot dont une partie ne sera
- * jamais scorée (I1, revue du 10/09/2026 ; second passage du même jour :
- * la sélection filtrait moins que le compteur, un signal sans prompt
- * exploitable pouvait alors occuper toute la file d'attente `created_at asc`
- * sans jamais être écarté). `$paramIndex` est le numéro du paramètre lié à
- * `MIN_SCORING_PROMPT_LENGTH` dans la requête appelante.
+ * Jointure SQL (alias `pe`, après `so`) vers la persona dont la consigne juge un
+ * `post_engagement`. Le prompt de la source est écrit pour des offres d'emploi
+ * et jugerait une personne de travers : c'est la consigne du persona qui dit
+ * qui on cherche. Le persona est celui que la source porte (`personaId`), à
+ * défaut l'unique persona de la campagne qui la nourrit.
+ */
+const JOINTURE_PERSONA = `left join lateral (
+          select p.scoring_prompt
+            from public.personas p
+           where s.kind = 'post_engagement'
+             and p.organization_id = s.organization_id
+             and p.id::text = coalesce(
+                   nullif(so.config ->> 'personaId', ''),
+                   (select c.entry_rules -> 'personas' ->> 0
+                      from public.campaigns c
+                     where c.organization_id = s.organization_id
+                       and (c.source_id = so.id
+                            or exists (select 1 from public.campaign_sources cs
+                                        where cs.campaign_id = c.id and cs.source_id = so.id))
+                       and jsonb_typeof(c.entry_rules -> 'personas') = 'array'
+                       and jsonb_array_length(c.entry_rules -> 'personas') = 1
+                     limit 1))
+        ) pe on true`;
+
+/** La consigne qui juge le signal : celle du persona pour une personne, de la source sinon. */
+const CONSIGNE_DE_SCORING = `case when s.kind = 'post_engagement' then pe.scoring_prompt
+             else so.config ->> 'scoring_prompt' end`;
+
+/**
+ * Fragment SQL : le signal (alias `s`, avec `so` et `pe`) porte une consigne de
+ * scoring exploitable — même seuil que le pré-filtre de `runScore`. Partagé par
+ * `compterSignauxScorables` et par la sélection de `runScore` : le crédit est
+ * décompté sur le premier compte AVANT l'appel au modèle, donc les deux
+ * requêtes doivent isoler EXACTEMENT le même ensemble de signaux, sous peine de
+ * créditer un lot dont une partie ne sera jamais scorée (I1, revue du
+ * 10/09/2026 ; second passage du même jour : la sélection filtrait moins que le
+ * compteur, un signal sans prompt exploitable pouvait alors occuper toute la
+ * file d'attente `created_at asc` sans jamais être écarté). `$paramIndex` est
+ * le numéro du paramètre lié à `MIN_SCORING_PROMPT_LENGTH` dans la requête
+ * appelante.
+ *
+ * Sans la branche `post_engagement`, une source d'engageurs (qui n'a pas de
+ * prompt de source) laisserait ses signaux `new` indéfiniment, sans erreur.
  */
 function conditionSourceScorable(paramIndex: number): string {
-  return `so.config ->> 'scoring_prompt' is not null
-        and length(trim(so.config ->> 'scoring_prompt')) >= $${paramIndex}`;
+  return `length(trim(coalesce(${CONSIGNE_DE_SCORING}, ''))) >= $${paramIndex}`;
 }
 
 /**
@@ -133,6 +173,7 @@ export async function compterSignauxScorables(pool: Pool, organizationId: string
     `select count(*)::text as count
        from public.signals s
        join public.sources so on so.id = s.source_id
+       ${JOINTURE_PERSONA}
       where s.organization_id = $1
         and s.status = 'new'
         and s.score is null
@@ -166,12 +207,14 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
             s.title, s.location,
             s.raw ->> 'description' as description,
             s.occurred_at, a.naf_code, a.prospecting_opposition as opposition,
+            s.kind::text as kind,
             s.source_id,
-            so.config ->> 'scoring_prompt' as scoring_prompt,
+            ${CONSIGNE_DE_SCORING} as scoring_prompt,
             nullif(so.config ->> 'match_threshold', '')::double precision as match_threshold
        from public.signals s
        left join public.accounts a on a.id = s.account_id
        left join public.sources so on so.id = s.source_id
+       ${JOINTURE_PERSONA}
       where s.organization_id = $1 and s.status = 'new' and s.score is null
         -- Un signal dont la source n'a pas de prompt exploitable doit être
         -- exclu ICI, pas seulement au regroupement par source plus bas : le
@@ -212,14 +255,14 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
     // Opposition au démarchage (Sirene) : filtre NON désactivable — l'entreprise a
     // refusé la diffusion publique, on ne la prospecte jamais.
     if (c.opposition === true) {
-      await markDiscarded(pool, c.id, 'prospecting_opposition');
+      await markDiscarded(pool, org, c, 'prospecting_opposition');
       prefiltered++;
       discarded++;
       continue;
     }
     const isAgency = isRecruitmentAgency({ name: company, naf: c.naf_code }, blacklist);
     if (isAgency) {
-      await markDiscarded(pool, c.id, 'recruitment_agency');
+      await markDiscarded(pool, org, c, 'recruitment_agency');
       prefiltered++;
       discarded++;
       continue;
@@ -233,7 +276,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       recruitmentBlacklist: blacklist,
     });
     if (!fresh) {
-      await markDiscarded(pool, c.id, 'stale');
+      await markDiscarded(pool, org, c, 'stale');
       prefiltered++;
       discarded++;
       continue;
@@ -281,18 +324,19 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
         continue;
       }
       // Auto-apprentissage : score nul + motif « cabinet » → blacklist de l'org.
-      if (s.score === 0 && isCabinetVerdict(s.reason)) {
+      // (Une personne n'est pas un cabinet : pas d'apprentissage pour elle.)
+      if (s.score === 0 && isCabinetVerdict(s.reason) && c.kind !== 'post_engagement') {
         await learnRecruitmentAgency(pool, org, c.company ?? '');
-        await persistScore(pool, c.id, s.score, s.reason, 'discarded', 'recruitment_agency');
+        await persistScore(pool, org, c, s.score, s.reason, 'discarded', 'recruitment_agency');
         learned++;
         discarded++;
         continue;
       }
       if (meetsScoreThreshold(s.score, threshold)) {
-        await persistScore(pool, c.id, s.score, s.reason, 'qualified', null);
+        await persistScore(pool, org, c, s.score, s.reason, 'qualified', null);
         qualified++;
       } else {
-        await persistScore(pool, c.id, s.score, s.reason, 'discarded', 'low_score');
+        await persistScore(pool, org, c, s.score, s.reason, 'discarded', 'low_score');
         discarded++;
       }
     }
