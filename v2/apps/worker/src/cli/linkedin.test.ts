@@ -225,6 +225,9 @@ describe('la commande connecter', () => {
     expect(saisies).toEqual([]);
     expect(appels.some((a) => /jr:linkedin_session_activer/.test(a.sql))).toBe(false);
     expect(sortie.join('\n')).toMatch(/IP du serveur/);
+    // La relève a déjà été consignée : ne pas affirmer que « rien » n'est enregistré.
+    expect(sortie.join('\n')).toMatch(/IP attendue n’est pas posée/);
+    expect(sortie.join('\n')).not.toMatch(/rien n’est enregistré/i);
   });
 
   it("n'ouvre ni ne demande rien quand le profil est deja connecte", async () => {
@@ -251,6 +254,8 @@ describe('la commande connecter', () => {
     const texte = sortie.join('\n');
     expect(texte).toMatch(/\/check\/add-phone/);
     expect(texte).not.toMatch(/incorrect/);
+    expect(texte).not.toMatch(/rien n’est enregistré/i);
+    expect(texte).toMatch(/session n’est pas activée/);
     expect(texte).not.toMatch(/secret/);
     expect(appels.some((a) => /jr:linkedin_session_(activer|bloquer)/.test(a.sql))).toBe(false);
   });
@@ -420,7 +425,7 @@ describe('la commande ip', () => {
 
   it("refuse de confirmer l'IP du serveur comme IP attendue", async () => {
     const { p } = piloteFaux();
-    const { d, appels } = dependances({
+    const { d, appels, sortie } = dependances({
       env: ACTIF,
       session: ligneSession(),
       pilote: p,
@@ -428,6 +433,7 @@ describe('la commande ip', () => {
       ipServeur: '192.0.2.55',
     });
     expect(await executerCommande(['ip', '--confirmer'], d)).not.toBe(0);
+    expect(sortie.join('\n')).toMatch(/IP attendue n’est pas posée/);
     expect(appels.some((a) => /jr:linkedin_session_confirmer_ip/.test(a.sql))).toBe(false);
   });
 

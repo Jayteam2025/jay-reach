@@ -64,7 +64,9 @@ function poser(
 export function demander(
   invite: string,
   flux: Flux = STANDARD(),
-  terminal = false,
+  // Sur un vrai terminal, readline doit passer en mode brut : sinon Ctrl+C reste un signal,
+  // Node meurt sans exécuter le `finally` de la commande et le verrou reste pris.
+  terminal = Boolean(process.stdin.isTTY),
 ): Promise<string> {
   return poser(invite, flux, false, terminal);
 }

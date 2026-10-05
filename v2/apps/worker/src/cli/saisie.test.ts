@@ -1,6 +1,6 @@
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
-import { demanderMasque, SaisieInterrompue } from './saisie.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { demander, demanderMasque, SaisieInterrompue } from './saisie.js';
 
 function flux() {
   const input = new PassThrough();
@@ -32,5 +32,28 @@ describe('la saisie masquee', () => {
     const p = demanderMasque('Code : ', { input, output });
     input.end();
     await expect(p).rejects.toBeInstanceOf(SaisieInterrompue);
+  });
+});
+
+describe("la saisie visible de l'identifiant", () => {
+  const origine = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+  afterEach(() => {
+    if (origine) Object.defineProperty(process.stdin, 'isTTY', origine);
+    else delete (process.stdin as { isTTY?: boolean }).isTTY;
+  });
+
+  it('rejette sur Ctrl+C quand stdin est un terminal : le finally de la commande doit pouvoir passer', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    const { input, output } = flux();
+    const p = demander('Identifiant : ', { input, output });
+    input.write('\x03');
+    await expect(p).rejects.toBeInstanceOf(SaisieInterrompue);
+  });
+
+  it("rend l'identifiant saisi", async () => {
+    const { input, output } = flux();
+    const p = demander('Identifiant : ', { input, output }, true);
+    input.write('  moi@exemple.fr \n');
+    expect(await p).toBe('moi@exemple.fr');
   });
 });

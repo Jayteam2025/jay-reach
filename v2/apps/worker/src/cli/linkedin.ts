@@ -163,7 +163,7 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
 async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<boolean> {
   if (ipVue !== (await d.ipDuProcessus())) return false;
   d.ecrire(
-    'Le navigateur sort par l’IP du serveur, pas par le proxy : vérifier LINKEDIN_PROXY_URL (navigateur.env). Rien n’est enregistré.',
+    'Le navigateur sort par l’IP du serveur, pas par le proxy : vérifier LINKEDIN_PROXY_URL (navigateur.env). L’IP attendue n’est pas posée.',
   );
   return true;
 }
@@ -206,7 +206,7 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
       resultat.issue === 'defi'
         ? 'LinkedIn demande une vérification que ce terminal ne sait pas passer : session bloquée.'
         : resultat.issue === 'delai'
-          ? `Délai dépassé : LinkedIn est resté sur ${resultat.chemin}. Rien n’est enregistré.`
+          ? `Délai dépassé : LinkedIn est resté sur ${resultat.chemin}. La session n’est pas activée.`
           : 'Connexion refusée : identifiant ou mot de passe incorrect.',
     );
     return 1;
