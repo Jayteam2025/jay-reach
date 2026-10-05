@@ -12,6 +12,9 @@ services:
     restart: unless-stopped
     env_file:
       - ${JAY_REACH_ENV_FILE:-/etc/jay-reach/worker.env}
+      # Identifiants du proxy LinkedIn (présentés par CDP) : absent tant que le canal n'est pas installé.
+      - path: ${JAY_REACH_NAVIGATEUR_ENV_FILE:-/etc/jay-reach/navigateur.env}
+        required: false
     environment:
       GIT_SHA: ${GIT_SHA:-inconnu}
       HEARTBEAT_FILE: /tmp/jay-reach-battement
@@ -40,10 +43,10 @@ services:
       context: ./navigateur
     image: jay-reach-navigateur:${GIT_SHA:-local}
     restart: unless-stopped
-    # Ce fichier porte aussi les clés du worker : l'entrypoint lance Chromium avec
-    # un environnement vidé (`env -i`), seul le proxy lui parvient.
+    # Fichier dédié, qui ne porte que le proxy : c'est le conteneur qui exécute le
+    # JavaScript de pages tierces, il ne doit voir ni DATABASE_URL ni aucune clé du worker.
     env_file:
-      - ${JAY_REACH_ENV_FILE:-/etc/jay-reach/worker.env}
+      - ${JAY_REACH_NAVIGATEUR_ENV_FILE:-/etc/jay-reach/navigateur.env}
     ports:
       - "127.0.0.1:9222:9223"
     volumes:

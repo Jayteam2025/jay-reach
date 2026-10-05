@@ -74,12 +74,12 @@ export async function activerSessionLinkedIn(ctx: Contexte, ip: string): Promise
 }
 
 const TITRE_BLOCAGE = 'Session LinkedIn bloquée';
-const CORPS_BLOCAGE: Record<MotifBlocage, string> = {
+/** `revoquee` est absent : c'est l'opérateur qui l'a voulue, l'alerter serait crier au loup. */
+const CORPS_BLOCAGE: Record<Exclude<MotifBlocage, 'revoquee'>, string> = {
   defi: 'LinkedIn demande une vérification : la collecte est suspendue jusqu’à ce que vous reconnectiez la session.',
   cookie_refuse: 'LinkedIn a refusé la session enregistrée : reconnectez le compte pour reprendre la collecte.',
   sortie_inattendue: 'Le navigateur est sorti par une adresse inattendue : la collecte est suspendue par précaution.',
   disjoncteur: 'Trop d’échecs d’affilée : la collecte est suspendue par précaution.',
-  revoquee: 'La session a été révoquée : reconnectez le compte pour reprendre la collecte.',
 };
 
 /**
@@ -101,7 +101,7 @@ export async function bloquerSessionLinkedIn(ctx: Contexte, motif: MotifBlocage)
         where linkedin_server_sessions.status <> 'bloquee'`,
       [ctx.organisationId, motif],
     );
-    if (!res.rowCount) return;
+    if (!res.rowCount || motif === 'revoquee') return;
     await notifier(tx, ctx.organisationId, 'linkedin.session_blocked', TITRE_BLOCAGE, CORPS_BLOCAGE[motif]);
   });
 }

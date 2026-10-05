@@ -47,6 +47,22 @@ describe('bloquerSessionLinkedIn', () => {
     expect(notif!.params[0]).toBe('org-1');
   });
 
+  it("ne notifie pas une revocation voulue, mais bloque quand meme", async () => {
+    const { ctx, appels } = faux();
+    await bloquerSessionLinkedIn(ctx, 'revoquee');
+    expect(appels.some((a) => /status\s*=\s*'bloquee'/.test(a.sql))).toBe(true);
+    expect(appels.some((a) => /into notifications/i.test(a.sql))).toBe(false);
+  });
+
+  it.each(['defi', 'cookie_refuse', 'sortie_inattendue', 'disjoncteur'] as const)(
+    'notifie un blocage subi : %s',
+    async (motif) => {
+      const { ctx, appels } = faux();
+      await bloquerSessionLinkedIn(ctx, motif);
+      expect(appels.some((a) => /into notifications/i.test(a.sql))).toBe(true);
+    },
+  );
+
   it('ne renotifie pas une session déjà bloquée', async () => {
     const { ctx, appels } = faux(0);
     await bloquerSessionLinkedIn(ctx, 'defi');

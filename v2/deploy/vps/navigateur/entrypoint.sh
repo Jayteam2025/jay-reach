@@ -19,8 +19,8 @@ fi
 # le DevTools que sur 127.0.0.1.
 socat TCP-LISTEN:9223,fork,reuseaddr TCP:127.0.0.1:9222 &
 
-# `env -i` : Chromium ne reçoit ni DATABASE_URL ni les autres clés que le fichier
-# d'environnement partagé a déposées dans ce conteneur.
+# `env -i` : défense en profondeur, Chromium ne reçoit que PATH et HOME (le conteneur
+# ne charge de toute façon que navigateur.env).
 exec env -i PATH="$PATH" HOME="$HOME" chromium \
   --headless=new \
   --no-sandbox \
