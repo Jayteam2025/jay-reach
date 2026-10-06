@@ -1,0 +1,462 @@
+// Lot 4a, tâche 8 : exécution RÉELLE, sur Postgres, de l'achat d'une adresse pour
+// une personne déjà identifiée — la première dépense d'argent du lot. Aucune
+// requête de production n'est recopiée ici : seules les fixtures sont en SQL, et
+// l'état de départ est construit par les fonctions de production (collecte d'un
+// engageur, scoring, enrichissement). Le SEUL faux est l'appel FullEnrich :
+// il est injecté, donc aucun test ne peut dépenser un centime.
+//
+// Mutations qui font rougir, et l'état OBSERVÉ à chaque fois (rapport de la tâche 8) :
+//   R0. migration : retirer le `revoke` -> MIGRATION_FAIL (le bloc de contrôle lève).
+//   R1. migration : ne plus ajouter `credits_spent` -> MIGRATION_FAIL.
+//  R1b. migration : retirer `check (credits_spent >= 0)` -> 7 rouge, « aucune erreur ».
+//   R2. app.record_provider_cost : `insert ... on conflict` au lieu du `update` ->
+//       5 rouge, « true lignes=1 » (un coût naît sans crédit consommé).
+//   R3. handler : ne plus appeler `enregistrerCout` -> 16, 20 et 21 rouges,
+//       `credits_spent: 0` partout.
+//   R4. handler, `dependancesEnrichissementReelles` : `?? 0` sur le coût -> AUCUN
+//       contrôle d'ici ne rougit (l'achat y est injecté) ; c'est le vitest
+//       « rend `undefined`, et surtout PAS zéro » qui tombe (« expected +0 to be undefined »).
+//   R5. handler : neutraliser la garde `raisonDeNePasAcheter` -> 23 rouge,
+//       « appels=1 used 1->2 » : l'appel PAYANT part sur une adresse fabriquée.
+//   R6. handler : ne plus poser `enriched_at` sans email -> 19, 19b et 25 rouges.
+//       Le 28 (purge) reste vert : sans marque, la personne est purgée de toute façon.
+//   R7. producer.ts : retirer `and c.enriched_at is null` -> 19b rouge (seul : une
+//       personne qui a son email est déjà exclue par `c.email is null`).
+//   R8. producer.ts : retirer la clause d'adresse fabriquée -> 10 rouge, « bob=1 ».
+//   R9. producer.ts : retirer `ct.email is not null` de l'épargne de purge -> 28
+//       rouge, la personne sans adresse survit.
+//  R10. handler : relancer le 23505 au lieu de le capturer -> la section
+//       `conflitDAdresse` lève en entier (« duplicate key value violates unique
+//       constraint contacts_org_email_uidx ») : le passage tombe, précisément ce
+//       que le contrôle 24 interdit.
+import pg from 'pg';
+import {
+  MSG,
+  ecarterSignauxTropAnciens,
+  ecrireReglage,
+  enqueueEnrichmentContactsConnus,
+  enregistrerEngageur,
+  enrichirContactConnu,
+  persistEnrichedContact,
+  raisonDeNePasAcheter,
+  runScore,
+} from './_linkedin-enrichissement-bundle.mjs';
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const q = (sql, params) => pool.query(sql, params);
+
+let failures = 0;
+function check(label, cond, extra = '') {
+  console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
+  if (!cond) failures += 1;
+}
+
+// Chaque section tourne dans son propre `try` : une exception dans l'une ne doit
+// pas emporter les suivantes. Un harnais qui saute une preuve en silence est
+// pire qu'un harnais rouge.
+async function jouer(...sections) {
+  for (const section of sections) {
+    try {
+      await section();
+    } catch (e) {
+      check(`section ${section.name} : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
+}
+const erreur = async (promesse) => {
+  try {
+    await promesse;
+    return null;
+  } catch (e) {
+    return e;
+  }
+};
+
+/**
+ * Capture ce que l'OPÉRATEUR LIT. Un contrôle qui ne lit que l'état final laisse
+ * passer un message qui nomme la mauvaise cause — et c'est la cause que
+ * l'opérateur lit pour comprendre pourquoi une adresse n'a pas été achetée.
+ */
+async function enEcoutant(fn) {
+  const lignes = [];
+  const vraiWarn = console.warn;
+  const vraiLog = console.log;
+  console.warn = (...a) => lignes.push(a.join(' '));
+  console.log = (...a) => lignes.push(a.join(' '));
+  try {
+    const valeur = await fn();
+    return { valeur, lignes };
+  } finally {
+    console.warn = vraiWarn;
+    console.log = vraiLog;
+  }
+}
+
+let seq = 0;
+async function userNeuf() {
+  return (await q(`insert into auth.users (id, email) values (gen_random_uuid(), $1) returning id`, [`u${Date.now()}${(seq += 1)}@test.local`]))
+    .rows[0].id;
+}
+const CONSIGNE = 'Tu juges si une personne est un directeur commercial a contacter pour une offre de formation. '.repeat(3);
+
+/** Une organisation avec persona, source d'engageurs, campagne active et passage. */
+async function monde() {
+  seq += 1;
+  const n = `${Date.now().toString(36)}${seq}`;
+  const org = (await q(`insert into organizations (name, slug) values ($1, $2) returning id`, [`Org ${n}`, `org-${n}`])).rows[0].id;
+  const admin = await userNeuf();
+  await q(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [org, admin]);
+  const persona = (await q(
+    `insert into personas (organization_id, name, scoring_prompt) values ($1, 'Directeur commercial', $2) returning id`,
+    [org, CONSIGNE],
+  )).rows[0].id;
+  const config = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x_y-1', personaId: persona, garder: ['commente'] };
+  const source = (await q(
+    `insert into sources (organization_id, provider_id, name, config) values ($1, 'linkedin_post_engagers', 'Engageurs', $2::jsonb) returning id`,
+    [org, JSON.stringify(config)],
+  )).rows[0].id;
+  const campagne = (await q(
+    `insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'C', 'active', $2::jsonb) returning id`,
+    [org, JSON.stringify({ personas: [persona] })],
+  )).rows[0].id;
+  await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [campagne, source]);
+  const run = (await q(`insert into source_runs (source_id) values ($1) returning id`, [source])).rows[0].id;
+  return { org, admin, persona, source, campagne, run, ctx: { pool, organizationId: org, sourceId: source, sourceRunId: run } };
+}
+
+const POST = 'https://www.linkedin.com/posts/x_y-1';
+const eng = (id, nom, intitule, urlProfil) => ({
+  urn: `urn:li:fsd_profile:ACoAA${id}`,
+  nom,
+  intitule,
+  ...(urlProfil ? { urlProfil } : {}),
+});
+const enregistrer = (m, e) => enregistrerEngageur(m.ctx, e, { id: m.campagne, personaId: m.persona }, POST);
+const scorer = async (prospects) =>
+  prospects.map((p) => ({ id: p.id, score: /directeur|directrice/i.test(p.title) ? 85 : 20, reason: 'jugé sur l’intitulé' }));
+
+/**
+ * Un engageur COLLECTÉ puis QUALIFIÉ par le scoring, avec l'adresse publique que
+ * le collecteur a lue. Tout passe par les fonctions de production : un `insert`
+ * direct dans `contacts` poserait l'hypothèse même qu'on cherche à tester (la
+ * forme de l'adresse, la présence du signal, son statut).
+ */
+async function engageurQualifie(m, id, nom, intitule, urlProfil) {
+  const issue = await enregistrer(m, eng(id, nom, intitule, urlProfil));
+  await runScore({ pool, organizationId: m.org, scorer });
+  const c = (await q(
+    `select c.id, c.email, c.enriched_at, c.linkedin_url, s.status
+       from contacts c join signals s on s.id = c.source_signal_id
+      where c.organization_id = $1 and s.external_id like $2`,
+    [m.org, `%ACoAA${id}`],
+  )).rows[0];
+  return { issue, ...c };
+}
+
+/** Le faux achat : la SEULE chose simulée de ce harnais. */
+function achat({ email = 'achete@acme.fr', statut = 'DELIVERABLE', credits = 1.5, sansCout = false, leve = null } = {}) {
+  const vus = [];
+  return {
+    vus,
+    deps: (opts = {}) => ({
+      pool,
+      cleFullEnrich: async () => (opts.sansCle ? null : 'cle-de-test'),
+      acheter: async (_k, entree) => {
+        vus.push(entree);
+        if (leve) throw leve;
+        return {
+          resultat: email ? { input: {}, contact_info: { most_probable_work_email: { email, status: statut } } } : { input: {} },
+          // `sansCout` et non `credits: undefined` : un paramètre par défaut
+          // retomberait sur 1.5, et la fixture ne produirait JAMAIS l'état
+          // qu'elle prétend tester — le contrôle 21 a rougi là-dessus.
+          credits: sansCout ? undefined : credits,
+        };
+      },
+    }),
+  };
+}
+
+const JOUR = () => new Date().toISOString().slice(0, 10);
+const usage = async (org) =>
+  (await q(`select used, credits_spent::float8 as credits_spent from provider_daily_usage where organization_id=$1 and provider_id='fullenrich' and usage_date=$2::date`, [org, JOUR()])).rows[0] ?? null;
+
+// ------------------------------------------------------- 1. la colonne de coût
+
+async function colonneDeCout() {
+  console.log('la colonne de coût existe, et seule une consommation déjà décomptée peut la remplir');
+  const m = await monde();
+
+  const col = (await q(
+    `select data_type, is_nullable, column_default from information_schema.columns
+      where table_schema='public' and table_name='provider_daily_usage' and column_name='credits_spent'`,
+  )).rows[0];
+  check('1. provider_daily_usage.credits_spent existe, numeric, not null, défaut 0',
+    col?.data_type === 'numeric' && col?.is_nullable === 'NO' && /0/.test(String(col?.column_default)), JSON.stringify(col));
+
+  // Le crédit se prend par la fonction de production, jamais par un insert direct.
+  await q(`select app.consume_provider_credit($1,'fullenrich',10,1,$2::date)`, [m.org, JOUR()]);
+  check('2. une consommation sans coût laisse credits_spent à zéro', (await usage(m.org))?.credits_spent === 0);
+
+  const r1 = (await q(`select app.record_provider_cost($1,'fullenrich',1.25::numeric,$2::date) as ok`, [m.org, JOUR()])).rows[0].ok;
+  check('3. le coût réel est ajouté à la ligne du jour', r1 === true && (await usage(m.org))?.credits_spent === 1.25, JSON.stringify(await usage(m.org)));
+  await q(`select app.record_provider_cost($1,'fullenrich',0.75::numeric,$2::date) as ok`, [m.org, JOUR()]);
+  check('4. un second coût s’ajoute au premier (fractions comprises)', (await usage(m.org))?.credits_spent === 2, JSON.stringify(await usage(m.org)));
+
+  // Aucun crédit consommé pour CE fournisseur : la fonction refuse et ne crée rien.
+  const r2 = (await q(`select app.record_provider_cost($1,'autre_fournisseur',3::numeric,$2::date) as ok`, [m.org, JOUR()])).rows[0].ok;
+  const cree = (await q(`select count(*)::int n from provider_daily_usage where organization_id=$1 and provider_id='autre_fournisseur'`, [m.org])).rows[0].n;
+  check('5. un coût sans consommation décomptée rend false et ne crée aucune ligne', r2 === false && cree === 0, `${r2} lignes=${cree}`);
+
+  const r3 = (await q(`select app.record_provider_cost($1,'fullenrich',0::numeric,$2::date) as ok`, [m.org, JOUR()])).rows[0].ok;
+  const r4 = (await q(`select app.record_provider_cost($1,'fullenrich',-5::numeric,$2::date) as ok`, [m.org, JOUR()])).rows[0].ok;
+  check('6. un coût nul ou négatif rend false et n’écrit rien', r3 === false && r4 === false && (await usage(m.org))?.credits_spent === 2);
+
+  const neg = await erreur(q(`update provider_daily_usage set credits_spent = -1 where organization_id=$1 and provider_id='fullenrich'`, [m.org]));
+  check('7. la contrainte interdit un coût négatif même en écriture directe', neg?.code === '23514', neg?.code ?? 'aucune erreur');
+
+  // Le PRIVILÈGE ne se vérifie pas ici, et c'est délibéré : `grants.sql` tourne
+  // APRÈS les migrations dans ce harnais et fait `grant execute on all routines in
+  // schema app to authenticated`, ce qui rouvre toute fonction du schéma — le
+  // fichier note déjà ce même effet pour `credentials_public`. Un contrôle lu ici
+  // mesurerait donc grants.sql, pas la migration : un faux rouge, qu'on serait
+  // tenté de « corriger » en ajoutant un revoke au harnais, et qui deviendrait
+  // alors un faux vert. La révocation est prouvée par le bloc de contrôle de la
+  // migration elle-même (`raise exception` si `authenticated` garde le droit),
+  // qui s'exécute avant grants.sql : le retirer sort en MIGRATION_FAIL. Vérifié :
+  // aucune migration n'accorde ce droit global, grants.sql est plus permissif que
+  // la production.
+  const def = (await q(
+    `select p.prosecdef, p.proconfig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='app' and p.proname='record_provider_cost'`,
+  )).rows[0];
+  check('8. la fonction de coût est security definer avec un search_path figé',
+    def?.prosecdef === true && (def?.proconfig ?? []).some((c) => c.startsWith('search_path=')), JSON.stringify(def));
+}
+
+// --------------------------------------------- 2. le producteur voit les bonnes personnes
+
+async function producteur() {
+  console.log('le producteur enfile les personnes qualifiées sans adresse email, et elles seules');
+  const m = await monde();
+  const jobs = [];
+  const boss = { insert: async (lot) => { jobs.push(...lot); } };
+  const pour = (id) => jobs.filter((j) => j.data.contactId === id);
+
+  const ada = await engageurQualifie(m, 'ada', 'Ada Lovelace', 'Directrice commerciale chez Acme', 'https://www.linkedin.com/in/ada-lovelace');
+  check('9. l’engageur est qualifié par le scoring, avec son adresse publique',
+    ada.status === 'qualified' && ada.linkedin_url === 'https://www.linkedin.com/in/ada-lovelace', `${ada.status} ${ada.linkedin_url}`);
+
+  // Sans `urlProfil`, le collecteur fabrique l'adresse depuis l'identifiant interne.
+  const bob = await engageurQualifie(m, 'bob', 'Bob Martin', 'Directeur commercial chez Beta');
+  check('9b. sans identifiant public, l’adresse du contact est bien celle fabriquée',
+    bob.linkedin_url === 'https://www.linkedin.com/in/ACoAAbob', bob.linkedin_url);
+
+  // Jugé hors cible par le scoring : son signal ET son contact sont effacés, et
+  // son écart est mémorisé. L'assertion porte sur les TROIS : « pas de contact »
+  // seul passerait aussi si le scoring n'avait rien fait du tout.
+  await engageurQualifie(m, 'carl', 'Carl Stagiaire', 'Stagiaire marketing');
+  const carl = (await q(
+    `select (select count(*)::int from contacts where organization_id=$1 and first_name='Carl') c,
+            (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAcarl') s,
+            (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAcarl') e`,
+    [m.org],
+  )).rows[0];
+  check('9c. l’engageur hors cible est effacé par le scoring, avec sa mémoire d’écart',
+    carl.c === 0 && carl.s === 0 && carl.e === 1, JSON.stringify(carl));
+
+  const n = await enqueueEnrichmentContactsConnus(boss, pool);
+  check('10. seule la personne à adresse publique est enfilée (l’adresse fabriquée est écartée)',
+    pour(ada.id).length === 1 && pour(bob.id).length === 0, `ada=${pour(ada.id).length} bob=${pour(bob.id).length} total=${n}`);
+  check('10b. le job vise la file enrichment.contact_connu, et porte l’organisation du contact',
+    pour(ada.id)[0]?.name === 'enrichment.contact_connu' && pour(ada.id)[0]?.data.organizationId === m.org,
+    JSON.stringify(pour(ada.id)[0] ?? null));
+
+  // Une personne encore `new` : collectée, pas encore jugée.
+  const dana = await enregistrer(m, eng('dana', 'Dana Neuve', 'Directrice commerciale', 'https://www.linkedin.com/in/dana-neuve'));
+  const danaId = (await q(`select id from contacts where organization_id=$1 and first_name='Dana'`, [m.org])).rows[0].id;
+  jobs.length = 0;
+  await enqueueEnrichmentContactsConnus(boss, pool);
+  check('11. une personne collectée mais pas encore qualifiée n’est pas enfilée', dana === 'nouveau' && pour(danaId).length === 0, dana);
+
+  // Email posé par le CHEMIN RÉEL (rattachement de `persistEnrichedContact`).
+  const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  await persistEnrichedContact(pool, m.org, compte, { email: 'ada@acme.fr', linkedinUrl: ada.linkedin_url, emailStatusRaw: 'VALID' });
+  jobs.length = 0;
+  await enqueueEnrichmentContactsConnus(boss, pool);
+  check('12. une personne qui a déjà son email n’est plus enfilée', pour(ada.id).length === 0, String(pour(ada.id).length));
+}
+
+// --------------------------------------------- 3. le handler, sur un vrai Postgres
+
+async function handler() {
+  console.log('l’achat écrit l’adresse, le statut, la marque et le coût');
+  const m = await monde();
+  const a = achat({ credits: 2.25 });
+  const ada = await engageurQualifie(m, 'ada', 'Ada Lovelace', 'Directrice commerciale chez Acme', 'https://www.linkedin.com/in/ada-lovelace');
+
+  const { valeur: issue } = await enEcoutant(() =>
+    enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: ada.id }));
+  check('13. l’achat aboutit', issue === 'achete', String(issue));
+  check('14. l’entrée envoyée au fournisseur porte l’adresse CANONIQUE, le prénom et le nom',
+    a.vus.length === 1 &&
+      a.vus[0].linkedin_url === 'https://www.linkedin.com/in/ada-lovelace' &&
+      a.vus[0].first_name === 'Ada' && a.vus[0].last_name === 'Lovelace',
+    JSON.stringify(a.vus));
+  const c = (await q(`select email, email_status, email_confidence::float8 as conf, enriched_at from contacts where id=$1`, [ada.id])).rows[0];
+  check('15. le contact reçoit son adresse, son statut de délivrabilité et sa marque d’achat',
+    c.email === 'achete@acme.fr' && c.email_status === 'valid' && c.conf > 0 && c.enriched_at !== null, JSON.stringify(c));
+  const u = await usage(m.org);
+  check('16. un crédit est décompté et le COÛT RÉEL est enregistré', u?.used === 1 && u?.credits_spent === 2.25, JSON.stringify(u));
+
+  // Le producteur ne le reprend plus.
+  const jobs = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('17. le producteur ne reprend pas une personne déjà enrichie', jobs.filter((j) => j.data.contactId === ada.id).length === 0);
+}
+
+async function sansResultat() {
+  console.log('un achat qui ne trouve rien, et un achat dont le coût est absent');
+  const m = await monde();
+  const bred = await engageurQualifie(m, 'bred', 'Bred Vide', 'Directeur commercial', 'https://www.linkedin.com/in/bred-vide');
+  const a = achat({ email: null, credits: 0.5 });
+  const { valeur, lignes } = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: bred.id }));
+  check('18. aucune adresse trouvée : le passage ne tombe pas, et le dit', valeur === 'sans_email' && lignes.includes(`${MSG.prefixe} ${MSG.sansEmail(bred.id)}`), `${valeur} / ${lignes.join(' | ')}`);
+  const c = (await q(`select email, enriched_at from contacts where id=$1`, [bred.id])).rows[0];
+  check('19. la personne est marquée traitée SANS email : elle ne sera pas rachetée demain',
+    c.email === null && c.enriched_at !== null, JSON.stringify(c));
+  const jobs = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('19b. et le producteur ne la reprend effectivement pas', jobs.filter((j) => j.data.contactId === bred.id).length === 0);
+  check('20. le coût réel d’un achat infructueux est quand même enregistré', (await usage(m.org))?.credits_spent === 0.5, JSON.stringify(await usage(m.org)));
+
+  // Coût ABSENT de la réponse : ce n'est pas zéro, et ça doit se voir.
+  const cora = await engageurQualifie(m, 'cora', 'Cora Muette', 'Directrice commerciale', 'https://www.linkedin.com/in/cora-muette');
+  const b = achat({ sansCout: true });
+  const r = await enEcoutant(() => enrichirContactConnu(b.deps(), { organizationId: m.org, contactId: cora.id }));
+  check('21. un coût absent de la réponse est SIGNALÉ, et n’est pas compté pour zéro',
+    r.lignes.includes(`${MSG.prefixe} ${MSG.coutAbsent(cora.id)}`) && (await usage(m.org))?.credits_spent === 0.5,
+    `${r.lignes.join(' | ')} / ${JSON.stringify(await usage(m.org))}`);
+}
+
+async function plafondEtRefus() {
+  console.log('le plafond de l’opérateur arrête l’achat, et une adresse fabriquée ne coûte rien');
+  const m = await monde();
+  // Le plafond est posé par l'écran Réglages › Plafonds, pas par un insert direct.
+  await ecrireReglage({ ex: pool, organisationId: m.org, utilisateurId: m.admin, role: 'admin' },
+    { cle: 'enrichissements_par_jour', valeur: 1 });
+
+  const ada = await engageurQualifie(m, 'ada', 'Ada Lovelace', 'Directrice commerciale', 'https://www.linkedin.com/in/ada-lovelace');
+  const bea = await engageurQualifie(m, 'bea', 'Bea Seconde', 'Directrice commerciale', 'https://www.linkedin.com/in/bea-seconde');
+  const a = achat();
+  await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: ada.id }));
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: bea.id }));
+  check('22. le second achat est refusé par le plafond saisi à l’écran, et le dit',
+    r.valeur === 'plafond' && r.lignes.includes(`${MSG.prefixe} ${MSG.plafond(m.org)}`), `${r.valeur} / ${r.lignes.join(' | ')}`);
+  check('22b. aucun appel n’est parti pour la seconde personne', a.vus.length === 1, String(a.vus.length));
+  const c = (await q(`select email, enriched_at from contacts where id=$1`, [bea.id])).rows[0];
+  check('22c. la personne reportée n’est PAS marquée : elle repartira demain', c.email === null && c.enriched_at === null, JSON.stringify(c));
+  const jobs = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('22d. et le producteur la reprend bien', jobs.filter((j) => j.data.contactId === bea.id).length === 1);
+
+  // Adresse FABRIQUÉE : le handler refuse avant toute dépense.
+  //
+  // Le plafond est RELEVÉ d'abord, et c'est tout l'intérêt du contrôle : laissé à
+  // 1, il serait déjà épuisé et arrêterait l'achat de lui-même. Le retrait de la
+  // garde ferait alors rougir le contrôle pour la MAUVAISE cause ('plafond' au
+  // lieu d'un achat parti), et on ne verrait jamais ce que la garde économise.
+  // Mesuré : sans ce relèvement, le retrait R5 rend « plafond appels=0 ».
+  await ecrireReglage({ ex: pool, organisationId: m.org, utilisateurId: m.admin, role: 'admin' },
+    { cle: 'enrichissements_par_jour', valeur: 50 });
+  const dan = await engageurQualifie(m, 'dan', 'Dan Interne', 'Directeur commercial');
+  const uAvant = await usage(m.org);
+  const b = achat();
+  const rd = await enEcoutant(() => enrichirContactConnu(b.deps(), { organizationId: m.org, contactId: dan.id }));
+  const uApres = await usage(m.org);
+  check('23. une adresse fabriquée à partir de l’identifiant interne ne consomme AUCUN crédit',
+    rd.valeur === 'refuse' && b.vus.length === 0 && uApres.used === uAvant.used,
+    `${rd.valeur} appels=${b.vus.length} used ${uAvant.used}->${uApres.used}`);
+  check('23b. et le refus nomme sa cause à l’opérateur',
+    rd.lignes.includes(`${MSG.prefixe} ${MSG.refus(dan.id, 'adresse_deduite')}`), rd.lignes.join(' | '));
+  check('23c. la règle de refus est la même des deux côtés (producteur et handler)',
+    raisonDeNePasAcheter({ linkedinUrl: 'https://www.linkedin.com/in/ACoAAdan', linkedinProviderId: 'ACoAAdan', firstName: 'Dan', lastName: 'Interne' }) === 'adresse_deduite');
+}
+
+async function conflitDAdresse() {
+  console.log('une adresse déjà portée par une autre fiche n’interrompt rien');
+  const m = await monde();
+  // La fiche qui porte déjà l'adresse naît du CHEMIN ENTREPRISE.
+  const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  await persistEnrichedContact(pool, m.org, compte, {
+    email: 'deja@acme.fr', firstName: 'Dejà', lastName: 'Connue',
+    linkedinUrl: 'https://www.linkedin.com/in/deja-connue', emailStatusRaw: 'VALID',
+  });
+  // Une AUTRE personne, collectée sur un post, pour qui FullEnrich rend la même adresse.
+  const eve = await engageurQualifie(m, 'eve', 'Eve Homonyme', 'Directrice commerciale', 'https://www.linkedin.com/in/eve-homonyme');
+  const a = achat({ email: 'deja@acme.fr' });
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: eve.id }));
+  check('24. le conflit d’unicité ne fait pas tomber le passage, et il est consigné',
+    r.valeur === 'email_deja_pris' && r.lignes.includes(`${MSG.prefixe} ${MSG.emailDejaPris(eve.id)}`), `${r.valeur} / ${r.lignes.join(' | ')}`);
+  const c = (await q(`select email, enriched_at from contacts where id=$1`, [eve.id])).rows[0];
+  check('25. la personne reste SANS email, et marquée traitée', c.email === null && c.enriched_at !== null, JSON.stringify(c));
+  const autres = (await q(`select count(*)::int n from contacts where organization_id=$1 and lower(email)='deja@acme.fr'`, [m.org])).rows[0].n;
+  check('25b. aucune fiche n’a été dupliquée ni fusionnée', autres === 1, String(autres));
+}
+
+async function retention() {
+  console.log('la marque d’achat n’épargne de la purge que ce qui a vraiment une adresse');
+  const m = await monde();
+  // Deux personnes qualifiées, anciennes. L'une a son email acheté, l'autre non —
+  // les DEUX marquées par le même chemin de production (le handler lui-même).
+  const fay = await engageurQualifie(m, 'fay', 'Fay Trouvee', 'Directrice commerciale', 'https://www.linkedin.com/in/fay-trouvee');
+  const gus = await engageurQualifie(m, 'gus', 'Gus Introuvable', 'Directeur commercial', 'https://www.linkedin.com/in/gus-introuvable');
+  await enEcoutant(() => enrichirContactConnu(achat().deps(), { organizationId: m.org, contactId: fay.id }));
+  await enEcoutant(() => enrichirContactConnu(achat({ email: null }).deps(), { organizationId: m.org, contactId: gus.id }));
+  const avant = (await q(`select (select count(*)::int from contacts where id=$1) f, (select count(*)::int from contacts where id=$2) g`, [fay.id, gus.id])).rows[0];
+  check('26. avant la purge, les deux personnes existent, l’une avec email et l’autre sans',
+    avant.f === 1 && avant.g === 1 &&
+      (await q(`select email from contacts where id=$1`, [gus.id])).rows[0].email === null);
+
+  // Les deux signaux vieillissent au-delà du délai, mais DANS la fenêtre d'épargne
+  // d'un email acheté (14 j < 20 j < 28 j) : seul l'email doit sauver sa personne.
+  await q(`update signals set occurred_at = now() - interval '20 days' where organization_id=$1`, [m.org]);
+  await ecarterSignauxTropAnciens(pool, 14);
+  const apres = (await q(`select (select count(*)::int from contacts where id=$1) f, (select count(*)::int from contacts where id=$2) g`, [fay.id, gus.id])).rows[0];
+  check('27. la personne dont on a acheté l’adresse est épargnée', apres.f === 1, JSON.stringify(apres));
+  check('28. la personne marquée SANS adresse est purgée : la marque seule ne rouvre aucune rétention',
+    apres.g === 0, JSON.stringify(apres));
+}
+
+async function pannes() {
+  console.log('une panne du fournisseur ne rejoue rien, et ne dit rien de la clé');
+  const m = await monde();
+  const hal = await engageurQualifie(m, 'hal', 'Hal Panne', 'Directeur commercial', 'https://www.linkedin.com/in/hal-panne');
+  const a = achat({ leve: new TypeError('https://api.fullenrich.com/v1/bulk?api_key=sk-secret-reel') });
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: hal.id }));
+  check('29. une panne du fournisseur ne lève pas : le job ne sera pas rejoué, donc rien n’est racheté',
+    r.valeur === 'panne_fournisseur', String(r.valeur));
+  check('29b. le journal nomme le type de l’erreur, jamais son message (une URL provider porte la clé)',
+    r.lignes.includes(`${MSG.prefixe} ${MSG.panne(hal.id, 'TypeError')}`) && !r.lignes.join(' ').includes('sk-secret-reel'),
+    r.lignes.join(' | '));
+  const c = (await q(`select email, enriched_at from contacts where id=$1`, [hal.id])).rows[0];
+  check('29c. la personne n’est pas marquée : elle repartira', c.email === null && c.enriched_at === null, JSON.stringify(c));
+
+  // Sans clé FullEnrich : rien n'est consommé, rien n'est marqué.
+  const m2 = await monde();
+  const ida = await engageurQualifie(m2, 'ida', 'Ida Sanscle', 'Directrice commerciale', 'https://www.linkedin.com/in/ida-sanscle');
+  const b = achat();
+  const r2 = await enEcoutant(() => enrichirContactConnu(b.deps({ sansCle: true }), { organizationId: m2.org, contactId: ida.id }));
+  check('30. sans clé fournisseur, aucun crédit n’est consommé et rien n’est marqué',
+    r2.valeur === 'sans_cle' && (await usage(m2.org)) === null && b.vus.length === 0, `${r2.valeur} ${JSON.stringify(await usage(m2.org))}`);
+
+  // Un contact d'une AUTRE organisation n'est pas lisible : le filtre est explicite.
+  const m3 = await monde();
+  const r3 = await enEcoutant(() => enrichirContactConnu(achat().deps(), { organizationId: m3.org, contactId: ida.id }));
+  check('31. un contact d’une autre organisation est introuvable, et aucun crédit n’est pris',
+    r3.valeur === 'introuvable' && (await usage(m3.org)) === null, String(r3.valeur));
+}
+
+await jouer(colonneDeCout, producteur, handler, sansResultat, plafondEtRefus, conflitDAdresse, retention, pannes);
+await pool.end();
+console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);
+process.exit(failures === 0 ? 0 : 1);

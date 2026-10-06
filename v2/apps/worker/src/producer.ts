@@ -21,7 +21,7 @@ import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
-import { ecarterEngageur } from './handlers/post-engagement.js';
+import { ecarterEngageur, lienProfilDeduit } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -167,7 +167,20 @@ export async function ecarterSignauxTropAnciens(
                   -- (enregistrerEngageur insère le signal puis le contact).
                   or ct.created_at < s.occurred_at
                   -- Email que NOUS avons acheté : la fenêtre court depuis l'achat.
-                  or (ct.enriched_at is not null
+                  --
+                  -- La condition sur l'email est celle que ce commentaire
+                  -- énonçait déjà et que le code ne vérifiait pas : tant que
+                  -- enriched_at n'était posé que par persistEnrichedContact,
+                  -- qui refuse un contact sans email, les deux étaient
+                  -- équivalents. Ils ne le sont plus : l'enrichissement d'un
+                  -- contact connu (tâche 8) pose aussi enriched_at quand
+                  -- FullEnrich n'a RIEN trouvé, pour ne pas racheter la même
+                  -- personne tous les jours. Sans cette condition, cette marque
+                  -- épargnerait de la purge le nom, l'intitulé et l'adresse
+                  -- LinkedIn d'une personne pour qui on n'a obtenu aucune
+                  -- adresse — exactement la rétention sans fin que la purge
+                  -- existe pour fermer.
+                  or (ct.email is not null and ct.enriched_at is not null
                       and ct.enriched_at >= now() - make_interval(days => $2))
                   -- Email qui ne vient pas de notre enrichissement : il a été fourni
                   -- par l'opérateur, sa rétention lui appartient, pas à la purge.
@@ -472,6 +485,82 @@ export async function enqueueEnrichmentForQualified(
           positionTitles: row.title_patterns,
           sourceSignalId: row.source_signal_id,
         },
+      },
+    ]);
+    enqueued += 1;
+  }
+  return enqueued;
+}
+
+/**
+ * Enfile l'achat d'une adresse pour les personnes DÉJÀ identifiées : un engageur
+ * de post LinkedIn, qualifié par le scoring, qui n'a pas encore d'email.
+ *
+ * C'est le maillon qui manquait entre la qualification d'une personne et son
+ * enrichissement. `enqueueEnrichmentForQualified` ci-dessus part des `accounts`,
+ * et un engageur n'en a pas : son contact serait resté sans adresse pour
+ * toujours, et le handler qui sait l'acheter n'aurait jamais été appelé.
+ *
+ * Le crédit N'EST PAS pris ici, contrairement au chemin entreprise : un job par
+ * contact, donc le handler est le seul à savoir s'il va réellement appeler
+ * FullEnrich (il peut encore refuser, cf. `raisonDeNePasAcheter`). Le décompter
+ * ici le brûlerait pour des appels qui ne partent pas.
+ *
+ * Trois filtres, trois raisons :
+ *  - `enriched_at is null` : l'achat a été TENTÉ, abouti ou non. Sans ce filtre,
+ *    une personne pour qui FullEnrich n'a rien trouvé serait rachetée à chaque
+ *    tour, indéfiniment.
+ *  - `email is null` : rien à acheter si on a déjà l'adresse.
+ *  - adresse de profil non FABRIQUÉE : voir `raisonDeNePasAcheter`. Le handler
+ *    refuserait de toute façon, mais ces contacts sont le cas MAJORITAIRE tant
+ *    que la collecte ne lit pas l'identifiant public — ils rempliraient le lot
+ *    et affameraient les contacts réellement payables. La forme de l'adresse
+ *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
+ *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
+ *
+ * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
+ * dernière quand le plafond ne permet pas de tout prendre.
+ */
+export async function enqueueEnrichmentContactsConnus(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? 25;
+  const res = await pool.query<{ organization_id: string; contact_id: string }>(
+    `select c.organization_id, c.id as contact_id
+       from contacts c
+       join signals s
+         on s.id = c.source_signal_id and s.organization_id = c.organization_id
+      where c.email is null
+        and c.enriched_at is null
+        and c.linkedin_url is not null
+        and s.status = 'qualified'
+        and (c.linkedin_provider_id is null or c.linkedin_url <> $2 || c.linkedin_provider_id)
+      order by s.occurred_at desc nulls last, c.created_at desc, c.id
+      limit $1`,
+    [limit, lienProfilDeduit('')],
+  );
+
+  let enqueued = 0;
+  // Un fuseau par organisation, lu une seule fois pour tout le lot : il borne la
+  // journée de l'identifiant de job ci-dessous.
+  const jours = new Map<string, string>();
+  for (const row of res.rows) {
+    let jour = jours.get(row.organization_id);
+    if (!jour) {
+      jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, row.organization_id));
+      jours.set(row.organization_id, jour);
+    }
+    // L'identifiant porte le JOUR : redéposer le même contact dans la même
+    // journée ne crée rien, mais un contact resté sans suite (plafond atteint,
+    // panne du fournisseur) repart demain sous un identifiant neuf. Sans le
+    // jour, il ne repartirait jamais.
+    await boss.insert([
+      {
+        name: 'enrichment.contact_connu',
+        id: deterministicUuid('enrich-contact-connu', row.contact_id, jour),
+        data: { organizationId: row.organization_id, contactId: row.contact_id },
       },
     ]);
     enqueued += 1;

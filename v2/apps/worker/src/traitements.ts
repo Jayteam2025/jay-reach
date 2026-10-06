@@ -39,6 +39,10 @@ import {
   type EnrichCompanyJob,
   type EnrichContactsJob,
 } from './handlers/enrich.js';
+import {
+  enrichirContactConnu,
+  dependancesEnrichissementReelles,
+} from './handlers/enrichment-contact-connu.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
 import {
   insertSignals,
@@ -60,6 +64,7 @@ import {
   enqueueDiscoverForActiveSources,
   enqueueScoringForOrgs,
   enqueueEnrichmentForQualified,
+  enqueueEnrichmentContactsConnus,
   enqueueEnrollments,
   enqueueRequestedRuns,
 } from './producer.js';
@@ -95,6 +100,7 @@ export const FILES_BRANCHEES = [
   'actions.dispatch',
   'enrichment.company',
   'enrichment.contacts',
+  'enrichment.contact_connu',
   'sequence.enroll',
   'sequence.tick',
   'inbox.sync',
@@ -697,6 +703,13 @@ export async function produire(ctx: Contexte): Promise<Error | null> {
     if (e > 0) {
       console.log(`[producer] enrichissement enfilé pour ${e} couple(s) compte/persona`);
     }
+    // Les PERSONNES qualifiées (engageurs de post) : elles n'ont pas de compte,
+    // donc la production ci-dessus ne les voit pas. Sans cet appel, le handler
+    // qui sait acheter leur adresse n'est jamais exécuté.
+    const ec = await enqueueEnrichmentContactsConnus(boss, pool);
+    if (ec > 0) {
+      console.log(`[producer] enrichissement enfilé pour ${ec} contact(s) déjà identifié(s)`);
+    }
     // Le cache provider n'a pas d'éviction propre : sans purge, la table grossit
     // indéfiniment de lignes que le moteur écarte déjà comme périmées.
     const purgees = await purgeExpiredCache(pool);
@@ -776,6 +789,12 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnrichCompany(ctx, donnees as EnrichCompanyJob);
     case 'enrichment.contacts':
       return traiterEnrichContacts(ctx, donnees as EnrichContactsJob);
+    case 'enrichment.contact_connu':
+      // La charge utile n'est PAS transtypée comme ses voisines : le handler la
+      // valide lui-même (zod). Un `contactId` absent ou mal formé doit échouer
+      // ici, pas plus loin dans une requête qui chercherait `undefined`.
+      await enrichirContactConnu(dependancesEnrichissementReelles(ctx.pool, ctx.encryptionKey), donnees);
+      return;
     case 'inbox.sync':
       return releverSalesBlink(ctx, donnees as { organizationId: string });
     case 'inbox.sync_graph':

@@ -95,8 +95,15 @@ export interface EnrichContactsJob {
   readonly maxContacts?: number;
 }
 
-/** Statut brut de l'email retenu (pour le mapping email_status en base). */
-function rawStatusOf(result: FullEnrichContactResult, email: string | null): string | null {
+/**
+ * Statut brut de l'email retenu (pour le mapping email_status en base).
+ *
+ * Exportée depuis le lot 4a : l'enrichissement d'un contact CONNU
+ * (`enrichment-contact-connu.ts`) retient son adresse de la même façon et doit
+ * en lire le statut de la même façon. La recopier ferait diverger les deux
+ * chemins au premier statut FullEnrich ajouté.
+ */
+export function rawStatusOf(result: FullEnrichContactResult, email: string | null): string | null {
   if (!email) {
     return null;
   }

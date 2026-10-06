@@ -25,6 +25,12 @@ export const QUEUES: readonly QueueDef[] = [
   { name: 'imports.process', descriptionKey: 'jobs.q.importsProcess', retry: DEFAULT_RETRY },
   { name: 'enrichment.company', descriptionKey: 'jobs.q.enrichmentCompany', retry: DEFAULT_RETRY },
   { name: 'enrichment.contacts', descriptionKey: 'jobs.q.enrichmentContacts', retry: DEFAULT_RETRY },
+  // `contact_connu` et non `contact` : à un caractère de `enrichment.contacts`
+  // ci-dessus, une faute de frappe ferait écouter la mauvaise file sans que rien
+  // ne le signale. Les deux achètent des adresses, mais pas au même point du
+  // chemin — celle-ci part d'une PERSONNE déjà identifiée (un engageur de post),
+  // l'autre d'une entreprise où il faut encore trouver qui contacter.
+  { name: 'enrichment.contact_connu', descriptionKey: 'jobs.q.enrichmentContactConnu', retry: DEFAULT_RETRY },
   { name: 'sequence.enroll', descriptionKey: 'jobs.q.sequenceEnroll', retry: DEFAULT_RETRY },
   { name: 'sequence.tick', descriptionKey: 'jobs.q.sequenceTick', retry: DEFAULT_RETRY },
   { name: 'actions.dispatch', descriptionKey: 'jobs.q.actionsDispatch', retry: DEFAULT_RETRY },
