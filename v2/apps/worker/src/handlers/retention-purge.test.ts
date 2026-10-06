@@ -15,6 +15,8 @@ function poolFactice(opts: { candidats: Array<{ id: string; organization_id: str
   const params: unknown[][] = [];
   const reponse = (sqlTexte: string, p: unknown[]) => {
     if (/from signals s\s+where s\.kind = 'post_engagement'/i.test(sqlTexte)) return { rows: opts.candidats, rowCount: opts.candidats.length };
+    if (/for update/i.test(sqlTexte) && /from signals/i.test(sqlTexte)) return { rows: [{ external_id: 'post:urn' }], rowCount: 1 };
+    if (/for update/i.test(sqlTexte)) return { rows: [], rowCount: 0 };
     if (/as contacte/i.test(sqlTexte)) return { rows: [{ contacte: opts.contactes?.has(String(p[1])) ?? false }], rowCount: 1 };
     if (/delete from signals/i.test(sqlTexte)) return { rows: [{ source_run_id: 'run-1' }], rowCount: 1 };
     return { rows: [], rowCount: 0 };
@@ -37,7 +39,7 @@ describe('retention.purge', () => {
     const selection = m.params[m.sql.findIndex((s) => /from signals s\s+where s\.kind = 'post_engagement'/i.test(s))];
     expect(selection?.[0]).toBe(RETENTION_PERSONNES_NON_CONTACTEES_JOURS);
     expect(m.sql.some((s) => /delete from signals/i.test(s))).toBe(true);
-    expect(bilan).toEqual({ candidats: 1, effaces: 1, conserves: 0 });
+    expect(bilan).toEqual({ candidats: 1, effaces: 1, conserves: 0, memoiresEffacees: 0 });
   });
 
   it("un post_engagement contacte n'est jamais efface", async () => {
@@ -48,7 +50,15 @@ describe('retention.purge', () => {
     });
     const bilan = await purgerEngageursPerimes(m.pool);
     expect(m.sql.some((s) => /delete from (signals|contacts)/i.test(s))).toBe(false);
-    expect(bilan).toEqual({ candidats: 1, effaces: 0, conserves: 1 });
+    expect(bilan).toEqual({ candidats: 1, effaces: 0, conserves: 1, memoiresEffacees: 0 });
+  });
+
+  it('la memoire d ecart a la meme borne que les personnes', async () => {
+    const m = poolFactice({ candidats: [] });
+    await purgerEngageursPerimes(m.pool);
+    const i = m.sql.findIndex((x) => /delete from linkedin_engageurs_ecartes/i.test(x));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(m.params[i]?.[0]).toBe(RETENTION_PERSONNES_NON_CONTACTEES_JOURS);
   });
 
   it('ecarterEngageur conserve une personne contactee, sans rien effacer', async () => {

@@ -15,13 +15,24 @@
 //   4b. les deux ensemble — 10, 11, 12, 13, 15, 15c : les personnes contactées sont détruites ;
 //   5. post-engagement.ts : ne plus consulter `suppressions` — 20 à 23 ; sans `lower()` — 22, 23 ; sans le
 //      filtre d'expiration — 24 ; sans le filtre d'organisation — 24b ;
-//   6. mention-origine.ts : retirer le test du kind — 28, 29 ; de l'étape — 27 ; de l'organisation — 30.
+//   6. mention-origine.ts : « premier email » toujours vrai — 27b ; canal email non filtré — 27, 27c, 27d ;
+//      retrait de `created_at >= occurred_at` (fiche importée) — 29b ;
+//   7. retention-purge.ts : retirer la purge de la mémoire — 34, 34b ; post-engagement.ts : stocker l'URN lisible
+//      au lieu de l'empreinte — 5, 9b, 31, 32, 33, 34c ;
+//   8. contacts.ts : retirer la suppression linkedin de `nePlusContacter` — 37, 37b, 38, 38b ;
+//   9. post-engagement.ts : retirer le verrou `for update` des contacts (ou des deux) — 40, 40b, 40t, 40tb : la
+//      personne contactée est DÉTRUITE. La condition atomique du `delete from signals`, retirée seule, ne fait
+//      rien rougir : sous verrou, aucune course ne l'atteint (défense en profondeur, non prouvée seule).
+import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import {
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
   ecarterEngageur,
   enregistrerEngageur,
+  envoyerEmailSalesBlink,
   mentionOrigineDuMessage,
+  nePlusContacter,
+  normaliserUrlPost,
   purgerEngageursPerimes,
 } from './_linkedin-retention-bundle.mjs';
 
@@ -49,6 +60,9 @@ async function jouer(...sections) {
 
 let seq = 0;
 const POST = 'https://www.linkedin.com/posts/x_y-1';
+/** L'external_id d'un engageur : le post NORMALISÉ, puis l'URN. */
+const externe = (id) => `${normaliserUrlPost(POST)}:urn:li:fsd_profile:ACoAA${id}`;
+const empreinteDe = async (id) => (await q(`select encode(sha256(convert_to($1, 'UTF8')), 'hex') h`, [externe(id)])).rows[0].h;
 const eng = (id, nom = `Nom ${id}`, intitule = 'Directrice commerciale') => ({ urn: `urn:li:fsd_profile:ACoAA${id}`, nom, intitule });
 
 /** Une organisation avec persona, source, campagne de deux étapes (positions 0 et 1) et passage. */
@@ -106,13 +120,13 @@ async function purgeParAge() {
   const bilan = await purgerEngageursPerimes(pool);
   check('2. 91 jours, jamais contacté : le signal ET le contact sont effacés', !(await existe('signals', vieux.signal)) && !(await existe('contacts', vieux.contact)));
   check('2b. 91 jours, jamais jugé : aucune mémoire d’écart (la personne peut revenir)',
-    (await q(`select 1 from linkedin_engageurs_ecartes where organization_id = $1 and external_id like '%ACoAAvieux'`, [m.org])).rowCount === 0);
+    (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id = $1 and external_id = $2`, [m.org, await empreinteDe('vieux')])).rows[0].n === 0);
   check('3. 89 jours : rien n’est effacé', (await existe('signals', recent.signal)) && (await existe('contacts', recent.contact)));
   check('4. 90 jours et 1 minute : effacé ; 90 jours moins 1 minute : conservé',
     !(await existe('signals', juste_apres.signal)) && (await existe('signals', juste_avant.signal)) && (await existe('contacts', juste_avant.contact)));
   check('5. une personne déjà jugée garde sa mémoire d’écart (sinon le collecteur la recréerait et la repaierait)',
     !(await existe('signals', note.signal)) &&
-      (await q(`select 1 from linkedin_engageurs_ecartes where organization_id = $1 and external_id like '%ACoAAnote'`, [m.org])).rowCount === 1);
+      (await q(`select 1 from linkedin_engageurs_ecartes where organization_id = $1 and external_id = $2`, [m.org, await empreinteDe('note')])).rowCount === 1);
   check('6. le compteur d’écarts du passage collecteur ne bouge pas (passage clos depuis longtemps)',
     (await q(`select ecartes from source_runs where id = $1`, [m.run])).rows[0].ecartes === 0);
   check('7. le bilan ne compte aucun refus de la fonction qui détruit', bilan.conserves === 0, JSON.stringify(bilan));
@@ -249,33 +263,211 @@ async function mention() {
   const m = await monde();
   const r = await collecter(m, eng('gaelle', 'Gaëlle Moreau'));
   const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, r.contact])).rows[0].id;
-  const demande = (stepId, locale, org = m.org) => ({ organizationId: org, enrollmentId: insc, stepId, locale });
+  const demande = (locale, org = m.org) => ({ organizationId: org, enrollmentId: insc, locale });
 
-  const fr = await mentionOrigineDuMessage(pool, demande(m.pos0, 'fr'));
+  const fr = await mentionOrigineDuMessage(pool, demande('fr'));
   check('25. contact né d’un engageur, étape 0, fr : la mention d’origine', typeof fr === 'string' && fr.includes('LinkedIn') && fr.includes('répondez'), String(fr).slice(0, 60));
-  const en = await mentionOrigineDuMessage(pool, demande(m.pos0, 'en'));
-  const nl = await mentionOrigineDuMessage(pool, demande(m.pos0, 'nl'));
+  const en = await mentionOrigineDuMessage(pool, demande('en'));
+  const nl = await mentionOrigineDuMessage(pool, demande('nl'));
   check('26. la mention sort dans la langue du contact (en, nl), le français pour une langue inconnue ou absente',
     en?.startsWith('You are receiving') === true && nl?.startsWith('U ontvangt') === true &&
-      (await mentionOrigineDuMessage(pool, demande(m.pos0, 'de'))) === fr && (await mentionOrigineDuMessage(pool, demande(m.pos0, null))) === fr);
-  check('27. étape 1 (une relance) : pas de mention', (await mentionOrigineDuMessage(pool, demande(m.pos1, 'fr'))) === null);
+      (await mentionOrigineDuMessage(pool, demande('de'))) === fr && (await mentionOrigineDuMessage(pool, demande(null))) === fr);
+  // 27 : une séquence qui COMMENCE PAR LINKEDIN porte quand même la mention au premier email.
+  await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key) values ($1,$2,$3,'linkedin_invite','delivered',gen_random_uuid()::text)`, [m.org, insc, m.pos0]);
+  check('27. une étape LinkedIn déjà partie ne supprime pas la mention du premier EMAIL', (await mentionOrigineDuMessage(pool, demande('fr'))) === fr);
+  // 27b : un email déjà parti (étape 0 ou 1, peu importe) : plus de mention.
+  const emailParti = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key) values ($1,$2,$3,'email','dispatched',gen_random_uuid()::text) returning id`, [m.org, insc, m.pos1])).rows[0].id;
+  check('27b. un email déjà parti pour ce contact : pas de seconde mention', (await mentionOrigineDuMessage(pool, demande('fr'))) === null);
+  await q(`update actions set status = 'failed' where id = $1`, [emailParti]);
+  check('27c. un email qui a échoué n’est pas un premier envoi réussi : la mention reste due', (await mentionOrigineDuMessage(pool, demande('fr'))) === fr);
+  await q(`update contacts set locale = 'nl' where id = $1`, [r.contact]);
+  check('27d. sans langue portée par le job, celle du contact', (await mentionOrigineDuMessage(pool, demande(null)))?.startsWith('U ontvangt') === true);
 
   const sigEnt = (await q(`insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at) values ($1,$2,'adzuna','adz:1','job_posting',now()) returning id`, [m.org, m.source])).rows[0].id;
   const ent = (await q(`insert into contacts (organization_id, first_name, email, source_signal_id) values ($1,'Hugo','hugo@acme.fr',$2) returning id`, [m.org, sigEnt])).rows[0].id;
   const inscEnt = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, ent])).rows[0].id;
   check('28. contact né d’un signal d’entreprise, étape 0 : pas de mention',
-    (await mentionOrigineDuMessage(pool, { organizationId: m.org, enrollmentId: inscEnt, stepId: m.pos0, locale: 'fr' })) === null);
+    (await mentionOrigineDuMessage(pool, { organizationId: m.org, enrollmentId: inscEnt, locale: 'fr' })) === null);
   const sansOrigine = (await q(`insert into contacts (organization_id, first_name, email) values ($1,'Ines','ines@acme.fr') returning id`, [m.org])).rows[0].id;
   const inscSans = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, sansOrigine])).rows[0].id;
   check('29. contact sans signal d’origine (import) : pas de mention',
-    (await mentionOrigineDuMessage(pool, { organizationId: m.org, enrollmentId: inscSans, stepId: m.pos0, locale: 'fr' })) === null);
+    (await mentionOrigineDuMessage(pool, { organizationId: m.org, enrollmentId: inscSans, locale: 'fr' })) === null);
+  // C2 : une fiche IMPORTÉE par l'opérateur, rattachée à un engageur, n'a pas été trouvée sur LinkedIn.
+  const importee = (await q(`insert into contacts (organization_id, first_name, email, linkedin_provider_id, created_at) values ($1,'Ivan','ivan@acme.fr','ACoAAivan', now() - interval '300 days') returning id`, [m.org])).rows[0].id;
+  const rIvan = await collecter(m, eng('ivan', 'Ivan Petit'));
+  const inscIvan = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, importee])).rows[0].id;
+  check('29b. fiche importée rattachée à un engageur : AUCUNE mention (l’origine serait fausse)',
+    rIvan.contact === importee && (await mentionOrigineDuMessage(pool, { organizationId: m.org, enrollmentId: inscIvan, locale: 'fr' })) === null);
   const autre = await monde();
   check('30. l’inscription d’une autre organisation ne donne rien',
-    (await mentionOrigineDuMessage(pool, demande(m.pos0, 'fr', autre.org))) === null);
+    (await mentionOrigineDuMessage(pool, demande('fr', autre.org))) === null);
+}
+
+async function memoireBornee() {
+  console.log('la mémoire d’écart : une empreinte, et la même borne que les personnes');
+  const m = await monde();
+  const note = await collecter(m, eng('note2'));
+  await q(`update signals set score = 12, status = 'new' where id = $1`, [note.signal]);
+  await ecarterEngageur(pool, m.org, note.signal); // jugé par le scoring : mémoire posée
+  const lignes = (await q(`select external_id, scored_at from linkedin_engageurs_ecartes where organization_id = $1`, [m.org])).rows;
+  const attendue = await empreinteDe('note2');
+  check('31. la mémoire stocke le sha256 de `<post>:<urn>`, calculé côté code comme côté base', lignes.length === 1 && lignes[0].external_id === attendue, JSON.stringify(lignes));
+  check('32. aucun identifiant lisible : la table ne contient pas l’URN',
+    (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id = $1 and external_id like '%ACoAA%'`, [m.org])).rows[0].n === 0);
+  const recoll = await collecter(m, eng('note2'));
+  check('33. la personne jugée n’est pas recollectée (la lecture compare l’empreinte)', recoll.issue === 'ecarte', recoll.issue);
+
+  // Bornes réelles : 90 j + 1 min expirée, 90 j - 1 min conservée, plus récente conservée.
+  const insere = (ext, jours, minutes) =>
+    q(`insert into linkedin_engageurs_ecartes (organization_id, external_id, scored_at) values ($1, $2, now() - make_interval(days => $3, mins => $4))`, [m.org, ext, jours, minutes]);
+  await insere('h-expiree', 90, 1);
+  await insere('h-limite', 89, 24 * 60 - 1);
+  await insere('h-recente', 5, 0);
+  const bilan = await purgerEngageursPerimes(pool);
+  const restantes = (await q(`select external_id from linkedin_engageurs_ecartes where organization_id = $1 and external_id like 'h-%' order by external_id`, [m.org])).rows.map((r) => r.external_id);
+  check('34. la purge efface la mémoire à 90 jours et 1 minute, garde 90 jours moins 1 minute et la récente',
+    JSON.stringify(restantes) === JSON.stringify(['h-limite', 'h-recente']), JSON.stringify(restantes));
+  check('34b. le bilan compte les empreintes expirées', bilan.memoiresEffacees >= 1, JSON.stringify(bilan));
+  check('34c. la mémoire posée à l’instant (la personne jugée ci-dessus) survit à la purge',
+    (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id = $1 and external_id = $2`, [m.org, attendue])).rows[0].n === 1);
+
+  // La migration convertit en place un identifiant lisible déjà présent, sans perte, et se rejoue.
+  const sqlMigration = await readFile(new URL('../../supabase/migrations/20261005130600_engageurs_ecartes_empreinte.sql', import.meta.url), 'utf8').catch(() => null);
+  if (sqlMigration === null) {
+    check('35. la migration est lisible', false);
+  } else {
+    await q(`insert into linkedin_engageurs_ecartes (organization_id, external_id) values ($1, 'post:urn:li:fsd_profile:ACoAAlisible')`, [m.org]);
+    await pool.query(sqlMigration);
+    await pool.query(sqlMigration);
+    const apres = (await q(`select external_id from linkedin_engageurs_ecartes where organization_id = $1 and external_id not like 'h-%'`, [m.org])).rows.map((r) => r.external_id);
+    const h = (await q(`select encode(sha256(convert_to('post:urn:li:fsd_profile:ACoAAlisible', 'UTF8')), 'hex') h`)).rows[0].h;
+    check('35. la migration hache une ligne lisible en place, et se rejoue sans effet', apres.includes(h) && !apres.includes('post:urn:li:fsd_profile:ACoAAlisible'), JSON.stringify(apres));
+  }
+}
+
+async function oppositionBoucleFermee() {
+  console.log('« Ne plus contacter » ferme la boucle : la personne n’est plus collectée');
+  const m = await monde();
+  const operateur = (await q(`insert into auth.users (id, email) values (gen_random_uuid(), $1) returning id`, [`op${Date.now()}@test.local`])).rows[0].id;
+  const r = await collecter(m, { ...eng('opposee', 'Olive Opposee'), urlProfil: 'https://www.linkedin.com/in/olive-opposee-9' });
+  check('36. avant l’opposition : la personne est collectée', r.issue === 'nouveau');
+  const ctx = { ex: pool, organisationId: m.org, utilisateurId: operateur, role: 'operator' };
+  await nePlusContacter(ctx, { contactId: r.contact });
+  const sup = (await q(`select value, scope from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows;
+  check('37. « Ne plus contacter » écrit une suppression de portée linkedin sur l’adresse du contact',
+    sup.length === 1 && sup[0].value === 'https://www.linkedin.com/in/olive-opposee-9', JSON.stringify(sup));
+  await nePlusContacter(ctx, { contactId: r.contact });
+  check('37b. rejouée, elle n’écrit pas de doublon', (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 1);
+  const autrePost = await enregistrerEngageur(m.ctx, { ...eng('opposee', 'Olive Opposee'), urlProfil: 'https://www.linkedin.com/in/olive-opposee-9' }, { id: m.campagne, personaId: m.persona }, 'https://www.linkedin.com/posts/autre-post-2');
+  check('38. re-collectée sur un AUTRE post : refusée dès la collecte (ni scorée, ni enrichie)', autrePost === 'supprime', autrePost);
+  const sansAdresse = (await q(`insert into contacts (organization_id, first_name, email) values ($1,'Sans','sans@acme.fr') returning id`, [m.org])).rows[0].id;
+  await nePlusContacter(ctx, { contactId: sansAdresse });
+  check('38b. un contact sans adresse LinkedIn n’écrit pas de suppression linkedin',
+    (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 1);
+}
+
+async function course() {
+  console.log('la garde résiste à une inscription ou à un fil concurrents');
+  const variantes = [
+    { nom: 'inscription', table: 'enrollments', suffixe: '',
+      inserer: (c, m, a) => c.query(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active')`, [m.org, m.campagne, a.contact]) },
+    { nom: 'fil de messages', table: 'threads', suffixe: 't',
+      inserer: (c, m, a) => c.query(`insert into threads (organization_id, contact_id, channel) values ($1,$2,'email')`, [m.org, a.contact]) },
+  ];
+  for (const { nom, table, suffixe, inserer } of variantes) {
+    const m = await monde();
+    const a = await collecter(m, eng(`course${suffixe}`));
+    // Une transaction ouverte crée le lien SANS l'avoir encore validé.
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await inserer(client, m, a);
+      let fini = false;
+      const effacement = ecarterEngageur(pool, m.org, a.signal, { juge: false }).then((x) => { fini = true; return x; });
+      await new Promise((r) => setTimeout(r, 700));
+      check(`39${suffixe}. ${nom} en cours : l’effacement ATTEND (verrou), il ne passe pas entre la lecture et la suppression`, fini === false);
+      await client.query('commit');
+      const issue = await effacement;
+      check(`40${suffixe}. ${nom} validé : l’effacement conserve la personne`, issue === 'conserve', issue);
+      check(`40${suffixe}b. rien n’a été détruit : signal, contact ET ${nom} sont là`,
+        (await existe('signals', a.signal)) && (await existe('contacts', a.contact)) &&
+          (await q(`select 1 from ${table} where contact_id = $1`, [a.contact])).rowCount === 1);
+    } finally {
+      client.release();
+    }
+  }
+}
+
+/**
+ * Bout en bout : le VRAI `envoyerEmailSalesBlink` sur Postgres (rendu, gabarit, porte
+ * email, plafond, liaison, fil). Seul le client HTTP de SalesBlink est un double, qui
+ * capture le corps poussé.
+ */
+async function envoiDeBoutEnBout() {
+  console.log('la mention part dans le vrai envoi, et se retrouve dans le fil');
+  process.env.SALESBLINK_API_KEY = 'cle-de-test';
+  const m = await monde();
+  const sender = (await q(
+    `insert into senders (organization_id, kind, provider_id, identity, provider_ref, provider_state, is_active)
+     values ($1, 'email', 'salesblink', 'exp@exemple.fr', 'sb-1', '{"sending_enabled": true}'::jsonb, true) returning id`, [m.org])).rows[0].id;
+  const famille = (await q(
+    `insert into message_templates (organization_id, name, channel, locale, subject, body)
+     values ($1, 'Gabarit', 'email', 'fr', 'Objet {{prenom}}', 'Bonjour {{prenom}}') returning id`, [m.org])).rows[0].id;
+  await q(`insert into message_templates (organization_id, name, channel, locale, subject, body, parent_id, version) values ($1, 'Template', 'email', 'en', 'Subject {{prenom}}', 'Hello {{prenom}}', $2, 2)`, [m.org, famille]);
+  await q(`update sequence_steps set template_parent_id = $2 where id = $1`, [m.pos0, famille]);
+
+  const envoyer = async (e, { stepId = m.pos0, locale = 'fr' } = {}) => {
+    const c = await collecter(m, e);
+    await q(`update contacts set email = $2, email_status = 'valid', first_name = 'Marie', locale = $3 where id = $1`, [c.contact, `${e.urn.slice(-6).toLowerCase()}@exemple.fr`, locale]);
+    const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, c.contact])).rows[0].id;
+    const action = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, sender_id, status, idempotency_key) values ($1,$2,$3,'email',$4,'scheduled',gen_random_uuid()::text) returning id`, [m.org, insc, stepId, sender])).rows[0].id;
+    const pousses = [];
+    const client = {
+      creerGabaritNeutre: async () => 'gab-1',
+      creerListe: async () => 'liste-1',
+      creerSequenceEtape: async () => 'seq-1',
+      activerEtPlanifier: async () => undefined,
+      pousserLeads: async (_liste, leads) => { pousses.push(...leads); },
+      repondreDansLeFil: async () => ({ idTache: 't' }),
+    };
+    await envoyerEmailSalesBlink({ pool }, {
+      organizationId: m.org, channel: 'email', actionId: action,
+      email: { enrollmentId: insc, contactId: c.contact, stepId, campaignId: m.campagne, templateParentId: famille, senderId: sender, locale },
+    }, client);
+    const fil = (await q(`select tm.body from thread_messages tm join threads t on t.id = tm.thread_id where t.contact_id = $1`, [c.contact])).rows.map((r) => r.body);
+    const statut = (await q(`select status, block_reason, error from actions where id = $1`, [action])).rows[0];
+    return { pousses, fil, statut, insc, action, contact: c.contact };
+  };
+
+  const premier = await envoyer(eng('envoi1'));
+  const corps = premier.pousses[0]?.jr_body ?? '';
+  check('41. le premier email d’un engageur part avec la mention en pied, rendue dans sa langue',
+    premier.pousses.length === 1 && corps.startsWith('<p>Bonjour Marie</p><p>Vous recevez ce message') && corps.includes('répondez simplement à ce message'),
+    `${JSON.stringify(premier.statut)} ${corps.slice(0, 80)}`);
+  check('42. le fil sortant porte le même texte que le destinataire lit', premier.fil.length === 1 && premier.fil[0].includes('Vous recevez ce message'), JSON.stringify(premier.fil).slice(0, 80));
+  const en = await envoyer(eng('envoi2'), { locale: 'en' }).catch((e) => ({ erreur: String(e) }));
+  check('43. un contact en anglais reçoit gabarit ET mention en anglais',
+    en.pousses?.[0]?.jr_body.startsWith('<p>Hello Marie</p><p>You are receiving this message') === true, JSON.stringify(en.statut ?? en));
+  // Un contact né d'un signal d'entreprise : même envoi, aucune mention.
+  const sigEnt = (await q(`insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at) values ($1,$2,'adzuna','adz:e2e','job_posting',now()) returning id`, [m.org, m.source])).rows[0].id;
+  const entreprise = (await q(`insert into contacts (organization_id, first_name, last_name, email, email_status, locale, source_signal_id) values ($1,'Marie','Durand','marie.durand@exemple.fr','valid','fr',$2) returning id`, [m.org, sigEnt])).rows[0].id;
+  const inscEnt = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active') returning id`, [m.org, m.campagne, entreprise])).rows[0].id;
+  const actEnt = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, sender_id, status, idempotency_key) values ($1,$2,$3,'email',$4,'scheduled',gen_random_uuid()::text) returning id`, [m.org, inscEnt, m.pos0, sender])).rows[0].id;
+  const poussesEnt = [];
+  await envoyerEmailSalesBlink({ pool }, {
+    organizationId: m.org, channel: 'email', actionId: actEnt,
+    email: { enrollmentId: inscEnt, contactId: entreprise, stepId: m.pos0, campaignId: m.campagne, templateParentId: famille, senderId: sender, locale: 'fr' },
+  }, {
+    creerGabaritNeutre: async () => 'gab-1', creerListe: async () => 'liste-1', creerSequenceEtape: async () => 'seq-1',
+    activerEtPlanifier: async () => undefined, pousserLeads: async (_l, leads) => { poussesEnt.push(...leads); }, repondreDansLeFil: async () => ({ idTache: 't' }),
+  });
+  const statEnt = (await q(`select status, block_reason, error from actions where id = $1`, [actEnt])).rows[0];
+  check('44. contact né d’un signal d’entreprise : le même envoi part SANS mention', poussesEnt.length === 1 && poussesEnt[0].jr_body === '<p>Bonjour Marie</p>', `${poussesEnt[0]?.jr_body} ${JSON.stringify(statEnt)}`);
+  delete process.env.SALESBLINK_API_KEY;
 }
 
 try {
-  await jouer(purgeParAge, jamaisLesContactes, contactPreexistant, suppression, mention);
+  await jouer(purgeParAge, jamaisLesContactes, contactPreexistant, suppression, mention, memoireBornee, oppositionBoucleFermee, course, envoiDeBoutEnBout);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

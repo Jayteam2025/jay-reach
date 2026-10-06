@@ -50,7 +50,12 @@ const RELEVE_GRAPH_POLL_MS = 60_000;
  * idempotente par les données (ce qui est effacé n'est plus sélectionné), deux
  * jobs concurrents au pire ne trouvent rien à faire.
  */
-const RETENTION_PURGE_POLL_MS = Number(process.env.RETENTION_PURGE_POLL_MS ?? 60 * 60 * 1000);
+const RETENTION_PURGE_POLL_MS = ((brut: string | undefined): number => {
+  const valeur = Number(brut ?? '');
+  // Une valeur absente ou absurde ne doit pas devenir `setInterval(fn, NaN)` (~1 ms,
+  // un job par milliseconde) : repli sur l'heure.
+  return Number.isFinite(valeur) && valeur >= 60_000 ? valeur : 60 * 60 * 1000;
+})(process.env.RETENTION_PURGE_POLL_MS);
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;

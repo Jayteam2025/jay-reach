@@ -14,3 +14,4 @@ export { ecrireReglage } from '@jay-reach/core';
 // dédoublonnage par identifiant, le comptage des jobs réellement créés et la
 // politique de reprise déclarée.
 export { createRuntime, registerQueues } from '../../apps/worker/src/runtime.js';
+export { normaliserUrlPost } from '@jay-reach/core';

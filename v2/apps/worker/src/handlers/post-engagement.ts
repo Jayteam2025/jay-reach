@@ -13,6 +13,7 @@
  * organisation.
  */
 import type { Pool } from 'pg';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { dansUneTransaction, normaliserUrlPost, normaliserUrlProfil, type Executeur } from '@jay-reach/core';
 
@@ -130,7 +131,7 @@ export async function enregistrerEngageur(
   // 1) Déjà écarté par le scoring : ni recréé, ni rescoré, donc jamais repayé.
   const ecarte = await pool.query(
     `select 1 as one from linkedin_engageurs_ecartes where organization_id = $1 and external_id = $2`,
-    [org, externalId],
+    [org, empreinteEngageur(externalId)],
   );
   if (ecarte.rows.length > 0) return 'ecarte';
 
@@ -241,6 +242,20 @@ export async function enregistrerEngageur(
 }
 
 /**
+ * Un morceau de SQL qui vient du code et jamais d'une donnée : le type nominal
+ * interdit de passer une chaîne quelconque à `sqlPersonneContactee`, qui la
+ * concatène. On ne le fabrique qu'avec un littéral écrit dans le code.
+ */
+export type FragmentSql = string & { readonly __fragmentSql: true };
+export const PARAM_ORG = '$1' as FragmentSql;
+export const PARAM_SIGNAL = '$2' as FragmentSql;
+
+/** Empreinte (sha256 hexadécimal) d'un `external_id` : ce que `linkedin_engageurs_ecartes` stocke. */
+export function empreinteEngageur(externalId: string): string {
+  return createHash('sha256').update(externalId, 'utf8').digest('hex');
+}
+
+/**
  * « Cette personne a été contactée à cause de cet engageur », en SQL : une
  * expression booléenne, partagée par la purge (qui l'exclut de sa sélection) et par
  * `ecarterEngageur` (qui refuse de détruire). Une seule définition : deux copies
@@ -255,7 +270,7 @@ export async function enregistrerEngageur(
  * @param signal   expression SQL de l'id du signal
  * @param occurred expression SQL de la date du signal
  */
-export function sqlPersonneContactee(org: string, signal: string, occurred: string): string {
+export function sqlPersonneContactee(org: FragmentSql, signal: FragmentSql, occurred: FragmentSql): string {
   return `(
          exists (select 1 from enrollments en where en.organization_id = ${org} and en.signal_id = ${signal})
          or exists (select 1 from contacts c join enrollments en on en.contact_id = c.id
@@ -304,42 +319,57 @@ export async function ecarterEngageur(
   const juge = opts.juge ?? true;
   const compter = opts.compter ?? juge;
   return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<'efface' | 'conserve'> => {
-    // GARDE DE SÛRETÉ, ICI et non chez l'appelant : une personne à qui on a écrit
-    // (inscription, ou fil de messages) n'est jamais effacée. Garder une ligne
-    // trop longtemps se répare, l'effacer non. Le signal est alors seulement
-    // marqué écarté s'il attendait encore son jugement, pour que le scoring ne le
-    // reprenne pas (et ne le repaie pas) à chaque cycle ; le contact n'est pas
-    // touché, il garde son origine.
-    const contacte = await tx.query<{ contacte: boolean }>(
-      `select ${sqlPersonneContactee('$1', '$2', '(select occurred_at from signals where id = $2)')} as contacte`,
+    // VERROUS d'abord : le signal et les contacts nés de lui. Une inscription ou un
+    // fil qui se crée en même temps prend un verrou partagé sur la ligne du contact
+    // (clé étrangère) : il attend la fin de cette transaction au lieu de passer entre
+    // la lecture de la garde et la suppression. Les `delete` ci-dessous portent en
+    // plus leurs propres conditions, la garde ne repose pas sur le seul verrou.
+    const verrouille = await tx.query<{ external_id: string }>(
+      `select external_id from signals
+        where id = $2 and organization_id = $1 and kind = 'post_engagement' for update`,
       [organizationId, signalId],
     );
-    if (contacte.rows[0]?.contacte === true) {
-      if (juge) {
-        await tx.query(
-          `insert into linkedin_engageurs_ecartes (organization_id, external_id)
-           select organization_id, external_id from signals
-            where id = $2 and organization_id = $1 and kind = 'post_engagement'
-           on conflict do nothing`,
-          [organizationId, signalId],
-        );
-      }
+    const externalId = verrouille.rows[0]?.external_id;
+    if (externalId === undefined) return 'efface'; // déjà parti, ou d'une autre organisation : rien à détruire
+    await tx.query(`select id from contacts where organization_id = $1 and source_signal_id = $2 for update`, [
+      organizationId,
+      signalId,
+    ]);
+
+    // Mémoire d'écart : une EMPREINTE de l'identifiant, jamais l'URN lisible. Cette
+    // table n'est qu'un cache d'économie (ne pas rescorer, donc ne pas repayer) :
+    // un seul lecteur, par égalité exacte. Elle est bornée par la purge de rétention.
+    const poserMemoire = async (): Promise<void> => {
+      if (!juge) return;
+      await tx.query(
+        `insert into linkedin_engageurs_ecartes (organization_id, external_id) values ($1, $2)
+         on conflict do nothing`,
+        [organizationId, empreinteEngageur(externalId)],
+      );
+    };
+    // La personne est contactée : on ne détruit rien. Le signal est seulement marqué
+    // écarté s'il attendait encore son jugement, pour que le scoring ne le reprenne
+    // pas (et ne le repaie pas) à chaque cycle ; le contact n'est pas touché.
+    const conserver = async (): Promise<'conserve'> => {
+      await poserMemoire();
       await tx.query(
         `update signals set status = 'discarded', discard_reason = 'contacted', scored_at = coalesce(scored_at, now())
           where id = $2 and organization_id = $1 and kind = 'post_engagement' and status = 'new'`,
         [organizationId, signalId],
       );
       return 'conserve';
-    }
-    if (juge) {
-      await tx.query(
-        `insert into linkedin_engageurs_ecartes (organization_id, external_id)
-         select organization_id, external_id from signals
-          where id = $2 and organization_id = $1 and kind = 'post_engagement'
-         on conflict do nothing`,
-        [organizationId, signalId],
-      );
-    }
+    };
+
+    // GARDE DE SÛRETÉ, ICI et non chez l'appelant : une personne à qui on a écrit
+    // (inscription, ou fil de messages) n'est jamais effacée. Garder une ligne
+    // trop longtemps se répare, l'effacer non. Cette lecture est un raccourci : le
+    // `delete from signals` plus bas porte la MÊME condition, c'est lui qui décide.
+    const contacte = await tx.query<{ contacte: boolean }>(
+      `select ${sqlPersonneContactee(PARAM_ORG, PARAM_SIGNAL, '(select occurred_at from signals where id = $2)' as FragmentSql)} as contacte`,
+      [organizationId, signalId],
+    );
+    if (contacte.rows[0]?.contacte === true) return conserver();
+    await poserMemoire();
     // N'efface que ce que CET engageur a créé. La garde vit ICI, et non chez
     // l'appelant : `qualifiesPersonnes` la portait, donc elle ne protégeait que
     // la purge — le scoring (`persistScore(..., 'discarded')`) et la purge des
@@ -354,6 +384,7 @@ export async function ecarterEngageur(
         where c.organization_id = $1 and c.source_signal_id = $2
           -- jamais une personne à qui on a écrit, même séquence terminée
           and not exists (select 1 from enrollments e where e.contact_id = c.id)
+          and not exists (select 1 from threads t where t.contact_id = c.id)
           -- jamais une ligne d'une liste importée par l'opérateur
           and c.source_list_id is null
           -- jamais une fiche ANTÉRIEURE au signal : elle préexistait à l'engageur,
@@ -361,16 +392,22 @@ export async function ecarterEngageur(
           and c.created_at >= (select s.occurred_at from signals s where s.id = $2)`,
       [organizationId, signalId],
     );
+    // Suppression du signal, ATOMIQUE : la condition « personne contactée » est dans
+    // l'instruction elle-même, évaluée avant le détachement des survivants (qui
+    // vide `source_signal_id`, donc la moitié de la condition).
+    const supprime = await tx.query<{ source_run_id: string | null }>(
+      `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement'
+          and not ${sqlPersonneContactee(PARAM_ORG, PARAM_SIGNAL, 'signals.occurred_at' as FragmentSql)}
+        returning source_run_id`,
+      [organizationId, signalId],
+    );
+    if (supprime.rows.length === 0) return conserver(); // contactée entre la lecture et ici
     // Les survivants sont DÉTACHÉS, l'inverse exact du rattachement : sans ça ils
     // garderaient l'origine d'un signal supprimé. La contrainte est aujourd'hui
     // `on delete set null`, qui produirait le même état ; on ne s'en remet pas à
     // elle, pour que le détachement ne dépende pas du mode de la clé étrangère.
     await tx.query(
       `update contacts set source_signal_id = null where organization_id = $1 and source_signal_id = $2`,
-      [organizationId, signalId],
-    );
-    const supprime = await tx.query<{ source_run_id: string | null }>(
-      `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement' returning source_run_id`,
       [organizationId, signalId],
     );
     const runId = supprime.rows[0]?.source_run_id;

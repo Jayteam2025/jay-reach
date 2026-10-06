@@ -42,6 +42,7 @@ import {
   raisonDeNePasAcheter,
   registerQueues,
   runScore,
+  normaliserUrlPost,
 } from './_linkedin-enrichissement-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -139,6 +140,8 @@ async function monde() {
 }
 
 const POST = 'https://www.linkedin.com/posts/x_y-1';
+// La mémoire d'écart stocke une EMPREINTE (sha256) de `<post>:<urn>`, jamais l'identifiant lisible.
+const empreinteSql = (id) => `encode(sha256(convert_to('${normaliserUrlPost(POST)}:urn:li:fsd_profile:ACoAA${id}', 'UTF8')), 'hex')`;
 const eng = (id, nom, intitule, urlProfil) => ({
   urn: `urn:li:fsd_profile:ACoAA${id}`,
   nom,
@@ -289,7 +292,7 @@ async function producteur() {
   const carl = (await q(
     `select (select count(*)::int from contacts where organization_id=$1 and first_name='Carl') c,
             (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAcarl') s,
-            (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAcarl') e`,
+            (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id = ${empreinteSql('carl')}) e`,
     [m.org],
   )).rows[0];
   check('9c. l’engageur hors cible est effacé par le scoring, avec sa mémoire d’écart',

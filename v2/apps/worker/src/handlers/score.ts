@@ -105,6 +105,9 @@ async function persistScore(
 ): Promise<void> {
   const id = c.id;
   if (status === 'discarded' && c.kind === 'post_engagement') {
+    // Si la personne a été contactée, la fonction CONSERVE le signal (marqué
+    // `contacted`) au lieu de l'effacer : le score et le motif d'écart ne sont alors
+    // pas écrits, volontairement, et l'issue n'a pas à être relue ici.
     await ecarterEngageur(pool, org, id);
     return;
   }

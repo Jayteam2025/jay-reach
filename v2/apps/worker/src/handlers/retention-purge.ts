@@ -20,7 +20,7 @@
  */
 import type { Pool } from 'pg';
 import { RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
-import { ecarterEngageur, sqlPersonneContactee } from './post-engagement.js';
+import { ecarterEngageur, sqlPersonneContactee, type FragmentSql } from './post-engagement.js';
 
 /** Taille d'un passage. Le reste attend le suivant : mieux vaut lent qu'une transaction géante. */
 const LOT = 1000;
@@ -30,6 +30,8 @@ export interface BilanPurge {
   readonly effaces: number;
   /** Candidats que la fonction qui détruit a refusés : doit rester à zéro, la sélection les exclut déjà. */
   readonly conserves: number;
+  /** Empreintes de la mémoire d'écart (`linkedin_engageurs_ecartes`) arrivées au terme de la même durée. */
+  readonly memoiresEffacees: number;
 }
 
 export async function purgerEngageursPerimes(
@@ -37,7 +39,7 @@ export async function purgerEngageursPerimes(
   jours: number = RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 ): Promise<BilanPurge> {
   // Une durée absurde n'efface rien : garder trop longtemps est réversible.
-  if (!Number.isFinite(jours) || jours <= 0) return { candidats: 0, effaces: 0, conserves: 0 };
+  if (!Number.isFinite(jours) || jours <= 0) return { candidats: 0, effaces: 0, conserves: 0, memoiresEffacees: 0 };
   const candidats = await pool.query<{ id: string; organization_id: string; juge: boolean }>(
     `select s.id, s.organization_id, (s.score is not null) as juge
        from signals s
@@ -45,7 +47,7 @@ export async function purgerEngageursPerimes(
         and s.occurred_at < now() - make_interval(days => $1)
         -- Jamais contactée à cause de cet engageur (même définition que la garde de
         -- la fonction qui détruit).
-        and not ${sqlPersonneContactee('s.organization_id', 's.id', 's.occurred_at')}
+        and not ${sqlPersonneContactee('s.organization_id' as FragmentSql, 's.id' as FragmentSql, 's.occurred_at' as FragmentSql)}
       order by s.occurred_at
       limit $2`,
     [jours, LOT],
@@ -60,14 +62,23 @@ export async function purgerEngageursPerimes(
     if (issue === 'efface') effaces += 1;
     else conserves += 1;
   }
-  return { candidats: candidats.rows.length, effaces, conserves };
+  // La mémoire d'écart a la MÊME borne : la phrase affichée aux personnes promet que
+  // rien ne subsiste au-delà. Le coût d'une empreinte expirée est connu : la personne,
+  // si elle réagit de nouveau à un post, est rescorée une fois.
+  const memoire = await pool.query(
+    `delete from linkedin_engageurs_ecartes where scored_at < now() - make_interval(days => $1)`,
+    [jours],
+  );
+  return { candidats: candidats.rows.length, effaces, conserves, memoiresEffacees: memoire.rowCount ?? 0 };
 }
 
 /** Job `retention.purge` : consigne le bilan, jamais d'identité de personne. */
 export async function traiterRetentionPurge(pool: Pool): Promise<BilanPurge> {
   const bilan = await purgerEngageursPerimes(pool);
-  if (bilan.candidats > 0) {
-    console.log(`[retention-purge] ${bilan.effaces} effacé(s), ${bilan.conserves} conservé(s) sur ${bilan.candidats} candidat(s)`);
+  if (bilan.candidats > 0 || bilan.memoiresEffacees > 0) {
+    console.log(
+      `[retention-purge] ${bilan.effaces} effacé(s), ${bilan.conserves} conservé(s) sur ${bilan.candidats} candidat(s), ${bilan.memoiresEffacees} empreinte(s) expirée(s)`,
+    );
   }
   return bilan;
 }

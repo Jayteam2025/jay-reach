@@ -1564,7 +1564,7 @@
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",
         "risque": "The account used may be restricted or closed. The operator of this instance is responsible.",
-        "baseLegale": "Legal basis for the processing: legitimate interest, business-to-business prospecting. People who are collected but never contacted are erased after {jours} days."
+        "baseLegale": "Legal basis for processing: legitimate interest, business-to-business prospecting. People collected who are never contacted are deleted after {jours} days. Those we have already assessed leave an unreadable fingerprint (not their identifier), kept for at most {jours} days, so that we do not assess them twice."
       }
     }
   },
@@ -1701,5 +1701,10 @@
   },
   "mentionOrigine": {
     "engageurLinkedin": "You are receiving this message because you reacted to or commented on a public LinkedIn post. Your professional details come from LinkedIn and from our contact enrichment. To object to this processing and stop being contacted, simply reply to this message."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
+    }
   }
 }

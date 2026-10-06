@@ -1564,7 +1564,7 @@
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
         "risque": "Het gebruikte account kan worden beperkt of gesloten. De operator van deze instantie is daarvoor verantwoordelijk.",
-        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na {jours} dagen gewist."
+        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na {jours} dagen gewist. Wie we al hebben beoordeeld, laat een onleesbare vingerafdruk achter (niet de identificatie zelf), hoogstens {jours} dagen bewaard, zodat we niemand twee keer beoordelen."
       }
     }
   },
@@ -1701,5 +1701,10 @@
   },
   "mentionOrigine": {
     "engageurLinkedin": "U ontvangt dit bericht omdat u hebt gereageerd op een openbare LinkedIn-publicatie of erop hebt gereageerd met een opmerking. Uw professionele gegevens komen van LinkedIn en van onze contactverrijking. Om bezwaar te maken tegen deze verwerking en niet langer gecontacteerd te worden, antwoordt u gewoon op dit bericht."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn."
+    }
   }
 }

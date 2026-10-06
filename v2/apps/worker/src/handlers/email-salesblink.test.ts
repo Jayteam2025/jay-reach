@@ -143,7 +143,7 @@ const ETAPE_POSITION = /from sequence_steps/i;
 // défaut (aucun pattern connu), surchargé par les tests qui en ont besoin.
 const DOMAIN_PATTERNS = /from domain_patterns/i;
 // Mention d'origine (tâche 11) : vide par défaut, le contact ne vient pas d'un engageur.
-const MENTION_ORIGINE = /as premiere_etape/i;
+const MENTION_ORIGINE = /as premier_email/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
@@ -938,7 +938,7 @@ describe('envoyerEmailSalesBlink', () => {
 
 describe('mention d origine des engageurs LinkedIn', () => {
   /** Envoie l'email d'un contact dont l'origine et l'étape sont fixées ; rend le corps parti. */
-  async function corpsEnvoye(origine: { premiere_etape: boolean; kind: string | null }, locale: string | null): Promise<string> {
+  async function corpsEnvoye(origine: { premier_email: boolean; ne_de_l_engageur: boolean }, locale: string | null): Promise<string> {
     const { pool } = creerPoolFactice(
       avecBase(
         { motif: MENTION_ORIGINE, repondre: () => ligne([origine]) },
@@ -953,24 +953,24 @@ describe('mention d origine des engageurs LinkedIn', () => {
   }
 
   it('un contact ne d un post_engagement recoit la mention d origine en pied du premier email', async () => {
-    const corps = await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'fr');
+    const corps = await corpsEnvoye({ premier_email: true, ne_de_l_engageur: true }, 'fr');
     expect(corps).toBe(
       "<p>Bonjour Marie</p><p>Vous recevez ce message parce que vous avez réagi à une publication LinkedIn publique ou l'avez commentée. Vos coordonnées professionnelles proviennent de LinkedIn et de notre enrichissement de contacts. Pour vous opposer à ce traitement et ne plus être contacté, répondez simplement à ce message.</p>",
     );
   });
 
   it('la mention sort dans la langue du contact, et en francais quand elle est inconnue', async () => {
-    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'en')).toContain('You are receiving this message');
-    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'nl')).toContain('U ontvangt dit bericht');
-    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'de')).toContain('Vous recevez ce message');
+    expect(await corpsEnvoye({ premier_email: true, ne_de_l_engageur: true }, 'en')).toContain('You are receiving this message');
+    expect(await corpsEnvoye({ premier_email: true, ne_de_l_engageur: true }, 'nl')).toContain('U ontvangt dit bericht');
+    expect(await corpsEnvoye({ premier_email: true, ne_de_l_engageur: true }, 'de')).toContain('Vous recevez ce message');
   });
 
   it('un contact ne d un signal d entreprise ne la recoit pas', async () => {
-    expect(await corpsEnvoye({ premiere_etape: true, kind: 'job_posting' }, 'fr')).toBe('<p>Bonjour Marie</p>');
+    expect(await corpsEnvoye({ premier_email: true, ne_de_l_engageur: false }, 'fr')).toBe('<p>Bonjour Marie</p>');
   });
 
-  it('une relance (etape au-dela de la position 0) ne la repete pas', async () => {
-    expect(await corpsEnvoye({ premiere_etape: false, kind: 'post_engagement' }, 'fr')).toBe('<p>Bonjour Marie</p>');
+  it('un email qui n est pas le premier ne la repete pas', async () => {
+    expect(await corpsEnvoye({ premier_email: false, ne_de_l_engageur: true }, 'fr')).toBe('<p>Bonjour Marie</p>');
   });
 });
 

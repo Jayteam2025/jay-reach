@@ -5,3 +5,4 @@ export { compterSignauxScorables, runScore } from '../../apps/worker/src/handler
 export { persistEnrichedContact } from '../../apps/worker/src/enrichment-persist.js';
 export { ecarterSignauxTropAnciens, enqueueEnrollments } from '../../apps/worker/src/producer.js';
 export { importerCsv } from '@jay-reach/core';
+export { normaliserUrlPost } from '@jay-reach/core';

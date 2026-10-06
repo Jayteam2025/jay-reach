@@ -1353,7 +1353,7 @@ async function hasActiveSuppression(pool: Pool, row: DueRow): Promise<boolean> {
         and (expires_at is null or expires_at > now())
         and (
           (scope = 'email' and value = $2) or
-          (scope = 'linkedin' and value = $3) or
+          (scope = 'linkedin' and lower(value) = lower($3)) or
           (scope = 'account' and value = $4)
         )`,
     [row.organization_id, row.email, row.linkedin_url, row.account_id],

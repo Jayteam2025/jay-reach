@@ -7,7 +7,7 @@ vi.mock('@jay-reach/providers/enrichment', () => ({
 
 import { resolveCompanyNaf } from '@jay-reach/providers/enrichment';
 import { normaliserUrlPost } from '@jay-reach/core';
-import { ecarterEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
+import { ecarterEngageur, empreinteEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
 import { runQualify } from './qualify.js';
 import { runScore } from './score.js';
 import { persistEnrichedContact } from '../enrichment-persist.js';
@@ -42,7 +42,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
   const etat = {
     contacts: [...(init.contacts ?? [])],
     signals: new Map<string, string>(), // external_id -> id
-    ecartes: new Set(init.ecartes ?? []),
+    ecartes: new Set((init.ecartes ?? []).map(empreinteEngageur)), // la mémoire stocke des empreintes
     enrolled: new Set(init.enrolled ?? []), // linkedin_url déjà en campagne
     enrolledMembres: new Set(init.enrolledMembres ?? []),
     runsIncrementes: [] as string[],
@@ -57,6 +57,12 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       const formes = p[1] as string[];
       return { rows: formes.some((f) => (init.supprimes ?? []).includes(f)) ? [{ one: 1 }] : [], rowCount: 0 };
     }
+    // Verrous de `ecarterEngageur` (`for update`) : le signal rend son external_id, les contacts rien.
+    if (/for update/i.test(sql) && /from signals/i.test(sql)) {
+      const ext = [...etat.signals].find(([, id]) => id === p[1])?.[0];
+      return { rows: ext ? [{ external_id: ext }] : [], rowCount: ext ? 1 : 0 };
+    }
+    if (/for update/i.test(sql) && /from contacts/i.test(sql)) return { rows: [], rowCount: 0 };
     // Garde de `ecarterEngageur` : personne contactée ? Ici, jamais (le modèle n'inscrit pas).
     if (/as contacte/i.test(sql)) return { rows: [{ contacte: false }], rowCount: 1 };
     if (/from linkedin_engageurs_ecartes/i.test(sql)) {
@@ -117,8 +123,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       return { rows: [{ source_run_id: 'run-1' }], rowCount: 1 };
     }
     if (/insert into linkedin_engageurs_ecartes/i.test(sql)) {
-      // Forme insert ... select : l'external_id est lu sur le signal, par son id.
-      for (const [ext, id] of etat.signals) if (id === p[1]) etat.ecartes.add(ext);
+      etat.ecartes.add(String(p[1])); // l'empreinte, jamais l'identifiant lisible
       return { rows: [], rowCount: 1 };
     }
     if (/update source_runs/i.test(sql)) {
@@ -298,7 +303,8 @@ describe('ecarterEngageur', () => {
     expect(ordre.findIndex((o) => o.includes('into linkedin_engageurs_ecartes'))).toBeLessThan(
       ordre.findIndex((o) => /^delete from signals/.test(o)),
     );
-    expect([...m.etat.ecartes]).toEqual([`${normaliserUrlPost(URL_POST)}:${ALICE.urn}`]);
+    expect([...m.etat.ecartes]).toEqual([empreinteEngageur(`${normaliserUrlPost(URL_POST)}:${ALICE.urn}`)]);
+    expect([...m.etat.ecartes][0]).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -333,7 +339,7 @@ describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
   it('les quatre ecritures se font dans une seule transaction', async () => {
     const appels: string[] = [];
     const client = {
-      query: vi.fn(async (sql: string) => { appels.push(sql.trim().split(/\s+/)[0]!.toLowerCase()); return { rows: [{ source_run_id: 'r' }], rowCount: 1 }; }),
+      query: vi.fn(async (sql: string) => { appels.push(sql.trim().split(/\s+/)[0]!.toLowerCase()); return { rows: [{ source_run_id: 'r', external_id: 'p:u', contacte: false }], rowCount: 1 }; }),
       release: vi.fn(),
     };
     const pool = { connect: vi.fn(async () => client), query: vi.fn() } as unknown as Pool;
@@ -434,7 +440,7 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
         requetes.push(sql);
         if (/select s\.id, s\.organization_id/i.test(sql)) return { rows: [], rowCount: 0 };
         if (/select id, organization_id/i.test(sql)) return { rows: [{ id: 'sig-1', organization_id: ORG }], rowCount: 1 };
-        return { rows: [{ source_id: null }], rowCount: 1 };
+        return { rows: [{ source_id: null, external_id: 'p:u', contacte: false }], rowCount: 1 };
       }),
     } as unknown as Pool;
     await ecarterSignauxTropAnciens(pool, 14);
@@ -453,7 +459,7 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
           return { rows: [{ id: 'sig-q', organization_id: ORG }], rowCount: 1 };
         }
         if (/select id, organization_id/i.test(sql)) return { rows: [], rowCount: 0 };
-        return { rows: [{ source_run_id: 'r' }], rowCount: 1 };
+        return { rows: [{ source_run_id: 'r', external_id: 'p:u', contacte: false }], rowCount: 1 };
       }),
     } as unknown as Pool;
     await ecarterSignauxTropAnciens(pool, 14);
@@ -481,7 +487,7 @@ describe('score : peremption avant jugement', () => {
             rowCount: 1,
           };
         }
-        return { rows: [{ source_run_id: 'r' }], rowCount: 1 };
+        return { rows: [{ source_run_id: 'r', external_id: 'p:u', contacte: false }], rowCount: 1 };
       }),
     } as unknown as Pool;
     const scorer = vi.fn(async () => []);

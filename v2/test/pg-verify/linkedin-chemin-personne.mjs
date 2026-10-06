@@ -30,6 +30,7 @@ import {
   importerCsv,
   persistEnrichedContact,
   runScore,
+  normaliserUrlPost,
 } from './_linkedin-chemin-personne-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -97,6 +98,8 @@ async function monde({ avecPrompt = true, personaDansSource = true } = {}) {
 }
 
 const POST = 'https://www.linkedin.com/posts/x_y-1';
+// La mémoire d'écart stocke une EMPREINTE (sha256) de `<post>:<urn>`, jamais l'identifiant lisible.
+const empreinteSql = (id) => `encode(sha256(convert_to('${normaliserUrlPost(POST)}:urn:li:fsd_profile:ACoAA${id}', 'UTF8')), 'hex')`;
 const eng = (id, nom, intitule) => ({ urn: `urn:li:fsd_profile:ACoAA${id}`, nom, intitule });
 const enregistrer = (m, e) => enregistrerEngageur(m.ctx, e, { id: m.campagne, personaId: m.persona }, POST);
 const scorer = async (prospects) =>
@@ -230,8 +233,8 @@ async function chaine() {
   check('20. le bon est qualifié, le mauvais n’existe plus', sigs.length === 1 && sigs[0].status === 'qualified' && sigs[0].external_id.endsWith('bonne'), JSON.stringify(sigs));
   const cts = (await q(`select first_name from contacts where organization_id=$1`, [m.org])).rows;
   check('21. le contact du mauvais est effacé avec lui', cts.length === 1 && cts[0].first_name === 'Claire', JSON.stringify(cts));
-  const ec = (await q(`select external_id from linkedin_engageurs_ecartes where organization_id=$1`, [m.org])).rows;
-  check('22. son external_id reste dans linkedin_engageurs_ecartes', ec.length === 1 && ec[0].external_id.endsWith('mauvaise'), JSON.stringify(ec));
+  const ec = (await q(`select external_id, external_id = ${empreinteSql('mauvaise')} as attendue from linkedin_engageurs_ecartes where organization_id=$1`, [m.org])).rows;
+  check('22. son EMPREINTE (sha256, pas l’URN) reste dans linkedin_engageurs_ecartes', ec.length === 1 && ec[0].attendue === true && /^[0-9a-f]{64}$/.test(ec[0].external_id), JSON.stringify(ec));
   const run = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0];
   check('23. source_runs.ecartes est incrémenté', run.ecartes === 1, JSON.stringify(run));
   const run2 = (await q(`insert into source_runs (source_id) values ($1) returning id`, [m.source])).rows[0].id;
@@ -293,7 +296,7 @@ async function purgeEtRegression() {
   await ecarterSignauxTropAnciens(pool, 14);
   const sv = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
   const cv = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Victor'`, [m.org])).rows[0].n;
-  const ev = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
+  const ev = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id = ${empreinteSql('vieux')}`, [m.org])).rows[0].n;
   check('38. l’engageur ancien resté `new` est effacé avec son contact', sv === 0 && cv === 0, `signal=${sv} contact=${cv}`);
   check('39. périmé AVANT jugement : aucune mémoire d’écart (il pourra être recollecté)', ev === 0, String(ev));
   const sr = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAArecent'`, [m.org])).rows[0].n;
@@ -301,7 +304,7 @@ async function purgeEtRegression() {
   const sq = (await q(`select status from signals where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0];
   const cq = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Quentin'`, [m.org])).rows[0].n;
   check('41. l’engageur qualifié ancien SANS email ni inscription est effacé (il n’a plus de sortie sinon), avec sa mémoire', sq === undefined && cq === 0, JSON.stringify(sq));
-  const eq = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0].n;
+  const eq = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id = ${empreinteSql('qual')}`, [m.org])).rows[0].n;
   check('41a. jugé donc mémorisé : il ne sera pas recollecté sur ce post', eq === 1, String(eq));
   // L'épargne d'un email ACHETÉ par nous est bornée à FACTEUR_EPARGNE_EMAIL x le délai
   // (ici 2 x 14 = 28 jours) et se compte depuis l'achat (`contacts.enriched_at`), pas depuis
@@ -367,7 +370,7 @@ async function purgeEtRegression() {
   await ecarterSignauxTropAnciens(pool, 14);
   const vv = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAvivant') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Vera') c`, [m.org])).rows[0];
   check('41c. email acheté il y a moins du double du délai : épargné', vv.s === 1 && vv.c === 1, JSON.stringify(vv));
-  const oo = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAoublie') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Oscar') c, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAoublie') e`, [m.org])).rows[0];
+  const oo = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAoublie') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Oscar') c, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id = ${empreinteSql('oublie')}) e`, [m.org])).rows[0];
   check('41d. email acheté au-delà du double du délai : effacé avec mémoire (pas de rétention indéfinie)', oo.s === 0 && oo.c === 0 && oo.e === 1, JSON.stringify(oo));
   const nn = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAnina') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Nina') c`, [m.org])).rows[0];
   // Couvert par DEUX branches (antériorité et email non acheté) : il prouve le

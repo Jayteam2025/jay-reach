@@ -489,6 +489,19 @@ describe('nePlusContacter', () => {
     expect(releases()).toBe(1);
   });
 
+  it('un contact avec une adresse LinkedIn : suppression de portée linkedin, sur cette adresse', async () => {
+    const adresse = 'https://www.linkedin.com/in/k-benali';
+    const { ctx, appelsClient } = fauxConnectable({
+      'jr:dnc_contact': [{ id: contactId, email: null, linkedin_url: adresse }],
+    });
+
+    await nePlusContacter(ctx, { contactId });
+
+    const appel = appelsClient().find((s) => /jr:dnc_suppression_linkedin/i.test(s));
+    expect(appel).toBeDefined();
+    expect(appel).toMatch(/'linkedin'/);
+  });
+
   it('sans email, aucune suppression n’est écrite', async () => {
     const { ctx, appelsClient } = fauxConnectable({
       'jr:dnc_contact': [{ id: contactId, email: null }],

@@ -496,7 +496,6 @@ export async function envoyerEmailSalesBlink(
   const mention = await mentionOrigineDuMessage(pool, {
     organizationId: job.organizationId,
     enrollmentId: email.enrollmentId,
-    stepId: email.stepId,
     locale: email.locale ?? ligne.locale,
   });
   const texteRendu = mention ? `${renduCorps.text}\n\n${mention}` : renduCorps.text;

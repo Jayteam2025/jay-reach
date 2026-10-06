@@ -1564,7 +1564,7 @@
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
         "risque": "Le compte utilisé peut être restreint ou fermé. L'opérateur de cette instance en répond.",
-        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées au bout de {jours} jours."
+        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées au bout de {jours} jours. Celles que nous avons déjà évaluées laissent une empreinte illisible (pas leur identifiant), conservée au plus {jours} jours, pour ne pas les évaluer deux fois."
       }
     }
   },
@@ -1701,5 +1701,10 @@
   },
   "mentionOrigine": {
     "engageurLinkedin": "Vous recevez ce message parce que vous avez réagi à une publication LinkedIn publique ou l'avez commentée. Vos coordonnées professionnelles proviennent de LinkedIn et de notre enrichissement de contacts. Pour vous opposer à ce traitement et ne plus être contacté, répondez simplement à ce message."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation."
+    }
   }
 }

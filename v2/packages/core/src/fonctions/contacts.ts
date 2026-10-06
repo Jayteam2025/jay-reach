@@ -531,8 +531,8 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
   const { contactId } = valider(schemaNePlusContacter, entree);
 
   await dansUneTransaction(ctx.ex, async (tx) => {
-    const contactRes = await tx.query<{ id: string; email: string | null }>(
-      `select id, email from contacts /* jr:dnc_contact */ where id = $1 and organization_id = $2`,
+    const contactRes = await tx.query<{ id: string; email: string | null; linkedin_url: string | null }>(
+      `select id, email, linkedin_url from contacts /* jr:dnc_contact */ where id = $1 and organization_id = $2`,
       [contactId, ctx.organisationId],
     );
     const contact = contactRes.rows[0];
@@ -551,6 +551,21 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
            select 1 from suppressions where organization_id = $1 and scope = 'email' and value = $2
          )`,
         [ctx.organisationId, contact.email],
+      );
+    }
+
+    // L'opposition porte sur le TRAITEMENT, pas seulement sur l'envoi : sans cette
+    // ligne, la personne serait re-collectée au prochain post, re-scorée et
+    // ré-enrichie (jetons et achat payés) avant que l'envoi, tout à la fin, ne
+    // soit bloqué. La collecte (`enregistrerEngageur`) consulte ce périmètre.
+    if (contact.linkedin_url) {
+      await tx.query(
+        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression_linkedin */
+         select $1, 'linkedin', $2, 'operator_do_not_contact', 'manual'
+         where not exists (
+           select 1 from suppressions where organization_id = $1 and scope = 'linkedin' and lower(value) = lower($2)
+         )`,
+        [ctx.organisationId, contact.linkedin_url],
       );
     }
 
