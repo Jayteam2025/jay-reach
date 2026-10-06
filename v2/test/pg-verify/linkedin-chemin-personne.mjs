@@ -257,9 +257,22 @@ async function chaine() {
   const inscrit = () => jobs.some((j) => j.name === 'sequence.enroll' && j.data.contactId === contact && j.data.campaignId === m.campagne);
   await enqueueEnrollments(boss, pool);
   check('25. un engageur qualifié SANS email n’est pas inscrit', !inscrit(), JSON.stringify(jobs.filter((j) => j.data.organizationId === m.org).map((j) => j.data.contactId)));
-  await q(`update contacts set email = 'claire@acme.fr', email_status = 'valid' where id = $1`, [contact]);
+  // L'email est posé par le CHEMIN RÉEL : le rattachement de `persistEnrichedContact`,
+  // qui retrouve le contact de l'engageur par son adresse. Un `update` nu poserait
+  // l'email seul, alors que le chemin réel pose AUSSI `enriched_at`, `account_id` et
+  // `persona_id` — le contrôle survivrait donc au jour où l'inscription exigera l'un
+  // d'eux, comme elle exige déjà `ct.persona_id is not null`.
+  const compteClaire = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  const urlClaire = (await q(`select linkedin_url from contacts where id = $1`, [contact])).rows[0].linkedin_url;
+  await persistEnrichedContact(pool, m.org, compteClaire, { email: 'claire@acme.fr', linkedinUrl: urlClaire, emailStatusRaw: 'valid' });
   await enqueueEnrollments(boss, pool);
-  check('25b. le même engageur, son email posé, est inscrit', inscrit());
+  // L'assertion porte aussi sur ce que le chemin réel pose EN PLUS de l'email : le
+  // jour où l'inscription exigera le compte ou le persona — elle exige déjà
+  // `ct.persona_id is not null` — ce contrôle restera fidèle au chemin réel.
+  const claire = (await q(`select account_id, persona_id, enriched_at from contacts where id = $1`, [contact])).rows[0];
+  check('25b. le même engageur, son email posé par l’enrichissement, est inscrit',
+    inscrit() && claire.account_id !== null && claire.persona_id !== null && claire.enriched_at !== null,
+    JSON.stringify(claire));
 }
 
 async function purgeEtRegression() {
@@ -302,39 +315,68 @@ async function purgeEtRegression() {
   await enregistrer(m, eng('oublie', 'Oscar Oublie', 'Directeur commercial'));
   await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAoublie'`, [m.org]);
   await q(`update contacts set email = 'oscar@acme.fr', enriched_at = now() - interval '40 days' where organization_id=$1 and first_name='Oscar'`, [m.org]);
-  // Email que nous n'avons PAS acheté (enriched_at nul) : il vient de l'opérateur, sa rétention
-  // lui appartient. Nina est aussi vieille qu'Oscar, et pourtant épargnée.
-  await enregistrer(m, eng('nina', 'Nina Native', 'Directrice commerciale'));
-  await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAnina'`, [m.org]);
-  await q(`update contacts set email = 'nina@acme.fr' where organization_id=$1 and first_name='Nina'`, [m.org]);
-  // Contact IMPORTÉ par l'opérateur (liste), créé AVANT la collecte, enrichi par nous il y a
-  // longtemps : aucune des trois autres branches ne l'épargne. Seule l'antériorité le protège.
-  // L'effacer détruirait une ligne saisie par l'opérateur et son appartenance à la liste.
-  const liste = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1,'Salon','Contacts du salon','import') returning id`, [m.org])).rows[0].id;
-  const urlImporte = 'https://www.linkedin.com/in/ACoAAimporte';
+  // Contact MIGRÉ DE LA V1 : `20260828150000_migration_donnees_legacy.sql:251` insère
+  // `email` et `linkedin_url` sans `enriched_at`, et la migration ne crée AUCUNE
+  // inscription (vérifié : le mot `enrollments` n'y figure pas). C'est le seul chemin
+  // de production qui donne un email que nous n'avons pas acheté sans inscription ;
+  // il n'est pas exécutable ici (il lit les tables du schéma v1), d'où le SQL direct.
+  // Un engageur le retrouve ensuite par son adresse et comble son origine vide.
+  const urlLegacy = 'https://www.linkedin.com/in/nina-native';
   await q(
-    `insert into contacts (organization_id, first_name, email, linkedin_url, source_list_id, enriched_at, created_at)
-     values ($1, 'Ivan', 'ivan@acme.fr', $2, $3, now() - interval '50 days', now() - interval '60 days')`,
-    [m.org, urlImporte, liste],
+    `insert into contacts (organization_id, first_name, email, linkedin_url, created_at)
+     values ($1,'Nina','nina@acme.fr',$2, now() - interval '90 days')`,
+    [m.org, urlLegacy],
   );
-  const issueImporte = await enregistrer(m, eng('importe', 'Ivan Importe', 'Directeur commercial'));
+  await enregistrer(m, { ...eng('nina', 'Nina Native', 'Directrice commerciale'), urlProfil: urlLegacy });
+  await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAnina'`, [m.org]);
+
+  // Contact ENRICHI SANS ORIGINE : `persistEnrichedContact` accepte `sourceSignalId`
+  // nul (enrichment-persist.ts:113) — l'enrichissement d'un compte crée alors une
+  // fiche avec email, `enriched_at` et adresse, que `enqueueEnrollments` n'inscrira
+  // jamais puisqu'il joint sur `source_signal_id`. Aucune inscription, aucune liste :
+  // quand un engageur comble son origine, SEULE l'antériorité peut l'épargner, son
+  // achat étant trop vieux. (L'état précédent — `source_list_id` SANS inscription —
+  // n'existe dans aucun chemin : `importerCsv` inscrit systématiquement.)
+  const compteIvan = (await q(`insert into accounts (organization_id, name) values ($1,'Ivan SARL') returning id`, [m.org])).rows[0].id;
+  const urlImporte = 'https://www.linkedin.com/in/ivan-importe';
+  await persistEnrichedContact(pool, m.org, compteIvan, { email: 'ivan@acme.fr', firstName: 'Ivan', linkedinUrl: urlImporte });
+  // Le temps passe : l'achat date, et la fiche est plus ancienne que le signal à venir.
+  await q(`update contacts set enriched_at = now() - interval '50 days', created_at = now() - interval '60 days' where organization_id=$1 and first_name='Ivan'`, [m.org]);
+  const issueImporte = await enregistrer(m, { ...eng('importe', 'Ivan Importe', 'Directeur commercial'), urlProfil: urlImporte });
   await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAimporte'`, [m.org]);
-  // L'épargne par INSCRIPTION, elle, n'a pas de borne : des messages sont partis.
-  await enregistrer(m, eng('seq', 'Sacha Sequence', 'Directrice commerciale'));
+
+  // L'épargne par INSCRIPTION n'a pas de borne. L'état — un contact d'engageur SANS
+  // email mais inscrit — n'est pas produit par le worker (`producer.ts` refuse
+  // d'inscrire un `post_engagement` sans email) : son seul producteur est l'import de
+  // fichier, qui retrouve le contact par son adresse et l'inscrit même sans email.
+  // La fiche est POSTÉRIEURE à son signal, donc l'antériorité ne la couvre pas :
+  // l'inscription est bien la seule branche qui joue.
+  const urlSacha = 'https://www.linkedin.com/in/sacha-sequence';
+  await enregistrer(m, { ...eng('seq', 'Sacha Sequence', 'Directrice commerciale'), urlProfil: urlSacha });
+  await importerCsv(
+    { ex: pool, organisationId: m.org, utilisateurId: m.admin, role: 'admin' },
+    {
+      campagneId: m.campagne,
+      nom: 'Salon',
+      fileName: 'salon.csv',
+      parsed: { headers: ['Prenom', 'Email', 'LinkedIn'], rows: [{ Prenom: 'Sacha', Email: '', LinkedIn: urlSacha }] },
+      mapping: { Prenom: 'first_name', Email: 'email', LinkedIn: 'linkedin_url' },
+    },
+  );
   await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAseq'`, [m.org]);
-  const sacha = (await q(`select id from contacts where organization_id=$1 and first_name='Sacha'`, [m.org])).rows[0].id;
-  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'completed')`, [m.org, m.campagne, sacha]);
   await ecarterSignauxTropAnciens(pool, 14);
   const vv = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAvivant') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Vera') c`, [m.org])).rows[0];
   check('41c. email acheté il y a moins du double du délai : épargné', vv.s === 1 && vv.c === 1, JSON.stringify(vv));
   const oo = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAoublie') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Oscar') c, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAoublie') e`, [m.org])).rows[0];
   check('41d. email acheté au-delà du double du délai : effacé avec mémoire (pas de rétention indéfinie)', oo.s === 0 && oo.c === 0 && oo.e === 1, JSON.stringify(oo));
   const nn = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAnina') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Nina') c`, [m.org])).rows[0];
-  check('41g. email que nous n’avons pas acheté (enriched_at nul), aussi vieux : épargné, il vient de l’opérateur', nn.s === 1 && nn.c === 1, JSON.stringify(nn));
-  const ii = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAimporte') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Ivan' and source_list_id is not null) c`, [m.org])).rows[0];
-  check('41h. contact importé puis rattaché à un engageur, email acheté trop vieux : épargné par l’antériorité, liste intacte', issueImporte === 'nouveau' && ii.s === 1 && ii.c === 1, `${issueImporte} ${JSON.stringify(ii)}`);
-  const ss = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAseq') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Sacha') c`, [m.org])).rows[0];
-  check('41e. inscription (même terminée), au-delà du double : épargné, l’épargne par inscription n’est pas bornée', ss.s === 1 && ss.c === 1, JSON.stringify(ss));
+  // Couvert par DEUX branches (antériorité et email non acheté) : il prouve le
+  // comportement — un contact migré de la v1 survit — mais aucune des deux isolément.
+  check('41g. contact migré de la v1, retrouvé par un engageur : il survit avec son email', nn.s === 1 && nn.c === 1, JSON.stringify(nn));
+  const ii = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAimporte') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Ivan' and email is not null) c`, [m.org])).rows[0];
+  check('41h. fiche enrichie sans origine, achat trop vieux, aucune inscription : seule l’antériorité l’épargne', issueImporte === 'nouveau' && ii.s === 1 && ii.c === 1, `${issueImporte} ${JSON.stringify(ii)}`);
+  const ss = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAseq') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Sacha') c, (select count(*)::int from enrollments e join contacts c2 on c2.id=e.contact_id where c2.organization_id=$1 and c2.first_name='Sacha') i`, [m.org])).rows[0];
+  check('41e. inscrit par l’import sans email, au-delà du double : épargné, l’épargne par inscription n’est pas bornée', ss.s === 1 && ss.c === 1 && ss.i === 1, JSON.stringify(ss));
   // Le passage qui a collecté ces personnes est clos : la purge le laisse tel quel.
   const ec = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0].ecartes;
   check('41f. purge d’un engageur qualifié : source_runs.ecartes du passage de collecte inchangé', ec === 0 && ecAvant === 0, `avant=${ecAvant} apres=${ec}`);
