@@ -16,6 +16,7 @@
  * que des gens qu'il a lui-même démarchés, pas sa messagerie LinkedIn
  * personnelle.
  */
+import { refusCanalGele } from '../../../../../lib/linkedin/canal-extension-gele';
 import { getPool } from '../../../../../lib/db';
 import { validateToken } from '../../../../../lib/linkedin/queue';
 import { notifyReply, recordInboundReply } from '@jay-reach/core';
@@ -42,6 +43,8 @@ function vanityDe(url: string): string | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const gele = refusCanalGele();
+  if (gele) return gele;
   let body: { token?: unknown; replies?: unknown; resolvedProfiles?: unknown };
   try {
     body = (await req.json()) as typeof body;

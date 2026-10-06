@@ -3,6 +3,7 @@
  * action LinkedIn (envoyée ou échouée). Transition autorisée uniquement depuis
  * `processing` (sinon 409). Valide le jeton et l'appartenance à l'organisation.
  */
+import { refusCanalGele } from '../../../../../lib/linkedin/canal-extension-gele';
 import { getPool } from '../../../../../lib/db';
 import { recordResult, validateToken } from '../../../../../lib/linkedin/queue';
 
@@ -10,6 +11,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request): Promise<Response> {
+  const gele = refusCanalGele();
+  if (gele) return gele;
   let body: {
     token?: unknown;
     queue_id?: unknown;
