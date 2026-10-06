@@ -359,18 +359,23 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       return;
     }
     // Avant d'ouvrir LinkedIn : l'écho d'IP part d'une page neutre.
-    const releve = async (): Promise<Sortie> => {
-      try {
-        return await d.releverSortie(pilote as Pilote);
-      } catch {
-        // Message sûr et lisible, à la place du `Collecte interrompue (Error).`
-        // que l'écran Sources affichait. Verdict VRAI : l'écho est chargé par le
-        // navigateur, donc par le proxy — trois échecs d'affilée disent qu'il est
-        // mort, et c'est exactement ce que le disjoncteur doit attraper.
-        throw new ErreurCollecte(MSG.releve, 'SortieInjoignable', true);
-      }
-    };
-    const controle = await controlerSortie(ctx, session.ipAttendue, releve);
+    // La relève se fait ICI, et n'est PAS confiée à `controlerSortie` : le `catch`
+    // de `verifierSortie` est inconditionnel et remplacerait notre erreur nommée
+    // par une `Error` nue — l'écran Sources afficherait « Collecte interrompue
+    // (Error). » au lieu de dire que le proxy ne répond pas. Le verdict, lui,
+    // restait juste, ce qui est précisément pourquoi aucun contrôle ne l'a vu.
+    //
+    // Verdict VRAI : l'écho est chargé par le navigateur, donc par le proxy —
+    // trois échecs d'affilée disent qu'il est mort, et c'est ce que le
+    // disjoncteur doit attraper.
+    let brute: Sortie;
+    try {
+      brute = await d.releverSortie(pilote);
+    } catch {
+      throw new ErreurCollecte(MSG.releve, 'SortieInjoignable', true);
+    }
+    // La relève est faite : celle-ci ne peut plus lever.
+    const controle = await controlerSortie(ctx, session.ipAttendue, async () => brute);
     sortie = controle.sortie;
     if (!controle.ok) {
       // `verifierSortie` a déjà bloqué la session.

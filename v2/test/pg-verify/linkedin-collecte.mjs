@@ -723,8 +723,10 @@ async function disjoncteurRefusLocaux() {
 async function disjoncteurReleveSortie() {
   console.log('\n11. trois relèves de sortie en échec font disjoncter (proxy mort)');
   const m = await monde();
+  let dernier;
   for (let i = 0; i < 3; i += 1) {
     const r = await run(m);
+    dernier = r;
     const d = deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) }), {
       releverSortie: async () => {
         throw new Error('écho injoignable');
@@ -732,6 +734,12 @@ async function disjoncteurReleveSortie() {
     });
     await traiterCollecteLinkedIn(d, job(m, r)).catch(() => undefined);
   }
+  // Ce que l'opérateur LIT, et pas seulement ce que le disjoncteur en conclut : le
+  // verdict restait juste alors que le message était générique, et c'est ce qui a
+  // laissé le défaut passer quatre relectures.
+  const passage = await lirePassage(dernier);
+  check('40c. l’écran dit que le proxy ne répond pas, il ne dit pas « Collecte interrompue (Error) »',
+    passage.error === MSG.releve, passage.error);
   const s = await lireSessionLinkedIn(m.ctx);
   check('40. un échec de relève compte parmi les erreurs consécutives, sans aucune requête émise', s.etat === 'bloquee' && s.motif === 'disjoncteur', `${s.etat}/${s.motif}`);
   const traces = (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1`, [m.org])).rows[0].n;
@@ -894,11 +902,37 @@ async function postIntrouvableNeDisjonctePas() {
   check('50b. trois adresses mal collées puis un incident ne bloquent PAS la session', s.etat === 'active', `${s.etat}/${s.motif}`);
 }
 
+/**
+ * Les trois autres `ErreurCollecte` partent de `lireEngageurs`, que le handler
+ * appelle directement : rien ne s'interpose. On le PROUVE au lieu de le relire —
+ * c'est exactement le défaut qui venait d'échapper à quatre relectures.
+ */
+async function messagesDesPannesDeLecture() {
+  console.log('\n20. ce que l’opérateur lit quand la lecture échoue');
+  const m = await monde();
+
+  const r1 = await run(m);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 500, corps: '' }) })), job(m, r1)).catch(() => undefined);
+  const p1 = await lirePassage(r1);
+  check('58. un statut anormal arrive à l’écran avec son code', p1.error === 'LinkedIn a répondu un statut inattendu (500).', p1.error);
+  check('58b. et il porte un verdict : c’est LinkedIn qui nous répond de travers', p1.verdict_linkedin === true);
+
+  const r2 = await run(m);
+  await traiterCollecteLinkedIn(
+    deps(pilote({ reponse: () => ({ statut: 200, corps: '<html>une page, pas du JSON</html>' }) })),
+    job(m, r2),
+  ).catch(() => undefined);
+  const p2 = await lirePassage(r2);
+  check('59. une réponse illisible le dit, au lieu de nommer une classe', p2.error === 'Réponse LinkedIn illisible : ce n’est pas du JSON.', p2.error);
+  check('59b. et elle ne porte aucun verdict : la requête a abouti, c’est notre lecture qui a échoué', p2.verdict_linkedin === false);
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
-    disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas);
+    disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
+    messagesDesPannesDeLecture);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
