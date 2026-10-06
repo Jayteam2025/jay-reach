@@ -135,6 +135,24 @@ export async function ecarterSignauxTropAnciens(
                       and ct.enriched_at >= now() - make_interval(days => $2))
                   -- Email qui ne vient pas de notre enrichissement : il a été fourni
                   -- par l'opérateur, sa rétention lui appartient, pas à la purge.
+                  --
+                  -- DÉFENSE EN PROFONDEUR DÉLIBÉRÉE, ET NON PROUVÉE. Mesuré le
+                  -- 06/10/2026 : aucun chemin de production ne produit son état
+                  -- ISOLÉMENT, et la retirer ne fait rougir aucun contrôle du
+                  -- harnais. Les deux chemins qui donnent un email sans
+                  -- enriched_at sont déjà couverts ailleurs : l'import de fichier
+                  -- inscrit systématiquement (première branche), et la migration
+                  -- des données v1 crée des fiches antérieures au signal (deuxième
+                  -- branche). Ce n'est donc PAS du code mort, et ce n'est pas non
+                  -- plus du code prouvé.
+                  --
+                  -- Gardée quand même, pour l'asymétrie : ce qu'elle protège est un
+                  -- effacement IRRÉVERSIBLE de données que l'opérateur a fournies.
+                  -- La garder à tort conserve quelques lignes trop longtemps ; la
+                  -- retirer à tort détruit définitivement. Et sa redondance tient à
+                  -- un détail qui peut changer sans qu'on y pense : le jour où
+                  -- l'import n'inscrira plus systématiquement, elle redevient la
+                  -- seule protection.
                   or (ct.email is not null and ct.enriched_at is null)))`,
     [maxJours, maxJours * FACTEUR_EPARGNE_EMAIL],
   );
