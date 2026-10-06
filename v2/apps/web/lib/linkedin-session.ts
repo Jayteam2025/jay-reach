@@ -21,16 +21,17 @@ export const lireSessionLinkedInCourante = cache((ctx: Contexte) => lireSessionL
 /**
  * Lecture de la coquille : une ligne facultative du pied de barre ne doit JAMAIS emporter toute
  * l'application. La coquille entoure chaque page ; si la table n'existe pas encore (interface
- * déployée avant la migration `20261005130000`) ou si la lecture échoue, la ligne disparaît et
+ * déployée avant la migration `20261005130000`) ou si la lecture échoue, on rend `undefined` (état
+ * inconnu : la ligne disparaît plutôt que de prétendre « aucune session », ce que `null` dit) et
  * le reste de la page se rend. Seul le type de l'erreur est consigné (le message d'une erreur de
  * base peut citer une requête). La page LinkedIn, elle, utilise la lecture qui échoue franchement.
  */
-export const lireSessionLinkedInPourLaCoquille = cache(async (ctx: Contexte): Promise<SessionLinkedIn | null> => {
+export const lireSessionLinkedInPourLaCoquille = cache(async (ctx: Contexte): Promise<SessionLinkedIn | null | undefined> => {
   try {
     return await lireSessionLinkedIn(ctx);
   } catch (err) {
     console.warn('[coquille] session LinkedIn illisible :', err instanceof Error ? err.name : typeof err);
-    return null;
+    return undefined;
   }
 });
 
@@ -46,9 +47,8 @@ export function composerLigneLinkedIn(
   t: (cle: string, valeurs?: Record<string, string>) => string,
   maintenant: Date,
   fuseau: string,
-): LigneLinkedin | null {
+): LigneLinkedin {
   const ligne = ligneMoteurLinkedIn(session);
-  if (!ligne) return null;
   const quand = session?.derniereCollecte
     ? dateRelativeCourte(session.derniereCollecte.toISOString(), maintenant, fuseau)
     : '';

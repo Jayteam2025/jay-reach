@@ -1,5 +1,7 @@
 import { Carte, CleValeur, Puce } from '../ui';
+import Link from 'next/link';
 import { IconeLinkedin } from '../ui/IconeLinkedin';
+import { HREF_REGLAGES_LINKEDIN } from '../coquille/LigneMoteurLinkedin';
 import type { PuceTon } from '../ui';
 
 // Composant pur (aucun hook) : testable par `renderToStaticMarkup`, comme
@@ -25,7 +27,7 @@ export interface DerniereErreurMoteur {
   libelle: string;
 }
 
-/** Ligne LinkedIn déjà composée (`composerLigneLinkedIn`) — absente tant qu'aucune session n'a existé. */
+/** Ligne LinkedIn déjà composée (`composerLigneLinkedIn`), toujours présente : sans session, elle dit qu'il reste à l'ouvrir. */
 export interface EtatLinkedin {
   ton: PuceTon;
   libelle: string;
@@ -41,7 +43,6 @@ export interface EtatMoteurProps {
   derniereErreur: DerniereErreurMoteur | null;
   /** Déjà composé par l'appelant (« 136 scorings · 2 enrichissements ») — `null` si rien n'attend. */
   tachesEnAttenteTexte: string | null;
-  /** `null` : aucune session LinkedIn n'a jamais existé, pas de ligne. */
   linkedin?: EtatLinkedin | null;
   libelles: EtatMoteurLibelles;
 }
@@ -84,9 +85,9 @@ export function EtatMoteur({
         // de marque, l'état se dit par le libellé de la puce.
         <CleValeur
           libelle={
-            <>
+            <Link href={HREF_REGLAGES_LINKEDIN}>
               <IconeLinkedin className="jr-ico-li" /> {libelles.linkedin}
-            </>
+            </Link>
           }
           valeur={
             <>

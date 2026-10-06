@@ -5,7 +5,7 @@ import { etatCollecteMaintenant } from './collecte-maintenant';
 // demande est consommée sans rien collecter. Le bouton ne promet donc que ce que le worker fera.
 describe('etatCollecteMaintenant', () => {
   it('campagne en brouillon : bouton désactivé, bandeau de brouillon, aide « une fois la campagne lancée »', () => {
-    expect(etatCollecteMaintenant('draft', true)).toEqual({
+    expect(etatCollecteMaintenant('draft', { active: true })).toEqual({
       actif: false,
       bandeauBrouillon: true,
       cleAide: 'collectNowDraft',
@@ -13,7 +13,7 @@ describe('etatCollecteMaintenant', () => {
   });
 
   it('brouillon et source pas encore créée : le brouillon prime (une seule explication)', () => {
-    expect(etatCollecteMaintenant('draft', false)).toEqual({
+    expect(etatCollecteMaintenant('draft', null)).toEqual({
       actif: false,
       bandeauBrouillon: true,
       cleAide: 'collectNowDraft',
@@ -21,7 +21,7 @@ describe('etatCollecteMaintenant', () => {
   });
 
   it('campagne active, source pas encore enregistrée : désactivé, sans bandeau', () => {
-    expect(etatCollecteMaintenant('active', false)).toEqual({
+    expect(etatCollecteMaintenant('active', null)).toEqual({
       actif: false,
       bandeauBrouillon: false,
       cleAide: 'collectNowUnsaved',
@@ -29,11 +29,19 @@ describe('etatCollecteMaintenant', () => {
   });
 
   it('campagne active et source enregistrée : le bouton marche', () => {
-    expect(etatCollecteMaintenant('active', true)).toEqual({ actif: true, bandeauBrouillon: false, cleAide: null });
+    expect(etatCollecteMaintenant('active', { active: true })).toEqual({ actif: true, bandeauBrouillon: false, cleAide: null });
+  });
+
+  it('campagne active, source en pause : désactivé (lancerPassage exigerait is_active), avec son explication', () => {
+    expect(etatCollecteMaintenant('active', { active: false })).toEqual({
+      actif: false,
+      bandeauBrouillon: false,
+      cleAide: 'collectNowPaused',
+    });
   });
 
   it.each(['paused', 'archived'] as const)('campagne %s : désactivé, sans bandeau de brouillon', (statut) => {
-    expect(etatCollecteMaintenant(statut, true)).toEqual({
+    expect(etatCollecteMaintenant(statut, { active: true })).toEqual({
       actif: false,
       bandeauBrouillon: false,
       cleAide: 'collectNowInactive',

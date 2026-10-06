@@ -26,8 +26,12 @@ const base: SessionLinkedIn = {
 const t = (cle: string, valeurs?: Record<string, string>) => `${cle}${valeurs ? JSON.stringify(valeurs) : ''}`;
 
 describe('composerLigneLinkedIn', () => {
-  it('aucune session en base : aucune ligne', () => {
-    expect(composerLigneLinkedIn(null, t, MAINTENANT, 'Europe/Paris')).toBeNull();
+  it('aucune session en base : la ligne existe quand même, « aucune session », ton gris', () => {
+    expect(composerLigneLinkedIn(null, t, MAINTENANT, 'Europe/Paris')).toEqual({
+      ton: 'gris',
+      libelle: 'coquille.linkedin.libelle.aucune',
+      detail: 'coquille.linkedin.detail.absente{"quand":""}',
+    });
   });
 
   it('session prête : libellé « prêt » et dernière collecte relative', () => {
@@ -50,10 +54,10 @@ describe('composerLigneLinkedIn', () => {
 describe('lireSessionLinkedInPourLaCoquille', () => {
   const ctx = {} as Contexte;
 
-  it('une lecture qui échoue (table absente, base injoignable) rend null au lieu d’emporter toutes les pages', async () => {
+  it('une lecture qui échoue (table absente, base injoignable) rend `undefined` (ligne masquée, pas « aucune session ») au lieu d’emporter toutes les pages', async () => {
     lire.mockRejectedValueOnce(new Error('relation "linkedin_server_sessions" does not exist'));
     const avertir = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await expect(lireSessionLinkedInPourLaCoquille(ctx)).resolves.toBeNull();
+    await expect(lireSessionLinkedInPourLaCoquille(ctx)).resolves.toBeUndefined();
     // Le type de l'erreur seulement : son message peut citer une requête.
     expect(avertir.mock.calls.flat().join(' ')).not.toContain('linkedin_server_sessions');
     avertir.mockRestore();

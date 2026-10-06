@@ -11,6 +11,7 @@ import {
 import { construireEntreeAssistant, nombreBoitesActives } from './Assistant';
 import {
   construireConfigOffre,
+  bandeauBrouillonLinkedin,
   construireGroupesMenu,
   EtapeSources,
   type EtapeSourcesLibelles,
@@ -255,6 +256,15 @@ describe('EtapeSources — sources déjà ajoutées', () => {
     );
     expect(html).toContain('25 profils par jour');
     expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+  });
+
+  it('le formulaire des engageurs d’un post porte le bandeau de brouillon, les autres types non', () => {
+    const html = renderToStaticMarkup(<>{bandeauBrouillonLinkedin('linkedin_post_engagers', LIBELLES_SOURCES)}</>);
+    expect(html).toContain('jr-bandeau attention');
+    expect(html).toContain('brouillon');
+    for (const id of ['adzuna', 'france_travail', 'linkedin_keywords', 'linkedin_job_change'] as const) {
+      expect(bandeauBrouillonLinkedin(id, LIBELLES_SOURCES)).toBeNull();
+    }
   });
 
   it('une source « engageurs d’un post » ajoutée n’affiche plus le badge « en attente »', () => {

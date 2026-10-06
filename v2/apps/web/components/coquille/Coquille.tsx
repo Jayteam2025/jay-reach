@@ -59,7 +59,7 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
             ton={a.moteur.enMarche ? 'bon' : 'erreur'}
             libelleEtat={a.moteur.enMarche ? t('coquille.engine.running') : t('coquille.engine.stopped')}
             detail={detailMoteur}
-            linkedin={composerLigneLinkedIn(sessionLinkedin, t, new Date(), a.fuseau)}
+            linkedin={sessionLinkedin === undefined ? null : composerLigneLinkedIn(sessionLinkedin, t, new Date(), a.fuseau)}
           />
           {/* La jauge porte sur l'EMAIL, numérateur ET dénominateur : avant la revue de
               cohérence du lot 2, elle comptait tous les canaux au numérateur et l'email seul au

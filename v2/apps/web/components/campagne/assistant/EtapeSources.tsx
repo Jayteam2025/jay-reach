@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Bouton, Carte, Champ, EtatVide, Menu, Puce, TuileLogo } from '../../ui';
 import type { GroupeMenu } from '../../ui';
 import {
@@ -230,6 +230,16 @@ export function construireGroupesMenu(
   ];
 }
 
+/**
+ * Bandeau du formulaire des engageurs d'un post : l'assistant crée TOUJOURS un brouillon, donc
+ * l'avertissement est vrai quoi qu'il arrive. Pure et exportée : le formulaire n'apparaît qu'après
+ * un clic (état interne), invisible à `renderToStaticMarkup`.
+ */
+export function bandeauBrouillonLinkedin(providerId: ProviderIdAssistant, libelles: EtapeSourcesLibelles): ReactNode {
+  if (providerId !== 'linkedin_post_engagers') return null;
+  return <div className="jr-bandeau attention">{libelles.formLinkedinBrouillon}</div>;
+}
+
 function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): string {
   if (source.providerId === 'adzuna' || source.providerId === 'france_travail') {
     const morceaux = [asListeChaines(source.config.motsCles).join(', ')];
@@ -374,9 +384,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
 
       {ajoutEnCours && estLinkedIn(ajoutEnCours) && (
         <div className="jr-formulaire">
-          {ajoutEnCours === 'linkedin_post_engagers' && (
-            <div className="jr-bandeau attention">{libelles.formLinkedinBrouillon}</div>
-          )}
+          {bandeauBrouillonLinkedin(ajoutEnCours, libelles)}
           <Champ libelle={libelles.formNom} id="assistant-sources-nom">
             <input id="assistant-sources-nom" name="nom" value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
           </Champ>

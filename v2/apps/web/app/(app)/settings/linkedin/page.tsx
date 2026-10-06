@@ -5,6 +5,7 @@ import {
   jourCourantDansFuseau,
   lirePlafondLinkedIn,
   lireReglages,
+  RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
@@ -79,7 +80,7 @@ export default async function ReglagesLinkedinPage() {
             <p className="jr-session-detail">{detail}</p>
             {phrase.avecCommande && (
               <div className="jr-session-action">
-                <p className="jr-session-detail" style={{ margin: 0 }}>
+                <p className="jr-session-detail jr-session-consigne">
                   {phrase.cle === 'defi' ? t('commande.consigneDefi') : t('commande.consigne')}
                 </p>
                 <code className="jr-session-commande">{COMMANDE_CONNEXION}</code>
@@ -133,7 +134,7 @@ export default async function ReglagesLinkedinPage() {
         <p>
           <b>{t('avertissement.titre')}</b> {t('avertissement.risque')}
         </p>
-        <p>{t('avertissement.baseLegale')}</p>
+        <p>{t('avertissement.baseLegale', { jours: RETENTION_PERSONNES_NON_CONTACTEES_JOURS })}</p>
       </div>
     </div>
   );

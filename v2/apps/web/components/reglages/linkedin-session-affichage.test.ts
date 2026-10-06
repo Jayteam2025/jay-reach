@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SessionLinkedIn } from '@jay-reach/core';
-import { ligneMoteurLinkedIn, phraseEtatSession, varianteDetailSession } from './linkedin-session-affichage';
+import { ligneMoteurLinkedIn, phraseEtatSession, varianteDetailSession, type CleEtatSession } from './linkedin-session-affichage';
 
 const base: SessionLinkedIn = {
   etat: 'active',
@@ -89,8 +91,8 @@ describe('phraseEtatSession', () => {
 // La ligne du pied de barre latérale dit l'état par son libellé : le logo, lui, ne change jamais
 // de couleur (il n'apparaît donc pas dans ce que la fonction rend).
 describe('ligneMoteurLinkedIn', () => {
-  it('aucune ligne en base : rien à afficher', () => {
-    expect(ligneMoteurLinkedIn(null)).toBeNull();
+  it('aucune ligne en base : la ligne est AFFICHÉE, « aucune session », ton gris (le canal ne disparaît pas)', () => {
+    expect(ligneMoteurLinkedIn(null)).toEqual({ ton: 'gris', cleLibelle: 'aucune', cleDetail: 'absente' });
   });
 
   it('active : « prêt », ton bon, détail sur la dernière collecte', () => {
@@ -115,7 +117,7 @@ describe('ligneMoteurLinkedIn', () => {
   });
 
   it('sortie inattendue l’emporte sur « active »', () => {
-    expect(ligneMoteurLinkedIn({ ...base, etat: 'active', motif: 'sortie_inattendue' })?.cleLibelle).toBe('arrete');
+    expect(ligneMoteurLinkedIn({ ...base, etat: 'active', motif: 'sortie_inattendue' }).cleLibelle).toBe('arrete');
   });
 
   it('absente : « aucune session », ton gris', () => {
@@ -157,4 +159,60 @@ describe('varianteDetailSession', () => {
     expect(varianteDetailSession(null)).toBe('detail');
     expect(varianteDetailSession(bloquee('defi'))).toBe('detail');
   });
+});
+
+// Une clé absente du catalogue afficherait son chemin brut à l'écran, et le garde-fou des clés ne
+// voit pas les clés construites (`etat.${cle}.${variante}`) : on les énumère ici contre fr.json.
+describe('clés de traduction construites dynamiquement', () => {
+  const fr = JSON.parse(
+    readFileSync(join(__dirname, '../../../../packages/i18n/src/messages/fr.json'), 'utf8'),
+  ) as Record<string, Record<string, Record<string, unknown>>>;
+  const lire = (chemin: string): unknown => chemin.split('.').reduce<unknown>((n, k) => (n as Record<string, unknown> | undefined)?.[k], fr);
+
+  const CLES: CleEtatSession[] = ['absente', 'prete', 'defi', 'cookieRefuse', 'disjoncteur', 'revoquee', 'sortieInattendue'];
+  const VARIANTES = ['detail', 'detailSansCollecte', 'detailSansOrigine', 'detailSansIp'] as const;
+
+  it.each(CLES)('reglages.linkedin.etat.%s a sa phrase et son détail', (cle) => {
+    expect(typeof lire(`reglages.linkedin.etat.${cle}.phrase`)).toBe('string');
+    expect(typeof lire(`reglages.linkedin.etat.${cle}.detail`)).toBe('string');
+  });
+
+  it('chaque variante que varianteDetailSession peut rendre existe pour la clé qui l’emploie', () => {
+    const cas: Array<[SessionLinkedIn | null, CleEtatSession]> = [
+      [base, 'prete'],
+      [{ ...base, derniereCollecte: null }, 'prete'],
+      [bloquee('sortie_inattendue'), 'sortieInattendue'],
+      [{ ...bloquee('sortie_inattendue'), operateur: null, pays: null }, 'sortieInattendue'],
+      [{ ...bloquee('sortie_inattendue'), ipVue: null }, 'sortieInattendue'],
+      [null, 'absente'],
+      [bloquee('defi'), 'defi'],
+    ];
+    for (const [session, cle] of cas) {
+      const variante = varianteDetailSession(session);
+      expect(VARIANTES).toContain(variante);
+      expect(typeof lire(`reglages.linkedin.etat.${cle}.${variante}`), `${cle}.${variante}`).toBe('string');
+    }
+  });
+
+  it.each([
+    ['pret', 'aucuneCollecte'],
+    ['arrete', 'defi'],
+    ['aucune', 'absente'],
+  ])('coquille.linkedin.libelle.%s existe', (libelle) => {
+    expect(typeof lire(`coquille.linkedin.libelle.${libelle}`)).toBe('string');
+  });
+
+  it.each(['derniereCollecte', 'aucuneCollecte', 'absente', ...CLES.filter((c) => c !== 'absente' && c !== 'prete')])(
+    'coquille.linkedin.detail.%s existe',
+    (detail) => {
+      expect(typeof lire(`coquille.linkedin.detail.${detail}`)).toBe('string');
+    },
+  );
+
+  it.each(['collectNowDraft', 'collectNowUnsaved', 'collectNowInactive', 'collectNowPaused'])(
+    'campagne.sources.drawer.%s existe (clé d’aide de « Collecter maintenant »)',
+    (cle) => {
+      expect(typeof lire(`campagne.sources.drawer.${cle}`)).toBe('string');
+    },
+  );
 });

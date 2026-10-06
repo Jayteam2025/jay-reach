@@ -27,6 +27,8 @@ export interface SourceLinkedInExistante {
   readonly nom: string;
   readonly config: Record<string, unknown>;
   readonly schedule: string;
+  /** Interrupteur de la source : une source en pause ne se collecte pas à la demande. */
+  readonly active: boolean;
 }
 
 export interface TiroirSourceLinkedInProps {
@@ -112,7 +114,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
   }
 
   const collecteDuPost = providerId === 'linkedin_post_engagers';
-  const collecte = etatCollecteMaintenant(statutCampagne, source !== null);
+  const collecte = etatCollecteMaintenant(statutCampagne, source);
 
   function collecterMaintenant() {
     if (!source) return;

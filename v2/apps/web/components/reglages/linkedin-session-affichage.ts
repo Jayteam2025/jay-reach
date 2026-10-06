@@ -27,6 +27,8 @@ const CLE_PAR_MOTIF = {
 function cleDeLaSession(session: SessionLinkedIn | null): CleEtatSession {
   if (!session) return 'absente';
   // Le motif d'abord : seul le motif dit pourquoi on ne collecte pas, quel que soit `etat`.
+  // Une session `bloquee` porte toujours un motif : la contrainte `linkedin_server_sessions_motif_coherent`
+  // (`status = 'bloquee'` <=> `blocked_reason is not null`) l'impose en base.
   if (session.motif) return CLE_PAR_MOTIF[session.motif];
   return session.etat === 'active' ? 'prete' : 'absente';
 }
@@ -58,17 +60,16 @@ export function phraseEtatSession(session: SessionLinkedIn | null): {
 }
 
 /**
- * Ligne LinkedIn des deux blocs d'état du moteur. `null` quand la session n'a jamais existé :
- * une organisation qui n'utilise pas LinkedIn n'a pas à voir une ligne grise permanente.
+ * Ligne LinkedIn des deux blocs d'état du moteur. Toujours une ligne, même sans session : un
+ * opérateur qui n'a jamais connecté LinkedIn doit y voir le canal et savoir qu'il reste à ouvrir.
  * Pas de « prochaine collecte » : la collecte est à la demande, il n'y en a pas de prochaine.
  */
 export function ligneMoteurLinkedIn(
   session: SessionLinkedIn | null,
-): { ton: PuceTon; cleLibelle: 'pret' | 'arrete' | 'aucune'; cleDetail: string } | null {
-  if (!session) return null;
+): { ton: PuceTon; cleLibelle: 'pret' | 'arrete' | 'aucune'; cleDetail: string } {
   const cle = cleDeLaSession(session);
   if (cle === 'prete') {
-    return { ton: 'bon', cleLibelle: 'pret', cleDetail: session.derniereCollecte ? 'derniereCollecte' : 'aucuneCollecte' };
+    return { ton: 'bon', cleLibelle: 'pret', cleDetail: session?.derniereCollecte ? 'derniereCollecte' : 'aucuneCollecte' };
   }
   if (cle === 'absente') return { ton: 'gris', cleLibelle: 'aucune', cleDetail: 'absente' };
   return { ton: TON_PAR_CLE[cle], cleLibelle: 'arrete', cleDetail: cle };

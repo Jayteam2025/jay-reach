@@ -731,7 +731,8 @@
         "collectNowDraft": "Disponible une fois la campagne lancée.",
         "collectNowUnsaved": "Disponible une fois la source enregistrée.",
         "collectNowInactive": "Disponible tant que la campagne est active.",
-        "collectRequested": "Collecte demandée : elle démarre dans la minute."
+        "collectRequested": "Collecte demandée.",
+        "collectNowPaused": "Disponible quand la source est active."
       }
     },
     "sequence": {
@@ -1497,7 +1498,7 @@
     },
     "linkedin": {
       "title": "LinkedIn",
-      "lead": "La session LinkedIn du serveur : où elle en est, par où elle sort et ce qu'elle a le droit de collecter.",
+      "lead": "Où en est la connexion du serveur à LinkedIn, par où elle sort et ce qu'elle a le droit de collecter.",
       "carte": {
         "titre": "Session LinkedIn",
         "sousTitre": "Compte de l'organisation, sur le serveur"
@@ -1541,7 +1542,7 @@
       },
       "faits": {
         "sortie": "Sortie réseau",
-        "operateur": "Opérateur",
+        "operateur": "Opérateur et pays",
         "collecte": "Dernière collecte",
         "inconnu": "Inconnu",
         "jamais": "Jamais"
@@ -1563,7 +1564,7 @@
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
         "risque": "Le compte utilisé peut être restreint ou fermé. L'opérateur de cette instance en répond.",
-        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées automatiquement au bout de quelques semaines."
+        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées au bout de {jours} jours."
       }
     }
   },

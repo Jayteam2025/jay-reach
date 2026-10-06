@@ -70,8 +70,10 @@ describe('EtatMoteur', () => {
         />,
       );
 
-    it('aucune session en base : pas de ligne LinkedIn', () => {
-      expect(rendre(null)).not.toContain('LinkedIn');
+    it('sans session, la ligne dit l’état et mène à Réglages › LinkedIn', () => {
+      const html = rendre({ ton: 'gris', libelle: 'LinkedIn : aucune session', detail: 'Session à ouvrir' });
+      expect(html).toContain('LinkedIn : aucune session');
+      expect(html).toContain('href="/settings/linkedin"');
     });
 
     it('session arrêtée : l’état se dit par le libellé, le logo garde sa couleur de marque', () => {

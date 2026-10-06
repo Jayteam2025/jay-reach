@@ -6,7 +6,7 @@ export interface CarteMoteurProps {
   ton: PuceTon;
   libelleEtat: string;
   detail: string;
-  /** `null` ou absent : aucune session LinkedIn n'a jamais existé, pas de ligne. */
+  /** Ligne LinkedIn, toujours rendue par la coquille (même sans session, elle dit qu'il reste à l'ouvrir) ; `null` seulement quand la lecture a échoué. */
   linkedin?: LigneMoteurLinkedinProps | null;
 }
 

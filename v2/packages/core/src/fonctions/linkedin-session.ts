@@ -11,6 +11,13 @@ import { dansUneTransaction } from '../transaction.js';
 import type { Contexte } from './contexte.js';
 import type { Sortie } from './linkedin-sortie.js';
 
+/**
+ * Durée de conservation d'une personne collectée sur LinkedIn et jamais contactée. Source unique :
+ * la mention de base légale de Réglages › LinkedIn l'affiche, la purge (tâche 11) l'applique,
+ * pour que la phrase et le comportement ne puissent pas diverger.
+ */
+export const RETENTION_PERSONNES_NON_CONTACTEES_JOURS = 90;
+
 export type EtatSession = 'absente' | 'active' | 'bloquee';
 export type MotifBlocage = 'defi' | 'cookie_refuse' | 'sortie_inattendue' | 'disjoncteur' | 'revoquee';
 

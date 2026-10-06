@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { IconeLinkedin } from '../ui/IconeLinkedin';
 import type { PuceTon } from '../ui';
 
@@ -6,6 +7,9 @@ export interface LigneMoteurLinkedinProps {
   libelle: string;
   detail: string;
 }
+
+/** Où mène la ligne : l'écran qui dit l'état et ce qu'il reste à faire. */
+export const HREF_REGLAGES_LINKEDIN = '/settings/linkedin';
 
 /**
  * Ligne LinkedIn du bloc « État du moteur » (maquette `maquettes-lot4a.html`, § 2), partagée par
@@ -17,12 +21,12 @@ export interface LigneMoteurLinkedinProps {
  */
 export function LigneMoteurLinkedin({ ton, libelle, detail }: LigneMoteurLinkedinProps) {
   return (
-    <div className="jr-moteur-linkedin">
+    <Link href={HREF_REGLAGES_LINKEDIN} className="jr-moteur-linkedin">
       <IconeLinkedin className="jr-ico-li" />
       <span>
         <b className={ton === 'erreur' ? 'jr-texte-erreur' : undefined}>{libelle}</b>
         <small className="jr-secondaire">{detail}</small>
       </span>
-    </div>
+    </Link>
   );
 }

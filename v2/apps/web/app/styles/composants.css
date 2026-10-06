@@ -143,7 +143,7 @@ select.jr-puce {
 .jr-logo-microsoft { background-image: url(/logos/microsoft.svg); }
 .jr-ico-li { width: 14px; height: 14px; fill: var(--jr-linkedin); stroke: none; vertical-align: -2px; }
 /* Ligne LinkedIn du bloc « État du moteur » (lot 4a) : le logo garde la couleur de marque (`.jr-ico-li`) quel que soit l'état. */
-.jr-moteur-linkedin { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.jr-moteur-linkedin { color: inherit; text-decoration: none; display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
 .jr-moteur-linkedin .jr-ico-li { flex: none; margin-top: 2px; }
 .jr-moteur-linkedin b { display: block; font-weight: 500; }
 .jr-etat-detail { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.4; font-weight: 400; }
@@ -621,6 +621,7 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-session-pastille.erreur { background: var(--jr-erreur); }
 .jr-session-phrase { font-size: 16px; font-weight: 500; line-height: 1.45; margin: 0; letter-spacing: -.005em; }
 .jr-session-detail { color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 3px 0 0; }
+.jr-session-detail.jr-session-consigne { margin: 0; }
 .jr-session-action { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--jr-filet); }
 .jr-session-commande { display: block; margin-top: 7px; padding: 7px 10px; font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--jr-fond); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow-x: auto; white-space: pre; }
 .jr-session-faits { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; margin: 16px 0 0; background: var(--jr-filet); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow: hidden; }

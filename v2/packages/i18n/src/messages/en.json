@@ -731,7 +731,8 @@
         "collectNowDraft": "Available once the campaign is launched.",
         "collectNowUnsaved": "Available once the source is saved.",
         "collectNowInactive": "Available while the campaign is active.",
-        "collectRequested": "Collection requested: it starts within the minute."
+        "collectRequested": "Collection requested.",
+        "collectNowPaused": "Available when the source is active."
       }
     },
     "sequence": {
@@ -1497,7 +1498,7 @@
     },
     "linkedin": {
       "title": "LinkedIn",
-      "lead": "The server LinkedIn session: where it stands, where it exits the network and what it is allowed to collect.",
+      "lead": "How the server connection to LinkedIn stands, where it exits the network and what it is allowed to collect.",
       "carte": {
         "titre": "LinkedIn session",
         "sousTitre": "The organization's account, on the server"
@@ -1541,7 +1542,7 @@
       },
       "faits": {
         "sortie": "Network exit",
-        "operateur": "Operator",
+        "operateur": "Operator and country",
         "collecte": "Last collection",
         "inconnu": "Unknown",
         "jamais": "Never"
@@ -1563,7 +1564,7 @@
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",
         "risque": "The account used may be restricted or closed. The operator of this instance is responsible.",
-        "baseLegale": "Legal basis for the processing: legitimate interest, business-to-business prospecting. People who are collected but never contacted are erased automatically after a few weeks."
+        "baseLegale": "Legal basis for the processing: legitimate interest, business-to-business prospecting. People who are collected but never contacted are erased after {jours} days."
       }
     }
   },

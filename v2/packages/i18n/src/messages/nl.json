@@ -731,7 +731,8 @@
         "collectNowDraft": "Beschikbaar zodra de campagne is gelanceerd.",
         "collectNowUnsaved": "Beschikbaar zodra de bron is opgeslagen.",
         "collectNowInactive": "Beschikbaar zolang de campagne actief is.",
-        "collectRequested": "Verzameling aangevraagd: ze start binnen een minuut."
+        "collectRequested": "Verzameling aangevraagd.",
+        "collectNowPaused": "Beschikbaar wanneer de bron actief is."
       }
     },
     "sequence": {
@@ -1497,7 +1498,7 @@
     },
     "linkedin": {
       "title": "LinkedIn",
-      "lead": "De LinkedIn-sessie van de server: hoe die ervoor staat, via welk netwerkadres ze naar buiten gaat en wat ze mag verzamelen.",
+      "lead": "Hoe de verbinding van de server met LinkedIn ervoor staat, via welk netwerkadres ze naar buiten gaat en wat ze mag verzamelen.",
       "carte": {
         "titre": "LinkedIn-sessie",
         "sousTitre": "Account van de organisatie, op de server"
@@ -1541,7 +1542,7 @@
       },
       "faits": {
         "sortie": "Netwerkuitgang",
-        "operateur": "Operator",
+        "operateur": "Operator en land",
         "collecte": "Laatste verzameling",
         "inconnu": "Onbekend",
         "jamais": "Nooit"
@@ -1563,7 +1564,7 @@
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
         "risque": "Het gebruikte account kan worden beperkt of gesloten. De operator van deze instantie is daarvoor verantwoordelijk.",
-        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na enkele weken automatisch gewist."
+        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na {jours} dagen gewist."
       }
     }
   },

@@ -43,6 +43,9 @@ test('Réglages › LinkedIn : une phrase d’état, les deux plafonds, l’aver
 
   await expect(page.getByText("Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.")).toBeVisible();
 
+  // Sans session, la ligne du bloc « État du moteur » existe quand même et mène ici.
+  await expect(page.getByRole('link', { name: /LinkedIn : aucune session/ })).toHaveAttribute('href', '/settings/linkedin');
+
   // Le mot de passe et le code ne transitent jamais par cette page.
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
