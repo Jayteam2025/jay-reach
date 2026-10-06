@@ -304,9 +304,11 @@ export type IssueEffacement = 'efface' | 'conserve' | 'absent';
  * Les écritures se font dans UNE transaction : une coupure ne laisse ni un
  * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse.
  *
- * Une personne CONTACTÉE (inscription ou fil de messages) n'est jamais effacée :
- * la fonction rend alors `'conserve'` et ne détruit rien (voir la garde en tête
- * de la transaction). Elle rend `'efface'` sinon.
+ * Trois issues, dites par la valeur rendue :
+ *  - `'efface'` : le signal (et, s'il en est né, le contact) a été détruit ;
+ *  - `'conserve'` : la personne est CONTACTÉE (inscription ou fil de messages), rien n'est
+ *    détruit (voir la garde et les verrous en tête de la transaction) ;
+ *  - `'absent'` : le signal n'existe plus ou n'est pas de cette organisation, rien n'a été touché.
  *
  * L'effacement du contact est GARDÉ (voir le `delete` ci-dessous) : seule une
  * fiche que cet engageur a réellement créée part. Une fiche qui préexistait, qui

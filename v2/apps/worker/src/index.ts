@@ -5,7 +5,7 @@
  * routes planifiées de l'application. Ce fichier ne s'occupe que du mode
  * d'exécution : écouter en continu et déclencher les producteurs à intervalle.
  */
-import { QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
+import { INTERVALLE_PURGE_MAX_MS, QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
 import {
   ecrireBattementFichier,
@@ -54,7 +54,9 @@ const RETENTION_PURGE_POLL_MS = ((brut: string | undefined): number => {
   const valeur = Number(brut ?? '');
   // Une valeur absente ou absurde ne doit pas devenir `setInterval(fn, NaN)` (~1 ms,
   // un job par milliseconde) : repli sur l'heure.
-  return Number.isFinite(valeur) && valeur >= 60_000 ? valeur : 60 * 60 * 1000;
+  // Bornée au-dessus aussi : l'alerte de l'écran Moteur (« en retard ») se déduit de ce
+  // maximum, une cadence plus lente la rendrait permanente.
+  return Number.isFinite(valeur) && valeur >= 60_000 ? Math.min(valeur, INTERVALLE_PURGE_MAX_MS) : INTERVALLE_PURGE_MAX_MS;
 })(process.env.RETENTION_PURGE_POLL_MS);
 
 async function main(): Promise<void> {
