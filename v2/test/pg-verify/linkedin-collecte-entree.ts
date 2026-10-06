@@ -11,6 +11,7 @@ export { enqueueDiscoverForActiveSources, enqueueRequestedRuns } from '../../app
 export { closeStaleSourceRuns, startSourceRun, SOURCE_RUN_TIMEOUT_MIN } from '../../apps/worker/src/db.js';
 export {
   activerSessionLinkedIn,
+  confirmerIpAttendue,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
 } from '../../packages/core/src/fonctions/linkedin-session.js';

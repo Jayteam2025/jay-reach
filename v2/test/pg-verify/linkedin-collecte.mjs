@@ -28,6 +28,7 @@ import {
   activerSessionLinkedIn,
   closeStaleSourceRuns,
   compterRequetesLinkedIn,
+  confirmerIpAttendue,
   creerSource,
   enqueueDiscoverForActiveSources,
   enqueueRequestedRuns,
@@ -169,6 +170,21 @@ function pilote({ url = POST, reponse } = {}) {
     fermer: async () => undefined,
   };
   return { p, requetes };
+}
+
+/**
+ * Le vrai pool, qui lève sur UNE requête reconnue à son marqueur. Tout le reste du
+ * SQL est réellement exécuté : c'est l'inverse d'un pool factice, qui ne prouverait
+ * que la forme des requêtes.
+ */
+function poolQuiLache(marqueur, fabriquer = () => new Error('panne de base')) {
+  return {
+    query: async (sql, params) => {
+      if (String(sql).includes(marqueur)) throw fabriquer();
+      return pool.query(sql, params);
+    },
+    connect: () => pool.connect(),
+  };
 }
 
 function deps(p, extra = {}) {
@@ -474,7 +490,7 @@ async function disjoncteur() {
  * blocage, le passage suivant rate UNE fois, et les deux anciens échecs le
  * rebloquent aussitôt avec un « Trop d'échecs d'affilée » qui est faux.
  */
-async function disjoncteurBornePaLaReconnexion() {
+async function disjoncteurBorneParLaReconnexion() {
   console.log('\n17. reconnecter, puis rater une fois');
   const m = await monde();
   // Cinq passages dans la journée : le plafond de posts ne doit pas court-circuiter
@@ -519,18 +535,7 @@ async function panneDeBaseApresLeTrafic() {
   console.log('\n18. une panne de base après tout le trafic LinkedIn');
   const m = await monde();
   const r = await run(m);
-  const poolQuiLache = {
-    query: async (sql, params) => {
-      if (String(sql).includes('jr:linkedin_collecte_marquer')) {
-        const e = new Error('canceling statement due to statement timeout');
-        e.name = 'DatabaseError';
-        throw e;
-      }
-      return pool.query(sql, params);
-    },
-    connect: () => pool.connect(),
-  };
-  const d = { ...deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), pool: poolQuiLache };
+  const d = { ...deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), pool: poolQuiLache('jr:linkedin_collecte_marquer') };
   await traiterCollecteLinkedIn(d, job(m, r)).catch(() => undefined);
   const passage = await lirePassage(r);
   check('53. le passage échoue', passage.status === 'error', `${passage.status} / ${passage.error}`);
@@ -538,6 +543,78 @@ async function panneDeBaseApresLeTrafic() {
     passage.verdict_linkedin === false, String(passage.verdict_linkedin));
   check('53c. et les personnes vues avant la panne sont enregistrées',
     (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n === 1);
+
+  // DANS la boucle d'enregistrement : `enregistrerEngageur` tape le pool
+  // directement, plusieurs requêtes par personne. C'est ce scénario-là que le
+  // ruling décrivait, et le contrôle 53 ne l'atteignait pas — son point
+  // d'injection est postérieur à la boucle.
+  const m2 = await monde();
+  const r2 = await run(m2);
+  const d2 = {
+    ...deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })),
+    pool: poolQuiLache('from linkedin_engageurs_ecartes'),
+  };
+  await traiterCollecteLinkedIn(d2, job(m2, r2)).catch(() => undefined);
+  const p2 = await lirePassage(r2);
+  check('54. une panne PENDANT la boucle d’enregistrement ne porte aucun verdict non plus',
+    p2.status === 'error' && p2.verdict_linkedin === false, `${p2.status} / ${p2.verdict_linkedin}`);
+
+  // AVANT la fin du trafic : `tracerRequeteLinkedIn` part à chaque requête. Ici le
+  // drapeau ne peut pas aider — c'est la reconnaissance de l'erreur Postgres qui
+  // décide. Vraie `DatabaseError` de `pg`, dont le `name` vaut « error ».
+  const m3 = await monde();
+  const r3 = await run(m3);
+  const d3 = {
+    ...deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })),
+    pool: poolQuiLache('jr:linkedin_requete_tracer', () => new pg.DatabaseError('canceling statement due to statement timeout', 100, 'error')),
+  };
+  await traiterCollecteLinkedIn(d3, job(m3, r3)).catch(() => undefined);
+  const p3 = await lirePassage(r3);
+  check('55. une erreur Postgres levée AVANT la fin du trafic ne porte pas de verdict non plus',
+    p3.status === 'error' && p3.verdict_linkedin === false, `${p3.status} / ${p3.verdict_linkedin}`);
+  check('55b. et son nom réel, « error », arrive tel quel à l’écran', p3.error === 'Collecte interrompue (error).', p3.error);
+}
+
+/**
+ * Une sortie inattendue bloque DÉJÀ la session elle-même. Si elle portait en plus
+ * un verdict, `confirmerIpAttendue` lèverait le blocage sans toucher
+ * `connected_at` : l'échec resterait dans la fenêtre, et trois changements d'IP
+ * résolus par l'opérateur rebloqueraient la session pour un problème réglé.
+ */
+async function sortieInattendueNeDisjonctePas() {
+  console.log('\n19. trois changements d’IP de proxy, chacun confirmé');
+  const m = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '10')`, [m.org]);
+  for (let i = 0; i < 3; i += 1) {
+    const r = await run(m);
+    const d = deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) }), {
+      releverSortie: async () => ({ ip: `198.51.100.${9 + i}` }),
+    });
+    await traiterCollecteLinkedIn(d, job(m, r));
+    check(`56.${i + 1} la sortie inattendue bloque la session sans porter de verdict`,
+      (await lireSessionLinkedIn(m.ctx)).motif === 'sortie_inattendue' && (await lirePassage(r)).verdict_linkedin === false);
+    // Chemin de production : « jay-reach linkedin ip --confirmer ».
+    await confirmerIpAttendue(m.ctx, `198.51.100.${9 + i}`);
+  }
+  check('56b. après confirmation, la session est active', (await lireSessionLinkedIn(m.ctx)).etat === 'active');
+
+  // C'est le passage suivant, qui lève, qui fait lire la fenêtre.
+  const r4 = await run(m);
+  await traiterCollecteLinkedIn(
+    deps(
+      pilote({
+        reponse: () => {
+          throw new Error('réseau');
+        },
+      }),
+      // La sortie est désormais CELLE QUI A ÉTÉ CONFIRMÉE : ce passage échoue sur
+      // le réseau, pas sur un nouvel écart d'IP.
+      { releverSortie: async () => ({ ip: '198.51.100.11' }) },
+    ),
+    job(m, r4),
+  ).catch(() => undefined);
+  const fin = await lireSessionLinkedIn(m.ctx);
+  check('57. trois changements d’IP confirmés puis un incident ne bloquent PAS la session', fin.etat === 'active', `${fin.etat}/${fin.motif}`);
 }
 
 // -------------------------------------------------------------- 8. producteur
@@ -821,7 +898,7 @@ async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
-    disjoncteurBornePaLaReconnexion, panneDeBaseApresLeTrafic);
+    disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

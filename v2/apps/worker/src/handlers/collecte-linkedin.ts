@@ -21,7 +21,7 @@
  * Aucun secret, aucune URL de proxy dans un message : seuls le type d'erreur et
  * l'IP observée sont consignés.
  */
-import type { Pool } from 'pg';
+import { DatabaseError, type Pool } from 'pg';
 import {
   bloquerSessionLinkedIn,
   compterPostsLinkedInDuJour,
@@ -352,6 +352,9 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // Verdict faux : un conteneur injoignable est un incident d'hébergement, et
       // une reconnexion LinkedIn n'y répondrait pas.
       const type = err instanceof Error ? err.name : 'Erreur';
+      // Journalisé : c'est le seul chemin du handler qui n'en avait aucun, et le
+      // premier qu'on lira au premier déploiement.
+      console.error(`[collecte-linkedin] navigateur indisponible (${type})`);
       await cloreCollecte(pool, job, { statut: 'error', erreur: `${MSG.navigateur} (${type})` });
       return;
     }
@@ -371,7 +374,13 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     sortie = controle.sortie;
     if (!controle.ok) {
       // `verifierSortie` a déjà bloqué la session.
-      await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.sortie, sortie, verdictLinkedIn: true });
+      // PAS de verdict : ce chemin bloque déjà la session lui-même, sa contribution
+      // au disjoncteur serait redondante — et nuisible. `confirmerIpAttendue` lève le
+      // blocage sans toucher `connected_at`, donc l'échec resterait dans la fenêtre :
+      // trois changements d'IP résolus par l'opérateur et la session se rebloquait en
+      // « Trop d'échecs d'affilée », ce qui l'envoie reconnecter pour un problème déjà
+      // réglé.
+      await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.sortie, sortie });
       return;
     }
 
@@ -474,7 +483,11 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // n'est pas terminé : on ne sait pas d'où elle vient, et le disjoncteur est
       // la précaution. Après, c'est forcément la base. Nos propres échecs de
       // lecture, eux, le disent franchement.
-      verdictLinkedIn: connue ? err.engageLeCompte : !traficTermine,
+      //
+      // Une erreur Postgres est reconnue à tout moment : `calculerBudget` et
+      // `tracerRequeteLinkedIn` — appelé à CHAQUE requête — lèvent avant que le
+      // trafic soit terminé, et un pooler saturé n'a jamais rien dit du compte.
+      verdictLinkedIn: connue ? err.engageLeCompte : !(traficTermine || err instanceof DatabaseError),
     });
     await verifierDisjoncteur(ctx, pool);
     throw err;

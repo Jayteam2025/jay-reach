@@ -34,6 +34,19 @@ export type Pilote = {
   fermer(): Promise<void>;
 };
 
+/**
+ * Une erreur dont le NOM dit la panne. Le handler ne consigne que `err.name` — le
+ * message d'une erreur quelconque peut porter l'URL du proxy avec ses identifiants
+ * — donc sans nom propre, trois causes distinctes arrivent à l'écran sous le même
+ * « (Error) » : conteneur éteint, variable absente, mot de passe de proxy faux.
+ * Trois remèdes, un message. Un nom qu'on écrit soi-même, lui, ne fuite rien.
+ */
+function erreurNommee(type: string, message: string): Error {
+  const e = new Error(message);
+  e.name = type;
+  return e;
+}
+
 const ECHO_IP = 'https://api.ipify.org?format=json';
 const PAGE_NEUTRE = 'about:blank';
 const DELAI_ACTION_MS = 30_000;
@@ -175,7 +188,7 @@ export async function adresseJoignable(
  */
 export async function ouvrirNavigateur(): Promise<Pilote> {
   const brute = process.env.LINKEDIN_BROWSER_URL;
-  if (!brute) throw new Error('LINKEDIN_BROWSER_URL manquant');
+  if (!brute) throw erreurNommee('UrlNavigateurAbsente', 'LINKEDIN_BROWSER_URL manquant');
   const user = process.env.LINKEDIN_PROXY_USER;
   const password = process.env.LINKEDIN_PROXY_PASSWORD;
 
@@ -187,7 +200,7 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
       defaultViewport: null,
     });
   } catch {
-    throw new Error('Connexion au navigateur impossible');
+    throw erreurNommee('ConnexionNavigateur', 'Connexion au navigateur impossible');
   }
   // Une page par client : deux commandes (ou une commande et la collecte) ne se piétinent pas.
   // Le `about:blank` initial de Chromium reste ouvert et garde le navigateur vivant.
@@ -212,7 +225,7 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     } catch {
       // Déjà tombée : il n'y a plus rien à rendre.
     }
-    throw new Error('Préparation du navigateur impossible');
+    throw erreurNommee('PreparationNavigateur', 'Préparation du navigateur impossible');
   }
 
   const onglet = page;

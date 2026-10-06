@@ -1,5 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { adresseJoignable, identiteNavigateur, releverSortie, type Pilote } from './navigateur.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { adresseJoignable, identiteNavigateur, ouvrirNavigateur, releverSortie, type Pilote } from './navigateur.js';
+
+// `puppeteer-core` n'est atteint que par un `import()` dynamique : le simuler ici
+// n'oblige à changer aucune signature, et c'est le seul moyen d'exercer
+// `ouvrirNavigateur`, qui tient la seule ressource de longue durée du lot.
+const faux = vi.hoisted(() => ({ connect: vi.fn() }));
+vi.mock('puppeteer-core', () => ({
+  default: { connect: faux.connect },
+  TimeoutError: class TimeoutError extends Error {},
+}));
 
 type Reponse = { statut: number; corps: string } | Error;
 
@@ -147,5 +156,86 @@ describe('identiteNavigateur', () => {
 
   it('ne touche a rien quand la version est illisible', () => {
     expect(identiteNavigateur('inconnu')).toBeNull();
+  });
+});
+
+describe('ouvrirNavigateur rend toujours la connexion CDP', () => {
+  // IP littérale : `adresseJoignable` court-circuite alors le DNS.
+  const URL_CDP = 'http://127.0.0.1:9223';
+
+  beforeEach(() => {
+    faux.connect.mockReset();
+    process.env.LINKEDIN_BROWSER_URL = URL_CDP;
+    delete process.env.LINKEDIN_PROXY_USER;
+    delete process.env.LINKEDIN_PROXY_PASSWORD;
+  });
+  afterEach(() => {
+    delete process.env.LINKEDIN_BROWSER_URL;
+  });
+
+  /** Chaque panne porte son NOM : trois causes, trois remèdes, trois messages. */
+  async function nomDeLErreur(agir: () => Promise<unknown>): Promise<string> {
+    try {
+      await agir();
+      return 'aucune erreur';
+    } catch (e) {
+      return e instanceof Error ? e.name : 'inconnue';
+    }
+  }
+
+  it('nomme la variable absente', async () => {
+    delete process.env.LINKEDIN_BROWSER_URL;
+    expect(await nomDeLErreur(() => ouvrirNavigateur())).toBe('UrlNavigateurAbsente');
+  });
+
+  it('nomme un conteneur injoignable', async () => {
+    faux.connect.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    expect(await nomDeLErreur(() => ouvrirNavigateur())).toBe('ConnexionNavigateur');
+  });
+
+  it('rend la connexion quand newPage leve, et n ouvre aucun onglet', async () => {
+    const disconnect = vi.fn(async () => undefined);
+    const newPage = vi.fn(async () => {
+      throw new Error('Target closed');
+    });
+    faux.connect.mockResolvedValue({ newPage, disconnect, version: async () => 'Chromium/129.0.6668.89' });
+    expect(await nomDeLErreur(() => ouvrirNavigateur())).toBe('PreparationNavigateur');
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('ferme l onglet ET rend la connexion quand l authentification du proxy leve', async () => {
+    // Le cas du premier déploiement : LINKEDIN_PROXY_PASSWORD faux.
+    process.env.LINKEDIN_PROXY_USER = 'u';
+    process.env.LINKEDIN_PROXY_PASSWORD = 'mauvais';
+    const close = vi.fn(async () => undefined);
+    const disconnect = vi.fn(async () => undefined);
+    const page = {
+      setDefaultTimeout: vi.fn(),
+      setUserAgent: vi.fn(async () => undefined),
+      authenticate: vi.fn(async () => {
+        throw new Error('Protocol error');
+      }),
+      close,
+    };
+    faux.connect.mockResolvedValue({
+      newPage: async () => page,
+      disconnect,
+      version: async () => 'Chromium/129.0.6668.89',
+    });
+    expect(await nomDeLErreur(() => ouvrirNavigateur())).toBe('PreparationNavigateur');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne reprend jamais la valeur du mot de passe de proxy dans le message', async () => {
+    process.env.LINKEDIN_PROXY_USER = 'u';
+    process.env.LINKEDIN_PROXY_PASSWORD = 'mdp-secret';
+    faux.connect.mockRejectedValue(new Error('proxy http://u:mdp-secret@exemple:8080 refuse'));
+    try {
+      await ouvrirNavigateur();
+      expect.unreachable();
+    } catch (e) {
+      expect(`${(e as Error).name}${(e as Error).message}`).not.toContain('mdp-secret');
+    }
   });
 });
