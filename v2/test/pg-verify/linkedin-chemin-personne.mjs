@@ -17,6 +17,7 @@
 import pg from 'pg';
 import {
   compterSignauxScorables,
+  ecarterEngageur,
   ecarterSignauxTropAnciens,
   enqueueEnrollments,
   enregistrerEngageur,
@@ -265,7 +266,16 @@ async function purgeEtRegression() {
   check('40. l’engageur récent est intact', sr === 1);
   const sq = (await q(`select status from signals where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0];
   const cq = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Quentin'`, [m.org])).rows[0].n;
-  check('41. l’engageur qualifié ancien n’est pas passé en `stale_unenriched`', sq?.status === 'qualified' && cq === 1, JSON.stringify(sq));
+  check('41. l’engageur qualifié ancien SANS email ni inscription est effacé (il n’a plus de sortie sinon), avec sa mémoire', sq === undefined && cq === 0, JSON.stringify(sq));
+  const eq = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0].n;
+  check('41a. jugé donc mémorisé : il ne sera pas recollecté sur ce post', eq === 1, String(eq));
+  // Qualifié, ancien, mais son contact a un email : il vit, rien ne s'efface.
+  await enregistrer(m, eng('vivant', 'Vera Vivante', 'Directrice commerciale'));
+  await q(`update signals set occurred_at = now() - interval '30 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAvivant'`, [m.org]);
+  await q(`update contacts set email = 'vera@acme.fr' where organization_id=$1 and first_name='Vera'`, [m.org]);
+  await ecarterSignauxTropAnciens(pool, 14);
+  const vv = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAvivant') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Vera') c`, [m.org])).rows[0];
+  check('41c. qualifié ancien dont le contact a un email : intact', vv.s === 1 && vv.c === 1, JSON.stringify(vv));
   const so = (await q(`select status, discard_reason from signals where organization_id=$1 and external_id='adz:old'`, [m.org])).rows[0];
   check('42. l’offre d’emploi ancienne suit toujours la règle d’avant (discarded / stale)', so?.status === 'discarded' && so?.discard_reason === 'stale', JSON.stringify(so));
 
@@ -364,6 +374,38 @@ const refuse = async (c, sql, params) => {
   }
 };
 
+async function atomicite() {
+  console.log('ecarterEngageur : une panne au milieu défait tout');
+  const m = await monde();
+  await enregistrerEngageur(m.ctx, eng('panne', 'Pia Panne', 'Directrice commerciale'), { id: m.campagne, personaId: m.persona }, POST);
+  const sigId = (await q(`select id from signals where organization_id=$1`, [m.org])).rows[0].id;
+  const compter = async () => (await q(
+    `select (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1) memoire,
+            (select count(*)::int from contacts where organization_id=$1) contacts,
+            (select count(*)::int from signals where organization_id=$1) signaux`, [m.org])).rows[0];
+  const avant = await compter();
+  // La preuve n'a de sens que si le point de départ est exact : un contact, un signal, aucune mémoire.
+  check('45a. point de départ : un contact, un signal, aucune mémoire', avant.memoire === 0 && avant.contacts === 1 && avant.signaux === 1, JSON.stringify(avant));
+
+  // La panne vise UNIQUEMENT la suppression de ce signal (trigger restreint à son identifiant) :
+  // la mémoire est posée et le contact effacé AVANT, la panne arrive donc au milieu.
+  await q(`create or replace function public.t6_panne() returns trigger language plpgsql as $f$ begin raise exception 'panne provoquee t6'; end $f$`);
+  await q(`create trigger t6_panne before delete on signals for each row when (old.id = '${sigId}') execute function public.t6_panne()`);
+  let e = null;
+  try {
+    e = await erreur(ecarterEngageur(pool, m.org, sigId));
+  } finally {
+    await q(`drop trigger if exists t6_panne on signals`);
+    await q(`drop function if exists public.t6_panne()`);
+  }
+  const etat = await compter();
+  check('45. l’erreur vient bien de la panne provoquée (pas d’une autre cause)', e !== null && String(e.message).includes('panne provoquee t6'), String(e?.message));
+  check('45b. rollback complet : la mémoire est ABSENTE, le contact et le signal intacts', etat.memoire === 0 && etat.contacts === 1 && etat.signaux === 1, JSON.stringify(etat));
+  await ecarterEngageur(pool, m.org, sigId);
+  const fin = await compter();
+  check('45c. panne retirée, le même appel aboutit (mémoire posée, contact et signal effacés)', fin.memoire === 1 && fin.contacts === 0 && fin.signaux === 0, JSON.stringify(fin));
+}
+
 async function rls() {
   console.log('rls de linkedin_engageurs_ecartes (sous le rôle authenticated)');
   const A = await monde();
@@ -395,6 +437,7 @@ try {
   await sansConsigne();
   await entreprise();
   await enrichissement();
+  await atomicite();
   await rls();
 } catch (e) {
   console.error('ERREUR', e);

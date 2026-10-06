@@ -71,8 +71,10 @@ export async function ecarterSignauxTropAnciens(
   // Une PERSONNE (`post_engagement`) ne passe jamais en `discarded` : son signal
   // et son contact s'effacent (rien de personnel sur ce qui ne sert pas), par le
   // même chemin que l'écart du scoring. Les deux mises à jour ci-dessous les
-  // excluent donc, et un engageur qualifié suit le sort de son contact, pas de
-  // l'ancienneté d'un compte qu'il n'a pas.
+  // excluent donc : un engageur QUALIFIÉ ancien, dont le contact n'a ni email ni
+  // inscription, est effacé lui aussi, AVEC mémoire (il a été jugé), sans quoi il
+  // garderait indéfiniment nom, intitulé et adresse. La mémoire est par couple
+  // post-personne : elle ne l'empêche pas de revenir par un autre post.
   const personnes = await pool.query<{ id: string; organization_id: string }>(
     `select id, organization_id from signals
       where kind = 'post_engagement' and status = 'new' and score is null
@@ -80,6 +82,18 @@ export async function ecarterSignauxTropAnciens(
     [maxJours],
   );
   for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: false });
+  const qualifiesPersonnes = await pool.query<{ id: string; organization_id: string }>(
+    `select s.id, s.organization_id from signals s
+      where s.kind = 'post_engagement' and s.status = 'qualified'
+        and s.occurred_at < now() - make_interval(days => $1)
+        and not exists (
+          select 1 from contacts ct
+           where ct.source_signal_id = s.id
+             and (ct.email is not null
+                  or exists (select 1 from enrollments e where e.contact_id = ct.id)))`,
+    [maxJours],
+  );
+  for (const p of qualifiesPersonnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: true });
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
@@ -97,7 +111,7 @@ export async function ecarterSignauxTropAnciens(
         and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
     [maxJours],
   );
-  return { nouveaux: (nouveaux.rowCount ?? 0) + personnes.rows.length, qualifies: qualifies.rowCount ?? 0 };
+  return { nouveaux: (nouveaux.rowCount ?? 0) + personnes.rows.length, qualifies: (qualifies.rowCount ?? 0) + qualifiesPersonnes.rows.length };
 }
 
 export async function enqueueDiscoverForActiveSources(

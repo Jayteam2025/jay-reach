@@ -117,7 +117,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
   return { etat, query, pool: { query } as unknown as Pool };
 }
 
-const ctxDe = (pool: Pool) => ({ pool, organizationId: ORG, sourceId: SOURCE });
+const ctxDe = (pool: Pool) => ({ pool, organizationId: ORG, sourceId: SOURCE, sourceRunId: 'run-1' });
 
 describe('enregistrerEngageur', () => {
   it('un engageur nouveau devient un signal et un contact portant persona, signal d origine et adresse', async () => {
@@ -274,7 +274,7 @@ describe('ecarterEngageur', () => {
 describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
   it('un ecart par le scoring incremente le passage qui a collecte la personne', async () => {
     const m = modele();
-    await enregistrerEngageur({ ...ctxDe(m.pool), sourceRunId: 'run-1' }, ALICE, CAMPAGNE, URL_POST);
+    await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
     await ecarterEngageur(m.pool, ORG, 'signal-1');
     expect(m.etat.runsIncrementes).toEqual(['run-1']);
   });
@@ -391,6 +391,7 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
     const pool = {
       query: vi.fn(async (sql: string) => {
         requetes.push(sql);
+        if (/select s\.id, s\.organization_id/i.test(sql)) return { rows: [], rowCount: 0 };
         if (/select id, organization_id/i.test(sql)) return { rows: [{ id: 'sig-1', organization_id: ORG }], rowCount: 1 };
         return { rows: [{ source_id: null }], rowCount: 1 };
       }),
@@ -400,6 +401,26 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
     expect(maj).toHaveLength(2);
     for (const r of maj) expect(r).toMatch(/kind <> 'post_engagement'|kind != 'post_engagement'/);
     expect(requetes.some((r) => /delete from contacts/i.test(r))).toBe(true);
+  });
+
+  it('un engageur qualifie ancien, sans email ni inscription, est efface AVEC memoire (juge) : il a ete juge', async () => {
+    const requetes: string[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        requetes.push(sql);
+        if (/select s\.id, s\.organization_id/i.test(sql)) {
+          return { rows: [{ id: 'sig-q', organization_id: ORG }], rowCount: 1 };
+        }
+        if (/select id, organization_id/i.test(sql)) return { rows: [], rowCount: 0 };
+        return { rows: [{ source_run_id: 'r' }], rowCount: 1 };
+      }),
+    } as unknown as Pool;
+    await ecarterSignauxTropAnciens(pool, 14);
+    const selection = requetes.find((r) => /select s\.id, s\.organization_id/i.test(r)) ?? '';
+    // Le contact qui a un email ou une inscription n'est jamais effacé.
+    expect(selection).toMatch(/ct\.email is not null/);
+    expect(selection).toMatch(/from enrollments/);
+    expect(requetes.some((r) => /insert into linkedin_engageurs_ecartes/i.test(r))).toBe(true);
   });
 });
 

@@ -53,8 +53,12 @@ export interface ContexteEngageur {
   readonly organizationId: string;
   /** Source d'engageurs qui porte le signal (sources.id). */
   readonly sourceId: string;
-  /** Passage de collecte en cours : c'est lui que l'écart par le scoring incrémentera. */
-  readonly sourceRunId?: string;
+  /**
+   * Passage de collecte en cours, OBLIGATOIRE : c'est lui que l'écart par le
+   * scoring incrémentera. Optionnel, un oubli du collecteur rendrait le compteur
+   * muet, sans aucune erreur.
+   */
+  readonly sourceRunId: string;
 }
 
 /** La partie stable d'un URN (`urn:li:fsd_profile:ACoAA…` -> `ACoAA…`). */
@@ -201,7 +205,7 @@ export async function enregistrerEngageur(
      values ($1, $2, $6, 'linkedin', $3, 'post_engagement', now(), $4, $5, 'new')
      on conflict (organization_id, external_id) where kind = 'post_engagement' do nothing
      returning id`,
-    [org, ctx.sourceId, externalId, engageur.intitule, urlPost, ctx.sourceRunId ?? null],
+    [org, ctx.sourceId, externalId, engageur.intitule, urlPost, ctx.sourceRunId],
   );
   const signalId = signal.rows[0]?.id;
   if (!signalId) return 'doublon'; // course : un autre passage vient de l'insérer
