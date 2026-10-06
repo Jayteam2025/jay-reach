@@ -39,6 +39,19 @@ function check(label, cond, extra = '') {
   console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
   if (!cond) failures += 1;
 }
+
+// Chaque section tourne dans son propre `try` : une exception dans l'une ne doit
+// pas emporter les suivantes. Un harnais qui saute une preuve en silence est
+// pire qu'un harnais rouge — on lit « 1 ÉCHEC » en croyant le reste prouvé.
+async function jouer(...sections) {
+  for (const section of sections) {
+    try {
+      await section();
+    } catch (e) {
+      check(`section ${section.name} : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
+}
 const erreur = async (promesse) => {
   try {
     await promesse;
@@ -552,16 +565,7 @@ async function rls() {
 }
 
 try {
-  await index();
-  await rattachement();
-  await chaine();
-  await purgeEtRegression();
-  await sansConsigne();
-  await entreprise();
-  await enrichissement();
-  await importCsv();
-  await atomicite();
-  await rls();
+  await jouer(index, rattachement, chaine, purgeEtRegression, sansConsigne, entreprise, enrichissement, importCsv, atomicite, rls);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

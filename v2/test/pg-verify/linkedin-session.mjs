@@ -20,6 +20,19 @@ function check(label, cond, extra = '') {
   console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
   if (!cond) failures += 1;
 }
+
+// Chaque section tourne dans son propre `try` : une exception dans l'une ne doit
+// pas emporter les suivantes. Un harnais qui saute une preuve en silence est
+// pire qu'un harnais rouge — on lit « 1 ÉCHEC » en croyant le reste prouvé.
+async function jouer(...sections) {
+  for (const section of sections) {
+    try {
+      await section();
+    } catch (e) {
+      check(`section ${section.name} : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
+}
 let seq = 0;
 async function userNeuf() {
   return (await q(`insert into auth.users (id, email) values (gen_random_uuid(), $1) returning id`, [`u${Date.now()}${(seq += 1)}@test.local`]))
@@ -185,9 +198,7 @@ async function rls() {
 
 try {
   await q('truncate organizations cascade');
-  await verrou();
-  await etat();
-  await rls();
+  await jouer(verrou, etat, rls);
 } finally {
   await pool.end();
 }

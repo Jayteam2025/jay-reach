@@ -16,6 +16,19 @@ function check(label, cond, extra = '') {
   console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
   if (!cond) failures += 1;
 }
+
+// Chaque section tourne dans son propre `try` : une exception dans l'une ne doit
+// pas emporter les suivantes. Un harnais qui saute une preuve en silence est
+// pire qu'un harnais rouge — on lit « 1 ÉCHEC » en croyant le reste prouvé.
+async function jouer(...sections) {
+  for (const section of sections) {
+    try {
+      await section();
+    } catch (e) {
+      check(`section ${section.name} : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
+}
 let seq = 0;
 async function orgNeuve() {
   seq += 1;
@@ -216,12 +229,7 @@ async function personasTrous() {
 
 try {
   await q('truncate organizations cascade');
-  await regle();
-  await modification();
-  await personas();
-  await creationDeCampagne();
-  await identiteDuPost();
-  await personasTrous();
+  await jouer(regle, modification, personas, creationDeCampagne, identiteDuPost, personasTrous);
 } finally {
   await pool.end();
 }
