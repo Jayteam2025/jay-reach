@@ -9,8 +9,9 @@
 -- doublon que l'index unique `contacts_org_linkedin_url_uidx` ne peut pas voir.
 --
 -- Mesuré en lecture seule sur la base de l'éditeur le 06/10/2026 : 587 contacts,
--- 550 avec adresse, 15 non canoniques (8 sans `www.`, 7 avec barre finale), et
--- AUCUNE collision. Mais Jay Reach est auto-hébergé : cette migration tournera
+-- 550 avec adresse, 15 non canoniques (8 sans `www.`, 7 avec barre finale), une
+-- seule portant une majuscule, aucune sans schéma, aucune adresse déduite d'un
+-- URN, et AUCUNE collision. Mais Jay Reach est auto-hébergé : cette migration tournera
 -- sur des bases jamais vues, où deux fiches peuvent très bien converger vers la
 -- même adresse. Elle ne doit donc jamais tomber — une migration qui échoue à
 -- l'application est pire que le défaut qu'elle corrige.
@@ -24,11 +25,18 @@ with cible as (
     organization_id,
     linkedin_url,
     'https://www.linkedin.com/in/'
-      || (regexp_match(linkedin_url, '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/([^/?#]+)', 'i'))[1]
+      || lower((regexp_match(linkedin_url, '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/([^/?#]+)', 'i'))[1])
       as canonique
   from contacts
   where linkedin_url is not null
     and linkedin_url ~* '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/[^/?#]+'
+    -- Une adresse FABRIQUÉE à partir d'un URN (`lienProfilDeduit`) n'est pas une
+    -- adresse publique : son dernier segment est un identifiant interne
+    -- (`ACoAA…`) où la casse est signifiante. On la reconnaît à ce que le slug
+    -- EST le `linkedin_provider_id` de la fiche, et on n'y touche pas : la
+    -- minusculiser confondrait deux personnes distinctes.
+    and not (linkedin_provider_id is not null
+             and linkedin_url = 'https://www.linkedin.com/in/' || linkedin_provider_id)
 ),
 a_changer as (
   select * from cible where canonique <> linkedin_url
@@ -68,11 +76,13 @@ begin
       organization_id,
       linkedin_url,
       'https://www.linkedin.com/in/'
-        || (regexp_match(linkedin_url, '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/([^/?#]+)', 'i'))[1]
+        || lower((regexp_match(linkedin_url, '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/([^/?#]+)', 'i'))[1])
         as canonique
     from contacts
     where linkedin_url is not null
       and linkedin_url ~* '^https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/[^/?#]+'
+      and not (linkedin_provider_id is not null
+               and linkedin_url = 'https://www.linkedin.com/in/' || linkedin_provider_id)
   )
   select
     count(*) filter (

@@ -379,12 +379,12 @@ async function gardeDeLEffacement() {
   const liste = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1,'Salon','Contacts du salon','import') returning id`, [m.org])).rows[0].id;
   const odile = (await q(
     `insert into contacts (organization_id, first_name, email, linkedin_url, source_list_id, created_at)
-     values ($1,'Odile','odile@acme.fr','https://www.linkedin.com/in/ACoAAodile',$2, now() - interval '60 days') returning id`,
+     values ($1,'Odile','odile@acme.fr','https://www.linkedin.com/in/odile-ancienne',$2, now() - interval '60 days') returning id`,
     [m.org, liste],
   )).rows[0].id;
   await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'completed')`, [m.org, m.campagne, odile]);
   await q(`insert into list_members (list_id, contact_id, raw_row) values ($1,$2,'{}'::jsonb)`, [liste, odile]);
-  await enregistrer(m, { ...eng('odile', 'Odile Ancienne', 'Plombière'), urlProfil: 'https://www.linkedin.com/in/ACoAAodile' });
+  await enregistrer(m, { ...eng('odile', 'Odile Ancienne', 'Plombière'), urlProfil: 'https://www.linkedin.com/in/odile-ancienne' });
   const r = await runScore({ pool, organizationId: m.org, scorer });
   const o = (await q(
     `select (select count(*)::int from contacts where id=$2) c,
@@ -401,11 +401,11 @@ async function gardeDeLEffacement() {
   const liste2 = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1,'Salon','Contacts du salon','import') returning id`, [p.org])).rows[0].id;
   const oscar = (await q(
     `insert into contacts (organization_id, first_name, email, linkedin_url, source_list_id, created_at)
-     values ($1,'Odilon','odilon@acme.fr','https://www.linkedin.com/in/ACoAAodilon',$2, now() - interval '60 days') returning id`,
+     values ($1,'Odilon','odilon@acme.fr','https://www.linkedin.com/in/odilon-ancien',$2, now() - interval '60 days') returning id`,
     [p.org, liste2],
   )).rows[0].id;
   await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'replied')`, [p.org, p.campagne, oscar]);
-  await enregistrer(p, { ...eng('odilon', 'Odilon Ancien', 'Plombier'), urlProfil: 'https://www.linkedin.com/in/ACoAAodilon' });
+  await enregistrer(p, { ...eng('odilon', 'Odilon Ancien', 'Plombier'), urlProfil: 'https://www.linkedin.com/in/odilon-ancien' });
   await q(`update signals set occurred_at = now() - interval '30 days' where organization_id=$1`, [p.org]);
   await ecarterSignauxTropAnciens(pool, 14);
   const d = (await q(
@@ -551,9 +551,9 @@ async function importCsv() {
     });
 
   // Une personne déjà collectée comme engageur, reprise dans un fichier.
-  await enregistrer(m, eng('csv', 'Carla Sieve', 'Directrice commerciale'));
+  await enregistrer(m, { ...eng('csv', 'Carla Sieve', 'Directrice commerciale'), urlProfil: 'https://www.linkedin.com/in/carla-sieve' });
   const avant = (await q(`select id, source_signal_id, enriched_at from contacts where organization_id=$1 and first_name='Carla'`, [m.org])).rows[0];
-  const r1 = await erreur(importer([{ Prenom: 'Carla', Nom: 'Sieve', Email: 'carla@acme.fr', LinkedIn: 'https://www.linkedin.com/in/ACoAAcsv' }]));
+  const r1 = await erreur(importer([{ Prenom: 'Carla', Nom: 'Sieve', Email: 'carla@acme.fr', LinkedIn: 'https://www.linkedin.com/in/carla-sieve' }]));
   check('46. import d’une personne déjà connue comme engageur : aboutit (plus de 23505)', r1 === null, String(r1));
   const ap = (await q(`select count(*)::int n, min(id::text) id, min(email) email, count(source_list_id)::int listes, count(enriched_at)::int enrichis, min(source_signal_id::text) sig from contacts where organization_id=$1 and first_name='Carla'`, [m.org])).rows[0];
   check('46a. une seule fiche, rattachée à la liste, email du fichier posé', ap.n === 1 && ap.id === avant.id && ap.listes === 1 && ap.email === 'carla@acme.fr', JSON.stringify(ap));
@@ -564,21 +564,21 @@ async function importCsv() {
   // Même personne, autre graphie, et SANS email dans le fichier : seule la forme
   // canonique peut la retrouver. Avec un email, le conflit sur l'email suffirait et
   // le contrôle passerait pour une autre raison que celle qu'il annonce.
-  await enregistrer(m, eng('graphie', 'Gina Graphie', 'Directrice commerciale'));
-  await importer([{ Prenom: 'Gina', Nom: 'Graphie', Email: '', LinkedIn: 'https://fr.linkedin.com/in/ACoAAgraphie/?trk=partage' }], 'Liste 2');
+  await enregistrer(m, { ...eng('graphie', 'Gina Graphie', 'Directrice commerciale'), urlProfil: 'https://www.linkedin.com/in/gina-graphie' });
+  await importer([{ Prenom: 'Gina', Nom: 'Graphie', Email: '', LinkedIn: 'https://fr.linkedin.com/in/gina-graphie/?trk=partage' }], 'Liste 2');
   const g = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Gina'`, [m.org])).rows[0];
   check('46d. une autre graphie de la même adresse ne crée PAS de seconde fiche', g.n === 1 && g.listes === 1, JSON.stringify(g));
 
   // L'email du fichier appartient déjà à une autre fiche : on rattache sans fusionner.
-  await enregistrer(m, eng('pris', 'Paul Pris', 'Directeur commercial'));
+  await enregistrer(m, { ...eng('pris', 'Paul Pris', 'Directeur commercial'), urlProfil: 'https://www.linkedin.com/in/paul-pris' });
   await q(`insert into contacts (organization_id, first_name, email) values ($1,'Autre','pris@acme.fr')`, [m.org]);
-  const r2 = await erreur(importer([{ Prenom: 'Paul', Nom: 'Pris', Email: 'pris@acme.fr', LinkedIn: 'https://www.linkedin.com/in/ACoAApris' }], 'Liste 3'));
+  const r2 = await erreur(importer([{ Prenom: 'Paul', Nom: 'Pris', Email: 'pris@acme.fr', LinkedIn: 'https://www.linkedin.com/in/paul-pris' }], 'Liste 3'));
   const pp = (await q(`select count(*)::int n, min(email) email, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Paul'`, [m.org])).rows[0];
   check('46e. email déjà porté par une autre fiche : l’import aboutit, rattache, et ne fusionne pas', r2 === null && pp.n === 1 && pp.email === null && pp.listes === 1, `${r2} ${JSON.stringify(pp)}`);
 
   // La COURSE, pour de vrai : une transaction concurrente insère la fiche entre la
   // recherche de l'import et son insertion. L'import doit la rattraper, pas tomber.
-  const urlCourse = 'https://www.linkedin.com/in/ACoAAcourse';
+  const urlCourse = 'https://www.linkedin.com/in/rosa-course';
   const concurrent = await pool.connect();
   let r3;
   try {
@@ -595,6 +595,33 @@ async function importCsv() {
   }
   const rr = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and linkedin_url=$2`, [m.org, urlCourse])).rows[0];
   check('47. course : la fiche naît entre la recherche et l’insertion — l’import la rattrape, une seule fiche, rattachée', r3 === null && rr.n === 1 && rr.listes === 1, `${r3} ${JSON.stringify(rr)}`);
+
+  // Une valeur qui n'est pas une adresse de profil ne doit JAMAIS devenir une
+  // identité : sinon la première ligne crée un contact et toutes les suivantes se
+  // rattachent dessus, en perdant leur nom et leur poste. Trois personnes, trois
+  // fiches — et la ligne d'origine reste dans list_members.raw_row.
+  const rNon = await erreur(importer([
+    { Prenom: 'Una', Nom: 'Uno', Email: 'una@acme.fr', LinkedIn: '-' },
+    { Prenom: 'Duna', Nom: 'Dos', Email: 'duna@acme.fr', LinkedIn: '-' },
+    { Prenom: 'Tina', Nom: 'Tres', Email: 'tina@acme.fr', LinkedIn: 'N/A' },
+  ], 'Liste 6'));
+  const nonUrl = (await q(`select count(*)::int n, count(distinct first_name)::int d, count(linkedin_url)::int avec from contacts where organization_id=$1 and first_name in ('Una','Duna','Tina')`, [m.org])).rows[0];
+  const brut = (await q(`select count(*)::int n from list_members lm join contacts c on c.id = lm.contact_id where c.organization_id=$1 and c.first_name='Una' and lm.raw_row->>'LinkedIn' = '-'`, [m.org])).rows[0].n;
+  check('53. une valeur non-URL en colonne LinkedIn : autant de contacts que de personnes, aucune identité usurpée', rNon === null && nonUrl.n === 3 && nonUrl.d === 3 && nonUrl.avec === 0, `${rNon} ${JSON.stringify(nonUrl)}`);
+  check('53a. la valeur d’origine du fichier n’est pas perdue (list_members.raw_row)', brut === 1, String(brut));
+
+  // Adresse SANS schéma : `new URL` la refuse, le pipeline l'accepte pourtant
+  // comme clé de dédup. Sans préfixe, la personne repart en brut et se double.
+  await enregistrer(m, { ...eng('sch', 'Sacha Schema', 'Directeur commercial'), urlProfil: 'https://www.linkedin.com/in/sacha-schema' });
+  await importer([{ Prenom: 'Sacha', Nom: 'Schema', Email: '', LinkedIn: 'linkedin.com/in/sacha-schema' }], 'Liste 7');
+  const sch = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Sacha'`, [m.org])).rows[0];
+  check('53b. adresse sans schéma dans le fichier : la personne est retrouvée, pas doublée', sch.n === 1 && sch.listes === 1, JSON.stringify(sch));
+
+  // Casse du slug : une adresse PUBLIQUE est insensible à la casse.
+  await enregistrer(m, { ...eng('cas', 'Clea Casse', 'Directrice commerciale'), urlProfil: 'https://www.linkedin.com/in/clea-casse' });
+  await importer([{ Prenom: 'Clea', Nom: 'Casse', Email: '', LinkedIn: 'https://www.linkedin.com/in/Clea-Casse' }], 'Liste 8');
+  const cas = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Clea'`, [m.org])).rows[0];
+  check('53c. même slug écrit avec des majuscules : une seule fiche', cas.n === 1 && cas.listes === 1, JSON.stringify(cas));
 
   // Non-régression : une personne inconnue est bien créée.
   const r4 = await erreur(importer([{ Prenom: 'Neuf', Nom: 'Venu', Email: 'neuf@acme.fr', LinkedIn: 'https://www.linkedin.com/in/neuf-venu' }], 'Liste 5'));
@@ -617,6 +644,10 @@ async function migrationAdresses() {
   await ct('Barre', 'https://www.linkedin.com/in/barre-finale/');
   await ct('Pays', 'https://fr.linkedin.com/in/sous-domaine?trk=x');
   await ct('Societe', 'https://www.linkedin.com/company/acme');
+  await ct('Casse', 'https://www.linkedin.com/in/Majuscule-Slug');
+  // Adresse FABRIQUÉE à partir d'un URN : son slug EST le linkedin_provider_id,
+  // et sa casse est signifiante. La migration doit la laisser intacte.
+  await q(`insert into contacts (organization_id, first_name, linkedin_url, linkedin_provider_id) values ($1,'Urne','https://www.linkedin.com/in/ACoAAUrNe','ACoAAUrNe')`, [m.org]);
   // Deux fiches qui CONVERGENT : sans précaution, la migration tomberait sur
   // l'index unique. Une organisation voisine porte le même cas, pour vérifier
   // que la normalisation ne déborde pas d'une organisation à l'autre.
@@ -632,6 +663,8 @@ async function migrationAdresses() {
   check('52b. la barre finale est retirée', (await lu('Barre')) === 'https://www.linkedin.com/in/barre-finale', await lu('Barre'));
   check('52c. sous-domaine de pays et paramètre de partage : forme canonique', (await lu('Pays')) === 'https://www.linkedin.com/in/sous-domaine', await lu('Pays'));
   check('52d. ce qui n’est pas un profil n’est pas touché', (await lu('Societe')) === 'https://www.linkedin.com/company/acme', await lu('Societe'));
+  check('52g. un slug public à majuscules passe en minuscules', (await lu('Casse')) === 'https://www.linkedin.com/in/majuscule-slug', await lu('Casse'));
+  check('52h. une adresse déduite d’un URN garde sa casse (identifiant interne)', (await lu('Urne')) === 'https://www.linkedin.com/in/ACoAAUrNe', await lu('Urne'));
   const j = (await q(`select count(*)::int n, count(distinct linkedin_url)::int d, count(*) filter (where linkedin_url = 'https://www.linkedin.com/in/jumelle')::int canon from contacts where organization_id=$1 and first_name like 'Jumelle%'`, [m.org])).rows[0];
   check('52e. deux fiches qui convergent : une seule prend l’adresse canonique, l’autre garde la sienne', j.n === 2 && j.d === 2 && j.canon === 1, JSON.stringify(j));
   check('52f. l’organisation voisine est normalisée elle aussi (la collision ne déborde pas)', (await (async () => (await q(`select linkedin_url u from contacts where organization_id=$1 and first_name='Ailleurs'`, [voisine.org])).rows[0]?.u)()) === 'https://www.linkedin.com/in/jumelle');

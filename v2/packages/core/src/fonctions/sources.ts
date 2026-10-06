@@ -644,11 +644,24 @@ async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<{ pe
  * un défaut plus silencieux et plus durable qu'une erreur d'insertion.
  */
 export function normaliserUrlProfil(url: string): string | null {
+  const brut = url.trim();
+  // Un fichier porte souvent l'adresse sans schéma (`linkedin.com/in/jdoe`), que
+  // `new URL` refuse — alors que `normalizeLinkedin`, qui dédoublonne DANS le
+  // fichier, l'accepte. Sans ce préfixe, la même personne passe deux fois.
+  const avecSchema = brut.includes('://') ? brut : `https://${brut}`;
   try {
-    const u = new URL(url.trim());
+    const u = new URL(avecSchema);
     const hote = u.hostname.toLowerCase();
     if (hote !== 'linkedin.com' && !hote.endsWith('.linkedin.com')) return null;
     const m = /^\/in\/([^/]+)/.exec(u.pathname);
+    // La CASSE du slug est conservée, volontairement. Cette fonction ne sert pas
+    // qu'à écrire : elle sert aussi à RETROUVER une fiche par son adresse, et
+    // elle ne peut pas savoir si l'adresse qu'on lui passe est publique (casse
+    // non signifiante) ou fabriquée à partir d'un URN par `lienProfilDeduit`
+    // (`/in/ACoAA…`, casse signifiante). Minusculiser ici romprait le second cas :
+    // mesuré, cinq contrôles du harnais passent au rouge. L'alignement de casse
+    // se fait donc là où l'on SAIT que la valeur a été saisie à la main, dans
+    // l'import de fichier.
     return m?.[1] ? `https://www.linkedin.com/in/${m[1]}` : null;
   } catch {
     return null;
@@ -1146,10 +1159,26 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
     // Forme canonique AVANT toute écriture : le fichier écrit ce que l'opérateur
     // a collé (`fr.linkedin.com/in/x/?trk=…`), le collecteur d'engageurs écrit la
     // forme canonique. Sans réconciliation, aucun conflit n'est levé et la même
-    // personne existe deux fois — silencieusement. Une adresse qui n'est pas un
-    // profil (page d'entreprise, saisie libre) est gardée telle quelle.
+    // personne existe deux fois — silencieusement.
+    //
+    // Ce qui n'est PAS un profil est écarté (null), jamais gardé tel quel : cette
+    // valeur sert ensuite de clé d'identité (`rattacherParAdresseLinkedin`). Un
+    // `-`, un `N/A` ou l'adresse d'une page entreprise recopiée sur chaque ligne
+    // deviendrait l'identité commune de tout le fichier — la première ligne crée
+    // un contact, toutes les autres se rattachent dessus en coalesce, perdent
+    // leur nom et leur poste, et sont comptées « déjà connues ». Trois cents
+    // personnes rendraient un seul contact, sans la moindre erreur. La valeur
+    // d'origine n'est pas perdue : `list_members.raw_row` garde la ligne entière.
+    //
+    // Slug en MINUSCULES, et seulement ici : une adresse de fichier est saisie ou
+    // collée à la main, sa casse n'est pas signifiante (`normalizeLinkedin`, qui
+    // dédoublonne dans le fichier, la minusculise déjà). Sans cela,
+    // `/in/Alexandre-Declercq` du fichier et `/in/alexandre-declercq` lu chez
+    // LinkedIn font deux fiches. `normaliserUrlProfil`, elle, ne minusculise pas :
+    // elle sert aussi aux adresses fabriquées à partir d'un URN, où la casse
+    // compte.
     const urlBrute = valeurDe(row, 'linkedin_url');
-    const linkedinUrl = urlBrute === null ? null : (normaliserUrlProfil(urlBrute) ?? urlBrute);
+    const linkedinUrl = (urlBrute === null ? null : normaliserUrlProfil(urlBrute))?.toLowerCase() ?? null;
     let contactId: string | undefined;
 
     if (linkedinUrl !== null) {
