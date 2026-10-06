@@ -25,6 +25,19 @@ function check(label, cond, extra = '') {
   console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${etiquette}${label}${extra ? ` — ${extra}` : ''}`);
   if (!cond) failures += 1;
 }
+
+// Chaque section tourne dans son propre `try` : une exception dans l'une ne doit
+// pas emporter les suivantes. Un harnais qui saute une preuve en silence est
+// pire qu'un harnais rouge — on lit « 1 ÉCHEC » en croyant le reste prouvé.
+async function jouer(...sections) {
+  for (const section of sections) {
+    try {
+      await section();
+    } catch (e) {
+      check(`section ${section.name} : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
+}
 const JOUR_MS = 24 * 3600 * 1000;
 const HEURE_MS = 3600 * 1000;
 let seq = 0;
@@ -611,13 +624,11 @@ try {
   // Base de test jetable (ou conservée par KEEP=1) : on repart de zéro, car
   // `enqueueEnrollments` balaie TOUTES les organisations d'un coup.
   await q('truncate organizations cascade');
-  await dedoublonnage();
-  await plafondEntrees();
   for (const tz of FUSEAUX) await quotaSender(tz);
   etiquette = '';
-  await doubleDefinitionDuQuota();
   for (const tz of FUSEAUX) await tickEtFuseau(tz);
   etiquette = '';
+  await jouer(dedoublonnage, plafondEntrees, doubleDefinitionDuQuota);
 } finally {
   await pool.end();
 }
