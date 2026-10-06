@@ -44,11 +44,12 @@ describe('extension gelee : manifeste', () => {
 describe('extension gelee : service worker', () => {
   function charger() {
     const appels = { alarmes: 0, fetch: 0, stockage: 0 };
+    let interne: ((m: unknown, s: unknown, r: (x: unknown) => void) => unknown) | undefined;
     let externe: ((m: unknown, s: unknown, r: (x: unknown) => void) => unknown) | undefined;
     const evt = { addListener: () => undefined };
     const chrome = {
       alarms: { create: () => appels.alarmes++, clear: () => undefined, onAlarm: { addListener: (f: unknown) => void f } },
-      runtime: { onInstalled: evt, onStartup: evt, onMessage: evt, onMessageExternal: { addListener: (f: typeof externe) => (externe = f) } },
+      runtime: { onInstalled: evt, onStartup: evt, onMessage: { addListener: (f: typeof interne) => (interne = f) }, onMessageExternal: { addListener: (f: typeof externe) => (externe = f) } },
       storage: {
         local: {
           get: (_k: unknown, cb: (v: object) => void) => cb({ extensionToken: 'jeton' }),
@@ -62,7 +63,7 @@ describe('extension gelee : service worker', () => {
       fetch: () => { appels.fetch++; return Promise.reject(new Error('fetch interdit')); },
       setTimeout, Date, Promise,
     });
-    return { appels, externe: () => externe };
+    return { appels, externe: () => externe, interne: () => interne };
   }
 
   it('ne pose aucune alarme, ne fait aucun fetch au demarrage meme avec un jeton stocke', async () => {
@@ -81,5 +82,16 @@ describe('extension gelee : service worker', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(appels.stockage).toBe(0);
     expect(appels.fetch).toBe(0);
+  });
+
+  it('les messages internes de la popup ne declenchent ni poll, ni releve, ni profil', async () => {
+    const { appels, interne } = charger();
+    for (const type of ['POLL_NOW', 'RELEVER_NOW', 'JAY_REACH_REMONTER_PROFIL']) {
+      const repondu = new Promise((r) => interne()?.({ type }, {}, r));
+      await repondu;
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(appels.fetch).toBe(0);
+    expect(appels.alarmes).toBe(0);
   });
 });
