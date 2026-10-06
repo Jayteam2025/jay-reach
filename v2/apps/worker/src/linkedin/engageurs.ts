@@ -31,8 +31,17 @@ const DELAI_MIN_MS = 2_000;
 const DELAI_MAX_MS = 6_000;
 /** Garde-fou de boucle : un `total` incohérent ne doit pas faire tourner la pagination sans fin. */
 const PAGES_MAX = 40;
-/** Profondeur de descente dans la réponse Voyager (les profils sont imbriqués, jamais à ce point). */
-const PROFONDEUR_MAX = 8;
+/**
+ * Profondeur de descente dans la réponse Voyager.
+ *
+ * Mesuré, pas supposé : sur la forme commentaires, le chemin
+ * `data → socialMetadata → comments → elements → élément → commenter → profile`
+ * met le profil à la profondeur **7**. Une décoration de plus (`*elements`,
+ * `commenterResolutionResult`, `miniProfile`) suffit à en ajouter trois. On garde
+ * donc plus du double de marge, et toute troncature laisse une trace : une perte
+ * muette ferait chercher la panne du côté de LinkedIn.
+ */
+const PROFONDEUR_MAX = 16;
 
 /**
  * En-têtes de l'API interne. `normalized+json` donne une réponse où les profils
@@ -133,29 +142,69 @@ export function entrepriseDeLIntitule(intitule: string): string | undefined {
  *
  * La descente est RÉCURSIVE et non une lecture de chemins fixes : LinkedIn range
  * ses profils tantôt dans `included` (réponse normalisée), tantôt dans les
- * éléments eux-mêmes, et change la décoration sans prévenir. On retient un objet
- * dès qu'il porte un URN de PERSONNE (trois préfixes reconnus, rien d'autre) ET
- * au moins un attribut de personne. Un URN cité en simple référence, sans aucun
- * attribut, est écarté ici — c'est le seul filtre de cette fonction. Tout le
- * reste (nom vide, intitulé vide) descend au schéma d'entrée du handler, qui
- * décide seul de ce qui mérite un contact.
+ * éléments eux-mêmes, et change la décoration sans prévenir.
+ *
+ * TROIS filtres, et il faut les connaître tous les trois : le jour où des profils
+ * manqueront, c'est ici qu'il faut regarder, pas chez LinkedIn.
+ *  1. **URN de personne** : trois préfixes reconnus, rien d'autre. Un URN de post,
+ *     d'entreprise, de réaction ou de commentaire ne passe pas.
+ *  2. **Au moins un attribut de personne** (nom, intitulé ou identifiant public).
+ *     Un URN cité en simple référence — auteur d'un commentaire parent, mention —
+ *     est écarté. Un nom VIDE descend en revanche jusqu'au schéma d'entrée du
+ *     handler, qui décide seul de ce qui mérite un contact.
+ *  3. **`PROFONDEUR_MAX`** : une branche plus profonde n'est pas explorée. Le
+ *     nombre de branches coupées est rendu dans `tronques`, et l'appelant doit en
+ *     faire quelque chose — sans ça la perte serait muette.
+ *
+ * Deux objets qui portent le MÊME URN sont FUSIONNÉS, le premier vu gardant ce
+ * qu'il a renseigné. Ignorer le second serait un arbitrage d'ordre de descente
+ * déguisé en filtre : `data` est visité avant `included`, donc un élément de
+ * liste simplement décoré (un `headline`, pas de `publicIdentifier`) raflerait
+ * l'URN et le vrai profil ne serait jamais lu. On perdrait `urlProfil`, donc le
+ * rattachement de l'email acheté à la tâche 8, en silence et sur une part
+ * inconnue des profils.
  *
  * `urlProfil` vient de `publicIdentifier` : sans lui, l'adresse de repli déduite
  * de l'URN (`lienProfilDeduit`) ne rejoindra jamais celle que rend FullEnrich, et
  * un contact déjà connu ne serait pas rattaché. C'est le collecteur, et lui seul,
  * qui dispose de cette information.
  */
-export function extraireEngageurs(corps: unknown): Engageur[] {
+/**
+ * Complète ce qui manque, sans jamais écraser ce qui est renseigné : le premier
+ * objet vu fait foi sur chaque champ qu'il porte. `entreprise` suit l'intitulé
+ * retenu — elle en est déduite, la prendre d'un intitulé qu'on ne garde pas
+ * donnerait une entreprise sans rapport avec le poste affiché.
+ */
+function fusionner(connu: Engageur, neuf: Engageur): Engageur {
+  const garderConnu = connu.intitule.length > 0;
+  const intitule = garderConnu ? connu.intitule : neuf.intitule;
+  const entreprise = garderConnu ? connu.entreprise : neuf.entreprise;
+  const urlProfil = connu.urlProfil ?? neuf.urlProfil;
+  return {
+    urn: connu.urn,
+    nom: connu.nom.length > 0 ? connu.nom : neuf.nom,
+    intitule,
+    ...(entreprise !== undefined ? { entreprise } : {}),
+    ...(urlProfil !== undefined ? { urlProfil } : {}),
+  };
+}
+
+export function extraireEngageurs(corps: unknown): { personnes: Engageur[]; tronques: number } {
   const vus = new Map<string, Engageur>();
+  let tronques = 0;
   const visiter = (noeud: unknown, profondeur: number): void => {
-    if (profondeur > PROFONDEUR_MAX || noeud === null || typeof noeud !== 'object') return;
+    if (noeud === null || typeof noeud !== 'object') return;
+    if (profondeur > PROFONDEUR_MAX) {
+      tronques += 1;
+      return;
+    }
     if (Array.isArray(noeud)) {
       for (const e of noeud) visiter(e, profondeur + 1);
       return;
     }
     const o = noeud as Record<string, unknown>;
     const urn = urnDeProfil(o.entityUrn) ?? urnDeProfil(o.objectUrn);
-    if (urn !== null && !vus.has(urn)) {
+    if (urn !== null) {
       const nom = [texteDe(o.firstName), texteDe(o.lastName)].filter(Boolean).join(' ') || texteDe(o.name) || '';
       const intitule = texteDe(o.headline) ?? texteDe(o.occupation) ?? '';
       const identifiant = texteDe(o.publicIdentifier);
@@ -167,7 +216,7 @@ export function extraireEngageurs(corps: unknown): Engageur[] {
       // d'entrée du handler, qui refuse un contact sans nom.
       if (nom.length > 0 || intitule.length > 0 || identifiant !== undefined) {
         const entreprise = entrepriseDeLIntitule(intitule);
-        vus.set(urn, {
+        const candidat: Engageur = {
           urn,
           nom,
           intitule,
@@ -175,13 +224,15 @@ export function extraireEngageurs(corps: unknown): Engageur[] {
           ...(identifiant !== undefined
             ? { urlProfil: `https://www.linkedin.com/in/${encodeURIComponent(identifiant)}` }
             : {}),
-        });
+        };
+        const connu = vus.get(urn);
+        vus.set(urn, connu === undefined ? candidat : fusionner(connu, candidat));
       }
     }
     for (const v of Object.values(o)) visiter(v, profondeur + 1);
   };
   visiter(corps, 0);
-  return [...vus.values()];
+  return { personnes: [...vus.values()], tronques };
 }
 
 /** Nombre total annoncé par la pagination Voyager, quand elle le donne. */
@@ -276,12 +327,23 @@ export async function lireEngageurs(
       const corps = lireJson(rep.corps);
       if (corps === undefined) throw new Error('Réponse LinkedIn illisible');
 
-      const lot = extraireEngageurs(corps);
+      const { personnes: lot, tronques } = extraireEngageurs(corps);
       const total = totalAnnonce(corps);
+      if (tronques > 0) {
+        console.warn(
+          `[collecte-linkedin] réponse Voyager plus profonde que ${PROFONDEUR_MAX} niveaux : ${tronques} branche(s) non explorée(s)`,
+        );
+      }
       // Le post annonce des engageurs et la liste n'en donne aucun : LinkedIn
       // retient la donnée. Ce n'est ni un post vide ni une panne — on s'arrête,
       // sans toucher à la session.
       if (faites === 1 && lot.length === 0 && total !== undefined && total > 0) {
+        // Sauf si c'est NOUS qui n'avons pas regardé assez loin : accuser LinkedIn
+        // de retenir la donnée serait un faux diagnostic de plus, et l'opérateur
+        // chercherait la panne du mauvais côté.
+        if (tronques > 0) {
+          throw new Error(`Réponse Voyager plus profonde que ${PROFONDEUR_MAX} niveaux : aucun profil lu`);
+        }
         return { personnes: [], arret: { type: 'liste_vide' } };
       }
       for (const e of lot) if (!vus.has(e.urn)) vus.set(e.urn, e);

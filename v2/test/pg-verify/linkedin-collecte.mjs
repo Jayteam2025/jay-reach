@@ -184,6 +184,45 @@ const ADA = { id: 'ACoAAada', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice
 const BOB = { id: 'ACoAAbob', prenom: 'Bob', nom: 'Durand', titre: 'Directeur commercial' };
 const SANS_NOM = { id: 'ACoAAnul', titre: 'LinkedIn Member' };
 
+/**
+ * Le cas du second lot : l'élément de liste porte `objectUrn` et une décoration
+ * d'affichage, SANS `publicIdentifier`, et il est rencontré AVANT le vrai profil de
+ * `included` (la descente visite `data` en premier). Si le premier vu rafle l'URN,
+ * `urlProfil` est perdue et l'adresse retombe sur la déduction par l'URN.
+ */
+function voyagerDecoreAvantComplet(p) {
+  return JSON.stringify({
+    data: {
+      paging: { start: 0, count: 50, total: 1 },
+      elements: [{ objectUrn: `urn:li:fsd_profile:${p.id}`, headline: p.titre, name: `${p.prenom} ${p.nom}` }],
+    },
+    included: [
+      {
+        $type: 'com.linkedin.voyager.dash.identity.profile.Profile',
+        entityUrn: `urn:li:fsd_profile:${p.id}`,
+        firstName: p.prenom,
+        lastName: p.nom,
+        headline: p.titre,
+        publicIdentifier: p.public,
+      },
+    ],
+  });
+}
+
+/** Un profil enfoui sous `n` niveaux de décoration, comme la forme commentaires sait en empiler. */
+function voyagerProfond(p, n) {
+  let noeud = {
+    $type: 'com.linkedin.voyager.identity.shared.MiniProfile',
+    entityUrn: `urn:li:fsd_profile:${p.id}`,
+    firstName: p.prenom,
+    lastName: p.nom,
+    occupation: p.titre,
+    publicIdentifier: p.public,
+  };
+  for (let i = 0; i < n; i += 1) noeud = { [`niveau${i}`]: noeud };
+  return JSON.stringify({ data: { paging: { start: 0, count: 50, total: 1 }, commentaires: noeud } });
+}
+
 const lirePassage = async (runId) =>
   (
     await q(
@@ -240,7 +279,7 @@ async function profilIncomplet() {
   const n = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n;
   check('9. le profil sans nom n’emporte pas le passage, les autres sont enregistrés', passage.status === 'success' && n === 1, `${passage.status} / ${passage.error} / ${n}`);
   check('9b. il est compté dans les personnes vues, pas dans les nouvelles', passage.vus === 2 && passage.nouveaux === 1, JSON.stringify(passage));
-  check('9c. l’extraction le rend bien (sinon le garde-fou ne serait jamais exercé)', extraireEngageurs(JSON.parse(voyager([SANS_NOM]))).length === 1);
+  check('9c. l’extraction le rend bien (sinon le garde-fou ne serait jamais exercé)', extraireEngageurs(JSON.parse(voyager([SANS_NOM]))).personnes.length === 1);
 }
 
 // ------------------------------------------------------------- 3. les plafonds
@@ -526,9 +565,54 @@ async function disjoncteurReleveSortie() {
   check('40b. et rien n’a été émis vers LinkedIn', traces === 0, String(traces));
 }
 
+// --------------------------- 12. deux objets pour la meme personne, et la profondeur
+
+async function fusionDesObjets() {
+  console.log('\n12. le profil décoré arrive AVANT le profil complet');
+  const m = await monde();
+  const r = await run(m);
+  const pil = pilote({ reponse: () => ({ statut: 200, corps: voyagerDecoreAvantComplet(ADA) }) });
+  await traiterCollecteLinkedIn(deps(pil), job(m, r));
+  const ct = (await q(`select linkedin_url, job_title from contacts where organization_id = $1`, [m.org])).rows;
+  check('41. le second objet, plus complet, n’est pas perdu : l’adresse vient du publicIdentifier',
+    ct.length === 1 && ct[0]?.linkedin_url === 'https://www.linkedin.com/in/ada-lovelace', JSON.stringify(ct));
+  check('41b. et une seule personne est créée pour cet URN', ct.length === 1, String(ct.length));
+  // Le premier vu garde ce qu'il a renseigné : l'intitulé est bien celui de l'élément décoré.
+  const direct = extraireEngageurs(JSON.parse(voyagerDecoreAvantComplet(ADA)));
+  check('41c. l’extraction rend UNE personne, fusionnée', direct.personnes.length === 1 && direct.personnes[0]?.urlProfil !== undefined,
+    JSON.stringify(direct.personnes));
+}
+
+async function profondeur() {
+  console.log('\n13. la profondeur de descente');
+  // Mesuré : la forme commentaires met le profil à 7. Douze niveaux sont au-delà de
+  // l’ancienne limite de 8 et bien en deçà de la nouvelle.
+  const douze = extraireEngageurs(JSON.parse(voyagerProfond(ADA, 12)));
+  check('42. un profil à douze niveaux est lu, et rien n’est tronqué',
+    douze.personnes.length === 1 && douze.tronques === 0, JSON.stringify({ n: douze.personnes.length, t: douze.tronques }));
+
+  const vingtCinq = extraireEngageurs(JSON.parse(voyagerProfond(ADA, 25)));
+  check('43. au-delà, la troncature est COMPTÉE, elle n’est pas muette',
+    vingtCinq.personnes.length === 0 && vingtCinq.tronques > 0, JSON.stringify({ n: vingtCinq.personnes.length, t: vingtCinq.tronques }));
+
+  // Et le passage ne doit pas accuser LinkedIn de retenir la donnée.
+  const m = await monde();
+  const r = await run(m);
+  const pil = pilote({ reponse: () => ({ statut: 200, corps: voyagerProfond(ADA, 25) }) });
+  await traiterCollecteLinkedIn(deps(pil), job(m, r)).catch(() => undefined);
+  const passage = await lirePassage(r);
+  const s = await lireSessionLinkedIn(m.ctx);
+  const notifs = (await q(`select count(*)::int n from notifications where organization_id = $1 and event = 'linkedin.collecte_arretee'`, [m.org])).rows[0].n;
+  check('44. une liste vide PARCE QUE tronquée n’est pas annoncée comme une rétention de LinkedIn',
+    passage.status === 'error' && notifs === 0, `${passage.status} / ${passage.error} / ${notifs} notif`);
+  check('44b. et l’échec compte pour le disjoncteur (c’est notre panne, elle doit s’arrêter)',
+    (await q(`select echec_navigateur from source_runs where id = $1`, [r])).rows[0]?.echec_navigateur === true);
+  check('44c. la session n’est pas bloquée pour autant au premier échec', s.etat === 'active', s.etat);
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
-    memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie);
+    memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
