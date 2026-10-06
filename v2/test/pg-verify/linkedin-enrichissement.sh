@@ -13,14 +13,23 @@ set -uo pipefail
 DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CT=jr_enrichissement
-PORT=55455
+PORT=55453
+EMPREINTE="$(cat "$DIR/test/pg-verify/auth-shim.sql" "$DIR"/supabase/migrations/*.sql "$DIR/test/pg-verify/grants.sql" | cksum | awk '{print $1"-"$2}')"
 
 echo "[linkedin-enrichissement] démarrage de Docker…"
 open -a Docker >/dev/null 2>&1 || true
 for i in $(seq 1 120); do "$DOCKER" info >/dev/null 2>&1 && break; sleep 2; done
 "$DOCKER" info >/dev/null 2>&1 || { echo "[linkedin-enrichissement] DAEMON_FAIL"; exit 3; }
 
-if ! "$DOCKER" ps --format '{{.Names}}' | grep -q "^$CT$"; then
+# Un conteneur qui porte le bon nom ne prouve rien : une execution interrompue
+# laisse une base vide, et un conteneur garde par KEEP=1 survit a l'ajout d'une
+# migration. On ne le reutilise que s'il porte l'empreinte des migrations du jour.
+harnais_pret() {
+  "$DOCKER" ps --format '{{.Names}}' | grep -q "^$CT$" || return 1
+  [ "$("$DOCKER" exec "$CT" psql -U postgres -d jayreach -tAc \
+      'select empreinte from jr_harnais_pret' 2>/dev/null | tr -d '[:space:]')" = "$EMPREINTE" ]
+}
+if ! harnais_pret; then
   "$DOCKER" rm -f "$CT" >/dev/null 2>&1 || true
   "$DOCKER" run -d --name "$CT" -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=jayreach \
     -p "$PORT":5432 postgres:16-alpine >/dev/null || { echo "[linkedin-enrichissement] RUN_FAIL"; exit 4; }
@@ -48,6 +57,8 @@ if ! "$DOCKER" ps --format '{{.Names}}' | grep -q "^$CT$"; then
     psql $FLAGS < "$m" >/dev/null || { echo "[linkedin-enrichissement] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 7; }
   done
   psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[linkedin-enrichissement] GRANTS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 8; }
+  psql -c "create table jr_harnais_pret(empreinte text not null); insert into jr_harnais_pret values ('$EMPREINTE');" >/dev/null \
+    || { echo "[linkedin-enrichissement] TEMOIN_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 9; }
 fi
 
 echo "[linkedin-enrichissement] bundles (esbuild)…"
