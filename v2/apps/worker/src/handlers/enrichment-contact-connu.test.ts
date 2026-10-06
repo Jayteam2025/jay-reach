@@ -64,6 +64,8 @@ interface Options {
   readonly echecsEcriture?: number;
   /** `0` = la clause `and email is null` n'a trouvé personne (course avec le chemin entreprise). */
   readonly lignesEcrites?: number;
+  /** Nombre de tentatives PAYÉES déjà portées par le contact, tel que le compteur le rend. */
+  readonly tentativesDeja?: number;
   readonly coutEnregistre?: boolean;
   readonly cle?: string | null;
 }
@@ -82,6 +84,7 @@ function monde(opts: Options = {}) {
     majContact: [] as unknown[][],
     marquesSeules: 0,
     essaisEcriture: 0,
+    tentatives: 0,
   };
   const contact =
     opts.contact === null
@@ -113,6 +116,10 @@ function monde(opts: Options = {}) {
     if (/record_provider_cost/i.test(sql)) {
       etat.couts.push(Number(p[2]));
       return { rows: [{ ok: opts.coutEnregistre ?? true }], rowCount: 1 };
+    }
+    if (/enrichment_attempts/i.test(sql)) {
+      etat.tentatives += 1;
+      return { rows: [{ enrichment_attempts: opts.tentativesDeja ?? etat.tentatives }], rowCount: 1 };
     }
     if (/update contacts/i.test(sql)) {
       if (/email\s*=\s*\$3/.test(sql)) {
@@ -340,6 +347,25 @@ describe('enrichirContactConnu', () => {
     expect(tronque.etat.marquesSeules).toBe(1);
   });
 
+  it('au troisieme echec paye, le contact est abandonne et le journal dit comment le reprendre', async () => {
+    const { deps, etat } = monde({ achatLeve: new TypeError('fournisseur injoignable'), tentativesDeja: 3 });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('panne_fournisseur');
+    expect(etat.marquesSeules).toBe(1);
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.tropDeTentatives(CONTACT, 3)}`);
+  });
+
+  it('avant le troisieme, une panne ne condamne pas la personne', async () => {
+    const { deps, etat } = monde({ achatLeve: new TypeError('fournisseur injoignable'), tentativesDeja: 2 });
+    const j = journal();
+    await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(etat.marquesSeules).toBe(0);
+    expect(j.lignes.join(' ')).not.toContain('abandonné');
+  });
+
   it('un contact refuse ne consomme aucun credit et n’appelle pas le fournisseur', async () => {
     const { deps, etat } = monde({ contact: { linkedin_url: 'https://www.linkedin.com/in/ACoAAada' } });
     const j = journal();
@@ -421,7 +447,15 @@ describe('enqueueEnrichmentContactsConnus', () => {
     const n = await enqueueEnrichmentContactsConnus(boss as any, pool);
     expect(n).toBe(1);
     expect(jobs).toEqual([
-      { name: 'enrichment.contact_connu', id: expect.any(String), data: { organizationId: ORG, contactId: CONTACT } },
+      {
+        name: 'enrichment.contact_connu',
+        id: expect.any(String),
+        data: { organizationId: ORG, contactId: CONTACT },
+        // La politique voyage avec le job : une file née à cinq reprises ne peut
+        // plus faire racheter l'adresse (cf. contrôles 11j/11k du harnais).
+        retryLimit: 0,
+        retryBackoff: false,
+      },
     ]);
     // Les trois conditions de sélection sont bien celles qu'on croit. Leur
     // EFFET est prouvé sur Postgres (test/pg-verify/linkedin-enrichissement.sh) ;

@@ -322,50 +322,83 @@ async function producteur() {
 
 async function famine() {
   console.log('le lot est par organisation : une organisation bloquée n’affame pas les autres');
-  // A : trois personnes, les PLUS RÉCENTES de la base, dans une organisation qui
-  // n'a AUCUNE clé FullEnrich. B : une personne, plus ancienne, organisation
-  // normale. C'est le scénario réel : le producteur ne lit pas les clés (elles se
-  // résolvent dans le coffre chiffré, pas en SQL), donc rien n'écarte A ; et le
-  // handler rend `sans_cle` SANS marquer, donc ses candidats reviennent
-  // identiques à chaque tour, indéfiniment.
-  const a = await monde();
-  const b = await monde();
-  const ancienne = await engageurQualifie(b, 'bruno', 'Bruno Ancien', 'Directeur commercial', 'https://www.linkedin.com/in/bruno-ancien');
-  // B est ANTÉRIEURE : son signal date d'hier, ceux de A de maintenant. Posé par
-  // l'horodatage du signal, que l'ordre de sélection lit (`s.occurred_at desc`).
-  await q(`update signals set occurred_at = now() - interval '1 day' where organization_id = $1`, [b.org]);
+  // Joué DEUX FOIS, une fois dans chaque ordre d'identifiant d'organisation.
+  //
+  // Le tri de repli d'un `order by` qui perdrait `rang` est l'identifiant de
+  // l'organisation, et `gen_random_uuid` le rend imprévisible : un contrôle joué
+  // dans un seul ordre rougissait une fois sur deux au retrait, selon que
+  // l'organisation chargée tirait le plus petit ou le plus grand identifiant. Un
+  // faux vert intermittent est pire qu'un faux vert franc — il passe chez soi et
+  // rougit un jour ailleurs, sans raison apparente. En jouant les deux ordres,
+  // c'est l'ENTRELACEMENT qui est prouvé, et plus seulement la partition.
+  await scenarioFamine(true, 'la plus petite');
+  await scenarioFamine(false, 'la plus grande');
+}
+
+/** Deux organisations neuves, rendues dans l'ordre où Postgres trie leur identifiant. */
+async function deuxOrganisationsOrdonnees() {
+  const x = await monde();
+  const y = await monde();
+  return x.org < y.org ? [x, y] : [y, x];
+}
+
+async function scenarioFamine(chargeeEstLaPlusPetite, libelle) {
+  const [petite, grande] = await deuxOrganisationsOrdonnees();
+  // CHARGÉE : trois personnes, les PLUS RÉCENTES de la base, dans une
+  // organisation qui n'a AUCUNE clé FullEnrich. LÉGÈRE : une personne, plus
+  // ancienne. C'est le scénario réel : le producteur ne lit pas les clés (elles
+  // se résolvent dans le coffre chiffré, pas en SQL), donc rien n'écarte la
+  // chargée ; et le handler rend `sans_cle` SANS marquer, donc ses candidats
+  // reviennent identiques à chaque tour, indéfiniment.
+  const chargee = chargeeEstLaPlusPetite ? petite : grande;
+  const legere = chargeeEstLaPlusPetite ? grande : petite;
+  const n = chargeeEstLaPlusPetite ? 'p' : 'g';
+
+  const ancienne = await engageurQualifie(legere, `${n}bruno`, 'Bruno Ancien', 'Directeur commercial', `https://www.linkedin.com/in/${n}-bruno-ancien`);
+  // La légère est ANTÉRIEURE : son signal date d'hier, ceux de la chargée de
+  // maintenant. Posé par l'horodatage du signal, que l'ordre de sélection lit.
+  await q(`update signals set occurred_at = now() - interval '1 day' where organization_id = $1`, [legere.org]);
   const recents = [];
   for (const [id, nom] of [['ava', 'Ava Recente'], ['aya', 'Aya Recente'], ['ana', 'Ana Recente']]) {
-    recents.push(await engageurQualifie(a, id, nom, 'Directrice commerciale', `https://www.linkedin.com/in/${id}-recente`));
+    recents.push(await engageurQualifie(chargee, n + id, nom, 'Directrice commerciale', `https://www.linkedin.com/in/${n}-${id}-recente`));
   }
 
-  // L'organisation A tourne réellement à vide : le handler ne marque rien.
+  // L'organisation chargée tourne réellement à vide : le handler ne marque rien.
   const sansCle = achat();
   for (const c of recents) {
-    await enEcoutant(() => enrichirContactConnu(sansCle.deps({ sansCle: true }), { organizationId: a.org, contactId: c.id }));
+    await enEcoutant(() => enrichirContactConnu(sansCle.deps({ sansCle: true }), { organizationId: chargee.org, contactId: c.id }));
   }
-  const marques = (await q(`select count(*)::int n from contacts where organization_id=$1 and enriched_at is not null`, [a.org])).rows[0].n;
-  check('11a. une organisation sans clé laisse ses candidats intacts : ils reviendront à chaque tour', marques === 0, String(marques));
+  const marques = (await q(`select count(*)::int n from contacts where organization_id=$1 and enriched_at is not null`, [chargee.org])).rows[0].n;
+  check(`11a (${libelle}). une organisation sans clé laisse ses candidats intacts : ils reviendront à chaque tour`, marques === 0, String(marques));
 
-  // Lot de DEUX par organisation : A en a trois, elle ne peut pas tout prendre.
   const jobs = [];
   const faux = { insert: async (lot) => { jobs.push(...lot); } };
   await enqueueEnrichmentContactsConnus(faux, pool, { limit: 2 });
-  const deA = jobs.filter((j) => j.data.organizationId === a.org).length;
-  check('11b. l’organisation aux contacts les plus récents ne prend que SA part du lot', deA === 2, String(deA));
+  const deA = jobs.filter((j) => j.data.organizationId === chargee.org).length;
+  check(`11b (${libelle}). l’organisation aux contacts les plus récents ne prend que SA part du lot`, deA === 2, String(deA));
 
   // LE scénario de famine. La borne globale est serrée à la taille d'un seul lot
-  // d'organisation : c'est la situation réelle, où A a plus de candidats que le
-  // tour n'a de places. Un lot GLOBAL trié chronologiquement donnerait les deux
-  // places aux contacts de A, les plus récents, et B n'en aurait jamais —
-  // définitivement, puisque rien ne fait avancer A. Les organisations étant
+  // d'organisation : c'est la situation réelle, où la chargée a plus de candidats
+  // que le tour n'a de places. Un lot GLOBAL trié chronologiquement donnerait les
+  // deux places à ses contacts, les plus récents, et l'autre n'en aurait jamais —
+  // définitivement, puisque rien ne la fait avancer. Les organisations étant
   // servies à tour de rôle, le rang 1 de chacune passe avant le rang 2 de l'autre.
   jobs.length = 0;
   await enqueueEnrichmentContactsConnus(faux, pool, { limit: 2, limiteGlobale: 2 });
-  const gA = jobs.filter((j) => j.data.organizationId === a.org).length;
+  const gA = jobs.filter((j) => j.data.organizationId === chargee.org).length;
   const gB = jobs.filter((j) => j.data.contactId === ancienne.id).length;
-  check('11c. sous une borne serrée, l’organisation aux contacts plus anciens est servie quand même',
-    jobs.length === 2 && gA === 1 && gB === 1, `total=${jobs.length} A=${gA} B=${gB}`);
+  check(`11c (${libelle}). sous une borne serrée, l’organisation aux contacts plus anciens est servie quand même`,
+    jobs.length === 2 && gA === 1 && gB === 1, `total=${jobs.length} chargée=${gA} légère=${gB}`);
+
+  // Ces quatre personnes sortent du jeu AVANT le scénario suivant, sans quoi
+  // leurs candidats prendraient les places de la borne serrée d'après. Elles en
+  // sortent par le chemin de production : un achat qui ne trouve aucune adresse
+  // pose la marque.
+  const vide = achat({ email: null });
+  for (const c of [...recents, ancienne]) {
+    const o = recents.includes(c) ? chargee.org : legere.org;
+    await enEcoutant(() => enrichirContactConnu(vide.deps(), { organizationId: o, contactId: c.id }));
+  }
 }
 
 // ------------------------------- 2 ter. la file réelle : dédoublonnage et comptage
@@ -408,6 +441,70 @@ async function fileReelle() {
     troisieme === 0, String(troisieme));
   check('11i. et le contact est toujours candidat, donc il repartira demain sous un id neuf',
     (await q(`select enriched_at, email from contacts where id=$1`, [ada.id])).rows[0].enriched_at === null);
+
+  // La file EXISTE DÉJÀ avec cinq reprises. C'est l'état qu'aurait laissé un
+  // déploiement intermédiaire : `8027a43` déclarait cette file en DEFAULT_RETRY,
+  // et ce commit est sur la branche. Lire `retry_limit` sur une file NEUVE (11e)
+  // ne peut pas voir ce cas.
+  await q(`update pgboss.queue set retry_limit = 5 where name = 'enrichment.contact_connu'`);
+  await registerQueues(boss);
+  const apres = (await q(`select retry_limit from pgboss.queue where name='enrichment.contact_connu'`)).rows[0];
+  check('11j. une file déjà créée n’est JAMAIS réalignée par la déclaration (createQueue est un on conflict do nothing)',
+    apres?.retry_limit === 5, JSON.stringify(apres));
+
+  const bea = await engageurQualifie(m, 'bea', 'Bea Reprise', 'Directrice commerciale', 'https://www.linkedin.com/in/bea-reprise');
+  await enqueueEnrichmentContactsConnus(boss, pool);
+  const dep = (await q(
+    `select retry_limit from pgboss.job where name='enrichment.contact_connu' and data->>'contactId' = $1`,
+    [bea.id],
+  )).rows[0];
+  check('11k. le job déposé porte quand même ZÉRO reprise : la politique voyage avec lui, pas avec la file',
+    dep?.retry_limit === 0, JSON.stringify(dep));
+  await q(`update pgboss.queue set retry_limit = 0 where name = 'enrichment.contact_connu'`);
+}
+
+// ------------------------------ 3 quater. on ne paie pas la même panne tous les jours
+
+async function tentativesPayees() {
+  console.log('un enrichissement qui échoue toujours cesse de coûter un crédit par jour');
+  const m = await monde();
+  const kim = await engageurQualifie(m, 'kim', 'Kim Panne', 'Directrice commerciale', 'https://www.linkedin.com/in/kim-panne');
+  const a = achat({ leve: new TypeError('fournisseur injoignable') });
+
+  const etat = async () =>
+    (await q(`select enrichment_attempts, enriched_at from contacts where id=$1`, [kim.id])).rows[0];
+
+  const r1 = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: kim.id }));
+  const e1 = await etat();
+  check('38. une première panne compte une tentative PAYÉE, et ne marque pas',
+    r1.valeur === 'panne_fournisseur' && e1.enrichment_attempts === 1 && e1.enriched_at === null, JSON.stringify(e1));
+
+  await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: kim.id }));
+  const e2 = await etat();
+  check('38b. la deuxième non plus : une panne passagère ne doit pas condamner la personne',
+    e2.enrichment_attempts === 2 && e2.enriched_at === null, JSON.stringify(e2));
+
+  const r3 = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: kim.id }));
+  const e3 = await etat();
+  check('39. à la troisième tentative payée, le contact est abandonné et le journal dit comment le reprendre',
+    e3.enrichment_attempts === 3 && e3.enriched_at !== null &&
+      r3.lignes.includes(`${MSG.prefixe} ${MSG.tropDeTentatives(kim.id, 3)}`),
+    `${JSON.stringify(e3)} / ${r3.lignes.join(' | ')}`);
+
+  const u = await usage(m.org);
+  check('39b. trois crédits ont été consommés — et plus un seul ensuite', u?.used === 3, JSON.stringify(u));
+
+  const jobs = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('39c. le producteur ne le reprend plus : il ne coûtera plus un crédit par jour',
+    jobs.filter((j) => j.data.contactId === kim.id).length === 0);
+
+  // La marque est LEVABLE : c'est ce que le message annonce à l'opérateur.
+  await q(`update contacts set enrichment_attempts = 0, enriched_at = null where id=$1`, [kim.id]);
+  jobs.length = 0;
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('39d. remettre le compteur à zéro le rend de nouveau candidat, comme le message le promet',
+    jobs.filter((j) => j.data.contactId === kim.id).length === 1);
 }
 
 // --------------------------------------------- 3. le handler, sur un vrai Postgres
@@ -687,7 +784,7 @@ async function pannes() {
     r3.valeur === 'introuvable' && (await usage(m3.org)) === null, String(r3.valeur));
 }
 
-await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, conflitDAdresse, retention, pannes);
+await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes);
 await boss.stop({ graceful: false });
 await pool.end();
 console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);

@@ -14,7 +14,7 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau, QUEUES } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
 import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
@@ -527,6 +527,9 @@ export async function enqueueEnrichmentForQualified(
  */
 const CONTACTS_CONNUS_PAR_ORGANISATION = 25;
 
+/** La politique de reprise déclarée pour la file d'achat, reprise sur chaque job. */
+const REPRISE_CONTACT_CONNU = QUEUES.find((q) => q.name === 'enrichment.contact_connu')?.retry;
+
 /**
  * Garde-fou global : au-delà, le tour s'arrête, quel que soit le nombre
  * d'organisations. Il borne la TAILLE DE LA FILE, pas la dépense — celle-ci est
@@ -622,6 +625,16 @@ export async function enqueueEnrichmentContactsConnus(
         name: 'enrichment.contact_connu',
         id: idJob,
         data: { organizationId: row.organization_id, contactId: row.contact_id },
+        // La politique de reprise voyage AVEC LE JOB, en plus d'être déclarée sur
+        // la file. `createQueue` est un `on conflict do nothing` : une file déjà
+        // née avec cinq reprises — ce qu'aurait produit un déploiement
+        // intermédiaire, la file ayant été déclarée en `DEFAULT_RETRY` avant
+        // d'être corrigée — n'est JAMAIS réalignée, et ce traitement rachèterait
+        // l'adresse à chaque reprise. L'option du job, elle, ne dépend d'aucun
+        // état de base. Lue dans la déclaration pour que les deux ne divergent
+        // pas ; le repli à zéro est le choix sûr, celui qui ne dépense pas.
+        retryLimit: REPRISE_CONTACT_CONNU?.retryLimit ?? 0,
+        retryBackoff: REPRISE_CONTACT_CONNU?.retryBackoff ?? false,
       },
     ]);
     enqueued += 1;

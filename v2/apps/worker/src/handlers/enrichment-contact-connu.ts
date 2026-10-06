@@ -46,6 +46,21 @@ import { resolveProviderCredentials } from '../credentials.js';
 const FOURNISSEUR = 'fullenrich';
 
 /**
+ * Tentatives PAYÉES au-delà desquelles on renonce à cette personne.
+ *
+ * Le crédit est consommé avant l'appel, et une panne du fournisseur laisse le
+ * contact candidat : sans ce plafond, il repart chaque jour et coûte un crédit
+ * chaque jour, pour toujours. Trois essais laissent passer une panne franche du
+ * fournisseur et un incident réseau ; au quatrième, le problème n'est pas
+ * passager.
+ *
+ * La marque posée alors est LEVABLE : remettre `contacts.enrichment_attempts` à
+ * zéro (et `enriched_at` à null) suffit à autoriser un nouvel essai, le jour où
+ * l'on voudra réessayer une fois le fournisseur réparé.
+ */
+const TENTATIVES_PAYEES_MAX = 3;
+
+/**
  * Temps maximal d'attente d'une réponse FullEnrich.
  *
  * **90 s, et non les 40 s de l'enrichissement d'entreprise.** Ces 40 s ont été
@@ -174,6 +189,8 @@ export const MSG = {
   refus: (contactId: string, raison: RaisonRefus) => `contact ${contactId} non enrichissable (${raison}) — aucun appel, aucun crédit`,
   sansCle: (organizationId: string) => `FullEnrich non configuré pour l’org ${organizationId} — job ignoré`,
   plafond: (organizationId: string) => `plafond quotidien d'enrichissement atteint pour l'organisation ${organizationId} — contact reporté à demain`,
+  tropDeTentatives: (contactId: string, tentatives: number) =>
+    `contact ${contactId} abandonné après ${tentatives} tentative(s) PAYÉE(S) sans résultat — remettre enrichment_attempts à zéro pour réessayer`,
   plafondNul: (organizationId: string) =>
     `le plafond d'enrichissement de l'organisation ${organizationId} est réglé à zéro — aucun achat possible, rien n'a été consommé`,
   panne: (contactId: string, type: string) => `achat échoué pour le contact ${contactId} (${type}) — crédit consommé, contact reporté`,
@@ -311,6 +328,18 @@ export async function enrichirContactConnu(
     return 'plafond';
   }
 
+  // Le crédit est pris : cette tentative est PAYÉE, qu'elle aboutisse ou non.
+  // Comptée ici et pas plus bas, pour qu'une coupure pendant l'appel ne la fasse
+  // pas oublier — c'est le crédit qu'on compte, pas le résultat.
+  const tentatives = (
+    await pool.query<{ enrichment_attempts: number }>(
+      `update contacts set enrichment_attempts = enrichment_attempts + 1
+        where id = $1 and organization_id = $2
+        returning enrichment_attempts`,
+      [job.contactId, org],
+    )
+  ).rows[0]?.enrichment_attempts ?? 0;
+
   // --- L'achat. À partir d'ici, plus rien ne lève.
 
   const entree: FullEnrichContactInput = {
@@ -327,6 +356,12 @@ export async function enrichirContactConnu(
     // Le crédit est perdu, pas le contact : il repartira demain. Seul le TYPE de
     // l'erreur est consigné — une URL FullEnrich porte la clé en clair.
     console.warn(`${MSG.prefixe} ${MSG.panne(job.contactId, typeErreur(err))}`);
+    // …mais pas indéfiniment. Au-delà du plafond d'essais payés, on marque : le
+    // contact coûterait sinon un crédit par jour sans jamais rien produire.
+    if (tentatives >= TENTATIVES_PAYEES_MAX) {
+      console.warn(`${MSG.prefixe} ${MSG.tropDeTentatives(job.contactId, tentatives)}`);
+      await marquerTraiteSansLever(pool, org, job.contactId);
+    }
     return 'panne_fournisseur';
   }
 
