@@ -21,7 +21,7 @@ export interface CarteSourceProps {
   readonly titre: string;
   readonly sousTitre: string;
   readonly active: boolean;
-  /** Faux pour les quatre types `linkedin_*` (lot 4) : puce à la place de l'interrupteur. */
+  /** Faux pour les types `linkedin_*` que le serveur ne collecte pas encore (`collecteImplementee`) : puce à la place de l'interrupteur. */
   readonly collecteDisponible: boolean;
   readonly blocs: BlocCarteSource[];
   /** `null` masque le bloc « Retenus sur 7 jours » (pas de sens pour une source qui n'a jamais tourné). */

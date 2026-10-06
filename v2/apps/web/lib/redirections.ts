@@ -23,7 +23,6 @@ export const REDIRECTIONS: readonly Redirection[] = [
   { source: '/import', destination: '/contacts' },
   { source: '/settings/sources', destination: '/campaigns' },
   { source: '/settings/templates', destination: '/settings/messages' },
-  { source: '/settings/linkedin', destination: '/settings/senders' },
   { source: '/settings/customers', destination: '/contacts?onglet=clients' },
   { source: '/settings/jobs', destination: '/settings/engine' },
 ];

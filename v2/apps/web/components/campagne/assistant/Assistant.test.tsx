@@ -63,6 +63,7 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinAccountId: 'Compte LinkedIn',
   formLinkedinProfilesPerDay: 'Profils lus par jour',
   formLinkedinErreur: 'Le compte LinkedIn et le champ propre à ce type de source sont nécessaires.',
+  formLinkedinBrouillon: "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
   resumeLinkedin: (n: number) => `${n} profils par jour`,
   formAjouter: 'Ajouter',
   formAnnuler: 'Annuler',
@@ -91,12 +92,18 @@ describe('construireGroupesMenu (R57 — catalogue complet du menu « + Ajouter 
     expect(ouvrir).toHaveBeenNthCalledWith(2, 'france_travail');
   });
 
-  it('groupe LinkedIn : les quatre sous-types, chacun avec le badge « collecte activée au lot 4 », sélectionnables', () => {
+  it('groupe LinkedIn : les quatre sous-types sélectionnables ; le badge « en attente » reste sur les trois que le serveur ne collecte pas (lot 4a)', () => {
     const ouvrir = vi.fn();
     const groupes = construireGroupesMenu(LIBELLES_SOURCES, ouvrir);
     expect(groupes[1]!.titre).toBe(LIBELLES_SOURCES.menuLinkedin);
     expect(groupes[1]!.entrees).toHaveLength(4);
-    for (const entree of groupes[1]!.entrees) {
+    const [engageurs, ...autres] = groupes[1]!.entrees;
+    // Les engageurs d'un post sont collectés : plus de badge qui prétend le contraire.
+    const htmlEngageurs = renderToStaticMarkup(<>{engageurs!.titre}</>);
+    expect(htmlEngageurs).toContain('Engageurs');
+    expect(htmlEngageurs).not.toContain('jr-puce');
+    expect(htmlEngageurs).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+    for (const entree of autres) {
       const html = renderToStaticMarkup(<>{entree.titre}</>);
       expect(html).toContain('jr-puce gris');
       expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
@@ -248,6 +255,20 @@ describe('EtapeSources — sources déjà ajoutées', () => {
     );
     expect(html).toContain('25 profils par jour');
     expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+  });
+
+  it('une source « engageurs d’un post » ajoutée n’affiche plus le badge « en attente »', () => {
+    const source: SourceAssistant = {
+      cle: 'k3',
+      providerId: 'linkedin_post_engagers',
+      nom: "Engageurs d'un post",
+      config: { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] },
+    };
+    const html = renderToStaticMarkup(
+      <EtapeSources sources={[source]} onAjouter={() => {}} onRetirer={() => {}} disabled={false} libelles={LIBELLES_SOURCES} />,
+    );
+    expect(html).toContain('https://www.linkedin.com/posts/x');
+    expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
   });
 
   it('une source Adzuna ajoutée résume mots-clés et lieux, sans badge LinkedIn', () => {

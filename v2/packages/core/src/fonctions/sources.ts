@@ -107,6 +107,27 @@ function estTypeLinkedIn(v: string): v is (typeof TYPES_LINKEDIN)[number] {
   return (TYPES_LINKEDIN as readonly string[]).includes(v);
 }
 
+/**
+ * Décision d'AFFICHAGE : la carte montre-t-elle l'interrupteur actif/pause (vrai) ou la puce
+ * « en attente » (faux) ? Lot 4a : le serveur collecte les engageurs d'un post ; les trois
+ * autres types LinkedIn n'ont pas de collecteur.
+ *
+ * Ne décide PAS d'écrire dans `source_providers` : voir `providerIdReel`. Les deux questions
+ * n'ont rien à voir, et les confondre en une seule donnée a failli écrire une ligne au
+ * `provider_id` nul pour une source LinkedIn.
+ */
+export function collecteImplementee(providerId: string): boolean {
+  return !estTypeLinkedIn(providerId) || providerId === 'linkedin_post_engagers';
+}
+
+/**
+ * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
+ * n'en a pas (une source LinkedIn se repère par `config.sourceType`, jamais par cette table).
+ */
+export function providerIdReel(providerId: TypeSource): string | null {
+  return providerId === 'adzuna' || providerId === 'france_travail' ? PROVIDER_ID_REEL[providerId] : null;
+}
+
 // ---------------------------------------------------------------------------
 // Schémas de `config` par type (formulaires des tiroirs)
 // ---------------------------------------------------------------------------
@@ -424,7 +445,7 @@ export interface SourceCarte {
   readonly totalLu: number;
   /** Date du tout premier passage, `null` si la source n'a jamais tourné (masque la puce). */
   readonly premierPassage: string | null;
-  /** Faux pour les quatre types `linkedin_*` tant que le worker ne les exécute pas (lot 4). */
+  /** Faux pour les types `linkedin_*` que le serveur ne collecte pas encore (tout sauf les engageurs d'un post, lot 4a). */
   readonly collecteDisponible: boolean;
   /**
    * R72 : vrai si au moins une campagne rattachée (`campaign_sources`, toutes
@@ -593,7 +614,7 @@ export async function listerSourcesCampagne(
       retenus7j,
       totalLu: resume?.total ?? 0,
       premierPassage: resume?.premier ?? null,
-      collecteDisponible: !estTypeLinkedIn(providerId),
+      collecteDisponible: collecteImplementee(providerId),
       campagneActive: idsAvecCampagneActive.has(row.id),
     };
   });
@@ -783,8 +804,6 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
     await exigerPostLibre(ctx, urlPost, null);
   }
   const configStocke = construireConfigStocke(providerId, configValide);
-  const collecteDisponible = !estTypeLinkedIn(providerId);
-
   const sourceRes = await ctx.ex.query<{ id: string }>(
     `insert into sources (organization_id, name, config, schedule, is_active) /* jr:sources_creer */
      values ($1, $2, $3::jsonb, $4, true) returning id`,
@@ -797,8 +816,8 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
     [campagneId, sourceId],
   );
 
-  if (collecteDisponible) {
-    const providerReel = PROVIDER_ID_REEL[providerId as 'adzuna' | 'france_travail'];
+  const providerReel = providerIdReel(providerId);
+  if (providerReel !== null) {
     await ctx.ex.query(
       `insert into source_providers (source_id, provider_id, is_active) /* jr:sources_provider_creer */ values ($1, $2, true)`,
       [sourceId, providerReel],

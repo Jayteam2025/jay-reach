@@ -175,6 +175,23 @@
       "operator": "Operator",
       "viewer": "Viewer",
       "none": "No role"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn ready",
+        "arrete": "LinkedIn stopped",
+        "aucune": "LinkedIn: no session"
+      },
+      "detail": {
+        "derniereCollecte": "Last collection {quand}",
+        "aucuneCollecte": "Nothing collected yet",
+        "absente": "Session to open",
+        "defi": "Verification requested, reconnect",
+        "cookieRefuse": "Session rejected, reconnect",
+        "disjoncteur": "Too many failures, reconnect",
+        "revoquee": "Session closed",
+        "sortieInattendue": "Unexpected network exit"
+      }
     }
   },
   "aujourdhui": {
@@ -708,7 +725,13 @@
         "directoryContactsCreated": "Contacts created",
         "directoryNone": "none",
         "directoryHint": "The directory gives companies, not people: contacts will come from postings, LinkedIn or an import. Added companies appear in Contacts › Companies.",
-        "directoryRetain": "Add {n} companies"
+        "directoryRetain": "Add {n} companies",
+        "brouillon": "This campaign is a draft: nothing will be collected until it is launched.",
+        "collectNow": "Collect now",
+        "collectNowDraft": "Available once the campaign is launched.",
+        "collectNowUnsaved": "Available once the source is saved.",
+        "collectNowInactive": "Available while the campaign is active.",
+        "collectRequested": "Collection requested: it starts within the minute."
       }
     },
     "sequence": {
@@ -906,7 +929,8 @@
         "summaryLinkedin": "{n, plural, one {# profile per day} other {# profiles per day}}",
         "formSubmit": "Add",
         "formCancel": "Cancel",
-        "formError": "At least one keyword is required."
+        "formError": "At least one keyword is required.",
+        "formLinkedinBrouillon": "This campaign is a draft: nothing will be collected until it is launched."
       },
       "sequence": {
         "startFrom": "Start from",
@@ -969,7 +993,8 @@
       "personas": "Personas",
       "messages": "Messages",
       "engine": "Engine",
-      "account": "Account"
+      "account": "Account",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "Email mailboxes",
@@ -1341,7 +1366,8 @@
         "aucuneErreur": "None",
         "tachesEnAttente": "Pending tasks",
         "aucuneTache": "None",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}",
+        "linkedin": "LinkedIn"
       },
       "pause": {
         "titre": "Global sending pause",
@@ -1467,6 +1493,77 @@
       "session": {
         "titre": "Session",
         "bouton": "Sign out"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "The server LinkedIn session: where it stands, where it exits the network and what it is allowed to collect.",
+      "carte": {
+        "titre": "LinkedIn session",
+        "sousTitre": "The organization's account, on the server"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "No session.",
+          "detail": "Open it from the server: the password and the code never go through this page."
+        },
+        "prete": {
+          "phrase": "Ready to collect.",
+          "detail": "Connected: {depuis}. Last collection: {collecte}.",
+          "detailSansCollecte": "Connected: {depuis}. Nothing collected yet."
+        },
+        "defi": {
+          "phrase": "Stopped: LinkedIn asked for a verification.",
+          "detail": "Noticed: {quand}. No new attempt will be made, on purpose."
+        },
+        "cookieRefuse": {
+          "phrase": "Stopped: LinkedIn rejected the saved session.",
+          "detail": "Noticed: {quand}. No new attempt will be made, on purpose."
+        },
+        "disjoncteur": {
+          "phrase": "Stopped as a precaution: too many failures in a row.",
+          "detail": "Noticed: {quand}. No new attempt will be made until the session is reopened."
+        },
+        "revoquee": {
+          "phrase": "Session closed.",
+          "detail": "Closed on purpose: {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Stopped: the network exit is not the expected one.",
+          "detail": "Seen at {ip} ({origine}) instead of the expected address. Nothing was sent to LinkedIn.",
+          "detailSansOrigine": "Seen at {ip} instead of the expected address. Nothing was sent to LinkedIn.",
+          "detailSansIp": "The network exit could not be read. Nothing was sent to LinkedIn."
+        }
+      },
+      "commande": {
+        "consigne": "In a terminal on the server, reopen the session:",
+        "consigneDefi": "Complete the verification, then reopen the session from a terminal on the server:"
+      },
+      "faits": {
+        "sortie": "Network exit",
+        "operateur": "Operator",
+        "collecte": "Last collection",
+        "inconnu": "Unknown",
+        "jamais": "Never"
+      },
+      "plafonds": {
+        "titre": "Collection limits",
+        "lead": "These are the same settings as in Settings › Limits.",
+        "postsParJour": {
+          "nom": "Posts per day",
+          "usage": "{n, plural, =0 {None used today} one {# used today} other {# used today}}"
+        },
+        "requetesParHeure": {
+          "nom": "Requests per hour",
+          "usage": "{n, plural, =0 {None in the last hour} one {# in the last hour} other {# in the last hour}}"
+        },
+        "enregistrer": "Save",
+        "erreurNombre": "Enter a whole number."
+      },
+      "avertissement": {
+        "titre": "Collecting from LinkedIn is against its terms of use.",
+        "risque": "The account used may be restricted or closed. The operator of this instance is responsible.",
+        "baseLegale": "Legal basis for the processing: legitimate interest, business-to-business prospecting. People who are collected but never contacted are erased automatically after a few weeks."
       }
     }
   },

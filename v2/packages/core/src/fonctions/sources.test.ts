@@ -7,6 +7,7 @@ import {
   ajouterDepuisAnnuaire,
   ajouterDepuisListe,
   activerSource,
+  collecteImplementee,
   configFormulaireDepuisStockee,
   configLinkedInPost,
   construireConfigStocke,
@@ -17,6 +18,7 @@ import {
   listerSourcesCampagne,
   modifierSource,
   normaliserUrlPost,
+  providerIdReel,
   sirensConnus,
   type ConfigAdzuna,
   type ConfigFranceTravail,
@@ -137,7 +139,7 @@ describe('listerSourcesCampagne', () => {
     }
   });
 
-  it('une source linkedin_* sans source_providers reste identifiable par `config.sourceType`, collecte indisponible', async () => {
+  it('une source linkedin_* sans source_providers reste identifiable par `config.sourceType`, et ses engageurs se collectent', async () => {
     const { ctx } = faux(
       {
         'jr:sources_lister': [
@@ -161,7 +163,8 @@ describe('listerSourcesCampagne', () => {
     );
     const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
     expect(carte!.providerId).toBe('linkedin_post_engagers');
-    expect(carte!.collecteDisponible).toBe(false);
+    // Lot 4a : les engageurs d'un post sont collectés par le serveur, la carte affiche l'interrupteur.
+    expect(carte!.collecteDisponible).toBe(true);
     expect(carte!.dernierPassage).toBeNull();
     expect(carte!.prochainPassage).toBeNull();
   });
@@ -405,7 +408,7 @@ describe('creerSource', () => {
     expect(valeursProviders).toContain('francetravail');
   });
 
-  it('ne crée aucun `source_providers` pour un type linkedin_* (collecte indisponible avant le lot 4)', async () => {
+  it('ne crée aucun `source_providers` pour un type linkedin_*, même quand sa collecte est disponible', async () => {
     const { ctx, appels } = faux({
       'jr:sources_campagne': [{ id: 'camp-1' }],
       'jr:sources_creer': [{ id: 'src-1' }],
@@ -815,5 +818,32 @@ describe('listerListesOrganisation', () => {
     expect(r).toEqual([
       { id: 'list-1', nom: 'Participants webinaire de juin', nombreContacts: 62 },
     ]);
+  });
+});
+
+
+// `collecteDisponible` portait deux décisions sans rapport : écrire une ligne `source_providers`
+// (jamais pour LinkedIn) et afficher l'interrupteur d'une carte. Les deux sont désormais séparées.
+describe('collecteImplementee / providerIdReel — deux décisions, deux fonctions', () => {
+  it('seuls les engageurs d’un post sont collectés côté LinkedIn (lot 4a)', () => {
+    expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
+    expect(collecteImplementee('linkedin_competitor_followers')).toBe(false);
+    expect(collecteImplementee('linkedin_keywords')).toBe(false);
+    expect(collecteImplementee('linkedin_job_change')).toBe(false);
+  });
+
+  it('les offres restent collectées', () => {
+    expect(collecteImplementee('adzuna')).toBe(true);
+    expect(collecteImplementee('france_travail')).toBe(true);
+  });
+
+  it('un type LinkedIn n’a JAMAIS de provider_id réel, même quand sa collecte est disponible', () => {
+    expect(providerIdReel('linkedin_post_engagers')).toBeNull();
+    expect(providerIdReel('linkedin_keywords')).toBeNull();
+  });
+
+  it('les offres gardent le provider_id que le worker route', () => {
+    expect(providerIdReel('adzuna')).toBe('adzuna');
+    expect(providerIdReel('france_travail')).toBe('francetravail');
   });
 });

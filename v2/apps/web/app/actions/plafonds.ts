@@ -29,6 +29,8 @@ export async function actionEcrireReglage(cle: string, valeur: number | string):
     const ctx = await contexteCourant();
     await ecrireReglage(ctx, { cle, valeur });
     revalidatePath('/settings/limits');
+    // Les deux plafonds de la collecte LinkedIn se règlent aussi depuis l'écran de la session.
+    revalidatePath('/settings/linkedin');
     // Seul le fuseau est lu par le layout (bornes du jour de la jauge, heures de la carte Moteur) :
     // les autres réglages (scoring, enrichissement, âge des offres…) n'y apparaissent pas, et la
     // jauge de gauche suit les quotas des boîtes (`senders`), pas cette table.

@@ -175,6 +175,23 @@
       "operator": "Operator",
       "viewer": "Lezer",
       "none": "Geen rol"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn klaar",
+        "arrete": "LinkedIn gestopt",
+        "aucune": "LinkedIn: geen sessie"
+      },
+      "detail": {
+        "derniereCollecte": "Laatste verzameling {quand}",
+        "aucuneCollecte": "Nog niets verzameld",
+        "absente": "Sessie te openen",
+        "defi": "Verificatie gevraagd, maak opnieuw verbinding",
+        "cookieRefuse": "Sessie geweigerd, maak opnieuw verbinding",
+        "disjoncteur": "Te veel mislukkingen, maak opnieuw verbinding",
+        "revoquee": "Sessie gesloten",
+        "sortieInattendue": "Onverwachte netwerkuitgang"
+      }
     }
   },
   "aujourdhui": {
@@ -708,7 +725,13 @@
         "directoryContactsCreated": "Aangemaakte contacten",
         "directoryNone": "geen",
         "directoryHint": "De bedrijvengids levert bedrijven, geen personen: contacten komen uit vacatures, LinkedIn of een import. Toegevoegde bedrijven verschijnen in Contacten › Bedrijven.",
-        "directoryRetain": "{n} bedrijven toevoegen"
+        "directoryRetain": "{n} bedrijven toevoegen",
+        "brouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd.",
+        "collectNow": "Nu verzamelen",
+        "collectNowDraft": "Beschikbaar zodra de campagne is gelanceerd.",
+        "collectNowUnsaved": "Beschikbaar zodra de bron is opgeslagen.",
+        "collectNowInactive": "Beschikbaar zolang de campagne actief is.",
+        "collectRequested": "Verzameling aangevraagd: ze start binnen een minuut."
       }
     },
     "sequence": {
@@ -906,7 +929,8 @@
         "summaryLinkedin": "{n, plural, one {# profiel per dag} other {# profielen per dag}}",
         "formSubmit": "Toevoegen",
         "formCancel": "Annuleren",
-        "formError": "Er is minstens één trefwoord vereist."
+        "formError": "Er is minstens één trefwoord vereist.",
+        "formLinkedinBrouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd."
       },
       "sequence": {
         "startFrom": "Beginnen vanaf",
@@ -969,7 +993,8 @@
       "personas": "Persona's",
       "messages": "Berichten",
       "engine": "Motor",
-      "account": "Account"
+      "account": "Account",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "E-mailmailboxes",
@@ -1341,7 +1366,8 @@
         "aucuneErreur": "Geen",
         "tachesEnAttente": "Wachtende taken",
         "aucuneTache": "Geen",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}",
+        "linkedin": "LinkedIn"
       },
       "pause": {
         "titre": "Algemene verzendpauze",
@@ -1467,6 +1493,77 @@
       "session": {
         "titre": "Sessie",
         "bouton": "Afmelden"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "De LinkedIn-sessie van de server: hoe die ervoor staat, via welk netwerkadres ze naar buiten gaat en wat ze mag verzamelen.",
+      "carte": {
+        "titre": "LinkedIn-sessie",
+        "sousTitre": "Account van de organisatie, op de server"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "Geen sessie.",
+          "detail": "Open de sessie vanaf de server: het wachtwoord en de code lopen niet via deze pagina."
+        },
+        "prete": {
+          "phrase": "Klaar om te verzamelen.",
+          "detail": "Verbonden: {depuis}. Laatste verzameling: {collecte}.",
+          "detailSansCollecte": "Verbonden: {depuis}. Nog niets verzameld."
+        },
+        "defi": {
+          "phrase": "Gestopt: LinkedIn vroeg om een verificatie.",
+          "detail": "Vastgesteld: {quand}. Er volgt bewust geen nieuwe poging."
+        },
+        "cookieRefuse": {
+          "phrase": "Gestopt: LinkedIn heeft de opgeslagen sessie geweigerd.",
+          "detail": "Vastgesteld: {quand}. Er volgt bewust geen nieuwe poging."
+        },
+        "disjoncteur": {
+          "phrase": "Uit voorzorg gestopt: te veel mislukkingen na elkaar.",
+          "detail": "Vastgesteld: {quand}. Er volgt geen nieuwe poging zolang de sessie niet is heropend."
+        },
+        "revoquee": {
+          "phrase": "Sessie gesloten.",
+          "detail": "Bewust gesloten: {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Gestopt: de netwerkuitgang is niet de verwachte.",
+          "detail": "Gezien op {ip} ({origine}) in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "detailSansOrigine": "Gezien op {ip} in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
+        }
+      },
+      "commande": {
+        "consigne": "Open de sessie opnieuw in een terminal op de server:",
+        "consigneDefi": "Los de verificatie op en open de sessie daarna opnieuw in een terminal op de server:"
+      },
+      "faits": {
+        "sortie": "Netwerkuitgang",
+        "operateur": "Operator",
+        "collecte": "Laatste verzameling",
+        "inconnu": "Onbekend",
+        "jamais": "Nooit"
+      },
+      "plafonds": {
+        "titre": "Verzamellimieten",
+        "lead": "Dit zijn dezelfde instellingen als in Instellingen › Limieten.",
+        "postsParJour": {
+          "nom": "Posts per dag",
+          "usage": "{n, plural, =0 {Vandaag geen gebruikt} one {# vandaag gebruikt} other {# vandaag gebruikt}}"
+        },
+        "requetesParHeure": {
+          "nom": "Verzoeken per uur",
+          "usage": "{n, plural, =0 {Geen in het laatste uur} one {# in het laatste uur} other {# in het laatste uur}}"
+        },
+        "enregistrer": "Opslaan",
+        "erreurNombre": "Voer een geheel getal in."
+      },
+      "avertissement": {
+        "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
+        "risque": "Het gebruikte account kan worden beperkt of gesloten. De operator van deze instantie is daarvoor verantwoordelijk.",
+        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na enkele weken automatisch gewist."
       }
     }
   },

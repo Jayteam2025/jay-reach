@@ -268,6 +268,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             formLinkedinAccountId: t('sources.formLinkedinAccountId'),
             formLinkedinProfilesPerDay: t('sources.formLinkedinProfilesPerDay'),
             formLinkedinErreur: t('sources.formLinkedinError'),
+            formLinkedinBrouillon: t('sources.formLinkedinBrouillon'),
             resumeLinkedin: (n: number) => t('sources.summaryLinkedin', { n }),
             formAjouter: t('sources.formSubmit'),
             formAnnuler: t('sources.formCancel'),

@@ -1,4 +1,6 @@
 import { Carte, CleValeur, Puce } from '../ui';
+import { IconeLinkedin } from '../ui/IconeLinkedin';
+import type { PuceTon } from '../ui';
 
 // Composant pur (aucun hook) : testable par `renderToStaticMarkup`, comme
 // `CorpsReglagesCampagne` (apps/web/components/campagne/FormulaireReglagesCampagne.tsx).
@@ -15,11 +17,19 @@ export interface EtatMoteurLibelles {
   aucuneErreur: string;
   tachesEnAttente: string;
   aucuneTache: string;
+  linkedin: string;
 }
 
 export interface DerniereErreurMoteur {
   quand: string;
   libelle: string;
+}
+
+/** Ligne LinkedIn déjà composée (`composerLigneLinkedIn`) — absente tant qu'aucune session n'a existé. */
+export interface EtatLinkedin {
+  ton: PuceTon;
+  libelle: string;
+  detail: string;
 }
 
 export interface EtatMoteurProps {
@@ -31,6 +41,8 @@ export interface EtatMoteurProps {
   derniereErreur: DerniereErreurMoteur | null;
   /** Déjà composé par l'appelant (« 136 scorings · 2 enrichissements ») — `null` si rien n'attend. */
   tachesEnAttenteTexte: string | null;
+  /** `null` : aucune session LinkedIn n'a jamais existé, pas de ligne. */
+  linkedin?: EtatLinkedin | null;
   libelles: EtatMoteurLibelles;
 }
 
@@ -41,6 +53,7 @@ export function EtatMoteur({
   prochainPassage,
   derniereErreur,
   tachesEnAttenteTexte,
+  linkedin,
   libelles,
 }: EtatMoteurProps) {
   return (
@@ -66,6 +79,25 @@ export function EtatMoteur({
         }
       />
       <CleValeur libelle={libelles.tachesEnAttente} valeur={tachesEnAttenteTexte ?? libelles.aucuneTache} />
+      {linkedin && (
+        // Pas de « prochaine collecte » : la collecte est à la demande. Le logo garde sa couleur
+        // de marque, l'état se dit par le libellé de la puce.
+        <CleValeur
+          libelle={
+            <>
+              <IconeLinkedin className="jr-ico-li" /> {libelles.linkedin}
+            </>
+          }
+          valeur={
+            <>
+              <Puce ton={linkedin.ton} point>
+                {linkedin.libelle}
+              </Puce>
+              <small className="jr-secondaire jr-etat-detail">{linkedin.detail}</small>
+            </>
+          }
+        />
+      )}
     </Carte>
   );
 }

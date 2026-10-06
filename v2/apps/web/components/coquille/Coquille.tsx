@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import type { ContexteWeb } from '../../lib/contexte';
 import { lireResumeCoquilleCourant } from '../../lib/aujourdhui';
+import { composerLigneLinkedIn, lireSessionLinkedInPourLaCoquille } from '../../lib/linkedin-session';
 import { Avatar } from '../ui';
 import { BarreLaterale } from './BarreLaterale';
 import { CarteMoteur } from './CarteMoteur';
@@ -30,7 +31,11 @@ function formatHeure(iso: string | null, fuseau: string): string | null {
 export async function Coquille({ ctx, children }: CoquilleProps) {
   // Une seule lecture de session par rendu : `contexteCourant()` (mémoïsée)
   // porte déjà le nom affiché, pas besoin d'un second appel à `getUser()`.
-  const [t, a] = await Promise.all([getTranslations(), lireResumeCoquilleCourant(ctx)]);
+  const [t, a, sessionLinkedin] = await Promise.all([
+    getTranslations(),
+    lireResumeCoquilleCourant(ctx),
+    lireSessionLinkedInPourLaCoquille(ctx),
+  ]);
 
   const nomAffiche = ctx.utilisateur.nomAffiche;
   const roleLibelle = ctx.role ? t(`coquille.role.${ctx.role}`) : t('coquille.role.none');
@@ -54,6 +59,7 @@ export async function Coquille({ ctx, children }: CoquilleProps) {
             ton={a.moteur.enMarche ? 'bon' : 'erreur'}
             libelleEtat={a.moteur.enMarche ? t('coquille.engine.running') : t('coquille.engine.stopped')}
             detail={detailMoteur}
+            linkedin={composerLigneLinkedIn(sessionLinkedin, t, new Date(), a.fuseau)}
           />
           {/* La jauge porte sur l'EMAIL, numérateur ET dénominateur : avant la revue de
               cohérence du lot 2, elle comptait tous les canaux au numérateur et l'email seul au

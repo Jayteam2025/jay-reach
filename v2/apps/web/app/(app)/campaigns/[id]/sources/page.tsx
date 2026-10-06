@@ -77,7 +77,13 @@ export default async function CampagneSourcesPage({
             persona={vue.campagne.nom}
           />
         ) : (
-          <TiroirSourceLinkedIn campagneId={id} providerId={carte.providerId} source={source} personas={personas} />
+          <TiroirSourceLinkedIn
+            campagneId={id}
+            providerId={carte.providerId}
+            source={source}
+            personas={personas}
+            statutCampagne={vue.campagne.statut}
+          />
         );
     }
   } else if (brutAjouter === 'adzuna' || brutAjouter === 'france_travail') {
@@ -90,7 +96,15 @@ export default async function CampagneSourcesPage({
       />
     );
   } else if (brutAjouter && estLinkedIn(brutAjouter)) {
-    tiroir = <TiroirSourceLinkedIn campagneId={id} providerId={brutAjouter} source={null} personas={personas} />;
+    tiroir = (
+      <TiroirSourceLinkedIn
+        campagneId={id}
+        providerId={brutAjouter}
+        source={null}
+        personas={personas}
+        statutCampagne={vue.campagne.statut}
+      />
+    );
   } else if (brutAjouter === 'csv') {
     tiroir = <TiroirSourceCsv campagneId={id} />;
   } else if (brutAjouter === 'list') {

@@ -142,6 +142,12 @@ select.jr-puce {
 .jr-logo-francetravail { background-image: url(/logos/francetravail.svg); }
 .jr-logo-microsoft { background-image: url(/logos/microsoft.svg); }
 .jr-ico-li { width: 14px; height: 14px; fill: var(--jr-linkedin); stroke: none; vertical-align: -2px; }
+/* Ligne LinkedIn du bloc « État du moteur » (lot 4a) : le logo garde la couleur de marque (`.jr-ico-li`) quel que soit l'état. */
+.jr-moteur-linkedin { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.jr-moteur-linkedin .jr-ico-li { flex: none; margin-top: 2px; }
+.jr-moteur-linkedin b { display: block; font-weight: 500; }
+.jr-etat-detail { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.4; font-weight: 400; }
+.jr-moteur-linkedin small { display: block; font-size: 11.5px; line-height: 1.4; }
 
 /* Tables */
 .jr-table { width: 100%; border-collapse: collapse; font-size: 13.5px; color: var(--jr-encre); font-family: inherit; table-layout: auto; }
@@ -606,3 +612,27 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
   .jr-moteur-plafonds,
   .jr-boite-blocs { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Écran LinkedIn de Réglages (lot 4a) : la phrase d'état est le seul endroit où l'on hausse la voix. */
+.jr-session-etat { display: flex; gap: 13px; align-items: flex-start; }
+.jr-session-pastille { width: 9px; height: 9px; border-radius: 50%; flex: none; margin-top: 8px; background: var(--jr-secondaire); }
+.jr-session-pastille.bon { background: var(--jr-bon); }
+.jr-session-pastille.attention { background: var(--jr-attention); }
+.jr-session-pastille.erreur { background: var(--jr-erreur); }
+.jr-session-phrase { font-size: 16px; font-weight: 500; line-height: 1.45; margin: 0; letter-spacing: -.005em; }
+.jr-session-detail { color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 3px 0 0; }
+.jr-session-action { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--jr-filet); }
+.jr-session-commande { display: block; margin-top: 7px; padding: 7px 10px; font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--jr-fond); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow-x: auto; white-space: pre; }
+.jr-session-faits { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; margin: 16px 0 0; background: var(--jr-filet); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow: hidden; }
+.jr-session-faits > div { background: var(--jr-surface); padding: 11px 13px; min-width: 0; }
+.jr-session-faits dt { color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 0 0 2px; }
+.jr-session-faits dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.jr-session-faits dd.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.jr-plafond-ligne { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--jr-filet); }
+.jr-plafond-ligne:first-child { padding-top: 0; }
+.jr-plafond-ligne:last-child { border-bottom: 0; padding-bottom: 0; }
+.jr-plafond-saisie { display: flex; align-items: center; gap: 8px; flex: none; }
+.jr-plafond-saisie input { width: 78px; text-align: right; }
+.jr-avertissement { background: var(--jr-attention-doux); border: 1px solid color-mix(in srgb, var(--jr-attention) 30%, transparent); border-radius: var(--jr-rayon); padding: 15px 18px; }
+.jr-avertissement p { margin: 0; font-size: var(--jr-petit); line-height: 1.6; max-width: 72ch; }
+.jr-avertissement p + p { margin-top: 7px; }

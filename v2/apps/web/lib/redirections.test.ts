@@ -30,4 +30,10 @@ describe('redirections des anciens écrans (tâche 24)', () => {
     const redirects = await nextConfig.redirects?.();
     expect(redirects).toEqual(REDIRECTIONS.map((r) => ({ ...r, permanent: true })));
   });
+
+  // Lot 4a : `/settings/linkedin` est redevenu un vrai écran (la session LinkedIn du serveur).
+  // La redirection d'origine (tâche 24) l'envoyait vers les expéditeurs et le rendait inaccessible.
+  it('/settings/linkedin ne redirige plus vers /settings/senders', () => {
+    expect(REDIRECTIONS.some((r) => r.source === '/settings/linkedin')).toBe(false);
+  });
 });

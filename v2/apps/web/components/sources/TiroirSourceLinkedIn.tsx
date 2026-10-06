@@ -3,9 +3,10 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { TypeSource } from '@jay-reach/core';
+import type { CampaignStatus, TypeSource } from '@jay-reach/core';
 import { Bouton, Champ, Tiroir, TuileLogo } from '../ui';
-import { actionCreerSource, actionModifierSourceCampagne } from '../../app/actions/sources';
+import { actionCreerSource, actionLancerPassageCampagne, actionModifierSourceCampagne } from '../../app/actions/sources';
+import { etatCollecteMaintenant } from './collecte-maintenant';
 import {
   ChampsSourceLinkedIn,
   construireConfigLinkedIn,
@@ -34,6 +35,8 @@ export interface TiroirSourceLinkedInProps {
   readonly source: SourceLinkedInExistante | null;
   /** Personas de la campagne ; plusieurs → le persona de la source est à choisir. */
   readonly personas?: readonly PersonaChoix[];
+  /** Statut de la campagne de l'écran : décide du bandeau de brouillon et du bouton « Collecter maintenant ». */
+  readonly statutCampagne: CampaignStatus;
 }
 
 const CLE_TITRE: Record<TypeLinkedIn, string> = {
@@ -45,9 +48,12 @@ const CLE_TITRE: Record<TypeLinkedIn, string> = {
 
 /**
  * Tiroir des quatre types LinkedIn (maquette `tiroir-source-linkedin.html`) :
- * réglable dès maintenant, mais la collecte ne démarre qu'au lot 4 — pas de
- * bouton « Lancer un passage » (`collecteDisponible` toujours faux pour ces
- * types, `packages/core/src/fonctions/sources.ts`). Un seul sous-formulaire à
+ * réglables tous les quatre, mais seuls les engageurs d'un post sont collectés
+ * par le serveur (lot 4a) : eux portent le bouton « Collecter maintenant » et,
+ * sur une campagne en brouillon, le bandeau qui dit que rien ne partira avant
+ * le lancement. Les trois autres gardent l'avertissement « en attente du
+ * canal » (`collecteImplementee`, `packages/core/src/fonctions/sources.ts`).
+ * Un seul sous-formulaire à
  * la fois (le type vient du menu qui a ouvert ce tiroir), pas d'onglets
  * internes pour prévisualiser les quatre variantes comme la maquette.
  *
@@ -57,11 +63,12 @@ const CLE_TITRE: Record<TypeLinkedIn, string> = {
  * qu'attend `configLinkedIn*`). Ce fichier garde son propre nom de source, sa
  * cadence et son appel serveur (`actionCreerSource`/`actionModifierSourceCampagne`).
  */
-export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas = [] }: TiroirSourceLinkedInProps) {
+export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas = [], statutCampagne }: TiroirSourceLinkedInProps) {
   const t = useTranslations('campagne.sources');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
+  const [collecteDemandee, setCollecteDemandee] = useState(false);
 
   const [nom, setNom] = useState(source?.nom ?? '');
   const [schedule, setSchedule] = useState(source?.schedule ?? 'every 24h');
@@ -104,6 +111,20 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
     });
   }
 
+  const collecteDuPost = providerId === 'linkedin_post_engagers';
+  const collecte = etatCollecteMaintenant(statutCampagne, source !== null);
+
+  function collecterMaintenant() {
+    if (!source) return;
+    setErreur(null);
+    setCollecteDemandee(false);
+    startTransition(async () => {
+      const res = await actionLancerPassageCampagne(campagneId, source.id);
+      if (res.ok) setCollecteDemandee(true);
+      else setErreur(res.error);
+    });
+  }
+
   return (
     <Tiroir
       ouvert
@@ -121,7 +142,8 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
       }
     >
       <div className="jr-formulaire">
-        <div className="jr-bandeau attention">{t('drawer.linkedinPending')}</div>
+        {!collecteDuPost && <div className="jr-bandeau attention">{t('drawer.linkedinPending')}</div>}
+        {collecteDuPost && collecte.bandeauBrouillon && <div className="jr-bandeau attention">{t('drawer.brouillon')}</div>}
         <Champ libelle={t('drawer.name')}>
           <input value={nom} onChange={(e) => setNom(e.target.value)} />
         </Champ>
@@ -153,6 +175,16 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             <option value="every 48h">{t('card.everyNHours', { n: 48 })}</option>
           </select>
         </Champ>
+        {collecteDuPost && (
+          <div>
+            <Bouton onClick={collecterMaintenant} disabled={pending || !collecte.actif}>
+              {t('drawer.collectNow')}
+            </Bouton>
+            <p className="jr-aide" style={{ marginTop: 9 }}>
+              {collecteDemandee ? t('drawer.collectRequested') : collecte.cleAide ? t(`drawer.${collecte.cleAide}`) : null}
+            </p>
+          </div>
+        )}
         {erreur && (
           <div className="jr-notification erreur" role="alert">
             {erreur}

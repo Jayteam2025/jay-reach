@@ -175,6 +175,23 @@
       "operator": "Opérateur",
       "viewer": "Lecteur",
       "none": "Sans rôle"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn prêt",
+        "arrete": "LinkedIn arrêté",
+        "aucune": "LinkedIn : aucune session"
+      },
+      "detail": {
+        "derniereCollecte": "Dernière collecte {quand}",
+        "aucuneCollecte": "Aucune collecte pour l'instant",
+        "absente": "Session à ouvrir",
+        "defi": "Vérification demandée, reconnectez-vous",
+        "cookieRefuse": "Session refusée, reconnectez-vous",
+        "disjoncteur": "Trop d'échecs, reconnectez-vous",
+        "revoquee": "Session fermée",
+        "sortieInattendue": "Sortie réseau inattendue"
+      }
     }
   },
   "aujourdhui": {
@@ -708,7 +725,13 @@
         "directoryContactsCreated": "Contacts créés",
         "directoryNone": "aucun",
         "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import. Les entreprises ajoutées apparaissent dans Contacts › Entreprises.",
-        "directoryRetain": "Ajouter {n} entreprises"
+        "directoryRetain": "Ajouter {n} entreprises",
+        "brouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
+        "collectNow": "Collecter maintenant",
+        "collectNowDraft": "Disponible une fois la campagne lancée.",
+        "collectNowUnsaved": "Disponible une fois la source enregistrée.",
+        "collectNowInactive": "Disponible tant que la campagne est active.",
+        "collectRequested": "Collecte demandée : elle démarre dans la minute."
       }
     },
     "sequence": {
@@ -906,7 +929,8 @@
         "summaryLinkedin": "{n, plural, one {# profil par jour} other {# profils par jour}}",
         "formSubmit": "Ajouter",
         "formCancel": "Annuler",
-        "formError": "Au moins un mot-clé est nécessaire."
+        "formError": "Au moins un mot-clé est nécessaire.",
+        "formLinkedinBrouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée."
       },
       "sequence": {
         "startFrom": "Partir de",
@@ -969,7 +993,8 @@
       "personas": "Personas",
       "messages": "Messages",
       "engine": "Moteur",
-      "account": "Compte"
+      "account": "Compte",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "Boîtes email",
@@ -1341,7 +1366,8 @@
         "aucuneErreur": "Aucune",
         "tachesEnAttente": "Tâches en attente",
         "aucuneTache": "Aucune",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}",
+        "linkedin": "LinkedIn"
       },
       "pause": {
         "titre": "Pause d'envoi globale",
@@ -1467,6 +1493,77 @@
       "session": {
         "titre": "Session",
         "bouton": "Se déconnecter"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "La session LinkedIn du serveur : où elle en est, par où elle sort et ce qu'elle a le droit de collecter.",
+      "carte": {
+        "titre": "Session LinkedIn",
+        "sousTitre": "Compte de l'organisation, sur le serveur"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "Aucune session.",
+          "detail": "Ouvrez-la depuis le serveur : le mot de passe et le code ne transitent pas par cette page."
+        },
+        "prete": {
+          "phrase": "Prête à collecter.",
+          "detail": "Connectée : {depuis}. Dernière collecte : {collecte}.",
+          "detailSansCollecte": "Connectée : {depuis}. Aucune collecte pour l'instant."
+        },
+        "defi": {
+          "phrase": "Arrêtée : LinkedIn a demandé une vérification.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu, c'est voulu."
+        },
+        "cookieRefuse": {
+          "phrase": "Arrêtée : LinkedIn a refusé la session enregistrée.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu, c'est voulu."
+        },
+        "disjoncteur": {
+          "phrase": "Arrêtée par précaution : trop d'échecs d'affilée.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu tant que la session n'est pas rouverte."
+        },
+        "revoquee": {
+          "phrase": "Session fermée.",
+          "detail": "Fermée volontairement : {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Arrêtée : la sortie réseau n'est pas celle attendue.",
+          "detail": "Vue à {ip} ({origine}) au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "detailSansOrigine": "Vue à {ip} au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
+        }
+      },
+      "commande": {
+        "consigne": "Dans un terminal sur le serveur, rouvrez la session :",
+        "consigneDefi": "Résolvez la vérification, puis rouvrez la session depuis un terminal sur le serveur :"
+      },
+      "faits": {
+        "sortie": "Sortie réseau",
+        "operateur": "Opérateur",
+        "collecte": "Dernière collecte",
+        "inconnu": "Inconnu",
+        "jamais": "Jamais"
+      },
+      "plafonds": {
+        "titre": "Plafonds de collecte",
+        "lead": "Ce sont les mêmes réglages que dans Réglages › Plafonds.",
+        "postsParJour": {
+          "nom": "Posts par jour",
+          "usage": "{n, plural, =0 {Aucun utilisé aujourd'hui} one {# utilisé aujourd'hui} other {# utilisés aujourd'hui}}"
+        },
+        "requetesParHeure": {
+          "nom": "Requêtes par heure",
+          "usage": "{n, plural, =0 {Aucune sur la dernière heure} one {# sur la dernière heure} other {# sur la dernière heure}}"
+        },
+        "enregistrer": "Enregistrer",
+        "erreurNombre": "Saisissez un nombre entier."
+      },
+      "avertissement": {
+        "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
+        "risque": "Le compte utilisé peut être restreint ou fermé. L'opérateur de cette instance en répond.",
+        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées automatiquement au bout de quelques semaines."
       }
     }
   },
