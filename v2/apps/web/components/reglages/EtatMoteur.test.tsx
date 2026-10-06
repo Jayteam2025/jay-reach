@@ -15,6 +15,7 @@ const LIBELLES: EtatMoteurLibelles = {
   tachesEnAttente: 'Tâches en attente',
   aucuneTache: 'Aucune',
   linkedin: 'LinkedIn',
+  purge: 'Purge de rétention',
 };
 
 describe('EtatMoteur', () => {
@@ -53,6 +54,27 @@ describe('EtatMoteur', () => {
     expect(html).toContain('jr-texte-erreur');
     expect(html).toContain('SalesBlink 429');
     expect(html).toContain('Aucune');
+  });
+
+  describe('purge de rétention', () => {
+    const rendre = (purge: Parameters<typeof EtatMoteur>[0]['purge']) =>
+      renderToStaticMarkup(
+        <EtatMoteur enMarche version={null} dernierPassage={null} prochainPassage={null} derniereErreur={null}
+          tachesEnAttenteTexte={null} purge={purge} libelles={LIBELLES} />,
+      );
+
+    it('une purge en échec ou en retard se voit : puce erreur et conséquence', () => {
+      const html = rendre({ ton: 'erreur', libelle: 'Échec au dernier passage', consequence: 'Plus effacées à la date annoncée.' });
+      expect(html).toContain('Purge de rétention');
+      expect(html).toContain('jr-puce erreur');
+      expect(html).toContain('Plus effacées à la date annoncée.');
+    });
+
+    it('une purge saine ne montre aucune conséquence', () => {
+      const html = rendre({ ton: 'bon', libelle: 'Dernier passage 10:02', consequence: null });
+      expect(html).toContain('Dernier passage 10:02');
+      expect(html).not.toContain('jr-etat-detail');
+    });
   });
 
   describe('ligne LinkedIn', () => {

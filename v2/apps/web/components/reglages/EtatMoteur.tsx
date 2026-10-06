@@ -20,6 +20,7 @@ export interface EtatMoteurLibelles {
   tachesEnAttente: string;
   aucuneTache: string;
   linkedin: string;
+  purge: string;
 }
 
 export interface DerniereErreurMoteur {
@@ -34,6 +35,14 @@ export interface EtatLinkedin {
   detail: string;
 }
 
+/** Passage de la purge de rétention, déjà composé : la promesse affichée aux personnes en dépend. */
+export interface EtatPurgeAffiche {
+  ton: PuceTon;
+  libelle: string;
+  /** Présent seulement quand la purge est en échec ou en retard : ce que ça change pour les personnes. */
+  consequence: string | null;
+}
+
 export interface EtatMoteurProps {
   enMarche: boolean;
   version: string | null;
@@ -44,6 +53,7 @@ export interface EtatMoteurProps {
   /** Déjà composé par l'appelant (« 136 scorings · 2 enrichissements ») — `null` si rien n'attend. */
   tachesEnAttenteTexte: string | null;
   linkedin?: EtatLinkedin | null;
+  purge?: EtatPurgeAffiche | null;
   libelles: EtatMoteurLibelles;
 }
 
@@ -55,6 +65,7 @@ export function EtatMoteur({
   derniereErreur,
   tachesEnAttenteTexte,
   linkedin,
+  purge,
   libelles,
 }: EtatMoteurProps) {
   return (
@@ -80,6 +91,19 @@ export function EtatMoteur({
         }
       />
       <CleValeur libelle={libelles.tachesEnAttente} valeur={tachesEnAttenteTexte ?? libelles.aucuneTache} />
+      {purge && (
+        <CleValeur
+          libelle={libelles.purge}
+          valeur={
+            <>
+              <Puce ton={purge.ton} point>
+                {purge.libelle}
+              </Puce>
+              {purge.consequence && <small className="jr-secondaire jr-etat-detail">{purge.consequence}</small>}
+            </>
+          }
+        />
+      )}
       {linkedin && (
         // Pas de « prochaine collecte » : la collecte est à la demande. Le logo garde sa couleur
         // de marque, l'état se dit par le libellé de la puce.

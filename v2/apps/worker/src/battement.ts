@@ -62,3 +62,19 @@ export async function enregistrerTour(
     [identite.instanceId, identite.hostname, identite.version, identite.startedAt, erreur],
   );
 }
+
+/**
+ * Enregistre un passage de la purge de rétention dans `engine_status` (colonnes dédiées :
+ * `last_error` est remis à zéro par chaque tour réussi, il masquerait l'échec). `erreur`
+ * ne porte que le NOM de l'erreur, jamais son message (un message Postgres peut citer
+ * l'hôte de la base, et cette ligne est lisible par tout utilisateur authentifié).
+ */
+export async function enregistrerPurge(pool: Pool, identite: IdentiteMoteur, erreur: string | null): Promise<void> {
+  await pool.query(
+    `insert into public.engine_status (instance_id, hostname, version, started_at, last_purge_at, last_purge_error, updated_at)
+     values ($1, $2, $3, $4, now(), $5, now())
+     on conflict (instance_id) do update
+       set last_purge_at = now(), last_purge_error = excluded.last_purge_error, updated_at = now()`,
+    [identite.instanceId, identite.hostname, identite.version, identite.startedAt, erreur],
+  );
+}

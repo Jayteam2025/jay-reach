@@ -23,6 +23,10 @@
 //   9. post-engagement.ts : retirer le verrou `for update` des contacts (ou des deux) — 40, 40b, 40t, 40tb : la
 //      personne contactée est DÉTRUITE. La condition atomique du `delete from signals`, retirée seule, ne fait
 //      rien rougir : sous verrou, aucune course ne l'atteint (défense en profondeur, non prouvée seule).
+//  10. post-engagement.ts : verrouiller le signal AVANT les contacts — 46, 46b : interblocage 40P01, et c'est la
+//      PURGE qui est sacrifiée ; retirer la branche `enrollments.signal_id` de « contactée » — 11, 16d ;
+//      retourner 'efface' au lieu de 'absent' — 16c, 16e ; ne plus écrire le statut de la purge — 47, 47b.
+
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import {
@@ -34,6 +38,7 @@ import {
   nePlusContacter,
   normaliserUrlPost,
   purgerEngageursPerimes,
+  traiterRetentionPurge,
 } from './_linkedin-retention-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -187,8 +192,14 @@ async function jamaisLesContactes() {
 
   // Isolation : la bonne personne mais la mauvaise organisation ne détruit rien.
   const libre = await collecter(m, eng('libre'));
-  await ecarterEngageur(pool, autre.org, libre.signal, { juge: false });
-  check('16c. une organisation ne peut pas effacer le signal (ni le contact) d’une autre', (await existe('signals', libre.signal)) && (await existe('contacts', libre.contact)));
+  const mauvaiseOrg = await ecarterEngageur(pool, autre.org, libre.signal, { juge: false });
+  check('16c. une organisation ne peut pas effacer le signal (ni le contact) d’une autre, et le bilan dit « absent », pas « effacé »',
+    mauvaiseOrg === 'absent' && (await existe('signals', libre.signal)) && (await existe('contacts', libre.contact)), mauvaiseOrg);
+  check('16e. un signal déjà parti rend « absent »', (await ecarterEngageur(pool, m.org, '00000000-0000-0000-0000-000000000000', { juge: false })) === 'absent');
+  // Chemin « contactée » par enrollments.signal_id SEUL : l'inscription porte le signal, le contact né de lui n'en a aucune.
+  const viaSignal = await ecarterEngageur(pool, m.org, b.signal, { juge: false });
+  check('16d. contactée par enrollments.signal_id seul (le contact né du signal n’a aucune inscription) : conservée, appel direct',
+    viaSignal === 'conserve' && (await existe('signals', b.signal)) && (await existe('contacts', b.contact)), viaSignal);
 }
 
 async function contactPreexistant() {
@@ -398,6 +409,61 @@ async function course() {
   }
 }
 
+async function ordreDesVerrous() {
+  console.log('pas d’interblocage entre la purge et une inscription');
+  const m = await monde();
+  // 1. L'insertion d'une inscription (contact_id ET signal_id) verrouille le CONTACT avant le SIGNAL.
+  const a = await collecter(m, eng('ordre1'));
+  const B = await pool.connect(), A = await pool.connect(), C = await pool.connect();
+  let erreurC = null, enAttente;
+  try {
+    await B.query('begin');
+    await B.query(`select 1 from signals where id = $1 for update`, [a.signal]); // B tient le signal
+    await A.query('begin');
+    enAttente = A.query(`insert into enrollments (organization_id, campaign_id, contact_id, signal_id, status) values ($1,$2,$3,$4,'active')`, [m.org, m.campagne, a.contact, a.signal]).catch((e) => e);
+    await new Promise((r) => setTimeout(r, 500)); // A attend le signal
+    await C.query('begin');
+    erreurC = await C.query(`select 1 from contacts where id = $1 for update nowait`, [a.contact]).then(() => null, (e) => e);
+  } finally {
+    await C.query('rollback').catch(() => {});
+    await B.query('rollback').catch(() => {});
+    await enAttente;
+    await A.query('rollback').catch(() => {});
+    A.release(); B.release(); C.release();
+  }
+  check('45. une inscription (contact_id + signal_id) verrouille le contact AVANT le signal (mesuré, pas supposé)', erreurC?.code === '55P03', String(erreurC?.code));
+
+  // 2. Une inscription tient déjà le contact quand la purge arrive ; elle prend ensuite le signal.
+  const b = await collecter(m, eng('ordre2'));
+  const A2 = await pool.connect();
+  let issue = null, erreurPurge = null, erreurInscription = null;
+  try {
+    await A2.query('begin');
+    await A2.query(`select 1 from contacts where id = $1 for key share`, [b.contact]);
+    const purge = ecarterEngageur(pool, m.org, b.signal, { juge: false }).then((x) => { issue = x; }, (e) => { erreurPurge = e; });
+    await new Promise((r) => setTimeout(r, 500));
+    await A2.query(`insert into enrollments (organization_id, campaign_id, contact_id, signal_id, status) values ($1,$2,$3,$4,'active')`, [m.org, m.campagne, b.contact, b.signal]).catch((e) => { erreurInscription = e; });
+    await A2.query(erreurInscription ? 'rollback' : 'commit');
+    await purge;
+  } finally {
+    A2.release();
+  }
+  check('46. la purge et l’inscription se croisent sans interblocage (ni l’une ni l’autre n’est sacrifiée)', erreurPurge === null && erreurInscription === null, `${erreurPurge?.code} ${erreurInscription?.code}`);
+  check('46b. la personne inscrite est conservée, inscription comprise', issue === 'conserve' && (await existe('signals', b.signal)) && (await existe('contacts', b.contact)) && (await q(`select 1 from enrollments where contact_id = $1`, [b.contact])).rowCount === 1, String(issue));
+}
+
+async function statutDeLaPurge() {
+  console.log('le passage de la purge est écrit pour l’écran Moteur');
+  const identite = { instanceId: `purge-${Date.now()}`, hostname: 'h', version: 'v', startedAt: new Date() };
+  await traiterRetentionPurge(pool, identite);
+  const l = (await q(`select last_purge_at, last_purge_error from engine_status where instance_id = $1`, [identite.instanceId])).rows[0];
+  check('47. un passage réussi écrit last_purge_at, sans erreur', l?.last_purge_at !== null && l?.last_purge_error === null, JSON.stringify(l));
+  await q(`update engine_status set last_purge_at = now() - interval '5 hours' where instance_id = $1`, [identite.instanceId]);
+  await traiterRetentionPurge(pool, identite);
+  const l2 = (await q(`select (now() - last_purge_at) < interval '1 minute' as recent from engine_status where instance_id = $1`, [identite.instanceId])).rows[0];
+  check('47b. un second passage rafraîchit la date, sur la même ligne', l2?.recent === true && (await q(`select count(*)::int n from engine_status where instance_id = $1`, [identite.instanceId])).rows[0].n === 1);
+}
+
 /**
  * Bout en bout : le VRAI `envoyerEmailSalesBlink` sur Postgres (rendu, gabarit, porte
  * email, plafond, liaison, fil). Seul le client HTTP de SalesBlink est un double, qui
@@ -467,7 +533,7 @@ async function envoiDeBoutEnBout() {
 }
 
 try {
-  await jouer(purgeParAge, jamaisLesContactes, contactPreexistant, suppression, mention, memoireBornee, oppositionBoucleFermee, course, envoiDeBoutEnBout);
+  await jouer(purgeParAge, jamaisLesContactes, contactPreexistant, suppression, mention, memoireBornee, oppositionBoucleFermee, course, ordreDesVerrous, statutDeLaPurge, envoiDeBoutEnBout);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

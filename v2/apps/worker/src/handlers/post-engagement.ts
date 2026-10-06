@@ -280,6 +280,9 @@ export function sqlPersonneContactee(org: FragmentSql, signal: FragmentSql, occu
        )`;
 }
 
+/** `absent` : le signal n'existe plus (ou n'est pas de cette organisation), rien n'a été touché. */
+export type IssueEffacement = 'efface' | 'conserve' | 'absent';
+
 /**
  * Efface un engageur : son signal et le contact né de ce signal. On ne garde pas
  * de données personnelles sur ce qui ne sert pas.
@@ -315,26 +318,33 @@ export async function ecarterEngageur(
   organizationId: string,
   signalId: string,
   opts: { juge?: boolean; compter?: boolean } = {},
-): Promise<'efface' | 'conserve'> {
+): Promise<IssueEffacement> {
   const juge = opts.juge ?? true;
   const compter = opts.compter ?? juge;
-  return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<'efface' | 'conserve'> => {
-    // VERROUS d'abord : le signal et les contacts nés de lui. Une inscription ou un
-    // fil qui se crée en même temps prend un verrou partagé sur la ligne du contact
+  return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<IssueEffacement> => {
+    // VERROUS d'abord : les contacts nés du signal, PUIS le signal. Une inscription ou
+    // un fil qui se crée en même temps prend un verrou partagé sur la ligne du contact
     // (clé étrangère) : il attend la fin de cette transaction au lieu de passer entre
     // la lecture de la garde et la suppression. Les `delete` ci-dessous portent en
-    // plus leurs propres conditions, la garde ne repose pas sur le seul verrou.
+    // plus leurs propres conditions, mais ce sont ces verrous qui tiennent (voir le
+    // harnais : sans eux, une inscription validée pendant l'effacement est détruite).
+    //
+    // L'ORDRE est contact puis signal, et il n'est pas libre : l'insertion d'une
+    // inscription qui porte `contact_id` ET `signal_id` verrouille ses deux clés
+    // étrangères dans cet ordre (mesuré par le harnais). Verrouiller le signal d'abord
+    // croiserait les deux transactions : interblocage, dont Postgres sacrifie l'une
+    // ou l'autre, la purge comprise.
+    await tx.query(
+      `select id from contacts where organization_id = $1 and source_signal_id = $2 order by id for update`,
+      [organizationId, signalId],
+    );
     const verrouille = await tx.query<{ external_id: string }>(
       `select external_id from signals
         where id = $2 and organization_id = $1 and kind = 'post_engagement' for update`,
       [organizationId, signalId],
     );
     const externalId = verrouille.rows[0]?.external_id;
-    if (externalId === undefined) return 'efface'; // déjà parti, ou d'une autre organisation : rien à détruire
-    await tx.query(`select id from contacts where organization_id = $1 and source_signal_id = $2 for update`, [
-      organizationId,
-      signalId,
-    ]);
+    if (externalId === undefined) return 'absent'; // déjà parti, ou d'une autre organisation : rien n'a été fait
 
     // Mémoire d'écart : une EMPREINTE de l'identifiant, jamais l'URN lisible. Cette
     // table n'est qu'un cache d'économie (ne pas rescorer, donc ne pas repayer) :

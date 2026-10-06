@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
 import { ecarterEngageur } from './post-engagement.js';
-import { purgerEngageursPerimes } from './retention-purge.js';
+import { purgerEngageursPerimes, traiterRetentionPurge } from './retention-purge.js';
 
 /**
  * Pool factice : il ne prouve que l'enchaînement des décisions (quelle durée est
@@ -39,7 +39,7 @@ describe('retention.purge', () => {
     const selection = m.params[m.sql.findIndex((s) => /from signals s\s+where s\.kind = 'post_engagement'/i.test(s))];
     expect(selection?.[0]).toBe(RETENTION_PERSONNES_NON_CONTACTEES_JOURS);
     expect(m.sql.some((s) => /delete from signals/i.test(s))).toBe(true);
-    expect(bilan).toEqual({ candidats: 1, effaces: 1, conserves: 0, memoiresEffacees: 0 });
+    expect(bilan).toEqual({ candidats: 1, effaces: 1, conserves: 0, absents: 0, memoiresEffacees: 0 });
   });
 
   it("un post_engagement contacte n'est jamais efface", async () => {
@@ -50,7 +50,7 @@ describe('retention.purge', () => {
     });
     const bilan = await purgerEngageursPerimes(m.pool);
     expect(m.sql.some((s) => /delete from (signals|contacts)/i.test(s))).toBe(false);
-    expect(bilan).toEqual({ candidats: 1, effaces: 0, conserves: 1, memoiresEffacees: 0 });
+    expect(bilan).toEqual({ candidats: 1, effaces: 0, conserves: 1, absents: 0, memoiresEffacees: 0 });
   });
 
   it('la memoire d ecart a la meme borne que les personnes', async () => {
@@ -66,5 +66,39 @@ describe('retention.purge', () => {
     const issue = await ecarterEngageur(m.pool, 'org-1', 'signal-9', { juge: false });
     expect(issue).toBe('conserve');
     expect(m.sql.some((s) => /delete from/i.test(s))).toBe(false);
+  });
+});
+
+describe('statut de la purge pour l ecran', () => {
+  const identite = { instanceId: 'worker', hostname: 'h', version: 'v', startedAt: new Date() };
+  const statuts = (m: ReturnType<typeof poolFactice>) =>
+    m.params.filter((_, i) => /last_purge_at/i.test(m.sql[i] ?? '')).map((p) => p[4]);
+
+  it('un passage reussi ecrit last_purge_at sans erreur', async () => {
+    const m = poolFactice({ candidats: [] });
+    await traiterRetentionPurge(m.pool, identite);
+    expect(statuts(m)).toEqual([null]);
+  });
+
+  it('un echec est enregistre (nom de l erreur seulement), puis relance', async () => {
+    const m = poolFactice({ candidats: [] });
+    const base = (m.pool as unknown as { query: (s: string, p?: unknown[]) => Promise<unknown> }).query;
+    (m.pool as unknown as { query: unknown }).query = vi.fn(async (s: string, p: unknown[] = []) => {
+      if (/from signals s\s+where s\.kind/i.test(s)) throw new TypeError('connexion postgresql://u:secret@hote/db');
+      return base(s, p);
+    });
+    await expect(traiterRetentionPurge(m.pool, identite)).rejects.toThrow(TypeError);
+    expect(statuts(m)).toEqual(['TypeError']);
+    expect(JSON.stringify(m.params)).not.toContain('secret');
+  });
+
+  it('une panne d ecriture du statut ne fait pas echouer la purge', async () => {
+    const m = poolFactice({ candidats: [] });
+    const base = (m.pool as unknown as { query: (s: string, p?: unknown[]) => Promise<unknown> }).query;
+    (m.pool as unknown as { query: unknown }).query = vi.fn(async (s: string, p: unknown[] = []) => {
+      if (/last_purge_at/i.test(s)) throw new Error('colonne absente');
+      return base(s, p);
+    });
+    await expect(traiterRetentionPurge(m.pool, identite)).resolves.toBeDefined();
   });
 });

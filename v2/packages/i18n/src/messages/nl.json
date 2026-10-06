@@ -1368,7 +1368,13 @@
         "tachesEnAttente": "Wachtende taken",
         "aucuneTache": "Geen",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}",
-        "linkedin": "LinkedIn"
+        "linkedin": "LinkedIn",
+        "purge": "Bewaartermijnopruiming",
+        "purgeOk": "Laatste run {quand}",
+        "purgeJamais": "Nog nooit gedraaid",
+        "purgeRetard": "Achterstallig: laatste run {quand}",
+        "purgeErreur": "Laatste run mislukt",
+        "purgeConsequence": "Verzamelde personen worden niet meer gewist op de datum die in Instellingen › LinkedIn wordt vermeld."
       },
       "pause": {
         "titre": "Algemene verzendpauze",

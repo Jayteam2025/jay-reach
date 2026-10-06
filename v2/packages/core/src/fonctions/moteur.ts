@@ -38,7 +38,24 @@ export const INTERVALLE_PRODUCTION_MS = 15 * 60_000;
 /** Passé ce délai sans tour enregistré, le moteur est considéré arrêté. */
 const SEUIL_SILENCE_MS = 15 * 60_000;
 
+/**
+ * Passé ce délai sans passage de la purge de rétention, elle est en retard. Le worker l'enfile
+ * toutes les heures (`RETENTION_PURGE_POLL_MS`, `apps/worker/src/index.ts`) : trois heures
+ * laissent passer un redémarrage, pas un arrêt. Dupliqué en dur, même motif que ci-dessus.
+ */
+const SEUIL_PURGE_EN_RETARD_MS = 3 * 60 * 60_000;
+
+/** La purge qui tient la promesse « effacées au bout de N jours » de Réglages › LinkedIn. */
+export interface EtatPurge {
+  dernierPassage: string | null;
+  /** Jamais passée, ou plus depuis trois heures : la durée de conservation annoncée n'est pas appliquée. */
+  enRetard: boolean;
+  /** Nom de l'erreur du dernier passage, `null` s'il a réussi. */
+  erreur: string | null;
+}
+
 export interface EtatMoteurResume {
+  purge: EtatPurge;
   enMarche: boolean;
   dernierPassage: string | null;
   prochainPassage: string | null;
@@ -51,6 +68,8 @@ interface LigneEngineStatus {
   version: string | null;
   last_tick_at: string | null;
   last_error: string | null;
+  last_purge_at: string | null;
+  last_purge_error: string | null;
 }
 
 /**
@@ -65,7 +84,7 @@ export async function lireEtatMoteur(ctx: Contexte, reglages?: { fuseau: number 
   const fuseau = String(reglagesResolus.fuseau);
   const [etatRes, erreursRes] = await Promise.all([
     ctx.ex.query<LigneEngineStatus>(
-      `select version, last_tick_at, last_error /* jr:engine_status */
+      `select version, last_tick_at, last_error, last_purge_at, last_purge_error /* jr:engine_status */
          from engine_status
         order by updated_at desc
         limit 1`,
@@ -95,7 +114,15 @@ export async function lireEtatMoteur(ctx: Contexte, reglages?: { fuseau: number 
   const enMarche = dernierPassage !== null && Date.now() - new Date(dernierPassage).getTime() < SEUIL_SILENCE_MS;
   const prochainPassage = dernierPassage ? new Date(new Date(dernierPassage).getTime() + INTERVALLE_TICK_MS).toISOString() : null;
 
+  const dernierePurge = ligne?.last_purge_at ?? null;
+  const purge: EtatPurge = {
+    dernierPassage: dernierePurge,
+    enRetard: dernierePurge === null || Date.now() - new Date(dernierePurge).getTime() > SEUIL_PURGE_EN_RETARD_MS,
+    erreur: ligne?.last_purge_error ?? null,
+  };
+
   return {
+    purge,
     enMarche,
     dernierPassage,
     prochainPassage,

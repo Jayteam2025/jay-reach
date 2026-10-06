@@ -112,6 +112,17 @@ export default async function ReglagesMoteurPage() {
           }
           tachesEnAttenteTexte={tachesEnAttenteTexte}
           linkedin={composerLigneLinkedIn(sessionLinkedin, tRacine, maintenant, fuseau)}
+          purge={(() => {
+            const quand = etat.purge.dernierPassage ? dateCourte(etat.purge.dernierPassage, maintenant, fuseau) : null;
+            const enAlerte = etat.purge.erreur !== null || etat.purge.enRetard;
+            const libelle =
+              etat.purge.erreur !== null
+                ? t('etat.purgeErreur')
+                : quand === null
+                  ? t('etat.purgeJamais')
+                  : t(etat.purge.enRetard ? 'etat.purgeRetard' : 'etat.purgeOk', { quand });
+            return { ton: enAlerte ? ('erreur' as const) : ('bon' as const), libelle, consequence: enAlerte ? t('etat.purgeConsequence') : null };
+          })()}
           libelles={{
             titre: t('etat.titre'),
             enMarche: t('etat.enMarche'),
@@ -125,6 +136,7 @@ export default async function ReglagesMoteurPage() {
             tachesEnAttente: t('etat.tachesEnAttente'),
             aucuneTache: t('etat.aucuneTache'),
             linkedin: t('etat.linkedin'),
+            purge: t('etat.purge'),
           }}
         />
         <PauseEnvoi

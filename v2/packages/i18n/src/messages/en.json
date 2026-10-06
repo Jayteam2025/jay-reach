@@ -1368,7 +1368,13 @@
         "tachesEnAttente": "Pending tasks",
         "aucuneTache": "None",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}",
-        "linkedin": "LinkedIn"
+        "linkedin": "LinkedIn",
+        "purge": "Retention purge",
+        "purgeOk": "Last run {quand}",
+        "purgeJamais": "Never run",
+        "purgeRetard": "Overdue: last run {quand}",
+        "purgeErreur": "Last run failed",
+        "purgeConsequence": "Collected people are no longer deleted on the date announced in Settings › LinkedIn."
       },
       "pause": {
         "titre": "Global sending pause",

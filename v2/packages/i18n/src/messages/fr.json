@@ -1368,7 +1368,13 @@
         "tachesEnAttente": "Tâches en attente",
         "aucuneTache": "Aucune",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}",
-        "linkedin": "LinkedIn"
+        "linkedin": "LinkedIn",
+        "purge": "Purge de rétention",
+        "purgeOk": "Dernier passage {quand}",
+        "purgeJamais": "Aucun passage",
+        "purgeRetard": "En retard : dernier passage {quand}",
+        "purgeErreur": "Échec au dernier passage",
+        "purgeConsequence": "Les personnes collectées ne sont plus effacées à la date annoncée dans Réglages › LinkedIn."
       },
       "pause": {
         "titre": "Pause d'envoi globale",

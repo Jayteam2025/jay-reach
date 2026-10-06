@@ -20,6 +20,7 @@
  */
 import type { Pool } from 'pg';
 import { RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
+import { enregistrerPurge, identiteDepuisEnvironnement, type IdentiteMoteur } from '../battement.js';
 import { ecarterEngageur, sqlPersonneContactee, type FragmentSql } from './post-engagement.js';
 
 /** Taille d'un passage. Le reste attend le suivant : mieux vaut lent qu'une transaction géante. */
@@ -30,6 +31,8 @@ export interface BilanPurge {
   readonly effaces: number;
   /** Candidats que la fonction qui détruit a refusés : doit rester à zéro, la sélection les exclut déjà. */
   readonly conserves: number;
+  /** Candidats déjà partis entre la sélection et l'effacement (un autre passage) : rien n'a été fait. */
+  readonly absents: number;
   /** Empreintes de la mémoire d'écart (`linkedin_engageurs_ecartes`) arrivées au terme de la même durée. */
   readonly memoiresEffacees: number;
 }
@@ -39,7 +42,7 @@ export async function purgerEngageursPerimes(
   jours: number = RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 ): Promise<BilanPurge> {
   // Une durée absurde n'efface rien : garder trop longtemps est réversible.
-  if (!Number.isFinite(jours) || jours <= 0) return { candidats: 0, effaces: 0, conserves: 0, memoiresEffacees: 0 };
+  if (!Number.isFinite(jours) || jours <= 0) return { candidats: 0, effaces: 0, conserves: 0, absents: 0, memoiresEffacees: 0 };
   const candidats = await pool.query<{ id: string; organization_id: string; juge: boolean }>(
     `select s.id, s.organization_id, (s.score is not null) as juge
        from signals s
@@ -54,13 +57,15 @@ export async function purgerEngageursPerimes(
   );
   let effaces = 0;
   let conserves = 0;
+  let absents = 0;
   for (const p of candidats.rows) {
     // `juge` : une personne déjà scorée garde sa mémoire d'écart (sinon le collecteur
     // la recréerait et la rescorerait, donc la repaierait). `compter: false` : le
     // passage qui l'a collectée est clos depuis des semaines.
     const issue = await ecarterEngageur(pool, p.organization_id, p.id, { juge: p.juge, compter: false });
     if (issue === 'efface') effaces += 1;
-    else conserves += 1;
+    else if (issue === 'conserve') conserves += 1;
+    else absents += 1;
   }
   // La mémoire d'écart a la MÊME borne : la phrase affichée aux personnes promet que
   // rien ne subsiste au-delà. Le coût d'une empreinte expirée est connu : la personne,
@@ -69,15 +74,30 @@ export async function purgerEngageursPerimes(
     `delete from linkedin_engageurs_ecartes where scored_at < now() - make_interval(days => $1)`,
     [jours],
   );
-  return { candidats: candidats.rows.length, effaces, conserves, memoiresEffacees: memoire.rowCount ?? 0 };
+  return { candidats: candidats.rows.length, effaces, conserves, absents, memoiresEffacees: memoire.rowCount ?? 0 };
 }
 
-/** Job `retention.purge` : consigne le bilan, jamais d'identité de personne. */
-export async function traiterRetentionPurge(pool: Pool): Promise<BilanPurge> {
-  const bilan = await purgerEngageursPerimes(pool);
+/**
+ * Job `retention.purge` : purge, puis écrit son passage (réussi ou non) dans `engine_status`,
+ * où l'écran Moteur le lit. Un échec est enregistré PUIS relancé : pg-boss rejoue le job.
+ * L'écriture du statut ne doit jamais masquer ni provoquer l'échec de la purge.
+ */
+export async function traiterRetentionPurge(pool: Pool, identite: IdentiteMoteur = identiteDepuisEnvironnement()): Promise<BilanPurge> {
+  let bilan: BilanPurge;
+  try {
+    bilan = await purgerEngageursPerimes(pool);
+  } catch (err) {
+    await enregistrerPurge(pool, identite, err instanceof Error ? err.name : 'Erreur').catch(() => {
+      console.error('[retention-purge] statut illisible pour l’écran (retention_purge_status)');
+    });
+    throw err;
+  }
+  await enregistrerPurge(pool, identite, null).catch(() => {
+    console.error('[retention-purge] statut illisible pour l’écran (retention_purge_status)');
+  });
   if (bilan.candidats > 0 || bilan.memoiresEffacees > 0) {
     console.log(
-      `[retention-purge] ${bilan.effaces} effacé(s), ${bilan.conserves} conservé(s) sur ${bilan.candidats} candidat(s), ${bilan.memoiresEffacees} empreinte(s) expirée(s)`,
+      `[retention-purge] ${bilan.effaces} effacé(s), ${bilan.conserves} conservé(s), ${bilan.absents} absent(s) sur ${bilan.candidats} candidat(s), ${bilan.memoiresEffacees} empreinte(s) expirée(s)`,
     );
   }
   return bilan;
