@@ -62,7 +62,11 @@ export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
 
 /**
  * Multiple du délai d'ancienneté pendant lequel un engageur qualifié est épargné
- * par la purge du seul fait que son contact porte un email.
+ * par la purge parce que NOUS avons acheté l'email de son contact. La fenêtre se
+ * compte depuis l'achat (`contacts.enriched_at`), pas depuis la collecte du
+ * signal : sinon la marge réelle dépendrait du retard de la file d'enrichissement
+ * — un contact enrichi au jour 25 à cause d'un plafond FullEnrich n'aurait plus
+ * que trois jours, ce qui n'a aucun rapport avec ce qu'on protège.
  *
  * Pourquoi une borne, et pas « toujours » : un contact qui a un email mais
  * AUCUNE inscription n'a jamais été contacté, il n'a donc aucun historique
@@ -73,16 +77,15 @@ export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
  * retirée de `entry_rules -> 'personas'`, score du signal sous `min_score`) :
  * ce n'est pas un cas de bord.
  *
- * Pourquoi DEUX fois, et pas une : la branche couvre la fenêtre entre
- * l'enrichissement (qui pose l'email) et le tick d'inscription, et
- * `occurred_at` d'un engageur vaut `now()` au moment de la COLLECTE, pas la
- * date du post — cette fenêtre se compte donc en heures, un seul délai la
- * couvrirait déjà. Le second délai est la marge : il laisse survivre un email
- * payé à FullEnrich pendant une pause de campagne de la durée du délai
- * lui-même, sans jamais rendre la rétention infinie.
+ * Pourquoi DEUX fois, et pas une : la fenêtre couvre une pause de campagne
+ * ordinaire survenant APRÈS l'achat — l'opérateur met sa campagne en pause, la
+ * reprend, et l'email payé est toujours là. Un seul délai ferait expirer l'achat
+ * en même temps que le signal lui-même, donc sans marge du tout.
  *
- * L'épargne par INSCRIPTION, elle, reste sans limite de temps : là, des
- * messages sont réellement partis.
+ * Deux autres épargnes n'ont PAS de borne, et c'est voulu : l'INSCRIPTION (des
+ * messages sont réellement partis) et l'email qui ne vient pas de nous
+ * (`enriched_at is null` : liste importée, contact migré de la v1 — voir
+ * `ecarterSignauxTropAnciens`).
  */
 export const FACTEUR_EPARGNE_EMAIL = 2;
 
@@ -99,8 +102,9 @@ export async function ecarterSignauxTropAnciens(
   // même chemin que l'écart du scoring. Les deux mises à jour ci-dessous les
   // excluent donc : un engageur QUALIFIÉ ancien est effacé lui aussi, AVEC mémoire
   // (il a été jugé), sans quoi il garderait indéfiniment nom, intitulé et adresse.
-  // Seul le contact qui a une inscription — ou un email encore récent, voir
-  // FACTEUR_EPARGNE_EMAIL — y échappe. La mémoire est par couple post-personne :
+  // Y échappent les contacts énumérés par les quatre branches ci-dessous : ceux
+  // qui ont une inscription, ceux qui préexistaient à l'engageur, et ceux dont
+  // l'email mérite encore d'être gardé. La mémoire est par couple post-personne :
   // elle ne l'empêche pas de revenir par un autre post.
   const personnes = await pool.query<{ id: string; organization_id: string }>(
     `select id, organization_id from signals
@@ -118,10 +122,20 @@ export async function ecarterSignauxTropAnciens(
            where ct.source_signal_id = s.id
              -- Déjà inscrit : épargné sans limite de temps, des messages sont partis.
              and (exists (select 1 from enrollments e where e.contact_id = ct.id)
-                  -- Un email sans inscription : épargné seulement le temps que
-                  -- l'inscription puisse encore venir (cf. FACTEUR_EPARGNE_EMAIL).
-                  or (ct.email is not null
-                      and s.occurred_at >= now() - make_interval(days => $2))))`,
+                  -- Le contact est ANTÉRIEUR au signal qui lui sert d'origine : il
+                  -- préexistait à l'engageur (liste importée, migration v1), et le
+                  -- rattachement n'a fait que combler son origine vide. Cette ligne
+                  -- n'est pas née de notre collecte, on ne l'efface pas — et
+                  -- l'effacer emporterait son appartenance à la liste. Un contact
+                  -- réellement créé par l'engageur est, lui, POSTÉRIEUR à son signal
+                  -- (enregistrerEngageur insère le signal puis le contact).
+                  or ct.created_at < s.occurred_at
+                  -- Email que NOUS avons acheté : la fenêtre court depuis l'achat.
+                  or (ct.enriched_at is not null
+                      and ct.enriched_at >= now() - make_interval(days => $2))
+                  -- Email qui ne vient pas de notre enrichissement : il a été fourni
+                  -- par l'opérateur, sa rétention lui appartient, pas à la purge.
+                  or (ct.email is not null and ct.enriched_at is null)))`,
     [maxJours, maxJours * FACTEUR_EPARGNE_EMAIL],
   );
   // `compter: false` : la personne est jugée (donc mémorisée), mais le passage qui
