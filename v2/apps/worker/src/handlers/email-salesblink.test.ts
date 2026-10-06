@@ -142,6 +142,8 @@ const ETAPE_POSITION = /from sequence_steps/i;
 // (`message-values.ts`) à chaque envoi, même porte que le tick — vide par
 // défaut (aucun pattern connu), surchargé par les tests qui en ont besoin.
 const DOMAIN_PATTERNS = /from domain_patterns/i;
+// Mention d'origine (tâche 11) : vide par défaut, le contact ne vient pas d'un engageur.
+const MENTION_ORIGINE = /as premiere_etape/i;
 const MARK_DISPATCHED = /mark_action_dispatched/i;
 const UPDATE_SUCCES = /update actions set provider_ref/i;
 const UPDATE_BLOQUE = /status = 'blocked'/i;
@@ -199,6 +201,7 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: CREDIT, repondre: () => ligne([{ ok: true }]) },
     { motif: INSCRIPTION, repondre: () => ligne([ligneInscription()]) },
     { motif: DOMAIN_PATTERNS, repondre: () => ligne([]) },
+    { motif: MENTION_ORIGINE, repondre: () => ligne([]) },
     {
       motif: TEMPLATE,
       repondre: () => ligne([{ id: 'gabarit-1', body: 'Bonjour {{prenom}}', subject: 'Objet {{prenom}}', name: 'Gabarit' }]),
@@ -930,6 +933,44 @@ describe('envoyerEmailSalesBlink', () => {
     const pause = appels.find((a) => UPDATE_ENROLLMENT_PAUSE.test(a.sql));
     expect(pause).toBeDefined();
     expect(pause!.values).toEqual([ENROLLMENT_ID, 0, 'salesblink_client_error']);
+  });
+});
+
+describe('mention d origine des engageurs LinkedIn', () => {
+  /** Envoie l'email d'un contact dont l'origine et l'étape sont fixées ; rend le corps parti. */
+  async function corpsEnvoye(origine: { premiere_etape: boolean; kind: string | null }, locale: string | null): Promise<string> {
+    const { pool } = creerPoolFactice(
+      avecBase(
+        { motif: MENTION_ORIGINE, repondre: () => ligne([origine]) },
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ locale })]) },
+        { motif: BINDING_SELECT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+      ),
+    );
+    const client = clientFactice();
+    await envoyerEmailSalesBlink({ pool }, jobEmail({ locale }), client);
+    const [, leads] = (client.pousserLeads as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Array<{ jr_body: string }>];
+    return leads[0]!.jr_body;
+  }
+
+  it('un contact ne d un post_engagement recoit la mention d origine en pied du premier email', async () => {
+    const corps = await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'fr');
+    expect(corps).toBe(
+      "<p>Bonjour Marie</p><p>Vous recevez ce message parce que vous avez réagi à une publication LinkedIn publique ou l'avez commentée. Vos coordonnées professionnelles proviennent de LinkedIn et de notre enrichissement de contacts. Pour vous opposer à ce traitement et ne plus être contacté, répondez simplement à ce message.</p>",
+    );
+  });
+
+  it('la mention sort dans la langue du contact, et en francais quand elle est inconnue', async () => {
+    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'en')).toContain('You are receiving this message');
+    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'nl')).toContain('U ontvangt dit bericht');
+    expect(await corpsEnvoye({ premiere_etape: true, kind: 'post_engagement' }, 'de')).toContain('Vous recevez ce message');
+  });
+
+  it('un contact ne d un signal d entreprise ne la recoit pas', async () => {
+    expect(await corpsEnvoye({ premiere_etape: true, kind: 'job_posting' }, 'fr')).toBe('<p>Bonjour Marie</p>');
+  });
+
+  it('une relance (etape au-dela de la position 0) ne la repete pas', async () => {
+    expect(await corpsEnvoye({ premiere_etape: false, kind: 'post_engagement' }, 'fr')).toBe('<p>Bonjour Marie</p>');
   });
 });
 

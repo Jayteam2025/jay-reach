@@ -28,7 +28,7 @@ export type Engageur = {
   urlProfil?: string;
 };
 
-export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte';
+export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte' | 'supprime';
 
 /**
  * Validation à l'entrée : un `urn` vide donnerait la même adresse de profil à
@@ -110,6 +110,22 @@ export async function enregistrerEngageur(
   const externalId = `${normaliserUrlPost(urlPost)}:${engageur.urn}`;
   const url = lienProfil(engageur);
   const membre = identifiantMembre(engageur.urn);
+
+  // 0) Sur la liste de suppression : refusé DÈS LA COLLECTE, sur l'adresse de profil.
+  //    Ne pas attendre l'envoi : la personne a demandé à ne plus être contactée,
+  //    la garder (nom, intitulé, adresse), la scorer et l'enrichir (un achat) serait
+  //    encore la traiter. Les deux formes de l'adresse (fournie, déduite de l'URN)
+  //    sont testées, et la casse ne compte pas.
+  const formes = [...new Set([url, lienProfilDeduit(engageur.urn)].map((u) => u.toLowerCase()))];
+  const supprime = await pool.query(
+    `select 1 as one from suppressions
+      where organization_id = $1 and scope = 'linkedin'
+        and (expires_at is null or expires_at > now())
+        and lower(value) = any($2::text[])
+      limit 1`,
+    [org, formes],
+  );
+  if (supprime.rows.length > 0) return 'supprime';
 
   // 1) Déjà écarté par le scoring : ni recréé, ni rescoré, donc jamais repayé.
   const ecarte = await pool.query(
@@ -225,6 +241,31 @@ export async function enregistrerEngageur(
 }
 
 /**
+ * « Cette personne a été contactée à cause de cet engageur », en SQL : une
+ * expression booléenne, partagée par la purge (qui l'exclut de sa sélection) et par
+ * `ecarterEngageur` (qui refuse de détruire). Une seule définition : deux copies
+ * auraient fini par diverger, et la divergence se paie par une personne effacée.
+ *
+ * Contactée = une inscription portée par le signal, ou une inscription / un fil de
+ * messages sur le contact NÉ de cet engageur. Un contact ANTÉRIEUR au signal (liste
+ * importée, migration v1) n'en est pas né : il a été contacté pour une autre
+ * raison, sa fiche est protégée plus bas (le détachement), le signal peut partir.
+ *
+ * @param org      expression SQL de l'organisation (`$1`, `s.organization_id`)
+ * @param signal   expression SQL de l'id du signal
+ * @param occurred expression SQL de la date du signal
+ */
+export function sqlPersonneContactee(org: string, signal: string, occurred: string): string {
+  return `(
+         exists (select 1 from enrollments en where en.organization_id = ${org} and en.signal_id = ${signal})
+         or exists (select 1 from contacts c join enrollments en on en.contact_id = c.id
+                     where c.organization_id = ${org} and c.source_signal_id = ${signal} and c.created_at >= ${occurred})
+         or exists (select 1 from contacts c join threads t on t.contact_id = c.id
+                     where c.organization_id = ${org} and c.source_signal_id = ${signal} and c.created_at >= ${occurred})
+       )`;
+}
+
+/**
  * Efface un engageur : son signal et le contact né de ce signal. On ne garde pas
  * de données personnelles sur ce qui ne sert pas.
  *
@@ -245,6 +286,10 @@ export async function enregistrerEngageur(
  * Les écritures se font dans UNE transaction : une coupure ne laisse ni un
  * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse.
  *
+ * Une personne CONTACTÉE (inscription ou fil de messages) n'est jamais effacée :
+ * la fonction rend alors `'conserve'` et ne détruit rien (voir la garde en tête
+ * de la transaction). Elle rend `'efface'` sinon.
+ *
  * L'effacement du contact est GARDÉ (voir le `delete` ci-dessous) : seule une
  * fiche que cet engageur a réellement créée part. Une fiche qui préexistait, qui
  * appartient à une liste importée, ou à qui on a déjà écrit, est conservée et
@@ -255,10 +300,37 @@ export async function ecarterEngageur(
   organizationId: string,
   signalId: string,
   opts: { juge?: boolean; compter?: boolean } = {},
-): Promise<void> {
+): Promise<'efface' | 'conserve'> {
   const juge = opts.juge ?? true;
   const compter = opts.compter ?? juge;
-  await dansUneTransaction(pool as unknown as Executeur, async (tx) => {
+  return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<'efface' | 'conserve'> => {
+    // GARDE DE SÛRETÉ, ICI et non chez l'appelant : une personne à qui on a écrit
+    // (inscription, ou fil de messages) n'est jamais effacée. Garder une ligne
+    // trop longtemps se répare, l'effacer non. Le signal est alors seulement
+    // marqué écarté s'il attendait encore son jugement, pour que le scoring ne le
+    // reprenne pas (et ne le repaie pas) à chaque cycle ; le contact n'est pas
+    // touché, il garde son origine.
+    const contacte = await tx.query<{ contacte: boolean }>(
+      `select ${sqlPersonneContactee('$1', '$2', '(select occurred_at from signals where id = $2)')} as contacte`,
+      [organizationId, signalId],
+    );
+    if (contacte.rows[0]?.contacte === true) {
+      if (juge) {
+        await tx.query(
+          `insert into linkedin_engageurs_ecartes (organization_id, external_id)
+           select organization_id, external_id from signals
+            where id = $2 and organization_id = $1 and kind = 'post_engagement'
+           on conflict do nothing`,
+          [organizationId, signalId],
+        );
+      }
+      await tx.query(
+        `update signals set status = 'discarded', discard_reason = 'contacted', scored_at = coalesce(scored_at, now())
+          where id = $2 and organization_id = $1 and kind = 'post_engagement' and status = 'new'`,
+        [organizationId, signalId],
+      );
+      return 'conserve';
+    }
     if (juge) {
       await tx.query(
         `insert into linkedin_engageurs_ecartes (organization_id, external_id)
@@ -311,5 +383,6 @@ export async function ecarterEngageur(
         [runId, organizationId],
       );
     }
+    return 'efface';
   });
 }

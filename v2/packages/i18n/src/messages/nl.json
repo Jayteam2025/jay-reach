@@ -1698,5 +1698,8 @@
       "missingEmail": "Zonder e-mail",
       "submit": "{n} contacten importeren"
     }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "U ontvangt dit bericht omdat u hebt gereageerd op een openbare LinkedIn-publicatie of erop hebt gereageerd met een opmerking. Uw professionele gegevens komen van LinkedIn en van onze contactverrijking. Om bezwaar te maken tegen deze verwerking en niet langer gecontacteerd te worden, antwoordt u gewoon op dit bericht."
   }
 }

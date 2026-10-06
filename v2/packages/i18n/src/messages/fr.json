@@ -1698,5 +1698,8 @@
       "missingEmail": "Sans email",
       "submit": "Importer {n} contacts"
     }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "Vous recevez ce message parce que vous avez réagi à une publication LinkedIn publique ou l'avez commentée. Vos coordonnées professionnelles proviennent de LinkedIn et de notre enrichissement de contacts. Pour vous opposer à ce traitement et ne plus être contacté, répondez simplement à ce message."
   }
 }

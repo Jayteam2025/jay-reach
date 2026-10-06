@@ -82,7 +82,10 @@ interface CandidateRow {
 async function markDiscarded(pool: Pool, org: string, c: CandidateRow, reason: string): Promise<void> {
   const id = c.id;
   // Une personne écartée s'efface avec son contact : ne reste que sa mémoire d'écart.
-  if (c.kind === 'post_engagement') return ecarterEngageur(pool, org, id, { juge: false });
+  if (c.kind === 'post_engagement') {
+    await ecarterEngageur(pool, org, id, { juge: false });
+    return;
+  }
   await pool.query(
     `update public.signals
         set status = 'discarded', discard_reason = $2, scored_at = now()
@@ -101,7 +104,10 @@ async function persistScore(
   discardReason: string | null,
 ): Promise<void> {
   const id = c.id;
-  if (status === 'discarded' && c.kind === 'post_engagement') return ecarterEngageur(pool, org, id);
+  if (status === 'discarded' && c.kind === 'post_engagement') {
+    await ecarterEngageur(pool, org, id);
+    return;
+  }
   await pool.query(
     `update public.signals
         set score = $2, score_reason = $3, status = $4, discard_reason = $5, scored_at = now()

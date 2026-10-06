@@ -30,12 +30,16 @@ COPY packages/providers/package.json packages/providers/
 COPY apps/worker/package.json apps/worker/
 RUN pnpm install --frozen-lockfile --filter @jay-reach/worker...
 
-# Seuls les trois paquets dont le worker dépend. `ui` et `i18n` servent au
-# front : les construire ici allongerait l'image et la ferait échouer sur des
+# Seuls les trois paquets dont le worker dépend (et les JSON de `i18n`, voir plus
+# bas). `ui` et `i18n` servent au front : les construire ici allongerait l'image et la ferait échouer sur des
 # outils qu'elle n'a aucune raison d'embarquer.
 COPY packages/core packages/core
 COPY packages/db packages/db
 COPY packages/providers packages/providers
+# Les catalogues de messages, seuls : le worker n'en lit que la mention d'origine
+# des engageurs LinkedIn (`mention-origine.ts`), que esbuild embarque dans son
+# bundle. Le paquet `i18n` lui-même n'est ni installé ni construit ici.
+COPY packages/i18n/src/messages packages/i18n/src/messages
 COPY apps/worker apps/worker
 RUN pnpm --filter @jay-reach/core --filter @jay-reach/db --filter @jay-reach/providers build \
  && pnpm --filter @jay-reach/worker build

@@ -438,6 +438,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, config.urlPost);
       if (issue === 'nouveau') bilan.nouveaux += 1;
       else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
+      else if (issue === 'supprime') bilan.ignores += 1; // sur la liste de suppression : laissée de côté
       else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
     }
 

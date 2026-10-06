@@ -1698,5 +1698,8 @@
       "missingEmail": "Without email",
       "submit": "Import {n} contacts"
     }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "You are receiving this message because you reacted to or commented on a public LinkedIn post. Your professional details come from LinkedIn and from our contact enrichment. To object to this processing and stop being contacted, simply reply to this message."
   }
 }

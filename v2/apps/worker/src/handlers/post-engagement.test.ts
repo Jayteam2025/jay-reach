@@ -38,7 +38,7 @@ interface Contact {
  * ne prouve que l'enchaînement des décisions : le SQL lui-même est exécuté sur
  * Postgres par test/pg-verify/linkedin-chemin-personne.sh.
  */
-function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: string[]; enrolledMembres?: string[] } = {}) {
+function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: string[]; enrolledMembres?: string[]; supprimes?: string[] } = {}) {
   const etat = {
     contacts: [...(init.contacts ?? [])],
     signals: new Map<string, string>(), // external_id -> id
@@ -53,6 +53,12 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
   let n = 0;
   const query = vi.fn(async (sql: string, p: unknown[] = []) => {
     etat.sql.push(sql);
+    if (/from suppressions/i.test(sql)) {
+      const formes = p[1] as string[];
+      return { rows: formes.some((f) => (init.supprimes ?? []).includes(f)) ? [{ one: 1 }] : [], rowCount: 0 };
+    }
+    // Garde de `ecarterEngageur` : personne contactée ? Ici, jamais (le modèle n'inscrit pas).
+    if (/as contacte/i.test(sql)) return { rows: [{ contacte: false }], rowCount: 1 };
     if (/from linkedin_engageurs_ecartes/i.test(sql)) {
       return { rows: etat.ecartes.has(String(p[1])) ? [{ one: 1 }] : [], rowCount: 0 };
     }
@@ -255,6 +261,24 @@ describe('normalisation et adresse de profil', () => {
     const e: Engageur = { ...ALICE, urlProfil: 'HTTPS://fr.linkedin.com/in/alice-martin-123/?trk=x' };
     await enregistrerEngageur(ctxDe(m.pool), e, CAMPAGNE, URL_POST);
     expect(m.etat.contacts[0]?.linkedin_url).toBe('https://www.linkedin.com/in/alice-martin-123');
+  });
+});
+
+describe('liste de suppression', () => {
+  it('la liste de suppression est consultee des la collecte, sur linkedin_url', async () => {
+    const e: Engageur = { ...ALICE, urlProfil: 'https://www.linkedin.com/in/alice-martin-123' };
+    // La valeur est écrite avec une autre casse : elle compte pour la même personne.
+    const m = modele({ supprimes: ['https://www.linkedin.com/in/alice-martin-123'] });
+    const r = await enregistrerEngageur(ctxDe(m.pool), e, CAMPAGNE, URL_POST);
+    expect(r).toBe('supprime');
+    // Ni signal, ni contact : rien n'est gardé, scoré ni enrichi.
+    expect(m.etat.insertsSignal).toBe(0);
+    expect(m.etat.insertsContact).toBe(0);
+  });
+
+  it('une personne absente de la liste est collectee normalement', async () => {
+    const m = modele({ supprimes: ['https://www.linkedin.com/in/quelquun-d-autre'] });
+    expect(await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST)).toBe('nouveau');
   });
 });
 

@@ -73,6 +73,7 @@ import {
   traiterCollecteLinkedIn,
   type CollecteLinkedInJob,
 } from './handlers/collecte-linkedin.js';
+import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
@@ -106,6 +107,7 @@ export const FILES_BRANCHEES = [
   'inbox.sync',
   'inbox.sync_graph',
   'linkedin.collecte',
+  'retention.purge',
 ] as const;
 
 const FULLENRICH_PROVIDER = 'fullenrich';
@@ -802,6 +804,9 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return;
     case 'linkedin.collecte':
       return traiterCollecteLinkedIn(dependancesCollecteReelles(ctx.pool), donnees as CollecteLinkedInJob);
+    case 'retention.purge':
+      await traiterRetentionPurge(ctx.pool);
+      return;
     default:
       // File déclarée mais sans traitement : on ne la laisse pas s'accumuler.
       return;
