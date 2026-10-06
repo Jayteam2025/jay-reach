@@ -6,7 +6,7 @@
  * contacts (+ colonnes email/email_status/email_confidence) du cahier des charges.
  */
 import type { Pool } from 'pg';
-import { normaliserUrlProfil } from './handlers/post-engagement.js';
+import { normaliserUrlProfil } from '@jay-reach/core';
 
 /**
  * Verdict de délivrabilité stocké dans `contacts.email_status`, et lu par le gate.

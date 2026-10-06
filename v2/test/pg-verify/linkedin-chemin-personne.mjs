@@ -26,6 +26,7 @@ import {
   ecarterSignauxTropAnciens,
   enqueueEnrollments,
   enregistrerEngageur,
+  importerCsv,
   persistEnrichedContact,
   runScore,
 } from './_linkedin-chemin-personne-bundle.mjs';
@@ -457,6 +458,76 @@ async function atomicite() {
   check('45c. panne retirée, le même appel aboutit (mémoire posée, contact et signal effacés)', fin.memoire === 1 && fin.contacts === 0 && fin.signaux === 0, JSON.stringify(fin));
 }
 
+/**
+ * L'index unique des adresses LinkedIn est posé par CETTE tâche : l'import de
+ * fichier, qui l'ignorait, tombait sur un 23505 dès qu'une personne du fichier
+ * était déjà connue comme engageur. Ici, le vrai `importerCsv` est exécuté.
+ */
+async function importCsv() {
+  console.log('import de fichier face à l’index des adresses LinkedIn');
+  const m = await monde();
+  const ctx = { ex: pool, organisationId: m.org, utilisateurId: m.admin, role: 'admin' };
+  const importer = (lignes, nom = 'Liste') =>
+    importerCsv(ctx, {
+      campagneId: m.campagne,
+      nom,
+      fileName: 'liste.csv',
+      parsed: { headers: ['Prenom', 'Nom', 'Email', 'LinkedIn'], rows: lignes },
+      mapping: { Prenom: 'first_name', Nom: 'last_name', Email: 'email', LinkedIn: 'linkedin_url' },
+    });
+
+  // Une personne déjà collectée comme engageur, reprise dans un fichier.
+  await enregistrer(m, eng('csv', 'Carla Sieve', 'Directrice commerciale'));
+  const avant = (await q(`select id, source_signal_id, enriched_at from contacts where organization_id=$1 and first_name='Carla'`, [m.org])).rows[0];
+  const r1 = await erreur(importer([{ Prenom: 'Carla', Nom: 'Sieve', Email: 'carla@acme.fr', LinkedIn: 'https://www.linkedin.com/in/ACoAAcsv' }]));
+  check('46. import d’une personne déjà connue comme engageur : aboutit (plus de 23505)', r1 === null, String(r1));
+  const ap = (await q(`select count(*)::int n, min(id::text) id, min(email) email, count(source_list_id)::int listes, count(enriched_at)::int enrichis, min(source_signal_id::text) sig from contacts where organization_id=$1 and first_name='Carla'`, [m.org])).rows[0];
+  check('46a. une seule fiche, rattachée à la liste, email du fichier posé', ap.n === 1 && ap.id === avant.id && ap.listes === 1 && ap.email === 'carla@acme.fr', JSON.stringify(ap));
+  check('46b. son origine est préservée, et l’email du fichier n’est PAS un email acheté (enriched_at nul)', ap.sig === avant.source_signal_id && ap.enrichis === 0, JSON.stringify(ap));
+  const membre = (await q(`select count(*)::int n from list_members lm join contacts c on c.id = lm.contact_id where c.organization_id=$1 and c.first_name='Carla'`, [m.org])).rows[0].n;
+  check('46c. le contact est bien membre de la liste importée', membre === 1, String(membre));
+
+  // Même personne, autre graphie, et SANS email dans le fichier : seule la forme
+  // canonique peut la retrouver. Avec un email, le conflit sur l'email suffirait et
+  // le contrôle passerait pour une autre raison que celle qu'il annonce.
+  await enregistrer(m, eng('graphie', 'Gina Graphie', 'Directrice commerciale'));
+  await importer([{ Prenom: 'Gina', Nom: 'Graphie', Email: '', LinkedIn: 'https://fr.linkedin.com/in/ACoAAgraphie/?trk=partage' }], 'Liste 2');
+  const g = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Gina'`, [m.org])).rows[0];
+  check('46d. une autre graphie de la même adresse ne crée PAS de seconde fiche', g.n === 1 && g.listes === 1, JSON.stringify(g));
+
+  // L'email du fichier appartient déjà à une autre fiche : on rattache sans fusionner.
+  await enregistrer(m, eng('pris', 'Paul Pris', 'Directeur commercial'));
+  await q(`insert into contacts (organization_id, first_name, email) values ($1,'Autre','pris@acme.fr')`, [m.org]);
+  const r2 = await erreur(importer([{ Prenom: 'Paul', Nom: 'Pris', Email: 'pris@acme.fr', LinkedIn: 'https://www.linkedin.com/in/ACoAApris' }], 'Liste 3'));
+  const pp = (await q(`select count(*)::int n, min(email) email, count(source_list_id)::int listes from contacts where organization_id=$1 and first_name='Paul'`, [m.org])).rows[0];
+  check('46e. email déjà porté par une autre fiche : l’import aboutit, rattache, et ne fusionne pas', r2 === null && pp.n === 1 && pp.email === null && pp.listes === 1, `${r2} ${JSON.stringify(pp)}`);
+
+  // La COURSE, pour de vrai : une transaction concurrente insère la fiche entre la
+  // recherche de l'import et son insertion. L'import doit la rattraper, pas tomber.
+  const urlCourse = 'https://www.linkedin.com/in/ACoAAcourse';
+  const concurrent = await pool.connect();
+  let r3;
+  try {
+    await concurrent.query('begin');
+    await concurrent.query(`insert into contacts (organization_id, first_name, linkedin_url) values ($1,'Rosa',$2)`, [m.org, urlCourse]);
+    // L'import ne voit rien (transaction non validée), puis son insertion attend le verrou.
+    const promesse = erreur(importer([{ Prenom: 'Rosa', Nom: 'Course', Email: 'rosa@acme.fr', LinkedIn: urlCourse }], 'Liste 4'));
+    await new Promise((r) => setTimeout(r, 400));
+    await concurrent.query('commit');
+    r3 = await promesse;
+  } finally {
+    await concurrent.query('rollback').catch(() => {});
+    concurrent.release();
+  }
+  const rr = (await q(`select count(*)::int n, count(source_list_id)::int listes from contacts where organization_id=$1 and linkedin_url=$2`, [m.org, urlCourse])).rows[0];
+  check('47. course : la fiche naît entre la recherche et l’insertion — l’import la rattrape, une seule fiche, rattachée', r3 === null && rr.n === 1 && rr.listes === 1, `${r3} ${JSON.stringify(rr)}`);
+
+  // Non-régression : une personne inconnue est bien créée.
+  const r4 = await erreur(importer([{ Prenom: 'Neuf', Nom: 'Venu', Email: 'neuf@acme.fr', LinkedIn: 'https://www.linkedin.com/in/neuf-venu' }], 'Liste 5'));
+  const nv = (await q(`select count(*)::int n, min(linkedin_url) u from contacts where organization_id=$1 and first_name='Neuf'`, [m.org])).rows[0];
+  check('48. une personne inconnue du fichier est créée, avec son adresse sous forme canonique', r4 === null && nv.n === 1 && nv.u === 'https://www.linkedin.com/in/neuf-venu', `${r4} ${JSON.stringify(nv)}`);
+}
+
 async function rls() {
   console.log('rls de linkedin_engageurs_ecartes (sous le rôle authenticated)');
   const A = await monde();
@@ -488,6 +559,7 @@ try {
   await sansConsigne();
   await entreprise();
   await enrichissement();
+  await importCsv();
   await atomicite();
   await rls();
 } catch (e) {

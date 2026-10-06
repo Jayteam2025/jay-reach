@@ -4,3 +4,4 @@ export { ecarterEngageur, enregistrerEngageur } from '../../apps/worker/src/hand
 export { compterSignauxScorables, runScore } from '../../apps/worker/src/handlers/score.js';
 export { persistEnrichedContact } from '../../apps/worker/src/enrichment-persist.js';
 export { ecarterSignauxTropAnciens, enqueueEnrollments } from '../../apps/worker/src/producer.js';
+export { importerCsv } from '@jay-reach/core';

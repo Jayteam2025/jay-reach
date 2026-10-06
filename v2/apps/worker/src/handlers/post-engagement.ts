@@ -14,7 +14,7 @@
  */
 import type { Pool } from 'pg';
 import { z } from 'zod';
-import { dansUneTransaction, normaliserUrlPost, type Executeur } from '@jay-reach/core';
+import { dansUneTransaction, normaliserUrlPost, normaliserUrlProfil, type Executeur } from '@jay-reach/core';
 
 export type Engageur = {
   urn: string;
@@ -80,23 +80,9 @@ export function lienProfilDeduit(urn: string): string {
   return `https://www.linkedin.com/in/${identifiantMembre(urn)}`;
 }
 
-/**
- * Forme canonique d'une adresse de profil fournie (hôte `www.linkedin.com`, sans
- * paramètres, ancre ni barre finale), pour que deux écritures de la même adresse
- * soient reconnues par l'index unique. Une adresse qui n'est pas un profil
- * LinkedIn est refusée (null) : elle ne doit pas devenir l'identité d'un contact.
- */
-export function normaliserUrlProfil(url: string): string | null {
-  try {
-    const u = new URL(url.trim());
-    const hote = u.hostname.toLowerCase();
-    if (hote !== 'linkedin.com' && !hote.endsWith('.linkedin.com')) return null;
-    const m = /^\/in\/([^/]+)/.exec(u.pathname);
-    return m?.[1] ? `https://www.linkedin.com/in/${m[1]}` : null;
-  } catch {
-    return null;
-  }
-}
+// `normaliserUrlProfil` vit dans le cœur : les trois chemins qui écrivent une
+// adresse de profil (ce collecteur, l'enrichissement, l'import de fichier)
+// doivent s'accorder sur la même forme, sinon la même personne existe deux fois.
 
 /** L'adresse fournie quand elle est exploitable, le repli déduit sinon. */
 export function lienProfil(engageur: Pick<Engageur, 'urn' | 'urlProfil'>): string {
