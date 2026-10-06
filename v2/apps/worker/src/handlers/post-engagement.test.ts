@@ -60,7 +60,9 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       const id = etat.signals.get(String(p[1]));
       return { rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 };
     }
-    if (/from enrollments/i.test(sql)) {
+    // Ancré sur `select` : `ecarterEngageur` nomme `enrollments` dans une
+    // sous-requête de son `delete`, qui ne doit pas tomber ici.
+    if (/^\s*select[\s\S]*from enrollments/i.test(sql)) {
       return { rows: etat.enrolled.has(String(p[1])) || etat.enrolledMembres.has(String(p[3])) ? [{ one: 1 }] : [], rowCount: 0 };
     }
     if (/insert into signals/i.test(sql)) {
@@ -72,6 +74,11 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
     if (/^\s*select[\s\S]*from contacts/i.test(sql)) {
       const c = etat.contacts.find((x) => x.linkedin_url === p[1] || (p[2] && x.linkedin_provider_id === p[2]));
       return { rows: c ? [{ id: c.id, source_signal_id: c.source_signal_id }] : [], rowCount: c ? 1 : 0 };
+    }
+    // Détachement des survivants de `ecarterEngageur` : l'inverse du rattachement.
+    if (/update contacts set source_signal_id = null/i.test(sql)) {
+      for (const c of etat.contacts) if (c.source_signal_id === p[1]) c.source_signal_id = null;
+      return { rows: [], rowCount: 1 };
     }
     if (/update contacts/i.test(sql)) {
       const c = etat.contacts.find((x) => x.id === p[1]);

@@ -19,6 +19,7 @@
 // NB : retirer `where linkedin_url is not null` de l'index des contacts ne fait
 // PAS rougir le test 4 : Postgres traite les NULL comme distincts dans un index
 // unique, la clause est donc de l'hygiène (index plus petit), pas une garantie.
+import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import {
   compterSignauxScorables,
@@ -363,6 +364,66 @@ async function purgeEtRegression() {
   check('44. une autre graphie de l’adresse retrouve le contact de l’engageur', zz === 1 && id !== null, `n=${zz}`);
 }
 
+/**
+ * La garde vit dans `ecarterEngageur`, donc elle vaut pour TOUS ses appelants.
+ * Portée par le `select` de la purge, elle ne protégeait que celle-ci : le
+ * scoring et la purge des `new` effaçaient la fiche d'un opérateur sans condition.
+ */
+async function gardeDeLEffacement() {
+  console.log('ecarterEngageur : seule une fiche née de cet engageur est effacée');
+
+  // Odile : importée par l'opérateur (liste), séquence TERMINÉE — `completed` n'est
+  // pas un statut vivant, donc l'étape 3 ne rend pas `deja_en_campagne` — et sans
+  // origine, que le rattachement comble. Le scoring la juge hors ICP.
+  const m = await monde();
+  const liste = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1,'Salon','Contacts du salon','import') returning id`, [m.org])).rows[0].id;
+  const odile = (await q(
+    `insert into contacts (organization_id, first_name, email, linkedin_url, source_list_id, created_at)
+     values ($1,'Odile','odile@acme.fr','https://www.linkedin.com/in/ACoAAodile',$2, now() - interval '60 days') returning id`,
+    [m.org, liste],
+  )).rows[0].id;
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'completed')`, [m.org, m.campagne, odile]);
+  await q(`insert into list_members (list_id, contact_id, raw_row) values ($1,$2,'{}'::jsonb)`, [liste, odile]);
+  await enregistrer(m, { ...eng('odile', 'Odile Ancienne', 'Plombière'), urlProfil: 'https://www.linkedin.com/in/ACoAAodile' });
+  const r = await runScore({ pool, organizationId: m.org, scorer });
+  const o = (await q(
+    `select (select count(*)::int from contacts where id=$2) c,
+            (select count(*)::int from list_members where contact_id=$2) lm,
+            (select count(*)::int from enrollments where contact_id=$2) e,
+            (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAodile') s,
+            (select source_signal_id from contacts where id=$2) orig`, [m.org, odile])).rows[0];
+  check('49. écartée par le SCORING : la fiche importée survit, avec sa liste et son historique', r.discarded === 1 && o.c === 1 && o.lm === 1 && o.e === 1, `${JSON.stringify(r)} ${JSON.stringify(o)}`);
+  check('49a. son signal est bien parti, et elle en est détachée', o.s === 0 && o.orig === null, JSON.stringify(o));
+
+  // Le même cas par la purge des `new` : le scoring n'a jamais tourné (c'est arrivé
+  // pour de vrai, scoring à 0 dans les trois organisations), 14 jours passent.
+  const p = await monde();
+  const liste2 = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1,'Salon','Contacts du salon','import') returning id`, [p.org])).rows[0].id;
+  const oscar = (await q(
+    `insert into contacts (organization_id, first_name, email, linkedin_url, source_list_id, created_at)
+     values ($1,'Odilon','odilon@acme.fr','https://www.linkedin.com/in/ACoAAodilon',$2, now() - interval '60 days') returning id`,
+    [p.org, liste2],
+  )).rows[0].id;
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'replied')`, [p.org, p.campagne, oscar]);
+  await enregistrer(p, { ...eng('odilon', 'Odilon Ancien', 'Plombier'), urlProfil: 'https://www.linkedin.com/in/ACoAAodilon' });
+  await q(`update signals set occurred_at = now() - interval '30 days' where organization_id=$1`, [p.org]);
+  await ecarterSignauxTropAnciens(pool, 14);
+  const d = (await q(
+    `select (select count(*)::int from contacts where id=$2) c,
+            (select count(*)::int from enrollments where contact_id=$2) e,
+            (select count(*)::int from signals where organization_id=$1) s,
+            (select source_signal_id from contacts where id=$2) orig`, [p.org, oscar])).rows[0];
+  check('50. écartée par la PURGE des `new` : la fiche importée survit, son historique aussi', d.c === 1 && d.e === 1, JSON.stringify(d));
+  check('50a. son signal est parti, et elle en est détachée', d.s === 0 && d.orig === null, JSON.stringify(d));
+
+  // Contrepartie : une personne réellement née de l'engageur part toujours.
+  const n = await monde();
+  await enregistrer(n, eng('nee', 'Nina Nee', 'Plombière'));
+  const rn = await runScore({ pool, organizationId: n.org, scorer });
+  const nn = (await q(`select (select count(*)::int from contacts where organization_id=$1) c, (select count(*)::int from signals where organization_id=$1) s`, [n.org])).rows[0];
+  check('51. une fiche réellement née de l’engageur est bien effacée (la garde ne bloque pas le cas normal)', rn.discarded === 1 && nn.c === 0 && nn.s === 0, JSON.stringify(nn));
+}
+
 async function sansConsigne() {
   console.log('persona sans consigne : rien n’est crédité, rien n’est jugé');
   const m = await monde({ avecPrompt: false });
@@ -541,6 +602,41 @@ async function importCsv() {
   check('48. une personne inconnue du fichier est créée, avec son adresse sous forme canonique', r4 === null && nv.n === 1 && nv.u === 'https://www.linkedin.com/in/neuf-venu', `${r4} ${JSON.stringify(nv)}`);
 }
 
+/**
+ * La migration de normalisation de l'existant, lue dans son fichier et rejouée :
+ * c'est le SQL livré qui est exécuté, pas une copie. Le conteneur l'a déjà
+ * appliquée sur une base vide — ici elle a de quoi travailler.
+ */
+async function migrationAdresses() {
+  console.log('migration : les adresses déjà en base passent à la forme canonique');
+  const chemin = new URL('../../supabase/migrations/20261005130320_linkedin_url_canonique.sql', import.meta.url);
+  const sql = await readFile(chemin, 'utf8');
+  const m = await monde();
+  const ct = (nom, url) => q(`insert into contacts (organization_id, first_name, linkedin_url) values ($1,$2,$3)`, [m.org, nom, url]);
+  await ct('Sans', 'https://linkedin.com/in/sans-www');
+  await ct('Barre', 'https://www.linkedin.com/in/barre-finale/');
+  await ct('Pays', 'https://fr.linkedin.com/in/sous-domaine?trk=x');
+  await ct('Societe', 'https://www.linkedin.com/company/acme');
+  // Deux fiches qui CONVERGENT : sans précaution, la migration tomberait sur
+  // l'index unique. Une organisation voisine porte le même cas, pour vérifier
+  // que la normalisation ne déborde pas d'une organisation à l'autre.
+  await ct('Jumelle1', 'https://linkedin.com/in/jumelle');
+  await ct('Jumelle2', 'https://www.linkedin.com/in/jumelle/');
+  const voisine = await monde();
+  await q(`insert into contacts (organization_id, first_name, linkedin_url) values ($1,'Ailleurs','https://linkedin.com/in/jumelle')`, [voisine.org]);
+
+  const e = await erreur(q(sql));
+  check('52. la migration s’applique sans tomber, malgré deux fiches qui convergent', e === null, String(e?.message));
+  const lu = async (nom) => (await q(`select linkedin_url u from contacts where organization_id=$1 and first_name=$2`, [m.org, nom])).rows[0]?.u;
+  check('52a. l’adresse sans « www. » est ramenée à la forme canonique', (await lu('Sans')) === 'https://www.linkedin.com/in/sans-www', await lu('Sans'));
+  check('52b. la barre finale est retirée', (await lu('Barre')) === 'https://www.linkedin.com/in/barre-finale', await lu('Barre'));
+  check('52c. sous-domaine de pays et paramètre de partage : forme canonique', (await lu('Pays')) === 'https://www.linkedin.com/in/sous-domaine', await lu('Pays'));
+  check('52d. ce qui n’est pas un profil n’est pas touché', (await lu('Societe')) === 'https://www.linkedin.com/company/acme', await lu('Societe'));
+  const j = (await q(`select count(*)::int n, count(distinct linkedin_url)::int d, count(*) filter (where linkedin_url = 'https://www.linkedin.com/in/jumelle')::int canon from contacts where organization_id=$1 and first_name like 'Jumelle%'`, [m.org])).rows[0];
+  check('52e. deux fiches qui convergent : une seule prend l’adresse canonique, l’autre garde la sienne', j.n === 2 && j.d === 2 && j.canon === 1, JSON.stringify(j));
+  check('52f. l’organisation voisine est normalisée elle aussi (la collision ne déborde pas)', (await (async () => (await q(`select linkedin_url u from contacts where organization_id=$1 and first_name='Ailleurs'`, [voisine.org])).rows[0]?.u)()) === 'https://www.linkedin.com/in/jumelle');
+}
+
 async function rls() {
   console.log('rls de linkedin_engageurs_ecartes (sous le rôle authenticated)');
   const A = await monde();
@@ -565,7 +661,7 @@ async function rls() {
 }
 
 try {
-  await jouer(index, rattachement, chaine, purgeEtRegression, sansConsigne, entreprise, enrichissement, importCsv, atomicite, rls);
+  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

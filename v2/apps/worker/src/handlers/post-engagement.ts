@@ -243,8 +243,12 @@ export async function enregistrerEngageur(
  *    terminé, et le rendement comparé des sources se lirait sur un nombre faux.
  *
  * Les écritures se font dans UNE transaction : une coupure ne laisse ni un
- * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse. Un
- * contact rattaché (né d'un autre signal, avec son email) n'est pas touché.
+ * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse.
+ *
+ * L'effacement du contact est GARDÉ (voir le `delete` ci-dessous) : seule une
+ * fiche que cet engageur a réellement créée part. Une fiche qui préexistait, qui
+ * appartient à une liste importée, ou à qui on a déjà écrit, est conservée et
+ * simplement détachée de son signal.
  */
 export async function ecarterEngageur(
   pool: Pool,
@@ -264,10 +268,35 @@ export async function ecarterEngageur(
         [organizationId, signalId],
       );
     }
-    await tx.query(`delete from contacts where organization_id = $1 and source_signal_id = $2`, [
-      organizationId,
-      signalId,
-    ]);
+    // N'efface que ce que CET engageur a créé. La garde vit ICI, et non chez
+    // l'appelant : `qualifiesPersonnes` la portait, donc elle ne protégeait que
+    // la purge — le scoring (`persistScore(..., 'discarded')`) et la purge des
+    // `new` effaçaient sans condition. Trois états ordinaires suffisaient à
+    // détruire la ligne d'un opérateur : un contact importé ou migré, dont
+    // l'inscription est TERMINÉE (`completed`/`replied`/… ne sont pas dans
+    // STATUTS_VIVANTS, donc l'étape 3 ne rend pas `deja_en_campagne`) et dont
+    // l'origine vide a été comblée par le rattachement. Le `delete` emportait
+    // alors `list_members` et `enrollments` en cascade.
+    await tx.query(
+      `delete from contacts c
+        where c.organization_id = $1 and c.source_signal_id = $2
+          -- jamais une personne à qui on a écrit, même séquence terminée
+          and not exists (select 1 from enrollments e where e.contact_id = c.id)
+          -- jamais une ligne d'une liste importée par l'opérateur
+          and c.source_list_id is null
+          -- jamais une fiche ANTÉRIEURE au signal : elle préexistait à l'engageur,
+          -- le rattachement n'a fait que combler son origine vide.
+          and c.created_at >= (select s.occurred_at from signals s where s.id = $2)`,
+      [organizationId, signalId],
+    );
+    // Les survivants sont DÉTACHÉS, l'inverse exact du rattachement : sans ça ils
+    // garderaient l'origine d'un signal supprimé. La contrainte est aujourd'hui
+    // `on delete set null`, qui produirait le même état ; on ne s'en remet pas à
+    // elle, pour que le détachement ne dépende pas du mode de la clé étrangère.
+    await tx.query(
+      `update contacts set source_signal_id = null where organization_id = $1 and source_signal_id = $2`,
+      [organizationId, signalId],
+    );
     const supprime = await tx.query<{ source_run_id: string | null }>(
       `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement' returning source_run_id`,
       [organizationId, signalId],
