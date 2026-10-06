@@ -16,7 +16,10 @@ import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
 import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
+// Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
+import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
+import { startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
 import { ecarterEngageur } from './handlers/post-engagement.js';
 
@@ -26,7 +29,40 @@ interface SourceRow {
   readonly provider_id: string;
   /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
   readonly source_provider_id: string;
-  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown } | null;
+  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown; sourceType?: unknown } | null;
+}
+
+/** Le seul type LinkedIn que le worker sait exécuter au lot 4a. Les trois autres arrivent au 4b. */
+const TYPE_LINKEDIN_EXECUTABLE = 'linkedin_post_engagers';
+
+/**
+ * Enfile une collecte LinkedIn demandée à la main. Rien d'autre ne l'enfile :
+ * le chemin périodique les exclut explicitement.
+ *
+ * Le passage (`source_runs`) est ouvert ICI, avant le job, parce que sa charge
+ * utile le porte : tout ce que le passage apprendra (requêtes émises, personnes
+ * vues, écarts du scoring plus tard) s'y rattache. Si le job n'est jamais
+ * exécuté — worker tué entre les deux — la ligne reste `running` et
+ * `closeStaleSourceRuns` la referme en `error` au bout de trente minutes.
+ */
+async function enfilerCollecteLinkedIn(
+  boss: PgBoss,
+  pool: Pool,
+  src: { id: string; organization_id: string },
+  type: string,
+): Promise<number> {
+  if (type !== TYPE_LINKEDIN_EXECUTABLE) {
+    console.warn(`[producer] collecte demandée pour la source ${src.id} : type LinkedIn pas encore exécutable — ignorée`);
+    return 0;
+  }
+  const sourceRunId = await startSourceRun(pool, src.id);
+  const job: CollecteLinkedInJob = {
+    organizationId: src.organization_id,
+    sourceId: src.id,
+    sourceRunId,
+  };
+  await boss.send('linkedin.collecte', job);
+  return 1;
 }
 
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
@@ -196,6 +232,14 @@ export async function enqueueDiscoverForActiveSources(
        from sources s
        join source_providers sp on sp.source_id = s.id
       where s.is_active = true and sp.is_active = true
+        -- Les sources LinkedIn ne passent JAMAIS par la planification : ce tour
+        -- revient toutes les quinze minutes, soit quatre-vingt-seize passages
+        -- par jour pour un plafond de trois. Elles partent a la demande
+        -- (enqueueRequestedRuns) et par la seulement. Aujourd hui la jointure
+        -- sur source_providers les ecarterait deja, faute de rattachement, mais
+        -- cette exclusion est DELIBEREE : elle doit survivre au jour ou cette
+        -- jointure deviendra un left join.
+        and coalesce(s.config->>'sourceType', '') not like 'linkedin%'
         and exists (
           select 1 from campaign_sources cs
             join campaigns c on c.id = cs.campaign_id
@@ -633,6 +677,14 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
       continue;
     }
     const config = src.config ?? {};
+    // Une source LinkedIn n'a ni `source_providers` ni `keywords` : elle tombait
+    // dans les deux `continue` ci-dessous, et le bouton « Lancer la collecte »
+    // ne faisait rien. Elle part par sa propre file.
+    const type = typeof config.sourceType === 'string' ? config.sourceType : '';
+    if (type.startsWith('linkedin')) {
+      enqueued += await enfilerCollecteLinkedIn(boss, pool, src, type);
+      continue;
+    }
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {
       console.warn(`[producer] collecte demandée pour le thème ${src.id} sans mots-clés — ignorée`);

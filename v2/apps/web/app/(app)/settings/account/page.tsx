@@ -16,8 +16,10 @@ type Traducteur = Awaited<ReturnType<typeof getTranslations>>;
 
 /**
  * Appel littéral (`cles-utilisees.test.ts` ne peut vérifier que des clés
- * littérales) — deux événements aujourd'hui (`contact.replied` et `linkedin.session_blocked` ;
- * les autres du catalogue n'ont pas de producteur, ils sont retirés de l'écran, voir `lib/notification-events.ts`).
+ * littérales) — trois événements aujourd'hui (`contact.replied`,
+ * `linkedin.session_blocked` et `linkedin.collecte_arretee` ; les autres du
+ * catalogue n'ont pas de producteur, ils sont retirés de l'écran, voir
+ * `lib/notification-events.ts`).
  */
 function libellesEvenements(t: Traducteur): Record<EvenementNotificationActif, { titre: string; detail: string }> {
   return {
@@ -28,6 +30,10 @@ function libellesEvenements(t: Traducteur): Record<EvenementNotificationActif, {
     'linkedin.session_blocked': {
       titre: t('notifications.evenement.linkedin.session_blocked.titre'),
       detail: t('notifications.evenement.linkedin.session_blocked.detail'),
+    },
+    'linkedin.collecte_arretee': {
+      titre: t('notifications.evenement.linkedin.collecte_arretee.titre'),
+      detail: t('notifications.evenement.linkedin.collecte_arretee.detail'),
     },
   };
 }

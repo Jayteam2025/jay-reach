@@ -139,6 +139,24 @@ export async function enregistrerObservationSortie(ctx: Contexte, sortie: Sortie
 }
 
 /**
+ * Horodate la dernière collecte TERMINÉE. Seul écrivain de `last_collect_at`,
+ * que l'écran et `jay-reach linkedin statut` affichent : un passage qui s'arrête
+ * sur une friction ne la met pas à jour, sinon la phrase « dernière collecte »
+ * annoncerait une collecte qui n'a rien rapporté.
+ *
+ * N'écrit que sur une ligne existante : la session a forcément été ouverte pour
+ * qu'une collecte ait lieu.
+ */
+export async function marquerCollecteLinkedIn(ctx: Contexte): Promise<void> {
+  await ctx.ex.query(
+    `update linkedin_server_sessions /* jr:linkedin_collecte_marquer */
+        set last_collect_at = now()
+      where organization_id = $1`,
+    [ctx.organisationId],
+  );
+}
+
+/**
  * L'opérateur confirme la sortie observée comme la bonne (changement de proxy
  * voulu). Remplace l'IP attendue ; si la session n'était bloquée que pour une
  * sortie inattendue, ce blocage tombe avec : sa cause est levée. Les autres

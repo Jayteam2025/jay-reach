@@ -33,6 +33,12 @@ export const QUEUES: readonly QueueDef[] = [
   { name: 'inbox.sync_graph', descriptionKey: 'jobs.q.inboxSyncGraph', retry: DEFAULT_RETRY },
   { name: 'crm.push', descriptionKey: 'jobs.q.crmPush', retry: DEFAULT_RETRY },
   { name: 'retention.purge', descriptionKey: 'jobs.q.retentionPurge', retry: DEFAULT_RETRY },
+  // Collecte LinkedIn : JAMAIS de reprise. Un passage qui a échoué a souvent
+  // échoué parce que LinkedIn n'était pas content ; le rejouer automatiquement
+  // ajoute du trafic suspect sur une session déjà fragile, et un passage arrêté
+  // au plafond serait rejoué pour redépasser le même plafond. L'opérateur
+  // relance à la main depuis l'écran Sources.
+  { name: 'linkedin.collecte', descriptionKey: 'jobs.q.linkedinCollecte', retry: { retryLimit: 0, retryBackoff: false } },
 ] as const;
 
 export const QUEUE_NAMES = QUEUES.map((q) => q.name);

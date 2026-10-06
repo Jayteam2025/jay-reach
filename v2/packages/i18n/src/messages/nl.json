@@ -1456,6 +1456,10 @@
             "session_blocked": {
               "titre": "Uw LinkedIn-sessie is geblokkeerd",
               "detail": "wanneer de LinkedIn-verzameling stopt en opnieuw verbinden vraagt"
+            },
+            "collecte_arretee": {
+              "titre": "Een LinkedIn-verzameling stopt",
+              "detail": "wanneer een bericht niets oplevert, terwijl de sessie geldig blijft"
             }
           }
         }

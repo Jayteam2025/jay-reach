@@ -24,8 +24,13 @@ export type Pilote = {
   saisir(selecteur: string, valeur: string): Promise<void>;
   cliquer(selecteur: string): Promise<void>;
   attendre(selecteur: string, delaiMs: number): Promise<boolean>;
-  /** Exécute l'appel DEPUIS LE CONTEXTE DE LA PAGE et rend le statut HTTP (le 999 de LinkedIn reste visible). */
-  requete(url: string): Promise<{ statut: number; corps: string }>;
+  /**
+   * Exécute l'appel DEPUIS LE CONTEXTE DE LA PAGE et rend le statut HTTP (le 999
+   * de LinkedIn reste visible). `entetes` sert aux appels Voyager, qui exigent
+   * leur protocole et leur décoration ; le jeton CSRF, lui, est ajouté côté page
+   * (voir l'implémentation), parce qu'il se lit dans un cookie.
+   */
+  requete(url: string, entetes?: Record<string, string>): Promise<{ statut: number; corps: string }>;
   fermer(): Promise<void>;
 };
 
@@ -216,11 +221,27 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     },
     // `same-origin` (défaut) : les cookies LinkedIn partent vers LinkedIn, jamais
     // vers l'écho d'IP ; `include` ferait échouer le CORS de l'écho.
-    requete: async (url) =>
-      page.evaluate(async (u) => {
-        const r = await fetch(u);
-        return { statut: r.status, corps: await r.text() };
-      }, url),
+    //
+    // Le jeton CSRF est ajouté ICI, et seulement pour LinkedIn : il se lit dans
+    // le cookie `JSESSIONID`, donc depuis la page. L'API interne le réclame même
+    // en lecture — c'est déjà ce que fait l'extension sur son GET de résolution
+    // de profil (`apps/extension/linkedin-invite.js`). Sans lui, chaque appel
+    // Voyager repartirait en 403, que le collecteur lirait comme un cookie
+    // refusé : il bloquerait la session alors qu'elle est valide.
+    requete: async (url, entetes) =>
+      page.evaluate(
+        async (u, e) => {
+          const headers: Record<string, string> = { ...e };
+          if (new URL(u).hostname.endsWith('linkedin.com')) {
+            const jeton = /JSESSIONID="?([^;"]+)/.exec(document.cookie);
+            if (jeton?.[1]) headers['csrf-token'] = jeton[1];
+          }
+          const r = await fetch(u, { headers });
+          return { statut: r.status, corps: await r.text() };
+        },
+        url,
+        entetes ?? {},
+      ),
     // On ferme NOTRE page puis on se détache sans fermer le navigateur : il garde le profil et ses cookies.
     fermer: async () => {
       await page.close().catch(() => undefined);

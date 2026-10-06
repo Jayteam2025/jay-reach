@@ -1456,6 +1456,10 @@
             "session_blocked": {
               "titre": "Votre session LinkedIn est bloquée",
               "detail": "quand la collecte LinkedIn s’arrête et demande une reconnexion"
+            },
+            "collecte_arretee": {
+              "titre": "Une collecte LinkedIn s’arrête",
+              "detail": "quand un post ne livre rien, sans que la session soit en cause"
             }
           }
         }

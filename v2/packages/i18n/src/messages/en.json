@@ -1456,6 +1456,10 @@
             "session_blocked": {
               "titre": "Your LinkedIn session is blocked",
               "detail": "when LinkedIn collection stops and needs a reconnection"
+            },
+            "collecte_arretee": {
+              "titre": "A LinkedIn collection stops",
+              "detail": "when a post returns nothing, with the session still valid"
             }
           }
         }

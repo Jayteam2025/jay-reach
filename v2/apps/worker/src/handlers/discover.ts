@@ -51,6 +51,13 @@ export async function runDiscover(
   job: DiscoverJob,
   credentials: Record<string, string>,
 ): Promise<ScraperResult> {
+  // Une source LinkedIn ne passe pas par ici : elle n'a pas de connecteur, elle
+  // a un navigateur et sa propre file (`linkedin.collecte`). Le producteur
+  // l'aiguille déjà ; ce message existe pour qu'un job mal routé se lise d'un
+  // coup d'œil au lieu de ressembler à un fournisseur mal orthographié.
+  if (job.provider.startsWith('linkedin')) {
+    throw new Error(`Source LinkedIn routée vers sources.discover : elle relève de la file linkedin.collecte (${job.provider})`);
+  }
   const scraper = SCRAPERS[job.provider];
   if (!scraper) {
     throw new Error(`Connecteur de signal inconnu : ${job.provider}`);

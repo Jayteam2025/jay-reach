@@ -23,6 +23,7 @@
 export const CATALOGUE_EVENEMENTS_NOTIFICATION = [
   'contact.replied',
   'linkedin.session_blocked',
+  'linkedin.collecte_arretee',
   'send_failed',
   'sender_disconnected',
   'quota_reached',
@@ -35,6 +36,7 @@ export type EvenementNotification = (typeof CATALOGUE_EVENEMENTS_NOTIFICATION)[n
 export const EVENEMENTS_NOTIFICATION_ACTIFS = [
   'contact.replied',
   'linkedin.session_blocked',
+  'linkedin.collecte_arretee',
 ] as const satisfies readonly EvenementNotification[];
 
 export type EvenementNotificationActif = (typeof EVENEMENTS_NOTIFICATION_ACTIFS)[number];
@@ -48,4 +50,5 @@ export interface PreferenceNotification {
 export const DEFAUT_ACTIF_NOTIFICATION: Record<EvenementNotificationActif, boolean> = {
   'contact.replied': true,
   'linkedin.session_blocked': true,
+  'linkedin.collecte_arretee': true,
 };

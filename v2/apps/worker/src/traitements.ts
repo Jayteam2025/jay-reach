@@ -63,6 +63,11 @@ import {
   enqueueEnrollments,
   enqueueRequestedRuns,
 } from './producer.js';
+import {
+  dependancesCollecteReelles,
+  traiterCollecteLinkedIn,
+  type CollecteLinkedInJob,
+} from './handlers/collecte-linkedin.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
 import { verifyDeliverability, PLAFOND_REOON_PAR_DEFAUT } from './email-verification.js';
@@ -94,6 +99,7 @@ export const FILES_BRANCHEES = [
   'sequence.tick',
   'inbox.sync',
   'inbox.sync_graph',
+  'linkedin.collecte',
 ] as const;
 
 const FULLENRICH_PROVIDER = 'fullenrich';
@@ -775,6 +781,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
     case 'inbox.sync_graph':
       await releverGraph(ctx, donnees as { organizationId: string });
       return;
+    case 'linkedin.collecte':
+      return traiterCollecteLinkedIn(dependancesCollecteReelles(ctx.pool), donnees as CollecteLinkedInJob);
     default:
       // File déclarée mais sans traitement : on ne la laisse pas s'accumuler.
       return;
