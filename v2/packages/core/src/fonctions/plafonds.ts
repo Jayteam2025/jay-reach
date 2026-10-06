@@ -541,13 +541,30 @@ export async function compterRequetesLinkedIn(ctx: Contexte, depuis: Date, jusqu
 }
 
 /**
- * Passages des sources `linkedin_post_engagers` ouverts pendant `jour`
- * (AAAA-MM-JJ) dans `fuseau`. Une source n'a pas de ligne `source_providers`
- * pour ce type : le repère est `config.sourceType` (cf. `construireConfigStocke`,
- * `sources.ts`). La borne s'écrit `::date::timestamp at time zone` : sans le
- * cast intermédiaire, Postgres repart du fuseau de la session.
+ * Posts `linkedin_post_engagers` RÉELLEMENT OUVERTS chez LinkedIn pendant `jour`
+ * (AAAA-MM-JJ) dans `fuseau`. Une source n'a pas de ligne `source_providers` pour
+ * ce type : le repère est `config.sourceType` (cf. `construireConfigStocke`,
+ * `sources.ts`). La borne s'écrit `::date::timestamp at time zone` : sans le cast
+ * intermédiaire, Postgres repart du fuseau de la session.
+ *
+ * Ne comptent que les passages ayant émis AU MOINS UNE requête (`linkedin_requetes`).
+ * Un `source_runs` est ouvert par le producteur avant que le job ne tourne : compter
+ * les lignes au lieu des requêtes rendait le plafond faux dès que plusieurs passages
+ * s'ouvraient dans le même tour — ce que font `lancerCampagne` (toutes les sources de
+ * la campagne, à chaque activation) et `lancerTache({tache:'sources'})`. Quatre posts
+ * suivis, plafond de trois : les quatre lisaient « quatre passages aujourd'hui », se
+ * clôturaient à vide, et plus rien ne collectait jusqu'au lendemain.
+ *
+ * `sauf` : le passage qui demande son propre budget. Il n'a encore rien émis au moment
+ * du calcul, donc l'`exists` l'exclut déjà ; l'exclure explicitement évite que la règle
+ * dépende de cet ordre.
  */
-export async function compterPostsLinkedInDuJour(ctx: Contexte, jour: string, fuseau: string): Promise<number> {
+export async function compterPostsLinkedInDuJour(
+  ctx: Contexte,
+  jour: string,
+  fuseau: string,
+  sauf?: string,
+): Promise<number> {
   const res = await ctx.ex.query<{ n: number }>(
     `select count(*)::int as n /* jr:linkedin_posts_du_jour */
        from source_runs sr
@@ -555,8 +572,10 @@ export async function compterPostsLinkedInDuJour(ctx: Contexte, jour: string, fu
       where so.organization_id = $1
         and so.config->>'sourceType' = 'linkedin_post_engagers'
         and sr.started_at >= ($2::date::timestamp at time zone $3)
-        and sr.started_at < (($2::date + 1)::timestamp at time zone $3)`,
-    [ctx.organisationId, jour, fuseau],
+        and sr.started_at < (($2::date + 1)::timestamp at time zone $3)
+        and ($4::uuid is null or sr.id <> $4::uuid)
+        and exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)`,
+    [ctx.organisationId, jour, fuseau, sauf ?? null],
   );
   return res.rows[0]?.n ?? 0;
 }

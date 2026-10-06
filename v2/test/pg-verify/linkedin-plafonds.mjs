@@ -71,14 +71,22 @@ async function postsDuJour() {
   const autre = await sourceNeuve(A.id, 'linkedin_keywords');
   const postB = await sourceNeuve(B.id, 'linkedin_post_engagers');
   // Paris (UTC+2) / New York (UTC-4), 4 et 5 octobre 2026.
-  await passage(post, '2026-10-04T21:55:00Z'); // 23:55 Paris le 4  | 17:55 NY le 4
-  await passage(post, '2026-10-04T22:30:00Z'); // 00:30 Paris le 5  | 18:30 NY le 4
-  await passage(post, '2026-10-05T03:30:00Z'); // 05:30 Paris le 5  | 23:30 NY le 4
-  await passage(post, '2026-10-05T04:30:00Z'); // 06:30 Paris le 5  | 00:30 NY le 5
-  await passage(autre, '2026-10-04T22:30:00Z'); // autre type : jamais compté
-  await passage(postB, '2026-10-04T22:30:00Z'); // autre organisation : jamais comptée
+  // Chaque passage a RÉELLEMENT émis une requête : c'est ce que fait le collecteur
+  // par `surRequete`, et c'est la condition pour qu'un post compte (un `source_runs`
+  // est ouvert par le producteur avant que le job ne tourne).
+  const passageEmetteur = async (src, quand, org) => {
+    const id = await passage(src, quand);
+    await tracerRequeteLinkedIn(ctxDe(org), id);
+    return id;
+  };
+  await passageEmetteur(post, '2026-10-04T21:55:00Z', A); // 23:55 Paris le 4  | 17:55 NY le 4
+  await passageEmetteur(post, '2026-10-04T22:30:00Z', A); // 00:30 Paris le 5  | 18:30 NY le 4
+  await passageEmetteur(post, '2026-10-05T03:30:00Z', A); // 05:30 Paris le 5  | 23:30 NY le 4
+  await passageEmetteur(post, '2026-10-05T04:30:00Z', A); // 06:30 Paris le 5  | 00:30 NY le 5
+  await passageEmetteur(autre, '2026-10-04T22:30:00Z', A); // autre type : jamais compté
+  await passageEmetteur(postB, '2026-10-04T22:30:00Z', B); // autre organisation : jamais comptée
 
-  const n = (ctx, jour, fuseau) => compterPostsLinkedInDuJour(ctx, jour, fuseau);
+  const n = (ctx, jour, fuseau, sauf) => compterPostsLinkedInDuJour(ctx, jour, fuseau, sauf);
   check('1. Paris le 4 : un passage (23:55)', (await n(ctxDe(A), '2026-10-04', 'Europe/Paris')) === 1);
   check('2. Paris le 5 : trois passages', (await n(ctxDe(A), '2026-10-05', 'Europe/Paris')) === 3);
   check('3. New York le 4 : trois passages', (await n(ctxDe(A), '2026-10-04', 'America/New_York')) === 3);
@@ -98,6 +106,19 @@ async function postsDuJour() {
     await c.query('reset timezone');
     c.release();
   }
+
+  // Une ligne de passage ouverte par le producteur, qui n'a encore rien émis, ne
+  // consomme pas le plafond : sans ça, activer une campagne de quatre posts les
+  // clôturait tous à vide (round 2 de la tâche 7).
+  const ouvertSansRequete = await passage(post, '2026-10-05T05:30:00Z');
+  check('9b. un passage ouvert sans requête émise ne compte pas',
+    (await n(ctxDe(A), '2026-10-05', 'Europe/Paris')) === 3);
+  check('9c. le passage qui demande son budget ne se compte pas lui-même',
+    (await n(ctxDe(A), '2026-10-05', 'Europe/Paris', ouvertSansRequete)) === 3);
+  await tracerRequeteLinkedIn(ctxDe(A), ouvertSansRequete);
+  check('9d. dès qu’il émet, il compte', (await n(ctxDe(A), '2026-10-05', 'Europe/Paris')) === 4);
+  check('9e. et il reste exclu de son propre budget',
+    (await n(ctxDe(A), '2026-10-05', 'Europe/Paris', ouvertSansRequete)) === 3);
 }
 
 /** Une collecte ouverte à 23 h 55 dont une requête part à 00 h 05 : une requête de chaque côté de minuit. */

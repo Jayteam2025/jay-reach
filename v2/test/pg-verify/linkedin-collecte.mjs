@@ -118,6 +118,17 @@ async function monde({ personaDansSource = true, campagneActive = true, session 
   return { org, admin, persona, campagne, source, ctx };
 }
 
+/** Une source de post de plus sur la même campagne, par la fonction de production. */
+async function sourceDePost(m, urlPost) {
+  const { id } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_post_engagers',
+    nom: `Engageurs ${urlPost.slice(-3)}`,
+    config: { urlPost, garder: ['reagi'], personaId: m.persona },
+  });
+  return id;
+}
+
 const run = async (m) => startSourceRun(pool, m.source);
 const job = (m, runId) => ({ organizationId: m.org, sourceId: m.source, sourceRunId: runId });
 
@@ -438,8 +449,86 @@ async function producteur() {
   check('36. la demande est consommée', demande.run_requested_at === null);
 }
 
+// ------------------------------------- 9. plusieurs passages dans le meme tour
+
+/**
+ * Le cas que le round 2 a trouvé : `lancerCampagne` demande une collecte sur TOUTES
+ * les sources de la campagne à chaque activation, et le producteur ouvre leurs
+ * passages dans la même boucle. Si le plafond compte les lignes de passage, les
+ * quatre lisent « quatre posts aujourd'hui » et se clôturent tous à vide.
+ */
+async function memeTour() {
+  console.log('\n9. quatre posts demandés dans le même tour, plafond de trois');
+  const m = await monde();
+  for (let i = 2; i <= 4; i += 1) {
+    await sourceDePost(m, `https://www.linkedin.com/feed/update/urn:li:activity:727100000000000000${i}/`);
+  }
+  // Chemin de production : `lancerCampagne` pose `run_requested_at` sur toutes les
+  // sources de la campagne (`lancerTache({tache:'sources'})` fait de même).
+  await q(`update sources set run_requested_at = now() where organization_id = $1`, [m.org]);
+  const envoyes = [];
+  const boss = { send: async (name, data) => envoyes.push({ name, data }), insert: async () => undefined };
+  const enfiles = await enqueueRequestedRuns(boss, pool);
+  check('37. les quatre collectes sont enfilées dans le même tour', enfiles === 4 && envoyes.length === 4, String(enfiles));
+
+  // Exécution séquentielle : c'est ce que fait pg-boss, `work()` sans options ne
+  // prend qu'un job à la fois par file — et le verrou de session le garantirait sinon.
+  let collectes = 0;
+  let refuses = 0;
+  for (const e of envoyes) {
+    const pil = pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) });
+    await traiterCollecteLinkedIn(deps(pil), e.data);
+    const passage = await lirePassage(e.data.sourceRunId);
+    if (passage.requetes > 0) collectes += 1;
+    else refuses += 1;
+  }
+  check('38. trois posts collectent vraiment, le quatrième seul est refusé au plafond', collectes === 3 && refuses === 1, `${collectes} collectés / ${refuses} refusés`);
+}
+
+// --------------------------------- 10. ce que le disjoncteur ne doit PAS compter
+
+async function disjoncteurRefusLocaux() {
+  console.log('\n10. un refus local ne nourrit pas le disjoncteur');
+  const m = await monde({ campagneActive: false });
+  // Deux clics sur « Lancer la collecte » avec une campagne encore en brouillon.
+  for (let i = 0; i < 2; i += 1) {
+    const r = await run(m);
+    await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), job(m, r));
+  }
+  // Chemin de production : `lancerCampagne` passe la campagne en `active`.
+  await q(`update campaigns set status = 'active' where organization_id = $1`, [m.org]);
+  const r3 = await run(m);
+  const panne = pilote({
+    reponse: () => {
+      throw new Error('réseau');
+    },
+  });
+  await traiterCollecteLinkedIn(deps(panne), job(m, r3)).catch(() => undefined);
+  const s = await lireSessionLinkedIn(m.ctx);
+  check('39. deux refus locaux puis un vrai échec : la session reste active', s.etat === 'active', `${s.etat}/${s.motif}`);
+}
+
+async function disjoncteurReleveSortie() {
+  console.log('\n11. trois relèves de sortie en échec font disjoncter (proxy mort)');
+  const m = await monde();
+  for (let i = 0; i < 3; i += 1) {
+    const r = await run(m);
+    const d = deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) }), {
+      releverSortie: async () => {
+        throw new Error('écho injoignable');
+      },
+    });
+    await traiterCollecteLinkedIn(d, job(m, r)).catch(() => undefined);
+  }
+  const s = await lireSessionLinkedIn(m.ctx);
+  check('40. un échec de relève compte parmi les erreurs consécutives, sans aucune requête émise', s.etat === 'bloquee' && s.motif === 'disjoncteur', `${s.etat}/${s.motif}`);
+  const traces = (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1`, [m.org])).rows[0].n;
+  check('40b. et rien n’a été émis vers LinkedIn', traces === 0, String(traces));
+}
+
 async function main() {
-  await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur);
+  await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
+    memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

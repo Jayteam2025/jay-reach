@@ -427,14 +427,14 @@ describe('plafonds LinkedIn', () => {
     expect(appels[1]![1]).toEqual(['org-1', minuit, lendemain]);
   });
 
-  it('compterPostsLinkedInDuJour compte les passages des sources linkedin_post_engagers du jour', async () => {
+  it('compterPostsLinkedInDuJour compte les posts reellement ouverts, pas les lignes de passage', async () => {
     const ctx = faux({ 'from source_runs': [{ n: 2 }] });
-    expect(await compterPostsLinkedInDuJour(ctx, '2026-10-05', 'Europe/Paris')).toBe(2);
+    expect(await compterPostsLinkedInDuJour(ctx, '2026-10-05', 'Europe/Paris', 'run-courant')).toBe(2);
     const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
     expect(sql).toMatch(/linkedin_post_engagers/);
     expect(sql).toContain('$2::date::timestamp at time zone $3');
     expect(sql).toContain('($2::date + 1)::timestamp at time zone $3');
-    expect(params).toEqual(['org-1', '2026-10-05', 'Europe/Paris']);
+    expect(params).toEqual(['org-1', '2026-10-05', 'Europe/Paris', 'run-courant']);
   });
 
   it('tracerRequeteLinkedIn refuse un passage d une autre organisation', async () => {

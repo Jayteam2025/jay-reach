@@ -160,7 +160,14 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
 async function cloreCollecte(
   pool: Pool,
   job: CollecteLinkedInJob,
-  etat: { statut: 'success' | 'error'; erreur?: string | null; bilan?: Bilan; sortie?: Sortie | null },
+  etat: {
+    statut: 'success' | 'error';
+    erreur?: string | null;
+    bilan?: Bilan;
+    sortie?: Sortie | null;
+    /** Vrai seulement si le passage a échoué APRÈS avoir commencé à parler au monde extérieur. */
+    echecNavigateur?: boolean;
+  },
 ): Promise<void> {
   const b = etat.bilan ?? bilanVierge();
   await pool.query(
@@ -168,7 +175,7 @@ async function cloreCollecte(
         set finished_at = now(), status = $3, error = $4,
             items_found = $5, items_new = $6,
             requetes = $7, vus = $5, nouveaux = $6, doublons = $8, deja_en_campagne = $9,
-            ip_sortie = $10, operateur_sortie = $11
+            ip_sortie = $10, operateur_sortie = $11, echec_navigateur = $12
       where sr.id = $2
         and sr.source_id in (select id from sources where organization_id = $1)`,
     [
@@ -183,6 +190,7 @@ async function cloreCollecte(
       b.dejaEnCampagne,
       etat.sortie?.ip ?? null,
       etat.sortie?.operateur ?? null,
+      etat.echecNavigateur ?? false,
     ],
   );
 }
@@ -194,11 +202,20 @@ async function cloreCollecte(
  * clore compris — pas un compteur séparé, qui pourrait diverger de ce que
  * l'écran Sources montre.
  *
- * Y entrent aussi les passages refermés par `closeStaleSourceRuns` (worker tué
- * en plein travail) et ceux qu'une friction a arrêtés : trois échecs d'affilée,
- * quelle qu'en soit la cause, veulent dire que ça ne marche pas, et la
- * reconnexion remet tout à zéro. Évalué seulement quand le passage courant a
- * échoué sur une exception, jamais après un succès.
+ * Ne comptent que les passages qui ont RÉELLEMENT touché le monde extérieur :
+ * une requête émise (`linkedin_requetes`), ou un échec survenu après l'ouverture
+ * du navigateur (`echec_navigateur` — typiquement une relève de sortie qui
+ * échoue, donc un proxy mort). Les refus purement locaux — canal désactivé,
+ * session non active, campagne en brouillon, persona ambigu, verrou tenu — ne
+ * disent rien de l'état de LinkedIn : sans ce filtre, deux clics sur « Lancer la
+ * collecte » avec une campagne encore en brouillon suffisaient à faire
+ * disjoncter au premier vrai passage.
+ *
+ * Y entrent en revanche les passages refermés par `closeStaleSourceRuns` qui
+ * avaient commencé à émettre (worker tué en plein travail), et ceux qu'une
+ * friction a arrêtés : on avait bien parlé à LinkedIn. La reconnexion remet
+ * tout à zéro. Évalué seulement quand le passage courant a échoué sur une
+ * exception, jamais après un succès.
  */
 async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
   const res = await pool.query<{ status: string }>(
@@ -208,6 +225,8 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
       where so.organization_id = $1
         and so.config->>'sourceType' = 'linkedin_post_engagers'
         and sr.finished_at is not null
+        and (sr.echec_navigateur
+             or exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id))
       order by sr.finished_at desc
       limit 3`,
     [ctx.organisationId],
@@ -217,12 +236,20 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
   }
 }
 
-/** Ce qu'il reste à dépenser. Le passage courant est DÉJÀ ouvert : il ne doit pas se compter contre lui-même. */
-async function calculerBudget(ctx: Contexte): Promise<Budget> {
+/**
+ * Ce qu'il reste à dépenser.
+ *
+ * `compterPostsLinkedInDuJour` ne compte que les posts RÉELLEMENT ouverts chez
+ * LinkedIn, pas les lignes de passage : le producteur en ouvre une par source dans
+ * la même boucle, et `lancerCampagne` demande une collecte sur TOUTES les sources de
+ * la campagne à chaque activation. Compter les lignes faisait lire « quatre passages
+ * aujourd'hui » aux quatre passages d'un coup, qui se clôturaient tous à vide.
+ */
+async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budget> {
   const { fuseau } = await lireFenetreLinkedIn(ctx);
   const [plafondPosts, postsDuJour, plafondRequetes, requetesDeLHeure] = await Promise.all([
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
-    compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau),
+    compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau, sourceRunId),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     // Fenêtre GLISSANTE : la dernière heure. Aucun calcul de jour, aucun fuseau
     // ici — un plafond horaire calé sur l'heure ronde laisserait passer deux
@@ -230,7 +257,7 @@ async function calculerBudget(ctx: Contexte): Promise<Budget> {
     compterRequetesLinkedIn(ctx, new Date(Date.now() - UNE_HEURE_MS)),
   ]);
   return {
-    postsRestants: Math.max(0, plafondPosts - postsDuJour + 1),
+    postsRestants: Math.max(0, plafondPosts - postsDuJour),
     requetesRestantes: Math.max(0, plafondRequetes - requetesDeLHeure),
   };
 }
@@ -294,7 +321,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       return;
     }
 
-    const budget = await calculerBudget(ctx);
+    const budget = await calculerBudget(ctx, job.sourceRunId);
     if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) {
       // Plafond : un passage à vide, pas un échec. Le rejouer redépasserait le
       // même plafond.
@@ -359,7 +386,15 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // base indisponible ne remplace pas l'erreur d'origine par la sienne.
     const type = err instanceof Error ? err.name : 'Erreur';
     console.error(`[collecte-linkedin] passage interrompu (${type})`);
-    await cloreCollecte(pool, job, { statut: 'error', erreur: `Collecte interrompue (${type}).`, bilan, sortie });
+    await cloreCollecte(pool, job, {
+      statut: 'error',
+      erreur: `Collecte interrompue (${type}).`,
+      bilan,
+      sortie,
+      // Le navigateur était ouvert et la relève de sortie engagée : cet échec-là
+      // parle de LinkedIn ou du proxy, il nourrit le disjoncteur.
+      echecNavigateur: true,
+    });
     await verifierDisjoncteur(ctx, pool);
     throw err;
   } finally {
