@@ -46,6 +46,16 @@ test('Réglages › LinkedIn : une phrase d’état, les deux plafonds, l’aver
   // Sans session, la ligne du bloc « État du moteur » existe quand même et mène ici.
   await expect(page.getByRole('link', { name: /LinkedIn : aucune session/ })).toHaveAttribute('href', '/settings/linkedin');
 
+  // Le logo garde sa couleur de marque (#0A66C2) en toute circonstance, ici sans session : mesuré
+  // sur le style CALCULÉ, une classe ne prouve rien (`.jr-app svg` le peignait en noir).
+  const BLEU_MARQUE = 'rgb(10, 102, 194)';
+  const logoMoteur = page.locator('.jr-barre-pied .jr-moteur-linkedin svg');
+  await expect(logoMoteur).toHaveCSS('fill', BLEU_MARQUE);
+  await expect(logoMoteur).toHaveCSS('stroke', 'none');
+  const tuile = page.locator('.jr-reglages-corps .jr-tuile-logo.li');
+  await expect(tuile).toHaveCSS('background-color', BLEU_MARQUE);
+  await expect(tuile.locator('svg')).toHaveCSS('fill', 'rgb(255, 255, 255)');
+
   // Le mot de passe et le code ne transitent jamais par cette page.
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
