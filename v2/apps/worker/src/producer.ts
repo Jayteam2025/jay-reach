@@ -521,25 +521,69 @@ export async function enqueueEnrichmentForQualified(
  * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
  * dernière quand le plafond ne permet pas de tout prendre.
  */
+/**
+ * Contacts enfilés par ORGANISATION et par tour. Le lot n'est pas global : voir
+ * `enqueueEnrichmentContactsConnus`.
+ */
+const CONTACTS_CONNUS_PAR_ORGANISATION = 25;
+
+/**
+ * Garde-fou global : au-delà, le tour s'arrête, quel que soit le nombre
+ * d'organisations. Il borne la TAILLE DE LA FILE, pas la dépense — celle-ci est
+ * bornée par `enrichissements_par_jour`, par organisation, dans le handler. La
+ * valeur est le lot par organisation multiplié par huit, soit plus
+ * d'organisations que l'instance n'en a jamais compté ; elle n'est donc pas
+ * atteinte en pratique, et sert à ce qu'un jour anormal ne dépose pas un nombre
+ * non borné de jobs en un seul tour.
+ */
+const CONTACTS_CONNUS_PAR_TOUR = CONTACTS_CONNUS_PAR_ORGANISATION * 8;
+
 export async function enqueueEnrichmentContactsConnus(
   boss: PgBoss,
   pool: Pool,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; limiteGlobale?: number } = {},
 ): Promise<number> {
-  const limit = opts.limit ?? 25;
+  const limit = opts.limit ?? CONTACTS_CONNUS_PAR_ORGANISATION;
+  const limiteGlobale = opts.limiteGlobale ?? CONTACTS_CONNUS_PAR_TOUR;
+  // Le lot est PAR ORGANISATION, et les organisations sont servies à tour de
+  // rôle (`order by rang` avant tout le reste) : le rang 1 de chacune passe
+  // avant le rang 2 de n'importe laquelle.
+  //
+  // Un `limit` global sur un ordre purement chronologique affamait les autres :
+  // une organisation dont les contacts sont les plus récents prenait les 25
+  // places à chaque tour. Définitivement, si rien ne la fait avancer — sans clé
+  // FullEnrich, le handler rend `sans_cle` SANS marquer le contact (marquer le
+  // priverait du jour où la clé est saisie), donc ses candidats reviennent
+  // identiques au tour suivant, indéfiniment, et aucune autre organisation n'est
+  // jamais servie.
+  //
+  // Les organisations sans clé ne sont PAS exclues en SQL, délibérément : la clé
+  // se résout par `resolveProviderCredentials` (coffre chiffré, puis repli sur
+  // l'environnement), et refaire cette résolution en SQL la ferait diverger de
+  // celle qu'exécute le handler. Une organisation sans clé tourne donc à vide
+  // sur SA PART du lot — un job perdu, pas une famine — et repart dès que la clé
+  // est saisie.
   const res = await pool.query<{ organization_id: string; contact_id: string }>(
-    `select c.organization_id, c.id as contact_id
-       from contacts c
-       join signals s
-         on s.id = c.source_signal_id and s.organization_id = c.organization_id
-      where c.email is null
-        and c.enriched_at is null
-        and c.linkedin_url is not null
-        and s.status = 'qualified'
-        and (c.linkedin_provider_id is null or c.linkedin_url <> $2 || c.linkedin_provider_id)
-      order by s.occurred_at desc nulls last, c.created_at desc, c.id
-      limit $1`,
-    [limit, lienProfilDeduit('')],
+    `with candidats as (
+       select c.organization_id, c.id as contact_id,
+              row_number() over (
+                partition by c.organization_id
+                order by s.occurred_at desc nulls last, c.created_at desc, c.id
+              ) as rang
+         from contacts c
+         join signals s
+           on s.id = c.source_signal_id and s.organization_id = c.organization_id
+        where c.email is null
+          and c.enriched_at is null
+          and c.linkedin_url is not null
+          and s.status = 'qualified'
+          and (c.linkedin_provider_id is null or c.linkedin_url <> $3 || c.linkedin_provider_id)
+     )
+     select organization_id, contact_id from candidats
+      where rang <= $1
+      order by rang, organization_id
+      limit $2`,
+    [limit, limiteGlobale, lienProfilDeduit('')],
   );
 
   let enqueued = 0;
@@ -556,15 +600,34 @@ export async function enqueueEnrichmentContactsConnus(
     // journée ne crée rien, mais un contact resté sans suite (plafond atteint,
     // panne du fournisseur) repart demain sous un identifiant neuf. Sans le
     // jour, il ne repartirait jamais.
+    const idJob = deterministicUuid('enrich-contact-connu', row.contact_id, jour);
+    // L'ARCHIVE compte autant que la file. `boss.insert` est bien un no-op sur
+    // un identifiant déjà présent, mais pg-boss déplace un job terminé vers
+    // `pgboss.archive` au bout de douze heures (`ARCHIVE_DEFAULT`, mesuré sur
+    // pg-boss 10.4.2) : passé ce délai, l'identifiant du jour redevient libre et
+    // le job renaîtrait LE MÊME JOUR. Sans conséquence pour un contact marqué
+    // (il n'est plus candidat), mais un contact laissé sans marque par une panne
+    // du fournisseur serait RACHETÉ une seconde fois dans la journée. La file
+    // ne reprend donc un contact que si son identifiant du jour n'existe nulle
+    // part. Les deux requêtes nomment la file : les deux tables sont indexées
+    // par (name, id).
+    const connu = await pool.query<{ existe: boolean }>(
+      `select exists (select 1 from pgboss.job where name = $2 and id = $1::uuid)
+           or exists (select 1 from pgboss.archive where name = $2 and id = $1::uuid) as existe`,
+      [idJob, 'enrichment.contact_connu'],
+    );
+    if (connu.rows[0]?.existe) continue;
     await boss.insert([
       {
         name: 'enrichment.contact_connu',
-        id: deterministicUuid('enrich-contact-connu', row.contact_id, jour),
+        id: idJob,
         data: { organizationId: row.organization_id, contactId: row.contact_id },
       },
     ]);
     enqueued += 1;
   }
+  // Le compte est celui des jobs RÉELLEMENT créés, pas des contacts examinés :
+  // le journal du moteur annonçait sinon un travail qui n'avait pas été déposé.
   return enqueued;
 }
 

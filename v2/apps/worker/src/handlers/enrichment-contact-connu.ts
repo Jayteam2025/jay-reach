@@ -46,12 +46,21 @@ import { resolveProviderCredentials } from '../credentials.js';
 const FOURNISSEUR = 'fullenrich';
 
 /**
- * Temps maximal d'attente, repris de l'enrichissement d'entreprise : FullEnrich
- * met 28,9 s en moyenne et 55,8 s au pire (mesuré le 01/09/2026). En worker
- * permanent rien ne coupe, `ENRICH_MAX_WAIT_MS` permet de lui rendre tout le
- * temps qu'il demande.
+ * Temps maximal d'attente d'une réponse FullEnrich.
+ *
+ * **90 s, et non les 40 s de l'enrichissement d'entreprise.** Ces 40 s ont été
+ * choisies pour « rendre la main proprement avant la coupure à soixante »
+ * (`enrich.ts`) — la coupure d'une fonction serverless. Le moteur tourne en
+ * worker permanent sur le VPS depuis le 10/09/2026, et plus rien ne le coupe.
+ * Or FullEnrich met 28,9 s en moyenne et **55,8 s au pire** (mesuré le
+ * 01/09/2026) : à 40 s, on abandonnait un appel qui allait aboutir, alors que le
+ * crédit était déjà payé et que rien n'oblige à rendre la main.
+ *
+ * La valeur est donc dérivée du pire cas mesuré, avec de la marge, et non d'un
+ * budget d'exécution. `ENRICH_MAX_WAIT_MS` reste le réglage, pour une
+ * installation qui hébergerait ce handler derrière une fonction coupée.
  */
-const ATTENTE_MAX_MS = Number(process.env.ENRICH_MAX_WAIT_MS ?? 40_000);
+const ATTENTE_MAX_MS = Number(process.env.ENRICH_MAX_WAIT_MS ?? 90_000);
 
 /** Charge utile de la file `enrichment.contact_connu`. */
 export interface EnrichContactConnuJob {
@@ -97,7 +106,11 @@ export type IssueEnrichissement =
   | 'sans_cle'
   | 'introuvable'
   | 'deja_enrichi'
-  | 'panne_fournisseur';
+  | 'panne_fournisseur'
+  /** Le fournisseur a répondu et l'adresse est payée, mais NOTRE base refuse de l'écrire. */
+  | 'ecriture_echouee'
+  /** L'adresse est payée, mais une autre source avait déjà posé un email entre-temps. */
+  | 'achat_perdu';
 
 /** Les champs du contact dont dépend la décision d'acheter. */
 export interface ContactAEnrichir {
@@ -161,7 +174,14 @@ export const MSG = {
   refus: (contactId: string, raison: RaisonRefus) => `contact ${contactId} non enrichissable (${raison}) — aucun appel, aucun crédit`,
   sansCle: (organizationId: string) => `FullEnrich non configuré pour l’org ${organizationId} — job ignoré`,
   plafond: (organizationId: string) => `plafond quotidien d'enrichissement atteint pour l'organisation ${organizationId} — contact reporté à demain`,
+  plafondNul: (organizationId: string) =>
+    `le plafond d'enrichissement de l'organisation ${organizationId} est réglé à zéro — aucun achat possible, rien n'a été consommé`,
   panne: (contactId: string, type: string) => `achat échoué pour le contact ${contactId} (${type}) — crédit consommé, contact reporté`,
+  reessai: (contactId: string, type: string) => `écriture de l'adresse du contact ${contactId} en échec (${type}) — un second essai`,
+  ecritureEchouee: (contactId: string, type: string) =>
+    `adresse PAYÉE mais non enregistrée pour le contact ${contactId} (${type}) — la base refuse l'écriture, pas le fournisseur ; contact marqué pour ne pas la racheter`,
+  achatPerdu: (contactId: string) =>
+    `adresse PAYÉE pour le contact ${contactId} alors qu'une autre source venait de poser son email — achat perdu`,
   sansEmail: (contactId: string) => `aucune adresse trouvée pour le contact ${contactId}`,
   emailDejaPris: (contactId: string) => `l'adresse achetée pour le contact ${contactId} appartient déjà à une autre fiche — contact laissé sans email`,
   coutAbsent: (contactId: string) => `FullEnrich n'a rendu AUCUN coût pour le contact ${contactId} — la dépense du jour est donc sous-estimée`,
@@ -237,9 +257,22 @@ export async function enrichirContactConnu(
   });
   if (refus) {
     console.warn(`${MSG.prefixe} ${MSG.refus(job.contactId, refus)}`);
-    // Marqué traité : sans cela le producteur le représenterait à chaque tour,
-    // et son refus occuperait une place du lot au détriment d'un contact payable.
-    await marquerTraite(pool, org, job.contactId);
+    // Marqué traité pour `nom_tronque` SEULEMENT, et c'est une asymétrie voulue.
+    //
+    // La marque est irréversible : elle sort le contact du lot pour toujours. Un
+    // nom tronqué l'est aussi — `enregistrerEngageur` n'écrase jamais un nom déjà
+    // posé (`coalesce(last_name, …)`), donc « L. » ne sera jamais complété et le
+    // contact resterait éternellement candidat sans devenir payable.
+    //
+    // Une adresse FABRIQUÉE, elle, peut cesser de l'être : il suffit qu'un
+    // passage de collecte lise l'identifiant public et que le contact reçoive sa
+    // vraie adresse. La marquer fermerait cette porte définitivement. Le
+    // producteur l'exclut déjà en SQL, donc ne pas marquer ne coûte rien — et ce
+    // chemin ne s'emprunte que pour un job déposé autrement (reprise à la main,
+    // serveur MCP à venir).
+    if (refus === 'nom_tronque') {
+      await marquerTraite(pool, org, job.contactId);
+    }
     return 'refuse';
   }
 
@@ -253,6 +286,19 @@ export async function enrichirContactConnu(
   // c'est la même journée que celle qu'affiche l'écran Plafonds.
   const jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, org));
   const plafond = await plafondDuJour(pool, org, 'enrichissements_par_jour');
+  // `consume_provider_credit` rend `false` pour DEUX raisons distinctes, et le
+  // message doit dire laquelle. Lu dans la fonction (migration
+  // `20260917130000`) : elle commence par `if p_cap <= 0 ... return false`, AVANT
+  // de toucher au compteur — la ligne du jour, elle, est toujours créée ensuite
+  // par un `insert ... on conflict`, donc son absence n'est jamais une cause de
+  // refus. Un plafond réglé à zéro (valeur que l'écran Plafonds accepte,
+  // `z.number().int().min(0)`) donnerait donc « plafond atteint » alors que rien
+  // n'a jamais été consommé, et l'opérateur chercherait une consommation
+  // inexistante au lieu de son propre réglage.
+  if (plafond <= 0) {
+    console.warn(`${MSG.prefixe} ${MSG.plafondNul(org)}`);
+    return 'plafond';
+  }
   const credit = await pool.query<{ ok: boolean }>(
     `select app.consume_provider_credit($1, $2, $3, 1, $4::date) as ok`,
     [org, FOURNISSEUR, plafond, jour],
@@ -295,25 +341,59 @@ export async function enrichirContactConnu(
 
   const brut = achat.resultat ? rawStatusOf(achat.resultat, choisi.email) : null;
   const { status, confidence } = mapEmailStatus(brut);
-  try {
-    await pool.query(
-      `update contacts set
-          email = $3, email_status = $4::email_status, email_confidence = $5, enriched_at = now()
-        where id = $1 and organization_id = $2 and email is null`,
-      [job.contactId, org, choisi.email, status, confidence],
-    );
-  } catch (err) {
-    // 23505 : l'adresse appartient déjà à une AUTRE fiche (index unique
-    // org + lower(email)). Cas ordinaire — la même personne connue par deux
-    // chemins — et non une panne : on ne fusionne pas deux fiches ici, le
-    // contact reste sans email, et le passage continue.
-    if ((err as { code?: string }).code !== '23505') {
-      console.warn(`${MSG.prefixe} ${MSG.panne(job.contactId, typeErreur(err))}`);
-      return 'panne_fournisseur';
+
+  // L'adresse est PAYÉE : à partir d'ici, tout chemin de sortie doit laisser le
+  // contact dans un état qui ne sera pas racheté demain. Un seul réessai, puis
+  // la marque — insister davantage ferait attendre un job qui, de toute façon,
+  // ne sera plus rejoué par la file (`retryLimit: 0`).
+  let ecrit = 0;
+  let echec: unknown = null;
+  for (const essai of [1, 2]) {
+    try {
+      const r = await pool.query(
+        `update contacts set
+            email = $3, email_status = $4::email_status, email_confidence = $5, enriched_at = now()
+          where id = $1 and organization_id = $2 and email is null`,
+        [job.contactId, org, choisi.email, status, confidence],
+      );
+      ecrit = r.rowCount ?? 0;
+      echec = null;
+      break;
+    } catch (err) {
+      echec = err;
+      // 23505 : l'adresse appartient déjà à une AUTRE fiche (index unique
+      // org + lower(email)). Cas ordinaire — la même personne connue par deux
+      // chemins — et non une panne : réessayer donnerait la même erreur.
+      if ((err as { code?: string }).code === '23505') break;
+      if (essai === 2) break;
+      console.warn(`${MSG.prefixe} ${MSG.reessai(job.contactId, typeErreur(echec))}`);
     }
-    console.warn(`${MSG.prefixe} ${MSG.emailDejaPris(job.contactId)}`);
+  }
+
+  if (echec !== null) {
+    if ((echec as { code?: string }).code === '23505') {
+      console.warn(`${MSG.prefixe} ${MSG.emailDejaPris(job.contactId)}`);
+      await marquerTraiteSansLever(pool, org, job.contactId);
+      return 'email_deja_pris';
+    }
+    // Ce n'est PAS une panne du fournisseur : il a répondu, on lui a payé une
+    // adresse, et c'est NOTRE base qui refuse de l'écrire. L'opérateur qui lit
+    // « panne fournisseur » irait chercher du côté de FullEnrich. Et le contact
+    // est marqué : sans cela il serait racheté demain, puis chaque jour, tant
+    // que l'écriture échoue — c'est le seul chemin où l'on paie sans rien garder.
+    console.warn(`${MSG.prefixe} ${MSG.ecritureEchouee(job.contactId, typeErreur(echec))}`);
     await marquerTraiteSansLever(pool, org, job.contactId);
-    return 'email_deja_pris';
+    return 'ecriture_echouee';
+  }
+
+  if (ecrit === 0) {
+    // La clause `and email is null` n'a trouvé personne : une autre source (le
+    // chemin entreprise) a posé l'email entre notre lecture et cette écriture.
+    // L'achat est perdu, mais le contact a bien son adresse — on ne dit donc ni
+    // « achetée » (ce serait faux : la nôtre a été jetée) ni « déjà enrichi »
+    // (qui désigne un cas où rien n'a été dépensé).
+    console.warn(`${MSG.prefixe} ${MSG.achatPerdu(job.contactId)}`);
+    return 'achat_perdu';
   }
 
   console.log(`${MSG.prefixe} ${MSG.achete(job.contactId, achat.credits)}`);

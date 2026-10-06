@@ -10,3 +10,7 @@ export { enregistrerEngageur } from '../../apps/worker/src/handlers/post-engagem
 export { runScore } from '../../apps/worker/src/handlers/score.js';
 export { persistEnrichedContact } from '../../apps/worker/src/enrichment-persist.js';
 export { ecrireReglage } from '@jay-reach/core';
+// Le vrai runtime pg-boss : la section `fileReelle` prouve sur lui le
+// dédoublonnage par identifiant, le comptage des jobs réellement créés et la
+// politique de reprise déclarée.
+export { createRuntime, registerQueues } from '../../apps/worker/src/runtime.js';

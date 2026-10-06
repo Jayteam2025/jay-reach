@@ -21,10 +21,15 @@ import type * as ModuleEnrichment from '@jay-reach/providers/enrichment';
 let reponseFullEnrich: () => FullEnrichJobResult = () => {
   throw new Error('réponse FullEnrich non posée');
 };
+/** Les options passées au poll : c'est là que se lit le budget d'attente. */
+let optionsPoll: { maxWaitMs?: number } | undefined;
 vi.mock('@jay-reach/providers/enrichment', async (importOriginal) => ({
   ...(await importOriginal<typeof ModuleEnrichment>()),
   submitBulkEnrichment: vi.fn(async () => 'bulk-1'),
-  pollBulkEnrichment: vi.fn(async () => reponseFullEnrich()),
+  pollBulkEnrichment: vi.fn(async (_k: string, _id: string, o?: { maxWaitMs?: number }) => {
+    optionsPoll = o;
+    return reponseFullEnrich();
+  }),
 }));
 
 import {
@@ -55,6 +60,10 @@ interface Options {
   readonly achat?: AchatFullEnrich;
   readonly achatLeve?: Error;
   readonly conflitEmail?: boolean;
+  /** Nombre d'écritures d'email qui échouent avant de réussir (erreur non 23505). */
+  readonly echecsEcriture?: number;
+  /** `0` = la clause `and email is null` n'a trouvé personne (course avec le chemin entreprise). */
+  readonly lignesEcrites?: number;
   readonly coutEnregistre?: boolean;
   readonly cle?: string | null;
 }
@@ -72,6 +81,7 @@ function monde(opts: Options = {}) {
     couts: [] as number[],
     majContact: [] as unknown[][],
     marquesSeules: 0,
+    essaisEcriture: 0,
   };
   const contact =
     opts.contact === null
@@ -106,11 +116,15 @@ function monde(opts: Options = {}) {
     }
     if (/update contacts/i.test(sql)) {
       if (/email\s*=\s*\$3/.test(sql)) {
+        etat.essaisEcriture += 1;
         if (opts.conflitEmail) throw Object.assign(new Error('duplicate key'), { code: '23505' });
+        if (etat.essaisEcriture <= (opts.echecsEcriture ?? 0)) {
+          throw Object.assign(new Error('deadlock detected'), { code: '40P01' });
+        }
         etat.majContact.push(p);
-      } else {
-        etat.marquesSeules += 1;
+        return { rows: [], rowCount: opts.lignesEcrites ?? 1 };
       }
+      etat.marquesSeules += 1;
       return { rows: [], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
@@ -262,6 +276,70 @@ describe('enrichirContactConnu', () => {
     expect(j.lignes.join(' ')).not.toContain('api_key');
   });
 
+  it('une ecriture qui echoue une fois reussit au second essai, sans racheter', async () => {
+    const { deps, etat } = monde({ echecsEcriture: 1 });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('achete');
+    expect(etat.essaisEcriture).toBe(2);
+    // Un seul appel payant : le réessai porte sur NOTRE base, pas sur le fournisseur.
+    expect(etat.achats).toHaveLength(1);
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.reessai(CONTACT, 'Error')}`);
+  });
+
+  it('une adresse PAYEE que la base refuse d’ecrire marque le contact, et ne s’appelle pas panne fournisseur', async () => {
+    const { deps, etat } = monde({ echecsEcriture: 2 });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('ecriture_echouee');
+    expect(etat.essaisEcriture).toBe(2);
+    // Marqué : sans cela, le contact serait racheté demain, puis chaque jour.
+    expect(etat.marquesSeules).toBe(1);
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.ecritureEchouee(CONTACT, 'Error')}`);
+    expect(j.lignes.join(' ')).not.toContain('achat échoué');
+  });
+
+  it('un email pose entre-temps par une autre source rend achat_perdu, pas achete', async () => {
+    const { deps } = monde({ lignesEcrites: 0 });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('achat_perdu');
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.achatPerdu(CONTACT)}`);
+    // Le message de succès ne doit PAS être émis : l'adresse payée a été jetée.
+    expect(j.lignes).not.toContain(`${MSG.prefixe} ${MSG.achete(CONTACT, 1.5)}`);
+  });
+
+  it('un plafond regle a zero le dit, au lieu d’annoncer un plafond atteint', async () => {
+    const { deps, etat } = monde({ plafondSaisi: 0 });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('plafond');
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.plafondNul(ORG)}`);
+    // Rien n'est demandé au compteur : il n'y a rien à consommer.
+    expect(etat.sql.some((s2) => /consume_provider_credit/.test(s2))).toBe(false);
+    expect(etat.achats).toEqual([]);
+  });
+
+  it('une adresse fabriquee est refusee SANS etre marquee, un nom tronque est marque', async () => {
+    const fabriquee = monde({ contact: { linkedin_url: 'https://www.linkedin.com/in/ACoAAada' } });
+    const j1 = journal();
+    expect(await enrichirContactConnu(fabriquee.deps, { organizationId: ORG, contactId: CONTACT })).toBe('refuse');
+    j1.rendre();
+    // Pas de marque : le jour où la collecte lira l'identifiant public, le contact
+    // recevra sa vraie adresse et redeviendra payable.
+    expect(fabriquee.etat.marquesSeules).toBe(0);
+
+    const tronque = monde({ contact: { last_name: 'L.' } });
+    const j2 = journal();
+    expect(await enrichirContactConnu(tronque.deps, { organizationId: ORG, contactId: CONTACT })).toBe('refuse');
+    j2.rendre();
+    expect(tronque.etat.marquesSeules).toBe(1);
+  });
+
   it('un contact refuse ne consomme aucun credit et n’appelle pas le fournisseur', async () => {
     const { deps, etat } = monde({ contact: { linkedin_url: 'https://www.linkedin.com/in/ACoAAada' } });
     const j = journal();
@@ -327,6 +405,7 @@ function producteur(candidats: LigneCandidat[]) {
   const query = vi.fn(async (texte: string) => {
     sql.push(texte);
     if (/from organization_settings/i.test(texte)) return { rows: [{ value: 'Europe/Paris' }], rowCount: 1 };
+    if (/pgboss\./i.test(texte)) return { rows: [{ existe: false }], rowCount: 1 };
     if (/from contacts/i.test(texte)) return { rows: candidats, rowCount: candidats.length };
     return { rows: [], rowCount: 0 };
   });
@@ -352,14 +431,19 @@ describe('enqueueEnrichmentContactsConnus', () => {
   });
 
   it('le producteur n’enfile rien pour un contact qui a deja un email', async () => {
-    // La sélection vit en SQL : un contact avec email ne remonte pas. Ce qui se
-    // vérifie ici, c'est qu'aucun job ne part quand la requête ne rend rien —
-    // la preuve que la requête l'exclut est sur Postgres réel.
-    const { pool, boss, jobs } = producteur([]);
+    // Un faux pool qui rend `[]` passerait même si `c.email is null` disparaissait
+    // du SQL : il ne prouverait que l'absence de job quand la requête ne rend
+    // rien. On assère donc les DEUX clauses qui écartent un contact déjà pourvu,
+    // comme on le fait pour `s.status = 'qualified'`. Leur EFFET est prouvé sur
+    // Postgres (contrôles 12 et 19b de test/pg-verify/linkedin-enrichissement.sh).
+    const { pool, boss, jobs, sql } = producteur([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
     const n = await enqueueEnrichmentContactsConnus(boss as any, pool);
     expect(n).toBe(0);
     expect(jobs).toEqual([]);
+    const requete = sql.find((s2) => /from contacts/i.test(s2)) ?? '';
+    expect(requete).toMatch(/c\.email is null/);
+    expect(requete).toMatch(/c\.enriched_at is null/);
   });
 
   it('deux contacts de la meme organisation ne lisent le fuseau qu’une fois', async () => {
@@ -379,11 +463,16 @@ describe('enqueueEnrichmentContactsConnus', () => {
     await enqueueEnrichmentContactsConnus(boss as any, pool);
     const hier = { ...jobs[0] };
     jobs.length = 0;
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.now() + 36 * 3600_000));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
-    await enqueueEnrichmentContactsConnus(boss as any, pool);
-    vi.useRealTimers();
+    try {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(Date.now() + 36 * 3600_000));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
+      await enqueueEnrichmentContactsConnus(boss as any, pool);
+    } finally {
+      // Dans un `finally` : une assertion qui échoue laisserait sinon les faux
+      // timers en place pour tous les tests suivants du fichier.
+      vi.useRealTimers();
+    }
     expect(jobs[0]?.id).not.toBe(hier.id);
   });
 });
@@ -411,6 +500,16 @@ describe('dependancesEnrichissementReelles : la lecture du coût', () => {
     // Un `?? 0` ici rendrait un appel facturé indiscernable d'un appel gratuit.
     expect(achat.credits).not.toBe(0);
     expect(achat.resultat?.contact_info?.most_probable_work_email?.email).toBe('ada@acme.fr');
+  });
+
+  it('attend 90 s, le pire cas mesuré, et non le budget d’une fonction serverless', async () => {
+    // 40 s venaient de la coupure à 60 s d'une fonction Vercel ; le moteur tourne
+    // en worker permanent depuis le 10/09/2026, et FullEnrich met jusqu'à 55,8 s.
+    // À 40 s on abandonnait un appel déjà payé qui allait aboutir.
+    reponseFullEnrich = () => reponse({ credits: 1 });
+    const deps = dependancesEnrichissementReelles({} as unknown as Pool, undefined);
+    await deps.acheter('k', { linkedin_url: 'u' });
+    expect(optionsPoll?.maxWaitMs).toBe(90_000);
   });
 
   it('rend un coût nul quand la réponse dit zéro', async () => {

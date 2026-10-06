@@ -30,7 +30,13 @@ export const QUEUES: readonly QueueDef[] = [
   // ne le signale. Les deux achètent des adresses, mais pas au même point du
   // chemin — celle-ci part d'une PERSONNE déjà identifiée (un engageur de post),
   // l'autre d'une entreprise où il faut encore trouver qui contacter.
-  { name: 'enrichment.contact_connu', descriptionKey: 'jobs.q.enrichmentContactConnu', retry: DEFAULT_RETRY },
+  // AUCUNE reprise, à la différence de sa voisine : ce traitement ACHÈTE. Le
+  // crédit FullEnrich est consommé avant l'appel, et la réponse n'est conservée
+  // nulle part ; un job rejoué après une coupure entre le décompte et l'écriture
+  // rachèterait donc la même adresse, jusqu'à cinq fois. Le producteur redépose
+  // le contact le lendemain sous un identifiant neuf : un échec transitoire
+  // coûte un jour de retard, là où une reprise coûterait cinq achats.
+  { name: 'enrichment.contact_connu', descriptionKey: 'jobs.q.enrichmentContactConnu', retry: { retryLimit: 0, retryBackoff: false } },
   { name: 'sequence.enroll', descriptionKey: 'jobs.q.sequenceEnroll', retry: DEFAULT_RETRY },
   { name: 'sequence.tick', descriptionKey: 'jobs.q.sequenceTick', retry: DEFAULT_RETRY },
   { name: 'actions.dispatch', descriptionKey: 'jobs.q.actionsDispatch', retry: DEFAULT_RETRY },

@@ -32,6 +32,7 @@
 import pg from 'pg';
 import {
   MSG,
+  createRuntime,
   ecarterSignauxTropAnciens,
   ecrireReglage,
   enqueueEnrichmentContactsConnus,
@@ -39,11 +40,24 @@ import {
   enrichirContactConnu,
   persistEnrichedContact,
   raisonDeNePasAcheter,
+  registerQueues,
   runScore,
 } from './_linkedin-enrichissement-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
+
+// Le VRAI runtime pg-boss, créé par le code de production (`createRuntime` +
+// `registerQueues`). Il pose le schéma `pgboss`, que le producteur interroge pour
+// savoir si l'identifiant du jour existe déjà — en file ou en archive. Les
+// sections de SÉLECTION gardent un faux `boss` (jobs en mémoire) : ce qu'elles
+// prouvent est le SQL de sélection, et un vrai dépôt y rendrait les contrôles
+// suivants ininterprétables (un contact non réenfilé parce qu'il est déjà en
+// file ressemblerait à un contact correctement exclu). La section `fileReelle`,
+// elle, prouve le dépôt sur le vrai runtime.
+const boss = createRuntime(process.env.DATABASE_URL);
+await boss.start();
+await registerQueues(boss);
 
 let failures = 0;
 function check(label, cond, extra = '') {
@@ -176,6 +190,22 @@ function achat({ email = 'achete@acme.fr', statut = 'DELIVERABLE', credits = 1.5
   };
 }
 
+/**
+ * Un pool qui LÈVE sur une seule requête nommée, tout le reste du SQL restant
+ * réel et exécuté sur Postgres. C'est la seule façon d'éprouver un échec
+ * d'écriture POSTÉRIEUR à un achat : aucune donnée ne peut le provoquer, c'est
+ * une panne de la base. `aPartirDe` laisse passer les N premiers essais, pour
+ * distinguer « échoue une fois puis réussit » de « échoue toujours ».
+ */
+function poolQuiLeve(motif, { code } = {}) {
+  return {
+    query: async (sql, params) => {
+      if (motif.test(sql)) throw Object.assign(new Error('panne injectée'), code ? { code } : {});
+      return pool.query(sql, params);
+    },
+  };
+}
+
 const JOUR = () => new Date().toISOString().slice(0, 10);
 const usage = async (org) =>
   (await q(`select used, credits_spent::float8 as credits_spent from provider_daily_usage where organization_id=$1 and provider_id='fullenrich' and usage_date=$2::date`, [org, JOUR()])).rows[0] ?? null;
@@ -239,7 +269,8 @@ async function producteur() {
   console.log('le producteur enfile les personnes qualifiées sans adresse email, et elles seules');
   const m = await monde();
   const jobs = [];
-  const boss = { insert: async (lot) => { jobs.push(...lot); } };
+  // Faux `boss` pour les sections de SÉLECTION : voir le commentaire du runtime.
+  const faux = { insert: async (lot) => { jobs.push(...lot); } };
   const pour = (id) => jobs.filter((j) => j.data.contactId === id);
 
   const ada = await engageurQualifie(m, 'ada', 'Ada Lovelace', 'Directrice commerciale chez Acme', 'https://www.linkedin.com/in/ada-lovelace');
@@ -264,7 +295,7 @@ async function producteur() {
   check('9c. l’engageur hors cible est effacé par le scoring, avec sa mémoire d’écart',
     carl.c === 0 && carl.s === 0 && carl.e === 1, JSON.stringify(carl));
 
-  const n = await enqueueEnrichmentContactsConnus(boss, pool);
+  const n = await enqueueEnrichmentContactsConnus(faux, pool);
   check('10. seule la personne à adresse publique est enfilée (l’adresse fabriquée est écartée)',
     pour(ada.id).length === 1 && pour(bob.id).length === 0, `ada=${pour(ada.id).length} bob=${pour(bob.id).length} total=${n}`);
   check('10b. le job vise la file enrichment.contact_connu, et porte l’organisation du contact',
@@ -275,15 +306,108 @@ async function producteur() {
   const dana = await enregistrer(m, eng('dana', 'Dana Neuve', 'Directrice commerciale', 'https://www.linkedin.com/in/dana-neuve'));
   const danaId = (await q(`select id from contacts where organization_id=$1 and first_name='Dana'`, [m.org])).rows[0].id;
   jobs.length = 0;
-  await enqueueEnrichmentContactsConnus(boss, pool);
+  await enqueueEnrichmentContactsConnus(faux, pool);
   check('11. une personne collectée mais pas encore qualifiée n’est pas enfilée', dana === 'nouveau' && pour(danaId).length === 0, dana);
 
   // Email posé par le CHEMIN RÉEL (rattachement de `persistEnrichedContact`).
   const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
   await persistEnrichedContact(pool, m.org, compte, { email: 'ada@acme.fr', linkedinUrl: ada.linkedin_url, emailStatusRaw: 'VALID' });
   jobs.length = 0;
-  await enqueueEnrichmentContactsConnus(boss, pool);
+  await enqueueEnrichmentContactsConnus(faux, pool);
   check('12. une personne qui a déjà son email n’est plus enfilée', pour(ada.id).length === 0, String(pour(ada.id).length));
+}
+
+
+// --------------------------------- 2 bis. une organisation n'en affame pas une autre
+
+async function famine() {
+  console.log('le lot est par organisation : une organisation bloquée n’affame pas les autres');
+  // A : trois personnes, les PLUS RÉCENTES de la base, dans une organisation qui
+  // n'a AUCUNE clé FullEnrich. B : une personne, plus ancienne, organisation
+  // normale. C'est le scénario réel : le producteur ne lit pas les clés (elles se
+  // résolvent dans le coffre chiffré, pas en SQL), donc rien n'écarte A ; et le
+  // handler rend `sans_cle` SANS marquer, donc ses candidats reviennent
+  // identiques à chaque tour, indéfiniment.
+  const a = await monde();
+  const b = await monde();
+  const ancienne = await engageurQualifie(b, 'bruno', 'Bruno Ancien', 'Directeur commercial', 'https://www.linkedin.com/in/bruno-ancien');
+  // B est ANTÉRIEURE : son signal date d'hier, ceux de A de maintenant. Posé par
+  // l'horodatage du signal, que l'ordre de sélection lit (`s.occurred_at desc`).
+  await q(`update signals set occurred_at = now() - interval '1 day' where organization_id = $1`, [b.org]);
+  const recents = [];
+  for (const [id, nom] of [['ava', 'Ava Recente'], ['aya', 'Aya Recente'], ['ana', 'Ana Recente']]) {
+    recents.push(await engageurQualifie(a, id, nom, 'Directrice commerciale', `https://www.linkedin.com/in/${id}-recente`));
+  }
+
+  // L'organisation A tourne réellement à vide : le handler ne marque rien.
+  const sansCle = achat();
+  for (const c of recents) {
+    await enEcoutant(() => enrichirContactConnu(sansCle.deps({ sansCle: true }), { organizationId: a.org, contactId: c.id }));
+  }
+  const marques = (await q(`select count(*)::int n from contacts where organization_id=$1 and enriched_at is not null`, [a.org])).rows[0].n;
+  check('11a. une organisation sans clé laisse ses candidats intacts : ils reviendront à chaque tour', marques === 0, String(marques));
+
+  // Lot de DEUX par organisation : A en a trois, elle ne peut pas tout prendre.
+  const jobs = [];
+  const faux = { insert: async (lot) => { jobs.push(...lot); } };
+  await enqueueEnrichmentContactsConnus(faux, pool, { limit: 2 });
+  const deA = jobs.filter((j) => j.data.organizationId === a.org).length;
+  check('11b. l’organisation aux contacts les plus récents ne prend que SA part du lot', deA === 2, String(deA));
+
+  // LE scénario de famine. La borne globale est serrée à la taille d'un seul lot
+  // d'organisation : c'est la situation réelle, où A a plus de candidats que le
+  // tour n'a de places. Un lot GLOBAL trié chronologiquement donnerait les deux
+  // places aux contacts de A, les plus récents, et B n'en aurait jamais —
+  // définitivement, puisque rien ne fait avancer A. Les organisations étant
+  // servies à tour de rôle, le rang 1 de chacune passe avant le rang 2 de l'autre.
+  jobs.length = 0;
+  await enqueueEnrichmentContactsConnus(faux, pool, { limit: 2, limiteGlobale: 2 });
+  const gA = jobs.filter((j) => j.data.organizationId === a.org).length;
+  const gB = jobs.filter((j) => j.data.contactId === ancienne.id).length;
+  check('11c. sous une borne serrée, l’organisation aux contacts plus anciens est servie quand même',
+    jobs.length === 2 && gA === 1 && gB === 1, `total=${jobs.length} A=${gA} B=${gB}`);
+}
+
+// ------------------------------- 2 ter. la file réelle : dédoublonnage et comptage
+
+async function fileReelle() {
+  console.log('sur le vrai pg-boss : un job par contact et par jour, compté une seule fois');
+  const m = await monde();
+  const ada = await engageurQualifie(m, 'ada', 'Ada Lovelace', 'Directrice commerciale', 'https://www.linkedin.com/in/ada-lovelace');
+
+  const file = (await q(`select retry_limit from pgboss.queue where name = 'enrichment.contact_connu'`)).rows[0];
+  check('11e. la file d’achat est déclarée SANS reprise : un rejeu rachèterait l’adresse',
+    file?.retry_limit === 0, JSON.stringify(file));
+
+  // Les candidats des sections précédentes sont toujours là (elles déposaient
+  // sur le faux `boss`), donc ce tour en dépose plus qu'un. Ce qui se vérifie
+  // n'est pas leur nombre mais la CORRESPONDANCE : le compte rendu doit être
+  // exactement ce que la file a reçu, et le contact de cette section y est.
+  const enFile = async () =>
+    (await q(`select count(*)::int n from pgboss.job where name='enrichment.contact_connu'`)).rows[0].n;
+  const jobAda = async () =>
+    (await q(`select count(*)::int n from pgboss.job where name='enrichment.contact_connu' and data->>'contactId' = $1`, [ada.id])).rows[0].n;
+  const premier = await enqueueEnrichmentContactsConnus(boss, pool);
+  const apres1 = await enFile();
+  check('11f. le premier tour dépose, et le nombre annoncé est exactement ce que la file a reçu',
+    premier === apres1 && premier > 0 && (await jobAda()) === 1, `annoncé=${premier} en file=${apres1}`);
+
+  const second = await enqueueEnrichmentContactsConnus(boss, pool);
+  const apres2 = await enFile();
+  check('11g. le tour suivant du MÊME jour ne crée rien, et n’annonce rien (le compte n’est pas celui des contacts examinés)',
+    second === 0 && apres2 === apres1, `annoncé=${second} en file ${apres1}->${apres2}`);
+
+  // Le job termine, puis pg-boss l'ARCHIVE — ce qu'il fait au bout de douze
+  // heures (ARCHIVE_DEFAULT, pg-boss 10.4.2), soit dans la même journée. Le SQL
+  // ci-dessous est celui de sa maintenance (`INSERT INTO archive … SELECT … FROM
+  // job`, src/plans.js), rejoué ici parce qu'on ne peut pas attendre douze heures.
+  await q(`insert into pgboss.archive select j.*, now() from pgboss.job j where j.name='enrichment.contact_connu'`);
+  await q(`delete from pgboss.job where name='enrichment.contact_connu'`);
+  const troisieme = await enqueueEnrichmentContactsConnus(boss, pool);
+  check('11h. un job ARCHIVÉ dans la journée ne fait pas renaître l’achat (sinon : seconde dépense)',
+    troisieme === 0, String(troisieme));
+  check('11i. et le contact est toujours candidat, donc il repartira demain sous un id neuf',
+    (await q(`select enriched_at, email from contacts where id=$1`, [ada.id])).rows[0].enriched_at === null);
 }
 
 // --------------------------------------------- 3. le handler, sur un vrai Postgres
@@ -403,6 +527,113 @@ async function conflitDAdresse() {
   check('25b. aucune fiche n’a été dupliquée ni fusionnée', autres === 1, String(autres));
 }
 
+
+// ------------------------- 3 ter. ce qui se passe APRÈS que l'adresse est payée
+
+async function apresLAchat() {
+  console.log('une adresse payée n’est jamais rachetée, quoi qu’il arrive ensuite');
+  const m = await monde();
+
+  // 1) La base refuse l'écriture. Deux fois : le réessai ne sauve pas.
+  const ida = await engageurQualifie(m, 'ida', 'Ida Base', 'Directrice commerciale', 'https://www.linkedin.com/in/ida-base');
+  const a = achat();
+  const sourd = poolQuiLeve(/update contacts set\s+email = \$3/, { code: '40P01' });
+  const r = await enEcoutant(() =>
+    enrichirContactConnu({ ...a.deps(), pool: sourd }, { organizationId: m.org, contactId: ida.id }));
+  check('32. une adresse PAYÉE que la base refuse d’écrire n’est pas étiquetée « panne fournisseur »',
+    r.valeur === 'ecriture_echouee' && r.lignes.includes(`${MSG.prefixe} ${MSG.ecritureEchouee(ida.id, 'Error')}`),
+    `${r.valeur} / ${r.lignes.join(' | ')}`);
+  const ci = (await q(`select email, enriched_at from contacts where id=$1`, [ida.id])).rows[0];
+  check('32b. et le contact est MARQUÉ : sans cela il serait racheté demain, puis chaque jour',
+    ci.email === null && ci.enriched_at !== null, JSON.stringify(ci));
+  const jobs = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (l) => { jobs.push(...l); } }, pool);
+  check('32c. le producteur ne le reprend effectivement plus', jobs.filter((j) => j.data.contactId === ida.id).length === 0);
+
+  // 2) Une panne passagère : le second essai écrit, et l'adresse n'est achetée qu'une fois.
+  const ivo = await engageurQualifie(m, 'ivo', 'Ivo Passager', 'Directeur commercial', 'https://www.linkedin.com/in/ivo-passager');
+  const b = achat({ email: 'ivo@acme.fr' });
+  // Le premier essai lève, le second passe : la panne ne dure pas.
+  let leve = 0;
+  const unePanne = {
+    query: async (sql, params) => {
+      if (/update contacts set\s+email = \$3/.test(sql) && leve === 0) {
+        leve = 1;
+        throw Object.assign(new Error('panne injectée'), { code: '40P01' });
+      }
+      return pool.query(sql, params);
+    },
+  };
+  const r2 = await enEcoutant(() =>
+    enrichirContactConnu({ ...b.deps(), pool: unePanne }, { organizationId: m.org, contactId: ivo.id }));
+  const cv = (await q(`select email from contacts where id=$1`, [ivo.id])).rows[0];
+  check('33. une panne passagère de la base est réessayée UNE fois, et l’adresse déjà payée est écrite',
+    r2.valeur === 'achete' && cv.email === 'ivo@acme.fr' && b.vus.length === 1,
+    `${r2.valeur} ${cv.email} appels=${b.vus.length}`);
+
+  // 3) Course : le chemin ENTREPRISE pose l'email pendant qu'on achetait.
+  const ola = await engageurQualifie(m, 'ola', 'Ola Course', 'Directrice commerciale', 'https://www.linkedin.com/in/ola-course');
+  const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  let double = false;
+  const course = {
+    query: async (sql, params) => {
+      if (/update contacts set\s+email = \$3/.test(sql) && !double) {
+        double = true;
+        // Chemin de production : l'enrichissement d'entreprise retrouve la même
+        // personne par son adresse de profil et lui pose SON email.
+        await persistEnrichedContact(pool, m.org, compte, {
+          email: 'ola-entreprise@acme.fr', linkedinUrl: ola.linkedin_url, emailStatusRaw: 'VALID',
+        });
+      }
+      return pool.query(sql, params);
+    },
+  };
+  const c = achat({ email: 'ola-achetee@acme.fr' });
+  const r3 = await enEcoutant(() =>
+    enrichirContactConnu({ ...c.deps(), pool: course }, { organizationId: m.org, contactId: ola.id }));
+  const co = (await q(`select email from contacts where id=$1`, [ola.id])).rows[0];
+  check('34. une adresse posée entre-temps par une autre source : l’achat est perdu, et on ne dit pas « achetée »',
+    r3.valeur === 'achat_perdu' && co.email === 'ola-entreprise@acme.fr' &&
+      r3.lignes.includes(`${MSG.prefixe} ${MSG.achatPerdu(ola.id)}`) &&
+      !r3.lignes.includes(`${MSG.prefixe} ${MSG.achete(ola.id, 1.5)}`),
+    `${r3.valeur} ${co.email} / ${r3.lignes.join(' | ')}`);
+}
+
+async function plafondNulEtMarquage() {
+  console.log('un plafond réglé à zéro le dit, et seul un nom tronqué ferme la porte');
+  const m = await monde();
+  await ecrireReglage({ ex: pool, organisationId: m.org, utilisateurId: m.admin, role: 'admin' },
+    { cle: 'enrichissements_par_jour', valeur: 0 });
+  const zoe = await engageurQualifie(m, 'zoe', 'Zoe Zero', 'Directrice commerciale', 'https://www.linkedin.com/in/zoe-zero');
+  const a = achat();
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: zoe.id }));
+  check('35. un plafond réglé à zéro est nommé pour ce qu’il est, pas annoncé comme « atteint »',
+    r.valeur === 'plafond' && r.lignes.includes(`${MSG.prefixe} ${MSG.plafondNul(m.org)}`) &&
+      !r.lignes.includes(`${MSG.prefixe} ${MSG.plafond(m.org)}`),
+    r.lignes.join(' | '));
+  check('35b. et rien n’est consommé : il n’y a pas de ligne de consommation à créer',
+    (await usage(m.org)) === null && a.vus.length === 0, JSON.stringify(await usage(m.org)));
+
+  // Marquage asymétrique : une adresse FABRIQUÉE peut cesser de l'être, pas un nom tronqué.
+  const m2 = await monde();
+  const dan = await engageurQualifie(m2, 'dan', 'Dan Interne', 'Directeur commercial');
+  const b = achat();
+  await enEcoutant(() => enrichirContactConnu(b.deps(), { organizationId: m2.org, contactId: dan.id }));
+  const cd = (await q(`select enriched_at from contacts where id=$1`, [dan.id])).rows[0];
+  check('36. une adresse fabriquée est refusée SANS marquer : le jour où l’identifiant public est lu, elle redevient payable',
+    cd.enriched_at === null, JSON.stringify(cd));
+
+  // « Ada L. » : ce que LinkedIn affiche d'un hors-réseau dans une vignette.
+  const tronque = await engageurQualifie(m2, 'lili', 'Lili L.', 'Directrice commerciale', 'https://www.linkedin.com/in/lili-l');
+  const rt = await enEcoutant(() => enrichirContactConnu(b.deps(), { organizationId: m2.org, contactId: tronque.id }));
+  const ct = (await q(`select first_name, last_name, enriched_at from contacts where id=$1`, [tronque.id])).rows[0];
+  check('37. un nom tronqué est refusé ET marqué : aucun passage ne le complétera (coalesce), il resterait candidat pour rien',
+    rt.valeur === 'refuse' && ct.last_name === 'L.' && ct.enriched_at !== null &&
+      rt.lignes.includes(`${MSG.prefixe} ${MSG.refus(tronque.id, 'nom_tronque')}`),
+    `${rt.valeur} ${JSON.stringify(ct)}`);
+  check('37b. et aucun crédit n’a été consommé pour l’un ou l’autre', b.vus.length === 0 && (await usage(m2.org)) === null);
+}
+
 async function retention() {
   console.log('la marque d’achat n’épargne de la purge que ce qui a vraiment une adresse');
   const m = await monde();
@@ -456,7 +687,8 @@ async function pannes() {
     r3.valeur === 'introuvable' && (await usage(m3.org)) === null, String(r3.valeur));
 }
 
-await jouer(colonneDeCout, producteur, handler, sansResultat, plafondEtRefus, conflitDAdresse, retention, pannes);
+await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, conflitDAdresse, retention, pannes);
+await boss.stop({ graceful: false });
 await pool.end();
 console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);
 process.exit(failures === 0 ? 0 : 1);
