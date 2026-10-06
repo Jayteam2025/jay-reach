@@ -22,7 +22,9 @@
  *  4. **Rien ne lève après l'appel payant.** Une panne d'écriture ferait rejouer
  *     le job par pg-boss, donc racheter la même adresse. Tout ce qui suit l'achat
  *     est capturé et consigné ; seules les pannes ANTÉRIEURES à l'achat laissent
- *     le job repartir.
+ *     le job repartir — y compris, délibérément, l'écriture du compteur de
+ *     tentatives, dont l'échec coûte un crédit et jamais un achat (voir sur
+ *     place).
  *
  * Le worker utilise la clé de service (il contourne la RLS) : chaque requête
  * filtre explicitement par organisation.
@@ -331,6 +333,17 @@ export async function enrichirContactConnu(
   // Le crédit est pris : cette tentative est PAYÉE, qu'elle aboutisse ou non.
   // Comptée ici et pas plus bas, pour qu'une coupure pendant l'appel ne la fasse
   // pas oublier — c'est le crédit qu'on compte, pas le résultat.
+  //
+  // CET `update` PEUT LEVER, et son erreur n'est volontairement PAS capturée :
+  // c'est la dernière chose qui lève, et elle le fait AVANT l'appel payant. Ce
+  // que ça coûte quand ça arrive : le crédit du jour est consommé pour rien, et
+  // le job repart (il n'est pas rejoué — la file est sans reprise — mais le
+  // contact, non marqué, revient demain). Un crédit perdu se LIT dans
+  // `provider_daily_usage`. La capturer coûterait beaucoup plus cher : l'appel
+  // partirait avec une tentative non comptée, et un contact dont l'écriture du
+  // compteur échoue systématiquement rouvrirait le rachat quotidien que ce
+  // compteur existe pour fermer. La fenêtre entre la prise du crédit et cet
+  // incrément coûte donc un crédit, jamais un achat.
   const tentatives = (
     await pool.query<{ enrichment_attempts: number }>(
       `update contacts set enrichment_attempts = enrichment_attempts + 1
@@ -340,7 +353,8 @@ export async function enrichirContactConnu(
     )
   ).rows[0]?.enrichment_attempts ?? 0;
 
-  // --- L'achat. À partir d'ici, plus rien ne lève.
+  // --- L'achat. À partir d'ici, plus rien ne lève : une panne postérieure
+  // ferait rejouer le job et racheter l'adresse. Tout est capturé et consigné.
 
   const entree: FullEnrichContactInput = {
     ...(contact.first_name ? { first_name: contact.first_name } : {}),

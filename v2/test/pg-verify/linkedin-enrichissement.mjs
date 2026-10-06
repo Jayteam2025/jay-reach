@@ -331,8 +331,17 @@ async function famine() {
   // faux vert intermittent est pire qu'un faux vert franc — il passe chez soi et
   // rougit un jour ailleurs, sans raison apparente. En jouant les deux ordres,
   // c'est l'ENTRELACEMENT qui est prouvé, et plus seulement la partition.
-  await scenarioFamine(true, 'la plus petite');
-  await scenarioFamine(false, 'la plus grande');
+  // Un `try` PAR SCÉNARIO, et pas seulement autour de la section : si le premier
+  // lève, le second doit tourner quand même — sinon l'entrelacement redevient à
+  // moitié prouvé le jour où l'un des deux casse, et le harnais n'annonce qu'un
+  // seul échec. Même raison que le helper `jouer` au niveau des sections.
+  for (const [plusPetite, libelle] of [[true, 'la plus petite'], [false, 'la plus grande']]) {
+    try {
+      await scenarioFamine(plusPetite, libelle);
+    } catch (e) {
+      check(`scénario famine (${libelle}) : exception, ses contrôles n'ont PAS été joués`, false, String(e?.message ?? e));
+    }
+  }
 }
 
 /** Deux organisations neuves, rendues dans l'ordre où Postgres trie leur identifiant. */
@@ -447,20 +456,26 @@ async function fileReelle() {
   // et ce commit est sur la branche. Lire `retry_limit` sur une file NEUVE (11e)
   // ne peut pas voir ce cas.
   await q(`update pgboss.queue set retry_limit = 5 where name = 'enrichment.contact_connu'`);
-  await registerQueues(boss);
-  const apres = (await q(`select retry_limit from pgboss.queue where name='enrichment.contact_connu'`)).rows[0];
-  check('11j. une file déjà créée n’est JAMAIS réalignée par la déclaration (createQueue est un on conflict do nothing)',
-    apres?.retry_limit === 5, JSON.stringify(apres));
+  try {
+    await registerQueues(boss);
+    const apres = (await q(`select retry_limit from pgboss.queue where name='enrichment.contact_connu'`)).rows[0];
+    check('11j. une file déjà créée n’est JAMAIS réalignée par la déclaration (createQueue est un on conflict do nothing)',
+      apres?.retry_limit === 5, JSON.stringify(apres));
 
-  const bea = await engageurQualifie(m, 'bea', 'Bea Reprise', 'Directrice commerciale', 'https://www.linkedin.com/in/bea-reprise');
-  await enqueueEnrichmentContactsConnus(boss, pool);
-  const dep = (await q(
-    `select retry_limit from pgboss.job where name='enrichment.contact_connu' and data->>'contactId' = $1`,
-    [bea.id],
-  )).rows[0];
-  check('11k. le job déposé porte quand même ZÉRO reprise : la politique voyage avec lui, pas avec la file',
-    dep?.retry_limit === 0, JSON.stringify(dep));
-  await q(`update pgboss.queue set retry_limit = 0 where name = 'enrichment.contact_connu'`);
+    const bea = await engageurQualifie(m, 'bea', 'Bea Reprise', 'Directrice commerciale', 'https://www.linkedin.com/in/bea-reprise');
+    await enqueueEnrichmentContactsConnus(boss, pool);
+    const dep = (await q(
+      `select retry_limit from pgboss.job where name='enrichment.contact_connu' and data->>'contactId' = $1`,
+      [bea.id],
+    )).rows[0];
+    check('11k. le job déposé porte quand même ZÉRO reprise : la politique voyage avec lui, pas avec la file',
+      dep?.retry_limit === 0, JSON.stringify(dep));
+  } finally {
+    // Dans un `finally` : une exception avant la remise laisserait la file à cinq
+    // reprises pour TOUT le reste du harnais. Une fixture ne laisse pas
+    // l'environnement sale derrière elle.
+    await q(`update pgboss.queue set retry_limit = 0 where name = 'enrichment.contact_connu'`);
+  }
 }
 
 // ------------------------------ 3 quater. on ne paie pas la même panne tous les jours

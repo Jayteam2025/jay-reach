@@ -31,12 +31,16 @@ comment on column contacts.enrichment_attempts is
 -- ---------------------------------------------------------------------------
 do $$
 begin
+  -- Le DÉFAUT est vérifié autant que la colonne : `not null` sans défaut ferait
+  -- échouer toute insertion de contact qui ne nomme pas cette colonne, c'est-à-dire
+  -- toutes celles du dépôt. Une migration ne doit pas pouvoir laisser passer ça.
   if not exists (
     select 1 from information_schema.columns
      where table_schema = 'public' and table_name = 'contacts'
        and column_name = 'enrichment_attempts' and is_nullable = 'NO'
+       and column_default = '0'
   ) then
-    raise exception 'colonne manquante : contacts.enrichment_attempts';
+    raise exception 'colonne manquante, nullable, ou sans défaut 0 : contacts.enrichment_attempts';
   end if;
   if not exists (
     select 1 from pg_constraint c join pg_class t on t.oid = c.conrelid
