@@ -133,9 +133,12 @@ export function entrepriseDeLIntitule(intitule: string): string | undefined {
  *
  * La descente est RÉCURSIVE et non une lecture de chemins fixes : LinkedIn range
  * ses profils tantôt dans `included` (réponse normalisée), tantôt dans les
- * éléments eux-mêmes, et change la décoration sans prévenir. On retient tout
- * objet qui porte à la fois un URN de personne et un nom — rien d'autre dans une
- * réponse Voyager ne ressemble à ça.
+ * éléments eux-mêmes, et change la décoration sans prévenir. On retient un objet
+ * dès qu'il porte un URN de PERSONNE (trois préfixes reconnus, rien d'autre) ET
+ * au moins un attribut de personne. Un URN cité en simple référence, sans aucun
+ * attribut, est écarté ici — c'est le seul filtre de cette fonction. Tout le
+ * reste (nom vide, intitulé vide) descend au schéma d'entrée du handler, qui
+ * décide seul de ce qui mérite un contact.
  *
  * `urlProfil` vient de `publicIdentifier` : sans lui, l'adresse de repli déduite
  * de l'URN (`lienProfilDeduit`) ne rejoindra jamais celle que rend FullEnrich, et
