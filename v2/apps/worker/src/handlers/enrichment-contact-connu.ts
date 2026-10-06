@@ -125,6 +125,12 @@ const INITIALE_SEULE = /^\p{L}\.?$/u;
  */
 export function raisonDeNePasAcheter(c: ContactAEnrichir): RaisonRefus | null {
   if (!c.linkedinUrl) return 'sans_adresse';
+  // Sans identifiant de membre, il n'y a RIEN à comparer : le défaut est donc
+  // d'acheter. C'est le bon sens de défaut — seul `enregistrerEngageur` fabrique
+  // une adresse, et il pose toujours l'identifiant (son schéma d'entrée exige un
+  // URN à dernier segment non vide). Un contact sans identifiant vient d'un
+  // import ou du chemin entreprise, où l'adresse a été saisie ou rendue par le
+  // fournisseur. Le SQL du producteur dit la même chose (`is null or <>`).
   // L'adresse a été FABRIQUÉE à partir de l'identifiant interne LinkedIn
   // (`lienProfilDeduit`) parce que la collecte n'a pas lu l'identifiant public.
   // Elle est stable, donc elle suffit à dédoublonner un contact — mais LinkedIn
@@ -134,6 +140,11 @@ export function raisonDeNePasAcheter(c: ContactAEnrichir): RaisonRefus | null {
   if (c.linkedinProviderId && c.linkedinUrl === lienProfilDeduit(c.linkedinProviderId)) {
     return 'adresse_deduite';
   }
+  // Nom tronqué : on RENONCE à acheter. Le handler marque ensuite la personne
+  // comme traitée, et c'est sans perte aujourd'hui — `enregistrerEngageur`
+  // n'écrase jamais un nom déjà posé (`coalesce(last_name, …)`), donc aucun
+  // passage ultérieur ne complétera « L. ». Le jour où la collecte saura corriger
+  // un nom tronqué a posteriori, cette marque devra être levée.
   if (c.lastName !== null && INITIALE_SEULE.test(c.lastName.trim())) return 'nom_tronque';
   return null;
 }

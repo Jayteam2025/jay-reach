@@ -162,6 +162,24 @@ describe('raisonDeNePasAcheter', () => {
   it('refuse un contact sans adresse de profil', () => {
     expect(raisonDeNePasAcheter({ ...base, linkedinUrl: null })).toBe('sans_adresse');
   });
+
+  it('sans identifiant de membre, l’adresse est tenue pour légitime et on achète', () => {
+    // La détection compare l'adresse à celle que `lienProfilDeduit` fabriquerait
+    // à partir de l'identifiant interne : sans cet identifiant, il n'y a rien à
+    // comparer. Le défaut est donc d'ACHETER, et c'est le bon : seul
+    // `enregistrerEngageur` fabrique une adresse, et il pose toujours
+    // l'identifiant (le schéma d'entrée exige un URN à dernier segment non vide).
+    // Un contact sans identifiant vient d'un import ou du chemin entreprise, où
+    // l'adresse a été saisie ou rendue par le fournisseur — jamais fabriquée.
+    expect(raisonDeNePasAcheter({ ...base, linkedinProviderId: null })).toBeNull();
+    expect(raisonDeNePasAcheter({ ...base, linkedinProviderId: '' })).toBeNull();
+  });
+
+  it('une adresse qui n’est QUE le préfixe ne passe pas pour fabriquée', () => {
+    // `lienProfilDeduit('')` rend le préfixe nu, que le SQL du producteur utilise
+    // comme paramètre. Une comparaison relâchée y verrait une adresse fabriquée.
+    expect(raisonDeNePasAcheter({ ...base, linkedinUrl: 'https://www.linkedin.com/in/', linkedinProviderId: null })).toBeNull();
+  });
 });
 
 describe('enrichirContactConnu', () => {
@@ -253,6 +271,23 @@ describe('enrichirContactConnu', () => {
     expect(etat.achats).toEqual([]);
     expect(etat.sql.some((s) => /consume_provider_credit/.test(s))).toBe(false);
     expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.refus(CONTACT, 'adresse_deduite')}`);
+  });
+
+  it('un nom tronque fait RENONCER a l’achat, et la personne est marquee traitee', async () => {
+    // Décision de dépense, explicite : on n'achète pas. `enregistrerEngageur`
+    // n'écrase jamais un nom déjà posé (`coalesce(last_name, …)`), donc un passage
+    // ultérieur ne complétera pas « L. » : marquer ne perd rien aujourd'hui. Le
+    // jour où la collecte saura corriger un nom tronqué a posteriori, cette marque
+    // devra être levée — sinon la personne restera définitivement sans adresse.
+    const { deps, etat } = monde({ contact: { last_name: 'L.' } });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('refuse');
+    expect(etat.achats).toEqual([]);
+    expect(etat.sql.some((s) => /consume_provider_credit/.test(s))).toBe(false);
+    expect(etat.marquesSeules).toBe(1);
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.refus(CONTACT, 'nom_tronque')}`);
   });
 
   it('un contact qui a deja un email n’est pas rachete', async () => {
