@@ -32,6 +32,8 @@ import {
   enqueueDiscoverForActiveSources,
   enqueueRequestedRuns,
   extraireEngageurs,
+  fusionner,
+  MSG,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
   QUEUES,
@@ -83,7 +85,7 @@ async function userNeuf() {
  * `creerCampagne` et l'inscription d'un membre sont les chemins de production
  * équivalents, ils n'apportent rien à ce qui est prouvé ici.
  */
-async function monde({ personaDansSource = true, campagneActive = true, session = 'active' } = {}) {
+async function monde({ personaDansSource = true, campagneActive = true, session = 'active', garder = ['reagi'] } = {}) {
   seq += 1;
   const n = `${Date.now().toString(36)}${seq}`;
   const org = (await q(`insert into organizations (name, slug) values ($1, $2) returning id`, [`Org ${n}`, `org-${n}`])).rows[0].id;
@@ -105,7 +107,7 @@ async function monde({ personaDansSource = true, campagneActive = true, session 
     campagneId: campagne,
     providerId: 'linkedin_post_engagers',
     nom: 'Engageurs du post',
-    config: { urlPost: POST, garder: ['reagi'], ...(personaDansSource ? { personaId: persona } : {}) },
+    config: { urlPost: POST, garder, ...(personaDansSource ? { personaId: persona } : {}) },
   });
 
   if (session !== 'absente') {
@@ -194,7 +196,12 @@ function voyagerDecoreAvantComplet(p) {
   return JSON.stringify({
     data: {
       paging: { start: 0, count: 50, total: 1 },
-      elements: [{ objectUrn: `urn:li:fsd_profile:${p.id}`, headline: p.titre, name: `${p.prenom} ${p.nom}` }],
+      // La vignette porte ce que LinkedIn affiche d'un HORS-RÉSEAU : nom abrégé et
+      // intitulé court. Lui donner le nom complet poserait comme acquis ce que le
+      // contrôle doit vérifier.
+      elements: [
+        { objectUrn: `urn:li:fsd_profile:${p.id}`, headline: 'Directrice commerciale', name: `${p.prenom} ${p.nom[0]}.` },
+      ],
     },
     included: [
       {
@@ -226,7 +233,8 @@ function voyagerProfond(p, n) {
 const lirePassage = async (runId) =>
   (
     await q(
-      `select status, error, items_found, items_new, requetes, vus, nouveaux, doublons, deja_en_campagne, ip_sortie, operateur_sortie
+      `select status, error, items_found, items_new, requetes, vus, nouveaux, doublons, deja_en_campagne,
+              ip_sortie, operateur_sortie, verdict_linkedin, finished_at
          from source_runs where id = $1`,
       [runId],
     )
@@ -243,7 +251,9 @@ async function nominal() {
 
   const passage = await lirePassage(r);
   check('1. le passage est un succès', passage.status === 'success', `${passage.status} / ${passage.error}`);
-  check('2. les compteurs du passage disent ce qui s’est produit', passage.vus === 2 && passage.nouveaux === 2 && passage.requetes === 1, JSON.stringify(passage));
+  // Deux requêtes : le CHARGEMENT DE LA PAGE du post, puis l'appel Voyager. Le
+  // chargement est du trafic LinkedIn comme le reste, et il se paie.
+  check('2. les compteurs du passage disent ce qui s’est produit', passage.vus === 2 && passage.nouveaux === 2 && passage.requetes === 2, JSON.stringify(passage));
   check('3. items_found/items_new restent alimentés pour la carte « dernier passage »', passage.items_found === 2 && passage.items_new === 2);
   check('4. la sortie observée est consignée sur le passage', passage.ip_sortie === IP && passage.operateur_sortie?.includes('Exemple') === true, `${passage.ip_sortie}`);
 
@@ -258,7 +268,9 @@ async function nominal() {
   check('8b. le contact porte le persona de la source', ct.every((c) => c.persona_id === m.persona));
 
   const traces = (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1 and source_run_id = $2`, [m.org, r])).rows[0].n;
-  check('10. une trace par requête émise', traces === 1, String(traces));
+  check('10. une trace par requête émise, chargement de la page du post COMPRIS', traces === 2 && pil.requetes.length === 1,
+    `${traces} tracées / ${pil.requetes.length} appel(s) Voyager`);
+  check('10b. ce passage porte un verdict : il remet le disjoncteur à zéro', passage.verdict_linkedin === true);
 
   const s = await lireSessionLinkedIn(m.ctx);
   check('11. la dernière collecte est horodatée sur la session', s.derniereCollecte !== null);
@@ -289,7 +301,8 @@ async function plafondHoraire() {
   const m = await monde();
   // Chemin de production : écran Réglages > Plafonds (`ecrireReglage`), qui écrit
   // la même ligne. Le collecteur la relit par `lirePlafondLinkedIn`.
-  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_requetes_par_heure', '2')`, [m.org]);
+  // Trois : le chargement de la page en consomme une, il reste deux appels Voyager.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_requetes_par_heure', '3')`, [m.org]);
 
   // Une requête d'il y a deux heures : hors fenêtre, elle ne doit rien consommer.
   const vieuxRun = await run(m);
@@ -299,11 +312,11 @@ async function plafondHoraire() {
   const pil = pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA], 500) }) });
   await traiterCollecteLinkedIn(deps(pil), job(m, r));
   const passage = await lirePassage(r);
-  check('15. une requête vieille de deux heures ne consomme pas le plafond de l’heure', pil.requetes.length === 2, `${pil.requetes.length} requête(s)`);
-  check('16. le plafond atteint en cours de pagination termine le passage proprement', passage.status === 'success' && passage.requetes === 2, `${passage.status} / ${passage.requetes}`);
+  check('15. une requête vieille de deux heures ne consomme pas le plafond de l’heure', pil.requetes.length === 2, `${pil.requetes.length} appel(s) Voyager`);
+  check('16. le plafond atteint en cours de pagination termine le passage proprement', passage.status === 'success' && passage.requetes === 3, `${passage.status} / ${passage.requetes}`);
   check('16b. ce qui a été vu avant le plafond est enregistré', passage.nouveaux === 1, JSON.stringify(passage));
   const compte = await compterRequetesLinkedIn(m.ctx, new Date(Date.now() - 3_600_000));
-  check('16c. la trace de l’heure compte exactement les requêtes émises', compte === 2, String(compte));
+  check('16c. la trace de l’heure compte exactement les requêtes émises', compte === 3, String(compte));
 }
 
 async function plafondPosts() {
@@ -314,7 +327,7 @@ async function plafondPosts() {
   const r1 = await run(m);
   const p1 = pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) });
   await traiterCollecteLinkedIn(deps(p1), job(m, r1));
-  check('17. le premier passage du jour n’est pas compté contre lui-même', (await lirePassage(r1)).requetes === 1, JSON.stringify(await lirePassage(r1)));
+  check('17. le premier passage du jour n’est pas compté contre lui-même', (await lirePassage(r1)).requetes === 2, JSON.stringify(await lirePassage(r1)));
 
   const r2 = await run(m);
   const p2 = pilote({ reponse: () => ({ statut: 200, corps: voyager([BOB]) }) });
@@ -507,21 +520,29 @@ async function memeTour() {
   await q(`update sources set run_requested_at = now() where organization_id = $1`, [m.org]);
   const envoyes = [];
   const boss = { send: async (name, data) => envoyes.push({ name, data }), insert: async () => undefined };
+  // Plafond ÉCRIT, pas hérité du défaut de `CLES_REGLAGES` : le contrôle ne doit
+  // pas changer de sens le jour où ce défaut change.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '3')`, [m.org]);
   const enfiles = await enqueueRequestedRuns(boss, pool);
   check('37. les quatre collectes sont enfilées dans le même tour', enfiles === 4 && envoyes.length === 4, String(enfiles));
 
   // Exécution séquentielle : c'est ce que fait pg-boss, `work()` sans options ne
   // prend qu'un job à la fois par file — et le verrou de session le garantirait sinon.
   let collectes = 0;
-  let refuses = 0;
+  const refuses = [];
   for (const e of envoyes) {
     const pil = pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) });
     await traiterCollecteLinkedIn(deps(pil), e.data);
     const passage = await lirePassage(e.data.sourceRunId);
     if (passage.requetes > 0) collectes += 1;
-    else refuses += 1;
+    else refuses.push(passage);
   }
-  check('38. trois posts collectent vraiment, le quatrième seul est refusé au plafond', collectes === 3 && refuses === 1, `${collectes} collectés / ${refuses} refusés`);
+  check('38. trois posts collectent vraiment, le quatrième seul est refusé', collectes === 3 && refuses.length === 1,
+    `${collectes} collectés / ${refuses.length} refusés`);
+  // Refusé par LE PLAFOND DE POSTS, pas par le verrou, la session ou le plafond
+  // horaire — qui donneraient tous le même « zéro requête ».
+  check('38b. et refusé par le plafond de posts, pas par autre chose',
+    refuses[0]?.status === 'success' && refuses[0]?.error === MSG.plafond_posts, JSON.stringify(refuses[0]));
 }
 
 // --------------------------------- 10. ce que le disjoncteur ne doit PAS compter
@@ -577,10 +598,60 @@ async function fusionDesObjets() {
   check('41. le second objet, plus complet, n’est pas perdu : l’adresse vient du publicIdentifier',
     ct.length === 1 && ct[0]?.linkedin_url === 'https://www.linkedin.com/in/ada-lovelace', JSON.stringify(ct));
   check('41b. et une seule personne est créée pour cet URN', ct.length === 1, String(ct.length));
-  // Le premier vu garde ce qu'il a renseigné : l'intitulé est bien celui de l'élément décoré.
+  // Le défaut du round 3 : la vignette arrive en premier avec « Ada L. », et c'est
+  // sur ce nom tronqué que la tâche 8 achèterait une adresse.
+  const fiche = (await q(`select first_name, last_name, job_title, enrichment from contacts where organization_id = $1`, [m.org])).rows[0];
+  check('41d. le nom retenu est le nom structuré du profil, pas la vignette abrégée',
+    fiche?.first_name === 'Ada' && fiche?.last_name === 'Lovelace', JSON.stringify(fiche));
+  check('41e. l’intitulé retenu est celui de l’entité profil, et l’entreprise le suit',
+    fiche?.job_title === 'Directrice commerciale chez Acme' && fiche?.enrichment?.entreprise === 'Acme', JSON.stringify(fiche));
+
   const direct = extraireEngageurs(JSON.parse(voyagerDecoreAvantComplet(ADA)));
   check('41c. l’extraction rend UNE personne, fusionnée', direct.personnes.length === 1 && direct.personnes[0]?.urlProfil !== undefined,
     JSON.stringify(direct.personnes));
+
+  // La règle champ par champ, directement sur `fusionner`. Une entité mince ne doit
+  // RIEN effacer : on échangerait une troncature contre une disparition.
+  const vu = (e, rangNom, rangIntitule) => ({ ...e, provenance: { rangNom, rangIntitule } });
+  const avecNom = vu({ urn: 'urn:li:fsd_profile:X', nom: 'Ada Lovelace', intitule: '' }, 3, 0);
+  const avecTitre = vu({ urn: 'urn:li:fsd_profile:X', nom: '', intitule: 'Directrice commerciale chez Acme', entreprise: 'Acme' }, 0, 1);
+  const f1 = fusionner(avecNom, avecTitre);
+  check('45. un intitulé arrivé en second comble un intitulé vide, et son entreprise vient avec',
+    f1.nom === 'Ada Lovelace' && f1.intitule === 'Directrice commerciale chez Acme' && f1.entreprise === 'Acme', JSON.stringify(f1));
+  const f2 = fusionner(avecTitre, avecNom);
+  check('46. l’entreprise SUIT l’intitulé retenu : un intitulé sans entreprise n’en invente pas une',
+    f2.intitule === 'Directrice commerciale chez Acme' && f2.entreprise === 'Acme', JSON.stringify(f2));
+  const sansEntreprise = vu({ urn: 'urn:li:fsd_profile:X', nom: '', intitule: 'Directrice commerciale' }, 0, 2);
+  const f3 = fusionner(avecTitre, sansEntreprise);
+  check('46b. et quand l’intitulé de meilleure source n’en porte pas, l’entreprise tombe avec lui',
+    f3.intitule === 'Directrice commerciale' && f3.entreprise === undefined, JSON.stringify(f3));
+  const mince = vu({ urn: 'urn:li:fsd_profile:X', nom: '', intitule: '', urlProfil: 'https://www.linkedin.com/in/ada-lovelace' }, 0, 0);
+  const f4 = fusionner(fusionner(avecNom, avecTitre), mince);
+  check('47. une entité mince ne fait qu’apporter l’adresse, elle n’efface rien',
+    f4.nom === 'Ada Lovelace' && f4.intitule === 'Directrice commerciale chez Acme' && f4.urlProfil !== undefined, JSON.stringify(f4));
+}
+
+/**
+ * Quelqu'un qui réagit ET commente apparaît dans les deux listes. Les réactions
+ * sont demandées en premier, et rien ne dit qu'elles sont les mieux décorées.
+ */
+async function fusionEntreReponses() {
+  console.log('\n14. la même personne dans la liste des réactions ET dans celle des commentaires');
+  const m = await monde({ garder: ['reagi', 'commente'] });
+  const r = await run(m);
+  const pil = pilote({
+    reponse: (url) =>
+      url.includes('Reactions')
+        ? { statut: 200, corps: voyager([{ id: ADA.id, prenom: 'Ada', nom: 'L.', titre: 'Directrice commerciale' }]) }
+        : { statut: 200, corps: voyager([ADA]) },
+  });
+  await traiterCollecteLinkedIn(deps(pil), job(m, r));
+  const ct = (await q(`select first_name, last_name, linkedin_url, job_title from contacts where organization_id = $1`, [m.org])).rows;
+  check('48. une seule personne, et la meilleure vue des deux réponses l’emporte',
+    ct.length === 1 && ct[0]?.linkedin_url === 'https://www.linkedin.com/in/ada-lovelace' && ct[0]?.last_name === 'Lovelace',
+    JSON.stringify(ct));
+  check('48b. l’intitulé complet de la seconde réponse est retenu',
+    ct[0]?.job_title === 'Directrice commerciale chez Acme', ct[0]?.job_title);
 }
 
 async function profondeur() {
@@ -605,14 +676,76 @@ async function profondeur() {
   const notifs = (await q(`select count(*)::int n from notifications where organization_id = $1 and event = 'linkedin.collecte_arretee'`, [m.org])).rows[0].n;
   check('44. une liste vide PARCE QUE tronquée n’est pas annoncée comme une rétention de LinkedIn',
     passage.status === 'error' && notifs === 0, `${passage.status} / ${passage.error} / ${notifs} notif`);
-  check('44b. et l’échec compte pour le disjoncteur (c’est notre panne, elle doit s’arrêter)',
-    (await q(`select echec_navigateur from source_runs where id = $1`, [r])).rows[0]?.echec_navigateur === true);
-  check('44c. la session n’est pas bloquée pour autant au premier échec', s.etat === 'active', s.etat);
+  check('44b. l’échec de NOTRE parseur ne porte aucun verdict sur le compte',
+    (await q(`select verdict_linkedin from source_runs where id = $1`, [r])).rows[0]?.verdict_linkedin === false);
+  check('44c. le message qui atteint l’opérateur EXPLIQUE la panne, au lieu de nommer une classe',
+    (passage.error ?? '').includes('imbriqués plus profond que 16 niveaux')
+      && !(passage.error ?? '').startsWith('Collecte interrompue'), passage.error);
+  check('44d. la session reste active', s.etat === 'active', s.etat);
+
+  // Trois fois de suite : une décoration que LinkedIn change ne doit pas exiger
+  // une reconnexion, qui ne corrigerait rien.
+  for (let i = 0; i < 2; i += 1) {
+    const r2 = await run(m);
+    await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyagerProfond(ADA, 25) }) })), job(m, r2)).catch(() => undefined);
+  }
+  const apres = await lireSessionLinkedIn(m.ctx);
+  check('44e. trois échecs de parseur d’affilée ne bloquent PAS la session', apres.etat === 'active', `${apres.etat}/${apres.motif}`);
+}
+
+async function navigateurInjoignable() {
+  console.log('\n15. le navigateur ne répond pas');
+  const m = await monde();
+  const r = await run(m);
+  const d = deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) }), {
+    ouvrirNavigateur: async () => {
+      throw new Error('connect ECONNREFUSED 10.0.0.3:9223');
+    },
+  });
+  await traiterCollecteLinkedIn(d, job(m, r));
+  const passage = await lirePassage(r);
+  check('49. le passage est refermé TOUT DE SUITE, pas laissé running trente minutes',
+    passage.status === 'error' && passage.finished_at !== null, `${passage.status}`);
+  check('49b. le message dit que le navigateur est injoignable, et ne reprend pas l’adresse',
+    (passage.error ?? '').startsWith(MSG.navigateur) && !/10\.0\.0\.3|9223/.test(passage.error ?? ''), passage.error);
+  check('49c. un conteneur injoignable ne porte aucun verdict sur le compte LinkedIn',
+    passage.verdict_linkedin === false, String(passage.verdict_linkedin));
+}
+
+async function postIntrouvableNeDisjonctePas() {
+  console.log('\n16. trois adresses de post mal collées, puis un vrai incident');
+  const m = await monde();
+  // Quatre passages dans la journée : sans ce plafond relevé, le quatrième serait
+  // refusé au plafond de posts et ne lèverait jamais — le contrôle 50b serait vide.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '10')`, [m.org]);
+  for (let i = 0; i < 3; i += 1) {
+    const r = await run(m);
+    await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 404, corps: '' }) })), job(m, r));
+  }
+  const verdicts = (await q(
+    `select count(*)::int n from source_runs sr join sources so on so.id = sr.source_id
+      where so.organization_id = $1 and sr.verdict_linkedin`,
+    [m.org],
+  )).rows[0].n;
+  check('50. un post introuvable ne porte aucun verdict : LinkedIn a répondu normalement', verdicts === 0, String(verdicts));
+
+  // C'est le passage SUIVANT, qui lève, qui fait lire la fenêtre du disjoncteur.
+  // Sans le filtre, les trois 404 la remplissaient et la session sautait ici.
+  const r4 = await run(m);
+  const panne = pilote({
+    reponse: () => {
+      throw new Error('réseau');
+    },
+  });
+  await traiterCollecteLinkedIn(deps(panne), job(m, r4)).catch(() => undefined);
+  const s = await lireSessionLinkedIn(m.ctx);
+  check('50b. trois adresses mal collées puis un incident ne bloquent PAS la session', s.etat === 'active', `${s.etat}/${s.motif}`);
 }
 
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
-    memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur);
+    memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
+    fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

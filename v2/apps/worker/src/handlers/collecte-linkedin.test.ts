@@ -174,14 +174,28 @@ describe('lireEngageurs', () => {
   });
 
   it('le plafond atteint en cours de pagination termine le passage proprement et n’est pas rejoue', async () => {
-    // Deux pages pleines annoncées, un budget d'une seule requête.
+    // Cent vingt engageurs annoncés, donc trois pages. Budget de deux requêtes :
+    // le chargement de la page du post en prend une, il reste un appel Voyager.
     const p = pilote({
       reponse: () => ({ statut: 200, corps: voyager([{ id: 'ACoAAa', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale chez Acme' }], 120) }),
     });
-    const r = await lireEngageurs(p.pilote, POST, ['reagi'], { requetesRestantes: 1, postsRestants: 3 }, TRACE_MUETTE, SANS_PAUSE);
+    const r = await lireEngageurs(p.pilote, POST, ['reagi'], { requetesRestantes: 2, postsRestants: 3 }, TRACE_MUETTE, SANS_PAUSE);
     expect(p.requetes).toHaveLength(1);
     expect(r.arret).toBe('plafond');
     expect(r.personnes).toHaveLength(1); // ce qui a été vu est gardé
+  });
+
+  it('le chargement de la page du post est compte comme une requete', async () => {
+    const p = pilote({ reponse: () => ({ statut: 200, corps: voyager([]) }) });
+    const traces: number[] = [];
+    await lireEngageurs(p.pilote, POST, ['reagi'], { requetesRestantes: 1, postsRestants: 3 }, async () => {
+      traces.push(1);
+    }, SANS_PAUSE);
+    // Le budget d'une requête est entièrement consommé par la navigation : aucun
+    // appel Voyager ne part, et la trace a bien été posée.
+    expect(traces).toHaveLength(1);
+    expect(p.navigations).toEqual([POST]);
+    expect(p.requetes).toEqual([]);
   });
 
   it('un statut 999 bloque la session', async () => {

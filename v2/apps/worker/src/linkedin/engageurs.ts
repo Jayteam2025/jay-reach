@@ -25,6 +25,29 @@ export type Friction = { type: 'defi' | 'cookie_refuse' | 'liste_vide' | 'post_i
 
 export type ArretCollecte = 'fini' | 'plafond' | Friction;
 
+/**
+ * Erreur du collecteur. Deux choses qu'une `Error` nue ne porte pas :
+ *  - un `name` parlant, parce que le handler ne consigne QUE le nom de la classe
+ *    (le message d'origine d'une erreur quelconque peut porter l'URL du proxy avec
+ *    ses identifiants). Un message construit ici, lui, est sûr par construction ;
+ *  - `engageLeCompte` : est-ce que cet échec dit quelque chose de l'état du compte
+ *    LinkedIn ? Le disjoncteur protège le COMPTE d'une activité répétée qui
+ *    l'expose, PAS nos bugs. Une réponse que notre parseur ne sait pas lire est
+ *    une requête qui a abouti : LinkedIn n'a rien vu d'anormal, et bloquer la
+ *    session imposerait à l'opérateur une reconnexion — l'opération la plus
+ *    risquée du lot — qui ne corrigerait rien.
+ */
+export class ErreurCollecte extends Error {
+  constructor(
+    message: string,
+    type: string,
+    readonly engageLeCompte: boolean,
+  ) {
+    super(message);
+    this.name = type;
+  }
+}
+
 const PAR_PAGE = 50;
 /** Délai entre deux requêtes : jamais de cadence régulière, qui se repère d'un coup d'œil côté LinkedIn. */
 const DELAI_MIN_MS = 2_000;
@@ -138,6 +161,55 @@ export function entrepriseDeLIntitule(intitule: string): string | undefined {
 }
 
 /**
+ * Ce que l'objet source valait sur chaque champ, pour départager deux objets du
+ * même URN. « Le premier vu fait foi » ne suffit pas : la descente visite `data`
+ * avant `included`, donc la VIGNETTE d'affichage arrive en premier — et c'est
+ * précisément elle que LinkedIn tronque. Un hors-réseau s'y affiche « Ada L. »
+ * alors que l'entité profil porte `firstName: Ada, lastName: Lovelace`. Garder la
+ * vignette ferait acheter à la tâche 8 une adresse sur un nom tronqué.
+ */
+export interface ProvenanceEngageur {
+  /** 0 absent · 1 chaîne d'affichage · 2 chaîne d'affichage d'une entité profil · 3 nom structuré d'une entité profil. */
+  readonly rangNom: number;
+  /** 0 absent · 1 vignette · 2 entité profil. */
+  readonly rangIntitule: number;
+}
+
+/** Un engageur, plus ce qu'on sait de la qualité de ses champs. La provenance ne sort pas d'ici : `engageurSchema` l'écarte. */
+export type EngageurVu = Engageur & { readonly provenance: ProvenanceEngageur };
+
+/**
+ * Fusionne deux vues de la même personne, CHAMP PAR CHAMP et seulement sur une
+ * valeur renseignée. Jamais en bloc : une entité mince (`entityUrn` +
+ * `publicIdentifier`, ni `firstName` ni `headline`) effacerait le nom et
+ * l'intitulé qu'une vignette avait apportés, et on échangerait une troncature
+ * contre une disparition.
+ *
+ * `entreprise` suit l'intitulé retenu — elle en est déduite, la prendre d'un
+ * intitulé qu'on ne garde pas donnerait une entreprise sans rapport avec le poste.
+ *
+ * Sert DEUX FOIS : à l'intérieur d'une réponse, et entre les réponses. Quelqu'un
+ * qui réagit ET commente apparaît dans les deux listes, les réactions sont
+ * demandées en premier, et rien ne dit que c'est la plus complète.
+ */
+export function fusionner(connu: EngageurVu, neuf: EngageurVu): EngageurVu {
+  const prendreNom = neuf.provenance.rangNom > connu.provenance.rangNom;
+  const pourIntitule = neuf.provenance.rangIntitule > connu.provenance.rangIntitule ? neuf : connu;
+  const urlProfil = connu.urlProfil ?? neuf.urlProfil;
+  return {
+    urn: connu.urn,
+    nom: prendreNom ? neuf.nom : connu.nom,
+    intitule: pourIntitule.intitule,
+    ...(pourIntitule.entreprise !== undefined ? { entreprise: pourIntitule.entreprise } : {}),
+    ...(urlProfil !== undefined ? { urlProfil } : {}),
+    provenance: {
+      rangNom: Math.max(connu.provenance.rangNom, neuf.provenance.rangNom),
+      rangIntitule: Math.max(connu.provenance.rangIntitule, neuf.provenance.rangIntitule),
+    },
+  };
+}
+
+/**
  * Les personnes d'une réponse Voyager, quelle que soit sa forme.
  *
  * La descente est RÉCURSIVE et non une lecture de chemins fixes : LinkedIn range
@@ -156,41 +228,18 @@ export function entrepriseDeLIntitule(intitule: string): string | undefined {
  *     nombre de branches coupées est rendu dans `tronques`, et l'appelant doit en
  *     faire quelque chose — sans ça la perte serait muette.
  *
- * Deux objets qui portent le MÊME URN sont FUSIONNÉS, le premier vu gardant ce
- * qu'il a renseigné. Ignorer le second serait un arbitrage d'ordre de descente
- * déguisé en filtre : `data` est visité avant `included`, donc un élément de
- * liste simplement décoré (un `headline`, pas de `publicIdentifier`) raflerait
- * l'URN et le vrai profil ne serait jamais lu. On perdrait `urlProfil`, donc le
- * rattachement de l'email acheté à la tâche 8, en silence et sur une part
- * inconnue des profils.
+ * Deux objets qui portent le MÊME URN sont FUSIONNÉS par `fusionner`, champ par
+ * champ et par qualité de source, jamais par ordre de rencontre : `data` est visité
+ * avant `included`, donc l'ordre donnerait systématiquement raison à la vignette
+ * d'affichage contre l'entité profil.
  *
  * `urlProfil` vient de `publicIdentifier` : sans lui, l'adresse de repli déduite
  * de l'URN (`lienProfilDeduit`) ne rejoindra jamais celle que rend FullEnrich, et
  * un contact déjà connu ne serait pas rattaché. C'est le collecteur, et lui seul,
  * qui dispose de cette information.
  */
-/**
- * Complète ce qui manque, sans jamais écraser ce qui est renseigné : le premier
- * objet vu fait foi sur chaque champ qu'il porte. `entreprise` suit l'intitulé
- * retenu — elle en est déduite, la prendre d'un intitulé qu'on ne garde pas
- * donnerait une entreprise sans rapport avec le poste affiché.
- */
-function fusionner(connu: Engageur, neuf: Engageur): Engageur {
-  const garderConnu = connu.intitule.length > 0;
-  const intitule = garderConnu ? connu.intitule : neuf.intitule;
-  const entreprise = garderConnu ? connu.entreprise : neuf.entreprise;
-  const urlProfil = connu.urlProfil ?? neuf.urlProfil;
-  return {
-    urn: connu.urn,
-    nom: connu.nom.length > 0 ? connu.nom : neuf.nom,
-    intitule,
-    ...(entreprise !== undefined ? { entreprise } : {}),
-    ...(urlProfil !== undefined ? { urlProfil } : {}),
-  };
-}
-
-export function extraireEngageurs(corps: unknown): { personnes: Engageur[]; tronques: number } {
-  const vus = new Map<string, Engageur>();
+export function extraireEngageurs(corps: unknown): { personnes: EngageurVu[]; tronques: number } {
+  const vus = new Map<string, EngageurVu>();
   let tronques = 0;
   const visiter = (noeud: unknown, profondeur: number): void => {
     if (noeud === null || typeof noeud !== 'object') return;
@@ -205,9 +254,17 @@ export function extraireEngageurs(corps: unknown): { personnes: Engageur[]; tron
     const o = noeud as Record<string, unknown>;
     const urn = urnDeProfil(o.entityUrn) ?? urnDeProfil(o.objectUrn);
     if (urn !== null) {
-      const nom = [texteDe(o.firstName), texteDe(o.lastName)].filter(Boolean).join(' ') || texteDe(o.name) || '';
+      const structure = [texteDe(o.firstName), texteDe(o.lastName)].filter(Boolean).join(' ');
+      // `o.name` est une chaîne d'AFFICHAGE : c'est elle que LinkedIn abrège.
+      const nom = structure.length > 0 ? structure : (texteDe(o.name) ?? '');
       const intitule = texteDe(o.headline) ?? texteDe(o.occupation) ?? '';
       const identifiant = texteDe(o.publicIdentifier);
+      // `publicIdentifier` ne figure que sur l'entité profil, jamais sur une vignette.
+      const autorite = identifiant !== undefined ? 1 : 0;
+      const provenance: ProvenanceEngageur = {
+        rangNom: nom.length === 0 ? 0 : 1 + autorite + (structure.length > 0 ? 1 : 0),
+        rangIntitule: intitule.length === 0 ? 0 : 1 + autorite,
+      };
       // Il faut au moins UN attribut de personne : une réponse Voyager est pleine
       // d'URN de profil cités en référence (auteur d'un commentaire parent,
       // mention), sans rien d'autre. Un nom VIDE est en revanche conservé — c'est
@@ -216,10 +273,11 @@ export function extraireEngageurs(corps: unknown): { personnes: Engageur[]; tron
       // d'entrée du handler, qui refuse un contact sans nom.
       if (nom.length > 0 || intitule.length > 0 || identifiant !== undefined) {
         const entreprise = entrepriseDeLIntitule(intitule);
-        const candidat: Engageur = {
+        const candidat: EngageurVu = {
           urn,
           nom,
           intitule,
+          provenance,
           ...(entreprise !== undefined ? { entreprise } : {}),
           ...(identifiant !== undefined
             ? { urlProfil: `https://www.linkedin.com/in/${encodeURIComponent(identifiant)}` }
@@ -300,32 +358,46 @@ export async function lireEngageurs(
 
   // Il faut être SUR une page LinkedIn avant d'appeler Voyager : `pilote.requete`
   // part en `same-origin`, donc depuis `about:blank` aucun cookie ne partirait.
+  //
+  // Ce chargement de page EST du trafic LinkedIn, et le plus lourd du passage : il
+  // se trace et se paie comme les autres. Le laisser hors du compteur ferait valoir
+  // le trafic réel « plafond + un » par post, sur deux plafonds qui reposent
+  // justement sur cette table.
+  const vus = new Map<string, EngageurVu>();
+  const personnes = (): Engageur[] => [...vus.values()];
+  let restantes = budget.requetesRestantes;
+  let premiereReponse = true;
+
+  await surRequete();
+  restantes -= 1;
   await pilote.aller(urlPost);
   const frictionArrivee = frictionDeLUrl(await pilote.url());
   if (frictionArrivee) return { personnes: [], arret: frictionArrivee };
-
-  const vus = new Map<string, Engageur>();
-  const personnes = (): Engageur[] => [...vus.values()];
-  let restantes = budget.requetesRestantes;
-  let faites = 0;
 
   for (const fabriquer of adressesDemandees(garder)) {
     let debut = 0;
     for (let page = 0; page < PAGES_MAX; page += 1) {
       if (restantes <= 0) return { personnes: personnes(), arret: 'plafond' };
-      if (faites > 0) await pause(delaiAleatoire());
+      // Toujours une pause : la précédente « requête » est au minimum le chargement
+      // de la page du post, et enchaîner sans délai est ce qui se repère le mieux.
+      await pause(delaiAleatoire());
       await surRequete();
       restantes -= 1;
-      faites += 1;
 
       const rep = await pilote.requete(fabriquer(urn, debut), ENTETES_VOYAGER);
       const friction = frictionDuStatut(rep.statut);
       if (friction) return { personnes: personnes(), arret: friction };
       if (rep.statut < 200 || rep.statut >= 300) {
-        throw new Error(`Réponse LinkedIn inattendue (statut ${rep.statut})`);
+        // Un statut anormal est un verdict de LinkedIn sur nous (429, 5xx répétés) :
+        // il engage le compte.
+        throw new ErreurCollecte(`LinkedIn a répondu un statut inattendu (${rep.statut}).`, 'StatutInattendu', true);
       }
       const corps = lireJson(rep.corps);
-      if (corps === undefined) throw new Error('Réponse LinkedIn illisible');
+      // La requête a abouti ; c'est NOTRE contrat de lecture qui ne tient plus.
+      // Les frictions, elles, se lisent sur le statut et sur l'URL (voir la spec).
+      if (corps === undefined) {
+        throw new ErreurCollecte('Réponse LinkedIn illisible : ce n’est pas du JSON.', 'ReponseIllisible', false);
+      }
 
       const { personnes: lot, tronques } = extraireEngageurs(corps);
       const total = totalAnnonce(corps);
@@ -337,16 +409,27 @@ export async function lireEngageurs(
       // Le post annonce des engageurs et la liste n'en donne aucun : LinkedIn
       // retient la donnée. Ce n'est ni un post vide ni une panne — on s'arrête,
       // sans toucher à la session.
-      if (faites === 1 && lot.length === 0 && total !== undefined && total > 0) {
+      if (premiereReponse && lot.length === 0 && total !== undefined && total > 0) {
         // Sauf si c'est NOUS qui n'avons pas regardé assez loin : accuser LinkedIn
         // de retenir la donnée serait un faux diagnostic de plus, et l'opérateur
         // chercherait la panne du mauvais côté.
         if (tronques > 0) {
-          throw new Error(`Réponse Voyager plus profonde que ${PROFONDEUR_MAX} niveaux : aucun profil lu`);
+          throw new ErreurCollecte(
+            `Les profils de cette réponse LinkedIn sont imbriqués plus profond que ${PROFONDEUR_MAX} niveaux : le collecteur ne sait pas les lire.`,
+            'ProfondeurVoyager',
+            false,
+          );
         }
         return { personnes: [], arret: { type: 'liste_vide' } };
       }
-      for (const e of lot) if (!vus.has(e.urn)) vus.set(e.urn, e);
+      premiereReponse = false;
+      // Fusion ENTRE réponses, pas seulement à l'intérieur de l'une : quelqu'un qui
+      // réagit et commente apparaît dans les deux listes, et les réactions, demandées
+      // en premier, ne sont pas forcément les mieux décorées.
+      for (const e of lot) {
+        const connu = vus.get(e.urn);
+        vus.set(e.urn, connu === undefined ? e : fusionner(connu, e));
+      }
 
       if (lot.length === 0) break;
       debut += PAR_PAGE;

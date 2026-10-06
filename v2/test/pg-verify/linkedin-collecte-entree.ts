@@ -4,8 +4,9 @@
 export {
   traiterCollecteLinkedIn,
   DUREE_VERROU_COLLECTE_MS,
+  MSG,
 } from '../../apps/worker/src/handlers/collecte-linkedin.js';
-export { lireEngageurs, extraireEngageurs } from '../../apps/worker/src/linkedin/engageurs.js';
+export { lireEngageurs, extraireEngageurs, fusionner } from '../../apps/worker/src/linkedin/engageurs.js';
 export { enqueueDiscoverForActiveSources, enqueueRequestedRuns } from '../../apps/worker/src/producer.js';
 export { closeStaleSourceRuns, startSourceRun, SOURCE_RUN_TIMEOUT_MIN } from '../../apps/worker/src/db.js';
 export {

@@ -38,7 +38,7 @@ import {
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
-import { lireEngageurs, type Budget, type Friction } from '../linkedin/engageurs.js';
+import { ErreurCollecte, lireEngageurs, type Budget, type Friction } from '../linkedin/engageurs.js';
 import { engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
 
@@ -70,13 +70,15 @@ export const DUREE_VERROU_COLLECTE_MS = 10 * 60_000;
 /** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
 const UNE_HEURE_MS = 3_600_000;
 
-const MSG = {
+export const MSG = {
   canal: 'Le canal LinkedIn serveur est désactivé (JAY_REACH_LINKEDIN).',
   session: 'La session LinkedIn n’est pas active : reconnectez le compte.',
   source: 'Cette source d’engageurs n’est reliée à aucune campagne active.',
   persona: 'La campagne porte plusieurs personas : choisissez celui de la source.',
   sortie: 'Le navigateur est sorti par une adresse inattendue : collecte annulée.',
   verrou: 'Un autre passage conduit déjà le navigateur LinkedIn.',
+  navigateur: 'Le navigateur LinkedIn est injoignable : vérifiez le conteneur et sa configuration.',
+  releve: 'Impossible de relever l’IP de sortie du navigateur : le proxy ne répond pas.',
   plafond_posts: 'Plafond de posts du jour atteint.',
   plafond_requetes: 'Plafond de requêtes de l’heure atteint.',
   defi: 'LinkedIn demande une vérification : collecte arrêtée.',
@@ -165,8 +167,14 @@ async function cloreCollecte(
     erreur?: string | null;
     bilan?: Bilan;
     sortie?: Sortie | null;
-    /** Vrai seulement si le passage a échoué APRÈS avoir commencé à parler au monde extérieur. */
-    echecNavigateur?: boolean;
+    /**
+     * Ce passage est-il un VERDICT sur l'état du compte LinkedIn et de sa sortie ?
+     * Vrai quand on a réellement parlé au monde extérieur et que le résultat dit
+     * quelque chose du compte : collecte réussie, relève de sortie ratée (proxy),
+     * statut anormal, défi. Faux pour tout le reste — refus locaux, plafonds,
+     * adresse de post invalide, et nos propres échecs de lecture.
+     */
+    verdictLinkedIn?: boolean;
   },
 ): Promise<void> {
   const b = etat.bilan ?? bilanVierge();
@@ -175,7 +183,7 @@ async function cloreCollecte(
         set finished_at = now(), status = $3, error = $4,
             items_found = $5, items_new = $6,
             requetes = $7, vus = $5, nouveaux = $6, doublons = $8, deja_en_campagne = $9,
-            ip_sortie = $10, operateur_sortie = $11, echec_navigateur = $12
+            ip_sortie = $10, operateur_sortie = $11, verdict_linkedin = $12
       where sr.id = $2
         and sr.source_id in (select id from sources where organization_id = $1)`,
     [
@@ -190,7 +198,7 @@ async function cloreCollecte(
       b.dejaEnCampagne,
       etat.sortie?.ip ?? null,
       etat.sortie?.operateur ?? null,
-      etat.echecNavigateur ?? false,
+      etat.verdictLinkedIn ?? false,
     ],
   );
 }
@@ -202,20 +210,25 @@ async function cloreCollecte(
  * clore compris — pas un compteur séparé, qui pourrait diverger de ce que
  * l'écran Sources montre.
  *
- * Ne comptent que les passages qui ont RÉELLEMENT touché le monde extérieur :
- * une requête émise (`linkedin_requetes`), ou un échec survenu après l'ouverture
- * du navigateur (`echec_navigateur` — typiquement une relève de sortie qui
- * échoue, donc un proxy mort). Les refus purement locaux — canal désactivé,
- * session non active, campagne en brouillon, persona ambigu, verrou tenu — ne
- * disent rien de l'état de LinkedIn : sans ce filtre, deux clics sur « Lancer la
- * collecte » avec une campagne encore en brouillon suffisaient à faire
- * disjoncter au premier vrai passage.
+ * Ne comptent que les passages qui portent un VERDICT (`verdict_linkedin`) :
+ * ceux où l'on a réellement parlé au monde extérieur ET dont le résultat dit
+ * quelque chose de l'état du compte. En sont exclus, délibérément :
+ *  - les refus purement locaux — canal désactivé, session non active, campagne en
+ *    brouillon, persona ambigu, verrou tenu, navigateur injoignable. Sans ce
+ *    filtre, deux clics sur « Lancer la collecte » avec une campagne en brouillon
+ *    suffisaient à faire disjoncter au premier vrai passage ;
+ *  - les plafonds, qui n'émettent rien ;
+ *  - **un post introuvable (404) et nos propres échecs de lecture**. La requête a
+ *    abouti, LinkedIn a répondu normalement, rien n'expose le compte : bloquer la
+ *    session imposerait à l'opérateur une reconnexion — l'opération la plus
+ *    risquée du lot — qui ne corrigerait ni une adresse mal collée ni un bug de
+ *    parseur. Le disjoncteur protège le COMPTE, pas notre code.
  *
- * Y entrent en revanche les passages refermés par `closeStaleSourceRuns` qui
- * avaient commencé à émettre (worker tué en plein travail), et ceux qu'une
- * friction a arrêtés : on avait bien parlé à LinkedIn. La reconnexion remet
- * tout à zéro. Évalué seulement quand le passage courant a échoué sur une
- * exception, jamais après un succès.
+ * Y entrent la collecte réussie (elle remet le compteur à zéro), la relève de
+ * sortie ratée (proxy mort), le statut anormal et le défi. Un passage refermé par
+ * `closeStaleSourceRuns` n'y entre pas : un worker tué est un incident
+ * d'hébergement, et une reconnexion LinkedIn n'y répond pas. Évalué seulement
+ * quand le passage courant a échoué sur une exception, jamais après un succès.
  */
 async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
   const res = await pool.query<{ status: string }>(
@@ -225,8 +238,7 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
       where so.organization_id = $1
         and so.config->>'sourceType' = 'linkedin_post_engagers'
         and sr.finished_at is not null
-        and (sr.echec_navigateur
-             or exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id))
+        and sr.verdict_linkedin
       order by sr.finished_at desc
       limit 3`,
     [ctx.organisationId],
@@ -304,14 +316,42 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
   const bilan = bilanVierge();
   let sortie: Sortie | null = null;
   let verrouPris = false;
-  const pilote = await d.ouvrirNavigateur();
+  // Ouvert DANS le `try` : c'est le seul chemin où le navigateur peut être
+  // réellement ouvert (`puppeteer.connect` passe, `newPage` échoue) sans qu'aucune
+  // clôture ne soit jouée. Le passage restait alors `running` trente minutes, le
+  // temps que `closeStaleSourceRuns` l'écrive en « worker arrêté » — un message
+  // faux, après une demi-heure de silence, là où tous les autres refus closent
+  // immédiatement avec leur motif. Cas le plus probable au premier déploiement :
+  // `LINKEDIN_BROWSER_URL` absent.
+  let pilote: Pilote | null = null;
   try {
+    try {
+      pilote = await d.ouvrirNavigateur();
+    } catch (err) {
+      // Le message peut porter l'URL du proxy ou du navigateur : seul le type sort.
+      // Verdict faux : un conteneur injoignable est un incident d'hébergement, et
+      // une reconnexion LinkedIn n'y répondrait pas.
+      const type = err instanceof Error ? err.name : 'Erreur';
+      await cloreCollecte(pool, job, { statut: 'error', erreur: `${MSG.navigateur} (${type})` });
+      return;
+    }
     // Avant d'ouvrir LinkedIn : l'écho d'IP part d'une page neutre.
-    const controle = await controlerSortie(ctx, session.ipAttendue, () => d.releverSortie(pilote));
+    const releve = async (): Promise<Sortie> => {
+      try {
+        return await d.releverSortie(pilote as Pilote);
+      } catch {
+        // Message sûr et lisible, à la place du `Collecte interrompue (Error).`
+        // que l'écran Sources affichait. Verdict VRAI : l'écho est chargé par le
+        // navigateur, donc par le proxy — trois échecs d'affilée disent qu'il est
+        // mort, et c'est exactement ce que le disjoncteur doit attraper.
+        throw new ErreurCollecte(MSG.releve, 'SortieInjoignable', true);
+      }
+    };
+    const controle = await controlerSortie(ctx, session.ipAttendue, releve);
     sortie = controle.sortie;
     if (!controle.ok) {
       // `verifierSortie` a déjà bloqué la session.
-      await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.sortie, sortie });
+      await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.sortie, sortie, verdictLinkedIn: true });
       return;
     }
 
@@ -366,7 +406,16 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
 
     if (typeof arret === 'object') {
       const message = await traiterFriction(ctx, pool, arret);
-      await cloreCollecte(pool, job, { statut: 'error', erreur: message, bilan, sortie });
+      await cloreCollecte(pool, job, {
+        statut: 'error',
+        erreur: message,
+        bilan,
+        sortie,
+        // Un défi ou un cookie refusé sont des verdicts sur le compte (ils bloquent
+        // déjà la session). Un post introuvable et une liste vide n'en sont pas :
+        // LinkedIn a répondu normalement.
+        verdictLinkedIn: arret.type === 'defi' || arret.type === 'cookie_refuse',
+      });
       return;
     }
 
@@ -376,6 +425,9 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       erreur: arret === 'plafond' ? MSG.plafond_requetes : null,
       bilan,
       sortie,
+      // Un passage qui a parlé à LinkedIn et abouti est le verdict qui remet le
+      // disjoncteur à zéro.
+      verdictLinkedIn: bilan.requetes > 0,
     });
     console.log(
       `[collecte-linkedin] ${bilan.requetes} requête(s), ${bilan.vus} personne(s) vue(s), ${bilan.nouveaux} nouvelle(s), ${bilan.doublons} doublon(s), ${bilan.dejaEnCampagne} déjà en campagne, ${bilan.ignores} ignorée(s)`,
@@ -386,14 +438,19 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // base indisponible ne remplace pas l'erreur d'origine par la sienne.
     const type = err instanceof Error ? err.name : 'Erreur';
     console.error(`[collecte-linkedin] passage interrompu (${type})`);
+    // Une `ErreurCollecte` est construite par nous : son message ne peut porter ni
+    // clé, ni mot de passe, ni URL de proxy, et il est bien plus utile à l'écran
+    // Sources que le nom d'une classe. Pour tout le reste, le nom seul.
+    const connue = err instanceof ErreurCollecte;
     await cloreCollecte(pool, job, {
       statut: 'error',
-      erreur: `Collecte interrompue (${type}).`,
+      erreur: connue ? err.message : `Collecte interrompue (${type}).`,
       bilan,
       sortie,
-      // Le navigateur était ouvert et la relève de sortie engagée : cet échec-là
-      // parle de LinkedIn ou du proxy, il nourrit le disjoncteur.
-      echecNavigateur: true,
+      // Une erreur inconnue est tenue pour un verdict : on ne sait pas d'où elle
+      // vient, et le disjoncteur est la précaution. Nos propres échecs de lecture,
+      // eux, le disent franchement.
+      verdictLinkedIn: connue ? err.engageLeCompte : true,
     });
     await verifierDisjoncteur(ctx, pool);
     throw err;
@@ -401,7 +458,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // Durée nulle, même propriétaire : le verrou tombe tout de suite plutôt que
     // de tenir dix minutes après un passage terminé.
     if (verrouPris) await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);
-    await pilote.fermer().catch(() => undefined);
+    if (pilote) await pilote.fermer().catch(() => undefined);
   }
 }
 
