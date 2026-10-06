@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
-import { RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
+import { INTERVALLE_PURGE_MAX_MS, RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
 import { ecarterEngageur } from './post-engagement.js';
-import { purgerEngageursPerimes, traiterRetentionPurge } from './retention-purge.js';
+import { cadencePurge, purgerEngageursPerimes, traiterRetentionPurge } from './retention-purge.js';
 
 /**
  * Pool factice : il ne prouve que l'enchaînement des décisions (quelle durée est
@@ -100,5 +100,23 @@ describe('statut de la purge pour l ecran', () => {
       return base(s, p);
     });
     await expect(traiterRetentionPurge(m.pool, identite)).resolves.toBeDefined();
+  });
+});
+
+describe('cadencePurge : la borne dont depend l alerte de l ecran Moteur', () => {
+  it('absente ou illisible : le maximum', () => {
+    expect(cadencePurge(undefined)).toBe(INTERVALLE_PURGE_MAX_MS);
+    expect(cadencePurge('')).toBe(INTERVALLE_PURGE_MAX_MS);
+    expect(cadencePurge('abc')).toBe(INTERVALLE_PURGE_MAX_MS);
+  });
+  it('sous le plafond : respectee', () => {
+    expect(cadencePurge('600000')).toBe(600_000);
+  });
+  it('au-dessus du plafond : ramenee au plafond', () => {
+    expect(cadencePurge(String(INTERVALLE_PURGE_MAX_MS * 5))).toBe(INTERVALLE_PURGE_MAX_MS);
+  });
+  it('sous une minute (ou negative) : le maximum, pas une rafale de jobs', () => {
+    expect(cadencePurge('5')).toBe(INTERVALLE_PURGE_MAX_MS);
+    expect(cadencePurge('-1')).toBe(INTERVALLE_PURGE_MAX_MS);
   });
 });

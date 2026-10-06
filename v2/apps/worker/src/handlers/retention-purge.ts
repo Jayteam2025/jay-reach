@@ -19,9 +19,20 @@
  * celui qui compte ; le premier évite de le solliciter pour rien.
  */
 import type { Pool } from 'pg';
-import { RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
+import { INTERVALLE_PURGE_MAX_MS, RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
 import { enregistrerPurge, identiteDepuisEnvironnement, type IdentiteMoteur } from '../battement.js';
 import { ecarterEngageur, sqlPersonneContactee, type FragmentSql } from './post-engagement.js';
+
+/**
+ * Cadence de la purge, depuis la variable d'environnement brute. Absente ou illisible, ou sous une
+ * minute : le maximum (une heure). Au-dessus du maximum : le maximum, car l'alerte « en retard »
+ * de l'écran Moteur s'en déduit (`INTERVALLE_PURGE_MAX_MS`) et une cadence plus lente la
+ * rendrait permanente. Sans identifiant de job : la purge est idempotente par les données.
+ */
+export function cadencePurge(brut: string | undefined): number {
+  const valeur = Number(brut ?? '');
+  return Number.isFinite(valeur) && valeur >= 60_000 ? Math.min(valeur, INTERVALLE_PURGE_MAX_MS) : INTERVALLE_PURGE_MAX_MS;
+}
 
 /** Taille d'un passage. Le reste attend le suivant : mieux vaut lent qu'une transaction géante. */
 const LOT = 1000;

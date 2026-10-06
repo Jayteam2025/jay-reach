@@ -5,7 +5,7 @@
  * routes planifiées de l'application. Ce fichier ne s'occupe que du mode
  * d'exécution : écouter en continu et déclencher les producteurs à intervalle.
  */
-import { INTERVALLE_PURGE_MAX_MS, QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
+import { QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
 import { createRuntime, registerQueues } from './runtime.js';
 import {
   ecrireBattementFichier,
@@ -26,6 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
+import { cadencePurge } from './handlers/retention-purge.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
 // ressent l'opérateur entre son clic et le départ de la collecte. La requête est
@@ -50,14 +51,7 @@ const RELEVE_GRAPH_POLL_MS = 60_000;
  * idempotente par les données (ce qui est effacé n'est plus sélectionné), deux
  * jobs concurrents au pire ne trouvent rien à faire.
  */
-const RETENTION_PURGE_POLL_MS = ((brut: string | undefined): number => {
-  const valeur = Number(brut ?? '');
-  // Une valeur absente ou absurde ne doit pas devenir `setInterval(fn, NaN)` (~1 ms,
-  // un job par milliseconde) : repli sur l'heure.
-  // Bornée au-dessus aussi : l'alerte de l'écran Moteur (« en retard ») se déduit de ce
-  // maximum, une cadence plus lente la rendrait permanente.
-  return Number.isFinite(valeur) && valeur >= 60_000 ? Math.min(valeur, INTERVALLE_PURGE_MAX_MS) : INTERVALLE_PURGE_MAX_MS;
-})(process.env.RETENTION_PURGE_POLL_MS);
+const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS);
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
