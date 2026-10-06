@@ -60,6 +60,32 @@ function lireAgeMaxSignalJours(): number {
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
 
+/**
+ * Multiple du délai d'ancienneté pendant lequel un engageur qualifié est épargné
+ * par la purge du seul fait que son contact porte un email.
+ *
+ * Pourquoi une borne, et pas « toujours » : un contact qui a un email mais
+ * AUCUNE inscription n'a jamais été contacté, il n'a donc aucun historique
+ * d'envoi à protéger. L'épargner sans limite, c'est garder indéfiniment le nom,
+ * l'intitulé, l'adresse LinkedIn et l'email d'une personne réelle — exactement
+ * la rétention sans fin que la purge existe pour fermer. Trois chemins
+ * ordinaires produisent cet état (campagne qui n'est plus `active`, persona
+ * retirée de `entry_rules -> 'personas'`, score du signal sous `min_score`) :
+ * ce n'est pas un cas de bord.
+ *
+ * Pourquoi DEUX fois, et pas une : la branche couvre la fenêtre entre
+ * l'enrichissement (qui pose l'email) et le tick d'inscription, et
+ * `occurred_at` d'un engageur vaut `now()` au moment de la COLLECTE, pas la
+ * date du post — cette fenêtre se compte donc en heures, un seul délai la
+ * couvrirait déjà. Le second délai est la marge : il laisse survivre un email
+ * payé à FullEnrich pendant une pause de campagne de la durée du délai
+ * lui-même, sans jamais rendre la rétention infinie.
+ *
+ * L'épargne par INSCRIPTION, elle, reste sans limite de temps : là, des
+ * messages sont réellement partis.
+ */
+export const FACTEUR_EPARGNE_EMAIL = 2;
+
 // Ecart global, toutes organisations confondues : la règle d'ancienneté est
 // la même pour tout le monde et ne dépend d'aucun réglage d'organisation.
 /** Ecarte les signaux trop anciens pour valoir un scoring ou un enrichissement. */
@@ -71,10 +97,11 @@ export async function ecarterSignauxTropAnciens(
   // Une PERSONNE (`post_engagement`) ne passe jamais en `discarded` : son signal
   // et son contact s'effacent (rien de personnel sur ce qui ne sert pas), par le
   // même chemin que l'écart du scoring. Les deux mises à jour ci-dessous les
-  // excluent donc : un engageur QUALIFIÉ ancien, dont le contact n'a ni email ni
-  // inscription, est effacé lui aussi, AVEC mémoire (il a été jugé), sans quoi il
-  // garderait indéfiniment nom, intitulé et adresse. La mémoire est par couple
-  // post-personne : elle ne l'empêche pas de revenir par un autre post.
+  // excluent donc : un engageur QUALIFIÉ ancien est effacé lui aussi, AVEC mémoire
+  // (il a été jugé), sans quoi il garderait indéfiniment nom, intitulé et adresse.
+  // Seul le contact qui a une inscription — ou un email encore récent, voir
+  // FACTEUR_EPARGNE_EMAIL — y échappe. La mémoire est par couple post-personne :
+  // elle ne l'empêche pas de revenir par un autre post.
   const personnes = await pool.query<{ id: string; organization_id: string }>(
     `select id, organization_id from signals
       where kind = 'post_engagement' and status = 'new' and score is null
@@ -89,11 +116,19 @@ export async function ecarterSignauxTropAnciens(
         and not exists (
           select 1 from contacts ct
            where ct.source_signal_id = s.id
-             and (ct.email is not null
-                  or exists (select 1 from enrollments e where e.contact_id = ct.id)))`,
-    [maxJours],
+             -- Déjà inscrit : épargné sans limite de temps, des messages sont partis.
+             and (exists (select 1 from enrollments e where e.contact_id = ct.id)
+                  -- Un email sans inscription : épargné seulement le temps que
+                  -- l'inscription puisse encore venir (cf. FACTEUR_EPARGNE_EMAIL).
+                  or (ct.email is not null
+                      and s.occurred_at >= now() - make_interval(days => $2))))`,
+    [maxJours, maxJours * FACTEUR_EPARGNE_EMAIL],
   );
-  for (const p of qualifiesPersonnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: true });
+  // `compter: false` : la personne est jugée (donc mémorisée), mais le passage qui
+  // l'a collectée est clos depuis des semaines — son compteur d'écarts ne doit pas
+  // bouger rétroactivement, sinon le rendement comparé des sources est faussé.
+  for (const p of qualifiesPersonnes.rows)
+    await ecarterEngageur(pool, p.organization_id, p.id, { juge: true, compter: false });
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())

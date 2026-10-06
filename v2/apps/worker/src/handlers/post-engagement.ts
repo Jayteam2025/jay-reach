@@ -55,8 +55,9 @@ export interface ContexteEngageur {
   readonly sourceId: string;
   /**
    * Passage de collecte en cours, OBLIGATOIRE : c'est lui que l'écart par le
-   * scoring incrémentera. Optionnel, un oubli du collecteur rendrait le compteur
-   * muet, sans aucune erreur.
+   * scoring incrémentera. Le champ est requis EXPRÈS — s'il était optionnel, un
+   * collecteur qui oublierait de le passer rendrait le compteur d'écarts muet,
+   * sans aucune erreur. Le collecteur doit donc fournir la valeur.
    */
   readonly sourceRunId: string;
 }
@@ -241,13 +242,19 @@ export async function enregistrerEngageur(
  * Efface un engageur : son signal et le contact né de ce signal. On ne garde pas
  * de données personnelles sur ce qui ne sert pas.
  *
- * `juge` distingue deux cas qu'il ne faut pas confondre :
- *  - écarté PAR LE SCORING (`juge: true`, défaut) : l'external_id est mémorisé
- *    dans `linkedin_engageurs_ecartes` pour que le collecteur ne recrée pas, ne
- *    rescore pas, donc ne repaie pas ce qu'on a déjà jugé ; le passage qui a
- *    collecté la personne compte un écart de plus ;
- *  - effacé AVANT jugement (péremption, `juge: false`) : rien n'a été évalué, la
- *    personne peut être recollectée plus tard, et aucun compteur n'est touché.
+ * Deux effets indépendants, à ne pas confondre :
+ *  - `juge` (défaut `true`) commande la MÉMOIRE : l'external_id est écrit dans
+ *    `linkedin_engageurs_ecartes` pour que le collecteur ne recrée pas, ne
+ *    rescore pas, donc ne repaie pas ce qu'on a déjà jugé. `juge: false` =
+ *    effacé AVANT jugement (péremption) : rien n'a été évalué, la personne peut
+ *    être recollectée plus tard.
+ *  - `compter` (défaut : la valeur de `juge`) commande le COMPTEUR
+ *    `source_runs.ecartes` du passage qui a collecté la personne. Il ne vaut que
+ *    pour un écart constaté PENDANT la vie de ce passage — le scoring. Un
+ *    engageur effacé des semaines plus tard par la purge d'ancienneté a été jugé
+ *    (il mérite la mémoire) mais son passage est clos depuis longtemps :
+ *    l'incrémenter ferait bouger rétroactivement le chiffre d'un passage
+ *    terminé, et le rendement comparé des sources se lirait sur un nombre faux.
  *
  * Les écritures se font dans UNE transaction : une coupure ne laisse ni un
  * engageur effacé sans mémoire d'écart (recréé et repayé), ni l'inverse. Un
@@ -257,9 +264,10 @@ export async function ecarterEngageur(
   pool: Pool,
   organizationId: string,
   signalId: string,
-  opts: { juge?: boolean } = {},
+  opts: { juge?: boolean; compter?: boolean } = {},
 ): Promise<void> {
   const juge = opts.juge ?? true;
+  const compter = opts.compter ?? juge;
   await dansUneTransaction(pool as unknown as Executeur, async (tx) => {
     if (juge) {
       await tx.query(
@@ -279,7 +287,7 @@ export async function ecarterEngageur(
       [organizationId, signalId],
     );
     const runId = supprime.rows[0]?.source_run_id;
-    if (juge && runId) {
+    if (compter && runId) {
       // Le passage qui a COLLECTÉ la personne, pas le dernier de la source : avec
       // un scoring plafonné, le jugement arrive souvent des passages plus tard.
       await tx.query(

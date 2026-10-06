@@ -11,6 +11,9 @@
 //      dupliqué (10, 13, 16).
 //   5. post-engagement.ts : retirer le coalesce de source_signal_id (rattachement), le ou-membre de deja_en_campagne,
 //      le parse du schéma, ou la clause « juge » — 15a2, 17c, 15g, 41b/39 rougissent.
+//   6. producer.ts : remettre `compter: true` (ou retirer l'option) sur l'appel de la purge — 41f rougit.
+//   7. producer.ts : retirer la borne `s.occurred_at >= now() - make_interval(days => $2)` de
+//      l'épargne par email — 41d rougit (l'engageur est retenu indéfiniment).
 // NB : retirer `where linkedin_url is not null` de l'index des contacts ne fait
 // PAS rougir le test 4 : Postgres traite les NULL comme distincts dans un index
 // unique, la clause est donc de l'hygiène (index plus petit), pas une garantie.
@@ -256,6 +259,7 @@ async function purgeEtRegression() {
   await q(`update signals set occurred_at = now() - interval '30 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org]);
   await q(`insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, company_hint) values ($1,$2,'adzuna','adz:old','job_posting', now() - interval '30 days','Vieille PME')`, [m.org, m.source]);
 
+  const ecAvant = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0].ecartes;
   await ecarterSignauxTropAnciens(pool, 14);
   const sv = (await q(`select count(*)::int n from signals where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org])).rows[0].n;
   const cv = (await q(`select count(*)::int n from contacts where organization_id=$1 and first_name='Victor'`, [m.org])).rows[0].n;
@@ -269,13 +273,31 @@ async function purgeEtRegression() {
   check('41. l’engageur qualifié ancien SANS email ni inscription est effacé (il n’a plus de sortie sinon), avec sa mémoire', sq === undefined && cq === 0, JSON.stringify(sq));
   const eq = (await q(`select count(*)::int n from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org])).rows[0].n;
   check('41a. jugé donc mémorisé : il ne sera pas recollecté sur ce post', eq === 1, String(eq));
-  // Qualifié, ancien, mais son contact a un email : il vit, rien ne s'efface.
+  // L'épargne par EMAIL est bornée à FACTEUR_EPARGNE_EMAIL x le délai (ici 2 x 14 = 28 jours) :
+  // un contact qui a un email sans inscription n'a jamais été contacté, il n'a aucun historique
+  // d'envoi à protéger, et le garder sans limite serait la rétention indéfinie que la purge ferme.
+  // Vera (20 jours) est dans la fenêtre, Oscar (40 jours) l'a dépassée.
   await enregistrer(m, eng('vivant', 'Vera Vivante', 'Directrice commerciale'));
-  await q(`update signals set occurred_at = now() - interval '30 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAvivant'`, [m.org]);
+  await q(`update signals set occurred_at = now() - interval '20 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAvivant'`, [m.org]);
   await q(`update contacts set email = 'vera@acme.fr' where organization_id=$1 and first_name='Vera'`, [m.org]);
+  await enregistrer(m, eng('oublie', 'Oscar Oublie', 'Directeur commercial'));
+  await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAoublie'`, [m.org]);
+  await q(`update contacts set email = 'oscar@acme.fr' where organization_id=$1 and first_name='Oscar'`, [m.org]);
+  // L'épargne par INSCRIPTION, elle, n'a pas de borne : des messages sont partis.
+  await enregistrer(m, eng('seq', 'Sacha Sequence', 'Directrice commerciale'));
+  await q(`update signals set occurred_at = now() - interval '40 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAseq'`, [m.org]);
+  const sacha = (await q(`select id from contacts where organization_id=$1 and first_name='Sacha'`, [m.org])).rows[0].id;
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'completed')`, [m.org, m.campagne, sacha]);
   await ecarterSignauxTropAnciens(pool, 14);
   const vv = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAvivant') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Vera') c`, [m.org])).rows[0];
-  check('41c. qualifié ancien dont le contact a un email : intact', vv.s === 1 && vv.c === 1, JSON.stringify(vv));
+  check('41c. email sans inscription, plus vieux que le délai mais sous son double : épargné', vv.s === 1 && vv.c === 1, JSON.stringify(vv));
+  const oo = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAoublie') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Oscar') c, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1 and external_id like '%ACoAAoublie') e`, [m.org])).rows[0];
+  check('41d. email sans inscription, au-delà du double du délai : effacé avec mémoire (pas de rétention indéfinie)', oo.s === 0 && oo.c === 0 && oo.e === 1, JSON.stringify(oo));
+  const ss = (await q(`select (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAseq') s, (select count(*)::int from contacts where organization_id=$1 and first_name='Sacha') c`, [m.org])).rows[0];
+  check('41e. inscription (même terminée), au-delà du double : épargné, l’épargne par inscription n’est pas bornée', ss.s === 1 && ss.c === 1, JSON.stringify(ss));
+  // Le passage qui a collecté ces personnes est clos : la purge le laisse tel quel.
+  const ec = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0].ecartes;
+  check('41f. purge d’un engageur qualifié : source_runs.ecartes du passage de collecte inchangé', ec === 0 && ecAvant === 0, `avant=${ecAvant} apres=${ec}`);
   const so = (await q(`select status, discard_reason from signals where organization_id=$1 and external_id='adz:old'`, [m.org])).rows[0];
   check('42. l’offre d’emploi ancienne suit toujours la règle d’avant (discarded / stale)', so?.status === 'discarded' && so?.discard_reason === 'stale', JSON.stringify(so));
 
@@ -390,6 +412,10 @@ async function atomicite() {
   // La panne vise UNIQUEMENT la suppression de ce signal (trigger restreint à son identifiant) :
   // la mémoire est posée et le contact effacé AVANT, la panne arrive donc au milieu.
   await q(`create or replace function public.t6_panne() returns trigger language plpgsql as $f$ begin raise exception 'panne provoquee t6'; end $f$`);
+  // Idempotent : avec KEEP=1, une interruption entre ce `create` et le `finally`
+  // laisserait le trigger en place, et le run suivant échouerait sur « already
+  // exists » — l'exception sortirait d'ici et emporterait la section `rls()`.
+  await q(`drop trigger if exists t6_panne on signals`);
   await q(`create trigger t6_panne before delete on signals for each row when (old.id = '${sigId}') execute function public.t6_panne()`);
   let e = null;
   try {

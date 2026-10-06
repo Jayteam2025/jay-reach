@@ -289,6 +289,16 @@ describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
     expect(m.etat.runsIncrementes).toEqual([]);
   });
 
+  it('juge sans compter : la memoire est posee, le compteur du passage ne bouge pas', async () => {
+    const m = modele();
+    await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
+    // Cas de la purge d'anciennete : la personne a ete jugee (memoire), mais le
+    // passage qui l'a collectee est clos, son compteur ne doit pas changer.
+    await ecarterEngageur(m.pool, ORG, 'signal-1', { juge: true, compter: false });
+    expect(m.etat.ecartes.size).toBe(1);
+    expect(m.etat.runsIncrementes).toEqual([]);
+  });
+
   it('les quatre ecritures se font dans une seule transaction', async () => {
     const appels: string[] = [];
     const client = {
