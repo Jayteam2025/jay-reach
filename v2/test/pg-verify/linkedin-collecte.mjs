@@ -456,13 +456,88 @@ async function disjoncteur() {
   const passage = await lirePassage(r3);
   check('30b. le message du passage ne porte que le type de l’erreur', /^Collecte interrompue \(/.test(passage.error ?? ''), passage.error);
 
-  // Un passage laissé ouvert par un worker tué entre dans le compte, par le
-  // chemin de production `closeStaleSourceRuns`.
+  // Un passage laissé ouvert par un worker tué est refermé par le chemin de
+  // production `closeStaleSourceRuns` — mais il n'entre PAS dans la fenêtre du
+  // disjoncteur : cette fonction n'écrit pas `verdict_linkedin`, et un worker tué
+  // est un incident d'hébergement qu'une reconnexion LinkedIn ne corrigerait pas.
   const m2 = await monde();
   const abandonne = await run(m2);
   await q(`update source_runs set started_at = now() - interval '45 minutes' where id = $1`, [abandonne]);
   const refermes = await closeStaleSourceRuns(pool);
-  check('31. un passage abandonné est refermé en erreur par le producteur', refermes >= 1 && (await lirePassage(abandonne)).status === 'error', String(refermes));
+  const refere = await lirePassage(abandonne);
+  check('31. un passage abandonné est refermé en erreur par le producteur', refermes >= 1 && refere.status === 'error', String(refermes));
+  check('31b. et il ne porte aucun verdict, donc il reste hors du disjoncteur', refere.verdict_linkedin === false, String(refere.verdict_linkedin));
+}
+
+/**
+ * La borne de session. Sans elle : l'opérateur reconnecte son compte après un
+ * blocage, le passage suivant rate UNE fois, et les deux anciens échecs le
+ * rebloquent aussitôt avec un « Trop d'échecs d'affilée » qui est faux.
+ */
+async function disjoncteurBornePaLaReconnexion() {
+  console.log('\n17. reconnecter, puis rater une fois');
+  const m = await monde();
+  // Cinq passages dans la journée : le plafond de posts ne doit pas court-circuiter
+  // le scénario avant la fin.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '10')`, [m.org]);
+  const panne = () =>
+    pilote({
+      reponse: () => {
+        throw new Error('réseau');
+      },
+    });
+  for (let i = 0; i < 3; i += 1) {
+    const r = await run(m);
+    await traiterCollecteLinkedIn(deps(panne()), job(m, r)).catch(() => undefined);
+  }
+  check('51. trois échecs bloquent la session', (await lireSessionLinkedIn(m.ctx)).motif === 'disjoncteur');
+
+  // Chemin de production : `jay-reach linkedin connecter`.
+  await activerSessionLinkedIn(m.ctx, IP);
+  check('51b. la reconnexion rend la session active', (await lireSessionLinkedIn(m.ctx)).etat === 'active');
+
+  const r4 = await run(m);
+  await traiterCollecteLinkedIn(deps(panne()), job(m, r4)).catch(() => undefined);
+  const apres = await lireSessionLinkedIn(m.ctx);
+  check('52. un seul échec après la reconnexion ne rebloque PAS la session', apres.etat === 'active', `${apres.etat}/${apres.motif}`);
+
+  // Mais le compteur repart : trois échecs APRÈS la reconnexion bloquent toujours.
+  for (let i = 0; i < 2; i += 1) {
+    const r = await run(m);
+    await traiterCollecteLinkedIn(deps(panne()), job(m, r)).catch(() => undefined);
+  }
+  const fin = await lireSessionLinkedIn(m.ctx);
+  check('52b. et trois échecs APRÈS la reconnexion bloquent de nouveau', fin.etat === 'bloquee' && fin.motif === 'disjoncteur', `${fin.etat}/${fin.motif}`);
+}
+
+/**
+ * Une panne de base survient APRÈS la dernière requête LinkedIn : la boucle
+ * d'enregistrement ne fait que du Postgres. Le pool injecté lève sur la seule
+ * requête `jr:linkedin_collecte_marquer`, tout le reste est réel.
+ */
+async function panneDeBaseApresLeTrafic() {
+  console.log('\n18. une panne de base après tout le trafic LinkedIn');
+  const m = await monde();
+  const r = await run(m);
+  const poolQuiLache = {
+    query: async (sql, params) => {
+      if (String(sql).includes('jr:linkedin_collecte_marquer')) {
+        const e = new Error('canceling statement due to statement timeout');
+        e.name = 'DatabaseError';
+        throw e;
+      }
+      return pool.query(sql, params);
+    },
+    connect: () => pool.connect(),
+  };
+  const d = { ...deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), pool: poolQuiLache };
+  await traiterCollecteLinkedIn(d, job(m, r)).catch(() => undefined);
+  const passage = await lirePassage(r);
+  check('53. le passage échoue', passage.status === 'error', `${passage.status} / ${passage.error}`);
+  check('53b. une panne de base survenue après le trafic ne porte AUCUN verdict sur le compte',
+    passage.verdict_linkedin === false, String(passage.verdict_linkedin));
+  check('53c. et les personnes vues avant la panne sont enregistrées',
+    (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n === 1);
 }
 
 // -------------------------------------------------------------- 8. producteur
@@ -745,7 +820,8 @@ async function postIntrouvableNeDisjonctePas() {
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
-    fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas);
+    fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
+    disjoncteurBornePaLaReconnexion, panneDeBaseApresLeTrafic);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

@@ -191,28 +191,47 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
   }
   // Une page par client : deux commandes (ou une commande et la collecte) ne se piétinent pas.
   // Le `about:blank` initial de Chromium reste ouvert et garde le navigateur vivant.
-  const page = await browser.newPage();
-  page.setDefaultTimeout(DELAI_ACTION_MS);
-  const identite = identiteNavigateur(await browser.version());
-  if (identite) await page.setUserAgent(identite);
-  if (user && password) await page.authenticate({ username: user, password });
+  //
+  // TOUT ce qui suit `connect` est enveloppé : un échec de `newPage`, `version`,
+  // `setUserAgent` ou `authenticate` laissait la WebSocket CDP et ses écouteurs
+  // attachés dans le worker — un processus de longue durée — et parfois un onglet
+  // orphelin dans le Chromium qui porte la session LinkedIn, qu'on ne redémarre
+  // pas. Des identifiants de proxy mal posés suffisent à le reproduire à chaque
+  // collecte.
+  let page: Awaited<ReturnType<typeof browser.newPage>> | undefined;
+  try {
+    page = await browser.newPage();
+    page.setDefaultTimeout(DELAI_ACTION_MS);
+    const identite = identiteNavigateur(await browser.version());
+    if (identite) await page.setUserAgent(identite);
+    if (user && password) await page.authenticate({ username: user, password });
+  } catch {
+    if (page) await page.close().catch(() => undefined);
+    try {
+      await browser.disconnect();
+    } catch {
+      // Déjà tombée : il n'y a plus rien à rendre.
+    }
+    throw new Error('Préparation du navigateur impossible');
+  }
 
+  const onglet = page;
   return {
     aller: async (url) => {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      await onglet.goto(url, { waitUntil: 'domcontentloaded' });
     },
-    url: async () => page.url(),
+    url: async () => onglet.url(),
     saisir: async (selecteur, valeur) => {
-      await page.waitForSelector(selecteur);
-      await page.type(selecteur, valeur, { delay: 40 });
+      await onglet.waitForSelector(selecteur);
+      await onglet.type(selecteur, valeur, { delay: 40 });
     },
     cliquer: async (selecteur) => {
-      await page.waitForSelector(selecteur);
-      await page.click(selecteur);
+      await onglet.waitForSelector(selecteur);
+      await onglet.click(selecteur);
     },
     attendre: async (selecteur, delaiMs) => {
       try {
-        await page.waitForSelector(selecteur, { timeout: delaiMs });
+        await onglet.waitForSelector(selecteur, { timeout: delaiMs });
         return true;
       } catch (e) {
         if (e instanceof TimeoutError) return false;
@@ -229,7 +248,7 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     // Voyager repartirait en 403, que le collecteur lirait comme un cookie
     // refusé : il bloquerait la session alors qu'elle est valide.
     requete: async (url, entetes) =>
-      page.evaluate(
+      onglet.evaluate(
         async (u, e) => {
           const headers: Record<string, string> = { ...e };
           if (new URL(u).hostname.endsWith('linkedin.com')) {
@@ -244,7 +263,7 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
       ),
     // On ferme NOTRE page puis on se détache sans fermer le navigateur : il garde le profil et ses cookies.
     fermer: async () => {
-      await page.close().catch(() => undefined);
+      await onglet.close().catch(() => undefined);
       await browser.disconnect();
     },
   };

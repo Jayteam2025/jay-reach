@@ -229,6 +229,13 @@ async function cloreCollecte(
  * `closeStaleSourceRuns` n'y entre pas : un worker tué est un incident
  * d'hébergement, et une reconnexion LinkedIn n'y répond pas. Évalué seulement
  * quand le passage courant a échoué sur une exception, jamais après un succès.
+ *
+ * **La fenêtre s'arrête à la dernière reconnexion** (`connected_at`, que
+ * `activerSessionLinkedIn` repose à chaque fois). Sans cette borne, l'opérateur
+ * reconnecte son compte — l'opération la plus risquée du lot — puis le premier
+ * passage qui rate UNE fois retrouve les deux anciens échecs et rebloque la
+ * session, avec un « Trop d'échecs d'affilée » qui est faux. Il tournerait en
+ * boucle, en répétant l'action dangereuse sans comprendre.
  */
 async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
   const res = await pool.query<{ status: string }>(
@@ -239,6 +246,9 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
         and so.config->>'sourceType' = 'linkedin_post_engagers'
         and sr.finished_at is not null
         and sr.verdict_linkedin
+        and sr.finished_at > coalesce(
+              (select connected_at from linkedin_server_sessions where organization_id = $1),
+              '-infinity'::timestamptz)
       order by sr.finished_at desc
       limit 3`,
     [ctx.organisationId],
@@ -316,6 +326,16 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
   const bilan = bilanVierge();
   let sortie: Sortie | null = null;
   let verrouPris = false;
+  /**
+   * Le trafic LinkedIn est-il derrière nous ? La boucle d'enregistrement qui suit
+   * `lireEngageurs` ne fait que du Postgres — plusieurs insertions par personne,
+   * jusqu'à cinquante par page — et un `statement timeout`, un deadlock ou un
+   * pooler saturé y lève une erreur inconnue. Sans ce drapeau, trois incidents de
+   * base de suite exigeaient de l'opérateur qu'il reconnecte son compte LinkedIn.
+   * La précaution « erreur inconnue = verdict » reste là où elle se justifie :
+   * tant qu'on peut encore être en train de parler à LinkedIn.
+   */
+  let traficTermine = false;
   // Ouvert DANS le `try` : c'est le seul chemin où le navigateur peut être
   // réellement ouvert (`puppeteer.connect` passe, `newPage` échoue) sans qu'aucune
   // clôture ne soit jouée. Le passage restait alors `running` trente minutes, le
@@ -379,6 +399,9 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       bilan.requetes += 1;
     };
     const { personnes, arret } = await lireEngageurs(pilote, config.urlPost, config.garder, budget, surRequete, d.pause);
+    // Plus une seule requête LinkedIn après ce point : tout ce qui suit est du
+    // Postgres. Une erreur qui survient là ne dit RIEN du compte.
+    traficTermine = true;
     bilan.vus = personnes.length;
 
     const contexteEngageur = {
@@ -447,10 +470,11 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       erreur: connue ? err.message : `Collecte interrompue (${type}).`,
       bilan,
       sortie,
-      // Une erreur inconnue est tenue pour un verdict : on ne sait pas d'où elle
-      // vient, et le disjoncteur est la précaution. Nos propres échecs de lecture,
-      // eux, le disent franchement.
-      verdictLinkedIn: connue ? err.engageLeCompte : true,
+      // Une erreur inconnue est tenue pour un verdict TANT QUE le trafic LinkedIn
+      // n'est pas terminé : on ne sait pas d'où elle vient, et le disjoncteur est
+      // la précaution. Après, c'est forcément la base. Nos propres échecs de
+      // lecture, eux, le disent franchement.
+      verdictLinkedIn: connue ? err.engageLeCompte : !traficTermine,
     });
     await verifierDisjoncteur(ctx, pool);
     throw err;
