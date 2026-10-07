@@ -829,8 +829,14 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
 }
 
 /** Branche les écouteurs permanents. Mode worker uniquement. */
-export async function ecouterLesFiles(ctx: Contexte): Promise<void> {
+export async function ecouterLesFiles(
+  ctx: Contexte,
+  options: { readonly ignorer?: readonly string[] } = {},
+): Promise<void> {
   for (const file of FILES_BRANCHEES) {
+    // Une file dont la politique est mal posée (voir `verifierPolitiquesDeFiles`) n'est pas
+    // consommée : le reste du moteur tourne, seul ce canal se tait, et l'opérateur en est prévenu.
+    if (options.ignorer?.includes(file)) continue;
     // pg-boss remet un tableau : sous `noUncheckedIndexedAccess`, son premier
     // element est potentiellement absent, et un lot vide ne doit rien declencher.
     await ctx.boss.work(file, async ([job]) => {

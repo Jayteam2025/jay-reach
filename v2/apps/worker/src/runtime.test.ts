@@ -19,18 +19,22 @@ describe('verifierPolitiquesDeFiles : la garantie « un envoi en vol par organis
   const bossAvec = (reponses: Record<string, { policy: string } | null>): PgBoss =>
     ({ getQueue: vi.fn(async (nom: string) => reponses[nom] ?? null) }) as unknown as PgBoss;
 
-  it('passe quand la file declaree en stately l est reellement', async () => {
-    await expect(verifierPolitiquesDeFiles(bossAvec({ 'linkedin.envoi': { policy: 'stately' } }))).resolves.toBeUndefined();
+  it('ne rend rien quand la file declaree en stately l est reellement', async () => {
+    expect(await verifierPolitiquesDeFiles(bossAvec({ 'linkedin.envoi': { policy: 'stately' } }))).toEqual([]);
   });
 
-  it('refuse de demarrer quand la file existe en politique standard, et dit quoi faire', async () => {
+  it('designe la file en politique standard et dit quoi faire, sans lever', async () => {
     // `createQueue` est un ON CONFLICT DO NOTHING : une file nee d'une image anterieure y reste.
-    const boss = bossAvec({ 'linkedin.envoi': { policy: 'standard' } });
-    await expect(verifierPolitiquesDeFiles(boss)).rejects.toThrow(/linkedin\.envoi.*stately.*standard/s);
-    await expect(verifierPolitiquesDeFiles(boss)).rejects.toThrow(/deleteQueue|supprim/i);
+    const r = await verifierPolitiquesDeFiles(bossAvec({ 'linkedin.envoi': { policy: 'standard' } }));
+    expect(r.map((x) => x.file)).toEqual(['linkedin.envoi']);
+    expect(r[0]?.message).toMatch(/stately.*standard/s);
+    expect(r[0]?.message).toMatch(/PAS consommée/);
+    expect(r[0]?.message).toMatch(/deleteQueue/);
   });
 
-  it('refuse aussi quand la file est introuvable', async () => {
-    await expect(verifierPolitiquesDeFiles(bossAvec({}))).rejects.toThrow(/linkedin\.envoi/);
+  it('designe aussi une file introuvable', async () => {
+    const r = await verifierPolitiquesDeFiles(bossAvec({}));
+    expect(r.map((x) => x.file)).toEqual(['linkedin.envoi']);
+    expect(r[0]?.message).toMatch(/introuvable/);
   });
 });

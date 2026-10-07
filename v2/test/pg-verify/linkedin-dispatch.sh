@@ -45,7 +45,7 @@ if ! harnais_pret; then
   psql -c "create schema if not exists extensions; create extension if not exists pgcrypto with schema extensions; alter database jayreach set search_path = public, extensions;" >/dev/null \
     || { echo "[linkedin-dispatch] EXTENSIONS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
   echo "[linkedin-dispatch] shim auth + migrations…"
-  psql < "$DIR/test/pg-verify/auth-shim.sql" >/dev/null || { echo "[linkedin-dispatch] SHIM_FAIL"; exit 6; }
+  psql < "$DIR/test/pg-verify/auth-shim.sql" >/dev/null || { echo "[linkedin-dispatch] SHIM_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 6; }
   for m in "$DIR"/supabase/migrations/*.sql; do
     # Les migrations de cette tâche tournent chacune dans UNE transaction, comme
     # `supabase db push` : c'est ce qui rendrait une valeur d'enum inutilisable

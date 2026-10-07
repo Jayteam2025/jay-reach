@@ -183,7 +183,10 @@ type VerdictRythme =
  * à une échéance connue.
  */
 function jugerRythme(stats: StatsRythme, now: Date): VerdictRythme {
-  // Mode manuel : rien ne part de soi-même.
+  // Mode manuel : rien ne part de soi-même. État IMPOSSIBLE en base aujourd'hui : la migration
+  // 20260831160000 a resserré la contrainte à `mode = 'auto'` (« Déprécié : seul auto existe »).
+  // La branche est gardée par précaution, parce qu'elle est conservatrice (rien ne part) et que la
+  // contrainte pourra être relâchée : ce produit veut que tout soit réglable à l'écran.
   if (stats.mode === 'manual') {
     return { ok: false, motif: 'manual_mode' };
   }

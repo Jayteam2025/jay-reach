@@ -80,7 +80,15 @@ async function main(): Promise<void> {
   const identite = identiteDepuisEnvironnement();
   await boss.start();
   await registerQueues(boss);
-  await verifierPolitiquesDeFiles(boss);
+  // Une file dont la politique n'est pas celle attendue n'est pas consommée, mais le worker
+  // démarre : les relances email ne doivent pas s'arrêter pour un défaut du canal LinkedIn.
+  // L'erreur va dans le journal d'activité et dans les logs, là où l'opérateur regarde.
+  const fautives = await verifierPolitiquesDeFiles(boss);
+  for (const f of fautives) {
+    console.error(`[worker] ${f.message}`);
+    await journaliserErreurMoteur(pool, new Error(f.message), `politique de file ${f.file}`);
+  }
+  const filesIgnorees = fautives.map((f) => f.file);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
 
@@ -119,7 +127,7 @@ async function main(): Promise<void> {
     }
   };
 
-  await ecouterLesFiles(ctx);
+  await ecouterLesFiles(ctx, { ignorer: filesIgnorees });
   console.log(`[worker] pg-boss démarré — ${QUEUES.length} files déclarées.`);
   void tourSequences();
 
@@ -155,7 +163,7 @@ async function main(): Promise<void> {
 
   // Seulement là où le canal est autorisé : ailleurs, le handler sortirait de toute façon.
   let envoiLinkedIn: NodeJS.Timeout | null = null;
-  if (process.env.JAY_REACH_LINKEDIN === '1') {
+  if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.envoi')) {
     // Même raison que la relève Graph : un hoquet de base ne doit pas tuer le worker.
     const enfilerEnvoiLinkedIn = (): void => {
       void enqueueEnvoiLinkedIn(boss, pool).catch(() => {

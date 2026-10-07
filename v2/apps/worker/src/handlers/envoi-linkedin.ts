@@ -20,6 +20,14 @@
  * réclamation, lecture du profil, envoi, enregistrement. Chaque appel LinkedIn est
  * tracé AVANT de partir. La file est en `retryLimit: 0` : pg-boss ne rejoue jamais ce job.
  *
+ * CE QUE COÛTE L'INVARIANT. Si le worker meurt entre le passage en `processing` et l'enregistrement
+ * du résultat, la ligne reste `processing` : on ne SAIT pas si LinkedIn a reçu l'envoi, et la
+ * rejouer inviterait deux fois la même personne. Elle n'est donc réparée (en `failed /
+ * resultat_indetermine`, visible à l'écran) qu'après `PROCESSING_TIMEOUT_MIN` (dix minutes), et
+ * pendant ce temps le canal est MUET pour l'organisation : `prochainEnvoiLinkedIn` voit une action
+ * en vol et ne dépose aucun job. Ce n'est pas un bug : c'est le prix de « jamais deux fois », payé
+ * volontairement. Après un incident, attendre dix minutes avant de chercher une panne.
+ *
  * Aucun secret, aucune URL de proxy dans un message ou un journal : seul `err.name`
  * sort d'ici, et les erreurs que ce fichier lève sont écrites ici, jamais copiées.
  */

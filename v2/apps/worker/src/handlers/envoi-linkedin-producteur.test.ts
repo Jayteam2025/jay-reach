@@ -106,7 +106,9 @@ describe('enqueueEnvoiLinkedIn, de bout en bout sur la decision', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it('en mode manuel, aucun job n est cree', async () => {
+  // Le mode manuel est IMPOSSIBLE en base aujourd'hui (contrainte `mode = 'auto'`, migration
+  // 20260831160000) : ce test exerce une branche de precaution, conservatrice, pas un cas reel.
+  it('en mode manuel (etat impossible en base aujourd hui, branche de precaution), aucun job n est cree', async () => {
     const { boss, send } = creerBoss();
     await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }], 'manual'), NOW);
     expect(send).not.toHaveBeenCalled();

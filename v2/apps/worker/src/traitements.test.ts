@@ -7,6 +7,7 @@ import {
   traiterDiscover,
   traiterJob,
   consommerLesFiles,
+  ecouterLesFiles,
   FILES_BRANCHEES,
   FILES_AVEC_NAVIGATEUR,
   libelleSourceRun,
@@ -546,5 +547,24 @@ describe('consommerLesFiles (route cron de Vercel, sans navigateur)', () => {
 
   it('les files a navigateur sont bien branchees pour le worker', () => {
     for (const f of FILES_AVEC_NAVIGATEUR) expect(FILES_BRANCHEES).toContain(f);
+  });
+});
+
+describe('ecouterLesFiles : une file fautive ne tait que son canal', () => {
+  it('ne consomme pas les files ignorees et consomme toutes les autres', async () => {
+    const work = vi.fn(async () => 'w');
+    const ctx = { pool: creerPoolFactice([]), boss: { work } as unknown as PgBoss } as Contexte;
+    await ecouterLesFiles(ctx, { ignorer: ['linkedin.envoi'] });
+    const files = (work.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(files).not.toContain('linkedin.envoi');
+    expect(files).toContain('actions.dispatch');
+    expect(files).toContain('linkedin.collecte');
+  });
+
+  it('sans file ignoree, tout est consomme, linkedin.envoi comprise', async () => {
+    const work = vi.fn(async () => 'w');
+    const ctx = { pool: creerPoolFactice([]), boss: { work } as unknown as PgBoss } as Contexte;
+    await ecouterLesFiles(ctx);
+    expect((work.mock.calls as unknown as [string][]).map((c) => c[0])).toContain('linkedin.envoi');
   });
 });

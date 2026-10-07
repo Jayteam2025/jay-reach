@@ -145,7 +145,9 @@ describe('prochainEnvoiLinkedIn', () => {
     expect((await prochainEnvoiLinkedIn(creerExecuteur({ deLaJournee: 20 }), ORG, NOW)).motif).toBe('daily_cap_reached');
   });
 
-  it('ne planifie rien en mode manuel', async () => {
+  // Le mode manuel est IMPOSSIBLE en base aujourd'hui (contrainte `mode = 'auto'`, migration
+  // 20260831160000) : ce test exerce une branche de precaution, conservatrice, pas un cas reel.
+  it('ne planifie rien en mode manuel (etat impossible en base aujourd hui, branche de precaution)', async () => {
     expect((await prochainEnvoiLinkedIn(creerExecuteur({ mode: 'manual' }), ORG, NOW)).motif).toBe('manual_mode');
   });
 });
