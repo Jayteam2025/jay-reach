@@ -28,10 +28,11 @@ export default async function ReglagesLinkedinPage() {
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
   const maintenant = new Date();
 
-  const [session, plafondPosts, plafondRequetes, postsDuJour, requetesDeLHeure] = await Promise.all([
+  const [session, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
+    lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
   ]);
@@ -124,6 +125,12 @@ export default async function ReglagesLinkedinPage() {
               nom: t('plafonds.requetesParHeure.nom'),
               usage: t('plafonds.requetesParHeure.usage', { n: requetesDeLHeure }),
               valeur: plafondRequetes,
+            },
+            {
+              cle: 'linkedin_personnes_par_passage',
+              nom: t('plafonds.personnesParPassage.nom'),
+              usage: t('plafonds.personnesParPassage.usage'),
+              valeur: plafondPersonnes,
             },
           ]}
           libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}

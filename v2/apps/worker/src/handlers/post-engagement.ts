@@ -15,7 +15,14 @@
 import type { Pool } from 'pg';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { dansUneTransaction, normaliserUrlPost, normaliserUrlProfil, type Executeur } from '@jay-reach/core';
+import {
+  dansUneTransaction,
+  identifiantMembre,
+  lienProfilDeduit,
+  normaliserUrlPost,
+  normaliserUrlProfil,
+  type Executeur,
+} from '@jay-reach/core';
 
 export type Engageur = {
   urn: string;
@@ -63,31 +70,32 @@ export interface ContexteEngageur {
   readonly sourceRunId: string;
 }
 
-/** La partie stable d'un URN (`urn:li:fsd_profile:ACoAA…` -> `ACoAA…`). */
-function identifiantMembre(urn: string): string {
-  const morceaux = urn.split(':');
-  return morceaux[morceaux.length - 1] ?? urn;
-}
-
-/**
- * Adresse de profil déduite de l'URN : REPLI, et HYPOTHÈSE non vérifiée. Le
- * dernier segment d'un URN de profil est un identifiant interne, pas le nom
- * public qui compose d'ordinaire les adresses `/in/` : LinkedIn peut ne pas la
- * résoudre. Elle reste stable d'un passage à l'autre, ce qui suffit à l'index
- * unique des contacts, mais l'enrichissement (tâche 8) ne doit pas compter
- * dessus : le collecteur fournit `urlProfil` dès qu'il le peut.
- */
-export function lienProfilDeduit(urn: string): string {
-  return `https://www.linkedin.com/in/${identifiantMembre(urn)}`;
-}
+// `identifiantMembre` et `lienProfilDeduit` vivent dans le cœur (voir `sources.ts`) :
+// l'opposition (`nePlusContacter`) doit fabriquer la même graphie que la collecte.
+export { lienProfilDeduit };
 
 // `normaliserUrlProfil` vit dans le cœur : les trois chemins qui écrivent une
 // adresse de profil (ce collecteur, l'enrichissement, l'import de fichier)
 // doivent s'accorder sur la même forme, sinon la même personne existe deux fois.
 
+/** L'adresse que la réponse Voyager a fournie, quand elle est exploitable. */
+function adresseFournie(engageur: Pick<Engageur, 'urlProfil'>): string | null {
+  return engageur.urlProfil ? normaliserUrlProfil(engageur.urlProfil) : null;
+}
+
+/**
+ * Cet engageur sera-t-il enregistré sous l'adresse DÉDUITE de son URN, que ni LinkedIn ni
+ * FullEnrich ne résolvent ? Même règle que `lienProfil`, qui s'appuie sur elle : le chiffre
+ * que la collecte compte (`source_runs.adresses_deduites`, la part d'intitulés exploitables
+ * de la spec) ne peut pas diverger de ce qui est réellement écrit.
+ */
+export function adresseDeduite(engageur: Pick<Engageur, 'urlProfil'>): boolean {
+  return adresseFournie(engageur) === null;
+}
+
 /** L'adresse fournie quand elle est exploitable, le repli déduit sinon. */
 export function lienProfil(engageur: Pick<Engageur, 'urn' | 'urlProfil'>): string {
-  return (engageur.urlProfil ? normaliserUrlProfil(engageur.urlProfil) : null) ?? lienProfilDeduit(engageur.urn);
+  return adresseFournie(engageur) ?? lienProfilDeduit(engageur.urn);
 }
 
 function separerNom(nom: string): { prenom: string | null; nomFamille: string | null } {
@@ -249,6 +257,24 @@ export async function enregistrerEngageur(
 export type FragmentSql = string & { readonly __fragmentSql: true };
 export const PARAM_ORG = '$1' as FragmentSql;
 export const PARAM_SIGNAL = '$2' as FragmentSql;
+
+/**
+ * « L'adresse LinkedIn de ce contact est celle d'une personne qu'on peut chercher » : le contact
+ * n'est pas né d'un URN (`linkedin_provider_id` vide), ou son adresse n'est pas celle que
+ * `lienProfilDeduit` fabrique pour son identifiant. Une adresse déduite se dédoublonne mais ne se
+ * résout pas : FullEnrich la refuse, donc l'enrichissement n'achète pas (`raisonDeNePasAcheter`).
+ *
+ * UNE définition, partagée par l'enrichissement (`enqueueEnrichmentContactsConnus`) et par le
+ * scoring (`conditionSourceScorable`) : le scoring paie des jetons, et les payer pour une personne
+ * que l'enrichissement refusera en SQL est la définition d'un coût payé pour rien. Deux copies
+ * auraient fini par diverger.
+ *
+ * @param contact    alias SQL du contact (`c`)
+ * @param prefixeDeduit paramètre SQL qui porte `lienProfilDeduit('')`, le préfixe nu des adresses déduites
+ */
+export function sqlAdresseResolvable(contact: FragmentSql, prefixeDeduit: FragmentSql): string {
+  return `(${contact}.linkedin_provider_id is null or ${contact}.linkedin_url <> ${prefixeDeduit} || ${contact}.linkedin_provider_id)`;
+}
 
 /** Empreinte (sha256 hexadécimal) d'un `external_id` : ce que `linkedin_engageurs_ecartes` stocke. */
 export function empreinteEngageur(externalId: string): string {

@@ -34,6 +34,7 @@ export type ClePlafond =
   | 'enrichissements_par_jour'
   | 'linkedin_posts_par_jour'
   | 'linkedin_requetes_par_heure'
+  | 'linkedin_personnes_par_passage'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -44,6 +45,7 @@ const CLE_PLAFOND_VALUES = [
   'enrichissements_par_jour',
   'linkedin_posts_par_jour',
   'linkedin_requetes_par_heure',
+  'linkedin_personnes_par_passage',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -55,6 +57,10 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   { cle: 'enrichissements_par_jour', defaut: 30, env: 'ENRICH_DAILY_CAP' },
   { cle: 'linkedin_posts_par_jour', defaut: 3, env: 'LINKEDIN_POSTS_DAILY_CAP' },
   { cle: 'linkedin_requetes_par_heure', defaut: 60, env: 'LINKEDIN_REQUESTS_HOURLY_CAP' },
+  // 100 : trois posts par jour (plafond ci-dessus) font 300 personnes, soit exactement le plafond
+  // de scoring, que les offres d'emploi se partagent. Un passage qui enregistre plus fabrique des
+  // fiches que le moteur ne traitera jamais (revue finale, 2.3).
+  { cle: 'linkedin_personnes_par_passage', defaut: 100, env: 'LINKEDIN_PEOPLE_PER_RUN_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -496,8 +502,13 @@ export async function lireConsommationDuJour(
   };
 }
 
-/** Les deux plafonds qui bornent la collecte LinkedIn du serveur (lot 4a). */
-export type ClePlafondLinkedIn = 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure';
+/**
+ * Les plafonds qui bornent la collecte LinkedIn du serveur (lot 4a) : posts par jour et requêtes
+ * par heure bornent le TRAFIC ; `linkedin_personnes_par_passage` borne ce qu'un passage ÉCRIT en
+ * base, parce que les étages aval (scoring, enrichissement) sont plafonnés à un ou deux ordres
+ * de grandeur de moins que ce que 60 requêtes de 50 profils laissent entrer.
+ */
+export type ClePlafondLinkedIn = 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure' | 'linkedin_personnes_par_passage';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
@@ -581,42 +592,25 @@ export async function compterPostsLinkedInDuJour(
 }
 
 /**
- * Fenêtre dans laquelle le serveur a le droit de toucher LinkedIn : jours ISO (1 = lundi), heures locales `HH:00`, fuseau IANA.
- * Attention : `fin` peut valoir `'24:00'` (la contrainte de plage autorise `send_to_hour = 24`), ce qu'un parseur d'heure
- * strict refuserait. Comparer en heures entières, ou traiter `24:00` comme minuit du lendemain.
+ * Fuseau dans lequel se compte le « jour » du plafond de posts : celui de `linkedin_settings`
+ * (le même que l'écran Expéditeurs règle pour le canal gelé de l'extension), à défaut
+ * Europe/Paris, valeur par défaut de la table (migration 20260831160000).
+ *
+ * DETTE POUR LE LOT 4b : cette fonction rendait aussi la FENÊTRE d'envoi (jours, heures), lue puis
+ * jetée par l'unique appelant, qui n'en gardait que le fuseau. Elle a été retirée plutôt que de
+ * laisser croire qu'elle contraint la collecte : rien ne part automatiquement en 4a (seul un clic
+ * d'opérateur enfile un passage, et refuser à 20 h le clic d'un humain qui a choisi son moment est
+ * un mauvais produit, ruling 63). La fenêtre devient OBLIGATOIRE le jour où une collecte part toute
+ * seule : une collecte à 4 h du matin sans personne devant est ce qui trahit une machine. Elle se
+ * relira alors dans `linkedin_settings` (`send_days`, `send_from_hour`, `send_to_hour`, où
+ * `send_to_hour` vaut jusqu'à 24) ; l'écran Expéditeurs l'écrit déjà.
  */
-export interface FenetreLinkedIn {
-  jours: number[];
-  debut: string;
-  fin: string;
-  fuseau: string;
-}
-
-/** Valeurs des colonnes de `linkedin_settings` (migration 20260831160000) : ce que prend une organisation sans ligne. */
-const FENETRE_LINKEDIN_PAR_DEFAUT = { jours: [1, 2, 3, 4, 5], debutHeure: 9, finHeure: 18, fuseau: 'Europe/Paris' } as const;
-
-const heurePleine = (h: number): string => `${String(h).padStart(2, '0')}:00`;
-
-/**
- * Fenêtre d'envoi LinkedIn de l'organisation, lue dans `linkedin_settings` —
- * jamais redéfinie ailleurs : un collecteur qui tourne à trois heures du matin
- * derrière une IP résidentielle française est un signal de détection. Sans
- * ligne, ce sont les défauts de la table qui s'appliquent (comme un plafond
- * absent retombe sur son défaut), pas un échec.
- */
-export async function lireFenetreLinkedIn(ctx: Contexte): Promise<FenetreLinkedIn> {
-  const res = await ctx.ex.query<{ send_days: number[]; send_from_hour: number; send_to_hour: number; timezone: string }>(
-    `select send_days, send_from_hour, send_to_hour, timezone /* jr:linkedin_fenetre */
+export async function lireFuseauLinkedIn(ctx: Contexte): Promise<string> {
+  const res = await ctx.ex.query<{ timezone: string }>(
+    `select timezone /* jr:linkedin_fuseau */
        from linkedin_settings
       where organization_id = $1`,
     [ctx.organisationId],
   );
-  const l = res.rows[0];
-  const d = FENETRE_LINKEDIN_PAR_DEFAUT;
-  return {
-    jours: l ? [...l.send_days] : [...d.jours],
-    debut: heurePleine(l?.send_from_hour ?? d.debutHeure),
-    fin: heurePleine(l?.send_to_hour ?? d.finHeure),
-    fuseau: l?.timezone ?? d.fuseau,
-  };
+  return res.rows[0]?.timezone ?? 'Europe/Paris';
 }

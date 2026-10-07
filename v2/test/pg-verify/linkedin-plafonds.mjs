@@ -9,7 +9,7 @@ import pg from 'pg';
 import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
-  lireFenetreLinkedIn,
+  lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
 } from './_linkedin-plafonds-bundle.mjs';
@@ -193,22 +193,19 @@ async function plafonds() {
 }
 
 async function fenetre() {
-  console.log('fenetre');
+  console.log('fuseau');
   const A = await orgNeuve();
-  const d = await lireFenetreLinkedIn(ctxDe(A));
-  check('32. sans ligne : défauts de la table (lun-ven, 09:00-18:00, Europe/Paris)',
-    JSON.stringify(d.jours) === '[1,2,3,4,5]' && d.debut === '09:00' && d.fin === '18:00' && d.fuseau === 'Europe/Paris', JSON.stringify(d));
+  const d = await lireFuseauLinkedIn(ctxDe(A));
+  check('32. sans ligne : le défaut de la table (Europe/Paris)', d === 'Europe/Paris', d);
   await q(`insert into linkedin_settings (organization_id) values ($1)`, [A.id]);
-  const colonnes = await lireFenetreLinkedIn(ctxDe(A));
-  check('33. ligne aux défauts : mêmes valeurs que sans ligne (les défauts du code suivent ceux de la table)',
-    JSON.stringify(colonnes) === JSON.stringify(d), JSON.stringify(colonnes));
-  await q(`update linkedin_settings set send_days = '{2,4,7}', send_from_hour = 8, send_to_hour = 24, timezone = 'America/Montreal' where organization_id = $1`, [A.id]);
-  const m = await lireFenetreLinkedIn(ctxDe(A));
-  check('34. ligne modifiée : valeurs lues',
-    JSON.stringify(m.jours) === '[2,4,7]' && m.debut === '08:00' && m.fin === '24:00' && m.fuseau === 'America/Montreal', JSON.stringify(m));
+  const colonnes = await lireFuseauLinkedIn(ctxDe(A));
+  check('33. ligne aux défauts : même valeur que sans ligne (le défaut du code suit celui de la table)', colonnes === d, colonnes);
+  await q(`update linkedin_settings set timezone = 'America/Montreal' where organization_id = $1`, [A.id]);
+  const m = await lireFuseauLinkedIn(ctxDe(A));
+  check('34. ligne modifiée : fuseau lu', m === 'America/Montreal', m);
   const B = await orgNeuve();
-  const b = await lireFenetreLinkedIn(ctxDe(B));
-  check('35. une autre organisation ne voit pas cette ligne', b.fuseau === 'Europe/Paris' && b.debut === '09:00', JSON.stringify(b));
+  const b = await lireFuseauLinkedIn(ctxDe(B));
+  check('35. une autre organisation ne voit pas cette ligne', b === 'Europe/Paris', b);
 }
 
 async function commeUtilisateur(userId, fn) {

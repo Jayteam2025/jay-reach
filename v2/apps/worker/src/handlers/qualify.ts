@@ -16,6 +16,13 @@ export interface QualifyJob {
   /**
    * Nature du signal. `post_engagement` décrit une PERSONNE, pas une
    * entreprise : il n'y a rien à résoudre auprès de l'annuaire légal.
+   *
+   * DÉFENSE EN PROFONDEUR DÉLIBÉRÉE, ET NON PROUVÉE : au 07/10/2026 aucun producteur ne pose
+   * `kind`. Le seul producteur de `signals.qualify` (`traiterDiscover`) ne voit jamais une source
+   * LinkedIn (le producteur l'exclut, et `runDiscover` lève pour `linkedin*`), et un engageur ne
+   * passe pas par la qualification : `enregistrerEngageur` crée le signal en `new` et le scoring le
+   * prend. Les gardes de `runQualify` et de `traitements.ts` existent pour le jour où un engageur
+   * emprunterait cette file ; ce n'est pas du code mort, et ce n'est pas du code prouvé.
    */
   readonly kind?: string;
 }

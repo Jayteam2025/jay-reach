@@ -15,13 +15,14 @@ import {
   buildScoringUserMessage,
   isCabinetVerdict,
   isRecruitmentAgency,
+  lienProfilDeduit,
   meetsScoreThreshold,
   passesRules,
   type Score,
   type ScoringProspect,
 } from '@jay-reach/core';
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
-import { ecarterEngageur } from './post-engagement.js';
+import { ecarterEngageur, sqlAdresseResolvable, type FragmentSql } from './post-engagement.js';
 
 /**
  * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
@@ -164,8 +165,20 @@ const CONSIGNE_DE_SCORING = `case when s.kind = 'post_engagement' then pe.scorin
  * Sans la branche `post_engagement`, une source d'engageurs (qui n'a pas de
  * prompt de source) laisserait ses signaux `new` indéfiniment, sans erreur.
  */
-function conditionSourceScorable(paramIndex: number): string {
-  return `length(trim(coalesce(${CONSIGNE_DE_SCORING}, ''))) >= $${paramIndex}`;
+function conditionSourceScorable(paramIndex: number, paramPrefixeDeduit: number): string {
+  return `length(trim(coalesce(${CONSIGNE_DE_SCORING}, ''))) >= $${paramIndex}
+        -- Un engageur dont le contact n'a qu'une adresse DÉDUITE de son URN (la réponse Voyager
+        -- n'a pas fourni l'identifiant public) n'est ni cherchable ni enrichissable : le
+        -- producteur d'enrichissement l'exclut en SQL, et l'achat le refuserait. Le scorer
+        -- paierait des jetons pour une personne qui sera effacée à quatorze jours. Le signal
+        -- reste new, sans mémoire d'écart : périmé, il est effacé puis recréé par un passage
+        -- qui lirait enfin l'identifiant public, et alors scorable.
+        -- Même définition que le producteur (sqlAdresseResolvable), et ICI parce que le
+        -- compteur de crédit et la sélection doivent isoler EXACTEMENT le même ensemble.
+        and (s.kind <> 'post_engagement' or not exists (
+              select 1 from public.contacts c
+               where c.organization_id = s.organization_id and c.source_signal_id = s.id
+                 and not ${sqlAdresseResolvable('c' as FragmentSql, `$${paramPrefixeDeduit}` as FragmentSql)}))`;
 }
 
 /**
@@ -186,8 +199,8 @@ export async function compterSignauxScorables(pool: Pool, organizationId: string
       where s.organization_id = $1
         and s.status = 'new'
         and s.score is null
-        and ${conditionSourceScorable(2)}`,
-    [organizationId, MIN_SCORING_PROMPT_LENGTH],
+        and ${conditionSourceScorable(2, 3)}`,
+    [organizationId, MIN_SCORING_PROMPT_LENGTH, lienProfilDeduit('')],
   );
   return Number(res.rows[0]?.count ?? 0);
 }
@@ -231,7 +244,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
         -- sur compterSignauxScorables, qui applique la même condition. Sans
         -- elle, ces signaux jamais scorés restaient les plus anciens de la
         -- file (created_at asc) et monopolisaient chaque lot, payé pour rien.
-        and ${conditionSourceScorable(3)}
+        and ${conditionSourceScorable(3, 4)}
       -- Les plus RECENTS d'abord. Depuis le 10/09/2026 le scoring est plafonné
       -- (300 signaux par jour par défaut) alors que la collecte en apporte
       -- plusieurs milliers : on ne scorera jamais tout, autant dépenser le
@@ -244,7 +257,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       -- file reste courte et l'ordre n'a plus d'importance.
       order by s.occurred_at desc, s.created_at desc
       limit $2`,
-    [org, batchSize, MIN_SCORING_PROMPT_LENGTH],
+    [org, batchSize, MIN_SCORING_PROMPT_LENGTH, lienProfilDeduit('')],
   );
   const candidates = candRes.rows;
   const empty: ScoreSummary = {

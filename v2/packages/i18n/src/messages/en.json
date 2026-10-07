@@ -627,7 +627,16 @@
         "franceEntiere": "All of France",
         "readAndKept": "{lus, plural, one {# posting read} other {# postings read}}, {retenus, plural, one {# kept} other {# kept}} on the last run",
         "nextPaused": "paused",
-        "nextOnLaunch": "at launch"
+        "nextOnLaunch": "at launch",
+        "onDemand": "On demand: “Collect now”",
+        "lastRun": "Last run",
+        "lastRunNever": "Never run",
+        "runRunning": "running",
+        "runSuccess": "finished",
+        "runError": "stopped",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# person seen} other {# people seen}} · {nouveaux, plural, one {# new} other {# new}} · {doublons, plural, one {# duplicate} other {# duplicates}} · {dejaEnCampagne} already in a campaign · {ecartes, plural, one {# dropped} other {# dropped}} by scoring",
+        "runDetails": "{requetes, plural, one {# request} other {# requests}} · {ignores} skipped (profile too sparse) · {opposes} opted out · {adressesDeduites} without a public address"
       },
       "drawer": {
         "close": "Close",
@@ -1149,6 +1158,10 @@
           "nom": "LinkedIn requests per hour",
           "description": "requests actually sent to LinkedIn, across all collections"
         },
+        "linkedinPersonnesParPassage": {
+          "nom": "LinkedIn people per run",
+          "description": "new people saved per collection run; beyond that, the rest of the post is not kept"
+        },
         "scoreMinDefaut": {
           "nom": "Minimum entry score",
           "description": "default for campaigns that don't specify one"
@@ -1563,6 +1576,10 @@
         "requetesParHeure": {
           "nom": "Requests per hour",
           "usage": "{n, plural, =0 {None in the last hour} one {# in the last hour} other {# in the last hour}}"
+        },
+        "personnesParPassage": {
+          "nom": "People per run",
+          "usage": "New people saved per run; beyond that, the run stops"
         },
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number."

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Les deux plafonds de la collecte LinkedIn (maquette `maquettes-lot4a.html`, § 1). Mêmes clés que
+ * Les trois plafonds de la collecte LinkedIn (maquette `maquettes-lot4a.html`, § 1). Mêmes clés que
  * Réglages › Plafonds, écrites par la même action (`actionEcrireReglage`) : une seule vérité, deux
  * endroits pour la régler. Lecture seule pour qui n'est pas administrateur.
  */
@@ -10,7 +10,7 @@ import { Bouton } from '../ui';
 import { actionEcrireReglage } from '../../app/actions/plafonds';
 
 export interface LignePlafondLinkedin {
-  cle: 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure';
+  cle: 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure' | 'linkedin_personnes_par_passage';
   nom: string;
   /** Déjà composé (« 1 utilisé aujourd'hui ») — ce composant ne compte rien. */
   usage: string;

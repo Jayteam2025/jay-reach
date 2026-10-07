@@ -40,7 +40,7 @@ function appelsDe(ctx: Contexte): { sql: string; params: unknown[] }[] {
 function fauxConnectable(
   rows: Record<string, unknown[]>,
   role: Contexte['role'] = 'operator',
-): { ctx: Contexte; appelsClient: () => string[]; releases: () => number } {
+): { ctx: Contexte; appelsClient: () => string[]; valeursClient: (motif: RegExp) => unknown[][]; releases: () => number } {
   let releases = 0;
   const resoudre = (sql: string) => {
     for (const [motif, r] of Object.entries(rows)) {
@@ -63,6 +63,8 @@ function fauxConnectable(
   return {
     ctx,
     appelsClient: () => (clientQuery.mock.calls as unknown[][]).map((a) => String(a[0])),
+    valeursClient: (motif) =>
+      (clientQuery.mock.calls as unknown[][]).filter((a) => motif.test(String(a[0]))).map((a) => (a[1] ?? []) as unknown[]),
     releases: () => releases,
   };
 }
@@ -500,6 +502,31 @@ describe('nePlusContacter', () => {
     const appel = appelsClient().find((s) => /jr:dnc_suppression_linkedin/i.test(s));
     expect(appel).toBeDefined();
     expect(appel).toMatch(/'linkedin'/);
+  });
+
+  it('l’opposition porte les DEUX graphies : l’adresse du contact et celle que la collecte déduit de son identifiant de membre', async () => {
+    const { ctx, valeursClient } = fauxConnectable({
+      'jr:dnc_contact': [
+        { id: contactId, email: null, linkedin_url: 'https://www.linkedin.com/in/k-benali', linkedin_provider_id: 'ACoAAAbc123' },
+      ],
+    });
+
+    await nePlusContacter(ctx, { contactId });
+
+    const posees = valeursClient(/jr:dnc_suppression_linkedin/i).map((v) => v[1]);
+    expect(posees).toEqual(['https://www.linkedin.com/in/k-benali', 'https://www.linkedin.com/in/ACoAAAbc123']);
+  });
+
+  it('une adresse déjà déduite n’est posée qu’une fois', async () => {
+    const { ctx, valeursClient } = fauxConnectable({
+      'jr:dnc_contact': [
+        { id: contactId, email: null, linkedin_url: 'https://www.linkedin.com/in/ACoAAAbc123', linkedin_provider_id: 'ACoAAAbc123' },
+      ],
+    });
+
+    await nePlusContacter(ctx, { contactId });
+
+    expect(valeursClient(/jr:dnc_suppression_linkedin/i)).toHaveLength(1);
   });
 
   it('sans email, aucune suppression n’est écrite', async () => {

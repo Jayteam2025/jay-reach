@@ -36,6 +36,8 @@ import {
   fusionner,
   MSG,
   lireSessionLinkedIn,
+  listerSourcesCampagne,
+  nePlusContacter,
   prendreVerrouLinkedIn,
   QUEUES,
   startSourceRun,
@@ -927,12 +929,122 @@ async function messagesDesPannesDeLecture() {
   check('59b. et elle ne porte aucun verdict : la requête a abouti, c’est notre lecture qui a échoué', p2.verdict_linkedin === false);
 }
 
+// ------------------------- 21. ce que l'écran Sources lit d'un passage (revue finale)
+
+/** La carte de la source, lue par la fonction de production de l'écran Sources. */
+async function carteDe(m, sourceId = m.source) {
+  const cartes = await listerSourcesCampagne(m.ctx, { campagneId: m.campagne });
+  return cartes.find((c) => c.id === sourceId);
+}
+
+/** Les lignes que le worker écrit sur la sortie d'avertissement pendant `fn`. */
+async function ecouterAvertissements(fn) {
+  const lignes = [];
+  const origine = console.warn;
+  console.warn = (...a) => lignes.push(a.join(' '));
+  try {
+    await fn();
+  } finally {
+    console.warn = origine;
+  }
+  return lignes;
+}
+
+async function ecranEtBilan() {
+  console.log('\n21. ce que l’écran Sources lit d’un passage');
+
+  // Un refus muet : la session n'est pas active. Avant la revue, ni écran, ni notification, ni journal.
+  const refus = await monde({ session: 'bloquee' });
+  const r0 = await run(refus);
+  const lignes = await ecouterAvertissements(() =>
+    traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), job(refus, r0)),
+  );
+  const c0 = (await carteDe(refus))?.derniereCollecte;
+  check('60. un refus avant toute requête arrive à la carte de la source, avec sa cause', c0?.statut === 'error' && c0?.erreur === MSG.session, JSON.stringify(c0));
+  check('60b. et une ligne du journal du worker le dit', lignes.length === 1 && lignes[0].includes(MSG.session), JSON.stringify(lignes));
+
+  // Plafond de personnes ÉCRIT dans organization_settings, comme le fait l'écran.
+  const m = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_personnes_par_passage', '3')`, [m.org]);
+  const cinq = ['ACoAAp1', 'ACoAAp2', 'ACoAAp3', 'ACoAAp4', 'ACoAAp5'].map((id, i) => ({ id, prenom: 'P', nom: `N${i}`, titre: 'Directeur commercial' }));
+  const r1 = await run(m);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager(cinq) }) })), job(m, r1));
+  const c1 = (await carteDe(m))?.derniereCollecte;
+  check('61. cinq personnes lues, plafond de trois : trois nouvelles, le passage le dit', c1?.vus === 5 && c1?.nouveaux === 3 && c1?.plafondPersonnesAtteint === true, JSON.stringify(c1));
+  check('61b. et le passage reste un succès, avec son message', c1?.statut === 'success' && c1?.erreur === MSG.plafond_personnes, JSON.stringify(c1));
+  const ecrits = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n;
+  check('61c. les deux autres ne sont JAMAIS écrites en base', ecrits === 3, String(ecrits));
+
+  // Un second passage va plus loin : il compte les NOUVELLES, pas les lues.
+  const r2 = await run(m);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager(cinq) }) })), job(m, r2));
+  const c2 = (await carteDe(m))?.derniereCollecte;
+  const ecrits2 = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n;
+  check('61d. le passage suivant dépasse les trois déjà connues et enregistre les deux restantes', c2?.nouveaux === 2 && c2?.doublons === 3 && ecrits2 === 5 && c2?.plafondPersonnesAtteint === false, JSON.stringify(c2));
+
+  // Adresses déduites : ADA a un nom public, BOB non.
+  const m2 = await monde();
+  const r3 = await run(m2);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA, BOB]) }) })), job(m2, r3));
+  const c3 = (await carteDe(m2))?.derniereCollecte;
+  check('62. une personne sur deux est enregistrée sous une adresse déduite : le bilan le compte', c3?.nouveaux === 2 && c3?.adressesDeduites === 1, JSON.stringify(c3));
+
+  // Une personne opposée : comptée, jamais écrite.
+  const m3 = await monde();
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'linkedin', $2, 'operator_do_not_contact', 'manual')`,
+    [m3.org, 'https://www.linkedin.com/in/ACoAAbob']);
+  const r4 = await run(m3);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA, BOB]) }) })), job(m3, r4));
+  const c4 = (await carteDe(m3))?.derniereCollecte;
+  const ecrits4 = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m3.org])).rows[0].n;
+  check('63. une personne opposée est comptée à part, et n’est pas écrite', c4?.opposes === 1 && c4?.ignores === 0 && c4?.nouveaux === 1 && ecrits4 === 1, JSON.stringify(c4));
+}
+
+// ------------- 22. l'opposition tient sur les DEUX graphies d'adresse (revue finale, 2.9)
+
+async function oppositionDeuxGraphies() {
+  console.log('\n22. l’opposition tient sous les deux graphies d’adresse');
+  const m = await monde();
+  // Premier passage : ADA est lue AVEC son nom public, le contact porte `/in/ada-lovelace`.
+  const r1 = await run(m);
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA]) }) })), job(m, r1));
+  const contact = (await q(`select id, linkedin_url, linkedin_provider_id from contacts where organization_id = $1`, [m.org])).rows[0];
+  check('64. le contact est créé sous son nom public', contact?.linkedin_url === 'https://www.linkedin.com/in/ada-lovelace' && contact?.linkedin_provider_id === 'ACoAAada', JSON.stringify(contact));
+
+  // Chemin de production : le bouton « Ne plus contacter » de la fiche.
+  await nePlusContacter(m.ctx, { contactId: contact.id });
+  const posees = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' order by value`, [m.org])).rows.map((r) => r.value);
+  check('65. l’opposition est posée sur les deux graphies', posees.length === 2 && posees.includes('https://www.linkedin.com/in/ada-lovelace') && posees.includes('https://www.linkedin.com/in/ACoAAada'), JSON.stringify(posees));
+
+  // Autre signal, autre post : la réponse Voyager ne livre plus le nom public, donc seule l'adresse déduite arrive.
+  await q(`delete from signals where organization_id = $1`, [m.org]);
+  const r2 = await run(m);
+  const ADA_SANS_NOM_PUBLIC = { ...ADA, public: undefined };
+  await traiterCollecteLinkedIn(deps(pilote({ reponse: () => ({ statut: 200, corps: voyager([ADA_SANS_NOM_PUBLIC]) }) })), job(m, r2));
+  const c = (await carteDe(m))?.derniereCollecte;
+  const signaux = (await q(`select count(*)::int n from signals where organization_id = $1`, [m.org])).rows[0].n;
+  check('66. recollectée sans son nom public, la personne opposée n’est PAS recréée', c?.opposes === 1 && c?.nouveaux === 0 && signaux === 0, JSON.stringify(c));
+}
+
+// --------- 23. la politique de reprise voyage avec le job de collecte (revue finale, 2.11)
+
+async function repriseDuJob() {
+  console.log('\n23. la file de collecte ne rejoue jamais, même née avec cinq reprises');
+  const m = await monde();
+  const envoyes = [];
+  const boss = { send: async (name, data, options) => envoyes.push({ name, data, options }), insert: async () => undefined };
+  await q(`update sources set run_requested_at = now() where id = $1`, [m.source]);
+  await enqueueRequestedRuns(boss, pool);
+  const options = envoyes[0]?.options;
+  check('67. le job porte retryLimit 0 et pas de backoff, indépendamment de l’état de la file', options?.retryLimit === 0 && options?.retryBackoff === false, JSON.stringify(options));
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

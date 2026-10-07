@@ -21,7 +21,7 @@ import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
-import { ecarterEngageur, lienProfilDeduit } from './handlers/post-engagement.js';
+import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, type FragmentSql } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -34,6 +34,9 @@ interface SourceRow {
 
 /** Le seul type LinkedIn que le worker sait exécuter au lot 4a. Les trois autres arrivent au 4b. */
 const TYPE_LINKEDIN_EXECUTABLE = 'linkedin_post_engagers';
+
+/** La politique de reprise déclarée pour la file de collecte, reprise sur chaque job (comme `REPRISE_CONTACT_CONNU`). */
+const REPRISE_COLLECTE_LINKEDIN = QUEUES.find((q) => q.name === 'linkedin.collecte')?.retry;
 
 /**
  * Enfile une collecte LinkedIn demandée à la main. Rien d'autre ne l'enfile :
@@ -61,7 +64,13 @@ async function enfilerCollecteLinkedIn(
     sourceId: src.id,
     sourceRunId,
   };
-  await boss.send('linkedin.collecte', job);
+  // La politique de reprise voyage AVEC LE JOB (ruling 90) : `createQueue` est un `on conflict do
+  // nothing`, une file déjà née avec cinq reprises n'est jamais réalignée. Une reprise automatique
+  // ajouterait du trafic suspect sur une session déjà fragile ; le repli à zéro est le choix sûr.
+  await boss.send('linkedin.collecte', job, {
+    retryLimit: REPRISE_COLLECTE_LINKEDIN?.retryLimit ?? 0,
+    retryBackoff: REPRISE_COLLECTE_LINKEDIN?.retryBackoff ?? false,
+  });
   return 1;
 }
 
@@ -580,7 +589,7 @@ export async function enqueueEnrichmentContactsConnus(
           and c.enriched_at is null
           and c.linkedin_url is not null
           and s.status = 'qualified'
-          and (c.linkedin_provider_id is null or c.linkedin_url <> $3 || c.linkedin_provider_id)
+          and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
      )
      select organization_id, contact_id from candidats
       where rang <= $1

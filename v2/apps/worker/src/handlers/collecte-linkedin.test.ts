@@ -89,7 +89,7 @@ function base(opts: {
   source?: Record<string, unknown> | null;
   derniersPassages?: string[];
   verrou?: boolean;
-  plafonds?: { posts?: number; requetes?: number };
+  plafonds?: { posts?: number; requetes?: number; personnes?: number };
   postsDuJour?: number;
   requetesDeLHeure?: number;
 }) {
@@ -124,7 +124,14 @@ function base(opts: {
       return rep([{}]);
     }
     if (t.includes('jr:plafond_du_jour') || t.includes('organization_settings')) {
-      return rep([{ value: String(t.includes('posts') ? (opts.plafonds?.posts ?? 3) : (opts.plafonds?.requetes ?? 60)) }]);
+      // La clé voyage en PARAMÈTRE (`key = $2`), jamais dans le texte du SQL.
+      const valeur =
+        params[1] === 'linkedin_posts_par_jour'
+          ? (opts.plafonds?.posts ?? 3)
+          : params[1] === 'linkedin_personnes_par_passage'
+            ? (opts.plafonds?.personnes ?? 100)
+            : (opts.plafonds?.requetes ?? 60);
+      return rep([{ value: String(valeur) }]);
     }
     if (t.includes('jr:linkedin_posts_du_jour')) return rep([{ n: opts.postsDuJour ?? 1 }]);
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
@@ -132,7 +139,9 @@ function base(opts: {
       ecritures.push({ sql: 'tracer', params });
       return rep([{}]);
     }
-    if (t.includes('jr:linkedin_fenetre')) return rep([]);
+    if (t.includes('jr:linkedin_fuseau')) return rep([]);
+    // Un engageur inconnu : l'insertion du signal rend son identifiant, donc l'issue est `nouveau`.
+    if (t.includes('insert into signals')) return rep([{ id: `signal-${params[2]}` }]);
     if (t.includes('begin') || t.includes('commit') || t.includes('rollback')) return rep([]);
     // Notifications, journal d'activité, enregistrement d'un engageur : sans effet ici.
     ecritures.push({ sql: t.trim().slice(0, 40), params });
@@ -266,5 +275,95 @@ describe('le handler de collecte', () => {
     });
     await expect(traiterCollecteLinkedIn(deps(p, b), JOB)).rejects.toThrow();
     expect(bloque(b)).toEqual([]);
+  });
+});
+
+// --------------------------------------------------- refus muets : le journal du worker
+describe('les refus avant toute requête LinkedIn laissent une ligne au journal', () => {
+  /** Ce que le worker écrit sur la sortie d'avertissement pendant un passage. */
+  async function avertissements(b: ReturnType<typeof base>, extra: Partial<DependancesCollecte> = {}) {
+    const lignes: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => {
+      lignes.push(a.join(' '));
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const p = pilote({ reponse: () => ({ statut: 200, corps: voyager([]) }) });
+    await traiterCollecteLinkedIn(deps(p, b, extra), JOB);
+    return lignes;
+  }
+
+  it('canal désactivé', async () => {
+    expect(await avertissements(base({}), { env: {} })).toEqual([expect.stringContaining('JAY_REACH_LINKEDIN')]);
+  });
+
+  it('session non active', async () => {
+    const lignes = await avertissements(base({ session: { status: 'bloquee', expected_egress_ip: null } }));
+    expect(lignes).toEqual([expect.stringContaining('session LinkedIn')]);
+  });
+
+  it('source sans campagne active', async () => {
+    expect(await avertissements(base({ source: null }))).toEqual([expect.stringContaining('aucune campagne active')]);
+  });
+
+  it('verrou tenu', async () => {
+    expect(await avertissements(base({ verrou: false }))).toEqual([expect.stringContaining('déjà le navigateur')]);
+  });
+
+  it('plafond de requêtes atteint, plafond de personnes à zéro', async () => {
+    expect(await avertissements(base({ postsDuJour: 0, requetesDeLHeure: 60 }))).toEqual([expect.stringContaining('requêtes')]);
+    expect(await avertissements(base({ plafonds: { personnes: 0 } }))).toEqual([expect.stringContaining('personnes par passage')]);
+  });
+
+  it('la ligne porte le passage et le message, jamais une clé ni une adresse de proxy', async () => {
+    const [ligne] = await avertissements(base({}), { env: {} });
+    expect(ligne).toContain('run-1');
+    expect(ligne).not.toMatch(/https?:\/\//);
+  });
+});
+
+// ------------------------------------------- bilan écrit : de quoi l'écran Sources lit
+describe('le bilan du passage', () => {
+  const P = (n: number, o: { public?: boolean } = {}) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `ACoAA${String(i).padStart(4, '0')}`,
+      prenom: 'Léa',
+      nom: `N${i}`,
+      titre: 'Directrice commerciale chez Acme',
+      ...(o.public ? { public: `lea-n${i}` } : {}),
+    }));
+
+  async function passer(profils: ReturnType<typeof P>, plafondPersonnes: number) {
+    const b = base({ plafonds: { personnes: plafondPersonnes } });
+    const p = pilote({ reponse: () => ({ statut: 200, corps: voyager(profils) }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    return { b, c: clos(b)! };
+  }
+  // Positions des paramètres de `jr:linkedin_collecte_clore` : $5 vus, $6 nouveaux, $13 ignores,
+  // $15 adresses déduites, $16 plafond de personnes atteint.
+  const colonnes = (c: Ecriture) => ({
+    vus: c.params[4],
+    nouveaux: c.params[5],
+    ignores: c.params[12],
+    opposes: c.params[13],
+    deduites: c.params[14],
+    plafond: c.params[15],
+    erreur: c.params[3],
+  });
+
+  it('un passage qui atteint le plafond de personnes s’arrête proprement, et le dit', async () => {
+    const { c } = await passer(P(5), 3);
+    expect(colonnes(c)).toMatchObject({ vus: 5, nouveaux: 3, plafond: true, erreur: expect.stringContaining('Plafond de personnes') });
+    expect(c.params[2]).toBe('success');
+  });
+
+  it('un post qui tient exactement dans le plafond ne le déclenche pas', async () => {
+    const { c } = await passer(P(3), 3);
+    expect(colonnes(c)).toMatchObject({ nouveaux: 3, plafond: false, erreur: null });
+  });
+
+  it('compte les personnes enregistrées sous une adresse déduite de l’URN', async () => {
+    const { c } = await passer([...P(2), ...P(2, { public: true }).map((x, i) => ({ ...x, id: `ACoAB${i}` }))], 100);
+    expect(colonnes(c)).toMatchObject({ nouveaux: 4, deduites: 2 });
   });
 });

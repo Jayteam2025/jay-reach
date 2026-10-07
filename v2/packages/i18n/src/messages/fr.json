@@ -627,7 +627,16 @@
         "franceEntiere": "France entière",
         "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage",
         "nextPaused": "en pause",
-        "nextOnLaunch": "au lancement"
+        "nextOnLaunch": "au lancement",
+        "onDemand": "À la demande : « Collecter maintenant »",
+        "lastRun": "Dernier passage",
+        "lastRunNever": "Jamais lancé",
+        "runRunning": "en cours",
+        "runSuccess": "terminé",
+        "runError": "arrêté",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# personne vue} other {# personnes vues}} · {nouveaux, plural, one {# nouvelle} other {# nouvelles}} · {doublons, plural, one {# doublon} other {# doublons}} · {dejaEnCampagne} déjà en campagne · {ecartes, plural, one {# écartée} other {# écartées}} par le scoring",
+        "runDetails": "{requetes, plural, one {# requête} other {# requêtes}} · {ignores} ignorés (profil trop pauvre) · {opposes} opposés · {adressesDeduites} sans adresse publique"
       },
       "drawer": {
         "close": "Fermer",
@@ -1149,6 +1158,10 @@
           "nom": "Requêtes LinkedIn par heure",
           "description": "requêtes réellement émises vers LinkedIn, toutes collectes confondues"
         },
+        "linkedinPersonnesParPassage": {
+          "nom": "Personnes LinkedIn par passage",
+          "description": "nouvelles personnes enregistrées par passage de collecte ; au-delà, le reste du post n’est pas conservé"
+        },
         "scoreMinDefaut": {
           "nom": "Score minimal d'entrée",
           "description": "défaut des campagnes qui ne le précisent pas"
@@ -1563,6 +1576,10 @@
         "requetesParHeure": {
           "nom": "Requêtes par heure",
           "usage": "{n, plural, =0 {Aucune sur la dernière heure} one {# sur la dernière heure} other {# sur la dernière heure}}"
+        },
+        "personnesParPassage": {
+          "nom": "Personnes par passage",
+          "usage": "Nouvelles personnes enregistrées par passage ; au-delà, le passage s’arrête"
         },
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier."

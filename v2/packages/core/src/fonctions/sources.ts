@@ -426,6 +426,29 @@ function resoudreProviders(
 
 export const schemaCampagneIdSource = z.object({ campagneId: z.string().uuid() });
 
+/** Le bilan d'un passage de collecte : les quatre issues de la spec §5.4 et ce qu'il faut pour les lire. */
+export interface BilanCollecte {
+  readonly quand: string;
+  /** `running` tant que le passage n'est pas clos. */
+  readonly statut: 'running' | 'success' | 'error';
+  /** Message du passage (cause d'un échec, ou plafond atteint sur un passage réussi) ; jamais de clé ni d'URL de proxy. */
+  readonly erreur: string | null;
+  readonly requetes: number;
+  readonly vus: number;
+  readonly nouveaux: number;
+  readonly doublons: number;
+  readonly dejaEnCampagne: number;
+  /** Écartées par le scoring depuis la collecte (le scoring juge souvent des passages plus tard). */
+  readonly ecartes: number;
+  /** Profils que la réponse Voyager n'a pas renseignés assez. */
+  readonly ignores: number;
+  /** Personnes laissées de côté parce qu'elles se sont opposées. */
+  readonly opposes: number;
+  /** Nouvelles personnes enregistrées sous une adresse déduite : ni cherchables ni enrichissables. */
+  readonly adressesDeduites: number;
+  readonly plafondPersonnesAtteint: boolean;
+}
+
 export interface SourceCarte {
   readonly id: string;
   /** Principal (R44) : celui dont le libellé apparaît dans le nom de la source, sinon le premier alphabétique. */
@@ -438,6 +461,12 @@ export interface SourceCarte {
   readonly schedule: string;
   readonly active: boolean;
   readonly dernierPassage: { quand: string; lus: number; retenus: number; ignores: number } | null;
+  /**
+   * Le bilan du dernier passage d'une source LinkedIn (`source_runs`, migrations 130310 et du bilan),
+   * `null` hors LinkedIn ou sans passage. `erreur` y dit POURQUOI un passage n'a rien produit : c'est le seul
+   * endroit où l'opérateur le lit, sans passer par les journaux du VPS.
+   */
+  readonly derniereCollecte: BilanCollecte | null;
   readonly prochainPassage: string | null;
   /** Sept valeurs, la plus ancienne d'abord (aujourd'hui inclus en dernier). */
   readonly retenus7j: number[];
@@ -502,12 +531,31 @@ export async function listerSourcesCampagne(
   const fuseau = String((await lireReglages(ctx)).fuseau);
 
   const [passages, resumes, tendances, providers, campagnesActives] = await Promise.all([
-    ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
+    ctx.ex.query<{
+      source_id: string;
+      started_at: string;
+      items_found: number;
+      items_new: number;
+      status: string;
+      error: string | null;
+      requetes: number;
+      vus: number;
+      nouveaux: number;
+      doublons: number;
+      deja_en_campagne: number;
+      ecartes: number;
+      ignores: number;
+      opposes: number;
+      adresses_deduites: number;
+      plafond_personnes_atteint: boolean;
+    }>(
       // Un seul run par source (`distinct on`, le plus récent) : les runs plus
       // anciens ne sont pas rattachés à un fournisseur avant la bascule vers
       // les thèmes (commentaire de la migration), `source_id` reste donc la
       // seule clé fiable pour « le dernier passage de cette carte ».
-      `select distinct on (source_id) source_id, started_at, items_found, items_new
+      `select distinct on (source_id) source_id, started_at, items_found, items_new,
+              status, error, requetes, vus, nouveaux, doublons, deja_en_campagne, ecartes,
+              ignores, opposes, adresses_deduites, plafond_personnes_atteint
          from source_runs /* jr:sources_dernier_passage */
         where source_id = any($1::uuid[])
         order by source_id, started_at desc`,
@@ -587,6 +635,24 @@ export async function listerSourcesCampagne(
           ignores: Math.max(0, passage.items_found - passage.items_new),
         }
       : null;
+    const derniereCollecte: BilanCollecte | null =
+      passage && providerId.startsWith('linkedin_')
+        ? {
+            quand: passage.started_at,
+            statut: passage.status === 'success' || passage.status === 'error' ? passage.status : 'running',
+            erreur: passage.error,
+            requetes: passage.requetes,
+            vus: passage.vus,
+            nouveaux: passage.nouveaux,
+            doublons: passage.doublons,
+            dejaEnCampagne: passage.deja_en_campagne,
+            ecartes: passage.ecartes,
+            ignores: passage.ignores,
+            opposes: passage.opposes,
+            adressesDeduites: passage.adresses_deduites,
+            plafondPersonnesAtteint: passage.plafond_personnes_atteint,
+          }
+        : null;
     const prochainPassage = dernierPassage
       ? new Date(
           new Date(dernierPassage.quand).getTime() + heuresDeSchedule(row.schedule) * 3_600_000,
@@ -610,6 +676,7 @@ export async function listerSourcesCampagne(
       schedule: row.schedule ?? 'every 6h',
       active: row.is_active,
       dernierPassage,
+      derniereCollecte,
       prochainPassage,
       retenus7j,
       totalLu: resume?.total ?? 0,
@@ -687,6 +754,29 @@ export function normaliserUrlProfil(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** La partie stable d'un URN (`urn:li:fsd_profile:ACoAA…` -> `ACoAA…`). */
+export function identifiantMembre(urn: string): string {
+  const morceaux = urn.split(':');
+  return morceaux[morceaux.length - 1] ?? urn;
+}
+
+/**
+ * Adresse de profil déduite de l'URN : REPLI, et HYPOTHÈSE non vérifiée. Le
+ * dernier segment d'un URN de profil est un identifiant interne, pas le nom
+ * public qui compose d'ordinaire les adresses `/in/` : LinkedIn peut ne pas la
+ * résoudre. Elle reste stable d'un passage à l'autre, ce qui suffit à l'index
+ * unique des contacts, mais l'enrichissement ne doit pas compter dessus : le
+ * collecteur fournit `urlProfil` dès qu'il le peut.
+ *
+ * Accepte aussi un identifiant de membre nu (`ACoAA…`, tel que `contacts.linkedin_provider_id`
+ * le garde) : le dernier segment d'une chaîne sans `:` est la chaîne elle-même. Vit dans
+ * le cœur parce que la collecte (worker) ET l'opposition (`nePlusContacter`) doivent
+ * fabriquer LA MÊME graphie : une opposition posée sur une seule des deux ne tient pas.
+ */
+export function lienProfilDeduit(urn: string): string {
+  return `https://www.linkedin.com/in/${identifiantMembre(urn)}`;
 }
 
 /**

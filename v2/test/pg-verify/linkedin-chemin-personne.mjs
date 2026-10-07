@@ -100,7 +100,10 @@ async function monde({ avecPrompt = true, personaDansSource = true } = {}) {
 const POST = 'https://www.linkedin.com/posts/x_y-1';
 // La mémoire d'écart stocke une EMPREINTE (sha256) de `<post>:<urn>`, jamais l'identifiant lisible.
 const empreinteSql = (id) => `encode(sha256(convert_to('${normaliserUrlPost(POST)}:urn:li:fsd_profile:ACoAA${id}', 'UTF8')), 'hex')`;
+// `eng` : adresse DÉDUITE de l'URN, que ni LinkedIn ni FullEnrich ne résolvent. `engPublic` : la réponse Voyager a livré
+// le nom public (`urlProfil`), c'est le cas qu'on peut chercher, enrichir, et donc scorer.
 const eng = (id, nom, intitule) => ({ urn: `urn:li:fsd_profile:ACoAA${id}`, nom, intitule });
+const engPublic = (id, nom, intitule) => ({ ...eng(id, nom, intitule), urlProfil: `https://www.linkedin.com/in/pub-${id}` });
 const enregistrer = (m, e) => enregistrerEngageur(m.ctx, e, { id: m.campagne, personaId: m.persona }, POST);
 const scorer = async (prospects) =>
   prospects.map((p) => ({ id: p.id, score: /directeur|directrice/i.test(p.title) ? 85 : 20, reason: 'jugé sur l’intitulé' }));
@@ -218,8 +221,8 @@ async function rattachement() {
 async function chaine() {
   console.log('du signal au contact scoré, jusqu’à l’inscription');
   const m = await monde();
-  const bonne = eng('bonne', 'Claire Petit', 'Directrice commerciale chez Acme');
-  const mauvaise = eng('mauvaise', 'Marc Lenoir', 'Développeur Python');
+  const bonne = engPublic('bonne', 'Claire Petit', 'Directrice commerciale chez Acme');
+  const mauvaise = engPublic('mauvaise', 'Marc Lenoir', 'Développeur Python');
   await enregistrer(m, bonne);
   await enregistrer(m, mauvaise);
 
@@ -238,7 +241,7 @@ async function chaine() {
   const run = (await q(`select ecartes from source_runs where id=$1`, [m.run])).rows[0];
   check('23. source_runs.ecartes est incrémenté', run.ecartes === 1, JSON.stringify(run));
   const run2 = (await q(`insert into source_runs (source_id) values ($1) returning id`, [m.source])).rows[0].id;
-  const autreProfil = eng('tard', 'Tardif Retard', 'Stagiaire');
+  const autreProfil = engPublic('tard', 'Tardif Retard', 'Stagiaire');
   await enregistrerEngageur({ ...m.ctx, sourceRunId: m.run }, autreProfil, { id: m.campagne, personaId: m.persona }, POST);
   // Un passage plus récent existe quand le scoring juge : l'écart va à celui qui a COLLECTÉ.
   await runScore({ pool, organizationId: m.org, scorer });
@@ -281,13 +284,13 @@ async function chaine() {
 async function purgeEtRegression() {
   console.log('purge d’ancienneté, et chemin entreprise face à l’index des adresses');
   const m = await monde({ avecPrompt: false });
-  const vieux = eng('vieux', 'Victor Vieux', 'Directeur commercial');
-  const recent = eng('recent', 'Rita Recente', 'Directrice commerciale');
+  const vieux = engPublic('vieux', 'Victor Vieux', 'Directeur commercial');
+  const recent = engPublic('recent', 'Rita Recente', 'Directrice commerciale');
   await enregistrer(m, vieux);
   await enregistrer(m, recent);
   await q(`update signals set occurred_at = now() - interval '30 days' where organization_id=$1 and external_id like '%ACoAAvieux'`, [m.org]);
   // Un engageur qualifié et ancien, et une offre d'emploi ancienne : le premier suit son contact, la seconde le chemin d'avant.
-  const qual = eng('qual', 'Quentin Qualifie', 'Directeur commercial');
+  const qual = engPublic('qual', 'Quentin Qualifie', 'Directeur commercial');
   await enregistrer(m, qual);
   await q(`update signals set occurred_at = now() - interval '30 days', status='qualified', score=80 where organization_id=$1 and external_id like '%ACoAAqual'`, [m.org]);
   await q(`insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, company_hint) values ($1,$2,'adzuna','adz:old','job_posting', now() - interval '30 days','Vieille PME')`, [m.org, m.source]);
@@ -388,7 +391,7 @@ async function purgeEtRegression() {
 
   // Périmé au pré-filtre du scoring : jamais jugé, donc jamais mémorisé non plus.
   const p = await monde();
-  await enregistrer(p, eng('perime', 'Paul Perime', 'Directeur commercial'));
+  await enregistrer(p, engPublic('perime', 'Paul Perime', 'Directeur commercial'));
   await q(`update signals set occurred_at = now() - interval '90 days' where organization_id=$1`, [p.org]);
   const rp = await runScore({ pool, organizationId: p.org, scorer });
   const sp = (await q(`select (select count(*)::int from signals where organization_id=$1) s, (select count(*)::int from linkedin_engageurs_ecartes where organization_id=$1) e, (select ecartes from source_runs where id=$2) r`, [p.org, p.run])).rows[0];
@@ -463,7 +466,7 @@ async function gardeDeLEffacement() {
 
   // Contrepartie : une personne réellement née de l'engageur part toujours.
   const n = await monde();
-  await enregistrer(n, eng('nee', 'Nina Nee', 'Plombière'));
+  await enregistrer(n, engPublic('nee', 'Nina Nee', 'Plombière'));
   const rn = await runScore({ pool, organizationId: n.org, scorer });
   const nn = (await q(`select (select count(*)::int from contacts where organization_id=$1) c, (select count(*)::int from signals where organization_id=$1) s`, [n.org])).rows[0];
   check('51. une fiche réellement née de l’engageur est bien effacée (la garde ne bloque pas le cas normal)', rn.discarded === 1 && nn.c === 0 && nn.s === 0, JSON.stringify(nn));
@@ -481,10 +484,27 @@ async function sansConsigne() {
 
   console.log('persona unique de la campagne quand la source n’en porte pas');
   const u = await monde({ personaDansSource: false });
-  await enregistrer(u, eng('y', 'Yves Blanc', 'Directeur commercial'));
+  await enregistrer(u, engPublic('y', 'Yves Blanc', 'Directeur commercial'));
   check('28. la consigne vient du persona de la campagne', (await compterSignauxScorables(pool, u.org)) === 1);
   const ru = await runScore({ pool, organizationId: u.org, scorer });
   check('29. et le signal est qualifié', ru.qualified === 1, JSON.stringify(ru));
+}
+
+async function scoringAdresseDeduite() {
+  console.log('une adresse déduite de l’URN n’est pas scorée : elle ne sera jamais enrichie (revue finale, 2.2)');
+  const m = await monde();
+  await enregistrer(m, eng('dedu', 'Dédé Duval', 'Directeur commercial'));
+  await enregistrer(m, engPublic('pub', 'Paula Public', 'Directrice commerciale'));
+  const n = await compterSignauxScorables(pool, m.org);
+  const jugés = [];
+  const r = await runScore({ pool, organizationId: m.org, scorer: async (ps) => { jugés.push(...ps.map((p) => p.title)); return ps.map((p) => ({ id: p.id, score: 85, reason: 'ok' })); } });
+  check('67. le compteur de crédit et la sélection isolent le MÊME ensemble : une seule personne', n === 1 && r.considered === 1, `n=${n} considered=${r.considered}`);
+  check('68. seule la personne à nom public est envoyée au modèle', jugés.length === 1 && /Directrice/.test(jugés[0]), JSON.stringify(jugés));
+  const statut = (await q(`select status from signals where organization_id = $1 and external_id like '%dedu'`, [m.org])).rows[0]?.status;
+  check('69. le signal de l’adresse déduite reste `new`, sans mémoire d’écart', statut === 'new' && (await q(`select 1 from linkedin_engageurs_ecartes where organization_id = $1`, [m.org])).rowCount === 0, String(statut));
+  // Plus tard, la réponse Voyager livre le nom public : le contact n'a plus d'adresse déduite, le signal devient scorable.
+  await q(`update contacts set linkedin_url = 'https://www.linkedin.com/in/dede-duval' where organization_id = $1 and linkedin_provider_id = 'ACoAAdedu'`, [m.org]);
+  check('70. une fois l’adresse publique connue, le même signal redevient scorable', (await compterSignauxScorables(pool, m.org)) === 1);
 }
 
 async function entreprise() {
@@ -739,7 +759,7 @@ async function rls() {
 }
 
 try {
-  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
+  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

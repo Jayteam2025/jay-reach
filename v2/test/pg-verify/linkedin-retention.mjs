@@ -365,16 +365,18 @@ async function oppositionBoucleFermee() {
   const ctx = { ex: pool, organisationId: m.org, utilisateurId: operateur, role: 'operator' };
   await nePlusContacter(ctx, { contactId: r.contact });
   const sup = (await q(`select value, scope from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows;
-  check('37. « Ne plus contacter » écrit une suppression de portée linkedin sur l’adresse du contact',
-    sup.length === 1 && sup[0].value === 'https://www.linkedin.com/in/olive-opposee-9', JSON.stringify(sup));
+  // DEUX graphies : l'adresse du contact ET celle que la collecte déduit de son identifiant de membre (revue finale, 2.9).
+  const valeurs = sup.map((r) => r.value).sort();
+  check('37. « Ne plus contacter » écrit une suppression de portée linkedin sur les DEUX graphies de l’adresse',
+    valeurs.length === 2 && valeurs[0] === 'https://www.linkedin.com/in/ACoAAopposee' && valeurs[1] === 'https://www.linkedin.com/in/olive-opposee-9', JSON.stringify(sup));
   await nePlusContacter(ctx, { contactId: r.contact });
-  check('37b. rejouée, elle n’écrit pas de doublon', (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 1);
+  check('37b. rejouée, elle n’écrit pas de doublon', (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 2);
   const autrePost = await enregistrerEngageur(m.ctx, { ...eng('opposee', 'Olive Opposee'), urlProfil: 'https://www.linkedin.com/in/olive-opposee-9' }, { id: m.campagne, personaId: m.persona }, 'https://www.linkedin.com/posts/autre-post-2');
   check('38. re-collectée sur un AUTRE post : refusée dès la collecte (ni scorée, ni enrichie)', autrePost === 'supprime', autrePost);
   const sansAdresse = (await q(`insert into contacts (organization_id, first_name, email) values ($1,'Sans','sans@acme.fr') returning id`, [m.org])).rows[0].id;
   await nePlusContacter(ctx, { contactId: sansAdresse });
   check('38b. un contact sans adresse LinkedIn n’écrit pas de suppression linkedin',
-    (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 1);
+    (await q(`select count(*)::int n from suppressions where organization_id = $1 and scope = 'linkedin'`, [m.org])).rows[0].n === 2);
 }
 
 async function course() {

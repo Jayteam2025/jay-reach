@@ -27,7 +27,7 @@ import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
   jourCourantDansFuseau,
-  lireFenetreLinkedIn,
+  lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
   marquerCollecteLinkedIn,
@@ -39,7 +39,7 @@ import {
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ErreurCollecte, lireEngageurs, type Budget, type Friction } from '../linkedin/engageurs.js';
-import { engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
+import { adresseDeduite, engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
 
 /** Charge utile de la file. Le passage est ouvert par le producteur : c'est lui qui a décidé de collecter. */
@@ -81,6 +81,7 @@ export const MSG = {
   releve: 'Impossible de relever l’IP de sortie du navigateur : le proxy ne répond pas.',
   plafond_posts: 'Plafond de posts du jour atteint.',
   plafond_requetes: 'Plafond de requêtes de l’heure atteint.',
+  plafond_personnes: 'Plafond de personnes par passage atteint : le reste du post n’a pas été enregistré.',
   defi: 'LinkedIn demande une vérification : collecte arrêtée.',
   cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
   liste_vide: 'Le post annonce des réactions mais LinkedIn n’en livre aucune : collecte arrêtée.',
@@ -97,9 +98,25 @@ interface Bilan {
   dejaEnCampagne: number;
   /** Profils que la réponse Voyager n'a pas renseignés assez pour être exploitables. */
   ignores: number;
+  /** Personnes laissées de côté parce qu'elles figurent sur la liste de suppression : un fait qu'on peut avoir à démontrer. */
+  opposes: number;
+  /** Parmi les nouvelles, celles enregistrées sous une adresse déduite de l'URN (ni cherchable ni enrichissable). */
+  adressesDeduites: number;
+  /** Le passage s'est arrêté sur le plafond de personnes enregistrées par passage. */
+  plafondPersonnes: boolean;
 }
 
-const bilanVierge = (): Bilan => ({ requetes: 0, vus: 0, nouveaux: 0, doublons: 0, dejaEnCampagne: 0, ignores: 0 });
+const bilanVierge = (): Bilan => ({
+  requetes: 0,
+  vus: 0,
+  nouveaux: 0,
+  doublons: 0,
+  dejaEnCampagne: 0,
+  ignores: 0,
+  opposes: 0,
+  adressesDeduites: 0,
+  plafondPersonnes: false,
+});
 
 interface ConfigCollecte {
   readonly urlPost: string;
@@ -152,9 +169,10 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
 
 /**
  * Clôt le passage : statut, compteurs du journal (`source_runs`, migration de la
- * tâche 6) et sortie observée. `items_found`/`items_new` reçoivent les mêmes
- * nombres que `vus`/`nouveaux` pour que la carte « dernier passage » de l'écran
- * Sources, écrite pour les connecteurs d'offres, continue d'afficher ce passage.
+ * tâche 6 et migration du bilan) et sortie observée. `items_found`/`items_new`
+ * reçoivent les mêmes nombres que `vus`/`nouveaux`, pour les lecteurs écrits pour
+ * les connecteurs d'offres ; la carte d'une source LinkedIn, elle, lit les compteurs
+ * et `error` eux-mêmes (`lireCartesSources`).
  *
  * Le filtre par organisation est explicite : le worker écrit avec la clé de
  * service, que la RLS ne borne pas.
@@ -183,7 +201,8 @@ async function cloreCollecte(
         set finished_at = now(), status = $3, error = $4,
             items_found = $5, items_new = $6,
             requetes = $7, vus = $5, nouveaux = $6, doublons = $8, deja_en_campagne = $9,
-            ip_sortie = $10, operateur_sortie = $11, verdict_linkedin = $12
+            ip_sortie = $10, operateur_sortie = $11, verdict_linkedin = $12,
+            ignores = $13, opposes = $14, adresses_deduites = $15, plafond_personnes_atteint = $16
       where sr.id = $2
         and sr.source_id in (select id from sources where organization_id = $1)`,
     [
@@ -199,6 +218,10 @@ async function cloreCollecte(
       etat.sortie?.ip ?? null,
       etat.sortie?.operateur ?? null,
       etat.verdictLinkedIn ?? false,
+      b.ignores,
+      b.opposes,
+      b.adressesDeduites,
+      b.plafondPersonnes,
     ],
   );
 }
@@ -267,9 +290,9 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
  * la campagne à chaque activation. Compter les lignes faisait lire « quatre passages
  * aujourd'hui » aux quatre passages d'un coup, qui se clôturaient tous à vide.
  */
-async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budget> {
-  const { fuseau } = await lireFenetreLinkedIn(ctx);
-  const [plafondPosts, postsDuJour, plafondRequetes, requetesDeLHeure] = await Promise.all([
+async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budget & { personnesMax: number }> {
+  const fuseau = await lireFuseauLinkedIn(ctx);
+  const [plafondPosts, postsDuJour, plafondRequetes, requetesDeLHeure, personnesMax] = await Promise.all([
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau, sourceRunId),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
@@ -277,10 +300,12 @@ async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budge
     // ici — un plafond horaire calé sur l'heure ronde laisserait passer deux
     // pleines charges à cheval sur la minute 59.
     compterRequetesLinkedIn(ctx, new Date(Date.now() - UNE_HEURE_MS)),
+    lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
   ]);
   return {
     postsRestants: Math.max(0, plafondPosts - postsDuJour),
     requetesRestantes: Math.max(0, plafondRequetes - requetesDeLHeure),
+    personnesMax,
   };
 }
 
@@ -299,26 +324,45 @@ async function traiterFriction(ctx: Contexte, pool: Pool, friction: Friction): P
   return message;
 }
 
+/**
+ * Clôt un passage refusé AVANT toute requête LinkedIn, et le dit au journal du worker.
+ *
+ * Ces refus (canal absent, session non active, source sans campagne, persona ambigu, verrou
+ * tenu, plafonds) n'envoient aucune notification : l'écran Sources les lit dans `source_runs.error`,
+ * le journal sert au diagnostic à distance sur le VPS. Sans la ligne, « Collecter maintenant »
+ * donnait un passage clos en silence, indistinguable d'un worker mort depuis le serveur.
+ * Le message est un littéral de `MSG` : il ne porte ni clé, ni URL de proxy.
+ */
+async function refuser(
+  pool: Pool,
+  job: CollecteLinkedInJob,
+  message: string,
+  etat: { statut?: 'success' | 'error'; bilan?: Bilan; sortie?: Sortie | null } = {},
+): Promise<void> {
+  console.warn(`[collecte-linkedin] passage ${job.sourceRunId} refusé : ${message}`);
+  await cloreCollecte(pool, job, { statut: etat.statut ?? 'error', erreur: message, bilan: etat.bilan, sortie: etat.sortie });
+}
+
 export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: CollecteLinkedInJob): Promise<void> {
   const { pool } = d;
   const ctx: Contexte = { ex: pool, organisationId: job.organizationId, utilisateurId: null, role: null };
 
   if (d.env.JAY_REACH_LINKEDIN !== '1') {
-    await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.canal });
+    await refuser(pool, job, MSG.canal);
     return;
   }
   const session = await lireSessionLinkedIn(ctx);
   if (!session || session.etat !== 'active') {
-    await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.session });
+    await refuser(pool, job, MSG.session);
     return;
   }
   const config = await lireConfigCollecte(pool, job);
   if (config === null) {
-    await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.source });
+    await refuser(pool, job, MSG.source);
     return;
   }
   if ('erreur' in config) {
-    await cloreCollecte(pool, job, { statut: 'error', erreur: config.erreur });
+    await refuser(pool, job, config.erreur);
     return;
   }
 
@@ -391,20 +435,24 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
 
     verrouPris = await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_COLLECTE_MS);
     if (!verrouPris) {
-      await cloreCollecte(pool, job, { statut: 'error', erreur: MSG.verrou, sortie });
+      await refuser(pool, job, MSG.verrou, { sortie });
       return;
     }
 
     const budget = await calculerBudget(ctx, job.sourceRunId);
-    if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) {
+    if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
       // Plafond : un passage à vide, pas un échec. Le rejouer redépasserait le
       // même plafond.
-      await cloreCollecte(pool, job, {
-        statut: 'success',
-        erreur: budget.postsRestants <= 0 ? MSG.plafond_posts : MSG.plafond_requetes,
-        bilan,
-        sortie,
-      });
+      await refuser(
+        pool,
+        job,
+        budget.postsRestants <= 0
+          ? MSG.plafond_posts
+          : budget.requetesRestantes <= 0
+            ? MSG.plafond_requetes
+            : MSG.plafond_personnes,
+        { statut: 'success', bilan, sortie },
+      );
       return;
     }
 
@@ -426,7 +474,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // compté sur le mauvais passage.
       sourceRunId: job.sourceRunId,
     };
-    for (const personne of personnes) {
+    for (const [rang, personne] of personnes.entries()) {
       // `enregistrerEngageur` LÈVE sur une entrée invalide : un seul profil
       // malformé emporterait tout le passage. On valide ici, et on compte ce
       // qu'on laisse de côté.
@@ -436,10 +484,22 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         continue;
       }
       const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, config.urlPost);
-      if (issue === 'nouveau') bilan.nouveaux += 1;
-      else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
-      else if (issue === 'supprime') bilan.ignores += 1; // sur la liste de suppression : laissée de côté
+      if (issue === 'nouveau') {
+        bilan.nouveaux += 1;
+        if (adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
+      } else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
+      else if (issue === 'supprime') bilan.opposes += 1;
       else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
+
+      // Plafond de personnes ENREGISTRÉES : il compte les nouvelles, pas les lues. Les étages
+      // aval sont plafonnés (scoring, enrichissement) à un ou deux ordres de grandeur de ce
+      // que soixante requêtes laissent entrer ; ce qui déborde serait effacé à quatorze jours
+      // sans mémoire, recollecté, recréé. Compter les NOUVELLES fait avancer un second passage
+      // au-delà des doublons du premier ; le reste n'est jamais écrit en base.
+      if (bilan.nouveaux >= budget.personnesMax) {
+        bilan.plafondPersonnes = rang < personnes.length - 1;
+        break;
+      }
     }
 
     if (typeof arret === 'object') {
@@ -460,7 +520,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     await marquerCollecteLinkedIn(ctx);
     await cloreCollecte(pool, job, {
       statut: 'success',
-      erreur: arret === 'plafond' ? MSG.plafond_requetes : null,
+      erreur: bilan.plafondPersonnes ? MSG.plafond_personnes : arret === 'plafond' ? MSG.plafond_requetes : null,
       bilan,
       sortie,
       // Un passage qui a parlé à LinkedIn et abouti est le verdict qui remet le
@@ -468,7 +528,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       verdictLinkedIn: bilan.requetes > 0,
     });
     console.log(
-      `[collecte-linkedin] ${bilan.requetes} requête(s), ${bilan.vus} personne(s) vue(s), ${bilan.nouveaux} nouvelle(s), ${bilan.doublons} doublon(s), ${bilan.dejaEnCampagne} déjà en campagne, ${bilan.ignores} ignorée(s)`,
+      `[collecte-linkedin] ${bilan.requetes} requête(s), ${bilan.vus} personne(s) vue(s), ${bilan.nouveaux} nouvelle(s), ${bilan.doublons} doublon(s), ${bilan.dejaEnCampagne} déjà en campagne, ${bilan.ignores} ignorée(s), ${bilan.opposes} opposée(s), ${bilan.adressesDeduites} à adresse déduite${bilan.plafondPersonnes ? ', plafond de personnes atteint' : ''}`,
     );
   } catch (err) {
     // Le message d'origine peut porter l'URL du proxy avec ses identifiants :

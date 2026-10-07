@@ -627,7 +627,16 @@
         "franceEntiere": "Heel Frankrijk",
         "readAndKept": "{lus, plural, one {# vacature gelezen} other {# vacatures gelezen}}, {retenus, plural, one {# behouden} other {# behouden}} bij de laatste run",
         "nextPaused": "gepauzeerd",
-        "nextOnLaunch": "bij het starten"
+        "nextOnLaunch": "bij het starten",
+        "onDemand": "Op aanvraag: “Nu verzamelen”",
+        "lastRun": "Laatste run",
+        "lastRunNever": "Nog nooit uitgevoerd",
+        "runRunning": "bezig",
+        "runSuccess": "afgerond",
+        "runError": "gestopt",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# persoon gezien} other {# personen gezien}} · {nouveaux, plural, one {# nieuw} other {# nieuw}} · {doublons, plural, one {# dubbel} other {# dubbel}} · {dejaEnCampagne} al in een campagne · {ecartes, plural, one {# afgewezen} other {# afgewezen}} door de scoring",
+        "runDetails": "{requetes, plural, one {# verzoek} other {# verzoeken}} · {ignores} overgeslagen (profiel te beperkt) · {opposes} bezwaar · {adressesDeduites} zonder openbaar adres"
       },
       "drawer": {
         "close": "Sluiten",
@@ -1149,6 +1158,10 @@
           "nom": "LinkedIn-verzoeken per uur",
           "description": "daadwerkelijk naar LinkedIn verstuurde verzoeken, alle verzamelingen samen"
         },
+        "linkedinPersonnesParPassage": {
+          "nom": "LinkedIn-personen per run",
+          "description": "nieuwe personen opgeslagen per verzamelrun; daarna wordt de rest van de post niet bewaard"
+        },
         "scoreMinDefaut": {
           "nom": "Minimale instapscore",
           "description": "standaard voor campagnes die er geen opgeven"
@@ -1563,6 +1576,10 @@
         "requetesParHeure": {
           "nom": "Verzoeken per uur",
           "usage": "{n, plural, =0 {Geen in het laatste uur} one {# in het laatste uur} other {# in het laatste uur}}"
+        },
+        "personnesParPassage": {
+          "nom": "Personen per run",
+          "usage": "Nieuwe personen opgeslagen per run; daarna stopt de run"
         },
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in."

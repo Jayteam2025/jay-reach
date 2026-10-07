@@ -16,5 +16,6 @@ export {
   prendreVerrouLinkedIn,
 } from '../../packages/core/src/fonctions/linkedin-session.js';
 export { compterRequetesLinkedIn } from '../../packages/core/src/fonctions/plafonds.js';
-export { creerSource } from '../../packages/core/src/fonctions/sources.js';
+export { creerSource, listerSourcesCampagne } from '../../packages/core/src/fonctions/sources.js';
+export { nePlusContacter } from '../../packages/core/src/fonctions/contacts.js';
 export { QUEUES } from '../../packages/core/src/queues.js';

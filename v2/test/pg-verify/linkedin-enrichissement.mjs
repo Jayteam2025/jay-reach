@@ -285,10 +285,14 @@ async function producteur() {
   check('9b. sans identifiant public, l’adresse du contact est bien celle fabriquée',
     bob.linkedin_url === 'https://www.linkedin.com/in/ACoAAbob', bob.linkedin_url);
 
+  // Sans adresse publique, le scoring ne paie pas de jetons pour lui : il ne sera jamais enrichi (revue finale, 2.2).
+  check('9a. une personne à adresse fabriquée reste `new` : le scoring ne la juge pas',
+    bob.status === 'new', bob.status);
+
   // Jugé hors cible par le scoring : son signal ET son contact sont effacés, et
   // son écart est mémorisé. L'assertion porte sur les TROIS : « pas de contact »
   // seul passerait aussi si le scoring n'avait rien fait du tout.
-  await engageurQualifie(m, 'carl', 'Carl Stagiaire', 'Stagiaire marketing');
+  await engageurQualifie(m, 'carl', 'Carl Stagiaire', 'Stagiaire marketing', 'https://www.linkedin.com/in/carl-stagiaire');
   const carl = (await q(
     `select (select count(*)::int from contacts where organization_id=$1 and first_name='Carl') c,
             (select count(*)::int from signals where organization_id=$1 and external_id like '%ACoAAcarl') s,
@@ -298,6 +302,10 @@ async function producteur() {
   check('9c. l’engageur hors cible est effacé par le scoring, avec sa mémoire d’écart',
     carl.c === 0 && carl.s === 0 && carl.e === 1, JSON.stringify(carl));
 
+  // État DÉLIBÉRÉMENT ARTIFICIEL : depuis la revue finale (2.2) le scoring ne juge plus une adresse fabriquée, donc plus
+  // aucun chemin de production ne la qualifie. On la qualifie en SQL pour que le contrôle 10 continue de mesurer la
+  // clause du producteur : c'est une défense en profondeur, la même condition (`sqlAdresseResolvable`) que le scoring.
+  await q(`update signals set status = 'qualified' where organization_id = $1 and id = (select source_signal_id from contacts where id = $2)`, [m.org, bob.id]);
   const n = await enqueueEnrichmentContactsConnus(faux, pool);
   check('10. seule la personne à adresse publique est enfilée (l’adresse fabriquée est écartée)',
     pour(ada.id).length === 1 && pour(bob.id).length === 0, `ada=${pour(ada.id).length} bob=${pour(bob.id).length} total=${n}`);

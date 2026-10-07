@@ -28,7 +28,7 @@ harnais_pret() {
       'select empreinte from jr_harnais_pret' 2>/dev/null | tr -d '[:space:]')" = "$EMPREINTE" ]
 }
 if ! harnais_pret; then
-  "$DOCKER" rm -f "$CT" >/dev/null 2>&1 || true
+  "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
   "$DOCKER" run -d --name "$CT" -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=jayreach \
     -p "$PORT":5432 postgres:16-alpine >/dev/null || { echo "[linkedin-retention] RUN_FAIL"; exit 4; }
   ok=0
@@ -38,13 +38,13 @@ if ! harnais_pret; then
     else ok=0; fi
     sleep 1
   done
-  [ "$ok" -ge 2 ] || { echo "[linkedin-retention] PG_NOT_READY"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 4; }
+  [ "$ok" -ge 2 ] || { echo "[linkedin-retention] PG_NOT_READY"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 4; }
 
   psql() { "$DOCKER" exec -i "$CT" psql -v ON_ERROR_STOP=1 -U postgres -d jayreach "$@"; }
   # Même préalable que la plateforme Supabase (cf. manques-cle-transport.sh) :
   # pgcrypto vit dans `extensions` AVANT les migrations ; le shim ne pose que le schéma.
   psql -c "create schema if not exists extensions; create extension if not exists pgcrypto with schema extensions; alter database jayreach set search_path = public, extensions;" >/dev/null \
-    || { echo "[linkedin-retention] EXTENSIONS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 5; }
+    || { echo "[linkedin-retention] EXTENSIONS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
   echo "[linkedin-retention] shim auth + migrations…"
   psql < "$DIR/test/pg-verify/auth-shim.sql" >/dev/null || { echo "[linkedin-retention] SHIM_FAIL"; exit 6; }
   for m in "$DIR"/supabase/migrations/*.sql; do
@@ -52,11 +52,11 @@ if ! harnais_pret; then
     # `supabase db push` : c'est ce qui rendrait une valeur d'enum inutilisable
     # dans le même fichier.
     case "$(basename "$m")" in 20261005130[3-9]*) FLAGS=-1 ;; *) FLAGS= ;; esac
-    psql $FLAGS < "$m" >/dev/null || { echo "[linkedin-retention] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 7; }
+    psql $FLAGS < "$m" >/dev/null || { echo "[linkedin-retention] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 7; }
   done
-  psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[linkedin-retention] GRANTS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 8; }
+  psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[linkedin-retention] GRANTS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 8; }
   psql -c "create table jr_harnais_pret(empreinte text not null); insert into jr_harnais_pret values ('$EMPREINTE');" >/dev/null \
-    || { echo "[linkedin-retention] TEMOIN_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 9; }
+    || { echo "[linkedin-retention] TEMOIN_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 9; }
 fi
 
 echo "[linkedin-retention] bundles (esbuild)…"
@@ -73,6 +73,6 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" \
 RC=$?
 
 rm -f "$DIR/apps/worker/_linkedin-retention-bundle.mjs" "$DIR/apps/worker/_linkedin-retention-runner.mjs"
-[ -n "${KEEP:-}" ] || "$DOCKER" rm -f "$CT" >/dev/null 2>&1 || true
+[ -n "${KEEP:-}" ] || "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
 [ "$RC" -eq 0 ] && echo "[linkedin-retention] VERIFY_OK" || echo "[linkedin-retention] VERIFY_FAIL"
 exit "$RC"

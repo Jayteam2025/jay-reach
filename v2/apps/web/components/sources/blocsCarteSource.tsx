@@ -144,9 +144,59 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
       contenu: <span>{config.depuisJours ?? 90}</span>,
     });
   }
+  if (carte.providerId === 'linkedin_post_engagers') {
+    // Jamais de cadence ici : une source d'engageurs ne part pas toute seule
+    // (`enqueueDiscoverForActiveSources` l'exclut, un passage ne s'ouvre que par
+    // « Collecter maintenant »). Afficher « toutes les 6 heures » promettrait
+    // une collecte que rien ne lance.
+    blocs.push({ libelle: t('card.passages'), contenu: <span>{t('card.onDemand')}</span> });
+    blocs.push({ libelle: t('card.lastRun'), contenu: <DernierePassageLinkedIn carte={carte} t={t} /> });
+    return blocs;
+  }
   blocs.push({
     libelle: t('card.passages'),
     contenu: <span>{cadenceDe(carte.schedule, t)}</span>,
   });
   return blocs;
+}
+
+/**
+ * Le bilan du dernier passage d'une source d'engageurs : la raison d'un passage qui n'a rien produit
+ * (`erreur`) et les issues de la spec §5.4 (nouveaux, doublons, déjà dans une campagne, écartés par
+ * le scoring). C'est le seul retour de l'opérateur sur une collecte qui tourne sur le serveur.
+ */
+function DernierePassageLinkedIn({ carte, t }: { carte: SourceCarte; t: Traducteur }) {
+  const c = carte.derniereCollecte;
+  if (!c) return <span className="jr-secondaire">{t('card.lastRunNever')}</span>;
+  const statut = c.statut === 'running' ? t('card.runRunning') : c.statut === 'success' ? t('card.runSuccess') : t('card.runError');
+  return (
+    <div>
+      {t('card.runHeader', { quand: heureAvecJour(c.quand), statut })}
+      {c.erreur && (
+        <>
+          <br />
+          <span className={c.statut === 'error' ? 'jr-texte-erreur' : 'jr-secondaire'}>{c.erreur}</span>
+        </>
+      )}
+      <br />
+      <span>
+        {t('card.runCounts', {
+          vus: c.vus,
+          nouveaux: c.nouveaux,
+          doublons: c.doublons,
+          dejaEnCampagne: c.dejaEnCampagne,
+          ecartes: c.ecartes,
+        })}
+      </span>
+      <br />
+      <span className="jr-secondaire">
+        {t('card.runDetails', {
+          requetes: c.requetes,
+          ignores: c.ignores,
+          opposes: c.opposes,
+          adressesDeduites: c.adressesDeduites,
+        })}
+      </span>
+    </div>
+  );
 }
