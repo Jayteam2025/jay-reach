@@ -11,6 +11,7 @@ import {
 import { construireEntreeAssistant, nombreBoitesActives } from './Assistant';
 import {
   construireConfigOffre,
+  bandeauBrouillonLinkedin,
   construireGroupesMenu,
   EtapeSources,
   type EtapeSourcesLibelles,
@@ -56,13 +57,14 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinKeepPeople: 'On garde les personnes qui',
   formLinkedinCommented: 'ont commenté',
   formLinkedinReacted: 'ont réagi',
-  formLinkedinExcludeFirstDegree: 'hors relations de 1er degré',
+  formLinkedinPostOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
   formLinkedinCompetitorPages: 'Pages entreprise suivies',
   formLinkedinTopics: 'Sujets suivis',
   formLinkedinSinceDays: 'Poste pris depuis (jours)',
   formLinkedinAccountId: 'Compte LinkedIn',
   formLinkedinProfilesPerDay: 'Profils lus par jour',
   formLinkedinErreur: 'Le compte LinkedIn et le champ propre à ce type de source sont nécessaires.',
+  formLinkedinBrouillon: "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
   resumeLinkedin: (n: number) => `${n} profils par jour`,
   formAjouter: 'Ajouter',
   formAnnuler: 'Annuler',
@@ -91,12 +93,18 @@ describe('construireGroupesMenu (R57 — catalogue complet du menu « + Ajouter 
     expect(ouvrir).toHaveBeenNthCalledWith(2, 'france_travail');
   });
 
-  it('groupe LinkedIn : les quatre sous-types, chacun avec le badge « collecte activée au lot 4 », sélectionnables', () => {
+  it('groupe LinkedIn : les quatre sous-types sélectionnables ; le badge « en attente » reste sur les trois que le serveur ne collecte pas (lot 4a)', () => {
     const ouvrir = vi.fn();
     const groupes = construireGroupesMenu(LIBELLES_SOURCES, ouvrir);
     expect(groupes[1]!.titre).toBe(LIBELLES_SOURCES.menuLinkedin);
     expect(groupes[1]!.entrees).toHaveLength(4);
-    for (const entree of groupes[1]!.entrees) {
+    const [engageurs, ...autres] = groupes[1]!.entrees;
+    // Les engageurs d'un post sont collectés : plus de badge qui prétend le contraire.
+    const htmlEngageurs = renderToStaticMarkup(<>{engageurs!.titre}</>);
+    expect(htmlEngageurs).toContain('Engageurs');
+    expect(htmlEngageurs).not.toContain('jr-puce');
+    expect(htmlEngageurs).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+    for (const entree of autres) {
       const html = renderToStaticMarkup(<>{entree.titre}</>);
       expect(html).toContain('jr-puce gris');
       expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
@@ -141,12 +149,10 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
   it('arrive dans l’entrée envoyée à creerCampagneComplete avec son providerId et sa config, valide contre le vrai schéma zod', () => {
     const config = construireConfigLinkedIn('linkedin_post_engagers', {
       ...etatChampsLinkedInDepuisConfig(),
-      compteId: 'compte-1',
       urlPost: 'https://exemple.fr/post',
     });
     expect(champsLinkedInValides('linkedin_post_engagers', {
       ...etatChampsLinkedInDepuisConfig(),
-      compteId: 'compte-1',
       urlPost: 'https://exemple.fr/post',
     })).toBe(true);
 
@@ -175,8 +181,7 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
     expect(entree.sources).toHaveLength(1);
     expect(entree.sources[0]!.providerId).toBe('linkedin_post_engagers');
     expect(entree.sources[0]!.nom).toBe("Engageurs d'un post");
-    expect(entree.sources[0]!.config).toMatchObject({
-      compteId: 'compte-1',
+    expect(entree.sources[0]!.config).toEqual({
       urlPost: 'https://exemple.fr/post',
       garder: ['commente', 'reagi'],
     });
@@ -251,6 +256,29 @@ describe('EtapeSources — sources déjà ajoutées', () => {
     );
     expect(html).toContain('25 profils par jour');
     expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+  });
+
+  it('le formulaire des engageurs d’un post porte le bandeau de brouillon, les autres types non', () => {
+    const html = renderToStaticMarkup(<>{bandeauBrouillonLinkedin('linkedin_post_engagers', LIBELLES_SOURCES)}</>);
+    expect(html).toContain('jr-bandeau attention');
+    expect(html).toContain('brouillon');
+    for (const id of ['adzuna', 'france_travail', 'linkedin_keywords', 'linkedin_job_change'] as const) {
+      expect(bandeauBrouillonLinkedin(id, LIBELLES_SOURCES)).toBeNull();
+    }
+  });
+
+  it('une source « engageurs d’un post » ajoutée n’affiche plus le badge « en attente »', () => {
+    const source: SourceAssistant = {
+      cle: 'k3',
+      providerId: 'linkedin_post_engagers',
+      nom: "Engageurs d'un post",
+      config: { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] },
+    };
+    const html = renderToStaticMarkup(
+      <EtapeSources sources={[source]} onAjouter={() => {}} onRetirer={() => {}} disabled={false} libelles={LIBELLES_SOURCES} />,
+    );
+    expect(html).toContain('https://www.linkedin.com/posts/x');
+    expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
   });
 
   it('une source Adzuna ajoutée résume mots-clés et lieux, sans badge LinkedIn', () => {
@@ -532,7 +560,7 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     keepPeople: 'On garde les personnes qui',
     commented: 'ont commenté',
     reacted: 'ont réagi',
-    excludeFirstDegree: 'hors relations de 1er degré',
+    postOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
     competitorPages: 'Pages entreprise suivies',
     topics: 'Sujets suivis',
     sinceDays: 'Poste pris depuis (jours)',
@@ -570,5 +598,49 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
       />,
     );
     expect(html).toContain('id="linkedin-topics"');
+  });
+
+  it('les engageurs d\'un post n\'ont ni compte ni cadence, et affichent la règle « un post, une campagne »', () => {
+    const html = renderToStaticMarkup(
+      <ChampsSourceLinkedIn
+        providerId="linkedin_post_engagers"
+        etat={etatChampsLinkedInDepuisConfig()}
+        onChange={() => {}}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain('linkedin-account-id');
+    expect(html).not.toContain('linkedin-profiles-per-day');
+    expect(html).toContain('seule campagne');
+  });
+
+  it('le choix du persona n\'apparait que si la campagne en porte plusieurs, et devient obligatoire', () => {
+    const personas = [
+      { id: 'p1', nom: 'Directeur commercial' },
+      { id: 'p2', nom: 'DRH' },
+    ];
+    const rendu = (liste: typeof personas) =>
+      renderToStaticMarkup(
+        <ChampsSourceLinkedIn
+          providerId="linkedin_post_engagers"
+          etat={etatChampsLinkedInDepuisConfig()}
+          onChange={() => {}}
+          libelles={{ ...LIBELLES, persona: 'Persona de la source', personaChoisir: 'Choisir' }}
+          personas={liste}
+        />,
+      );
+    expect(rendu(personas)).toContain('DRH');
+    expect(rendu(personas.slice(0, 1))).not.toContain('Persona de la source');
+    expect(rendu([])).not.toContain('Persona de la source');
+
+    const etat = { ...etatChampsLinkedInDepuisConfig(), urlPost: 'https://exemple.fr/p' };
+    expect(champsLinkedInValides('linkedin_post_engagers', etat, 2)).toBe(false);
+    expect(champsLinkedInValides('linkedin_post_engagers', { ...etat, personaId: 'p2' }, 2)).toBe(true);
+    expect(champsLinkedInValides('linkedin_post_engagers', etat, 1)).toBe(true);
+    expect(construireConfigLinkedIn('linkedin_post_engagers', { ...etat, personaId: 'p2' })).toEqual({
+      urlPost: 'https://exemple.fr/p',
+      garder: ['commente', 'reagi'],
+      personaId: 'p2',
+    });
   });
 });

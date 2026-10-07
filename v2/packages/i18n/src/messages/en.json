@@ -175,6 +175,23 @@
       "operator": "Operator",
       "viewer": "Viewer",
       "none": "No role"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn ready",
+        "arrete": "LinkedIn stopped",
+        "aucune": "LinkedIn: no session"
+      },
+      "detail": {
+        "derniereCollecte": "Last collection {quand}",
+        "aucuneCollecte": "Nothing collected yet",
+        "absente": "Session to open",
+        "defi": "Verification requested, reconnect",
+        "cookieRefuse": "Session rejected, reconnect",
+        "disjoncteur": "Too many failures, reconnect",
+        "revoquee": "Session closed",
+        "sortieInattendue": "Unexpected network exit"
+      }
     }
   },
   "aujourdhui": {
@@ -610,7 +627,16 @@
         "franceEntiere": "All of France",
         "readAndKept": "{lus, plural, one {# posting read} other {# postings read}}, {retenus, plural, one {# kept} other {# kept}} on the last run",
         "nextPaused": "paused",
-        "nextOnLaunch": "at launch"
+        "nextOnLaunch": "at launch",
+        "onDemand": "On demand: “Collect now”",
+        "lastRun": "Last run",
+        "lastRunNever": "Never run",
+        "runRunning": "running",
+        "runSuccess": "finished",
+        "runError": "stopped",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# person seen} other {# people seen}} · {nouveaux, plural, one {# new} other {# new}} · {doublons, plural, one {# duplicate} other {# duplicates}} · {dejaEnCampagne} already in a campaign · {ecartes, plural, one {# dropped} other {# dropped}} by scoring",
+        "runDetails": "{requetes, plural, one {# request} other {# requests}} · {ignores} skipped (profile too sparse) · {opposes} opted out · {adressesDeduites} without a public address"
       },
       "drawer": {
         "close": "Close",
@@ -644,7 +670,10 @@
         "keepPeople": "We keep people who",
         "commented": "commented",
         "reacted": "reacted",
-        "excludeFirstDegree": "excluding 1st-degree connections",
+        "postOneCampaign": "A post can only serve one campaign.",
+        "persona": "Source persona",
+        "personaChoisir": "Choose a persona",
+        "personaRequis": "Choose this source's persona.",
         "accountId": "LinkedIn account",
         "profilesPerDay": "Profiles read per day",
         "competitorPages": "Company pages followed",
@@ -705,7 +734,14 @@
         "directoryContactsCreated": "Contacts created",
         "directoryNone": "none",
         "directoryHint": "The directory gives companies, not people: contacts will come from postings, LinkedIn or an import. Added companies appear in Contacts › Companies.",
-        "directoryRetain": "Add {n} companies"
+        "directoryRetain": "Add {n} companies",
+        "brouillon": "This campaign is a draft: nothing will be collected until it is launched.",
+        "collectNow": "Collect now",
+        "collectNowDraft": "Available once the campaign is launched.",
+        "collectNowUnsaved": "Available once the source is saved.",
+        "collectNowInactive": "Available while the campaign is active.",
+        "collectRequested": "Collection requested.",
+        "collectNowPaused": "Available when the source is active."
       }
     },
     "sequence": {
@@ -793,6 +829,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "The source “{nom}” has no persona, but this campaign now has several. Open it to pick one.",
+        "personaSourcePerime": "The source “{nom}” is tied to a persona that is no longer part of this campaign. Open it to pick another."
+      },
       "identity": {
         "title": "Identity",
         "name": "Campaign name",
@@ -889,7 +929,7 @@
         "formLinkedinKeepPeople": "We keep people who",
         "formLinkedinCommented": "commented",
         "formLinkedinReacted": "reacted",
-        "formLinkedinExcludeFirstDegree": "excluding 1st-degree connections",
+        "formLinkedinPostOneCampaign": "A post can only serve one campaign.",
         "formLinkedinCompetitorPages": "Company pages followed",
         "formLinkedinTopics": "Topics followed",
         "formLinkedinSinceDays": "Started role since (days)",
@@ -899,7 +939,8 @@
         "summaryLinkedin": "{n, plural, one {# profile per day} other {# profiles per day}}",
         "formSubmit": "Add",
         "formCancel": "Cancel",
-        "formError": "At least one keyword is required."
+        "formError": "At least one keyword is required.",
+        "formLinkedinBrouillon": "This campaign is a draft: nothing will be collected until it is launched."
       },
       "sequence": {
         "startFrom": "Start from",
@@ -962,7 +1003,8 @@
       "personas": "Personas",
       "messages": "Messages",
       "engine": "Engine",
-      "account": "Account"
+      "account": "Account",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "Email mailboxes",
@@ -1107,6 +1149,18 @@
         "enrichissementsParJour": {
           "nom": "Enrichments per day",
           "description": "FullEnrich credits to find emails"
+        },
+        "linkedinPostsParJour": {
+          "nom": "LinkedIn posts per day",
+          "description": "posts whose engagers are collected, per day"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "LinkedIn requests per hour",
+          "description": "requests actually sent to LinkedIn, across all collections"
+        },
+        "linkedinPersonnesParPassage": {
+          "nom": "LinkedIn people per run",
+          "description": "new people saved per collection run; beyond that, the rest of the post is not kept"
         },
         "scoreMinDefaut": {
           "nom": "Minimum entry score",
@@ -1326,7 +1380,14 @@
         "aucuneErreur": "None",
         "tachesEnAttente": "Pending tasks",
         "aucuneTache": "None",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}",
+        "linkedin": "LinkedIn",
+        "purge": "Retention purge",
+        "purgeOk": "Last run {quand}",
+        "purgeJamais": "Never run",
+        "purgeRetard": "Overdue: last run {quand}",
+        "purgeErreur": "Last run failed",
+        "purgeConsequence": "Collected people are no longer deleted on the date announced in Settings › LinkedIn."
       },
       "pause": {
         "titre": "Global sending pause",
@@ -1436,12 +1497,97 @@
               "titre": "A reply arrives",
               "detail": "for every human reply detected"
             }
+          },
+          "linkedin": {
+            "session_blocked": {
+              "titre": "Your LinkedIn session is blocked",
+              "detail": "when LinkedIn collection stops and needs a reconnection"
+            },
+            "collecte_arretee": {
+              "titre": "A LinkedIn collection stops",
+              "detail": "when a post returns nothing, with the session still valid"
+            }
           }
         }
       },
       "session": {
         "titre": "Session",
         "bouton": "Sign out"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "How the server connection to LinkedIn stands, where it exits the network and what it is allowed to collect.",
+      "carte": {
+        "titre": "LinkedIn session",
+        "sousTitre": "The organization's account, on the server"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "No session.",
+          "detail": "Open it from the server: the password and the code never go through this page."
+        },
+        "prete": {
+          "phrase": "Ready to collect.",
+          "detail": "Connected: {depuis}. Last collection: {collecte}.",
+          "detailSansCollecte": "Connected: {depuis}. Nothing collected yet."
+        },
+        "defi": {
+          "phrase": "Stopped: LinkedIn asked for a verification.",
+          "detail": "Noticed: {quand}. No new attempt will be made, on purpose."
+        },
+        "cookieRefuse": {
+          "phrase": "Stopped: LinkedIn rejected the saved session.",
+          "detail": "Noticed: {quand}. No new attempt will be made, on purpose."
+        },
+        "disjoncteur": {
+          "phrase": "Stopped as a precaution: too many failures in a row.",
+          "detail": "Noticed: {quand}. No new attempt will be made until the session is reopened."
+        },
+        "revoquee": {
+          "phrase": "Session closed.",
+          "detail": "Closed on purpose: {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Stopped: the network exit is not the expected one.",
+          "detail": "Seen at {ip} ({origine}) instead of the expected address. Nothing was sent to LinkedIn.",
+          "detailSansOrigine": "Seen at {ip} instead of the expected address. Nothing was sent to LinkedIn.",
+          "detailSansIp": "The network exit could not be read. Nothing was sent to LinkedIn."
+        }
+      },
+      "commande": {
+        "consigne": "In a terminal on the server, reopen the session:",
+        "consigneDefi": "Complete the verification, then reopen the session from a terminal on the server:"
+      },
+      "faits": {
+        "sortie": "Network exit",
+        "operateur": "Operator and country",
+        "collecte": "Last collection",
+        "inconnu": "Unknown",
+        "jamais": "Never"
+      },
+      "plafonds": {
+        "titre": "Collection limits",
+        "lead": "These are the same settings as in Settings › Limits.",
+        "postsParJour": {
+          "nom": "Posts per day",
+          "usage": "{n, plural, =0 {None used today} one {# used today} other {# used today}}"
+        },
+        "requetesParHeure": {
+          "nom": "Requests per hour",
+          "usage": "{n, plural, =0 {None in the last hour} one {# in the last hour} other {# in the last hour}}"
+        },
+        "personnesParPassage": {
+          "nom": "People per run",
+          "usage": "New people saved per run; beyond that, the run stops"
+        },
+        "enregistrer": "Save",
+        "erreurNombre": "Enter a whole number."
+      },
+      "avertissement": {
+        "titre": "Collecting from LinkedIn is against its terms of use.",
+        "risque": "The account used may be restricted or closed. The operator of this instance is responsible.",
+        "baseLegale": "Legal basis for processing: legitimate interest, business-to-business prospecting. People collected who are never contacted are deleted after {jours} days. Those we have already assessed leave an unreadable fingerprint (not their identifier), kept for at most {jours} days, so that we do not assess them twice."
       }
     }
   },
@@ -1574,6 +1720,14 @@
       "known": "Already known",
       "missingEmail": "Without email",
       "submit": "Import {n} contacts"
+    }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "You are receiving this message because you reacted to or commented on a public LinkedIn post. Your professional details come from LinkedIn and from our contact enrichment. To object to this processing and stop being contacted, simply reply to this message."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
     }
   }
 }

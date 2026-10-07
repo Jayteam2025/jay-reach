@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SourceCarte } from '@jay-reach/core';
+import type { BilanCollecte, SourceCarte } from '@jay-reach/core';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { construireBlocsOffres, marquesDe, sousTitreDe } from './blocsCarteSource';
+import { construireBlocsLinkedIn, construireBlocsOffres, marquesDe, sousTitreDe } from './blocsCarteSource';
 
 /**
  * Traducteur factice : lit les vraies chaînes de `campagne.sources` dans
@@ -63,6 +63,7 @@ function carteDeBase(overrides: Partial<SourceCarte> = {}): SourceCarte {
     retenus7j: [0, 0, 0, 0, 0, 0, 6],
     totalLu: 312,
     premierPassage: '2026-09-01T06:00:00.000Z', // 08:00 Paris le 1er
+    derniereCollecte: null,
     collecteDisponible: true,
     campagneActive: true,
     ...overrides,
@@ -144,5 +145,76 @@ describe('construireBlocsOffres', () => {
     const html = renderToStaticMarkup(<>{passages!.contenu}</>);
     expect(html).toContain('demain 09:00');
     expect(html).not.toContain('au lancement');
+  });
+});
+
+describe('construireBlocsLinkedIn : une source d’engageurs', () => {
+  const t = fabriquerT();
+  const bilan: BilanCollecte = {
+    quand: '2026-09-15T07:00:00.000Z',
+    statut: 'error',
+    erreur: 'La session LinkedIn n’est pas active : reconnectez le compte.',
+    requetes: 0,
+    vus: 0,
+    nouveaux: 0,
+    doublons: 0,
+    dejaEnCampagne: 0,
+    ecartes: 0,
+    ignores: 0,
+    opposes: 0,
+    adressesDeduites: 0,
+    plafondPersonnesAtteint: false,
+  };
+  const engageurs = (o: Partial<SourceCarte> = {}) =>
+    carteDeBase({ providerId: 'linkedin_post_engagers', providerIds: ['linkedin_post_engagers'], config: { urlPost: 'https://x' }, ...o });
+  const rendu = (carte: SourceCarte) =>
+    construireBlocsLinkedIn(carte, t)
+      .map((b) => renderToStaticMarkup(<>{b.contenu}</>))
+      .join('|');
+
+  it('annonce « à la demande », jamais une cadence que rien n’applique', () => {
+    const html = rendu(engageurs({ schedule: 'every 6h' }));
+    expect(html).toContain('À la demande');
+    expect(html).not.toContain('Toutes les 6 heures');
+  });
+
+  it('affiche la cause d’un passage qui n’a rien produit : c’est le seul endroit où l’opérateur la lit', () => {
+    const html = rendu(engageurs({ derniereCollecte: bilan }));
+    expect(html).toContain('La session LinkedIn n’est pas active');
+    expect(html).toContain('arrêté');
+  });
+
+  it('un passage réussi qui s’est arrêté sur un plafond n’est pas rendu comme une erreur', () => {
+    const html = rendu(engageurs({ derniereCollecte: { ...bilan, statut: 'success', erreur: 'Plafond de personnes par passage atteint.' } }));
+    expect(html).toContain('Plafond de personnes par passage atteint.');
+    expect(html).not.toContain('jr-texte-erreur');
+  });
+
+  it('un passage arrêté sans rien avoir vu n’affiche que sa cause, aucun compteur à zéro', () => {
+    const html = rendu(engageurs({ derniereCollecte: bilan }));
+    expect(html).toContain('La session LinkedIn n’est pas active');
+    expect(html).not.toContain('par le scoring');
+    expect(html).not.toContain('sans adresse publique');
+  });
+
+  it('un passage qui a vu des personnes montre ses compteurs', () => {
+    const html = rendu(engageurs({ derniereCollecte: { ...bilan, statut: 'success', erreur: null, vus: 12, nouveaux: 12 } }));
+    expect(html).toContain('par le scoring');
+    expect(html).toContain('sans adresse publique');
+  });
+
+  it('l’adresse du post tient sur une ligne, avec l’adresse complète au survol', () => {
+    const html = rendu(engageurs());
+    expect(html).toContain('class="jr-url-tronquee"');
+    expect(html).toContain('title="https://x"');
+  });
+
+  it('une adresse qui n’est pas en https n’est jamais un lien', () => {
+    const html = rendu(engageurs({ config: { urlPost: 'javascript:alert(1)' } }));
+    expect(html).not.toContain('<a ');
+  });
+
+  it('sans passage : « Jamais lancé »', () => {
+    expect(rendu(engageurs())).toContain('Jamais lancé');
   });
 });

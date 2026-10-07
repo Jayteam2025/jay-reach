@@ -17,7 +17,7 @@ open -a Docker >/dev/null 2>&1 || true
 for i in $(seq 1 120); do "$DOCKER" info >/dev/null 2>&1 && break; sleep 2; done
 "$DOCKER" info >/dev/null 2>&1 || { echo "[manques] DAEMON_FAIL"; exit 3; }
 
-"$DOCKER" rm -f "$CT" >/dev/null 2>&1 || true
+"$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
 "$DOCKER" run -d --name "$CT" -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=jayreach \
   -p "$PORT":5432 postgres:16-alpine >/dev/null || { echo "[manques] RUN_FAIL"; exit 4; }
 
@@ -30,7 +30,7 @@ for i in $(seq 1 90); do
   else ok=0; fi
   sleep 1
 done
-[ "$ok" -ge 2 ] || { echo "[manques] PG_NOT_READY"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 4; }
+[ "$ok" -ge 2 ] || { echo "[manques] PG_NOT_READY"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 4; }
 
 # `postgres:16-alpine` est nu : sur Supabase (hébergé comme self-hosted), le
 # schéma `extensions` existe déjà et `pgcrypto` y est préinstallé AVANT nos
@@ -39,17 +39,17 @@ done
 # plateforme, posé une fois ici plutôt que dans `auth-shim.sql` (partagé par
 # tous les harnais, hors périmètre de ce ticket).
 psql -c "create schema if not exists extensions; create extension if not exists pgcrypto with schema extensions; alter database jayreach set search_path = public, extensions;" >/dev/null \
-  || { echo "[manques] EXTENSIONS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 5; }
+  || { echo "[manques] EXTENSIONS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
 
 echo "[manques] shim auth + migrations…"
 psql < "$DIR/test/pg-verify/auth-shim.sql" >/dev/null || { echo "[manques] SHIM_FAIL"; exit 6; }
 for m in "$DIR"/supabase/migrations/*.sql; do
-  psql < "$m" >/dev/null || { echo "[manques] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 7; }
+  psql < "$m" >/dev/null || { echo "[manques] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 7; }
 done
-psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[manques] GRANTS_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 8; }
+psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[manques] GRANTS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 8; }
 
 echo "[manques] jeu d'essai (deux organisations : avec et sans clé SalesBlink)…"
-psql >/dev/null <<'SQL' || { echo "[manques] SEED_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 9; }
+psql >/dev/null <<'SQL' || { echo "[manques] SEED_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 9; }
 reset role;
 insert into auth.users(id, email) values
   ('11111111-1111-1111-1111-111111111111', 'owner-avec-cle@g7.test'),
@@ -65,9 +65,9 @@ SQL
 
 ORG_AVEC_CLE=$(psql -tAc "select id from public.organizations where slug='org-g7-avec-cle'" | tr -d '[:space:]')
 ORG_SANS_CLE=$(psql -tAc "select id from public.organizations where slug='org-g7-sans-cle'" | tr -d '[:space:]')
-[ -n "$ORG_AVEC_CLE" ] && [ -n "$ORG_SANS_CLE" ] || { echo "[manques] ORG_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 9; }
+[ -n "$ORG_AVEC_CLE" ] && [ -n "$ORG_SANS_CLE" ] || { echo "[manques] ORG_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 9; }
 
-psql >/dev/null <<SQL || { echo "[manques] SEED2_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 10; }
+psql >/dev/null <<SQL || { echo "[manques] SEED2_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 10; }
 reset role;
 -- Statut écrit comme le ferait le serveur (service_role, table directe) :
 -- une ligne 'configured' pour salesblink, uniquement pour la première org.
@@ -104,7 +104,7 @@ echo "[manques] bundle de campagnes.ts (esbuild)…"
 "$DIR/apps/worker/node_modules/.bin/esbuild" "$DIR/packages/core/src/fonctions/campagnes.ts" \
   --bundle --platform=node --format=esm --packages=external \
   --outfile="$DIR/apps/worker/_manques-bundle.mjs" >/dev/null 2>&1 \
-  || { echo "[manques] BUNDLE_FAIL"; "$DOCKER" rm -f "$CT" >/dev/null 2>&1; exit 11; }
+  || { echo "[manques] BUNDLE_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 11; }
 cp "$DIR/test/pg-verify/manques-cle-transport.mjs" "$DIR/apps/worker/_manques-runner.mjs"
 
 echo "[manques] exécution du test node…"
@@ -115,6 +115,6 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" \
 RC=$?
 
 rm -f "$DIR/apps/worker/_manques-bundle.mjs" "$DIR/apps/worker/_manques-runner.mjs"
-"$DOCKER" rm -f "$CT" >/dev/null 2>&1 || true
+"$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
 [ "$RC" -eq 0 ] && echo "[manques] VERIFY_OK" || echo "[manques] VERIFY_FAIL"
 exit "$RC"

@@ -88,9 +88,11 @@ Jay Reach décide quoi envoyer et rend le texte ; SalesBlink n'est que le transp
 
 Isoler derrière `EmailProvider` dès le premier jour, même avec une seule implémentation.
 
-### LinkedIn — Unipile, avec repli manuel
+### LinkedIn — collecte livrée, actions à venir
 
-Actions pilotées : visite de profil (réchauffement passif, 1 à 2 jours avant l'invitation), invitation avec ou sans note, message après acceptation, lecture des réponses.
+La collecte des engageurs d'un post (lot 4a) s'exécute côté serveur : navigateur dédié, session ouverte en ligne de commande, proxy résidentiel (voir `03-sources.md`). Les **actions** et la lecture des réponses LinkedIn ne sont pas encore livrées (lot 4b) ; la façon de les exécuter se décide à ce lot.
+
+Cadre prévu pour les actions, à livrer avec elles : visite de profil (réchauffement passif, 1 à 2 jours avant l'invitation), invitation avec ou sans note, message après acceptation, lecture des réponses.
 
 Garde-fous **en dur**, non contournables par configuration :
 - 20 invitations par jour et par compte, plafond absolu
@@ -99,8 +101,6 @@ Garde-fous **en dur**, non contournables par configuration :
 - aucune action hors fenêtre horaire
 - montée en charge sur 14 jours pour un compte fraîchement connecté
 - **un seul provider LinkedIn actif par compte** — deux outils sur le même profil font sauter le compte
-
-Le mode `manual` produit une liste d'actions à faire à la main, exportable, message pré-rédigé à copier. Zéro risque, zéro coût. C'est ce que beaucoup d'utilisateurs prudents choisiront.
 
 Avertissement affiché à la connexion d'un compte : ces API ne sont pas officielles, l'automatisation contrevient aux conditions d'utilisation de la plateforme, le risque de restriction est assumé par l'utilisateur.
 

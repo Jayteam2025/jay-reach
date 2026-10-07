@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Bouton, Carte, Champ, EtatVide, Menu, Puce, TuileLogo } from '../../ui';
 import type { GroupeMenu } from '../../ui';
 import {
@@ -72,13 +72,15 @@ export interface EtapeSourcesLibelles {
   formLinkedinKeepPeople: string;
   formLinkedinCommented: string;
   formLinkedinReacted: string;
-  formLinkedinExcludeFirstDegree: string;
+  formLinkedinPostOneCampaign: string;
   formLinkedinCompetitorPages: string;
   formLinkedinTopics: string;
   formLinkedinSinceDays: string;
   formLinkedinAccountId: string;
   formLinkedinProfilesPerDay: string;
   formLinkedinErreur: string;
+  /** Bandeau du formulaire des engageurs d'un post : l'assistant crée toujours un brouillon. */
+  formLinkedinBrouillon: string;
   resumeLinkedin: (n: number) => string;
   formAjouter: string;
   formAnnuler: string;
@@ -139,7 +141,9 @@ export function construireConfigOffre(
 /**
  * Groupes du menu « + Ajouter une source » (maquette `nouvelle-campagne-2.html`,
  * tour de correction 1, R57) : Offres d'emploi, LinkedIn (badge « collecte
- * activée au lot 4 », comme l'onglet Sources de la tâche 11) et Manuel
+ * activée avec le canal LinkedIn » sur les trois types que le serveur ne collecte pas encore ;
+ * les engageurs d'un post n'en portent plus, ils le disent par le bandeau de brouillon du
+ * formulaire) et Manuel
  * (Fichier CSV, affiché mais inerte — l'import exige une campagne déjà créée).
  * Pure et exportée pour être testée sans ouvrir le menu (état interne du
  * composant, invisible à `renderToStaticMarkup`).
@@ -174,7 +178,7 @@ export function construireGroupesMenu(
           icone: <TuileLogo marque="linkedin" />,
           titre: (
             <>
-              {libelles.menuLinkedinPostEngagersTitre} {badgeLinkedin}
+              {libelles.menuLinkedinPostEngagersTitre}
             </>
           ),
           description: libelles.menuLinkedinPostEngagersDescription,
@@ -226,12 +230,25 @@ export function construireGroupesMenu(
   ];
 }
 
+/**
+ * Bandeau du formulaire des engageurs d'un post : l'assistant crée TOUJOURS un brouillon, donc
+ * l'avertissement est vrai quoi qu'il arrive. Pure et exportée : le formulaire n'apparaît qu'après
+ * un clic (état interne), invisible à `renderToStaticMarkup`.
+ */
+export function bandeauBrouillonLinkedin(providerId: ProviderIdAssistant, libelles: EtapeSourcesLibelles): ReactNode {
+  if (providerId !== 'linkedin_post_engagers') return null;
+  return <div className="jr-bandeau attention">{libelles.formLinkedinBrouillon}</div>;
+}
+
 function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): string {
   if (source.providerId === 'adzuna' || source.providerId === 'france_travail') {
     const morceaux = [asListeChaines(source.config.motsCles).join(', ')];
     const lieux = asListeChaines(source.config.lieux);
     if (lieux.length > 0) morceaux.push(lieux.join(', '));
     return morceaux.join(' · ');
+  }
+  if (source.providerId === 'linkedin_post_engagers') {
+    return typeof source.config.urlPost === 'string' ? source.config.urlPost : '';
   }
   const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
   return libelles.resumeLinkedin(profilsParJour);
@@ -246,7 +263,7 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
  * Catalogue complet de la maquette (tour de correction 1, R57) : Offres
  * d'emploi (Adzuna, France Travail), les quatre sources LinkedIn — réglables
  * dès l'assistant via `ChampsSourceLinkedIn`, partagé avec le tiroir de
- * l'onglet Sources (tâche 11) ; la collecte elle-même ne démarre qu'au lot 4 —
+ * l'onglet Sources (tâche 11) ; seule la collecte des engageurs d'un post existe (lot 4a) —
  * et Manuel (Fichier CSV, affiché mais désactivé : l'import exige une
  * campagne déjà créée, `importerCsv`).
  */
@@ -357,7 +374,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
             <small>{resumeSource(source, libelles)}</small>
           </span>
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {estLinkedIn(source.providerId) && badgeLinkedin}
+            {estLinkedIn(source.providerId) && source.providerId !== 'linkedin_post_engagers' && badgeLinkedin}
             <Bouton taille="petit" onClick={() => onRetirer(source.cle)} disabled={disabled}>
               {libelles.retirer}
             </Bouton>
@@ -367,6 +384,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
 
       {ajoutEnCours && estLinkedIn(ajoutEnCours) && (
         <div className="jr-formulaire">
+          {bandeauBrouillonLinkedin(ajoutEnCours, libelles)}
           <Champ libelle={libelles.formNom} id="assistant-sources-nom">
             <input id="assistant-sources-nom" name="nom" value={nom} onChange={(e) => setNom(e.target.value)} disabled={disabled} />
           </Champ>
@@ -381,7 +399,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               keepPeople: libelles.formLinkedinKeepPeople,
               commented: libelles.formLinkedinCommented,
               reacted: libelles.formLinkedinReacted,
-              excludeFirstDegree: libelles.formLinkedinExcludeFirstDegree,
+              postOneCampaign: libelles.formLinkedinPostOneCampaign,
               competitorPages: libelles.formLinkedinCompetitorPages,
               topics: libelles.formLinkedinTopics,
               sinceDays: libelles.formLinkedinSinceDays,

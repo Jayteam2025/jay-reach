@@ -90,3 +90,12 @@ describe('mise en page sous 1240 px', () => {
     }
   });
 });
+
+// `.jr-app svg` peint TOUT svg en trait sans remplissage (`fill: none`) : sans une règle plus
+// spécifique, le logo LinkedIn des lignes d'état sortait noir. La mesure réelle vit dans le parcours
+// `e2e/linkedin-source.spec.ts` (style calculé) ; ceci garde la règle qui la rend vraie.
+describe('logo LinkedIn en ligne : la couleur de marque l’emporte sur la règle globale des svg', () => {
+  it('`.jr-app svg.jr-ico-li` existe, plus spécifique que `.jr-app svg`, et remplit avec --jr-linkedin', () => {
+    expect(css).toMatch(/\.jr-app svg\.jr-ico-li\s*\{[^}]*fill:\s*var\(--jr-linkedin\)[^}]*stroke:\s*none/);
+  });
+});

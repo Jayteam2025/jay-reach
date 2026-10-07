@@ -11,6 +11,8 @@ import { actionActiverSourceCampagne } from '../../app/actions/sources';
 export interface BlocCarteSource {
   readonly libelle: string;
   readonly contenu: ReactNode;
+  /** Occupe toute la ligne de la grille : pour un bloc dont le texte est long (le bilan d'un passage de collecte). */
+  readonly pleineLargeur?: boolean;
 }
 
 export interface CarteSourceProps {
@@ -21,11 +23,13 @@ export interface CarteSourceProps {
   readonly titre: string;
   readonly sousTitre: string;
   readonly active: boolean;
-  /** Faux pour les quatre types `linkedin_*` (lot 4) : puce à la place de l'interrupteur. */
+  /** Faux pour les types `linkedin_*` que le serveur ne collecte pas encore (`collecteImplementee`) : puce à la place de l'interrupteur. */
   readonly collecteDisponible: boolean;
   readonly blocs: BlocCarteSource[];
   /** `null` masque le bloc « Retenus sur 7 jours » (pas de sens pour une source qui n'a jamais tourné). */
   readonly retenus7j: number[] | null;
+  /** Le nombre seul, sans mini-graphe : une source qui ne tourne qu'à la demande n'a pas sept jours de courbe à montrer. */
+  readonly sansGraphe?: boolean;
 }
 
 /**
@@ -45,6 +49,7 @@ export function CarteSource({
   collecteDisponible,
   blocs,
   retenus7j,
+  sansGraphe = false,
 }: CarteSourceProps) {
   const t = useTranslations('campagne.sources.card');
   const [pending, startTransition] = useTransition();
@@ -102,7 +107,7 @@ export function CarteSource({
       </div>
       <div className="jr-corps jr-blocs">
         {blocs.map((bloc, index) => (
-          <div key={index}>
+          <div key={index} className={bloc.pleineLargeur ? 'jr-bloc-large' : undefined}>
             <span className="jr-libelle">{bloc.libelle}</span>
             <div>{bloc.contenu}</div>
           </div>
@@ -112,7 +117,7 @@ export function CarteSource({
             <span className="jr-libelle">{t('trend7d')}</span>
             <div className="jr-valeur-tendance">
               <b>{retenus7j.reduce((a, b) => a + b, 0)}</b>
-              <Tendance valeurs={retenus7j} />
+              {!sansGraphe && <Tendance valeurs={retenus7j} />}
             </div>
           </div>
         )}

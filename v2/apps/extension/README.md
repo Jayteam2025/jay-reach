@@ -1,5 +1,12 @@
 # Jay Reach — Extension LinkedIn (interne)
 
+> **GELEE depuis le 06/10/2026 (lot 4a).** Le travail LinkedIn passe par le
+> serveur. Le code est conserve (regle 1) mais ne s'execute plus : motifs
+> d'injection et `externally_connectable` du manifeste pointent vers
+> `extension-gelee.invalid`, et `EXTENSION_GELEE = true` dans `background.js`
+> coupe alarmes, poll, releve et messages externes. Pour la reveiller, voir le
+> commentaire en tete de `background.js` ; `gel.test.ts` garde la porte fermee.
+
 Extension Chrome (Manifest V3) qui exécute les **actions LinkedIn** de Jay Reach
 — **invitations** et **messages (DM)** — via l'API interne **Voyager** de
 LinkedIn, avec la **propre session** de l'utilisateur. Reprise de l'extension

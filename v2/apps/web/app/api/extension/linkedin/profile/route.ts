@@ -11,6 +11,7 @@
  * l'identifiant public d'un profil ne sont pas des secrets : ce sont ceux que
  * LinkedIn affiche à quiconque visite la page.
  */
+import { refusCanalGele } from '../../../../../lib/linkedin/canal-extension-gele';
 import { createHash } from 'node:crypto';
 import { getPool } from '../../../../../lib/db';
 import { validateToken } from '../../../../../lib/linkedin/queue';
@@ -28,6 +29,8 @@ function nettoyer(valeur: unknown): string | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const gele = refusCanalGele();
+  if (gele) return gele;
   let corps: { token?: unknown; name?: unknown; publicIdentifier?: unknown };
   try {
     corps = (await req.json()) as typeof corps;

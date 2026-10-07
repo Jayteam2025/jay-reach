@@ -135,15 +135,21 @@ async function main() {
   check('après l’intervalle → nouveau claim', claim2.action !== null, claim2.reason ?? 'ok');
 
   console.log('\n[lkq] 6. Pacing : plafond quotidien (curseur)');
-  await pool.query(`update linkedin_settings set daily_cap = 1 where organization_id = $1`, [ORG]);
+  // Le plafond quotidien se DÉDUIT du curseur hebdomadaire (`ceil(weekly_cap / jours d'envoi)`), `daily_cap` est ignorée :
+  // 5 par semaine sur cinq jours donnent 1 par jour.
+  await pool.query(`update linkedin_settings set weekly_cap = 5 where organization_id = $1`, [ORG]);
   // 1 déjà envoyé aujourd'hui, cap = 1 → refus même hors intervalle.
   const capped = await claimNext(pool, ORG, new Date(inWindow.getTime() + 60 * 60_000));
   check('plafond quotidien atteint → daily_cap_reached', capped.reason === 'daily_cap_reached', capped.reason);
 
   console.log('\n[lkq] 7. Mode manuel');
-  await pool.query(`update linkedin_settings set mode = 'manual', daily_cap = 25 where organization_id = $1`, [ORG]);
-  const manual = await claimNext(pool, ORG, new Date(inWindow.getTime() + 2 * 60 * 60_000));
-  check('mode manuel → manual_mode', manual.reason === 'manual_mode', manual.reason);
+  // Depuis la migration 20260831160000, seul `auto` existe (`check (mode = 'auto')`) : le mode manuel ne peut plus
+  // être posé en base, la branche `manual_mode` de `claimNext` est inatteignable. On prouve le refus, pas la branche.
+  await pool.query(`update linkedin_settings set weekly_cap = 100 where organization_id = $1`, [ORG]);
+  const refusManuel = await pool
+    .query(`update linkedin_settings set mode = 'manual' where organization_id = $1`, [ORG])
+    .then(() => null, (e) => e.code);
+  check('le mode manuel est refusé par la contrainte (seul « auto » existe)', refusManuel === '23514', String(refusManuel));
 
   console.log('\n[lkq] 8. Requeue des lignes bloquées en processing');
   await pool.query(`update linkedin_settings set mode = 'auto' where organization_id = $1`, [ORG]);

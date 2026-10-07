@@ -107,6 +107,27 @@ function estTypeLinkedIn(v: string): v is (typeof TYPES_LINKEDIN)[number] {
   return (TYPES_LINKEDIN as readonly string[]).includes(v);
 }
 
+/**
+ * Décision d'AFFICHAGE : la carte montre-t-elle l'interrupteur actif/pause (vrai) ou la puce
+ * « en attente » (faux) ? Lot 4a : le serveur collecte les engageurs d'un post ; les trois
+ * autres types LinkedIn n'ont pas de collecteur.
+ *
+ * Ne décide PAS d'écrire dans `source_providers` : voir `providerIdReel`. Les deux questions
+ * n'ont rien à voir, et les confondre en une seule donnée a failli écrire une ligne au
+ * `provider_id` nul pour une source LinkedIn.
+ */
+export function collecteImplementee(providerId: string): boolean {
+  return !estTypeLinkedIn(providerId) || providerId === 'linkedin_post_engagers';
+}
+
+/**
+ * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
+ * n'en a pas (une source LinkedIn se repère par `config.sourceType`, jamais par cette table).
+ */
+export function providerIdReel(providerId: TypeSource): string | null {
+  return providerId === 'adzuna' || providerId === 'france_travail' ? PROVIDER_ID_REEL[providerId] : null;
+}
+
 // ---------------------------------------------------------------------------
 // Schémas de `config` par type (formulaires des tiroirs)
 // ---------------------------------------------------------------------------
@@ -152,9 +173,8 @@ export const configLinkedInPost = z
   .object({
     urlPost: z.string().min(1),
     garder: z.array(z.enum(['commente', 'reagi'])).min(1),
-    exclurePremierDegre: z.boolean().default(true),
-    compteId: z.string().min(1),
-    profilsParJour: z.number().int().positive().max(200).default(40),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
   })
   .strict();
 export type ConfigLinkedInPost = z.infer<typeof configLinkedInPost>;
@@ -309,9 +329,7 @@ export function configFormulaireDepuisStockee(
       garder: tableauDeChaines(c.garder).filter(
         (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
       ),
-      exclurePremierDegre: typeof c.exclurePremierDegre === 'boolean' ? c.exclurePremierDegre : true,
-      compteId: chaineOuVide(c.compteId),
-      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+      personaId: chaineOuIndefinie(c.personaId),
     };
   }
   if (providerId === 'linkedin_competitor_followers') {
@@ -408,6 +426,29 @@ function resoudreProviders(
 
 export const schemaCampagneIdSource = z.object({ campagneId: z.string().uuid() });
 
+/** Le bilan d'un passage de collecte : les quatre issues de la spec §5.4 et ce qu'il faut pour les lire. */
+export interface BilanCollecte {
+  readonly quand: string;
+  /** `running` tant que le passage n'est pas clos. */
+  readonly statut: 'running' | 'success' | 'error';
+  /** Message du passage (cause d'un échec, ou plafond atteint sur un passage réussi) ; jamais de clé ni d'URL de proxy. */
+  readonly erreur: string | null;
+  readonly requetes: number;
+  readonly vus: number;
+  readonly nouveaux: number;
+  readonly doublons: number;
+  readonly dejaEnCampagne: number;
+  /** Écartées par le scoring depuis la collecte (le scoring juge souvent des passages plus tard). */
+  readonly ecartes: number;
+  /** Profils que la réponse Voyager n'a pas renseignés assez. */
+  readonly ignores: number;
+  /** Personnes laissées de côté parce qu'elles se sont opposées. */
+  readonly opposes: number;
+  /** Nouvelles personnes enregistrées sous une adresse déduite : ni cherchables ni enrichissables. */
+  readonly adressesDeduites: number;
+  readonly plafondPersonnesAtteint: boolean;
+}
+
 export interface SourceCarte {
   readonly id: string;
   /** Principal (R44) : celui dont le libellé apparaît dans le nom de la source, sinon le premier alphabétique. */
@@ -420,6 +461,12 @@ export interface SourceCarte {
   readonly schedule: string;
   readonly active: boolean;
   readonly dernierPassage: { quand: string; lus: number; retenus: number; ignores: number } | null;
+  /**
+   * Le bilan du dernier passage d'une source LinkedIn (`source_runs`, migrations 130310 et du bilan),
+   * `null` hors LinkedIn ou sans passage. `erreur` y dit POURQUOI un passage n'a rien produit : c'est le seul
+   * endroit où l'opérateur le lit, sans passer par les journaux du VPS.
+   */
+  readonly derniereCollecte: BilanCollecte | null;
   readonly prochainPassage: string | null;
   /** Sept valeurs, la plus ancienne d'abord (aujourd'hui inclus en dernier). */
   readonly retenus7j: number[];
@@ -427,7 +474,7 @@ export interface SourceCarte {
   readonly totalLu: number;
   /** Date du tout premier passage, `null` si la source n'a jamais tourné (masque la puce). */
   readonly premierPassage: string | null;
-  /** Faux pour les quatre types `linkedin_*` tant que le worker ne les exécute pas (lot 4). */
+  /** Faux pour les types `linkedin_*` que le serveur ne collecte pas encore (tout sauf les engageurs d'un post, lot 4a). */
   readonly collecteDisponible: boolean;
   /**
    * R72 : vrai si au moins une campagne rattachée (`campaign_sources`, toutes
@@ -484,12 +531,31 @@ export async function listerSourcesCampagne(
   const fuseau = String((await lireReglages(ctx)).fuseau);
 
   const [passages, resumes, tendances, providers, campagnesActives] = await Promise.all([
-    ctx.ex.query<{ source_id: string; started_at: string; items_found: number; items_new: number }>(
+    ctx.ex.query<{
+      source_id: string;
+      started_at: string;
+      items_found: number;
+      items_new: number;
+      status: string;
+      error: string | null;
+      requetes: number;
+      vus: number;
+      nouveaux: number;
+      doublons: number;
+      deja_en_campagne: number;
+      ecartes: number;
+      ignores: number;
+      opposes: number;
+      adresses_deduites: number;
+      plafond_personnes_atteint: boolean;
+    }>(
       // Un seul run par source (`distinct on`, le plus récent) : les runs plus
       // anciens ne sont pas rattachés à un fournisseur avant la bascule vers
       // les thèmes (commentaire de la migration), `source_id` reste donc la
       // seule clé fiable pour « le dernier passage de cette carte ».
-      `select distinct on (source_id) source_id, started_at, items_found, items_new
+      `select distinct on (source_id) source_id, started_at, items_found, items_new,
+              status, error, requetes, vus, nouveaux, doublons, deja_en_campagne, ecartes,
+              ignores, opposes, adresses_deduites, plafond_personnes_atteint
          from source_runs /* jr:sources_dernier_passage */
         where source_id = any($1::uuid[])
         order by source_id, started_at desc`,
@@ -569,6 +635,24 @@ export async function listerSourcesCampagne(
           ignores: Math.max(0, passage.items_found - passage.items_new),
         }
       : null;
+    const derniereCollecte: BilanCollecte | null =
+      passage && providerId.startsWith('linkedin_')
+        ? {
+            quand: passage.started_at,
+            statut: passage.status === 'success' || passage.status === 'error' ? passage.status : 'running',
+            erreur: passage.error,
+            requetes: passage.requetes,
+            vus: passage.vus,
+            nouveaux: passage.nouveaux,
+            doublons: passage.doublons,
+            dejaEnCampagne: passage.deja_en_campagne,
+            ecartes: passage.ecartes,
+            ignores: passage.ignores,
+            opposes: passage.opposes,
+            adressesDeduites: passage.adresses_deduites,
+            plafondPersonnesAtteint: passage.plafond_personnes_atteint,
+          }
+        : null;
     const prochainPassage = dernierPassage
       ? new Date(
           new Date(dernierPassage.quand).getTime() + heuresDeSchedule(row.schedule) * 3_600_000,
@@ -592,11 +676,12 @@ export async function listerSourcesCampagne(
       schedule: row.schedule ?? 'every 6h',
       active: row.is_active,
       dernierPassage,
+      derniereCollecte,
       prochainPassage,
       retenus7j,
       totalLu: resume?.total ?? 0,
       premierPassage: resume?.premier ?? null,
-      collecteDisponible: !estTypeLinkedIn(providerId),
+      collecteDisponible: collecteImplementee(providerId),
       campagneActive: idsAvecCampagneActive.has(row.id),
     };
   });
@@ -622,12 +707,164 @@ export const schemaCreerSource = z.object({
   schedule: schemaSchedule.default('every 6h'),
 });
 
-async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<void> {
-  const res = await ctx.ex.query<{ id: string }>(
-    `select id from campaigns /* jr:sources_campagne */ where id = $1 and organization_id = $2`,
+async function verifierCampagne(ctx: Contexte, campagneId: string): Promise<{ personas: string[] }> {
+  const res = await ctx.ex.query<{ id: string; entry_rules: { personas?: unknown } | null }>(
+    `select id, entry_rules from campaigns /* jr:sources_campagne */ where id = $1 and organization_id = $2`,
     [campagneId, ctx.organisationId],
   );
   if (res.rowCount === 0) throw new ErreurIntrouvable('Campagne');
+  const personas = res.rows[0]?.entry_rules?.personas;
+  return { personas: Array.isArray(personas) ? personas.filter((p): p is string => typeof p === 'string') : [] };
+}
+
+/**
+ * Forme canonique d'une adresse de profil LinkedIn (hôte `www.linkedin.com`,
+ * sans paramètres, ancre ni barre finale), pour que deux écritures de la même
+ * adresse soient reconnues comme la même personne — par l'index unique
+ * `contacts_org_linkedin_url_uidx` comme par une recherche. Une adresse qui
+ * n'est pas un profil LinkedIn est refusée (null) : elle ne doit pas devenir
+ * l'identité d'un contact.
+ *
+ * Vit ICI, et non dans le worker, parce que les TROIS chemins qui écrivent une
+ * adresse de profil doivent s'accorder : le collecteur d'engageurs,
+ * l'enrichissement, et l'import de fichier. Deux graphies non réconciliées ne
+ * lèvent aucun conflit — elles produisent deux fiches pour une seule personne,
+ * un défaut plus silencieux et plus durable qu'une erreur d'insertion.
+ */
+export function normaliserUrlProfil(url: string): string | null {
+  const brut = url.trim();
+  // Un fichier porte souvent l'adresse sans schéma (`linkedin.com/in/jdoe`), que
+  // `new URL` refuse — alors que `normalizeLinkedin`, qui dédoublonne DANS le
+  // fichier, l'accepte. Sans ce préfixe, la même personne passe deux fois.
+  const avecSchema = brut.includes('://') ? brut : `https://${brut}`;
+  try {
+    const u = new URL(avecSchema);
+    const hote = u.hostname.toLowerCase();
+    if (hote !== 'linkedin.com' && !hote.endsWith('.linkedin.com')) return null;
+    const m = /^\/in\/([^/]+)/.exec(u.pathname);
+    // La CASSE du slug est conservée, volontairement. Cette fonction ne sert pas
+    // qu'à écrire : elle sert aussi à RETROUVER une fiche par son adresse, et
+    // elle ne peut pas savoir si l'adresse qu'on lui passe est publique (casse
+    // non signifiante) ou fabriquée à partir d'un URN par `lienProfilDeduit`
+    // (`/in/ACoAA…`, casse signifiante). Minusculiser ici romprait le second cas :
+    // mesuré, cinq contrôles du harnais passent au rouge. L'alignement de casse
+    // se fait donc là où l'on SAIT que la valeur a été saisie à la main, dans
+    // l'import de fichier.
+    return m?.[1] ? `https://www.linkedin.com/in/${m[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** La partie stable d'un URN (`urn:li:fsd_profile:ACoAA…` -> `ACoAA…`). */
+export function identifiantMembre(urn: string): string {
+  const morceaux = urn.split(':');
+  return morceaux[morceaux.length - 1] ?? urn;
+}
+
+/**
+ * Adresse de profil déduite de l'URN : REPLI, et HYPOTHÈSE non vérifiée. Le
+ * dernier segment d'un URN de profil est un identifiant interne, pas le nom
+ * public qui compose d'ordinaire les adresses `/in/` : LinkedIn peut ne pas la
+ * résoudre. Elle reste stable d'un passage à l'autre, ce qui suffit à l'index
+ * unique des contacts, mais l'enrichissement ne doit pas compter dessus : le
+ * collecteur fournit `urlProfil` dès qu'il le peut.
+ *
+ * Accepte aussi un identifiant de membre nu (`ACoAA…`, tel que `contacts.linkedin_provider_id`
+ * le garde) : le dernier segment d'une chaîne sans `:` est la chaîne elle-même. Vit dans
+ * le cœur parce que la collecte (worker) ET l'opposition (`nePlusContacter`) doivent
+ * fabriquer LA MÊME graphie : une opposition posée sur une seule des deux ne tient pas.
+ */
+export function lienProfilDeduit(urn: string): string {
+  return `https://www.linkedin.com/in/${identifiantMembre(urn)}`;
+}
+
+/**
+ * Identité d'un post, pour les comparer. LinkedIn sert le même post sous
+ * plusieurs formes (`/posts/…_activity-7271…`, `/feed/update/urn:li:activity:7271…`,
+ * `fr.linkedin.com`, `www.linkedin.com`) : quand l'adresse porte un identifiant
+ * d'activité, c'est lui qui fait foi. À défaut, adresse normalisée : hôte en
+ * minuscules sans `www.` (ni sous-domaine de pays pour LinkedIn), sans paramètres
+ * de partage, sans ancre, sans barre finale ; chemin et casse conservés, donc
+ * deux posts réellement distincts le restent.
+ */
+export function normaliserUrlPost(url: string): string {
+  const brut = url.trim();
+  let lisible = brut;
+  try {
+    lisible = decodeURIComponent(brut);
+  } catch {
+    // adresse mal encodée : on compare telle quelle
+  }
+  try {
+    const u = new URL(brut);
+    const hote = u.host.toLowerCase().replace(/^www\./, '');
+    const linkedin = hote === 'linkedin.com' || hote.endsWith('.linkedin.com');
+    if (linkedin) {
+      const activite = /(?:activity|ugcPost|share)[-:](\d+)/i.exec(lisible);
+      if (activite) return `linkedin:${activite[1]}`;
+    }
+    const hoteCanonique = linkedin ? 'linkedin.com' : hote;
+    return `${u.protocol}//${hoteCanonique}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return brut.toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+/** Plusieurs personas : on demande lequel ; un persona donné doit toujours appartenir à la campagne (création, modification, réglages). */
+export function personaSourceValide(personas: readonly string[], personaId: string | undefined): boolean {
+  const manquant = personas.length > 1 && !personaId;
+  const etranger = personaId !== undefined && !personas.includes(personaId);
+  return !manquant && !etranger;
+}
+
+export function exigerPersonaSource(personas: readonly string[], personaId: string | undefined): void {
+  if (!personaSourceValide(personas, personaId)) {
+    const manquant = personas.length > 1 && !personaId;
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: {
+        personaId: [
+          manquant
+            ? 'Cette campagne porte plusieurs personas : choisissez celui de la source.'
+            : 'Ce persona ne fait pas partie de la campagne.',
+        ],
+      },
+    });
+  }
+}
+
+/**
+ * Règle « un post ne sert qu'à une seule campagne » : sans elle,
+ * `enqueueEnrollments` fait entrer la personne dans la campagne la plus
+ * ancienne, sans trace, et l'autre campagne affiche « 0 nouveau ».
+ * Les sources sont en N-N avec les campagnes (`campaign_sources`) : la règle
+ * se pose donc ici, dans les fonctions qui écrivent le lien, jamais dans l'écran.
+ *
+ * Refuse si une AUTRE source de l'organisation (`sourceIgnoree` : la source
+ * qu'on modifie) porte le même post et est reliée à une campagne, quelle
+ * qu'elle soit, la même comprise : même règle à la création et à la modification.
+ */
+export async function exigerPostLibre(
+  ctx: Contexte,
+  urlPost: string,
+  sourceIgnoree: string | null,
+): Promise<void> {
+  const res = await ctx.ex.query<{ url: string | null }>(
+    `select s.config->>'urlPost' as url
+       from sources s join campaign_sources cs on cs.source_id = s.id /* jr:post_deja_pris */
+      where s.organization_id = $1
+        and s.config->>'sourceType' = 'linkedin_post_engagers'
+        and ($2::uuid is null or s.id <> $2::uuid)`,
+    [ctx.organisationId, sourceIgnoree],
+  );
+  const cible = normaliserUrlPost(urlPost);
+  if (res.rows.some((r) => r.url !== null && normaliserUrlPost(r.url) === cible)) {
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: { urlPost: ['Un post ne peut servir qu’à une seule campagne.'] },
+    });
+  }
 }
 
 /**
@@ -648,12 +885,15 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
       fieldErrors: { providerId: ['Ce type de source ne se crée pas par ce formulaire.'] },
     });
   }
-  await verifierCampagne(ctx, campagneId);
+  const { personas } = await verifierCampagne(ctx, campagneId);
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
+  if (providerId === 'linkedin_post_engagers') {
+    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
+    exigerPersonaSource(personas, personaId);
+    await exigerPostLibre(ctx, urlPost, null);
+  }
   const configStocke = construireConfigStocke(providerId, configValide);
-  const collecteDisponible = !estTypeLinkedIn(providerId);
-
   const sourceRes = await ctx.ex.query<{ id: string }>(
     `insert into sources (organization_id, name, config, schedule, is_active) /* jr:sources_creer */
      values ($1, $2, $3::jsonb, $4, true) returning id`,
@@ -666,8 +906,8 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
     [campagneId, sourceId],
   );
 
-  if (collecteDisponible) {
-    const providerReel = PROVIDER_ID_REEL[providerId as 'adzuna' | 'france_travail'];
+  const providerReel = providerIdReel(providerId);
+  if (providerReel !== null) {
     await ctx.ex.query(
       `insert into source_providers (source_id, provider_id, is_active) /* jr:sources_provider_creer */ values ($1, $2, true)`,
       [sourceId, providerReel],
@@ -722,6 +962,22 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   )[0]!;
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
+  if (providerId === 'linkedin_post_engagers') {
+    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
+    const campagnesRes = await ctx.ex.query<{ personas: unknown }>(
+      `select c.entry_rules->'personas' as personas
+         from campaign_sources cs join campaigns c on c.id = cs.campaign_id /* jr:sources_personas_campagnes */
+        where cs.source_id = $1 and c.organization_id = $2`,
+      [sourceId, ctx.organisationId],
+    );
+    for (const c of campagnesRes.rows) {
+      exigerPersonaSource(
+        Array.isArray(c.personas) ? c.personas.filter((p): p is string => typeof p === 'string') : [],
+        personaId,
+      );
+    }
+    await exigerPostLibre(ctx, urlPost, sourceId);
+  }
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
   // créée avant ce lot porte des clés que ce formulaire ne gère pas
   // (`scoring_prompt`, `match_threshold`, `exclude_keywords` — R30, vérifié
@@ -730,6 +986,10 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
     ...(ligne.config ?? {}),
     ...construireConfigStocke(providerId, configValide),
   };
+  // Le formulaire envoie la config complète : un `personaId` absent a été retiré, il ne doit pas survivre à la fusion.
+  if (providerId === 'linkedin_post_engagers' && (configValide as ConfigLinkedInPost).personaId === undefined) {
+    delete (configStocke as Record<string, unknown>).personaId;
+  }
 
   const ecriture = await ctx.ex.query(
     `update sources /* jr:sources_modifier */ set name = $2, config = $3::jsonb, schedule = $4
@@ -950,12 +1210,120 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
 
   let contactsNouveaux = 0;
   let dejaConnus = 0;
+
+  /**
+   * Une personne peut DÉJÀ être un contact sous cette adresse LinkedIn : née
+   * d'un engageur de post, ou d'un import précédent. L'index unique partiel
+   * `contacts_org_linkedin_url_uidx` refuse alors l'insertion (23505). On la
+   * retrouve et on la rattache à la liste, comme on le fait depuis toujours sur
+   * l'email — ni doublon, ni erreur d'import.
+   *
+   * Le fichier ne fait que COMBLER ce qui manque (coalesce) : un contact garde
+   * son email, sa liste d'origine et son `enriched_at`. Cet `enriched_at` n'est
+   * jamais posé ici — un email lu dans un fichier n'est pas un email acheté, et
+   * la purge d'ancienneté distingue les deux (cf. `ecarterSignauxTropAnciens`).
+   */
+  const rattacherParAdresseLinkedin = async (
+    url: string,
+    row: MappedRow,
+    accountId: string | null,
+    email: string | null,
+  ): Promise<string | null> => {
+    const champs = [
+      ctx.organisationId,
+      url,
+      valeurDe(row, 'first_name'),
+      valeurDe(row, 'last_name'),
+      valeurDe(row, 'job_title'),
+      accountId,
+      listId,
+    ];
+    const rattacher = (avecEmail: boolean) =>
+      ctx.ex.query<{ id: string }>(
+        `update contacts set /* jr:sources_csv_contact_linkedin */
+           first_name = coalesce(first_name, $3),
+           last_name = coalesce(last_name, $4),
+           job_title = coalesce(job_title, $5),
+           account_id = coalesce(account_id, $6),
+           source_list_id = coalesce(source_list_id, $7)${avecEmail ? ',\n           email = coalesce(email, $8)' : ''}
+         where organization_id = $1 and linkedin_url = $2
+         returning id`,
+        avecEmail ? [...champs, email] : champs,
+      );
+    try {
+      const r = await rattacher(email !== null);
+      return r.rows[0]?.id ?? null;
+    } catch (err) {
+      // 23505 : l'email du fichier appartient déjà à une AUTRE fiche. On ne
+      // fusionne pas deux contacts ici ; celui-ci est rattaché sans son email.
+      if ((err as { code?: string }).code !== '23505') throw err;
+      const r = await rattacher(false);
+      return r.rows[0]?.id ?? null;
+    }
+  };
+
   for (const row of outcome.rows) {
     const accountId = await resoudreCompteImport(ctx, row);
     const email = valeurDe(row, 'email');
-    let contactId: string;
-    if (email) {
-      const c = await ctx.ex.query<{ id: string; inserted: boolean }>(
+    // Forme canonique AVANT toute écriture : le fichier écrit ce que l'opérateur
+    // a collé (`fr.linkedin.com/in/x/?trk=…`), le collecteur d'engageurs écrit la
+    // forme canonique. Sans réconciliation, aucun conflit n'est levé et la même
+    // personne existe deux fois — silencieusement.
+    //
+    // Ce qui n'est PAS un profil est écarté (null), jamais gardé tel quel : cette
+    // valeur sert ensuite de clé d'identité (`rattacherParAdresseLinkedin`). Un
+    // `-`, un `N/A` ou l'adresse d'une page entreprise recopiée sur chaque ligne
+    // deviendrait l'identité commune de tout le fichier — la première ligne crée
+    // un contact, toutes les autres se rattachent dessus en coalesce, perdent
+    // leur nom et leur poste, et sont comptées « déjà connues ». Trois cents
+    // personnes rendraient un seul contact, sans la moindre erreur. La valeur
+    // d'origine n'est pas perdue : `list_members.raw_row` garde la ligne entière.
+    //
+    // Slug en MINUSCULES, et seulement ici : une adresse de fichier est saisie ou
+    // collée à la main, sa casse n'est pas signifiante (`normalizeLinkedin`, qui
+    // dédoublonne dans le fichier, la minusculise déjà). Sans cela,
+    // `/in/Alexandre-Declercq` du fichier et `/in/alexandre-declercq` lu chez
+    // LinkedIn font deux fiches. `normaliserUrlProfil`, elle, ne minusculise pas :
+    // elle sert aussi aux adresses fabriquées à partir d'un URN, où la casse
+    // compte.
+    const urlBrute = valeurDe(row, 'linkedin_url');
+    const linkedinUrl = (urlBrute === null ? null : normaliserUrlProfil(urlBrute))?.toLowerCase() ?? null;
+    let contactId: string | undefined;
+
+    if (linkedinUrl !== null) {
+      const id = await rattacherParAdresseLinkedin(linkedinUrl, row, accountId, email);
+      if (id !== null) {
+        contactId = id;
+        dejaConnus += 1;
+      }
+    }
+
+    /**
+     * La course : entre la recherche ci-dessus et cette insertion, un autre
+     * import ou le collecteur d'engageurs a pu créer la fiche. L'index la refuse
+     * alors ; on rejoue la recherche, qui la trouve cette fois. Seule une
+     * violation de CET index est rattrapée — un autre 23505 reste une erreur.
+     */
+    const insererOuRattraper = async <T extends { id: string }>(
+      requete: () => Promise<{ rows: T[] }>,
+    ): Promise<{ ligne: T | null; rattrape: boolean }> => {
+      try {
+        const r = await requete();
+        return { ligne: r.rows[0] ?? null, rattrape: false };
+      } catch (err) {
+        const e = err as { code?: string; constraint?: string };
+        if (e.code !== '23505' || e.constraint !== 'contacts_org_linkedin_url_uidx' || linkedinUrl === null) throw err;
+        const id = await rattacherParAdresseLinkedin(linkedinUrl, row, accountId, email);
+        if (id === null) throw err; // la fiche a disparu entre-temps : rien à rattraper
+        return { ligne: { id } as T, rattrape: true };
+      }
+    };
+
+    if (contactId !== undefined) {
+      // rattaché ci-dessus : rien à insérer.
+    } else if (email) {
+      const { ligne, rattrape } = await insererOuRattraper<{ id: string; inserted: boolean }>(() =>
+        ctx.ex.query<{ id: string; inserted: boolean }>(
         `insert into contacts (organization_id, first_name, last_name, email, job_title, linkedin_url, account_id, source_list_id) /* jr:sources_csv_contact_email */
          values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (organization_id, lower(email)) where email is not null
@@ -973,30 +1341,34 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
           valeurDe(row, 'last_name'),
           email,
           valeurDe(row, 'job_title'),
-          valeurDe(row, 'linkedin_url'),
+          linkedinUrl,
           accountId,
           listId,
         ],
+        ),
       );
-      contactId = c.rows[0]!.id;
-      if (c.rows[0]!.inserted) contactsNouveaux += 1;
+      contactId = ligne!.id;
+      if (!rattrape && ligne!.inserted) contactsNouveaux += 1;
       else dejaConnus += 1;
     } else {
-      const c = await ctx.ex.query<{ id: string }>(
-        `insert into contacts (organization_id, first_name, last_name, job_title, linkedin_url, account_id, source_list_id) /* jr:sources_csv_contact_sans_email */
+      const { ligne, rattrape } = await insererOuRattraper<{ id: string }>(() =>
+        ctx.ex.query<{ id: string }>(
+          `insert into contacts (organization_id, first_name, last_name, job_title, linkedin_url, account_id, source_list_id) /* jr:sources_csv_contact_sans_email */
          values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [
-          ctx.organisationId,
-          valeurDe(row, 'first_name'),
-          valeurDe(row, 'last_name'),
-          valeurDe(row, 'job_title'),
-          valeurDe(row, 'linkedin_url'),
-          accountId,
-          listId,
-        ],
+          [
+            ctx.organisationId,
+            valeurDe(row, 'first_name'),
+            valeurDe(row, 'last_name'),
+            valeurDe(row, 'job_title'),
+            linkedinUrl,
+            accountId,
+            listId,
+          ],
+        ),
       );
-      contactId = c.rows[0]!.id;
-      contactsNouveaux += 1;
+      contactId = ligne!.id;
+      if (rattrape) dejaConnus += 1;
+      else contactsNouveaux += 1;
     }
 
     await ctx.ex.query(

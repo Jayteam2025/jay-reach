@@ -39,6 +39,7 @@ import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
 import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant } from './sequence.js';
+import { mentionOrigineDuMessage } from './mention-origine.js';
 import type { DispatchJob } from './dispatch.js';
 
 export const SALESBLINK_PROVIDER = 'salesblink';
@@ -489,7 +490,16 @@ export async function envoyerEmailSalesBlink(
     console.warn(`[email-salesblink] action ${actionId} bloquée : variable(s) manquante(s)`);
     return;
   }
-  const corps = corpsPourSalesBlink(renduCorps.text);
+  // Une personne collectée sur LinkedIn apprend d'où vient la donnée dès le premier
+  // message, dans sa langue. Le texte entre dans le corps rendu : il part, et se
+  // retrouve dans le fil, exactement comme le destinataire le lit.
+  const mention = await mentionOrigineDuMessage(pool, {
+    organizationId: job.organizationId,
+    enrollmentId: email.enrollmentId,
+    locale: email.locale ?? ligne.locale,
+  });
+  const texteRendu = mention ? `${renduCorps.text}\n\n${mention}` : renduCorps.text;
+  const corps = corpsPourSalesBlink(texteRendu);
   const objet = objetPourSalesBlink(renduObjet.text);
 
   // 4. Mode d'envoi.
@@ -623,7 +633,7 @@ export async function envoyerEmailSalesBlink(
     await pool.query(
       `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
          values ($1, 'out', $2, null, $3::jsonb, now())`,
-      [filId, renduCorps.text, JSON.stringify({ action_id: actionId, mode: mode.mode, subject: payloadSucces.subject })],
+      [filId, texteRendu, JSON.stringify({ action_id: actionId, mode: mode.mode, subject: payloadSucces.subject })],
     );
     // Un fil déjà existant (relance dans un fil ouvert par un envoi
     // précédent) n'est pas touché par `assurerFil` : sans cette mise à jour,

@@ -14,6 +14,8 @@ const LIBELLES: EtatMoteurLibelles = {
   aucuneErreur: 'Aucune',
   tachesEnAttente: 'Tâches en attente',
   aucuneTache: 'Aucune',
+  linkedin: 'LinkedIn',
+  purge: 'Purge de rétention',
 };
 
 describe('EtatMoteur', () => {
@@ -52,5 +54,65 @@ describe('EtatMoteur', () => {
     expect(html).toContain('jr-texte-erreur');
     expect(html).toContain('SalesBlink 429');
     expect(html).toContain('Aucune');
+  });
+
+  describe('purge de rétention', () => {
+    const rendre = (purge: Parameters<typeof EtatMoteur>[0]['purge']) =>
+      renderToStaticMarkup(
+        <EtatMoteur enMarche version={null} dernierPassage={null} prochainPassage={null} derniereErreur={null}
+          tachesEnAttenteTexte={null} purge={purge} libelles={LIBELLES} />,
+      );
+
+    it('une purge en échec ou en retard se voit : puce erreur et conséquence', () => {
+      const html = rendre({ ton: 'erreur', libelle: 'Échec au dernier passage', consequence: 'Plus effacées à la date annoncée.' });
+      expect(html).toContain('Purge de rétention');
+      expect(html).toContain('jr-puce erreur');
+      expect(html).toContain('Plus effacées à la date annoncée.');
+    });
+
+    it('une purge saine ne montre aucune conséquence', () => {
+      const html = rendre({ ton: 'bon', libelle: 'Dernier passage 10:02', consequence: null });
+      expect(html).toContain('Dernier passage 10:02');
+      expect(html).not.toContain('jr-etat-detail');
+    });
+  });
+
+  describe('ligne LinkedIn', () => {
+    const rendre = (linkedin: Parameters<typeof EtatMoteur>[0]['linkedin']) =>
+      renderToStaticMarkup(
+        <EtatMoteur
+          enMarche
+          version={null}
+          dernierPassage="10:47"
+          prochainPassage="10:48"
+          derniereErreur={null}
+          tachesEnAttenteTexte={null}
+          linkedin={linkedin}
+          libelles={LIBELLES}
+        />,
+      );
+
+    it('sans session, la ligne dit l’état et mène à Réglages › LinkedIn', () => {
+      const html = rendre({ ton: 'gris', libelle: 'LinkedIn : aucune session', detail: 'Session à ouvrir' });
+      expect(html).toContain('LinkedIn : aucune session');
+      expect(html).toContain('href="/settings/linkedin"');
+    });
+
+    it('session arrêtée : l’état se dit par le libellé, le logo garde sa couleur de marque', () => {
+      const html = rendre({ ton: 'erreur', libelle: 'LinkedIn arrêté', detail: 'Vérification demandée' });
+      expect(html).toContain('LinkedIn arrêté');
+      expect(html).toContain('Vérification demandée');
+      // Le logo porte la classe de marque, jamais une classe d'état ni un style en ligne.
+      expect(html).toMatch(/<svg[^>]*class="jr-ico-li"/);
+      expect(html).not.toMatch(/<svg[^>]*style=/);
+    });
+
+    it('ne parle jamais de « prochaine collecte » : la collecte est à la demande', () => {
+      const html = rendre({ ton: 'bon', libelle: 'LinkedIn prêt', detail: 'Dernière collecte il y a 2 h' });
+      expect(html).not.toMatch(/prochain(e)? collecte/i);
+      // « Prochain » (passage du moteur) reste sur sa propre ligne, jamais sur celle de LinkedIn.
+      const ligneLinkedin = html.slice(html.indexOf('jr-ico-li'));
+      expect(ligneLinkedin).not.toContain('Prochain');
+    });
   });
 });

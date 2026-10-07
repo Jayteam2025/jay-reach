@@ -14,9 +14,10 @@ export interface EtatChampsLinkedIn {
   readonly compteId: string;
   readonly profilsParJour: string;
   readonly urlPost: string;
+  /** Persona de la source d'engageurs : n'a de sens que si la campagne en porte plusieurs. */
+  readonly personaId: string;
   readonly garderCommente: boolean;
   readonly garderReagi: boolean;
-  readonly exclurePremierDegre: boolean;
   readonly comptesConcurrents: string;
   readonly sujets: string;
   readonly depuisJours: string;
@@ -44,9 +45,9 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     compteId: typeof config.compteId === 'string' ? config.compteId : '',
     profilsParJour: typeof config.profilsParJour === 'number' ? String(config.profilsParJour) : '40',
     urlPost: typeof config.urlPost === 'string' ? config.urlPost : '',
+    personaId: typeof config.personaId === 'string' ? config.personaId : '',
     garderCommente: Array.isArray(config.garder) ? config.garder.includes('commente') : true,
     garderReagi: Array.isArray(config.garder) ? config.garder.includes('reagi') : true,
-    exclurePremierDegre: config.exclurePremierDegre !== false,
     comptesConcurrents: listeVersTexte(config.comptesConcurrents),
     sujets: listeVersTexte(config.sujets),
     depuisJours: typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
@@ -61,7 +62,8 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       const garder: string[] = [];
       if (etat.garderCommente) garder.push('commente');
       if (etat.garderReagi) garder.push('reagi');
-      return { ...commun, urlPost: etat.urlPost, garder, exclurePremierDegre: etat.exclurePremierDegre };
+      // Ni compte ni cadence : l'exécution est côté serveur, le post suffit.
+      return { urlPost: etat.urlPost, garder, ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     }
     case 'linkedin_competitor_followers':
       return { ...commun, comptesConcurrents: texteVersListe(etat.comptesConcurrents) };
@@ -72,12 +74,17 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
   }
 }
 
-/** Champ requis du sous-type (en plus du compte LinkedIn, commun aux quatre) rempli — condition d'activation du bouton d'enregistrement. */
-export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn): boolean {
-  if (!etat.compteId.trim()) return false;
+/** Champ requis du sous-type (en plus du compte LinkedIn, commun aux trois autres) rempli — condition d'activation du bouton d'enregistrement. */
+/** `nbPersonas` : personas de la campagne ; au-delà d'un, le persona de la source est obligatoire (règle serveur de `creerSource`). */
+export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn, nbPersonas = 0): boolean {
+  if (providerId !== 'linkedin_post_engagers' && !etat.compteId.trim()) return false;
   switch (providerId) {
     case 'linkedin_post_engagers':
-      return etat.urlPost.trim().length > 0 && (etat.garderCommente || etat.garderReagi);
+      return (
+        etat.urlPost.trim().length > 0 &&
+        (etat.garderCommente || etat.garderReagi) &&
+        (nbPersonas <= 1 || etat.personaId.length > 0)
+      );
     case 'linkedin_competitor_followers':
       return texteVersListe(etat.comptesConcurrents).length > 0;
     case 'linkedin_keywords':
@@ -92,12 +99,20 @@ export interface ChampsSourceLinkedInLibelles {
   readonly keepPeople: string;
   readonly commented: string;
   readonly reacted: string;
-  readonly excludeFirstDegree: string;
+  readonly postOneCampaign: string;
   readonly competitorPages: string;
   readonly topics: string;
   readonly sinceDays: string;
   readonly accountId: string;
   readonly profilesPerDay: string;
+  /** Seulement si `personas` est fourni (campagne à plusieurs personas). */
+  readonly persona?: string;
+  readonly personaChoisir?: string;
+}
+
+export interface PersonaChoix {
+  readonly id: string;
+  readonly nom: string;
 }
 
 export interface ChampsSourceLinkedInProps {
@@ -106,6 +121,8 @@ export interface ChampsSourceLinkedInProps {
   readonly onChange: (patch: Partial<EtatChampsLinkedIn>) => void;
   readonly disabled?: boolean;
   readonly libelles: ChampsSourceLinkedInLibelles;
+  /** Personas de la campagne : la liste de choix n'apparaît que s'il y en a plusieurs. */
+  readonly personas?: readonly PersonaChoix[];
   /** Préfixe des `id` de champ (tour de correction 2, R66) — utile si jamais deux instances se retrouvent sur la même page ; les deux appelants actuels (tiroir tâche 11, assistant tâche 14) n'en ont chacun qu'une, le défaut suffit. */
   readonly idPrefix?: string;
 }
@@ -124,6 +141,7 @@ export function ChampsSourceLinkedIn({
   onChange,
   disabled,
   libelles,
+  personas = [],
   idPrefix = 'linkedin',
 }: ChampsSourceLinkedInProps) {
   return (
@@ -148,10 +166,27 @@ export function ChampsSourceLinkedIn({
             <CaseACocher coche={etat.garderReagi} onChange={(v) => onChange({ garderReagi: v })}>
               {libelles.reacted}
             </CaseACocher>
-            <CaseACocher coche={etat.exclurePremierDegre} onChange={(v) => onChange({ exclurePremierDegre: v })}>
-              {libelles.excludeFirstDegree}
-            </CaseACocher>
           </div>
+          <p className="jr-aide">{libelles.postOneCampaign}</p>
+          {personas.length > 1 && (
+            <Champ libelle={libelles.persona ?? ''} id={`${idPrefix}-persona`}>
+              <select
+                id={`${idPrefix}-persona`}
+                name="personaId"
+                value={etat.personaId}
+                onChange={(e) => onChange({ personaId: e.target.value })}
+                disabled={disabled}
+                required
+              >
+                <option value="">{libelles.personaChoisir ?? ''}</option>
+                {personas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nom}
+                  </option>
+                ))}
+              </select>
+            </Champ>
+          )}
         </>
       )}
       {providerId === 'linkedin_competitor_followers' && (
@@ -190,6 +225,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       )}
+      {providerId !== 'linkedin_post_engagers' && (
       <div className="ligne">
         <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
           <input
@@ -211,6 +247,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       </div>
+      )}
     </>
   );
 }

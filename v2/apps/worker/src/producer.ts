@@ -14,10 +14,14 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
+import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau, QUEUES } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
+// Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
+import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
+import { startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
+import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, type FragmentSql } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -25,7 +29,49 @@ interface SourceRow {
   readonly provider_id: string;
   /** Identifiant du rattachement (thème, fournisseur), pour tracer l'exécution. */
   readonly source_provider_id: string;
-  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown } | null;
+  readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown; sourceType?: unknown } | null;
+}
+
+/** Le seul type LinkedIn que le worker sait exécuter au lot 4a. Les trois autres arrivent au 4b. */
+const TYPE_LINKEDIN_EXECUTABLE = 'linkedin_post_engagers';
+
+/** La politique de reprise déclarée pour la file de collecte, reprise sur chaque job (comme `REPRISE_CONTACT_CONNU`). */
+const REPRISE_COLLECTE_LINKEDIN = QUEUES.find((q) => q.name === 'linkedin.collecte')?.retry;
+
+/**
+ * Enfile une collecte LinkedIn demandée à la main. Rien d'autre ne l'enfile :
+ * le chemin périodique les exclut explicitement.
+ *
+ * Le passage (`source_runs`) est ouvert ICI, avant le job, parce que sa charge
+ * utile le porte : tout ce que le passage apprendra (requêtes émises, personnes
+ * vues, écarts du scoring plus tard) s'y rattache. Si le job n'est jamais
+ * exécuté — worker tué entre les deux — la ligne reste `running` et
+ * `closeStaleSourceRuns` la referme en `error` au bout de trente minutes.
+ */
+async function enfilerCollecteLinkedIn(
+  boss: PgBoss,
+  pool: Pool,
+  src: { id: string; organization_id: string },
+  type: string,
+): Promise<number> {
+  if (type !== TYPE_LINKEDIN_EXECUTABLE) {
+    console.warn(`[producer] collecte demandée pour la source ${src.id} : type LinkedIn pas encore exécutable — ignorée`);
+    return 0;
+  }
+  const sourceRunId = await startSourceRun(pool, src.id);
+  const job: CollecteLinkedInJob = {
+    organizationId: src.organization_id,
+    sourceId: src.id,
+    sourceRunId,
+  };
+  // La politique de reprise voyage AVEC LE JOB (ruling 90) : `createQueue` est un `on conflict do
+  // nothing`, une file déjà née avec cinq reprises n'est jamais réalignée. Une reprise automatique
+  // ajouterait du trafic suspect sur une session déjà fragile ; le repli à zéro est le choix sûr.
+  await boss.send('linkedin.collecte', job, {
+    retryLimit: REPRISE_COLLECTE_LINKEDIN?.retryLimit ?? 0,
+    retryBackoff: REPRISE_COLLECTE_LINKEDIN?.retryBackoff ?? false,
+  });
+  return 1;
 }
 
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
@@ -59,6 +105,35 @@ function lireAgeMaxSignalJours(): number {
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
 
+/**
+ * Multiple du délai d'ancienneté pendant lequel un engageur qualifié est épargné
+ * par la purge parce que NOUS avons acheté l'email de son contact. La fenêtre se
+ * compte depuis l'achat (`contacts.enriched_at`), pas depuis la collecte du
+ * signal : sinon la marge réelle dépendrait du retard de la file d'enrichissement
+ * — un contact enrichi au jour 25 à cause d'un plafond FullEnrich n'aurait plus
+ * que trois jours, ce qui n'a aucun rapport avec ce qu'on protège.
+ *
+ * Pourquoi une borne, et pas « toujours » : un contact qui a un email mais
+ * AUCUNE inscription n'a jamais été contacté, il n'a donc aucun historique
+ * d'envoi à protéger. L'épargner sans limite, c'est garder indéfiniment le nom,
+ * l'intitulé, l'adresse LinkedIn et l'email d'une personne réelle — exactement
+ * la rétention sans fin que la purge existe pour fermer. Trois chemins
+ * ordinaires produisent cet état (campagne qui n'est plus `active`, persona
+ * retirée de `entry_rules -> 'personas'`, score du signal sous `min_score`) :
+ * ce n'est pas un cas de bord.
+ *
+ * Pourquoi DEUX fois, et pas une : la fenêtre couvre une pause de campagne
+ * ordinaire survenant APRÈS l'achat — l'opérateur met sa campagne en pause, la
+ * reprend, et l'email payé est toujours là. Un seul délai ferait expirer l'achat
+ * en même temps que le signal lui-même, donc sans marge du tout.
+ *
+ * Deux autres épargnes n'ont PAS de borne, et c'est voulu : l'INSCRIPTION (des
+ * messages sont réellement partis) et l'email qui ne vient pas de nous
+ * (`enriched_at is null` : liste importée, contact migré de la v1 — voir
+ * `ecarterSignauxTropAnciens`).
+ */
+export const FACTEUR_EPARGNE_EMAIL = 2;
+
 // Ecart global, toutes organisations confondues : la règle d'ancienneté est
 // la même pour tout le monde et ne dépend d'aucun réglage d'organisation.
 /** Ecarte les signaux trop anciens pour valoir un scoring ou un enrichissement. */
@@ -67,10 +142,87 @@ export async function ecarterSignauxTropAnciens(
   maxJours: number,
 ): Promise<{ nouveaux: number; qualifies: number }> {
   if (!Number.isFinite(maxJours) || maxJours <= 0) return { nouveaux: 0, qualifies: 0 };
+  // Une PERSONNE (`post_engagement`) ne passe jamais en `discarded` : son signal
+  // et son contact s'effacent (rien de personnel sur ce qui ne sert pas), par le
+  // même chemin que l'écart du scoring. Les deux mises à jour ci-dessous les
+  // excluent donc : un engageur QUALIFIÉ ancien est effacé lui aussi, AVEC mémoire
+  // (il a été jugé), sans quoi il garderait indéfiniment nom, intitulé et adresse.
+  // Y échappent les contacts énumérés par les quatre branches ci-dessous : ceux
+  // qui ont une inscription, ceux qui préexistaient à l'engageur, et ceux dont
+  // l'email mérite encore d'être gardé. La mémoire est par couple post-personne :
+  // elle ne l'empêche pas de revenir par un autre post.
+  const personnes = await pool.query<{ id: string; organization_id: string }>(
+    `select id, organization_id from signals
+      where kind = 'post_engagement' and status = 'new' and score is null
+        and occurred_at < now() - make_interval(days => $1)`,
+    [maxJours],
+  );
+  for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: false });
+  const qualifiesPersonnes = await pool.query<{ id: string; organization_id: string }>(
+    `select s.id, s.organization_id from signals s
+      where s.kind = 'post_engagement' and s.status = 'qualified'
+        and s.occurred_at < now() - make_interval(days => $1)
+        and not exists (
+          select 1 from contacts ct
+           where ct.source_signal_id = s.id
+             -- Déjà inscrit : épargné sans limite de temps, des messages sont partis.
+             and (exists (select 1 from enrollments e where e.contact_id = ct.id)
+                  -- Le contact est ANTÉRIEUR au signal qui lui sert d'origine : il
+                  -- préexistait à l'engageur (liste importée, migration v1), et le
+                  -- rattachement n'a fait que combler son origine vide. Cette ligne
+                  -- n'est pas née de notre collecte, on ne l'efface pas — et
+                  -- l'effacer emporterait son appartenance à la liste. Un contact
+                  -- réellement créé par l'engageur est, lui, POSTÉRIEUR à son signal
+                  -- (enregistrerEngageur insère le signal puis le contact).
+                  or ct.created_at < s.occurred_at
+                  -- Email que NOUS avons acheté : la fenêtre court depuis l'achat.
+                  --
+                  -- La condition sur l'email est celle que ce commentaire
+                  -- énonçait déjà et que le code ne vérifiait pas : tant que
+                  -- enriched_at n'était posé que par persistEnrichedContact,
+                  -- qui refuse un contact sans email, les deux étaient
+                  -- équivalents. Ils ne le sont plus : l'enrichissement d'un
+                  -- contact connu (tâche 8) pose aussi enriched_at quand
+                  -- FullEnrich n'a RIEN trouvé, pour ne pas racheter la même
+                  -- personne tous les jours. Sans cette condition, cette marque
+                  -- épargnerait de la purge le nom, l'intitulé et l'adresse
+                  -- LinkedIn d'une personne pour qui on n'a obtenu aucune
+                  -- adresse — exactement la rétention sans fin que la purge
+                  -- existe pour fermer.
+                  or (ct.email is not null and ct.enriched_at is not null
+                      and ct.enriched_at >= now() - make_interval(days => $2))
+                  -- Email qui ne vient pas de notre enrichissement : il a été fourni
+                  -- par l'opérateur, sa rétention lui appartient, pas à la purge.
+                  --
+                  -- DÉFENSE EN PROFONDEUR DÉLIBÉRÉE, ET NON PROUVÉE. Mesuré le
+                  -- 06/10/2026 : aucun chemin de production ne produit son état
+                  -- ISOLÉMENT, et la retirer ne fait rougir aucun contrôle du
+                  -- harnais. Les deux chemins qui donnent un email sans
+                  -- enriched_at sont déjà couverts ailleurs : l'import de fichier
+                  -- inscrit systématiquement (première branche), et la migration
+                  -- des données v1 crée des fiches antérieures au signal (deuxième
+                  -- branche). Ce n'est donc PAS du code mort, et ce n'est pas non
+                  -- plus du code prouvé.
+                  --
+                  -- Gardée quand même, pour l'asymétrie : ce qu'elle protège est un
+                  -- effacement IRRÉVERSIBLE de données que l'opérateur a fournies.
+                  -- La garder à tort conserve quelques lignes trop longtemps ; la
+                  -- retirer à tort détruit définitivement. Et sa redondance tient à
+                  -- un détail qui peut changer sans qu'on y pense : le jour où
+                  -- l'import n'inscrira plus systématiquement, elle redevient la
+                  -- seule protection.
+                  or (ct.email is not null and ct.enriched_at is null)))`,
+    [maxJours, maxJours * FACTEUR_EPARGNE_EMAIL],
+  );
+  // `compter: false` : la personne est jugée (donc mémorisée), mais le passage qui
+  // l'a collectée est clos depuis des semaines — son compteur d'écarts ne doit pas
+  // bouger rétroactivement, sinon le rendement comparé des sources est faussé.
+  for (const p of qualifiesPersonnes.rows)
+    await ecarterEngageur(pool, p.organization_id, p.id, { juge: true, compter: false });
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
-      where status = 'new' and score is null
+      where status = 'new' and score is null and kind <> 'post_engagement'
         and occurred_at < now() - make_interval(days => $1)`,
     [maxJours],
   );
@@ -79,12 +231,12 @@ export async function ecarterSignauxTropAnciens(
   const qualifies = await pool.query(
     `update signals s
         set status = 'discarded', discard_reason = 'stale_unenriched'
-      where s.status = 'qualified'
+      where s.status = 'qualified' and s.kind <> 'post_engagement'
         and s.occurred_at < now() - make_interval(days => $1)
         and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
     [maxJours],
   );
-  return { nouveaux: nouveaux.rowCount ?? 0, qualifies: qualifies.rowCount ?? 0 };
+  return { nouveaux: (nouveaux.rowCount ?? 0) + personnes.rows.length, qualifies: (qualifies.rowCount ?? 0) + qualifiesPersonnes.rows.length };
 }
 
 export async function enqueueDiscoverForActiveSources(
@@ -102,6 +254,14 @@ export async function enqueueDiscoverForActiveSources(
        from sources s
        join source_providers sp on sp.source_id = s.id
       where s.is_active = true and sp.is_active = true
+        -- Les sources LinkedIn ne passent JAMAIS par la planification : ce tour
+        -- revient toutes les quinze minutes, soit quatre-vingt-seize passages
+        -- par jour pour un plafond de trois. Elles partent a la demande
+        -- (enqueueRequestedRuns) et par la seulement. Aujourd hui la jointure
+        -- sur source_providers les ecarterait deja, faute de rattachement, mais
+        -- cette exclusion est DELIBEREE : elle doit survivre au jour ou cette
+        -- jointure deviendra un left join.
+        and coalesce(s.config->>'sourceType', '') not like 'linkedin%'
         and exists (
           select 1 from campaign_sources cs
             join campaigns c on c.id = cs.campaign_id
@@ -342,6 +502,158 @@ export async function enqueueEnrichmentForQualified(
 }
 
 /**
+ * Enfile l'achat d'une adresse pour les personnes DÉJÀ identifiées : un engageur
+ * de post LinkedIn, qualifié par le scoring, qui n'a pas encore d'email.
+ *
+ * C'est le maillon qui manquait entre la qualification d'une personne et son
+ * enrichissement. `enqueueEnrichmentForQualified` ci-dessus part des `accounts`,
+ * et un engageur n'en a pas : son contact serait resté sans adresse pour
+ * toujours, et le handler qui sait l'acheter n'aurait jamais été appelé.
+ *
+ * Le crédit N'EST PAS pris ici, contrairement au chemin entreprise : un job par
+ * contact, donc le handler est le seul à savoir s'il va réellement appeler
+ * FullEnrich (il peut encore refuser, cf. `raisonDeNePasAcheter`). Le décompter
+ * ici le brûlerait pour des appels qui ne partent pas.
+ *
+ * Trois filtres, trois raisons :
+ *  - `enriched_at is null` : l'achat a été TENTÉ, abouti ou non. Sans ce filtre,
+ *    une personne pour qui FullEnrich n'a rien trouvé serait rachetée à chaque
+ *    tour, indéfiniment.
+ *  - `email is null` : rien à acheter si on a déjà l'adresse.
+ *  - adresse de profil non FABRIQUÉE : voir `raisonDeNePasAcheter`. Le handler
+ *    refuserait de toute façon, mais ces contacts sont le cas MAJORITAIRE tant
+ *    que la collecte ne lit pas l'identifiant public — ils rempliraient le lot
+ *    et affameraient les contacts réellement payables. La forme de l'adresse
+ *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
+ *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
+ *
+ * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
+ * dernière quand le plafond ne permet pas de tout prendre.
+ */
+/**
+ * Contacts enfilés par ORGANISATION et par tour. Le lot n'est pas global : voir
+ * `enqueueEnrichmentContactsConnus`.
+ */
+const CONTACTS_CONNUS_PAR_ORGANISATION = 25;
+
+/** La politique de reprise déclarée pour la file d'achat, reprise sur chaque job. */
+const REPRISE_CONTACT_CONNU = QUEUES.find((q) => q.name === 'enrichment.contact_connu')?.retry;
+
+/**
+ * Garde-fou global : au-delà, le tour s'arrête, quel que soit le nombre
+ * d'organisations. Il borne la TAILLE DE LA FILE, pas la dépense — celle-ci est
+ * bornée par `enrichissements_par_jour`, par organisation, dans le handler. La
+ * valeur est le lot par organisation multiplié par huit, soit plus
+ * d'organisations que l'instance n'en a jamais compté ; elle n'est donc pas
+ * atteinte en pratique, et sert à ce qu'un jour anormal ne dépose pas un nombre
+ * non borné de jobs en un seul tour.
+ */
+const CONTACTS_CONNUS_PAR_TOUR = CONTACTS_CONNUS_PAR_ORGANISATION * 8;
+
+export async function enqueueEnrichmentContactsConnus(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number; limiteGlobale?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? CONTACTS_CONNUS_PAR_ORGANISATION;
+  const limiteGlobale = opts.limiteGlobale ?? CONTACTS_CONNUS_PAR_TOUR;
+  // Le lot est PAR ORGANISATION, et les organisations sont servies à tour de
+  // rôle (`order by rang` avant tout le reste) : le rang 1 de chacune passe
+  // avant le rang 2 de n'importe laquelle.
+  //
+  // Un `limit` global sur un ordre purement chronologique affamait les autres :
+  // une organisation dont les contacts sont les plus récents prenait les 25
+  // places à chaque tour. Définitivement, si rien ne la fait avancer — sans clé
+  // FullEnrich, le handler rend `sans_cle` SANS marquer le contact (marquer le
+  // priverait du jour où la clé est saisie), donc ses candidats reviennent
+  // identiques au tour suivant, indéfiniment, et aucune autre organisation n'est
+  // jamais servie.
+  //
+  // Les organisations sans clé ne sont PAS exclues en SQL, délibérément : la clé
+  // se résout par `resolveProviderCredentials` (coffre chiffré, puis repli sur
+  // l'environnement), et refaire cette résolution en SQL la ferait diverger de
+  // celle qu'exécute le handler. Une organisation sans clé tourne donc à vide
+  // sur SA PART du lot — un job perdu, pas une famine — et repart dès que la clé
+  // est saisie.
+  const res = await pool.query<{ organization_id: string; contact_id: string }>(
+    `with candidats as (
+       select c.organization_id, c.id as contact_id,
+              row_number() over (
+                partition by c.organization_id
+                order by s.occurred_at desc nulls last, c.created_at desc, c.id
+              ) as rang
+         from contacts c
+         join signals s
+           on s.id = c.source_signal_id and s.organization_id = c.organization_id
+        where c.email is null
+          and c.enriched_at is null
+          and c.linkedin_url is not null
+          and s.status = 'qualified'
+          and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
+     )
+     select organization_id, contact_id from candidats
+      where rang <= $1
+      order by rang, organization_id
+      limit $2`,
+    [limit, limiteGlobale, lienProfilDeduit('')],
+  );
+
+  let enqueued = 0;
+  // Un fuseau par organisation, lu une seule fois pour tout le lot : il borne la
+  // journée de l'identifiant de job ci-dessous.
+  const jours = new Map<string, string>();
+  for (const row of res.rows) {
+    let jour = jours.get(row.organization_id);
+    if (!jour) {
+      jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, row.organization_id));
+      jours.set(row.organization_id, jour);
+    }
+    // L'identifiant porte le JOUR : redéposer le même contact dans la même
+    // journée ne crée rien, mais un contact resté sans suite (plafond atteint,
+    // panne du fournisseur) repart demain sous un identifiant neuf. Sans le
+    // jour, il ne repartirait jamais.
+    const idJob = deterministicUuid('enrich-contact-connu', row.contact_id, jour);
+    // L'ARCHIVE compte autant que la file. `boss.insert` est bien un no-op sur
+    // un identifiant déjà présent, mais pg-boss déplace un job terminé vers
+    // `pgboss.archive` au bout de douze heures (`ARCHIVE_DEFAULT`, mesuré sur
+    // pg-boss 10.4.2) : passé ce délai, l'identifiant du jour redevient libre et
+    // le job renaîtrait LE MÊME JOUR. Sans conséquence pour un contact marqué
+    // (il n'est plus candidat), mais un contact laissé sans marque par une panne
+    // du fournisseur serait RACHETÉ une seconde fois dans la journée. La file
+    // ne reprend donc un contact que si son identifiant du jour n'existe nulle
+    // part. Les deux requêtes nomment la file : les deux tables sont indexées
+    // par (name, id).
+    const connu = await pool.query<{ existe: boolean }>(
+      `select exists (select 1 from pgboss.job where name = $2 and id = $1::uuid)
+           or exists (select 1 from pgboss.archive where name = $2 and id = $1::uuid) as existe`,
+      [idJob, 'enrichment.contact_connu'],
+    );
+    if (connu.rows[0]?.existe) continue;
+    await boss.insert([
+      {
+        name: 'enrichment.contact_connu',
+        id: idJob,
+        data: { organizationId: row.organization_id, contactId: row.contact_id },
+        // La politique de reprise voyage AVEC LE JOB, en plus d'être déclarée sur
+        // la file. `createQueue` est un `on conflict do nothing` : une file déjà
+        // née avec cinq reprises — ce qu'aurait produit un déploiement
+        // intermédiaire, la file ayant été déclarée en `DEFAULT_RETRY` avant
+        // d'être corrigée — n'est JAMAIS réalignée, et ce traitement rachèterait
+        // l'adresse à chaque reprise. L'option du job, elle, ne dépend d'aucun
+        // état de base. Lue dans la déclaration pour que les deux ne divergent
+        // pas ; le repli à zéro est le choix sûr, celui qui ne dépense pas.
+        retryLimit: REPRISE_CONTACT_CONNU?.retryLimit ?? 0,
+        retryBackoff: REPRISE_CONTACT_CONNU?.retryBackoff ?? false,
+      },
+    ]);
+    enqueued += 1;
+  }
+  // Le compte est celui des jobs RÉELLEMENT créés, pas des contacts examinés :
+  // le journal du moteur annonçait sinon un travail qui n'avait pas été déposé.
+  return enqueued;
+}
+
+/**
  * Inscrit en campagne les contacts enrichis qui n'y sont pas encore.
  *
  * C'était le maillon manquant. La file `sequence.enroll` était déclarée, le
@@ -402,6 +714,11 @@ export async function enqueueEnrollments(
        -- La persona du contact doit être explicitement acceptée.
         and ct.persona_id is not null
         and c.entry_rules -> 'personas' ? ct.persona_id::text
+       -- Un engageur naît SANS email : l'inscrire maintenant brûlerait une place du
+       -- plafond du jour et le tick l'arrêterait (not_sendable), puis l'email
+       -- arrivé plus tard relancerait une seconde inscription. Restreint à ce kind
+       -- par construction : le chemin des offres d'emploi n'est pas touché.
+        and not (s.kind = 'post_engagement' and ct.email is null)
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
@@ -534,6 +851,14 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
       continue;
     }
     const config = src.config ?? {};
+    // Une source LinkedIn n'a ni `source_providers` ni `keywords` : elle tombait
+    // dans les deux `continue` ci-dessous, et le bouton « Lancer la collecte »
+    // ne faisait rien. Elle part par sa propre file.
+    const type = typeof config.sourceType === 'string' ? config.sourceType : '';
+    if (type.startsWith('linkedin')) {
+      enqueued += await enfilerCollecteLinkedIn(boss, pool, src, type);
+      continue;
+    }
     const keywords = Array.isArray(config.keywords) ? config.keywords.map((k) => String(k)).filter(Boolean) : [];
     if (keywords.length === 0) {
       console.warn(`[producer] collecte demandée pour le thème ${src.id} sans mots-clés — ignorée`);

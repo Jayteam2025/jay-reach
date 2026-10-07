@@ -94,7 +94,7 @@ Les neuf garde-fous, avec décisions explicites `allow` / `defer` / `block`. Int
 Réglage par canal, courrier non désactivable, rodage des trois premiers envois d'une version, dépassement de budget. Onglet de campagne, navigation clavier, édition en ligne.
 
 ### T22 — Canal LinkedIn
-`LinkedInProvider`, implémentation Unipile, mode `manual` avec export. Garde-fous de pacing en dur. Avertissement à la connexion.
+La collecte des engageurs d'un post est livrée (lot 4a) : navigateur dédié du serveur, session ouverte en ligne de commande, proxy résidentiel. Reste à faire (lot 4b) : les actions (invitation, message) et la lecture des réponses, dont le mode d'exécution se décide à ce lot. Garde-fous de pacing en dur. Avertissement à la connexion.
 
 ### T23 — Canal courrier — Manuscry
 `MailProvider`, lead time, vérification humaine obligatoire de l'adresse au premier courrier vers une entreprise, sélection d'établissement, plafond de dépense, suivi impression et expédition.

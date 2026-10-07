@@ -7,7 +7,9 @@ import {
   ajouterDepuisAnnuaire,
   ajouterDepuisListe,
   activerSource,
+  collecteImplementee,
   configFormulaireDepuisStockee,
+  configLinkedInPost,
   construireConfigStocke,
   creerSource,
   importerCsv,
@@ -15,6 +17,8 @@ import {
   listerListesOrganisation,
   listerSourcesCampagne,
   modifierSource,
+  normaliserUrlPost,
+  providerIdReel,
   sirensConnus,
   type ConfigAdzuna,
   type ConfigFranceTravail,
@@ -135,7 +139,7 @@ describe('listerSourcesCampagne', () => {
     }
   });
 
-  it('une source linkedin_* sans source_providers reste identifiable par `config.sourceType`, collecte indisponible', async () => {
+  it('une source linkedin_* sans source_providers reste identifiable par `config.sourceType`, et ses engageurs se collectent', async () => {
     const { ctx } = faux(
       {
         'jr:sources_lister': [
@@ -159,7 +163,8 @@ describe('listerSourcesCampagne', () => {
     );
     const [carte] = await listerSourcesCampagne(ctx, { campagneId: CAMPAGNE_ID });
     expect(carte!.providerId).toBe('linkedin_post_engagers');
-    expect(carte!.collecteDisponible).toBe(false);
+    // Lot 4a : les engageurs d'un post sont collectés par le serveur, la carte affiche l'interrupteur.
+    expect(carte!.collecteDisponible).toBe(true);
     expect(carte!.dernierPassage).toBeNull();
     expect(carte!.prochainPassage).toBeNull();
   });
@@ -403,7 +408,7 @@ describe('creerSource', () => {
     expect(valeursProviders).toContain('francetravail');
   });
 
-  it('ne crée aucun `source_providers` pour un type linkedin_* (collecte indisponible avant le lot 4)', async () => {
+  it('ne crée aucun `source_providers` pour un type linkedin_*, même quand sa collecte est disponible', async () => {
     const { ctx, appels } = faux({
       'jr:sources_campagne': [{ id: 'camp-1' }],
       'jr:sources_creer': [{ id: 'src-1' }],
@@ -412,9 +417,152 @@ describe('creerSource', () => {
       campagneId: CAMPAGNE_ID,
       providerId: 'linkedin_post_engagers',
       nom: 'LinkedIn · Engageurs',
-      config: { urlPost: 'https://exemple.fr/post', garder: ['commente'], compteId: 'compte-1' },
+      config: { urlPost: 'https://exemple.fr/post', garder: ['commente'] },
     });
     expect(appels.some(([sql]) => /insert into source_providers/i.test(sql))).toBe(false);
+  });
+});
+
+describe('configLinkedInPost — la source d’engageurs ne garde que ce qui sert', () => {
+  const base = { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] };
+
+  it('le schema refuse compteId', () => {
+    expect(() => configLinkedInPost.parse({ ...base, compteId: 'c1' })).toThrow();
+  });
+  it('le schema refuse profilsParJour', () => {
+    expect(() => configLinkedInPost.parse({ ...base, profilsParJour: 40 })).toThrow();
+  });
+  it('le schema refuse exclurePremierDegre', () => {
+    expect(() => configLinkedInPost.parse({ ...base, exclurePremierDegre: true })).toThrow();
+  });
+  it('le schema accepte urlPost et garder seuls', () => {
+    expect(configLinkedInPost.parse(base)).toEqual(base);
+  });
+});
+
+describe('creerSource — engageurs d’un post : persona et unicité du post', () => {
+  const config = { urlPost: 'https://www.linkedin.com/posts/x', garder: ['commente'] };
+
+  it('une campagne a plusieurs personas rend personaId obligatoire', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1', 'p2'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    const entree = { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'Engageurs', config };
+    await expect(creerSource(ctx, entree)).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /insert into sources/i.test(sql))).toBe(false);
+    await expect(creerSource(ctx, { ...entree, config: { ...config, personaId: 'p2' } })).resolves.toEqual({ id: 'src-1' });
+  });
+
+  it('une campagne a un seul persona ne demande aucun personaId', async () => {
+    const { ctx } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).resolves.toEqual({ id: 'src-1' });
+  });
+
+  it('refuse un personaId étranger même quand la campagne n’a qu’un persona', async () => {
+    const { ctx } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1', entry_rules: { personas: ['p1'] } }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config: { ...config, personaId: 'etranger' } }),
+    ).rejects.toThrow(ErreurEntree);
+  });
+
+  it('refuse un second exemplaire du même post dans la MÊME campagne (règle alignée sur modifierSource)', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:post_deja_pris': [{ url: config.urlPost }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).rejects.toThrow(ErreurEntree);
+    const requete = appels.find(([sql]) => /jr:post_deja_pris/.test(sql));
+    expect(requete![0]).not.toMatch(/campaign_id <>/);
+  });
+
+  it('rattacher une source d\'engageurs a une seconde campagne est refuse cote serveur', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:post_deja_pris': [{ url: 'https://WWW.linkedin.com/posts/x/?utm_source=share' }],
+      'jr:sources_creer': [{ id: 'src-1' }],
+    });
+    await expect(
+      creerSource(ctx, { campagneId: CAMPAGNE_ID, providerId: 'linkedin_post_engagers', nom: 'E', config }),
+    ).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /insert into (sources|campaign_sources)/i.test(sql))).toBe(false);
+  });
+});
+
+describe('normaliserUrlPost — l’identité d’un post', () => {
+  it('reconnait le même post sous ses deux formes et ses sous-domaines de pays', () => {
+    const id = normaliserUrlPost('https://www.linkedin.com/posts/jean_cold-email-activity-7271234567890123456-abcd?utm_source=share');
+    expect(normaliserUrlPost('https://fr.linkedin.com/feed/update/urn:li:activity:7271234567890123456')).toBe(id);
+    expect(normaliserUrlPost('https://www.linkedin.com/feed/update/urn%3Ali%3Aactivity%3A7271234567890123456/')).toBe(id);
+  });
+  it('ne confond pas deux posts distincts, ni deux chemins sans identifiant', () => {
+    expect(normaliserUrlPost('https://www.linkedin.com/posts/a-activity-7271')).not.toBe(
+      normaliserUrlPost('https://www.linkedin.com/posts/a-activity-7272'),
+    );
+    expect(normaliserUrlPost('https://exemple.fr/Post/A')).not.toBe(normaliserUrlPost('https://exemple.fr/Post/a'));
+    expect(normaliserUrlPost('https://www.exemple.fr/post/a/')).toBe(normaliserUrlPost('https://exemple.fr/post/a'));
+  });
+});
+
+describe('modifierSource — engageurs d’un post : le persona se revérifie', () => {
+  it('refuse un personaId étranger à la campagne même quand elle n’a qu’un persona', async () => {
+    const stock = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'] };
+    const { ctx } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stock }],
+      'jr:sources_modifier': [{}],
+      'jr:sources_personas_campagnes': [{ personas: ['p1'] }],
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stock.urlPost, garder: ['reagi'], personaId: 'etranger' }, schedule: 'every 6h' }),
+    ).rejects.toThrow(ErreurEntree);
+  });
+
+  it('retire le personaId stocké quand le formulaire ne l’envoie plus (pas de fusion avec l’ancien)', async () => {
+    const stock = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'], personaId: 'p-ancien' };
+    const { ctx, appels } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stock }],
+      'jr:sources_modifier': [{ id: 'x' }],
+      'jr:sources_personas_campagnes': [{ personas: ['p1'] }],
+    });
+    await modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stock.urlPost, garder: ['reagi'] }, schedule: 'every 6h' });
+    const ecriture = appels.find(([sql]) => /jr:sources_modifier/.test(sql));
+    expect(JSON.parse((ecriture![1] as unknown[])[2] as string)).not.toHaveProperty('personaId');
+  });
+
+  const stockee = { sourceType: 'linkedin_post_engagers', urlPost: 'https://www.linkedin.com/posts/x', garder: ['reagi'] };
+  const campagnes = { 'jr:sources_personas_campagnes': [{ personas: ['p1', 'p2'] }] };
+
+  it('refuse une modification sans personaId quand la campagne porte plusieurs personas', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stockee }],
+      'jr:sources_modifier': [{}],
+      ...campagnes,
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stockee.urlPost, garder: ['reagi'] }, schedule: 'every 6h' }),
+    ).rejects.toThrow(ErreurEntree);
+    expect(appels.some(([sql]) => /update sources/i.test(sql))).toBe(false);
+  });
+
+  it('accepte la modification avec un personaId de la campagne', async () => {
+    const { ctx } = faux({
+      'jr:sources_lire_pour_modifier': [{ name: 'E', config: stockee }],
+      'jr:sources_modifier': [{}],
+      ...campagnes,
+    });
+    await expect(
+      modifierSource(ctx, { sourceId: SOURCE_ID, nom: 'E', config: { urlPost: stockee.urlPost, garder: ['reagi'], personaId: 'p2' }, schedule: 'every 6h' }),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -670,5 +818,32 @@ describe('listerListesOrganisation', () => {
     expect(r).toEqual([
       { id: 'list-1', nom: 'Participants webinaire de juin', nombreContacts: 62 },
     ]);
+  });
+});
+
+
+// `collecteDisponible` portait deux décisions sans rapport : écrire une ligne `source_providers`
+// (jamais pour LinkedIn) et afficher l'interrupteur d'une carte. Les deux sont désormais séparées.
+describe('collecteImplementee / providerIdReel — deux décisions, deux fonctions', () => {
+  it('seuls les engageurs d’un post sont collectés côté LinkedIn (lot 4a)', () => {
+    expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
+    expect(collecteImplementee('linkedin_competitor_followers')).toBe(false);
+    expect(collecteImplementee('linkedin_keywords')).toBe(false);
+    expect(collecteImplementee('linkedin_job_change')).toBe(false);
+  });
+
+  it('les offres restent collectées', () => {
+    expect(collecteImplementee('adzuna')).toBe(true);
+    expect(collecteImplementee('france_travail')).toBe(true);
+  });
+
+  it('un type LinkedIn n’a JAMAIS de provider_id réel, même quand sa collecte est disponible', () => {
+    expect(providerIdReel('linkedin_post_engagers')).toBeNull();
+    expect(providerIdReel('linkedin_keywords')).toBeNull();
+  });
+
+  it('les offres gardent le provider_id que le worker route', () => {
+    expect(providerIdReel('adzuna')).toBe('adzuna');
+    expect(providerIdReel('france_travail')).toBe('francetravail');
   });
 });

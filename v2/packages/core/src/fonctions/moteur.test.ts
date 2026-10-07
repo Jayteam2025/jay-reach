@@ -56,6 +56,31 @@ describe('lireEtatMoteur', () => {
     expect(etat.erreursDepuisMinuit).toBe(3);
   });
 
+  describe('purge de rétention', () => {
+    const il = (heures: number) => new Date(Date.now() - heures * 3_600_000).toISOString();
+    const avec = (purge: Record<string, unknown>) =>
+      lireEtatMoteur(faux({ 'jr:engine_status': [{ version: 'v', last_tick_at: il(0.01), last_error: null, ...purge }], 'jr:engine_errors': [{ n: 0 }] }));
+
+    it('passée il y a une heure, sans erreur : à l’heure', async () => {
+      const e = await avec({ last_purge_at: il(1), last_purge_error: null });
+      expect(e.purge).toEqual({ dernierPassage: expect.any(String), enRetard: false, erreur: null });
+    });
+    it('jamais passée : en retard', async () => {
+      expect((await avec({ last_purge_at: null, last_purge_error: null })).purge.enRetard).toBe(true);
+    });
+    it('plus de trois heures : en retard', async () => {
+      expect((await avec({ last_purge_at: il(3.5), last_purge_error: null })).purge.enRetard).toBe(true);
+    });
+    it('un échec au dernier passage remonte, même si le tour de production a réussi', async () => {
+      const e = await avec({ last_purge_at: il(0.5), last_purge_error: 'Error', last_error: null });
+      expect(e.purge.erreur).toBe('Error');
+      expect(e.derniereErreur).toBeNull();
+    });
+    it('aucune ligne engine_status : en retard', async () => {
+      expect((await lireEtatMoteur(faux({}))).purge.enRetard).toBe(true);
+    });
+  });
+
   it("est arrêté et sans passage quand le moteur n'a jamais tourné", async () => {
     const ctx = faux({});
     const etat = await lireEtatMoteur(ctx);

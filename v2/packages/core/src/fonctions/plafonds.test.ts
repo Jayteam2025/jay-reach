@@ -7,7 +7,12 @@ import {
   ecrireReglage,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
+  compterPostsLinkedInDuJour,
+  compterRequetesLinkedIn,
   lireConsommationDuJour,
+  lireFuseauLinkedIn,
+  lirePlafondLinkedIn,
+  tracerRequeteLinkedIn,
   lireReglages,
   lireReglagesDetail,
   plafondDuJour,
@@ -384,5 +389,70 @@ describe('schemaEcrireReglage', () => {
 
   it('revue F5 (relecture) : accepte un autre identifiant IANA valide que le défaut', () => {
     expect(schemaEcrireReglage.safeParse({ cle: 'fuseau', valeur: 'Pacific/Kiritimati' }).success).toBe(true);
+  });
+});
+
+describe('plafonds LinkedIn', () => {
+  it('lirePlafondLinkedIn prefere la valeur en base a la variable d environnement', async () => {
+    vi.stubEnv('LINKEDIN_POSTS_DAILY_CAP', '9');
+    try {
+      const ctx = faux({ 'from organization_settings': [{ value: 5 }] });
+      expect(await lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour')).toBe(5);
+      const sans = faux({ 'from organization_settings': [] });
+      expect(await lirePlafondLinkedIn(sans, 'linkedin_posts_par_jour')).toBe(9);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('lirePlafondLinkedIn : defauts 3 par jour et 60 par heure', async () => {
+    const ctx = faux({});
+    expect(await lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour')).toBe(3);
+    expect(await lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure')).toBe(60);
+  });
+
+  it('compterRequetesLinkedIn compte sur l horodatage de chaque requete, pas sur le demarrage du passage', async () => {
+    const ctx = faux({ 'from linkedin_requetes': [{ n: 1 }] });
+    const veille = new Date('2026-10-03T22:00:00Z');
+    const minuit = new Date('2026-10-04T22:00:00Z');
+    const lendemain = new Date('2026-10-05T22:00:00Z');
+    await compterRequetesLinkedIn(ctx, veille, minuit);
+    await compterRequetesLinkedIn(ctx, minuit, lendemain);
+    const appels = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]][];
+    for (const [sql] of appels) {
+      expect(sql).toMatch(/requested_at/);
+      expect(sql).not.toMatch(/source_runs|started_at/);
+    }
+    expect(appels[0]![1]).toEqual(['org-1', veille, minuit]);
+    expect(appels[1]![1]).toEqual(['org-1', minuit, lendemain]);
+  });
+
+  it('compterPostsLinkedInDuJour compte les posts reellement ouverts, pas les lignes de passage', async () => {
+    const ctx = faux({ 'from source_runs': [{ n: 2 }] });
+    expect(await compterPostsLinkedInDuJour(ctx, '2026-10-05', 'Europe/Paris', 'run-courant')).toBe(2);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/linkedin_post_engagers/);
+    expect(sql).toContain('$2::date::timestamp at time zone $3');
+    expect(sql).toContain('($2::date + 1)::timestamp at time zone $3');
+    expect(params).toEqual(['org-1', '2026-10-05', 'Europe/Paris', 'run-courant']);
+  });
+
+  it('tracerRequeteLinkedIn refuse un passage d une autre organisation', async () => {
+    const ctx = faux({});
+    await expect(tracerRequeteLinkedIn(ctx, 'run-etranger')).rejects.toThrow(/introuvable/);
+  });
+});
+
+describe('fuseau du jour LinkedIn', () => {
+  it('lireFuseauLinkedIn lit le fuseau de linkedin_settings, pour cette organisation', async () => {
+    const ctx = faux({ 'from linkedin_settings': [{ timezone: 'Europe/Brussels' }] });
+    expect(await lireFuseauLinkedIn(ctx)).toBe('Europe/Brussels');
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/where organization_id = \$1/);
+    expect(params).toEqual(['org-1']);
+  });
+
+  it('lireFuseauLinkedIn sans ligne : le defaut de la table (Europe/Paris)', async () => {
+    expect(await lireFuseauLinkedIn(faux({}))).toBe('Europe/Paris');
   });
 });

@@ -4,6 +4,7 @@
  * renvoie une action à traiter (ou null + raison). Aucun envoi ici : l'extension
  * exécute l'appel Voyager avec la session de l'utilisateur puis rappelle /update.
  */
+import { refusCanalGele } from '../../../../../lib/linkedin/canal-extension-gele';
 import { getPool } from '../../../../../lib/db';
 import { claimNext, validateToken } from '../../../../../lib/linkedin/queue';
 
@@ -11,6 +12,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request): Promise<Response> {
+  const gele = refusCanalGele();
+  if (gele) return gele;
   let token: unknown;
   try {
     ({ token } = (await req.json()) as { token?: unknown });

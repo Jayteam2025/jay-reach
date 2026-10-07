@@ -4,6 +4,24 @@
 // (fenêtre, plafonds, intervalle) : ici on ne fait que demander la prochaine
 // action prête et remonter le résultat.
 
+/**
+ * EXTENSION GELEE (lot 4a, tache 10, 06/10/2026).
+ *
+ * Le travail LinkedIn s'execute desormais cote serveur (session en ligne de
+ * commande sur le VPS, proxy residentiel dedie, plafonds et trace par requete).
+ * Ce chemin-ci, non surveille et lance depuis le poste de quelqu'un, est ferme :
+ * plus d'alarme, plus de poll, plus de releve, plus de profil remonte, et les
+ * messages venus d'une page sont refuses. Rien n'est supprime (regle 1 de
+ * v2/CLAUDE.md) : le code reste lisible pour qu'on sache ce qu'il faisait.
+ *
+ * Pour le reveiller : passer cette constante a false ET remettre dans
+ * manifest.json les motifs `/settings/linkedin*` (content_scripts) et les
+ * origines de l'application (externally_connectable). Le test gel.test.ts
+ * rougira, c'est voulu : il faut le changer en connaissance de cause. Les deux
+ * expediteurs `kind = 'linkedin'` restent inactifs de toute facon.
+ */
+const EXTENSION_GELEE = true;
+
 importScripts('linkedin-invite.js', 'linkedin-message.js', 'linkedin-inbox.js');
 
 // Repli quand l'extension n'a pas encore vu d'application : c'est le cas d'une
@@ -27,6 +45,12 @@ const PAUSE_MS = 24 * 60 * 60 * 1000; // pause 24 h sur compte restreint / déco
  * remplace l'alarme sans en créer une seconde, l'appel est donc sans risque.
  */
 function poserLesAlarmes() {
+  if (EXTENSION_GELEE) {
+    // Une alarme posee par une version precedente survit a la mise a jour.
+    chrome.alarms.clear('pollLinkedIn');
+    chrome.alarms.clear('releverReponses');
+    return;
+  }
   chrome.alarms.create('pollLinkedIn', { periodInMinutes: POLL_MINUTES });
   chrome.alarms.create('releverReponses', { periodInMinutes: RELEVE_MINUTES });
 }
@@ -75,6 +99,7 @@ async function postJson(base, path, payload) {
 }
 
 async function pollLinkedInQueue() {
+  if (EXTENSION_GELEE) return;
   try {
     const token = await getToken();
     if (!token) return;
@@ -156,6 +181,7 @@ async function pollLinkedInQueue() {
  * empecher une releve de reponses de se faire.
  */
 async function remonterProfil() {
+  if (EXTENSION_GELEE) return;
   try {
     const token = await getToken();
     if (!token) return;
@@ -174,6 +200,7 @@ async function remonterProfil() {
 }
 
 async function releverReponses() {
+  if (EXTENSION_GELEE) return;
   try {
     const token = await getToken();
     if (!token) return;
@@ -274,6 +301,8 @@ async function getStatus() {
 
 // Réception du token depuis la page /settings/linkedin de l'app (handshake).
 chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  // Gelee : aucune page ne peut deposer un jeton ni declencher un poll.
+  if (EXTENSION_GELEE) return false;
   if (message?.type === 'JAY_REACH_LINKEDIN_TOKEN' && typeof message.token === 'string') {
     const patch = { extensionToken: message.token };
     if (typeof message.baseUrl === 'string') patch.appBaseUrl = message.baseUrl.replace(/\/$/, '');
@@ -300,5 +329,5 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
 
 // Poll immédiat au démarrage si déjà configuré.
 getToken().then((t) => {
-  if (t) pollLinkedInQueue();
+  if (t && !EXTENSION_GELEE) pollLinkedInQueue();
 });

@@ -22,6 +22,8 @@
  */
 export const CATALOGUE_EVENEMENTS_NOTIFICATION = [
   'contact.replied',
+  'linkedin.session_blocked',
+  'linkedin.collecte_arretee',
   'send_failed',
   'sender_disconnected',
   'quota_reached',
@@ -31,7 +33,11 @@ export const CATALOGUE_EVENEMENTS_NOTIFICATION = [
 export type EvenementNotification = (typeof CATALOGUE_EVENEMENTS_NOTIFICATION)[number];
 
 /** Sous-ensemble du catalogue réellement proposé à l'écran aujourd'hui — voir le commentaire d'en-tête. */
-export const EVENEMENTS_NOTIFICATION_ACTIFS = ['contact.replied'] as const satisfies readonly EvenementNotification[];
+export const EVENEMENTS_NOTIFICATION_ACTIFS = [
+  'contact.replied',
+  'linkedin.session_blocked',
+  'linkedin.collecte_arretee',
+] as const satisfies readonly EvenementNotification[];
 
 export type EvenementNotificationActif = (typeof EVENEMENTS_NOTIFICATION_ACTIFS)[number];
 
@@ -43,4 +49,6 @@ export interface PreferenceNotification {
 /** Réglage d'usine : tout actif (aucun des quatre événements « à venir » n'a encore de digest du soir à tempérer). */
 export const DEFAUT_ACTIF_NOTIFICATION: Record<EvenementNotificationActif, boolean> = {
   'contact.replied': true,
+  'linkedin.session_blocked': true,
+  'linkedin.collecte_arretee': true,
 };

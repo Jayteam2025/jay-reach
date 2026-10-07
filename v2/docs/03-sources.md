@@ -39,7 +39,7 @@ packages/providers/signals/<id>/
 Un décideur qui vient de prendre son poste dispose de 90 jours pendant lesquels il a mandat de changer les choses et aucun attachement au parc d'outils existant. Meilleur signal du lot, le plus difficile à collecter proprement.
 
 - **Sources par ordre de qualité** : annonces légales (changements de dirigeant, fiable et licite) ; presse professionnelle et rubriques nominations via flux RSS ; communiqués d'entreprise ; changements de poste LinkedIn.
-- **Sous-connecteur LinkedIn** : désactivé par défaut, limité au réseau du compte connecté, avertissement explicite dans l'interface. La collecte massive de profils est juridiquement exposée.
+- **Sous-connecteur LinkedIn** : les engageurs d'un post public (réactions et commentaires), lus depuis un navigateur dédié du serveur derrière un proxy résidentiel, à la demande de l'opérateur et jamais seul. Désactivé par défaut (`JAY_REACH_LINKEDIN`, session à ouvrir depuis le serveur), plafonné (posts par jour, requêtes par heure, personnes enregistrées par passage, tous réglables dans Plafonds), avertissement explicite dans l'interface. Une personne sur la liste de suppression n'est pas collectée. La collecte massive de profils est juridiquement exposée : seules les personnes enregistrées sont conservées, et celles que le moteur ne contacte jamais sont effacées.
 - **Extraction** : personne, nouveau poste, entreprise, date d'effet, poste précédent.
 - **Piège** : distinguer nomination, promotion interne et simple mise à jour de titre. Le modèle tranche avec un seuil de confiance ; en dessous, arbitrage humain.
 - `freshnessWindowDays` : 60.

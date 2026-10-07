@@ -17,6 +17,7 @@ import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { lienProfilDeduit } from './sources.js';
 import {
   CASE_STATUT_DERIVE,
   etapeAffichee,
@@ -531,8 +532,13 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
   const { contactId } = valider(schemaNePlusContacter, entree);
 
   await dansUneTransaction(ctx.ex, async (tx) => {
-    const contactRes = await tx.query<{ id: string; email: string | null }>(
-      `select id, email from contacts /* jr:dnc_contact */ where id = $1 and organization_id = $2`,
+    const contactRes = await tx.query<{
+      id: string;
+      email: string | null;
+      linkedin_url: string | null;
+      linkedin_provider_id: string | null;
+    }>(
+      `select id, email, linkedin_url, linkedin_provider_id from contacts /* jr:dnc_contact */ where id = $1 and organization_id = $2`,
       [contactId, ctx.organisationId],
     );
     const contact = contactRes.rows[0];
@@ -551,6 +557,34 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
            select 1 from suppressions where organization_id = $1 and scope = 'email' and value = $2
          )`,
         [ctx.organisationId, contact.email],
+      );
+    }
+
+    // L'opposition porte sur le TRAITEMENT, pas seulement sur l'envoi : sans cette
+    // ligne, la personne serait re-collectée au prochain post, re-scorée et
+    // ré-enrichie (jetons et achat payés) avant que l'envoi, tout à la fin, ne
+    // soit bloqué. La collecte (`enregistrerEngageur`) consulte ce périmètre.
+    //
+    // DEUX graphies, pas une : la collecte reconnaît une personne par l'adresse qu'elle
+    // lit ET par celle qu'elle déduit de l'URN. Si le contact a été créé sous son nom
+    // public et qu'un passage ultérieur ne le relit pas, seule la forme déduite arrive à
+    // `enregistrerEngageur` : une opposition posée sur la seule adresse du contact ne
+    // correspondrait à rien, et la personne serait recollectée malgré elle.
+    const adresses = [
+      ...new Set(
+        [contact.linkedin_url, contact.linkedin_provider_id ? lienProfilDeduit(contact.linkedin_provider_id) : null].filter(
+          (a): a is string => Boolean(a),
+        ),
+      ),
+    ];
+    for (const adresse of adresses) {
+      await tx.query(
+        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression_linkedin */
+         select $1, 'linkedin', $2, 'operator_do_not_contact', 'manual'
+         where not exists (
+           select 1 from suppressions where organization_id = $1 and scope = 'linkedin' and lower(value) = lower($2)
+         )`,
+        [ctx.organisationId, adresse],
       );
     }
 

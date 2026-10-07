@@ -79,7 +79,7 @@ Quand `successor_hint` est renseigné, l'interface propose directement d'enrichi
 
 La boîte permet de répondre dans le fil **email**. Le message part par le sender lié au contact, jamais par un autre.
 
-Répondre à un fil LinkedIn depuis Jay Reach n'existe pas encore : le bouton est grisé et le dit. La réponse se tape sur LinkedIn, et la détection la rapporte dans le fil comme aujourd'hui. Le canal LinkedIn arrive au lot 4.
+Répondre à un fil LinkedIn depuis Jay Reach n'existe pas encore : le bouton est grisé et le dit. La réponse se tape sur LinkedIn, et la détection la rapporte dans le fil comme aujourd'hui. Les actions et la lecture des réponses LinkedIn arrivent au lot 4b (le lot 4a n'a livré que la collecte).
 
 Une réponse envoyée depuis Jay Reach arrête l'inscription au même titre qu'une réponse envoyée depuis votre client habituel.
 

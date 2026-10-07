@@ -13,6 +13,12 @@
  * l'extension vers l'application — donc les envois LinkedIn, pas seulement
  * l'affichage du compte. Aucune des deux ne se voyait ailleurs que dans la
  * console du service worker.
+ *
+ * EXTENSION GELEE (lot 4a, tache 10) : `content_scripts.matches` et
+ * `externally_connectable` pointent volontairement vers une URL qui n'existe
+ * plus, pour qu'aucun jeton ne soit emis. Les deux autres reglages restent
+ * alignes. Pour reveiller l'extension, remettre les quatre a true ici ; voir
+ * apps/extension/gel.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -32,7 +38,7 @@ const manifeste = JSON.parse(
 const ORIGINES = ['http://localhost:3000', 'https://jay-reach.vercel.app', 'https://app.jay-reach.fr'];
 
 describe('manifeste de l’extension', () => {
-  it.each(ORIGINES)('%s est autorisée dans les quatre réglages', (origine) => {
+  it.each(ORIGINES)('%s : hôtes et CSP alignés, injection et handshake gelés', (origine) => {
     const dansLesHotes = manifeste.host_permissions.some((h) => h.startsWith(origine));
     const dansConnectable = manifeste.externally_connectable.matches.some((m) => m.startsWith(origine));
     const dansLesScripts = manifeste.content_scripts
@@ -42,8 +48,8 @@ describe('manifeste de l’extension', () => {
 
     expect({ dansLesHotes, dansConnectable, dansLesScripts, dansLaCsp }).toEqual({
       dansLesHotes: true,
-      dansConnectable: true,
-      dansLesScripts: true,
+      dansConnectable: false,
+      dansLesScripts: false,
       dansLaCsp: true,
     });
   });

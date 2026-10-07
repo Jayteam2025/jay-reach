@@ -9,6 +9,7 @@ import {
   listerTaches,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { composerLigneLinkedIn, lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { dateCourte, heureAvecJour, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import Link from 'next/link';
 import { Carte, Journal } from '../../../../components/ui';
@@ -22,13 +23,15 @@ export default async function ReglagesMoteurPage() {
   const ctx = await contexteCourant();
   const t = await getTranslations('reglages.moteur');
 
-  const [reglages, etat, pause, erreurs, taches, reglageReleve] = await Promise.all([
+  const [reglages, etat, pause, erreurs, taches, reglageReleve, sessionLinkedin, tRacine] = await Promise.all([
     lireReglages(ctx),
     lireEtatMoteur(ctx),
     lireEtatPauseEnvoi(ctx),
     listerErreursRecentes(ctx),
     listerTaches(ctx),
     lireReglageReleve(ctx),
+    lireSessionLinkedInCourante(ctx),
+    getTranslations(),
   ]);
 
   const fuseau = String(reglages.fuseau ?? FUSEAU_PAR_DEFAUT);
@@ -108,6 +111,18 @@ export default async function ReglagesMoteurPage() {
             erreurs[0] ? { quand: dateCourte(erreurs[0].quand, maintenant, fuseau), libelle: erreurs[0].libelle } : null
           }
           tachesEnAttenteTexte={tachesEnAttenteTexte}
+          linkedin={composerLigneLinkedIn(sessionLinkedin, tRacine, maintenant, fuseau)}
+          purge={(() => {
+            const quand = etat.purge.dernierPassage ? dateCourte(etat.purge.dernierPassage, maintenant, fuseau) : null;
+            const enAlerte = etat.purge.erreur !== null || etat.purge.enRetard;
+            const libelle =
+              etat.purge.erreur !== null
+                ? t('etat.purgeErreur')
+                : quand === null
+                  ? t('etat.purgeJamais')
+                  : t(etat.purge.enRetard ? 'etat.purgeRetard' : 'etat.purgeOk', { quand });
+            return { ton: enAlerte ? ('erreur' as const) : ('bon' as const), libelle, consequence: enAlerte ? t('etat.purgeConsequence') : null };
+          })()}
           libelles={{
             titre: t('etat.titre'),
             enMarche: t('etat.enMarche'),
@@ -120,6 +135,8 @@ export default async function ReglagesMoteurPage() {
             aucuneErreur: t('etat.aucuneErreur'),
             tachesEnAttente: t('etat.tachesEnAttente'),
             aucuneTache: t('etat.aucuneTache'),
+            linkedin: t('etat.linkedin'),
+            purge: t('etat.purge'),
           }}
         />
         <PauseEnvoi

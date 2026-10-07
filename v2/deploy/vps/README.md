@@ -140,8 +140,9 @@ docker compose -p jay-reach down
   mêmes files rendent les journaux illisibles.
 - **Ne pas remettre la planification Vercel en route** tant que ce worker
   tourne : les deux produiraient le même travail.
-- **Aucun port n'est publié** par ce compose : le worker n'expose aucun
-  service réseau, il ne fait que consommer des files d'attente.
+- **Aucun port n'est publié** : le worker ne fait que consommer des files
+  d'attente, et le navigateur LinkedIn (section suivante, facultatif) n'est
+  joignable que par le réseau Compose.
 - **Les plafonds quotidiens comptent en UTC**, le jour de la base Postgres,
   pas le fuseau du serveur ni celui d'un opérateur. C'est le comportement par
   défaut d'un projet Supabase ; à vérifier si le projet a été reconfiguré.
@@ -171,8 +172,85 @@ joignable : celle de Fournisseurs → Microsoft Graph, ou, à défaut, les trois
 variables ci-dessus **toutes les trois** présentes. Une seule manquante et rien
 ne tourne.
 
+| `JAY_REACH_LINKEDIN` | Optionnelle. `1` autorise les commandes `jay-reach linkedin ...` ; sinon `connecter`, `deconnecter` et `ip` refusent (`statut` reste lisible). |
+| `LINKEDIN_BROWSER_URL` | Adresse DevTools du service `navigateur` : `http://navigateur:9223`. |
+| `LINKEDIN_PROXY_URL` (**`navigateur.env`**) | Adresse du proxy résidentiel dédié, **sans identifiants** (`schéma://hôte:port`). Le navigateur refuse de démarrer sans elle. |
+| `LINKEDIN_PROXY_USER` / `LINKEDIN_PROXY_PASSWORD` (`worker.env`) | Identifiants du proxy, présentés par CDP : Chromium les refuse dans `--proxy-server`. |
+| `JAY_REACH_ORGANISATION_ID` | Optionnelle. À poser si la base porte plusieurs organisations (sinon l'organisation unique est prise). |
+
 `GIT_SHA`, `NODE_ENV` et `HEARTBEAT_FILE` sont posés directement par
 `docker-compose.yml` : ils n'ont pas leur place dans `worker.env`.
+
+## Le navigateur LinkedIn (facultatif)
+
+Le canal LinkedIn exécuté côté serveur pilote un Chromium dans son propre
+conteneur (`navigateur`), derrière un proxy résidentiel dédié. Il est derrière
+un profil Compose : sans le réglage ci-dessous, `./deployer.sh` ne le construit
+ni ne le démarre.
+
+1. Dans `/etc/jay-reach/worker.env`, poser `JAY_REACH_LINKEDIN=1`,
+   `LINKEDIN_BROWSER_URL`, `LINKEDIN_PROXY_USER` et `LINKEDIN_PROXY_PASSWORD`.
+   **L'adresse du proxy va dans un fichier à part**, que seul le navigateur
+   charge :
+
+   ```bash
+   sudo cp deploy/vps/navigateur.env.example /etc/jay-reach/navigateur.env
+   sudo chmod 600 /etc/jay-reach/navigateur.env
+   sudo chown root:root /etc/jay-reach/navigateur.env
+   sudo nano /etc/jay-reach/navigateur.env
+   ```
+2. Activer le profil, une fois, dans `deploy/vps/.env` (fichier local, jamais commité) :
+
+   ```bash
+   echo 'COMPOSE_PROFILES=linkedin' >> .env
+   ./deployer.sh --force-recreate
+   ```
+
+3. Installer la commande d'exploitation :
+
+   ```bash
+   sudo install -m 0755 jay-reach /usr/local/bin/jay-reach
+   ```
+
+   Le script suppose le dépôt dans `/opt/jay-reach` ; ailleurs, exporter
+   `JAY_REACH_DEPLOY_DIR` vers ce dossier (`deploy/vps`). Il est installé par
+   copie : après une mise à jour du dépôt, le réinstaller.
+4. Ouvrir la session, depuis un terminal (la saisie du mot de passe et du code
+   est masquée, rien ne passe par l'historique du shell) :
+
+   ```bash
+   jay-reach linkedin connecter
+   jay-reach linkedin statut
+   ```
+
+Autres commandes : `jay-reach linkedin deconnecter` (révoque la session) et
+`jay-reach linkedin ip [--confirmer]` (relève l'IP de sortie par le navigateur ;
+`--confirmer` la pose comme IP attendue après un changement de proxy voulu).
+
+Points à connaître :
+
+- **Le navigateur ne sort jamais par l'IP du VPS** : il refuse de démarrer sans
+  `LINKEDIN_PROXY_URL`, et l'IP de sortie est relevée **par le navigateur**,
+  jamais par le worker.
+- **Le DevTools du navigateur donne la main sur la session LinkedIn**, c'est
+  pourquoi aucun port n'est publié, pas même sur `127.0.0.1` (tout processus
+  local ou conteneur en `network_mode: host` y accéderait). Ne jamais en
+  ajouter un, ni tunneler le port vers un poste partagé.
+- **Seul un proxy HTTP ou HTTPS convient.** Chromium ne sait pas authentifier
+  un proxy SOCKS5 : `page.authenticate` n'aurait aucun effet et l'erreur serait
+  illisible. L'entrypoint refuse toute autre forme.
+- **Limites du conteneur** : 1,5 Go de mémoire et 512 processus, car ce serveur
+  héberge aussi les bots de visioconférence de production. Un `docker stats`
+  qui colle au plafond se traite avant qu'il ne coûte la mémoire de ces bots.
+- **Le secret du proxy est réparti sur deux fichiers, exprès.** L'adresse
+  `LINKEDIN_PROXY_URL` va dans `navigateur.env` (Chromium en a besoin pour
+  `--proxy-server`) ; les identifiants `LINKEDIN_PROXY_USER` et
+  `LINKEDIN_PROXY_PASSWORD` vont dans `worker.env` (le worker les présente par
+  CDP). Le conteneur `navigateur`, qui exécute le JavaScript de pages tierces,
+  ne voit ainsi ni clé du worker ni identifiant de proxy. Ne pas tout remettre
+  dans un seul fichier.
+- Le profil (cookies de la session) vit dans le volume `profil-navigateur` :
+  `docker compose -p jay-reach down -v` l'efface.
 
 ### Restreindre l'application Microsoft Graph à ses boîtes
 

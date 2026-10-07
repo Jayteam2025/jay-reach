@@ -26,6 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
+import { cadencePurge } from './handlers/retention-purge.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
 // ressent l'opérateur entre son clic et le départ de la collecte. La requête est
@@ -43,6 +44,14 @@ const RELEVE_SALESBLINK_POLL_MS = 60_000;
 
 /** Même raison que `RELEVE_SALESBLINK_POLL_MS` : `produire()` est trop lâche pour un `sync_interval_min` Graph par défaut de cinq minutes. */
 const RELEVE_GRAPH_POLL_MS = 60_000;
+
+/**
+ * Cadence de la purge de rétention. Aucune urgence : la durée se compte en jours,
+ * une heure de retard ne change rien. Sans identifiant de job : la purge est
+ * idempotente par les données (ce qui est effacé n'est plus sélectionné), deux
+ * jobs concurrents au pire ne trouvent rien à faire.
+ */
+const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS);
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -134,6 +143,15 @@ async function main(): Promise<void> {
   const releveGraph = setInterval(enfilerReleveGraph, RELEVE_GRAPH_POLL_MS);
   releveGraph.unref();
 
+  const enfilerPurge = (): void => {
+    void boss.send('retention.purge', {}).catch(() => {
+      console.error('[retention-purge] enfilage impossible (retention_purge_enqueue)');
+    });
+  };
+  enfilerPurge();
+  const purge = setInterval(enfilerPurge, RETENTION_PURGE_POLL_MS);
+  purge.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[worker] ${signal} reçu, arrêt propre…`);
     clearInterval(producer);
@@ -141,6 +159,7 @@ async function main(): Promise<void> {
     clearInterval(ticker);
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);
+    clearInterval(purge);
     await boss.stop({ graceful: true });
     process.exit(0);
   };

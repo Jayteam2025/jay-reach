@@ -28,8 +28,9 @@ Rien n'est enregistré avant le dernier bouton : vous pouvez revenir en arrière
 1. **Qui** : donnez un nom à la campagne, choisissez le persona recherché (ou créez-en un nouveau), réglez
    le score minimal d'entrée si le défaut de l'organisation ne convient pas.
 2. **Sources** : ajoutez au moins une source. Offres d'emploi (Adzuna, France Travail). LinkedIn
-   (engageurs d'un post, abonnés d'un concurrent, mots-clés, changement de poste, réglables dès
-   maintenant ; la collecte elle-même arrive dans un lot suivant). Ou manuel (fichier CSV, liste
+   (engageurs d'un post, abonnés d'un concurrent, mots-clés, changement de poste : seule la collecte des
+   engageurs d'un post tourne aujourd'hui, à la demande avec **Collecter maintenant** ; les trois autres
+   se règlent mais ne collectent pas encore). Ou manuel (fichier CSV, liste
    existante, annuaire d'entreprises).
 3. **Séquence** : partez d'un modèle tout prêt ou composez vos étapes une par une : canal, objet, corps
    avec variables, délai avant la relance suivante.
@@ -128,14 +129,29 @@ Les **boîtes email** : une carte par boîte, avec son état de connexion, son u
 ses heures d'envoi. **Modifier** ajuste ces réglages ; **Relier une boîte** en connecte une nouvelle. Une
 boîte peut aussi être réglée pour lire ses réponses directement, sans attendre la relève habituelle.
 
-Les **comptes LinkedIn** : une carte par compte déjà connecté, avec ses quotas de profils lus et
-d'actions par jour et par semaine, et le bouton **Modifier** pour les ajuster. Cet écran ne permet pas
-encore d'en connecter un nouveau.
+Les **comptes LinkedIn** : une carte par compte connecté par l'extension de navigateur, avec ses quotas de
+profils lus et d'actions par jour et par semaine. L'extension est gelée : ces quotas ne pilotent plus la
+collecte, qui passe par le serveur (voir Réglages › LinkedIn ci-dessous). Cet écran ne permet pas d'en
+connecter un nouveau.
+
+### LinkedIn
+
+La **session du serveur** : l'état de la connexion à LinkedIn (prête, arrêtée par un défi, par un cookie
+refusé, par précaution après trois échecs d'affilée, ou fermée), l'adresse par laquelle le navigateur du
+serveur sort, et la date de la dernière collecte. Rien ne se saisit ici : le mot de passe et le code ne
+transitent jamais par l'application, la session s'ouvre depuis un terminal sur le serveur
+(`jay-reach linkedin connecter`) et ne repart pas seule une fois arrêtée. La page porte aussi les trois
+plafonds de collecte, réglables comme dans Plafonds.
+
+Le résultat d'une collecte se lit sur la carte de la source (Sources) : pour le dernier passage, ses
+personnes vues, nouvelles, doublons, déjà en campagne et écartées par le scoring, et la raison quand il
+n'a rien produit (session fermée, aucune campagne active, plafond atteint...).
 
 ### Plafonds
 
 Cette page règle ce qui protège l'organisation : le nombre de scorings et d'enrichissements autorisés par
-jour, le score minimal d'entrée par défaut, la relecture des premiers envois par défaut, l'âge maximal des
+jour, les plafonds de la collecte LinkedIn (posts par jour, requêtes par heure, nouvelles personnes
+enregistrées par passage), le score minimal d'entrée par défaut, la relecture des premiers envois par défaut, l'âge maximal des
 offres retenues.
 
 La règle à retenir : **tout se règle ici, en base**. L'environnement technique du serveur ne sert de repli

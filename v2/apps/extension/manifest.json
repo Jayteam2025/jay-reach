@@ -23,9 +23,7 @@
   "content_scripts": [
     {
       "matches": [
-        "http://localhost:3000/settings/linkedin*",
-        "https://app.jay-reach.fr/settings/linkedin*",
-        "https://jay-reach.vercel.app/settings/linkedin*"
+        "https://extension-gelee.invalid/settings/linkedin*"
       ],
       "js": [
         "content-oauth.js"
@@ -51,9 +49,7 @@
   },
   "externally_connectable": {
     "matches": [
-      "http://localhost:3000/*",
-      "https://app.jay-reach.fr/*",
-      "https://jay-reach.vercel.app/*"
+      "https://extension-gelee.invalid/*"
     ]
   }
 }

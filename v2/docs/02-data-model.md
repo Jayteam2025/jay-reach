@@ -47,12 +47,14 @@ Approuver un envoi exige `operator` minimum.
 
 **source_runs** — `source_id`, `started_at`, `finished_at`, `status`, `cursor` (jsonb), `items_found`, `items_new`, `error`
 
+Pour un passage de collecte LinkedIn, le bilan tient dans des colonnes dédiées : `requetes` (émises vers LinkedIn), `vus`, `nouveaux`, `doublons`, `deja_en_campagne`, `ecartes` (par le scoring, après coup), `ignores` (profil trop pauvre), `opposes` (liste de suppression), `adresses_deduites` (enregistrées sous une adresse déduite de l'URN, ni cherchables ni enrichissables), `plafond_personnes_atteint`, plus `ip_sortie` et `operateur_sortie` (d'où le passage est parti) et `verdict_linkedin` (le passage dit-il quelque chose de l'état du compte ?). `error` dit pourquoi un passage n'a rien produit ; l'écran Sources la lit.
+
 Sans historique d'exécution, on ne sait jamais pourquoi une source ne remonte plus rien.
 
 **signals**
 - `id`, `organization_id`, `source_id`, `provider_id`
 - `external_id` — unique avec `source_id`
-- `kind` — `job_posting` | `appointment` | `tradeshow`
+- `kind` — `job_posting` | `appointment` | `tradeshow` | `post_engagement` (une personne qui a réagi à un post LinkedIn : son signal naît `new`, et `source_run_id` désigne le passage qui l'a collectée)
 - `occurred_at` — date de l'événement, **pas** de la collecte. Peut être dans le futur (salons).
 - `raw` (jsonb), `title`, `url`, `company_hint`, `location`
 - `account_id` nullable, `resolution_status` (`pending`|`resolved`|`unresolved`|`rejected`)

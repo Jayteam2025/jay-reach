@@ -175,6 +175,23 @@
       "operator": "Operator",
       "viewer": "Lezer",
       "none": "Geen rol"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn klaar",
+        "arrete": "LinkedIn gestopt",
+        "aucune": "LinkedIn: geen sessie"
+      },
+      "detail": {
+        "derniereCollecte": "Laatste verzameling {quand}",
+        "aucuneCollecte": "Nog niets verzameld",
+        "absente": "Sessie te openen",
+        "defi": "Verificatie gevraagd, maak opnieuw verbinding",
+        "cookieRefuse": "Sessie geweigerd, maak opnieuw verbinding",
+        "disjoncteur": "Te veel mislukkingen, maak opnieuw verbinding",
+        "revoquee": "Sessie gesloten",
+        "sortieInattendue": "Onverwachte netwerkuitgang"
+      }
     }
   },
   "aujourdhui": {
@@ -610,7 +627,16 @@
         "franceEntiere": "Heel Frankrijk",
         "readAndKept": "{lus, plural, one {# vacature gelezen} other {# vacatures gelezen}}, {retenus, plural, one {# behouden} other {# behouden}} bij de laatste run",
         "nextPaused": "gepauzeerd",
-        "nextOnLaunch": "bij het starten"
+        "nextOnLaunch": "bij het starten",
+        "onDemand": "Op aanvraag: “Nu verzamelen”",
+        "lastRun": "Laatste run",
+        "lastRunNever": "Nog nooit uitgevoerd",
+        "runRunning": "bezig",
+        "runSuccess": "afgerond",
+        "runError": "gestopt",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# persoon gezien} other {# personen gezien}} · {nouveaux, plural, one {# nieuw} other {# nieuw}} · {doublons, plural, one {# dubbel} other {# dubbel}} · {dejaEnCampagne} al in een campagne · {ecartes, plural, one {# afgewezen} other {# afgewezen}} door de scoring",
+        "runDetails": "{requetes, plural, one {# verzoek} other {# verzoeken}} · {ignores} overgeslagen (profiel te beperkt) · {opposes} bezwaar · {adressesDeduites} zonder openbaar adres"
       },
       "drawer": {
         "close": "Sluiten",
@@ -644,7 +670,10 @@
         "keepPeople": "We houden personen die",
         "commented": "hebben een reactie geplaatst",
         "reacted": "hebben gereageerd",
-        "excludeFirstDegree": "buiten 1e-graadsverbindingen",
+        "postOneCampaign": "Een post kan maar voor één campagne dienen.",
+        "persona": "Persona van de bron",
+        "personaChoisir": "Kies een persona",
+        "personaRequis": "Kies de persona van deze bron.",
         "accountId": "LinkedIn-account",
         "profilesPerDay": "Profielen gelezen per dag",
         "competitorPages": "Gevolgde bedrijfspagina's",
@@ -705,7 +734,14 @@
         "directoryContactsCreated": "Aangemaakte contacten",
         "directoryNone": "geen",
         "directoryHint": "De bedrijvengids levert bedrijven, geen personen: contacten komen uit vacatures, LinkedIn of een import. Toegevoegde bedrijven verschijnen in Contacten › Bedrijven.",
-        "directoryRetain": "{n} bedrijven toevoegen"
+        "directoryRetain": "{n} bedrijven toevoegen",
+        "brouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd.",
+        "collectNow": "Nu verzamelen",
+        "collectNowDraft": "Beschikbaar zodra de campagne is gelanceerd.",
+        "collectNowUnsaved": "Beschikbaar zodra de bron is opgeslagen.",
+        "collectNowInactive": "Beschikbaar zolang de campagne actief is.",
+        "collectRequested": "Verzameling aangevraagd.",
+        "collectNowPaused": "Beschikbaar wanneer de bron actief is."
       }
     },
     "sequence": {
@@ -793,6 +829,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "De bron “{nom}” heeft geen persona, maar deze campagne heeft er nu meerdere. Open de bron om er een te kiezen.",
+        "personaSourcePerime": "De bron “{nom}” hoort bij een persona die niet meer bij deze campagne hoort. Open de bron om een andere te kiezen."
+      },
       "identity": {
         "title": "Identiteit",
         "name": "Naam van de campagne",
@@ -889,7 +929,7 @@
         "formLinkedinKeepPeople": "We houden personen die",
         "formLinkedinCommented": "hebben een reactie geplaatst",
         "formLinkedinReacted": "hebben gereageerd",
-        "formLinkedinExcludeFirstDegree": "buiten 1e-graadsverbindingen",
+        "formLinkedinPostOneCampaign": "Een post kan maar voor één campagne dienen.",
         "formLinkedinCompetitorPages": "Gevolgde bedrijfspagina's",
         "formLinkedinTopics": "Gevolgde onderwerpen",
         "formLinkedinSinceDays": "Functie aangetreden sinds (dagen)",
@@ -899,7 +939,8 @@
         "summaryLinkedin": "{n, plural, one {# profiel per dag} other {# profielen per dag}}",
         "formSubmit": "Toevoegen",
         "formCancel": "Annuleren",
-        "formError": "Er is minstens één trefwoord vereist."
+        "formError": "Er is minstens één trefwoord vereist.",
+        "formLinkedinBrouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd."
       },
       "sequence": {
         "startFrom": "Beginnen vanaf",
@@ -962,7 +1003,8 @@
       "personas": "Persona's",
       "messages": "Berichten",
       "engine": "Motor",
-      "account": "Account"
+      "account": "Account",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "E-mailmailboxes",
@@ -1107,6 +1149,18 @@
         "enrichissementsParJour": {
           "nom": "Verrijkingen per dag",
           "description": "FullEnrich-credits om e-mails te vinden"
+        },
+        "linkedinPostsParJour": {
+          "nom": "LinkedIn-posts per dag",
+          "description": "posts waarvan de reageerders per dag worden verzameld"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "LinkedIn-verzoeken per uur",
+          "description": "daadwerkelijk naar LinkedIn verstuurde verzoeken, alle verzamelingen samen"
+        },
+        "linkedinPersonnesParPassage": {
+          "nom": "LinkedIn-personen per run",
+          "description": "nieuwe personen opgeslagen per verzamelrun; daarna wordt de rest van de post niet bewaard"
         },
         "scoreMinDefaut": {
           "nom": "Minimale instapscore",
@@ -1326,7 +1380,14 @@
         "aucuneErreur": "Geen",
         "tachesEnAttente": "Wachtende taken",
         "aucuneTache": "Geen",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}",
+        "linkedin": "LinkedIn",
+        "purge": "Bewaartermijnopruiming",
+        "purgeOk": "Laatste run {quand}",
+        "purgeJamais": "Nog nooit gedraaid",
+        "purgeRetard": "Achterstallig: laatste run {quand}",
+        "purgeErreur": "Laatste run mislukt",
+        "purgeConsequence": "Verzamelde personen worden niet meer gewist op de datum die in Instellingen › LinkedIn wordt vermeld."
       },
       "pause": {
         "titre": "Algemene verzendpauze",
@@ -1436,12 +1497,97 @@
               "titre": "Er komt een reactie binnen",
               "detail": "bij elke gedetecteerde menselijke reactie"
             }
+          },
+          "linkedin": {
+            "session_blocked": {
+              "titre": "Uw LinkedIn-sessie is geblokkeerd",
+              "detail": "wanneer de LinkedIn-verzameling stopt en opnieuw verbinden vraagt"
+            },
+            "collecte_arretee": {
+              "titre": "Een LinkedIn-verzameling stopt",
+              "detail": "wanneer een bericht niets oplevert, terwijl de sessie geldig blijft"
+            }
           }
         }
       },
       "session": {
         "titre": "Sessie",
         "bouton": "Afmelden"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "Hoe de verbinding van de server met LinkedIn ervoor staat, via welk netwerkadres ze naar buiten gaat en wat ze mag verzamelen.",
+      "carte": {
+        "titre": "LinkedIn-sessie",
+        "sousTitre": "Account van de organisatie, op de server"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "Geen sessie.",
+          "detail": "Open de sessie vanaf de server: het wachtwoord en de code lopen niet via deze pagina."
+        },
+        "prete": {
+          "phrase": "Klaar om te verzamelen.",
+          "detail": "Verbonden: {depuis}. Laatste verzameling: {collecte}.",
+          "detailSansCollecte": "Verbonden: {depuis}. Nog niets verzameld."
+        },
+        "defi": {
+          "phrase": "Gestopt: LinkedIn vroeg om een verificatie.",
+          "detail": "Vastgesteld: {quand}. Er volgt bewust geen nieuwe poging."
+        },
+        "cookieRefuse": {
+          "phrase": "Gestopt: LinkedIn heeft de opgeslagen sessie geweigerd.",
+          "detail": "Vastgesteld: {quand}. Er volgt bewust geen nieuwe poging."
+        },
+        "disjoncteur": {
+          "phrase": "Uit voorzorg gestopt: te veel mislukkingen na elkaar.",
+          "detail": "Vastgesteld: {quand}. Er volgt geen nieuwe poging zolang de sessie niet is heropend."
+        },
+        "revoquee": {
+          "phrase": "Sessie gesloten.",
+          "detail": "Bewust gesloten: {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Gestopt: de netwerkuitgang is niet de verwachte.",
+          "detail": "Gezien op {ip} ({origine}) in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "detailSansOrigine": "Gezien op {ip} in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
+        }
+      },
+      "commande": {
+        "consigne": "Open de sessie opnieuw in een terminal op de server:",
+        "consigneDefi": "Los de verificatie op en open de sessie daarna opnieuw in een terminal op de server:"
+      },
+      "faits": {
+        "sortie": "Netwerkuitgang",
+        "operateur": "Operator en land",
+        "collecte": "Laatste verzameling",
+        "inconnu": "Onbekend",
+        "jamais": "Nooit"
+      },
+      "plafonds": {
+        "titre": "Verzamellimieten",
+        "lead": "Dit zijn dezelfde instellingen als in Instellingen › Limieten.",
+        "postsParJour": {
+          "nom": "Posts per dag",
+          "usage": "{n, plural, =0 {Vandaag geen gebruikt} one {# vandaag gebruikt} other {# vandaag gebruikt}}"
+        },
+        "requetesParHeure": {
+          "nom": "Verzoeken per uur",
+          "usage": "{n, plural, =0 {Geen in het laatste uur} one {# in het laatste uur} other {# in het laatste uur}}"
+        },
+        "personnesParPassage": {
+          "nom": "Personen per run",
+          "usage": "Nieuwe personen opgeslagen per run; daarna stopt de run"
+        },
+        "enregistrer": "Opslaan",
+        "erreurNombre": "Voer een geheel getal in."
+      },
+      "avertissement": {
+        "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
+        "risque": "Het gebruikte account kan worden beperkt of gesloten. De operator van deze instantie is daarvoor verantwoordelijk.",
+        "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na {jours} dagen gewist. Wie we al hebben beoordeeld, laat een onleesbare vingerafdruk achter (niet de identificatie zelf), hoogstens {jours} dagen bewaard, zodat we niemand twee keer beoordelen."
       }
     }
   },
@@ -1574,6 +1720,14 @@
       "known": "Al bekend",
       "missingEmail": "Zonder e-mail",
       "submit": "{n} contacten importeren"
+    }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "U ontvangt dit bericht omdat u hebt gereageerd op een openbare LinkedIn-publicatie of erop hebt gereageerd met een opmerking. Uw professionele gegevens komen van LinkedIn en van onze contactverrijking. Om bezwaar te maken tegen deze verwerking en niet langer gecontacteerd te worden, antwoordt u gewoon op dit bericht."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn."
     }
   }
 }

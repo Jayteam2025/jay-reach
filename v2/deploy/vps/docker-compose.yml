@@ -27,3 +27,50 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  # Navigateur dédié à LinkedIn (lot 4a). Son profil (cookies de la session) vit
+  # sur un volume nommé. Il ne démarre pas sans LINKEDIN_PROXY_URL, pour ne
+  # jamais sortir par l'IP publique du VPS. Réseau du projet uniquement : jamais
+  # `vexa-lite-net`. Le DevTools donne la main sur la session LinkedIn : il n'est publié nulle part.
+  navigateur:
+    # Facultatif : `up -d` ne le démarre que si COMPOSE_PROFILES=linkedin (voir README).
+    profiles: ["linkedin"]
+    build:
+      context: ./navigateur
+    image: jay-reach-navigateur:${GIT_SHA:-local}
+    restart: unless-stopped
+    # Fichier dédié, qui ne porte que l'adresse du proxy : c'est le conteneur qui exécute le
+    # JavaScript de pages tierces, il ne doit voir ni DATABASE_URL ni aucune clé du worker.
+    env_file:
+      - ${JAY_REACH_NAVIGATEUR_ENV_FILE:-/etc/jay-reach/navigateur.env}
+    # Aucun port publié : le worker joint le navigateur par le réseau Compose. Publier le
+    # DevTools, même sur 127.0.0.1, donnerait la main sur la session LinkedIn à tout
+    # processus local ou conteneur en `network_mode: host`.
+    # Nom d'hôte fixe : le verrou de profil de Chromium en dépend (voir l'entrypoint).
+    hostname: navigateur
+    volumes:
+      - profil-navigateur:/profil
+    shm_size: 1gb
+    # Ce VPS héberge aussi les bots de visioconférence de production : un Chromium qui
+    # dérive ne doit pas leur prendre la mémoire.
+    mem_limit: 1500m
+    pids_limit: 512
+    # Il exécute du JavaScript tiers, en --no-sandbox, au-dessus du cookie de session.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # 9223 : traverse le relais socat, pas seulement Chromium.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9223/json/version"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  profil-navigateur:

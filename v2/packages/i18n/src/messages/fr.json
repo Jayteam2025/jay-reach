@@ -175,6 +175,23 @@
       "operator": "Opérateur",
       "viewer": "Lecteur",
       "none": "Sans rôle"
+    },
+    "linkedin": {
+      "libelle": {
+        "pret": "LinkedIn prêt",
+        "arrete": "LinkedIn arrêté",
+        "aucune": "LinkedIn : aucune session"
+      },
+      "detail": {
+        "derniereCollecte": "Dernière collecte {quand}",
+        "aucuneCollecte": "Aucune collecte pour l'instant",
+        "absente": "Session à ouvrir",
+        "defi": "Vérification demandée, reconnectez-vous",
+        "cookieRefuse": "Session refusée, reconnectez-vous",
+        "disjoncteur": "Trop d'échecs, reconnectez-vous",
+        "revoquee": "Session fermée",
+        "sortieInattendue": "Sortie réseau inattendue"
+      }
     }
   },
   "aujourdhui": {
@@ -610,7 +627,16 @@
         "franceEntiere": "France entière",
         "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage",
         "nextPaused": "en pause",
-        "nextOnLaunch": "au lancement"
+        "nextOnLaunch": "au lancement",
+        "onDemand": "À la demande : « Collecter maintenant »",
+        "lastRun": "Dernier passage",
+        "lastRunNever": "Jamais lancé",
+        "runRunning": "en cours",
+        "runSuccess": "terminé",
+        "runError": "arrêté",
+        "runHeader": "{quand} · {statut}",
+        "runCounts": "{vus, plural, one {# personne vue} other {# personnes vues}} · {nouveaux, plural, one {# nouvelle} other {# nouvelles}} · {doublons, plural, one {# doublon} other {# doublons}} · {dejaEnCampagne} déjà en campagne · {ecartes, plural, one {# écartée} other {# écartées}} par le scoring",
+        "runDetails": "{requetes, plural, one {# requête} other {# requêtes}} · {ignores, plural, one {# ignoré} other {# ignorés}} (profil trop pauvre) · {opposes, plural, one {# opposé} other {# opposés}} · {adressesDeduites} sans adresse publique"
       },
       "drawer": {
         "close": "Fermer",
@@ -644,7 +670,10 @@
         "keepPeople": "On garde les personnes qui",
         "commented": "ont commenté",
         "reacted": "ont réagi",
-        "excludeFirstDegree": "hors relations de 1er degré",
+        "postOneCampaign": "Un post ne peut servir qu'à une seule campagne.",
+        "persona": "Persona de la source",
+        "personaChoisir": "Choisir un persona",
+        "personaRequis": "Choisissez le persona de cette source.",
         "accountId": "Compte LinkedIn",
         "profilesPerDay": "Profils lus par jour",
         "competitorPages": "Pages entreprise suivies",
@@ -705,7 +734,14 @@
         "directoryContactsCreated": "Contacts créés",
         "directoryNone": "aucun",
         "directoryHint": "L'annuaire donne des entreprises, pas des personnes : les contacts viendront des offres, de LinkedIn ou d'un import. Les entreprises ajoutées apparaissent dans Contacts › Entreprises.",
-        "directoryRetain": "Ajouter {n} entreprises"
+        "directoryRetain": "Ajouter {n} entreprises",
+        "brouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
+        "collectNow": "Collecter maintenant",
+        "collectNowDraft": "Disponible une fois la campagne lancée.",
+        "collectNowUnsaved": "Disponible une fois la source enregistrée.",
+        "collectNowInactive": "Disponible tant que la campagne est active.",
+        "collectRequested": "Collecte demandée.",
+        "collectNowPaused": "Disponible quand la source est active."
       }
     },
     "sequence": {
@@ -793,6 +829,10 @@
       }
     },
     "reglages": {
+      "errors": {
+        "personaSourceAbsent": "La source « {nom} » n’a pas de persona, or cette campagne en porte plusieurs. Ouvrez-la pour en choisir un.",
+        "personaSourcePerime": "La source « {nom} » est rattachée à un persona qui ne fait plus partie de cette campagne. Ouvrez-la pour en choisir un autre."
+      },
       "identity": {
         "title": "Identité",
         "name": "Nom de la campagne",
@@ -889,7 +929,7 @@
         "formLinkedinKeepPeople": "On garde les personnes qui",
         "formLinkedinCommented": "ont commenté",
         "formLinkedinReacted": "ont réagi",
-        "formLinkedinExcludeFirstDegree": "hors relations de 1er degré",
+        "formLinkedinPostOneCampaign": "Un post ne peut servir qu'à une seule campagne.",
         "formLinkedinCompetitorPages": "Pages entreprise suivies",
         "formLinkedinTopics": "Sujets suivis",
         "formLinkedinSinceDays": "Poste pris depuis (jours)",
@@ -899,7 +939,8 @@
         "summaryLinkedin": "{n, plural, one {# profil par jour} other {# profils par jour}}",
         "formSubmit": "Ajouter",
         "formCancel": "Annuler",
-        "formError": "Au moins un mot-clé est nécessaire."
+        "formError": "Au moins un mot-clé est nécessaire.",
+        "formLinkedinBrouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée."
       },
       "sequence": {
         "startFrom": "Partir de",
@@ -962,7 +1003,8 @@
       "personas": "Personas",
       "messages": "Messages",
       "engine": "Moteur",
-      "account": "Compte"
+      "account": "Compte",
+      "linkedin": "LinkedIn"
     },
     "expediteurs": {
       "boxesTitle": "Boîtes email",
@@ -1107,6 +1149,18 @@
         "enrichissementsParJour": {
           "nom": "Enrichissements par jour",
           "description": "crédits FullEnrich pour trouver des emails"
+        },
+        "linkedinPostsParJour": {
+          "nom": "Posts LinkedIn par jour",
+          "description": "posts dont on collecte les engageurs, par jour"
+        },
+        "linkedinRequetesParHeure": {
+          "nom": "Requêtes LinkedIn par heure",
+          "description": "requêtes réellement émises vers LinkedIn, toutes collectes confondues"
+        },
+        "linkedinPersonnesParPassage": {
+          "nom": "Personnes LinkedIn par passage",
+          "description": "nouvelles personnes enregistrées par passage de collecte ; au-delà, le reste du post n’est pas conservé"
         },
         "scoreMinDefaut": {
           "nom": "Score minimal d'entrée",
@@ -1326,7 +1380,14 @@
         "aucuneErreur": "Aucune",
         "tachesEnAttente": "Tâches en attente",
         "aucuneTache": "Aucune",
-        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}"
+        "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}",
+        "linkedin": "LinkedIn",
+        "purge": "Purge de rétention",
+        "purgeOk": "Dernier passage {quand}",
+        "purgeJamais": "Aucun passage",
+        "purgeRetard": "En retard : dernier passage {quand}",
+        "purgeErreur": "Échec au dernier passage",
+        "purgeConsequence": "Les personnes collectées ne sont plus effacées à la date annoncée dans Réglages › LinkedIn."
       },
       "pause": {
         "titre": "Pause d'envoi globale",
@@ -1436,12 +1497,97 @@
               "titre": "Une réponse arrive",
               "detail": "à chaque réponse humaine détectée"
             }
+          },
+          "linkedin": {
+            "session_blocked": {
+              "titre": "Votre session LinkedIn est bloquée",
+              "detail": "quand la collecte LinkedIn s’arrête et demande une reconnexion"
+            },
+            "collecte_arretee": {
+              "titre": "Une collecte LinkedIn s’arrête",
+              "detail": "quand un post ne livre rien, sans que la session soit en cause"
+            }
           }
         }
       },
       "session": {
         "titre": "Session",
         "bouton": "Se déconnecter"
+      }
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "lead": "Où en est la connexion du serveur à LinkedIn, par où elle sort et ce qu'elle a le droit de collecter.",
+      "carte": {
+        "titre": "Session LinkedIn",
+        "sousTitre": "Compte de l'organisation, sur le serveur"
+      },
+      "etat": {
+        "absente": {
+          "phrase": "Aucune session.",
+          "detail": "Ouvrez-la depuis le serveur : le mot de passe et le code ne transitent pas par cette page."
+        },
+        "prete": {
+          "phrase": "Prête à collecter.",
+          "detail": "Connectée : {depuis}. Dernière collecte : {collecte}.",
+          "detailSansCollecte": "Connectée : {depuis}. Aucune collecte pour l'instant."
+        },
+        "defi": {
+          "phrase": "Arrêtée : LinkedIn a demandé une vérification.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu, c'est voulu."
+        },
+        "cookieRefuse": {
+          "phrase": "Arrêtée : LinkedIn a refusé la session enregistrée.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu, c'est voulu."
+        },
+        "disjoncteur": {
+          "phrase": "Arrêtée par précaution : trop d'échecs d'affilée.",
+          "detail": "Constaté : {quand}. Aucune nouvelle tentative n'aura lieu tant que la session n'est pas rouverte."
+        },
+        "revoquee": {
+          "phrase": "Session fermée.",
+          "detail": "Fermée volontairement : {quand}."
+        },
+        "sortieInattendue": {
+          "phrase": "Arrêtée : la sortie réseau n'est pas celle attendue.",
+          "detail": "Vue à {ip} ({origine}) au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "detailSansOrigine": "Vue à {ip} au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
+        }
+      },
+      "commande": {
+        "consigne": "Dans un terminal sur le serveur, rouvrez la session :",
+        "consigneDefi": "Résolvez la vérification, puis rouvrez la session depuis un terminal sur le serveur :"
+      },
+      "faits": {
+        "sortie": "Sortie réseau",
+        "operateur": "Opérateur et pays",
+        "collecte": "Dernière collecte",
+        "inconnu": "Inconnu",
+        "jamais": "Jamais"
+      },
+      "plafonds": {
+        "titre": "Plafonds de collecte",
+        "lead": "Ce sont les mêmes réglages que dans Réglages › Plafonds.",
+        "postsParJour": {
+          "nom": "Posts par jour",
+          "usage": "{n, plural, =0 {Aucun utilisé aujourd'hui} one {# utilisé aujourd'hui} other {# utilisés aujourd'hui}}"
+        },
+        "requetesParHeure": {
+          "nom": "Requêtes par heure",
+          "usage": "{n, plural, =0 {Aucune sur la dernière heure} one {# sur la dernière heure} other {# sur la dernière heure}}"
+        },
+        "personnesParPassage": {
+          "nom": "Personnes par passage",
+          "usage": "Nouvelles personnes enregistrées par passage ; au-delà, le passage s’arrête"
+        },
+        "enregistrer": "Enregistrer",
+        "erreurNombre": "Saisissez un nombre entier."
+      },
+      "avertissement": {
+        "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
+        "risque": "Le compte utilisé peut être restreint ou fermé. L'opérateur de cette instance en répond.",
+        "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées au bout de {jours} jours. Celles que nous avons déjà évaluées laissent une empreinte illisible (pas leur identifiant), conservée au plus {jours} jours, pour ne pas les évaluer deux fois."
       }
     }
   },
@@ -1574,6 +1720,14 @@
       "known": "Déjà connus",
       "missingEmail": "Sans email",
       "submit": "Importer {n} contacts"
+    }
+  },
+  "mentionOrigine": {
+    "engageurLinkedin": "Vous recevez ce message parce que vous avez réagi à une publication LinkedIn publique ou l'avez commentée. Vos coordonnées professionnelles proviennent de LinkedIn et de notre enrichissement de contacts. Pour vous opposer à ce traitement et ne plus être contacté, répondez simplement à ce message."
+  },
+  "jobs": {
+    "q": {
+      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation."
     }
   }
 }
