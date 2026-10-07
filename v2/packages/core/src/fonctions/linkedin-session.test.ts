@@ -6,6 +6,7 @@ import {
   bloquerSessionLinkedIn,
   confirmerIpAttendue,
   enregistrerObservationSortie,
+  lireSessionLinkedIn,
   prendreVerrouLinkedIn,
 } from './linkedin-session.js';
 
@@ -135,5 +136,44 @@ describe('confirmerIpAttendue', () => {
   it("rend false quand la session n'existe pas", async () => {
     const { ctx } = faux(0);
     expect(await confirmerIpAttendue(ctx, '198.51.100.9')).toBe(false);
+  });
+});
+
+describe('lireSessionLinkedIn', () => {
+  /** Contexte factice qui rend une ligne de session fixée. */
+  function avecLigne(ligne: Record<string, unknown>): Contexte {
+    const query = vi.fn(async () => ({ rows: [ligne], rowCount: 1 })) as unknown as Executeur['query'];
+    return { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null };
+  }
+
+  const base = {
+    status: 'active',
+    blocked_reason: null,
+    connected_at: null,
+    blocked_at: null,
+    expected_egress_ip: null,
+    last_egress_ip: null,
+    last_egress_org: null,
+    last_egress_country: null,
+    last_collect_at: null,
+  };
+
+  it("remonte la date de pause d'envoi, telle que pg la rend (un objet Date)", async () => {
+    const pause = new Date('2026-10-08T07:30:00Z');
+    const session = await lireSessionLinkedIn(avecLigne({ ...base, envoi_pause_jusqua: pause }));
+    expect(session?.envoiPauseJusqua).toBeInstanceOf(Date);
+    expect(session?.envoiPauseJusqua?.getTime()).toBe(pause.getTime());
+  });
+
+  it("remonte null quand l'envoi n'est pas en pause", async () => {
+    const session = await lireSessionLinkedIn(avecLigne({ ...base, envoi_pause_jusqua: null }));
+    expect(session?.envoiPauseJusqua).toBeNull();
+  });
+
+  it('demande la colonne dans le select', async () => {
+    const ctx = avecLigne({ ...base, envoi_pause_jusqua: null });
+    await lireSessionLinkedIn(ctx);
+    const sql = (ctx.ex.query as unknown as { mock: { calls: string[][] } }).mock.calls[0]![0]!;
+    expect(sql).toMatch(/envoi_pause_jusqua/);
   });
 });

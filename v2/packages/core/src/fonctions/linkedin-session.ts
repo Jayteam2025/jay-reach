@@ -31,6 +31,7 @@ export type SessionLinkedIn = {
   operateur: string | null;
   pays: string | null;
   derniereCollecte: Date | null;
+  envoiPauseJusqua: Date | null;
 };
 
 interface LigneSession {
@@ -43,12 +44,14 @@ interface LigneSession {
   last_egress_org: string | null;
   last_egress_country: string | null;
   last_collect_at: Date | null;
+  envoi_pause_jusqua: Date | null;
 }
 
 export async function lireSessionLinkedIn(ctx: Contexte): Promise<SessionLinkedIn | null> {
   const res = await ctx.ex.query<LigneSession>(
     `select status, blocked_reason, connected_at, blocked_at, expected_egress_ip,
-            last_egress_ip, last_egress_org, last_egress_country, last_collect_at
+            last_egress_ip, last_egress_org, last_egress_country, last_collect_at,
+            envoi_pause_jusqua
        from linkedin_server_sessions /* jr:linkedin_session_lire */
       where organization_id = $1`,
     [ctx.organisationId],
@@ -65,6 +68,7 @@ export async function lireSessionLinkedIn(ctx: Contexte): Promise<SessionLinkedI
     operateur: l.last_egress_org,
     pays: l.last_egress_country,
     derniereCollecte: l.last_collect_at,
+    envoiPauseJusqua: l.envoi_pause_jusqua,
   };
 }
 
