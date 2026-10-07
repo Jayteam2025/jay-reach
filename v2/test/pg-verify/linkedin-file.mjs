@@ -7,6 +7,7 @@
 //   2. file.ts : retirer `camp.status = 'active'` : 3 rougit.
 //   3. file.ts : renommer `envoi_pause_jusqua` : 4 et 5 rougissent (colonne inconnue).
 //   4. file.ts : retirer `and status = 'processing'` de la mise a jour de resultat : 7 rougit.
+//   7. file.ts : retirer le refus `session_inactive` : 9 rougit.
 //   6. file.ts : retirer `greatest` de la mise en pause : 8 rougit.
 //   5. file.ts : retirer le requeue : 6 rougit.
 import pg from 'pg';
@@ -28,10 +29,12 @@ const AVANT = new Date(NOW.getTime() - 60 * 60_000).toISOString();
 let org;
 let seq = 0;
 
-async function remettreAZero() {
+async function remettreAZero({ sansSession = false } = {}) {
   await q('delete from linkedin_action_queue where organization_id = $1', [org]);
   await q('delete from linkedin_server_sessions where organization_id = $1', [org]);
   await q('delete from linkedin_settings where organization_id = $1', [org]);
+  // Le canal n'est disponible que si la session est `active` : par defaut, une l'est.
+  if (!sansSession) await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
 }
 async function ligne(method, extra = {}) {
   seq += 1;
@@ -114,7 +117,6 @@ async function campagne_non_active_non_reclamee() {
 async function pause_active_refuse_la_reclamation() {
   console.log('\n[lkf] 4. pause active : refus');
   await remettreAZero();
-  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
   const idPauseCanal = await ligne('serveur');
   const jusqua = new Date(NOW.getTime() + 30 * 60_000);
   await mettreEnPauseEnvoiLinkedIn(pool, org, jusqua);
@@ -128,7 +130,6 @@ async function pause_active_refuse_la_reclamation() {
 async function pause_echue_laisse_passer() {
   console.log('\n[lkf] 5. pause echue : la reclamation passe');
   await remettreAZero();
-  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
   const idPauseCanal = await ligne('serveur');
   const jusqua = new Date(NOW.getTime() + 30 * 60_000);
   await mettreEnPauseEnvoiLinkedIn(pool, org, jusqua);
@@ -172,7 +173,7 @@ async function resultat_seulement_depuis_processing() {
 
 async function pause_ne_se_raccourcit_pas_et_dit_quand_rien_n_est_pose() {
   console.log('\n[lkf] 8. une pause plus courte ne raccourcit pas une pause deja posee');
-  await remettreAZero();
+  await remettreAZero({ sansSession: true });
   const sansSession = await mettreEnPauseEnvoiLinkedIn(pool, org, new Date(NOW.getTime() + 60_000));
   check('sans ligne de session : rend false', sansSession === false);
   await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
@@ -186,6 +187,23 @@ async function pause_ne_se_raccourcit_pas_et_dit_quand_rien_n_est_pose() {
   await mettreEnPauseEnvoiLinkedIn(pool, org, plusLongue);
   const lue2 = (await q('select envoi_pause_jusqua from linkedin_server_sessions where organization_id = $1', [org])).rows[0].envoi_pause_jusqua;
   check('pause plus lointaine : echeance repoussee', new Date(lue2).getTime() === plusLongue.getTime());
+}
+
+async function session_non_active_refuse_la_reclamation() {
+  console.log('\n[lkf] 9. une session bloquee ou absente refuse, ligne intacte');
+  await remettreAZero();
+  const id = await ligne('serveur');
+  await q(`update linkedin_server_sessions set status = 'bloquee', blocked_at = now(), blocked_reason = 'defi' where organization_id = $1`, [org]);
+  const r = await reclamerProchaineAction(pool, org, NOW);
+  check('session bloquee : session_inactive', r.action === null && r.motif === 'session_inactive', r.motif ?? '');
+  const ap = (await q('select status, attempts, processing_started_at from linkedin_action_queue where id = $1', [id])).rows[0];
+  check('ligne restee pending, attempts inchange', ap.status === 'pending' && ap.attempts === 0 && ap.processing_started_at === null, JSON.stringify(ap));
+  await q('delete from linkedin_server_sessions where organization_id = $1', [org]);
+  const r2 = await reclamerProchaineAction(pool, org, NOW);
+  check('aucune ligne de session : session_inactive', r2.action === null && r2.motif === 'session_inactive', r2.motif ?? '');
+  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
+  const r3 = await reclamerProchaineAction(pool, org, NOW);
+  check('session active : reclamee', r3.action?.id === id, r3.motif ?? '');
 }
 
 async function jouer(...sections) {
@@ -212,6 +230,7 @@ async function main() {
     ligne_coincee_requeue_apres_dix_minutes,
     resultat_seulement_depuis_processing,
     pause_ne_se_raccourcit_pas_et_dit_quand_rien_n_est_pose,
+    session_non_active_refuse_la_reclamation,
   );
   await remettreAZero();
   await pool.end();

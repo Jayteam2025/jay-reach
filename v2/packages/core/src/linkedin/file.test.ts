@@ -13,6 +13,7 @@ interface Etat {
   coinceDepuis: string | null;
   pauseJusqua: string | null;
   session: boolean;
+  statutSession: string;
 }
 
 interface Appel {
@@ -33,6 +34,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
     coinceDepuis: null,
     pauseJusqua: null,
     session: true,
+    statutSession: 'active',
     ...depart,
   };
   let enProcessing = etat.coinceDepuis !== null;
@@ -41,7 +43,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
   const ex: Executeur = {
     async query(sql: string, values: unknown[] = []) {
       appels.push({ sql, values });
-      if (/from linkedin_server_sessions/i.test(sql)) return rep(etat.pauseJusqua ? [{ envoi_pause_jusqua: etat.pauseJusqua }] : []) as never;
+      if (/from linkedin_server_sessions/i.test(sql)) return rep(etat.session ? [{ status: etat.statutSession, envoi_pause_jusqua: etat.pauseJusqua }] : []) as never;
       if (/update linkedin_server_sessions/i.test(sql)) {
         if (!etat.session) return { rows: [], rowCount: 0 } as never;
         const demandee = values[1] as string;
@@ -148,5 +150,15 @@ describe('reclamerProchaineAction', () => {
     expect(await mettreEnPauseEnvoiLinkedIn(ex, ORG, new Date(NOW.getTime() + 60_000))).toBe(false);
     const avec = creerExecuteur();
     expect(await mettreEnPauseEnvoiLinkedIn(avec.ex, ORG, new Date(NOW.getTime() + 60_000))).toBe(true);
+  });
+
+  it('une session bloquee refuse la reclamation', async () => {
+    const bloquee = creerExecuteur({ statutSession: 'bloquee' });
+    const r = await reclamerProchaineAction(bloquee.ex, ORG, NOW);
+    expect(r).toEqual({ action: null, motif: 'session_inactive' });
+    expect(bloquee.appels.some((a) => /set status = 'processing'/i.test(a.sql))).toBe(false);
+
+    const absente = creerExecuteur({ session: false });
+    expect((await reclamerProchaineAction(absente.ex, ORG, NOW)).motif).toBe('session_inactive');
   });
 });

@@ -32,7 +32,8 @@ export type MotifRefus =
   | 'daily_cap_reached'
   | 'queue_empty'
   | 'race_retry'
-  | 'canal_en_pause';
+  | 'canal_en_pause'
+  | 'session_inactive';
 
 export type ResultatReclamation =
   | { readonly action: ActionReclamee; readonly motif: null }
@@ -145,6 +146,10 @@ export async function mettreEnPauseEnvoiLinkedIn(ex: Executeur, organisationId: 
  * la colonne est nullable (`references actions(id) on delete set null`), donc
  * aucune garantie NOT NULL sur laquelle s'appuyer.
  *
+ * Refus rendus AVANT toute réclamation, au même rang : `session_inactive`
+ * (aucune session `active` pour l'organisation) puis `canal_en_pause`. La garde
+ * vit ici et non chez l'appelant : worker, MCP et écran appellent cette fonction.
+ *
  * `maintenant` est injectable pour les tests hermétiques.
  */
 export async function reclamerProchaineAction(
@@ -155,12 +160,17 @@ export async function reclamerProchaineAction(
   const orgId = organisationId;
   const now = maintenant;
 
-  // 0. Pause d'envoi posée sur la session du serveur.
-  const pause = await ex.query<{ envoi_pause_jusqua: string | Date | null }>(
-    `select envoi_pause_jusqua from linkedin_server_sessions where organization_id = $1`,
+  // 0. Session du serveur : le canal n'est disponible que si elle est `active`
+  // (absente, bloquée ou sans ligne : rien ne part). Puis pause d'envoi posée
+  // sur cette même session. Les deux refus précèdent toute réclamation.
+  const session = await ex.query<{ status: string; envoi_pause_jusqua: string | Date | null }>(
+    `select status, envoi_pause_jusqua from linkedin_server_sessions where organization_id = $1`,
     [orgId],
   );
-  const echeancePause = pause.rows[0]?.envoi_pause_jusqua;
+  if (session.rows[0]?.status !== 'active') {
+    return { action: null, motif: 'session_inactive' };
+  }
+  const echeancePause = session.rows[0].envoi_pause_jusqua;
   if (echeancePause && new Date(echeancePause).getTime() > now.getTime()) {
     return { action: null, motif: 'canal_en_pause' };
   }
