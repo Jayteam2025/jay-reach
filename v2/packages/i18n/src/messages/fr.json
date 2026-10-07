@@ -1566,14 +1566,23 @@
         "planifie": {
           "phrase": "Prochain envoi {quand}."
         },
+        "reprise": {
+          "phrase": "Une action est restée en cours. Le moteur la reprend."
+        },
         "enPause": {
           "phrase": "Envoi en pause jusqu'à {quand}."
         },
         "rienAEnvoyer": {
           "phrase": "Aucune action en attente."
         },
-        "horsCreneau": {
-          "phrase": "Aucun envoi pour le moment : hors des heures d'envoi, ou plafond atteint."
+        "enVol": {
+          "phrase": "Un envoi est en cours."
+        },
+        "horsFenetre": {
+          "phrase": "Hors des heures ou des jours d'envoi."
+        },
+        "plafondAtteint": {
+          "phrase": "Plafond d'envoi atteint. Reprise au prochain créneau."
         },
         "canalBloque": {
           "phrase": "Rien ne part tant que ce point n'est pas réglé."

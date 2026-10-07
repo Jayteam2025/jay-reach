@@ -1566,14 +1566,23 @@
         "planifie": {
           "phrase": "Next send {quand}."
         },
+        "reprise": {
+          "phrase": "An action was left running. The engine is picking it up."
+        },
         "enPause": {
           "phrase": "Sending paused until {quand}."
         },
         "rienAEnvoyer": {
           "phrase": "Nothing waiting to be sent."
         },
-        "horsCreneau": {
-          "phrase": "Nothing goes out right now: outside sending hours, or the cap is reached."
+        "enVol": {
+          "phrase": "A send is in progress."
+        },
+        "horsFenetre": {
+          "phrase": "Outside sending hours or sending days."
+        },
+        "plafondAtteint": {
+          "phrase": "Sending cap reached. Resumes at the next slot."
         },
         "canalBloque": {
           "phrase": "Nothing is sent until this is fixed."

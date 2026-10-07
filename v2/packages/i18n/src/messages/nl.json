@@ -1566,14 +1566,23 @@
         "planifie": {
           "phrase": "Volgende verzending {quand}."
         },
+        "reprise": {
+          "phrase": "Een actie is blijven hangen. De engine pakt die weer op."
+        },
         "enPause": {
           "phrase": "Verzenden gepauzeerd tot {quand}."
         },
         "rienAEnvoyer": {
-          "phrase": "Niets in de wachtrij."
+          "phrase": "Geen acties in de wachtrij."
         },
-        "horsCreneau": {
-          "phrase": "Er wordt nu niets verstuurd: buiten de verzenduren, of de limiet is bereikt."
+        "enVol": {
+          "phrase": "Er loopt een verzending."
+        },
+        "horsFenetre": {
+          "phrase": "Buiten de verzenduren of verzenddagen."
+        },
+        "plafondAtteint": {
+          "phrase": "Verzendlimiet bereikt. Hervat bij het volgende venster."
         },
         "canalBloque": {
           "phrase": "Er wordt niets verstuurd zolang dit niet is opgelost."

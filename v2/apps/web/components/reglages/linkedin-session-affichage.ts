@@ -91,16 +91,29 @@ export function varianteDetailSession(
   return 'detail';
 }
 
-export type CleEtatEnvoi = 'pret' | 'planifie' | 'enPause' | 'rienAEnvoyer' | 'horsCreneau' | 'canalBloque';
+export type CleEtatEnvoi =
+  | 'pret'
+  | 'planifie'
+  | 'reprise'
+  | 'enPause'
+  | 'rienAEnvoyer'
+  | 'enVol'
+  | 'horsFenetre'
+  | 'plafondAtteint'
+  | 'canalBloque';
 
 /**
  * État du canal d'ENVOI, sous la phrase de session (lot 4b).
  *
  * Elle ne devine rien : elle traduit le verdict de `prochainEnvoiLinkedIn`, c'est-à-dire la
- * fonction même qui décide quand le moteur enverra. Une première version ne connaissait que
- * la session et la pause, et affichait donc « Prêt à envoyer » la nuit, le week-end et une
- * fois le plafond du jour atteint — soit la majorité des heures de la semaine. Un écran qui
- * ment sur l'état du canal est pire qu'un écran muet : il fait chercher la panne ailleurs.
+ * fonction même qui décide quand le moteur enverra. Une première version ne connaissait que la
+ * session et la pause, et affichait donc « Prêt à envoyer » la nuit, le week-end et une fois le
+ * plafond du jour atteint — soit la majorité des heures de la semaine. Un écran qui ment sur
+ * l'état du canal est pire qu'un écran muet : il fait chercher la panne ailleurs.
+ *
+ * Chaque motif a sa phrase, parce qu'ils n'appellent pas la même action : vérifier ses heures,
+ * attendre un plafond, ou ne rien faire. Un libellé qui les regroupe envoie l'opérateur
+ * corriger un réglage qui est déjà juste.
  *
  * Quand la session ne tient pas, on ne répète pas sa raison — elle est écrite juste au-dessus —
  * et on ne la nomme pas non plus : sur une sortie réseau inattendue, la session EST ouverte, et
@@ -113,18 +126,33 @@ export function phraseEtatEnvoi(
 ): { ton: PuceTon; cle: CleEtatEnvoi } {
   if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'canalBloque' };
   if (prochain.quand !== null) {
+    // Une ligne restée en cours n'est pas un créneau d'envoi : le moteur passe la réparer.
+    if (prochain.reprise) return { ton: 'attention', cle: 'reprise' };
     return prochain.quand.getTime() <= maintenant.getTime()
       ? { ton: 'bon', cle: 'pret' }
       : { ton: 'bon', cle: 'planifie' };
   }
-  if (prochain.motif === 'canal_en_pause') return { ton: 'attention', cle: 'enPause' };
-  if (prochain.motif === 'session_inactive') return { ton: 'gris', cle: 'canalBloque' };
-  // `file_vide` et `action_en_cours` ne sont pas des empêchements : rien n'attend, ou un envoi
-  // est en vol. Les deux se disent « rien à envoyer là, tout de suite » à l'opérateur.
-  if (prochain.motif === 'file_vide' || prochain.motif === 'action_en_cours') {
-    return { ton: 'bon', cle: 'rienAEnvoyer' };
+  switch (prochain.motif) {
+    case 'canal_en_pause':
+      return { ton: 'attention', cle: 'enPause' };
+    case 'session_inactive':
+      return { ton: 'gris', cle: 'canalBloque' };
+    // Ni l'un ni l'autre n'est un empêchement : rien n'attend, ou un envoi est déjà parti.
+    case 'file_vide':
+    case 'queue_empty':
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
+    case 'action_en_cours':
+      return { ton: 'bon', cle: 'enVol' };
+    // `outside_window` couvre AUSSI le jour non coché : le libellé doit nommer les deux, sinon
+    // un samedi l'opérateur va vérifier des heures qui sont justes.
+    case 'outside_window':
+      return { ton: 'attention', cle: 'horsFenetre' };
+    case 'daily_cap_reached':
+    case 'weekly_cap_reached':
+      return { ton: 'attention', cle: 'plafondAtteint' };
+    // `too_soon` sans date calculable, `race_retry`, `manual_mode` (impossible en base depuis la
+    // migration 20260831160000) : rien ne part là, tout de suite, sans rien à corriger.
+    default:
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
   }
-  // Le reste vient du rythme : hors fenêtre horaire, jour non coché, plafond du jour ou des
-  // sept jours. Rien ne partira avant le prochain créneau, et aucune date n'est calculable ici.
-  return { ton: 'attention', cle: 'horsCreneau' };
 }

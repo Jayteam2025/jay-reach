@@ -92,8 +92,10 @@ describe('prochainEnvoiLinkedIn', () => {
 
   it('planifie quand meme une ligne coincee depuis plus de dix minutes : le handler la repare', async () => {
     // Sinon la ligne resterait `processing` pour toujours : seul un job la ferait passer en echec visible.
+    // `reprise` distingue ce cas d'un vrai creneau : sans lui, l'ecran annoncait « pret a envoyer »
+    // un dimanche a 3 h, file vide, parce qu'il lisait une date de reparation comme une autorisation.
     const r = await prochainEnvoiLinkedIn(creerExecuteur({ enCoursPerimees: 1, enAttente: false }), ORG, NOW);
-    expect(r).toEqual({ quand: NOW, motif: null });
+    expect(r).toEqual({ quand: NOW, motif: null, reprise: true });
   });
 
   it('une action en vol l emporte sur une ligne perimee', async () => {
