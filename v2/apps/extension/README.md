@@ -61,7 +61,10 @@ décompresse puis « charge l'extension non empaquetée » (guide pas-à-pas dan
 
 ## Envoi réel
 
-Aucun envoi réel n'est déclenché tant que (a) le séquenceur n'enfile pas
-d'actions (STOP, validation boss) et (b) l'extension n'est pas connectée à un
-vrai compte LinkedIn. Le backend est testé hermétiquement
-(`test/pg-verify/linkedin-queue.sh`, données fictives). Ce script a été supprimé : il éprouvait le chemin de l'extension, aujourd'hui gelé ; la file et l'envoi exécuté par le serveur sont couverts par `linkedin-file.sh` et `linkedin-envoi.sh`.
+L'extension n'envoie plus rien. Le serveur exécute lui-même les invitations et
+les messages, depuis sa propre session LinkedIn, et les routes qu'appelait
+l'extension répondent 410.
+
+Le harnais `test/pg-verify/linkedin-queue.sh` a disparu avec ce chemin : il
+éprouvait la file telle que l'extension la consommait. La file et l'envoi côté
+serveur sont couverts par `linkedin-file.sh` et `linkedin-envoi.sh`.
