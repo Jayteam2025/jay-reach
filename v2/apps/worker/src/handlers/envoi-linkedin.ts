@@ -128,7 +128,7 @@ const RESULTAT_INDETERMINE = 'resultat_indetermine';
 
 type Phase = 'lecture' | 'envoi';
 
-type Issue =
+export type Issue =
   | { type: 'envoye' }
   | { type: 'refus'; code: CodeRefus }
   | { type: 'rien_parti' }
@@ -389,7 +389,7 @@ async function enregistrer(
  * Sort la ligne de `processing`. Chaque branche dit POURQUOI l'action peut, ou non, être
  * rejouée : seule la certitude que rien n'est parti la remet en attente.
  */
-async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee, issue: Issue): Promise<void> {
+export async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee, issue: Issue): Promise<void> {
   const base = { organizationId: ctx.organisationId, queueId: action.id };
   const remettre = (comptee: boolean) =>
     remettreActionEnAttente(d.pool, ctx.organisationId, action.id, { comptee, maxTentatives: MAX_TENTATIVES_LECTURE });

@@ -69,6 +69,11 @@ SQL
     || { echo "[linkedin-envoi] TEMOIN_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 9; }
 fi
 
+echo "[linkedin-envoi] bundle (esbuild)…"
+"$DIR/apps/worker/node_modules/.bin/esbuild" "$DIR/test/pg-verify/linkedin-envoi-entree.ts" --bundle --platform=node --format=esm --packages=external \
+  --alias:@jay-reach/core="$DIR/packages/core/src/index.ts" \
+  --outfile="$DIR/apps/worker/_linkedin-envoi-bundle.mjs" >/dev/null 2>&1 \
+  || { echo "[linkedin-envoi] BUNDLE_FAIL"; exit 11; }
 cp "$DIR/test/pg-verify/linkedin-envoi.mjs" "$DIR/apps/worker/_linkedin-envoi-runner.mjs"
 
 echo "[linkedin-envoi] exécution…"
@@ -76,7 +81,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" \
   node "$DIR/apps/worker/_linkedin-envoi-runner.mjs"
 RC=$?
 
-rm -f "$DIR/apps/worker/_linkedin-envoi-runner.mjs"
+rm -f "$DIR/apps/worker/_linkedin-envoi-runner.mjs" "$DIR/apps/worker/_linkedin-envoi-bundle.mjs"
 [ -n "${KEEP:-}" ] || "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
 [ "$RC" -eq 0 ] && echo "[linkedin-envoi] VERIFY_OK" || echo "[linkedin-envoi] VERIFY_FAIL"
 exit "$RC"

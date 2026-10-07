@@ -97,3 +97,42 @@ describe('libelleProchainMessage', () => {
     expect(enUtc).toContain('27 septembre');
   });
 });
+
+// Un refus d'envoi LinkedIn met l'inscription en pause avec `linkedin_refus:<code>`. Les huit
+// codes sont regroupés par ce que l'opérateur doit FAIRE, pas par ce que l'API a répondu.
+describe('libelleMotifPause — refus LinkedIn', () => {
+  const libelle = (code: string) =>
+    libelleMotifPause(`linkedin_refus:${code}`, null, fauxT(), 'Europe/Paris');
+
+  it('la note d invitation a son propre libellé : c est le seul qui se corrige', () => {
+    expect(libelle('note_non_supportee').texte).toBe('linkedinNote');
+  });
+
+  it('un message sans relation acceptée ne se lit pas comme une panne', () => {
+    expect(libelle('cannot_message').texte).toBe('linkedinPasRelation');
+  });
+
+  it.each(['profile_not_found', 'invalid_url'])('%s renvoie à l adresse du contact', (code) => {
+    expect(libelle(code).texte).toBe('linkedinProfil');
+  });
+
+  it('un résultat indéterminé envoie vérifier sur LinkedIn', () => {
+    expect(libelle('resultat_indetermine').texte).toBe('linkedinIndetermine');
+  });
+
+  it.each(['cannot_invite', 'bad_request'])('%s retombe sur le refus générique', (code) => {
+    expect(libelle(code).texte).toBe('linkedinRefus');
+  });
+
+  // Le code brut reste atteignable pour qui veut creuser, sans être lu par accident.
+  it('le code brut reste en title, jamais dans le texte', () => {
+    const r = libelle('note_non_supportee');
+    expect(r.title).toBe('linkedin_refus:note_non_supportee');
+    expect(r.texte).not.toContain('note_non_supportee');
+  });
+
+  // Sans ce test, un motif LinkedIn inconnu tomberait sur `generic` sans qu'on le voie.
+  it('un motif LinkedIn inconnu reste un refus LinkedIn, pas le générique', () => {
+    expect(libelle('code_que_personne_n_a_encore_vu').texte).toBe('linkedinRefus');
+  });
+});

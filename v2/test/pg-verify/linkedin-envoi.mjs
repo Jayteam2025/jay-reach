@@ -7,8 +7,11 @@
 //   2. migration : retirer `alter column source_run_id drop not null` — 2 rougit.
 //   3. migration : retirer la contrainte `linkedin_requetes_une_origine` — 4 et 5 rougissent.
 //   4. migration : retirer la colonne `envoi_pause_jusqua` — 7 rougit.
+//   6. envoi-linkedin.ts, `arreterSequence` : retirer `set status = 'failed'`, la jointure
+//      `a.id = q.action_id` ou le filtre `a.status in (...)` — la section 5 rougit.
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
+import { regler } from './_linkedin-envoi-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -133,8 +136,72 @@ async function pause() {
   check('9. accepte une date, relue dans le futur', w?.futur === true);
 }
 
+// ---------------------------------------------------------------- refus définitif
+// Le vrai `regler` (celui du handler), sur une vraie base : file, action et inscription.
+async function mondeSequence() {
+  const m = await monde();
+  const contact = (await q(`insert into contacts (organization_id) values ($1) returning id`, [m.org])).rows[0].id;
+  const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'C', 'active') returning id`, [m.org])).rows[0].id;
+  const etapes = [];
+  for (const position of [0, 1, 2]) {
+    etapes.push((await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, $2, 'linkedin_invite') returning id`, [camp, position])).rows[0].id);
+  }
+  // Le tick a déjà avancé l'inscription à l'étape 2 et vidé l'échéance : l'état réel après émission de l'étape 1.
+  const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, next_action_at) values ($1, $2, $3, 2, null) returning id`, [m.org, camp, contact])).rows[0].id;
+  const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key) values ($1, $2, $3, 'linkedin_invite', 'scheduled', $4) returning id`, [m.org, insc, etapes[1], `cle-${Date.now()}-${Math.random()}`])).rows[0].id;
+  return { ...m, contact, insc, act };
+}
+const file = (m, actionId, url) =>
+  q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status, processing_started_at)
+     values ($1, $2, $3, $4, 'invite', 'serveur', 'processing', now()) returning id`, [m.org, m.contact, actionId, url]).then((r) => r.rows[0].id);
+const deps = () => ({ pool, env: {}, pause: async () => undefined });
+const ctxDe = (m) => ({ ex: pool, organisationId: m.org, utilisateurId: null, role: null });
+const lire = async (m, queueId) => ({
+  file: (await q(`select status, error_code from linkedin_action_queue where id = $1`, [queueId])).rows[0],
+  action: (await q(`select status::text, error from actions where id = $1`, [m.act])).rows[0],
+  insc: (await q(`select status::text, stop_reason, current_step, next_action_at from enrollments where id = $1`, [m.insc])).rows[0],
+});
+
+async function refusDefinitif() {
+  console.log('\n5. un refus définitif arrête la séquence (revue finale, C2)');
+  const m = await mondeSequence();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/refus');
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/refus', messageBody: 'note' }, { type: 'refus', code: 'note_non_supportee' });
+  const r = await lire(m, queue);
+  check('10. la ligne de file est en échec avec son code', r.file.status === 'failed' && r.file.error_code === 'note_non_supportee', JSON.stringify(r.file));
+  check('11. l\'action est failed avec son error', r.action.status === 'failed' && !!r.action.error, JSON.stringify(r.action));
+  check('12. l\'inscription est en pause, motif nommé, rembobinée sur l\'étape en échec (position 1)',
+    r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:note_non_supportee' && r.insc.current_step === 1 && r.insc.next_action_at === null, JSON.stringify(r.insc));
+
+  const m2 = await mondeSequence();
+  const q2 = await file(m2, m2.act, 'https://www.linkedin.com/in/indet');
+  await regler(deps(), ctxDe(m2), { id: q2, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/indet', messageBody: null }, { type: 'indetermine' });
+  const r2 = await lire(m2, q2);
+  check('13. un résultat indéterminé arrête aussi la séquence',
+    r2.file.status === 'failed' && r2.action.status === 'failed' && r2.insc.stop_reason === 'linkedin_refus:resultat_indetermine', JSON.stringify(r2));
+
+  const m3 = await mondeSequence();
+  await q(`update actions set status = 'dispatched' where id = $1`, [m3.act]);
+  const q3 = await file(m3, m3.act, 'https://www.linkedin.com/in/partie');
+  await regler(deps(), ctxDe(m3), { id: q3, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/partie', messageBody: null }, { type: 'refus', code: 'cannot_invite' });
+  const r3 = await lire(m3, q3);
+  check('14. une action déjà partie n\'est jamais repassée en échec, son inscription reste active',
+    r3.action.status === 'dispatched' && r3.insc.status === 'active', JSON.stringify(r3));
+}
+
+async function sansActionLiee() {
+  console.log('\n6. une ligne de file sans action liée ne touche ni action ni inscription');
+  const m = await mondeSequence();
+  const queue = await file(m, null, 'https://www.linkedin.com/in/extension');
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/extension', messageBody: null }, { type: 'refus', code: 'profile_not_found' });
+  const r = await lire(m, queue);
+  check('15. la file est en échec', r.file.status === 'failed' && r.file.error_code === 'profile_not_found', JSON.stringify(r.file));
+  check('16. l\'action voisine reste scheduled, sans error', r.action.status === 'scheduled' && r.action.error === null, JSON.stringify(r.action));
+  check('17. l\'inscription voisine reste active, étape 2, sans motif', r.insc.status === 'active' && r.insc.stop_reason === null && r.insc.current_step === 2, JSON.stringify(r.insc));
+}
+
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

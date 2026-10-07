@@ -413,7 +413,13 @@
         "senderUnavailable": "No sending mailbox available",
         "absence": "Away, resuming on {date}",
         "absenceNoDate": "Away",
-        "generic": "Paused"
+        "generic": "Paused",
+        "linkedinNote": "Server-side sending does not carry the invitation note yet. Remove it from the step so the invitation can go out.",
+        "linkedinPasRelation": "The invitation was not accepted: a message cannot reach this contact.",
+        "linkedinProfil": "LinkedIn profile not found. Check the contact's address.",
+        "linkedinDejaInvite": "This contact has already been invited.",
+        "linkedinIndetermine": "A send was left unanswered. Check on LinkedIn before trying again.",
+        "linkedinRefus": "LinkedIn refused this action."
       },
       "step": "Step {n}",
       "stepEnded": "{n} · {libelle}",

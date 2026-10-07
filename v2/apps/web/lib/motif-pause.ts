@@ -42,7 +42,39 @@ export function libelleMotifPause(
     const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau }).format(new Date(repriseLe));
     return { texte: t('absence', { date }), title: null };
   }
+  if (motif.startsWith('linkedin_refus:')) {
+    return { texte: t(cleRefusLinkedIn(motif.slice('linkedin_refus:'.length))), title: motif };
+  }
   return { texte: t('generic'), title: motif };
+}
+
+/**
+ * Les huit codes de refus LinkedIn regroupés par CE QUE L'OPÉRATEUR DOIT FAIRE, pas par ce que
+ * l'API a répondu : retirer une note, corriger une adresse de profil, vérifier sur LinkedIn, ou
+ * ne rien faire parce que la personne n'a pas accepté l'invitation. Un libellé par code dirait
+ * huit fois la même chose à qui n'a rien à faire, et noierait le seul qui appelle un geste.
+ *
+ * Le code brut reste en `title` : qui veut creuser le trouve, personne ne le lit par accident.
+ */
+function cleRefusLinkedIn(code: string): string {
+  switch (code) {
+    // Le seul qui se corrige en deux clics, et le plus fréquent : toute invitation qui porte une note.
+    case 'note_non_supportee':
+      return 'linkedinNote';
+    // Pas une panne : la personne n'a pas (encore) accepté, un message ne peut pas l'atteindre.
+    case 'cannot_message':
+      return 'linkedinPasRelation';
+    case 'profile_not_found':
+    case 'invalid_url':
+      return 'linkedinProfil';
+    case 'already_invited':
+      return 'linkedinDejaInvite';
+    // L'action est peut-être partie : c'est le seul cas où il faut aller voir sur LinkedIn.
+    case 'resultat_indetermine':
+      return 'linkedinIndetermine';
+    default:
+      return 'linkedinRefus';
+  }
 }
 
 /**

@@ -413,7 +413,13 @@
         "senderUnavailable": "Aucune boîte d'envoi disponible",
         "absence": "Absent, reprise le {date}",
         "absenceNoDate": "Absent",
-        "generic": "En pause"
+        "generic": "En pause",
+        "linkedinNote": "La note d'invitation n'est pas encore portée par l'envoi serveur. Retirez-la de l'étape pour que l'invitation parte.",
+        "linkedinPasRelation": "L'invitation n'a pas été acceptée : un message ne peut pas atteindre ce contact.",
+        "linkedinProfil": "Profil LinkedIn introuvable. Vérifiez l'adresse du contact.",
+        "linkedinDejaInvite": "Ce contact a déjà reçu une invitation.",
+        "linkedinIndetermine": "Envoi resté sans réponse. À vérifier sur LinkedIn avant de relancer.",
+        "linkedinRefus": "LinkedIn a refusé cette action."
       },
       "step": "Étape {n}",
       "stepEnded": "{n} · {libelle}",
