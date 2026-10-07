@@ -33,9 +33,10 @@ export type Pilote = {
    * Exécute l'appel DEPUIS LE CONTEXTE DE LA PAGE et rend le statut HTTP (le 999
    * de LinkedIn reste visible). `entetes` sert aux appels Voyager, qui exigent
    * leur protocole et leur décoration ; le jeton CSRF, lui, est ajouté côté page
-   * (voir l'implémentation), parce qu'il se lit dans un cookie.
+   * (voir l'implémentation), parce qu'il se lit dans un cookie. Un `corps` défini
+   * fait partir un POST JSON ; sans `corps`, c'est un GET.
    */
-  requete(url: string, entetes?: Record<string, string>): Promise<{ statut: number; corps: string }>;
+  requete(url: string, entetes?: Record<string, string>, corps?: unknown): Promise<{ statut: number; corps: string }>;
   fermer(): Promise<void>;
 };
 
@@ -433,19 +434,22 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     // de profil (`apps/extension/linkedin-invite.js`). Sans lui, chaque appel
     // Voyager repartirait en 403, que le collecteur lirait comme un cookie
     // refusé : il bloquerait la session alors qu'elle est valide.
-    requete: async (url, entetes) =>
+    requete: async (url, entetes, corps) =>
       onglet.evaluate(
-        async (u, e) => {
+        async (u, e, c) => {
           const headers: Record<string, string> = { ...e };
+          if (c !== undefined) headers['content-type'] = 'application/json; charset=UTF-8';
           if (new URL(u).hostname.endsWith('linkedin.com')) {
             const jeton = /JSESSIONID="?([^;"]+)/.exec(document.cookie);
             if (jeton?.[1]) headers['csrf-token'] = jeton[1];
           }
-          const r = await fetch(u, { headers });
+          const r = await fetch(u, c === undefined ? { headers } : { method: 'POST', headers, body: c });
           return { statut: r.status, corps: await r.text() };
         },
         url,
         entetes ?? {},
+        // Sérialisé ici : l'argument traverse le protocole du navigateur, et `undefined` y reste `undefined`.
+        corps === undefined ? undefined : JSON.stringify(corps),
       ),
     // On ferme NOTRE page puis on se détache sans fermer le navigateur : il garde le profil et ses cookies.
     fermer: async () => {
