@@ -50,7 +50,8 @@ Jay Reach n'inclut aucune donnée et aucun quota d'envoi. Vous branchez vos prop
 | Identité et adresses d'entreprise | Annuaire légal | Oui pour le courrier |
 | Modèle de langage | Anthropic, OpenAI, Ollama | Oui |
 | Email | SalesBlink | Si canal email |
-| LinkedIn | Unipile, mode manuel | Si canal LinkedIn |
+| LinkedIn, collecte | Navigateur dédié du serveur derrière un proxy résidentiel, sans fournisseur tiers | Non |
+| LinkedIn, envoi | Unipile, mode manuel | Si canal LinkedIn |
 | Courrier | Manuscry | Si canal courrier |
 | Boîte de réception | Unipile | Recommandé |
 
