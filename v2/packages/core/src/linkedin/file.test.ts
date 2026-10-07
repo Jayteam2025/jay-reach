@@ -107,7 +107,9 @@ describe('reclamerProchaineAction', () => {
     expect(apres.motif).toBe('weekly_cap_reached');
   });
 
-  it('une action dont la campagne n est pas active n est pas reclamee', async () => {
+  it('la requete de reclamation filtre sur le statut actif de la campagne', async () => {
+    // Ne prouve que la forme du SQL (le faux executeur ne l'execute pas) : la preuve
+    // du comportement est la section 3 du harnais pg-verify linkedin-file, sur une vraie base.
     const { ex, appels } = creerExecuteur({ campagneStatut: 'paused' });
     const r = await reclamerProchaineAction(ex, ORG, NOW);
     expect(r).toEqual({ action: null, motif: 'queue_empty' });
