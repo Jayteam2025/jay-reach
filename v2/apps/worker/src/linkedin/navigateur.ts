@@ -265,6 +265,27 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     if (!element) throw erreurNommee('ElementIntrouvable', 'Aucun élément visible ne correspond');
     return element;
   };
+  /**
+   * Une navigation détruit le contexte d'exécution de la page sous `evaluateHandle`, qui lève
+   * alors une erreur ANONYME (`name` à `Error`). C'est le cas normal d'une connexion réussie :
+   * LinkedIn redirige vers `/feed` ou `/checkpoint` pendant que la boucle lit la page. Sans la
+   * reconnaître, la commande s'arrêtait sur « Échec (Error) » au moment précis où elle marchait.
+   * `waitForFunction` ne souffre pas de cela : puppeteer le rattache au nouveau document.
+   */
+  const contexteDetruit = (e: unknown) =>
+    e instanceof Error &&
+    /Execution context was destroyed|Cannot find context|Target closed|Session closed/i.test(
+      e.message,
+    );
+  /** Une action perdue dans une navigation est rejouée UNE fois, sur le document arrivé. */
+  const avecReprise = async <T>(action: () => Promise<T>): Promise<T> => {
+    try {
+      return await action();
+    } catch (e) {
+      if (!contexteDetruit(e)) throw e;
+      return await action();
+    }
+  };
   return {
     aller: async (url) => {
       await onglet.goto(url, { waitUntil: 'domcontentloaded' });
@@ -272,34 +293,48 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
     url: async () => onglet.url(),
     // Chaque poignée est rendue : le worker est un processus de longue durée, et une
     // poignée gardée retient son objet côté Chromium aussi longtemps que la session.
-    saisir: async (selecteur, valeur) => {
-      await attendreVisible(selecteur, DELAI_ACTION_MS);
-      const element = await premierVisible(selecteur);
-      try {
-        await element.type(valeur, { delay: 40 });
-      } finally {
-        await element.dispose();
-      }
-    },
-    presserEntree: async (selecteur) => {
-      await attendreVisible(selecteur, DELAI_ACTION_MS);
-      const element = await premierVisible(selecteur);
-      try {
-        await element.focus();
-        await onglet.keyboard.press('Enter');
-      } finally {
-        await element.dispose();
-      }
-    },
+    saisir: (selecteur, valeur) =>
+      avecReprise(async () => {
+        await attendreVisible(selecteur, DELAI_ACTION_MS);
+        const element = await premierVisible(selecteur);
+        try {
+          await element.type(valeur, { delay: 40 });
+        } finally {
+          await element.dispose();
+        }
+      }),
+    presserEntree: (selecteur) =>
+      avecReprise(async () => {
+        await attendreVisible(selecteur, DELAI_ACTION_MS);
+        const element = await premierVisible(selecteur);
+        try {
+          await element.focus();
+          await onglet.keyboard.press('Enter');
+        } finally {
+          await element.dispose();
+        }
+      }),
     // `innerText` et non `textContent` : la région d'alerte peut porter un gabarit masqué,
     // dont le texte ferait conclure à un refus alors que rien n'est affiché.
+    //
+    // Une page en train de naviguer n'affiche aucun message de refus : rendre la chaîne vide
+    // est la lecture juste, et c'est le contrat annoncé (ne jamais lever pour une absence).
     texte: async (selecteur) => {
-      const element = await chercherVisible(selecteur);
+      let element;
+      try {
+        element = await chercherVisible(selecteur);
+      } catch (e) {
+        if (contexteDetruit(e)) return '';
+        throw e;
+      }
       if (!element) return '';
       try {
         return await element.evaluate((el) =>
           el instanceof HTMLElement ? el.innerText : (el.textContent ?? ''),
         );
+      } catch (e) {
+        if (contexteDetruit(e)) return '';
+        throw e;
       } finally {
         await element.dispose();
       }

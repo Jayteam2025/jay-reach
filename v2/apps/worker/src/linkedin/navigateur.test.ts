@@ -240,3 +240,98 @@ describe('ouvrirNavigateur rend toujours la connexion CDP', () => {
     }
   });
 });
+
+describe('une navigation en cours ne fait pas echouer la commande', () => {
+  const URL_CDP = 'http://127.0.0.1:9223';
+  // Le message exact de puppeteer, releve le 07/10 sur le navigateur du serveur en provoquant
+  // une navigation pendant un `evaluateHandle`. Son `name` est `Error` : rien ne le distingue
+  // d'une panne, d'ou le filtrage sur le message.
+  const NAVIGATION = 'Execution context was destroyed, most likely because of a navigation.';
+
+  function piloteAvec(evaluateHandle: () => Promise<unknown>): Promise<Pilote> {
+    const page = {
+      setDefaultTimeout: () => undefined,
+      setUserAgent: async () => undefined,
+      authenticate: async () => undefined,
+      waitForFunction: async () => undefined,
+      evaluateHandle,
+      keyboard: { press: async () => undefined },
+      close: async () => undefined,
+    };
+    faux.connect.mockResolvedValue({
+      newPage: async () => page,
+      disconnect: async () => undefined,
+      version: async () => 'Chromium/129.0.6668.89',
+    });
+    return ouvrirNavigateur();
+  }
+
+  /** Une poignee d'element factice : `asElement` rend l'objet, `evaluate` son texte. */
+  const poignee = (texte: string) => {
+    const element = {
+      evaluate: async () => texte,
+      dispose: async () => undefined,
+      type: async () => undefined,
+      focus: async () => undefined,
+    };
+    return { asElement: () => element, dispose: async () => undefined };
+  };
+
+  beforeEach(() => {
+    faux.connect.mockReset();
+    process.env.LINKEDIN_BROWSER_URL = URL_CDP;
+    delete process.env.LINKEDIN_PROXY_USER;
+    delete process.env.LINKEDIN_PROXY_PASSWORD;
+  });
+  afterEach(() => {
+    delete process.env.LINKEDIN_BROWSER_URL;
+  });
+
+  it('texte rend la chaine vide quand la page navigue, au lieu de lever', async () => {
+    const pilote = await piloteAvec(async () => {
+      throw new Error(NAVIGATION);
+    });
+    // Sans cela, une connexion REUSSIE echouait : LinkedIn redirige vers /feed pendant que
+    // la boucle lit la region d'alerte.
+    expect(await pilote.texte('[aria-live="assertive"]')).toBe('');
+  });
+
+  it('texte laisse passer une vraie panne', async () => {
+    const pilote = await piloteAvec(async () => {
+      throw new Error('Protocol error: connexion CDP perdue');
+    });
+    await expect(pilote.texte('[aria-live="assertive"]')).rejects.toThrow('Protocol error');
+  });
+
+  it('saisir rejoue une fois sur le document arrive', async () => {
+    let appels = 0;
+    const pilote = await piloteAvec(async () => {
+      appels += 1;
+      if (appels === 1) throw new Error(NAVIGATION);
+      return poignee('');
+    });
+    await pilote.saisir('input[autocomplete="current-password"]', 'secret');
+    expect(appels).toBe(2);
+  });
+
+  it('saisir ne rejoue pas indefiniment', async () => {
+    let appels = 0;
+    const pilote = await piloteAvec(async () => {
+      appels += 1;
+      throw new Error(NAVIGATION);
+    });
+    await expect(pilote.saisir('input', 'secret')).rejects.toThrow(NAVIGATION);
+    expect(appels).toBe(2);
+  });
+
+  it('presserEntree rejoue une fois sur le document arrive', async () => {
+    let appels = 0;
+    const pilote = await piloteAvec(async () => {
+      appels += 1;
+      if (appels === 1) throw new Error(NAVIGATION);
+      return poignee('');
+    });
+    await pilote.presserEntree('input[autocomplete="current-password"]');
+    expect(appels).toBe(2);
+  });
+});
