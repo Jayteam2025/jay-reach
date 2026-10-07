@@ -58,7 +58,7 @@ export async function validateToken(pool: Pool, token: string): Promise<string |
 
 /**
  * Enfile une action, en dédupliquant : pas de doublon actif (pending/processing/
- * sent) pour le même (contact, kind). Renvoie l'id créé, ou null si déjà en file.
+ * sent, ou résultat indéterminé) pour le même (contact, kind). Renvoie l'id créé, ou null si déjà en file.
  */
 export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<string | null> {
   const r = await pool.query<{ id: string }>(
@@ -68,7 +68,8 @@ export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<st
      where not exists (
        select 1 from linkedin_action_queue q
        where q.contact_id = $2 and q.kind = $5
-         and q.status in ('pending', 'processing', 'sent')
+         and (q.status in ('pending', 'processing', 'sent')
+              or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
          and $2 is not null
      )
      returning id`,

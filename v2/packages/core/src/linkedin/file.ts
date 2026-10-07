@@ -10,6 +10,7 @@
  * `linkedin_server_sessions.envoi_pause_jusqua` n'est pas passée.
  */
 import type { Executeur } from '../executeur.js';
+import { dansUneTransaction } from '../transaction.js';
 import { poserEcheanceApresDepart } from '../sequencer/echeance.js';
 import {
   decideCanSend,
@@ -333,33 +334,41 @@ async function poserEcheanceApresDepartDepuisAction(ex: Executeur, actionId: str
 export async function enregistrerResultat(ex: Executeur, entree: EntreeResultat): Promise<boolean> {
   const now = entree.now ?? new Date();
   const sentAt = entree.status === 'sent' ? now.toISOString() : null;
-  const r = await ex.query<{ action_id: string | null }>(
-    `update linkedin_action_queue
-       set status = $3, sent_at = $4, error_code = $5, error_message = $6, updated_at = now()
-     where id = $1 and organization_id = $2 and status = 'processing'
-     returning action_id`,
-    [
-      entree.queueId,
-      entree.organizationId,
-      entree.status,
-      sentAt,
-      entree.errorCode ?? null,
-      entree.errorMessage ?? null,
-    ],
-  );
-  const transitionFaite = (r.rowCount ?? 0) > 0;
+  // UNE transaction pour les trois écritures : sans elle, une panne entre `processing -> sent`
+  // et `mark_action_dispatched` laissait la ligne `sent` mais l'action jamais marquée partie ni
+  // l'échéance posée, et la nouvelle tentative ne rejouait plus rien (la ligne n'est plus
+  // `processing`) : l'inscription restait bloquée à cette étape, sans bruit. Ici tout ou rien :
+  // en cas d'échec la ligne reste `processing` et la réparation des lignes coincées la rendra
+  // visible comme résultat indéterminé, ce qui est vrai.
+  return dansUneTransaction(ex, async (tx) => {
+    const r = await tx.query<{ action_id: string | null }>(
+      `update linkedin_action_queue
+         set status = $3, sent_at = $4, error_code = $5, error_message = $6, updated_at = now()
+       where id = $1 and organization_id = $2 and status = 'processing'
+       returning action_id`,
+      [
+        entree.queueId,
+        entree.organizationId,
+        entree.status,
+        sentAt,
+        entree.errorCode ?? null,
+        entree.errorMessage ?? null,
+      ],
+    );
+    const transitionFaite = (r.rowCount ?? 0) > 0;
 
-  // Referme la boucle vers le séquenceur : sans cet appel, l'action restait à son
-  // statut d'émission et la table `outcomes` vide, donc toute la mesure — actions
-  // envoyées, statistiques de campagne, tableau de bord — affichait zéro sur des
-  // messages pourtant réellement partis.
-  const actionId = r.rows[0]?.action_id;
-  if (transitionFaite && entree.status === 'sent' && actionId) {
-    await ex.query('select app.mark_action_dispatched($1)', [actionId]);
-    await poserEcheanceApresDepartDepuisAction(ex, actionId, now);
-  }
+    // Referme la boucle vers le séquenceur : sans cet appel, l'action restait à son
+    // statut d'émission et la table `outcomes` vide, donc toute la mesure — actions
+    // envoyées, statistiques de campagne, tableau de bord — affichait zéro sur des
+    // messages pourtant réellement partis.
+    const actionId = r.rows[0]?.action_id;
+    if (transitionFaite && entree.status === 'sent' && actionId) {
+      await tx.query('select app.mark_action_dispatched($1)', [actionId]);
+      await poserEcheanceApresDepartDepuisAction(tx, actionId, now);
+    }
 
-  return transitionFaite;
+    return transitionFaite;
+  });
 }
 
 /**
@@ -400,10 +409,24 @@ export async function remettreActionEnAttente(
  * navigateur, ni relever la sortie par le proxy, à chaque tick sans travail.
  */
 export async function existeActionServeurEnAttente(ex: Executeur, organisationId: string): Promise<boolean> {
+  // Mêmes garde-fous « il y a quelque chose à envoyer MAINTENANT » que la réclamation, et
+  // seulement eux : échéance atteinte, campagne active (F14), canal hors pause. Ni l'intervalle,
+  // ni la fenêtre horaire, ni les plafonds : c'est `reclamerProchaineAction` qui les juge.
   const res = await ex.query<{ existe: boolean }>(
-    `select exists (
-        select 1 from linkedin_action_queue /* jr:linkedin_envoi_en_attente */
-         where organization_id = $1 and status = 'pending' and method = 'serveur'
+    `select (
+        exists (
+          select 1 from linkedin_action_queue q /* jr:linkedin_envoi_en_attente */
+            left join actions a on a.id = q.action_id
+            left join enrollments e on e.id = a.enrollment_id
+            left join campaigns camp on camp.id = e.campaign_id
+           where q.organization_id = $1 and q.status = 'pending' and q.method = 'serveur'
+             and q.scheduled_for <= now()
+             and (q.action_id is null or camp.status = 'active')
+        )
+        and not exists (
+          select 1 from linkedin_server_sessions s
+           where s.organization_id = $1 and s.envoi_pause_jusqua > now()
+        )
       ) as existe`,
     [organisationId],
   );

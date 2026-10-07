@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Executeur } from '../executeur.js';
-import { reclamerProchaineAction, mettreEnPauseEnvoiLinkedIn } from './file.js';
+import { reclamerProchaineAction, mettreEnPauseEnvoiLinkedIn, enregistrerResultat } from './file.js';
 
 const ORG = 'org-1';
 // Mardi 15/09/2026 10:00 UTC = 12:00 Paris, en semaine.
@@ -193,5 +193,27 @@ describe('reclamerProchaineAction', () => {
     expect(await reclamerProchaineAction(ex, ORG, NOW)).toEqual({ action: null, motif: 'queue_empty' });
     const serveur = creerExecuteur();
     expect((await reclamerProchaineAction(serveur.ex, ORG, NOW)).action?.id).toBe('file-1');
+  });
+});
+
+describe('enregistrerResultat', () => {
+  it('une ecriture qui leve apres la transition annule tout : rollback, jamais de commit', async () => {
+    const journal: string[] = [];
+    const client = {
+      release: () => undefined,
+      async query(sql: string) {
+        journal.push(sql.trim().split(/\s+/).slice(0, 2).join(' '));
+        if (/mark_action_dispatched/.test(sql)) throw new Error('interblocage');
+        if (/update linkedin_action_queue/.test(sql)) return { rows: [{ action_id: 'a-1' }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const ex = { query: client.query, connect: async () => client } as unknown as Executeur;
+    await expect(
+      enregistrerResultat(ex, { organizationId: ORG, queueId: 'q-1', status: 'sent', now: NOW }),
+    ).rejects.toThrow('interblocage');
+    expect(journal).toContain('rollback');
+    expect(journal).not.toContain('commit');
+    // La preuve que la ligne n'est pas `sent` est dans pg-verify (section 17) : un faux ne l'établit pas.
   });
 });

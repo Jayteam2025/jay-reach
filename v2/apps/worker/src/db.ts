@@ -306,7 +306,8 @@ export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob):
      where not exists (
        select 1 from linkedin_action_queue q
        where q.contact_id = $2 and q.kind = $5
-         and q.status in ('pending', 'processing', 'sent')
+         and (q.status in ('pending', 'processing', 'sent')
+              or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
          and $2 is not null
      )
      returning id`,

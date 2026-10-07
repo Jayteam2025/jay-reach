@@ -61,6 +61,10 @@ ESB="$DIR/apps/worker/node_modules/.bin/esbuild"
   --outfile="$DIR/apps/worker/_lkf.mjs" >/dev/null 2>&1 || { echo "[linkedin-file] BUNDLE_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
 "$ESB" "$DIR/packages/core/src/fonctions/plafonds.ts" --bundle --platform=node --format=esm \
   --outfile="$DIR/apps/worker/_lkp.mjs" >/dev/null 2>&1 || { echo "[linkedin-file] BUNDLE_PLAFONDS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
+"$ESB" "$DIR/apps/web/lib/linkedin/queue.ts" --bundle --platform=node --format=esm --external:pg \
+  --outfile="$DIR/apps/worker/_lkq.mjs" >/dev/null 2>&1 || { echo "[linkedin-file] BUNDLE_QUEUE_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
+"$ESB" "$DIR/apps/worker/src/db.ts" --bundle --platform=node --format=esm --external:pg \
+  --outfile="$DIR/apps/worker/_lkd.mjs" >/dev/null 2>&1 || { echo "[linkedin-file] BUNDLE_DB_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 5; }
 cp "$DIR/test/pg-verify/linkedin-file.mjs" "$DIR/apps/worker/_linkedin-file-runner.mjs"
 
 echo "[linkedin-file] exécution…"
@@ -68,7 +72,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:$PORT/jayreach" \
   node "$DIR/apps/worker/_linkedin-file-runner.mjs"
 RC=$?
 
-rm -f "$DIR/apps/worker/_linkedin-file-runner.mjs" "$DIR/apps/worker/_lkf.mjs" "$DIR/apps/worker/_lkp.mjs"
+rm -f "$DIR/apps/worker/_linkedin-file-runner.mjs" "$DIR/apps/worker/_lkf.mjs" "$DIR/apps/worker/_lkp.mjs" "$DIR/apps/worker/_lkq.mjs" "$DIR/apps/worker/_lkd.mjs"
 [ -n "${KEEP:-}" ] || "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1 || true
 [ "$RC" -eq 0 ] && echo "[linkedin-file] VERIFY_OK" || echo "[linkedin-file] VERIFY_FAIL"
 exit "$RC"

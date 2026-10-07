@@ -94,6 +94,8 @@ function monde(opts: {
   ouvrirEchoue?: boolean;
   traceEchoue?: boolean;
   fileVide?: boolean;
+  plafondHoraire?: number;
+  requetesDeLHeure?: number;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -123,6 +125,10 @@ function monde(opts: {
     }
     if (t.includes('jr:linkedin_session_observer')) return rep([]);
     if (t.includes('jr:linkedin_fuseau')) return rep([{ timezone: opts.fuseau ?? 'Europe/Paris' }]);
+    if (t.includes('jr:plafond_du_jour') || t.includes('organization_settings')) {
+      return rep([{ value: String(opts.plafondHoraire ?? 60) }]);
+    }
+    if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_coincees_serveur')) {
       w.journal.push('nettoyage');
       return rep([]);
@@ -270,6 +276,32 @@ describe('les gardes avant tout appel LinkedIn', () => {
     expect(w.releve).not.toHaveBeenCalled();
     expect(mocks.reclamer).not.toHaveBeenCalled();
     expect(w.journal.filter((j) => j.startsWith('verrou'))).toEqual([]);
+  });
+
+  it('le plafond de requêtes de l heure freine l envoi : rien ne s ouvre, rien n est réclamé', async () => {
+    const w = monde({ plafondHoraire: 60, requetesDeLHeure: 57 });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(w.releve).not.toHaveBeenCalled();
+    expect(mocks.reclamer).not.toHaveBeenCalled();
+    expect(w.journal.filter((j) => j.startsWith('verrou'))).toEqual([]);
+  });
+
+  it('un plafond abaissé à l écran s applique au job suivant', async () => {
+    const reponses = { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } };
+    const avant = monde({ plafondHoraire: 60, requetesDeLHeure: 10, reponses });
+    await traiterEnvoiLinkedIn(deps(avant), JOB);
+    expect(mocks.reclamer).toHaveBeenCalledTimes(1);
+    mocks.reclamer.mockClear();
+    const apres = monde({ plafondHoraire: 10, requetesDeLHeure: 10, reponses });
+    await traiterEnvoiLinkedIn(deps(apres), JOB);
+    expect(mocks.reclamer).not.toHaveBeenCalled();
+  });
+
+  it('assez de budget pour une action entière : l envoi part', async () => {
+    const w = monde({ plafondHoraire: 60, requetesDeLHeure: 56, reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
   });
 
   it('le verrou pris par une collecte fait renoncer l envoi', async () => {
@@ -431,6 +463,17 @@ describe('le non-double-envoi', () => {
 });
 
 describe('une lecture qui échoue : rien n est parti', () => {
+  it('une coupure réseau pendant le GET /me d un message n est PAS un résultat indéterminé', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: new Error('socket hang up'), [URL_MESSAGE]: { statut: 201 } },
+    });
+    avec(w, ACTION_MESSAGE);
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(envoyees(w)).toEqual([]);
+    expect(w.remises).toEqual([{ comptee: true }]);
+    expect(mocks.enregistrer).not.toHaveBeenCalled();
+  });
+
   it('un statut inattendu sur la lecture du profil remet l action en attente, tentative comptée', async () => {
     const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 500 } } });
     await traiterEnvoiLinkedIn(deps(w), JOB);

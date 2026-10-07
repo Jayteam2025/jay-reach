@@ -26,10 +26,12 @@
 import type { Pool } from 'pg';
 import {
   bloquerSessionLinkedIn,
+  compterRequetesLinkedIn,
   enregistrerResultat,
   existeActionServeurEnAttente,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
+  lirePlafondLinkedIn,
   lireSessionLinkedIn,
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
@@ -74,6 +76,11 @@ export interface DependancesEnvoi {
  */
 export const DUREE_VERROU_ENVOI_MS = 5 * 60_000;
 
+/** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
+const UNE_HEURE_MS = 3_600_000;
+/** Requêtes qu'une action peut émettre : chargement du fil, profil, expéditeur (message), envoi. */
+const REQUETES_PAR_ENVOI = 4;
+
 /** Tentatives de la lecture d'un profil avant d'abandonner l'action. */
 const MAX_TENTATIVES_LECTURE = 3;
 /** Tentatives d'ENREGISTREMENT d'un résultat déjà acquis. Elles ne touchent jamais LinkedIn. */
@@ -109,19 +116,6 @@ const MOTIFS: Record<CodeRefus, string> = {
 
 /** Code consigné quand on ne sait pas si l'action est partie. Il n'a jamais de reprise. */
 const RESULTAT_INDETERMINE = 'resultat_indetermine';
-
-/**
- * Erreurs qui prouvent que RIEN n'est parti : elles viennent de GET (lecture du profil,
- * de l'expéditeur) ou de notre propre trace. Toute autre erreur levée PENDANT l'envoi
- * est ambiguë, donc indéterminée.
- */
-const NOMS_RIEN_PARTI: ReadonlySet<string> = new Set([
-  'StatutInattenduResolution',
-  'StatutInattenduExpediteur',
-  'ReponseIllisible',
-  'ExpediteurIntrouvable',
-  'TraceImpossible',
-]);
 
 type Phase = 'lecture' | 'envoi';
 
@@ -171,7 +165,7 @@ export function minuitSuivant(fuseau: string, maintenant: Date): Date {
  * horaire compte des requêtes réellement émises. Une trace qui échoue empêche l'appel, et
  * porte un nom qui dit que rien n'est parti.
  */
-function piloteTrace(pilote: Pilote, tracer: () => Promise<void>): Pilote {
+function piloteTrace(pilote: Pilote, tracer: () => Promise<void>, avantPost: () => void): Pilote {
   const avant = async (): Promise<void> => {
     try {
       await tracer();
@@ -187,6 +181,10 @@ function piloteTrace(pilote: Pilote, tracer: () => Promise<void>): Pilote {
     },
     requete: async (url, entetes, corps) => {
       await avant();
+      // Un `corps` fait partir un POST. La bascule se fait ICI, juste avant lui et après sa
+      // trace : tout ce qui échoue plus tôt (lecture du profil, de l'expéditeur, trace) n'a
+      // rien envoyé, même sous forme d'une erreur réseau anonyme.
+      if (corps !== undefined) avantPost();
       return pilote.requete(url, entetes, corps);
     },
   };
@@ -197,7 +195,6 @@ async function executer(
   d: DependancesEnvoi,
   action: ActionReclamee,
   p: Pilote,
-  phase: { courante: Phase },
 ): Promise<Issue> {
   // Refus qui ne demandent aucun appel : on ne charge pas un profil pour les découvrir.
   // Un texte de message vide n'a jamais de raison de partir ; une note d'invitation, que
@@ -214,9 +211,9 @@ async function executer(
     throw err;
   }
 
-  // Allure humaine entre la lecture du profil et l'envoi. À partir d'ici, un POST peut partir.
+  // Allure humaine entre la lecture du profil et l'envoi. La phase ne bascule pas ici :
+  // `envoyerMessage` commence par un GET `/me`, la bascule est posée par le pilote tracé.
   await d.pause(3_000 + Math.floor(Math.random() * 4_000));
-  phase.courante = 'envoi';
 
   const resultat: ResultatEnvoi =
     action.kind === 'invite'
@@ -225,11 +222,13 @@ async function executer(
   return resultat.ok ? { type: 'envoye' } : { type: 'refus', code: resultat.code };
 }
 
-/** Ce qu'une erreur levée dit de l'état de l'action : partie peut-être, ou sûrement pas. */
-function classer(err: unknown, phase: Phase): Issue {
-  // Pendant la lecture, seuls des GET ont pu partir : rien n'est jamais parti.
-  if (phase === 'lecture') return { type: 'rien_parti' };
-  return NOMS_RIEN_PARTI.has(nomDe(err)) ? { type: 'rien_parti' } : { type: 'indetermine' };
+/**
+ * Ce qu'une erreur levée dit de l'état de l'action. Tant que le POST n'a pas été
+ * entamé, seuls des GET (ou notre trace) ont pu partir : rien n'est parti, quelle que
+ * soit l'erreur, nommée ou anonyme. Une fois le POST entamé, toute erreur est ambiguë.
+ */
+function classer(phase: Phase): Issue {
+  return phase === 'lecture' ? { type: 'rien_parti' } : { type: 'indetermine' };
 }
 
 export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinkedInJob): Promise<void> {
@@ -258,6 +257,20 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
   // après le contrôle de sortie.
   if (!(await existeActionServeurEnAttente(pool, job.organizationId))) {
     console.log('[envoi-linkedin] rien à envoyer (file vide)');
+    return;
+  }
+
+  // Plafond de requêtes de l'heure, partagé avec la collecte (même table, même fenêtre
+  // glissante). Lu à chaque job : un plafond abaissé à l'écran freine dès l'action suivante.
+  // Avant le verrou et le navigateur : un budget épuisé ne doit rien ouvrir. Une action coûte
+  // jusqu'à `REQUETES_PAR_ENVOI` requêtes ; en dessous, on attend plutôt que d'en laisser une
+  // moitié partir.
+  const [plafondHoraire, deLHeure] = await Promise.all([
+    lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
+    compterRequetesLinkedIn(ctx, new Date(Date.now() - UNE_HEURE_MS)),
+  ]);
+  if (plafondHoraire - deLHeure < REQUETES_PAR_ENVOI) {
+    console.log('[envoi-linkedin] plafond de requêtes de l’heure atteint');
     return;
   }
 
@@ -305,13 +318,19 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     // À partir d'ici la ligne est `processing` : elle n'en sort que par `regler`.
 
     const phase: { courante: Phase } = { courante: 'lecture' };
-    const p = piloteTrace(pilote, () => tracerEnvoiLinkedIn(ctx, action.id));
+    const p = piloteTrace(
+      pilote,
+      () => tracerEnvoiLinkedIn(ctx, action.id),
+      () => {
+        phase.courante = 'envoi';
+      },
+    );
     let issue: Issue;
     try {
-      issue = await executer(d, action, p, phase);
+      issue = await executer(d, action, p);
     } catch (err) {
       console.error(`[envoi-linkedin] appel interrompu (${nomDe(err)})`);
-      issue = classer(err, phase.courante);
+      issue = classer(phase.courante);
     }
 
     try {

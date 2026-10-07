@@ -14,10 +14,15 @@
 //   9. file.ts : retirer `and status = 'processing'` de remettreActionEnAttente : 11 rougit.
 //  10. file.ts : inverser `comptee` (decrement/plafond) : 11 et 12 rougissent.
 //  12. file.ts : un seul UPDATE de requeue pour les deux methodes : 6 et 10 rougissent.
+//  13. file.ts : retirer `dansUneTransaction` de enregistrerResultat : 17a rougit (ligne `sent` sans action marquee partie).
+//  14. file.ts : retirer `q.scheduled_for <= now()`, le filtre de campagne ou la pause de la sonde : 16a, 16b, 16c rougissent.
+//  15. migration 20261007120000 : reprendre l'ancien predicat : 18a, 18c et 18d rougissent.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
 import { reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
 import { tracerEnvoiLinkedIn } from './_lkp.mjs';
+import { enqueueAction } from './_lkq.mjs';
+import { enqueueLinkedInAction } from './_lkd.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -299,6 +304,101 @@ async function nettoyage_sans_reclamation() {
   check('la file serveur est vide : la sonde le dit', (await existeActionServeurEnAttente(pool, org)) === false);
 }
 
+async function sonde_ne_juge_que_ce_qui_est_pret() {
+  console.log('\n[lkf] 16. sonde : echeance, campagne active, pause du canal');
+  await remettreAZero();
+  const futur = new Date(Date.now() + 3_600_000).toISOString();
+  await ligne('serveur', { scheduledFor: futur });
+  check('16a. ligne pending a echeance future : false', (await existeActionServeurEnAttente(pool, org)) === false);
+  await remettreAZero();
+  const actPause = await campagneAvecAction('paused');
+  await ligne('serveur', { actionId: actPause });
+  check('16b. campagne en pause : false', (await existeActionServeurEnAttente(pool, org)) === false);
+  const actOk = await campagneAvecAction('active');
+  await ligne('serveur', { actionId: actOk });
+  check('16b. campagne active : true', (await existeActionServeurEnAttente(pool, org)) === true);
+  await q(`update linkedin_server_sessions set envoi_pause_jusqua = now() + interval '1 hour' where organization_id = $1`, [org]);
+  check('16c. canal en pause : false meme avec une ligne prete', (await existeActionServeurEnAttente(pool, org)) === false);
+  await q(`update linkedin_server_sessions set envoi_pause_jusqua = now() - interval '1 hour' where organization_id = $1`, [org]);
+  check('16c. pause echue : true', (await existeActionServeurEnAttente(pool, org)) === true);
+}
+
+/** Un executeur dont le client loue echoue sur `mark_action_dispatched` : la deuxieme des trois ecritures. */
+function executeurQuiEchoueSurLaDeuxiemeEcriture() {
+  const journal = [];
+  return {
+    journal,
+    ex: {
+      query: (sql, v) => pool.query(sql, v),
+      connect: async () => {
+        const c = await pool.connect();
+        return {
+          query: (sql, v) => {
+            journal.push(String(sql).trim().split(/\s+/).slice(0, 2).join(' '));
+            if (/mark_action_dispatched/.test(sql)) return Promise.reject(new Error('interblocage simule'));
+            return c.query(sql, v);
+          },
+          release: () => c.release(),
+        };
+      },
+    },
+  };
+}
+
+async function enregistrement_atomique() {
+  console.log('\n[lkf] 17. enregistrerResultat : une transaction, tout ou rien');
+  await remettreAZero();
+  const act = await campagneAvecAction('active');
+  const id = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT, actionId: act });
+  const { ex, journal } = executeurQuiEchoueSurLaDeuxiemeEcriture();
+  let leve = false;
+  try {
+    await enregistrerResultat(ex, { organizationId: org, queueId: id, status: 'sent', now: NOW });
+  } catch {
+    leve = true;
+  }
+  const l = (await q('select status, sent_at from linkedin_action_queue where id = $1', [id])).rows[0];
+  check('17a. la deuxieme ecriture leve : la ligne n est PAS sent, elle reste processing', leve && l.status === 'processing' && l.sent_at === null, JSON.stringify({ leve, ...l, journal }));
+  check('17b. rollback joue, aucun commit', journal.includes('rollback') && !journal.includes('commit'), journal.join(','));
+  const ok = await enregistrerResultat(pool, { organizationId: org, queueId: id, status: 'sent', now: NOW });
+  const apres = (await q('select a.dispatched_at is not null as parti, l.status from actions a, linkedin_action_queue l where a.id = $1 and l.id = $2', [act, id])).rows[0];
+  check('17c. la nouvelle tentative aboutit : sent ET action marquee partie', ok && apres.status === 'sent' && apres.parti === true, JSON.stringify(apres));
+}
+
+async function indetermine_compte_comme_actif() {
+  console.log('\n[lkf] 18. resultat_indetermine : index unique et deduplications');
+  await remettreAZero();
+  const c = (await q(`insert into contacts (organization_id) values ($1) returning id`, [org])).rows[0].id;
+  const insere = (statut, code, kind = 'invite') =>
+    q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, status, error_code)
+       values ($1, $2, 'https://www.linkedin.com/in/fictif-idx', $3, 'serveur', $4, $5)`, [org, c, kind, statut, code]);
+  await insere('failed', 'resultat_indetermine');
+  let violation = null;
+  try {
+    await insere('pending', null);
+  } catch (e) {
+    violation = e.code;
+  }
+  check('18a. une action pending a cote d une indeterminee viole l index unique', violation === '23505', String(violation));
+  let autre = null;
+  try {
+    await insere('failed', 'profile_not_found');
+    await insere('pending', null, 'message');
+  } catch (e) {
+    autre = e.code;
+  }
+  check('18b. un autre echec et un autre type restent permis', autre === null, String(autre));
+  const web = await enqueueAction(pool, { organizationId: org, contactId: c, linkedinUrl: 'https://www.linkedin.com/in/fictif-idx', kind: 'invite', method: 'extension_auto' });
+  check('18c. enqueueAction (web) deduplique sur l indeterminee', web === null, String(web));
+  const wk = await enqueueLinkedInAction(pool, { organizationId: org, contactId: c, linkedinUrl: 'https://www.linkedin.com/in/fictif-idx', kind: 'invite', method: 'extension_auto' });
+  check('18d. enqueueLinkedInAction (worker) deduplique sur l indeterminee', wk === null, String(wk));
+  const c2 = (await q(`insert into contacts (organization_id) values ($1) returning id`, [org])).rows[0].id;
+  await q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, status, error_code)
+           values ($1, $2, 'https://www.linkedin.com/in/fictif-2', 'invite', 'serveur', 'failed', 'bad_request')`, [org, c2]);
+  const libre = await enqueueLinkedInAction(pool, { organizationId: org, contactId: c2, linkedinUrl: 'https://www.linkedin.com/in/fictif-2', kind: 'invite', method: 'extension_auto' });
+  check('18e. un echec ordinaire ne bloque pas un nouvel enfilement', typeof libre === 'string', String(libre));
+}
+
 async function trace_d_envoi_bornee_a_l_organisation() {
   await remettreAZero();
   const id = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
@@ -346,6 +446,9 @@ async function main() {
     trace_d_envoi_bornee_a_l_organisation,
     sonde_file_vide,
     nettoyage_sans_reclamation,
+    sonde_ne_juge_que_ce_qui_est_pret,
+    enregistrement_atomique,
+    indetermine_compte_comme_actif,
   );
   await remettreAZero();
   await pool.end();
