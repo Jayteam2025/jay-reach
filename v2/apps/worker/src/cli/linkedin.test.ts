@@ -45,24 +45,32 @@ function ctxFaux(session: Ligne | null): { ctx: Contexte; appels: Appel[] } {
   };
 }
 
-/** Pilote factice : `urls` est la suite des URL rendues (la derniere se repete), `presents` les selecteurs trouves. */
+/**
+ * Pilote factice : `urls` est la suite des URL rendues (la derniere se repete), `presents` les
+ * selecteurs trouves, `textes` le texte rendu par selecteur (vide si absent).
+ */
+const CODE = 'input[autocomplete="one-time-code"], input[name="pin"]';
+const ERREUR = '[aria-live="assertive"]';
+
 function piloteFaux(
   urls: string[] = [],
   presents: string[] = [],
-): { p: Pilote; saisies: [string, string][]; clics: string[] } {
+  textes: Record<string, string> = {},
+): { p: Pilote; saisies: [string, string][]; entrees: string[] } {
   const saisies: [string, string][] = [];
-  const clics: string[] = [];
+  const entrees: string[] = [];
   const file = [...urls];
   const p: Pilote = {
     aller: vi.fn(async () => undefined),
     url: async () => (file.length > 1 ? file.shift()! : (file[0] ?? 'about:blank')),
     saisir: async (s, v) => void saisies.push([s, v]),
-    cliquer: async (s) => void clics.push(s),
+    presserEntree: async (s) => void entrees.push(s),
+    texte: async (s) => textes[s] ?? '',
     attendre: async (s) => presents.includes(s),
     requete: async () => ({ statut: 200, corps: '' }),
     fermer: vi.fn(async () => undefined),
   };
-  return { p, saisies, clics };
+  return { p, saisies, entrees };
 }
 
 function dependances(o: {
@@ -180,7 +188,7 @@ describe('la commande connecter', () => {
       null,
       null,
     ]);
-    expect(saisies).toContainEqual(['#password', 'mot-de-passe-secret']);
+    expect(saisies).toContainEqual(['input[autocomplete="current-password"]', 'mot-de-passe-secret']);
     const tout = JSON.stringify([sortie, appels]);
     expect(tout).not.toMatch(/mot-de-passe-secret/);
     expect(tout).not.toMatch(/moi@exemple\.fr/);
@@ -268,7 +276,7 @@ describe('la commande connecter', () => {
         'https://www.linkedin.com/checkpoint/x',
         'https://www.linkedin.com/feed/',
       ],
-      ['input[name="pin"]'],
+      [CODE],
     );
     const attendre = p.attendre;
     p.attendre = async (s, ms) => (delais.push(ms), attendre(s, ms));
@@ -315,7 +323,7 @@ describe('la commande connecter', () => {
         'https://www.linkedin.com/checkpoint/challenge/abc',
         'https://www.linkedin.com/feed/',
       ],
-      ['input[name="pin"]'],
+      [CODE],
     );
     const masque = vi.fn(async (i: string) => (/code/i.test(i) ? '123456' : 'mdp'));
     const { d, sortie, appels } = dependances({
@@ -326,7 +334,7 @@ describe('la commande connecter', () => {
       demanderMasque: masque,
     });
     expect(await executerCommande(['connecter'], d)).toBe(0);
-    expect(saisies).toContainEqual(['input[name="pin"]', '123456']);
+    expect(saisies).toContainEqual([CODE, '123456']);
     expect(JSON.stringify([sortie, appels])).not.toMatch(/123456/);
   });
 
@@ -348,8 +356,69 @@ describe('la commande connecter', () => {
     ).toBe(true);
   });
 
+  it('saisit identifiant puis mot de passe, et presse Entree sur le mot de passe, pas sur un bouton', async () => {
+    const { p, saisies, entrees } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/feed/',
+    ]);
+    const { d } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'mdp',
+    });
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(saisies).toEqual([
+      ['input[autocomplete^="username"]', 'a@b.fr'],
+      ['input[autocomplete="current-password"]', 'mdp'],
+    ]);
+    expect(entrees).toEqual(['input[autocomplete="current-password"]']);
+  });
+
+  it.each(['', '   ', '\n\t '])(
+    'une region aria-live presente mais vide (%j) ne donne pas refuse : etat normal avant soumission',
+    async (vide) => {
+      const { p } = piloteFaux(['https://www.linkedin.com/login'], [ERREUR], { [ERREUR]: vide });
+      const { d, sortie, appels } = dependances({
+        env: ACTIF,
+        session: null,
+        pilote: p,
+        demander: async () => 'a@b.fr',
+        demanderMasque: async () => 'x',
+      });
+      expect(await executerCommande(['connecter'], d)).not.toBe(0);
+      expect(sortie.join('\n')).not.toMatch(/incorrect/);
+      expect(appels.some((a) => /jr:linkedin_session_activer/.test(a.sql))).toBe(false);
+    },
+  );
+
+  it("presse Entree sur le champ du code de verification", async () => {
+    const { p, entrees } = piloteFaux(
+      [
+        'https://www.linkedin.com/login',
+        'https://www.linkedin.com/checkpoint/challenge/abc',
+        'https://www.linkedin.com/feed/',
+      ],
+      [CODE],
+    );
+    const { d } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => '123456',
+    });
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(entrees).toEqual(['input[autocomplete="current-password"]', CODE]);
+  });
+
   it("n'active ni ne bloque rien quand les identifiants sont refuses", async () => {
-    const { p } = piloteFaux(['https://www.linkedin.com/login'], ['#error-for-password']);
+    const { p } = piloteFaux(
+      ['https://www.linkedin.com/login'],
+      [],
+      { '[aria-live="assertive"]': 'Adresse e-mail ou mot de passe incorrect.' },
+    );
     const { d, appels } = dependances({
       env: ACTIF,
       session: null,
@@ -379,7 +448,11 @@ describe('la commande connecter', () => {
   });
 
   it("libere le verrou et ferme le navigateur meme en cas d'echec", async () => {
-    const { p } = piloteFaux(['https://www.linkedin.com/login'], ['#error-for-password']);
+    const { p } = piloteFaux(
+      ['https://www.linkedin.com/login'],
+      [],
+      { '[aria-live="assertive"]': 'Adresse e-mail ou mot de passe incorrect.' },
+    );
     const { d, appels } = dependances({
       env: ACTIF,
       session: null,

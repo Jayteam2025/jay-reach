@@ -24,7 +24,8 @@ function pilote(reponses: Record<string, Reponse>): {
     aller: async (url) => void pages.push(url),
     url: async () => 'about:blank',
     saisir: async () => undefined,
-    cliquer: async () => undefined,
+    presserEntree: async () => undefined,
+    texte: async () => '',
     attendre: async () => true,
     requete: async (url) => {
       requetes.push(url);

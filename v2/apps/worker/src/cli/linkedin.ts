@@ -52,12 +52,22 @@ const USAGE = [
 
 const URL_CONNEXION = 'https://www.linkedin.com/login';
 const URL_DECONNEXION = 'https://www.linkedin.com/m/logout/';
+/**
+ * Ancres de la page de connexion refondue de LinkedIn (mesurées le 07/10 sur la vraie page) :
+ * plus de `<form>`, des `id` régénérés à chaque rendu, plus d'attribut `name`, et un bouton
+ * d'envoi que seul son texte distingue (donc la langue de l'IP de sortie). Seul l'attribut
+ * `autocomplete` des champs et la région `aria-live` du message d'erreur tiennent. Le pilote
+ * vise le premier élément VISIBLE : chaque champ existe en double et le premier du DOM est caché.
+ *
+ * `code` : la page de défi n'a PAS pu être mesurée (il aurait fallu déclencher un vrai défi sur
+ * le compte de l'opérateur). `one-time-code` est la convention du champ de code, `name="pin"`
+ * l'ancienne ancre gardée en second choix : ce chemin n'est pas vérifié.
+ */
 const SEL = {
-  identifiant: '#username',
-  motDePasse: '#password',
-  envoyer: 'button[type="submit"]',
-  erreurMotDePasse: '#error-for-password',
-  code: 'input[name="pin"]',
+  identifiant: 'input[autocomplete^="username"]',
+  motDePasse: 'input[autocomplete="current-password"]',
+  erreurConnexion: '[aria-live="assertive"]',
+  code: 'input[autocomplete="one-time-code"], input[name="pin"]',
 };
 const DUREE_VERROU_MS = 15 * 60_000;
 const ATTENTE_MAX_CONNEXION_MS = 90_000;
@@ -127,7 +137,8 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
   const motDePasse = await d.demanderMasque('Mot de passe : ');
   await pilote.saisir(SEL.identifiant, identifiant);
   await pilote.saisir(SEL.motDePasse, motDePasse);
-  await pilote.cliquer(SEL.envoyer);
+  // Entrée depuis le champ soumet le formulaire : aucun clic de bouton, donc aucune dépendance à la langue.
+  await pilote.presserEntree(SEL.motDePasse);
 
   // Après l'envoi du code, LinkedIn met quelques secondes à quitter le défi : on patiente avant de conclure.
   let codeEnvoyeA: number | null = null;
@@ -140,14 +151,15 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
       if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
         const code = await d.demanderMasque('Code reçu de LinkedIn : ');
         await pilote.saisir(SEL.code, code);
-        await pilote.cliquer(SEL.envoyer);
+        await pilote.presserEntree(SEL.code);
         codeEnvoyeA = ecoule;
       } else if (codeEnvoyeA === null || ecoule - codeEnvoyeA >= DELAI_APRES_CODE_MS) {
         // Captcha, validation sur l'application mobile, ou code refusé : rien que ce terminal sache passer.
         await bloquerSessionLinkedIn(ctx, 'defi');
         return { issue: 'defi' };
       }
-    } else if (await pilote.attendre(SEL.erreurMotDePasse, 500)) {
+    } else if ((await pilote.texte(SEL.erreurConnexion)).trim() !== '') {
+      // La région existe DÉJÀ avant l'envoi, vide : seul son texte signale un refus, jamais sa présence.
       return { issue: 'refuse' };
     }
     await d.pause(PAS_MS);

@@ -36,7 +36,8 @@ function pilote(opts: {
       },
       url: async () => opts.url ?? POST,
       saisir: async () => undefined,
-      cliquer: async () => undefined,
+      presserEntree: async () => undefined,
+      texte: async () => '',
       attendre: async () => false,
       requete: async (u) => {
         requetes.push(u);

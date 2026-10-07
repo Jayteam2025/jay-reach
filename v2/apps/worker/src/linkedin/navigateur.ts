@@ -21,8 +21,13 @@ import type { Sortie } from '@jay-reach/core';
 export type Pilote = {
   aller(url: string): Promise<void>;
   url(): Promise<string>;
+  /** Tape dans le premier élément VISIBLE correspondant (le premier du DOM peut être un double caché). */
   saisir(selecteur: string, valeur: string): Promise<void>;
-  cliquer(selecteur: string): Promise<void>;
+  /** Presse Entrée sur le premier élément visible correspondant : soumet sans dépendre du texte d'un bouton. */
+  presserEntree(selecteur: string): Promise<void>;
+  /** Texte du premier élément visible correspondant, chaîne vide s'il n'y en a aucun. Ne lève jamais pour une absence. */
+  texte(selecteur: string): Promise<string>;
+  /** Vrai dès qu'un élément correspondant est visible, faux au dépassement du délai (sans lever). */
   attendre(selecteur: string, delaiMs: number): Promise<boolean>;
   /**
    * Exécute l'appel DEPUIS LE CONTEXTE DE LA PAGE et rend le statut HTTP (le 999
@@ -229,22 +234,79 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
   }
 
   const onglet = page;
+  // Visible = rectangle de largeur et hauteur non nulles. `waitForSelector({ visible })` ne
+  // convient pas : il attend que le PREMIER match le devienne, or LinkedIn double ses champs
+  // et le premier du DOM reste caché en permanence. On attend donc sur la liste complète.
+  const attendreVisible = (selecteur: string, timeout: number) =>
+    onglet.waitForFunction(
+      (sel) =>
+        Array.from(document.querySelectorAll(sel)).some((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }),
+      { timeout },
+      selecteur,
+    );
+  const chercherVisible = async (selecteur: string) => {
+    const poignee = await onglet.evaluateHandle((sel) => {
+      return (
+        Array.from(document.querySelectorAll(sel)).find((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }) ?? null
+      );
+    }, selecteur);
+    const element = poignee.asElement();
+    if (!element) await poignee.dispose();
+    return element;
+  };
+  const premierVisible = async (selecteur: string) => {
+    const element = await chercherVisible(selecteur);
+    if (!element) throw erreurNommee('ElementIntrouvable', 'Aucun élément visible ne correspond');
+    return element;
+  };
   return {
     aller: async (url) => {
       await onglet.goto(url, { waitUntil: 'domcontentloaded' });
     },
     url: async () => onglet.url(),
+    // Chaque poignée est rendue : le worker est un processus de longue durée, et une
+    // poignée gardée retient son objet côté Chromium aussi longtemps que la session.
     saisir: async (selecteur, valeur) => {
-      await onglet.waitForSelector(selecteur);
-      await onglet.type(selecteur, valeur, { delay: 40 });
+      await attendreVisible(selecteur, DELAI_ACTION_MS);
+      const element = await premierVisible(selecteur);
+      try {
+        await element.type(valeur, { delay: 40 });
+      } finally {
+        await element.dispose();
+      }
     },
-    cliquer: async (selecteur) => {
-      await onglet.waitForSelector(selecteur);
-      await onglet.click(selecteur);
+    presserEntree: async (selecteur) => {
+      await attendreVisible(selecteur, DELAI_ACTION_MS);
+      const element = await premierVisible(selecteur);
+      try {
+        await element.focus();
+        await onglet.keyboard.press('Enter');
+      } finally {
+        await element.dispose();
+      }
+    },
+    // `innerText` et non `textContent` : la région d'alerte peut porter un gabarit masqué,
+    // dont le texte ferait conclure à un refus alors que rien n'est affiché.
+    texte: async (selecteur) => {
+      const element = await chercherVisible(selecteur);
+      if (!element) return '';
+      try {
+        return await element.evaluate((el) =>
+          el instanceof HTMLElement ? el.innerText : (el.textContent ?? ''),
+        );
+      } finally {
+        await element.dispose();
+      }
     },
     attendre: async (selecteur, delaiMs) => {
       try {
-        await onglet.waitForSelector(selecteur, { timeout: delaiMs });
+        await attendreVisible(selecteur, delaiMs);
         return true;
       } catch (e) {
         if (e instanceof TimeoutError) return false;
