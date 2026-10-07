@@ -14,6 +14,8 @@ interface Etat {
   pauseJusqua: string | null;
   session: boolean;
   statutSession: string;
+  /** Methode de la ligne en file : le faux ne la renvoie que si le SQL la demande. */
+  methodeDeLaLigne: string;
 }
 
 interface Appel {
@@ -35,6 +37,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
     pauseJusqua: null,
     session: true,
     statutSession: 'active',
+    methodeDeLaLigne: 'serveur',
     ...depart,
   };
   let enProcessing = etat.coinceDepuis !== null;
@@ -65,7 +68,8 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       if (/count\(\*\) filter/i.test(sql)) return rep([{ last7: String(etat.envoyesSur7Jours), today: '0' }]) as never;
       if (/select sent_at from linkedin_action_queue/i.test(sql)) return rep([]) as never;
       if (/select q\.id/i.test(sql)) {
-        if (!/q\.method = 'serveur'/.test(sql)) throw new Error('le candidat doit se filtrer sur method = serveur');
+        const demandee = /q\.method = '([a-z_]+)'/.exec(sql)?.[1] ?? null;
+        if (demandee !== etat.methodeDeLaLigne) return rep([]) as never;
         if (enProcessing) return rep([]) as never;
         const filtre = /camp\.status\s*=\s*'active'/i.test(sql);
         const ok = !filtre || etat.campagneStatut === null || etat.campagneStatut === 'active';
@@ -164,5 +168,14 @@ describe('reclamerProchaineAction', () => {
 
     const absente = creerExecuteur({ session: false });
     expect((await reclamerProchaineAction(absente.ex, ORG, NOW)).motif).toBe('session_inactive');
+  });
+
+  it('la requete de reclamation filtre sur method = serveur', async () => {
+    // Ne prouve que la forme du SQL (le faux executeur ne l'execute pas) : la preuve
+    // du comportement est les sections 1 et 2 du harnais pg-verify linkedin-file, sur une vraie base.
+    const { ex } = creerExecuteur({ methodeDeLaLigne: 'extension_auto' });
+    expect(await reclamerProchaineAction(ex, ORG, NOW)).toEqual({ action: null, motif: 'queue_empty' });
+    const serveur = creerExecuteur();
+    expect((await reclamerProchaineAction(serveur.ex, ORG, NOW)).action?.id).toBe('file-1');
   });
 });
