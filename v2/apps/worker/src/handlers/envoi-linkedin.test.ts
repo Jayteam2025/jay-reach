@@ -13,6 +13,7 @@ import type { Pilote } from '../linkedin/navigateur.js';
 
 const mocks = vi.hoisted(() => ({
   reclamer: vi.fn(),
+  prochain: vi.fn(),
   enregistrer: vi.fn(),
   pause: vi.fn(),
 }));
@@ -22,6 +23,7 @@ vi.mock('@jay-reach/core', async (importOriginal) => {
   return {
     ...original,
     reclamerProchaineAction: mocks.reclamer,
+    prochainEnvoiLinkedIn: mocks.prochain,
     enregistrerResultat: mocks.enregistrer,
     mettreEnPauseEnvoiLinkedIn: mocks.pause,
   };
@@ -99,6 +101,8 @@ function monde(opts: {
   /** La trace échoue à partir du (n+1)-ième appel : les n premiers passent. */
   traceEchoueApres?: number;
   fileVide?: boolean;
+  /** Date que rend `prochainEnvoiLinkedIn` ; absente : maintenant. Passee ou future, elle decide du navigateur. */
+  prochainQuand?: (maintenant: Date) => Date | null;
   plafondHoraire?: number;
   requetesDeLHeure?: number;
 }): Monde {
@@ -139,11 +143,6 @@ function monde(opts: {
     if (t.includes('jr:linkedin_coincees_serveur')) {
       w.journal.push('nettoyage');
       return rep([]);
-    }
-    if (t.includes('jr:linkedin_envoi_en_attente')) {
-      w.journal.push('sonde');
-      w.horloges.push(params[1]);
-      return rep([{ existe: opts.fileVide !== true }]);
     }
     if (t.includes('jr:linkedin_envoi_tracer')) {
       if (opts.traceEchoue || (opts.traceEchoueApres !== undefined && w.traces >= opts.traceEchoueApres)) {
@@ -188,6 +187,15 @@ function monde(opts: {
     if (opts.ouvrirEchoue) throw new Error('http://user:motdepasse@proxy.example:8080 injoignable');
     return w.pilote;
   });
+  // Le jugement du rythme (`prochainEnvoiLinkedIn`) est prouve a part ; ici seul compte ce que le
+  // handler en fait : n'ouvrir le navigateur que si la date rendue est deja echue.
+  mocks.prochain.mockImplementation(async (_ex: unknown, _org: string, maintenant: Date) => {
+    w.journal.push('sonde');
+    w.horloges.push(maintenant.toISOString());
+    if (opts.fileVide === true) return { quand: null, motif: 'file_vide' };
+    const quand = opts.prochainQuand ? opts.prochainQuand(maintenant) : maintenant;
+    return quand === null ? { quand: null, motif: 'too_soon' } : { quand, motif: null };
+  });
   mocks.reclamer.mockImplementation(async (_ex: unknown, _org: string, maintenant?: Date): Promise<ResultatReclamation> => {
     w.journal.push('reclamer');
     w.horloges.push(maintenant instanceof Date ? maintenant.toISOString() : maintenant);
@@ -229,6 +237,7 @@ const enregistrements = () => mocks.enregistrer.mock.calls.map((c) => c[1] as En
 
 beforeEach(() => {
   mocks.reclamer.mockReset();
+  mocks.prochain.mockReset();
   mocks.enregistrer.mockReset();
   mocks.pause.mockReset();
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -303,6 +312,34 @@ describe('les gardes avant tout appel LinkedIn', () => {
     vi.unstubAllGlobals();
     expect(w.horloges).toHaveLength(2);
     expect(w.horloges[0]).toBe(w.horloges[1]);
+  });
+
+  it('un job qui arrive avant l intervalle n ouvre ni navigateur, ni relève, ni verrou, et ne reclame rien', async () => {
+    // Le job fantome : cree pendant que l'envoi precedent ouvrait son navigateur, il s'entend dire
+    // « trop tot ». Il doit l'apprendre en trois SELECT, pas apres un echo d'IP paye au proxy.
+    const w = monde({ prochainQuand: (m) => new Date(m.getTime() + 7 * 60_000) });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(w.releve).not.toHaveBeenCalled();
+    expect(mocks.reclamer).not.toHaveBeenCalled();
+    expect(w.journal.filter((j) => j.startsWith('verrou'))).toEqual([]);
+  });
+
+  it('aucune date (fenetre fermee, plafond, mode manuel) : meme arret, sans navigateur', async () => {
+    const w = monde({ prochainQuand: () => null });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(mocks.reclamer).not.toHaveBeenCalled();
+  });
+
+  it('une date deja echue ouvre le navigateur et reclame', async () => {
+    const w = monde({
+      prochainQuand: (m) => new Date(m.getTime() - 1000),
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } },
+    });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).toHaveBeenCalled();
+    expect(mocks.reclamer).toHaveBeenCalled();
   });
 
   it('une file vide n ouvre ni navigateur, ni relève de sortie, ni verrou', async () => {

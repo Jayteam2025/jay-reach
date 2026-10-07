@@ -6,7 +6,9 @@ import {
   REJEU_ACTIONS_EMAIL_MS,
   traiterDiscover,
   traiterJob,
+  consommerLesFiles,
   FILES_BRANCHEES,
+  FILES_AVEC_NAVIGATEUR,
   libelleSourceRun,
   libelleScoringBatch,
   libelleEnrichmentBatch,
@@ -525,5 +527,24 @@ describe('file linkedin.envoi (tache 6)', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('consommerLesFiles (route cron de Vercel, sans navigateur)', () => {
+  it('ne prend jamais un job des files qui exigent un navigateur', async () => {
+    // Le handler sortirait sans rien faire, mais `fetch` puis `complete` marquerait le job termine :
+    // en `retryLimit: 0`, l'occasion d'envoi serait detruite en silence.
+    const fetch = vi.fn(async () => []);
+    const ctx = { pool: creerPoolFactice([]), boss: { fetch, complete: vi.fn(), fail: vi.fn() } as unknown as PgBoss } as Contexte;
+    await consommerLesFiles(ctx);
+    const files = (fetch.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(files).not.toContain('linkedin.envoi');
+    expect(files).not.toContain('linkedin.collecte');
+    expect(files).toContain('sources.discover');
+    expect(files.length).toBe(FILES_BRANCHEES.length - FILES_AVEC_NAVIGATEUR.length);
+  });
+
+  it('les files a navigateur sont bien branchees pour le worker', () => {
+    for (const f of FILES_AVEC_NAVIGATEUR) expect(FILES_BRANCHEES).toContain(f);
   });
 });

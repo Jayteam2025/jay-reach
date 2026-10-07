@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { enqueueEnvoiLinkedIn } from './envoi-linkedin-producteur.js';
+import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn, CADENCE_ENVOI_DEFAUT_MS, CADENCE_ENVOI_MAX_MS } from './envoi-linkedin-producteur.js';
 
 const NOW = new Date('2026-09-15T10:00:00.000Z');
 
@@ -116,5 +116,27 @@ describe('enqueueEnvoiLinkedIn, de bout en bout sur la decision', () => {
     const { boss, send } = creerBoss();
     await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }]), NOW);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('cadenceEnvoiLinkedIn : une cle vide dans worker.env ne doit pas faire mille passages par seconde', () => {
+  it('absente, vide ou illisible : le defaut', () => {
+    // `Number('')` vaut 0 et `Number('60s')` NaN : Node ramene alors l'intervalle a 1 ms.
+    for (const brut of [undefined, '', '   ', '60s', 'abc', 'NaN', 'Infinity']) {
+      expect(cadenceEnvoiLinkedIn(brut)).toBe(CADENCE_ENVOI_DEFAUT_MS);
+    }
+  });
+  it('sous le plancher ou negative : le defaut, pas une rafale', () => {
+    expect(cadenceEnvoiLinkedIn('0')).toBe(CADENCE_ENVOI_DEFAUT_MS);
+    expect(cadenceEnvoiLinkedIn('1')).toBe(CADENCE_ENVOI_DEFAUT_MS);
+    expect(cadenceEnvoiLinkedIn('9999')).toBe(CADENCE_ENVOI_DEFAUT_MS);
+    expect(cadenceEnvoiLinkedIn('-60000')).toBe(CADENCE_ENVOI_DEFAUT_MS);
+  });
+  it('dans la plage : respectee', () => {
+    expect(cadenceEnvoiLinkedIn('10000')).toBe(10_000);
+    expect(cadenceEnvoiLinkedIn('120000')).toBe(120_000);
+  });
+  it('au-dessus du plafond : ramenee au plafond', () => {
+    expect(cadenceEnvoiLinkedIn(String(CADENCE_ENVOI_MAX_MS * 10))).toBe(CADENCE_ENVOI_MAX_MS);
   });
 });

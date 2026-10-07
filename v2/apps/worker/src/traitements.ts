@@ -108,11 +108,20 @@ export const FILES_BRANCHEES = [
   'inbox.sync',
   'inbox.sync_graph',
   'linkedin.collecte',
-  // Parcouru aussi par `consommerLesFiles` (route cron de Vercel, sans navigateur) : c'est
-  // la garde `JAY_REACH_LINKEDIN` en tête du handler qui l'y rend inerte.
+  // Exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`) ; la garde `JAY_REACH_LINKEDIN`
+  // en tête du handler n'est que la seconde barrière.
   'linkedin.envoi',
   'retention.purge',
 ] as const;
+
+/**
+ * Files dont le traitement ouvre un navigateur. `consommerLesFiles` (route cron de Vercel) ne les
+ * prend JAMAIS : un environnement sans navigateur qui les ferait traiter verrait le handler sortir
+ * normalement, `complete` marquerait le job terminé, et en `retryLimit: 0` l'occasion d'envoi
+ * (ou la collecte) serait détruite sans un message d'erreur. Elles restent à qui a un navigateur :
+ * le worker permanent.
+ */
+export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi'];
 
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
@@ -866,6 +875,9 @@ export async function consommerLesFiles(
   const compte: Record<string, number> = {};
 
   for (const file of FILES_BRANCHEES) {
+    if (FILES_AVEC_NAVIGATEUR.includes(file)) {
+      continue;
+    }
     if (Date.now() - debut > budgetMs) {
       break;
     }

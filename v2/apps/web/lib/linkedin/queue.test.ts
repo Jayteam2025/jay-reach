@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante, seededRandom } from '@jay-reach/core';
-import { claimNext, recordResult } from './queue.js';
+import { claimNext, recordResult, enqueueAction } from './queue.js';
 
 const ORG_ID = 'org-1';
 const QUEUE_ID = 'queue-1';
@@ -246,5 +246,13 @@ describe('claimNext — campagne non active (F14)', () => {
     );
     const resultat = await claimNext(pool, ORG_ID, maintenant);
     expect(resultat).toEqual({ action: null, reason: 'too_soon' });
+  });
+});
+
+describe('enqueueAction — methode par defaut', () => {
+  it('sans methode, la ligne est creee pour le serveur', async () => {
+    const { pool, appels } = creerPoolFactice([{ motif: /insert into linkedin_action_queue/i, repondre: () => ligne([{ id: 'q-1' }]) }]);
+    await enqueueAction(pool, { organizationId: ORG_ID, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/x' });
+    expect(appels[0]?.values[6]).toBe('serveur');
   });
 });

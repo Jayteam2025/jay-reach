@@ -34,7 +34,8 @@ export interface EnqueueInput {
   readonly contactId?: string | null;
   readonly signalId?: string | null;
   readonly messageBody?: string | null;
-  readonly method?: 'extension_auto' | 'manual';
+  /** Seule méthode qui s'écrit encore (voir `LinkedInActionJob.method` côté worker). */
+  readonly method?: 'serveur';
 }
 
 export interface ClaimedAction {
@@ -81,7 +82,7 @@ export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<st
       input.linkedinUrl,
       input.kind,
       input.messageBody ?? null,
-      input.method ?? 'extension_auto',
+      input.method ?? 'serveur',
     ],
   );
   return r.rows[0]?.id ?? null;

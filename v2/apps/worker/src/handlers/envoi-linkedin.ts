@@ -28,13 +28,13 @@ import {
   bloquerSessionLinkedIn,
   compterRequetesLinkedIn,
   enregistrerResultat,
-  existeActionServeurEnAttente,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
+  prochainEnvoiLinkedIn,
   reclamerProchaineAction,
   reparerLignesCoincees,
   remettreActionEnAttente,
@@ -251,15 +251,21 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     return;
   }
 
-  // Sonde AVANT d'ouvrir quoi que ce soit : une file vide est le cas courant, et ouvrir le
-  // navigateur puis relever l'IP par le proxy à chaque tick serait du trafic payé pour rien
-  // sur une IP qu'on ménage. Elle ne juge PAS le rythme : `reclamerProchaineAction` s'en charge,
-  // après le contrôle de sortie.
-  // Une seule lecture de l'horloge, partagée avec la réclamation : la sonde et elle comparent
-  // les mêmes échéances, deux horloges pourraient se contredire.
+  // Jugement AVANT d'ouvrir quoi que ce soit, et c'est le MÊME code que celui du producteur
+  // (`prochainEnvoiLinkedIn` : file, pause, fenêtre, plafonds, intervalle de 1 à 20 minutes).
+  // Un job peut arriver avant son heure : le producteur n'en voit aucun pendant que le job
+  // précédent ouvre son navigateur (la ligne n'est `processing` qu'après le verrou), donc il en
+  // dépose un second que la file garde en attente. Ce second job doit l'apprendre en trois SELECT,
+  // pas après avoir ouvert Chromium et payé un écho d'IP au proxy pour s'entendre répondre « trop tôt ».
+  // Une seule lecture de l'horloge, partagée avec la réclamation : deux horloges pourraient se contredire.
   const maintenant = new Date();
-  if (!(await existeActionServeurEnAttente(pool, job.organizationId, maintenant))) {
-    console.log('[envoi-linkedin] rien à envoyer (file vide)');
+  const prochain = await prochainEnvoiLinkedIn(pool, job.organizationId, maintenant);
+  if (prochain.quand === null) {
+    console.log(`[envoi-linkedin] rien à envoyer (${prochain.motif})`);
+    return;
+  }
+  if (prochain.quand.getTime() > maintenant.getTime()) {
+    console.log('[envoi-linkedin] trop tôt pour le prochain envoi');
     return;
   }
 

@@ -45,3 +45,20 @@ export async function enqueueEnvoiLinkedIn(
     }
   }
 }
+
+export const CADENCE_ENVOI_DEFAUT_MS = 60_000;
+const CADENCE_ENVOI_MIN_MS = 10_000;
+/** Cinq minutes : au-delà, le job daté arriverait trop souvent après son créneau (l'intervalle minimal est d'une minute). */
+export const CADENCE_ENVOI_MAX_MS = 300_000;
+
+/**
+ * Cadence de l'évaluation, depuis `LINKEDIN_ENVOI_POLL_MS` brute. `??` ne retombe que sur
+ * `undefined` : une clé laissée vide (cas courant dans `worker.env`, rempli à la main) donne
+ * `Number('') === 0` et `60s` donne `NaN`, deux valeurs que Node ramène à 1 ms, soit mille
+ * passages par seconde sur la base. Absente, illisible ou sous le plancher : le défaut.
+ */
+export function cadenceEnvoiLinkedIn(brut: string | undefined): number {
+  const valeur = Number(brut ?? '');
+  if (!Number.isFinite(valeur) || valeur < CADENCE_ENVOI_MIN_MS) return CADENCE_ENVOI_DEFAUT_MS;
+  return Math.min(valeur, CADENCE_ENVOI_MAX_MS);
+}

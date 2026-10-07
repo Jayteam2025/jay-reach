@@ -6,7 +6,7 @@
  * d'exécution : écouter en continu et déclencher les producteurs à intervalle.
  */
 import { QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
-import { createRuntime, registerQueues } from './runtime.js';
+import { createRuntime, registerQueues, verifierPolitiquesDeFiles } from './runtime.js';
 import {
   ecrireBattementFichier,
   CHEMIN_BATTEMENT_PAR_DEFAUT,
@@ -26,7 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
-import { enqueueEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
+import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
@@ -60,7 +60,7 @@ const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS
  * date le job (`startAfter`) au moment où l'intervalle de 1 à 20 minutes s'achève.
  * Réglable : `LINKEDIN_ENVOI_POLL_MS`.
  */
-const LINKEDIN_ENVOI_POLL_MS = Number(process.env.LINKEDIN_ENVOI_POLL_MS ?? 60_000);
+const LINKEDIN_ENVOI_POLL_MS = cadenceEnvoiLinkedIn(process.env.LINKEDIN_ENVOI_POLL_MS);
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -80,6 +80,7 @@ async function main(): Promise<void> {
   const identite = identiteDepuisEnvironnement();
   await boss.start();
   await registerQueues(boss);
+  await verifierPolitiquesDeFiles(boss);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
 
