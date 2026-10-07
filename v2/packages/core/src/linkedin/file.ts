@@ -137,6 +137,40 @@ export async function mettreEnPauseEnvoiLinkedIn(ex: Executeur, organisationId: 
 }
 
 /**
+ * Répare les lignes coincées en `processing` (appelant mort en plein call), sans envoyer
+ * quoi que ce soit : aucun quota, aucun appel LinkedIn. Appelée en tête de la réclamation
+ * ET par le handler d'envoi avant sa sonde de file vide, pour qu'une ligne périmée devienne
+ * visible même quand il ne reste plus rien à envoyer.
+ *
+ * DEUX traitements, parce que « coincée » ne veut pas dire la même chose :
+ *  - `extension_auto` : l'extension n'avait encore rien envoyé, la remise en
+ *    attente est sûre (chemin historique, inchangé) ;
+ *  - `serveur` : le POST a pu être ACCEPTÉ par LinkedIn avant que le worker meure.
+ *    La remettre en `pending` inviterait la personne une seconde fois, ce qui ne se
+ *    rattrape pas. Elle passe en statut terminal `resultat_indetermine` : au pire une
+ *    action perdue, visible à l'écran, rattrapable à la main. Aucune variante plus
+ *    fine (distinguer les lignes déjà tracées) : un garde-fou se lit en une seconde.
+ */
+export async function reparerLignesCoincees(ex: Executeur, organisationId: string, maintenant: Date = new Date()): Promise<void> {
+  const stuckCutoff = new Date(maintenant.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
+  await ex.query(
+    `update linkedin_action_queue
+         set status = 'pending', processing_started_at = null, updated_at = now()
+       where organization_id = $1 and status = 'processing' and processing_started_at < $2
+         and method <> 'serveur'`,
+    [organisationId, stuckCutoff],
+  );
+  await ex.query(
+    `update linkedin_action_queue /* jr:linkedin_coincees_serveur */
+         set status = 'failed', error_code = 'resultat_indetermine',
+             error_message = $3, updated_at = now()
+       where organization_id = $1 and status = 'processing' and processing_started_at < $2
+         and method = 'serveur'`,
+    [organisationId, stuckCutoff, MESSAGE_RESULTAT_INDETERMINE],
+  );
+}
+
+/**
  * Réclame la prochaine action à envoyer pour une organisation, en appliquant le
  * rythme (fenêtre horaire, plafond 7 j, plafond quotidien du curseur,
  * intervalle). Remet d'abord en file les lignes bloquées en `processing`. La
@@ -168,34 +202,10 @@ export async function reclamerProchaineAction(
   const orgId = organisationId;
   const now = maintenant;
 
-  // 1. Lignes coincées en processing (appelant mort en plein call).
+  // 1. Réparation des lignes coincées en processing (voir `reparerLignesCoincees`).
   // AVANT les refus : c'est une réparation d'état, pas un envoi. Session bloquée
   // ou canal en pause, une ligne coincée ne doit pas rester annoncée `processing`.
-  //
-  // DEUX traitements, parce que « coincée » ne veut pas dire la même chose :
-  //  - `extension_auto` : l'extension n'avait encore rien envoyé, la remise en
-  //    attente est sûre (chemin historique, inchangé) ;
-  //  - `serveur` : le POST a pu être ACCEPTÉ par LinkedIn avant que le worker meure.
-  //    La remettre en `pending` inviterait la personne une seconde fois, ce qui ne se
-  //    rattrape pas. Elle passe en statut terminal `resultat_indetermine` : au pire une
-  //    action perdue, visible à l'écran, rattrapable à la main. Aucune variante plus
-  //    fine (distinguer les lignes déjà tracées) : un garde-fou se lit en une seconde.
-  const stuckCutoff = new Date(now.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
-  await ex.query(
-    `update linkedin_action_queue
-         set status = 'pending', processing_started_at = null, updated_at = now()
-       where organization_id = $1 and status = 'processing' and processing_started_at < $2
-         and method <> 'serveur'`,
-    [orgId, stuckCutoff],
-  );
-  await ex.query(
-    `update linkedin_action_queue
-         set status = 'failed', error_code = 'resultat_indetermine',
-             error_message = $3, updated_at = now()
-       where organization_id = $1 and status = 'processing' and processing_started_at < $2
-         and method = 'serveur'`,
-    [orgId, stuckCutoff, MESSAGE_RESULTAT_INDETERMINE],
-  );
+  await reparerLignesCoincees(ex, orgId, now);
 
   // 2. Session du serveur : le canal n'est disponible que si elle est `active`
   // (absente, bloquée ou sans ligne : rien ne part). Puis pause d'envoi posée

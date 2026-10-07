@@ -123,7 +123,14 @@ function monde(opts: {
     }
     if (t.includes('jr:linkedin_session_observer')) return rep([]);
     if (t.includes('jr:linkedin_fuseau')) return rep([{ timezone: opts.fuseau ?? 'Europe/Paris' }]);
-    if (t.includes('jr:linkedin_envoi_en_attente')) return rep([{ existe: opts.fileVide !== true }]);
+    if (t.includes('jr:linkedin_coincees_serveur')) {
+      w.journal.push('nettoyage');
+      return rep([]);
+    }
+    if (t.includes('jr:linkedin_envoi_en_attente')) {
+      w.journal.push('sonde');
+      return rep([{ existe: opts.fileVide !== true }]);
+    }
     if (t.includes('jr:linkedin_envoi_tracer')) {
       if (opts.traceEchoue) throw new Error('base indisponible');
       w.journal.push('trace');
@@ -238,6 +245,22 @@ describe('les gardes avant tout appel LinkedIn', () => {
     await traiterEnvoiLinkedIn(deps(w, { env: {} }), JOB);
     expect(w.ouvrir).not.toHaveBeenCalled();
     expect(mocks.reclamer).not.toHaveBeenCalled();
+  });
+
+  it('une ligne serveur coincee est nettoyee AVANT la sonde, meme file vide, sans navigateur ni relève', async () => {
+    const w = monde({ fileVide: true });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal.indexOf('nettoyage')).toBeGreaterThanOrEqual(0);
+    expect(w.journal.indexOf('nettoyage')).toBeLessThan(w.journal.indexOf('sonde'));
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(w.releve).not.toHaveBeenCalled();
+  });
+
+  it('le nettoyage a lieu même sans session active', async () => {
+    const w = monde({ session: { status: 'bloquee', expected_egress_ip: null } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain('nettoyage');
+    expect(w.ouvrir).not.toHaveBeenCalled();
   });
 
   it('une file vide n ouvre ni navigateur, ni relève de sortie, ni verrou', async () => {

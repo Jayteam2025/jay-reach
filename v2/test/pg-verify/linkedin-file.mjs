@@ -16,7 +16,7 @@
 //  12. file.ts : un seul UPDATE de requeue pour les deux methodes : 6 et 10 rougissent.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
-import { existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
+import { reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
 import { tracerEnvoiLinkedIn } from './_lkp.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -282,6 +282,23 @@ async function sonde_file_vide() {
   check('une action serveur pending : true', (await existeActionServeurEnAttente(pool, org)) === true);
 }
 
+async function nettoyage_sans_reclamation() {
+  console.log('\n[lkf] 15. nettoyage seul (file vide) : serveur terminal, extension_auto pending');
+  await remettreAZero();
+  const vieux = new Date(NOW.getTime() - 11 * 60_000).toISOString();
+  const recent = new Date(NOW.getTime() - 5 * 60_000).toISOString();
+  const srv = await ligne('serveur', { status: 'processing', processingStartedAt: vieux });
+  const srvRecent = await ligne('serveur', { status: 'processing', processingStartedAt: recent });
+  const ext = await ligne('extension_auto', { status: 'processing', processingStartedAt: vieux });
+  check('AVANT nettoyage : la sonde seule dit file vide et la ligne serveur reste processing', (await existeActionServeurEnAttente(pool, org)) === false && (await statut(srv)) === 'processing');
+  await reparerLignesCoincees(pool, org, NOW);
+  const l = (await q('select status, error_code from linkedin_action_queue where id = $1', [srv])).rows[0];
+  check('serveur coincee : failed / resultat_indetermine sans aucune reclamation', l.status === 'failed' && l.error_code === 'resultat_indetermine', JSON.stringify(l));
+  check('serveur recente : intacte', (await statut(srvRecent)) === 'processing');
+  check('extension_auto coincee : pending, jamais failed', (await statut(ext)) === 'pending');
+  check('la file serveur est vide : la sonde le dit', (await existeActionServeurEnAttente(pool, org)) === false);
+}
+
 async function trace_d_envoi_bornee_a_l_organisation() {
   await remettreAZero();
   const id = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
@@ -328,6 +345,7 @@ async function main() {
     remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentatives,
     trace_d_envoi_bornee_a_l_organisation,
     sonde_file_vide,
+    nettoyage_sans_reclamation,
   );
   await remettreAZero();
   await pool.end();

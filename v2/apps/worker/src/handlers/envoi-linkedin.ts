@@ -34,6 +34,7 @@ import {
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
   reclamerProchaineAction,
+  reparerLignesCoincees,
   remettreActionEnAttente,
   tracerEnvoiLinkedIn,
   type ActionReclamee,
@@ -239,6 +240,12 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     console.warn(`[envoi-linkedin] ${MSG.canal}`);
     return;
   }
+  // Réparation d'état AVANT tout, session ou non, file vide ou non : une action serveur coincée
+  // devient `failed / resultat_indetermine` dès ce tick, visible pour l'opérateur. Sans cela la
+  // sonde ci-dessous arrêterait le tour sur une file qui se vide et la ligne resterait
+  // `processing` indéfiniment, perdue en silence. Aucun envoi, aucun navigateur.
+  await reparerLignesCoincees(pool, job.organizationId);
+
   const session = await lireSessionLinkedIn(ctx);
   if (!session || session.etat !== 'active') {
     console.warn(`[envoi-linkedin] ${MSG.session}`);
