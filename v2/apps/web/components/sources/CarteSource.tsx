@@ -28,6 +28,8 @@ export interface CarteSourceProps {
   readonly blocs: BlocCarteSource[];
   /** `null` masque le bloc « Retenus sur 7 jours » (pas de sens pour une source qui n'a jamais tourné). */
   readonly retenus7j: number[] | null;
+  /** Le nombre seul, sans mini-graphe : une source qui ne tourne qu'à la demande n'a pas sept jours de courbe à montrer. */
+  readonly sansGraphe?: boolean;
 }
 
 /**
@@ -47,6 +49,7 @@ export function CarteSource({
   collecteDisponible,
   blocs,
   retenus7j,
+  sansGraphe = false,
 }: CarteSourceProps) {
   const t = useTranslations('campagne.sources.card');
   const [pending, startTransition] = useTransition();
@@ -114,7 +117,7 @@ export function CarteSource({
             <span className="jr-libelle">{t('trend7d')}</span>
             <div className="jr-valeur-tendance">
               <b>{retenus7j.reduce((a, b) => a + b, 0)}</b>
-              <Tendance valeurs={retenus7j} />
+              {!sansGraphe && <Tendance valeurs={retenus7j} />}
             </div>
           </div>
         )}

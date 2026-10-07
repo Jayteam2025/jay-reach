@@ -122,7 +122,7 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
   };
   const blocs: BlocCarteSource[] = [];
   if (carte.providerId === 'linkedin_post_engagers') {
-    blocs.push({ libelle: t('card.postFollowed'), contenu: <span>{config.urlPost ?? '—'}</span> });
+    blocs.push({ libelle: t('card.postFollowed'), contenu: <AdressePost url={config.urlPost} /> });
     const garde = [
       config.garder?.includes('commente') ? t('drawer.commented') : null,
       config.garder?.includes('reagi') ? t('drawer.reacted') : null,
@@ -161,6 +161,22 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
 }
 
 /**
+ * L'adresse du post sur UNE ligne, tronquée par une ellipse : un identifiant d'activité de dix-sept
+ * chiffres ne se lit pas, la couper en trois lignes la rend illisible. L'adresse complète reste au
+ * survol et dans le lien. Le lien n'est posé que pour une adresse https : la valeur vient de la
+ * configuration saisie par l'opérateur, jamais un schéma `javascript:`.
+ */
+function AdressePost({ url }: { url: string | undefined }) {
+  if (!url) return <span>—</span>;
+  if (!/^https:\/\//i.test(url)) return <span className="jr-url-tronquee" title={url}>{url}</span>;
+  return (
+    <a className="jr-url-tronquee" href={url} title={url} target="_blank" rel="noopener noreferrer">
+      {url.replace(/^https:\/\/(www\.)?/i, '')}
+    </a>
+  );
+}
+
+/**
  * Le bilan du dernier passage d'une source d'engageurs : la raison d'un passage qui n'a rien produit
  * (`erreur`) et les issues de la spec §5.4 (nouveaux, doublons, déjà dans une campagne, écartés par
  * le scoring). C'est le seul retour de l'opérateur sur une collecte qui tourne sur le serveur.
@@ -168,6 +184,8 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
 function DernierePassageLinkedIn({ carte, t }: { carte: SourceCarte; t: Traducteur }) {
   const c = carte.derniereCollecte;
   if (!c) return <span className="jr-secondaire">{t('card.lastRunNever')}</span>;
+  // Un passage arrêté sans avoir rien vu : sa cause est la seule information, des compteurs à zéro la noieraient.
+  const rienVu = c.vus === 0 && c.erreur !== null;
   const statut = c.statut === 'running' ? t('card.runRunning') : c.statut === 'success' ? t('card.runSuccess') : t('card.runError');
   return (
     <div>
@@ -178,25 +196,29 @@ function DernierePassageLinkedIn({ carte, t }: { carte: SourceCarte; t: Traducte
           <span className={c.statut === 'error' ? 'jr-texte-erreur' : 'jr-secondaire'}>{c.erreur}</span>
         </>
       )}
-      <br />
-      <span>
-        {t('card.runCounts', {
-          vus: c.vus,
-          nouveaux: c.nouveaux,
-          doublons: c.doublons,
-          dejaEnCampagne: c.dejaEnCampagne,
-          ecartes: c.ecartes,
-        })}
-      </span>
-      <br />
-      <span className="jr-secondaire">
-        {t('card.runDetails', {
-          requetes: c.requetes,
-          ignores: c.ignores,
-          opposes: c.opposes,
-          adressesDeduites: c.adressesDeduites,
-        })}
-      </span>
+      {!rienVu && (
+        <>
+          <br />
+          <span>
+            {t('card.runCounts', {
+              vus: c.vus,
+              nouveaux: c.nouveaux,
+              doublons: c.doublons,
+              dejaEnCampagne: c.dejaEnCampagne,
+              ecartes: c.ecartes,
+            })}
+          </span>
+          <br />
+          <span className="jr-secondaire">
+            {t('card.runDetails', {
+              requetes: c.requetes,
+              ignores: c.ignores,
+              opposes: c.opposes,
+              adressesDeduites: c.adressesDeduites,
+            })}
+          </span>
+        </>
+      )}
     </div>
   );
 }

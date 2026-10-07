@@ -142,6 +142,7 @@ export default async function CampagneSourcesPage({
                 : construireBlocsLinkedIn(carte, t)
             }
             retenus7j={carte.dernierPassage ? carte.retenus7j : null}
+            sansGraphe={carte.providerId.startsWith('linkedin_')}
           />
         ))
       )}

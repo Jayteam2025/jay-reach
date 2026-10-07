@@ -190,6 +190,30 @@ describe('construireBlocsLinkedIn : une source d’engageurs', () => {
     expect(html).not.toContain('jr-texte-erreur');
   });
 
+  it('un passage arrêté sans rien avoir vu n’affiche que sa cause, aucun compteur à zéro', () => {
+    const html = rendu(engageurs({ derniereCollecte: bilan }));
+    expect(html).toContain('La session LinkedIn n’est pas active');
+    expect(html).not.toContain('par le scoring');
+    expect(html).not.toContain('sans adresse publique');
+  });
+
+  it('un passage qui a vu des personnes montre ses compteurs', () => {
+    const html = rendu(engageurs({ derniereCollecte: { ...bilan, statut: 'success', erreur: null, vus: 12, nouveaux: 12 } }));
+    expect(html).toContain('par le scoring');
+    expect(html).toContain('sans adresse publique');
+  });
+
+  it('l’adresse du post tient sur une ligne, avec l’adresse complète au survol', () => {
+    const html = rendu(engageurs());
+    expect(html).toContain('class="jr-url-tronquee"');
+    expect(html).toContain('title="https://x"');
+  });
+
+  it('une adresse qui n’est pas en https n’est jamais un lien', () => {
+    const html = rendu(engageurs({ config: { urlPost: 'javascript:alert(1)' } }));
+    expect(html).not.toContain('<a ');
+  });
+
   it('sans passage : « Jamais lancé »', () => {
     expect(rendu(engageurs())).toContain('Jamais lancé');
   });

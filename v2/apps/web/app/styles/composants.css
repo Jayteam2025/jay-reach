@@ -80,6 +80,9 @@
 /* `min-width: 0` + `overflow-wrap` : sans eux une adresse de post, longue et sans espace, déborde sur la colonne voisine. */
 .jr-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px; padding-top: 14px; }
 .jr-blocs > div { min-width: 0; overflow-wrap: anywhere; }
+/* Une adresse sur une seule ligne, ellipse en fin ; l'adresse complète est au survol (`title`). */
+.jr-blocs .jr-url-tronquee { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jr-blocs a.jr-url-tronquee { text-decoration: underline; text-underline-offset: 2px; }
 .jr-blocs > .jr-bloc-large { grid-column: 1 / -1; }
 /* Grand chiffre + mini-graphe de tendance côte à côte. */
 .jr-valeur-tendance { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
