@@ -534,6 +534,23 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string):
 }
 
 /**
+ * Consigne UNE requête d'ENVOI émise vers LinkedIn, au moment où elle part : même table, même
+ * fenêtre horaire que la collecte (le compte est le même). L'action doit appartenir à
+ * l'organisation, pour la même raison que `tracerRequeteLinkedIn` : le worker écrit avec la clé
+ * de service, que la RLS ne borne pas.
+ */
+export async function tracerEnvoiLinkedIn(ctx: Contexte, actionQueueId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, action_queue_id) /* jr:linkedin_envoi_tracer */
+     select q.organization_id, q.id
+       from linkedin_action_queue q
+      where q.id = $2 and q.organization_id = $1`,
+    [ctx.organisationId, actionQueueId],
+  );
+  if (res.rowCount === 0) throw new Error("Action LinkedIn introuvable pour cette organisation.");
+}
+
+/**
  * Requêtes émises vers LinkedIn depuis `depuis` (inclus), jusqu'à `jusqua`
  * (exclu) si fourni. Compte l'horodatage de CHAQUE requête, jamais le
  * démarrage du passage : une collecte ouverte à 23 h 55 dont une requête part

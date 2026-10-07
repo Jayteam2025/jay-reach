@@ -329,3 +329,34 @@ export async function enregistrerResultat(ex: Executeur, entree: EntreeResultat)
 
   return transitionFaite;
 }
+
+/**
+ * Remet une action `processing` en `pending` quand on SAIT que rien n'est parti
+ * (lecture refusée, session ou canal à l'arrêt). Transition depuis `processing`
+ * uniquement : une ligne déjà `sent` ou `failed` n'est jamais rouverte.
+ *
+ * `comptee: true` garde la tentative (une panne répétée d'une lecture ne doit pas
+ * boucler à l'infini : à `maxTentatives` la ligne passe `failed`). `comptee: false`
+ * rend la tentative, car l'action n'a pas été essayée par sa faute : une session
+ * bloquée ou une pause d'un jour ne doit pas la faire vieillir. Rend true si la
+ * ligne a bougé.
+ */
+export async function remettreActionEnAttente(
+  ex: Executeur,
+  organisationId: string,
+  queueId: string,
+  options: { readonly comptee: boolean; readonly maxTentatives?: number },
+): Promise<boolean> {
+  const res = await ex.query(
+    `update linkedin_action_queue /* jr:linkedin_action_remettre */
+        set status = case when $3::boolean and attempts >= $4::int then 'failed' else 'pending' end,
+            attempts = case when $3::boolean then attempts else greatest(attempts - 1, 0) end,
+            error_code = case when $3::boolean and attempts >= $4::int then 'trop_de_tentatives' else null end,
+            error_message = case when $3::boolean and attempts >= $4::int
+              then 'La lecture du profil a échoué plusieurs fois de suite : l’action est abandonnée.' else null end,
+            processing_started_at = null, updated_at = now()
+      where id = $1 and organization_id = $2 and status = 'processing'`,
+    [queueId, organisationId, options.comptee, options.maxTentatives ?? 3],
+  );
+  return (res.rowCount ?? 0) > 0;
+}

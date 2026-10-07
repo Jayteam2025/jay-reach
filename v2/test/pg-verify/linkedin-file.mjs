@@ -11,8 +11,12 @@
 //   7. file.ts : retirer le refus `session_inactive` : 9 rougit.
 //   6. file.ts : retirer `greatest` de la mise en pause : 8 rougit.
 //   5. file.ts : retirer le requeue : 6 rougit.
+//   9. file.ts : retirer `and status = 'processing'` de remettreActionEnAttente : 11 rougit.
+//  10. file.ts : inverser `comptee` (decrement/plafond) : 11 et 12 rougissent.
+//  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
-import { reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn } from './_lkf.mjs';
+import { reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
+import { tracerEnvoiLinkedIn } from './_lkp.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -218,6 +222,58 @@ async function requeue_passe_avant_les_refus_de_session() {
   check('ligne coincee repassee pending, processing_started_at nul', ap.status === 'pending' && ap.processing_started_at === null, JSON.stringify(ap));
 }
 
+async function remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentatives() {
+  await remettreAZero();
+  const ex = { organizationId: org };
+  // 11. Seule une ligne `processing` bouge ; une ligne `sent` ou `failed` n'est jamais rouverte.
+  const envoyee = await ligne('serveur', { status: 'sent' });
+  const echouee = await ligne('serveur', { status: 'failed' });
+  const r1 = await remettreActionEnAttente(pool, org, envoyee, { comptee: true });
+  const r2 = await remettreActionEnAttente(pool, org, echouee, { comptee: false });
+  check('11. une ligne sent ou failed n est jamais rouverte', !r1 && !r2 && (await statut(envoyee)) === 'sent' && (await statut(echouee)) === 'failed');
+  // 12. Tentative rendue (comptee: false) : attempts redescend, jamais sous zero, pas de plafond.
+  const a = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await q('update linkedin_action_queue set attempts = 5 where id = $1', [a]);
+  const r3 = await remettreActionEnAttente(pool, org, a, { comptee: false, maxTentatives: 3 });
+  const la = (await q('select status, attempts, error_code, processing_started_at from linkedin_action_queue where id = $1', [a])).rows[0];
+  check('12a. comptee false : pending, tentative rendue, jamais abandonnee', r3 && la.status === 'pending' && la.attempts === 4 && la.error_code === null && la.processing_started_at === null, JSON.stringify(la));
+  const z = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await remettreActionEnAttente(pool, org, z, { comptee: false });
+  check('12b. attempts ne passe jamais sous zero', (await q('select attempts from linkedin_action_queue where id = $1', [z])).rows[0].attempts === 0);
+  // Tentative comptee : sous le plafond -> pending ; au plafond -> failed / trop_de_tentatives.
+  const b = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await q('update linkedin_action_queue set attempts = 2 where id = $1', [b]);
+  await remettreActionEnAttente(pool, org, b, { comptee: true, maxTentatives: 3 });
+  const c = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await q('update linkedin_action_queue set attempts = 3 where id = $1', [c]);
+  await remettreActionEnAttente(pool, org, c, { comptee: true, maxTentatives: 3 });
+  const lc = (await q('select status, error_code, error_message from linkedin_action_queue where id = $1', [c])).rows[0];
+  check('12c. comptee true : sous le plafond pending, au plafond failed', (await statut(b)) === 'pending' && lc.status === 'failed' && lc.error_code === 'trop_de_tentatives' && lc.error_message !== null, JSON.stringify(lc));
+  // Une autre organisation ne peut pas remettre cette ligne.
+  const org2 = (await q(`insert into organizations (name, slug) values ('Autre', 'autre-' || gen_random_uuid()) returning id`)).rows[0].id;
+  const d = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  const rautre = await remettreActionEnAttente(pool, org2, d, { comptee: true });
+  check('12d. une autre organisation ne peut pas remettre la ligne', !rautre && (await statut(d)) === 'processing');
+  void ex;
+}
+
+async function trace_d_envoi_bornee_a_l_organisation() {
+  await remettreAZero();
+  const id = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await tracerEnvoiLinkedIn({ ex: pool, organisationId: org }, id);
+  const n = (await q('select count(*)::int as n from linkedin_requetes where action_queue_id = $1 and organization_id = $2 and source_run_id is null', [id, org])).rows[0].n;
+  check('13a. la trace d envoi pose une ligne rattachee a l action, sans passage de collecte', n === 1, String(n));
+  const org2 = (await q(`insert into organizations (name, slug) values ('Autre', 'autre2-' || gen_random_uuid()) returning id`)).rows[0].id;
+  let leve = false;
+  try {
+    await tracerEnvoiLinkedIn({ ex: pool, organisationId: org2 }, id);
+  } catch {
+    leve = true;
+  }
+  const n2 = (await q('select count(*)::int as n from linkedin_requetes where action_queue_id = $1', [id])).rows[0].n;
+  check('13b. une action d une autre organisation n est pas tracee et leve', leve && n2 === 1, `leve=${leve} n=${n2}`);
+}
+
 async function jouer(...sections) {
   for (const section of sections) {
     try {
@@ -244,6 +300,8 @@ async function main() {
     pause_ne_se_raccourcit_pas_et_dit_quand_rien_n_est_pose,
     session_non_active_refuse_la_reclamation,
     requeue_passe_avant_les_refus_de_session,
+    remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentatives,
+    trace_d_envoi_bornee_a_l_organisation,
   );
   await remettreAZero();
   await pool.end();
