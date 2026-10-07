@@ -7,6 +7,8 @@
  * traduite en trois langues, et une phrase assemblée ici serait intraduisible.
  */
 
+import type { EtapeVue } from '@jay-reach/core';
+
 export type CleAvertissementSequence = 'messageSansInvitation' | 'noteDInvitation';
 
 export interface AvertissementSequence {
@@ -15,11 +17,15 @@ export interface AvertissementSequence {
   readonly position: number;
 }
 
-export interface EtapePourAvertissement {
-  readonly position: number;
-  readonly canal: string;
-  readonly corps: string;
-}
+/**
+ * Dérivé de `EtapeVue` plutôt que redéclaré : une forme recopiée à la main se serait
+ * contentée d'un `canal: string` qui compile, et c'est exactement ce qui est arrivé — la
+ * première version testait `canal === 'linkedin_message'` alors que `lireSequence` collapse
+ * ce champ en « linkedin ». Les tests passaient sur une fixture que la base ne produit
+ * jamais. Lié au type du cœur, un renommage casse la compilation au lieu de rendre cette
+ * fonction muette en silence.
+ */
+export type EtapePourAvertissement = Pick<EtapeVue, 'position' | 'canalDetaille' | 'corps'>;
 
 /**
  * Deux empêchements, tous deux silencieux sans cet écran.
@@ -42,15 +48,15 @@ export function avertissementsSequence(
 
   const premierMessageOrphelin = ordonnees.find(
     (e, i) =>
-      e.canal === 'linkedin_message' &&
-      !ordonnees.slice(0, i).some((p) => p.canal === 'linkedin_invite'),
+      e.canalDetaille === 'linkedin_message' &&
+      !ordonnees.slice(0, i).some((p) => p.canalDetaille === 'linkedin_invite'),
   );
   if (premierMessageOrphelin) {
     avertissements.push({ cle: 'messageSansInvitation', position: premierMessageOrphelin.position });
   }
 
   const premiereInvitationAvecNote = ordonnees.find(
-    (e) => e.canal === 'linkedin_invite' && e.corps.trim() !== '',
+    (e) => e.canalDetaille === 'linkedin_invite' && e.corps.trim() !== '',
   );
   if (premiereInvitationAvecNote) {
     avertissements.push({ cle: 'noteDInvitation', position: premiereInvitationAvecNote.position });

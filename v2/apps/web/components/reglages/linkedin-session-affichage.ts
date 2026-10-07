@@ -11,7 +11,7 @@
  * Le logo LinkedIn garde sa couleur de marque en toute circonstance : l'état se dit par le
  * libellé, rien ici ne porte de consigne de couleur pour la marque.
  */
-import type { SessionLinkedIn } from '@jay-reach/core';
+import type { ProchainEnvoi, SessionLinkedIn } from '@jay-reach/core';
 import type { PuceTon } from '../ui';
 
 export type CleEtatSession = 'absente' | 'prete' | 'defi' | 'cookieRefuse' | 'disjoncteur' | 'revoquee' | 'sortieInattendue';
@@ -91,26 +91,40 @@ export function varianteDetailSession(
   return 'detail';
 }
 
-export type CleEtatEnvoi = 'pret' | 'enPause' | 'sessionRequise';
+export type CleEtatEnvoi = 'pret' | 'planifie' | 'enPause' | 'rienAEnvoyer' | 'horsCreneau' | 'canalBloque';
 
 /**
- * État du canal d'ENVOI, sous la phrase de session (lot 4b). Deux faits distincts
- * cohabitent sur cet écran — « puis-je parler à LinkedIn » et « vais-je envoyer
- * maintenant » — et ils ne doivent jamais se contredire : c'est pourquoi cette
- * fonction interroge `phraseEtatSession` au lieu de relire `etat` et `motif` pour
- * son compte. Sans cela, les deux lignes dériveraient au premier motif ajouté.
+ * État du canal d'ENVOI, sous la phrase de session (lot 4b).
  *
- * Quand la session ne tient pas, on ne répète pas sa raison — elle est écrite
- * juste au-dessus — on en dit la conséquence, et en ton neutre : une seule alarme
- * à l'écran, sinon l'opérateur ne sait plus laquelle traiter (même correctif que
- * la double puce de `puceEtatCompteLinkedIn`).
+ * Elle ne devine rien : elle traduit le verdict de `prochainEnvoiLinkedIn`, c'est-à-dire la
+ * fonction même qui décide quand le moteur enverra. Une première version ne connaissait que
+ * la session et la pause, et affichait donc « Prêt à envoyer » la nuit, le week-end et une
+ * fois le plafond du jour atteint — soit la majorité des heures de la semaine. Un écran qui
+ * ment sur l'état du canal est pire qu'un écran muet : il fait chercher la panne ailleurs.
+ *
+ * Quand la session ne tient pas, on ne répète pas sa raison — elle est écrite juste au-dessus —
+ * et on ne la nomme pas non plus : sur une sortie réseau inattendue, la session EST ouverte, et
+ * « tant que la session n'est pas ouverte » contredirait la ligne du dessus.
  */
 export function phraseEtatEnvoi(
   session: SessionLinkedIn | null,
+  prochain: ProchainEnvoi,
   maintenant: Date,
 ): { ton: PuceTon; cle: CleEtatEnvoi } {
-  if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'sessionRequise' };
-  const pause = session?.envoiPauseJusqua;
-  if (pause && pause.getTime() > maintenant.getTime()) return { ton: 'attention', cle: 'enPause' };
-  return { ton: 'bon', cle: 'pret' };
+  if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'canalBloque' };
+  if (prochain.quand !== null) {
+    return prochain.quand.getTime() <= maintenant.getTime()
+      ? { ton: 'bon', cle: 'pret' }
+      : { ton: 'bon', cle: 'planifie' };
+  }
+  if (prochain.motif === 'canal_en_pause') return { ton: 'attention', cle: 'enPause' };
+  if (prochain.motif === 'session_inactive') return { ton: 'gris', cle: 'canalBloque' };
+  // `file_vide` et `action_en_cours` ne sont pas des empêchements : rien n'attend, ou un envoi
+  // est en vol. Les deux se disent « rien à envoyer là, tout de suite » à l'opérateur.
+  if (prochain.motif === 'file_vide' || prochain.motif === 'action_en_cours') {
+    return { ton: 'bon', cle: 'rienAEnvoyer' };
+  }
+  // Le reste vient du rythme : hors fenêtre horaire, jour non coché, plafond du jour ou des
+  // sept jours. Rien ne partira avant le prochain créneau, et aucune date n'est calculable ici.
+  return { ton: 'attention', cle: 'horsCreneau' };
 }

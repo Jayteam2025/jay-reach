@@ -769,7 +769,7 @@
         "modify": "Modifier",
         "repliedHere": "Ont répondu ici",
         "leftSequence": "{n, plural, one {# est sorti de la séquence} other {# sont sortis de la séquence}}",
-        "linkedinNotice": "l'envoi s'exécute côté serveur (à venir)",
+        "linkedinNotice": "l'envoi s'exécute côté serveur",
         "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
       },
       "preview": {
@@ -1563,14 +1563,21 @@
         "pret": {
           "phrase": "Prêt à envoyer."
         },
+        "planifie": {
+          "phrase": "Prochain envoi {quand}."
+        },
         "enPause": {
           "phrase": "Envoi en pause jusqu'à {quand}."
         },
-        "sessionRequise": {
-          "phrase": "Aucun envoi tant que la session n'est pas ouverte."
+        "rienAEnvoyer": {
+          "phrase": "Aucune action en attente."
         },
-        "volume": "Le volume se règle avec le curseur hebdomadaire.",
-        "volumeLien": "Ouvrir Réglages › Expéditeurs"
+        "horsCreneau": {
+          "phrase": "Aucun envoi pour le moment : hors des heures d'envoi, ou plafond atteint."
+        },
+        "canalBloque": {
+          "phrase": "Rien ne part tant que ce point n'est pas réglé."
+        }
       },
       "commande": {
         "consigne": "Dans un terminal sur le serveur, rouvrez la session :",

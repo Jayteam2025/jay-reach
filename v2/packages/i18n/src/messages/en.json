@@ -769,7 +769,7 @@
         "modify": "Edit",
         "repliedHere": "Replied here",
         "leftSequence": "{n, plural, one {# left the sequence} other {# left the sequence}}",
-        "linkedinNotice": "the send runs server-side (coming soon)",
+        "linkedinNotice": "the send runs server-side",
         "salesblinkNotice": "The SalesBlink sequence is created on the first send."
       },
       "preview": {
@@ -1563,14 +1563,21 @@
         "pret": {
           "phrase": "Ready to send."
         },
+        "planifie": {
+          "phrase": "Next send {quand}."
+        },
         "enPause": {
           "phrase": "Sending paused until {quand}."
         },
-        "sessionRequise": {
-          "phrase": "Nothing is sent until the session is open."
+        "rienAEnvoyer": {
+          "phrase": "Nothing waiting to be sent."
         },
-        "volume": "Volume is set with the weekly cursor.",
-        "volumeLien": "Open Settings › Senders"
+        "horsCreneau": {
+          "phrase": "Nothing goes out right now: outside sending hours, or the cap is reached."
+        },
+        "canalBloque": {
+          "phrase": "Nothing is sent until this is fixed."
+        }
       },
       "commande": {
         "consigne": "In a terminal on the server, reopen the session:",

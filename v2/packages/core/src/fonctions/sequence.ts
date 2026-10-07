@@ -45,6 +45,13 @@ import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 /** Canaux affichés dans l'onglet (R19) : courrier et appel n'y figurent jamais. */
 const CANAUX_AFFICHES = ['email', 'linkedin_invite', 'linkedin_message'] as const;
 type CanalAffiche = 'email' | 'linkedin';
+/**
+ * Le canal tel qu'il est en base. `canal` le collapse en « linkedin » pour l'icône et le
+ * libellé — mais invitation et message n'obéissent pas aux mêmes règles d'envoi (un message
+ * n'atteint qu'une relation de 1er degré), et l'écran doit pouvoir les distinguer. Le `where`
+ * de la requête borne déjà les valeurs à `CANAUX_AFFICHES`.
+ */
+export type CanalEtape = (typeof CANAUX_AFFICHES)[number];
 
 function canalAffiche(channel: string): CanalAffiche {
   return channel.startsWith('linkedin') ? 'linkedin' : 'email';
@@ -55,6 +62,8 @@ export interface EtapeVue {
   /** 1-based (`sequence_steps.position` part de 0), même conversion que `campagnes.ts`/`aujourdhui.ts`. */
   readonly position: number;
   readonly canal: CanalAffiche;
+  /** Le canal non collapsé : seul moyen de distinguer une invitation d'un message. */
+  readonly canalDetaille: CanalEtape;
   readonly titre: string;
   /** `null` pour un canal sans objet (LinkedIn) ou une étape sans message écrit. */
   readonly sujet: string | null;
@@ -216,6 +225,7 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
       id: e.id,
       position: e.position + 1,
       canal: canalAffiche(e.channel),
+      canalDetaille: e.channel as CanalEtape,
       titre: titreEtape(e.channel, index, etapesBrutes.length),
       sujet: gabarit?.subject ?? null,
       corps: gabarit?.body ?? '',

@@ -5,6 +5,7 @@ import {
   jourCourantDansFuseau,
   lirePlafondLinkedIn,
   lireReglages,
+  prochainEnvoiLinkedIn,
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
@@ -28,8 +29,9 @@ export default async function ReglagesLinkedinPage() {
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
   const maintenant = new Date();
 
-  const [session, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] = await Promise.all([
+  const [session, prochain, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
+    prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
@@ -39,7 +41,7 @@ export default async function ReglagesLinkedinPage() {
 
   const phrase = phraseEtatSession(session);
   const variante = varianteDetailSession(session);
-  const envoi = phraseEtatEnvoi(session, maintenant);
+  const envoi = phraseEtatEnvoi(session, prochain, maintenant);
   const inconnu = t('faits.inconnu');
   const origine = [session?.operateur, session?.pays].filter(Boolean).join(', ');
   const detail = t(`etat.${phrase.cle}.${variante}`, {
@@ -52,9 +54,17 @@ export default async function ReglagesLinkedinPage() {
     origine,
   });
 
-  const pauseJusqua = session?.envoiPauseJusqua
-    ? dateCourte(session.envoiPauseJusqua.toISOString(), maintenant, fuseau)
-    : inconnu;
+  // « jusqu'à » pour une pause, « prochain envoi » pour un créneau à venir : deux dates
+  // différentes, une seule variable de texte — chaque phrase ne lit que la sienne.
+  const dateEnvoi = (() => {
+    if (envoi.cle === 'enPause' && session?.envoiPauseJusqua) {
+      return dateCourte(session.envoiPauseJusqua.toISOString(), maintenant, fuseau);
+    }
+    if (envoi.cle === 'planifie' && prochain.quand) {
+      return dateCourte(prochain.quand.toISOString(), maintenant, fuseau);
+    }
+    return inconnu;
+  })();
 
   const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
 
@@ -100,15 +110,7 @@ export default async function ReglagesLinkedinPage() {
         <div className="jr-session-etat">
           <span className={`jr-session-pastille ${envoi.ton}`} aria-hidden="true" />
           <div>
-            <p className="jr-session-phrase">{t(`envoi.${envoi.cle}.phrase`, { quand: pauseJusqua })}</p>
-            {envoi.cle !== 'sessionRequise' && (
-              <p className="jr-session-detail">
-                {t('envoi.volume')}{' '}
-                <a className="jr-lien" href="/settings/senders">
-                  {t('envoi.volumeLien')}
-                </a>
-              </p>
-            )}
+            <p className="jr-session-phrase">{t(`envoi.${envoi.cle}.phrase`, { quand: dateEnvoi })}</p>
           </div>
         </div>
         <dl className="jr-session-faits">

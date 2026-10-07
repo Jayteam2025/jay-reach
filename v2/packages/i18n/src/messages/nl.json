@@ -769,7 +769,7 @@
         "modify": "Bewerken",
         "repliedHere": "Hebben hier gereageerd",
         "leftSequence": "{n, plural, one {# heeft de sequentie verlaten} other {# hebben de sequentie verlaten}}",
-        "linkedinNotice": "de verzending draait serverside (binnenkort)",
+        "linkedinNotice": "de verzending draait serverside",
         "salesblinkNotice": "De SalesBlink-sequentie wordt aangemaakt bij de eerste verzending."
       },
       "preview": {
@@ -1563,14 +1563,21 @@
         "pret": {
           "phrase": "Klaar om te versturen."
         },
+        "planifie": {
+          "phrase": "Volgende verzending {quand}."
+        },
         "enPause": {
           "phrase": "Verzenden gepauzeerd tot {quand}."
         },
-        "sessionRequise": {
-          "phrase": "Er wordt niets verstuurd zolang de sessie niet open is."
+        "rienAEnvoyer": {
+          "phrase": "Niets in de wachtrij."
         },
-        "volume": "Het volume stel je in met de weekregelaar.",
-        "volumeLien": "Instellingen › Afzenders openen"
+        "horsCreneau": {
+          "phrase": "Er wordt nu niets verstuurd: buiten de verzenduren, of de limiet is bereikt."
+        },
+        "canalBloque": {
+          "phrase": "Er wordt niets verstuurd zolang dit niet is opgelost."
+        }
       },
       "commande": {
         "consigne": "Open de sessie opnieuw in een terminal op de server:",
