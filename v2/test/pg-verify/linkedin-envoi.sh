@@ -49,6 +49,19 @@ if ! harnais_pret; then
     # `supabase db push` : c'est ce qui rendrait une valeur d'enum inutilisable
     # dans le même fichier.
     case "$(basename "$m")" in 20261005130[3-9]*) FLAGS=-1 ;; *) FLAGS= ;; esac
+    # Lignes PRÉEXISTANTES : posées juste avant la migration de l'envoi, comme celles
+    # de la base de production au moment du `db push`. La migration doit se poser
+    # dessus sans erreur, et le .mjs relit ces lignes intactes.
+    if [ "$(basename "$m")" = "20261007110000_linkedin_envoi.sql" ]; then
+      psql >/dev/null <<'SQL' || { echo "[linkedin-envoi] PREEXISTANT_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 10; }
+        with o as (insert into organizations (name, slug) values ('Préexistant', 'preexistant') returning id),
+        s as (insert into sources (organization_id, provider_id, name) select id, 'linkedin_post_engagers', 'S' from o returning id),
+        r as (insert into source_runs (source_id) select id from s returning id),
+        t as (insert into linkedin_requetes (organization_id, source_run_id) select o.id, r.id from o, r returning id)
+        insert into linkedin_action_queue (organization_id, linkedin_url, kind, method, status, sent_at)
+          select id, 'https://www.linkedin.com/in/preexistant', 'invite', 'extension_auto', 'sent', now() from o;
+SQL
+    fi
     psql $FLAGS < "$m" >/dev/null || { echo "[linkedin-envoi] MIGRATION_FAIL: $(basename "$m")"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 7; }
   done
   psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "[linkedin-envoi] GRANTS_FAIL"; "$DOCKER" rm -f -v "$CT" >/dev/null 2>&1; exit 8; }

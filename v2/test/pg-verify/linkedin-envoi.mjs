@@ -23,7 +23,7 @@ async function refus(fn) {
     await fn();
     return null;
   } catch (e) {
-    return e.code ?? String(e.message);
+    return e.constraint ? `${e.code}:${e.constraint}` : (e.code ?? String(e.message));
   }
 }
 
@@ -57,7 +57,7 @@ async function methode() {
   check('1b. extension_auto et manual restent acceptés',
     (await refus(() => action(m.org, 'extension_auto', 'https://www.linkedin.com/in/y'))) === null &&
     (await refus(() => action(m.org, 'manual', 'https://www.linkedin.com/in/z'))) === null);
-  check('1c. une méthode inconnue est refusée (23514)', (await refus(() => action(m.org, 'robot', 'https://www.linkedin.com/in/w'))) === '23514');
+  check('1c. une méthode inconnue est refusée (23514)', (await refus(() => action(m.org, 'robot', 'https://www.linkedin.com/in/w'))) === '23514:linkedin_action_queue_method_check');
   check('1d. une ligne extension_auto déjà sent reste valide',
     (await refus(() => q(`insert into linkedin_action_queue (organization_id, linkedin_url, kind, method, status, sent_at) values ($1, 'https://www.linkedin.com/in/h', 'invite', 'extension_auto', 'sent', now())`, [m.org]))) === null);
 }
@@ -69,11 +69,11 @@ async function trace() {
   const ins = (cols, vals) => q(`insert into linkedin_requetes (organization_id, ${cols}) values ($1, ${vals}) returning id`, [m.org, ...(cols === 'source_run_id' ? [m.run] : cols === 'action_queue_id' ? [a] : cols ? [m.run, a] : [])]);
   check('2. une ligne de collecte (source_run_id seul) passe', (await refus(() => ins('source_run_id', '$2'))) === null);
   check('3. une ligne d\'envoi (action_queue_id seul, source_run_id nul) passe', (await refus(() => ins('action_queue_id', '$2'))) === null);
-  check('4. les deux renseignés : refusé (23514)', (await refus(() => ins('source_run_id, action_queue_id', '$2, $3'))) === '23514');
-  check('5. aucun des deux : refusé (23514)',
-    (await refus(() => q(`insert into linkedin_requetes (organization_id) values ($1)`, [m.org]))) === '23514');
+  check('4. les deux renseignés : refusé par linkedin_requetes_une_origine', (await refus(() => ins('source_run_id, action_queue_id', '$2, $3'))) === '23514:linkedin_requetes_une_origine');
+  check('5. aucun des deux : refusé par linkedin_requetes_une_origine',
+    (await refus(() => q(`insert into linkedin_requetes (organization_id) values ($1)`, [m.org]))) === '23514:linkedin_requetes_une_origine');
   check('5b. une action inexistante est refusée (23503)',
-    (await refus(() => q(`insert into linkedin_requetes (organization_id, action_queue_id) values ($1, gen_random_uuid())`, [m.org]))) === '23503');
+    (await refus(() => q(`insert into linkedin_requetes (organization_id, action_queue_id) values ($1, gen_random_uuid())`, [m.org]))) === '23503:linkedin_requetes_action_queue_id_fkey');
   const n = (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1`, [m.org])).rows[0].n;
   check('5c. exactement deux lignes ont été écrites', n === 2, String(n));
 }
@@ -100,6 +100,16 @@ async function suppressionAction() {
   check('6d. et sa trace a disparu', n === 0, String(n));
 }
 
+async function preexistant() {
+  console.log('\n0. les lignes posées AVANT la migration sont intactes');
+  const o = (await q(`select id from organizations where slug = 'preexistant'`)).rows[0]?.id;
+  check('0. la base préexistante est là', !!o);
+  const r = (await q(`select source_run_id is not null as run, action_queue_id is null as sans_action from linkedin_requetes where organization_id = $1`, [o])).rows;
+  check('0b. la ligne de collecte garde son source_run_id, sans action', r.length === 1 && r[0].run && r[0].sans_action, JSON.stringify(r));
+  const a = (await q(`select method, status from linkedin_action_queue where organization_id = $1`, [o])).rows;
+  check('0c. l\'action sent en extension_auto est inchangée', a.length === 1 && a[0].method === 'extension_auto' && a[0].status === 'sent', JSON.stringify(a));
+}
+
 async function pause() {
   console.log('\n4. la pause d\'envoi de la session');
   const m = await monde();
@@ -114,7 +124,7 @@ async function pause() {
 }
 
 async function main() {
-  await jouer(methode, trace, suppressions, suppressionAction, pause);
+  await jouer(preexistant, methode, trace, suppressions, suppressionAction, pause);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
