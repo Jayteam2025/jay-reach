@@ -26,6 +26,13 @@ export type CodeRefus =
   | 'profile_not_found'
   | 'invalid_url'
   | 'bad_request'
+  /**
+   * Une note d'invitation a été demandée. Le champ Voyager qui la porte n'a jamais été
+   * relevé (l'extension invitait sans note) : il reste à relever en recette. Code distinct
+   * de `bad_request` pour que l'opérateur lise que le produit ne la supporte pas, et non
+   * qu'il a mal saisi quelque chose.
+   */
+  | 'note_non_supportee'
   | 'defi';
 
 export type ResultatEnvoi = { ok: true } | { ok: false; code: CodeRefus };
@@ -44,6 +51,21 @@ function erreurNommee(nom: string, message: string): Error {
   e.name = nom;
   return e;
 }
+
+/**
+ * Statut qu'on ne sait pas lire. Le NOM dit si l'action a pu partir, car c'est la seule
+ * chose que le projet consigne dans `engine_status.last_error` : `...Invitation` et
+ * `...Message` sont des POST, JAMAIS rejouables ; `...Resolution` et `...Expediteur`
+ * sont des GET, rejouables sans risque. Le statut est un entier que nous écrivons
+ * nous-mêmes, il ne peut porter aucun secret.
+ */
+type NomStatutInattendu =
+  | 'StatutInattenduResolution'
+  | 'StatutInattenduExpediteur'
+  | 'StatutInattenduInvitation'
+  | 'StatutInattenduMessage';
+const statutInattendu = (nom: NomStatutInattendu, statut: number) =>
+  erreurNommee(nom, `LinkedIn a répondu ${statut}`);
 
 const URL_PROFILS = 'https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=';
 const URL_INVITATION =
@@ -109,8 +131,12 @@ function extraireIdentifiant(brute: string): string | null {
   }
   // `endsWith('linkedin.com')` seul (l'extension) accepterait `evillinkedin.com`.
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
-  if (u.hostname !== 'linkedin.com' && !u.hostname.endsWith('.linkedin.com')) return null;
-  const m = /^\/in\/([^/?#]+)/.exec(u.pathname);
+  // Un hôte à point final (`www.linkedin.com.`) est le même hôte.
+  const hote = u.hostname.replace(/\.$/, '');
+  if (hote !== 'linkedin.com' && !hote.endsWith('.linkedin.com')) return null;
+  // Formes qu'on trouve dans un fichier importé : `/in/x`, `/IN/x`, `/mwlite/in/x`, `/pub/x/1/2/3`.
+  // Si le slug ne désigne pas un identifiant public, la résolution le refuse (voir `resoudreProfil`).
+  const m = /^\/(?:mwlite\/)?(?:in|pub)\/([^/?#]+)/i.exec(u.pathname);
   if (!m) return null;
   try {
     const id = decodeURIComponent(m[1]!);
@@ -120,7 +146,13 @@ function extraireIdentifiant(brute: string): string | null {
   }
 }
 
-const SchemaElements = z.array(z.object({ entityUrn: z.string().optional(), '*entityUrn': z.string().optional() }));
+const SchemaElements = z.array(
+  z.object({
+    entityUrn: z.string().optional(),
+    '*entityUrn': z.string().optional(),
+    publicIdentifier: z.string().optional(),
+  }),
+);
 const SchemaInclus = z.array(z.object({ entityUrn: z.string().optional(), publicIdentifier: z.string().optional() }));
 
 const SchemaProfils = z.object({
@@ -145,30 +177,39 @@ export async function resoudreProfil(pilote: Pilote, linkedinUrl: string): Promi
   // Un 403 sur une LECTURE est un cookie ou un jeton refusés (l'extension le lisait ainsi).
   if (rep.statut === 403) throw new ErreurEnvoi('not_logged_in');
   if (rep.statut === 404) throw new ErreurEnvoi('profile_not_found');
-  if (rep.statut < 200 || rep.statut >= 300) throw erreurNommee('StatutInattendu', 'LinkedIn a répondu un statut inattendu');
+  if (rep.statut < 200 || rep.statut >= 300) throw statutInattendu('StatutInattenduResolution', rep.statut);
 
   const lu = SchemaProfils.safeParse(lireJson(rep.corps));
   if (!lu.success) throw erreurNommee('ReponseIllisible', 'Réponse LinkedIn illisible');
 
-  const elements = lu.data.elements ?? lu.data.data?.elements ?? [];
-  let urn: string | undefined = elements[0]?.entityUrn ?? elements[0]?.['*entityUrn'];
-  if (!urn) {
-    // Le profil retenu doit porter l'identifiant demandé : sans cela, on écrirait à quelqu'un d'autre.
-    urn = lu.data.included?.find(
-      (i) => i.entityUrn?.startsWith(PREFIXE_PROFIL) && i.publicIdentifier === identifiant,
-    )?.entityUrn;
+  // Le profil retenu doit PORTER l'identifiant demandé, sur les deux chemins : si LinkedIn
+  // répond 200 pour un slug obsolète en rendant un profil voisin, on inviterait quelqu'un
+  // qui n'a jamais été ciblé. Sans identifiant exploitable, on n'invite pas à l'aveugle.
+  // LinkedIn rend l'identifiant dans sa casse, le contact peut l'avoir dans une autre.
+  const inclus = lu.data.included ?? [];
+  const memeIdentifiant = (a: string | undefined) => a !== undefined && a.toLowerCase() === identifiant.toLowerCase();
+  const element = (lu.data.elements ?? lu.data.data?.elements ?? [])[0];
+  const urnElement = element?.entityUrn ?? element?.['*entityUrn'];
+  if (urnElement?.startsWith(PREFIXE_PROFIL)) {
+    const porte = element?.publicIdentifier ?? inclus.find((i) => i.entityUrn === urnElement)?.publicIdentifier;
+    if (memeIdentifiant(porte)) return urnElement;
   }
-  if (!urn || !urn.startsWith(PREFIXE_PROFIL)) throw new ErreurEnvoi('profile_not_found');
+  const urn = inclus.find((i) => i.entityUrn?.startsWith(PREFIXE_PROFIL) && memeIdentifiant(i.publicIdentifier))
+    ?.entityUrn;
+  if (!urn) throw new ErreurEnvoi('profile_not_found');
   return urn;
 }
 
 /**
  * Invitation SANS note. L'extension n'en envoyait jamais : le champ qui porte une
- * note n'a pas été relevé, et l'inventer enverrait un corps que personne n'a
- * éprouvé à une vraie personne. Une note demandée est donc REFUSÉE sans appel.
+ * note n'a pas été relevé (à relever en recette), et l'inventer enverrait un corps que
+ * personne n'a éprouvé à une vraie personne. Une note RÉELLE est donc refusée sans appel,
+ * sous un code à elle. Une note vide ou blanche vaut absence : une colonne `default ''`
+ * ou un `note ?? ''` ne doivent pas faire refuser toutes les invitations.
  */
 export async function envoyerInvitation(pilote: Pilote, urn: string, note: string | null): Promise<ResultatEnvoi> {
-  if (note !== null || !urn.startsWith(PREFIXE_PROFIL)) return { ok: false, code: 'bad_request' };
+  if (!urn.startsWith(PREFIXE_PROFIL)) return { ok: false, code: 'bad_request' };
+  if (note !== null && note.trim() !== '') return { ok: false, code: 'note_non_supportee' };
 
   await surLinkedin(pilote);
   const rep = await pilote.requete(URL_INVITATION, ENTETES, { invitee: { inviteeUnion: { memberProfile: urn } } });
@@ -187,7 +228,7 @@ export async function envoyerInvitation(pilote: Pilote, urn: string, note: strin
     if (PLAFOND.test(message)) return { ok: false, code: 'restricted' };
     return { ok: false, code: 'cannot_invite' };
   }
-  throw erreurNommee('StatutInattendu', 'LinkedIn a répondu un statut inattendu');
+  throw statutInattendu('StatutInattenduInvitation', rep.statut);
 }
 
 const SchemaMoi = z.object({
@@ -208,9 +249,11 @@ const SchemaMoi = z.object({
 /**
  * URN du compte qui écrit (le `mailboxUrn`). `/me` ne rend PAS le profil mais une
  * RÉFÉRENCE (`*miniProfile`, en `fs_miniProfile`), à normaliser en `fsd_profile`.
- * À défaut de référence, on cherche dans `included` le profil qui porte NOTRE
- * identifiant public : prendre le premier venu écrirait depuis un autre profil.
- * `null` si rien ne se lit : le message ne part pas.
+ * À défaut de référence, on cherche dans `included` (qui porte des `fs_miniProfile`,
+ * forme mesurée sur la réponse réelle) le profil dont l'identifiant public est NOTRE
+ * identifiant. Jamais un profil sans correspondance, jamais « le premier » : écrire
+ * depuis la mauvaise boîte est pire que ne rien envoyer. `null` si rien ne se lit,
+ * et le message ne part pas.
  */
 function lireExpediteur(corps: unknown): string | null {
   const lu = SchemaMoi.safeParse(corps);
@@ -219,17 +262,33 @@ function lireExpediteur(corps: unknown): string | null {
   const monIdentifiant =
     (typeof data?.miniProfile === 'object' ? data.miniProfile.publicIdentifier : undefined) ?? data?.publicIdentifier;
   let urn = data?.['*miniProfile'] ?? (typeof data?.miniProfile === 'string' ? data.miniProfile : undefined);
-  if (!urn || !urn.includes('fsd_profile')) {
-    const profils = included.filter((i) => i.entityUrn?.startsWith(PREFIXE_PROFIL));
-    const moi = monIdentifiant ? profils.find((i) => i.publicIdentifier === monIdentifiant) : profils[0];
-    urn = moi?.entityUrn ?? urn;
+  if (!urn || !/fsd_profile|miniProfile/.test(urn)) {
+    if (!monIdentifiant) return null;
+    urn = included.find(
+      (i) =>
+        i.entityUrn !== undefined &&
+        /fsd_profile|miniProfile/.test(i.entityUrn) &&
+        i.publicIdentifier?.toLowerCase() === monIdentifiant.toLowerCase(),
+    )?.entityUrn;
   }
   if (!urn) return null;
   const normalise = urn.replace('urn:li:fs_miniProfile:', PREFIXE_PROFIL);
   return normalise.startsWith(PREFIXE_PROFIL) ? normalise : null;
 }
 
-/** 16 octets bruts, pas du base64 : un `trackingId` vide fait répondre 400 muet (retour terrain de l'extension). */
+/**
+ * L'URN de l'expéditeur est stable sur toute la session : un appel `/me` par message
+ * doublerait le trafic Voyager d'un compte qu'on ménage. Une session = un pilote.
+ * Seul un succès est mémorisé.
+ */
+const expediteurs = new WeakMap<Pilote, string>();
+
+/**
+ * Chaîne de 16 caractères dont chacun a le code d'un octet aléatoire (0 à 255), comme
+ * l'extension : ce n'est ni du base64 ni de l'hexadécimal, et sur le fil JSON elle
+ * occupe 16 à 32 octets selon l'encodage UTF-8 des caractères au-dessus de 127.
+ * Un `trackingId` vide fait répondre 400 muet (retour terrain de l'extension).
+ */
 function trackingId(): string {
   return String.fromCharCode(...randomBytes(16));
 }
@@ -238,12 +297,17 @@ export async function envoyerMessage(pilote: Pilote, urn: string, texte: string)
   if (!urn.startsWith(PREFIXE_PROFIL) || texte.trim() === '') return { ok: false, code: 'bad_request' };
 
   await surLinkedin(pilote);
-  const moi = await pilote.requete(URL_MOI, ENTETES);
-  const refusMoi = refusCommun(moi.statut) ?? (moi.statut === 403 ? 'not_logged_in' : null);
-  if (refusMoi) return { ok: false, code: refusMoi };
-  if (moi.statut < 200 || moi.statut >= 300) throw erreurNommee('StatutInattendu', 'LinkedIn a répondu un statut inattendu');
-  const expediteur = lireExpediteur(lireJson(moi.corps));
-  if (expediteur === null) throw erreurNommee('ExpediteurIntrouvable', "Profil de l'expéditeur introuvable");
+  let expediteur = expediteurs.get(pilote);
+  if (expediteur === undefined) {
+    const moi = await pilote.requete(URL_MOI, ENTETES);
+    const refusMoi = refusCommun(moi.statut) ?? (moi.statut === 403 ? 'not_logged_in' : null);
+    if (refusMoi) return { ok: false, code: refusMoi };
+    if (moi.statut < 200 || moi.statut >= 300) throw statutInattendu('StatutInattenduExpediteur', moi.statut);
+    const lu = lireExpediteur(lireJson(moi.corps));
+    if (lu === null) throw erreurNommee('ExpediteurIntrouvable', "Profil de l'expéditeur introuvable");
+    expediteur = lu;
+    expediteurs.set(pilote, expediteur);
+  }
 
   const rep = await pilote.requete(URL_MESSAGE, ENTETES, {
     message: {
@@ -255,6 +319,9 @@ export async function envoyerMessage(pilote: Pilote, urn: string, texte: string)
     },
     mailboxUrn: expediteur,
     trackingId: trackingId(),
+    // Héritage de l'extension : la déduplication côté LinkedIn est DÉSACTIVÉE et l'`originToken`
+    // change à chaque appel. Un jeton dérivé de l'action avec `true` protégerait du double
+    // envoi, mais personne ne l'a éprouvé : à essayer en recette, pas à changer ici.
     dedupeByClientGeneratedToken: false,
     hostRecipientUrns: [urn],
   });
@@ -267,5 +334,5 @@ export async function envoyerMessage(pilote: Pilote, urn: string, texte: string)
     // Le plus souvent : destinataire hors du premier degré (point de vigilance 3).
     return { ok: false, code: PLAFOND.test(lireMotif(rep.corps).message) ? 'restricted' : 'cannot_message' };
   }
-  throw erreurNommee('StatutInattendu', 'LinkedIn a répondu un statut inattendu');
+  throw statutInattendu('StatutInattenduMessage', rep.statut);
 }

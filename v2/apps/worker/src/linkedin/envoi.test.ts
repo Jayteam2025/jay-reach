@@ -21,12 +21,15 @@ const URN_EXPEDITEUR = 'urn:li:fsd_profile:ACoAAexpediteur';
 function pilote(
   reponses: Record<string, Reponse>,
   urlCourante = 'about:blank',
-): { p: Pilote; appels: Appel[]; pages: string[] } {
+): { p: Pilote; appels: Appel[]; pages: string[]; journal: string[] } {
   const appels: Appel[] = [];
   const pages: string[] = [];
+  /** Navigations et requetes dans l'ordre exact ou elles ont eu lieu. */
+  const journal: string[] = [];
   let courante = urlCourante;
   const p: Pilote = {
     aller: async (url) => {
+      journal.push(`aller ${url}`);
       pages.push(url);
       courante = url;
     },
@@ -36,6 +39,7 @@ function pilote(
     texte: async () => '',
     attendre: async () => true,
     requete: async (url, entetes, corps) => {
+      journal.push(`requete ${url}`);
       appels.push({ url, entetes, corps });
       const r = reponses[url];
       if (!r) throw new Error(`requete non prevue : ${url}`);
@@ -43,11 +47,14 @@ function pilote(
     },
     fermer: async () => undefined,
   };
-  return { p, appels, pages };
+  return { p, appels, pages, journal };
 }
 
 const profilResolu = (vanity = 'jeanne-dupont'): Record<string, Reponse> => ({
-  [URL_PROFIL(vanity)]: { statut: 200, corps: { elements: [{ entityUrn: URN_DESTINATAIRE }] } },
+  [URL_PROFIL(vanity)]: {
+    statut: 200,
+    corps: { elements: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: vanity }] },
+  },
 });
 const moi: Record<string, Reponse> = {
   [URL_ME]: {
@@ -85,11 +92,78 @@ describe('resoudreProfil', () => {
 
   it('une URN qui ne commence pas par urn:li:fsd_profile: rend profile_not_found', async () => {
     const { p } = pilote({
-      [URL_PROFIL('jeanne-dupont')]: { statut: 200, corps: { elements: [{ entityUrn: 'urn:li:company:1' }] } },
+      [URL_PROFIL('jeanne-dupont')]: {
+        statut: 200,
+        corps: { elements: [{ entityUrn: 'urn:li:company:1', publicIdentifier: 'jeanne-dupont' }] },
+      },
     });
     await expect(resoudreProfil(p, 'https://www.linkedin.com/in/jeanne-dupont')).rejects.toMatchObject({
       code: 'profile_not_found',
     });
+  });
+
+  it("un profil renvoye pour un autre identifiant rend profile_not_found, sur les deux chemins", async () => {
+    const voisin = pilote({
+      [URL_PROFIL('jeanne-dupont')]: {
+        statut: 200,
+        corps: { elements: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: 'jean-voisin' }] },
+      },
+    });
+    await expect(resoudreProfil(voisin.p, 'https://www.linkedin.com/in/jeanne-dupont')).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    const sansIdentifiant = pilote({
+      [URL_PROFIL('jeanne-dupont')]: { statut: 200, corps: { elements: [{ entityUrn: URN_DESTINATAIRE }] } },
+    });
+    await expect(resoudreProfil(sansIdentifiant.p, 'https://www.linkedin.com/in/jeanne-dupont')).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    const inclusVoisin = pilote({
+      [URL_PROFIL('jeanne-dupont')]: {
+        statut: 200,
+        corps: { included: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: 'jean-voisin' }] },
+      },
+    });
+    await expect(resoudreProfil(inclusVoisin.p, 'https://www.linkedin.com/in/jeanne-dupont')).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+  });
+
+  it("lit l'identifiant de l'element dans included quand l'element n'est qu'une reference", async () => {
+    const { p } = pilote({
+      [URL_PROFIL('jeanne-dupont')]: {
+        statut: 200,
+        corps: {
+          elements: [{ '*entityUrn': URN_DESTINATAIRE }],
+          included: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: 'jeanne-dupont' }],
+        },
+      },
+    });
+    await expect(resoudreProfil(p, 'https://www.linkedin.com/in/jeanne-dupont')).resolves.toBe(URN_DESTINATAIRE);
+  });
+
+  it("compare l'identifiant sans tenir compte de la casse", async () => {
+    const { p, appels } = pilote({
+      [URL_PROFIL('Jeanne-Dupont')]: {
+        statut: 200,
+        corps: { elements: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: 'jeanne-dupont' }] },
+      },
+    });
+    await expect(resoudreProfil(p, 'https://www.linkedin.com/in/Jeanne-Dupont')).resolves.toBe(URN_DESTINATAIRE);
+    expect(appels).toHaveLength(1);
+  });
+
+  it('accepte les formes legitimes qu on trouve dans un fichier importe', async () => {
+    for (const url of [
+      'https://www.linkedin.com/mwlite/in/jeanne-dupont',
+      'https://www.linkedin.com/pub/jeanne-dupont/1/2/3',
+      'https://www.linkedin.com/IN/jeanne-dupont',
+      'https://www.linkedin.com./in/jeanne-dupont',
+      'https://fr.linkedin.com/in/jeanne-dupont/?trk=x',
+    ]) {
+      const { p } = pilote(profilResolu());
+      await expect(resoudreProfil(p, url), url).resolves.toBe(URN_DESTINATAIRE);
+    }
   });
 
   it('404 rend profile_not_found', async () => {
@@ -139,7 +213,10 @@ describe('resoudreProfil', () => {
 
   it("encode l'identifiant dans la requete", async () => {
     const { p, appels } = pilote({
-      [URL_PROFIL(encodeURIComponent('jeanne dupont-é'))]: { statut: 200, corps: { elements: [{ entityUrn: URN_DESTINATAIRE }] } },
+      [URL_PROFIL(encodeURIComponent('jeanne dupont-é'))]: {
+        statut: 200,
+        corps: { elements: [{ entityUrn: URN_DESTINATAIRE, publicIdentifier: 'jeanne dupont-é' }] },
+      },
     });
     await resoudreProfil(p, 'https://www.linkedin.com/in/jeanne%20dupont-%C3%A9');
     expect(appels[0]!.url).toBe(URL_PROFIL(encodeURIComponent('jeanne dupont-é')));
@@ -149,7 +226,8 @@ describe('resoudreProfil', () => {
     const { p } = pilote({ [URL_PROFIL('jeanne-dupont')]: { statut: 502, corps: 'proxy://user:SECRET@hote' } });
     const erreur = await resoudreProfil(p, 'https://www.linkedin.com/in/jeanne-dupont').catch((e: unknown) => e);
     expect(erreur).toBeInstanceOf(Error);
-    expect((erreur as Error).name).toBe('StatutInattendu');
+    expect((erreur as Error).name).toBe('StatutInattenduResolution');
+    expect((erreur as Error).message).toBe('LinkedIn a répondu 502');
     expect((erreur as Error).message).not.toContain('SECRET');
   });
 
@@ -164,14 +242,14 @@ describe('resoudreProfil', () => {
     expect(Object.keys(appels[0]!.entetes ?? {}).map((k) => k.toLowerCase())).not.toContain('csrf-token');
   });
 
-  it("navigue vers le fil avant l'appel quand la page n'est pas sur LinkedIn, pas quand elle y est deja", async () => {
+  it("navigue vers le fil AVANT l'appel quand la page n'est pas sur LinkedIn, pas quand elle y est deja", async () => {
     const a = pilote(profilResolu(), 'about:blank');
     await resoudreProfil(a.p, 'https://www.linkedin.com/in/jeanne-dupont');
-    expect(a.pages).toEqual([FEED]);
+    expect(a.journal).toEqual([`aller ${FEED}`, `requete ${URL_PROFIL('jeanne-dupont')}`]);
 
     const b = pilote(profilResolu(), 'https://www.linkedin.com/feed/');
     await resoudreProfil(b.p, 'https://www.linkedin.com/in/jeanne-dupont');
-    expect(b.pages).toEqual([]);
+    expect(b.journal).toEqual([`requete ${URL_PROFIL('jeanne-dupont')}`]);
   });
 });
 
@@ -188,10 +266,22 @@ describe('envoyerInvitation', () => {
     ]);
   });
 
-  it("refuse sans appeler LinkedIn une invitation avec note : le champ de la note n'a jamais ete releve", async () => {
+  it("refuse sans appeler LinkedIn une note reelle : le champ de la note n'a jamais ete releve", async () => {
     const { p, appels } = pilote({});
-    await expect(envoyerInvitation(p, URN_DESTINATAIRE, 'Bonjour')).resolves.toEqual({ ok: false, code: 'bad_request' });
+    await expect(envoyerInvitation(p, URN_DESTINATAIRE, 'Bonjour')).resolves.toEqual({
+      ok: false,
+      code: 'note_non_supportee',
+    });
     expect(appels).toEqual([]);
+  });
+
+  it('une note vide ou blanche vaut absence : l invitation part', async () => {
+    for (const note of ['', '   ', '\n\t']) {
+      const { p, appels } = pilote({ [URL_INVITATION]: { statut: 200 } }, FEED);
+      await expect(envoyerInvitation(p, URN_DESTINATAIRE, note), JSON.stringify(note)).resolves.toEqual({ ok: true });
+      expect(appels).toHaveLength(1);
+      expect(appels[0]!.corps).toEqual({ invitee: { inviteeUnion: { memberProfile: URN_DESTINATAIRE } } });
+    }
   });
 
   it("refuse sans appeler LinkedIn un URN qui n'est pas un profil", async () => {
@@ -246,8 +336,17 @@ describe('envoyerInvitation', () => {
   it("un statut inattendu leve une erreur nommee : on ne sait pas si l'invitation est partie, rien ne doit la rejouer", async () => {
     const { p } = pilote({ [URL_INVITATION]: { statut: 500, corps: 'SECRET' } }, FEED);
     const erreur = await envoyerInvitation(p, URN_DESTINATAIRE, null).catch((e: unknown) => e);
-    expect((erreur as Error).name).toBe('StatutInattendu');
+    expect((erreur as Error).name).toBe('StatutInattenduInvitation');
+    expect((erreur as Error).message).toBe('LinkedIn a répondu 500');
     expect((erreur as Error).message).not.toContain('SECRET');
+  });
+
+  it('un 202 n est PAS un succes : seuls 200 et 201 le sont, le reste est une action au sort inconnu', async () => {
+    for (const statut of [202, 204, 299]) {
+      const { p } = pilote({ [URL_INVITATION]: { statut } }, FEED);
+      const erreur = await envoyerInvitation(p, URN_DESTINATAIRE, null).catch((e: unknown) => e);
+      expect((erreur as Error).name, String(statut)).toBe('StatutInattenduInvitation');
+    }
   });
 
   it("navigue vers le fil d'abord quand la page n'est pas sur LinkedIn", async () => {
@@ -258,7 +357,7 @@ describe('envoyerInvitation', () => {
 });
 
 describe('envoyerMessage', () => {
-  it("lit l'expediteur sur /me (une reference, resolue dans included) puis poste le corps exact", async () => {
+  it("lit l'expediteur sur /me (la reference *miniProfile, normalisee en fsd_profile) puis poste le corps exact", async () => {
     const { p, appels } = pilote({ ...moi, [URL_MESSAGE]: { statut: 200 } }, FEED);
     await expect(envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour Jeanne')).resolves.toEqual({ ok: true });
     expect(appels.map((a) => a.url)).toEqual([URL_ME, URL_MESSAGE]);
@@ -285,9 +384,9 @@ describe('envoyerMessage', () => {
     expect((corps.message.originToken as string).length).toBeGreaterThan(0);
   });
 
-  it('le trackingId fait 16 octets bruts et change a chaque envoi', async () => {
+  it('le trackingId est une chaine de 16 octets bruts (pas de base64 ni d hexadecimal) et change a chaque envoi', async () => {
     const ids: string[] = [];
-    for (let i = 0; i < 2; i += 1) {
+    for (let i = 0; i < 20; i += 1) {
       const { p, appels } = pilote({ ...moi, [URL_MESSAGE]: { statut: 200 } }, FEED);
       await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour');
       ids.push((appels[1]!.corps as { trackingId: string }).trackingId);
@@ -296,19 +395,22 @@ describe('envoyerMessage', () => {
       expect(id).toHaveLength(16);
       expect([...id].every((c) => c.charCodeAt(0) <= 255)).toBe(true);
     }
-    expect(ids[0]).not.toBe(ids[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Des octets bruts depassent 127 : 20 tirages de 16 sans un seul tel octet n'arrivent pas
+    // (2^-320). Un passage a du base64 ou a de l'hexadecimal le ferait echouer, en plus de la longueur.
+    expect(ids.some((id) => [...id].some((c) => c.charCodeAt(0) > 127))).toBe(true);
   });
 
-  it("choisit dans included le profil qui porte notre identifiant public quand /me n'a pas de reference", async () => {
+  it("sans reference, retient dans included (en fs_miniProfile, forme reelle) le profil qui porte NOTRE identifiant", async () => {
     const { p, appels } = pilote(
       {
         [URL_ME]: {
           statut: 200,
           corps: {
-            data: { publicIdentifier: 'moi' },
+            data: { publicIdentifier: 'Moi' },
             included: [
-              { entityUrn: 'urn:li:fsd_profile:ACoAAautre', publicIdentifier: 'autre' },
-              { entityUrn: URN_EXPEDITEUR, publicIdentifier: 'moi' },
+              { entityUrn: 'urn:li:fs_miniProfile:ACoAAautre', publicIdentifier: 'autre' },
+              { entityUrn: 'urn:li:fs_miniProfile:ACoAAexpediteur', publicIdentifier: 'moi' },
             ],
           },
         },
@@ -320,10 +422,54 @@ describe('envoyerMessage', () => {
     expect((appels[1]!.corps as { mailboxUrn: string }).mailboxUrn).toBe(URN_EXPEDITEUR);
   });
 
+  it("n'ecrit JAMAIS depuis un profil sans correspondance d'identifiant : ExpediteurIntrouvable, rien n'est envoye", async () => {
+    const corpsMe: unknown[] = [
+      // aucun profil ne correspond
+      { data: { publicIdentifier: 'moi' }, included: [{ entityUrn: 'urn:li:fs_miniProfile:ACoAAautre', publicIdentifier: 'autre' }] },
+      // un seul profil, mais on ne connait pas notre identifiant
+      { data: {}, included: [{ entityUrn: 'urn:li:fs_miniProfile:ACoAAautre', publicIdentifier: 'autre' }] },
+      // plusieurs profils, identifiant inconnu : pas de « premier venu »
+      {
+        data: {},
+        included: [
+          { entityUrn: 'urn:li:fs_miniProfile:ACoAAun', publicIdentifier: 'un' },
+          { entityUrn: 'urn:li:fs_miniProfile:ACoAAdeux', publicIdentifier: 'deux' },
+        ],
+      },
+    ];
+    for (const corps of corpsMe) {
+      const { p, appels } = pilote({ [URL_ME]: { statut: 200, corps } }, FEED);
+      const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour').catch((e: unknown) => e);
+      expect((erreur as Error).name, JSON.stringify(corps)).toBe('ExpediteurIntrouvable');
+      expect(appels.map((a) => a.url)).toEqual([URL_ME]);
+    }
+  });
+
+  it("ne rappelle /me qu'une fois par session, et ne memorise pas un echec", async () => {
+    const { p, appels } = pilote({ ...moi, [URL_MESSAGE]: { statut: 200 } }, FEED);
+    await envoyerMessage(p, URN_DESTINATAIRE, 'Un');
+    await envoyerMessage(p, URN_DESTINATAIRE, 'Deux');
+    expect(appels.map((a) => a.url)).toEqual([URL_ME, URL_MESSAGE, URL_MESSAGE]);
+
+    const reponses: Record<string, Reponse> = { [URL_ME]: { statut: 401 } };
+    const b = pilote(reponses, FEED);
+    await expect(envoyerMessage(b.p, URN_DESTINATAIRE, 'Un')).resolves.toEqual({ ok: false, code: 'not_logged_in' });
+    Object.assign(reponses, moi, { [URL_MESSAGE]: { statut: 200 } });
+    await expect(envoyerMessage(b.p, URN_DESTINATAIRE, 'Deux')).resolves.toEqual({ ok: true });
+  });
+
   it("n'envoie rien quand l'expediteur est introuvable, avec une erreur nommee", async () => {
     const { p, appels } = pilote({ [URL_ME]: { statut: 200, corps: { data: {} } } }, FEED);
     const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour').catch((e: unknown) => e);
     expect((erreur as Error).name).toBe('ExpediteurIntrouvable');
+    expect(appels.map((a) => a.url)).toEqual([URL_ME]);
+  });
+
+  it("un statut inattendu sur /me leve StatutInattenduExpediteur (un GET : rien n'est parti)", async () => {
+    const { p, appels } = pilote({ [URL_ME]: { statut: 500, corps: 'SECRET' } }, FEED);
+    const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour').catch((e: unknown) => e);
+    expect((erreur as Error).name).toBe('StatutInattenduExpediteur');
+    expect((erreur as Error).message).toBe('LinkedIn a répondu 500');
     expect(appels.map((a) => a.url)).toEqual([URL_ME]);
   });
 
@@ -383,7 +529,14 @@ describe('envoyerMessage', () => {
   it("un statut inattendu sur le message leve une erreur nommee sans le corps", async () => {
     const { p } = pilote({ ...moi, [URL_MESSAGE]: { statut: 503, corps: 'SECRET' } }, FEED);
     const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour').catch((e: unknown) => e);
-    expect((erreur as Error).name).toBe('StatutInattendu');
+    expect((erreur as Error).name).toBe('StatutInattenduMessage');
+    expect((erreur as Error).message).toBe('LinkedIn a répondu 503');
     expect((erreur as Error).message).not.toContain('SECRET');
+  });
+
+  it('un 202 sur le message leve StatutInattenduMessage', async () => {
+    const { p } = pilote({ ...moi, [URL_MESSAGE]: { statut: 202 } }, FEED);
+    const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour').catch((e: unknown) => e);
+    expect((erreur as Error).name).toBe('StatutInattenduMessage');
   });
 });
