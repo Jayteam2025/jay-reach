@@ -74,12 +74,16 @@ Régime distinct de l'email. Deux exigences produit :
 
 ## LinkedIn
 
-À écrire dans le README et à afficher au moment de connecter un compte :
+Écrit dans le README, et affiché sur l'écran Réglages > LinkedIn :
 
-- Les API utilisées ne sont pas officielles
+- La collecte s'exécute sur votre serveur, avec votre compte et votre session : aucune API
+  officielle n'existe, et aucun intermédiaire ne rendrait la démarche conforme
 - L'automatisation contrevient aux conditions d'utilisation de la plateforme
 - Le risque de restriction ou de suspension est réel et assumé par l'utilisateur
-- Le mode manuel existe précisément pour ceux qui ne veulent pas le prendre
+- Aucun réglage ne supprime ce risque. Les plafonds, la trace par requête et l'IP dédiée le
+  contiennent et le rendent mesurable ; ils ne l'annulent pas
+- Le seul moyen de ne pas le prendre est de ne connecter aucun compte : le canal reste inactif
+  tant qu'aucune session n'est ouverte
 
 Ne pas minimiser. Un projet qui le dit clairement inspire plus confiance qu'un projet qui l'enterre en note de bas de page.
 

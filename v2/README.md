@@ -77,7 +77,7 @@ Pas un CRM — il pousse vers le vôtre. Pas une base de contacts à acheter. Pa
 
 **La boîte de réception ne stocke que ce qui vous concerne.** Un message dont aucun participant ne correspond à un contact de votre base est ignoré et ne laisse aucune trace.
 
-**L'automatisation LinkedIn contrevient aux conditions d'utilisation de la plateforme.** Les API tierces disponibles ne sont pas officielles. Le risque de restriction de compte est réel et vous appartient. Le mode manuel — qui prépare vos actions sans les exécuter — existe pour ceux qui préfèrent ne pas le prendre.
+**L'automatisation LinkedIn contrevient aux conditions d'utilisation de la plateforme.** Jay Reach parcourt LinkedIn depuis votre serveur, avec votre compte et votre session : il n'existe ni API officielle, ni intermédiaire qui rendrait cela conforme. Le risque de restriction ou de fermeture du compte est réel et vous appartient. Aucun réglage ne le supprime : les plafonds et la trace par requête servent à le mesurer et à le contenir, pas à l'annuler. Le seul moyen de ne pas le prendre est de ne connecter aucun compte — le canal reste alors inactif.
 
 ## Licence
 
