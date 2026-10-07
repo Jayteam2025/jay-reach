@@ -10,7 +10,8 @@
 import type { Pool, PoolClient } from 'pg';
 import {
   decideCanSend,
-  poserEcheanceApresDepart,
+  enregistrerResultat,
+  type EntreeResultat,
   heureLocale,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
@@ -263,77 +264,10 @@ export async function claimNext(pool: Pool, orgId: string, now: Date = new Date(
   }
 }
 
-export interface RecordInput {
-  readonly organizationId: string;
-  readonly queueId: string;
-  readonly status: 'sent' | 'failed';
-  readonly errorCode?: string | null;
-  readonly errorMessage?: string | null;
-  readonly now?: Date;
-}
-
 /**
- * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action LinkedIn
- * (transition `processing -> sent`, confirmée par l'extension) — même point,
- * même calcul et même garde que côté SalesBlink (issue #111) : les deux
- * transports appellent la même implémentation partagée,
- * `poserEcheanceApresDepart` de `@jay-reach/core` (tour de correction 1,
- * revue du 17/09 — auparavant dupliquée ici avec le même SQL).
- *
- * Cette fonction ne fait que la résolution propre à LinkedIn : retrouver
- * l'inscription (`campaign_id`, `current_step`) à partir de l'`actionId` posé
- * sur la ligne de file.
+ * Enregistrement du résultat : l'implémentation vit dans le cœur
+ * (`enregistrerResultat`, `@jay-reach/core`) pour que le worker l'importe ;
+ * le nom et la forme d'entrée historiques restent pour les routes gelées.
  */
-async function poserEcheanceApresDepartDepuisAction(pool: Pool, actionId: string, now: Date): Promise<void> {
-  const inscription = await pool.query<{ enrollment_id: string; campaign_id: string; current_step: number }>(
-    `select en.id as enrollment_id, en.campaign_id, en.current_step
-       from actions a
-       join enrollments en on en.id = a.enrollment_id
-      where a.id = $1`,
-    [actionId],
-  );
-  const ligne = inscription.rows[0];
-  if (!ligne) return;
-  await poserEcheanceApresDepart(
-    pool,
-    { enrollmentId: ligne.enrollment_id, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
-    now,
-  );
-}
-
-/**
- * Enregistre le résultat d'une action (renvoyé par l'extension). Transition
- * autorisée uniquement depuis `processing` (sinon 0 ligne → l'appelant renvoie 409).
- * Renvoie true si la transition a eu lieu.
- */
-export async function recordResult(pool: Pool, input: RecordInput): Promise<boolean> {
-  const now = input.now ?? new Date();
-  const sentAt = input.status === 'sent' ? now.toISOString() : null;
-  const r = await pool.query<{ action_id: string | null }>(
-    `update linkedin_action_queue
-       set status = $3, sent_at = $4, error_code = $5, error_message = $6, updated_at = now()
-     where id = $1 and organization_id = $2 and status = 'processing'
-     returning action_id`,
-    [
-      input.queueId,
-      input.organizationId,
-      input.status,
-      sentAt,
-      input.errorCode ?? null,
-      input.errorMessage ?? null,
-    ],
-  );
-  const transitionFaite = (r.rowCount ?? 0) > 0;
-
-  // Referme la boucle vers le séquenceur : sans cet appel, l'action restait à son
-  // statut d'émission et la table `outcomes` vide, donc toute la mesure — actions
-  // envoyées, statistiques de campagne, tableau de bord — affichait zéro sur des
-  // messages pourtant réellement partis.
-  const actionId = r.rows[0]?.action_id;
-  if (transitionFaite && input.status === 'sent' && actionId) {
-    await pool.query('select app.mark_action_dispatched($1)', [actionId]);
-    await poserEcheanceApresDepartDepuisAction(pool, actionId, now);
-  }
-
-  return transitionFaite;
-}
+export type RecordInput = EntreeResultat;
+export const recordResult = enregistrerResultat;
