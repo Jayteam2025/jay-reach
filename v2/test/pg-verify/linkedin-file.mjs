@@ -7,6 +7,7 @@
 //   2. file.ts : retirer `camp.status = 'active'` : 3 rougit.
 //   3. file.ts : renommer `envoi_pause_jusqua` : 4 et 5 rougissent (colonne inconnue).
 //   4. file.ts : retirer `and status = 'processing'` de la mise a jour de resultat : 7 rougit.
+//   8. file.ts : remettre le requeue apres les refus de session/pause : 10 rougit.
 //   7. file.ts : retirer le refus `session_inactive` : 9 rougit.
 //   6. file.ts : retirer `greatest` de la mise en pause : 8 rougit.
 //   5. file.ts : retirer le requeue : 6 rougit.
@@ -206,6 +207,17 @@ async function session_non_active_refuse_la_reclamation() {
   check('session active : reclamee', r3.action?.id === id, r3.motif ?? '');
 }
 
+async function requeue_passe_avant_les_refus_de_session() {
+  console.log('\n[lkf] 10. session bloquee : la ligne coincee est quand meme remise en file');
+  await remettreAZero();
+  const id = await ligne('serveur', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
+  await q(`update linkedin_server_sessions set status = 'bloquee', blocked_at = now(), blocked_reason = 'defi' where organization_id = $1`, [org]);
+  const r = await reclamerProchaineAction(pool, org, NOW);
+  check('session bloquee : session_inactive', r.action === null && r.motif === 'session_inactive', r.motif ?? '');
+  const ap = (await q('select status, processing_started_at from linkedin_action_queue where id = $1', [id])).rows[0];
+  check('ligne coincee repassee pending, processing_started_at nul', ap.status === 'pending' && ap.processing_started_at === null, JSON.stringify(ap));
+}
+
 async function jouer(...sections) {
   for (const section of sections) {
     try {
@@ -231,6 +243,7 @@ async function main() {
     resultat_seulement_depuis_processing,
     pause_ne_se_raccourcit_pas_et_dit_quand_rien_n_est_pose,
     session_non_active_refuse_la_reclamation,
+    requeue_passe_avant_les_refus_de_session,
   );
   await remettreAZero();
   await pool.end();

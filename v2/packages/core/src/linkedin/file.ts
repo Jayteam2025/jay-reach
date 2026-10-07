@@ -6,8 +6,8 @@
  *
  * Écarts assumés avec l'original : le candidat se filtre sur `q.method =
  * 'serveur'` (envoi par le serveur, plus par l'extension), et la réclamation
- * commence par refuser tant que `linkedin_server_sessions.envoi_pause_jusqua`
- * n'est pas passée.
+ * refuse tant que la session du serveur n'est pas `active` ou que
+ * `linkedin_server_sessions.envoi_pause_jusqua` n'est pas passée.
  */
 import type { Executeur } from '../executeur.js';
 import { poserEcheanceApresDepart } from '../sequencer/echeance.js';
@@ -146,9 +146,13 @@ export async function mettreEnPauseEnvoiLinkedIn(ex: Executeur, organisationId: 
  * la colonne est nullable (`references actions(id) on delete set null`), donc
  * aucune garantie NOT NULL sur laquelle s'appuyer.
  *
- * Refus rendus AVANT toute réclamation, au même rang : `session_inactive`
- * (aucune session `active` pour l'organisation) puis `canal_en_pause`. La garde
- * vit ici et non chez l'appelant : worker, MCP et écran appellent cette fonction.
+ * Ordre : 1. requeue des lignes coincées (seule écriture avant les refus : une
+ * réparation d'état, pas un envoi, qui ne consomme aucun quota et ne touche pas
+ * LinkedIn, donc faite même session bloquée ou canal en pause) ; 2. refus
+ * `session_inactive` (aucune session `active` pour l'organisation) puis
+ * `canal_en_pause`, au même rang, rendus avant toute réclamation : aucune ligne
+ * n'est réclamée ni son `attempts` touché. La garde vit ici et non chez
+ * l'appelant : worker, MCP et écran appellent cette fonction.
  *
  * `maintenant` est injectable pour les tests hermétiques.
  */
@@ -160,7 +164,18 @@ export async function reclamerProchaineAction(
   const orgId = organisationId;
   const now = maintenant;
 
-  // 0. Session du serveur : le canal n'est disponible que si elle est `active`
+  // 1. Requeue des lignes coincées en processing (appelant mort en plein call).
+  // AVANT les refus : c'est une réparation d'état, pas un envoi. Session bloquée
+  // ou canal en pause, une ligne coincée ne doit pas rester annoncée `processing`.
+  const stuckCutoff = new Date(now.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
+  await ex.query(
+    `update linkedin_action_queue
+         set status = 'pending', processing_started_at = null, updated_at = now()
+       where organization_id = $1 and status = 'processing' and processing_started_at < $2`,
+    [orgId, stuckCutoff],
+  );
+
+  // 2. Session du serveur : le canal n'est disponible que si elle est `active`
   // (absente, bloquée ou sans ligne : rien ne part). Puis pause d'envoi posée
   // sur cette même session. Les deux refus précèdent toute réclamation.
   const session = await ex.query<{ status: string; envoi_pause_jusqua: string | Date | null }>(
@@ -175,23 +190,14 @@ export async function reclamerProchaineAction(
     return { action: null, motif: 'canal_en_pause' };
   }
 
-  // 1. Requeue des lignes coincées en processing (appelant mort en plein call).
-  const stuckCutoff = new Date(now.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
-  await ex.query(
-    `update linkedin_action_queue
-         set status = 'pending', processing_started_at = null, updated_at = now()
-       where organization_id = $1 and status = 'processing' and processing_started_at < $2`,
-    [orgId, stuckCutoff],
-  );
-
   const stats = await chargerStatsRythme(ex, orgId, now);
 
-  // 2. Mode manuel : rien ne part de soi-même.
+  // 3. Mode manuel : rien ne part de soi-même.
   if (stats.mode === 'manual') {
     return { action: null, motif: 'manual_mode' };
   }
 
-  // 3. Pacing pur : fenêtre + plafond 7 j (dur) + intervalle.
+  // 4. Pacing pur : fenêtre + plafond 7 j (dur) + intervalle.
   const minutesSinceLastSent = stats.lastSentAtIso
     ? (now.getTime() - new Date(stats.lastSentAtIso).getTime()) / 60_000
     : null;
@@ -213,12 +219,12 @@ export async function reclamerProchaineAction(
     return { action: null, motif: decision.reason };
   }
 
-  // 4. Plafond quotidien du curseur (volume/jour choisi par l'org).
+  // 5. Plafond quotidien du curseur (volume/jour choisi par l'org).
   if (stats.sentToday >= stats.dailyCap) {
     return { action: null, motif: 'daily_cap_reached' };
   }
 
-  // 5. Prochaine ligne pending (la plus ancienne planifiée), claim atomique.
+  // 6. Prochaine ligne pending (la plus ancienne planifiée), claim atomique.
   const candidate = await ex.query<{ id: string }>(
     `select q.id
          from linkedin_action_queue q
