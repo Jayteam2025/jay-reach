@@ -245,6 +245,48 @@ describe('tickDueEnrollments', () => {
   });
 });
 
+describe('tickDueEnrollments — expéditeur par canal (revue finale, C1)', () => {
+  /** Aucune ligne `senders` active : le cas du canal serveur, qui n'en crée jamais. */
+  const SANS_EXPEDITEUR: Gestionnaire = { motif: SENDERS, repondre: () => ligne([]) };
+  const etape = (channel: string): Gestionnaire => ({
+    motif: STEPS,
+    repondre: () => ligne([{ id: STEP_ID, channel, delay_hours: 24, template_parent_id: null }]),
+  });
+
+  it('une étape d’invitation LinkedIn crée son action sans aucune ligne `senders` active', async () => {
+    const { pool, appels } = creerPoolFactice([
+      SANS_EXPEDITEUR,
+      etape('linkedin_invite'),
+      ...gestionnairesBase({ linkedin_url: 'https://www.linkedin.com/in/jeanne-dupont/' }),
+    ]);
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    const insertion = appels.find((a) => INSERT_ACTION.test(a.sql));
+    expect(insertion).toBeDefined();
+    // Pas d'expéditeur attribué, donc aucun lien contact/expéditeur écrit.
+    expect(insertion!.sql).toMatch(/sender_id\)/);
+    expect(insertion!.values.at(-1)).toBeNull();
+    expect(appels.some((a) => INSERT_BINDING.test(a.sql))).toBe(false);
+    // Aucune pause `sender_unavailable`.
+    expect(appels.some((a) => UPDATE_PAUSE.test(a.sql))).toBe(false);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ channel: 'linkedin_invite', actionId: ACTION_ID });
+  });
+
+  it('une étape email continue d’exiger la sienne : sans expéditeur actif, pause et aucune action', async () => {
+    const { pool, appels } = creerPoolFactice([SANS_EXPEDITEUR, ...gestionnairesBase({ email_status: 'valid' })]);
+
+    const jobs = await tickDueEnrollments(pool, NOW);
+
+    expect(jobs).toEqual([]);
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(false);
+    const pause = appels.find((a) => UPDATE_PAUSE.test(a.sql));
+    expect(pause).toBeDefined();
+    expect(pause!.values).toEqual([ENROLLMENT_ID, 'sender_unavailable:email']);
+  });
+});
+
 describe('tickDueEnrollments — campagne non active (F14)', () => {
   /**
    * Pool factice AVEC ÉTAT, dédié à ce défaut : contrairement à

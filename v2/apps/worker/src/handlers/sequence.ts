@@ -138,10 +138,16 @@ function isLinkedIn(channel: TickChannel): boolean {
 /**
  * Type d'expéditeur requis par un canal, ou null quand le canal n'en consomme
  * aucun. Une étape `call` n'envoie rien (CLAUDE.md #8) : ni expéditeur, ni quota.
+ *
+ * LinkedIn n'en consomme pas non plus : l'expéditeur y est la session du serveur
+ * (`linkedin_server_sessions`), pas une ligne de `senders`, et ses plafonds vivent
+ * dans `linkedin_settings`, appliqués plus loin par le canal d'envoi. Exiger ici une
+ * ligne `senders` de type `linkedin` mettait chaque inscription en pause
+ * (`sender_unavailable:linkedin`) sans jamais créer d'action : le canal serveur n'en
+ * crée aucune, seule l'extension gelée le faisait.
  */
-function senderKindFor(channel: TickChannel): 'email' | 'linkedin' | 'postal' | null {
+function senderKindFor(channel: TickChannel): 'email' | 'postal' | null {
   if (channel === 'email') return 'email';
-  if (isLinkedIn(channel)) return 'linkedin';
   if (channel === 'letter') return 'postal';
   return null;
 }
