@@ -95,7 +95,7 @@ La collecte des engageurs d'un post (lot 4a) et l'envoi (lot 4b) s'exécutent c�
 Actions : visite de profil (réchauffement passif, 1 à 2 jours avant l'invitation), invitation avec ou sans note, message après acceptation, lecture des réponses.
 
 Garde-fous appliqués avant chaque envoi :
-- un **plafond hebdomadaire**, réglable à l'écran (Réglages › Expéditeurs, carte du compte LinkedIn), au plus 200 ; au-delà de 200 actions sur 7 jours glissants, rien ne part, quel que soit le réglage
+- un **plafond hebdomadaire** (`linkedin_settings`), au plus 200 ; au-delà de 200 actions sur 7 jours glissants, rien ne part, quel que soit le réglage. Attention : la carte qui règle ce plafond (Réglages › Expéditeurs) n'apparaît que pour un compte relié par l'ancienne extension. Sur une instance dont la session est ouverte par `jay-reach linkedin connecter`, ce plafond s'applique mais n'a pas encore d'écran pour le modifier
 - un **intervalle irrégulier de 1 à 20 minutes** entre deux envois du même compte, tiré d'une graine dérivée du dernier envoi
 - aucune action hors de la fenêtre horaire et des jours d'envoi réglés
 - **un seul provider LinkedIn actif par compte** : deux outils sur le même profil font sauter le compte
