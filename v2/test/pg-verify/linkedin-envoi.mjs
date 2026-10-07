@@ -7,6 +7,7 @@
 //   2. migration : retirer `alter column source_run_id drop not null` — 2 rougit.
 //   3. migration : retirer la contrainte `linkedin_requetes_une_origine` — 4 et 5 rougissent.
 //   4. migration : retirer la colonne `envoi_pause_jusqua` — 7 rougit.
+//   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -60,6 +61,15 @@ async function methode() {
   check('1c. une méthode inconnue est refusée (23514)', (await refus(() => action(m.org, 'robot', 'https://www.linkedin.com/in/w'))) === '23514:linkedin_action_queue_method_check');
   check('1d. une ligne extension_auto déjà sent reste valide',
     (await refus(() => q(`insert into linkedin_action_queue (organization_id, linkedin_url, kind, method, status, sent_at) values ($1, 'https://www.linkedin.com/in/h', 'invite', 'extension_auto', 'sent', now())`, [m.org]))) === null);
+}
+
+async function defaut() {
+  console.log('\n1bis. la methode par defaut');
+  const m = await monde();
+  const r = await q(`insert into linkedin_action_queue (organization_id, linkedin_url, kind) values ($1, 'https://www.linkedin.com/in/defaut', 'invite') returning method`, [m.org]);
+  check('1e. une ligne creee sans method est une ligne serveur', r.rows[0].method === 'serveur', r.rows[0].method);
+  const h = await q(`select count(*)::int n from linkedin_action_queue where method = 'extension_auto' and status = 'sent'`);
+  check('1f. les lignes historiques extension_auto n ont pas bouge', h.rows[0].n >= 1, String(h.rows[0].n));
 }
 
 async function trace() {
@@ -124,7 +134,7 @@ async function pause() {
 }
 
 async function main() {
-  await jouer(preexistant, methode, trace, suppressions, suppressionAction, pause);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
