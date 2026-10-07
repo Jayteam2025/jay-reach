@@ -11,6 +11,8 @@ import { actionActiverSourceCampagne } from '../../app/actions/sources';
 export interface BlocCarteSource {
   readonly libelle: string;
   readonly contenu: ReactNode;
+  /** Occupe toute la ligne de la grille : pour un bloc dont le texte est long (le bilan d'un passage de collecte). */
+  readonly pleineLargeur?: boolean;
 }
 
 export interface CarteSourceProps {
@@ -102,7 +104,7 @@ export function CarteSource({
       </div>
       <div className="jr-corps jr-blocs">
         {blocs.map((bloc, index) => (
-          <div key={index}>
+          <div key={index} className={bloc.pleineLargeur ? 'jr-bloc-large' : undefined}>
             <span className="jr-libelle">{bloc.libelle}</span>
             <div>{bloc.contenu}</div>
           </div>

@@ -77,7 +77,10 @@
 /* Actions à droite d'un en-tête de carte (statut, interrupteur, bouton Modifier). */
 .jr-carte-h-actions { display: flex; gap: 10px; align-items: center; }
 /* Grille de petites fiches d'information dans le corps d'une carte (ex. Requête/Filtres/Passages d'une source). */
+/* `min-width: 0` + `overflow-wrap` : sans eux une adresse de post, longue et sans espace, déborde sur la colonne voisine. */
 .jr-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px; padding-top: 14px; }
+.jr-blocs > div { min-width: 0; overflow-wrap: anywhere; }
+.jr-blocs > .jr-bloc-large { grid-column: 1 / -1; }
 /* Grand chiffre + mini-graphe de tendance côte à côte. */
 .jr-valeur-tendance { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .jr-valeur-tendance b { font-size: 26px; line-height: 1; }

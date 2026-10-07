@@ -150,7 +150,7 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
     // « Collecter maintenant »). Afficher « toutes les 6 heures » promettrait
     // une collecte que rien ne lance.
     blocs.push({ libelle: t('card.passages'), contenu: <span>{t('card.onDemand')}</span> });
-    blocs.push({ libelle: t('card.lastRun'), contenu: <DernierePassageLinkedIn carte={carte} t={t} /> });
+    blocs.push({ libelle: t('card.lastRun'), contenu: <DernierePassageLinkedIn carte={carte} t={t} />, pleineLargeur: true });
     return blocs;
   }
   blocs.push({
