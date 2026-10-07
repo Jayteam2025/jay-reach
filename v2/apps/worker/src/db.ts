@@ -299,8 +299,8 @@ export interface LinkedInActionJob {
 
 /**
  * Enfile une action LinkedIn (invitation ou message) dans
- * `linkedin_action_queue`, consommée par l'extension Chrome (envoi via Voyager,
- * session de l'utilisateur ; pacing appliqué côté serveur). Dédup : pas de
+ * `linkedin_action_queue`, consommée par le serveur (envoi via Voyager, session
+ * LinkedIn du serveur ; pacing appliqué avant chaque envoi). Dédup : pas de
  * doublon actif (pending/processing/sent) pour le même (contact, kind).
  * Retourne l'id créé, ou null si déjà en file. Aucun envoi ici.
  */

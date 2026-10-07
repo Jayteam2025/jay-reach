@@ -441,8 +441,9 @@ export async function traiterScore(ctx: Contexte, data: { organizationId: string
 
 export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise<void> {
   const { pool, encryptionKey } = ctx;
-  // Canal LinkedIn : aucune API d'envoi. On enfile l'action ; l'extension
-  // Chrome l'exécute (Voyager, session utilisateur ; pacing côté serveur).
+  // Canal LinkedIn : aucune API d'envoi. On enfile l'action ; le serveur
+  // l'exécute lui-même (Voyager, session LinkedIn du serveur, pacing appliqué
+  // avant chaque envoi).
   if (isLinkedInChannel(data.channel)) {
     const id = await runLinkedInDispatch(pool, data);
     console.log(`[dispatch] LinkedIn ${data.channel} → ${id ? `enfilé ${id}` : 'déjà en file (dédup)'}`);

@@ -7,7 +7,7 @@
 > coupe alarmes, poll, releve et messages externes. Pour la reveiller, voir le
 > commentaire en tete de `background.js` ; `gel.test.ts` garde la porte fermee.
 
-Extension Chrome (Manifest V3) qui exécute les **actions LinkedIn** de Jay Reach
+Extension Chrome (Manifest V3) qui exécutait les **actions LinkedIn** de Jay Reach
 — **invitations** et **messages (DM)** — via l'API interne **Voyager** de
 LinkedIn, avec la **propre session** de l'utilisateur. Reprise de l'extension
 interne « Jay » (JB), réduite à LinkedIn et branchée sur les endpoints de l'app
@@ -17,13 +17,16 @@ Jay Reach.
 > entraîner une restriction de compte. Usage interne, session de l'utilisateur,
 > plafonds prudents, pause automatique 24 h. Ne pas distribuer publiquement.
 
-## Architecture
+> Tout ce qui suit, jusqu'à « Envoi réel », décrit le chemin gelé tel qu'il
+> fonctionnait : conservé pour archive, il n'est plus le fonctionnement actuel.
 
-- **Le pacing est appliqué côté serveur** (app Jay Reach) : fenêtre 08–21 h
+## Architecture (chemin gelé)
+
+- **Le pacing était appliqué côté serveur** (app Jay Reach) : fenêtre 08–21 h
   Europe/Paris, plafond dur 200/7 j, plafond quotidien (curseur), intervalle
-  1–20 min, requeue des lignes bloquées. L'extension ne décide rien : elle
-  demande la prochaine action prête et remonte le résultat.
-- `background.js` — poll toutes les 2 min → `POST /api/extension/linkedin/next`
+  1–20 min, requeue des lignes bloquées. L'extension ne décidait rien : elle
+  demandait la prochaine action prête et remontait le résultat.
+- `background.js` — pollait toutes les 2 min → `POST /api/extension/linkedin/next`
   → dispatch selon `kind` (`invite` → `linkedin-invite.js`, `message` →
   `linkedin-message.js`) → `POST /api/extension/linkedin/update`. Pause 24 h si
   `restricted` / `not_logged_in`.
@@ -32,31 +35,32 @@ Jay Reach.
 - `linkedin-message.js` — **net-new** : Voyager `createMessage` (DM). À valider
   avec un vrai compte (endpoint messagerie mouvant ; DM possible seulement vers
   une relation de 1er degré).
-- `content-oauth.js` — reçoit le jeton d'extension depuis `/settings/linkedin`.
-- `popup.html` / `popup.js` — état, poll manuel, reprise, **avertissement CGU**.
+- `content-oauth.js` — recevait le jeton d'extension depuis `/settings/linkedin`.
+- `popup.html` / `popup.js` — affichait l'état, poll manuel, reprise, **avertissement CGU**.
 
-## Distribution à un utilisateur final
+## Distribution à un utilisateur final (chemin gelé)
 
 Le Chrome Web Store refuse généralement l'automatisation LinkedIn : la voie
-**fiable** est un paquet `.zip` chargé en local. `pnpm package:extension` (lancé
-aussi au `build` du web) génère `apps/web/public/jay-reach-linkedin-extension.zip`,
-proposé au téléchargement depuis l'écran `/settings/linkedin`. L'utilisateur
-décompresse puis « charge l'extension non empaquetée » (guide pas-à-pas dans l'app).
+**fiable** était un paquet `.zip` chargé en local. `pnpm package:extension` (lancé
+aussi au `build` du web) génère `apps/web/public/jay-reach-linkedin-extension.zip`.
+L'écran `/settings/linkedin` ne le propose plus ni ne mentionne l'extension. Le
+chemin d'installation était : décompresser, puis « charger l'extension non empaquetée ».
 
-## Installation (dev)
+## Installation (dev, chemin gelé)
 
 1. `chrome://extensions` → activer le **mode développeur**.
 2. **Charger l'extension non empaquetée** → sélectionner `apps/extension/`.
-3. Lancer l'app (`pnpm dev`, `http://localhost:3000`) et ouvrir
-   `/settings/linkedin` pour connecter l'extension (génère un jeton).
+3. Lancer l'app (`pnpm dev`, `http://localhost:3000`) et, pour connecter
+   l'extension (génération d'un jeton), ouvrir l'écran qui l'offrait (retiré
+   de `/settings/linkedin`).
 4. Être connecté à LinkedIn dans le même navigateur.
 
-## Configuration
+## Configuration (chemin gelé)
 
-- Origines autorisées : `http://localhost:3000` (dev) et `https://app.jay-reach.fr`
+- Origines autorisées (à l'époque) : `http://localhost:3000` (dev) et `https://app.jay-reach.fr`
   (placeholder prod — remplacer par le vrai domaine dans `manifest.json`,
   `background.js` et `content-oauth.js` le moment venu).
-- Le jeton et l'URL de l'app sont stockés dans `chrome.storage.local`
+- Le jeton et l'URL de l'app étaient stockés dans `chrome.storage.local`
   (`extensionToken`, `appBaseUrl`).
 
 ## Envoi réel

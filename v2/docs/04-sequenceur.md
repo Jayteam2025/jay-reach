@@ -88,19 +88,17 @@ Jay Reach décide quoi envoyer et rend le texte ; SalesBlink n'est que le transp
 
 Isoler derrière `EmailProvider` dès le premier jour, même avec une seule implémentation.
 
-### LinkedIn — collecte livrée, actions à venir
+### LinkedIn — collecte et actions côté serveur
 
-La collecte des engageurs d'un post (lot 4a) s'exécute côté serveur : navigateur dédié, session ouverte en ligne de commande, proxy résidentiel (voir `03-sources.md`). Les **actions** et la lecture des réponses LinkedIn ne sont pas encore livrées (lot 4b) ; la façon de les exécuter se décide à ce lot.
+La collecte des engageurs d'un post (lot 4a) et l'envoi (lot 4b) s'exécutent côté serveur : navigateur dédié, session ouverte en ligne de commande, proxy résidentiel (voir `03-sources.md`). L'envoi part de la session LinkedIn du serveur, par l'IP résidentielle dédiée ; l'extension de navigateur est gelée.
 
-Cadre prévu pour les actions, à livrer avec elles : visite de profil (réchauffement passif, 1 à 2 jours avant l'invitation), invitation avec ou sans note, message après acceptation, lecture des réponses.
+Actions : visite de profil (réchauffement passif, 1 à 2 jours avant l'invitation), invitation avec ou sans note, message après acceptation, lecture des réponses.
 
-Garde-fous **en dur**, non contournables par configuration :
-- 20 invitations par jour et par compte, plafond absolu
-- 60 messages par jour et par compte
-- délai aléatoire de 30 à 180 secondes entre deux actions du même compte
-- aucune action hors fenêtre horaire
-- montée en charge sur 14 jours pour un compte fraîchement connecté
-- **un seul provider LinkedIn actif par compte** — deux outils sur le même profil font sauter le compte
+Garde-fous appliqués avant chaque envoi :
+- un **plafond hebdomadaire**, réglable à l'écran (Réglages › Expéditeurs, carte du compte LinkedIn), au plus 200 ; au-delà de 200 actions sur 7 jours glissants, rien ne part, quel que soit le réglage
+- un **intervalle irrégulier de 1 à 20 minutes** entre deux envois du même compte, tiré d'une graine dérivée du dernier envoi
+- aucune action hors de la fenêtre horaire et des jours d'envoi réglés
+- **un seul provider LinkedIn actif par compte** : deux outils sur le même profil font sauter le compte
 
 Avertissement affiché à la connexion d'un compte : ces API ne sont pas officielles, l'automatisation contrevient aux conditions d'utilisation de la plateforme, le risque de restriction est assumé par l'utilisateur.
 
