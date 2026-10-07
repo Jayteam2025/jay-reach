@@ -282,8 +282,25 @@ describe('les gardes avant tout appel LinkedIn', () => {
   });
 
   it('la sonde et la réclamation reçoivent la MÊME horloge', async () => {
+    // Chaque `new Date()` sans argument avance d'une seconde : deux lectures de l'horloge ne
+    // peuvent plus coïncider par hasard dans la même milliseconde.
+    const Reelle = Date;
+    let t = Date.parse('2026-10-07T10:00:00Z');
+    vi.stubGlobal(
+      'Date',
+      class extends Reelle {
+        constructor(...a: unknown[]) {
+          // `super` doit être le premier appel : la valeur se choisit avant, sans branche dessus.
+          super(...((a.length === 0 ? [(t += 1000)] : a) as [number]));
+        }
+        static override now(): number {
+          return t;
+        }
+      },
+    );
     const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
     await traiterEnvoiLinkedIn(deps(w), JOB);
+    vi.unstubAllGlobals();
     expect(w.horloges).toHaveLength(2);
     expect(w.horloges[0]).toBe(w.horloges[1]);
   });
