@@ -17,7 +17,8 @@ interface Etat {
   mode: 'auto' | 'hybrid' | 'manual';
   hebdo: number;
   envoyesSur7Jours: number;
-  dernierEnvoi: string | null;
+  /** Ce que `pg` rend pour un timestamptz : un `Date`, pas une chaine. */
+  dernierEnvoi: string | Date | null;
   deLaJournee: number;
 }
 
@@ -109,6 +110,21 @@ describe('prochainEnvoiLinkedIn', () => {
     expect(r.quand!.getTime()).toBeGreaterThanOrEqual(cible);
     expect(r.quand!.getTime() - cible).toBeLessThan(60_000);
     expect(r.quand!.getTime()).toBeGreaterThan(NOW.getTime());
+  });
+
+  it('l intervalle depend de la date du dernier envoi tel que pg la fournit (un Date)', async () => {
+    // Le test precedent passait une chaine ISO : il n exercait pas le type de la production,
+    // et c est lui qui masquait un intervalle constant.
+    const cibles: number[] = [];
+    for (const secondes of [20, 30, 40, 50, 55]) {
+      const dernier = new Date(NOW.getTime() - secondes * 1000);
+      const r = await prochainEnvoiLinkedIn(creerExecuteur({ dernierEnvoi: dernier }), ORG, NOW);
+      const attendu = dernier.getTime() + (1 + seededRandom(dernier.toISOString()) * 19) * 60_000;
+      expect(r.quand!.getTime()).toBeGreaterThanOrEqual(attendu);
+      expect(r.quand!.getTime() - attendu).toBeLessThan(60_000);
+      cibles.push(r.quand!.getTime() - dernier.getTime());
+    }
+    expect(new Set(cibles).size).toBeGreaterThan(1);
   });
 
   it('rend maintenant une fois l intervalle ecoule', async () => {

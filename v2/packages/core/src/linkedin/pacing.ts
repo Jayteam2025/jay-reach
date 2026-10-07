@@ -26,12 +26,27 @@ export const HARD_CAP_7_DAYS = 200;
 
 /** Hash déterministe FNV-1a → [0, 1). Rejoue le même intervalle à chaque poll. */
 export function seededRandom(seed: string): number {
+  // Une graine qui n'est pas une chaîne doit échouer, pas dégrader : `pg` rend les timestamptz
+  // en `Date`, dont `.length` vaut `undefined` ; la boucle ne tournait pas et la fonction rendait
+  // la constante 0,136261, soit le même intervalle de 3 min 35 s à chaque envoi.
+  if (typeof seed !== 'string') {
+    throw new TypeError('seededRandom : la graine doit être une chaîne');
+  }
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return ((h >>> 0) % 1_000_000) / 1_000_000;
+}
+
+/**
+ * Date ISO d'une valeur lue en base. `pg` désérialise un `timestamptz` en `Date` alors que les
+ * champs du rythme sont typés `string` : le compilateur ne voit rien. À appeler sur TOUTE date
+ * lue en base qui alimente `decideCanSend`.
+ */
+export function versIso(valeur: string | Date): string {
+  return valeur instanceof Date ? valeur.toISOString() : new Date(valeur).toISOString();
 }
 
 /** Heure locale (0–23) à Paris pour une date donnée (DST géré par Intl). */

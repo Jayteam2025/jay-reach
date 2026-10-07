@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
-import { echeanceEtapeSuivante } from '@jay-reach/core';
+import { echeanceEtapeSuivante, seededRandom } from '@jay-reach/core';
 import { claimNext, recordResult } from './queue.js';
 
 const ORG_ID = 'org-1';
@@ -169,14 +169,14 @@ describe('claimNext — campagne non active (F14)', () => {
    * Pacing neutre (aucun réglage en base → défauts `loadPaceStats`, jamais
    * envoyé) pour que seul le garde-fou de campagne décide du résultat.
    */
-  function creerPoolFile(candidats: LigneFile[]): { pool: Pool; appels: Appel[] } {
+  function creerPoolFile(candidats: LigneFile[], dernierEnvoi: Date | null = null): { pool: Pool; appels: Appel[] } {
     const appels: Appel[] = [];
     const query = vi.fn(async (sql: string, values: unknown[] = []) => {
       appels.push({ sql, values });
       if (REQUEUE.test(sql)) return { rows: [], rowCount: 0 };
       if (SETTINGS.test(sql)) return ligne([]);
       if (COUNTS.test(sql)) return ligne([{ last7: '0', today: '0' }]);
-      if (DERNIER_ENVOI.test(sql)) return ligne([]);
+      if (DERNIER_ENVOI.test(sql)) return ligne(dernierEnvoi ? [{ sent_at: dernierEnvoi }] : []);
       if (CANDIDAT.test(sql)) {
         const filtreCampagneActive = /camp\.status\s*=\s*'active'/i.test(sql);
         const eligibles = candidats.filter(
@@ -229,5 +229,22 @@ describe('claimNext — campagne non active (F14)', () => {
     const resultat = await claimNext(pool, ORG_ID, NOW);
 
     expect(resultat.action?.id).toBe(QUEUE_ROW_ID);
+  });
+
+  it('l intervalle suit la date du dernier envoi tel que pg la rend (un Date), pas une constante', async () => {
+    // Un Date n'a pas de `.length` : la graine ne bouclait pas et valait toujours 0,136261, soit un
+    // intervalle fixe de 3 min 35 s. On cherche une date dont l'intervalle tire plus de 10 minutes :
+    // a 5 minutes ecoulees, seul un intervalle reellement tire refuse l'envoi.
+    let dernier = new Date(NOW.getTime() - 5 * 60_000);
+    while (1 + seededRandom(dernier.toISOString()) * 19 < 10) {
+      dernier = new Date(dernier.getTime() - 1000);
+    }
+    const maintenant = new Date(dernier.getTime() + 5 * 60_000);
+    const { pool } = creerPoolFile(
+      [{ id: QUEUE_ROW_ID, kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null, campagneStatut: 'active' }],
+      dernier,
+    );
+    const resultat = await claimNext(pool, ORG_ID, maintenant);
+    expect(resultat).toEqual({ action: null, reason: 'too_soon' });
   });
 });

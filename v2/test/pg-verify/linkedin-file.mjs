@@ -21,6 +21,7 @@
 //      retirer la branche `perimees` : 19d rougit ; faire rendre `quand` sans attendre l intervalle : 19e rougit.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
+import { seededRandom } from './_lkpace.mjs';
 import { prochainEnvoiLinkedIn, reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
 import { tracerEnvoiLinkedIn } from './_lkp.mjs';
 import { enqueueAction } from './_lkq.mjs';
@@ -487,6 +488,28 @@ async function prochain_envoi_sur_vrai_sql() {
   // La reclamation, rejouee a la date posee, doit etre d accord (sinon le job s ouvrirait pour rien).
   const r6 = await reclamerProchaineAction(pool, org, r5.quand);
   check('19f. la reclamation a la date posee reussit', r6.action !== null, r6.motif ?? '');
+
+  // 19g. LE defaut du 07/10 : `pg` rend `sent_at` en Date, `seededRandom` ne bouclait pas et rendait une
+  // constante, donc le meme intervalle (3 min 35 s) a chaque envoi. Une borne [0, 20] min le satisfait
+  // parfaitement ; seule la dependance a la date du dernier envoi le trahit. Vrai pilote, vraies dates.
+  const ecarts = [];
+  let exact = true;
+  for (const secondes of [15, 25, 35, 45, 55, 65, 75]) {
+    await q('delete from linkedin_action_queue where organization_id = $1', [org]);
+    const dernier = new Date(NOW.getTime() - secondes * 1000);
+    await ligne('serveur', { status: 'sent' });
+    await q(`update linkedin_action_queue set sent_at = $2 where organization_id = $1 and status = 'sent'`, [org, dernier.toISOString()]);
+    await ligne('serveur');
+    // Meme temps ecoule (30 s) pour chaque date : seul ce que la graine tire peut alors differer.
+    const maintenant = new Date(dernier.getTime() + 30_000);
+    const r = await prochainEnvoiLinkedIn(pool, org, maintenant);
+    const cible = dernier.getTime() + (1 + seededRandom(dernier.toISOString()) * 19) * 60_000;
+    const d = r.quand ? r.quand.getTime() : NaN;
+    if (!(d >= cible && d - cible < 60_000)) exact = false;
+    ecarts.push(d - dernier.getTime());
+  }
+  check('19g. l intervalle suit la graine de la date du dernier envoi (sept dates)', exact, JSON.stringify(ecarts));
+  check('19h. a temps ecoule egal, sept dates de depart donnent des intervalles differents', new Set(ecarts).size > 1, JSON.stringify(ecarts));
   await remettreAZero();
 }
 

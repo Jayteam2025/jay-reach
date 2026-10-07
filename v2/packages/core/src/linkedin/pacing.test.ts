@@ -63,6 +63,17 @@ describe('pacing LinkedIn', () => {
     expect(seededRandom('x')).toBe(a);
   });
 
+  it('seededRandom refuse une graine qui n est pas une chaine', () => {
+    // `pg` rend les timestamptz en `Date` : sur un `Date`, `.length` vaut undefined, la boucle ne
+    // tournait pas et la fonction rendait une constante, soit un intervalle de 3 min 35 s a chaque envoi.
+    expect(() => seededRandom(new Date('2026-08-20T10:00:00.000Z') as unknown as string)).toThrow(TypeError);
+    expect(() => seededRandom(undefined as unknown as string)).toThrow(TypeError);
+  });
+
+  it('deux graines differentes donnent deux valeurs differentes', () => {
+    expect(seededRandom('2026-08-20T10:00:00.000Z')).not.toBe(seededRandom('2026-08-20T10:00:01.000Z'));
+  });
+
   it('parisHour renvoie une heure 0–23', () => {
     const h = parisHour(new Date('2026-08-20T12:00:00.000Z'));
     expect(h).toBeGreaterThanOrEqual(0);

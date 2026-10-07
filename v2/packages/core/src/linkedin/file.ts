@@ -15,6 +15,7 @@ import { poserEcheanceApresDepart } from '../sequencer/echeance.js';
 import {
   decideCanSend,
   heureLocale,
+  versIso,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
   type PaceReason,
@@ -84,7 +85,7 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
      where organization_id = $1 and status = 'sent'`,
     [orgId, sevenDaysAgo, oneDayAgo],
   );
-  const last = await ex.query<{ sent_at: string }>(
+  const last = await ex.query<{ sent_at: string | Date }>(
     `select sent_at from linkedin_action_queue
      where organization_id = $1 and status = 'sent'
      order by sent_at desc limit 1`,
@@ -115,7 +116,7 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
     timezone: r?.timezone ?? 'Europe/Paris',
     sentLast7Days: Number(counts.rows[0]?.last7 ?? 0),
     sentToday: Number(counts.rows[0]?.today ?? 0),
-    lastSentAtIso: last.rows[0]?.sent_at ?? null,
+    lastSentAtIso: last.rows[0]?.sent_at ? versIso(last.rows[0].sent_at) : null,
   };
 }
 
