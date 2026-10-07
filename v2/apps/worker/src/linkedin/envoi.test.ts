@@ -445,6 +445,24 @@ describe('envoyerMessage', () => {
     }
   });
 
+  it("ne memorise ni ExpediteurIntrouvable ni StatutInattenduExpediteur : le second appel rappelle /me", async () => {
+    const cas: [string, Reponse][] = [
+      ['ExpediteurIntrouvable', { statut: 200, corps: { data: {} } }],
+      ['StatutInattenduExpediteur', { statut: 500 }],
+    ];
+    for (const [nom, echec] of cas) {
+      const reponses: Record<string, Reponse> = { [URL_ME]: echec };
+      const { p, appels } = pilote(reponses, FEED);
+      const erreur = await envoyerMessage(p, URN_DESTINATAIRE, 'Un').catch((e: unknown) => e);
+      expect((erreur as Error).name).toBe(nom);
+      // Le second appel doit REINTERROGER /me, puis partir avec le bon mailboxUrn.
+      Object.assign(reponses, moi, { [URL_MESSAGE]: { statut: 200 } });
+      await expect(envoyerMessage(p, URN_DESTINATAIRE, 'Deux'), nom).resolves.toEqual({ ok: true });
+      expect(appels.map((a) => a.url), nom).toEqual([URL_ME, URL_ME, URL_MESSAGE]);
+      expect((appels[2]!.corps as { mailboxUrn: string }).mailboxUrn, nom).toBe(URN_EXPEDITEUR);
+    }
+  });
+
   it("ne rappelle /me qu'une fois par session, et ne memorise pas un echec", async () => {
     const { p, appels } = pilote({ ...moi, [URL_MESSAGE]: { statut: 200 } }, FEED);
     await envoyerMessage(p, URN_DESTINATAIRE, 'Un');
