@@ -79,6 +79,9 @@ interface Monde {
   /** Statut de la ligne au moment précis de chaque requête sortante. */
   statutsAuxRequetes: string[];
   remises: { comptee: boolean }[];
+  traces: number;
+  /** `maintenant` reçu par la sonde et par la réclamation. */
+  horloges: unknown[];
   pilote: Pilote;
   fermer: ReturnType<typeof vi.fn>;
   ouvrir: ReturnType<typeof vi.fn>;
@@ -93,6 +96,8 @@ function monde(opts: {
   fuseau?: string;
   ouvrirEchoue?: boolean;
   traceEchoue?: boolean;
+  /** La trace échoue à partir du (n+1)-ième appel : les n premiers passent. */
+  traceEchoueApres?: number;
   fileVide?: boolean;
   plafondHoraire?: number;
   requetesDeLHeure?: number;
@@ -102,6 +107,8 @@ function monde(opts: {
     statut: 'absente',
     statutsAuxRequetes: [],
     remises: [],
+    traces: 0,
+    horloges: [],
     pilote: undefined as unknown as Pilote,
     fermer: vi.fn(async () => undefined),
     ouvrir: vi.fn(),
@@ -135,10 +142,14 @@ function monde(opts: {
     }
     if (t.includes('jr:linkedin_envoi_en_attente')) {
       w.journal.push('sonde');
+      w.horloges.push(params[1]);
       return rep([{ existe: opts.fileVide !== true }]);
     }
     if (t.includes('jr:linkedin_envoi_tracer')) {
-      if (opts.traceEchoue) throw new Error('base indisponible');
+      if (opts.traceEchoue || (opts.traceEchoueApres !== undefined && w.traces >= opts.traceEchoueApres)) {
+        throw new Error('base indisponible');
+      }
+      w.traces += 1;
       w.journal.push('trace');
       return rep([{}]);
     }
@@ -177,8 +188,9 @@ function monde(opts: {
     if (opts.ouvrirEchoue) throw new Error('http://user:motdepasse@proxy.example:8080 injoignable');
     return w.pilote;
   });
-  mocks.reclamer.mockImplementation(async (): Promise<ResultatReclamation> => {
+  mocks.reclamer.mockImplementation(async (_ex: unknown, _org: string, maintenant?: Date): Promise<ResultatReclamation> => {
     w.journal.push('reclamer');
+    w.horloges.push(maintenant instanceof Date ? maintenant.toISOString() : maintenant);
     w.statut = 'processing';
     return { action: ACTION_INVITATION, motif: null };
   });
@@ -267,6 +279,13 @@ describe('les gardes avant tout appel LinkedIn', () => {
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(w.journal).toContain('nettoyage');
     expect(w.ouvrir).not.toHaveBeenCalled();
+  });
+
+  it('la sonde et la réclamation reçoivent la MÊME horloge', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.horloges).toHaveLength(2);
+    expect(w.horloges[0]).toBe(w.horloges[1]);
   });
 
   it('une file vide n ouvre ni navigateur, ni relève de sortie, ni verrou', async () => {
@@ -494,6 +513,19 @@ describe('une lecture qui échoue : rien n est parti', () => {
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(w.journal.filter((j) => j.startsWith('requete'))).toEqual([]);
     expect(w.remises).toEqual([{ comptee: true }]);
+  });
+
+  it('la phase ne bascule que sur un appel porteur d un corps : une trace qui échoue AVANT le POST n est pas indéterminée', async () => {
+    // Les deux premiers appels (page du fil non requise ici, lecture du profil) passent ;
+    // la trace du POST échoue. Le POST n'est pas parti : l'action doit retourner en attente.
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } },
+      traceEchoueApres: 1,
+    });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(envoyees(w)).toEqual([]);
+    expect(w.remises).toEqual([{ comptee: true }]);
+    expect(mocks.enregistrer).not.toHaveBeenCalled();
   });
 
   it('la lecture de l expéditeur qui répond mal (GET) ne perd pas le message : il retourne en attente', async () => {

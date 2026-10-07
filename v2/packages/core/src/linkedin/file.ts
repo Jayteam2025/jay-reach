@@ -403,12 +403,17 @@ export async function remettreActionEnAttente(
 }
 
 /**
- * Sonde bon marché : existe-t-il au moins une action serveur en attente ? Elle ne
+ * Sonde bon marché (`maintenant` : la même horloge, celle du worker, que `reclamerProchaineAction`,
+ * pour que les deux jugent les mêmes échéances). : existe-t-il au moins une action serveur en attente ? Elle ne
  * répond QUE « la file est-elle vide » ; le rythme (fenêtre, plafonds, intervalle,
  * campagne) reste décidé par `reclamerProchaineAction`. Sert à ne pas ouvrir le
  * navigateur, ni relever la sortie par le proxy, à chaque tick sans travail.
  */
-export async function existeActionServeurEnAttente(ex: Executeur, organisationId: string): Promise<boolean> {
+export async function existeActionServeurEnAttente(
+  ex: Executeur,
+  organisationId: string,
+  maintenant: Date = new Date(),
+): Promise<boolean> {
   // Mêmes garde-fous « il y a quelque chose à envoyer MAINTENANT » que la réclamation, et
   // seulement eux : échéance atteinte, campagne active (F14), canal hors pause. Ni l'intervalle,
   // ni la fenêtre horaire, ni les plafonds : c'est `reclamerProchaineAction` qui les juge.
@@ -420,15 +425,15 @@ export async function existeActionServeurEnAttente(ex: Executeur, organisationId
             left join enrollments e on e.id = a.enrollment_id
             left join campaigns camp on camp.id = e.campaign_id
            where q.organization_id = $1 and q.status = 'pending' and q.method = 'serveur'
-             and q.scheduled_for <= now()
+             and q.scheduled_for <= $2
              and (q.action_id is null or camp.status = 'active')
         )
         and not exists (
           select 1 from linkedin_server_sessions s
-           where s.organization_id = $1 and s.envoi_pause_jusqua > now()
+           where s.organization_id = $1 and s.envoi_pause_jusqua > $2
         )
       ) as existe`,
-    [organisationId],
+    [organisationId, maintenant.toISOString()],
   );
   return res.rows[0]?.existe === true;
 }

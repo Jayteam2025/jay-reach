@@ -345,6 +345,32 @@ function executeurQuiEchoueSurLaDeuxiemeEcriture() {
   };
 }
 
+async function sonde_et_reclamation_d_accord_a_l_echeance_limite() {
+  console.log('\n[lkf] 16bis. sonde et reclamation lisent la meme horloge, a la limite');
+  await remettreAZero();
+  await ligne('serveur', { scheduledFor: NOW.toISOString() });
+  const avantLimite = new Date(NOW.getTime() - 1);
+  check('16d. sonde a T-1ms : false', (await existeActionServeurEnAttente(pool, org, avantLimite)) === false);
+  const refus = await reclamerProchaineAction(pool, org, avantLimite);
+  check('16d. reclamation a T-1ms : refuse, d accord', refus.action === null && refus.motif === 'queue_empty', refus.motif ?? '');
+  check('16e. sonde a T : true', (await existeActionServeurEnAttente(pool, org, NOW)) === true);
+  const ok = await reclamerProchaineAction(pool, org, NOW);
+  check('16e. reclamation a T : accepte, d accord', ok.action !== null, ok.motif ?? '');
+  // Pause : la limite est la meme (strictement apres `maintenant`).
+  await remettreAZero();
+  await ligne('serveur');
+  await q(`update linkedin_server_sessions set envoi_pause_jusqua = $2 where organization_id = $1`, [org, NOW.toISOString()]);
+  check('16f. pause finissant exactement a T : sonde true', (await existeActionServeurEnAttente(pool, org, NOW)) === true);
+  const r = await reclamerProchaineAction(pool, org, NOW);
+  check('16f. pause finissant exactement a T : reclamation accepte aussi', r.action !== null, r.motif ?? '');
+  await remettreAZero();
+  await ligne('serveur');
+  await q(`update linkedin_server_sessions set envoi_pause_jusqua = $2 where organization_id = $1`, [org, new Date(NOW.getTime() + 1).toISOString()]);
+  check('16g. pause finissant a T+1ms : sonde false', (await existeActionServeurEnAttente(pool, org, NOW)) === false);
+  const r2 = await reclamerProchaineAction(pool, org, NOW);
+  check('16g. pause finissant a T+1ms : reclamation refuse aussi', r2.motif === 'canal_en_pause', r2.motif ?? '');
+}
+
 async function enregistrement_atomique() {
   console.log('\n[lkf] 17. enregistrerResultat : une transaction, tout ou rien');
   await remettreAZero();
@@ -447,6 +473,7 @@ async function main() {
     sonde_file_vide,
     nettoyage_sans_reclamation,
     sonde_ne_juge_que_ce_qui_est_pret,
+    sonde_et_reclamation_d_accord_a_l_echeance_limite,
     enregistrement_atomique,
     indetermine_compte_comme_actif,
   );

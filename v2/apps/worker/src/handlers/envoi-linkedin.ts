@@ -255,7 +255,10 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
   // navigateur puis relever l'IP par le proxy à chaque tick serait du trafic payé pour rien
   // sur une IP qu'on ménage. Elle ne juge PAS le rythme : `reclamerProchaineAction` s'en charge,
   // après le contrôle de sortie.
-  if (!(await existeActionServeurEnAttente(pool, job.organizationId))) {
+  // Une seule lecture de l'horloge, partagée avec la réclamation : la sonde et elle comparent
+  // les mêmes échéances, deux horloges pourraient se contredire.
+  const maintenant = new Date();
+  if (!(await existeActionServeurEnAttente(pool, job.organizationId, maintenant))) {
     console.log('[envoi-linkedin] rien à envoyer (file vide)');
     return;
   }
@@ -309,7 +312,7 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     }
 
     // Un job, au plus une action : le rythme (1 à 20 minutes entre deux envois) est celui de la file.
-    const reclamation = await reclamerProchaineAction(pool, job.organizationId);
+    const reclamation = await reclamerProchaineAction(pool, job.organizationId, maintenant);
     if (reclamation.action === null) {
       console.log(`[envoi-linkedin] rien à envoyer (${reclamation.motif})`);
       return;
