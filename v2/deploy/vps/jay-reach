@@ -10,6 +10,11 @@ set -euo pipefail
 main() {
   local dossier="${JAY_REACH_DEPLOY_DIR:-/opt/jay-reach/v2/deploy/vps}"
   cd "$dossier"
+  # Sans GIT_SHA, `compose run` viserait l'image `jay-reach-worker:local`, qu'il
+  # reconstruirait au lieu de reprendre celle du worker en service : la commande
+  # tournerait un autre code que le moteur. Le déployeur fixe la même valeur.
+  GIT_SHA="$(git rev-parse --short HEAD)"
+  export GIT_SHA
   case "${1:-}" in
     linkedin)
       shift
