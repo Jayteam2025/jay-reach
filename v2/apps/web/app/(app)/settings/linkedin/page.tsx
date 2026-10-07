@@ -12,7 +12,7 @@ import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../../l
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { Carte, TuileLogo } from '../../../../components/ui';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
-import { phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
+import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
 
@@ -39,6 +39,7 @@ export default async function ReglagesLinkedinPage() {
 
   const phrase = phraseEtatSession(session);
   const variante = varianteDetailSession(session);
+  const envoi = phraseEtatEnvoi(session, maintenant);
   const inconnu = t('faits.inconnu');
   const origine = [session?.operateur, session?.pays].filter(Boolean).join(', ');
   const detail = t(`etat.${phrase.cle}.${variante}`, {
@@ -50,6 +51,10 @@ export default async function ReglagesLinkedinPage() {
     ip: session?.ipVue ?? inconnu,
     origine,
   });
+
+  const pauseJusqua = session?.envoiPauseJusqua
+    ? dateCourte(session.envoiPauseJusqua.toISOString(), maintenant, fuseau)
+    : inconnu;
 
   const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
 
@@ -86,6 +91,23 @@ export default async function ReglagesLinkedinPage() {
                 </p>
                 <code className="jr-session-commande">{COMMANDE_CONNEXION}</code>
               </div>
+            )}
+          </div>
+        </div>
+        {/* Second fait du même canal : « est-ce que ça envoie maintenant ». Il ne peut pas
+            contredire la ligne du dessus — `phraseEtatEnvoi` lui demande d'abord si la session
+            tient, au lieu de relire l'état pour son compte. */}
+        <div className="jr-session-etat">
+          <span className={`jr-session-pastille ${envoi.ton}`} aria-hidden="true" />
+          <div>
+            <p className="jr-session-phrase">{t(`envoi.${envoi.cle}.phrase`, { quand: pauseJusqua })}</p>
+            {envoi.cle !== 'sessionRequise' && (
+              <p className="jr-session-detail">
+                {t('envoi.volume')}{' '}
+                <a className="jr-lien" href="/settings/senders">
+                  {t('envoi.volumeLien')}
+                </a>
+              </p>
             )}
           </div>
         </div>

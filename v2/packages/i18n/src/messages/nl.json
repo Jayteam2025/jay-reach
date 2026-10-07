@@ -803,6 +803,10 @@
         "testNote": "\"Stuur mij een test\" schrijft je adres in als testcontact van de campagne: de e-mail volgt het normale pad en verschijnt in de wachtrij van vandaag.",
         "listVariables": "Kolommen van de geïmporteerde lijst",
         "listVariablesEmpty": "Een campagne die door een geïmporteerd bestand wordt gevoed, biedt ook zijn kolommen aan: '{{'liste_nom_de_la_colonne'}}'."
+      },
+      "avertissements": {
+        "messageSansInvitation": "Stap {n}: een LinkedIn-bericht bereikt alleen een connectie van de 1e graad. Voeg er een uitnodigingsstap vóór toe, anders wordt het nooit verstuurd.",
+        "noteDInvitation": "Stap {n}: verzenden vanaf de server kan de uitnodigingsnotitie nog niet meesturen. Zolang die er staat, wordt de uitnodiging niet verstuurd. Verwijder de notitie om te starten."
       }
     },
     "activite": {
@@ -1554,6 +1558,19 @@
           "detailSansOrigine": "Gezien op {ip} in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
           "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
         }
+      },
+      "envoi": {
+        "pret": {
+          "phrase": "Klaar om te versturen."
+        },
+        "enPause": {
+          "phrase": "Verzenden gepauzeerd tot {quand}."
+        },
+        "sessionRequise": {
+          "phrase": "Er wordt niets verstuurd zolang de sessie niet open is."
+        },
+        "volume": "Het volume stel je in met de weekregelaar.",
+        "volumeLien": "Instellingen › Afzenders openen"
       },
       "commande": {
         "consigne": "Open de sessie opnieuw in een terminal op de server:",

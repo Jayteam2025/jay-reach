@@ -7,6 +7,7 @@ import { TuileLogo } from '../ui';
 import { marqueSource } from '../../lib/marque-source';
 import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { CarteEtape } from './CarteEtape';
+import { avertissementsSequence } from './avertissements-sequence';
 
 export interface FluxSequenceProps {
   readonly campagneId: string;
@@ -27,9 +28,19 @@ function delaiLibelle(t: ReturnType<typeof useTranslations>, heures: number): st
 export function FluxSequence({ campagneId, vue }: FluxSequenceProps) {
   const t = useTranslations('campagne.sequence');
   const providers = [...new Set(vue.sources.map((s) => s.providerId))];
+  // Ce que cette séquence ne pourra pas faire, dit AVANT le lancement : sans cela, l'opérateur
+  // ne l'apprend qu'action par action dans le journal, une fois la campagne partie.
+  const avertissements = avertissementsSequence(vue.etapes);
 
   return (
     <section className="jr-flux">
+      {avertissements.length > 0 && (
+        <div className="jr-avertissement">
+          {avertissements.map((a) => (
+            <p key={a.cle}>{t(`avertissements.${a.cle}`, { n: a.position })}</p>
+          ))}
+        </div>
+      )}
       {vue.listeSource ? (
         // Campagne à liste (point 2, issue #120 ; revue F5, constat bloquant 1) : même texte
         // que la carte Sources de la vue d'ensemble, jamais « 0 source alimente cette

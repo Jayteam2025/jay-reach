@@ -90,3 +90,27 @@ export function varianteDetailSession(
   }
   return 'detail';
 }
+
+export type CleEtatEnvoi = 'pret' | 'enPause' | 'sessionRequise';
+
+/**
+ * État du canal d'ENVOI, sous la phrase de session (lot 4b). Deux faits distincts
+ * cohabitent sur cet écran — « puis-je parler à LinkedIn » et « vais-je envoyer
+ * maintenant » — et ils ne doivent jamais se contredire : c'est pourquoi cette
+ * fonction interroge `phraseEtatSession` au lieu de relire `etat` et `motif` pour
+ * son compte. Sans cela, les deux lignes dériveraient au premier motif ajouté.
+ *
+ * Quand la session ne tient pas, on ne répète pas sa raison — elle est écrite
+ * juste au-dessus — on en dit la conséquence, et en ton neutre : une seule alarme
+ * à l'écran, sinon l'opérateur ne sait plus laquelle traiter (même correctif que
+ * la double puce de `puceEtatCompteLinkedIn`).
+ */
+export function phraseEtatEnvoi(
+  session: SessionLinkedIn | null,
+  maintenant: Date,
+): { ton: PuceTon; cle: CleEtatEnvoi } {
+  if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'sessionRequise' };
+  const pause = session?.envoiPauseJusqua;
+  if (pause && pause.getTime() > maintenant.getTime()) return { ton: 'attention', cle: 'enPause' };
+  return { ton: 'bon', cle: 'pret' };
+}

@@ -803,6 +803,10 @@
         "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour.",
         "listVariables": "Colonnes de la liste importée",
         "listVariablesEmpty": "Une campagne alimentée par un fichier importé offre aussi ses colonnes : '{{'liste_nom_de_la_colonne'}}'."
+      },
+      "avertissements": {
+        "messageSansInvitation": "Étape {n} : un message LinkedIn n'atteint qu'une relation de 1er degré. Ajoutez une étape d'invitation avant lui, sinon il ne partira jamais.",
+        "noteDInvitation": "Étape {n} : l'envoi depuis le serveur ne sait pas encore porter la note d'invitation. Tant qu'elle est là, l'invitation ne part pas. Retirez-la pour lancer."
       }
     },
     "activite": {
@@ -1554,6 +1558,19 @@
           "detailSansOrigine": "Vue à {ip} au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
           "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
         }
+      },
+      "envoi": {
+        "pret": {
+          "phrase": "Prêt à envoyer."
+        },
+        "enPause": {
+          "phrase": "Envoi en pause jusqu'à {quand}."
+        },
+        "sessionRequise": {
+          "phrase": "Aucun envoi tant que la session n'est pas ouverte."
+        },
+        "volume": "Le volume se règle avec le curseur hebdomadaire.",
+        "volumeLien": "Ouvrir Réglages › Expéditeurs"
       },
       "commande": {
         "consigne": "Dans un terminal sur le serveur, rouvrez la session :",

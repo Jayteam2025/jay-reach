@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SessionLinkedIn } from '@jay-reach/core';
-import { ligneMoteurLinkedIn, phraseEtatSession, varianteDetailSession, type CleEtatSession } from './linkedin-session-affichage';
+import { ligneMoteurLinkedIn, phraseEtatEnvoi, phraseEtatSession, varianteDetailSession, type CleEtatEnvoi, type CleEtatSession } from './linkedin-session-affichage';
 
 const base: SessionLinkedIn = {
   etat: 'active',
@@ -14,6 +14,7 @@ const base: SessionLinkedIn = {
   operateur: 'Free SAS',
   pays: 'France',
   derniereCollecte: new Date('2026-10-05T10:00:00Z'),
+  envoiPauseJusqua: null,
 };
 
 const bloquee = (motif: NonNullable<SessionLinkedIn['motif']>): SessionLinkedIn => ({
@@ -215,4 +216,61 @@ describe('clés de traduction construites dynamiquement', () => {
       expect(typeof lire(`campagne.sources.drawer.${cle}`)).toBe('string');
     },
   );
+});
+
+// Le canal d'envoi est un SECOND fait sur le même écran. Il ne doit jamais contredire la
+// phrase de session au-dessus de lui : d'où la hiérarchie, vérifiée ici cas par cas.
+describe('phraseEtatEnvoi', () => {
+  const MAINTENANT = new Date('2026-10-07T14:00:00Z');
+
+  it('session prête, aucune pause : prêt à envoyer', () => {
+    expect(phraseEtatEnvoi(base, MAINTENANT)).toEqual({ ton: 'bon', cle: 'pret' });
+  });
+
+  it('session prête, pause encore à venir : en pause, ton attention', () => {
+    const session = { ...base, envoiPauseJusqua: new Date('2026-10-08T07:00:00Z') };
+    expect(phraseEtatEnvoi(session, MAINTENANT)).toEqual({ ton: 'attention', cle: 'enPause' });
+  });
+
+  it('session prête, pause échue : de nouveau prêt', () => {
+    const session = { ...base, envoiPauseJusqua: new Date('2026-10-07T13:59:59Z') };
+    expect(phraseEtatEnvoi(session, MAINTENANT)).toEqual({ ton: 'bon', cle: 'pret' });
+  });
+
+  it('aucune session : la conséquence, en ton neutre — la raison est déjà dite au-dessus', () => {
+    expect(phraseEtatEnvoi(null, MAINTENANT)).toEqual({ ton: 'gris', cle: 'sessionRequise' });
+  });
+
+  // Le cas qui justifie la hiérarchie : LinkedIn a réclamé une vérification APRÈS avoir
+  // renvoyé un 429, donc la ligne porte les deux. Afficher « en pause jusqu'à 7 h » ferait
+  // croire que l'envoi repart tout seul demain matin, alors qu'il faut rouvrir la session
+  // à la main. La session l'emporte, toujours.
+  it('session bloquée ET pause posée : la session l emporte, jamais « en pause »', () => {
+    const session = { ...bloquee('defi'), envoiPauseJusqua: new Date('2026-10-08T07:00:00Z') };
+    expect(phraseEtatEnvoi(session, MAINTENANT)).toEqual({ ton: 'gris', cle: 'sessionRequise' });
+  });
+
+  it('sortie inattendue ET pause posée : la sortie l emporte aussi', () => {
+    const session = { ...bloquee('sortie_inattendue'), envoiPauseJusqua: new Date('2026-10-08T07:00:00Z') };
+    expect(phraseEtatEnvoi(session, MAINTENANT)).toEqual({ ton: 'gris', cle: 'sessionRequise' });
+  });
+});
+
+describe('clés de traduction du canal d envoi', () => {
+  const LANGUES = ['fr', 'en', 'nl'] as const;
+  const CLES: CleEtatEnvoi[] = ['pret', 'enPause', 'sessionRequise'];
+
+  it.each(LANGUES)('%s : chaque état a sa phrase, et la pause nomme sa date', (langue) => {
+    const messages = JSON.parse(
+      readFileSync(join(__dirname, `../../../../packages/i18n/src/messages/${langue}.json`), 'utf8'),
+    ) as Record<string, Record<string, Record<string, Record<string, Record<string, unknown>>>>>;
+    const envoi = messages.reglages.linkedin.envoi;
+    for (const cle of CLES) {
+      expect(typeof envoi[cle].phrase, `${langue} > ${cle}`).toBe('string');
+    }
+    // Une pause sans échéance ne dit pas à l'opérateur quand revenir.
+    expect(String(envoi.enPause.phrase), `${langue} > enPause`).toContain('{quand}');
+    expect(typeof envoi.volume, `${langue} > volume`).toBe('string');
+    expect(typeof envoi.volumeLien, `${langue} > volumeLien`).toBe('string');
+  });
 });
