@@ -5,7 +5,9 @@
  * @jay-reach/core) ; ici on fait les I/O SQL et on renvoie les jobs d'envoi.
  *
  * Aucun envoi réel ici : les actions LinkedIn émises partent vers `actions.dispatch`,
- * qui les enfile dans `linkedin_action_queue` (exécutée par l'extension, pacing serveur).
+ * qui les enfile dans `linkedin_action_queue`. Le worker les exécute ensuite depuis la
+ * session LinkedIn du serveur (IP résidentielle dédiée), sous plafonds réglables ; le
+ * pacing est jugé côté serveur avant chaque envoi.
  */
 import type { Pool } from 'pg';
 import {

@@ -183,7 +183,7 @@ ne tourne.
 
 ## Le navigateur LinkedIn (facultatif)
 
-Le canal LinkedIn exécuté côté serveur pilote un Chromium dans son propre
+Le canal LinkedIn exécuté côté serveur (collecte et envoi) pilote un Chromium dans son propre
 conteneur (`navigateur`), derrière un proxy résidentiel dédié. Il est derrière
 un profil Compose : sans le réglage ci-dessous, `./deployer.sh` ne le construit
 ni ne le démarre.
