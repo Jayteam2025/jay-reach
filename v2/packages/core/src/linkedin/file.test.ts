@@ -12,6 +12,7 @@ interface Etat {
   campagneStatut: string | null;
   coinceDepuis: string | null;
   pauseJusqua: string | null;
+  session: boolean;
 }
 
 interface Appel {
@@ -31,6 +32,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
     campagneStatut: null,
     coinceDepuis: null,
     pauseJusqua: null,
+    session: true,
     ...depart,
   };
   let enProcessing = etat.coinceDepuis !== null;
@@ -41,7 +43,11 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       appels.push({ sql, values });
       if (/from linkedin_server_sessions/i.test(sql)) return rep(etat.pauseJusqua ? [{ envoi_pause_jusqua: etat.pauseJusqua }] : []) as never;
       if (/update linkedin_server_sessions/i.test(sql)) {
-        etat.pauseJusqua = values[1] as string;
+        if (!etat.session) return { rows: [], rowCount: 0 } as never;
+        const demandee = values[1] as string;
+        // Le SQL est jugé sur son texte : sans `greatest`, l'écrasement est sec.
+        etat.pauseJusqua =
+          /greatest/i.test(sql) && etat.pauseJusqua !== null && etat.pauseJusqua > demandee ? etat.pauseJusqua : demandee;
         return { rows: [], rowCount: 1 } as never;
       }
       if (/set status = 'pending', processing_started_at = null/i.test(sql)) {
@@ -126,5 +132,21 @@ describe('reclamerProchaineAction', () => {
 
     const apres = await reclamerProchaineAction(ex, ORG, new Date(jusqua.getTime() + 1));
     expect(apres.action?.id).toBe('file-1');
+  });
+
+  it('une pause plus courte ne raccourcit pas une pause deja posee', async () => {
+    const { ex, etat } = creerExecuteur();
+    const longue = new Date(NOW.getTime() + 22 * 60 * 60_000);
+    const courte = new Date(NOW.getTime() + 60 * 60_000);
+    await mettreEnPauseEnvoiLinkedIn(ex, ORG, longue);
+    await mettreEnPauseEnvoiLinkedIn(ex, ORG, courte);
+    expect(etat.pauseJusqua).toBe(longue.toISOString());
+  });
+
+  it('sans ligne de session, la mise en pause rend false', async () => {
+    const { ex } = creerExecuteur({ session: false });
+    expect(await mettreEnPauseEnvoiLinkedIn(ex, ORG, new Date(NOW.getTime() + 60_000))).toBe(false);
+    const avec = creerExecuteur();
+    expect(await mettreEnPauseEnvoiLinkedIn(avec.ex, ORG, new Date(NOW.getTime() + 60_000))).toBe(true);
   });
 });

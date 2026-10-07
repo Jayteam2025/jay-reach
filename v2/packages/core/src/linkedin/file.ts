@@ -115,13 +115,20 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
 
 /**
  * Met l'envoi en pause jusqu'à `jusqua` : la réclamation refuse `canal_en_pause`
- * tant que cette date n'est pas passée. Sans ligne de session, rien n'est écrit.
+ * tant que cette date n'est pas passée. Une pause ne se raccourcit jamais : si
+ * une échéance plus lointaine est déjà posée, elle est conservée (`greatest`).
+ *
+ * Renvoie `false` quand aucune ligne de session n'existe pour l'organisation :
+ * rien n'a été posé, et l'appelant ne doit pas croire le canal en pause.
  */
-export async function mettreEnPauseEnvoiLinkedIn(ex: Executeur, organisationId: string, jusqua: Date): Promise<void> {
-  await ex.query(
-    `update linkedin_server_sessions set envoi_pause_jusqua = $2 where organization_id = $1`,
+export async function mettreEnPauseEnvoiLinkedIn(ex: Executeur, organisationId: string, jusqua: Date): Promise<boolean> {
+  const res = await ex.query(
+    `update linkedin_server_sessions
+        set envoi_pause_jusqua = greatest(coalesce(envoi_pause_jusqua, $2::timestamptz), $2::timestamptz)
+      where organization_id = $1`,
     [organisationId, jusqua.toISOString()],
   );
+  return (res.rowCount ?? 0) > 0;
 }
 
 /**

@@ -6,6 +6,11 @@
  *
  * Aucun envoi réel : ce module prépare/claim/enregistre des lignes de file.
  * L'envoi Voyager est fait par l'extension, avec la session de l'utilisateur.
+ *
+ * ATTENTION : le cœur porte la même logique de réclamation dans
+ * `packages/core/src/linkedin/file.ts`. La duplication est délibérée (l'ancien
+ * chemin cherche `method = 'extension_auto'`, le nouveau `'serveur'`) : toute
+ * correction de la clause de réclamation se porte des DEUX côtés.
  */
 import type { Pool, PoolClient } from 'pg';
 import {
