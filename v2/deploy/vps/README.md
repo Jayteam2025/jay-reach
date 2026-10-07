@@ -236,6 +236,26 @@ Points à connaître :
   pourquoi aucun port n'est publié, pas même sur `127.0.0.1` (tout processus
   local ou conteneur en `network_mode: host` y accéderait). Ne jamais en
   ajouter un, ni tunneler le port vers un poste partagé.
+- **Vérifier ce que vaut une IP de proxy, et en changer.** `jay-reach linkedin ip` affiche, sous
+  la sortie observée, le titulaire de l'adresse selon le registre RIPE, et avertit quand le pays
+  déclaré par ce titulaire est contredit par son adresse postale. Le cas vu le 07/10/2026 :
+
+  ```
+  Sortie du navigateur : 185.134.193.162 · AS6830 Liberty Global Europe Holding B.V. · FR
+  Titulaire de l’IP : NADEJDA-NET · Sofia, Bulgaria Kukush Str., Bl.58
+  Attention : le titulaire déclare le pays France mais son adresse est « Sofia, Bulgaria … »
+  ```
+
+  Le champ `country` d'un objet RIPE est une **déclaration**, que les bases de géolocalisation
+  recopient : trois d'entre elles répondaient « France, Paris » pour cette adresse. Une fois la
+  session ouverte, le contrôle le plus sûr reste la page LinkedIn des sessions actives
+  (`/mypreferences/d/user-sessions`), qui donne le lieu retenu **et** le propriétaire de l'IP.
+
+  Pour changer d'IP : poser la nouvelle `LINKEDIN_PROXY_URL` dans `/etc/jay-reach/navigateur.env`
+  (et ses identifiants dans `worker.env`), relancer `./deployer.sh --force-recreate`, vérifier avec
+  `jay-reach linkedin ip`, puis figer la nouvelle sortie avec `jay-reach linkedin ip --confirmer`.
+  Sans ce dernier appel, la collecte s'arrête sur l'écart entre la sortie vue et l'IP attendue.
+
 - **Seul un proxy HTTP ou HTTPS convient.** Chromium ne sait pas authentifier
   un proxy SOCKS5 : `page.authenticate` n'aurait aucun effet et l'erreur serait
   illisible. L'entrypoint refuse toute autre forme.
