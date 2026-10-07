@@ -13,9 +13,10 @@
 //   5. file.ts : retirer le requeue : 6 rougit.
 //   9. file.ts : retirer `and status = 'processing'` de remettreActionEnAttente : 11 rougit.
 //  10. file.ts : inverser `comptee` (decrement/plafond) : 11 et 12 rougissent.
+//  12. file.ts : un seul UPDATE de requeue pour les deux methodes : 6 et 10 rougissent.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
-import { reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
+import { existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
 import { tracerEnvoiLinkedIn } from './_lkp.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -147,11 +148,19 @@ async function ligne_coincee_requeue_apres_dix_minutes() {
   await remettreAZero();
   const idRecent = await ligne('serveur', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString() });
   const r6a = await reclamerProchaineAction(pool, org, NOW);
-  check('coincee depuis 5 min : pas reclamable', r6a.action === null && r6a.motif === 'queue_empty', r6a.motif ?? '');
+  check('serveur coincee depuis 5 min : pas reclamable', r6a.action === null && r6a.motif === 'queue_empty', r6a.motif ?? '');
   check('reste en processing', (await statut(idRecent)) === 'processing');
   await q(`update linkedin_action_queue set processing_started_at = $2 where id = $1`, [idRecent, new Date(NOW.getTime() - 11 * 60_000).toISOString()]);
   const r6b = await reclamerProchaineAction(pool, org, NOW);
-  check('coincee depuis 11 min : reclamee a nouveau', r6b.action?.id === idRecent, r6b.motif ?? '');
+  // L'action a pu partir : elle n'est JAMAIS reclamee a nouveau (double envoi).
+  const l6 = (await q('select status, error_code, error_message from linkedin_action_queue where id = $1', [idRecent])).rows[0];
+  check('serveur coincee depuis 11 min : jamais reclamee, statut terminal resultat_indetermine', r6b.action === null && l6.status === 'failed' && l6.error_code === 'resultat_indetermine' && l6.error_message !== null, JSON.stringify(l6));
+  const idExt = await ligne('extension_auto', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString() });
+  await reclamerProchaineAction(pool, org, NOW);
+  check('extension_auto coincee depuis 5 min : reste processing', (await statut(idExt)) === 'processing');
+  await q(`update linkedin_action_queue set processing_started_at = $2 where id = $1`, [idExt, new Date(NOW.getTime() - 11 * 60_000).toISOString()]);
+  await reclamerProchaineAction(pool, org, NOW);
+  check('extension_auto coincee depuis 11 min : remise pending comme avant', (await statut(idExt)) === 'pending');
 }
 
 async function resultat_seulement_depuis_processing() {
@@ -214,12 +223,14 @@ async function session_non_active_refuse_la_reclamation() {
 async function requeue_passe_avant_les_refus_de_session() {
   console.log('\n[lkf] 10. session bloquee : la ligne coincee est quand meme remise en file');
   await remettreAZero();
-  const id = await ligne('serveur', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
+  const id = await ligne('extension_auto', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
+  const idServeur = await ligne('serveur', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
   await q(`update linkedin_server_sessions set status = 'bloquee', blocked_at = now(), blocked_reason = 'defi' where organization_id = $1`, [org]);
   const r = await reclamerProchaineAction(pool, org, NOW);
   check('session bloquee : session_inactive', r.action === null && r.motif === 'session_inactive', r.motif ?? '');
   const ap = (await q('select status, processing_started_at from linkedin_action_queue where id = $1', [id])).rows[0];
   check('ligne coincee repassee pending, processing_started_at nul', ap.status === 'pending' && ap.processing_started_at === null, JSON.stringify(ap));
+  check('ligne serveur coincee : terminale meme session bloquee, jamais pending', (await statut(idServeur)) === 'failed');
 }
 
 async function remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentatives() {
@@ -255,6 +266,20 @@ async function remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentative
   const rautre = await remettreActionEnAttente(pool, org2, d, { comptee: true });
   check('12d. une autre organisation ne peut pas remettre la ligne', !rautre && (await statut(d)) === 'processing');
   void ex;
+}
+
+async function sonde_file_vide() {
+  console.log('\n[lkf] 14. sonde : y a-t-il une action serveur en attente');
+  await remettreAZero();
+  check('file vide : false', (await existeActionServeurEnAttente(pool, org)) === false);
+  await ligne('extension_auto');
+  await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await ligne('serveur', { status: 'sent' });
+  check('ni extension, ni processing, ni sent : false', (await existeActionServeurEnAttente(pool, org)) === false);
+  const autre = (await q(`insert into organizations (name, slug) values ('Autre', 'autre3-' || gen_random_uuid()) returning id`)).rows[0].id;
+  check('une autre organisation ne voit pas cette file', (await existeActionServeurEnAttente(pool, autre)) === false);
+  await ligne('serveur');
+  check('une action serveur pending : true', (await existeActionServeurEnAttente(pool, org)) === true);
 }
 
 async function trace_d_envoi_bornee_a_l_organisation() {
@@ -302,6 +327,7 @@ async function main() {
     requeue_passe_avant_les_refus_de_session,
     remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentatives,
     trace_d_envoi_bornee_a_l_organisation,
+    sonde_file_vide,
   );
   await remettreAZero();
   await pool.end();

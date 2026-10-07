@@ -41,6 +41,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
     ...depart,
   };
   let enProcessing = etat.coinceDepuis !== null;
+  let terminee = false;
   const appels: Appel[] = [];
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
   const ex: Executeur = {
@@ -57,7 +58,21 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       }
       if (/set status = 'pending', processing_started_at = null/i.test(sql)) {
         const cutoff = values[1] as string;
-        if (enProcessing && etat.coinceDepuis !== null && etat.coinceDepuis < cutoff) enProcessing = false;
+        // La remise en attente ne vise QUE les lignes non serveur (`method <> 'serveur'`) :
+        // la ligne du faux, elle, est serveur sauf indication contraire.
+        const viseLeServeur = !/method\s*<>\s*'serveur'/i.test(sql);
+        if (enProcessing && etat.coinceDepuis !== null && etat.coinceDepuis < cutoff && (viseLeServeur || etat.methodeDeLaLigne !== 'serveur')) {
+          enProcessing = false;
+        }
+        return { rows: [], rowCount: 0 } as never;
+      }
+      if (/set status = 'failed', error_code = 'resultat_indetermine'/i.test(sql)) {
+        const cutoff = values[1] as string;
+        const vise = /method\s*=\s*'serveur'/i.test(sql) && etat.methodeDeLaLigne === 'serveur';
+        if (vise && enProcessing && etat.coinceDepuis !== null && etat.coinceDepuis < cutoff) {
+          enProcessing = false;
+          terminee = true;
+        }
         return { rows: [], rowCount: 0 } as never;
       }
       if (/from linkedin_settings/i.test(sql)) {
@@ -70,7 +85,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       if (/select q\.id/i.test(sql)) {
         const demandee = /q\.method = '([a-z_]+)'/.exec(sql)?.[1] ?? null;
         if (demandee !== etat.methodeDeLaLigne) return rep([]) as never;
-        if (enProcessing) return rep([]) as never;
+        if (enProcessing || terminee) return rep([]) as never;
         const filtre = /camp\.status\s*=\s*'active'/i.test(sql);
         const ok = !filtre || etat.campagneStatut === null || etat.campagneStatut === 'active';
         return rep(ok ? [{ id: 'file-1' }] : []) as never;
@@ -120,10 +135,11 @@ describe('reclamerProchaineAction', () => {
     expect(appels.some((a) => /set status = 'processing'/i.test(a.sql))).toBe(false);
   });
 
-  it('une ligne coincee en processing depuis plus de dix minutes redevient reclamable', async () => {
+  it('une ligne serveur coincee depuis plus de dix minutes n est JAMAIS reclamee : elle a pu partir', async () => {
     const { ex } = creerExecuteur({ coinceDepuis: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
     const r = await reclamerProchaineAction(ex, ORG, NOW);
-    expect(r.action?.id).toBe('file-1');
+    expect(r).toEqual({ action: null, motif: 'queue_empty' });
+    // Preuve du SQL réel : harnais pg-verify (section 6 de linkedin-file.mjs).
 
     const recente = creerExecuteur({ coinceDepuis: new Date(NOW.getTime() - 5 * 60_000).toISOString() });
     const r2 = await reclamerProchaineAction(recente.ex, ORG, NOW);

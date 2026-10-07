@@ -93,6 +93,7 @@ function monde(opts: {
   fuseau?: string;
   ouvrirEchoue?: boolean;
   traceEchoue?: boolean;
+  fileVide?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -122,6 +123,7 @@ function monde(opts: {
     }
     if (t.includes('jr:linkedin_session_observer')) return rep([]);
     if (t.includes('jr:linkedin_fuseau')) return rep([{ timezone: opts.fuseau ?? 'Europe/Paris' }]);
+    if (t.includes('jr:linkedin_envoi_en_attente')) return rep([{ existe: opts.fileVide !== true }]);
     if (t.includes('jr:linkedin_envoi_tracer')) {
       if (opts.traceEchoue) throw new Error('base indisponible');
       w.journal.push('trace');
@@ -236,6 +238,15 @@ describe('les gardes avant tout appel LinkedIn', () => {
     await traiterEnvoiLinkedIn(deps(w, { env: {} }), JOB);
     expect(w.ouvrir).not.toHaveBeenCalled();
     expect(mocks.reclamer).not.toHaveBeenCalled();
+  });
+
+  it('une file vide n ouvre ni navigateur, ni relève de sortie, ni verrou', async () => {
+    const w = monde({ fileVide: true });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(w.releve).not.toHaveBeenCalled();
+    expect(mocks.reclamer).not.toHaveBeenCalled();
+    expect(w.journal.filter((j) => j.startsWith('verrou'))).toEqual([]);
   });
 
   it('le verrou pris par une collecte fait renoncer l envoi', async () => {

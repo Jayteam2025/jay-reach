@@ -19,6 +19,10 @@ import {
   type PaceReason,
 } from './pacing.js';
 
+/** Texte écrit sur une action serveur dont on ignore si elle est partie : elle n'est jamais rejouée. */
+export const MESSAGE_RESULTAT_INDETERMINE =
+  'LinkedIn a peut-être reçu cette action avant l’arrêt du worker : vérifiez sur LinkedIn, elle ne sera pas rejouée.';
+
 export interface ActionReclamee {
   readonly id: string;
   readonly kind: 'invite' | 'message';
@@ -164,15 +168,33 @@ export async function reclamerProchaineAction(
   const orgId = organisationId;
   const now = maintenant;
 
-  // 1. Requeue des lignes coincées en processing (appelant mort en plein call).
+  // 1. Lignes coincées en processing (appelant mort en plein call).
   // AVANT les refus : c'est une réparation d'état, pas un envoi. Session bloquée
   // ou canal en pause, une ligne coincée ne doit pas rester annoncée `processing`.
+  //
+  // DEUX traitements, parce que « coincée » ne veut pas dire la même chose :
+  //  - `extension_auto` : l'extension n'avait encore rien envoyé, la remise en
+  //    attente est sûre (chemin historique, inchangé) ;
+  //  - `serveur` : le POST a pu être ACCEPTÉ par LinkedIn avant que le worker meure.
+  //    La remettre en `pending` inviterait la personne une seconde fois, ce qui ne se
+  //    rattrape pas. Elle passe en statut terminal `resultat_indetermine` : au pire une
+  //    action perdue, visible à l'écran, rattrapable à la main. Aucune variante plus
+  //    fine (distinguer les lignes déjà tracées) : un garde-fou se lit en une seconde.
   const stuckCutoff = new Date(now.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
   await ex.query(
     `update linkedin_action_queue
          set status = 'pending', processing_started_at = null, updated_at = now()
-       where organization_id = $1 and status = 'processing' and processing_started_at < $2`,
+       where organization_id = $1 and status = 'processing' and processing_started_at < $2
+         and method <> 'serveur'`,
     [orgId, stuckCutoff],
+  );
+  await ex.query(
+    `update linkedin_action_queue
+         set status = 'failed', error_code = 'resultat_indetermine',
+             error_message = $3, updated_at = now()
+       where organization_id = $1 and status = 'processing' and processing_started_at < $2
+         and method = 'serveur'`,
+    [orgId, stuckCutoff, MESSAGE_RESULTAT_INDETERMINE],
   );
 
   // 2. Session du serveur : le canal n'est disponible que si elle est `active`
@@ -359,4 +381,21 @@ export async function remettreActionEnAttente(
     [queueId, organisationId, options.comptee, options.maxTentatives ?? 3],
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Sonde bon marché : existe-t-il au moins une action serveur en attente ? Elle ne
+ * répond QUE « la file est-elle vide » ; le rythme (fenêtre, plafonds, intervalle,
+ * campagne) reste décidé par `reclamerProchaineAction`. Sert à ne pas ouvrir le
+ * navigateur, ni relever la sortie par le proxy, à chaque tick sans travail.
+ */
+export async function existeActionServeurEnAttente(ex: Executeur, organisationId: string): Promise<boolean> {
+  const res = await ex.query<{ existe: boolean }>(
+    `select exists (
+        select 1 from linkedin_action_queue /* jr:linkedin_envoi_en_attente */
+         where organization_id = $1 and status = 'pending' and method = 'serveur'
+      ) as existe`,
+    [organisationId],
+  );
+  return res.rows[0]?.existe === true;
 }

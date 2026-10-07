@@ -27,6 +27,7 @@ import type { Pool } from 'pg';
 import {
   bloquerSessionLinkedIn,
   enregistrerResultat,
+  existeActionServeurEnAttente,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
   lireSessionLinkedIn,
@@ -241,6 +242,15 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
   const session = await lireSessionLinkedIn(ctx);
   if (!session || session.etat !== 'active') {
     console.warn(`[envoi-linkedin] ${MSG.session}`);
+    return;
+  }
+
+  // Sonde AVANT d'ouvrir quoi que ce soit : une file vide est le cas courant, et ouvrir le
+  // navigateur puis relever l'IP par le proxy à chaque tick serait du trafic payé pour rien
+  // sur une IP qu'on ménage. Elle ne juge PAS le rythme : `reclamerProchaineAction` s'en charge,
+  // après le contrôle de sortie.
+  if (!(await existeActionServeurEnAttente(pool, job.organizationId))) {
+    console.log('[envoi-linkedin] rien à envoyer (file vide)');
     return;
   }
 
