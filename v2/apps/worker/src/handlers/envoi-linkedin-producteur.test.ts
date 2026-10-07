@@ -59,3 +59,62 @@ describe('enqueueEnvoiLinkedIn', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Pool factice qui EVALUE ce que le SQL declare : la liste des organisations n'est filtree que si la
+ * requete contient `status = 'active'`, et le mode vient des reglages. Sans cela, un filtre retire
+ * du SQL ne ferait rougir personne. Le SQL reel est joue par `test/pg-verify/linkedin-file.sh`.
+ */
+function poolAvecEtat(sessions: { id: string; status: string }[], mode: 'auto' | 'manual' = 'auto'): Pool {
+  const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
+  return {
+    query: vi.fn(async (sql: string, valeurs: unknown[] = []) => {
+      if (/select organization_id from linkedin_server_sessions/.test(sql)) {
+        const gardees = /status = 'active'/.test(sql) ? sessions.filter((x) => x.status === 'active') : sessions;
+        return rep(gardees.map((x) => ({ organization_id: x.id })));
+      }
+      if (/jr:linkedin_envoi_en_cours/.test(sql)) return rep([{ recentes: '0', perimees: '0' }]);
+      if (/jr:linkedin_envoi_en_attente/.test(sql)) return rep([{ existe: true }]);
+      if (/from linkedin_server_sessions/.test(sql)) {
+        const x = sessions.find((y) => y.id === valeurs[0]);
+        return rep(x ? [{ status: x.status, envoi_pause_jusqua: null }] : []);
+      }
+      if (/from linkedin_settings/.test(sql)) {
+        return rep([{ mode, weekly_cap: 100, send_days: [1, 2, 3, 4, 5], send_from_hour: 9, send_to_hour: 18, timezone: 'Europe/Paris' }]);
+      }
+      if (/count\(\*\) filter/i.test(sql)) return rep([{ last7: '0', today: '0' }]);
+      if (/order by sent_at desc/i.test(sql)) return rep([]);
+      throw new Error(`requete inattendue : ${sql.slice(0, 60)}`);
+    }),
+  } as unknown as Pool;
+}
+
+describe('enqueueEnvoiLinkedIn, de bout en bout sur la decision', () => {
+  it('une organisation dont la session n est pas active ne recoit aucun job', async () => {
+    const { boss, send } = creerBoss();
+    await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }, { id: 'org-2', status: 'blocked' }]), NOW);
+    expect(send.mock.calls.map((c) => c[1])).toEqual([{ organizationId: 'org-1' }]);
+  });
+
+  it('une organisation inactive n est meme pas jugee : pas de lecture, pas de job', async () => {
+    // Le jugement lui-meme refuse une session inactive ; ce test tient le FILTRE de la liste, qui
+    // evite trois SELECT par organisation et par minute, et ne doit pas dependre de cette redondance.
+    const { boss, send } = creerBoss();
+    const juger = vi.fn(async () => ({ quand: NOW, motif: null }));
+    await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }, { id: 'org-2', status: 'blocked' }]), NOW, juger);
+    expect(juger.mock.calls.map((c) => (c as unknown[])[1])).toEqual(['org-1']);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('en mode manuel, aucun job n est cree', async () => {
+    const { boss, send } = creerBoss();
+    await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }], 'manual'), NOW);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('en mode automatique, le meme etat cree bien un job', async () => {
+    const { boss, send } = creerBoss();
+    await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }]), NOW);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
