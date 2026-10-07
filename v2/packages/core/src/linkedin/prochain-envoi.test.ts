@@ -67,7 +67,7 @@ function creerExecuteur(depart: Partial<Etat> = {}): Executeur {
 describe('prochainEnvoiLinkedIn', () => {
   it('rend maintenant quand un envoi est possible', async () => {
     const r = await prochainEnvoiLinkedIn(creerExecuteur(), ORG, NOW);
-    expect(r).toEqual({ quand: NOW, motif: null });
+    expect(r).toEqual({ quand: NOW, motif: null, raison: 'envoi' });
   });
 
   it('ne planifie rien sans session active', async () => {
@@ -95,7 +95,7 @@ describe('prochainEnvoiLinkedIn', () => {
     // `reprise` distingue ce cas d'un vrai creneau : sans lui, l'ecran annoncait « pret a envoyer »
     // un dimanche a 3 h, file vide, parce qu'il lisait une date de reparation comme une autorisation.
     const r = await prochainEnvoiLinkedIn(creerExecuteur({ enCoursPerimees: 1, enAttente: false }), ORG, NOW);
-    expect(r).toEqual({ quand: NOW, motif: null, reprise: true });
+    expect(r).toEqual({ quand: NOW, motif: null, raison: 'reparation' });
   });
 
   it('une action en vol l emporte sur une ligne perimee', async () => {
@@ -132,7 +132,7 @@ describe('prochainEnvoiLinkedIn', () => {
   it('rend maintenant une fois l intervalle ecoule', async () => {
     const dernier = new Date(NOW.getTime() - 21 * 60_000).toISOString();
     const r = await prochainEnvoiLinkedIn(creerExecuteur({ dernierEnvoi: dernier }), ORG, NOW);
-    expect(r).toEqual({ quand: NOW, motif: null });
+    expect(r).toEqual({ quand: NOW, motif: null, raison: 'envoi' });
   });
 
   it('ne planifie rien hors de la fenetre horaire', async () => {

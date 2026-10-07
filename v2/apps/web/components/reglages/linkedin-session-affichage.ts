@@ -126,8 +126,8 @@ export function phraseEtatEnvoi(
 ): { ton: PuceTon; cle: CleEtatEnvoi } {
   if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'canalBloque' };
   if (prochain.quand !== null) {
-    // Une ligne restée en cours n'est pas un créneau d'envoi : le moteur passe la réparer.
-    if (prochain.reprise) return { ton: 'attention', cle: 'reprise' };
+    // Une ligne restée en cours n'est pas un créneau d'envoi : elle va être close, pas rejouée.
+    if (prochain.raison === 'reparation') return { ton: 'attention', cle: 'reprise' };
     return prochain.quand.getTime() <= maintenant.getTime()
       ? { ton: 'bon', cle: 'pret' }
       : { ton: 'bon', cle: 'planifie' };
@@ -136,6 +136,12 @@ export function phraseEtatEnvoi(
     case 'canal_en_pause':
       return { ton: 'attention', cle: 'enPause' };
     case 'session_inactive':
+      return { ton: 'gris', cle: 'canalBloque' };
+    // En mode manuel il Y A des actions en attente, et elles ne partiront jamais : « aucune
+    // action en attente », en vert, serait doublement faux. L'état est impossible en base
+    // depuis la migration 20260831160000, mais la branche existe encore dans `jugerRythme` au
+    // cas où la contrainte serait relâchée — par cohérence, elle existe aussi ici.
+    case 'manual_mode':
       return { ton: 'gris', cle: 'canalBloque' };
     // Ni l'un ni l'autre n'est un empêchement : rien n'attend, ou un envoi est déjà parti.
     case 'file_vide':
@@ -150,9 +156,20 @@ export function phraseEtatEnvoi(
     case 'daily_cap_reached':
     case 'weekly_cap_reached':
       return { ton: 'attention', cle: 'plafondAtteint' };
-    // `too_soon` sans date calculable, `race_retry`, `manual_mode` (impossible en base depuis la
-    // migration 20260831160000) : rien ne part là, tout de suite, sans rien à corriger.
-    default:
+    // Inatteignables par `prochainEnvoiLinkedIn` : `too_soon` y arrive toujours avec un délai,
+    // donc avec une date, et `race_retry` n'appartient qu'à la réclamation. Nommés quand même,
+    // parce qu'un motif rangé dans un fourre-tout silencieux est un motif qu'on ne verra pas
+    // changer de sens.
+    case 'too_soon':
+    case 'race_retry':
       return { ton: 'bon', cle: 'rienAEnvoyer' };
+    // Le `never` fait échouer la COMPILATION si un motif nouveau apparaît ; le `return` qui suit
+    // garde l'écran debout à l'exécution, car un écran de réglages ne doit pas tomber parce que
+    // le moteur a appris un refus de plus.
+    default: {
+      const _exhaustif: never = prochain;
+      void _exhaustif;
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
+    }
   }
 }

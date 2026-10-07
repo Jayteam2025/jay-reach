@@ -1567,7 +1567,7 @@
           "phrase": "Volgende verzending {quand}."
         },
         "reprise": {
-          "phrase": "Een actie is blijven hangen. De engine pakt die weer op."
+          "phrase": "Een verzending bleef zonder antwoord. Die wordt als onbepaald gemarkeerd — controleer op LinkedIn."
         },
         "enPause": {
           "phrase": "Verzenden gepauzeerd tot {quand}."
@@ -1582,7 +1582,7 @@
           "phrase": "Buiten de verzenduren of verzenddagen."
         },
         "plafondAtteint": {
-          "phrase": "Verzendlimiet bereikt. Hervat bij het volgende venster."
+          "phrase": "Verzendlimiet bereikt. Er gaat niets uit tot die weer ruimte geeft."
         },
         "canalBloque": {
           "phrase": "Er wordt niets verstuurd zolang dit niet is opgelost."

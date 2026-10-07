@@ -1567,7 +1567,7 @@
           "phrase": "Next send {quand}."
         },
         "reprise": {
-          "phrase": "An action was left running. The engine is picking it up."
+          "phrase": "A send was left unanswered. It will be marked undetermined — check on LinkedIn."
         },
         "enPause": {
           "phrase": "Sending paused until {quand}."
@@ -1582,7 +1582,7 @@
           "phrase": "Outside sending hours or sending days."
         },
         "plafondAtteint": {
-          "phrase": "Sending cap reached. Resumes at the next slot."
+          "phrase": "Sending cap reached. Nothing goes out until it frees up."
         },
         "canalBloque": {
           "phrase": "Nothing is sent until this is fixed."

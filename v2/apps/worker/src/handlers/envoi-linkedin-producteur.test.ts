@@ -17,7 +17,7 @@ describe('enqueueEnvoiLinkedIn', () => {
   it('depose un job date, unique par organisation', async () => {
     const { boss, send } = creerBoss();
     const quand = new Date(NOW.getTime() + 7 * 60_000);
-    await enqueueEnvoiLinkedIn(boss, creerPool(['org-1']), NOW, async () => ({ quand, motif: null }));
+    await enqueueEnvoiLinkedIn(boss, creerPool(['org-1']), NOW, async () => ({ quand, motif: null, raison: 'envoi' as const }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith('linkedin.envoi', { organizationId: 'org-1' }, { singletonKey: 'org-1', startAfter: quand });
   });
@@ -31,7 +31,7 @@ describe('enqueueEnvoiLinkedIn', () => {
   it('juge chaque organisation avec sa propre decision', async () => {
     const { boss, send } = creerBoss();
     await enqueueEnvoiLinkedIn(boss, creerPool(['org-1', 'org-2']), NOW, async (_ex, org) =>
-      org === 'org-2' ? { quand: NOW, motif: null } : { quand: null, motif: 'file_vide' },
+      org === 'org-2' ? { quand: NOW, motif: null, raison: 'envoi' } : { quand: null, motif: 'file_vide' },
     );
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]?.[1]).toEqual({ organizationId: 'org-2' });
@@ -42,7 +42,7 @@ describe('enqueueEnvoiLinkedIn', () => {
     const erreur = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await enqueueEnvoiLinkedIn(boss, creerPool(['org-1', 'org-2']), NOW, async (_ex, org) => {
       if (org === 'org-1') throw new Error('connexion postgres://user:motdepasse@hote/base refusee');
-      return { quand: NOW, motif: null };
+      return { quand: NOW, motif: null, raison: 'envoi' };
     });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]?.[1]).toEqual({ organizationId: 'org-2' });
@@ -55,7 +55,7 @@ describe('enqueueEnvoiLinkedIn', () => {
     const { boss, send } = creerBoss();
     send.mockResolvedValueOnce(null);
     await expect(
-      enqueueEnvoiLinkedIn(boss, creerPool(['org-1']), NOW, async () => ({ quand: NOW, motif: null })),
+      enqueueEnvoiLinkedIn(boss, creerPool(['org-1']), NOW, async () => ({ quand: NOW, motif: null, raison: 'envoi' })),
     ).resolves.toBeUndefined();
   });
 });
@@ -100,7 +100,7 @@ describe('enqueueEnvoiLinkedIn, de bout en bout sur la decision', () => {
     // Le jugement lui-meme refuse une session inactive ; ce test tient le FILTRE de la liste, qui
     // evite trois SELECT par organisation et par minute, et ne doit pas dependre de cette redondance.
     const { boss, send } = creerBoss();
-    const juger = vi.fn(async () => ({ quand: NOW, motif: null }));
+    const juger = vi.fn(async () => ({ quand: NOW, motif: null, raison: 'envoi' as const }));
     await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }, { id: 'org-2', status: 'blocked' }]), NOW, juger);
     expect(juger.mock.calls.map((c) => (c as unknown[])[1])).toEqual(['org-1']);
     expect(send).toHaveBeenCalledTimes(1);

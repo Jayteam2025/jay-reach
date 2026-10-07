@@ -468,11 +468,15 @@ export type MotifAucunEnvoi = MotifRefus | 'action_en_cours' | 'file_vide';
 
 export type ProchainEnvoi =
   /**
-   * `reprise` distingue « le rythme autorise un envoi » de « une ligne est restée en cours et
-   * doit être réparée ». Le worker traite les deux pareil — il crée un job — mais un écran qui
-   * les confond annonce « prêt à envoyer » un dimanche à 3 h du matin, file vide.
+   * `raison` distingue « le rythme autorise un envoi » de « une ligne est restée en cours et
+   * doit être close ». Le producteur crée un job dans les deux cas, mais le handler ne doit pas
+   * ouvrir Chromium ni payer un écho d'IP pour une réparation, et un écran qui les confond
+   * annonce « prêt à envoyer » un dimanche à 3 h du matin, file vide.
+   *
+   * Obligatoire, et non optionnel : trois sites rendent une date, et un champ qu'on peut omettre
+   * se laisse oublier par celui qu'on ajoute ensuite.
    */
-  | { readonly quand: Date; readonly motif: null; readonly reprise?: true }
+  | { readonly quand: Date; readonly motif: null; readonly raison: 'envoi' | 'reparation' }
   | { readonly quand: null; readonly motif: MotifAucunEnvoi };
 
 /**
@@ -521,7 +525,7 @@ export async function prochainEnvoiLinkedIn(
     return { quand: null, motif: 'action_en_cours' };
   }
   if (Number(enVol.rows[0]?.perimees ?? 0) > 0) {
-    return { quand: maintenant, motif: null, reprise: true };
+    return { quand: maintenant, motif: null, raison: 'reparation' };
   }
 
   if (!(await existeActionServeurEnAttente(ex, organisationId, maintenant))) {
@@ -530,10 +534,10 @@ export async function prochainEnvoiLinkedIn(
 
   const verdict = jugerRythme(await chargerStatsRythme(ex, organisationId, maintenant), maintenant);
   if (verdict.ok) {
-    return { quand: maintenant, motif: null };
+    return { quand: maintenant, motif: null, raison: 'envoi' };
   }
   if (verdict.motif === 'too_soon' && verdict.attendreMinutes !== undefined) {
-    return { quand: new Date(maintenant.getTime() + verdict.attendreMinutes * 60_000), motif: null };
+    return { quand: new Date(maintenant.getTime() + verdict.attendreMinutes * 60_000), motif: null, raison: 'envoi' };
   }
   return { quand: null, motif: verdict.motif };
 }

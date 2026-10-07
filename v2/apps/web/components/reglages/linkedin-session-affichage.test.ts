@@ -223,7 +223,7 @@ describe('clés de traduction construites dynamiquement', () => {
 // `prochainEnvoiLinkedIn`, la fonction qui décide réellement quand le moteur enverra.
 describe('phraseEtatEnvoi', () => {
   const MAINTENANT = new Date('2026-10-07T14:00:00Z');
-  const creneau = (quand: Date): ProchainEnvoi => ({ quand, motif: null });
+  const creneau = (quand: Date): ProchainEnvoi => ({ quand, motif: null, raison: 'envoi' });
   // PAS de `as` ici : c'est un `as` qui a laissé passer `hors_fenetre` et `cap_7_days`, deux
   // motifs qui n'existent pas. Le paramètre est typé par le cœur, donc un nom inventé ne
   // compile plus — et le test redevient la garde qu'il prétendait être.
@@ -243,7 +243,7 @@ describe('phraseEtatEnvoi', () => {
   // Une ligne restée en cours fait rendre `{quand: maintenant}` par le moteur, pour qu'il passe
   // la réparer. Sans le drapeau `reprise`, l'écran disait « Prêt à envoyer » un dimanche à 3 h.
   it('reprise d une ligne coincée : jamais « prêt à envoyer »', () => {
-    expect(phraseEtatEnvoi(base, { quand: MAINTENANT, motif: null, reprise: true }, MAINTENANT)).toEqual({
+    expect(phraseEtatEnvoi(base, { quand: MAINTENANT, motif: null, raison: 'reparation' }, MAINTENANT)).toEqual({
       ton: 'attention',
       cle: 'reprise',
     });
@@ -274,6 +274,13 @@ describe('phraseEtatEnvoi', () => {
 
   it.each(['daily_cap_reached', 'weekly_cap_reached'] as const)('plafond atteint (%s) : son propre libellé', (motif) => {
     expect(phraseEtatEnvoi(base, refus(motif), MAINTENANT)).toEqual({ ton: 'attention', cle: 'plafondAtteint' });
+  });
+
+  // En mode manuel, des actions ATTENDENT et ne partiront jamais : « aucune action en attente »,
+  // en vert, serait doublement faux. L'état est impossible en base depuis la migration
+  // 20260831160000, la branche existe par précaution des deux côtés.
+  it('mode manuel : canal bloqué, jamais « rien à envoyer »', () => {
+    expect(phraseEtatEnvoi(base, refus('manual_mode'), MAINTENANT)).toEqual({ ton: 'gris', cle: 'canalBloque' });
   });
 
   it('aucune session : la conséquence, en ton neutre — la raison est déjà dite au-dessus', () => {

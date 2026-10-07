@@ -1567,7 +1567,7 @@
           "phrase": "Prochain envoi {quand}."
         },
         "reprise": {
-          "phrase": "Une action est restée en cours. Le moteur la reprend."
+          "phrase": "Un envoi est resté sans réponse. Il va être marqué indéterminé, à vérifier sur LinkedIn."
         },
         "enPause": {
           "phrase": "Envoi en pause jusqu'à {quand}."
@@ -1582,7 +1582,7 @@
           "phrase": "Hors des heures ou des jours d'envoi."
         },
         "plafondAtteint": {
-          "phrase": "Plafond d'envoi atteint. Reprise au prochain créneau."
+          "phrase": "Plafond d'envoi atteint. Rien ne part avant qu'il se libère."
         },
         "canalBloque": {
           "phrase": "Rien ne part tant que ce point n'est pas réglé."
