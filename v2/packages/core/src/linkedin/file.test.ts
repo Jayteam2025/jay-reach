@@ -136,7 +136,9 @@ describe('reclamerProchaineAction', () => {
     expect(apres.action?.id).toBe('file-1');
   });
 
-  it('une pause plus courte ne raccourcit pas une pause deja posee', async () => {
+  it('la requete de mise en pause compare l echeance avec greatest', async () => {
+    // Ne prouve que la forme du SQL (le faux executeur ne l'execute pas) : la preuve
+    // du comportement est la section 8 du harnais pg-verify linkedin-file, sur une vraie base.
     const { ex, etat } = creerExecuteur();
     const longue = new Date(NOW.getTime() + 22 * 60 * 60_000);
     const courte = new Date(NOW.getTime() + 60 * 60_000);
