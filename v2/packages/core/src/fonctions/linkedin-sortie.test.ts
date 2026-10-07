@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
-import { verifierSortie } from './linkedin-sortie.js';
+import { desaccordDeTitulaire, verifierSortie } from './linkedin-sortie.js';
 
 interface Appel {
   sql: string;
@@ -86,5 +86,42 @@ describe('verifierSortie', () => {
     // La sortie n'est pas établie : aucun constat « sortie inattendue » à écrire.
     expect(blocage(appels)).toBeUndefined();
     expect(appels).toHaveLength(0);
+  });
+});
+
+describe('desaccordDeTitulaire', () => {
+  it('leve le drapeau sur le cas reel : pays declare FR, titulaire a Sofia', () => {
+    const texte = desaccordDeTitulaire({
+      nom: 'NADEJDA-NET',
+      paysDeclare: 'FR',
+      adresses: ['Sofia, Bulgaria Kukush Str., Bl.58'],
+    });
+    expect(texte).toMatch(/France/);
+    expect(texte).toMatch(/Sofia, Bulgaria/);
+  });
+
+  it("ne leve pas le drapeau quand l'adresse nomme le pays declare", () => {
+    expect(
+      desaccordDeTitulaire({ paysDeclare: 'FR', adresses: ['12 rue de Rivoli, 75001 Paris, France'] }),
+    ).toBeNull();
+  });
+
+  it('reconnait le code pays en mot entier', () => {
+    expect(desaccordDeTitulaire({ paysDeclare: 'FR', adresses: ['75001 Paris FR'] })).toBeNull();
+  });
+
+  it('ne prend pas une sous-chaine pour le code pays', () => {
+    expect(desaccordDeTitulaire({ paysDeclare: 'FR', adresses: ['Sofia, Bulgaria, Frunze Str.'] })).not.toBeNull();
+  });
+
+  it('rend null sans titulaire, sans pays declare ou sans adresse', () => {
+    expect(desaccordDeTitulaire(null)).toBeNull();
+    expect(desaccordDeTitulaire({ adresses: ['Sofia, Bulgaria'] })).toBeNull();
+    expect(desaccordDeTitulaire({ paysDeclare: 'FR', adresses: [] })).toBeNull();
+  });
+
+  it('ne leve pas sur un code pays invalide', () => {
+    expect(() => desaccordDeTitulaire({ paysDeclare: '1!', adresses: ['Sofia'] })).not.toThrow();
+    expect(desaccordDeTitulaire({ paysDeclare: '1!', adresses: ['Sofia'] })).toBeNull();
   });
 });

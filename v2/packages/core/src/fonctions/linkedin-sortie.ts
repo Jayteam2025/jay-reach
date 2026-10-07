@@ -11,6 +11,41 @@ import { bloquerSessionLinkedIn } from './linkedin-session.js';
 
 export type Sortie = { ip: string; operateur?: string; pays?: string };
 
+/** Titulaire de l'IP selon le registre (RDAP) : le pays n'y est qu'une déclaration, l'adresse dit où il est. */
+export type Titulaire = { nom?: string; paysDeclare?: string; adresses: string[] };
+
+/**
+ * Les bases de géolocalisation recopient le pays déclaré par le titulaire : trois
+ * d'entre elles disaient « France, Paris » pour une IP dont le titulaire est à
+ * Sofia (mesuré le 07/10). LinkedIn lui-même hésite — son courriel de nouvel
+ * appareil disait Sofia, sa page des sessions actives Saint-Denis — donc on
+ * n'affirme rien sur ce qu'il retient. Seul l'écart entre le pays déclaré et
+ * l'adresse du titulaire est un fait. Information pour l'opérateur, jamais un blocage.
+ *
+ * Faux positif possible : une adresse qui ne mentionne aucun pays. Il coûte une
+ * ligne d'information, on ne cherche pas à l'éviter.
+ */
+export function desaccordDeTitulaire(t: Titulaire | null): string | null {
+  const code = t?.paysDeclare?.trim().toUpperCase();
+  if (!t || !code || !/^[A-Z]{2}$/.test(code) || t.adresses.length === 0) return null;
+  let nomEn: string | undefined;
+  try {
+    nomEn = new Intl.DisplayNames(['en'], { type: 'region' }).of(code);
+  } catch {
+    nomEn = undefined;
+  }
+  const texte = t.adresses.join(' ').toLowerCase();
+  if (new RegExp(`\\b${code.toLowerCase()}\\b`).test(texte)) return null;
+  if (nomEn && texte.includes(nomEn.toLowerCase())) return null;
+  let nomFr = code;
+  try {
+    nomFr = new Intl.DisplayNames(['fr'], { type: 'region' }).of(code) ?? code;
+  } catch {
+    // Le code seul suffit à la phrase.
+  }
+  return `le titulaire déclare le pays ${nomFr} mais son adresse est « ${t.adresses[0]} » : LinkedIn pourrait situer la connexion ailleurs`;
+}
+
 /**
  * Compare la sortie observée à l'IP attendue et bloque la session si elles
  * diffèrent. Seule l'égalité des IP décide ; l'opérateur et le pays sont

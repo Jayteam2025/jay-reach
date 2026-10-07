@@ -16,7 +16,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { normaliserIp } from './ip.js';
 import { z } from 'zod';
-import type { Sortie } from '@jay-reach/core';
+import type { Sortie, Titulaire } from '@jay-reach/core';
 
 export type Pilote = {
   aller(url: string): Promise<void>;
@@ -119,6 +119,82 @@ export async function releverSortie(pilote: Pilote): Promise<Sortie> {
     // Meilleur effort : l'IP seule suffit au contrôle.
   }
   return sortie;
+}
+
+interface Entite {
+  vcardArray?: unknown;
+  entities?: Entite[];
+}
+const SchemaEntite: z.ZodType<Entite, z.ZodTypeDef, unknown> = z.lazy(() =>
+  z.object({ vcardArray: z.unknown(), entities: z.array(SchemaEntite).optional() }),
+);
+
+const SchemaRdap = z.object({
+  name: z.string().trim().min(1).max(200).optional().catch(undefined),
+  country: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/)
+    .transform((c) => c.toUpperCase())
+    .optional()
+    .catch(undefined),
+  entities: z.array(SchemaEntite).optional(),
+});
+
+const LONGUEUR_ADRESSE_MAX = 200;
+
+/** Texte d'une propriété vCard `adr` : l'étiquette si elle existe, sinon les composants joints. */
+function texteAdresse(propriete: unknown[]): string {
+  const etiquette = (propriete[1] as { label?: unknown } | null | undefined)?.label;
+  const brut =
+    typeof etiquette === 'string' && etiquette.trim()
+      ? etiquette
+      : Array.isArray(propriete[3])
+        ? propriete[3].filter((x): x is string => typeof x === 'string').join(' ')
+        : typeof propriete[3] === 'string'
+          ? propriete[3]
+          : '';
+  return brut.replace(/\s+/g, ' ').trim().slice(0, LONGUEUR_ADRESSE_MAX);
+}
+
+function collecterAdresses(entites: Entite[], vues: Set<string>): void {
+  for (const e of entites) {
+    const proprietes = Array.isArray(e.vcardArray) && Array.isArray(e.vcardArray[1]) ? e.vcardArray[1] : [];
+    for (const propriete of proprietes) {
+      if (Array.isArray(propriete) && propriete[0] === 'adr') {
+        const a = texteAdresse(propriete);
+        if (a) vues.add(a);
+      }
+    }
+    if (e.entities) collecterAdresses(e.entities, vues);
+  }
+}
+
+/**
+ * Titulaire de l'IP selon le registre RIPE, interrogé PAR LE NAVIGATEUR (donc par
+ * le proxy, comme le reste de la relève). Fonction séparée de `releverSortie` :
+ * celle-ci tourne à chaque collecte et n'a pas à payer une requête pour une
+ * information de confort. Les bases de géolocalisation recopient le pays déclaré
+ * par le titulaire ; l'adresse du titulaire, elle, dit où il est vraiment.
+ *
+ * Meilleur effort : rend `null` et ne lève jamais, une panne ici ne doit pas
+ * faire échouer une connexion.
+ */
+export async function releverTitulaire(pilote: Pilote, ip: string): Promise<Titulaire | null> {
+  try {
+    const rep = await pilote.requete(`https://rdap.db.ripe.net/ip/${ip}`);
+    if (rep.statut !== 200) return null;
+    const lu = SchemaRdap.safeParse(lireJson(rep.corps));
+    if (!lu.success) return null;
+    const adresses = new Set<string>();
+    collecterAdresses(lu.data.entities ?? [], adresses);
+    const t: Titulaire = { adresses: [...adresses] };
+    if (lu.data.name) t.nom = lu.data.name;
+    if (lu.data.country) t.paysDeclare = lu.data.country;
+    return t;
+  } catch {
+    return null;
+  }
 }
 
 /**

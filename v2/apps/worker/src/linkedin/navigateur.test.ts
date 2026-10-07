@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { adresseJoignable, identiteNavigateur, ouvrirNavigateur, releverSortie, type Pilote } from './navigateur.js';
+import { adresseJoignable, identiteNavigateur, ouvrirNavigateur, releverSortie, releverTitulaire, type Pilote } from './navigateur.js';
 
 // `puppeteer-core` n'est atteint que par un `import()` dynamique : le simuler ici
 // n'oblige à changer aucune signature, et c'est le seul moyen d'exercer
@@ -333,5 +333,52 @@ describe('une navigation en cours ne fait pas echouer la commande', () => {
     });
     await pilote.presserEntree('input[autocomplete="current-password"]');
     expect(appels).toBe(2);
+  });
+});
+
+describe('releverTitulaire', () => {
+  const URL_RDAP = 'https://rdap.db.ripe.net/ip/185.134.193.162';
+  const adr = (label: string) => ['adr', { label }, 'text', ['', '', '', '', '', '', '']];
+  const rdap = {
+    name: 'NADEJDA-NET',
+    country: 'FR',
+    entities: [
+      {
+        vcardArray: ['vcard', [['version', {}, 'text', '4.0'], adr('Sofia, Bulgaria\nKukush Str., Bl.58')]],
+        entities: [
+          { vcardArray: ['vcard', [['adr', {}, 'text', ['', '', 'Nadejda.Net Ltd', 'Sofia', '', '1233', 'BULGARIA']]]] },
+          { vcardArray: ['vcard', [adr('Sofia, Bulgaria  Kukush Str., Bl.58')]] },
+        ],
+      },
+    ],
+  };
+
+  it('extrait nom, pays declare et adresses, y compris celles des entites imbriquees', async () => {
+    const { p, requetes } = pilote({ [URL_RDAP]: { statut: 200, corps: JSON.stringify(rdap) } });
+    const t = await releverTitulaire(p, '185.134.193.162');
+    expect(requetes).toEqual([URL_RDAP]);
+    expect(t?.nom).toBe('NADEJDA-NET');
+    expect(t?.paysDeclare).toBe('FR');
+    expect(t?.adresses).toEqual(['Sofia, Bulgaria Kukush Str., Bl.58', 'Nadejda.Net Ltd Sofia 1233 BULGARIA']);
+  });
+
+  it('rend null sur un statut non 200', async () => {
+    const { p } = pilote({ [URL_RDAP]: { statut: 404, corps: '{}' } });
+    expect(await releverTitulaire(p, '185.134.193.162')).toBeNull();
+  });
+
+  it('rend null sur un corps illisible', async () => {
+    const { p } = pilote({ [URL_RDAP]: { statut: 200, corps: '<html>' } });
+    expect(await releverTitulaire(p, '185.134.193.162')).toBeNull();
+  });
+
+  it('rend null sur un schema inattendu', async () => {
+    const { p } = pilote({ [URL_RDAP]: { statut: 200, corps: JSON.stringify({ entities: 'non' }) } });
+    expect(await releverTitulaire(p, '185.134.193.162')).toBeNull();
+  });
+
+  it('ne leve jamais sur une panne reseau', async () => {
+    const { p } = pilote({ [URL_RDAP]: new Error('http://user:secret@proxy:1080 refuse') });
+    await expect(releverTitulaire(p, '185.134.193.162')).resolves.toBeNull();
   });
 });

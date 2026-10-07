@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Contexte, Sortie } from '@jay-reach/core';
+import type { Contexte, Sortie, Titulaire } from '@jay-reach/core';
 import type { Pilote } from '../linkedin/navigateur.js';
 import { executerCommande, type Dependances } from './linkedin.js';
 
@@ -78,6 +78,7 @@ function dependances(o: {
   session?: Ligne | null;
   pilote?: Pilote;
   sortie?: Sortie;
+  titulaire?: Titulaire | null | Error;
   ipServeur?: string;
   demander?: (i: string) => Promise<string>;
   demanderMasque?: (i: string) => Promise<string>;
@@ -105,6 +106,10 @@ function dependances(o: {
       contexte,
       ouvrirNavigateur: ouvrir,
       releverSortie: async () => o.sortie ?? { ip: '203.0.113.7' },
+      releverTitulaire: async () => {
+        if (o.titulaire instanceof Error) throw o.titulaire;
+        return o.titulaire ?? null;
+      },
       ipDuProcessus: async () => o.ipServeur ?? '10.255.255.1',
       demander: o.demander ?? interdit('demander'),
       demanderMasque: o.demanderMasque ?? interdit('demanderMasque'),
@@ -549,4 +554,54 @@ describe("l'usage", () => {
     const b = dependances({ session: null });
     expect(await executerCommande(['statut', '--mot-de-passe=x'], b.d)).toBe(2);
   });
+});
+
+describe('le titulaire de l’IP', () => {
+  const SOFIA = {
+    nom: 'NADEJDA-NET',
+    paysDeclare: 'FR',
+    adresses: ['Sofia, Bulgaria Kukush Str., Bl.58'],
+  };
+  const PARIS = { nom: 'Orange', paysDeclare: 'FR', adresses: ['Paris, France'] };
+
+  async function jouer(commande: string[], titulaire: Titulaire | null | Error) {
+    const { p } = piloteFaux(['https://www.linkedin.com/login', 'https://www.linkedin.com/feed/']);
+    const r = dependances({
+      env: ACTIF,
+      session: ligneSession(),
+      pilote: p,
+      sortie: { ip: '203.0.113.7' },
+      titulaire,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'x',
+    });
+    const code = await executerCommande(commande, r.d);
+    return { code, texte: r.sortie.join('\n'), appels: r.appels.map((a) => [a.sql, a.params]) };
+  }
+
+  for (const commande of [['ip'], ['connecter']]) {
+    describe(`avec « ${commande[0]} »`, () => {
+      it('nomme le titulaire et avertit en cas de desaccord, sans rien changer d’autre', async () => {
+        const sans = await jouer(commande, null);
+        const avec = await jouer(commande, SOFIA);
+        expect(avec.texte).toMatch(/NADEJDA-NET/);
+        expect(avec.texte).toMatch(/Attention : .*France.*Sofia, Bulgaria/);
+        expect(avec.code).toBe(sans.code);
+        expect(avec.appels).toEqual(sans.appels);
+      });
+
+      it('n’avertit pas quand l’adresse confirme le pays', async () => {
+        const r = await jouer(commande, PARIS);
+        expect(r.texte).toMatch(/Orange/);
+        expect(r.texte).not.toMatch(/Attention/);
+      });
+
+      it('ignore une panne du registre', async () => {
+        const sans = await jouer(commande, null);
+        const r = await jouer(commande, new Error('http://u:secret@proxy:1080'));
+        expect(r.code).toBe(sans.code);
+        expect(r.texte).not.toMatch(/secret|Titulaire/);
+      });
+    });
+  }
 });

@@ -21,6 +21,8 @@ import {
   prendreVerrouLinkedIn,
   type Contexte,
   type Sortie,
+  type Titulaire,
+  desaccordDeTitulaire,
 } from '@jay-reach/core';
 import { createPool } from '../db.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
@@ -35,6 +37,8 @@ export interface Dependances {
   contexte(): Promise<Contexte>;
   ouvrirNavigateur(): Promise<Pilote>;
   releverSortie(pilote: Pilote): Promise<Sortie>;
+  /** Meilleur effort : `null` quand le registre ne répond pas. */
+  releverTitulaire(pilote: Pilote, ip: string): Promise<Titulaire | null>;
   /** IP publique du processus worker, donc du VPS (voir `ip.ts`). */
   ipDuProcessus(): Promise<string>;
   demander(invite: string): Promise<string>;
@@ -92,6 +96,27 @@ function surLinkedIn(url: string, chemin: string): boolean {
 
 function libelleSortie(s: Sortie): string {
   return [s.ip, s.operateur, s.pays].filter(Boolean).join(' · ');
+}
+
+/**
+ * Rend à l'opérateur ce que le registre dit de l'IP : qui la détient, et si son
+ * adresse contredit le pays déclaré. Information seule : ni code de retour, ni
+ * état de session, ni base ne bougent. Une panne du registre ne change rien.
+ */
+async function afficherTitulaire(d: Dependances, pilote: Pilote, ip: string): Promise<void> {
+  let titulaire: Titulaire | null = null;
+  try {
+    titulaire = await d.releverTitulaire(pilote, ip);
+  } catch {
+    return;
+  }
+  if (!titulaire) return;
+  const adresse = titulaire.adresses[0];
+  if (titulaire.nom || adresse) {
+    d.ecrire(`Titulaire de l’IP : ${[titulaire.nom, adresse].filter(Boolean).join(' · ')}`);
+  }
+  const desaccord = desaccordDeTitulaire(titulaire);
+  if (desaccord) d.ecrire(`Attention : ${desaccord}.`);
 }
 
 async function statut(ctx: Contexte, d: Dependances): Promise<number> {
@@ -198,6 +223,7 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
       return 1;
     }
     d.ecrire(`Sortie du navigateur : ${libelleSortie(sortie)}`);
+    await afficherTitulaire(d, pilote, sortie.ip);
     if (await sortieEstCelleDuServeur(d, sortie.ip)) return 1;
 
     // Le verrou suppose la ligne de session : l'observation ci-dessus l'a créée au besoin.
@@ -256,6 +282,7 @@ async function ip(ctx: Contexte, d: Dependances, confirmer: boolean): Promise<nu
     // Observation seule : un écart ne bloque rien ici, c'est l'opérateur qui regarde.
     await enregistrerObservationSortie(ctx, sortie);
     d.ecrire(`Sortie du navigateur : ${libelleSortie(sortie)}`);
+    await afficherTitulaire(d, pilote, sortie.ip);
     d.ecrire(`IP attendue : ${session?.ipAttendue ?? '-'}`);
     if (!confirmer) {
       if (session?.ipAttendue && session.ipAttendue !== sortie.ip) {
@@ -340,6 +367,7 @@ async function main(): Promise<void> {
     // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
     ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
     releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
+    releverTitulaire: async (p, ip) => (await import('../linkedin/navigateur.js')).releverTitulaire(p, ip),
     ipDuProcessus,
     demander,
     demanderMasque,
