@@ -90,6 +90,16 @@ async function suppressions() {
   check('6b. et la trace a disparu avec elle', n === 0, String(n));
 }
 
+async function suppressionAction() {
+  console.log('\n3b. supprimer une action emporte sa trace');
+  const m = await monde();
+  const a = (await action(m.org, 'serveur')).rows[0].id;
+  await q(`insert into linkedin_requetes (organization_id, action_queue_id) values ($1, $2)`, [m.org, a]);
+  check('6c. supprimer l\'action seule réussit', (await refus(() => q(`delete from linkedin_action_queue where id = $1`, [a]))) === null);
+  const n = (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1`, [m.org])).rows[0].n;
+  check('6d. et sa trace a disparu', n === 0, String(n));
+}
+
 async function pause() {
   console.log('\n4. la pause d\'envoi de la session');
   const m = await monde();
@@ -104,7 +114,7 @@ async function pause() {
 }
 
 async function main() {
-  await jouer(methode, trace, suppressions, pause);
+  await jouer(methode, trace, suppressions, suppressionAction, pause);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

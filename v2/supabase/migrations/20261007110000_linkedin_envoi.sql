@@ -36,13 +36,11 @@ alter table linkedin_action_queue
 alter table linkedin_requetes alter column source_run_id drop not null;
 
 alter table linkedin_requetes
-  add column action_queue_id uuid references linkedin_action_queue(id) on delete set null;
+  add column action_queue_id uuid references linkedin_action_queue(id) on delete cascade;
 
--- Piège : `on delete set null` viderait l'origine d'une ligne d'envoi si
--- l'action était supprimée, et la contrainte ferait échouer cette suppression.
--- La file ne supprime jamais ses actions (elle les passe en `cancelled`) ; seule
--- la suppression en cascade d'une organisation les emporte, et elle emporte aussi
--- `linkedin_requetes` (même parent), donc rien n'échoue.
+-- Cascade, comme `source_run_id` : un `set null` viderait l'origine et la
+-- contrainte ferait échouer la suppression de l'action. La trace n'a de valeur
+-- que sur la fenêtre horaire du plafond.
 alter table linkedin_requetes
   add constraint linkedin_requetes_une_origine
   check ((source_run_id is null) <> (action_queue_id is null));
