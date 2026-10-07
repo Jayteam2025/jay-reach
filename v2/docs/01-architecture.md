@@ -19,9 +19,9 @@ jay-reach/
 │   │   ├── signals/          jobboard, appointment, tradeshow
 │   │   ├── enrichment/       fullenrich, dropcontact, legalregistry
 │   │   ├── email/            salesblink
-│   │   ├── linkedin/         unipile, manual
+│   │   ├── linkedin/         à venir : actions et réponses (la collecte vit dans apps/worker)
 │   │   ├── mail/             manuscry, pdf
-│   │   ├── inbox/            unipile
+│   │   ├── inbox/            à venir : réponses LinkedIn
 │   │   └── ai/               anthropic, openai, ollama
 │   └── ui/                   Composants Jay Reach
 ├── supabase/migrations/

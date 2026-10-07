@@ -636,7 +636,7 @@
         "runError": "arrêté",
         "runHeader": "{quand} · {statut}",
         "runCounts": "{vus, plural, one {# personne vue} other {# personnes vues}} · {nouveaux, plural, one {# nouvelle} other {# nouvelles}} · {doublons, plural, one {# doublon} other {# doublons}} · {dejaEnCampagne} déjà en campagne · {ecartes, plural, one {# écartée} other {# écartées}} par le scoring",
-        "runDetails": "{requetes, plural, one {# requête} other {# requêtes}} · {ignores} ignorés (profil trop pauvre) · {opposes} opposés · {adressesDeduites} sans adresse publique"
+        "runDetails": "{requetes, plural, one {# requête} other {# requêtes}} · {ignores, plural, one {# ignoré} other {# ignorés}} (profil trop pauvre) · {opposes, plural, one {# opposé} other {# opposés}} · {adressesDeduites} sans adresse publique"
       },
       "drawer": {
         "close": "Fermer",

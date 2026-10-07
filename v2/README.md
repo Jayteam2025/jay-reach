@@ -51,9 +51,9 @@ Jay Reach n'inclut aucune donnée et aucun quota d'envoi. Vous branchez vos prop
 | Modèle de langage | Anthropic, OpenAI, Ollama | Oui |
 | Email | SalesBlink | Si canal email |
 | LinkedIn, collecte | Navigateur dédié du serveur derrière un proxy résidentiel, sans fournisseur tiers | Non |
-| LinkedIn, envoi | Unipile, mode manuel | Si canal LinkedIn |
+| LinkedIn, envoi | À venir : invitation et message, dont le mode d'exécution se décide au lot suivant | Si canal LinkedIn |
 | Courrier | Manuscry | Si canal courrier |
-| Boîte de réception | Unipile | Recommandé |
+| Boîte de réception | Relève des réponses email ; réponses LinkedIn à venir | Recommandé |
 
 Le mode Ollama fait tourner scoring et rédaction entièrement en local : aucune donnée ne sort de votre infrastructure.
 
