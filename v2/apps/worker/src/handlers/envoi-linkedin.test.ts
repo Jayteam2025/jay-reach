@@ -59,6 +59,9 @@ const ME_OK = {
   },
 };
 const ORG = 'org-1';
+const ID_INSCRIPTION = 'inscription-1';
+const ID_ETAPE = 'etape-1';
+const POSITION_ETAPE = 2;
 const JOB = { organizationId: ORG };
 
 const ACTION_INVITATION: ActionReclamee = {
@@ -105,6 +108,8 @@ function monde(opts: {
   prochainQuand?: (maintenant: Date) => Date | null;
   plafondHoraire?: number;
   requetesDeLHeure?: number;
+  /** La ligne de file n'a pas d'action de séquence (créée par l'extension). */
+  sansAction?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -157,6 +162,18 @@ function monde(opts: {
       w.remises.push({ comptee: params[2] === true });
       w.statut = 'pending';
       return rep([{}]);
+    }
+    if (t.includes('jr:linkedin_action_echec')) {
+      if (opts.sansAction) return rep([]);
+      // Le double ne rend la ligne que si l'écriture pose bien `failed` : une requête qui ne le
+      // pose plus ne laisse aucune trace, donc rougit le test.
+      if (t.includes("set status = 'failed'")) w.journal.push(`action_echec ${params[1]}`);
+      return rep([{ enrollment_id: ID_INSCRIPTION, step_id: ID_ETAPE }]);
+    }
+    if (t.includes('jr:linkedin_echec_etape')) return rep([{ position: POSITION_ETAPE }]);
+    if (t.includes("set status = 'paused'")) {
+      w.journal.push(`pause_inscription ${params[0]} etape=${params[1]} motif=${params[2]}`);
+      return rep([]);
     }
     if (t.includes('begin') || t.includes('commit') || t.includes('rollback')) return rep([]);
     w.journal.push(`autre ${t.trim().slice(0, 40)}`);
@@ -626,7 +643,8 @@ describe('les refus de LinkedIn', () => {
     expect(enregistrements()).toEqual([
       expect.objectContaining({ status: 'failed', errorCode: 'profile_not_found', queueId: 'q-1' }),
     ]);
-    expect(w.journal.some((j) => j.startsWith('bloquer') || j.startsWith('pause'))).toBe(false);
+    // `pause ` : la pause du CANAL, pas celle de l'inscription (`pause_inscription`).
+    expect(w.journal.some((j) => j.startsWith('bloquer') || j.startsWith('pause '))).toBe(false);
     expect(w.remises).toEqual([]);
   });
 
@@ -659,6 +677,66 @@ describe('les refus de LinkedIn', () => {
     // Le contrat de `envoyerInvitation` est `null`, pas une note vide qu'il tolère aujourd'hui.
     expect(vi.mocked(envoyerInvitation).mock.calls.at(-1)?.[2]).toBeNull();
     expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+  });
+});
+
+describe('un refus définitif arrête la séquence (revue finale, C2)', () => {
+  const profil = { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK };
+  const arrets = (w: Monde) => w.journal.filter((j) => j.startsWith('action_echec') || j.startsWith('pause_inscription'));
+  const pauseAttendue = (code: string) => `pause_inscription ${ID_INSCRIPTION} etape=${POSITION_ETAPE} motif=linkedin_refus:${code}`;
+
+  const familles: { code: string; prepare: (w?: Monde) => { reponses: Record<string, Reponse>; action: ActionReclamee } }[] = [
+    { code: 'note_non_supportee', prepare: () => ({ reponses: profil, action: { ...ACTION_INVITATION, messageBody: 'Bonjour' } }) },
+    {
+      code: 'cannot_message',
+      prepare: () => ({
+        reponses: { ...profil, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 403, corps: {} } },
+        action: ACTION_MESSAGE,
+      }),
+    },
+    { code: 'profile_not_found', prepare: () => ({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 404 } }, action: ACTION_INVITATION }) },
+    { code: 'invalid_url', prepare: () => ({ reponses: {}, action: { ...ACTION_INVITATION, linkedinUrl: 'https://example.com/pas-un-profil' } }) },
+    { code: 'bad_request', prepare: () => ({ reponses: { ...profil, [URL_INVITATION]: { statut: 400 } }, action: ACTION_INVITATION }) },
+    {
+      code: 'already_invited',
+      prepare: () => ({
+        reponses: { ...profil, [URL_INVITATION]: { statut: 422, corps: { message: 'already invited' } } },
+        action: ACTION_INVITATION,
+      }),
+    },
+    {
+      code: 'cannot_invite',
+      prepare: () => ({
+        reponses: { ...profil, [URL_INVITATION]: { statut: 422, corps: { message: 'refus' } } },
+        action: ACTION_INVITATION,
+      }),
+    },
+    { code: 'resultat_indetermine', prepare: () => ({ reponses: { ...profil, [URL_INVITATION]: { statut: 502 } }, action: ACTION_INVITATION }) },
+  ];
+
+  it.each(familles)('$code : l action passe en échec ET l inscription est mise en pause avec son motif', async ({ code, prepare }) => {
+    const { reponses, action } = prepare();
+    const w = monde({ reponses });
+    avec(w, action);
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: code })]);
+    expect(arrets(w)).toEqual([expect.stringMatching(/^action_echec \S/), pauseAttendue(code)]);
+  });
+
+  it('une ligne de file sans action de séquence (extension) ne met aucune inscription en pause', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 404 } }, sansAction: true });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'profile_not_found' })]);
+    expect(arrets(w)).toEqual([]);
+  });
+
+  it('un envoi réussi, une remise en attente ou une session bloquée ne touchent ni l action ni l inscription', async () => {
+    const reussi = monde({ reponses: { ...profil, [URL_INVITATION]: { statut: 201 } } });
+    await traiterEnvoiLinkedIn(deps(reussi), JOB);
+    const bloque = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 401 } } });
+    await traiterEnvoiLinkedIn(deps(bloque), JOB);
+    expect(arrets(reussi)).toEqual([]);
+    expect(arrets(bloque)).toEqual([]);
   });
 });
 

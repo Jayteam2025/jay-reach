@@ -52,6 +52,7 @@ import {
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
+import { mettreInscriptionEnPause } from './sequence.js';
 import {
   envoyerInvitation,
   envoyerMessage,
@@ -400,6 +401,7 @@ async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee
   if (issue.type === 'indetermine') {
     console.warn(`[envoi-linkedin] ${MSG.indetermine}`);
     await enregistrer(d, { ...base, status: 'failed', errorCode: RESULTAT_INDETERMINE, errorMessage: MSG.indetermine });
+    await arreterSequence(d, ctx, action.id, RESULTAT_INDETERMINE, MSG.indetermine);
     return;
   }
   if (issue.type === 'rien_parti') {
@@ -433,6 +435,57 @@ async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee
   // Refus définitif : le rejouer ne produirait que le même refus.
   console.warn(`[envoi-linkedin] action refusée (${code})`);
   await enregistrer(d, { ...base, status: 'failed', errorCode: code, errorMessage: MOTIFS[code] });
+  await arreterSequence(d, ctx, action.id, code, MOTIFS[code]);
+}
+
+/**
+ * Répercute un échec définitif sur la séquence. La file ne connaît pas l'inscription : sans
+ * cette écriture l'action restait `scheduled`, `next_action_at` restait nul (le tick l'exige
+ * non nul pour resélectionner) et l'inscription, toujours active et sans motif, ne se
+ * distinguait plus d'une inscription en attente : le contact ne recevait jamais l'étape
+ * suivante et rien ne le disait. Même geste que le chemin email (`email-salesblink.ts`) :
+ * action en échec avec son erreur, inscription en pause SUR l'étape en échec avec un motif
+ * qui nomme le code de refus. Une ligne sans action liée (créée par l'extension) n'a pas de
+ * séquence à arrêter : rien ne bouge. Retentée comme l'enregistrement : un échec ici, après
+ * celui de la file, ne se rejouerait jamais (plus aucune action réclamable).
+ */
+async function arreterSequence(
+  d: DependancesEnvoi,
+  ctx: Contexte,
+  queueId: string,
+  code: string,
+  message: string,
+): Promise<void> {
+  const motif = `linkedin_refus:${code}`;
+  for (let essai = 1; ; essai += 1) {
+    try {
+      const echec = await d.pool.query<{ enrollment_id: string; step_id: string | null }>(
+        `update actions a /* jr:linkedin_action_echec */
+            set status = 'failed', error = $2
+           from linkedin_action_queue q
+          where q.id = $1 and q.organization_id = $3 and a.id = q.action_id
+            and a.status in ('scheduled', 'approved')
+        returning a.enrollment_id, a.step_id`,
+        [queueId, message, ctx.organisationId],
+      );
+      const ligne = echec.rows[0];
+      if (!ligne) return;
+      // `current_step` est déjà avancé par le tick : la pause rembobine sur l'étape en échec.
+      const etape = ligne.step_id
+        ? await d.pool.query<{ position: number }>(
+            `select position from sequence_steps where id = $1 /* jr:linkedin_echec_etape */`,
+            [ligne.step_id],
+          )
+        : null;
+      const position = etape?.rows[0]?.position;
+      if (position !== undefined) await mettreInscriptionEnPause(d.pool, ligne.enrollment_id, position, motif);
+      return;
+    } catch (err) {
+      if (essai >= TENTATIVES_ENREGISTREMENT) throw err;
+      console.error(`[envoi-linkedin] arrêt de la séquence à retenter (${nomDe(err)})`);
+      await d.pause(ATTENTE_ENREGISTREMENT_MS);
+    }
+  }
 }
 
 /** Les dépendances réelles. L'import du navigateur est dynamique : `puppeteer-core` n'est chargé que si un envoi part. */
