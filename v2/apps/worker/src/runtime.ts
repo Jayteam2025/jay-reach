@@ -31,6 +31,7 @@ export async function registerQueues(boss: PgBoss): Promise<void> {
       name: queue.name,
       retryLimit: queue.retry.retryLimit,
       retryBackoff: queue.retry.retryBackoff,
+      ...(queue.policy ? { policy: queue.policy } : {}),
     });
   }
 }

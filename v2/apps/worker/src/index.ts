@@ -26,6 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
+import { enqueueEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
@@ -52,6 +53,14 @@ const RELEVE_GRAPH_POLL_MS = 60_000;
  * jobs concurrents au pire ne trouvent rien à faire.
  */
 const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS);
+
+/**
+ * Cadence de l'évaluation de l'envoi LinkedIn. Ce n'est PAS la cadence des envois : elle
+ * ne fait que juger, en base et sans navigateur, quelles organisations peuvent envoyer, et
+ * date le job (`startAfter`) au moment où l'intervalle de 1 à 20 minutes s'achève.
+ * Réglable : `LINKEDIN_ENVOI_POLL_MS`.
+ */
+const LINKEDIN_ENVOI_POLL_MS = Number(process.env.LINKEDIN_ENVOI_POLL_MS ?? 60_000);
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -143,6 +152,20 @@ async function main(): Promise<void> {
   const releveGraph = setInterval(enfilerReleveGraph, RELEVE_GRAPH_POLL_MS);
   releveGraph.unref();
 
+  // Seulement là où le canal est autorisé : ailleurs, le handler sortirait de toute façon.
+  let envoiLinkedIn: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1') {
+    // Même raison que la relève Graph : un hoquet de base ne doit pas tuer le worker.
+    const enfilerEnvoiLinkedIn = (): void => {
+      void enqueueEnvoiLinkedIn(boss, pool).catch(() => {
+        console.error('[envoi-linkedin] évaluation impossible (envoi_linkedin_enqueue)');
+      });
+    };
+    enfilerEnvoiLinkedIn();
+    envoiLinkedIn = setInterval(enfilerEnvoiLinkedIn, LINKEDIN_ENVOI_POLL_MS);
+    envoiLinkedIn.unref();
+  }
+
   const enfilerPurge = (): void => {
     void boss.send('retention.purge', {}).catch(() => {
       console.error('[retention-purge] enfilage impossible (retention_purge_enqueue)');
@@ -160,6 +183,7 @@ async function main(): Promise<void> {
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);
     clearInterval(purge);
+    if (envoiLinkedIn) clearInterval(envoiLinkedIn);
     await boss.stop({ graceful: true });
     process.exit(0);
   };

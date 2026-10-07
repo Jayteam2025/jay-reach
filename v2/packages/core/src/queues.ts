@@ -14,6 +14,11 @@ export interface QueueDef {
   readonly name: string;
   readonly descriptionKey: string;
   readonly retry: QueueRetryPolicy;
+  /**
+   * Politique de file de pg-boss. Absente : `standard`. `stately` n'admet, par clé
+   * de singleton, qu'un job en attente et qu'un job actif.
+   */
+  readonly policy?: 'stately';
 }
 
 const DEFAULT_RETRY: QueueRetryPolicy = { retryLimit: 5, retryBackoff: true };
@@ -51,6 +56,15 @@ export const QUEUES: readonly QueueDef[] = [
   // au plafond serait rejoué pour redépasser le même plafond. L'opérateur
   // relance à la main depuis l'écran Sources.
   { name: 'linkedin.collecte', descriptionKey: 'jobs.q.linkedinCollecte', retry: { retryLimit: 0, retryBackoff: false } },
+  // Envoi LinkedIn : JAMAIS de reprise, pour la même raison que l'achat ci-dessus mais
+  // en pire : un envoi rejoué est une seconde invitation à la même personne, que rien
+  // ne rattrape. `stately` + clé de singleton = organisation : au plus UN job en attente
+  // et UN job actif par organisation. Le verrou du handler a pour propriétaire
+  // `envoi-<organisation>` et se renouvelle pour son propre propriétaire : sans cette
+  // politique, deux jobs de la même organisation le prendraient tous les deux, deux
+  // navigateurs partageraient la session et l'intervalle de 1 à 20 minutes entre deux
+  // envois serait contourné, soit la signature de machine qu'il existe pour éviter.
+  { name: 'linkedin.envoi', descriptionKey: 'jobs.q.linkedinEnvoi', retry: { retryLimit: 0, retryBackoff: false }, policy: 'stately' },
 ] as const;
 
 export const QUEUE_NAMES = QUEUES.map((q) => q.name);

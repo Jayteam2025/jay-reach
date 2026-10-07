@@ -5,6 +5,8 @@ import {
   rejouerActionsEmailEnAttente,
   REJEU_ACTIONS_EMAIL_MS,
   traiterDiscover,
+  traiterJob,
+  FILES_BRANCHEES,
   libelleSourceRun,
   libelleScoringBatch,
   libelleEnrichmentBatch,
@@ -491,5 +493,37 @@ describe('journaliserEnrichmentBatch (journal, tÃ¢che 6, tour de correction 1 â€
     const pool = { query } as unknown as Pool;
 
     await expect(journaliserEnrichmentBatch(pool, 'org-1', 'Acme', 10, 3)).resolves.toBeUndefined();
+  });
+});
+
+describe('file linkedin.envoi (tache 6)', () => {
+  it('est branchee', () => {
+    expect(FILES_BRANCHEES).toContain('linkedin.envoi');
+  });
+
+  it('sans JAY_REACH_LINKEDIN, rien n est touche : ni base, ni navigateur', async () => {
+    // `FILES_BRANCHEES` est aussi parcouru par `consommerLesFiles`, que la route cron de
+    // Vercel appelle : un environnement sans navigateur, ou la garde doit etre la
+    // premiere instruction du handler, avant meme la reparation des lignes coincees.
+    vi.stubEnv('JAY_REACH_LINKEDIN', '');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.envoi', { organizationId: ORG_ID });
+      expect(ctx.pool.query).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('avec JAY_REACH_LINKEDIN, le job atteint le handler d envoi', async () => {
+    vi.stubEnv('JAY_REACH_LINKEDIN', '1');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.envoi', { organizationId: ORG_ID });
+      const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n');
+      expect(sql).toContain('linkedin_action_queue');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

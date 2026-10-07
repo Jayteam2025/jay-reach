@@ -17,9 +17,11 @@
 //  13. file.ts : retirer `dansUneTransaction` de enregistrerResultat : 17a rougit (ligne `sent` sans action marquee partie).
 //  14. file.ts : retirer `q.scheduled_for <= now()`, le filtre de campagne ou la pause de la sonde : 16a, 16b, 16c rougissent.
 //  15. migration 20261007120000 : reprendre l'ancien predicat : 18a, 18c et 18d rougissent.
+//  16. file.ts : retirer le filtre `method = 'serveur'` ou la coupure de dix minutes de `prochainEnvoiLinkedIn` : 19c, 19d rougissent ;
+//      retirer la branche `perimees` : 19d rougit ; faire rendre `quand` sans attendre l intervalle : 19e rougit.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import pg from 'pg';
-import { reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
+import { prochainEnvoiLinkedIn, reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
 import { tracerEnvoiLinkedIn } from './_lkp.mjs';
 import { enqueueAction } from './_lkq.mjs';
 import { enqueueLinkedInAction } from './_lkd.mjs';
@@ -442,6 +444,52 @@ async function trace_d_envoi_bornee_a_l_organisation() {
   check('13b. une action d une autre organisation n est pas tracee et leve', leve && n2 === 1, `leve=${leve} n=${n2}`);
 }
 
+async function prochain_envoi_sur_vrai_sql() {
+  console.log('\n[lkf] 19. prochainEnvoiLinkedIn : la date du job, jugee sur la vraie base');
+  await remettreAZero();
+  const idPret = await ligne('serveur');
+  const r1 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('19a. une action prete : maintenant', r1.motif === null && r1.quand?.getTime() === NOW.getTime(), JSON.stringify(r1));
+
+  await q('update linkedin_action_queue set status = $2, processing_started_at = $3 where id = $1', [
+    idPret,
+    'processing',
+    new Date(NOW.getTime() - 60_000).toISOString(),
+  ]);
+  const r2 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('19b. une action serveur en vol (1 min) : aucun second job', r2.quand === null && r2.motif === 'action_en_cours', JSON.stringify(r2));
+
+  // Une ligne extension en vol ne regarde pas la session du serveur.
+  await q('delete from linkedin_action_queue where organization_id = $1', [org]);
+  await ligne('extension_auto', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 60_000).toISOString() });
+  await ligne('serveur');
+  const r3 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('19c. une ligne extension en vol ne retient pas un envoi serveur', r3.motif === null, JSON.stringify(r3));
+
+  // Ligne serveur coincee depuis 11 min, rien d autre : un job doit partir pour la reparer.
+  await q('delete from linkedin_action_queue where organization_id = $1', [org]);
+  await ligne('serveur', { status: 'processing', processingStartedAt: new Date(NOW.getTime() - 11 * 60_000).toISOString() });
+  const r4 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('19d. une ligne coincee depuis 11 min appelle un job (reparation)', r4.motif === null && r4.quand?.getTime() === NOW.getTime(), JSON.stringify(r4));
+
+  // Dernier envoi il y a 30 s : le job est date, jamais maintenant, et jamais plus de 20 min apres.
+  await q('delete from linkedin_action_queue where organization_id = $1', [org]);
+  await ligne('serveur', { status: 'sent' });
+  await q(`update linkedin_action_queue set sent_at = $2 where organization_id = $1 and status = 'sent'`, [
+    org,
+    new Date(NOW.getTime() - 30_000).toISOString(),
+  ]);
+  await ligne('serveur');
+  const r5 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  const delaiMs = r5.quand ? r5.quand.getTime() - NOW.getTime() : -1;
+  check('19e. apres un envoi recent : date dans le futur, sous 20 min', r5.motif === null && delaiMs > 0 && delaiMs <= 20 * 60_000, JSON.stringify(r5));
+
+  // La reclamation, rejouee a la date posee, doit etre d accord (sinon le job s ouvrirait pour rien).
+  const r6 = await reclamerProchaineAction(pool, org, r5.quand);
+  check('19f. la reclamation a la date posee reussit', r6.action !== null, r6.motif ?? '');
+  await remettreAZero();
+}
+
 async function jouer(...sections) {
   for (const section of sections) {
     try {
@@ -476,6 +524,7 @@ async function main() {
     sonde_et_reclamation_d_accord_a_l_echeance_limite,
     enregistrement_atomique,
     indetermine_compte_comme_actif,
+    prochain_envoi_sur_vrai_sql,
   );
   await remettreAZero();
   await pool.end();

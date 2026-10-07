@@ -73,6 +73,7 @@ import {
   traiterCollecteLinkedIn,
   type CollecteLinkedInJob,
 } from './handlers/collecte-linkedin.js';
+import { dependancesEnvoiReelles, traiterEnvoiLinkedIn, type EnvoiLinkedInJob } from './handlers/envoi-linkedin.js';
 import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -107,6 +108,9 @@ export const FILES_BRANCHEES = [
   'inbox.sync',
   'inbox.sync_graph',
   'linkedin.collecte',
+  // Parcouru aussi par `consommerLesFiles` (route cron de Vercel, sans navigateur) : c'est
+  // la garde `JAY_REACH_LINKEDIN` en tête du handler qui l'y rend inerte.
+  'linkedin.envoi',
   'retention.purge',
 ] as const;
 
@@ -804,6 +808,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return;
     case 'linkedin.collecte':
       return traiterCollecteLinkedIn(dependancesCollecteReelles(ctx.pool), donnees as CollecteLinkedInJob);
+    case 'linkedin.envoi':
+      return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

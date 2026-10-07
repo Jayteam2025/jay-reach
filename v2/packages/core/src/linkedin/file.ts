@@ -171,6 +171,53 @@ export async function reparerLignesCoincees(ex: Executeur, organisationId: strin
   );
 }
 
+type VerdictRythme =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly motif: MotifRefus; readonly attendreMinutes?: number };
+
+/**
+ * Le rythme appliqué à une organisation : mode manuel, puis `decideCanSend` (fenêtre, plafond
+ * 7 j dur, intervalle irrégulier de 1 à 20 minutes), puis plafond quotidien du curseur. Pur.
+ * `attendreMinutes` n'est rendu que pour l'intervalle, seul refus qui se lève de lui-même
+ * à une échéance connue.
+ */
+function jugerRythme(stats: StatsRythme, now: Date): VerdictRythme {
+  // Mode manuel : rien ne part de soi-même.
+  if (stats.mode === 'manual') {
+    return { ok: false, motif: 'manual_mode' };
+  }
+
+  // Pacing pur : fenêtre + plafond 7 j (dur) + intervalle.
+  const minutesSinceLastSent = stats.lastSentAtIso
+    ? (now.getTime() - new Date(stats.lastSentAtIso).getTime()) / 60_000
+    : null;
+  const { hour, isoDay } = heureLocale(now, stats.timezone);
+  const decision = decideCanSend({
+    hour,
+    isoDay,
+    startHour: stats.startHour,
+    endHour: stats.endHour,
+    days: stats.days,
+    sentLast7Days: stats.sentLast7Days,
+    // Le curseur de l'opérateur, sans jamais dépasser le plafond dur : c'est
+    // lui qui protège le compte LinkedIn, pas le réglage.
+    cap7Days: Math.min(stats.weeklyCap, HARD_CAP_7_DAYS),
+    lastSentAtIso: stats.lastSentAtIso,
+    minutesSinceLastSent,
+  });
+  if (!decision.ok) {
+    return decision.waitMinutes === undefined
+      ? { ok: false, motif: decision.reason }
+      : { ok: false, motif: decision.reason, attendreMinutes: decision.waitMinutes };
+  }
+
+  // Plafond quotidien du curseur (volume/jour choisi par l'org).
+  if (stats.sentToday >= stats.dailyCap) {
+    return { ok: false, motif: 'daily_cap_reached' };
+  }
+  return { ok: true };
+}
+
 /**
  * Réclame la prochaine action à envoyer pour une organisation, en appliquant le
  * rythme (fenêtre horaire, plafond 7 j, plafond quotidien du curseur,
@@ -225,36 +272,11 @@ export async function reclamerProchaineAction(
 
   const stats = await chargerStatsRythme(ex, orgId, now);
 
-  // 3. Mode manuel : rien ne part de soi-même.
-  if (stats.mode === 'manual') {
-    return { action: null, motif: 'manual_mode' };
-  }
-
-  // 4. Pacing pur : fenêtre + plafond 7 j (dur) + intervalle.
-  const minutesSinceLastSent = stats.lastSentAtIso
-    ? (now.getTime() - new Date(stats.lastSentAtIso).getTime()) / 60_000
-    : null;
-  const { hour, isoDay } = heureLocale(now, stats.timezone);
-  const decision = decideCanSend({
-    hour,
-    isoDay,
-    startHour: stats.startHour,
-    endHour: stats.endHour,
-    days: stats.days,
-    sentLast7Days: stats.sentLast7Days,
-    // Le curseur de l'opérateur, sans jamais dépasser le plafond dur : c'est
-    // lui qui protège le compte LinkedIn, pas le réglage.
-    cap7Days: Math.min(stats.weeklyCap, HARD_CAP_7_DAYS),
-    lastSentAtIso: stats.lastSentAtIso,
-    minutesSinceLastSent,
-  });
-  if (!decision.ok) {
-    return { action: null, motif: decision.reason };
-  }
-
-  // 5. Plafond quotidien du curseur (volume/jour choisi par l'org).
-  if (stats.sentToday >= stats.dailyCap) {
-    return { action: null, motif: 'daily_cap_reached' };
+  // 3 à 5. Rythme : mode manuel, fenêtre, plafonds, intervalle. Un seul jugement, partagé
+  // avec `prochainEnvoiLinkedIn` : la date qu'il pose et la décision d'ici ne peuvent pas diverger.
+  const verdict = jugerRythme(stats, now);
+  if (!verdict.ok) {
+    return { action: null, motif: verdict.motif };
   }
 
   // 6. Prochaine ligne pending (la plus ancienne planifiée), claim atomique.
@@ -436,4 +458,73 @@ export async function existeActionServeurEnAttente(
     [organisationId, maintenant.toISOString()],
   );
   return res.rows[0]?.existe === true;
+}
+
+export type MotifAucunEnvoi = MotifRefus | 'action_en_cours' | 'file_vide';
+
+export type ProchainEnvoi =
+  | { readonly quand: Date; readonly motif: null }
+  | { readonly quand: null; readonly motif: MotifAucunEnvoi };
+
+/**
+ * Le moment où un envoi serveur redevient possible pour une organisation, ou `null` quand
+ * aucun ne l'est. LECTURE SEULE, sans navigateur : elle sert à dater le job d'envoi plutôt
+ * qu'à réveiller le worker toutes les minutes pour que la réclamation réponde « pas encore ».
+ *
+ * Elle juge avec les mêmes règles que `reclamerProchaineAction` (`jugerRythme`), et ne
+ * rend une date que pour ce qui se lève à une échéance connue :
+ *  - tout est prêt : maintenant ;
+ *  - l'intervalle irrégulier de 1 à 20 minutes n'est pas écoulé : la minute où il le sera ;
+ *  - fenêtre horaire fermée, plafond atteint, mode manuel, pause, file vide : `null`. Aucune
+ *    date n'est devinée ; l'appelant réévalue au tick suivant, ce qui ne coûte que ces SELECT.
+ *
+ * Une action serveur en vol (`processing` depuis moins de `PROCESSING_TIMEOUT_MIN`) donne
+ * `null` : un second job viserait la même session. Une ligne coincée depuis plus longtemps
+ * donne « maintenant » même sans rien en attente : seul le handler la répare, et sans job
+ * elle resterait `processing` pour toujours, annoncée comme en cours.
+ */
+export async function prochainEnvoiLinkedIn(
+  ex: Executeur,
+  organisationId: string,
+  maintenant: Date = new Date(),
+): Promise<ProchainEnvoi> {
+  const session = await ex.query<{ status: string; envoi_pause_jusqua: string | Date | null }>(
+    `select status, envoi_pause_jusqua from linkedin_server_sessions where organization_id = $1`,
+    [organisationId],
+  );
+  if (session.rows[0]?.status !== 'active') {
+    return { quand: null, motif: 'session_inactive' };
+  }
+  const echeancePause = session.rows[0].envoi_pause_jusqua;
+  if (echeancePause && new Date(echeancePause).getTime() > maintenant.getTime()) {
+    return { quand: null, motif: 'canal_en_pause' };
+  }
+
+  const coupure = new Date(maintenant.getTime() - PROCESSING_TIMEOUT_MIN * 60_000).toISOString();
+  const enVol = await ex.query<{ recentes: string; perimees: string }>(
+    `select count(*) filter (where processing_started_at >= $2) as recentes,
+            count(*) filter (where processing_started_at < $2) as perimees
+       from linkedin_action_queue /* jr:linkedin_envoi_en_cours */
+      where organization_id = $1 and status = 'processing' and method = 'serveur'`,
+    [organisationId, coupure],
+  );
+  if (Number(enVol.rows[0]?.recentes ?? 0) > 0) {
+    return { quand: null, motif: 'action_en_cours' };
+  }
+  if (Number(enVol.rows[0]?.perimees ?? 0) > 0) {
+    return { quand: maintenant, motif: null };
+  }
+
+  if (!(await existeActionServeurEnAttente(ex, organisationId, maintenant))) {
+    return { quand: null, motif: 'file_vide' };
+  }
+
+  const verdict = jugerRythme(await chargerStatsRythme(ex, organisationId, maintenant), maintenant);
+  if (verdict.ok) {
+    return { quand: maintenant, motif: null };
+  }
+  if (verdict.motif === 'too_soon' && verdict.attendreMinutes !== undefined) {
+    return { quand: new Date(maintenant.getTime() + verdict.attendreMinutes * 60_000), motif: null };
+  }
+  return { quand: null, motif: verdict.motif };
 }

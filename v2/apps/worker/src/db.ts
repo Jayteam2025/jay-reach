@@ -286,7 +286,7 @@ export interface LinkedInActionJob {
   readonly contactId?: string | null;
   readonly signalId?: string | null;
   readonly messageBody?: string | null;
-  readonly method?: 'extension_auto' | 'manual';
+  readonly method?: 'extension_auto' | 'manual' | 'serveur';
   /** Action du sequenceur a l'origine : sert a la marquer partie une fois envoyee. */
   readonly actionId?: string | null;
 }

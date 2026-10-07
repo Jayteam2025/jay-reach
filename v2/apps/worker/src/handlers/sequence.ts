@@ -1270,7 +1270,6 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           contactId: row.contact_id,
           signalId: row.signal_id,
           messageBody,
-          method: 'extension_auto',
         },
       });
     }
