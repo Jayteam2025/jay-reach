@@ -1603,6 +1603,14 @@
       "rythme": {
         "titre": "Verzendritme",
         "lead": "Hoeveel en wanneer de motor verstuurt. Deze instellingen beschermen het LinkedIn-account.",
+        "invitationsParSemaine": {
+          "nom": "Uitnodigingen per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Berichten per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
         "fenetre": {
           "heures": {
             "nom": "Uren",

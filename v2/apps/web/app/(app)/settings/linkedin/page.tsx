@@ -5,6 +5,7 @@ import {
   jourCourantDansFuseau,
   lireHeuresEnvoiLinkedIn,
   lirePlafondLinkedIn,
+  lireVolumeEnvoiLinkedIn,
   lireReglages,
   prochainEnvoiLinkedIn,
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
@@ -31,11 +32,21 @@ export default async function ReglagesLinkedinPage() {
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
   const maintenant = new Date();
 
-  const [session, prochain, heuresEnvoi, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] =
-    await Promise.all([
+  const [
+    session,
+    prochain,
+    heuresEnvoi,
+    volumeEnvoi,
+    plafondPosts,
+    plafondRequetes,
+    plafondPersonnes,
+    postsDuJour,
+    requetesDeLHeure,
+  ] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
     prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
     lireHeuresEnvoiLinkedIn(ctx),
+    lireVolumeEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
@@ -149,6 +160,27 @@ export default async function ReglagesLinkedinPage() {
           serveur. */}
       <Carte titre={t('rythme.titre')}>
         <p className="jr-aide">{t('rythme.lead')}</p>
+        {/* Le plafond et sa consommation côte à côte : un plafond seul ne dit pas s'il
+            est sur le point de bloquer. Les deux chiffres viennent de la fonction que le
+            moteur consulte avant chaque envoi, jamais d'un second comptage. */}
+        <PlafondsLinkedin
+          peutModifier={peutModifier}
+          lignes={[
+            {
+              cle: 'linkedin_invitations_par_semaine',
+              nom: t('rythme.invitationsParSemaine.nom'),
+              usage: t('rythme.invitationsParSemaine.usage', { n: volumeEnvoi.invite.envoyes7Jours }),
+              valeur: volumeEnvoi.invite.plafondHebdo,
+            },
+            {
+              cle: 'linkedin_messages_par_semaine',
+              nom: t('rythme.messagesParSemaine.nom'),
+              usage: t('rythme.messagesParSemaine.usage', { n: volumeEnvoi.message.envoyes7Jours }),
+              valeur: volumeEnvoi.message.plafondHebdo,
+            },
+          ]}
+          libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
+        />
         <FenetreEnvoiLinkedin valeur={heuresEnvoi} peutModifier={peutModifier} />
       </Carte>
 

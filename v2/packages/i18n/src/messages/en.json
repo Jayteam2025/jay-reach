@@ -1603,6 +1603,14 @@
       "rythme": {
         "titre": "Sending pace",
         "lead": "How much and when the engine sends. These settings protect the LinkedIn account.",
+        "invitationsParSemaine": {
+          "nom": "Invitations per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
         "fenetre": {
           "heures": {
             "nom": "Hours",

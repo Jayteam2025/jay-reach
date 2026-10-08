@@ -7,6 +7,7 @@ import {
   reclamerProchaineAction,
   mettreEnPauseEnvoiLinkedIn,
   enregistrerResultat,
+  lireVolumeEnvoiLinkedIn,
   type TypeActionLinkedIn,
 } from './file.js';
 
@@ -304,6 +305,40 @@ describe('fenetre d envoi par defaut', () => {
     // Et c'est la constante unique, pas deux valeurs qui se trouvent égales aujourd'hui.
     expect(debut).toBe(HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure);
     expect(fin).toBe(HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure);
+  });
+});
+
+describe('lireVolumeEnvoiLinkedIn', () => {
+  /**
+   * Ce que l'écran de réglages affiche à côté de chaque plafond. Elle passe par la MÊME
+   * fonction que le moteur consulte avant d'envoyer : un second comptage finirait par
+   * diverger, et l'écran annoncerait un chiffre que le moteur ne connaît pas.
+   */
+  it('rend le plafond appliqué et la consommation, séparément par type', async () => {
+    const { ex } = creerExecuteur({
+      plafondHebdo: { invite: 40, message: 150 },
+      envoyesSur7Jours: { invite: 7, message: 3 },
+    });
+
+    const volume = await lireVolumeEnvoiLinkedIn(ex, ORG, NOW);
+
+    expect(volume.invite.plafondHebdo).toBe(40);
+    expect(volume.invite.envoyes7Jours).toBe(7);
+    expect(volume.message.plafondHebdo).toBe(150);
+    expect(volume.message.envoyes7Jours).toBe(3);
+  });
+
+  it('ne mélange pas les deux types : le compteur d un type ne déborde pas sur l autre', async () => {
+    const { ex } = creerExecuteur({
+      plafondHebdo: { invite: 40, message: 150 },
+      envoyesSur7Jours: { invite: 40, message: 0 },
+    });
+
+    const volume = await lireVolumeEnvoiLinkedIn(ex, ORG, NOW);
+
+    // Les invitations sont au plafond, les messages n'en ont pas consommé un seul.
+    expect(volume.invite.envoyes7Jours).toBe(volume.invite.plafondHebdo);
+    expect(volume.message.envoyes7Jours).toBe(0);
   });
 });
 

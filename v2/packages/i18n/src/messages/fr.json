@@ -1603,6 +1603,14 @@
       "rythme": {
         "titre": "Rythme d'envoi",
         "lead": "À quel volume et à quelles heures le moteur envoie. Ces réglages protègent le compte LinkedIn.",
+        "invitationsParSemaine": {
+          "nom": "Invitations par semaine",
+          "usage": "{n, plural, =0 {Aucune sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages par semaine",
+          "usage": "{n, plural, =0 {Aucun sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
         "fenetre": {
           "heures": {
             "nom": "Heures",

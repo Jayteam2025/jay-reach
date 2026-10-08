@@ -60,7 +60,7 @@ export type ResultatReclamation =
   | { readonly action: null; readonly motif: MotifRefus };
 
 /** Ce qui se compte, se plafonne et se déduit séparément pour un type d'action. */
-interface CompteurType {
+export interface CompteurType {
   readonly plafondHebdo: number;
   readonly plafondQuotidien: number;
   readonly envoyes7Jours: number;
@@ -143,6 +143,23 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
     parType: { invite: await compteur('invite'), message: await compteur('message') },
     lastSentAtIso: last.rows[0]?.sent_at ? versIso(last.rows[0].sent_at) : null,
   };
+}
+
+/**
+ * Volume d'envoi par type, pour l'écran de réglages : le plafond appliqué et ce qui a
+ * déjà été envoyé sur sept jours glissants.
+ *
+ * Elle appelle `chargerStatsRythme`, c'est à dire exactement ce que le moteur consulte
+ * avant chaque envoi, au lieu de recompter de son côté. Un second comptage finirait par
+ * diverger du premier, et l'écran annoncerait un chiffre que le moteur ne connaît pas.
+ */
+export async function lireVolumeEnvoiLinkedIn(
+  ex: Executeur,
+  organisationId: string,
+  maintenant: Date = new Date(),
+): Promise<Readonly<Record<TypeActionLinkedIn, CompteurType>>> {
+  const stats = await chargerStatsRythme(ex, organisationId, maintenant);
+  return stats.parType;
 }
 
 /**

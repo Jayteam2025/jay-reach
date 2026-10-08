@@ -518,7 +518,12 @@ export async function lireConsommationDuJour(
  * base, parce que les étages aval (scoring, enrichissement) sont plafonnés à un ou deux ordres
  * de grandeur de moins que ce que 60 requêtes de 50 profils laissent entrer.
  */
-export type ClePlafondLinkedIn = 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure' | 'linkedin_personnes_par_passage';
+export type ClePlafondLinkedIn =
+  | 'linkedin_posts_par_jour'
+  | 'linkedin_requetes_par_heure'
+  | 'linkedin_personnes_par_passage'
+  | 'linkedin_invitations_par_semaine'
+  | 'linkedin_messages_par_semaine';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
