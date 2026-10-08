@@ -32,6 +32,7 @@
     "./domain-patterns": "./src/domain-patterns.ts",
     "./enrichment-persist": "./src/enrichment-persist.ts",
     "./handlers/*": "./src/handlers/*.ts",
+    "./linkedin/*": "./src/linkedin/*.ts",
     "./producer": "./src/producer.ts",
     "./provider-cache": "./src/provider-cache.ts",
     "./runtime": "./src/runtime.ts",

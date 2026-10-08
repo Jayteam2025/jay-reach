@@ -47,7 +47,12 @@ export default async function CampagneContactsPage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp, reglages] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx)]);
+  const [t, tMotifs, sp, reglages] = await Promise.all([
+    getTranslations('campagne'),
+    getTranslations('motifsPause'),
+    searchParams,
+    lireReglages(ctx),
+  ]);
   const fuseau = String(reglages.fuseau);
   // Constat produit (18/09, tour de correction G4) : voir le commentaire équivalent dans
   // `contacts/page.tsx` — `reglages` déjà lu ci-dessus, aucune requête de plus.
@@ -82,7 +87,7 @@ export default async function CampagneContactsPage({
     ),
     motifPauseAffiche:
       ligne.statut === 'en_pause' && ligne.motifPause
-        ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`contacts.pause.${cle}`, valeurs), fuseau)
+        ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => tMotifs(cle, valeurs), fuseau)
         : null,
     prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(`contacts.${cle}`, valeurs), fuseau),
   }));

@@ -407,20 +407,6 @@
         "rebond": "Bounced",
         "ne_plus_contacter": "Do not contact"
       },
-      "pause": {
-        "emailGate": "Email deemed undeliverable",
-        "salesblinkError": "Send refused by the email provider",
-        "senderUnavailable": "No sending mailbox available",
-        "absence": "Away, resuming on {date}",
-        "absenceNoDate": "Away",
-        "generic": "Paused",
-        "linkedinNote": "Server-side sending does not carry the invitation note yet. Remove it from the step so the invitation can go out.",
-        "linkedinPasRelation": "The invitation was not accepted: a message cannot reach this contact.",
-        "linkedinProfil": "LinkedIn profile not found. Check the contact's address.",
-        "linkedinDejaInvite": "This contact has already been invited.",
-        "linkedinIndetermine": "A send was left unanswered. Check on LinkedIn before trying again.",
-        "linkedinRefus": "LinkedIn refused this action."
-      },
       "step": "Step {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "to contact",
@@ -1707,14 +1693,6 @@
       "rebond": "Bounced",
       "ne_plus_contacter": "Do not contact"
     },
-    "pause": {
-      "emailGate": "Email deemed undeliverable",
-      "salesblinkError": "Send refused by the email provider",
-      "senderUnavailable": "No sending mailbox available",
-      "absence": "Away, resuming on {date}",
-      "absenceNoDate": "Away",
-      "generic": "Paused"
-    },
     "step": "Step {n}",
     "stepEnded": "{n} · {libelle}",
     "noStep": "to contact",
@@ -1801,5 +1779,20 @@
     "q": {
       "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
     }
+  },
+  "motifsPause": {
+    "emailGate": "Email deemed undeliverable",
+    "salesblinkError": "Send refused by the email provider",
+    "senderUnavailable": "No sending mailbox available",
+    "absence": "Away, resuming on {date}",
+    "absenceNoDate": "Away",
+    "generic": "Paused",
+    "linkedinNote": "Server-side sending can't include an invitation note yet. Remove it from the step so the invitation can go out.",
+    "linkedinPasRelation": "The invitation was not accepted: a message cannot reach this contact.",
+    "linkedinProfil": "LinkedIn profile not found. Check the contact's address.",
+    "linkedinDejaInvite": "This contact has already been invited.",
+    "linkedinIndetermine": "No confirmation came back. Check on LinkedIn before trying again.",
+    "linkedinRefus": "LinkedIn refused this action.",
+    "linkedinSansMessage": "This step has no message to send. Add one in the sequence."
   }
 }

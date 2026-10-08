@@ -407,20 +407,6 @@
         "rebond": "Bounce",
         "ne_plus_contacter": "Niet meer contacteren"
       },
-      "pause": {
-        "emailGate": "E-mail als onbestelbaar beoordeeld",
-        "salesblinkError": "Verzending geweigerd door de e-mailprovider",
-        "senderUnavailable": "Geen verzendmailbox beschikbaar",
-        "absence": "Afwezig, hervat op {date}",
-        "absenceNoDate": "Afwezig",
-        "generic": "Gepauzeerd",
-        "linkedinNote": "Verzenden vanaf de server stuurt de uitnodigingsnotitie nog niet mee. Haal die uit de stap zodat de uitnodiging kan vertrekken.",
-        "linkedinPasRelation": "De uitnodiging is niet geaccepteerd: een bericht bereikt dit contact niet.",
-        "linkedinProfil": "LinkedIn-profiel niet gevonden. Controleer het adres van het contact.",
-        "linkedinDejaInvite": "Dit contact heeft al een uitnodiging gekregen.",
-        "linkedinIndetermine": "Een verzending bleef zonder antwoord. Controleer op LinkedIn voordat je opnieuw probeert.",
-        "linkedinRefus": "LinkedIn heeft deze actie geweigerd."
-      },
       "step": "Stap {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "te contacteren",
@@ -1707,14 +1693,6 @@
       "rebond": "Bounce",
       "ne_plus_contacter": "Niet meer contacteren"
     },
-    "pause": {
-      "emailGate": "E-mail als onbestelbaar beoordeeld",
-      "salesblinkError": "Verzending geweigerd door de e-mailprovider",
-      "senderUnavailable": "Geen verzendmailbox beschikbaar",
-      "absence": "Afwezig, hervat op {date}",
-      "absenceNoDate": "Afwezig",
-      "generic": "Gepauzeerd"
-    },
     "step": "Stap {n}",
     "stepEnded": "{n} · {libelle}",
     "noStep": "te contacteren",
@@ -1801,5 +1779,20 @@
     "q": {
       "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn."
     }
+  },
+  "motifsPause": {
+    "emailGate": "E-mail als onbestelbaar beoordeeld",
+    "salesblinkError": "Verzending geweigerd door de e-mailprovider",
+    "senderUnavailable": "Geen verzendmailbox beschikbaar",
+    "absence": "Afwezig, hervat op {date}",
+    "absenceNoDate": "Afwezig",
+    "generic": "Gepauzeerd",
+    "linkedinNote": "Verzenden vanaf de server stuurt de uitnodigingsnotitie nog niet mee. Haal die uit de stap zodat de uitnodiging verstuurd kan worden.",
+    "linkedinPasRelation": "De uitnodiging is niet geaccepteerd: een bericht bereikt dit contact niet.",
+    "linkedinProfil": "LinkedIn-profiel niet gevonden. Controleer de profiel-URL van het contact.",
+    "linkedinDejaInvite": "Dit contact heeft al een uitnodiging gekregen.",
+    "linkedinIndetermine": "Er kwam geen bevestiging terug. Controleer op LinkedIn voordat je opnieuw probeert.",
+    "linkedinRefus": "LinkedIn heeft deze actie geweigerd.",
+    "linkedinSansMessage": "Deze stap heeft geen bericht om te versturen. Voeg er een toe in de reeks."
   }
 }

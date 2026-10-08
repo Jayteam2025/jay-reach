@@ -1,8 +1,14 @@
 /**
  * Libellé du motif de pause d'une inscription (tâche 29, lot 2, R93) —
- * fonction pure (même esprit que `etape-contact.tsx`) : les écrans (`TableContacts`,
- * `SectionOuEnEstOn`) passent leur propre `t`, déjà scopé sur
- * `campagne.contacts.pause`, et le nom des clés reste relatif à ce sous-espace.
+ * fonction pure (même esprit que `etape-contact.tsx`) : les trois écrans qui affichent
+ * un motif de pause (Contacts, Contacts d'une campagne, fiche contact) passent leur
+ * propre `t`, tous scopés sur le MÊME bloc `motifsPause`.
+ *
+ * Ce bloc est unique depuis le 08/10, et il l'est pour une raison : il a d'abord existé
+ * en deux exemplaires jumeaux (`contacts.pause` et `campagne.contacts.pause`). Les six
+ * motifs LinkedIn n'avaient été ajoutés que dans l'un des deux, si bien que le même
+ * refus s'affichait en clair sur l'écran d'une campagne et en chemin de clé brut sur
+ * l'écran Contacts.
  *
  * Quatre motifs reconnus (posés par le worker, `apps/worker/src/handlers/sequence.ts`
  * et `email-salesblink.ts`, ou par la Réception sur une réponse d'absence) —
@@ -24,7 +30,7 @@ export interface LibelleMotifPause {
   readonly title: string | null;
 }
 
-/** `t` déjà scopé sur `campagne.contacts.pause` : `t('emailGate')`, `t('absence', { date })`, etc. */
+/** `t` déjà scopé sur `motifsPause` : `t('emailGate')`, `t('absence', { date })`, etc. */
 type Traducteur = (cle: string, valeurs?: Record<string, string | number>) => string;
 
 export function libelleMotifPause(
@@ -58,9 +64,15 @@ export function libelleMotifPause(
  */
 function cleRefusLinkedIn(code: string): string {
   switch (code) {
-    // Le seul qui se corrige en deux clics, et le plus fréquent : toute invitation qui porte une note.
+    // Le seul qui se corrige en deux clics : toute invitation qui porte une note. Il
+    // n'est atteignable que parce que le tick rend le corps d'une étape `linkedin_invite`
+    // — sans ce rendu, la note serait perdue en silence et l'invitation partirait nue.
     case 'note_non_supportee':
       return 'linkedinNote';
+    // Produit par NOUS, sans aucun appel réseau, quand l'étape n'a pas de message à
+    // envoyer : accuser LinkedIn enverrait l'opérateur chercher la panne du mauvais côté.
+    case 'bad_request':
+      return 'linkedinSansMessage';
     // Pas une panne : la personne n'a pas (encore) accepté, un message ne peut pas l'atteindre.
     case 'cannot_message':
       return 'linkedinPasRelation';
