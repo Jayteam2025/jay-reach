@@ -1599,6 +1599,8 @@
         "consigneDefi": "Los de verificatie op en open de sessie daarna opnieuw in een terminal op de server:"
       },
       "faits": {
+        "compte": "Verbonden account",
+        "comptePasEncore": "Gelezen bij de eerste verzending",
         "sortie": "Netwerkuitgang",
         "operateur": "Operator en land",
         "collecte": "Laatste verzameling",

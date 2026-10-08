@@ -1599,6 +1599,8 @@
         "consigneDefi": "Résolvez la vérification, puis rouvrez la session depuis un terminal sur le serveur :"
       },
       "faits": {
+        "compte": "Compte connecté",
+        "comptePasEncore": "Lu au premier envoi",
         "sortie": "Sortie réseau",
         "operateur": "Opérateur et pays",
         "collecte": "Dernière collecte",

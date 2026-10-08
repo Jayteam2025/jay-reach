@@ -32,6 +32,10 @@ export type SessionLinkedIn = {
   pays: string | null;
   derniereCollecte: Date | null;
   envoiPauseJusqua: Date | null;
+  /** Identifiant public du compte connecté (`/in/<slug>`), `null` tant qu'aucun envoi ne l'a révélé. */
+  compteIdentifiant: string | null;
+  compteUrn: string | null;
+  compteVuLe: Date | null;
 };
 
 interface LigneSession {
@@ -45,13 +49,16 @@ interface LigneSession {
   last_egress_country: string | null;
   last_collect_at: Date | null;
   envoi_pause_jusqua: Date | null;
+  account_public_id: string | null;
+  account_urn: string | null;
+  account_seen_at: Date | null;
 }
 
 export async function lireSessionLinkedIn(ctx: Contexte): Promise<SessionLinkedIn | null> {
   const res = await ctx.ex.query<LigneSession>(
     `select status, blocked_reason, connected_at, blocked_at, expected_egress_ip,
             last_egress_ip, last_egress_org, last_egress_country, last_collect_at,
-            envoi_pause_jusqua
+            envoi_pause_jusqua, account_public_id, account_urn, account_seen_at
        from linkedin_server_sessions /* jr:linkedin_session_lire */
       where organization_id = $1`,
     [ctx.organisationId],
@@ -69,7 +76,33 @@ export async function lireSessionLinkedIn(ctx: Contexte): Promise<SessionLinkedI
     pays: l.last_egress_country,
     derniereCollecte: l.last_collect_at,
     envoiPauseJusqua: l.envoi_pause_jusqua,
+    compteIdentifiant: l.account_public_id,
+    compteUrn: l.account_urn,
+    compteVuLe: l.account_seen_at,
   };
+}
+
+/**
+ * Note QUEL compte LinkedIn est ouvert sur le serveur, lu dans la réponse `/me` que l'envoi
+ * fait déjà. Aucune requête supplémentaire vers LinkedIn, et aucune session créée : si la
+ * ligne n'existe pas, il n'y a rien à renseigner et la fonction ne fait rien.
+ *
+ * Mesuré en recette le 08/10 : aucune table ne disait quel compte envoyait, donc impossible
+ * de savoir si un destinataire était en relation de 1er degré avec lui — alors qu'un message
+ * ne part que vers une relation de 1er degré.
+ */
+export async function enregistrerCompteLinkedIn(
+  ctx: Contexte,
+  compte: { readonly urn: string; readonly identifiantPublic: string | null },
+): Promise<void> {
+  await ctx.ex.query(
+    `update linkedin_server_sessions /* jr:linkedin_session_compte */
+        set account_urn = $2,
+            account_public_id = coalesce($3, account_public_id),
+            account_seen_at = now()
+      where organization_id = $1`,
+    [ctx.organisationId, compte.urn, compte.identifiantPublic],
+  );
 }
 
 /** Marque la session active et efface tout blocage antérieur. `ip` est l'IP de sortie attendue. */
