@@ -124,10 +124,11 @@ docker image prune
 Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Trois
 migrations l'accompagnent, et **l'ordre compte, il n'est pas symétrique** :
 
-1. **Les trois migrations, dans l'ordre des noms de fichiers**, avec
+1. **Les cinq migrations, dans l'ordre des noms de fichiers**, avec
    `supabase db push --linked` :
    `20261007110000_linkedin_envoi`, `20261007120000_linkedin_resultat_indetermine_actif`,
-   `20261007130000_linkedin_methode_par_defaut_serveur`.
+   `20261007130000_linkedin_methode_par_defaut_serveur`,
+   `20261008100000_linkedin_plafonds_envoi_report`, `20261008110000_linkedin_reprise_marquee`.
 2. **Puis le worker** (`./deployer.sh`).
 3. **Puis l'application web** (Vercel). Le worker et le web peuvent partir
    ensemble, du moment que la base est passée avant les deux.
@@ -180,7 +181,21 @@ select column_default from information_schema.columns
 
 -- 20261007120000 : l'index doit porter resultat_indetermine
 select indexdef from pg_indexes where indexname = 'uq_linkedin_action_active';
+
+-- 20261008100000 : le volume d'envoi est reporte par type
+select key, value from organization_settings
+ where key in ('linkedin_invitations_par_semaine', 'linkedin_messages_par_semaine');
+
+-- 20261008110000 : la marque de reprise et son index
+select column_name from information_schema.columns
+ where table_name = 'linkedin_action_queue' and column_name = 'reprise_le';
+select indexname from pg_indexes where indexname = 'linkedin_action_queue_reprise_idx';
 ```
+
+La migration de report (`20261008100000`) ne pose une cle que pour les organisations
+qui avaient deja regle `linkedin_settings.weekly_cap` ; une organisation qui n'en
+avait pas garde le defaut du code (100 invitations, 200 messages par semaine), et le
+regle ensuite dans Reglages > LinkedIn.
 
 Chaque migration se vérifie aussi elle-même et échoue si son objet manque : un
 `db push` qui se termine sans erreur est déjà un premier signal.
