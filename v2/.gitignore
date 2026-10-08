@@ -24,3 +24,10 @@ supabase/.branches
 /apps/web/playwright-report
 /apps/web/test-results
 /apps/web/blob-report
+
+# Scripts jetables que les harnais pg-verify deposent le temps d'un passage
+# (`_lkd.mjs`, `_seq.mjs`...). Ils sont censes etre supprimes par le harnais
+# lui-meme, mais un harnais qui sort par une exception en laisse derriere lui :
+# le 07/10, l'un d'eux a ete ramasse par un `git add -A` et commite sans que
+# son message de commit le mentionne.
+apps/worker/_*.mjs

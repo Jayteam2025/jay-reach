@@ -166,8 +166,13 @@ async function main(): Promise<void> {
   if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.envoi')) {
     // Même raison que la relève Graph : un hoquet de base ne doit pas tuer le worker.
     const enfilerEnvoiLinkedIn = (): void => {
-      void enqueueEnvoiLinkedIn(boss, pool).catch(() => {
+      void enqueueEnvoiLinkedIn(boss, pool).catch((err: unknown) => {
+        // Le canal d'envoi n'avait AUCUNE surface d'erreur pour l'opérateur : ni
+        // `engine_status`, ni le journal d'activité, ni l'écran. Une évaluation qui
+        // échoue toutes les minutes se lisait seulement dans les journaux du conteneur,
+        // pendant que l'écran continuait d'annoncer un canal prêt.
         console.error('[envoi-linkedin] évaluation impossible (envoi_linkedin_enqueue)');
+        void journaliserErreurMoteur(pool, err instanceof Error ? err : new Error(String(err)), 'envoi LinkedIn');
       });
     };
     enfilerEnvoiLinkedIn();
