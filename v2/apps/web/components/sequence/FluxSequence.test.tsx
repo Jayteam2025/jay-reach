@@ -60,3 +60,35 @@ describe('FluxSequence — les avertissements atteignent vraiment l écran', () 
     expect(html).not.toContain('jr-avertissement');
   });
 });
+
+/**
+ * Même piège que ci-dessus, côté carte : `canal` est collapsé à `linkedin`, donc une
+ * invitation et un message portaient la même tuile et la même mention. Depuis que
+ * l'invitation est créable (lot 4b), l'opérateur doit lire laquelle il a posée.
+ */
+describe('CarteEtape — la carte nomme le canal réel', () => {
+  it('une invitation se lit comme une invitation, et son absence de corps est normale', () => {
+    const html = renderToStaticMarkup(
+      <FluxSequence campagneId="camp-1" vue={vue([etape(1, 'linkedin_invite', '')])} />,
+    );
+    expect(html).toContain('card.channelLinkedinInvite');
+    expect(html).toContain('card.inviteSansNote');
+    // « Aucun message écrit pour cette étape » accuserait l'opérateur d'un oubli.
+    expect(html).not.toContain('card.noMessage');
+  });
+
+  it('un message se lit comme un message, et montre son corps', () => {
+    const html = renderToStaticMarkup(
+      <FluxSequence campagneId="camp-1" vue={vue([etape(1, 'linkedin_invite', ''), etape(2, 'linkedin_message', 'Suite')])} />,
+    );
+    expect(html).toContain('card.channelLinkedinMessage');
+    expect(html).toContain('Suite');
+  });
+
+  it('un email ne porte aucune mention de canal LinkedIn', () => {
+    const html = renderToStaticMarkup(
+      <FluxSequence campagneId="camp-1" vue={vue([etape(1, 'email', 'Bonjour')])} />,
+    );
+    expect(html).not.toContain('card.channelLinkedin');
+  });
+});
