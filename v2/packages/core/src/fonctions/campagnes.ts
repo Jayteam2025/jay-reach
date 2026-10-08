@@ -2081,7 +2081,29 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
   );
   const genres = new Set(expediteursRes.rows.map((s) => s.kind));
   if (besoinEmail && !genres.has('email')) manques.push('aucun expéditeur email actif');
-  if (besoinLinkedIn && !genres.has('linkedin')) manques.push('aucun expéditeur LinkedIn actif');
+  if (besoinLinkedIn) {
+    // L'expéditeur LinkedIn, depuis le lot 4b, EST la session ouverte sur le serveur : plus
+    // aucune ligne `senders` n'est créée pour ce canal, et le séquenceur n'en demande plus
+    // (`senderKindFor` rend `null`, comme pour le canal `call`). Exiger ici une ligne `senders`
+    // active rendait le canal entier inatteignable — mesuré sur la base : deux lignes LinkedIn,
+    // aucune active, et une session serveur ouverte. Une campagne LinkedIn ne pouvait pas être
+    // lancée du tout.
+    //
+    // Le chemin de l'extension est gelé (ses routes rendent 410) : une ligne `senders` héritée
+    // n'enverrait rien. C'est donc bien la session qu'il faut exiger, pas l'une ou l'autre.
+    const sessionRes = await ctx.ex.query<{ status: string }>(
+      `select status from linkedin_server_sessions /* jr:manques_session_linkedin */ where organization_id = $1`,
+      [ctx.organisationId],
+    );
+    const etatSession = sessionRes.rows[0]?.status ?? null;
+    if (etatSession !== 'active') {
+      manques.push(
+        etatSession === null
+          ? 'aucune session LinkedIn ouverte sur le serveur (`jay-reach linkedin connecter`)'
+          : 'la session LinkedIn du serveur n’est pas active',
+      );
+    }
+  }
 
   if (besoinEmail) {
     const [cleRes, boitesRes] = await Promise.all([
