@@ -17,10 +17,14 @@
 //  12. rejeu : retirer la branche « refus de l'enfilage » (`deja_en_attente`) de rejouerActionsLinkedInReprises — 50, 51 et 52 rougissent.
 //  13. rejeu : reprendre `message_body` de la ligne refusée au lieu de `rendreCorpsDeLEtape` — 53 et 54 rougissent ;
 //      retirer le blocage `missing_variable` / `missing_locale` — 55 et 56 rougissent.
+//  14. rejeu des actions jamais enfilées (rejouerActionsLinkedInEnAttente) : retirer `camp.status = 'active'` — 58 rougit ;
+//      `a.dispatched_at is null` — 59 ; la comparaison de suppression `lower(sup.value) = lower(c.linkedin_url)` — 60 ; `org.sending_paused_at is null` — 61 ;
+//      `a.created_at < now() - interval '2 minutes'` — 62 ; `e.status in ('active', 'completed')` réduit à 'active' — 57 ;
+//      le `not exists` sur linkedin_action_queue — 63 ; le filtre de statut d'inscription retiré en entier — 64.
 //  11. migration 20261008110000 : retirer `add column reprise_le` — la migration échoue (contrôle).
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
-import { regler, mettreEnPauseActionsLinkedInOrphelines, rejouerActionsLinkedInReprises, reprendreInscription, actionIdempotencyKey, envoyerEmailSalesBlink, rangDeLEtape, ErreurSalesBlink, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
+import { regler, mettreEnPauseActionsLinkedInOrphelines, rejouerActionsLinkedInReprises, rejouerActionsLinkedInEnAttente, reprendreInscription, actionIdempotencyKey, envoyerEmailSalesBlink, rangDeLEtape, ErreurSalesBlink, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -541,8 +545,53 @@ async function corpsReRendu() {
     ac.status === 'blocked' && ac.block_reason === 'missing_locale' && (await sansLigneDeFile(c.m)) === 1, JSON.stringify(ac));
 }
 
+async function rejeuActionsEnAttente() {
+  console.log('\n18. rejeu des actions LinkedIn JAMAIS enfilées (dernière étape, inscription completed)');
+  const monter = async (opts = {}) => {
+    const m = await monde();
+    const contact = (await q(`insert into contacts (organization_id, linkedin_url, first_name) values ($1, 'https://www.linkedin.com/in/Rejeu', 'Jeanne') returning id`, [m.org])).rows[0].id;
+    const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'C', $2) returning id`, [m.org, opts.campagne ?? 'active'])).rows[0].id;
+    const etape = (await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'linkedin_message') returning id`, [camp])).rows[0].id;
+    const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, status, next_action_at) values ($1, $2, $3, 1, $4, null) returning id`, [m.org, camp, contact, opts.inscription ?? 'completed'])).rows[0].id;
+    const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key, payload, created_at, dispatched_at) values ($1, $2, $3, 'linkedin_message', 'scheduled', $4, '{}'::jsonb, now() - $5::interval, $6) returning id`,
+      [m.org, insc, etape, actionIdempotencyKey(insc, etape), opts.age ?? '10 minutes', opts.dispatchee ? new Date() : null])).rows[0].id;
+    if (opts.suppression) await q(`insert into suppressions (organization_id, scope, value) values ($1, 'linkedin', 'HTTPS://www.linkedin.com/in/rejeu')`, [m.org]);
+    if (opts.pause) await q(`update organizations set sending_paused_at = now() where id = $1`, [m.org]);
+    if (opts.ligne) await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status) values ($1, $2, $3, 'https://www.linkedin.com/in/rejeu', 'message', 'serveur', 'pending')`, [m.org, contact, act]);
+    return { m, act, contact };
+  };
+  // Un seul balayage vu depuis l'organisation du cas : les autres cas de la base ne comptent pas.
+  const balayer = async (cas) => {
+    const jobs = [];
+    const boss = { insert: async (lot) => { jobs.push(...lot); } };
+    await rejouerActionsLinkedInEnAttente({ pool, boss });
+    return jobs.filter((j) => j.data.organizationId === cas.m.org);
+  };
+
+  const a = await monter();
+  const ja = await balayer(a);
+  check('57. une action jamais enfilée, inscription completed, campagne active, est réenfilée avec le job du tick',
+    ja.length === 1 && ja[0].name === 'actions.dispatch' && ja[0].data.channel === 'linkedin_message' && ja[0].data.actionId === a.act &&
+    ja[0].data.linkedin.linkedinUrl === 'https://www.linkedin.com/in/Rejeu' && ja[0].data.linkedin.contactId === a.contact &&
+    ja[0].data.linkedin.actionId === a.act && ja[0].data.linkedin.messageBody === null, JSON.stringify(ja));
+  const b = await monter({ campagne: 'paused' });
+  check('58. la même, campagne non active : PAS réenfilée', (await balayer(b)).length === 0);
+  const c = await monter({ dispatchee: true });
+  check('59. la même, dispatched_at renseigné : PAS réenfilée', (await balayer(c)).length === 0);
+  const d = await monter({ suppression: true });
+  check('60. la même, suppression linkedin active sur le contact (casse différente) : PAS réenfilée', (await balayer(d)).length === 0);
+  const e = await monter({ pause: true });
+  check('61. la même, organisation en pause d\'envoi : PAS réenfilée', (await balayer(e)).length === 0);
+  const f = await monter({ age: '30 seconds' });
+  check('62. la même, vieille de moins de 2 minutes : PAS réenfilée', (await balayer(f)).length === 0);
+  const g = await monter({ ligne: true });
+  check('63. la même, avec déjà une ligne de file : PAS réenfilée (jamais deux envois)', (await balayer(g)).length === 0);
+  const h = await monter({ inscription: 'replied' });
+  check('64. la même, inscription replied : PAS réenfilée', (await balayer(h)).length === 0);
+}
+
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail, refusDeLEnfilage, corpsReRendu);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail, refusDeLEnfilage, corpsReRendu, rejeuActionsEnAttente);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
