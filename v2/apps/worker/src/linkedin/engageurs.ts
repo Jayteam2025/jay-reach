@@ -72,7 +72,7 @@ const PROFONDEUR_MAX = 16;
  * n'est pas posé ici : il se lit dans le cookie `JSESSIONID`, donc côté page
  * (voir `navigateur.ts`), jamais depuis ce processus.
  */
-const ENTETES_VOYAGER: Record<string, string> = {
+export const ENTETES_VOYAGER: Record<string, string> = {
   accept: 'application/vnd.linkedin.normalized+json+2.1',
   'x-restli-protocol-version': '2.0.0',
 };

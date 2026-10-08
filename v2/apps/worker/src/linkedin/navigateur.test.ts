@@ -382,3 +382,72 @@ describe('releverTitulaire', () => {
     await expect(releverTitulaire(p, '185.134.193.162')).resolves.toBeNull();
   });
 });
+
+describe('requete : GET et POST depuis la page', () => {
+  const URL_CDP = 'http://127.0.0.1:9223';
+  const VOYAGER = 'https://www.linkedin.com/voyager/api/x';
+
+  type Appel = { url: string; init: { method?: string; headers: Record<string, string>; body?: string } };
+
+  /** `evaluate` rejoue la fonction envoyee a la page, avec un `fetch` et un `document` factices. */
+  async function piloteQuiCapte(cookie: string): Promise<{ pilote: Pilote; appels: Appel[] }> {
+    const appels: Appel[] = [];
+    vi.stubGlobal('document', { cookie });
+    vi.stubGlobal('fetch', async (url: string, init: Appel['init']) => {
+      appels.push({ url, init });
+      return { status: 200, text: async () => 'ok' };
+    });
+    const page = {
+      setDefaultTimeout: () => undefined,
+      setUserAgent: async () => undefined,
+      authenticate: async () => undefined,
+      evaluate: async (fn: (...a: unknown[]) => unknown, ...args: unknown[]) => fn(...args),
+      close: async () => undefined,
+    };
+    faux.connect.mockResolvedValue({
+      newPage: async () => page,
+      disconnect: async () => undefined,
+      version: async () => 'Chromium/129.0.6668.89',
+    });
+    return { pilote: await ouvrirNavigateur(), appels };
+  }
+
+  beforeEach(() => {
+    faux.connect.mockReset();
+    process.env.LINKEDIN_BROWSER_URL = URL_CDP;
+    delete process.env.LINKEDIN_PROXY_USER;
+    delete process.env.LINKEDIN_PROXY_PASSWORD;
+  });
+  afterEach(() => {
+    delete process.env.LINKEDIN_BROWSER_URL;
+    vi.unstubAllGlobals();
+  });
+
+  it('un corps fourni declenche un POST avec le content-type JSON', async () => {
+    const { pilote, appels } = await piloteQuiCapte('JSESSIONID="ajax:1"');
+    const rep = await pilote.requete(VOYAGER, { accept: 'application/json' }, { a: 1 });
+    expect(rep).toEqual({ statut: 200, corps: 'ok' });
+    expect(appels[0]?.init.method).toBe('POST');
+    expect(appels[0]?.init.body).toBe('{"a":1}');
+    expect(appels[0]?.init.headers['content-type']).toBe('application/json; charset=UTF-8');
+    expect(appels[0]?.init.headers.accept).toBe('application/json');
+  });
+
+  it('sans corps, la requete reste un GET sans content-type', async () => {
+    const { pilote, appels } = await piloteQuiCapte('JSESSIONID="ajax:1"');
+    await pilote.requete(VOYAGER, { accept: 'application/json' });
+    expect(appels[0]?.init.method).toBeUndefined();
+    expect(appels[0]?.init.body).toBeUndefined();
+    expect(appels[0]?.init.headers['content-type']).toBeUndefined();
+  });
+
+  it('le jeton CSRF est ajoute pour linkedin.com, en POST comme en GET', async () => {
+    const { pilote, appels } = await piloteQuiCapte('JSESSIONID="ajax:42"; autre=1');
+    await pilote.requete(VOYAGER);
+    await pilote.requete(VOYAGER, {}, { a: 1 });
+    await pilote.requete('https://ipinfo.io/1.2.3.4/json', {}, { a: 1 });
+    expect(appels[0]?.init.headers['csrf-token']).toBe('ajax:42');
+    expect(appels[1]?.init.headers['csrf-token']).toBe('ajax:42');
+    expect(appels[2]?.init.headers['csrf-token']).toBeUndefined();
+  });
+});

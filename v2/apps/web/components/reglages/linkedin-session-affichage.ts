@@ -11,7 +11,7 @@
  * Le logo LinkedIn garde sa couleur de marque en toute circonstance : l'état se dit par le
  * libellé, rien ici ne porte de consigne de couleur pour la marque.
  */
-import type { SessionLinkedIn } from '@jay-reach/core';
+import type { ProchainEnvoi, SessionLinkedIn } from '@jay-reach/core';
 import type { PuceTon } from '../ui';
 
 export type CleEtatSession = 'absente' | 'prete' | 'defi' | 'cookieRefuse' | 'disjoncteur' | 'revoquee' | 'sortieInattendue';
@@ -89,4 +89,96 @@ export function varianteDetailSession(
     return session.operateur || session.pays ? 'detail' : 'detailSansOrigine';
   }
   return 'detail';
+}
+
+export type CleEtatEnvoi =
+  | 'pret'
+  | 'planifie'
+  | 'reprise'
+  | 'enPause'
+  | 'rienAEnvoyer'
+  | 'enVol'
+  | 'horsFenetre'
+  | 'plafondAtteint'
+  | 'plafondHoraire'
+  | 'plafondHoraireDate'
+  | 'canalBloque';
+
+/**
+ * État du canal d'ENVOI, sous la phrase de session (lot 4b).
+ *
+ * Elle ne devine rien : elle traduit le verdict de `prochainEnvoiLinkedIn`, c'est-à-dire la
+ * fonction même qui décide quand le moteur enverra. Une première version ne connaissait que la
+ * session et la pause, et affichait donc « Prêt à envoyer » la nuit, le week-end et une fois le
+ * plafond du jour atteint — soit la majorité des heures de la semaine. Un écran qui ment sur
+ * l'état du canal est pire qu'un écran muet : il fait chercher la panne ailleurs.
+ *
+ * Chaque motif a sa phrase, parce qu'ils n'appellent pas la même action : vérifier ses heures,
+ * attendre un plafond, ou ne rien faire. Un libellé qui les regroupe envoie l'opérateur
+ * corriger un réglage qui est déjà juste.
+ *
+ * Quand la session ne tient pas, on ne répète pas sa raison — elle est écrite juste au-dessus —
+ * et on ne la nomme pas non plus : sur une sortie réseau inattendue, la session EST ouverte, et
+ * « tant que la session n'est pas ouverte » contredirait la ligne du dessus.
+ */
+export function phraseEtatEnvoi(
+  session: SessionLinkedIn | null,
+  prochain: ProchainEnvoi,
+  maintenant: Date,
+): { ton: PuceTon; cle: CleEtatEnvoi } {
+  if (phraseEtatSession(session).cle !== 'prete') return { ton: 'gris', cle: 'canalBloque' };
+  if (prochain.quand !== null) {
+    // Une ligne restée en cours n'est pas un créneau d'envoi : elle va être close, pas rejouée.
+    if (prochain.raison === 'reparation') return { ton: 'attention', cle: 'reprise' };
+    return prochain.quand.getTime() <= maintenant.getTime()
+      ? { ton: 'bon', cle: 'pret' }
+      : { ton: 'bon', cle: 'planifie' };
+  }
+  switch (prochain.motif) {
+    case 'canal_en_pause':
+      return { ton: 'attention', cle: 'enPause' };
+    case 'session_inactive':
+      return { ton: 'gris', cle: 'canalBloque' };
+    // En mode manuel il Y A des actions en attente, et elles ne partiront jamais : « aucune
+    // action en attente », en vert, serait doublement faux. L'état est impossible en base
+    // depuis la migration 20260831160000, mais la branche existe encore dans `jugerRythme` au
+    // cas où la contrainte serait relâchée — par cohérence, elle existe aussi ici.
+    case 'manual_mode':
+      return { ton: 'gris', cle: 'canalBloque' };
+    // Ni l'un ni l'autre n'est un empêchement : rien n'attend, ou un envoi est déjà parti.
+    case 'file_vide':
+    case 'queue_empty':
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
+    case 'action_en_cours':
+      return { ton: 'bon', cle: 'enVol' };
+    // `outside_window` couvre AUSSI le jour non coché : le libellé doit nommer les deux, sinon
+    // un samedi l'opérateur va vérifier des heures qui sont justes.
+    case 'outside_window':
+      return { ton: 'attention', cle: 'horsFenetre' };
+    case 'daily_cap_reached':
+    case 'weekly_cap_reached':
+      return { ton: 'attention', cle: 'plafondAtteint' };
+    // Distinct des plafonds de volume : celui-ci est le budget de requêtes de l'heure, que la
+    // COLLECTE partage avec l'envoi. Rien n'est à corriger dans les réglages d'envoi, et le dire
+    // autrement enverrait baisser un plafond qui n'y est pour rien. Deux clés sur le modèle
+    // d'`absence`/`absenceNoDate` : la date n'existe que si le budget peut se libérer, ce qui est
+    // faux quand le plafond est plus petit que le coût d'un seul envoi.
+    case 'plafond_horaire_atteint':
+      return { ton: 'attention', cle: prochain.disponibleA ? 'plafondHoraireDate' : 'plafondHoraire' };
+    // Inatteignables par `prochainEnvoiLinkedIn` : `too_soon` y arrive toujours avec un délai,
+    // donc avec une date, et `race_retry` n'appartient qu'à la réclamation. Nommés quand même,
+    // parce qu'un motif rangé dans un fourre-tout silencieux est un motif qu'on ne verra pas
+    // changer de sens.
+    case 'too_soon':
+    case 'race_retry':
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
+    // Le `never` fait échouer la COMPILATION si un motif nouveau apparaît ; le `return` qui suit
+    // garde l'écran debout à l'exécution, car un écran de réglages ne doit pas tomber parce que
+    // le moteur a appris un refus de plus.
+    default: {
+      const _exhaustif: never = prochain;
+      void _exhaustif;
+      return { ton: 'bon', cle: 'rienAEnvoyer' };
+    }
+  }
 }

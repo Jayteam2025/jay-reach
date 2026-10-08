@@ -3,8 +3,15 @@ import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import {
   rejouerActionsEmailEnAttente,
+  mettreEnPauseActionsLinkedInOrphelines,
   REJEU_ACTIONS_EMAIL_MS,
   traiterDiscover,
+  traiterJob,
+  traiterTick,
+  consommerLesFiles,
+  ecouterLesFiles,
+  FILES_BRANCHEES,
+  FILES_AVEC_NAVIGATEUR,
   libelleSourceRun,
   libelleScoringBatch,
   libelleEnrichmentBatch,
@@ -491,5 +498,122 @@ describe('journaliserEnrichmentBatch (journal, tâche 6, tour de correction 1 �
     const pool = { query } as unknown as Pool;
 
     await expect(journaliserEnrichmentBatch(pool, 'org-1', 'Acme', 10, 3)).resolves.toBeUndefined();
+  });
+});
+
+describe('file linkedin.envoi (tache 6)', () => {
+  it('est branchee', () => {
+    expect(FILES_BRANCHEES).toContain('linkedin.envoi');
+  });
+
+  it('sans JAY_REACH_LINKEDIN, rien n est touche : ni base, ni navigateur', async () => {
+    // `FILES_BRANCHEES` est aussi parcouru par `consommerLesFiles`, que la route cron de
+    // Vercel appelle : un environnement sans navigateur, ou la garde doit etre la
+    // premiere instruction du handler, avant meme la reparation des lignes coincees.
+    vi.stubEnv('JAY_REACH_LINKEDIN', '');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.envoi', { organizationId: ORG_ID });
+      expect(ctx.pool.query).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('avec JAY_REACH_LINKEDIN, le job atteint le handler d envoi', async () => {
+    vi.stubEnv('JAY_REACH_LINKEDIN', '1');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.envoi', { organizationId: ORG_ID });
+      const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n');
+      expect(sql).toContain('linkedin_action_queue');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe('consommerLesFiles (route cron de Vercel, sans navigateur)', () => {
+  it('ne prend jamais un job des files qui exigent un navigateur', async () => {
+    // Le handler sortirait sans rien faire, mais `fetch` puis `complete` marquerait le job termine :
+    // en `retryLimit: 0`, l'occasion d'envoi serait detruite en silence.
+    const fetch = vi.fn(async () => []);
+    const ctx = { pool: creerPoolFactice([]), boss: { fetch, complete: vi.fn(), fail: vi.fn() } as unknown as PgBoss } as Contexte;
+    await consommerLesFiles(ctx);
+    const files = (fetch.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(files).not.toContain('linkedin.envoi');
+    expect(files).not.toContain('linkedin.collecte');
+    expect(files).toContain('sources.discover');
+    expect(files.length).toBe(FILES_BRANCHEES.length - FILES_AVEC_NAVIGATEUR.length);
+  });
+
+  it('les files a navigateur sont bien branchees pour le worker', () => {
+    for (const f of FILES_AVEC_NAVIGATEUR) expect(FILES_BRANCHEES).toContain(f);
+  });
+});
+
+describe('ecouterLesFiles : une file fautive ne tait que son canal', () => {
+  it('ne consomme pas les files ignorees et consomme toutes les autres', async () => {
+    const work = vi.fn(async () => 'w');
+    const ctx = { pool: creerPoolFactice([]), boss: { work } as unknown as PgBoss } as Contexte;
+    await ecouterLesFiles(ctx, { ignorer: ['linkedin.envoi'] });
+    const files = (work.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(files).not.toContain('linkedin.envoi');
+    expect(files).toContain('actions.dispatch');
+    expect(files).toContain('linkedin.collecte');
+  });
+
+  it('sans file ignoree, tout est consomme, linkedin.envoi comprise', async () => {
+    const work = vi.fn(async () => 'w');
+    const ctx = { pool: creerPoolFactice([]), boss: { work } as unknown as PgBoss } as Contexte;
+    await ecouterLesFiles(ctx);
+    expect((work.mock.calls as unknown as [string][]).map((c) => c[0])).toContain('linkedin.envoi');
+  });
+});
+
+describe('mettreEnPauseActionsLinkedInOrphelines', () => {
+  /** Pool factice : la première requête (le balayage) rend `orphelines`, les suivantes ne trouvent rien à arrêter. */
+  function poolEnregistreur(orphelines: unknown[]): { pool: Pool; sqls: string[] } {
+    const sqls: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      sqls.push(sql);
+      const rows = sqls.length === 1 ? orphelines : [];
+      return { rows, rowCount: rows.length };
+    });
+    return { pool: { query } as unknown as Pool, sqls };
+  }
+
+  it('ne cherche que les actions LinkedIn encore scheduled dont la ligne de file est terminale, sans rien réenfiler', async () => {
+    const { pool, sqls } = poolEnregistreur([]);
+    await mettreEnPauseActionsLinkedInOrphelines({ pool });
+    const balayage = sqls[0] ?? '';
+    expect(balayage).toMatch(/q\.status = 'failed'/);
+    expect(balayage).toMatch(/a\.status in \('scheduled', 'approved'\)/);
+    // Invariant « jamais deux envois » : ce balayage ne fait que lire, il ne rejoue rien.
+    expect(balayage).not.toMatch(/\b(insert|update|delete)\b/i);
+    expect(sqls).toHaveLength(1);
+  });
+
+  it('applique le geste de pause à chaque ligne trouvée, mais n\'écrit jamais dans la file', async () => {
+    const { pool, sqls } = poolEnregistreur([
+      { queue_id: 'q-1', organization_id: ORG_ID, error_code: 'resultat_indetermine', error_message: 'indéterminé' },
+    ]);
+    const arretees = await mettreEnPauseActionsLinkedInOrphelines({ pool });
+    expect(arretees).toBe(0); // le double ne rend aucune action à arrêter : la lecture du geste est vide
+    expect(sqls).toHaveLength(2);
+    expect(sqls.some((q) => /linkedin_action_queue\s+set|insert into linkedin_action_queue/i.test(q))).toBe(false);
+  });
+});
+
+describe('traiterTick — rattrapage LinkedIn', () => {
+  it('chaque tick passe le balayage des envois LinkedIn terminaux', async () => {
+    const sqls: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      sqls.push(sql);
+      return { rows: [], rowCount: 0 };
+    });
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+    await traiterTick({ pool: { query } as unknown as Pool, boss });
+    expect(sqls.some((q) => q.includes('jr:linkedin_orphelines'))).toBe(true);
   });
 });

@@ -407,14 +407,6 @@
         "rebond": "Rebond",
         "ne_plus_contacter": "Ne plus contacter"
       },
-      "pause": {
-        "emailGate": "Email jugé non délivrable",
-        "salesblinkError": "Envoi refusé par le fournisseur d'email",
-        "senderUnavailable": "Aucune boîte d'envoi disponible",
-        "absence": "Absent, reprise le {date}",
-        "absenceNoDate": "Absent",
-        "generic": "En pause"
-      },
       "step": "Étape {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "à contacter",
@@ -769,7 +761,7 @@
         "modify": "Modifier",
         "repliedHere": "Ont répondu ici",
         "leftSequence": "{n, plural, one {# est sorti de la séquence} other {# sont sortis de la séquence}}",
-        "linkedinNotice": "l'envoi s'exécute côté serveur (à venir)",
+        "linkedinNotice": "l'envoi s'exécute côté serveur",
         "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
       },
       "preview": {
@@ -803,6 +795,10 @@
         "testNote": "« M'envoyer un test » inscrit votre adresse comme contact de test de la campagne : l'email part par le chemin normal et apparaît dans la File du jour.",
         "listVariables": "Colonnes de la liste importée",
         "listVariablesEmpty": "Une campagne alimentée par un fichier importé offre aussi ses colonnes : '{{'liste_nom_de_la_colonne'}}'."
+      },
+      "avertissements": {
+        "messageSansInvitation": "Étape {n} : un message LinkedIn n'atteint qu'une relation de 1er degré. Ajoutez une étape d'invitation avant lui, sinon il ne partira jamais.",
+        "noteDInvitation": "Étape {n} : l'envoi depuis le serveur ne sait pas encore porter la note d'invitation. Tant qu'elle est là, l'invitation ne part pas. Retirez-la pour lancer."
       }
     },
     "activite": {
@@ -1064,6 +1060,8 @@
         "title": "Comptes LinkedIn",
         "lead": "Les actions LinkedIn partent d'une IP résidentielle dédiée, jamais du serveur.",
         "empty": "Aucun compte LinkedIn connecté.",
+        "emptyServeur": "Le canal LinkedIn est tenu par la session ouverte sur le serveur, sans extension ni compte relié ici.",
+        "emptyServeurLien": "Régler le rythme et les heures d'envoi",
         "connected": "Connecté",
         "notConnected": "Non connecté",
         "senderMissing": "Aucun envoi ne partira : expéditeur non activé",
@@ -1080,10 +1078,7 @@
         "close": "Fermer",
         "drawerDailyQuota": "Profils lus et actions par jour",
         "drawerWeeklyQuota": "Plafond par semaine",
-        "drawerHoursFrom": "À partir de",
-        "drawerHoursTo": "Jusqu'à",
-        "drawerDays": "Jours d'envoi",
-        "drawerTimezone": "Fuseau horaire"
+        "plafondsExtension": "Ces plafonds ne valent que pour l'envoi par l'extension. Le volume de l'envoi par le serveur se règle dans Réglages, LinkedIn."
       }
     },
     "days": {
@@ -1555,6 +1550,41 @@
           "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
         }
       },
+      "envoi": {
+        "pret": {
+          "phrase": "Prêt à envoyer."
+        },
+        "planifie": {
+          "phrase": "Prochain envoi {quand}."
+        },
+        "reprise": {
+          "phrase": "Un envoi est resté sans réponse. Il va être marqué indéterminé, à vérifier sur LinkedIn."
+        },
+        "enPause": {
+          "phrase": "Envoi en pause jusqu'à {quand}."
+        },
+        "rienAEnvoyer": {
+          "phrase": "Aucune action en attente."
+        },
+        "enVol": {
+          "phrase": "Un envoi est en cours."
+        },
+        "horsFenetre": {
+          "phrase": "Hors des heures ou des jours d'envoi."
+        },
+        "plafondAtteint": {
+          "phrase": "Plafond d'envoi atteint. Rien ne part avant qu'il se libère."
+        },
+        "canalBloque": {
+          "phrase": "Rien ne part tant que ce point n'est pas réglé."
+        },
+        "plafondHoraire": {
+          "phrase": "Le budget de requêtes LinkedIn de l'heure est épuisé. La collecte le partage avec l'envoi."
+        },
+        "plafondHoraireDate": {
+          "phrase": "Le budget de requêtes LinkedIn de l'heure est épuisé, la collecte le partage avec l'envoi. Reprise vers {quand}."
+        }
+      },
       "commande": {
         "consigne": "Dans un terminal sur le serveur, rouvrez la session :",
         "consigneDefi": "Résolvez la vérification, puis rouvrez la session depuis un terminal sur le serveur :"
@@ -1565,6 +1595,37 @@
         "collecte": "Dernière collecte",
         "inconnu": "Inconnu",
         "jamais": "Jamais"
+      },
+      "rythme": {
+        "titre": "Rythme d'envoi",
+        "lead": "À quel volume et à quelles heures le moteur envoie. Ces réglages protègent le compte LinkedIn.",
+        "invitationsParSemaine": {
+          "nom": "Invitations par semaine",
+          "usage": "{n, plural, =0 {Aucune sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages par semaine",
+          "usage": "{n, plural, =0 {Aucun sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Heures",
+            "aide": "Un envoi part entre ces deux heures, jamais avant ni après.",
+            "debut": "Heure de début",
+            "fin": "Heure de fin"
+          },
+          "jours": {
+            "nom": "Jours",
+            "aide": "Les jours de la semaine où le moteur envoie."
+          },
+          "fuseau": {
+            "nom": "Fuseau",
+            "aide": "Les heures ci-dessus se lisent dans ce fuseau."
+          },
+          "enregistrer": "Enregistrer",
+          "erreurOrdre": "L'heure de fin doit venir après l'heure de début.",
+          "erreurJours": "Choisissez au moins un jour."
+        }
       },
       "plafonds": {
         "titre": "Plafonds de collecte",
@@ -1634,14 +1695,6 @@
       "termine": "Terminé",
       "rebond": "Rebond",
       "ne_plus_contacter": "Ne plus contacter"
-    },
-    "pause": {
-      "emailGate": "Email jugé non délivrable",
-      "salesblinkError": "Envoi refusé par le fournisseur d'email",
-      "senderUnavailable": "Aucune boîte d'envoi disponible",
-      "absence": "Absent, reprise le {date}",
-      "absenceNoDate": "Absent",
-      "generic": "En pause"
     },
     "step": "Étape {n}",
     "stepEnded": "{n} · {libelle}",
@@ -1729,5 +1782,21 @@
     "q": {
       "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation."
     }
+  },
+  "motifsPause": {
+    "emailGate": "Email jugé non délivrable",
+    "salesblinkError": "Envoi refusé par le fournisseur d'email",
+    "senderUnavailable": "Aucune boîte d'envoi disponible",
+    "absence": "Absent, reprise le {date}",
+    "absenceNoDate": "Absent",
+    "generic": "En pause",
+    "linkedinNote": "La note d'invitation n'est pas encore portée par l'envoi serveur. Retirez-la de l'étape pour que l'invitation parte.",
+    "linkedinPasRelation": "L'invitation n'a pas été acceptée : un message ne peut pas atteindre ce contact.",
+    "linkedinProfil": "Profil LinkedIn introuvable. Vérifiez l'adresse du contact.",
+    "linkedinDejaInvite": "Ce contact a déjà reçu une invitation.",
+    "linkedinIndetermine": "Envoi resté sans confirmation. À vérifier sur LinkedIn avant de relancer.",
+    "linkedinRefus": "LinkedIn a refusé cette action.",
+    "linkedinSansMessage": "Cette étape n'a pas de message à envoyer. Ajoutez-en un dans la séquence.",
+    "linkedinDejaEnAttente": "Une autre action LinkedIn est déjà en cours pour ce contact, dans une autre campagne. Reprenez cette inscription quand elle sera terminée."
   }
 }

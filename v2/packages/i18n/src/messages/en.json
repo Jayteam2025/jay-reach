@@ -407,14 +407,6 @@
         "rebond": "Bounced",
         "ne_plus_contacter": "Do not contact"
       },
-      "pause": {
-        "emailGate": "Email deemed undeliverable",
-        "salesblinkError": "Send refused by the email provider",
-        "senderUnavailable": "No sending mailbox available",
-        "absence": "Away, resuming on {date}",
-        "absenceNoDate": "Away",
-        "generic": "Paused"
-      },
       "step": "Step {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "to contact",
@@ -769,7 +761,7 @@
         "modify": "Edit",
         "repliedHere": "Replied here",
         "leftSequence": "{n, plural, one {# left the sequence} other {# left the sequence}}",
-        "linkedinNotice": "the send runs server-side (coming soon)",
+        "linkedinNotice": "the send runs server-side",
         "salesblinkNotice": "The SalesBlink sequence is created on the first send."
       },
       "preview": {
@@ -803,6 +795,10 @@
         "testNote": "\"Send me a test\" enrolls your address as the campaign's test contact: the email goes out through the normal path and appears in Today's queue.",
         "listVariables": "Imported list columns",
         "listVariablesEmpty": "A campaign fed by an imported file also offers its columns: '{{'liste_nom_de_la_colonne'}}'."
+      },
+      "avertissements": {
+        "messageSansInvitation": "Step {n}: a LinkedIn message only reaches a 1st-degree connection. Add an invitation step before it, or it will never be sent.",
+        "noteDInvitation": "Step {n}: server-side sending cannot carry the invitation note yet. While it is there, the invitation is not sent. Remove it to launch."
       }
     },
     "activite": {
@@ -1064,6 +1060,8 @@
         "title": "LinkedIn accounts",
         "lead": "LinkedIn actions go out from a dedicated residential IP, never from the server.",
         "empty": "No LinkedIn account connected.",
+        "emptyServeur": "The LinkedIn channel runs on the session opened on the server, with no extension and no account linked here.",
+        "emptyServeurLien": "Set the sending pace and hours",
         "connected": "Connected",
         "notConnected": "Not connected",
         "senderMissing": "Nothing will go out: sender not activated",
@@ -1080,10 +1078,7 @@
         "close": "Close",
         "drawerDailyQuota": "Profiles read and actions per day",
         "drawerWeeklyQuota": "Weekly limit",
-        "drawerHoursFrom": "From",
-        "drawerHoursTo": "To",
-        "drawerDays": "Sending days",
-        "drawerTimezone": "Time zone"
+        "plafondsExtension": "These limits only apply to sending through the extension. Server-side sending volume is set in Settings, LinkedIn."
       }
     },
     "days": {
@@ -1555,6 +1550,41 @@
           "detailSansIp": "The network exit could not be read. Nothing was sent to LinkedIn."
         }
       },
+      "envoi": {
+        "pret": {
+          "phrase": "Ready to send."
+        },
+        "planifie": {
+          "phrase": "Next send {quand}."
+        },
+        "reprise": {
+          "phrase": "A send was left unanswered. It will be marked undetermined — check on LinkedIn."
+        },
+        "enPause": {
+          "phrase": "Sending paused until {quand}."
+        },
+        "rienAEnvoyer": {
+          "phrase": "Nothing waiting to be sent."
+        },
+        "enVol": {
+          "phrase": "A send is in progress."
+        },
+        "horsFenetre": {
+          "phrase": "Outside sending hours or sending days."
+        },
+        "plafondAtteint": {
+          "phrase": "Sending cap reached. Nothing goes out until it frees up."
+        },
+        "canalBloque": {
+          "phrase": "Nothing is sent until this is fixed."
+        },
+        "plafondHoraire": {
+          "phrase": "This hour's LinkedIn request budget is used up. Collection shares it with sending."
+        },
+        "plafondHoraireDate": {
+          "phrase": "This hour's LinkedIn request budget is used up, and collection shares it with sending. Back around {quand}."
+        }
+      },
       "commande": {
         "consigne": "In a terminal on the server, reopen the session:",
         "consigneDefi": "Complete the verification, then reopen the session from a terminal on the server:"
@@ -1565,6 +1595,37 @@
         "collecte": "Last collection",
         "inconnu": "Unknown",
         "jamais": "Never"
+      },
+      "rythme": {
+        "titre": "Sending pace",
+        "lead": "How much and when the engine sends. These settings protect the LinkedIn account.",
+        "invitationsParSemaine": {
+          "nom": "Invitations per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Hours",
+            "aide": "Nothing goes out before the first hour or after the last.",
+            "debut": "Start hour",
+            "fin": "End hour"
+          },
+          "jours": {
+            "nom": "Days",
+            "aide": "The weekdays the engine sends on."
+          },
+          "fuseau": {
+            "nom": "Time zone",
+            "aide": "The hours above are read in this time zone."
+          },
+          "enregistrer": "Save",
+          "erreurOrdre": "The end hour must come after the start hour.",
+          "erreurJours": "Pick at least one day."
+        }
       },
       "plafonds": {
         "titre": "Collection limits",
@@ -1634,14 +1695,6 @@
       "termine": "Finished",
       "rebond": "Bounced",
       "ne_plus_contacter": "Do not contact"
-    },
-    "pause": {
-      "emailGate": "Email deemed undeliverable",
-      "salesblinkError": "Send refused by the email provider",
-      "senderUnavailable": "No sending mailbox available",
-      "absence": "Away, resuming on {date}",
-      "absenceNoDate": "Away",
-      "generic": "Paused"
     },
     "step": "Step {n}",
     "stepEnded": "{n} · {libelle}",
@@ -1729,5 +1782,21 @@
     "q": {
       "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
     }
+  },
+  "motifsPause": {
+    "emailGate": "Email deemed undeliverable",
+    "salesblinkError": "Send refused by the email provider",
+    "senderUnavailable": "No sending mailbox available",
+    "absence": "Away, resuming on {date}",
+    "absenceNoDate": "Away",
+    "generic": "Paused",
+    "linkedinNote": "Server-side sending can't include an invitation note yet. Remove it from the step so the invitation can go out.",
+    "linkedinPasRelation": "The invitation was not accepted: a message cannot reach this contact.",
+    "linkedinProfil": "LinkedIn profile not found. Check the contact's address.",
+    "linkedinDejaInvite": "This contact has already been invited.",
+    "linkedinIndetermine": "No confirmation came back. Check on LinkedIn before trying again.",
+    "linkedinRefus": "LinkedIn refused this action.",
+    "linkedinSansMessage": "This step has no message to send. Add one in the sequence.",
+    "linkedinDejaEnAttente": "Another LinkedIn action is already under way for this contact, in a different campaign. Resume this enrolment once it has finished."
   }
 }

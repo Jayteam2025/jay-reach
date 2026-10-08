@@ -2027,6 +2027,72 @@ describe('manquesPourLancer', () => {
     expect(r).toEqual(['l’étape 1 n’a pas de message relié']);
   });
 
+  /**
+   * L'expéditeur LinkedIn est la session ouverte sur le serveur, plus une ligne `senders`.
+   * Mesuré sur la base OSS le 08/10 : deux lignes `senders` LinkedIn, AUCUNE active, et une
+   * session serveur ouverte. Tant que le lancement exigeait la ligne, aucune campagne LinkedIn
+   * ne pouvait être lancée, et tout le canal restait inatteignable.
+   */
+  const etapeLinkedIn = { position: 0, channel: 'linkedin_invite', template_parent_id: 'tpl-1' };
+
+  it('une campagne LinkedIn se lance sur la seule session serveur, sans aucune ligne senders', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [etapeLinkedIn],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    expect(await manquesPourLancer(ctx, { campagneId })).toEqual([]);
+  });
+
+  it('sans session serveur, le manque dit la commande qui l ouvre', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [etapeLinkedIn],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [],
+    });
+    const r = await manquesPourLancer(ctx, { campagneId });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toContain('jay-reach linkedin connecter');
+  });
+
+  it('une session bloquée n est pas une session absente : le manque le dit autrement', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [etapeLinkedIn],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'bloquee' }],
+    });
+    const r = await manquesPourLancer(ctx, { campagneId });
+    expect(r).toEqual(['la session LinkedIn du serveur n’est pas active']);
+  });
+
+  /**
+   * Le refus `note_non_supportee` frappe CHAQUE invitation portant une note, et fige le contact.
+   * Le dire au lancement vaut mieux que de laisser une campagne entière se figer contact par
+   * contact : l'issue est connue d'avance et uniforme.
+   */
+  it('refuse de lancer une invitation LinkedIn dont le message porte une note', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [{ position: 2, channel: 'linkedin_invite', template_parent_id: 'tpl-note' }],
+      'jr:manques_note_invitation': [{ parent: 'tpl-note' }],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    const r = await manquesPourLancer(ctx, { campagneId });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toContain('étape 3');
+    expect(r[0]).toContain('note');
+  });
+
+  it('laisse passer une invitation dont le message est vide : sans note, elle part', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [{ position: 0, channel: 'linkedin_invite', template_parent_id: 'tpl-vide' }],
+      'jr:manques_note_invitation': [],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    expect(await manquesPourLancer(ctx, { campagneId })).toEqual([]);
+  });
+
   it('ne signale rien quand tout est prêt', async () => {
     const ctx = faux({
       'jr:manques_etapes': [{ position: 0, channel: 'email', template_parent_id: 'tpl-1' }],

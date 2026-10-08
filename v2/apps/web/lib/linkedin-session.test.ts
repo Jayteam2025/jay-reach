@@ -21,6 +21,7 @@ const base: SessionLinkedIn = {
   operateur: 'Free SAS',
   pays: 'France',
   derniereCollecte: new Date('2026-10-05T10:00:00Z'),
+  envoiPauseJusqua: null,
 };
 // Rend la clé et ses valeurs : prouve QUELLE phrase est choisie, pas son texte traduit.
 const t = (cle: string, valeurs?: Record<string, string>) => `${cle}${valeurs ? JSON.stringify(valeurs) : ''}`;

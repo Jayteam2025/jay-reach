@@ -38,7 +38,7 @@ import {
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
-import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant } from './sequence.js';
+import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant, rangDeLEtape } from './sequence.js';
 import { mentionOrigineDuMessage } from './mention-origine.js';
 import type { DispatchJob } from './dispatch.js';
 
@@ -451,13 +451,9 @@ export async function envoyerEmailSalesBlink(
   if (!decisionGate.allow) {
     const motif = `email_gate:${decisionGate.reason}`;
     await bloquerAction(pool, actionId, motif);
-    const etapeEnEchecGate = await pool.query<{ position: number }>(
-      `select position from sequence_steps where id = $1`,
-      [email.stepId],
-    );
-    const positionEnEchecGate = etapeEnEchecGate.rows[0]?.position;
-    if (positionEnEchecGate !== undefined) {
-      await mettreInscriptionEnPause(pool, email.enrollmentId, positionEnEchecGate, motif);
+    const rangEnEchecGate = await rangDeLEtape(pool, email.stepId);
+    if (rangEnEchecGate !== undefined) {
+      await mettreInscriptionEnPause(pool, email.enrollmentId, rangEnEchecGate, motif);
     }
     console.warn(`[email-salesblink] action ${actionId} bloquée : email non délivrable (${decisionGate.reason})`);
     return;
@@ -694,13 +690,9 @@ export async function envoyerEmailSalesBlink(
     // vers la suivante (le tick l'y avait déjà fait avancer avant l'envoi).
     // Sans cette pause, un email 2 peut partir alors que le mail 1 n'a jamais
     // été envoyé.
-    const etapeEnEchec = await pool.query<{ position: number }>(
-      `select position from sequence_steps where id = $1`,
-      [email.stepId],
-    );
-    const positionEnEchec = etapeEnEchec.rows[0]?.position;
-    if (positionEnEchec !== undefined) {
-      await mettreInscriptionEnPause(pool, email.enrollmentId, positionEnEchec, 'salesblink_client_error');
+    const rangEnEchec = await rangDeLEtape(pool, email.stepId);
+    if (rangEnEchec !== undefined) {
+      await mettreInscriptionEnPause(pool, email.enrollmentId, rangEnEchec, 'salesblink_client_error');
     }
     console.error(`[email-salesblink] action ${actionId} en échec définitif (${err.code})`);
   }

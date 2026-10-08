@@ -286,15 +286,21 @@ export interface LinkedInActionJob {
   readonly contactId?: string | null;
   readonly signalId?: string | null;
   readonly messageBody?: string | null;
-  readonly method?: 'extension_auto' | 'manual';
+  /**
+   * Seule méthode qui s'écrit encore : la réclamation ne prend que `serveur`, donc une ligne
+   * `extension_auto` ou `manual` créée aujourd'hui ne serait réclamée par personne, jamais, et la
+   * déduplication refuserait alors tout nouvel enfilage du même (contact, type), sans message.
+   * La lecture, elle, accepte toujours les lignes historiques.
+   */
+  readonly method?: 'serveur';
   /** Action du sequenceur a l'origine : sert a la marquer partie une fois envoyee. */
   readonly actionId?: string | null;
 }
 
 /**
  * Enfile une action LinkedIn (invitation ou message) dans
- * `linkedin_action_queue`, consommée par l'extension Chrome (envoi via Voyager,
- * session de l'utilisateur ; pacing appliqué côté serveur). Dédup : pas de
+ * `linkedin_action_queue`, consommée par le serveur (envoi via Voyager, session
+ * LinkedIn du serveur ; pacing appliqué avant chaque envoi). Dédup : pas de
  * doublon actif (pending/processing/sent) pour le même (contact, kind).
  * Retourne l'id créé, ou null si déjà en file. Aucun envoi ici.
  */
@@ -306,7 +312,8 @@ export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob):
      where not exists (
        select 1 from linkedin_action_queue q
        where q.contact_id = $2 and q.kind = $5
-         and q.status in ('pending', 'processing', 'sent')
+         and (q.status in ('pending', 'processing', 'sent')
+              or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
          and $2 is not null
      )
      returning id`,
@@ -317,7 +324,7 @@ export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob):
       job.linkedinUrl,
       job.kind,
       job.messageBody ?? null,
-      job.method ?? 'extension_auto',
+      job.method ?? 'serveur',
       job.actionId ?? null,
     ],
   );

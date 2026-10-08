@@ -90,8 +90,9 @@ function qsFiltres(args: {
 
 export default async function ContactsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await contexteCourant();
-  const [t, sp, campagnesRes, reglages] = await Promise.all([
+  const [t, tMotifs, sp, campagnesRes, reglages] = await Promise.all([
     getTranslations('contacts'),
+    getTranslations('motifsPause'),
     searchParams,
     listerCampagnesPourFiltre(ctx),
     lireReglages(ctx),
@@ -217,7 +218,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       etapeTexte: texteEtape(ligne.etape, ligne.statut, libellesStatut[ligne.statut], t),
       motifPauseAffiche:
         ligne.statut === 'en_pause' && ligne.motifPause
-          ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => t(`pause.${cle}`, valeurs), fuseau)
+          ? libelleMotifPause(ligne.motifPause, ligne.repriseLe, (cle, valeurs) => tMotifs(cle, valeurs), fuseau)
           : null,
       prochainMessageAffiche: libelleProchainMessage(ligne.prochainMessageLe, (cle, valeurs) => t(cle, valeurs), fuseau),
     }));

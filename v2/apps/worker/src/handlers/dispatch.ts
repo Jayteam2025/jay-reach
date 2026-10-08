@@ -2,9 +2,9 @@
  * Handler de la file `actions.dispatch` — routage par canal. L'email part par
  * SalesBlink (`envoyerEmailSalesBlink`, lot 3 : « SalesBlink comme simple
  * transport email »). LinkedIn (invitation/message) n'appelle aucune API
- * d'envoi : l'action est ENFILÉE dans `linkedin_action_queue` et c'est
- * l'extension Chrome qui l'exécute (API Voyager, session de l'utilisateur ;
- * pacing appliqué côté serveur). Les garde-fous et l'approbation sont
+ * d'envoi : l'action est ENFILÉE dans `linkedin_action_queue` (méthode
+ * `serveur`) et c'est la file `linkedin.envoi` qui l'exécute, sous le rythme
+ * de `reclamerProchaineAction`. Les garde-fous et l'approbation sont
  * appliqués en amont (séquenceur).
  */
 import type { Pool } from 'pg';
@@ -50,7 +50,6 @@ export interface DispatchJob {
     readonly contactId?: string | null;
     readonly signalId?: string | null;
     readonly messageBody?: string | null;
-    readonly method?: 'extension_auto' | 'manual';
   };
 }
 
@@ -58,7 +57,7 @@ export function isLinkedInChannel(channel: DispatchChannel | undefined): boolean
   return channel === 'linkedin_invite' || channel === 'linkedin_message';
 }
 
-/** Envoi LinkedIn : enfile l'action pour l'extension (aucun appel réseau ici). */
+/** Envoi LinkedIn : enfile l'action pour l'envoi par le serveur (aucun appel réseau ici). */
 export async function runLinkedInDispatch(pool: Pool, job: DispatchJob): Promise<string | null> {
   if (!job.linkedin) {
     throw new Error('dispatch LinkedIn : payload linkedin manquant');
@@ -71,7 +70,9 @@ export async function runLinkedInDispatch(pool: Pool, job: DispatchJob): Promise
     contactId: job.linkedin.contactId ?? null,
     signalId: job.linkedin.signalId ?? null,
     messageBody: job.linkedin.messageBody ?? null,
-    method: job.linkedin.method ?? 'extension_auto',
+    // Toujours le serveur : c'est la file `linkedin.envoi` qui exécute. Un job déposé avant
+    // le déploiement peut porter l'ancienne méthode (`extension_auto`), qu'on n'honore plus.
+    method: 'serveur',
     actionId: job.linkedin.actionId ?? job.actionId ?? null,
   };
   return enqueueLinkedInAction(pool, action);

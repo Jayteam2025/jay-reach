@@ -129,10 +129,13 @@ Les **boîtes email** : une carte par boîte, avec son état de connexion, son u
 ses heures d'envoi. **Modifier** ajuste ces réglages ; **Relier une boîte** en connecte une nouvelle. Une
 boîte peut aussi être réglée pour lire ses réponses directement, sans attendre la relève habituelle.
 
-Les **comptes LinkedIn** : une carte par compte connecté par l'extension de navigateur, avec ses quotas de
-profils lus et d'actions par jour et par semaine. L'extension est gelée : ces quotas ne pilotent plus la
-collecte, qui passe par le serveur (voir Réglages › LinkedIn ci-dessous). Cet écran ne permet pas d'en
-connecter un nouveau.
+Les **comptes LinkedIn** : une carte par compte, avec ses quotas d'actions par jour et par semaine, sa
+fenêtre horaire, ses jours d'envoi et son fuseau. Ces réglages (`linkedin_settings`) sont le seul réglage du
+volume d'envoi LinkedIn : le serveur les lit avant chaque envoi d'invitation ou de message. Cette carte
+n'apparaît toutefois que pour un compte relié par l'ancienne extension : si la session a été ouverte par
+`jay-reach linkedin connecter`, l'écran reste vide et ces valeurs gardent celles de la base. La collecte a ses
+propres plafonds (voir Réglages › LinkedIn ci-dessous). L'extension de navigateur est gelée et ne pilote
+plus rien. Cet écran ne permet pas de connecter un nouveau compte.
 
 ### LinkedIn
 

@@ -3,16 +3,20 @@ import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
   jourCourantDansFuseau,
+  lireHeuresEnvoiLinkedIn,
   lirePlafondLinkedIn,
+  lireVolumeEnvoiLinkedIn,
   lireReglages,
+  prochainEnvoiLinkedIn,
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
-import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { Carte, TuileLogo } from '../../../../components/ui';
+import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
-import { phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
+import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
 
@@ -28,8 +32,21 @@ export default async function ReglagesLinkedinPage() {
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
   const maintenant = new Date();
 
-  const [session, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] = await Promise.all([
+  const [
+    session,
+    prochain,
+    heuresEnvoi,
+    volumeEnvoi,
+    plafondPosts,
+    plafondRequetes,
+    plafondPersonnes,
+    postsDuJour,
+    requetesDeLHeure,
+  ] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
+    prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
+    lireHeuresEnvoiLinkedIn(ctx),
+    lireVolumeEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
@@ -39,6 +56,7 @@ export default async function ReglagesLinkedinPage() {
 
   const phrase = phraseEtatSession(session);
   const variante = varianteDetailSession(session);
+  const envoi = phraseEtatEnvoi(session, prochain, maintenant);
   const inconnu = t('faits.inconnu');
   const origine = [session?.operateur, session?.pays].filter(Boolean).join(', ');
   const detail = t(`etat.${phrase.cle}.${variante}`, {
@@ -50,6 +68,23 @@ export default async function ReglagesLinkedinPage() {
     ip: session?.ipVue ?? inconnu,
     origine,
   });
+
+  // « jusqu'à » pour une pause, « prochain envoi » pour un créneau à venir : deux dates
+  // différentes, une seule variable de texte — chaque phrase ne lit que la sienne.
+  const dateEnvoi = (() => {
+    if (envoi.cle === 'enPause' && session?.envoiPauseJusqua) {
+      return dateCourte(session.envoiPauseJusqua.toISOString(), maintenant, fuseau);
+    }
+    if (envoi.cle === 'planifie' && prochain.quand) {
+      return dateCourte(prochain.quand.toISOString(), maintenant, fuseau);
+    }
+    // Budget horaire : l'échéance tombe dans l'heure qui vient, donc une HEURE et pas une
+    // date — « 8 oct. » pour quelque chose qui se débloque à 11 h 20 ne dirait rien.
+    if (envoi.cle === 'plafondHoraireDate' && prochain.disponibleA) {
+      return heureAvecJour(prochain.disponibleA.toISOString(), maintenant, fuseau);
+    }
+    return inconnu;
+  })();
 
   const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
 
@@ -89,6 +124,15 @@ export default async function ReglagesLinkedinPage() {
             )}
           </div>
         </div>
+        {/* Second fait du même canal : « est-ce que ça envoie maintenant ». Il ne peut pas
+            contredire la ligne du dessus — `phraseEtatEnvoi` lui demande d'abord si la session
+            tient, au lieu de relire l'état pour son compte. */}
+        <div className="jr-session-etat">
+          <span className={`jr-session-pastille ${envoi.ton}`} aria-hidden="true" />
+          <div>
+            <p className="jr-session-phrase">{t(`envoi.${envoi.cle}.phrase`, { quand: dateEnvoi })}</p>
+          </div>
+        </div>
         <dl className="jr-session-faits">
           <div>
             <dt>{t('faits.sortie')}</dt>
@@ -107,6 +151,37 @@ export default async function ReglagesLinkedinPage() {
             </dd>
           </div>
         </dl>
+      </Carte>
+
+      {/* Envoi d'abord, collecte ensuite : les deux cartes se lisent dans l'ordre des
+          deux métiers du canal, et chacune porte ses propres réglages. Sans cette
+          carte, la fenêtre d'envoi n'était réglable que depuis la carte d'un compte
+          d'extension — donc par personne, sur une instance tenue par la session du
+          serveur. */}
+      <Carte titre={t('rythme.titre')}>
+        <p className="jr-aide">{t('rythme.lead')}</p>
+        {/* Le plafond et sa consommation côte à côte : un plafond seul ne dit pas s'il
+            est sur le point de bloquer. Les deux chiffres viennent de la fonction que le
+            moteur consulte avant chaque envoi, jamais d'un second comptage. */}
+        <PlafondsLinkedin
+          peutModifier={peutModifier}
+          lignes={[
+            {
+              cle: 'linkedin_invitations_par_semaine',
+              nom: t('rythme.invitationsParSemaine.nom'),
+              usage: t('rythme.invitationsParSemaine.usage', { n: volumeEnvoi.invite.envoyes7Jours }),
+              valeur: volumeEnvoi.invite.plafondHebdo,
+            },
+            {
+              cle: 'linkedin_messages_par_semaine',
+              nom: t('rythme.messagesParSemaine.nom'),
+              usage: t('rythme.messagesParSemaine.usage', { n: volumeEnvoi.message.envoyes7Jours }),
+              valeur: volumeEnvoi.message.plafondHebdo,
+            },
+          ]}
+          libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
+        />
+        <FenetreEnvoiLinkedin valeur={heuresEnvoi} peutModifier={peutModifier} />
       </Carte>
 
       <Carte titre={t('plafonds.titre')}>

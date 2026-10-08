@@ -119,6 +119,105 @@ temps en temps celles qui ne sont plus utilisées :
 docker image prune
 ```
 
+## Déployer l'envoi LinkedIn côté serveur (lot 4b)
+
+Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Cinq
+migrations l'accompagnent, et **l'ordre compte, il n'est pas symétrique** :
+
+1. **Les cinq migrations, dans l'ordre des noms de fichiers**, avec
+   `supabase db push --linked` :
+   `20261007110000_linkedin_envoi`, `20261007120000_linkedin_resultat_indetermine_actif`,
+   `20261007130000_linkedin_methode_par_defaut_serveur`,
+   `20261008100000_linkedin_plafonds_envoi_report`, `20261008110000_linkedin_reprise_marquee`.
+2. **Puis le worker** (`./deployer.sh`).
+3. **Puis l'application web** (Vercel). Le worker et le web peuvent partir
+   ensemble, du moment que la base est passée avant les deux.
+
+Pourquoi cet ordre :
+
+- **Web avant les migrations** : la lecture de la session LinkedIn sélectionne
+  désormais `linkedin_server_sessions.envoi_pause_jusqua`. Sans la colonne, la
+  requête échoue et deux pages tombent en 500 : Réglages → LinkedIn et
+  Réglages → Moteur.
+- **Worker avant les migrations** : l'enfilage d'une action écrit
+  `method = 'serveur'`, que l'ancien check de la colonne refuse. Le job
+  `actions.dispatch` lève, est rejoué cinq fois avec attente croissante, puis
+  meurt : l'action du séquenceur est perdue.
+- **Worker avant `20261008110000`** (colonne `reprise_le`) : les deux balayages
+  LinkedIn sont appelés à chaque tick, sans `try/catch` et sans garde
+  `JAY_REACH_LINKEDIN`. Chaque tick lèvera sur « column "reprise_le" does not
+  exist ». Les envois email du tick sont enfilés avant, donc ce canal survit,
+  mais le job `tick` échoue toutes les minutes, `engine_status.last_error` reste
+  rouge en permanence, et plus aucun balayage ne tourne.
+- **Web avant `20261008110000`** : « Reprendre » lève APRÈS avoir déjà remis
+  l'inscription `active` et l'action `scheduled` (ces écritures ne sont pas dans
+  une transaction). L'inscription reste alors active sans échéance, et le
+  balayage qui aurait dû la rattraper ne tourne pas non plus.
+- **`20261008100000` (report des plafonds d'envoi)** ne pose une clé que pour
+  les organisations qui avaient déjà réglé `linkedin_settings.weekly_cap`. La
+  déployer après le worker ne casse rien : le code retombe sur ses valeurs par
+  défaut. Mais un réglage déjà posé par l'opérateur serait appliqué en retard,
+  donc à passer avec les autres.
+- **La migration `20261007120000` peut refuser de s'appliquer** : elle recrée
+  l'index unique `uq_linkedin_action_active` avec un prédicat élargi (les
+  actions `failed` au résultat `resultat_indetermine` comptent comme actives),
+  et s'arrête avec le nombre de couples fautifs s'il existe déjà un couple
+  (contact, type) en doublon sur ce prédicat. Rien n'est modifié dans ce cas.
+  Pour les trouver :
+
+  ```sql
+  select contact_id, kind, count(*), array_agg(id order by created_at) as actions
+    from linkedin_action_queue
+   where contact_id is not null
+     and (status in ('pending', 'processing', 'sent')
+          or (status = 'failed' and error_code = 'resultat_indetermine'))
+   group by contact_id, kind
+  having count(*) > 1;
+  ```
+
+  C'est à l'opérateur d'arbitrer, ligne par ligne, laquelle des actions du
+  couple garder (relire les lignes avant de supprimer ou de passer un statut :
+  une invitation peut déjà être partie). Puis relancer `supabase db push --linked`.
+
+Vérifier que chaque migration est passée, dans l'éditeur SQL du projet :
+
+```sql
+-- 20261007110000 : colonnes et check
+select column_name from information_schema.columns
+ where table_name = 'linkedin_server_sessions' and column_name = 'envoi_pause_jusqua';
+select column_name from information_schema.columns
+ where table_name = 'linkedin_requetes' and column_name = 'action_queue_id';
+select pg_get_constraintdef(oid) from pg_constraint
+ where conname = 'linkedin_action_queue_method_check';   -- doit contenir 'serveur'
+
+-- 20261007130000 : défaut de la colonne method
+select column_default from information_schema.columns
+ where table_name = 'linkedin_action_queue' and column_name = 'method';  -- 'serveur'::text
+
+-- 20261007120000 : l'index doit porter resultat_indetermine
+select indexdef from pg_indexes where indexname = 'uq_linkedin_action_active';
+
+-- 20261008100000 : le volume d'envoi est reporte par type
+select key, value from organization_settings
+ where key in ('linkedin_invitations_par_semaine', 'linkedin_messages_par_semaine');
+
+-- 20261008110000 : la marque de reprise et son index
+select column_name from information_schema.columns
+ where table_name = 'linkedin_action_queue' and column_name = 'reprise_le';
+select indexname from pg_indexes where indexname = 'linkedin_action_queue_reprise_idx';
+```
+
+La migration de report (`20261008100000`) ne pose une cle que pour les organisations
+qui avaient deja regle `linkedin_settings.weekly_cap` ; une organisation qui n'en
+avait pas garde le defaut du code (100 invitations, 200 messages par semaine), et le
+regle ensuite dans Reglages > LinkedIn.
+
+Chaque migration se vérifie aussi elle-même et échoue si son objet manque : un
+`db push` qui se termine sans erreur est déjà un premier signal.
+
+Enfin, poser `JAY_REACH_LINKEDIN=1` dans `worker.env` (voir le tableau des
+variables) : sans elle, rien ne part, et rien ne le dit.
+
 ## Journaux
 
 ```bash
@@ -172,7 +271,8 @@ joignable : celle de Fournisseurs → Microsoft Graph, ou, à défaut, les trois
 variables ci-dessus **toutes les trois** présentes. Une seule manquante et rien
 ne tourne.
 
-| `JAY_REACH_LINKEDIN` | Optionnelle. `1` autorise les commandes `jay-reach linkedin ...` ; sinon `connecter`, `deconnecter` et `ip` refusent (`statut` reste lisible). |
+| `JAY_REACH_LINKEDIN` | `1` active le canal LinkedIn du serveur : les commandes `jay-reach linkedin ...` (`connecter`, `deconnecter`, `ip` ; `statut` reste lisible) **et tout l'envoi**. Clé absente, vide ou différente de `1` : le minuteur d'envoi ne démarre pas et le handler `linkedin.envoi` sort sur un `console.warn`, sans rien envoyer. Aucune erreur, aucune action en échec : les actions restent `pending`. La valeur est comparée strictement à `1` (`true` ou `oui` ne comptent pas). |
+| `LINKEDIN_ENVOI_POLL_MS` | Optionnelle. Cadence (millisecondes) à laquelle le worker évalue s'il y a un envoi LinkedIn à faire. Défaut `60000`. Absente, vide, illisible ou sous `10000` : le défaut. Au-dessus de `300000` : ramenée à `300000`. N'a d'effet que si `JAY_REACH_LINKEDIN=1`. |
 | `LINKEDIN_BROWSER_URL` | Adresse DevTools du service `navigateur` : `http://navigateur:9223`. |
 | `LINKEDIN_PROXY_URL` (**`navigateur.env`**) | Adresse du proxy résidentiel dédié, **sans identifiants** (`schéma://hôte:port`). Le navigateur refuse de démarrer sans elle. |
 | `LINKEDIN_PROXY_USER` / `LINKEDIN_PROXY_PASSWORD` (`worker.env`) | Identifiants du proxy, présentés par CDP : Chromium les refuse dans `--proxy-server`. |
@@ -183,7 +283,7 @@ ne tourne.
 
 ## Le navigateur LinkedIn (facultatif)
 
-Le canal LinkedIn exécuté côté serveur pilote un Chromium dans son propre
+Le canal LinkedIn exécuté côté serveur (collecte et envoi) pilote un Chromium dans son propre
 conteneur (`navigateur`), derrière un proxy résidentiel dédié. Il est derrière
 un profil Compose : sans le réglage ci-dessous, `./deployer.sh` ne le construit
 ni ne le démarre.

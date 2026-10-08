@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
+import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 import {
   CLES_REGLAGES,
   ecrireReglage,
@@ -456,3 +457,31 @@ describe('fuseau du jour LinkedIn', () => {
     expect(await lireFuseauLinkedIn(faux({}))).toBe('Europe/Paris');
   });
 });
+
+describe('schemaEcrireReglage — les plafonds d envoi LinkedIn sont bornes', () => {
+  /**
+   * Le moteur rabote ces deux plafonds a HARD_CAP_7_DAYS. Sans borne a l'ecriture,
+   * l'ecran acceptait 400, affichait 400, et 200 partaient : le reglage visible
+   * mentait sur ce qui part. La colonne `linkedin_settings.weekly_cap` portait cette
+   * garde par un `check`, perdue en demenageant dans `organization_settings`.
+   */
+  it.each(['linkedin_invitations_par_semaine', 'linkedin_messages_par_semaine'] as const)(
+    '%s refuse une valeur au-dessus de la borne appliquee par le moteur',
+    (cle) => {
+      const r = schemaEcrireReglage.safeParse({ cle, valeur: HARD_CAP_7_DAYS + 1 });
+      expect(r.success).toBe(false);
+    },
+  );
+
+  it.each(['linkedin_invitations_par_semaine', 'linkedin_messages_par_semaine'] as const)(
+    '%s accepte exactement la borne',
+    (cle) => {
+      expect(schemaEcrireReglage.safeParse({ cle, valeur: HARD_CAP_7_DAYS }).success).toBe(true);
+    },
+  );
+
+  it('les autres plafonds ne sont pas bornes par cette regle', () => {
+    expect(schemaEcrireReglage.safeParse({ cle: 'scoring_par_jour', valeur: HARD_CAP_7_DAYS + 500 }).success).toBe(true);
+  });
+});
+

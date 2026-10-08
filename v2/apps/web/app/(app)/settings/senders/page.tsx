@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { hasMinRole, lireReglages } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { dateCourte, estDateRelative } from '../../../../lib/dates';
 import { listerBoitesExpediteurs } from '../../../actions/senders';
 import { listerComptesLinkedInAction } from '../../../actions/linkedin';
@@ -19,11 +20,12 @@ export default async function ReglagesExpediteursPage() {
   const ctx = await contexteCourant();
   const peutModifier = ctx.role !== null && hasMinRole(ctx.role, 'admin');
 
-  const [t, boitesResultat, comptesResultat, reglages] = await Promise.all([
+  const [t, boitesResultat, comptesResultat, reglages, sessionLinkedIn] = await Promise.all([
     getTranslations('reglages.expediteurs'),
     listerBoitesExpediteurs(),
     listerComptesLinkedInAction(),
     lireReglages(ctx),
+    lireSessionLinkedInCourante(ctx),
   ]);
 
   const boites = boitesResultat.ok ? boitesResultat.valeur : [];
@@ -85,7 +87,16 @@ export default async function ReglagesExpediteursPage() {
         </div>
       ) : comptes.length === 0 ? (
         <div className="jr-carte">
-          <div className="jr-vide">{t('linkedin.empty')}</div>
+          {/* « Aucun compte connecté » est faux dès qu'une session tourne sur le serveur :
+              cette section ne liste que les comptes reliés par l'extension, et le canal
+              n'en passe plus par là. Le renvoi ne promet que ce que l'autre page porte
+              réellement, c'est à dire le rythme et les heures d'envoi. */}
+          <div className="jr-vide">{sessionLinkedIn ? t('linkedin.emptyServeur') : t('linkedin.empty')}</div>
+          {sessionLinkedIn && (
+            <a className="jr-lien" href="/settings/linkedin">
+              {t('linkedin.emptyServeurLien')}
+            </a>
+          )}
         </div>
       ) : (
         comptes.map((compte) => <CarteCompteLinkedIn key={compte.id} compte={compte} peutModifier={peutModifier} />)

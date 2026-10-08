@@ -2071,6 +2071,32 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
     );
   }
 
+  // Une invitation LinkedIn portant une note ne peut PAS partir aujourd'hui : l'envoi serveur
+  // ne sait pas encore porter la note (le champ Voyager qui la transporte reste à relever), et
+  // la règle du dépôt interdit d'envoyer un message amputé. Le handler refuse donc chaque
+  // invitation avec note (`note_non_supportee`), une par une, et chaque contact se retrouve
+  // figé. Autant le dire au lancement : la campagne entière est condamnée, pas un contact.
+  const invitationsAvecNote = etapes.filter((e) => e.channel === 'linkedin_invite' && e.template_parent_id !== null);
+  if (invitationsAvecNote.length > 0) {
+    const ids = invitationsAvecNote.map((e) => e.template_parent_id);
+    const avecCorps = await ctx.ex.query<{ parent: string }>(
+      `select distinct coalesce(t.parent_id, t.id)::text as parent /* jr:manques_note_invitation */
+         from message_templates t
+        where (t.id = any($1::uuid[]) or t.parent_id = any($1::uuid[]))
+          and coalesce(btrim(t.body), '') <> ''`,
+      [ids],
+    );
+    if (avecCorps.rowCount && avecCorps.rowCount > 0) {
+      const numeros = invitationsAvecNote
+        .filter((e) => avecCorps.rows.some((r) => r.parent === e.template_parent_id))
+        .map((e) => e.position + 1)
+        .join(', ');
+      manques.push(
+        `l’invitation LinkedIn de l’étape ${numeros} porte une note, que l’envoi serveur ne sait pas encore transmettre : retirez-la du message`,
+      );
+    }
+  }
+
   const canaux = new Set(etapes.map((e) => e.channel).filter((c) => c !== 'call'));
   const besoinEmail = canaux.has('email');
   const besoinLinkedIn = [...canaux].some((c) => c.startsWith('linkedin'));
@@ -2081,7 +2107,29 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
   );
   const genres = new Set(expediteursRes.rows.map((s) => s.kind));
   if (besoinEmail && !genres.has('email')) manques.push('aucun expéditeur email actif');
-  if (besoinLinkedIn && !genres.has('linkedin')) manques.push('aucun expéditeur LinkedIn actif');
+  if (besoinLinkedIn) {
+    // L'expéditeur LinkedIn, depuis le lot 4b, EST la session ouverte sur le serveur : plus
+    // aucune ligne `senders` n'est créée pour ce canal, et le séquenceur n'en demande plus
+    // (`senderKindFor` rend `null`, comme pour le canal `call`). Exiger ici une ligne `senders`
+    // active rendait le canal entier inatteignable — mesuré sur la base : deux lignes LinkedIn,
+    // aucune active, et une session serveur ouverte. Une campagne LinkedIn ne pouvait pas être
+    // lancée du tout.
+    //
+    // Le chemin de l'extension est gelé (ses routes rendent 410) : une ligne `senders` héritée
+    // n'enverrait rien. C'est donc bien la session qu'il faut exiger, pas l'une ou l'autre.
+    const sessionRes = await ctx.ex.query<{ status: string }>(
+      `select status from linkedin_server_sessions /* jr:manques_session_linkedin */ where organization_id = $1`,
+      [ctx.organisationId],
+    );
+    const etatSession = sessionRes.rows[0]?.status ?? null;
+    if (etatSession !== 'active') {
+      manques.push(
+        etatSession === null
+          ? 'aucune session LinkedIn ouverte sur le serveur (`jay-reach linkedin connecter`)'
+          : 'la session LinkedIn du serveur n’est pas active',
+      );
+    }
+  }
 
   if (besoinEmail) {
     const [cleRes, boitesRes] = await Promise.all([

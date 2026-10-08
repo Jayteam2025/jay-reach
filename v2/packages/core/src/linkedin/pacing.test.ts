@@ -7,8 +7,10 @@ import {
   heureLocale,
   WINDOW_START_HOUR,
   WINDOW_END_HOUR,
+  WINDOW_DAYS,
   type PaceInput,
 } from './pacing.js';
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
 
 const base: PaceInput = { hour: 10, sentLast7Days: 0, cap7Days: 25, lastSentAtIso: null, minutesSinceLastSent: null };
 
@@ -61,6 +63,17 @@ describe('pacing LinkedIn', () => {
     expect(a).toBeGreaterThanOrEqual(0);
     expect(a).toBeLessThan(1);
     expect(seededRandom('x')).toBe(a);
+  });
+
+  it('seededRandom refuse une graine qui n est pas une chaine', () => {
+    // `pg` rend les timestamptz en `Date` : sur un `Date`, `.length` vaut undefined, la boucle ne
+    // tournait pas et la fonction rendait une constante, soit un intervalle de 3 min 35 s a chaque envoi.
+    expect(() => seededRandom(new Date('2026-08-20T10:00:00.000Z') as unknown as string)).toThrow(TypeError);
+    expect(() => seededRandom(undefined as unknown as string)).toThrow(TypeError);
+  });
+
+  it('deux graines differentes donnent deux valeurs differentes', () => {
+    expect(seededRandom('2026-08-20T10:00:00.000Z')).not.toBe(seededRandom('2026-08-20T10:00:01.000Z'));
   });
 
   it('parisHour renvoie une heure 0–23', () => {
@@ -126,8 +139,17 @@ describe('la fenêtre saisie à l’écran est celle qui s’applique', () => {
     expect(heureLocale(d, 'America/Montreal')).toEqual({ hour: 18, isoDay: 2 });
   });
 
+  it('les constantes de fenêtre du rythme SONT la constante unique des heures d’envoi par défaut', () => {
+    // Deux constantes distinctes ont déjà divergé : 8 h - 21 h appliqué, 9 h - 18 h annoncé.
+    expect(WINDOW_START_HOUR).toBe(HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure);
+    expect(WINDOW_END_HOUR).toBe(HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure);
+    expect([...WINDOW_DAYS]).toEqual([...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours]);
+  });
+
   it('retombe sur la fenêtre par défaut quand rien n’est réglé', () => {
-    expect(decideCanSend({ ...base, hour: 7, isoDay: 1 })).toEqual({ ok: false, reason: 'outside_window' });
-    expect(decideCanSend({ ...base, hour: 8, isoDay: 1 })).toEqual({ ok: true });
+    expect(decideCanSend({ ...base, hour: WINDOW_START_HOUR - 1, isoDay: 1 })).toEqual({ ok: false, reason: 'outside_window' });
+    expect(decideCanSend({ ...base, hour: WINDOW_START_HOUR, isoDay: 1 })).toEqual({ ok: true });
+    expect(decideCanSend({ ...base, hour: WINDOW_END_HOUR - 1, isoDay: 1 })).toEqual({ ok: true });
+    expect(decideCanSend({ ...base, hour: WINDOW_END_HOUR, isoDay: 1 })).toEqual({ ok: false, reason: 'outside_window' });
   });
 });

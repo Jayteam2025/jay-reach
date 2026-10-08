@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type { ScrapedSignal } from '@jay-reach/providers/signals';
-import { insertSignals } from './db.js';
+import { insertSignals, enqueueLinkedInAction } from './db.js';
 
 const NOW = new Date('2026-09-17T00:00:00.000Z');
 const JOURS = 24 * 60 * 60 * 1000;
@@ -90,5 +90,28 @@ describe('insertSignals — âge maximal des offres (I3)', () => {
     expect(ecartesAge).toBe(2);
     expect(inserted).toHaveLength(0);
     expect(appels.some((a) => /insert into signals/i.test(a.sql))).toBe(false);
+  });
+});
+
+describe('enqueueLinkedInAction — methode par defaut', () => {
+  it('sans methode, la ligne est creee pour le serveur : la seule que la reclamation prenne', async () => {
+    const query = vi.fn(async (_sql: string, _valeurs: unknown[]) => ({ rows: [{ id: 'q-1' }], rowCount: 1 }));
+    await enqueueLinkedInAction({ query } as unknown as Pool, {
+      organizationId: 'org-1',
+      kind: 'invite',
+      linkedinUrl: 'https://www.linkedin.com/in/x',
+    });
+    expect(query.mock.calls[0]?.[1][6]).toBe('serveur');
+  });
+
+  it('ne laisse plus ecrire une ligne que personne ne reclamerait', () => {
+    const job: Parameters<typeof enqueueLinkedInAction>[1] = {
+      organizationId: 'org-1',
+      kind: 'invite',
+      linkedinUrl: 'https://www.linkedin.com/in/x',
+      // @ts-expect-error `extension_auto` n'est plus une methode d'ecriture
+      method: 'extension_auto',
+    };
+    expect(job.method).toBe('extension_auto');
   });
 });

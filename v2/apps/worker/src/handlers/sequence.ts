@@ -5,7 +5,9 @@
  * @jay-reach/core) ; ici on fait les I/O SQL et on renvoie les jobs d'envoi.
  *
  * Aucun envoi réel ici : les actions LinkedIn émises partent vers `actions.dispatch`,
- * qui les enfile dans `linkedin_action_queue` (exécutée par l'extension, pacing serveur).
+ * qui les enfile dans `linkedin_action_queue`. Le worker les exécute ensuite depuis la
+ * session LinkedIn du serveur (IP résidentielle dédiée), sous plafonds réglables ; le
+ * pacing est jugé côté serveur avant chaque envoi.
  */
 import type { Pool } from 'pg';
 import {
@@ -14,7 +16,6 @@ import {
   ecrireEvenement,
   placesRestantes,
   runGuards,
-  renderTemplate,
   resolveSender,
   shiftIntoBusinessHours,
   applyLeadTime,
@@ -34,9 +35,8 @@ import { loadDomainPatterns, domainOf, type DomainPattern } from '../domain-patt
 import type { DispatchJob } from './dispatch.js';
 import {
   REQUETE_LIGNE_INSCRIPTION,
-  buildMessageValues,
   construireEntreeGate,
-  resolveTemplate,
+  rendreCorpsDeLEtape,
   loadSnippets,
   type DueRow,
 } from './message-values.js';
@@ -136,10 +136,16 @@ function isLinkedIn(channel: TickChannel): boolean {
 /**
  * Type d'expéditeur requis par un canal, ou null quand le canal n'en consomme
  * aucun. Une étape `call` n'envoie rien (CLAUDE.md #8) : ni expéditeur, ni quota.
+ *
+ * LinkedIn n'en consomme pas non plus : l'expéditeur y est la session du serveur
+ * (`linkedin_server_sessions`), pas une ligne de `senders`, et ses plafonds vivent
+ * dans `linkedin_settings`, appliqués plus loin par le canal d'envoi. Exiger ici une
+ * ligne `senders` de type `linkedin` mettait chaque inscription en pause
+ * (`sender_unavailable:linkedin`) sans jamais créer d'action : le canal serveur n'en
+ * crée aucune, seule l'extension gelée le faisait.
  */
-function senderKindFor(channel: TickChannel): 'email' | 'linkedin' | 'postal' | null {
+function senderKindFor(channel: TickChannel): 'email' | 'postal' | null {
   if (channel === 'email') return 'email';
-  if (isLinkedIn(channel)) return 'linkedin';
   if (channel === 'letter') return 'postal';
   return null;
 }
@@ -489,6 +495,26 @@ const PERSONNES_PAR_ENTREPRISE_ET_PAR_JOUR = Number(process.env.ACCOUNT_PEOPLE_P
  * qui ferait partir un courrier le jour où il devrait arriver.
  */
 const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
+
+/**
+ * Rang ORDINAL d'une étape dans sa campagne (0 pour la première), c'est-à-dire ce que
+ * `enrollments.current_step` désigne partout : le tick lit `steps[current_step]` et
+ * `reprendreInscription` fait `order by position offset current_step`. Les positions, elles,
+ * ne sont pas contiguës (`supprimerEtape` ne renumérote pas, `enregistrerEtape` crée à
+ * `max(position) + 1`) : passer `sequence_steps.position` à `mettreInscriptionEnPause` écrivait
+ * un rang faux dès qu'une étape avait été supprimée, et la reprise ne retrouvait plus l'étape.
+ * Rend undefined quand l'étape n'existe plus (suppression entre-temps).
+ */
+export async function rangDeLEtape(pool: Pick<Pool, 'query'>, stepId: string): Promise<number | undefined> {
+  const res = await pool.query<{ rang: number }>(
+    `select (select count(*)::int from sequence_steps o /* jr:rang_etape */
+              where o.campaign_id = s.campaign_id and o.position < s.position) as rang
+       from sequence_steps s
+      where s.id = $1`,
+    [stepId],
+  );
+  return res.rows[0]?.rang;
+}
 
 /**
  * Met en pause une inscription active : plus rien ne part tant qu'un
@@ -1010,22 +1036,18 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);
       // Rendu local des variables pour les canaux dont Jay Reach possède le corps
-      // ici, dans le tick (message LinkedIn, courrier). L'email est aussi rendu
+      // ici, dans le tick (invitation LinkedIn, message LinkedIn, courrier). L'invitation y
+      // figure : sans rendu sa note était jetée en silence et l'invitation partait nue, alors
+      // que l'écran promet qu'une note non portée ne part pas (« un message altéré ne part
+      // pas »). Rendue, la note arrive au handler d'envoi, qui la refuse (`note_non_supportee`). L'email est aussi rendu
       // par Jay Reach (`jr_subject`/`jr_body`), mais au moment de l'envoi
       // (`envoyerEmailSalesBlink`), pas ici : voir `message-values.ts`.
-      if ((ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
-        const resolved = await resolveTemplate(pool, step.template_parent_id, row.locale);
-        if (resolved.missingLocale) {
-          missingLocale = true;
-        } else if (resolved.body !== null) {
-          templateId = resolved.id;
-          const rendered = renderTemplate(
-            resolved.body,
-            buildMessageValues(row, extraitsParOrg.get(row.organization_id)),
-          );
-          messageBody = rendered.text;
-          unresolvedVariables = rendered.missing;
-        }
+      if ((ch === 'linkedin_invite' || ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
+        const corps = await rendreCorpsDeLEtape(pool, row, step.template_parent_id, extraitsParOrg.get(row.organization_id));
+        missingLocale = corps.langueManquante;
+        templateId = corps.templateId;
+        messageBody = corps.texte;
+        unresolvedVariables = corps.variablesManquantes;
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);
@@ -1270,7 +1292,6 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           contactId: row.contact_id,
           signalId: row.signal_id,
           messageBody,
-          method: 'extension_auto',
         },
       });
     }

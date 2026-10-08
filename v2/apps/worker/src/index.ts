@@ -6,7 +6,7 @@
  * d'exécution : écouter en continu et déclencher les producteurs à intervalle.
  */
 import { QUEUES, journaliserErreurMoteur } from '@jay-reach/core';
-import { createRuntime, registerQueues } from './runtime.js';
+import { createRuntime, registerQueues, verifierPolitiquesDeFiles } from './runtime.js';
 import {
   ecrireBattementFichier,
   CHEMIN_BATTEMENT_PAR_DEFAUT,
@@ -26,6 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
+import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
@@ -53,6 +54,14 @@ const RELEVE_GRAPH_POLL_MS = 60_000;
  */
 const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS);
 
+/**
+ * Cadence de l'évaluation de l'envoi LinkedIn. Ce n'est PAS la cadence des envois : elle
+ * ne fait que juger, en base et sans navigateur, quelles organisations peuvent envoyer, et
+ * date le job (`startAfter`) au moment où l'intervalle de 1 à 20 minutes s'achève.
+ * Réglable : `LINKEDIN_ENVOI_POLL_MS`.
+ */
+const LINKEDIN_ENVOI_POLL_MS = cadenceEnvoiLinkedIn(process.env.LINKEDIN_ENVOI_POLL_MS);
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -71,6 +80,15 @@ async function main(): Promise<void> {
   const identite = identiteDepuisEnvironnement();
   await boss.start();
   await registerQueues(boss);
+  // Une file dont la politique n'est pas celle attendue n'est pas consommée, mais le worker
+  // démarre : les relances email ne doivent pas s'arrêter pour un défaut du canal LinkedIn.
+  // L'erreur va dans le journal d'activité et dans les logs, là où l'opérateur regarde.
+  const fautives = await verifierPolitiquesDeFiles(boss);
+  for (const f of fautives) {
+    console.error(`[worker] ${f.message}`);
+    await journaliserErreurMoteur(pool, new Error(f.message), `politique de file ${f.file}`);
+  }
+  const filesIgnorees = fautives.map((f) => f.file);
 
   const ctx: Contexte = { boss, pool, encryptionKey };
 
@@ -109,7 +127,7 @@ async function main(): Promise<void> {
     }
   };
 
-  await ecouterLesFiles(ctx);
+  await ecouterLesFiles(ctx, { ignorer: filesIgnorees });
   console.log(`[worker] pg-boss démarré — ${QUEUES.length} files déclarées.`);
   void tourSequences();
 
@@ -143,6 +161,25 @@ async function main(): Promise<void> {
   const releveGraph = setInterval(enfilerReleveGraph, RELEVE_GRAPH_POLL_MS);
   releveGraph.unref();
 
+  // Seulement là où le canal est autorisé : ailleurs, le handler sortirait de toute façon.
+  let envoiLinkedIn: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.envoi')) {
+    // Même raison que la relève Graph : un hoquet de base ne doit pas tuer le worker.
+    const enfilerEnvoiLinkedIn = (): void => {
+      void enqueueEnvoiLinkedIn(boss, pool).catch((err: unknown) => {
+        // Le canal d'envoi n'avait AUCUNE surface d'erreur pour l'opérateur : ni
+        // `engine_status`, ni le journal d'activité, ni l'écran. Une évaluation qui
+        // échoue toutes les minutes se lisait seulement dans les journaux du conteneur,
+        // pendant que l'écran continuait d'annoncer un canal prêt.
+        console.error('[envoi-linkedin] évaluation impossible (envoi_linkedin_enqueue)');
+        void journaliserErreurMoteur(pool, err instanceof Error ? err : new Error(String(err)), 'envoi LinkedIn');
+      });
+    };
+    enfilerEnvoiLinkedIn();
+    envoiLinkedIn = setInterval(enfilerEnvoiLinkedIn, LINKEDIN_ENVOI_POLL_MS);
+    envoiLinkedIn.unref();
+  }
+
   const enfilerPurge = (): void => {
     void boss.send('retention.purge', {}).catch(() => {
       console.error('[retention-purge] enfilage impossible (retention_purge_enqueue)');
@@ -160,6 +197,7 @@ async function main(): Promise<void> {
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);
     clearInterval(purge);
+    if (envoiLinkedIn) clearInterval(envoiLinkedIn);
     await boss.stop({ graceful: true });
     process.exit(0);
   };

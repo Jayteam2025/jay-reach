@@ -7,17 +7,17 @@
  * intervalle aléatoire mais déterministe entre deux actions du même compte.
  */
 
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
+
 /**
- * Fenêtre appliquée quand l'opérateur n'en a réglé aucune.
- *
- * Ce n'était pas un défaut mais la seule valeur possible : le pacing lisait ces
- * constantes et ignorait les heures, les jours et le fuseau que l'écran
- * LinkedIn enregistre depuis toujours.
+ * Fenêtre appliquée quand l'opérateur n'en a réglé aucune : celle de
+ * `HEURES_ENVOI_LINKEDIN_PAR_DEFAUT`, l'UNIQUE source (colonnes de `linkedin_settings`, écran,
+ * documentation). Trois constantes distinctes ont déjà divergé : 8 h - 21 h appliqué, 9 h - 18 h annoncé.
  */
-export const WINDOW_START_HOUR = 8;
-export const WINDOW_END_HOUR = 21; // exclusif : dernier créneau à 20 h
+export const WINDOW_START_HOUR = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure;
+export const WINDOW_END_HOUR = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure; // exclusif : dernier créneau à 17 h
 /** Jours ISO par défaut : du lundi au vendredi. */
-export const WINDOW_DAYS: readonly number[] = [1, 2, 3, 4, 5];
+export const WINDOW_DAYS: readonly number[] = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours;
 export const MIN_INTERVAL_MIN = 1;
 export const MAX_INTERVAL_MIN = 20;
 export const PROCESSING_TIMEOUT_MIN = 10;
@@ -26,12 +26,27 @@ export const HARD_CAP_7_DAYS = 200;
 
 /** Hash déterministe FNV-1a → [0, 1). Rejoue le même intervalle à chaque poll. */
 export function seededRandom(seed: string): number {
+  // Une graine qui n'est pas une chaîne doit échouer, pas dégrader : `pg` rend les timestamptz
+  // en `Date`, dont `.length` vaut `undefined` ; la boucle ne tournait pas et la fonction rendait
+  // la constante 0,136261, soit le même intervalle de 3 min 35 s à chaque envoi.
+  if (typeof seed !== 'string') {
+    throw new TypeError('seededRandom : la graine doit être une chaîne');
+  }
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return ((h >>> 0) % 1_000_000) / 1_000_000;
+}
+
+/**
+ * Date ISO d'une valeur lue en base. `pg` désérialise un `timestamptz` en `Date` alors que les
+ * champs du rythme sont typés `string` : le compilateur ne voit rien. À appeler sur TOUTE date
+ * lue en base qui alimente `decideCanSend`.
+ */
+export function versIso(valeur: string | Date): string {
+  return valeur instanceof Date ? valeur.toISOString() : new Date(valeur).toISOString();
 }
 
 /** Heure locale (0–23) à Paris pour une date donnée (DST géré par Intl). */

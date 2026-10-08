@@ -27,7 +27,7 @@ function classePilule(etat: FicheSequence['etapes'][number]['etat']): string {
 
 export function SectionOuEnEstOn({ sequence, campagneId, fuseau }: SectionOuEnEstOnProps) {
   const t = useTranslations('campagne.fiche');
-  const tPause = useTranslations('campagne.contacts.pause');
+  const tPause = useTranslations('motifsPause');
   const tActions = useTranslations('campagne.contacts.actions');
 
   const motifAffiche = sequence?.pause

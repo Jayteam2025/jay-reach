@@ -18,6 +18,7 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { fuseauDeLOrganisation } from './plafonds.js';
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from '../linkedin/reglages-envoi.js';
 
 // ---------------------------------------------------------------------------
 // Fenêtre d'envoi : conversion HH:MM ↔ heure pleine
@@ -423,10 +424,10 @@ interface LigneReglagesLinkedIn {
 const REGLAGES_LINKEDIN_PAR_DEFAUT: LigneReglagesLinkedIn = {
   daily_cap: 25,
   weekly_cap: 100,
-  send_from_hour: 9,
-  send_to_hour: 18,
-  send_days: [1, 2, 3, 4, 5],
-  timezone: 'Europe/Paris',
+  send_from_hour: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+  send_to_hour: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+  send_days: [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+  timezone: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
 };
 
 /**
@@ -642,14 +643,19 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
 
   const jours = [...e.heures.jours].sort((a, b) => a - b);
 
+  // N'écrit PLUS la fenêtre d'envoi (`send_from_hour`, `send_to_hour`, `send_days`,
+  // `timezone`). Ces quatre colonnes sont celles que le moteur du serveur applique, et
+  // elles ont leur propre écran (Réglages › LinkedIn, carte « Rythme d'envoi »). Tant
+  // qu'elles étaient réécrites ici, un enregistrement sur la carte d'un compte
+  // d'extension — présentée à l'opérateur comme sans effet sur le serveur — remettait
+  // silencieusement la fenêtre du serveur à ce que portait CE formulaire. Deux écrans
+  // qui écrivent le même réglage, c'est deux vérités.
   await ctx.ex.query(
-    `insert into linkedin_settings (organization_id, daily_cap, weekly_cap, send_from_hour, send_to_hour, send_days, timezone, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, now())
+    `insert into linkedin_settings (organization_id, daily_cap, weekly_cap, updated_at)
+     values ($1, $2, $3, now())
      on conflict (organization_id) do update
-       set daily_cap = excluded.daily_cap, weekly_cap = excluded.weekly_cap,
-           send_from_hour = excluded.send_from_hour, send_to_hour = excluded.send_to_hour,
-           send_days = excluded.send_days, timezone = excluded.timezone, updated_at = now()`,
-    [ctx.organisationId, e.quotaJour, e.quotaSemaine, debut, fin, jours, e.heures.fuseau],
+       set daily_cap = excluded.daily_cap, weekly_cap = excluded.weekly_cap, updated_at = now()`,
+    [ctx.organisationId, e.quotaJour, e.quotaSemaine],
   );
 
   // F15 : sans cet expéditeur, l'activation ci-dessus (comme les plafonds et

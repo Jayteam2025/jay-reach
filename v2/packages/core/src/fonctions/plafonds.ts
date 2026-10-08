@@ -27,6 +27,7 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
 import { normaliserPlafond } from '../plafonds.js';
+import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 import type { Executeur } from '../executeur.js';
 
 export type ClePlafond =
@@ -35,6 +36,8 @@ export type ClePlafond =
   | 'linkedin_posts_par_jour'
   | 'linkedin_requetes_par_heure'
   | 'linkedin_personnes_par_passage'
+  | 'linkedin_invitations_par_semaine'
+  | 'linkedin_messages_par_semaine'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -46,6 +49,8 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_posts_par_jour',
   'linkedin_requetes_par_heure',
   'linkedin_personnes_par_passage',
+  'linkedin_invitations_par_semaine',
+  'linkedin_messages_par_semaine',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -61,6 +66,12 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // de scoring, que les offres d'emploi se partagent. Un passage qui enregistre plus fabrique des
   // fiches que le moteur ne traitera jamais (revue finale, 2.3).
   { cle: 'linkedin_personnes_par_passage', defaut: 100, env: 'LINKEDIN_PEOPLE_PER_RUN_CAP' },
+  // Deux plafonds d'envoi, un par type d'action, sur sept jours glissants. C'est l'invitation qui
+  // met un compte LinkedIn en danger (son taux d'acceptation est surveillé), le message beaucoup
+  // moins : un compteur commun forçait à brider les messages au rythme du plus risqué. Le plafond
+  // quotidien de chaque type se déduit du sien (`chargerStatsRythme`, linkedin/file.ts).
+  { cle: 'linkedin_invitations_par_semaine', defaut: 100, env: 'LINKEDIN_INVITES_WEEKLY_CAP' },
+  { cle: 'linkedin_messages_par_semaine', defaut: 200, env: 'LINKEDIN_MESSAGES_WEEKLY_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -267,6 +278,23 @@ export const schemaEcrireReglage = z
             : `La clé « ${entree.cle} » attend une chaîne non vide, pas un nombre.`,
       });
       return;
+    }
+    // Les deux plafonds d'envoi LinkedIn sont rabotés par le moteur à `HARD_CAP_7_DAYS`
+    // (`jugerRythme`). Sans borne ici, l'écran accepterait 400, afficherait 400, et le
+    // moteur en appliquerait 200 : le réglage visible mentirait sur ce qui part, ce qui
+    // est pire que pas de réglage du tout. La colonne `linkedin_settings.weekly_cap`
+    // portait cette garde par un `check` ; en déménageant dans `organization_settings`,
+    // elle s'était perdue.
+    if (
+      (entree.cle === 'linkedin_invitations_par_semaine' || entree.cle === 'linkedin_messages_par_semaine') &&
+      typeof entree.valeur === 'number' &&
+      entree.valeur > HARD_CAP_7_DAYS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['valeur'],
+        message: `Ce plafond ne peut pas dépasser ${HARD_CAP_7_DAYS} par semaine : au-delà, le moteur appliquerait ${HARD_CAP_7_DAYS} sans le dire.`,
+      });
     }
     if (entree.cle === 'fuseau' && typeof entree.valeur === 'string' && !fuseauValide(entree.valeur)) {
       ctx.addIssue({
@@ -508,7 +536,12 @@ export async function lireConsommationDuJour(
  * base, parce que les étages aval (scoring, enrichissement) sont plafonnés à un ou deux ordres
  * de grandeur de moins que ce que 60 requêtes de 50 profils laissent entrer.
  */
-export type ClePlafondLinkedIn = 'linkedin_posts_par_jour' | 'linkedin_requetes_par_heure' | 'linkedin_personnes_par_passage';
+export type ClePlafondLinkedIn =
+  | 'linkedin_posts_par_jour'
+  | 'linkedin_requetes_par_heure'
+  | 'linkedin_personnes_par_passage'
+  | 'linkedin_invitations_par_semaine'
+  | 'linkedin_messages_par_semaine';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
@@ -534,12 +567,29 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string):
 }
 
 /**
+ * Consigne UNE requête d'ENVOI émise vers LinkedIn, au moment où elle part : même table, même
+ * fenêtre horaire que la collecte (le compte est le même). L'action doit appartenir à
+ * l'organisation, pour la même raison que `tracerRequeteLinkedIn` : le worker écrit avec la clé
+ * de service, que la RLS ne borne pas.
+ */
+export async function tracerEnvoiLinkedIn(ctx: Contexte, actionQueueId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, action_queue_id) /* jr:linkedin_envoi_tracer */
+     select q.organization_id, q.id
+       from linkedin_action_queue q
+      where q.id = $2 and q.organization_id = $1`,
+    [ctx.organisationId, actionQueueId],
+  );
+  if (res.rowCount === 0) throw new Error("Action LinkedIn introuvable pour cette organisation.");
+}
+
+/**
  * Requêtes émises vers LinkedIn depuis `depuis` (inclus), jusqu'à `jusqua`
  * (exclu) si fourni. Compte l'horodatage de CHAQUE requête, jamais le
  * démarrage du passage : une collecte ouverte à 23 h 55 dont une requête part
  * à 00 h 05 compte une requête de chaque côté de minuit.
  */
-export async function compterRequetesLinkedIn(ctx: Contexte, depuis: Date, jusqua?: Date): Promise<number> {
+export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organisationId'>, depuis: Date, jusqua?: Date): Promise<number> {
   const res = await ctx.ex.query<{ n: number }>(
     `select count(*)::int as n /* jr:linkedin_requetes_compter */
        from linkedin_requetes

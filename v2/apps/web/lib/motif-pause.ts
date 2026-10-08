@@ -1,8 +1,14 @@
 /**
  * Libellé du motif de pause d'une inscription (tâche 29, lot 2, R93) —
- * fonction pure (même esprit que `etape-contact.tsx`) : les écrans (`TableContacts`,
- * `SectionOuEnEstOn`) passent leur propre `t`, déjà scopé sur
- * `campagne.contacts.pause`, et le nom des clés reste relatif à ce sous-espace.
+ * fonction pure (même esprit que `etape-contact.tsx`) : les trois écrans qui affichent
+ * un motif de pause (Contacts, Contacts d'une campagne, fiche contact) passent leur
+ * propre `t`, tous scopés sur le MÊME bloc `motifsPause`.
+ *
+ * Ce bloc est unique depuis le 08/10, et il l'est pour une raison : il a d'abord existé
+ * en deux exemplaires jumeaux (`contacts.pause` et `campagne.contacts.pause`). Les six
+ * motifs LinkedIn n'avaient été ajoutés que dans l'un des deux, si bien que le même
+ * refus s'affichait en clair sur l'écran d'une campagne et en chemin de clé brut sur
+ * l'écran Contacts.
  *
  * Quatre motifs reconnus (posés par le worker, `apps/worker/src/handlers/sequence.ts`
  * et `email-salesblink.ts`, ou par la Réception sur une réponse d'absence) —
@@ -24,7 +30,7 @@ export interface LibelleMotifPause {
   readonly title: string | null;
 }
 
-/** `t` déjà scopé sur `campagne.contacts.pause` : `t('emailGate')`, `t('absence', { date })`, etc. */
+/** `t` déjà scopé sur `motifsPause` : `t('emailGate')`, `t('absence', { date })`, etc. */
 type Traducteur = (cle: string, valeurs?: Record<string, string | number>) => string;
 
 export function libelleMotifPause(
@@ -42,7 +48,57 @@ export function libelleMotifPause(
     const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau }).format(new Date(repriseLe));
     return { texte: t('absence', { date }), title: null };
   }
+  if (motif.startsWith('linkedin_refus:')) {
+    return { texte: t(cleRefusLinkedIn(motif.slice('linkedin_refus:'.length))), title: motif };
+  }
   return { texte: t('generic'), title: motif };
+}
+
+/**
+ * Les huit codes de refus LinkedIn regroupés par CE QUE L'OPÉRATEUR DOIT FAIRE, pas par ce que
+ * l'API a répondu : retirer une note, corriger une adresse de profil, vérifier sur LinkedIn, ou
+ * ne rien faire parce que la personne n'a pas accepté l'invitation. Un libellé par code dirait
+ * huit fois la même chose à qui n'a rien à faire, et noierait le seul qui appelle un geste.
+ *
+ * Le code brut reste en `title` : qui veut creuser le trouve, personne ne le lit par accident.
+ */
+function cleRefusLinkedIn(code: string): string {
+  switch (code) {
+    // Le seul qui se corrige en deux clics : toute invitation qui porte une note. Il
+    // n'est atteignable que parce que le tick rend le corps d'une étape `linkedin_invite`
+    // — sans ce rendu, la note serait perdue en silence et l'invitation partirait nue.
+    case 'note_non_supportee':
+      return 'linkedinNote';
+    // Produit par NOUS, sans aucun appel réseau, quand l'étape n'a pas de message à
+    // envoyer : accuser LinkedIn enverrait l'opérateur chercher la panne du mauvais côté.
+    //
+    // `bad_request` NE convient pas pour ça et ne doit pas revenir ici : il a quatre
+    // sources, dont trois viennent de LinkedIn (URN illisible, réponse 400). Sur une
+    // invitation refusée par un 400, « ajoutez un message à cette étape » poussait
+    // l'opérateur à ajouter une note — ce qui provoque le refus suivant, qui lui dit
+    // de la retirer. Deux écrans qui se contredisent sur le même contact.
+    case 'message_vide':
+      return 'linkedinSansMessage';
+    // Pas un refus de LinkedIn non plus : le réenfilage a été refusé par notre propre
+    // déduplication, parce qu'une action LinkedIn est déjà en vol pour ce contact dans
+    // une autre campagne. Sans sa phrase, la reprise échouait en silence et l'inscription
+    // restait active sans échéance — le défaut même que ce lot a supprimé ailleurs.
+    case 'deja_en_attente':
+      return 'linkedinDejaEnAttente';
+    // Pas une panne : la personne n'a pas (encore) accepté, un message ne peut pas l'atteindre.
+    case 'cannot_message':
+      return 'linkedinPasRelation';
+    case 'profile_not_found':
+    case 'invalid_url':
+      return 'linkedinProfil';
+    case 'already_invited':
+      return 'linkedinDejaInvite';
+    // L'action est peut-être partie : c'est le seul cas où il faut aller voir sur LinkedIn.
+    case 'resultat_indetermine':
+      return 'linkedinIndetermine';
+    default:
+      return 'linkedinRefus';
+  }
 }
 
 /**

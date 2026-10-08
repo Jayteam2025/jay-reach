@@ -310,7 +310,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
       ),
     );
     const client = clientFactice();
@@ -442,7 +442,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
       ),
     );
     const client = clientFactice();
@@ -493,7 +493,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
       ),
     );
 
@@ -520,7 +520,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
         {
           motif: AUDIT_INSERT,
           repondre: () => {
@@ -543,7 +543,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
         { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([{ template_id: 'gabarit-existant-1' }]) },
       ),
     );
@@ -569,7 +569,7 @@ describe('envoyerEmailSalesBlink', () => {
         }
         if (GABARIT_NEUTRE_LOOKUP.test(sql)) return ligne([]);
         if (CAMPAGNE_NOM.test(sql)) return ligne([{ name: 'Campagne Test' }]);
-        if (ETAPE_POSITION.test(sql)) return ligne([{ position: 0 }]);
+        if (ETAPE_POSITION.test(sql)) return ligne([{ rang: 0 }]);
         throw new Error(`requete non prevue par le test :\n${sql}`);
       });
       const pool = { query } as unknown as Pool;
@@ -692,7 +692,7 @@ describe('envoyerEmailSalesBlink', () => {
       avecBase(
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
         { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: null }]) },
         { motif: UPDATE_ESSAIS, repondre: () => ligne([]) },
       ),
@@ -759,7 +759,7 @@ describe('envoyerEmailSalesBlink', () => {
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: 'invalid' })]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 1 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 1 }]) },
         { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
         { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
       ),
@@ -786,7 +786,7 @@ describe('envoyerEmailSalesBlink', () => {
     const { pool, appels } = creerPoolFactice(
       avecBase(
         { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ email_status: null })]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
         { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
         { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
       ),
@@ -827,7 +827,7 @@ describe('envoyerEmailSalesBlink', () => {
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
       ),
     );
     const client = clientFactice();
@@ -882,7 +882,7 @@ describe('envoyerEmailSalesBlink', () => {
       avecBase(
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 1 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 1 }]) },
         { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: null }]) },
         { motif: UPDATE_ECHEC, repondre: () => ligne([]) },
         { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },
@@ -920,7 +920,7 @@ describe('envoyerEmailSalesBlink', () => {
       avecBase(
         { motif: BINDING_SELECT, repondre: () => ligne([]) },
         { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
-        { motif: ETAPE_POSITION, repondre: () => ligne([{ position: 0 }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
         { motif: SELECT_ESSAIS, repondre: () => ligne([{ essais: 5 }]) },
         { motif: UPDATE_ECHEC, repondre: () => ligne([]) },
         { motif: UPDATE_ENROLLMENT_PAUSE, repondre: () => ligne([]) },

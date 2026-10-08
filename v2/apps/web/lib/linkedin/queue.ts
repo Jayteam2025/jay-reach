@@ -6,14 +6,22 @@
  *
  * Aucun envoi réel : ce module prépare/claim/enregistre des lignes de file.
  * L'envoi Voyager est fait par l'extension, avec la session de l'utilisateur.
+ *
+ * ATTENTION : le cœur porte la même logique de réclamation dans
+ * `packages/core/src/linkedin/file.ts`. La duplication est délibérée (l'ancien
+ * chemin cherche `method = 'extension_auto'`, le nouveau `'serveur'`) : toute
+ * correction de la clause de réclamation se porte des DEUX côtés.
  */
 import type { Pool, PoolClient } from 'pg';
 import {
   decideCanSend,
-  poserEcheanceApresDepart,
+  enregistrerResultat,
+  type EntreeResultat,
   heureLocale,
+  versIso,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
+  HEURES_ENVOI_LINKEDIN_PAR_DEFAUT,
   type PaceReason,
 } from '@jay-reach/core';
 
@@ -27,7 +35,8 @@ export interface EnqueueInput {
   readonly contactId?: string | null;
   readonly signalId?: string | null;
   readonly messageBody?: string | null;
-  readonly method?: 'extension_auto' | 'manual';
+  /** Seule méthode qui s'écrit encore (voir `LinkedInActionJob.method` côté worker). */
+  readonly method?: 'serveur';
 }
 
 export interface ClaimedAction {
@@ -52,7 +61,7 @@ export async function validateToken(pool: Pool, token: string): Promise<string |
 
 /**
  * Enfile une action, en dédupliquant : pas de doublon actif (pending/processing/
- * sent) pour le même (contact, kind). Renvoie l'id créé, ou null si déjà en file.
+ * sent, ou résultat indéterminé) pour le même (contact, kind). Renvoie l'id créé, ou null si déjà en file.
  */
 export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<string | null> {
   const r = await pool.query<{ id: string }>(
@@ -62,7 +71,8 @@ export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<st
      where not exists (
        select 1 from linkedin_action_queue q
        where q.contact_id = $2 and q.kind = $5
-         and q.status in ('pending', 'processing', 'sent')
+         and (q.status in ('pending', 'processing', 'sent')
+              or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
          and $2 is not null
      )
      returning id`,
@@ -73,7 +83,7 @@ export async function enqueueAction(pool: Pool, input: EnqueueInput): Promise<st
       input.linkedinUrl,
       input.kind,
       input.messageBody ?? null,
-      input.method ?? 'extension_auto',
+      input.method ?? 'serveur',
     ],
   );
   return r.rows[0]?.id ?? null;
@@ -120,7 +130,7 @@ async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Prom
      where organization_id = $1 and status = 'sent'`,
     [orgId, sevenDaysAgo, oneDayAgo],
   );
-  const last = await client.query<{ sent_at: string }>(
+  const last = await client.query<{ sent_at: string | Date }>(
     `select sent_at from linkedin_action_queue
      where organization_id = $1 and status = 'sent'
      order by sent_at desc limit 1`,
@@ -146,13 +156,14 @@ async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Prom
     mode: r?.mode ?? 'auto',
     dailyCap: quotidien,
     weeklyCap: hebdo,
-    startHour: r?.send_from_hour ?? 8,
-    endHour: r?.send_to_hour ?? 21,
-    days: jours.length > 0 ? jours : [1, 2, 3, 4, 5],
-    timezone: r?.timezone ?? 'Europe/Paris',
+    startHour: r?.send_from_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+    endHour: r?.send_to_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+    days: jours.length > 0 ? jours : [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+    timezone: r?.timezone ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
     sentLast7Days: Number(counts.rows[0]?.last7 ?? 0),
     sentToday: Number(counts.rows[0]?.today ?? 0),
-    lastSentAtIso: last.rows[0]?.sent_at ?? null,
+    // `pg` rend un `Date` : la graine de l'intervalle exige la chaîne ISO (voir `versIso`).
+    lastSentAtIso: last.rows[0]?.sent_at ? versIso(last.rows[0].sent_at) : null,
   };
 }
 
@@ -263,77 +274,10 @@ export async function claimNext(pool: Pool, orgId: string, now: Date = new Date(
   }
 }
 
-export interface RecordInput {
-  readonly organizationId: string;
-  readonly queueId: string;
-  readonly status: 'sent' | 'failed';
-  readonly errorCode?: string | null;
-  readonly errorMessage?: string | null;
-  readonly now?: Date;
-}
-
 /**
- * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action LinkedIn
- * (transition `processing -> sent`, confirmée par l'extension) — même point,
- * même calcul et même garde que côté SalesBlink (issue #111) : les deux
- * transports appellent la même implémentation partagée,
- * `poserEcheanceApresDepart` de `@jay-reach/core` (tour de correction 1,
- * revue du 17/09 — auparavant dupliquée ici avec le même SQL).
- *
- * Cette fonction ne fait que la résolution propre à LinkedIn : retrouver
- * l'inscription (`campaign_id`, `current_step`) à partir de l'`actionId` posé
- * sur la ligne de file.
+ * Enregistrement du résultat : l'implémentation vit dans le cœur
+ * (`enregistrerResultat`, `@jay-reach/core`) pour que le worker l'importe ;
+ * le nom et la forme d'entrée historiques restent pour les routes gelées.
  */
-async function poserEcheanceApresDepartDepuisAction(pool: Pool, actionId: string, now: Date): Promise<void> {
-  const inscription = await pool.query<{ enrollment_id: string; campaign_id: string; current_step: number }>(
-    `select en.id as enrollment_id, en.campaign_id, en.current_step
-       from actions a
-       join enrollments en on en.id = a.enrollment_id
-      where a.id = $1`,
-    [actionId],
-  );
-  const ligne = inscription.rows[0];
-  if (!ligne) return;
-  await poserEcheanceApresDepart(
-    pool,
-    { enrollmentId: ligne.enrollment_id, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
-    now,
-  );
-}
-
-/**
- * Enregistre le résultat d'une action (renvoyé par l'extension). Transition
- * autorisée uniquement depuis `processing` (sinon 0 ligne → l'appelant renvoie 409).
- * Renvoie true si la transition a eu lieu.
- */
-export async function recordResult(pool: Pool, input: RecordInput): Promise<boolean> {
-  const now = input.now ?? new Date();
-  const sentAt = input.status === 'sent' ? now.toISOString() : null;
-  const r = await pool.query<{ action_id: string | null }>(
-    `update linkedin_action_queue
-       set status = $3, sent_at = $4, error_code = $5, error_message = $6, updated_at = now()
-     where id = $1 and organization_id = $2 and status = 'processing'
-     returning action_id`,
-    [
-      input.queueId,
-      input.organizationId,
-      input.status,
-      sentAt,
-      input.errorCode ?? null,
-      input.errorMessage ?? null,
-    ],
-  );
-  const transitionFaite = (r.rowCount ?? 0) > 0;
-
-  // Referme la boucle vers le séquenceur : sans cet appel, l'action restait à son
-  // statut d'émission et la table `outcomes` vide, donc toute la mesure — actions
-  // envoyées, statistiques de campagne, tableau de bord — affichait zéro sur des
-  // messages pourtant réellement partis.
-  const actionId = r.rows[0]?.action_id;
-  if (transitionFaite && input.status === 'sent' && actionId) {
-    await pool.query('select app.mark_action_dispatched($1)', [actionId]);
-    await poserEcheanceApresDepartDepuisAction(pool, actionId, now);
-  }
-
-  return transitionFaite;
-}
+export type RecordInput = EntreeResultat;
+export const recordResult = enregistrerResultat;

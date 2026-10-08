@@ -51,7 +51,7 @@ Jay Reach n'inclut aucune donnée et aucun quota d'envoi. Vous branchez vos prop
 | Modèle de langage | Anthropic, OpenAI, Ollama | Oui |
 | Email | SalesBlink | Si canal email |
 | LinkedIn, collecte | Navigateur dédié du serveur derrière un proxy résidentiel, sans fournisseur tiers | Non |
-| LinkedIn, envoi | À venir : invitation et message, dont le mode d'exécution se décide au lot suivant | Si canal LinkedIn |
+| LinkedIn, envoi | Invitation et message envoyés par le serveur depuis la session LinkedIn connectée, sous plafonds réglables | Si canal LinkedIn |
 | Courrier | Manuscry | Si canal courrier |
 | Boîte de réception | Relève des réponses email ; réponses LinkedIn à venir | Recommandé |
 

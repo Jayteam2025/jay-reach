@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 // façades »), pour la section « Comptes LinkedIn » de la page.
 // ---------------------------------------------------------------------------
 import {
+  enregistrerHeuresEnvoiLinkedIn,
   ErreurEntree,
   ErreurIntrouvable,
   ForbiddenError,
@@ -49,6 +50,25 @@ export async function actionModifierCompteLinkedIn(entree: unknown): Promise<Res
     const ctx = await contexteCourant();
     await modifierCompteLinkedInCoeur(ctx, entree);
     revalidatePath('/settings/senders');
+    return { ok: true, valeur: undefined };
+  } catch (err) {
+    return resultatDErreurLinkedIn<void>(err);
+  }
+}
+
+/**
+ * Enregistre les heures d'envoi LinkedIn de l'organisation (Réglages › LinkedIn).
+ *
+ * Distincte de `actionModifierCompteLinkedIn`, qui part d'un jeton d'extension :
+ * sur une instance dont le canal est tenu par la session du serveur, il n'existe
+ * aucun jeton, donc aucune carte de compte, donc aucun moyen de régler la fenêtre
+ * d'envoi. Celle-ci ne dépend que de l'organisation.
+ */
+export async function actionEnregistrerHeuresEnvoiLinkedIn(entree: unknown): Promise<ResultatComptesLinkedIn> {
+  try {
+    const ctx = await contexteCourant();
+    await enregistrerHeuresEnvoiLinkedIn(ctx, entree);
+    revalidatePath('/settings/linkedin');
     return { ok: true, valeur: undefined };
   } catch (err) {
     return resultatDErreurLinkedIn<void>(err);

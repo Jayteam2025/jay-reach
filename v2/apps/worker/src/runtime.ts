@@ -31,6 +31,43 @@ export async function registerQueues(boss: PgBoss): Promise<void> {
       name: queue.name,
       retryLimit: queue.retry.retryLimit,
       retryBackoff: queue.retry.retryBackoff,
+      ...(queue.policy ? { policy: queue.policy } : {}),
     });
   }
+}
+
+export interface FilePolitiqueFautive {
+  readonly file: string;
+  readonly message: string;
+}
+
+/**
+ * Cherche les files qui déclarent une politique et ne l'ont PAS réellement en base. `createQueue`
+ * est un `ON CONFLICT DO NOTHING` : une file née sous une image antérieure (retour arrière,
+ * déploiement d'un commit plus ancien) garde sa politique standard pour toujours, sans erreur ni
+ * trace, et la propriété « au plus un job d'envoi en vol par organisation » disparaîtrait en
+ * silence : deux navigateurs sur la même session LinkedIn.
+ *
+ * Elle ne lève PAS : le refus est proportionné à ce qu'il protège. Une file LinkedIn mal posée ne
+ * doit pas empêcher les relances email de partir. L'appelant ne consomme pas les files fautives,
+ * le dit bruyamment, et laisse tourner le reste du moteur.
+ *
+ * Séparée de `registerQueues` : la route cron de Vercel l'appelle aussi.
+ */
+export async function verifierPolitiquesDeFiles(boss: PgBoss): Promise<FilePolitiqueFautive[]> {
+  const fautives: FilePolitiqueFautive[] = [];
+  for (const queue of QUEUES) {
+    if (!queue.policy) continue;
+    const reelle = await boss.getQueue(queue.name);
+    if (reelle?.policy === queue.policy) continue;
+    fautives.push({
+      file: queue.name,
+      message:
+        `La file ${queue.name} doit avoir la politique « ${queue.policy} » et a « ${reelle?.policy ?? 'introuvable'} » : ` +
+        `elle n'est PAS consommée, rien ne part par ce canal. Sans cette politique, deux jobs de la même organisation ` +
+        `pourraient tourner ensemble sur la même session LinkedIn. Arrêtez le worker, supprimez la file ` +
+        `(boss.deleteQueue('${queue.name}')) puis redémarrez : elle sera recréée avec la bonne politique.`,
+    });
+  }
+  return fautives;
 }

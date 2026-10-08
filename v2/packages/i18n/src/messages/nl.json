@@ -407,14 +407,6 @@
         "rebond": "Bounce",
         "ne_plus_contacter": "Niet meer contacteren"
       },
-      "pause": {
-        "emailGate": "E-mail als onbestelbaar beoordeeld",
-        "salesblinkError": "Verzending geweigerd door de e-mailprovider",
-        "senderUnavailable": "Geen verzendmailbox beschikbaar",
-        "absence": "Afwezig, hervat op {date}",
-        "absenceNoDate": "Afwezig",
-        "generic": "Gepauzeerd"
-      },
       "step": "Stap {n}",
       "stepEnded": "{n} · {libelle}",
       "noStep": "te contacteren",
@@ -769,7 +761,7 @@
         "modify": "Bewerken",
         "repliedHere": "Hebben hier gereageerd",
         "leftSequence": "{n, plural, one {# heeft de sequentie verlaten} other {# hebben de sequentie verlaten}}",
-        "linkedinNotice": "de verzending draait serverside (binnenkort)",
+        "linkedinNotice": "de verzending draait serverside",
         "salesblinkNotice": "De SalesBlink-sequentie wordt aangemaakt bij de eerste verzending."
       },
       "preview": {
@@ -803,6 +795,10 @@
         "testNote": "\"Stuur mij een test\" schrijft je adres in als testcontact van de campagne: de e-mail volgt het normale pad en verschijnt in de wachtrij van vandaag.",
         "listVariables": "Kolommen van de geïmporteerde lijst",
         "listVariablesEmpty": "Een campagne die door een geïmporteerd bestand wordt gevoed, biedt ook zijn kolommen aan: '{{'liste_nom_de_la_colonne'}}'."
+      },
+      "avertissements": {
+        "messageSansInvitation": "Stap {n}: een LinkedIn-bericht bereikt alleen een connectie van de 1e graad. Voeg er een uitnodigingsstap vóór toe, anders wordt het nooit verstuurd.",
+        "noteDInvitation": "Stap {n}: verzenden vanaf de server kan de uitnodigingsnotitie nog niet meesturen. Zolang die er staat, wordt de uitnodiging niet verstuurd. Verwijder de notitie om te starten."
       }
     },
     "activite": {
@@ -1064,6 +1060,8 @@
         "title": "LinkedIn-accounts",
         "lead": "LinkedIn-acties vertrekken vanaf een toegewijd residentieel IP-adres, nooit vanaf de server.",
         "empty": "Geen LinkedIn-account verbonden.",
+        "emptyServeur": "Het LinkedIn-kanaal draait op de sessie die op de server openstaat, zonder extensie en zonder account hier.",
+        "emptyServeurLien": "Ritme en verzenduren instellen",
         "connected": "Verbonden",
         "notConnected": "Niet verbonden",
         "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
@@ -1080,10 +1078,7 @@
         "close": "Sluiten",
         "drawerDailyQuota": "Gelezen profielen en acties per dag",
         "drawerWeeklyQuota": "Weeklimiet",
-        "drawerHoursFrom": "Vanaf",
-        "drawerHoursTo": "Tot",
-        "drawerDays": "Verzenddagen",
-        "drawerTimezone": "Tijdzone"
+        "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn."
       }
     },
     "days": {
@@ -1555,6 +1550,41 @@
           "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
         }
       },
+      "envoi": {
+        "pret": {
+          "phrase": "Klaar om te versturen."
+        },
+        "planifie": {
+          "phrase": "Volgende verzending {quand}."
+        },
+        "reprise": {
+          "phrase": "Een verzending bleef zonder antwoord. Die wordt als onbepaald gemarkeerd — controleer op LinkedIn."
+        },
+        "enPause": {
+          "phrase": "Verzenden gepauzeerd tot {quand}."
+        },
+        "rienAEnvoyer": {
+          "phrase": "Geen acties in de wachtrij."
+        },
+        "enVol": {
+          "phrase": "Er loopt een verzending."
+        },
+        "horsFenetre": {
+          "phrase": "Buiten de verzenduren of verzenddagen."
+        },
+        "plafondAtteint": {
+          "phrase": "Verzendlimiet bereikt. Er gaat niets uit tot die weer ruimte geeft."
+        },
+        "canalBloque": {
+          "phrase": "Er wordt niets verstuurd zolang dit niet is opgelost."
+        },
+        "plafondHoraire": {
+          "phrase": "Het LinkedIn-verzoekbudget van dit uur is op. Het verzamelen deelt het met het versturen."
+        },
+        "plafondHoraireDate": {
+          "phrase": "Het LinkedIn-verzoekbudget van dit uur is op, het verzamelen deelt het met het versturen. Rond {quand} weer beschikbaar."
+        }
+      },
       "commande": {
         "consigne": "Open de sessie opnieuw in een terminal op de server:",
         "consigneDefi": "Los de verificatie op en open de sessie daarna opnieuw in een terminal op de server:"
@@ -1565,6 +1595,37 @@
         "collecte": "Laatste verzameling",
         "inconnu": "Onbekend",
         "jamais": "Nooit"
+      },
+      "rythme": {
+        "titre": "Verzendritme",
+        "lead": "Hoeveel en wanneer de motor verstuurt. Deze instellingen beschermen het LinkedIn-account.",
+        "invitationsParSemaine": {
+          "nom": "Uitnodigingen per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Berichten per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Uren",
+            "aide": "Er vertrekt niets voor het eerste uur of na het laatste.",
+            "debut": "Beginuur",
+            "fin": "Einduur"
+          },
+          "jours": {
+            "nom": "Dagen",
+            "aide": "De weekdagen waarop de motor verstuurt."
+          },
+          "fuseau": {
+            "nom": "Tijdzone",
+            "aide": "De uren hierboven gelden in deze tijdzone."
+          },
+          "enregistrer": "Opslaan",
+          "erreurOrdre": "Het einduur moet na het beginuur liggen.",
+          "erreurJours": "Kies minstens een dag."
+        }
       },
       "plafonds": {
         "titre": "Verzamellimieten",
@@ -1634,14 +1695,6 @@
       "termine": "Afgerond",
       "rebond": "Bounce",
       "ne_plus_contacter": "Niet meer contacteren"
-    },
-    "pause": {
-      "emailGate": "E-mail als onbestelbaar beoordeeld",
-      "salesblinkError": "Verzending geweigerd door de e-mailprovider",
-      "senderUnavailable": "Geen verzendmailbox beschikbaar",
-      "absence": "Afwezig, hervat op {date}",
-      "absenceNoDate": "Afwezig",
-      "generic": "Gepauzeerd"
     },
     "step": "Stap {n}",
     "stepEnded": "{n} · {libelle}",
@@ -1729,5 +1782,21 @@
     "q": {
       "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn."
     }
+  },
+  "motifsPause": {
+    "emailGate": "E-mail als onbestelbaar beoordeeld",
+    "salesblinkError": "Verzending geweigerd door de e-mailprovider",
+    "senderUnavailable": "Geen verzendmailbox beschikbaar",
+    "absence": "Afwezig, hervat op {date}",
+    "absenceNoDate": "Afwezig",
+    "generic": "Gepauzeerd",
+    "linkedinNote": "Verzenden vanaf de server stuurt de uitnodigingsnotitie nog niet mee. Haal die uit de stap zodat de uitnodiging verstuurd kan worden.",
+    "linkedinPasRelation": "De uitnodiging is niet geaccepteerd: een bericht bereikt dit contact niet.",
+    "linkedinProfil": "LinkedIn-profiel niet gevonden. Controleer de profiel-URL van het contact.",
+    "linkedinDejaInvite": "Dit contact heeft al een uitnodiging gekregen.",
+    "linkedinIndetermine": "Er kwam geen bevestiging terug. Controleer op LinkedIn voordat je opnieuw probeert.",
+    "linkedinRefus": "LinkedIn heeft deze actie geweigerd.",
+    "linkedinSansMessage": "Deze stap heeft geen bericht om te versturen. Voeg er een toe in de reeks.",
+    "linkedinDejaEnAttente": "Er loopt al een andere LinkedIn-actie voor dit contact, in een andere campagne. Hervat deze inschrijving zodra die klaar is."
   }
 }

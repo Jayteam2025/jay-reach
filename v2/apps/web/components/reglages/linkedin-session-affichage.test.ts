@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { SessionLinkedIn } from '@jay-reach/core';
-import { ligneMoteurLinkedIn, phraseEtatSession, varianteDetailSession, type CleEtatSession } from './linkedin-session-affichage';
+import type { ProchainEnvoi, SessionLinkedIn } from '@jay-reach/core';
+import { ligneMoteurLinkedIn, phraseEtatEnvoi, phraseEtatSession, varianteDetailSession, type CleEtatEnvoi, type CleEtatSession } from './linkedin-session-affichage';
 
 const base: SessionLinkedIn = {
   etat: 'active',
@@ -14,6 +14,7 @@ const base: SessionLinkedIn = {
   operateur: 'Free SAS',
   pays: 'France',
   derniereCollecte: new Date('2026-10-05T10:00:00Z'),
+  envoiPauseJusqua: null,
 };
 
 const bloquee = (motif: NonNullable<SessionLinkedIn['motif']>): SessionLinkedIn => ({
@@ -215,4 +216,110 @@ describe('clés de traduction construites dynamiquement', () => {
       expect(typeof lire(`campagne.sources.drawer.${cle}`)).toBe('string');
     },
   );
+});
+
+// Le canal d'envoi est un SECOND fait sur le même écran, et il ne doit jamais contredire la
+// phrase de session au-dessus. Il ne devine rien non plus : il traduit le verdict de
+// `prochainEnvoiLinkedIn`, la fonction qui décide réellement quand le moteur enverra.
+describe('phraseEtatEnvoi', () => {
+  const MAINTENANT = new Date('2026-10-07T14:00:00Z');
+  const creneau = (quand: Date): ProchainEnvoi => ({ quand, motif: null, raison: 'envoi' });
+  // PAS de `as` ici : c'est un `as` qui a laissé passer `hors_fenetre` et `cap_7_days`, deux
+  // motifs qui n'existent pas. Le paramètre est typé par le cœur, donc un nom inventé ne
+  // compile plus — et le test redevient la garde qu'il prétendait être.
+  const refus = (motif: Exclude<ProchainEnvoi['motif'], null>): ProchainEnvoi => ({ quand: null, motif });
+
+  it('créneau déjà échu : prêt à envoyer', () => {
+    expect(phraseEtatEnvoi(base, creneau(MAINTENANT), MAINTENANT)).toEqual({ ton: 'bon', cle: 'pret' });
+  });
+
+  it('créneau à venir : annoncé, pas présenté comme prêt', () => {
+    expect(phraseEtatEnvoi(base, creneau(new Date('2026-10-07T14:12:00Z')), MAINTENANT)).toEqual({
+      ton: 'bon',
+      cle: 'planifie',
+    });
+  });
+
+  // Une ligne restée en cours fait rendre `{quand: maintenant}` par le moteur, pour qu'il passe
+  // la réparer. Sans le drapeau `reprise`, l'écran disait « Prêt à envoyer » un dimanche à 3 h.
+  it('reprise d une ligne coincée : jamais « prêt à envoyer »', () => {
+    expect(phraseEtatEnvoi(base, { quand: MAINTENANT, motif: null, raison: 'reparation' }, MAINTENANT)).toEqual({
+      ton: 'attention',
+      cle: 'reprise',
+    });
+  });
+
+  it('canal en pause : ton attention', () => {
+    expect(phraseEtatEnvoi(base, refus('canal_en_pause'), MAINTENANT)).toEqual({ ton: 'attention', cle: 'enPause' });
+  });
+
+  it('file vide : rien à envoyer, et ce n est pas une alerte', () => {
+    expect(phraseEtatEnvoi(base, refus('file_vide'), MAINTENANT)).toEqual({ ton: 'bon', cle: 'rienAEnvoyer' });
+  });
+
+  // « rien dans la file » serait faux : une action est partie et n'a pas encore rendu la main.
+  it('une action en vol se dit comme telle, pas comme une file vide', () => {
+    expect(phraseEtatEnvoi(base, refus('action_en_cours'), MAINTENANT)).toEqual({ ton: 'bon', cle: 'enVol' });
+  });
+
+  // Le défaut que cette refonte corrige : la nuit, le week-end et plafond atteint, la première
+  // version affichait « Prêt à envoyer » — soit la majorité des heures de la semaine. Et chaque
+  // motif a sa phrase : « hors fenêtre » et « plafond atteint » n'appellent pas la même action.
+  it('hors fenêtre horaire ou jour non coché : son propre libellé', () => {
+    expect(phraseEtatEnvoi(base, refus('outside_window'), MAINTENANT)).toEqual({
+      ton: 'attention',
+      cle: 'horsFenetre',
+    });
+  });
+
+  it.each(['daily_cap_reached', 'weekly_cap_reached'] as const)('plafond atteint (%s) : son propre libellé', (motif) => {
+    expect(phraseEtatEnvoi(base, refus(motif), MAINTENANT)).toEqual({ ton: 'attention', cle: 'plafondAtteint' });
+  });
+
+  // En mode manuel, des actions ATTENDENT et ne partiront jamais : « aucune action en attente »,
+  // en vert, serait doublement faux. L'état est impossible en base depuis la migration
+  // 20260831160000, la branche existe par précaution des deux côtés.
+  it('mode manuel : canal bloqué, jamais « rien à envoyer »', () => {
+    expect(phraseEtatEnvoi(base, refus('manual_mode'), MAINTENANT)).toEqual({ ton: 'gris', cle: 'canalBloque' });
+  });
+
+  it('aucune session : la conséquence, en ton neutre — la raison est déjà dite au-dessus', () => {
+    expect(phraseEtatEnvoi(null, refus('session_inactive'), MAINTENANT)).toEqual({ ton: 'gris', cle: 'canalBloque' });
+  });
+
+  // La session l'emporte sur tout verdict de rythme : LinkedIn a réclamé une vérification, et
+  // afficher un créneau ferait croire que l'envoi repart tout seul.
+  it('session bloquée : la session l emporte, même avec un créneau calculé', () => {
+    expect(phraseEtatEnvoi(bloquee('defi'), creneau(MAINTENANT), MAINTENANT)).toEqual({ ton: 'gris', cle: 'canalBloque' });
+  });
+
+  // `sortie_inattendue` : la session EST ouverte, c'est la sortie réseau qui ne l'est pas. Le
+  // libellé ne doit donc pas parler de session, sinon il contredit la ligne du dessus.
+  it('sortie inattendue : canal bloqué, sans nommer la session', () => {
+    expect(phraseEtatEnvoi(bloquee('sortie_inattendue'), creneau(MAINTENANT), MAINTENANT)).toEqual({
+      ton: 'gris',
+      cle: 'canalBloque',
+    });
+  });
+});
+
+describe('clés de traduction du canal d envoi', () => {
+  const LANGUES = ['fr', 'en', 'nl'] as const;
+  const CLES: CleEtatEnvoi[] = ['pret', 'planifie', 'reprise', 'enPause', 'rienAEnvoyer', 'enVol', 'horsFenetre', 'plafondAtteint', 'canalBloque'];
+
+  it.each(LANGUES)('%s : chaque état a sa phrase, et la pause nomme sa date', (langue) => {
+    type BlocEnvoi = Record<string, { phrase?: string } | string | undefined>;
+    const messages = JSON.parse(
+      readFileSync(join(__dirname, `../../../../packages/i18n/src/messages/${langue}.json`), 'utf8'),
+    ) as { reglages?: { linkedin?: { envoi?: BlocEnvoi } } };
+    const envoi = messages.reglages?.linkedin?.envoi ?? {};
+    for (const cle of CLES) {
+      expect(typeof (envoi[cle] as { phrase?: string } | undefined)?.phrase, `${langue} > ${cle}`).toBe('string');
+    }
+    // Une pause sans échéance ne dit pas à l'opérateur quand revenir.
+    // Une pause ou un créneau sans date ne dit pas à l'opérateur quand revenir.
+    for (const cle of ['enPause', 'planifie'] as const) {
+      expect(String((envoi[cle] as { phrase?: string } | undefined)?.phrase), `${langue} > ${cle}`).toContain('{quand}');
+    }
+  });
 });

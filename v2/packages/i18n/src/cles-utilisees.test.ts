@@ -349,6 +349,14 @@ describe('clés de traduction', () => {
         // la même suite de caractères par coïncidence.
         const valeurDeTable = new RegExp(`[:,[?]\\s*['"\`]${echapper(c)}['"\`]`);
         if (valeurDeTable.test(texte)) return true;
+        // Clé rendue par une fonction de correspondance (`cleRefusLinkedIn` :
+        // `case 'profile_not_found': return 'linkedinProfil';`). La clé n'est ni
+        // l'argument de `t`, ni une valeur de table : c'est la valeur de retour
+        // d'un aiguillage, que l'écran passe ensuite à `t`. Sans cette forme, les
+        // sept phrases de refus LinkedIn étaient déclarées mortes alors qu'elles
+        // sont les seules que l'opérateur lit quand un envoi échoue.
+        const valeurRendue = new RegExp(`return\\s+['"\`]${echapper(c)}['"\`]`);
+        if (valeurRendue.test(texte)) return true;
         // Accès dynamique (`t(\`csvFields.${champ}\`)`) : la clé complète
         // n'apparaît jamais littéralement, seul le préfixe statique le fait.
         // Le préfixe statique peut s'arrêter à un point (`csvFields.${champ}`)
