@@ -761,7 +761,9 @@
         "modify": "Modifier",
         "repliedHere": "Ont répondu ici",
         "leftSequence": "{n, plural, one {# est sorti de la séquence} other {# sont sortis de la séquence}}",
-        "linkedinNotice": "l'envoi s'exécute côté serveur",
+        "channelLinkedinInvite": "Invitation LinkedIn",
+        "channelLinkedinMessage": "Message LinkedIn",
+        "inviteSansNote": "Invitation à se connecter, sans note.",
         "salesblinkNotice": "La séquence SalesBlink se crée au premier envoi."
       },
       "preview": {
@@ -786,6 +788,7 @@
         "subject": "Objet",
         "body": "Corps",
         "bodyHint": "Variables : cliquez pour insérer au curseur. Jamais de repli sur '{{'prenom'}}' : sans prénom, l'envoi est bloqué. La signature de la boîte est ajoutée à l'envoi.",
+        "bodyHintLinkedin": "Variables : cliquez pour insérer au curseur. Jamais de repli sur '{{'prenom'}}' : sans prénom, l'envoi est bloqué. Le message part en texte simple, tel quel.",
         "preview": "Aperçu",
         "previewCaption": "rendu avec un contact fictif",
         "save": "Enregistrer",

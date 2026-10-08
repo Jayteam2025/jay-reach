@@ -305,7 +305,9 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
               onChange={(e) => setCorps(e.target.value)}
             />
           </Champ>
-          <div className="jr-aide">{t('drawer.bodyHint')}</div>
+          {/* La signature de la boîte d'envoi est une affaire d'email : un message LinkedIn
+              part tel qu'il est écrit, rien ne lui est ajouté. */}
+          <div className="jr-aide">{t(canal === 'email' ? 'drawer.bodyHint' : 'drawer.bodyHintLinkedin')}</div>
           <div className="jr-puces variables">
             {VARIABLES_INSERABLES.map((nom) => (
               <button

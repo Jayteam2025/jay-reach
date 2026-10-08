@@ -761,7 +761,9 @@
         "modify": "Bewerken",
         "repliedHere": "Hebben hier gereageerd",
         "leftSequence": "{n, plural, one {# heeft de sequentie verlaten} other {# hebben de sequentie verlaten}}",
-        "linkedinNotice": "de verzending draait serverside",
+        "channelLinkedinInvite": "LinkedIn-uitnodiging",
+        "channelLinkedinMessage": "LinkedIn-bericht",
+        "inviteSansNote": "Uitnodiging om te connecteren, zonder notitie.",
         "salesblinkNotice": "De SalesBlink-sequentie wordt aangemaakt bij de eerste verzending."
       },
       "preview": {
@@ -786,6 +788,7 @@
         "subject": "Onderwerp",
         "body": "Inhoud",
         "bodyHint": "Variabelen: klik om op de cursorpositie in te voegen. Nooit een terugval op '{{'prenom'}}': zonder voornaam wordt de verzending geblokkeerd. De handtekening van de mailbox wordt aan de verzending toegevoegd.",
+        "bodyHintLinkedin": "Variabelen: klik om op de cursorpositie in te voegen. Nooit een terugval op '{{'prenom'}}': zonder voornaam wordt de verzending geblokkeerd. Het bericht vertrekt als platte tekst, precies zoals geschreven.",
         "preview": "Voorbeeld",
         "previewCaption": "weergegeven met een fictief contact",
         "save": "Opslaan",

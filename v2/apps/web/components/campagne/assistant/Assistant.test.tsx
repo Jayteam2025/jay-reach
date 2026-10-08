@@ -421,6 +421,33 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     expect(html).toContain(LIBELLES.inviteSansNote);
   });
 
+  // Vu à l'écran le 08/10 : passer une étape du modèle « Question puis trois relances » en
+  // invitation laissait la pilule annoncer « 1 · {{prenom}}, une question sur votre équipe ».
+  // L'objet reste en mémoire pour un retour à l'email, mais il ne doit plus rien étiqueter.
+  it('la pilule d’une étape LinkedIn dit le canal, jamais l’objet d’un email abandonné', () => {
+    const html = renderToStaticMarkup(
+      <EtapeSequence
+        etapes={[
+          { cle: 'a', canal: 'linkedin_invite', sujet: 'Objet resté là', corps: '', delaiJours: 0 },
+          { cle: 'b', canal: 'linkedin_message', sujet: 'Autre objet', corps: 'Bonjour {{prenom}}, ravi…', delaiJours: 2 },
+          { cle: 'c', canal: 'linkedin_message', sujet: '', corps: '', delaiJours: 3 },
+        ]}
+        onChoisirModele={() => {}}
+        onAjouterEtape={() => {}}
+        onModifierEtape={() => {}}
+        onSupprimerEtape={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain('Objet resté là');
+    expect(html).not.toContain('Autre objet');
+    expect(html).toContain('1 · Invitation LinkedIn');
+    // Un message porte ses premiers mots : deux messages de suite doivent rester distinguables.
+    expect(html).toContain('2 · Bonjour {{prenom}}, ravi…');
+    expect(html).toContain('3 · Message LinkedIn');
+  });
+
   it('aucun role="button" résiduel : les options de modèle et les pilules sont de vrais boutons', () => {
     const etapes = etapesDepuisModele('question_relances');
     const html = renderToStaticMarkup(

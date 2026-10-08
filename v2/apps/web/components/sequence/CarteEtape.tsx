@@ -17,13 +17,15 @@ export interface CarteEtapeProps {
  * précisément à cette étape.
  *
  * Les étapes email ET LinkedIn s'éditent depuis ce tiroir (R48, tour de
- * correction 1 : une campagne réelle alterne déjà les deux) — seule
- * l'EXÉCUTION d'une étape LinkedIn (l'envoi réel) reste pilotée côté serveur
- * (lot 4, pas encore livré), signalé en sous-titre plutôt que par l'absence
- * du lien Modifier.
+ * correction 1 : une campagne réelle alterne déjà les deux).
+ *
+ * Le sous-titre nomme le canal RÉEL (`canalDetaille`) : depuis que
+ * l'invitation est créable (lot 4b), deux étapes LinkedIn qui ne font pas du
+ * tout la même chose portaient la même tuile et la même mention.
  */
 export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
   const t = useTranslations('campagne.sequence');
+  const estInvitation = etape.canalDetaille === 'linkedin_invite';
 
   return (
     <div className="jr-etape">
@@ -35,13 +37,18 @@ export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
             <b>{etape.titre}</b>
             <small>
               {t('card.step', { n: etape.position })}
-              {etape.canal === 'linkedin' && ` · ${t('card.linkedinNotice')}`}
+              {etape.canal === 'linkedin' &&
+                ` · ${t(estInvitation ? 'card.channelLinkedinInvite' : 'card.channelLinkedinMessage')}`}
               {etape.canal === 'email' && etape.position === 1 && ` · ${t('card.salesblinkNotice')}`}
             </small>
           </span>
         </div>
         <div className="apercu">
-          {etape.corps ? (
+          {/* Une invitation n'a pas de corps : « Aucun message écrit » se lirait comme un oubli
+              de l'opérateur alors que c'est la forme normale de l'étape. */}
+          {estInvitation ? (
+            t('card.inviteSansNote')
+          ) : etape.corps ? (
             <>
               {etape.sujet && <b>{etape.sujet}</b>}
               {etape.corps}

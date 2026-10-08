@@ -54,6 +54,21 @@ export interface EtapeSequenceProps {
   libelles: EtapeSequenceLibelles;
 }
 
+/**
+ * Libellé d'une pilule d'aperçu. Une étape LinkedIn n'a pas d'objet : laisser
+ * `sujet` décider afficherait l'objet d'un email abandonné en changeant de
+ * canal — la pilule annoncerait un email là où part une invitation.
+ */
+function libellePilule(etape: EtapeSequenceEtape, libelles: EtapeSequenceLibelles): string {
+  if (etape.canal === 'linkedin_invite') return libelles.canalLinkedinInvite;
+  if (etape.canal === 'linkedin_message') {
+    const premiereLigne = etape.corps.trim().split('\n')[0]?.trim() ?? '';
+    if (!premiereLigne) return libelles.canalLinkedinMessage;
+    return premiereLigne.length > 48 ? `${premiereLigne.slice(0, 48)}…` : premiereLigne;
+  }
+  return etape.sujet || libelles.etape;
+}
+
 /** Valeur du select, ramenée au type : tout ce qui n'est pas un canal connu retombe sur l'email. */
 function lireCanal(valeur: string): CanalEtape {
   return valeur === 'linkedin_invite' || valeur === 'linkedin_message' ? valeur : 'email';
@@ -160,7 +175,7 @@ export function EtapeSequence({
                   disabled={disabled}
                   onClick={() => setEtapeOuverte(etape.cle)}
                 >
-                  {index + 1} · {etape.sujet || libelles.etape}
+                  {index + 1} · {libellePilule(etape, libelles)}
                 </button>
               </span>
             ))}
