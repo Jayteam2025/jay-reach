@@ -300,8 +300,13 @@ export interface LinkedInActionJob {
 /**
  * Enfile une action LinkedIn (invitation ou message) dans
  * `linkedin_action_queue`, consommée par le serveur (envoi via Voyager, session
- * LinkedIn du serveur ; pacing appliqué avant chaque envoi). Dédup : pas de
- * doublon actif (pending/processing/sent) pour le même (contact, kind).
+ * LinkedIn du serveur ; pacing appliqué avant chaque envoi). Dédup : une invitation
+ * n'est enfilée qu'une fois par contact (sans limite de temps) ; un message est gardé par
+ * son `action_id`, donc deux actions distinctes vers le même contact passent, et une même
+ * action ne produit jamais deux lignes actives. Une ligne historique de l'extension, sans
+ * `action_id`, ne bloque plus un message neuf. Un enfilement SANS `action_id` retombe sur
+ * l'ancienne garde (contact, type) : rien ne distinguerait deux enfilements du même message,
+ * et le laisser passer ferait partir deux fois.
  * Retourne l'id créé, ou null si déjà en file. Aucun envoi ici.
  */
 export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob): Promise<string | null> {
@@ -311,10 +316,18 @@ export async function enqueueLinkedInAction(pool: Pool, job: LinkedInActionJob):
      select $1, $2, $3, $4, $5, $6, $7, $8
      where not exists (
        select 1 from linkedin_action_queue q
-       where q.contact_id = $2 and q.kind = $5
-         and (q.status in ('pending', 'processing', 'sent')
+       where (q.status in ('pending', 'processing', 'sent')
               or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
-         and $2 is not null
+         and (
+           -- Une invitation ne part qu'une fois par personne, sans limite de temps.
+           ($5::text = 'invite' and $2::uuid is not null and q.contact_id = $2::uuid and q.kind = 'invite')
+           -- Toute action du sequenceur ne produit qu'une ligne : c'est elle qu'on ne double pas.
+           or ($8::uuid is not null and q.action_id = $8::uuid)
+           -- Sans action_id, rien ne distingue deux enfilements du meme message : on retombe
+           -- sur (contact, type), l'ancienne garde. La laisser tomber ici ferait partir un
+           -- message deux fois, ce que la regle du lot interdit avant tout le reste.
+           or ($8::uuid is null and $2::uuid is not null and q.contact_id = $2::uuid and q.kind = $5::text)
+         )
      )
      returning id`,
     [

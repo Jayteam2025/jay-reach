@@ -121,14 +121,15 @@ docker image prune
 
 ## Déployer l'envoi LinkedIn côté serveur (lot 4b)
 
-Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Cinq
+Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Six
 migrations l'accompagnent, et **l'ordre compte, il n'est pas symétrique** :
 
-1. **Les cinq migrations, dans l'ordre des noms de fichiers**, avec
+1. **Les six migrations, dans l'ordre des noms de fichiers**, avec
    `supabase db push --linked` :
    `20261007110000_linkedin_envoi`, `20261007120000_linkedin_resultat_indetermine_actif`,
    `20261007130000_linkedin_methode_par_defaut_serveur`,
-   `20261008100000_linkedin_plafonds_envoi_report`, `20261008110000_linkedin_reprise_marquee`.
+   `20261008100000_linkedin_plafonds_envoi_report`, `20261008110000_linkedin_reprise_marquee`,
+   `20261008120000_linkedin_dedup_par_action`.
 2. **Puis le worker** (`./deployer.sh`).
 3. **Puis l'application web** (Vercel). Le worker et le web peuvent partir
    ensemble, du moment que la base est passée avant les deux.
@@ -153,6 +154,12 @@ Pourquoi cet ordre :
   l'inscription `active` et l'action `scheduled` (ces écritures ne sont pas dans
   une transaction). L'inscription reste alors active sans échéance, et le
   balayage qui aurait dû la rattraper ne tourne pas non plus.
+- **Worker avant `20261008120000`** (déduplication par action) : sans elle, l'index
+  `uq_linkedin_action_active` interdit toujours deux lignes actives pour un même
+  (contact, type). Le worker neuf enfile un message en comptant sur la garde par
+  `action_id` : l'INSERT violerait l'index et le job `actions.dispatch` lèverait. Dans
+  l'autre sens (migration avant worker), rien ne casse — l'ancien worker porte encore sa
+  garde applicative (contact, type), plus étroite que les nouveaux index.
 - **`20261008100000` (report des plafonds d'envoi)** ne pose une clé que pour
   les organisations qui avaient déjà réglé `linkedin_settings.weekly_cap`. La
   déployer après le worker ne casse rien : le code retombe sur ses valeurs par
@@ -205,6 +212,11 @@ select key, value from organization_settings
 select column_name from information_schema.columns
  where table_name = 'linkedin_action_queue' and column_name = 'reprise_le';
 select indexname from pg_indexes where indexname = 'linkedin_action_queue_reprise_idx';
+-- 20261008120000 : la dedup suit l'action, et (contact, type) ne vaut plus que pour l'invitation
+select indexname, indexdef from pg_indexes
+ where indexname in ('uq_linkedin_action_active', 'uq_linkedin_action_par_action');
+-- attendu : `uq_linkedin_action_active` porte `kind = 'invite'` dans son WHERE,
+-- `uq_linkedin_action_par_action` porte `(action_id)` et `action_id IS NOT NULL`.
 ```
 
 La migration de report (`20261008100000`) ne pose une cle que pour les organisations

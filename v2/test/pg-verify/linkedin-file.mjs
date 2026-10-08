@@ -710,6 +710,71 @@ async function migration_de_report_des_plafonds() {
   await q('delete from linkedin_settings where organization_id = $1', [org2]);
 }
 
+async function dedup_par_action() {
+  console.log('\n[lkf] 24. deduplication par action : message gardé par action_id, invitation par contact');
+  await remettreAZero();
+  const contact = async () => (await q(`insert into contacts (organization_id) values ($1) returning id`, [org])).rows[0].id;
+  const url = 'https://www.linkedin.com/in/fictif-dedup';
+  const c = await contact();
+  const a1 = await campagneAvecAction('active');
+  const a2 = await campagneAvecAction('active');
+  const msg = (actionId, contactId = c) =>
+    enqueueLinkedInAction(pool, { organizationId: org, contactId, linkedinUrl: url, kind: 'message', messageBody: 'x', actionId });
+  const lignes = async (where, params) =>
+    Number((await q(`select count(*)::int n from linkedin_action_queue where ${where}`, params)).rows[0].n);
+
+  const m1 = await msg(a1);
+  const m2 = await msg(a2);
+  check('24a. deux messages d actions differentes vers le meme contact s enfilent tous les deux', typeof m1 === 'string' && typeof m2 === 'string', `${m1} / ${m2}`);
+
+  const m1bis = await msg(a1);
+  check('24b. deux enfilements de la MEME action ne produisent qu une ligne', m1bis === null && (await lignes('action_id = $1', [a1])) === 1, String(m1bis));
+
+  await remettreAZero();
+  const i1 = await enqueueLinkedInAction(pool, { organizationId: org, contactId: c, linkedinUrl: url, kind: 'invite' });
+  const i2 = await enqueueLinkedInAction(pool, { organizationId: org, contactId: c, linkedinUrl: url, kind: 'invite' });
+  check('24c. une seconde invitation vers un contact deja invite reste refusee', typeof i1 === 'string' && i2 === null, `${i1} / ${i2}`);
+  let violation = null;
+  try {
+    await q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, status)
+             values ($1, $2, $3, 'invite', 'serveur', 'pending')`, [org, c, url]);
+  } catch (e) {
+    violation = e.code;
+  }
+  check('24c bis. l index refuse aussi une seconde invitation inseree directement', violation === '23505', String(violation));
+
+  await remettreAZero();
+  const c2 = await contact();
+  await q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, status, sent_at)
+           values ($1, $2, $3, 'message', 'extension_auto', 'sent', '2026-08-28T10:00:00Z')`, [org, c2, url]);
+  const neuf = await msg(a1, c2);
+  check('24d. une ligne historique sent sans action_id ne bloque plus un message neuf', typeof neuf === 'string', String(neuf));
+
+  // L'index porte la meme garantie que la requete, pour deux enfilements concurrents.
+  let doublon = null;
+  try {
+    await q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, status, action_id)
+             values ($1, $2, $3, 'message', 'serveur', 'pending', $4)`, [org, c2, url, a1]);
+  } catch (e) {
+    doublon = e.code;
+  }
+  check('24e. l index unique par action refuse une seconde ligne active de la meme action', doublon === '23505', String(doublon));
+
+  // Trouve en revue : sans `action_id`, aucune des deux gardes ne s appliquait plus, donc un
+  // message partait deux fois. `dispatch.ts` peut passer `actionId: null`, le cas est atteignable.
+  await remettreAZero();
+  const c3 = await contact();
+  const sans = () =>
+    enqueueLinkedInAction(pool, { organizationId: org, contactId: c3, linkedinUrl: url, kind: 'message', messageBody: 'x' });
+  const s1 = await sans();
+  const s2 = await sans();
+  check(
+    '24f. sans action_id, un message ne s enfile qu une fois (retour a la garde contact, type)',
+    typeof s1 === 'string' && s2 === null && (await lignes('contact_id = $1', [c3])) === 1,
+    `${s1} / ${s2}`,
+  );
+}
+
 async function jouer(...sections) {
   for (const section of sections) {
     try {
@@ -744,6 +809,7 @@ async function main() {
     sonde_et_reclamation_d_accord_a_l_echeance_limite,
     enregistrement_atomique,
     indetermine_compte_comme_actif,
+    dedup_par_action,
     prochain_envoi_sur_vrai_sql,
     plafonds_par_type_sur_vrai_sql,
     un_type_plafonne_ne_retient_pas_l_autre,
