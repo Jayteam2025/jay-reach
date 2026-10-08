@@ -11,3 +11,5 @@ export { actionIdempotencyKey } from '../../packages/core/src/sequencer/actions.
 export { envoyerEmailSalesBlink } from '../../apps/worker/src/handlers/email-salesblink.js';
 export { rangDeLEtape } from '../../apps/worker/src/handlers/sequence.js';
 export { ErreurSalesBlink } from '../../packages/providers/src/outreach/index.js';
+// La normalisation d'adresse LinkedIn du JS, pour la confronter à sa jumelle SQL.
+export { normalizeLinkedin } from '../../packages/core/src/import/pipeline.js';

@@ -46,6 +46,22 @@ describe('validation + déduplication + compte rendu', () => {
 
   it('déduplique par LinkedIn normalisé, puis par nom+entreprise', () => {
     expect(normalizeLinkedin('https://www.linkedin.com/in/jdoe/')).toBe('linkedin.com/in/jdoe');
+    // Les sept graphies que la fonction SQL `app.url_linkedin_normalisee` doit rendre
+    // identiques (migration 20261008170000) : les deux implémentations sont la même règle,
+    // et le harnais pg-verify compare leurs sorties sur cette même liste.
+    for (const graphie of [
+      'https://www.linkedin.com/in/jdoe',
+      'https://www.linkedin.com/in/jdoe/',
+      'HTTPS://WWW.LinkedIn.com/in/JDoe',
+      'http://linkedin.com/in/jdoe',
+      'www.linkedin.com/in/jdoe',
+      'linkedin.com/in/jdoe//',
+      '  https://www.linkedin.com/in/jdoe?trk=public_profile  ',
+    ]) {
+      expect(normalizeLinkedin(graphie)).toBe('linkedin.com/in/jdoe');
+    }
+    // Deux personnes distinctes ne se confondent pas.
+    expect(normalizeLinkedin('https://www.linkedin.com/in/jdoe2')).not.toBe('linkedin.com/in/jdoe');
     const rows: MappedRow[] = [
       { raw: {}, linkedin_url: 'https://linkedin.com/in/jdoe' },
       { raw: {}, linkedin_url: 'http://www.linkedin.com/in/jdoe/' },

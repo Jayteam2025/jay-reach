@@ -651,7 +651,9 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
           select 1 from suppressions sup
            where sup.organization_id = a.organization_id
              and sup.scope = 'linkedin'
-             and lower(sup.value) = lower(c.linkedin_url)
+             -- Normalisée des deux côtés : une opposition posée sous une autre graphie
+             -- (barre finale, www., paramètres de suivi) doit bloquer la même personne.
+             and app.url_linkedin_normalisee(sup.value) = app.url_linkedin_normalisee(c.linkedin_url)
              and (sup.expires_at is null or sup.expires_at > now())
         )
       order by a.created_at asc
@@ -786,7 +788,7 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
           select 1 from suppressions sup
            where sup.organization_id = a.organization_id
              and sup.scope = 'linkedin'
-             and lower(sup.value) = lower(coalesce(c.linkedin_url, q.linkedin_url))
+             and app.url_linkedin_normalisee(sup.value) = app.url_linkedin_normalisee(coalesce(c.linkedin_url, q.linkedin_url))
              and (sup.expires_at is null or sup.expires_at > now())
         )
       order by q.reprise_le asc

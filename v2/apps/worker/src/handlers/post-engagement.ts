@@ -125,12 +125,15 @@ export async function enregistrerEngageur(
   //    la garder (nom, intitulé, adresse), la scorer et l'enrichir (un achat) serait
   //    encore la traiter. Les deux formes de l'adresse (fournie, déduite de l'URN)
   //    sont testées, et la casse ne compte pas.
-  const formes = [...new Set([url, lienProfilDeduit(engageur.urn)].map((u) => u.toLowerCase()))];
+  // Les deux formes partent BRUTES : c'est le SQL qui normalise les deux côtés, pour qu'une
+  // seule implémentation de « c'est la même adresse » décide (migration 20261008170000).
+  const formes = [...new Set([url, lienProfilDeduit(engageur.urn)])];
   const supprime = await pool.query(
     `select 1 as one from suppressions
       where organization_id = $1 and scope = 'linkedin'
         and (expires_at is null or expires_at > now())
-        and lower(value) = any($2::text[])
+        and app.url_linkedin_normalisee(value)
+            = any(select app.url_linkedin_normalisee(f) from unnest($2::text[]) as f)
       limit 1`,
     [org, formes],
   );
