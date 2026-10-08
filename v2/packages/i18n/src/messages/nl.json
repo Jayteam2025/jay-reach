@@ -774,6 +774,9 @@
         "channel": "Kanaal",
         "channelEmail": "E-mail",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "LinkedIn-uitnodiging",
+        "channelLinkedinMessage": "LinkedIn-bericht",
+        "inviteSansNote": "De uitnodiging vertrekt zonder notitie: de server kan er nog geen meesturen.",
         "stats": "{passes, plural, one {# verzonden} other {# verzonden}} · {repondus, plural, one {# reactie} other {# reacties}}",
         "delay": "Vertraging na de vorige stap",
         "delayHint": "Al geplande opvolgingen behouden de oude vertraging.",
@@ -948,6 +951,9 @@
         "channel": "Kanaal",
         "channelEmail": "E-mail",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "LinkedIn-uitnodiging",
+        "channelLinkedinMessage": "LinkedIn-bericht",
+        "inviteSansNote": "De uitnodiging vertrekt zonder notitie: de server kan er nog geen meesturen.",
         "subject": "Onderwerp",
         "body": "Inhoud",
         "delay": "Vertraging sinds de vorige stap",
@@ -1772,7 +1778,7 @@
       "new": "Nieuwe contacten",
       "known": "Al bekend",
       "missingEmail": "Zonder e-mail",
-      "submit": "{n} contacten importeren"
+      "submit": "{n, plural, one {# contact} other {# contacten}} importeren"
     }
   },
   "mentionOrigine": {

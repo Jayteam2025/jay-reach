@@ -6,9 +6,12 @@ import { Bouton, Carte, Champ } from '../../ui';
 
 export type CleModeleSequence = ModeleSequence['cle'] | 'vide';
 
+/** Ce que l'étape FAIT : l'invitation et le message sont deux canaux distincts, pas un réglage de « LinkedIn ». */
+export type CanalEtape = 'email' | 'linkedin_invite' | 'linkedin_message';
+
 export interface EtapeSequenceEtape {
   readonly cle: string;
-  readonly canal: 'email' | 'linkedin';
+  readonly canal: CanalEtape;
   readonly sujet: string;
   readonly corps: string;
   /** Délai depuis l'étape précédente, en JOURS (l'écran raisonne en jours ; `delaiHeures` — ×24 — est ce que `creerCampagneComplete` reçoit). */
@@ -24,7 +27,10 @@ export interface EtapeSequenceLibelles {
   etape: string;
   canal: string;
   canalEmail: string;
-  canalLinkedin: string;
+  canalLinkedinInvite: string;
+  canalLinkedinMessage: string;
+  /** Remplace le champ « Corps » pour une invitation, qui n'a pas de message. */
+  inviteSansNote: string;
   objet: string;
   corps: string;
   delai: string;
@@ -46,6 +52,11 @@ export interface EtapeSequenceProps {
   onSupprimerEtape: (cle: string) => void;
   disabled: boolean;
   libelles: EtapeSequenceLibelles;
+}
+
+/** Valeur du select, ramenée au type : tout ce qui n'est pas un canal connu retombe sur l'email. */
+function lireCanal(valeur: string): CanalEtape {
+  return valeur === 'linkedin_invite' || valeur === 'linkedin_message' ? valeur : 'email';
 }
 
 /** Construit les étapes d'un modèle (`packages/core/modeles-sequence.ts`) en cles locales + délais en jours. */
@@ -172,11 +183,12 @@ export function EtapeSequence({
                   id="assistant-sequence-canal"
                   name="canal"
                   value={etape.canal}
-                  onChange={(e) => onModifierEtape(etape.cle, { canal: e.target.value === 'linkedin' ? 'linkedin' : 'email' })}
+                  onChange={(e) => onModifierEtape(etape.cle, { canal: lireCanal(e.target.value) })}
                   disabled={disabled}
                 >
                   <option value="email">{libelles.canalEmail}</option>
-                  <option value="linkedin">{libelles.canalLinkedin}</option>
+                  <option value="linkedin_invite">{libelles.canalLinkedinInvite}</option>
+                  <option value="linkedin_message">{libelles.canalLinkedinMessage}</option>
                 </select>
               </Champ>
               {etape.canal === 'email' && (
@@ -190,17 +202,25 @@ export function EtapeSequence({
                   />
                 </Champ>
               )}
-              <Champ libelle={libelles.corps} id="assistant-sequence-corps">
-                <textarea
-                  id="assistant-sequence-corps"
-                  name="corps"
-                  rows={5}
-                  value={etape.corps}
-                  onChange={(e) => onModifierEtape(etape.cle, { corps: e.target.value })}
-                  disabled={disabled}
-                />
-              </Champ>
-              <div className="jr-aide">{libelles.variablesAide}</div>
+              {etape.canal === 'linkedin_invite' ? (
+                // Une invitation n'a pas de message : montrer un champ vide à remplir serait
+                // promettre une note que l'envoi jetterait.
+                <p className="jr-aide">{libelles.inviteSansNote}</p>
+              ) : (
+                <>
+                  <Champ libelle={libelles.corps} id="assistant-sequence-corps">
+                    <textarea
+                      id="assistant-sequence-corps"
+                      name="corps"
+                      rows={5}
+                      value={etape.corps}
+                      onChange={(e) => onModifierEtape(etape.cle, { corps: e.target.value })}
+                      disabled={disabled}
+                    />
+                  </Champ>
+                  <div className="jr-aide">{libelles.variablesAide}</div>
+                </>
+              )}
               {index === 0 ? (
                 // Première étape : pas de « délai depuis l'étape précédente », elle n'en a pas (R65, tour de correction 2).
                 <p className="jr-aide">{libelles.envoiImmediat}</p>

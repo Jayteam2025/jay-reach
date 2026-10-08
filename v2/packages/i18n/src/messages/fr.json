@@ -774,6 +774,9 @@
         "channel": "Canal",
         "channelEmail": "Email",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "Invitation LinkedIn",
+        "channelLinkedinMessage": "Message LinkedIn",
+        "inviteSansNote": "L’invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.",
         "stats": "{passes, plural, one {# envoyé} other {# envoyés}} · {repondus, plural, one {# réponse} other {# réponses}}",
         "delay": "Délai après l'étape précédente",
         "delayHint": "Les relances déjà planifiées gardent l'ancien délai.",
@@ -948,6 +951,9 @@
         "channel": "Canal",
         "channelEmail": "Email",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "Invitation LinkedIn",
+        "channelLinkedinMessage": "Message LinkedIn",
+        "inviteSansNote": "L’invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.",
         "subject": "Objet",
         "body": "Corps",
         "delay": "Délai depuis l'étape précédente",
@@ -1772,7 +1778,7 @@
       "new": "Nouveaux contacts",
       "known": "Déjà connus",
       "missingEmail": "Sans email",
-      "submit": "Importer {n} contacts"
+      "submit": "Importer {n, plural, one {# contact} other {# contacts}}"
     }
   },
   "mentionOrigine": {

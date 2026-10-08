@@ -115,3 +115,38 @@ describe('enqueueLinkedInAction — methode par defaut', () => {
     expect(job.method).toBe('extension_auto');
   });
 });
+
+describe('enqueueLinkedInAction — deduplication par action', () => {
+  const appel = async (job: Parameters<typeof enqueueLinkedInAction>[1]) => {
+    const query = vi.fn(async (_sql: string, _valeurs: unknown[]) => ({ rows: [], rowCount: 0 }));
+    const id = await enqueueLinkedInAction({ query } as unknown as Pool, job);
+    const [sql, valeurs] = query.mock.calls[0] ?? ['', []];
+    return { id, sql: String(sql), valeurs };
+  };
+
+  it('transmet le type et l action a la garde SQL', async () => {
+    const { valeurs } = await appel({
+      organizationId: 'org-1',
+      kind: 'message',
+      linkedinUrl: 'https://www.linkedin.com/in/x',
+      contactId: 'c-1',
+      actionId: 'a-1',
+    });
+    expect(valeurs[4]).toBe('message');
+    expect(valeurs[7]).toBe('a-1');
+  });
+
+  it('porte les trois gardes : invitation par contact, action par action, et le repli sans action', async () => {
+    const { sql } = await appel({ organizationId: 'org-1', kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/x' });
+    expect(sql).toMatch(/\$5::text = 'invite'[\s\S]*q\.kind = 'invite'/);
+    expect(sql).toMatch(/q\.action_id = \$8::uuid/);
+    // Trouve en revue : sans ce repli, un message sans `action_id` n etait plus garde du tout
+    // et partait deux fois. Le comportement est prouve par le harnais pg-verify (24f).
+    expect(sql).toMatch(/\$8::uuid is null[\s\S]*q\.kind = \$5::text/);
+  });
+
+  it('sans action, l absence est transmise null — c est le repli (contact, type) qui garde alors', async () => {
+    const { valeurs } = await appel({ organizationId: 'org-1', kind: 'message', linkedinUrl: 'https://www.linkedin.com/in/x' });
+    expect(valeurs[7]).toBeNull();
+  });
+});

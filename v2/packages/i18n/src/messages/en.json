@@ -774,6 +774,9 @@
         "channel": "Channel",
         "channelEmail": "Email",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "LinkedIn invitation",
+        "channelLinkedinMessage": "LinkedIn message",
+        "inviteSansNote": "The invitation goes out without a note: server-side sending cannot carry one yet.",
         "stats": "{passes, plural, one {# sent} other {# sent}} · {repondus, plural, one {# reply} other {# replies}}",
         "delay": "Delay after the previous step",
         "delayHint": "Follow-ups already scheduled keep the old delay.",
@@ -948,6 +951,9 @@
         "channel": "Channel",
         "channelEmail": "Email",
         "channelLinkedin": "LinkedIn",
+        "channelLinkedinInvite": "LinkedIn invitation",
+        "channelLinkedinMessage": "LinkedIn message",
+        "inviteSansNote": "The invitation goes out without a note: server-side sending cannot carry one yet.",
         "subject": "Subject",
         "body": "Body",
         "delay": "Delay since the previous step",
@@ -1772,7 +1778,7 @@
       "new": "New contacts",
       "known": "Already known",
       "missingEmail": "Without email",
-      "submit": "Import {n} contacts"
+      "submit": "Import {n, plural, one {# contact} other {# contacts}}"
     }
   },
   "mentionOrigine": {

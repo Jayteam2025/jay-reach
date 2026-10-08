@@ -370,7 +370,9 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     etape: 'Étape',
     canal: 'Canal',
     canalEmail: 'Email',
-    canalLinkedin: 'LinkedIn',
+    canalLinkedinInvite: 'Invitation LinkedIn',
+    canalLinkedinMessage: 'Message LinkedIn',
+    inviteSansNote: 'L’invitation part sans note.',
     objet: 'Objet',
     corps: 'Corps',
     delai: 'Délai',
@@ -381,6 +383,43 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     variablesAide: 'Variables disponibles.',
     vide: 'Aucune étape.',
   };
+
+  // Mesuré en production le 08/10 : aucun écran ne savait créer une invitation, alors que
+  // l'écran Séquence demandait d'en ajouter une. Ces deux contrôles gardent l'ouverture.
+  it('le canal propose l’invitation ET le message, distinctement', () => {
+    const html = renderToStaticMarkup(
+      <EtapeSequence
+        etapes={[{ cle: 'a', canal: 'email', sujet: '', corps: 'Bonjour', delaiJours: 0 }]}
+        onChoisirModele={() => {}}
+        onAjouterEtape={() => {}}
+        onModifierEtape={() => {}}
+        onSupprimerEtape={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('value="linkedin_invite"');
+    expect(html).toContain('value="linkedin_message"');
+    expect(html).toContain('Invitation LinkedIn');
+    expect(html).toContain('Message LinkedIn');
+  });
+
+  it('une invitation n’a pas de champ message : le corps cède la place à la phrase qui dit pourquoi', () => {
+    const html = renderToStaticMarkup(
+      <EtapeSequence
+        etapes={[{ cle: 'a', canal: 'linkedin_invite', sujet: '', corps: '', delaiJours: 0 }]}
+        onChoisirModele={() => {}}
+        onAjouterEtape={() => {}}
+        onModifierEtape={() => {}}
+        onSupprimerEtape={() => {}}
+        disabled={false}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain('<textarea');
+    expect(html).not.toContain(LIBELLES.variablesAide);
+    expect(html).toContain(LIBELLES.inviteSansNote);
+  });
 
   it('aucun role="button" résiduel : les options de modèle et les pilules sont de vrais boutons', () => {
     const etapes = etapesDepuisModele('question_relances');
