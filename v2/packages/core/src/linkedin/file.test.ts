@@ -115,7 +115,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
         ) as never;
       }
       if (/select sent_at from linkedin_action_queue/i.test(sql)) return rep([]) as never;
-      if (/select q\.id/i.test(sql)) {
+      if (/jr:linkedin_candidates_par_type/i.test(sql)) {
         const demandee = /q\.method = '([a-z_]+)'/.exec(sql)?.[1] ?? null;
         if (demandee !== etat.methodeDeLaLigne) return rep([]) as never;
         if (enProcessing || terminee) return rep([]) as never;

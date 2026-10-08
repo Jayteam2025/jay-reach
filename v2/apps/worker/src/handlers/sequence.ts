@@ -16,7 +16,6 @@ import {
   ecrireEvenement,
   placesRestantes,
   runGuards,
-  renderTemplate,
   resolveSender,
   shiftIntoBusinessHours,
   applyLeadTime,
@@ -36,9 +35,8 @@ import { loadDomainPatterns, domainOf, type DomainPattern } from '../domain-patt
 import type { DispatchJob } from './dispatch.js';
 import {
   REQUETE_LIGNE_INSCRIPTION,
-  buildMessageValues,
   construireEntreeGate,
-  resolveTemplate,
+  rendreCorpsDeLEtape,
   loadSnippets,
   type DueRow,
 } from './message-values.js';
@@ -1045,18 +1043,11 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       // par Jay Reach (`jr_subject`/`jr_body`), mais au moment de l'envoi
       // (`envoyerEmailSalesBlink`), pas ici : voir `message-values.ts`.
       if ((ch === 'linkedin_invite' || ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
-        const resolved = await resolveTemplate(pool, step.template_parent_id, row.locale);
-        if (resolved.missingLocale) {
-          missingLocale = true;
-        } else if (resolved.body !== null) {
-          templateId = resolved.id;
-          const rendered = renderTemplate(
-            resolved.body,
-            buildMessageValues(row, extraitsParOrg.get(row.organization_id)),
-          );
-          messageBody = rendered.text;
-          unresolvedVariables = rendered.missing;
-        }
+        const corps = await rendreCorpsDeLEtape(pool, row, step.template_parent_id, extraitsParOrg.get(row.organization_id));
+        missingLocale = corps.langueManquante;
+        templateId = corps.templateId;
+        messageBody = corps.texte;
+        unresolvedVariables = corps.variablesManquantes;
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);

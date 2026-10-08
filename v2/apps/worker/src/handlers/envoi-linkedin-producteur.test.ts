@@ -51,6 +51,35 @@ describe('enqueueEnvoiLinkedIn', () => {
     erreur.mockRestore();
   });
 
+  it('une organisation en echec est journalisee pour ELLE : son nom et le type d erreur, jamais le message', async () => {
+    const { boss } = creerBoss();
+    const ecritures: { sql: string; valeurs: unknown[] }[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string, valeurs: unknown[] = []) => {
+        if (/insert into audit_events/.test(sql)) {
+          ecritures.push({ sql, valeurs });
+          return { rows: [], rowCount: 1 };
+        }
+        return { rows: [{ organization_id: 'org-1' }, { organization_id: 'org-2' }], rowCount: 2 };
+      }),
+    } as unknown as Pool;
+    const erreur = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await enqueueEnvoiLinkedIn(boss, pool, NOW, async (_ex, org) => {
+      if (org === 'org-1') throw new TypeError('proxy http://user:motdepasse@hote:8080 injoignable');
+      return { quand: null, motif: 'file_vide' };
+    });
+    expect(ecritures).toHaveLength(1);
+    expect(ecritures[0]?.valeurs[0]).toBe('org-1');
+    expect(ecritures[0]?.valeurs[4]).toBe('engine_error');
+    const diff = String(ecritures[0]?.valeurs[5]);
+    expect(diff).toContain('TypeError');
+    expect(diff).not.toContain('motdepasse');
+    const sortie = erreur.mock.calls.flat().join(' ');
+    expect(sortie).toContain('org-1');
+    expect(sortie).not.toContain('motdepasse');
+    erreur.mockRestore();
+  });
+
   it('un job deja en attente (send rend null) n est pas une erreur', async () => {
     const { boss, send } = creerBoss();
     send.mockResolvedValueOnce(null);
@@ -78,7 +107,7 @@ function poolAvecEtat(
         return rep(gardees.map((x) => ({ organization_id: x.id })));
       }
       if (/jr:linkedin_envoi_en_cours/.test(sql)) return rep([{ recentes: '0', perimees: '0' }]);
-      if (/select q\.id, q\.kind/.test(sql)) return rep([{ id: 'file-1', kind: 'invite' }]);
+      if (/jr:linkedin_candidates_par_type/.test(sql)) return rep([{ id: 'file-1', kind: 'invite' }]);
       if (/from organization_settings/.test(sql)) {
         return rep(valeurs[1] === 'linkedin_requetes_par_heure' ? [{ value: 60 }] : [{ value: 100 }]);
       }

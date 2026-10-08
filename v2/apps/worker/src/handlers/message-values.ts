@@ -7,7 +7,7 @@
  * rendu depuis le tick jusqu'à la file de dispatch.
  */
 import type { Pool } from 'pg';
-import { construireValeursContact } from '@jay-reach/core';
+import { construireValeursContact, renderTemplate } from '@jay-reach/core';
 import { emailGateAllows, type GateDecision, type GateInput } from '@jay-reach/providers/email-validation';
 import { domainOf, loadDomainPatterns, type DomainPattern } from '../domain-patterns.js';
 import type { EmailStatus } from '../enrichment-persist.js';
@@ -174,6 +174,38 @@ export async function resolveTemplate(pool: Pool, familyId: string, locale: stri
     name: found?.name ?? null,
     missingLocale: false,
   };
+}
+
+/** Le corps d'une étape rendu pour un contact, avec ce qui empêche de l'envoyer. */
+export interface CorpsRendu {
+  /** Version du gabarit rendue ; nul sans gabarit lisible. */
+  readonly templateId: string | null;
+  /** Texte rendu ; nul sans gabarit lisible (étape sans modèle, modèle supprimé, langue manquante). */
+  readonly texte: string | null;
+  /** Variables non résolues : tant qu'il en reste, rien ne part (jamais d'envoi avec un champ vide). */
+  readonly variablesManquantes: string[];
+  /** La langue du contact n'a pas de variante alors que la famille en a d'autres. */
+  readonly langueManquante: boolean;
+}
+
+/**
+ * Rend le corps d'une étape pour un contact : UN SEUL rendu pour le tick et pour le réenfilage
+ * d'une action reprise. Deux rendus qui divergeraient feraient partir, après un « Reprendre »,
+ * une version du message que l'écran de séquence n'affiche plus.
+ */
+export async function rendreCorpsDeLEtape(
+  pool: Pool,
+  ligne: DueRow,
+  templateParentId: string | null,
+  extraits?: ReadonlyMap<string, string>,
+): Promise<CorpsRendu> {
+  const vide: CorpsRendu = { templateId: null, texte: null, variablesManquantes: [], langueManquante: false };
+  if (!templateParentId) return vide;
+  const resolu = await resolveTemplate(pool, templateParentId, ligne.locale);
+  if (resolu.missingLocale) return { ...vide, langueManquante: true };
+  if (resolu.body === null) return vide;
+  const rendu = renderTemplate(resolu.body, buildMessageValues(ligne, extraits));
+  return { templateId: resolu.id, texte: rendu.text, variablesManquantes: rendu.missing, langueManquante: false };
 }
 
 /**

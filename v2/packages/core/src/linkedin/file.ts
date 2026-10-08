@@ -266,16 +266,19 @@ function jugerRythme(stats: StatsRythme, kind: TypeActionLinkedIn, now: Date): V
 }
 
 /**
- * La plus ancienne action serveur prête à partir (échéance atteinte, campagne active), avec son
- * type. Lecture seule : la réclamation, elle, est l'`update` atomique qui suit.
+ * La plus ancienne action serveur prête à partir (échéance atteinte, campagne active) POUR CHAQUE
+ * TYPE, la plus ancienne en tête. Les plafonds sont par type : juger la seule plus ancienne ligne
+ * arrêterait toute la file dès que son type est plafonné, y compris l'autre type qui a du budget.
+ * Lecture seule : la réclamation, elle, est l'`update` atomique qui suit.
  */
-async function prochaineCandidate(
+async function prochainesCandidates(
   ex: Executeur,
   organisationId: string,
   now: Date,
-): Promise<{ id: string; kind: TypeActionLinkedIn } | null> {
-  const candidate = await ex.query<{ id: string; kind: TypeActionLinkedIn }>(
-    `select q.id, q.kind
+): Promise<Array<{ id: string; kind: TypeActionLinkedIn }>> {
+  const candidates = await ex.query<{ id: string; kind: TypeActionLinkedIn }>(
+    `select id, kind from (
+       select distinct on (q.kind) q.id, q.kind, q.scheduled_for /* jr:linkedin_candidates_par_type */
          from linkedin_action_queue q
          left join actions a on a.id = q.action_id
          left join enrollments e on e.id = a.enrollment_id
@@ -283,10 +286,31 @@ async function prochaineCandidate(
         where q.organization_id = $1 and q.status = 'pending'
           and q.method = 'serveur' and q.scheduled_for <= $2
           and (q.action_id is null or camp.status = 'active')
-        order by q.scheduled_for asc limit 1`,
+        order by q.kind, q.scheduled_for asc, q.id asc
+     ) par_type
+     order by scheduled_for asc, id asc`,
     [organisationId, now.toISOString()],
   );
-  return candidate.rows[0] ?? null;
+  return candidates.rows;
+}
+
+/**
+ * Juge chaque candidate sur le plafond de SON type et rend la plus ancienne qui passe. Aucune ne
+ * passe : le verdict le plus utile (celui qui porte une attente datée, sinon celui de la plus
+ * ancienne). Un seul jugement, partagé par la réclamation et par `prochainEnvoiLinkedIn` : la date
+ * qu'il pose et la décision de la réclamation ne peuvent pas diverger.
+ */
+function jugerCandidates(
+  candidates: ReadonlyArray<{ id: string; kind: TypeActionLinkedIn }>,
+  stats: StatsRythme,
+  now: Date,
+): { readonly candidate: { id: string; kind: TypeActionLinkedIn }; readonly verdict: VerdictRythme } {
+  const juges = candidates.map((candidate) => ({ candidate, verdict: jugerRythme(stats, candidate.kind, now) }));
+  const premier = juges.find((j) => j.verdict.ok);
+  if (premier) return premier;
+  const datee = juges.find((j) => !j.verdict.ok && j.verdict.attendreMinutes !== undefined);
+  // `candidates` n'est jamais vide ici : les deux appelants ont déjà rendu `queue_empty` / `file_vide`.
+  return datee ?? juges[0]!;
 }
 
 /**
@@ -343,15 +367,16 @@ export async function reclamerProchaineAction(
 
   // 3. Prochaine ligne pending (la plus ancienne planifiée). Choisie AVANT le jugement du rythme :
   // les plafonds sont par type, on ne sait lequel appliquer qu'en connaissant l'action visée.
-  const candidate = await prochaineCandidate(ex, orgId, now);
-  if (!candidate) {
+  const candidates = await prochainesCandidates(ex, orgId, now);
+  if (candidates.length === 0) {
     return { action: null, motif: 'queue_empty' };
   }
 
-  // 4 à 6. Rythme : mode manuel, fenêtre, plafonds du type, intervalle. Un seul jugement, partagé
-  // avec `prochainEnvoiLinkedIn` : la date qu'il pose et la décision d'ici ne peuvent pas diverger.
+  // 4 à 6. Rythme : mode manuel, fenêtre, plafonds du type, intervalle. Un jugement PAR TYPE, la plus
+  // ancienne qui passe est réclamée : un type plafonné ne retient pas l'autre. Partagé avec
+  // `prochainEnvoiLinkedIn`.
   const stats = await chargerStatsRythme(ex, orgId, now);
-  const verdict = jugerRythme(stats, candidate.kind, now);
+  const { candidate, verdict } = jugerCandidates(candidates, stats, now);
   if (!verdict.ok) {
     return { action: null, motif: verdict.motif };
   }
@@ -635,13 +660,13 @@ export async function prochainEnvoiLinkedIn(
     return { quand: maintenant, motif: null, raison: 'reparation' };
   }
 
-  // Le type de la prochaine action décide de LEUR plafond : on la connaît avant de juger.
-  const candidate = await prochaineCandidate(ex, organisationId, maintenant);
-  if (!candidate) {
+  // Chaque type a son plafond : on juge la plus ancienne de chacun, et un seul qui passe suffit.
+  const candidates = await prochainesCandidates(ex, organisationId, maintenant);
+  if (candidates.length === 0) {
     return { quand: null, motif: 'file_vide' };
   }
 
-  const verdict = jugerRythme(await chargerStatsRythme(ex, organisationId, maintenant), candidate.kind, maintenant);
+  const { verdict } = jugerCandidates(candidates, await chargerStatsRythme(ex, organisationId, maintenant), maintenant);
   let quand: Date;
   if (verdict.ok) {
     quand = maintenant;

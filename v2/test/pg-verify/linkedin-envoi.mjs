@@ -14,6 +14,9 @@
 //   9. balayage : retirer `q.reprise_le is not null` — 33 rougit ; retirer `q.reprise_le is null` du
 //      balayage des orphelines — 37 rougit ; retirer le `not exists` (lignes vivantes/indéterminées) — 38 rougit.
 //  10. reprise : retirer l'exists `linkedin_action_queue` de `deja_envoyee` — 39 et 40 rougissent.
+//  12. rejeu : retirer la branche « refus de l'enfilage » (`deja_en_attente`) de rejouerActionsLinkedInReprises — 50, 51 et 52 rougissent.
+//  13. rejeu : reprendre `message_body` de la ligne refusée au lieu de `rendreCorpsDeLEtape` — 53 et 54 rougissent ;
+//      retirer le blocage `missing_variable` / `missing_locale` — 55 et 56 rougissent.
 //  11. migration 20261008110000 : retirer `add column reprise_le` — la migration échoue (contrôle).
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
@@ -465,8 +468,81 @@ async function cheminEmail() {
   delete process.env.SALESBLINK_API_KEY;
 }
 
+// ---------------------------------------------------------------- rejeu : refus de l'enfilage et corps périmé
+const sansLigneDeFile = async (m) => (await q(`select count(*)::int n from linkedin_action_queue where organization_id = $1`, [m.org])).rows[0].n;
+
+async function refusDeLEnfilage() {
+  console.log('\n16. une reprise que l\'enfilage refuse (même contact, même type déjà parti) ne disparaît pas en silence');
+  const m = await monde();
+  const contact = (await q(`insert into contacts (organization_id, linkedin_url) values ($1, 'https://www.linkedin.com/in/doublon') returning id`, [m.org])).rows[0].id;
+  const inscrire = async (nom, statutAction, statutInsc) => {
+    const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, $2, 'active') returning id`, [m.org, nom])).rows[0].id;
+    const etape = (await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'linkedin_invite') returning id`, [camp])).rows[0].id;
+    const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, next_action_at, status) values ($1, $2, $3, 1, null, $4) returning id`, [m.org, camp, contact, statutInsc])).rows[0].id;
+    const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key) values ($1, $2, $3, 'linkedin_invite', $4, $5) returning id`, [m.org, insc, etape, statutAction, actionIdempotencyKey(insc, etape)])).rows[0].id;
+    return { insc, act };
+  };
+  const partie = await inscrire('Partie', 'dispatched', 'completed');
+  const reprise = await inscrire('Reprise', 'scheduled', 'active');
+  await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status, sent_at) values ($1,$2,$3,'https://www.linkedin.com/in/doublon','invite','serveur','sent', now())`, [m.org, contact, partie.act]);
+  const refusee = (await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status, error_code, reprise_le) values ($1,$2,$3,'https://www.linkedin.com/in/doublon','invite','serveur','failed','already_invited', now()) returning id`, [m.org, contact, reprise.act])).rows[0].id;
+
+  const n = await rejouerActionsLinkedInReprises({ pool });
+  const ligne = (await q(`select status, reprise_le from linkedin_action_queue where id = $1`, [refusee])).rows[0];
+  const a = (await q(`select status::text from actions where id = $1`, [reprise.act])).rows[0];
+  const e = (await q(`select status::text, stop_reason from enrollments where id = $1`, [reprise.insc])).rows[0];
+  check('50. rien n\'est réenfilé et le compte reste exact (0 réenfilée, aucune ligne de plus)', n === 0 && (await sansLigneDeFile(m)) === 2, `${n} ${await sansLigneDeFile(m)}`);
+  check('51. la marque de reprise est levée (le balayage de pause peut reprendre la main)', ligne.reprise_le === null && ligne.status === 'failed', JSON.stringify(ligne));
+  check('52. l\'action est en échec et l\'inscription en pause avec le motif deja_en_attente (l\'écran dit la vérité)',
+    a.status === 'failed' && e.status === 'paused' && e.stop_reason === 'linkedin_refus:deja_en_attente', JSON.stringify({ a, e }));
+  const encore = await rejouerActionsLinkedInReprises({ pool });
+  check('52b. un second balayage ne refait rien (idempotent)', encore === 0 && (await sansLigneDeFile(m)) === 2);
+  const intacte = (await q(`select status::text from actions where id = $1`, [partie.act])).rows[0];
+  check('52c. l\'inscription qui a déjà envoyé n\'est pas touchée', intacte.status === 'dispatched');
+}
+
+async function corpsReRendu() {
+  console.log('\n17. le corps réenfilé est RE-RENDU depuis le modèle : un message périmé ne part pas');
+  const monter = async ({ corpsModele, locale = null, entreprise = false }) => {
+    const m = await monde();
+    const compte = entreprise ? (await q(`insert into accounts (organization_id, name) values ($1, 'Acme') returning id`, [m.org])).rows[0].id : null;
+    const contact = (await q(`insert into contacts (organization_id, linkedin_url, first_name, locale, account_id) values ($1, 'https://www.linkedin.com/in/jeanne', 'Jeanne', $2, $3) returning id`, [m.org, locale, compte])).rows[0].id;
+    const modele = (await q(`insert into message_templates (organization_id, name, channel, locale, body) values ($1, 'Relance', 'linkedin_message', 'fr', $2) returning id`, [m.org, corpsModele])).rows[0].id;
+    const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'C', 'active') returning id`, [m.org])).rows[0].id;
+    const etape = (await q(`insert into sequence_steps (campaign_id, position, channel, template_parent_id) values ($1, 0, 'linkedin_message', $2) returning id`, [camp, modele])).rows[0].id;
+    const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, next_action_at) values ($1, $2, $3, 1, null) returning id`, [m.org, camp, contact])).rows[0].id;
+    const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key, payload) values ($1, $2, $3, 'linkedin_message', 'scheduled', $4, '{"messageBody":"Bonjour Jeanne, ancienne offre"}'::jsonb) returning id`, [m.org, insc, etape, actionIdempotencyKey(insc, etape)])).rows[0].id;
+    await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status, error_code, reprise_le, message_body) values ($1,$2,$3,'https://www.linkedin.com/in/jeanne','message','serveur','failed','cannot_message', now(), 'Bonjour Jeanne, ancienne offre')`, [m.org, contact, act]);
+    return { m, modele, act };
+  };
+
+  // Le modèle est corrigé APRÈS le rendu d'origine : c'est la version corrigée qui doit partir.
+  const a = await monter({ corpsModele: 'Bonjour {{prenom}}, ancienne offre' });
+  await q(`update message_templates set body = 'Bonjour {{prenom}}, nouvelle offre' where id = $1`, [a.modele]);
+  const n = await rejouerActionsLinkedInReprises({ pool });
+  const neuve = (await q(`select message_body, status from linkedin_action_queue where action_id = $1 and status = 'pending'`, [a.act])).rows;
+  check('53. la ligne réenfilée porte le texte du modèle CORRIGÉ, jamais l\'ancien',
+    n === 1 && neuve.length === 1 && neuve[0].message_body === 'Bonjour Jeanne, nouvelle offre', JSON.stringify(neuve));
+  const payload = (await q(`select payload->>'messageBody' as corps from actions where id = $1`, [a.act])).rows[0];
+  check('54. l\'action montre le corps qui part', payload.corps === 'Bonjour Jeanne, nouvelle offre', JSON.stringify(payload));
+
+  // Variable non résolue : l'action est bloquée comme le tick la bloque, rien n'est enfilé.
+  const b = await monter({ corpsModele: 'Bonjour {{prenom}} de {{entreprise}}' });
+  const nb = await rejouerActionsLinkedInReprises({ pool });
+  const ab = (await q(`select status::text, block_reason::text, payload->'missingVariables' as manquantes from actions where id = $1`, [b.act])).rows[0];
+  check('55. une variable non résolue bloque l\'action (missing_variable) et n\'enfile rien',
+    nb === 0 && ab.status === 'blocked' && ab.block_reason === 'missing_variable' && JSON.stringify(ab.manquantes) === '["entreprise"]' && (await sansLigneDeFile(b.m)) === 1, JSON.stringify(ab));
+
+  // Langue sans variante : même blocage que le tick (missing_locale).
+  const c = await monter({ corpsModele: 'Bonjour {{prenom}}', locale: 'de' });
+  await rejouerActionsLinkedInReprises({ pool });
+  const ac = (await q(`select status::text, block_reason::text from actions where id = $1`, [c.act])).rows[0];
+  check('56. une langue du contact sans variante bloque l\'action (missing_locale) et n\'enfile rien',
+    ac.status === 'blocked' && ac.block_reason === 'missing_locale' && (await sansLigneDeFile(c.m)) === 1, JSON.stringify(ac));
+}
+
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail, refusDeLEnfilage, corpsReRendu);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

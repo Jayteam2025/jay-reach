@@ -483,7 +483,7 @@ describe('un envoi qui réussit', () => {
     avec(w, { ...ACTION_MESSAGE, messageBody: '   ' });
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(envoyees(w)).toEqual([]);
-    expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'bad_request' })]);
+    expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'message_vide' })]);
   });
 
   it('un job ne traite qu une seule action', async () => {
@@ -711,6 +711,7 @@ describe('un refus définitif arrête la séquence (revue finale, C2)', () => {
     },
     { code: 'profile_not_found', prepare: () => ({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 404 } }, action: ACTION_INVITATION }) },
     { code: 'invalid_url', prepare: () => ({ reponses: {}, action: { ...ACTION_INVITATION, linkedinUrl: 'https://example.com/pas-un-profil' } }) },
+    { code: 'message_vide', prepare: () => ({ reponses: {}, action: { ...ACTION_MESSAGE, messageBody: '' } }) },
     { code: 'bad_request', prepare: () => ({ reponses: { ...profil, [URL_INVITATION]: { statut: 400 } }, action: ACTION_INVITATION }) },
     {
       code: 'already_invited',

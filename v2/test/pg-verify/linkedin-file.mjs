@@ -26,6 +26,7 @@
 //      changer le seuil (REQUETES_PAR_ENVOI) ou le calcul de la date : 21c, 21d rougissent.
 //  20. migration 20261008100000 : retirer l'insert, ou en fausser la valeur : 22a, 22b, 22d rougissent ; 22e prouve que la
 //      vérification interne lève.
+//  21. file.ts : remettre `order by scheduled_for asc limit 1` (un seul candidat, retrait de `distinct on (q.kind)`) : 23a et 23b rougissent.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -586,6 +587,34 @@ async function plafonds_par_type_sur_vrai_sql() {
   check('20e. linkedin_settings.weekly_cap = 5 et daily_cap = 1 ne bornent plus rien', r6.motif === null, JSON.stringify(r6));
 }
 
+async function un_type_plafonne_ne_retient_pas_l_autre() {
+  console.log('\n[lkf] 23. un type plafonné ne retient pas l\'autre : un candidat PAR TYPE, sur la vraie base');
+  await remettreAZero();
+  await envoyees('invite', 100); // plafond des invitations (100) atteint
+  await envoyees('message', 3);
+  // La plus ancienne de la file est une invitation (plafonnée) ; derrière elle, deux messages (budget libre).
+  const inv = await ligne('serveur', { kind: 'invite', scheduledFor: new Date(NOW.getTime() - 5 * 3_600_000).toISOString() });
+  const msgAncien = await ligne('serveur', { kind: 'message', scheduledFor: new Date(NOW.getTime() - 3 * 3_600_000).toISOString() });
+  const msgRecent = await ligne('serveur', { kind: 'message', scheduledFor: new Date(NOW.getTime() - 1 * 3_600_000).toISOString() });
+
+  const sonde = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('23a. la sonde annonce un envoi possible (le message), pas « plafond atteint » alors que l\'autre type peut partir',
+    sonde.motif === null && sonde.raison === 'envoi', JSON.stringify(sonde));
+  const r = await reclamerProchaineAction(pool, org, NOW);
+  check('23b. la réclamation prend le plus ancien MESSAGE, derrière l\'invitation plafonnée',
+    r.action?.id === msgAncien, r.motif ?? '');
+  check('23c. l\'invitation plafonnée reste pending, l\'autre message aussi',
+    (await statut(inv)) === 'pending' && (await statut(msgRecent)) === 'pending');
+
+  // Les deux types plafonnés : le refus dit la vérité (plafond), et rien n'est réclamé.
+  await poserReglage('linkedin_messages_par_semaine', 3);
+  await q(`update linkedin_action_queue set status = 'pending', processing_started_at = null where id = $1`, [msgAncien]);
+  const sondeDeux = await prochainEnvoiLinkedIn(pool, org, new Date(NOW.getTime() + 21 * 60_000));
+  const rDeux = await reclamerProchaineAction(pool, org, new Date(NOW.getTime() + 21 * 60_000));
+  check('23d. les deux types plafonnés : « plafond atteint » pour la sonde et pour la réclamation, rien de réclamé',
+    sondeDeux.motif === 'weekly_cap_reached' && rDeux.action === null && rDeux.motif === 'weekly_cap_reached', `${JSON.stringify(sondeDeux)} ${rDeux.motif ?? ''}`);
+}
+
 async function fenetre_par_defaut_sur_instance_neuve() {
   console.log('\n[lkf] 20f. fenetre d envoi par defaut, sans ligne linkedin_settings');
   await remettreAZero();
@@ -717,6 +746,7 @@ async function main() {
     indetermine_compte_comme_actif,
     prochain_envoi_sur_vrai_sql,
     plafonds_par_type_sur_vrai_sql,
+    un_type_plafonne_ne_retient_pas_l_autre,
     fenetre_par_defaut_sur_instance_neuve,
     plafond_horaire_dans_le_prochain_envoi,
     migration_de_report_des_plafonds,

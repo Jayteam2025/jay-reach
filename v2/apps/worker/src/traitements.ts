@@ -45,6 +45,7 @@ import {
 } from './handlers/enrichment-contact-connu.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
+import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
 import {
   insertSignals,
   upsertResolvedAccount,
@@ -583,23 +584,35 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
  * `resultat_indetermine` ; et seulement si l'action n'a aucune ligne vivante, déjà envoyée ou
  * indéterminée. Une ligne refusée mais NON reprise ne repart jamais seule. Une seule
  * réenfilée par reprise : la nouvelle ligne, plus récente, sort l'action de la sélection.
- * L'adresse est relue sur le contact (l'opérateur vient de la corriger) ; le corps est celui
- * déjà rendu à l'origine.
+ * L'adresse est relue sur le contact (l'opérateur vient de la corriger) et le corps est RE-RENDU
+ * depuis le modèle, par le même helper que le tick (`rendreCorpsDeLEtape`) : le texte rendu à
+ * l'origine est périmé dès que l'opérateur corrige le modèle, et un message périmé PARTIRAIT.
+ * Un corps qui ne se rend pas (variable non résolue, langue sans variante) bloque l'action comme
+ * le tick la bloque, sans rien enfiler.
+ *
+ * L'enfilage déduplique par contact et type, le balayage raisonne par action : quand ils divergent
+ * (même personne dans deux campagnes), l'insertion est refusée. Ce refus ne reste PAS muet : la
+ * marque de reprise est levée et le geste de pause appliqué (`deja_en_attente`), sinon la ligne
+ * serait exclue des deux balayages pour toujours.
  */
 export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>): Promise<number> {
   const { pool } = ctx;
   const res = await pool.query<{
     action_id: string;
+    queue_id: string;
+    enrollment_id: string;
+    template_parent_id: string | null;
     organization_id: string;
     kind: 'invite' | 'message';
     contact_id: string;
     signal_id: string | null;
     linkedin_url: string;
-    message_body: string | null;
   }>(
-    `select a.id as action_id, a.organization_id, q.kind, e.contact_id, q.signal_id,
-            coalesce(c.linkedin_url, q.linkedin_url) as linkedin_url, q.message_body /* jr:linkedin_rejeu_reprises */
+    `select a.id as action_id, q.id as queue_id, e.id as enrollment_id, st.template_parent_id,
+            a.organization_id, q.kind, e.contact_id, q.signal_id,
+            coalesce(c.linkedin_url, q.linkedin_url) as linkedin_url /* jr:linkedin_rejeu_reprises */
        from actions a
+       left join sequence_steps st on st.id = a.step_id
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
        join campaigns camp on camp.id = e.campaign_id
@@ -635,19 +648,68 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
       limit 200`,
   );
   let rejouees = 0;
+  const extraitsParOrg = new Map<string, Map<string, string>>();
   for (const row of res.rows) {
     try {
+      const ligne = await chargerLigneInscription(pool, row.enrollment_id);
+      if (!ligne) continue;
+      if (!extraitsParOrg.has(row.organization_id)) {
+        const charges = await loadSnippets(pool, [row.organization_id]);
+        extraitsParOrg.set(row.organization_id, charges.get(row.organization_id) ?? new Map());
+      }
+      const corps = await rendreCorpsDeLEtape(pool, ligne, row.template_parent_id, extraitsParOrg.get(row.organization_id));
+      const raisonBlocage = corps.langueManquante
+        ? 'missing_locale'
+        : corps.variablesManquantes.length > 0
+          ? 'missing_variable'
+          : null;
+      if (raisonBlocage) {
+        // Comme le tick : l'action est bloquée, l'inscription reste vivante, rien n'est enfilé.
+        await pool.query(
+          `update actions
+              set status = 'blocked', block_reason = $2,
+                  payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('missingVariables', $3::jsonb)
+            where id = $1 and organization_id = $4 and status = 'scheduled' /* jr:linkedin_rejeu_bloque */`,
+          [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
+        );
+        continue;
+      }
       const id = await enqueueLinkedInAction(pool, {
         organizationId: row.organization_id,
         kind: row.kind,
         linkedinUrl: row.linkedin_url,
         contactId: row.contact_id,
         signalId: row.signal_id,
-        messageBody: row.message_body,
+        messageBody: corps.texte,
         method: 'serveur',
         actionId: row.action_id,
       });
-      if (id) rejouees += 1;
+      if (id) {
+        rejouees += 1;
+        // L'écran de l'action montre le corps qui part, pas celui de l'origine.
+        await pool.query(
+          `update actions set payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('messageBody', $2::text),
+                  template_id = coalesce($3, template_id)
+            where id = $1 and organization_id = $4 /* jr:linkedin_rejeu_corps */`,
+          [row.action_id, corps.texte, corps.templateId, row.organization_id],
+        );
+        continue;
+      }
+      // Refus de l'enfilage (même contact, même type déjà vivant ou envoyé) : lever la marque pour
+      // que le balayage de pause reprenne la main, puis dire la vérité sur l'écran.
+      await pool.query(
+        `update linkedin_action_queue set reprise_le = null, updated_at = now()
+          where id = $1 and organization_id = $2 /* jr:linkedin_rejeu_refuse */`,
+        [row.queue_id, row.organization_id],
+      );
+      await arreterSequenceDeLaLigne(
+        pool,
+        row.organization_id,
+        row.queue_id,
+        'deja_en_attente',
+        'Une action du même type est déjà en attente ou envoyée pour ce contact : cette reprise ne peut pas repartir.',
+      );
+      console.warn(`[tick] reprise LinkedIn refusée par l'enfilage, organisation ${row.organization_id} : action remise en pause`);
     } catch (err) {
       // Une ligne qui échoue ne prive pas les suivantes ; le prochain tick la reprend.
       console.error(`[tick] réenfilage LinkedIn d'une action reprise à retenter (${err instanceof Error ? err.name : 'erreur'})`);

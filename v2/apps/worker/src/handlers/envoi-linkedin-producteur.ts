@@ -15,7 +15,7 @@
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { prochainEnvoiLinkedIn, type Executeur, type ProchainEnvoi } from '@jay-reach/core';
+import { ecrireEvenement, prochainEnvoiLinkedIn, type Executeur, type ProchainEnvoi } from '@jay-reach/core';
 
 export type JugerProchainEnvoi = (ex: Executeur, organisationId: string, maintenant: Date) => Promise<ProchainEnvoi>;
 
@@ -39,9 +39,24 @@ export async function enqueueEnvoiLinkedIn(
         { singletonKey: organisationId, startAfter: prochain.quand },
       );
     } catch (err) {
-      // Une organisation en échec ne retient pas les autres. Seul le type sort : le message
-      // d'une erreur de base ou de pg-boss peut porter une chaîne de connexion.
-      console.error(`[envoi-linkedin] enfilage impossible (${err instanceof Error ? err.name : 'Erreur'})`);
+      // Une organisation en échec ne retient pas les autres. Seul le TYPE de l'erreur sort : le message
+      // d'une erreur de base ou de pg-boss peut porter une chaîne de connexion ou un identifiant de proxy.
+      const type = err instanceof Error ? err.name : 'Erreur';
+      console.error(`[envoi-linkedin] enfilage impossible, organisation ${organisationId} (${type})`);
+      // Le `catch` externe de l'appelant ne voit qu'une panne de base GLOBALE : sans cette écriture,
+      // une organisation dont l'évaluation lève laissait « État du moteur » au vert pendant que plus
+      // rien ne partait. Même `engine_error` que le journal de cycle, rattaché à CETTE organisation.
+      try {
+        await ecrireEvenement(pool, {
+          organisationId,
+          entityType: 'engine',
+          entityId: null,
+          action: 'engine_error',
+          diff: { libelle: `L'évaluation de l'envoi LinkedIn a échoué (${type}).`, detail: 'envoi LinkedIn' },
+        });
+      } catch {
+        // Un journal qui échoue ne doit jamais retenir les autres organisations.
+      }
     }
   }
 }

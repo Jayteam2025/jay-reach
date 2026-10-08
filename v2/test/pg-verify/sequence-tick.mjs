@@ -2,6 +2,7 @@
 // inscription → tick → action idempotente → job de dispatch → linkedin_action_queue.
 // Données fictives ; aucun envoi réel (les lignes restent en pending dans la file).
 import pg from 'pg';
+import { poserEcheanceApresDepart } from '@jay-reach/core';
 import { enrollContact, tickDueEnrollments } from './_seq.mjs';
 import { refreshDomainPatterns } from './_patterns.mjs';
 import { runLinkedInDispatch } from './_lkd.mjs';
@@ -124,9 +125,18 @@ async function main() {
   await q(`update organizations set sending_paused_at=null, sending_paused_reason=null where id=$1`, [ORG]);
   await q(`delete from senders where organization_id=$1 and identity like 'SEQ %'`, [ORG]);
   await q(`delete from campaigns where organization_id=$1`, [ORG]);
-  await q(`delete from contacts where organization_id=$1 and email like '%@example.test'`, [ORG]);
+  await q(`delete from contacts where organization_id=$1 and email like '%.test'`, [ORG]);
   await q(`delete from personas where organization_id=$1 and name like 'SEQ %'`, [ORG]);
   await q(`delete from accounts where organization_id=$1 and name like 'SEQ %'`, [ORG]);
+
+  // `accounts_nom_unique_si_non_resolu_idx` est UNIQUE sur (organisation, nom) tant que
+  // `siren` est nul. Plusieurs sections de ce harnais créent volontairement des comptes
+  // HOMONYMES (un compte par contact, le nom servant aux assertions sur {{entreprise}}) :
+  // sans siren distinct, la deuxième insertion lève et le harnais s'arrête en route, en
+  // emportant toutes les sections suivantes. Un siren de test par compte lève l'ambiguïté
+  // sans toucher au nom que les assertions vérifient.
+  let sirenDeTest = 100000000;
+  const prochainSiren = () => String(++sirenDeTest);
 
   // Le tick exige un expéditeur actif du bon type pour émettre un envoi
   // (docs/04). Sans celui-ci, toute la chaîne LinkedIn partirait en pause.
@@ -161,6 +171,23 @@ async function main() {
   check('invitation enfilée dans linkedin_action_queue', typeof qid === 'string');
   const lk = (await q(`select kind, status from linkedin_action_queue where id=$1`, [qid])).rows[0];
   check('kind=invite, status=pending (aucun envoi)', lk.kind === 'invite' && lk.status === 'pending');
+
+  // Depuis le lot 4b, une action LinkedIn reste `scheduled` tant que l'envoi n'est pas
+  // RÉELLEMENT parti : la file en est le témoin, et le séquenceur n'avance qu'une fois
+  // l'étape précédente `dispatched`. C'est voulu — on n'envoie pas le message de suivi
+  // avant que l'invitation soit partie. Avant ce lot, l'enfilage valait départ, et ce
+  // harnais avançait sans que rien ne parte.
+  //
+  // On simule donc ici le départ réel, en SQL : le vrai chemin (`enregistrerResultat`,
+  // qui pose `sent`, appelle `mark_action_dispatched` et l'échéance dans UNE transaction)
+  // est éprouvé par `linkedin-envoi.sh`. Ce harnais-ci éprouve le TICK.
+  console.log('\n[seq] 3 bis. Depart reel de l invitation (simule)');
+  await q(`update linkedin_action_queue set status='sent', sent_at=now() where id=$1`, [qid]);
+  const actionInvite = (await q(`select action_id from linkedin_action_queue where id=$1`, [qid])).rows[0].action_id;
+  await q(`select app.mark_action_dispatched($1)`, [actionInvite]);
+  await q(`update enrollments set next_action_at = now() where id=$1`, [enr]);
+  const apresDepart = (await q(`select status from actions where id=$1`, [actionInvite])).rows[0];
+  check('l invitation est marquee partie (dispatched)', apresDepart.status === 'dispatched', apresDepart.status);
 
   console.log('\n[seq] 4. Tick 2 → étape message (corps du template)');
   const jobs2 = await tickDueEnrollments(pool, at(1000));
@@ -211,7 +238,10 @@ async function main() {
       v === 'on'
         ? account
         : (
-            await q(`insert into accounts (organization_id, name) values ($1,'SEQ Usine Nord') returning id`, [ORG])
+            await q(`insert into accounts (organization_id, name, siren) values ($1,'SEQ Usine Nord',$2) returning id`, [
+              ORG,
+              prochainSiren(),
+            ])
           ).rows[0].id;
     return (
       await q(
@@ -260,7 +290,10 @@ async function main() {
     // Même raison : un compte par contact. Le nom reste « SEQ Usine Nord », que
     // les assertions sur le rendu des variables vérifient dans le message.
     const cpt = (
-      await q(`insert into accounts (organization_id, name) values ($1,'SEQ Usine Nord') returning id`, [ORG])
+      await q(`insert into accounts (organization_id, name, siren) values ($1,'SEQ Usine Nord',$2) returning id`, [
+        ORG,
+        prochainSiren(),
+      ])
     ).rows[0].id;
     return (
       await q(
@@ -312,63 +345,92 @@ async function main() {
   check('action bloquée missing_locale', aLoc?.status === 'blocked' && aLoc?.block_reason === 'missing_locale', `${aLoc?.status}/${aLoc?.block_reason}`);
 
 
-  console.log('\n[seq] 9. Attribution de l’expéditeur (lien à vie par canal)');
-  // On écarte l'expéditeur de base pour que le duel A/B soit sans ambiguïté.
+  console.log('\n[seq] 9. LinkedIn : plus aucun expéditeur, plus aucun lien (le séquenceur ne l\'exige plus)');
+  // Critique C1 du lot 4b : l'envoi LinkedIn passe par la session du serveur, plus par une ligne `senders`.
+  // Aucun expéditeur LinkedIn actif : l'action doit quand même être créée, sans `sender_id`, sans lien,
+  // et l'inscription ne doit PAS passer en pause `sender_unavailable:linkedin`.
   await q(`update senders set is_active=false where organization_id=$1 and kind='linkedin'`, [ORG]);
-  // Deux expéditeurs LinkedIn : le moins consommé doit gagner la première attribution.
-  const sndA = (await q(
-    `insert into senders (organization_id, kind, identity, is_active) values ($1,'linkedin','SEQ li-A',true) returning id`,
-    [ORG],
-  )).rows[0].id;
-  const sndB = (await q(
-    `insert into senders (organization_id, kind, identity, is_active) values ($1,'linkedin','SEQ li-B',true) returning id`,
-    [ORG],
-  )).rows[0].id;
-  // On charge artificiellement A pour que B soit le moins consommé.
-  await q(
-    `insert into actions (organization_id, enrollment_id, channel, status, idempotency_key, sender_id)
-     select $1, id, 'linkedin_invite', 'dispatched', 'seq-charge-'||id, $2 from enrollments where organization_id=$1 limit 1`,
-    [ORG, sndA],
-  );
-
-  const sndCamp = await seedCampaign('LK expediteur', [
+  const nLk = (await q(`select count(*)::int n from senders where organization_id=$1 and kind='linkedin' and is_active`, [ORG])).rows[0].n;
+  check('précondition : aucune ligne senders LinkedIn active', nLk === 0, String(nLk));
+  const lkCamp = await seedCampaign('LK sans expediteur', [
     { channel: 'linkedin_invite', delay_hours: 0 },
     { channel: 'linkedin_message', delay_hours: 0, body: 'Suite de la conversation.' },
   ]);
-  const cSnd = await newContact('sender-seq');
-  const enrSnd = await enrollContact(pool, { organizationId: ORG, campaignId: sndCamp, contactId: cSnd });
+  const cLk = await newContact('sans-sender-seq');
+  const enrLk = await enrollContact(pool, { organizationId: ORG, campaignId: lkCamp, contactId: cLk });
   await tickDueEnrollments(pool, at(30000));
+  const aLk = (await q(`select channel, status, sender_id from actions where enrollment_id=$1`, [enrLk])).rows;
+  check('l\'action LinkedIn est créée malgré l\'absence d\'expéditeur LinkedIn', aLk.length === 1 && aLk[0].channel === 'linkedin_invite' && aLk[0].status === 'scheduled', JSON.stringify(aLk));
+  check('elle ne porte aucun sender_id', aLk[0]?.sender_id === null);
+  const eLk = (await q(`select status, stop_reason, current_step from enrollments where id=$1`, [enrLk])).rows[0];
+  check('l\'inscription reste active, sans stop_reason, avancée à l\'étape 1',
+    eLk.status === 'active' && eLk.stop_reason === null && eLk.current_step === 1, JSON.stringify(eLk));
+  const lienLk = (await q(`select count(*)::int n from contact_sender_bindings where contact_id=$1`, [cLk])).rows[0].n;
+  check('aucun lien contact_sender_bindings n\'est créé pour le canal LinkedIn', lienLk === 0, String(lienLk));
+  // L'étape suivante (message) non plus n'exige rien, une fois l'invitation réellement partie.
+  await q(`select app.mark_action_dispatched($1)`, [(await q(`select id from actions where enrollment_id=$1`, [enrLk])).rows[0].id]);
+  await q(`update enrollments set next_action_at = now() where id=$1`, [enrLk]);
+  await tickDueEnrollments(pool, at(45000));
+  const aLk2 = (await q(`select channel, sender_id from actions where enrollment_id=$1 order by created_at`, [enrLk])).rows;
+  const eLk2 = (await q(`select status, stop_reason from enrollments where id=$1`, [enrLk])).rows[0];
+  check('l\'étape message est créée elle aussi, sans sender_id, sans pause',
+    aLk2.length === 2 && aLk2[1].channel === 'linkedin_message' && aLk2[1].sender_id === null && !String(eLk2.stop_reason ?? '').startsWith('sender_unavailable'), JSON.stringify({ aLk2, eLk2 }));
 
-  const sndA1 = (await q(
-    `select sender_id, status from actions where enrollment_id=$1 order by created_at asc limit 1`,
-    [enrSnd],
-  )).rows[0];
-  check('action portée par le moins consommé', sndA1?.sender_id === sndB, `${sndA1?.sender_id} (attendu ${sndB})`);
-
-  const sndLien = (await q(
-    `select sender_id, sender_kind from contact_sender_bindings where contact_id=$1`,
-    [cSnd],
-  )).rows;
-  check('lien créé pour le canal LinkedIn', sndLien.length === 1 && sndLien[0].sender_id === sndB && sndLien[0].sender_kind === 'linkedin');
-
-  // Deuxième étape du même contact : le sndLien doit tenir, même si A est désormais
-  // moins consommé que B.
+  console.log('\n[seq] 9 bis. Attribution de l’expéditeur EMAIL (moins consommé, lien à vie, désactivé → pause)');
+  // La règle d'attribution reste vivante pour l'email : même scénario que l'ancienne section 9, sur ce canal.
+  await q(`update senders set is_active=false where organization_id=$1 and kind='email'`, [ORG]);
+  const mailA = (await q(`insert into senders (organization_id, kind, identity, is_active) values ($1,'email','SEQ mail-A',true) returning id`, [ORG])).rows[0].id;
+  const mailB = (await q(`insert into senders (organization_id, kind, identity, is_active) values ($1,'email','SEQ mail-B',true) returning id`, [ORG])).rows[0].id;
+  // On charge artificiellement A pour que B soit le moins consommé.
+  await q(
+    `insert into actions (organization_id, enrollment_id, channel, status, idempotency_key, sender_id)
+     select $1, id, 'email', 'dispatched', 'seq-charge-'||id, $2 from enrollments where organization_id=$1 limit 1`,
+    [ORG, mailA],
+  );
+  const sndCamp = await seedCampaign('Mail expediteur', [
+    { channel: 'email', delay_hours: 0 },
+    { channel: 'email', delay_hours: 0 },
+  ]);
+  // Contacts sans persona, un compte chacun : ni « persona déjà contactée » ni « un contact par compte ».
+  const mkSndContact = async (v) => {
+    const cpt = (await q(`insert into accounts (organization_id, name, siren) values ($1,'SEQ Attribution',$2) returning id`, [ORG, prochainSiren()])).rows[0].id;
+    return (await q(
+      `insert into contacts (organization_id, account_id, email, email_status, first_name, last_name)
+       values ($1,$2,$3,'valid','Jean','Test') returning id`,
+      [ORG, cpt, `snd-${v}@example.test`],
+    )).rows[0].id;
+  };
+  const cSnd = await mkSndContact('lien');
+  const enrSnd = await enrollContact(pool, { organizationId: ORG, campaignId: sndCamp, contactId: cSnd });
   await tickDueEnrollments(pool, at(60000));
-  const sndA2 = (await q(
-    `select sender_id from actions where enrollment_id=$1 order by created_at desc limit 1`,
-    [enrSnd],
-  )).rows[0];
-  check('même expéditeur à l’étape suivante (lien à vie)', sndA2?.sender_id === sndB, `${sndA2?.sender_id}`);
+  const sndA1 = (await q(`select id, sender_id, status from actions where enrollment_id=$1 order by created_at asc limit 1`, [enrSnd])).rows[0];
+  check('action email portée par le moins consommé', sndA1?.sender_id === mailB, `${sndA1?.sender_id} (attendu ${mailB})`);
+  const sndLien = (await q(`select sender_id, sender_kind from contact_sender_bindings where contact_id=$1`, [cSnd])).rows;
+  check('lien créé pour le canal email', sndLien.length === 1 && sndLien[0].sender_id === mailB && sndLien[0].sender_kind === 'email', JSON.stringify(sndLien));
+
+  // Deuxième étape : le lien doit tenir, même si A est désormais le moins consommé.
+  await q(`select app.mark_action_dispatched($1)`, [sndA1.id]);
+  await q(`update enrollments set next_action_at = now() where id=$1`, [enrSnd]);
+  await q(
+    `insert into actions (organization_id, enrollment_id, channel, status, idempotency_key, sender_id)
+     select $1, id, 'email', 'dispatched', 'seq-charge-b-'||id, $2 from enrollments where id=$3`,
+    [ORG, mailB, enrSnd],
+  );
+  await tickDueEnrollments(pool, at(90000));
+  const sndA2 = (await q(`select sender_id from actions where enrollment_id=$1 and idempotency_key not like 'seq-charge%' order by created_at desc limit 1`, [enrSnd])).rows[0];
+  const nSnd = (await q(`select count(*)::int n from actions where enrollment_id=$1 and idempotency_key not like 'seq-charge%'`, [enrSnd])).rows[0].n;
+  check('même expéditeur à l’étape suivante (lien à vie)', nSnd === 2 && sndA2?.sender_id === mailB, `${nSnd} actions, ${sndA2?.sender_id}`);
 
   // Expéditeur lié désactivé : l'inscription passe en pause, jamais de réattribution.
-  const cOff = await newContact('sender-off');
+  const cOff = await mkSndContact('off');
   const enrOff = await enrollContact(pool, { organizationId: ORG, campaignId: sndCamp, contactId: cOff });
-  await tickDueEnrollments(pool, at(90000));
+  await tickDueEnrollments(pool, at(120000));
   const sndLienOff = (await q(`select sender_id from contact_sender_bindings where contact_id=$1`, [cOff])).rows[0];
+  await q(`select app.mark_action_dispatched((select id from actions where enrollment_id=$1 order by created_at limit 1))`, [enrOff]);
   await q(`update senders set is_active=false where id=$1`, [sndLienOff.sender_id]);
   await q(`update enrollments set next_action_at=now() where id=$1`, [enrOff]);
   const sndAvant = (await q(`select count(*)::int as n from actions where enrollment_id=$1`, [enrOff])).rows[0].n;
-  await tickDueEnrollments(pool, at(120000));
+  await tickDueEnrollments(pool, at(150000));
   const sndApres = (await q(`select count(*)::int as n from actions where enrollment_id=$1`, [enrOff])).rows[0].n;
   const sndEtat = (await q(`select status, stop_reason from enrollments where id=$1`, [enrOff])).rows[0];
   check('expéditeur désactivé → inscription en pause', sndEtat?.status === 'paused', `${sndEtat?.status}`);
@@ -535,8 +597,10 @@ async function main() {
 
 
   console.log('\n[seq] 13. Jitter et lead time');
-  // On rouvre la fenêtre horaire et le quota, fermés par l'étape précédente.
-  await q(`update senders set is_active=true, business_hours=null, daily_quota=null, hourly_quota=null
+  // On rouvre la fenêtre horaire (toute la journée, tous les jours : sinon le harnais dépend de l'heure à
+  // laquelle il tourne, `SEQ ord-mail` étant en UTC) et le quota, fermés par l'étape précédente.
+  await q(`update senders set is_active=true, daily_quota=null, hourly_quota=null,
+             business_hours='{"startHour":0,"endHour":24,"days":[1,2,3,4,5,6,7]}'::jsonb
              where organization_id=$1 and kind='email'`, [ORG]);
 
   const persoJit = (await q(
@@ -557,6 +621,11 @@ async function main() {
       [ORG, cpt, persoJit, nom, `${nom.toLowerCase()}@jitter.test`])).rows[0].id;
     const e = await enrollContact(pool, { organizationId: ORG, campaignId: campJit, contactId: ct });
     await tickDueEnrollments(pool, at(400000 + echeances.length * 1000));
+    // Depuis #111 l'échéance de l'étape suivante n'est plus posée à la création de l'action mais à son DÉPART
+    // RÉEL : on simule ce départ (marquage `dispatched`, puis la fonction partagée qui pose l'échéance avec jitter).
+    const actionJit = (await q(`select id from actions where enrollment_id=$1 order by created_at limit 1`, [e])).rows[0];
+    await q(`select app.mark_action_dispatched($1)`, [actionJit.id]);
+    await poserEcheanceApresDepart(pool, { enrollmentId: e, campaignId: campJit, currentStep: 1 }, at(400000));
     const r = (await q(`select next_action_at from enrollments where id=$1`, [e])).rows[0];
     if (r?.next_action_at) echeances.push({ id: e, quand: new Date(r.next_action_at).getTime() });
   }

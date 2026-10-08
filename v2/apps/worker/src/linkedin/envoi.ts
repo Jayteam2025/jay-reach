@@ -25,7 +25,10 @@ export type CodeRefus =
   | 'cannot_message'
   | 'profile_not_found'
   | 'invalid_url'
+  /** Refus venu de LinkedIn (réponse 400) ou profil dont l'URN est illisible. */
   | 'bad_request'
+  /** Interne : une étape message sans texte. Ne vient JAMAIS de LinkedIn, d'où un code distinct de `bad_request`. */
+  | 'message_vide'
   /**
    * Une note d'invitation a été demandée. Le champ Voyager qui la porte n'a jamais été
    * relevé (l'extension invitait sans note) : il reste à relever en recette. Code distinct

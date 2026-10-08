@@ -44,6 +44,7 @@ import {
   prendreVerrouLinkedIn,
   prochainEnvoiLinkedIn,
   reclamerProchaineAction,
+  REQUETES_PAR_ENVOI,
   reparerLignesCoincees,
   remettreActionEnAttente,
   tracerEnvoiLinkedIn,
@@ -87,8 +88,6 @@ export const DUREE_VERROU_ENVOI_MS = 5 * 60_000;
 
 /** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
 const UNE_HEURE_MS = 3_600_000;
-/** Requêtes qu'une action peut émettre : chargement du fil, profil, expéditeur (message), envoi. */
-const REQUETES_PAR_ENVOI = 4;
 
 /** Tentatives de la lecture d'un profil avant d'abandonner l'action. */
 const MAX_TENTATIVES_LECTURE = 3;
@@ -121,7 +120,8 @@ const MOTIFS: Record<CodeRefus, string> = {
   cannot_message: 'LinkedIn refuse le message : la personne n’est sans doute pas une relation de premier degré.',
   profile_not_found: 'Profil LinkedIn introuvable : vérifiez l’adresse.',
   invalid_url: 'Adresse LinkedIn invalide.',
-  bad_request: 'LinkedIn a refusé la forme de la demande (texte vide ou profil illisible).',
+  bad_request: 'LinkedIn a refusé la forme de la demande (profil illisible).',
+  message_vide: 'Cette étape n’a pas de message à envoyer.',
   note_non_supportee: 'Une note d’invitation est demandée, et l’envoi serveur ne sait pas en porter.',
 };
 
@@ -212,7 +212,7 @@ async function executer(
   // Un texte de message vide n'a jamais de raison de partir ; une note d'invitation, que
   // l'envoi serveur ne sait pas porter, est un refus définitif (le contrat est `null`, jamais "").
   const texte = (action.messageBody ?? '').trim();
-  if (action.kind === 'message' && texte === '') return { type: 'refus', code: 'bad_request' };
+  if (action.kind === 'message' && texte === '') return { type: 'refus', code: 'message_vide' };
   if (action.kind === 'invite' && texte !== '') return { type: 'refus', code: 'note_non_supportee' };
 
   let urn: string;
