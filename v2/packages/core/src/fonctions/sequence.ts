@@ -1033,7 +1033,14 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
   let ligneBloquee: { id: string; deja_envoyee: boolean } | undefined;
   if (etapeId) {
     const bloquee = await ctx.ex.query<{ id: string; deja_envoyee: boolean }>(
-      `select id, (payload ->> 'message_id') is not null as deja_envoyee from actions /* jr:reprendre_verif_envoi */
+      `select id,
+              ((payload ->> 'message_id') is not null
+               or exists (
+                 select 1 from linkedin_action_queue q
+                  where q.action_id = actions.id and q.organization_id = actions.organization_id
+                    and (q.status = 'sent' or (q.status = 'failed' and q.error_code = 'resultat_indetermine'))
+               )) as deja_envoyee /* jr:reprendre_verif_envoi */
+         from actions
         where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
       [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId],
     );
@@ -1094,6 +1101,20 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
           set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
         where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
       [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId, new Date(instantDeReprise).toISOString()],
+    );
+    // LinkedIn : marque la ligne de file refusée comme REPRISE par un humain. Seule une ligne
+    // marquée est réenfilée par le balayage du worker (`rejouerActionsLinkedInReprises`) ; rien
+    // n'est effacé. `resultat_indetermine` n'est jamais marquée (voir le refus plus haut : « l'envoi
+    // est peut-être parti »). Sans ligne de file (email), ne touche aucune ligne.
+    await ctx.ex.query(
+      `update linkedin_action_queue q /* jr:reprendre_marque_file */
+          set reprise_le = now(), updated_at = now()
+         from actions a
+        where a.idempotency_key = $1 and a.organization_id = $2
+          and q.action_id = a.id and q.organization_id = a.organization_id
+          and q.status = 'failed' and q.error_code is distinct from 'resultat_indetermine'
+          and q.reprise_le is null`,
+      [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId],
     );
   }
 

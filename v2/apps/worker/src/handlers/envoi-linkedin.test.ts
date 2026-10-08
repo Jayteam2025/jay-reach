@@ -60,7 +60,7 @@ const ME_OK = {
 };
 const ORG = 'org-1';
 const ID_INSCRIPTION = 'inscription-1';
-const POSITION_ETAPE = 2;
+const RANG_ETAPE = 2;
 /** Rang déjà avancé par le tick : celui que garde l'inscription quand l'étape a disparu. */
 const ETAPE_COURANTE = 3;
 const JOB = { organizationId: ORG };
@@ -174,11 +174,12 @@ function monde(opts: {
         {
           action_id: 'action-1',
           enrollment_id: ID_INSCRIPTION,
-          position: opts.etapeSupprimee ? null : POSITION_ETAPE,
+          step_id: opts.etapeSupprimee ? null : 'etape-1',
           current_step: ETAPE_COURANTE,
         },
       ]);
     }
+    if (t.includes('jr:rang_etape')) return rep([{ rang: RANG_ETAPE }]);
     if (t.includes('jr:linkedin_action_echec')) {
       // Le double ne note l'échec que si l'écriture pose bien `failed` : une requête qui ne le
       // pose plus ne laisse aucune trace, donc rougit le test.
@@ -697,7 +698,7 @@ describe('les refus de LinkedIn', () => {
 describe('un refus définitif arrête la séquence (revue finale, C2)', () => {
   const profil = { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK };
   const arrets = (w: Monde) => w.journal.filter((j) => j.startsWith('action_echec') || j.startsWith('pause_inscription'));
-  const pauseAttendue = (code: string) => `pause_inscription ${ID_INSCRIPTION} etape=${POSITION_ETAPE} motif=linkedin_refus:${code}`;
+  const pauseAttendue = (code: string) => `pause_inscription ${ID_INSCRIPTION} etape=${RANG_ETAPE} motif=linkedin_refus:${code}`;
 
   const familles: { code: string; prepare: (w?: Monde) => { reponses: Record<string, Reponse>; action: ActionReclamee } }[] = [
     { code: 'note_non_supportee', prepare: () => ({ reponses: profil, action: { ...ACTION_INVITATION, messageBody: 'Bonjour' } }) },

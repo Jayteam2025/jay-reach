@@ -499,6 +499,26 @@ const PERSONNES_PAR_ENTREPRISE_ET_PAR_JOUR = Number(process.env.ACCOUNT_PEOPLE_P
 const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
 
 /**
+ * Rang ORDINAL d'une étape dans sa campagne (0 pour la première), c'est-à-dire ce que
+ * `enrollments.current_step` désigne partout : le tick lit `steps[current_step]` et
+ * `reprendreInscription` fait `order by position offset current_step`. Les positions, elles,
+ * ne sont pas contiguës (`supprimerEtape` ne renumérote pas, `enregistrerEtape` crée à
+ * `max(position) + 1`) : passer `sequence_steps.position` à `mettreInscriptionEnPause` écrivait
+ * un rang faux dès qu'une étape avait été supprimée, et la reprise ne retrouvait plus l'étape.
+ * Rend undefined quand l'étape n'existe plus (suppression entre-temps).
+ */
+export async function rangDeLEtape(pool: Pick<Pool, 'query'>, stepId: string): Promise<number | undefined> {
+  const res = await pool.query<{ rang: number }>(
+    `select (select count(*)::int from sequence_steps o /* jr:rang_etape */
+              where o.campaign_id = s.campaign_id and o.position < s.position) as rang
+       from sequence_steps s
+      where s.id = $1`,
+    [stepId],
+  );
+  return res.rows[0]?.rang;
+}
+
+/**
  * Met en pause une inscription active : plus rien ne part tant qu'un
  * opérateur ne l'a pas reprise. `currentStep` ramène l'inscription à
  * l'étape qui vient d'échouer (gate de délivrabilité, échec d'envoi

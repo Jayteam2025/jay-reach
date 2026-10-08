@@ -52,7 +52,7 @@ import {
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
-import { mettreInscriptionEnPause } from './sequence.js';
+import { mettreInscriptionEnPause, rangDeLEtape } from './sequence.js';
 import {
   envoyerInvitation,
   envoyerMessage,
@@ -495,7 +495,7 @@ async function arreterSequence(
  * retrouve.
  *
  * Quand l'étape a été supprimée entre-temps (`actions.step_id` mis à null par la clé étrangère),
- * aucune position n'est lisible : l'inscription est mise en pause quand même, sur son
+ * aucun rang n'est lisible : l'inscription est mise en pause quand même, sur son
  * `current_step` courant. Une pause sur un rang imparfait vaut mieux qu'une inscription muette.
  *
  * Rend false quand aucune action n'est à arrêter (ligne sans action, action déjà partie ou déjà arrêtée).
@@ -507,12 +507,11 @@ export async function arreterSequenceDeLaLigne(
   code: string,
   message: string,
 ): Promise<boolean> {
-  const trouvee = await pool.query<{ action_id: string; enrollment_id: string; position: number | null; current_step: number }>(
-    `select a.id as action_id, a.enrollment_id, s.position, e.current_step /* jr:linkedin_arret_lecture */
+  const trouvee = await pool.query<{ action_id: string; enrollment_id: string; step_id: string | null; current_step: number }>(
+    `select a.id as action_id, a.enrollment_id, a.step_id, e.current_step /* jr:linkedin_arret_lecture */
        from linkedin_action_queue q
        join actions a on a.id = q.action_id and a.organization_id = q.organization_id
        join enrollments e on e.id = a.enrollment_id
-       left join sequence_steps s on s.id = a.step_id
       where q.id = $1 and q.organization_id = $2
         and a.status in ('scheduled', 'approved')`,
     [queueId, organisationId],
@@ -520,7 +519,8 @@ export async function arreterSequenceDeLaLigne(
   const ligne = trouvee.rows[0];
   if (!ligne) return false;
   // `current_step` est déjà avancé par le tick : la pause rembobine sur l'étape en échec.
-  await mettreInscriptionEnPause(pool, ligne.enrollment_id, ligne.position ?? ligne.current_step, `linkedin_refus:${code}`);
+  const rang = ligne.step_id ? await rangDeLEtape(pool, ligne.step_id) : undefined;
+  await mettreInscriptionEnPause(pool, ligne.enrollment_id, rang ?? ligne.current_step, `linkedin_refus:${code}`);
   await pool.query(
     `update actions set status = 'failed', error = $2 /* jr:linkedin_action_echec */
       where id = $1 and organization_id = $3 and status in ('scheduled', 'approved')`,

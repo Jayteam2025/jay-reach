@@ -52,6 +52,7 @@ import {
   startSourceRun,
   finishSourceRun,
   closeStaleSourceRuns,
+  enqueueLinkedInAction,
 } from './db.js';
 import {
   persistCompanyEnrichment,
@@ -571,6 +572,91 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
 }
 
 /**
+ * Réenfile les actions LinkedIn qu'un humain a REPRISES (`reprendreInscription` pose
+ * `linkedin_action_queue.reprise_le` sur la ligne refusée et repasse l'action en `scheduled`).
+ * Sans ce balayage rien ne repartait : la reprise laisse `next_action_at` nul, le tick ne
+ * resélectionne pas l'inscription, et seul l'email avait un rejeu. Modèle :
+ * `rejouerActionsEmailEnAttente`.
+ *
+ * INVARIANT « jamais deux envois pour une même action » : ne réenfile QUE la ligne la plus
+ * récente de l'action, si elle est `failed`, marquée reprise, et d'un code autre que
+ * `resultat_indetermine` ; et seulement si l'action n'a aucune ligne vivante, déjà envoyée ou
+ * indéterminée. Une ligne refusée mais NON reprise ne repart jamais seule. Une seule
+ * réenfilée par reprise : la nouvelle ligne, plus récente, sort l'action de la sélection.
+ * L'adresse est relue sur le contact (l'opérateur vient de la corriger) ; le corps est celui
+ * déjà rendu à l'origine.
+ */
+export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>): Promise<number> {
+  const { pool } = ctx;
+  const res = await pool.query<{
+    action_id: string;
+    organization_id: string;
+    kind: 'invite' | 'message';
+    contact_id: string;
+    signal_id: string | null;
+    linkedin_url: string;
+    message_body: string | null;
+  }>(
+    `select a.id as action_id, a.organization_id, q.kind, e.contact_id, q.signal_id,
+            coalesce(c.linkedin_url, q.linkedin_url) as linkedin_url, q.message_body /* jr:linkedin_rejeu_reprises */
+       from actions a
+       join enrollments e on e.id = a.enrollment_id
+       join contacts c on c.id = e.contact_id
+       join campaigns camp on camp.id = e.campaign_id
+       join organizations org on org.id = a.organization_id
+       join lateral (
+         select * from linkedin_action_queue l
+          where l.action_id = a.id and l.organization_id = a.organization_id
+          order by l.created_at desc, l.id desc
+          limit 1
+       ) q on true
+      where a.channel in ('linkedin_invite', 'linkedin_message')
+        and a.status = 'scheduled'
+        and e.status = 'active'
+        and camp.status = 'active'
+        and org.sending_paused_at is null
+        and q.status = 'failed'
+        and q.reprise_le is not null
+        and q.error_code is distinct from 'resultat_indetermine'
+        and not exists (
+          select 1 from linkedin_action_queue autre
+           where autre.action_id = a.id
+             and (autre.status in ('pending', 'processing', 'sent')
+                  or (autre.status = 'failed' and autre.error_code = 'resultat_indetermine'))
+        )
+        and not exists (
+          select 1 from suppressions sup
+           where sup.organization_id = a.organization_id
+             and sup.scope = 'linkedin'
+             and lower(sup.value) = lower(coalesce(c.linkedin_url, q.linkedin_url))
+             and (sup.expires_at is null or sup.expires_at > now())
+        )
+      order by q.reprise_le asc
+      limit 200`,
+  );
+  let rejouees = 0;
+  for (const row of res.rows) {
+    try {
+      const id = await enqueueLinkedInAction(pool, {
+        organizationId: row.organization_id,
+        kind: row.kind,
+        linkedinUrl: row.linkedin_url,
+        contactId: row.contact_id,
+        signalId: row.signal_id,
+        messageBody: row.message_body,
+        method: 'serveur',
+        actionId: row.action_id,
+      });
+      if (id) rejouees += 1;
+    } catch (err) {
+      // Une ligne qui échoue ne prive pas les suivantes ; le prochain tick la reprend.
+      console.error(`[tick] réenfilage LinkedIn d'une action reprise à retenter (${err instanceof Error ? err.name : 'erreur'})`);
+    }
+  }
+  return rejouees;
+}
+
+/**
  * Balayage de rattrapage des envois LinkedIn terminaux dont la séquence n'a pas été arrêtée.
  * Une ligne de `linkedin_action_queue` peut devenir `failed` par des chemins qui ne touchent
  * ni `actions` ni `enrollments` : la réparation des lignes coincées (`resultat_indetermine`,
@@ -584,6 +670,10 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
  * personne deux fois. Aucun `insert`, aucun retour à `pending` ici ; l'`not exists` écarte en
  * plus toute action qui aurait encore une autre ligne vivante ou déjà envoyée.
  *
+ * Une ligne REPRISE par un humain (`reprise_le` posé par `reprendreInscription`) est exclue :
+ * l'action y est volontairement `scheduled` en attendant d'être réenfilée par
+ * `rejouerActionsLinkedInReprises`, sans quoi ce balayage remettrait aussitôt l'inscription en pause.
+ *
  * Idempotent (la pause ne touche qu'une inscription `active`), borné à 200 par tick, et sans
  * condition sur `JAY_REACH_LINKEDIN` : il n'appelle pas LinkedIn, il ne fait que dire la vérité.
  */
@@ -594,6 +684,7 @@ export async function mettreEnPauseActionsLinkedInOrphelines(ctx: Pick<Contexte,
        from linkedin_action_queue q
        join actions a on a.id = q.action_id and a.organization_id = q.organization_id
       where q.status = 'failed'
+        and q.reprise_le is null
         and a.channel in ('linkedin_invite', 'linkedin_message')
         and a.status in ('scheduled', 'approved')
         and not exists (
@@ -645,6 +736,10 @@ export async function traiterTick(ctx: Contexte): Promise<number> {
   const rejouees = await rejouerActionsEmailEnAttente(ctx);
   if (rejouees > 0) {
     console.log(`[tick] ${rejouees} action(s) email en attente rejouée(s)`);
+  }
+  const reenfilees = await rejouerActionsLinkedInReprises(ctx);
+  if (reenfilees > 0) {
+    console.log(`[tick] ${reenfilees} action(s) LinkedIn reprise(s) réenfilée(s)`);
   }
   const arretees = await mettreEnPauseActionsLinkedInOrphelines(ctx);
   if (arretees > 0) {

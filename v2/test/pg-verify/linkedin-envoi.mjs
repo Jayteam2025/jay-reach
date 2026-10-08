@@ -9,9 +9,15 @@
 //   4. migration : retirer la colonne `envoi_pause_jusqua` — 7 rougit.
 //   6. envoi-linkedin.ts, `arreterSequence` : retirer `set status = 'failed'`, la jointure
 //      `a.id = q.action_id` ou le filtre `a.status in (...)` — la section 5 rougit.
+//   7. rang : `arreterSequenceDeLaLigne` relit `s.position` au lieu du rang — 32 rougit (et 29 reste vert).
+//   8. reprise : retirer l'update `jr:reprendre_marque_file` — 34, 35 et 36 rougissent.
+//   9. balayage : retirer `q.reprise_le is not null` — 33 rougit ; retirer `q.reprise_le is null` du
+//      balayage des orphelines — 37 rougit ; retirer le `not exists` (lignes vivantes/indéterminées) — 38 rougit.
+//  10. reprise : retirer l'exists `linkedin_action_queue` de `deja_envoyee` — 39 et 40 rougissent.
+//  11. migration 20261008110000 : retirer `add column reprise_le` — la migration échoue (contrôle).
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
-import { regler, mettreEnPauseActionsLinkedInOrphelines, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
+import { regler, mettreEnPauseActionsLinkedInOrphelines, rejouerActionsLinkedInReprises, reprendreInscription, actionIdempotencyKey, envoyerEmailSalesBlink, rangDeLEtape, ErreurSalesBlink, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -157,7 +163,7 @@ const file = (m, actionId, url) =>
 const deps = () => ({ pool, env: {}, pause: async () => undefined });
 const ctxDe = (m) => ({ ex: pool, organisationId: m.org, utilisateurId: null, role: null });
 const lire = async (m, queueId) => ({
-  file: (await q(`select status, error_code from linkedin_action_queue where id = $1`, [queueId])).rows[0],
+  file: queueId ? (await q(`select status, error_code from linkedin_action_queue where id = $1`, [queueId])).rows[0] : null,
   action: (await q(`select status::text, error from actions where id = $1`, [m.act])).rows[0],
   insc: (await q(`select status::text, stop_reason, current_step, next_action_at from enrollments where id = $1`, [m.insc])).rows[0],
 });
@@ -311,8 +317,156 @@ async function panneEntreLesDeuxEcritures() {
     r.action.status === 'failed' && r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:resultat_indetermine', JSON.stringify(r));
 }
 
+// ---------------------------------------------------------------- rang contre position, et reprise
+// Positions NON contiguës (0, 3, 7) : l'état réel après deux suppressions. Avec 0, 1, 2 le rang et la
+// position coïncident et le défaut reste invisible. L'inscription est au rang 2 (le tick a émis l'étape
+// de rang 1, position 3).
+async function mondeNonContigu() {
+  const m = await monde();
+  const contact = (await q(`insert into contacts (organization_id, linkedin_url) values ($1, 'https://www.linkedin.com/in/ancienne') returning id`, [m.org])).rows[0].id;
+  const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'C', 'active') returning id`, [m.org])).rows[0].id;
+  const etapes = [];
+  for (const position of [0, 3, 7]) {
+    etapes.push((await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, $2, 'linkedin_invite') returning id`, [camp, position])).rows[0].id);
+  }
+  const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, next_action_at) values ($1, $2, $3, 2, null) returning id`, [m.org, camp, contact])).rows[0].id;
+  const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key) values ($1, $2, $3, 'linkedin_invite', 'scheduled', $4) returning id`, [m.org, insc, etapes[1], actionIdempotencyKey(insc, etapes[1])])).rows[0].id;
+  return { ...m, contact, insc, act, camp };
+}
+const ctxOperateur = (m) => ({ ...ctxDe(m), role: 'operator' });
+const lignesFile = async (m) => (await q(`select id, status, error_code, reprise_le, linkedin_url from linkedin_action_queue where organization_id = $1 order by created_at, id`, [m.org])).rows;
+
+async function rangContrePosition() {
+  console.log('\n12. le current_step posé par la pause est un RANG, pas une position (positions 0, 3, 7)');
+  const m = await mondeNonContigu();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/rang');
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/rang', messageBody: null }, { type: 'refus', code: 'cannot_invite' });
+  const r = await lire(m, queue);
+  check('32. l\'inscription est rembobinée au rang 1 (l\'étape de position 3), pas à la position 3',
+    r.insc.status === 'paused' && r.insc.current_step === 1, JSON.stringify(r.insc));
+}
+
+async function reprise() {
+  console.log('\n13. « Reprendre » après un refus : marque la ligne, puis le balayage réenfile UNE fois');
+  const m = await mondeNonContigu();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/ancienne');
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/ancienne', messageBody: 'bonjour' }, { type: 'refus', code: 'profile_not_found' });
+
+  await rejouerActionsLinkedInReprises({ pool });
+  check('33. un refus NON repris par un humain ne repart jamais seul (aucune ligne de plus)',
+    (await lignesFile(m)).length === 1, JSON.stringify(await lignesFile(m)));
+
+  await q(`update contacts set linkedin_url = 'https://www.linkedin.com/in/corrigee' where id = $1`, [m.contact]);
+  await reprendreInscription(ctxOperateur(m), { inscriptionId: m.insc });
+  const apres = await lignesFile(m);
+  const ra = await lire(m, queue);
+  check('34. la reprise marque la ligne refusée sans l\'effacer (toujours failed, même code, reprise_le posé)',
+    apres.length === 1 && apres[0].status === 'failed' && apres[0].error_code === 'profile_not_found' && apres[0].reprise_le !== null, JSON.stringify(apres));
+  check('35. la reprise rend l\'inscription active et l\'action scheduled, sans échéance (rang 1 retrouvé malgré les positions 0, 3, 7)',
+    ra.insc.status === 'active' && ra.insc.next_action_at === null && ra.action.status === 'scheduled', JSON.stringify(ra));
+
+  await tick();
+  const sansRepause = await lire(m, queue);
+  check('37. le balayage des orphelines ne remet PAS l\'inscription reprise en pause', sansRepause.insc.status === 'active' && sansRepause.action.status === 'scheduled', JSON.stringify(sansRepause));
+
+  const n = await rejouerActionsLinkedInReprises({ pool });
+  const lignes = await lignesFile(m);
+  const neuve = lignes.find((l) => l.id !== queue);
+  check('36. le balayage réenfile exactement une ligne pending, avec l\'adresse CORRIGÉE, liée à la même action',
+    n === 1 && lignes.length === 2 && neuve?.status === 'pending' && neuve.linkedin_url === 'https://www.linkedin.com/in/corrigee', JSON.stringify(lignes));
+  const lie = (await q(`select action_id from linkedin_action_queue where id = $1`, [neuve.id])).rows[0];
+  check('36b. la nouvelle ligne porte l\'action reprise', lie.action_id === m.act);
+
+  await rejouerActionsLinkedInReprises({ pool });
+  check('36c. un second balayage ne réenfile rien (une ligne par reprise)', (await lignesFile(m)).length === 2);
+
+  // La nouvelle ligne échoue à son tour : la ligne la plus récente n'est pas marquée, rien ne repart seul.
+  await q(`update linkedin_action_queue set status = 'processing', processing_started_at = now() where id = $1`, [neuve.id]);
+  await regler(deps(), ctxDe(m), { id: neuve.id, kind: 'invite', linkedinUrl: neuve.linkedin_url, messageBody: 'bonjour' }, { type: 'refus', code: 'profile_not_found' });
+  await rejouerActionsLinkedInReprises({ pool });
+  const fin = await lire(m, neuve.id);
+  check('36d. un second refus remet l\'inscription en pause au rang 1 et rien n\'est réenfilé tout seul',
+    fin.insc.status === 'paused' && fin.insc.current_step === 1 && (await lignesFile(m)).length === 2, JSON.stringify(fin));
+}
+
+async function resultatIndetermineJamaisRejoue() {
+  console.log('\n14. resultat_indetermine n\'est JAMAIS levé : jamais deux envois pour une même action');
+  const m = await mondeNonContigu();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/indet');
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/indet', messageBody: null }, { type: 'indetermine' });
+  await reprendreInscription(ctxOperateur(m), { inscriptionId: m.insc });
+  await rejouerActionsLinkedInReprises({ pool });
+  const lignes = await lignesFile(m);
+  const r = await lire(m, queue);
+  check('39. la ligne indéterminée n\'est pas marquée, et rien n\'est réenfilé',
+    lignes.length === 1 && lignes[0].reprise_le === null && lignes[0].status === 'failed', JSON.stringify(lignes));
+  check('40. l\'inscription est réactivée avec son échéance normale, l\'action RESTE failed',
+    r.insc.status === 'active' && r.insc.next_action_at !== null && r.action.status === 'failed', JSON.stringify(r));
+  const j = (await q(`select diff->>'libelle' as libelle from audit_events where organization_id = $1 and action = 'enrollment_resumed'`, [m.org])).rows;
+  check('41. le journal dit que rien n\'a été rejoué', j.length === 1 && j[0].libelle === 'Inscription reprise sans rejouer un envoi déjà parti.', JSON.stringify(j));
+
+  // Panne entre les deux écritures : ligne refusée NON reprise, action restée scheduled, inscription active.
+  const m3 = await mondeNonContigu();
+  const q3 = await file(m3, m3.act, 'https://www.linkedin.com/in/orpheline');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_invite' where id = $1`, [q3]);
+  await rejouerActionsLinkedInReprises({ pool });
+  check('38b. une ligne refusée NON reprise, sur une action restée scheduled, n\'est jamais réenfilée',
+    (await lignesFile(m3)).length === 1, JSON.stringify(await lignesFile(m3)));
+
+  // Même sans passer par la reprise : une ligne marquée À LA MAIN sur une action qui a une ligne indéterminée.
+  const m2 = await mondeNonContigu();
+  const q1 = await file(m2, m2.act, 'https://www.linkedin.com/in/indet2');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'resultat_indetermine' where id = $1`, [q1]);
+  await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status, error_code, reprise_le) values ($1,$2,$3,'https://www.linkedin.com/in/indet2','invite','serveur','failed','cannot_invite', now())`, [m2.org, m2.contact, m2.act]);
+  await rejouerActionsLinkedInReprises({ pool });
+  check('38. le balayage ne réenfile pas une action qui porte une ligne indéterminée, même si sa dernière ligne est marquée',
+    (await lignesFile(m2)).length === 2);
+}
+
+async function cheminEmail() {
+  console.log('\n15. le chemin email pose le même rang (positions 0, 3, 7), et le helper partagé lit un rang');
+  process.env.SALESBLINK_API_KEY = 'cle-de-test';
+  const m = await mondeNonContigu();
+  const etapes = (await q(`select id from sequence_steps where campaign_id = $1 order by position`, [m.camp])).rows.map((r) => r.id);
+  check('42. le helper rend 0, 1, 2 pour les positions 0, 3, 7',
+    JSON.stringify(await Promise.all(etapes.map((id) => rangDeLEtape(pool, id)))) === '[0,1,2]');
+  const autre = await mondeNonContigu();
+  check('42b. les étapes d\'une AUTRE campagne ne comptent pas, et une étape supprimée n\'a pas de rang',
+    (await rangDeLEtape(pool, (await q(`select id from sequence_steps where campaign_id = $1 and position = 7`, [autre.camp])).rows[0].id)) === 2
+    && (await rangDeLEtape(pool, '00000000-0000-0000-0000-000000000000')) === undefined);
+
+  // Site 1 : porte de délivrabilité (adresse invalide à l'envoi).
+  const sender = (await q(
+    `insert into senders (organization_id, kind, provider_id, identity, provider_ref, provider_state, is_active)
+     values ($1, 'email', 'salesblink', 'exp@exemple.fr', 'sb-1', '{"sending_enabled": true}'::jsonb, true) returning id`, [m.org])).rows[0].id;
+  await q(`update actions set channel = 'email', sender_id = $2 where id = $1`, [m.act, sender]);
+  await q(`update contacts set email = 'invalide@exemple.fr', email_status = 'invalid', first_name = 'M' where id = $1`, [m.contact]);
+  const client = { creerGabaritNeutre: async () => 'g', creerListe: async () => 'l', creerSequenceEtape: async () => 's', activerEtPlanifier: async () => undefined, pousserLeads: async () => undefined, repondreDansLeFil: async () => ({ idTache: 't' }) };
+  const stepId = etapes[1];
+  await envoyerEmailSalesBlink({ pool }, { organizationId: m.org, channel: 'email', actionId: m.act, email: { enrollmentId: m.insc, contactId: m.contact, stepId, campaignId: m.camp, templateParentId: null, senderId: sender, locale: 'fr' } }, client);
+  const r = await lire(m, null);
+  check('43. porte email : l\'inscription est en pause au RANG 1 (pas à la position 3), motif email_gate',
+    r.insc.status === 'paused' && r.insc.current_step === 1 && String(r.insc.stop_reason).startsWith('email_gate:'), JSON.stringify(r.insc));
+
+  // Site 2 : échec définitif (erreur client du transport).
+  const m2 = await mondeNonContigu();
+  const etapes2 = (await q(`select id from sequence_steps where campaign_id = $1 order by position`, [m2.camp])).rows.map((r2) => r2.id);
+  const sender2 = (await q(
+    `insert into senders (organization_id, kind, provider_id, identity, provider_ref, provider_state, is_active)
+     values ($1, 'email', 'salesblink', 'exp2@exemple.fr', 'sb-2', '{"sending_enabled": true}'::jsonb, true) returning id`, [m2.org])).rows[0].id;
+  const famille = (await q(`insert into message_templates (organization_id, name, channel, locale, subject, body) values ($1, 'G', 'email', 'fr', 'Objet', 'Bonjour') returning id`, [m2.org])).rows[0].id;
+  await q(`update actions set channel = 'email', sender_id = $2 where id = $1`, [m2.act, sender2]);
+  await q(`update contacts set email = 'valide@exemple.fr', email_status = 'valid', first_name = 'Marie', last_name = 'Durand', locale = 'fr' where id = $1`, [m2.contact]);
+  const clientKo = { ...client, pousserLeads: async () => { throw new ErreurSalesBlink('client', 400, 'refus'); } };
+  await envoyerEmailSalesBlink({ pool }, { organizationId: m2.org, channel: 'email', actionId: m2.act, email: { enrollmentId: m2.insc, contactId: m2.contact, stepId: etapes2[1], campaignId: m2.camp, templateParentId: famille, senderId: sender2, locale: 'fr' } }, clientKo);
+  const r2 = await lire(m2, null);
+  check('44. échec définitif du transport : l\'inscription est en pause au RANG 1, motif salesblink_client_error',
+    r2.insc.status === 'paused' && r2.insc.current_step === 1 && r2.insc.stop_reason === 'salesblink_client_error', JSON.stringify(r2));
+  delete process.env.SALESBLINK_API_KEY;
+}
+
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
