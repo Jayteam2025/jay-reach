@@ -43,11 +43,20 @@ export function validateRows(rows: MappedRow[]): ValidationResult {
 }
 
 // ---- Déduplication --------------------------------------------------------
+/**
+ * Une seule définition de « c'est la même adresse LinkedIn », partagée avec le SQL
+ * (`app.url_linkedin_normalisee`, migration 20261008170000) : la déduplication d'import et
+ * l'opposition « ne pas contacter » doivent dire la même chose d'une même personne.
+ *
+ * Le `www.` se retire INDÉPENDAMMENT du protocole : `www.linkedin.com/in/x`, collé sans
+ * `https://`, est la graphie que donne un copier-coller depuis la barre d'adresse.
+ */
 export function normalizeLinkedin(url: string): string {
   return url
     .trim()
     .toLowerCase()
-    .replace(/^https?:\/\/(www\.)?/, '')
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
     .replace(/\?.*$/, '')
     .replace(/\/+$/, '');
 }

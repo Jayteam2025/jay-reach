@@ -255,7 +255,10 @@ describe('rejouerActionsLinkedInEnAttente', () => {
     expect(sql).toContain(`camp.status = 'active'`);
     expect(sql).toMatch(/not exists[\s\S]*from linkedin_action_queue/i);
     expect(sql).toMatch(/scope = 'linkedin'/);
-    expect(sql).toMatch(/lower\(sup\.value\) = lower\(c\.linkedin_url\)/);
+    // Normalisée des DEUX côtés depuis la migration 20261008170000 : une opposition posée
+    // sous une autre graphie (barre finale, www., paramètres de suivi) bloque la même
+    // personne. Le harnais pg-verify le prouve sur du SQL réel (contrôles 65 à 71).
+    expect(sql).toMatch(/app\.url_linkedin_normalisee\(sup\.value\) = app\.url_linkedin_normalisee\(c\.linkedin_url\)/);
     expect(sql).toContain('limit 200');
   });
 });

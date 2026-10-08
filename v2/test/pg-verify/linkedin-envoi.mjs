@@ -24,7 +24,7 @@
 //  11. migration 20261008110000 : retirer `add column reprise_le` — la migration échoue (contrôle).
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
-import { regler, mettreEnPauseActionsLinkedInOrphelines, rejouerActionsLinkedInReprises, rejouerActionsLinkedInEnAttente, reprendreInscription, actionIdempotencyKey, envoyerEmailSalesBlink, rangDeLEtape, ErreurSalesBlink, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
+import { regler, mettreEnPauseActionsLinkedInOrphelines, rejouerActionsLinkedInReprises, rejouerActionsLinkedInEnAttente, reprendreInscription, actionIdempotencyKey, envoyerEmailSalesBlink, rangDeLEtape, ErreurSalesBlink, remettreActionEnAttente, reparerLignesCoincees, normalizeLinkedin } from './_linkedin-envoi-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -555,7 +555,7 @@ async function rejeuActionsEnAttente() {
     const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, current_step, status, next_action_at) values ($1, $2, $3, 1, $4, null) returning id`, [m.org, camp, contact, opts.inscription ?? 'completed'])).rows[0].id;
     const act = (await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, idempotency_key, payload, created_at, dispatched_at) values ($1, $2, $3, 'linkedin_message', 'scheduled', $4, '{}'::jsonb, now() - $5::interval, $6) returning id`,
       [m.org, insc, etape, actionIdempotencyKey(insc, etape), opts.age ?? '10 minutes', opts.dispatchee ? new Date() : null])).rows[0].id;
-    if (opts.suppression) await q(`insert into suppressions (organization_id, scope, value) values ($1, 'linkedin', 'HTTPS://www.linkedin.com/in/rejeu')`, [m.org]);
+    if (opts.suppression) await q(`insert into suppressions (organization_id, scope, value) values ($1, 'linkedin', $2)`, [m.org, opts.suppression === true ? 'HTTPS://www.linkedin.com/in/rejeu' : opts.suppression]);
     if (opts.pause) await q(`update organizations set sending_paused_at = now() where id = $1`, [m.org]);
     if (opts.ligne) await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status) values ($1, $2, $3, 'https://www.linkedin.com/in/rejeu', 'message', 'serveur', 'pending')`, [m.org, contact, act]);
     return { m, act, contact };
@@ -588,10 +588,55 @@ async function rejeuActionsEnAttente() {
   check('63. la même, avec déjà une ligne de file : PAS réenfilée (jamais deux envois)', (await balayer(g)).length === 0);
   const h = await monter({ inscription: 'replied' });
   check('64. la même, inscription replied : PAS réenfilée', (await balayer(h)).length === 0);
+
+  // Le contact porte `https://www.linkedin.com/in/Rejeu`. Chacune de ces graphies désigne la
+  // MÊME personne et doit donc bloquer. Avant la migration 20261008170000, seule la première
+  // (même chaîne à la casse près) bloquait : l'opposition tombait sur une barre oblique.
+  for (const [n, graphie] of [
+    ['65', 'https://www.linkedin.com/in/rejeu/'],
+    ['66', 'www.linkedin.com/in/rejeu'],
+    ['67', 'linkedin.com/in/rejeu'],
+    ['68', 'https://linkedin.com/in/rejeu'],
+    ['69', 'https://www.linkedin.com/in/rejeu?trk=public_profile_browsemap'],
+    ['70', '  https://www.linkedin.com/in/REJEU//  '],
+  ]) {
+    const cas = await monter({ suppression: graphie });
+    check(`${n}. opposition sous la graphie « ${graphie.trim()} » : PAS réenfilée`, (await balayer(cas)).length === 0);
+  }
+  // Et surtout : la normalisation ne doit pas confondre deux personnes.
+  const voisin = await monter({ suppression: 'https://www.linkedin.com/in/rejeu2' });
+  check('71. opposition sur un AUTRE profil : réenfilée quand même (aucune confusion)', (await balayer(voisin)).length === 1);
+}
+
+async function normalisationUrlLinkedin() {
+  console.log('\n19. la normalisation SQL dit la même chose que normalizeLinkedin (JS)');
+  // Les deux implémentations sont la même règle : si elles divergent, l'import dédoublonne
+  // d'un côté ce que l'opposition laisse passer de l'autre.
+  const cas = [
+    'https://www.linkedin.com/in/jdoe',
+    'https://www.linkedin.com/in/jdoe/',
+    'HTTPS://WWW.LinkedIn.com/in/JDoe',
+    'http://linkedin.com/in/jdoe',
+    'www.linkedin.com/in/jdoe',
+    'linkedin.com/in/jdoe//',
+    '  https://www.linkedin.com/in/jdoe?trk=public_profile  ',
+    'https://www.linkedin.com/in/jdoe2',
+    'https://fr.linkedin.com/in/jdoe',
+  ];
+  const res = await q(`select f as entree, app.url_linkedin_normalisee(f) as sortie from unnest($1::text[]) as f`, [cas]);
+  const divergences = res.rows.filter((r) => r.sortie !== normalizeLinkedin(r.entree));
+  check('72. aucune divergence entre le SQL et le JS sur neuf graphies',
+    divergences.length === 0, JSON.stringify(divergences));
+  const sorties = new Map(res.rows.map((r) => [r.entree, r.sortie]));
+  check('73. les sept graphies du même profil se rejoignent',
+    new Set(cas.slice(0, 7).map((c) => sorties.get(c))).size === 1, JSON.stringify([...new Set(cas.slice(0, 7).map((c) => sorties.get(c)))]));
+  check('74. un autre profil et un autre sous-domaine restent distincts',
+    sorties.get('https://www.linkedin.com/in/jdoe2') !== sorties.get('https://www.linkedin.com/in/jdoe') &&
+    sorties.get('https://fr.linkedin.com/in/jdoe') !== sorties.get('https://www.linkedin.com/in/jdoe'));
 }
 
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail, refusDeLEnfilage, corpsReRendu, rejeuActionsEnAttente);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures, rangContrePosition, reprise, resultatIndetermineJamaisRejoue, cheminEmail, refusDeLEnfilage, corpsReRendu, rejeuActionsEnAttente, normalisationUrlLinkedin);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
