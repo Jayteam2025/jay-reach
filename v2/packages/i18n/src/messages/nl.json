@@ -1778,7 +1778,7 @@
       "new": "Nieuwe contacten",
       "known": "Al bekend",
       "missingEmail": "Zonder e-mail",
-      "submit": "{n} contacten importeren"
+      "submit": "{n, plural, one {# contact} other {# contacten}} importeren"
     }
   },
   "mentionOrigine": {

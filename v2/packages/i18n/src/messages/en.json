@@ -1778,7 +1778,7 @@
       "new": "New contacts",
       "known": "Already known",
       "missingEmail": "Without email",
-      "submit": "Import {n} contacts"
+      "submit": "Import {n, plural, one {# contact} other {# contacts}}"
     }
   },
   "mentionOrigine": {
