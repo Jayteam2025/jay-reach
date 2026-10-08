@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import {
   rejouerActionsEmailEnAttente,
+  rejouerActionsLinkedInEnAttente,
   mettreEnPauseActionsLinkedInOrphelines,
   REJEU_ACTIONS_EMAIL_MS,
   traiterDiscover,
@@ -195,6 +196,67 @@ describe('rejouerActionsEmailEnAttente', () => {
 
     expect(rejouees).toBe(1);
     expect(insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rejouerActionsLinkedInEnAttente', () => {
+  const ligneLinkedIn = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    action_id: ACTION_ID,
+    organization_id: ORG_ID,
+    enrollment_id: 'enrollment-1',
+    template_parent_id: null,
+    channel: 'linkedin_message',
+    contact_id: 'contact-1',
+    signal_id: 'signal-1',
+    linkedin_url: 'https://www.linkedin.com/in/jeanne',
+    ...overrides,
+  });
+
+  it('une action jamais enfilée produit un job de la forme du tick, au seau de rejeu', async () => {
+    const { ctx, insert } = creerContexteFactice([ligneLinkedIn()]);
+
+    const rejouees = await rejouerActionsLinkedInEnAttente(ctx);
+
+    expect(rejouees).toBe(1);
+    const lot = insert.mock.calls[0]![0] as { name: string; id: string; data: unknown }[];
+    expect(lot).toHaveLength(1);
+    expect(lot[0]!.name).toBe('actions.dispatch');
+    expect(lot[0]!.id).toBe(deterministicUuid('dispatch-rejeu', ACTION_ID, currentBucket(REJEU_ACTIONS_EMAIL_MS)));
+    expect(lot[0]!.data).toEqual({
+      organizationId: ORG_ID,
+      channel: 'linkedin_message',
+      actionId: ACTION_ID,
+      linkedin: {
+        linkedinUrl: 'https://www.linkedin.com/in/jeanne',
+        actionId: ACTION_ID,
+        contactId: 'contact-1',
+        signalId: 'signal-1',
+        messageBody: null,
+      },
+    });
+  });
+
+  it('aucune ligne éligible : aucun job', async () => {
+    const { ctx, insert } = creerContexteFactice([]);
+    expect(await rejouerActionsLinkedInEnAttente(ctx)).toBe(0);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('la requête porte tous les garde-fous (le pool factice ne filtre pas, on lit le SQL)', async () => {
+    const { ctx } = creerContexteFactice([]);
+    await rejouerActionsLinkedInEnAttente(ctx);
+    const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(sql).toContain(`a.channel in ('linkedin_invite', 'linkedin_message')`);
+    expect(sql).toContain(`a.status = 'scheduled'`);
+    expect(sql).toContain('a.dispatched_at is null');
+    expect(sql).toContain(`a.created_at < now() - interval '2 minutes'`);
+    expect(sql).toContain('org.sending_paused_at is null');
+    expect(sql).toContain(`e.status in ('active', 'completed')`);
+    expect(sql).toContain(`camp.status = 'active'`);
+    expect(sql).toMatch(/not exists[\s\S]*from linkedin_action_queue/i);
+    expect(sql).toMatch(/scope = 'linkedin'/);
+    expect(sql).toMatch(/lower\(sup\.value\) = lower\(c\.linkedin_url\)/);
+    expect(sql).toContain('limit 200');
   });
 });
 
