@@ -19,11 +19,20 @@
 //  15. migration 20261007120000 : reprendre l'ancien predicat : 18a, 18c et 18d rougissent.
 //  16. file.ts : retirer le filtre `method = 'serveur'` ou la coupure de dix minutes de `prochainEnvoiLinkedIn` : 19c, 19d rougissent ;
 //      retirer la branche `perimees` : 19d rougit ; faire rendre `quand` sans attendre l intervalle : 19e rougit.
+//  17. file.ts : retirer `group by kind` ou le filtre sur le type du compteur (retour au compteur commun) :
+//      20a, 20b, 20d rougissent ; relire `weekly_cap` de linkedin_settings : 20e rougit.
+//  18. reglages-envoi.ts : remettre 8 / 21 dans un site de repli (file.ts, pacing.ts, expediteurs.ts) : 20f rougit.
+//  19. file.ts : retirer le contrôle du budget horaire de prochainEnvoiLinkedIn : 21a, 21b, 21c rougissent ;
+//      changer le seuil (REQUETES_PAR_ENVOI) ou le calcul de la date : 21c, 21d rougissent.
+//  20. migration 20261008100000 : retirer l'insert, ou en fausser la valeur : 22a, 22b, 22d rougissent ; 22e prouve que la
+//      vérification interne lève.
 //  11. plafonds.ts : retirer `q.organization_id = $1` de tracerEnvoiLinkedIn : 13 rougit.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { seededRandom } from './_lkpace.mjs';
 import { prochainEnvoiLinkedIn, reparerLignesCoincees, existeActionServeurEnAttente, reclamerProchaineAction, enregistrerResultat, mettreEnPauseEnvoiLinkedIn, remettreActionEnAttente } from './_lkf.mjs';
-import { tracerEnvoiLinkedIn } from './_lkp.mjs';
+import { tracerEnvoiLinkedIn, compterRequetesLinkedIn } from './_lkp.mjs';
 import { enqueueAction } from './_lkq.mjs';
 import { enqueueLinkedInAction } from './_lkd.mjs';
 
@@ -47,6 +56,8 @@ async function remettreAZero({ sansSession = false } = {}) {
   await q('delete from linkedin_action_queue where organization_id = $1', [org]);
   await q('delete from linkedin_server_sessions where organization_id = $1', [org]);
   await q('delete from linkedin_settings where organization_id = $1', [org]);
+  await q(`delete from organization_settings where organization_id = $1 and key like 'linkedin_%'`, [org]);
+  await q('delete from linkedin_requetes where organization_id = $1', [org]);
   // Le canal n'est disponible que si la session est `active` : par defaut, une l'est.
   if (!sansSession) await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
 }
@@ -54,7 +65,7 @@ async function ligne(method, extra = {}) {
   seq += 1;
   const r = await q(
     `insert into linkedin_action_queue (organization_id, linkedin_url, kind, method, status, scheduled_for, processing_started_at, action_id)
-     values ($1, $2, 'invite', $3, $4, $5, $6, $7) returning id`,
+     values ($1, $2, $8, $3, $4, $5, $6, $7) returning id`,
     [
       org,
       `https://www.linkedin.com/in/fictif-${seq}`,
@@ -63,6 +74,7 @@ async function ligne(method, extra = {}) {
       extra.scheduledFor ?? AVANT,
       extra.processingStartedAt ?? null,
       extra.actionId ?? null,
+      extra.kind ?? 'invite',
     ],
   );
   return r.rows[0].id;
@@ -249,13 +261,13 @@ async function remise_en_attente_ne_rouvre_que_processing_et_borne_les_tentative
   const echouee = await ligne('serveur', { status: 'failed' });
   const r1 = await remettreActionEnAttente(pool, org, envoyee, { comptee: true });
   const r2 = await remettreActionEnAttente(pool, org, echouee, { comptee: false });
-  check('11. une ligne sent ou failed n est jamais rouverte', !r1 && !r2 && (await statut(envoyee)) === 'sent' && (await statut(echouee)) === 'failed');
+  check('11. une ligne sent ou failed n est jamais rouverte', r1 === null && r2 === null && (await statut(envoyee)) === 'sent' && (await statut(echouee)) === 'failed');
   // 12. Tentative rendue (comptee: false) : attempts redescend, jamais sous zero, pas de plafond.
   const a = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
   await q('update linkedin_action_queue set attempts = 5 where id = $1', [a]);
   const r3 = await remettreActionEnAttente(pool, org, a, { comptee: false, maxTentatives: 3 });
   const la = (await q('select status, attempts, error_code, processing_started_at from linkedin_action_queue where id = $1', [a])).rows[0];
-  check('12a. comptee false : pending, tentative rendue, jamais abandonnee', r3 && la.status === 'pending' && la.attempts === 4 && la.error_code === null && la.processing_started_at === null, JSON.stringify(la));
+  check('12a. comptee false : pending, tentative rendue, jamais abandonnee', r3 === 'pending' && la.status === 'pending' && la.attempts === 4 && la.error_code === null && la.processing_started_at === null, JSON.stringify(la));
   const z = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
   await remettreActionEnAttente(pool, org, z, { comptee: false });
   check('12b. attempts ne passe jamais sous zero', (await q('select attempts from linkedin_action_queue where id = $1', [z])).rows[0].attempts === 0);
@@ -513,6 +525,162 @@ async function prochain_envoi_sur_vrai_sql() {
   await remettreAZero();
 }
 
+/** `n` actions envoyees de ce type, il y a `joursAvant` jours (loin du jour courant : seul le compteur 7 j les voit). */
+async function envoyees(kind, n, joursAvant = 2) {
+  await q(
+    `insert into linkedin_action_queue (organization_id, linkedin_url, kind, method, status, scheduled_for, sent_at)
+     select $1, 'https://www.linkedin.com/in/envoye-' || $2 || '-' || g || '-' || gen_random_uuid(), $2, 'serveur', 'sent', $3, $3
+       from generate_series(1, $4::int) g`,
+    [org, kind, new Date(NOW.getTime() - joursAvant * 24 * 3_600_000).toISOString(), n],
+  );
+}
+const poserReglage = (cle, valeur) =>
+  q(`insert into organization_settings (organization_id, key, value) values ($1, $2, to_jsonb($3::int))
+     on conflict (organization_id, key) do update set value = excluded.value`, [org, cle, valeur]);
+
+async function plafonds_par_type_sur_vrai_sql() {
+  console.log('\n[lkf] 20. plafonds hebdomadaires PAR TYPE, lus dans organization_settings, sur la vraie base');
+  await remettreAZero();
+  await envoyees('invite', 100);
+  await envoyees('message', 3);
+  const msg = await ligne('serveur', { kind: 'message', scheduledFor: new Date(NOW.getTime() - 3 * 3_600_000).toISOString() });
+  const inv = await ligne('serveur', { kind: 'invite' });
+
+  // Tete de file : le message (le plus ancien). 100 invitations envoyees n'arretent pas un message.
+  const r1 = await reclamerProchaineAction(pool, org, NOW);
+  check('20a. 100 invitations envoyees (plafond 100) n arretent pas un message en tete de file', r1.action?.id === msg, r1.motif ?? '');
+  // Le message est pris : la tete devient l'invitation, refusee par SON plafond.
+  const r2 = await reclamerProchaineAction(pool, org, new Date(NOW.getTime() + 21 * 60_000));
+  check('20b. l invitation en tete est refusee par le plafond des invitations', r2.action === null && r2.motif === 'weekly_cap_reached', r2.motif ?? '');
+  check('20c. et reste pending', (await statut(inv)) === 'pending');
+
+  await poserReglage('linkedin_invitations_par_semaine', 150);
+  const r3 = await reclamerProchaineAction(pool, org, new Date(NOW.getTime() + 21 * 60_000));
+  check('20d. relever le plafond des invitations dans organization_settings libere l invitation', r3.action?.id === inv, r3.motif ?? '');
+
+  // Messages : leur compteur et leur plafond a eux.
+  await remettreAZero();
+  await envoyees('message', 150);
+  await envoyees('invite', 60); // somme 210 > 200 : chaque compteur separement reste sous son plafond
+  await ligne('serveur', { kind: 'message' });
+  const r4 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('20d2. 150 messages sous un plafond de 200 : pret', r4.motif === null, JSON.stringify(r4));
+  await poserReglage('linkedin_messages_par_semaine', 150);
+  const r5 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('20d3. plafond des messages abaisse a 150 : weekly_cap_reached', r5.motif === 'weekly_cap_reached', JSON.stringify(r5));
+
+  // Une invitation n'est pas consommee par les messages : 60 + 80 = 140 au compteur commun, > 100.
+  await remettreAZero();
+  await envoyees('invite', 60);
+  await envoyees('message', 80);
+  await ligne('serveur', { kind: 'invite' });
+  const r4b = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('20d4. 60 invitations + 80 messages : l invitation est jugee sur les invitations seules', r4b.motif === null, JSON.stringify(r4b));
+
+  // L'ancienne colonne ne regle plus rien.
+  await remettreAZero();
+  await envoyees('invite', 10);
+  await ligne('serveur', { kind: 'invite' });
+  await q(`insert into linkedin_settings (organization_id, weekly_cap, daily_cap) values ($1, 5, 1)`, [org]);
+  const r6 = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('20e. linkedin_settings.weekly_cap = 5 et daily_cap = 1 ne bornent plus rien', r6.motif === null, JSON.stringify(r6));
+}
+
+async function fenetre_par_defaut_sur_instance_neuve() {
+  console.log('\n[lkf] 20f. fenetre d envoi par defaut, sans ligne linkedin_settings');
+  await remettreAZero();
+  // Echeance la veille : sinon l'action n'est pas encore prete avant 11 h et masque la fenetre.
+  await ligne('serveur', { scheduledFor: new Date(NOW.getTime() - 24 * 3_600_000).toISOString() });
+  const heures = [];
+  for (let h = 0; h < 24; h++) {
+    // 15/09/2026 : Paris = UTC + 2.
+    const r = await prochainEnvoiLinkedIn(pool, org, new Date(Date.UTC(2026, 8, 15, h - 2, 0, 0)));
+    if (r.motif === null) heures.push(h);
+  }
+  check('20f. sans ligne, le moteur envoie de 9 h a 17 h inclus (fenetre 9 h - 18 h annoncee)', heures[0] === 9 && heures[heures.length - 1] === 17 && heures.length === 9, JSON.stringify(heures));
+  const defauts = (await q(`select column_default from information_schema.columns where table_name = 'linkedin_settings' and column_name in ('send_from_hour', 'send_to_hour') order by column_name`)).rows.map((r) => r.column_default);
+  check('20g. les colonnes de la table ont les memes defauts (9 et 18)', defauts.join(',') === '9,18', defauts.join(','));
+}
+
+async function plafond_horaire_dans_le_prochain_envoi() {
+  console.log('\n[lkf] 21. plafond horaire de requetes : annonce par prochainEnvoiLinkedIn, meme regle que le handler');
+  await remettreAZero();
+  const id = await ligne('serveur', { status: 'processing', processingStartedAt: AVANT });
+  await ligne('serveur');
+  await q('update linkedin_action_queue set status = $2 where id = $1', [id, 'sent']);
+  await q(`update linkedin_action_queue set sent_at = $2 where id = $1`, [id, new Date(NOW.getTime() - 2 * 24 * 3_600_000).toISOString()]);
+  const requete = (minutes) =>
+    q(`insert into linkedin_requetes (organization_id, action_queue_id, requested_at) values ($1, $2, $3)`, [org, id, new Date(NOW.getTime() - minutes * 60_000).toISOString()]);
+
+  // Regle du handler (apps/worker/src/handlers/envoi-linkedin.ts) : refuse quand plafond - deLHeure < 4.
+  const handlerRefuse = async (maintenant) => {
+    const plafond = 60;
+    const deLHeure = await compterRequetesLinkedIn({ ex: pool, organisationId: org }, new Date(maintenant.getTime() - 3_600_000));
+    return plafond - deLHeure < 4;
+  };
+
+  for (let i = 0; i < 55; i++) await requete(10);
+  const a = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('21a. 55 requetes sur 60 : reste 5 >= 4, pret', a.motif === null && !(await handlerRefuse(NOW)), JSON.stringify(a));
+  await requete(50); // la plus ancienne, 50 min : 56 sur 60 -> reste 4, encore pret
+  const b = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('21b. 56 requetes sur 60 : reste 4 = cout d un envoi, encore pret', b.motif === null && !(await handlerRefuse(NOW)), JSON.stringify(b));
+  await requete(10);
+  const c = await prochainEnvoiLinkedIn(pool, org, NOW);
+  const libere = new Date(NOW.getTime() - 50 * 60_000 + 3_600_000 + 1);
+  check('21c. 57 requetes sur 60 : plafond_horaire_atteint, avec la date ou la plus ancienne sort de la fenetre', c.quand === null && c.motif === 'plafond_horaire_atteint' && c.disponibleA?.getTime() === libere.getTime() && (await handlerRefuse(NOW)), JSON.stringify(c));
+
+  // La date est juste : le handler refuse juste avant, accepte a l instant annonce.
+  const avant = new Date(libere.getTime() - 1);
+  check('21d. le handler refuse encore 1 ms avant la date annoncee', (await handlerRefuse(avant)) === true && (await prochainEnvoiLinkedIn(pool, org, avant)).motif === 'plafond_horaire_atteint');
+  const apres = await prochainEnvoiLinkedIn(pool, org, libere);
+  check('21e. a la date annoncee, le handler accepte et prochainEnvoi rend pret', (await handlerRefuse(libere)) === false && apres.motif === null, JSON.stringify(apres));
+
+  // Le plafond se regle : relever a 100 libere tout de suite.
+  await poserReglage('linkedin_requetes_par_heure', 100);
+  const d = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('21f. plafond horaire releve a 100 : pret', d.motif === null, JSON.stringify(d));
+  await poserReglage('linkedin_requetes_par_heure', 3);
+  const e = await prochainEnvoiLinkedIn(pool, org, NOW);
+  check('21g. plafond sous le cout d un envoi : refus sans date inventee', e.motif === 'plafond_horaire_atteint' && e.disponibleA === undefined, JSON.stringify(e));
+}
+
+async function migration_de_report_des_plafonds() {
+  console.log('\n[lkf] 22. migration de report de weekly_cap vers linkedin_invitations_par_semaine');
+  const chemin = fileURLToPath(new URL('../../supabase/migrations/20261008100000_linkedin_plafonds_envoi_report.sql', import.meta.url));
+  const sql = readFileSync(chemin, 'utf8');
+  await remettreAZero();
+  const org2 = (await q(`insert into organizations (name, slug) values ('Report', 'report-' || gen_random_uuid()) returning id`)).rows[0].id;
+  const org3 = (await q(`insert into organizations (name, slug) values ('Report3', 'report3-' || gen_random_uuid()) returning id`)).rows[0].id;
+  await q(`insert into linkedin_settings (organization_id, weekly_cap) values ($1, 150), ($2, 120)`, [org, org2]);
+  // org2 a deja choisi sa valeur dans le nouvel endroit : elle ne doit jamais etre ecrasee.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_invitations_par_semaine', '80'::jsonb)`, [org2]);
+  const lire = async (o) => (await q(`select value from organization_settings where organization_id = $1 and key = 'linkedin_invitations_par_semaine'`, [o])).rows[0]?.value ?? null;
+
+  // 22e d'abord : une version qui fausse la valeur reportee doit LEVER, et ne rien laisser.
+  const fausse = sql.replace('to_jsonb(ls.weekly_cap)', 'to_jsonb(1)');
+  let leve = null;
+  try {
+    await q('begin');
+    await q(fausse);
+    await q('commit');
+  } catch (e) {
+    leve = e.message;
+    await q('rollback');
+  }
+  check('22e. un report fausse fait lever la verification interne de la migration', leve !== null && /different|différent/.test(leve), String(leve));
+  check('22e2. et rien n est ecrit (transaction annulee)', (await lire(org)) === null);
+
+  await q(sql);
+  check('22a. weekly_cap = 150 reporte tel quel', (await lire(org)) === 150, String(await lire(org)));
+  check('22b. une valeur deja posee n est jamais ecrasee (80 reste 80, pas 120)', (await lire(org2)) === 80, String(await lire(org2)));
+  check('22c. une organisation sans ligne linkedin_settings n en recoit pas', (await lire(org3)) === null);
+  await q(sql);
+  check('22d. idempotente : une seconde execution ne change rien', (await lire(org)) === 150 && (await lire(org2)) === 80);
+  await q('delete from organization_settings where organization_id = any($1)', [[org2, org3]]);
+  await q('delete from linkedin_settings where organization_id = $1', [org2]);
+}
+
 async function jouer(...sections) {
   for (const section of sections) {
     try {
@@ -548,6 +716,10 @@ async function main() {
     enregistrement_atomique,
     indetermine_compte_comme_actif,
     prochain_envoi_sur_vrai_sql,
+    plafonds_par_type_sur_vrai_sql,
+    fenetre_par_defaut_sur_instance_neuve,
+    plafond_horaire_dans_le_prochain_envoi,
+    migration_de_report_des_plafonds,
   );
   await remettreAZero();
   await pool.end();

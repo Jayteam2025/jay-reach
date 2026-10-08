@@ -21,6 +21,7 @@ import {
   versIso,
   PROCESSING_TIMEOUT_MIN,
   HARD_CAP_7_DAYS,
+  HEURES_ENVOI_LINKEDIN_PAR_DEFAUT,
   type PaceReason,
 } from '@jay-reach/core';
 
@@ -155,10 +156,10 @@ async function loadPaceStats(client: PoolClient, orgId: string, now: Date): Prom
     mode: r?.mode ?? 'auto',
     dailyCap: quotidien,
     weeklyCap: hebdo,
-    startHour: r?.send_from_hour ?? 8,
-    endHour: r?.send_to_hour ?? 21,
-    days: jours.length > 0 ? jours : [1, 2, 3, 4, 5],
-    timezone: r?.timezone ?? 'Europe/Paris',
+    startHour: r?.send_from_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+    endHour: r?.send_to_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+    days: jours.length > 0 ? jours : [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+    timezone: r?.timezone ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
     sentLast7Days: Number(counts.rows[0]?.last7 ?? 0),
     sentToday: Number(counts.rows[0]?.today ?? 0),
     // `pg` rend un `Date` : la graine de l'intervalle exige la chaîne ISO (voir `versIso`).

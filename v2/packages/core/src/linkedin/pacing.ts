@@ -7,17 +7,17 @@
  * intervalle aléatoire mais déterministe entre deux actions du même compte.
  */
 
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
+
 /**
- * Fenêtre appliquée quand l'opérateur n'en a réglé aucune.
- *
- * Ce n'était pas un défaut mais la seule valeur possible : le pacing lisait ces
- * constantes et ignorait les heures, les jours et le fuseau que l'écran
- * LinkedIn enregistre depuis toujours.
+ * Fenêtre appliquée quand l'opérateur n'en a réglé aucune : celle de
+ * `HEURES_ENVOI_LINKEDIN_PAR_DEFAUT`, l'UNIQUE source (colonnes de `linkedin_settings`, écran,
+ * documentation). Trois constantes distinctes ont déjà divergé : 8 h - 21 h appliqué, 9 h - 18 h annoncé.
  */
-export const WINDOW_START_HOUR = 8;
-export const WINDOW_END_HOUR = 21; // exclusif : dernier créneau à 20 h
+export const WINDOW_START_HOUR = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure;
+export const WINDOW_END_HOUR = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure; // exclusif : dernier créneau à 17 h
 /** Jours ISO par défaut : du lundi au vendredi. */
-export const WINDOW_DAYS: readonly number[] = [1, 2, 3, 4, 5];
+export const WINDOW_DAYS: readonly number[] = HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours;
 export const MIN_INTERVAL_MIN = 1;
 export const MAX_INTERVAL_MIN = 20;
 export const PROCESSING_TIMEOUT_MIN = 10;

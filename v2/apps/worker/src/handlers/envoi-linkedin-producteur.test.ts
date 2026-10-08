@@ -65,7 +65,11 @@ describe('enqueueEnvoiLinkedIn', () => {
  * requete contient `status = 'active'`, et le mode vient des reglages. Sans cela, un filtre retire
  * du SQL ne ferait rougir personne. Le SQL reel est joue par `test/pg-verify/linkedin-file.sh`.
  */
-function poolAvecEtat(sessions: { id: string; status: string }[], mode: 'auto' | 'manual' = 'auto'): Pool {
+function poolAvecEtat(
+  sessions: { id: string; status: string }[],
+  mode: 'auto' | 'manual' = 'auto',
+  requetesDeLHeure = 0,
+): Pool {
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
   return {
     query: vi.fn(async (sql: string, valeurs: unknown[] = []) => {
@@ -74,15 +78,20 @@ function poolAvecEtat(sessions: { id: string; status: string }[], mode: 'auto' |
         return rep(gardees.map((x) => ({ organization_id: x.id })));
       }
       if (/jr:linkedin_envoi_en_cours/.test(sql)) return rep([{ recentes: '0', perimees: '0' }]);
-      if (/jr:linkedin_envoi_en_attente/.test(sql)) return rep([{ existe: true }]);
+      if (/select q\.id, q\.kind/.test(sql)) return rep([{ id: 'file-1', kind: 'invite' }]);
+      if (/from organization_settings/.test(sql)) {
+        return rep(valeurs[1] === 'linkedin_requetes_par_heure' ? [{ value: 60 }] : [{ value: 100 }]);
+      }
+      if (/jr:linkedin_requetes_compter/.test(sql)) return rep([{ n: requetesDeLHeure }]);
+      if (/jr:linkedin_budget_horaire_liberation/.test(sql)) return rep([]);
       if (/from linkedin_server_sessions/.test(sql)) {
         const x = sessions.find((y) => y.id === valeurs[0]);
         return rep(x ? [{ status: x.status, envoi_pause_jusqua: null }] : []);
       }
       if (/from linkedin_settings/.test(sql)) {
-        return rep([{ mode, weekly_cap: 100, send_days: [1, 2, 3, 4, 5], send_from_hour: 9, send_to_hour: 18, timezone: 'Europe/Paris' }]);
+        return rep([{ mode, send_days: [1, 2, 3, 4, 5], send_from_hour: 9, send_to_hour: 18, timezone: 'Europe/Paris' }]);
       }
-      if (/count\(\*\) filter/i.test(sql)) return rep([{ last7: '0', today: '0' }]);
+      if (/count\(\*\) filter/i.test(sql)) return rep([]);
       if (/order by sent_at desc/i.test(sql)) return rep([]);
       throw new Error(`requete inattendue : ${sql.slice(0, 60)}`);
     }),
@@ -112,6 +121,16 @@ describe('enqueueEnvoiLinkedIn, de bout en bout sur la decision', () => {
     const { boss, send } = creerBoss();
     await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }], 'manual'), NOW);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('un budget horaire de requetes epuise : aucun job, le handler le jetterait sans trace', async () => {
+    const { boss, send } = creerBoss();
+    await enqueueEnvoiLinkedIn(boss, poolAvecEtat([{ id: 'org-1', status: 'active' }], 'auto', 57), NOW);
+    expect(send).not.toHaveBeenCalled();
+    // Le meme etat avec de la marge cree un job : le refus vient bien du budget.
+    const libre = creerBoss();
+    await enqueueEnvoiLinkedIn(libre.boss, poolAvecEtat([{ id: 'org-1', status: 'active' }], 'auto', 56), NOW);
+    expect(libre.send).toHaveBeenCalledTimes(1);
   });
 
   it('en mode automatique, le meme etat cree bien un job', async () => {

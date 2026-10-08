@@ -18,6 +18,7 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { fuseauDeLOrganisation } from './plafonds.js';
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from '../linkedin/reglages-envoi.js';
 
 // ---------------------------------------------------------------------------
 // Fenêtre d'envoi : conversion HH:MM ↔ heure pleine
@@ -423,10 +424,10 @@ interface LigneReglagesLinkedIn {
 const REGLAGES_LINKEDIN_PAR_DEFAUT: LigneReglagesLinkedIn = {
   daily_cap: 25,
   weekly_cap: 100,
-  send_from_hour: 9,
-  send_to_hour: 18,
-  send_days: [1, 2, 3, 4, 5],
-  timezone: 'Europe/Paris',
+  send_from_hour: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+  send_to_hour: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+  send_days: [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+  timezone: HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
 };
 
 /**

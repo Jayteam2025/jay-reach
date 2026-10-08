@@ -35,6 +35,8 @@ export type ClePlafond =
   | 'linkedin_posts_par_jour'
   | 'linkedin_requetes_par_heure'
   | 'linkedin_personnes_par_passage'
+  | 'linkedin_invitations_par_semaine'
+  | 'linkedin_messages_par_semaine'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -46,6 +48,8 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_posts_par_jour',
   'linkedin_requetes_par_heure',
   'linkedin_personnes_par_passage',
+  'linkedin_invitations_par_semaine',
+  'linkedin_messages_par_semaine',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -61,6 +65,12 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // de scoring, que les offres d'emploi se partagent. Un passage qui enregistre plus fabrique des
   // fiches que le moteur ne traitera jamais (revue finale, 2.3).
   { cle: 'linkedin_personnes_par_passage', defaut: 100, env: 'LINKEDIN_PEOPLE_PER_RUN_CAP' },
+  // Deux plafonds d'envoi, un par type d'action, sur sept jours glissants. C'est l'invitation qui
+  // met un compte LinkedIn en danger (son taux d'acceptation est surveillé), le message beaucoup
+  // moins : un compteur commun forçait à brider les messages au rythme du plus risqué. Le plafond
+  // quotidien de chaque type se déduit du sien (`chargerStatsRythme`, linkedin/file.ts).
+  { cle: 'linkedin_invitations_par_semaine', defaut: 100, env: 'LINKEDIN_INVITES_WEEKLY_CAP' },
+  { cle: 'linkedin_messages_par_semaine', defaut: 200, env: 'LINKEDIN_MESSAGES_WEEKLY_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -556,7 +566,7 @@ export async function tracerEnvoiLinkedIn(ctx: Contexte, actionQueueId: string):
  * démarrage du passage : une collecte ouverte à 23 h 55 dont une requête part
  * à 00 h 05 compte une requête de chaque côté de minuit.
  */
-export async function compterRequetesLinkedIn(ctx: Contexte, depuis: Date, jusqua?: Date): Promise<number> {
+export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organisationId'>, depuis: Date, jusqua?: Date): Promise<number> {
   const res = await ctx.ex.query<{ n: number }>(
     `select count(*)::int as n /* jr:linkedin_requetes_compter */
        from linkedin_requetes

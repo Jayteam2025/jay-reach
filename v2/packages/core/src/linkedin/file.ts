@@ -12,6 +12,8 @@
 import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { poserEcheanceApresDepart } from '../sequencer/echeance.js';
+import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
+import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
 import {
   decideCanSend,
   heureLocale,
@@ -32,6 +34,18 @@ export interface ActionReclamee {
   readonly messageBody: string | null;
 }
 
+/** Le type d'une action de la file : le rythme se juge PAR type (invitation ou message). */
+export type TypeActionLinkedIn = ActionReclamee['kind'];
+
+/**
+ * Le plafond hebdomadaire de chaque type, dans `organization_settings` : c'est l'invitation qui met
+ * un compte en danger, le message beaucoup moins, d'où deux curseurs (voir `CLES_REGLAGES`).
+ */
+const CLE_PLAFOND_HEBDOMADAIRE = {
+  invite: 'linkedin_invitations_par_semaine',
+  message: 'linkedin_messages_par_semaine',
+} as const satisfies Record<TypeActionLinkedIn, ClePlafond>;
+
 export type MotifRefus =
   | PaceReason
   | 'manual_mode'
@@ -45,44 +59,49 @@ export type ResultatReclamation =
   | { readonly action: ActionReclamee; readonly motif: null }
   | { readonly action: null; readonly motif: MotifRefus };
 
+/** Ce qui se compte, se plafonne et se déduit séparément pour un type d'action. */
+interface CompteurType {
+  readonly plafondHebdo: number;
+  readonly plafondQuotidien: number;
+  readonly envoyes7Jours: number;
+  readonly envoyesAujourdhui: number;
+}
+
 interface StatsRythme {
   readonly mode: 'auto' | 'hybrid' | 'manual';
-  readonly dailyCap: number;
-  readonly weeklyCap: number;
   readonly startHour: number;
   readonly endHour: number;
   readonly days: number[];
   readonly timezone: string;
-  readonly sentLast7Days: number;
-  readonly sentToday: number;
+  readonly parType: Readonly<Record<TypeActionLinkedIn, CompteurType>>;
+  /** Dernier envoi, tous types : l'intervalle irrégulier protège le COMPTE, pas un type. */
   readonly lastSentAtIso: string | null;
 }
 
 async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Promise<StatsRythme> {
-  // L'écran enregistre `weekly_cap`, les jours, la plage horaire et le fuseau
-  // depuis toujours ; rien ici ne les lisait. Le pacing appliquait une fenêtre
-  // 8 h - 21 h Paris codée en dur, tous les jours, et le plafond dur de 200 par
-  // semaine quel que soit le curseur.
+  // L'écran enregistre les jours, la plage horaire et le fuseau dans `linkedin_settings`. Le VOLUME,
+  // lui, ne s'y lit plus : `weekly_cap` et `daily_cap` de cette table sont des colonnes héritées,
+  // deux plafonds (invitations, messages) vivent dans `organization_settings` comme tous les autres.
   const settings = await ex.query<{
     mode: 'auto' | 'hybrid' | 'manual';
-    weekly_cap: number | null;
     send_days: number[] | null;
     send_from_hour: number | null;
     send_to_hour: number | null;
     timezone: string | null;
   }>(
-    `select mode, weekly_cap, send_days, send_from_hour, send_to_hour, timezone
+    `select mode, send_days, send_from_hour, send_to_hour, timezone
        from linkedin_settings where organization_id = $1`,
     [orgId],
   );
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60_000).toISOString();
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
-  const counts = await ex.query<{ last7: string; today: string }>(
-    `select
+  const counts = await ex.query<{ kind: TypeActionLinkedIn; last7: string; today: string }>(
+    `select kind,
        count(*) filter (where sent_at >= $2) as last7,
        count(*) filter (where sent_at >= $3) as today
-     from linkedin_action_queue
-     where organization_id = $1 and status = 'sent'`,
+     from linkedin_action_queue /* jr:linkedin_envoyes_par_type */
+     where organization_id = $1 and status = 'sent'
+     group by kind`,
     [orgId, sevenDaysAgo, oneDayAgo],
   );
   const last = await ex.query<{ sent_at: string | Date }>(
@@ -93,29 +112,35 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
   );
   const r = settings.rows[0];
   const jours = (r?.send_days ?? []).filter((j) => j >= 1 && j <= 7);
-  const hebdo = r?.weekly_cap ?? 100;
+  const nbJoursActifs = Math.max(1, jours.length || HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours.length);
 
-  // Le plafond quotidien se DÉDUIT du curseur hebdomadaire, et `daily_cap` est
-  // volontairement ignoré.
-  //
-  // L'écran ne saisit plus que le volume par semaine ; `daily_cap` est une
-  // colonne héritée que plus personne n'écrit. Sur la base, elle vaut encore 25
-  // alors que le curseur dit 100 par semaine sur cinq jours — soit vingt. S'y
-  // fier ferait envoyer cent vingt-cinq invitations en affichant cent : le
-  // réglage visible mentirait sur ce qui part, ce qui est pire que pas de
-  // réglage du tout.
-  const quotidien = Math.max(1, Math.ceil(hebdo / Math.max(1, jours.length || 5)));
+  const compteur = async (kind: TypeActionLinkedIn): Promise<CompteurType> => {
+    const plafondHebdo = await plafondDuJour(ex, orgId, CLE_PLAFOND_HEBDOMADAIRE[kind]);
+    const ligne = counts.rows.find((c) => c.kind === kind);
+    return {
+      plafondHebdo,
+      // Le plafond quotidien se DÉDUIT du curseur hebdomadaire, et `daily_cap` est
+      // volontairement ignoré.
+      //
+      // L'écran ne saisit plus que le volume par semaine ; `daily_cap` est une
+      // colonne héritée que plus personne n'écrit. Sur la base, elle vaut encore 25
+      // alors que le curseur dit 100 par semaine sur cinq jours — soit vingt. S'y
+      // fier ferait envoyer cent vingt-cinq invitations en affichant cent : le
+      // réglage visible mentirait sur ce qui part, ce qui est pire que pas de
+      // réglage du tout.
+      plafondQuotidien: Math.max(1, Math.ceil(plafondHebdo / nbJoursActifs)),
+      envoyes7Jours: Number(ligne?.last7 ?? 0),
+      envoyesAujourdhui: Number(ligne?.today ?? 0),
+    };
+  };
 
   return {
     mode: r?.mode ?? 'auto',
-    dailyCap: quotidien,
-    weeklyCap: hebdo,
-    startHour: r?.send_from_hour ?? 8,
-    endHour: r?.send_to_hour ?? 21,
-    days: jours.length > 0 ? jours : [1, 2, 3, 4, 5],
-    timezone: r?.timezone ?? 'Europe/Paris',
-    sentLast7Days: Number(counts.rows[0]?.last7 ?? 0),
-    sentToday: Number(counts.rows[0]?.today ?? 0),
+    startHour: r?.send_from_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+    endHour: r?.send_to_hour ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+    days: jours.length > 0 ? jours : [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+    timezone: r?.timezone ?? HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
+    parType: { invite: await compteur('invite'), message: await compteur('message') },
     lastSentAtIso: last.rows[0]?.sent_at ? versIso(last.rows[0].sent_at) : null,
   };
 }
@@ -177,12 +202,13 @@ type VerdictRythme =
   | { readonly ok: false; readonly motif: MotifRefus; readonly attendreMinutes?: number };
 
 /**
- * Le rythme appliqué à une organisation : mode manuel, puis `decideCanSend` (fenêtre, plafond
+ * Le rythme appliqué à une organisation POUR UN TYPE D'ACTION (celui de l'action jugée) : mode manuel, puis `decideCanSend` (fenêtre, plafond
  * 7 j dur, intervalle irrégulier de 1 à 20 minutes), puis plafond quotidien du curseur. Pur.
  * `attendreMinutes` n'est rendu que pour l'intervalle, seul refus qui se lève de lui-même
  * à une échéance connue.
  */
-function jugerRythme(stats: StatsRythme, now: Date): VerdictRythme {
+function jugerRythme(stats: StatsRythme, kind: TypeActionLinkedIn, now: Date): VerdictRythme {
+  const c = stats.parType[kind];
   // Mode manuel : rien ne part de soi-même. État IMPOSSIBLE en base aujourd'hui : la migration
   // 20260831160000 a resserré la contrainte à `mode = 'auto'` (« Déprécié : seul auto existe »).
   // La branche est gardée par précaution, parce qu'elle est conservatrice (rien ne part) et que la
@@ -202,10 +228,10 @@ function jugerRythme(stats: StatsRythme, now: Date): VerdictRythme {
     startHour: stats.startHour,
     endHour: stats.endHour,
     days: stats.days,
-    sentLast7Days: stats.sentLast7Days,
-    // Le curseur de l'opérateur, sans jamais dépasser le plafond dur : c'est
+    sentLast7Days: c.envoyes7Jours,
+    // Le curseur de l'opérateur POUR CE TYPE, sans jamais dépasser le plafond dur : c'est
     // lui qui protège le compte LinkedIn, pas le réglage.
-    cap7Days: Math.min(stats.weeklyCap, HARD_CAP_7_DAYS),
+    cap7Days: Math.min(c.plafondHebdo, HARD_CAP_7_DAYS),
     lastSentAtIso: stats.lastSentAtIso,
     minutesSinceLastSent,
   });
@@ -216,10 +242,34 @@ function jugerRythme(stats: StatsRythme, now: Date): VerdictRythme {
   }
 
   // Plafond quotidien du curseur (volume/jour choisi par l'org).
-  if (stats.sentToday >= stats.dailyCap) {
+  if (c.envoyesAujourdhui >= c.plafondQuotidien) {
     return { ok: false, motif: 'daily_cap_reached' };
   }
   return { ok: true };
+}
+
+/**
+ * La plus ancienne action serveur prête à partir (échéance atteinte, campagne active), avec son
+ * type. Lecture seule : la réclamation, elle, est l'`update` atomique qui suit.
+ */
+async function prochaineCandidate(
+  ex: Executeur,
+  organisationId: string,
+  now: Date,
+): Promise<{ id: string; kind: TypeActionLinkedIn } | null> {
+  const candidate = await ex.query<{ id: string; kind: TypeActionLinkedIn }>(
+    `select q.id, q.kind
+         from linkedin_action_queue q
+         left join actions a on a.id = q.action_id
+         left join enrollments e on e.id = a.enrollment_id
+         left join campaigns camp on camp.id = e.campaign_id
+        where q.organization_id = $1 and q.status = 'pending'
+          and q.method = 'serveur' and q.scheduled_for <= $2
+          and (q.action_id is null or camp.status = 'active')
+        order by q.scheduled_for asc limit 1`,
+    [organisationId, now.toISOString()],
+  );
+  return candidate.rows[0] ?? null;
 }
 
 /**
@@ -274,33 +324,23 @@ export async function reclamerProchaineAction(
     return { action: null, motif: 'canal_en_pause' };
   }
 
-  const stats = await chargerStatsRythme(ex, orgId, now);
-
-  // 3 à 5. Rythme : mode manuel, fenêtre, plafonds, intervalle. Un seul jugement, partagé
-  // avec `prochainEnvoiLinkedIn` : la date qu'il pose et la décision d'ici ne peuvent pas diverger.
-  const verdict = jugerRythme(stats, now);
-  if (!verdict.ok) {
-    return { action: null, motif: verdict.motif };
-  }
-
-  // 6. Prochaine ligne pending (la plus ancienne planifiée), claim atomique.
-  const candidate = await ex.query<{ id: string }>(
-    `select q.id
-         from linkedin_action_queue q
-         left join actions a on a.id = q.action_id
-         left join enrollments e on e.id = a.enrollment_id
-         left join campaigns camp on camp.id = e.campaign_id
-        where q.organization_id = $1 and q.status = 'pending'
-          and q.method = 'serveur' and q.scheduled_for <= $2
-          and (q.action_id is null or camp.status = 'active')
-        order by q.scheduled_for asc limit 1`,
-    [orgId, now.toISOString()],
-  );
-  const id = candidate.rows[0]?.id;
-  if (!id) {
+  // 3. Prochaine ligne pending (la plus ancienne planifiée). Choisie AVANT le jugement du rythme :
+  // les plafonds sont par type, on ne sait lequel appliquer qu'en connaissant l'action visée.
+  const candidate = await prochaineCandidate(ex, orgId, now);
+  if (!candidate) {
     return { action: null, motif: 'queue_empty' };
   }
 
+  // 4 à 6. Rythme : mode manuel, fenêtre, plafonds du type, intervalle. Un seul jugement, partagé
+  // avec `prochainEnvoiLinkedIn` : la date qu'il pose et la décision d'ici ne peuvent pas diverger.
+  const stats = await chargerStatsRythme(ex, orgId, now);
+  const verdict = jugerRythme(stats, candidate.kind, now);
+  if (!verdict.ok) {
+    return { action: null, motif: verdict.motif };
+  }
+  const id = candidate.id;
+
+  // 7. Claim atomique.
   const claimed = await ex.query<ActionReclamee>(
     `update linkedin_action_queue
          set status = 'processing', processing_started_at = $2,
@@ -405,16 +445,17 @@ export async function enregistrerResultat(ex: Executeur, entree: EntreeResultat)
  * `comptee: true` garde la tentative (une panne répétée d'une lecture ne doit pas
  * boucler à l'infini : à `maxTentatives` la ligne passe `failed`). `comptee: false`
  * rend la tentative, car l'action n'a pas été essayée par sa faute : une session
- * bloquée ou une pause d'un jour ne doit pas la faire vieillir. Rend true si la
- * ligne a bougé.
+ * bloquée ou une pause d'un jour ne doit pas la faire vieillir. Rend le statut que la
+ * ligne vient de prendre (`pending`, ou `failed` si les tentatives sont épuisées : l'appelant
+ * doit alors arrêter la séquence), ou `null` si elle n'a pas bougé.
  */
 export async function remettreActionEnAttente(
   ex: Executeur,
   organisationId: string,
   queueId: string,
   options: { readonly comptee: boolean; readonly maxTentatives?: number },
-): Promise<boolean> {
-  const res = await ex.query(
+): Promise<'pending' | 'failed' | null> {
+  const res = await ex.query<{ status: 'pending' | 'failed' }>(
     `update linkedin_action_queue /* jr:linkedin_action_remettre */
         set status = case when $3::boolean and attempts >= $4::int then 'failed' else 'pending' end,
             attempts = case when $3::boolean then attempts else greatest(attempts - 1, 0) end,
@@ -422,10 +463,11 @@ export async function remettreActionEnAttente(
             error_message = case when $3::boolean and attempts >= $4::int
               then 'La lecture du profil a échoué plusieurs fois de suite : l’action est abandonnée.' else null end,
             processing_started_at = null, updated_at = now()
-      where id = $1 and organization_id = $2 and status = 'processing'`,
+      where id = $1 and organization_id = $2 and status = 'processing'
+  returning status`,
     [queueId, organisationId, options.comptee, options.maxTentatives ?? 3],
   );
-  return (res.rowCount ?? 0) > 0;
+  return res.rows[0]?.status ?? null;
 }
 
 /**
@@ -464,7 +506,49 @@ export async function existeActionServeurEnAttente(
   return res.rows[0]?.existe === true;
 }
 
-export type MotifAucunEnvoi = MotifRefus | 'action_en_cours' | 'file_vide';
+export type MotifAucunEnvoi = MotifRefus | 'action_en_cours' | 'file_vide' | 'plafond_horaire_atteint';
+
+/**
+ * Requêtes qu'un envoi peut coûter à LinkedIn (lecture du profil, envoi, traces) : sous ce reste de
+ * budget horaire on attend plutôt que d'en laisser une moitié partir. UNE seule valeur pour le
+ * handler d'envoi (qui refuse le tour) et pour `prochainEnvoiLinkedIn` (qui annonce le refus) :
+ * deux jugements sur le même fait feraient promettre à l'écran un envoi que le worker jette.
+ */
+export const REQUETES_PAR_ENVOI = 4;
+const UNE_HEURE_MS = 3_600_000;
+
+/**
+ * Le budget de requêtes de l'heure écoulée (plafond `linkedin_requetes_par_heure`, partagé avec la
+ * collecte : même table, même fenêtre glissante). Quand il manque, la date où il se libère se
+ * CALCULE : il faut que les `aLiberer` requêtes les plus anciennes de la fenêtre en sortent, donc
+ * la date de la dernière d'entre elles plus une heure (et une milliseconde : la fenêtre du
+ * handler est `>=`, une requête posée à l'instant T compte encore à T + 1 h). `null` quand elle
+ * ne se libérera jamais (plafond réglé sous le coût d'un envoi) : aucune date n'est inventée.
+ */
+async function budgetHoraire(
+  ex: Executeur,
+  organisationId: string,
+  maintenant: Date,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly libereA: Date | null }> {
+  const plafond = await plafondDuJour(ex, organisationId, 'linkedin_requetes_par_heure');
+  const depuis = new Date(maintenant.getTime() - UNE_HEURE_MS);
+  const deLHeure = await compterRequetesLinkedIn({ ex, organisationId }, depuis);
+  if (plafond - deLHeure >= REQUETES_PAR_ENVOI) return { ok: true };
+  if (plafond < REQUETES_PAR_ENVOI) return { ok: false, libereA: null };
+
+  const aLiberer = deLHeure - (plafond - REQUETES_PAR_ENVOI);
+  const res = await ex.query<{ requested_at: string | Date }>(
+    `select requested_at from linkedin_requetes /* jr:linkedin_budget_horaire_liberation */
+      where organization_id = $1 and requested_at >= $2
+      order by requested_at asc offset $3 limit 1`,
+    [organisationId, depuis.toISOString(), aLiberer - 1],
+  );
+  const dernierePartie = res.rows[0]?.requested_at;
+  return {
+    ok: false,
+    libereA: dernierePartie ? new Date(new Date(versIso(dernierePartie)).getTime() + UNE_HEURE_MS + 1) : null,
+  };
+}
 
 export type ProchainEnvoi =
   /**
@@ -476,8 +560,12 @@ export type ProchainEnvoi =
    * Obligatoire, et non optionnel : trois sites rendent une date, et un champ qu'on peut omettre
    * se laisse oublier par celui qu'on ajoute ensuite.
    */
-  | { readonly quand: Date; readonly motif: null; readonly raison: 'envoi' | 'reparation' }
-  | { readonly quand: null; readonly motif: MotifAucunEnvoi };
+  | { readonly quand: Date; readonly motif: null; readonly raison: 'envoi' | 'reparation'; readonly disponibleA?: undefined }
+  /**
+   * `disponibleA` : seulement quand le refus se lève à une date CALCULÉE (budget horaire) ; absent
+   * pour tous les autres, qui ne se lèvent pas à une échéance connue.
+   */
+  | { readonly quand: null; readonly motif: MotifAucunEnvoi; readonly disponibleA?: Date };
 
 /**
  * Le moment où un envoi serveur redevient possible pour une organisation, ou `null` quand
@@ -488,6 +576,8 @@ export type ProchainEnvoi =
  * rend une date que pour ce qui se lève à une échéance connue :
  *  - tout est prêt : maintenant ;
  *  - l'intervalle irrégulier de 1 à 20 minutes n'est pas écoulé : la minute où il le sera ;
+ *  - budget de requêtes de l'heure épuisé (`plafond_horaire_atteint`) : `null` et, quand elle se
+ *    calcule, la date où le budget se libère (`disponibleA`) ;
  *  - fenêtre horaire fermée, plafond atteint, mode manuel, pause, file vide : `null`. Aucune
  *    date n'est devinée ; l'appelant réévalue au tick suivant, ce qui ne coûte que ces SELECT.
  *
@@ -528,16 +618,30 @@ export async function prochainEnvoiLinkedIn(
     return { quand: maintenant, motif: null, raison: 'reparation' };
   }
 
-  if (!(await existeActionServeurEnAttente(ex, organisationId, maintenant))) {
+  // Le type de la prochaine action décide de LEUR plafond : on la connaît avant de juger.
+  const candidate = await prochaineCandidate(ex, organisationId, maintenant);
+  if (!candidate) {
     return { quand: null, motif: 'file_vide' };
   }
 
-  const verdict = jugerRythme(await chargerStatsRythme(ex, organisationId, maintenant), maintenant);
+  const verdict = jugerRythme(await chargerStatsRythme(ex, organisationId, maintenant), candidate.kind, maintenant);
+  let quand: Date;
   if (verdict.ok) {
-    return { quand: maintenant, motif: null, raison: 'envoi' };
+    quand = maintenant;
+  } else if (verdict.motif === 'too_soon' && verdict.attendreMinutes !== undefined) {
+    quand = new Date(maintenant.getTime() + verdict.attendreMinutes * 60_000);
+  } else {
+    return { quand: null, motif: verdict.motif };
   }
-  if (verdict.motif === 'too_soon' && verdict.attendreMinutes !== undefined) {
-    return { quand: new Date(maintenant.getTime() + verdict.attendreMinutes * 60_000), motif: null, raison: 'envoi' };
+
+  // Le handler refuse le tour quand le budget de l'heure est épuisé : l'annoncer ici, sinon l'écran
+  // dit « prêt » pendant que chaque job est jeté.
+  const horaire = await budgetHoraire(ex, organisationId, maintenant);
+  if (!horaire.ok) {
+    if (!horaire.libereA) return { quand: null, motif: 'plafond_horaire_atteint' };
+    // Les deux conditions doivent être levées : l'intervalle irrégulier ET le budget.
+    const disponibleA = horaire.libereA.getTime() > quand.getTime() ? horaire.libereA : quand;
+    return { quand: null, motif: 'plafond_horaire_atteint', disponibleA };
   }
-  return { quand: null, motif: verdict.motif };
+  return { quand, motif: null, raison: 'envoi' };
 }
