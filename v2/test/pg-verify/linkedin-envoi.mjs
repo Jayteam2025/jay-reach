@@ -11,7 +11,7 @@
 //      `a.id = q.action_id` ou le filtre `a.status in (...)` — la section 5 rougit.
 //   5. migration 20261007130000 : retirer le `set default` — la migration echoue (controle), et 1e rougit.
 import pg from 'pg';
-import { regler } from './_linkedin-envoi-bundle.mjs';
+import { regler, mettreEnPauseActionsLinkedInOrphelines, remettreActionEnAttente, reparerLignesCoincees } from './_linkedin-envoi-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
@@ -200,8 +200,119 @@ async function sansActionLiee() {
   check('17. l\'inscription voisine reste active, étape 2, sans motif', r.insc.status === 'active' && r.insc.stop_reason === null && r.insc.current_step === 2, JSON.stringify(r.insc));
 }
 
+// ---------------------------------------------------------------- sorties terminales hors `regler`
+// Trois chemins rendent une ligne de file terminale sans passer par l'arrêt de séquence. Le balayage
+// du tick (`mettreEnPauseActionsLinkedInOrphelines`) les rattrape : il MET EN PAUSE, il ne réenfile
+// jamais. Chaque section compte les lignes de file avant/après : un réenfilement ferait bouger le compte
+// ou le statut.
+const etatFile = async (m) => (await q(`select id, status, error_code from linkedin_action_queue where organization_id = $1 order by created_at, id`, [m.org])).rows;
+const tick = () => mettreEnPauseActionsLinkedInOrphelines({ pool });
+
+async function lignesCoinceesRattrapees() {
+  console.log('\n7. une ligne coincée (resultat_indetermine) est rattrapée par le balayage, sans jamais rejouer');
+  const m = await mondeSequence();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/coincee');
+  await q(`update linkedin_action_queue set processing_started_at = now() - interval '2 hours' where id = $1`, [queue]);
+  await reparerLignesCoincees(pool, m.org);
+  const avant = await lire(m, queue);
+  check('18. avant le balayage : la file est terminale mais l\'inscription reste active sans échéance (le défaut)',
+    avant.file.status === 'failed' && avant.file.error_code === 'resultat_indetermine' && avant.action.status === 'scheduled' && avant.insc.status === 'active' && avant.insc.next_action_at === null,
+    JSON.stringify(avant));
+  const file0 = await etatFile(m);
+  await tick();
+  const r = await lire(m, queue);
+  check('19. le balayage met l\'action en échec et l\'inscription en pause, motif nommé, rembobinée sur l\'étape (1)',
+    r.action.status === 'failed' && r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:resultat_indetermine' && r.insc.current_step === 1 && r.insc.next_action_at === null,
+    JSON.stringify(r));
+  const file1 = await etatFile(m);
+  check('20. INVARIANT : la file n\'a pas bougé (même lignes, toujours failed, rien en pending, aucun insert)',
+    JSON.stringify(file0) === JSON.stringify(file1) && file1.length === 1 && file1[0].status === 'failed', JSON.stringify(file1));
+  await tick();
+  const r2 = await lire(m, queue);
+  check('21. un second balayage ne change rien (idempotent)', JSON.stringify(r2) === JSON.stringify(r), JSON.stringify(r2));
+}
+
+async function balayageGardes() {
+  console.log('\n8. le balayage ne touche que ce qu\'il doit');
+  const parti = await mondeSequence();
+  await q(`update actions set status = 'dispatched' where id = $1`, [parti.act]);
+  const qp = await file(parti, parti.act, 'https://www.linkedin.com/in/b-parti');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_invite' where id = $1`, [qp]);
+  const doublon = await mondeSequence();
+  const qd1 = await file(doublon, doublon.act, 'https://www.linkedin.com/in/b-doublon');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_invite' where id = $1`, [qd1]);
+  await q(`insert into linkedin_action_queue (organization_id, contact_id, action_id, linkedin_url, kind, method, status) values ($1,$2,$3,'https://www.linkedin.com/in/b-doublon','invite','serveur','pending')`, [doublon.org, doublon.contact, doublon.act]);
+  const sans = await mondeSequence();
+  const qs = await file(sans, null, 'https://www.linkedin.com/in/b-ext');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_invite' where id = $1`, [qs]);
+  await tick();
+  const rp = await lire(parti, qp);
+  check('22. une action déjà partie n\'est jamais repassée en échec, son inscription reste active', rp.action.status === 'dispatched' && rp.insc.status === 'active', JSON.stringify(rp));
+  const rd = await lire(doublon, qd1);
+  check('23. une action qui a encore une ligne de file vivante n\'est pas arrêtée', rd.action.status === 'scheduled' && rd.insc.status === 'active', JSON.stringify(rd));
+  const rs = await lire(sans, qs);
+  check('24. une ligne de file sans action liée ne touche rien', rs.action.status === 'scheduled' && rs.insc.status === 'active', JSON.stringify(rs));
+}
+
+async function epuisementDesTentatives() {
+  console.log('\n9. l\'épuisement des tentatives de lecture arrête la séquence');
+  const m = await mondeSequence();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/lecture');
+  await q(`update linkedin_action_queue set attempts = 3 where id = $1`, [queue]);
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/lecture', messageBody: null }, { type: 'rien_parti' });
+  const r = await lire(m, queue);
+  check('25. la file est en échec trop_de_tentatives, l\'action en échec, l\'inscription en pause avec le motif',
+    r.file.status === 'failed' && r.file.error_code === 'trop_de_tentatives' && r.action.status === 'failed' && r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:trop_de_tentatives' && r.insc.current_step === 1,
+    JSON.stringify(r));
+
+  const m2 = await mondeSequence();
+  const q2 = await file(m2, m2.act, 'https://www.linkedin.com/in/lecture2');
+  await regler(deps(), ctxDe(m2), { id: q2, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/lecture2', messageBody: null }, { type: 'rien_parti' });
+  const r2 = await lire(m2, q2);
+  check('26. une lecture qui échoue AVANT l\'épuisement remet en pending sans toucher la séquence',
+    r2.file.status === 'pending' && r2.action.status === 'scheduled' && r2.insc.status === 'active', JSON.stringify(r2));
+
+  const m3 = await mondeSequence();
+  const q3 = await file(m3, m3.act, 'https://www.linkedin.com/in/lecture3');
+  await q(`update linkedin_action_queue set attempts = 3 where id = $1`, [q3]);
+  const statut = await remettreActionEnAttente(pool, m3.org, q3, { comptee: true, maxTentatives: 3 });
+  const statutAbsent = await remettreActionEnAttente(pool, m3.org, q3, { comptee: true, maxTentatives: 3 });
+  check('27. remettreActionEnAttente rend le statut écrit (failed), puis null quand la ligne n\'a pas bougé', statut === 'failed' && statutAbsent === null, `${statut}/${statutAbsent}`);
+}
+
+async function etapeSupprimee() {
+  console.log('\n10. une étape supprimée pendant que l\'action est en file n\'abandonne pas l\'inscription');
+  const m = await mondeSequence();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/etape');
+  const etape = (await q(`select step_id from actions where id = $1`, [m.act])).rows[0].step_id;
+  await q(`delete from sequence_steps where id = $1`, [etape]);
+  const sansEtape = (await q(`select step_id from actions where id = $1`, [m.act])).rows[0].step_id;
+  await regler(deps(), ctxDe(m), { id: queue, kind: 'invite', linkedinUrl: 'https://www.linkedin.com/in/etape', messageBody: null }, { type: 'refus', code: 'cannot_invite' });
+  const r = await lire(m, queue);
+  check('28. step_id est bien devenu null (clé étrangère on delete set null)', sansEtape === null);
+  check('29. l\'inscription est en pause quand même, son current_step courant (2) conservé, l\'action en échec',
+    r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:cannot_invite' && r.insc.current_step === 2 && r.action.status === 'failed', JSON.stringify(r));
+}
+
+async function panneEntreLesDeuxEcritures() {
+  console.log('\n11. une panne de l\'arrêt de séquence est rattrapée par le balayage');
+  const m = await mondeSequence();
+  const queue = await file(m, m.act, 'https://www.linkedin.com/in/panne');
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'resultat_indetermine' where id = $1`, [queue]);
+  // Pool dont l'écriture de l'ACTION échoue : l'inscription est déjà en pause à ce moment (ordre voulu).
+  const panne = { query: (sql, params) => (String(sql).includes('jr:linkedin_action_echec') ? Promise.reject(new Error('base indisponible')) : pool.query(sql, params)) };
+  await mettreEnPauseActionsLinkedInOrphelines({ pool: panne });
+  const mi = await lire(m, queue);
+  check('30. la panne laisse l\'action scheduled (le témoin du balayage) et l\'inscription déjà en pause',
+    mi.action.status === 'scheduled' && mi.insc.status === 'paused', JSON.stringify(mi));
+  await tick();
+  const r = await lire(m, queue);
+  check('31. le balayage suivant termine : action en échec, inscription toujours en pause avec son motif',
+    r.action.status === 'failed' && r.insc.status === 'paused' && r.insc.stop_reason === 'linkedin_refus:resultat_indetermine', JSON.stringify(r));
+}
+
 async function main() {
-  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee);
+  await jouer(preexistant, methode, defaut, trace, suppressions, suppressionAction, pause, refusDefinitif, sansActionLiee, lignesCoinceesRattrapees, balayageGardes, epuisementDesTentatives, etapeSupprimee, panneEntreLesDeuxEcritures);
   console.log(`\n[linkedin-envoi] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

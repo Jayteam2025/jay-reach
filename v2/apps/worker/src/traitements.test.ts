@@ -3,9 +3,11 @@ import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import {
   rejouerActionsEmailEnAttente,
+  mettreEnPauseActionsLinkedInOrphelines,
   REJEU_ACTIONS_EMAIL_MS,
   traiterDiscover,
   traiterJob,
+  traiterTick,
   consommerLesFiles,
   ecouterLesFiles,
   FILES_BRANCHEES,
@@ -566,5 +568,52 @@ describe('ecouterLesFiles : une file fautive ne tait que son canal', () => {
     const ctx = { pool: creerPoolFactice([]), boss: { work } as unknown as PgBoss } as Contexte;
     await ecouterLesFiles(ctx);
     expect((work.mock.calls as unknown as [string][]).map((c) => c[0])).toContain('linkedin.envoi');
+  });
+});
+
+describe('mettreEnPauseActionsLinkedInOrphelines', () => {
+  /** Pool factice : la première requête (le balayage) rend `orphelines`, les suivantes ne trouvent rien à arrêter. */
+  function poolEnregistreur(orphelines: unknown[]): { pool: Pool; sqls: string[] } {
+    const sqls: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      sqls.push(sql);
+      const rows = sqls.length === 1 ? orphelines : [];
+      return { rows, rowCount: rows.length };
+    });
+    return { pool: { query } as unknown as Pool, sqls };
+  }
+
+  it('ne cherche que les actions LinkedIn encore scheduled dont la ligne de file est terminale, sans rien réenfiler', async () => {
+    const { pool, sqls } = poolEnregistreur([]);
+    await mettreEnPauseActionsLinkedInOrphelines({ pool });
+    const balayage = sqls[0] ?? '';
+    expect(balayage).toMatch(/q\.status = 'failed'/);
+    expect(balayage).toMatch(/a\.status in \('scheduled', 'approved'\)/);
+    // Invariant « jamais deux envois » : ce balayage ne fait que lire, il ne rejoue rien.
+    expect(balayage).not.toMatch(/\b(insert|update|delete)\b/i);
+    expect(sqls).toHaveLength(1);
+  });
+
+  it('applique le geste de pause à chaque ligne trouvée, mais n\'écrit jamais dans la file', async () => {
+    const { pool, sqls } = poolEnregistreur([
+      { queue_id: 'q-1', organization_id: ORG_ID, error_code: 'resultat_indetermine', error_message: 'indéterminé' },
+    ]);
+    const arretees = await mettreEnPauseActionsLinkedInOrphelines({ pool });
+    expect(arretees).toBe(0); // le double ne rend aucune action à arrêter : la lecture du geste est vide
+    expect(sqls).toHaveLength(2);
+    expect(sqls.some((q) => /linkedin_action_queue\s+set|insert into linkedin_action_queue/i.test(q))).toBe(false);
+  });
+});
+
+describe('traiterTick — rattrapage LinkedIn', () => {
+  it('chaque tick passe le balayage des envois LinkedIn terminaux', async () => {
+    const sqls: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      sqls.push(sql);
+      return { rows: [], rowCount: 0 };
+    });
+    const boss = { insert: vi.fn(async () => undefined) } as unknown as PgBoss;
+    await traiterTick({ pool: { query } as unknown as Pool, boss });
+    expect(sqls.some((q) => q.includes('jr:linkedin_orphelines'))).toBe(true);
   });
 });

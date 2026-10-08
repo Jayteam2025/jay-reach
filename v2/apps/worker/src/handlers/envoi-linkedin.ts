@@ -107,6 +107,8 @@ export const MSG = {
     'LinkedIn limite le compte mais la pause n’a pas pu être posée : la session est bloquée par précaution.',
   indetermine:
     'LinkedIn a répondu de façon imprévue : l’envoi a peut-être abouti. Vérifiez sur LinkedIn, l’action ne sera pas rejouée.',
+  // Même texte que celui que `remettreActionEnAttente` écrit dans la file à l'épuisement des tentatives.
+  tentatives: 'La lecture du profil a échoué plusieurs fois de suite : l’action est abandonnée.',
 } as const;
 
 /** Motif lisible de chaque refus définitif, écrit à l'écran : jamais un extrait de réponse LinkedIn. */
@@ -125,6 +127,7 @@ const MOTIFS: Record<CodeRefus, string> = {
 
 /** Code consigné quand on ne sait pas si l'action est partie. Il n'a jamais de reprise. */
 const RESULTAT_INDETERMINE = 'resultat_indetermine';
+const CODE_TROP_DE_TENTATIVES = 'trop_de_tentatives';
 
 type Phase = 'lecture' | 'envoi';
 
@@ -391,8 +394,18 @@ async function enregistrer(
  */
 export async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee, issue: Issue): Promise<void> {
   const base = { organizationId: ctx.organisationId, queueId: action.id };
-  const remettre = (comptee: boolean) =>
-    remettreActionEnAttente(d.pool, ctx.organisationId, action.id, { comptee, maxTentatives: MAX_TENTATIVES_LECTURE });
+  const remettre = async (comptee: boolean): Promise<void> => {
+    const statut = await remettreActionEnAttente(d.pool, ctx.organisationId, action.id, {
+      comptee,
+      maxTentatives: MAX_TENTATIVES_LECTURE,
+    });
+    // Tentatives épuisées : la ligne vient de passer `failed`, définitivement. Même geste qu'un
+    // refus, sinon l'action reste `scheduled` et l'inscription active sans échéance.
+    if (statut === 'failed') {
+      console.warn(`[envoi-linkedin] ${MSG.tentatives}`);
+      await arreterSequence(d, ctx, action.id, CODE_TROP_DE_TENTATIVES, MSG.tentatives);
+    }
+  };
 
   if (issue.type === 'envoye') {
     await enregistrer(d, { ...base, status: 'sent' });
@@ -447,7 +460,8 @@ export async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionR
  * action en échec avec son erreur, inscription en pause SUR l'étape en échec avec un motif
  * qui nomme le code de refus. Une ligne sans action liée (créée par l'extension) n'a pas de
  * séquence à arrêter : rien ne bouge. Retentée comme l'enregistrement : un échec ici, après
- * celui de la file, ne se rejouerait jamais (plus aucune action réclamable).
+ * celui de la file, ne se rejouerait jamais (plus aucune action réclamable) ; si elle jette
+ * quand même, le balayage `mettreEnPauseActionsLinkedInOrphelines` (tick) reprend le même geste.
  */
 async function arreterSequence(
   d: DependancesEnvoi,
@@ -456,29 +470,9 @@ async function arreterSequence(
   code: string,
   message: string,
 ): Promise<void> {
-  const motif = `linkedin_refus:${code}`;
   for (let essai = 1; ; essai += 1) {
     try {
-      const echec = await d.pool.query<{ enrollment_id: string; step_id: string | null }>(
-        `update actions a /* jr:linkedin_action_echec */
-            set status = 'failed', error = $2
-           from linkedin_action_queue q
-          where q.id = $1 and q.organization_id = $3 and a.id = q.action_id
-            and a.status in ('scheduled', 'approved')
-        returning a.enrollment_id, a.step_id`,
-        [queueId, message, ctx.organisationId],
-      );
-      const ligne = echec.rows[0];
-      if (!ligne) return;
-      // `current_step` est déjà avancé par le tick : la pause rembobine sur l'étape en échec.
-      const etape = ligne.step_id
-        ? await d.pool.query<{ position: number }>(
-            `select position from sequence_steps where id = $1 /* jr:linkedin_echec_etape */`,
-            [ligne.step_id],
-          )
-        : null;
-      const position = etape?.rows[0]?.position;
-      if (position !== undefined) await mettreInscriptionEnPause(d.pool, ligne.enrollment_id, position, motif);
+      await arreterSequenceDeLaLigne(d.pool, ctx.organisationId, queueId, code, message);
       return;
     } catch (err) {
       if (essai >= TENTATIVES_ENREGISTREMENT) throw err;
@@ -486,6 +480,53 @@ async function arreterSequence(
       await d.pause(ATTENTE_ENREGISTREMENT_MS);
     }
   }
+}
+
+/**
+ * Le geste de pause, une seule tentative, idempotent : action `scheduled`/`approved` liée à la
+ * ligne de file mise en `failed`, inscription mise en `paused` avec le motif `linkedin_refus:<code>`.
+ * JAMAIS de réenfilement ni de rejeu : la ligne de file est terminale et le reste, un
+ * `resultat_indetermine` veut dire « l'envoi est peut-être parti ».
+ *
+ * ORDRE voulu : l'inscription d'abord, l'action ensuite. L'action `scheduled` est le témoin que
+ * le balayage de rattrapage cherche ; si la pause de l'inscription échoue, l'action reste
+ * `scheduled` et le balayage la retrouve. Dans l'ordre inverse, une panne entre les deux
+ * laissait une action `failed` et une inscription active sans échéance, que plus rien ne
+ * retrouve.
+ *
+ * Quand l'étape a été supprimée entre-temps (`actions.step_id` mis à null par la clé étrangère),
+ * aucune position n'est lisible : l'inscription est mise en pause quand même, sur son
+ * `current_step` courant. Une pause sur un rang imparfait vaut mieux qu'une inscription muette.
+ *
+ * Rend false quand aucune action n'est à arrêter (ligne sans action, action déjà partie ou déjà arrêtée).
+ */
+export async function arreterSequenceDeLaLigne(
+  pool: Pool,
+  organisationId: string,
+  queueId: string,
+  code: string,
+  message: string,
+): Promise<boolean> {
+  const trouvee = await pool.query<{ action_id: string; enrollment_id: string; position: number | null; current_step: number }>(
+    `select a.id as action_id, a.enrollment_id, s.position, e.current_step /* jr:linkedin_arret_lecture */
+       from linkedin_action_queue q
+       join actions a on a.id = q.action_id and a.organization_id = q.organization_id
+       join enrollments e on e.id = a.enrollment_id
+       left join sequence_steps s on s.id = a.step_id
+      where q.id = $1 and q.organization_id = $2
+        and a.status in ('scheduled', 'approved')`,
+    [queueId, organisationId],
+  );
+  const ligne = trouvee.rows[0];
+  if (!ligne) return false;
+  // `current_step` est déjà avancé par le tick : la pause rembobine sur l'étape en échec.
+  await mettreInscriptionEnPause(pool, ligne.enrollment_id, ligne.position ?? ligne.current_step, `linkedin_refus:${code}`);
+  await pool.query(
+    `update actions set status = 'failed', error = $2 /* jr:linkedin_action_echec */
+      where id = $1 and organization_id = $3 and status in ('scheduled', 'approved')`,
+    [ligne.action_id, message, organisationId],
+  );
+  return true;
 }
 
 /** Les dépendances réelles. L'import du navigateur est dynamique : `puppeteer-core` n'est chargé que si un envoi part. */

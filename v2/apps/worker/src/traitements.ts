@@ -44,6 +44,7 @@ import {
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import {
   insertSignals,
   upsertResolvedAccount,
@@ -570,6 +571,60 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
 }
 
 /**
+ * Balayage de rattrapage des envois LinkedIn terminaux dont la séquence n'a pas été arrêtée.
+ * Une ligne de `linkedin_action_queue` peut devenir `failed` par des chemins qui ne touchent
+ * ni `actions` ni `enrollments` : la réparation des lignes coincées (`resultat_indetermine`,
+ * le plus fréquent : worker redéployé ou Chromium mort en plein envoi), ou une panne de
+ * l'arrêt de séquence après l'écriture de la file. L'action reste alors `scheduled`,
+ * `next_action_at` reste nul, le tick ne resélectionne jamais l'inscription : le contact est
+ * perdu en silence. Ce balayage retrouve ces actions et leur applique le geste de pause.
+ *
+ * INVARIANT : il MET EN PAUSE, il ne réenfile JAMAIS et ne rejoue JAMAIS. Une ligne
+ * `resultat_indetermine` signifie « l'envoi est peut-être parti » : la rejouer inviterait la
+ * personne deux fois. Aucun `insert`, aucun retour à `pending` ici ; l'`not exists` écarte en
+ * plus toute action qui aurait encore une autre ligne vivante ou déjà envoyée.
+ *
+ * Idempotent (la pause ne touche qu'une inscription `active`), borné à 200 par tick, et sans
+ * condition sur `JAY_REACH_LINKEDIN` : il n'appelle pas LinkedIn, il ne fait que dire la vérité.
+ */
+export async function mettreEnPauseActionsLinkedInOrphelines(ctx: Pick<Contexte, 'pool'>): Promise<number> {
+  const { pool } = ctx;
+  const res = await pool.query<{ queue_id: string; organization_id: string; error_code: string | null; error_message: string | null }>(
+    `select q.id as queue_id, q.organization_id, q.error_code, q.error_message /* jr:linkedin_orphelines */
+       from linkedin_action_queue q
+       join actions a on a.id = q.action_id and a.organization_id = q.organization_id
+      where q.status = 'failed'
+        and a.channel in ('linkedin_invite', 'linkedin_message')
+        and a.status in ('scheduled', 'approved')
+        and not exists (
+          select 1 from linkedin_action_queue autre
+           where autre.action_id = a.id and autre.id <> q.id
+             and autre.status in ('pending', 'processing', 'sent')
+        )
+      order by q.updated_at asc
+      limit 200`,
+  );
+  let arretees = 0;
+  for (const row of res.rows) {
+    try {
+      const code = row.error_code ?? 'inconnu';
+      const faite = await arreterSequenceDeLaLigne(
+        pool,
+        row.organization_id,
+        row.queue_id,
+        code,
+        row.error_message ?? `Envoi LinkedIn terminé en échec (${code}).`,
+      );
+      if (faite) arretees += 1;
+    } catch (err) {
+      // Une ligne qui échoue ne prive pas les suivantes ; le prochain tick la reprend.
+      console.error(`[tick] arrêt de séquence LinkedIn à reprendre (${err instanceof Error ? err.name : 'erreur'})`);
+    }
+  }
+  return arretees;
+}
+
+/**
  * Avance les inscriptions dues et enfile les envois autorisés vers
  * `actions.dispatch` (id déterministe par action → pas de doublon de job),
  * puis relance les actions email restées en attente d'un tour précédent.
@@ -590,6 +645,10 @@ export async function traiterTick(ctx: Contexte): Promise<number> {
   const rejouees = await rejouerActionsEmailEnAttente(ctx);
   if (rejouees > 0) {
     console.log(`[tick] ${rejouees} action(s) email en attente rejouée(s)`);
+  }
+  const arretees = await mettreEnPauseActionsLinkedInOrphelines(ctx);
+  if (arretees > 0) {
+    console.warn(`[tick] ${arretees} séquence(s) LinkedIn mise(s) en pause (envoi terminé en échec)`);
   }
   return jobs.length + rejouees;
 }

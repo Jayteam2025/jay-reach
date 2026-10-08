@@ -60,8 +60,9 @@ const ME_OK = {
 };
 const ORG = 'org-1';
 const ID_INSCRIPTION = 'inscription-1';
-const ID_ETAPE = 'etape-1';
 const POSITION_ETAPE = 2;
+/** Rang déjà avancé par le tick : celui que garde l'inscription quand l'étape a disparu. */
+const ETAPE_COURANTE = 3;
 const JOB = { organizationId: ORG };
 
 const ACTION_INVITATION: ActionReclamee = {
@@ -110,6 +111,10 @@ function monde(opts: {
   requetesDeLHeure?: number;
   /** La ligne de file n'a pas d'action de séquence (créée par l'extension). */
   sansAction?: boolean;
+  /** L'étape a été supprimée pendant que l'action attendait : `actions.step_id` est devenu null. */
+  etapeSupprimee?: boolean;
+  /** `remettreActionEnAttente` rend `failed` : les tentatives de lecture sont épuisées. */
+  tentativesEpuisees?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -160,17 +165,26 @@ function monde(opts: {
     if (t.includes('jr:linkedin_action_remettre')) {
       w.journal.push('remise');
       w.remises.push({ comptee: params[2] === true });
-      w.statut = 'pending';
-      return rep([{}]);
+      w.statut = opts.tentativesEpuisees ? 'failed' : 'pending';
+      return rep([{ status: w.statut }]);
+    }
+    if (t.includes('jr:linkedin_arret_lecture')) {
+      if (opts.sansAction) return rep([]);
+      return rep([
+        {
+          action_id: 'action-1',
+          enrollment_id: ID_INSCRIPTION,
+          position: opts.etapeSupprimee ? null : POSITION_ETAPE,
+          current_step: ETAPE_COURANTE,
+        },
+      ]);
     }
     if (t.includes('jr:linkedin_action_echec')) {
-      if (opts.sansAction) return rep([]);
-      // Le double ne rend la ligne que si l'écriture pose bien `failed` : une requête qui ne le
+      // Le double ne note l'échec que si l'écriture pose bien `failed` : une requête qui ne le
       // pose plus ne laisse aucune trace, donc rougit le test.
       if (t.includes("set status = 'failed'")) w.journal.push(`action_echec ${params[1]}`);
-      return rep([{ enrollment_id: ID_INSCRIPTION, step_id: ID_ETAPE }]);
+      return rep([]);
     }
-    if (t.includes('jr:linkedin_echec_etape')) return rep([{ position: POSITION_ETAPE }]);
     if (t.includes("set status = 'paused'")) {
       w.journal.push(`pause_inscription ${params[0]} etape=${params[1]} motif=${params[2]}`);
       return rep([]);
@@ -720,7 +734,30 @@ describe('un refus définitif arrête la séquence (revue finale, C2)', () => {
     avec(w, action);
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: code })]);
-    expect(arrets(w)).toEqual([expect.stringMatching(/^action_echec \S/), pauseAttendue(code)]);
+    expect(arrets(w)).toEqual([pauseAttendue(code), expect.stringMatching(/^action_echec \S/)]);
+  });
+
+  it('une étape supprimée en cours de file (step_id null) met quand même l inscription en pause, sur son rang courant', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 404 } }, etapeSupprimee: true });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(arrets(w)).toEqual([
+      `pause_inscription ${ID_INSCRIPTION} etape=${ETAPE_COURANTE} motif=linkedin_refus:profile_not_found`,
+      expect.stringMatching(/^action_echec \S/),
+    ]);
+  });
+
+  it('les tentatives de lecture épuisées arrêtent la séquence au lieu de la laisser muette', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 500 } }, tentativesEpuisees: true });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.statut).toBe('failed');
+    expect(arrets(w)).toEqual([pauseAttendue('trop_de_tentatives'), expect.stringMatching(/^action_echec \S/)]);
+  });
+
+  it('une remise en attente qui reste `pending` ne touche ni l action ni l inscription', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: { statut: 500 } } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.statut).toBe('pending');
+    expect(arrets(w)).toEqual([]);
   });
 
   it('une ligne de file sans action de séquence (extension) ne met aucune inscription en pause', async () => {

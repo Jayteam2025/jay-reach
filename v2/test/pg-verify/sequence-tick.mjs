@@ -79,6 +79,37 @@ async function newContact(vanity) {
   ).rows[0].id;
 }
 
+// Étape 8bis, jouée tôt : les sections 4 et 7 de ce harnais ont des défauts propres (voir le rapport de
+// la tâche C-1) qui l'interrompent avant la section 8.
+const mkInvContact = async (v, firstName) =>
+  (await q(`insert into contacts (organization_id, linkedin_url, email, first_name, last_name, locale) values ($1,$2,$3,$4,'Test','fr') returning id`,
+    [ORG, `https://www.linkedin.com/in/${v}`, `${v}@example.test`, firstName])).rows[0].id;
+async function invitationNote() {
+  // --- Étape 8bis : la note d'une INVITATION est rendue, jamais jetée en silence ------
+  // Avant le correctif le corps n'était rendu que pour `linkedin_message` et `letter` : l'invitation
+  // partait nue, sa note perdue. Rendue, elle arrive au handler d'envoi qui refuse `note_non_supportee`.
+  console.log('\n[seq] 8bis. Invitation : la note est rendue, bloquée si variable manquante, absente sans modèle');
+  const invCamp = await seedCampaign('SEQ invitation note', [
+    { channel: 'linkedin_invite', delay_hours: 0, body: 'Bonjour {{prenom}}, ravi de vous connecter' },
+  ]);
+  const invNue = await seedCampaign('SEQ invitation nue', [{ channel: 'linkedin_invite', delay_hours: 0 }]);
+  const cInvOk = await mkInvContact('inv-ok', 'Marie');
+  await enrollContact(pool, { organizationId: ORG, campaignId: invCamp, contactId: cInvOk });
+  const cInvMiss = await mkInvContact('inv-miss', null);
+  const enrInvMiss = await enrollContact(pool, { organizationId: ORG, campaignId: invCamp, contactId: cInvMiss });
+  const cInvNue = await mkInvContact('inv-nue', 'Paul');
+  await enrollContact(pool, { organizationId: ORG, campaignId: invNue, contactId: cInvNue });
+  const jInv = await tickDueEnrollments(pool, at(2500));
+  const ok = jInv.filter((j) => j.channel === 'linkedin_invite' && j.linkedin?.contactId === cInvOk);
+  check('la note de l\'invitation est rendue et transmise', ok.length === 1 && ok[0].linkedin.messageBody === 'Bonjour Marie, ravi de vous connecter', JSON.stringify(ok[0]?.linkedin?.messageBody));
+  check('variable manquante dans la note : aucun dispatch', jInv.filter((j) => j.linkedin?.contactId === cInvMiss).length === 0);
+  const aInvMiss = (await q(`select status, block_reason from actions where enrollment_id=$1`, [enrInvMiss])).rows[0];
+  check('... et action bloquée missing_variable', aInvMiss?.status === 'blocked' && aInvMiss?.block_reason === 'missing_variable', `${aInvMiss?.status}/${aInvMiss?.block_reason}`);
+  const nue = jInv.filter((j) => j.channel === 'linkedin_invite' && j.linkedin?.contactId === cInvNue);
+  check('une invitation sans modèle part toujours sans note (messageBody null)', nue.length === 1 && nue[0].linkedin.messageBody === null, JSON.stringify(nue[0]?.linkedin?.messageBody));
+
+}
+
 async function main() {
   await syncClock();
   console.log('[seq] nettoyage + préparation…');
@@ -136,6 +167,8 @@ async function main() {
   check('1 job de dispatch (message + corps)', jobs2.length === 1 && jobs2[0].channel === 'linkedin_message' && jobs2[0].linkedin.messageBody === 'Bonjour, ravi de vous connecter.', JSON.stringify(jobs2[0]?.linkedin));
   const e2 = (await q(`select current_step, status, next_action_at from enrollments where id=$1`, [enr])).rows[0];
   check('inscription terminée (completed)', e2.status === 'completed' && e2.next_action_at === null, e2.status);
+
+  await invitationNote();
 
   console.log('\n[seq] 5. Idempotence : tick rejoué → aucune nouvelle action');
   const before = (await q(`select count(*)::int n from actions where organization_id=$1`, [ORG])).rows[0].n;

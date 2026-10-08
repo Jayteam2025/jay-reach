@@ -1018,10 +1018,13 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       if (isLinkedIn(ch)) sendable = Boolean(row.linkedin_url);
       else if (ch === 'email') sendable = Boolean(row.email);
       // Rendu local des variables pour les canaux dont Jay Reach possède le corps
-      // ici, dans le tick (message LinkedIn, courrier). L'email est aussi rendu
+      // ici, dans le tick (invitation LinkedIn, message LinkedIn, courrier). L'invitation y
+      // figure : sans rendu sa note était jetée en silence et l'invitation partait nue, alors
+      // que l'écran promet qu'une note non portée ne part pas (« un message altéré ne part
+      // pas »). Rendue, la note arrive au handler d'envoi, qui la refuse (`note_non_supportee`). L'email est aussi rendu
       // par Jay Reach (`jr_subject`/`jr_body`), mais au moment de l'envoi
       // (`envoyerEmailSalesBlink`), pas ici : voir `message-values.ts`.
-      if ((ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
+      if ((ch === 'linkedin_invite' || ch === 'linkedin_message' || ch === 'letter') && step.template_parent_id) {
         const resolved = await resolveTemplate(pool, step.template_parent_id, row.locale);
         if (resolved.missingLocale) {
           missingLocale = true;
