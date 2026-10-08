@@ -1081,7 +1081,8 @@
         "drawerHoursFrom": "À partir de",
         "drawerHoursTo": "Jusqu'à",
         "drawerDays": "Jours d'envoi",
-        "drawerTimezone": "Fuseau horaire"
+        "drawerTimezone": "Fuseau horaire",
+        "plafondsExtension": "Ces plafonds ne valent que pour l'envoi par l'extension. Le volume de l'envoi par le serveur se règle dans Réglages, LinkedIn."
       }
     },
     "days": {
@@ -1580,6 +1581,12 @@
         },
         "canalBloque": {
           "phrase": "Rien ne part tant que ce point n'est pas réglé."
+        },
+        "plafondHoraire": {
+          "phrase": "Le budget de requêtes LinkedIn de l'heure est épuisé. La collecte le partage avec l'envoi."
+        },
+        "plafondHoraireDate": {
+          "phrase": "Le budget de requêtes LinkedIn de l'heure est épuisé, la collecte le partage avec l'envoi. Reprise vers {quand}."
         }
       },
       "commande": {
@@ -1596,14 +1603,6 @@
       "rythme": {
         "titre": "Rythme d'envoi",
         "lead": "À quel volume et à quelles heures le moteur envoie. Ces réglages protègent le compte LinkedIn.",
-        "invitationsParSemaine": {
-          "nom": "Invitations par semaine",
-          "usage": "{n, plural, =0 {Aucune sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
-        },
-        "messagesParSemaine": {
-          "nom": "Messages par semaine",
-          "usage": "{n, plural, =0 {Aucun sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
-        },
         "fenetre": {
           "heures": {
             "nom": "Heures",

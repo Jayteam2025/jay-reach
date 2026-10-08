@@ -100,6 +100,8 @@ export type CleEtatEnvoi =
   | 'enVol'
   | 'horsFenetre'
   | 'plafondAtteint'
+  | 'plafondHoraire'
+  | 'plafondHoraireDate'
   | 'canalBloque';
 
 /**
@@ -156,6 +158,13 @@ export function phraseEtatEnvoi(
     case 'daily_cap_reached':
     case 'weekly_cap_reached':
       return { ton: 'attention', cle: 'plafondAtteint' };
+    // Distinct des plafonds de volume : celui-ci est le budget de requêtes de l'heure, que la
+    // COLLECTE partage avec l'envoi. Rien n'est à corriger dans les réglages d'envoi, et le dire
+    // autrement enverrait baisser un plafond qui n'y est pour rien. Deux clés sur le modèle
+    // d'`absence`/`absenceNoDate` : la date n'existe que si le budget peut se libérer, ce qui est
+    // faux quand le plafond est plus petit que le coût d'un seul envoi.
+    case 'plafond_horaire_atteint':
+      return { ton: 'attention', cle: prochain.disponibleA ? 'plafondHoraireDate' : 'plafondHoraire' };
     // Inatteignables par `prochainEnvoiLinkedIn` : `too_soon` y arrive toujours avec un délai,
     // donc avec une date, et `race_retry` n'appartient qu'à la réclamation. Nommés quand même,
     // parce qu'un motif rangé dans un fourre-tout silencieux est un motif qu'on ne verra pas

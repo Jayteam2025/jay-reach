@@ -1081,7 +1081,8 @@
         "drawerHoursFrom": "Vanaf",
         "drawerHoursTo": "Tot",
         "drawerDays": "Verzenddagen",
-        "drawerTimezone": "Tijdzone"
+        "drawerTimezone": "Tijdzone",
+        "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn."
       }
     },
     "days": {
@@ -1580,6 +1581,12 @@
         },
         "canalBloque": {
           "phrase": "Er wordt niets verstuurd zolang dit niet is opgelost."
+        },
+        "plafondHoraire": {
+          "phrase": "Het LinkedIn-verzoekbudget van dit uur is op. Het verzamelen deelt het met het versturen."
+        },
+        "plafondHoraireDate": {
+          "phrase": "Het LinkedIn-verzoekbudget van dit uur is op, het verzamelen deelt het met het versturen. Rond {quand} weer beschikbaar."
         }
       },
       "commande": {
@@ -1596,14 +1603,6 @@
       "rythme": {
         "titre": "Verzendritme",
         "lead": "Hoeveel en wanneer de motor verstuurt. Deze instellingen beschermen het LinkedIn-account.",
-        "invitationsParSemaine": {
-          "nom": "Uitnodigingen per week",
-          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
-        },
-        "messagesParSemaine": {
-          "nom": "Berichten per week",
-          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
-        },
         "fenetre": {
           "heures": {
             "nom": "Uren",

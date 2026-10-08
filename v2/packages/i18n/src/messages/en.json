@@ -1081,7 +1081,8 @@
         "drawerHoursFrom": "From",
         "drawerHoursTo": "To",
         "drawerDays": "Sending days",
-        "drawerTimezone": "Time zone"
+        "drawerTimezone": "Time zone",
+        "plafondsExtension": "These limits only apply to sending through the extension. Server-side sending volume is set in Settings, LinkedIn."
       }
     },
     "days": {
@@ -1580,6 +1581,12 @@
         },
         "canalBloque": {
           "phrase": "Nothing is sent until this is fixed."
+        },
+        "plafondHoraire": {
+          "phrase": "This hour's LinkedIn request budget is used up. Collection shares it with sending."
+        },
+        "plafondHoraireDate": {
+          "phrase": "This hour's LinkedIn request budget is used up, and collection shares it with sending. Back around {quand}."
         }
       },
       "commande": {
@@ -1596,14 +1603,6 @@
       "rythme": {
         "titre": "Sending pace",
         "lead": "How much and when the engine sends. These settings protect the LinkedIn account.",
-        "invitationsParSemaine": {
-          "nom": "Invitations per week",
-          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
-        },
-        "messagesParSemaine": {
-          "nom": "Messages per week",
-          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
-        },
         "fenetre": {
           "heures": {
             "nom": "Hours",

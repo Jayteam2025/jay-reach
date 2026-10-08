@@ -144,6 +144,14 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
         }
       >
         <div style={{ display: 'grid', gap: 14 }}>
+          {/*
+            Depuis que l'envoi passe par le serveur, le rythme n'est plus lu ici : il vient
+            de `organization_settings` (`linkedin_invitations_par_semaine`,
+            `linkedin_messages_par_semaine`). Les deux champs ci-dessous ne gouvernent plus
+            que le pacing de l'extension (`apps/web/lib/linkedin/queue.ts`). Les laisser
+            muets ferait croire qu'on règle ici le volume du serveur.
+          */}
+          <p className="jr-aide">{t('plafondsExtension')}</p>
           <Champ libelle={t('drawerDailyQuota')} id="tiroir-li-quota-jour">
             <input
               id="tiroir-li-quota-jour"

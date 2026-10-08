@@ -10,7 +10,7 @@ import {
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
-import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { Carte, TuileLogo } from '../../../../components/ui';
 import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
@@ -66,6 +66,11 @@ export default async function ReglagesLinkedinPage() {
     }
     if (envoi.cle === 'planifie' && prochain.quand) {
       return dateCourte(prochain.quand.toISOString(), maintenant, fuseau);
+    }
+    // Budget horaire : l'échéance tombe dans l'heure qui vient, donc une HEURE et pas une
+    // date — « 8 oct. » pour quelque chose qui se débloque à 11 h 20 ne dirait rien.
+    if (envoi.cle === 'plafondHoraireDate' && prochain.disponibleA) {
+      return heureAvecJour(prochain.disponibleA.toISOString(), maintenant, fuseau);
     }
     return inconnu;
   })();
