@@ -258,7 +258,7 @@ const SchemaMoi = z.object({
  * depuis la mauvaise boîte est pire que ne rien envoyer. `null` si rien ne se lit,
  * et le message ne part pas.
  */
-function lireExpediteur(corps: unknown): string | null {
+function lireExpediteur(corps: unknown): IdentiteExpediteur | null {
   const lu = SchemaMoi.safeParse(corps);
   if (!lu.success) return null;
   const { data, included = [] } = lu.data;
@@ -276,7 +276,24 @@ function lireExpediteur(corps: unknown): string | null {
   }
   if (!urn) return null;
   const normalise = urn.replace('urn:li:fs_miniProfile:', PREFIXE_PROFIL);
-  return normalise.startsWith(PREFIXE_PROFIL) ? normalise : null;
+  if (!normalise.startsWith(PREFIXE_PROFIL)) return null;
+  // L'identifiant public voyageait déjà dans la même réponse et était jeté : c'est le seul
+  // moyen de dire à l'opérateur QUEL compte envoie, sans une requête de plus vers LinkedIn.
+  // Quand `data` ne le porte pas (cas courant : il ne tient que la RÉFÉRENCE au profil), on le
+  // relit dans `included` sur l'entrée de NOTRE urn — jamais « la première », qui serait le
+  // profil de quelqu'un d'autre.
+  const identifiantPublic =
+    monIdentifiant ??
+    included.find((i) => i.entityUrn?.replace('urn:li:fs_miniProfile:', PREFIXE_PROFIL) === normalise)?.publicIdentifier ??
+    null;
+  return { urn: normalise, identifiantPublic };
+}
+
+/** Le compte qui écrit : son URN (la boîte d'envoi) et son identifiant public (ce que lit l'opérateur). */
+export interface IdentiteExpediteur {
+  readonly urn: string;
+  /** `null` quand la réponse `/me` ne le porte pas : on n'invente pas de nom. */
+  readonly identifiantPublic: string | null;
 }
 
 /**
@@ -284,7 +301,17 @@ function lireExpediteur(corps: unknown): string | null {
  * doublerait le trafic Voyager d'un compte qu'on ménage. Une session = un pilote.
  * Seul un succès est mémorisé.
  */
-const expediteurs = new WeakMap<Pilote, string>();
+const expediteurs = new WeakMap<Pilote, IdentiteExpediteur>();
+
+/**
+ * Ce que `/me` a rendu pour ce pilote, sans jamais rappeler LinkedIn : `undefined` tant
+ * qu'aucun message n'est parti depuis ce navigateur. L'appelant s'en sert pour écrire en base
+ * quel compte est connecté — une information qu'aucune table ne portait, au point qu'en recette
+ * on ne pouvait pas dire si le destinataire était en relation avec l'expéditeur.
+ */
+export function identiteExpediteurMemorisee(pilote: Pilote): IdentiteExpediteur | undefined {
+  return expediteurs.get(pilote);
+}
 
 /**
  * Chaîne de 16 caractères dont chacun a le code d'un octet aléatoire (0 à 255), comme
@@ -320,7 +347,7 @@ export async function envoyerMessage(pilote: Pilote, urn: string, texte: string)
       // (relevé sur l'extension en production).
       originToken: randomUUID(),
     },
-    mailboxUrn: expediteur,
+    mailboxUrn: expediteur.urn,
     trackingId: trackingId(),
     // Héritage de l'extension : la déduplication côté LinkedIn est DÉSACTIVÉE et l'`originToken`
     // change à chaque appel. Un jeton dérivé de l'action avec `true` protégerait du double

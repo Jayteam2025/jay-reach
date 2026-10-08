@@ -1599,6 +1599,8 @@
         "consigneDefi": "Complete the verification, then reopen the session from a terminal on the server:"
       },
       "faits": {
+        "compte": "Connected account",
+        "comptePasEncore": "Read on the first send",
         "sortie": "Network exit",
         "operateur": "Operator and country",
         "collecte": "Last collection",

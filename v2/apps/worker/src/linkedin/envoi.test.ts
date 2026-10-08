@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Pilote } from './navigateur.js';
-import { envoyerInvitation, envoyerMessage, resoudreProfil } from './envoi.js';
+import { envoyerInvitation, envoyerMessage, identiteExpediteurMemorisee, resoudreProfil } from './envoi.js';
 
 type Appel = { url: string; entetes: Record<string, string> | undefined; corps: unknown };
 type Reponse = { statut: number; corps?: unknown };
@@ -373,6 +373,33 @@ describe('envoyerMessage', () => {
       dedupeByClientGeneratedToken: false,
       hostRecipientUrns: [URN_DESTINATAIRE],
     });
+  });
+
+  // Mesure du 08/10 : aucune table ne disait quel compte envoyait, alors que la reponse /me
+  // portait deja son identifiant public et qu'on le jetait. Sans lui, impossible de savoir si
+  // un destinataire est en relation de 1er degre avec l'expediteur.
+  it("memorise l'identite du compte qui ecrit, URN ET identifiant public, sans appel de plus", async () => {
+    const { p, appels } = pilote({ ...moi, [URL_MESSAGE]: { statut: 200 } }, FEED);
+    expect(identiteExpediteurMemorisee(p)).toBeUndefined();
+    await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour Jeanne');
+    expect(identiteExpediteurMemorisee(p)).toEqual({ urn: URN_EXPEDITEUR, identifiantPublic: 'moi' });
+    const avant = appels.length;
+    await envoyerMessage(p, URN_DESTINATAIRE, 'Et encore');
+    // Un seul /me pour la session : le second envoi ne rappelle pas LinkedIn pour l'identite.
+    expect(appels.slice(avant).map((a) => a.url)).toEqual([URL_MESSAGE]);
+    expect(identiteExpediteurMemorisee(p)).toEqual({ urn: URN_EXPEDITEUR, identifiantPublic: 'moi' });
+  });
+
+  it("une reponse /me sans identifiant public donne l'URN et null : on n'invente pas de nom", async () => {
+    const { p } = pilote(
+      {
+        [URL_ME]: { statut: 200, corps: JSON.stringify({ data: { '*miniProfile': 'urn:li:fs_miniProfile:ACoAAexpediteur' } }) },
+        [URL_MESSAGE]: { statut: 200 },
+      },
+      FEED,
+    );
+    await envoyerMessage(p, URN_DESTINATAIRE, 'Bonjour');
+    expect(identiteExpediteurMemorisee(p)).toEqual({ urn: URN_EXPEDITEUR, identifiantPublic: null });
   });
 
   it("l'originToken vit DANS message, jamais a la racine (sinon LinkedIn repond 400)", async () => {

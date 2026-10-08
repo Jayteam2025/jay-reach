@@ -37,6 +37,7 @@ import {
   compterRequetesLinkedIn,
   enregistrerResultat,
   jourCourantDansFuseau,
+  enregistrerCompteLinkedIn,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
@@ -57,6 +58,7 @@ import { mettreInscriptionEnPause, rangDeLEtape } from './sequence.js';
 import {
   envoyerInvitation,
   envoyerMessage,
+  identiteExpediteurMemorisee,
   resoudreProfil,
   ErreurEnvoi,
   type CodeRefus,
@@ -352,6 +354,19 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     } catch (err) {
       console.error(`[envoi-linkedin] appel interrompu (${nomDe(err)})`);
       issue = classer(phase.courante);
+    }
+
+    // Quel compte vient d'écrire : lu dans la réponse `/me` que l'envoi a DÉJÀ faite, jamais
+    // d'appel en plus. Après l'issue et avant l'enregistrement, pour que même un envoi refusé
+    // renseigne l'écran — c'est justement quand ça refuse qu'on veut savoir qui envoyait.
+    // Un échec d'écriture ne fait pas tomber l'envoi : c'est un confort d'affichage.
+    const identite = identiteExpediteurMemorisee(p);
+    if (identite) {
+      try {
+        await enregistrerCompteLinkedIn(ctx, identite);
+      } catch (err) {
+        console.error(`[envoi-linkedin] compte connecté non enregistré (${nomDe(err)})`);
+      }
     }
 
     try {

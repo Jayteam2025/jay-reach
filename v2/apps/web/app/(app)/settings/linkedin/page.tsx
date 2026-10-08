@@ -134,6 +134,26 @@ export default async function ReglagesLinkedinPage() {
           </div>
         </div>
         <dl className="jr-session-faits">
+          {/* En tête des faits : c'est l'identité, et un message LinkedIn ne part que vers une
+              relation de 1er degré DE CE COMPTE. Sans elle, on ne peut pas dire si un envoi a
+              une chance d'aboutir. Lue dans la réponse `/me` du premier envoi, jamais devinée. */}
+          <div>
+            <dt>{t('faits.compte')}</dt>
+            <dd>
+              {session?.compteIdentifiant ? (
+                <a
+                  className="jr-lien mono"
+                  href={`https://www.linkedin.com/in/${session.compteIdentifiant}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {session.compteIdentifiant}
+                </a>
+              ) : (
+                t('faits.comptePasEncore')
+              )}
+            </dd>
+          </div>
           <div>
             <dt>{t('faits.sortie')}</dt>
             <dd className="mono">{session?.ipVue ?? inconnu}</dd>

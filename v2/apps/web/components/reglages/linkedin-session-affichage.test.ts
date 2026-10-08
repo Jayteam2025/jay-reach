@@ -15,6 +15,9 @@ const base: SessionLinkedIn = {
   pays: 'France',
   derniereCollecte: new Date('2026-10-05T10:00:00Z'),
   envoiPauseJusqua: null,
+  compteIdentifiant: null,
+  compteUrn: null,
+  compteVuLe: null,
 };
 
 const bloquee = (motif: NonNullable<SessionLinkedIn['motif']>): SessionLinkedIn => ({
