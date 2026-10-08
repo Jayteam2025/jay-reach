@@ -2065,6 +2065,34 @@ describe('manquesPourLancer', () => {
     expect(r).toEqual(['la session LinkedIn du serveur n’est pas active']);
   });
 
+  /**
+   * Le refus `note_non_supportee` frappe CHAQUE invitation portant une note, et fige le contact.
+   * Le dire au lancement vaut mieux que de laisser une campagne entière se figer contact par
+   * contact : l'issue est connue d'avance et uniforme.
+   */
+  it('refuse de lancer une invitation LinkedIn dont le message porte une note', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [{ position: 2, channel: 'linkedin_invite', template_parent_id: 'tpl-note' }],
+      'jr:manques_note_invitation': [{ parent: 'tpl-note' }],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    const r = await manquesPourLancer(ctx, { campagneId });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toContain('étape 3');
+    expect(r[0]).toContain('note');
+  });
+
+  it('laisse passer une invitation dont le message est vide : sans note, elle part', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [{ position: 0, channel: 'linkedin_invite', template_parent_id: 'tpl-vide' }],
+      'jr:manques_note_invitation': [],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    expect(await manquesPourLancer(ctx, { campagneId })).toEqual([]);
+  });
+
   it('ne signale rien quand tout est prêt', async () => {
     const ctx = faux({
       'jr:manques_etapes': [{ position: 0, channel: 'email', template_parent_id: 'tpl-1' }],
