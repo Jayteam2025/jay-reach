@@ -131,7 +131,14 @@ describe('libelleMotifPause — refus LinkedIn', () => {
   // n'a aucun message à envoyer. Le ranger avec les refus de LinkedIn envoyait
   // l'opérateur vérifier son compte au lieu de sa séquence.
   it('une étape sans message dit que c est l étape, pas LinkedIn, qui manque', () => {
-    expect(libelle('bad_request').texte).toBe('linkedinSansMessage');
+    expect(libelle('message_vide').texte).toBe('linkedinSansMessage');
+  });
+
+  // `bad_request` vient de LinkedIn trois fois sur quatre (URN illisible, réponse 400) :
+  // le ranger avec « ajoutez un message » poussait à ajouter une note sur une invitation,
+  // donc à provoquer le refus suivant.
+  it('bad_request reste un refus de LinkedIn, pas un reproche fait à l étape', () => {
+    expect(libelle('bad_request').texte).toBe('linkedinRefus');
   });
 
   // Le code brut reste atteignable pour qui veut creuser, sans être lu par accident.
@@ -167,6 +174,7 @@ describe('tout refus que le worker peut produire a sa phrase, dans les trois lan
     invalid_url: true,
     bad_request: true,
     note_non_supportee: true,
+    message_vide: true,
     defi: true,
   };
 

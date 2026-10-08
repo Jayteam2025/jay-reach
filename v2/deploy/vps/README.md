@@ -121,7 +121,7 @@ docker image prune
 
 ## Déployer l'envoi LinkedIn côté serveur (lot 4b)
 
-Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Trois
+Ce lot fait passer l'envoi LinkedIn de l'extension navigateur au worker. Cinq
 migrations l'accompagnent, et **l'ordre compte, il n'est pas symétrique** :
 
 1. **Les cinq migrations, dans l'ordre des noms de fichiers**, avec
@@ -143,6 +143,21 @@ Pourquoi cet ordre :
   `method = 'serveur'`, que l'ancien check de la colonne refuse. Le job
   `actions.dispatch` lève, est rejoué cinq fois avec attente croissante, puis
   meurt : l'action du séquenceur est perdue.
+- **Worker avant `20261008110000`** (colonne `reprise_le`) : les deux balayages
+  LinkedIn sont appelés à chaque tick, sans `try/catch` et sans garde
+  `JAY_REACH_LINKEDIN`. Chaque tick lèvera sur « column "reprise_le" does not
+  exist ». Les envois email du tick sont enfilés avant, donc ce canal survit,
+  mais le job `tick` échoue toutes les minutes, `engine_status.last_error` reste
+  rouge en permanence, et plus aucun balayage ne tourne.
+- **Web avant `20261008110000`** : « Reprendre » lève APRÈS avoir déjà remis
+  l'inscription `active` et l'action `scheduled` (ces écritures ne sont pas dans
+  une transaction). L'inscription reste alors active sans échéance, et le
+  balayage qui aurait dû la rattraper ne tourne pas non plus.
+- **`20261008100000` (report des plafonds d'envoi)** ne pose une clé que pour
+  les organisations qui avaient déjà réglé `linkedin_settings.weekly_cap`. La
+  déployer après le worker ne casse rien : le code retombe sur ses valeurs par
+  défaut. Mais un réglage déjà posé par l'opérateur serait appliqué en retard,
+  donc à passer avec les autres.
 - **La migration `20261007120000` peut refuser de s'appliquer** : elle recrée
   l'index unique `uq_linkedin_action_active` avec un prédicat élargi (les
   actions `failed` au résultat `resultat_indetermine` comptent comme actives),

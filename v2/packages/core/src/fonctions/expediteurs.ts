@@ -643,14 +643,19 @@ export async function modifierCompteLinkedIn(ctx: Contexte, entree: unknown): Pr
 
   const jours = [...e.heures.jours].sort((a, b) => a - b);
 
+  // N'écrit PLUS la fenêtre d'envoi (`send_from_hour`, `send_to_hour`, `send_days`,
+  // `timezone`). Ces quatre colonnes sont celles que le moteur du serveur applique, et
+  // elles ont leur propre écran (Réglages › LinkedIn, carte « Rythme d'envoi »). Tant
+  // qu'elles étaient réécrites ici, un enregistrement sur la carte d'un compte
+  // d'extension — présentée à l'opérateur comme sans effet sur le serveur — remettait
+  // silencieusement la fenêtre du serveur à ce que portait CE formulaire. Deux écrans
+  // qui écrivent le même réglage, c'est deux vérités.
   await ctx.ex.query(
-    `insert into linkedin_settings (organization_id, daily_cap, weekly_cap, send_from_hour, send_to_hour, send_days, timezone, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, now())
+    `insert into linkedin_settings (organization_id, daily_cap, weekly_cap, updated_at)
+     values ($1, $2, $3, now())
      on conflict (organization_id) do update
-       set daily_cap = excluded.daily_cap, weekly_cap = excluded.weekly_cap,
-           send_from_hour = excluded.send_from_hour, send_to_hour = excluded.send_to_hour,
-           send_days = excluded.send_days, timezone = excluded.timezone, updated_at = now()`,
-    [ctx.organisationId, e.quotaJour, e.quotaSemaine, debut, fin, jours, e.heures.fuseau],
+       set daily_cap = excluded.daily_cap, weekly_cap = excluded.weekly_cap, updated_at = now()`,
+    [ctx.organisationId, e.quotaJour, e.quotaSemaine],
   );
 
   // F15 : sans cet expéditeur, l'activation ci-dessus (comme les plafonds et

@@ -7,20 +7,6 @@ import { Avatar, Bouton, Carte, Champ, Interrupteur, Puce, Tiroir } from '../ui'
 import { actionModifierCompteLinkedIn } from '../../app/actions/linkedin';
 import { puceEtatCompteLinkedIn } from './compte-linkedin-affichage';
 
-/** Même liste restreinte que `LinkedInPanel.tsx`. */
-const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
-/** Abréviation traduite via `reglages.days.short.*` — jamais câblée en dur. */
-const JOURS: { valeur: number; cle: string }[] = [
-  { valeur: 1, cle: 'mon' },
-  { valeur: 2, cle: 'tue' },
-  { valeur: 3, cle: 'wed' },
-  { valeur: 4, cle: 'thu' },
-  { valeur: 5, cle: 'fri' },
-  { valeur: 6, cle: 'sat' },
-  { valeur: 7, cle: 'sun' },
-];
-const HEURES = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
-const HEURES_FIN = [...HEURES.slice(1), '24:00'];
 
 export interface CarteCompteLinkedInProps {
   compte: CompteLinkedIn;
@@ -37,7 +23,6 @@ export interface CarteCompteLinkedInProps {
  */
 export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedInProps) {
   const t = useTranslations('reglages.expediteurs.linkedin');
-  const tJours = useTranslations('reglages.days.short');
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -45,16 +30,6 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
 
   const [quotaJour, setQuotaJour] = useState(compte.quotas.parJour);
   const [quotaSemaine, setQuotaSemaine] = useState(compte.quotas.parSemaine);
-  const [debut, setDebut] = useState(compte.heures.debut);
-  const [fin, setFin] = useState(compte.heures.fin);
-  const [jours, setJours] = useState<number[]>(compte.heures.jours);
-  const [fuseau, setFuseau] = useState(compte.heures.fuseau);
-
-  function basculerJour(jour: number) {
-    setJours((precedent) =>
-      precedent.includes(jour) ? precedent.filter((j) => j !== jour) : [...precedent, jour].sort((a, b) => a - b),
-    );
-  }
 
   async function enregistrer(actifSuivant: boolean) {
     setErreur(null);
@@ -65,7 +40,9 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
         active: actifSuivant,
         quotaJour,
         quotaSemaine,
-        heures: { debut, fin, jours, fuseau },
+        // La fenêtre d'envoi n'est plus réglable ici (elle appartient à l'écran du canal
+        // serveur) : on renvoie celle qui est enregistrée, inchangée.
+        heures: compte.heures,
       });
       if (resultat.ok) {
         setOuvert(false);
@@ -171,48 +148,6 @@ export function CarteCompteLinkedIn({ compte, peutModifier }: CarteCompteLinkedI
               value={quotaSemaine}
               onChange={(e) => setQuotaSemaine(Number(e.target.value))}
             />
-          </Champ>
-          <Champ libelle={t('drawerHoursFrom')} id="tiroir-li-debut">
-            <select id="tiroir-li-debut" value={debut} onChange={(e) => setDebut(e.target.value)}>
-              {HEURES.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </Champ>
-          <Champ libelle={t('drawerHoursTo')} id="tiroir-li-fin">
-            <select id="tiroir-li-fin" value={fin} onChange={(e) => setFin(e.target.value)}>
-              {HEURES_FIN.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </Champ>
-          <Champ libelle={t('drawerDays')}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {JOURS.map(({ valeur, cle }) => (
-                <Bouton
-                  key={valeur}
-                  taille="petit"
-                  variante={jours.includes(valeur) ? 'principal' : undefined}
-                  aria-pressed={jours.includes(valeur)}
-                  onClick={() => basculerJour(valeur)}
-                >
-                  {tJours(cle)}
-                </Bouton>
-              ))}
-            </div>
-          </Champ>
-          <Champ libelle={t('drawerTimezone')} id="tiroir-li-fuseau">
-            <select id="tiroir-li-fuseau" value={fuseau} onChange={(e) => setFuseau(e.target.value)}>
-              {FUSEAUX.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
           </Champ>
         </div>
       </Tiroir>

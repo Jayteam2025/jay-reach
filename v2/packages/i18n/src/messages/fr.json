@@ -1078,10 +1078,6 @@
         "close": "Fermer",
         "drawerDailyQuota": "Profils lus et actions par jour",
         "drawerWeeklyQuota": "Plafond par semaine",
-        "drawerHoursFrom": "À partir de",
-        "drawerHoursTo": "Jusqu'à",
-        "drawerDays": "Jours d'envoi",
-        "drawerTimezone": "Fuseau horaire",
         "plafondsExtension": "Ces plafonds ne valent que pour l'envoi par l'extension. Le volume de l'envoi par le serveur se règle dans Réglages, LinkedIn."
       }
     },
@@ -1800,6 +1796,7 @@
     "linkedinDejaInvite": "Ce contact a déjà reçu une invitation.",
     "linkedinIndetermine": "Envoi resté sans confirmation. À vérifier sur LinkedIn avant de relancer.",
     "linkedinRefus": "LinkedIn a refusé cette action.",
-    "linkedinSansMessage": "Cette étape n'a pas de message à envoyer. Ajoutez-en un dans la séquence."
+    "linkedinSansMessage": "Cette étape n'a pas de message à envoyer. Ajoutez-en un dans la séquence.",
+    "linkedinDejaEnAttente": "Une autre action LinkedIn est déjà en cours pour ce contact, dans une autre campagne. Reprenez cette inscription quand elle sera terminée."
   }
 }

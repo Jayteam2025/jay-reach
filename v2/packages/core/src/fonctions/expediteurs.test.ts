@@ -466,6 +466,34 @@ describe('modifierCompteLinkedIn', () => {
     expect(appels.some((s) => /insert into linkedin_settings/i.test(s))).toBe(true);
   });
 
+  /**
+   * La fenêtre d'envoi (`send_from_hour`, `send_to_hour`, `send_days`, `timezone`) est
+   * ce que le MOTEUR du serveur applique, et elle a son propre écran. Tant que cette
+   * fonction la réécrivait, enregistrer la carte d'un compte d'extension remettait
+   * silencieusement la fenêtre du serveur à ce que portait CE formulaire — alors que
+   * l'écran annonce à l'opérateur que cette carte ne règle pas le serveur.
+   */
+  it('n écrit plus la fenêtre d envoi : elle appartient à l écran du canal serveur', async () => {
+    const appels: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      appels.push(sql);
+      if (/update extension_tokens/i.test(sql)) return { rows: [], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'admin' };
+
+    await modifierCompteLinkedIn(ctx, ENTREE);
+
+    const upsert = appels.find((s) => /insert into linkedin_settings/i.test(s));
+    expect(upsert).toBeDefined();
+    for (const colonne of ['send_from_hour', 'send_to_hour', 'send_days', 'timezone']) {
+      expect(upsert).not.toContain(colonne);
+    }
+    // Les quotas, eux, gouvernent encore le pacing du chemin extension.
+    expect(upsert).toContain('daily_cap');
+    expect(upsert).toContain('weekly_cap');
+  });
+
   // F15 : sans l'appel à `synchroniserExpediteurLinkedIn` dans
   // `modifierCompteLinkedIn`, ce test échoue — aucun `insert into senders`
   // n'est jamais émis, et `resolveSender` (worker) ne trouve alors jamais de

@@ -27,6 +27,7 @@ import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider } from './contexte.js';
 import { normaliserPlafond } from '../plafonds.js';
+import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 import type { Executeur } from '../executeur.js';
 
 export type ClePlafond =
@@ -277,6 +278,23 @@ export const schemaEcrireReglage = z
             : `La clé « ${entree.cle} » attend une chaîne non vide, pas un nombre.`,
       });
       return;
+    }
+    // Les deux plafonds d'envoi LinkedIn sont rabotés par le moteur à `HARD_CAP_7_DAYS`
+    // (`jugerRythme`). Sans borne ici, l'écran accepterait 400, afficherait 400, et le
+    // moteur en appliquerait 200 : le réglage visible mentirait sur ce qui part, ce qui
+    // est pire que pas de réglage du tout. La colonne `linkedin_settings.weekly_cap`
+    // portait cette garde par un `check` ; en déménageant dans `organization_settings`,
+    // elle s'était perdue.
+    if (
+      (entree.cle === 'linkedin_invitations_par_semaine' || entree.cle === 'linkedin_messages_par_semaine') &&
+      typeof entree.valeur === 'number' &&
+      entree.valeur > HARD_CAP_7_DAYS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['valeur'],
+        message: `Ce plafond ne peut pas dépasser ${HARD_CAP_7_DAYS} par semaine : au-delà, le moteur appliquerait ${HARD_CAP_7_DAYS} sans le dire.`,
+      });
     }
     if (entree.cle === 'fuseau' && typeof entree.valeur === 'string' && !fuseauValide(entree.valeur)) {
       ctx.addIssue({

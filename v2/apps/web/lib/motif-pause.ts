@@ -71,8 +71,20 @@ function cleRefusLinkedIn(code: string): string {
       return 'linkedinNote';
     // Produit par NOUS, sans aucun appel réseau, quand l'étape n'a pas de message à
     // envoyer : accuser LinkedIn enverrait l'opérateur chercher la panne du mauvais côté.
-    case 'bad_request':
+    //
+    // `bad_request` NE convient pas pour ça et ne doit pas revenir ici : il a quatre
+    // sources, dont trois viennent de LinkedIn (URN illisible, réponse 400). Sur une
+    // invitation refusée par un 400, « ajoutez un message à cette étape » poussait
+    // l'opérateur à ajouter une note — ce qui provoque le refus suivant, qui lui dit
+    // de la retirer. Deux écrans qui se contredisent sur le même contact.
+    case 'message_vide':
       return 'linkedinSansMessage';
+    // Pas un refus de LinkedIn non plus : le réenfilage a été refusé par notre propre
+    // déduplication, parce qu'une action LinkedIn est déjà en vol pour ce contact dans
+    // une autre campagne. Sans sa phrase, la reprise échouait en silence et l'inscription
+    // restait active sans échéance — le défaut même que ce lot a supprimé ailleurs.
+    case 'deja_en_attente':
+      return 'linkedinDejaEnAttente';
     // Pas une panne : la personne n'a pas (encore) accepté, un message ne peut pas l'atteindre.
     case 'cannot_message':
       return 'linkedinPasRelation';

@@ -1078,10 +1078,6 @@
         "close": "Sluiten",
         "drawerDailyQuota": "Gelezen profielen en acties per dag",
         "drawerWeeklyQuota": "Weeklimiet",
-        "drawerHoursFrom": "Vanaf",
-        "drawerHoursTo": "Tot",
-        "drawerDays": "Verzenddagen",
-        "drawerTimezone": "Tijdzone",
         "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn."
       }
     },
@@ -1800,6 +1796,7 @@
     "linkedinDejaInvite": "Dit contact heeft al een uitnodiging gekregen.",
     "linkedinIndetermine": "Er kwam geen bevestiging terug. Controleer op LinkedIn voordat je opnieuw probeert.",
     "linkedinRefus": "LinkedIn heeft deze actie geweigerd.",
-    "linkedinSansMessage": "Deze stap heeft geen bericht om te versturen. Voeg er een toe in de reeks."
+    "linkedinSansMessage": "Deze stap heeft geen bericht om te versturen. Voeg er een toe in de reeks.",
+    "linkedinDejaEnAttente": "Er loopt al een andere LinkedIn-actie voor dit contact, in een andere campagne. Hervat deze inschrijving zodra die klaar is."
   }
 }

@@ -1078,10 +1078,6 @@
         "close": "Close",
         "drawerDailyQuota": "Profiles read and actions per day",
         "drawerWeeklyQuota": "Weekly limit",
-        "drawerHoursFrom": "From",
-        "drawerHoursTo": "To",
-        "drawerDays": "Sending days",
-        "drawerTimezone": "Time zone",
         "plafondsExtension": "These limits only apply to sending through the extension. Server-side sending volume is set in Settings, LinkedIn."
       }
     },
@@ -1800,6 +1796,7 @@
     "linkedinDejaInvite": "This contact has already been invited.",
     "linkedinIndetermine": "No confirmation came back. Check on LinkedIn before trying again.",
     "linkedinRefus": "LinkedIn refused this action.",
-    "linkedinSansMessage": "This step has no message to send. Add one in the sequence."
+    "linkedinSansMessage": "This step has no message to send. Add one in the sequence.",
+    "linkedinDejaEnAttente": "Another LinkedIn action is already under way for this contact, in a different campaign. Resume this enrolment once it has finished."
   }
 }
