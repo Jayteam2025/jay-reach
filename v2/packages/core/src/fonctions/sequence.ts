@@ -418,10 +418,16 @@ export const schemaEnregistrerEtape = z
   .object({
     campagneId: z.string().uuid(),
     etapeId: z.string().uuid().optional(),
-    /** LinkedIn n'a pas d'objet (`sujet` facultatif) — un email en a toujours besoin, voir `superRefine`. */
-    canal: z.enum(['email', 'linkedin']).default('email'),
+    /**
+     * LinkedIn n'a pas d'objet (`sujet` facultatif) — un email en a toujours besoin, voir
+     * `superRefine`. `linkedin` est la forme héritée des écrans d'avant l'ouverture de
+     * l'invitation : elle vaut « message », et reste acceptée pour qu'un écran plus ancien que
+     * le serveur ne se fasse pas refuser.
+     */
+    canal: z.enum(['email', 'linkedin', 'linkedin_invite', 'linkedin_message']).default('email'),
     sujet: z.string().max(200).optional(),
-    corps: z.string().min(1),
+    /** Vide pour une invitation, qui part sans note — exigé partout ailleurs, voir `superRefine`. */
+    corps: z.string().default(''),
     delaiHeures: z.number().int().min(0),
     position: z.number().int().min(1).optional(),
   })
@@ -429,18 +435,37 @@ export const schemaEnregistrerEtape = z
     if (v.canal === 'email' && !v.sujet?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['sujet'], message: 'Un email a besoin d’un objet.' });
     }
+    // Une note d'invitation ne serait pas transmise par l'envoi serveur : la refuser ici plutôt
+    // que l'écrire pour la jeter plus tard, en silence, au moment du départ.
+    if (v.canal === 'linkedin_invite' && v.corps.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['corps'],
+        message: 'Une invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.',
+      });
+    }
+    // `linkedin` seul ne dit pas s'il s'agit d'une invitation : son corps se juge dans
+    // `enregistrerEtape`, une fois le canal réel connu.
+    if (v.canal !== 'linkedin_invite' && v.canal !== 'linkedin' && !v.corps.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['corps'], message: 'Le message ne peut pas être vide.' });
+    }
   });
 
 /**
- * Canal `channel_kind` réel d'une étape à écrire (R48) : `email` → `'email'` ;
- * `linkedin` → garde le canal LinkedIn déjà en base pour cette étape s'il y en
- * a un (`linkedin_invite`/`linkedin_message`, jamais changé par ce tiroir qui
- * n'a pas de notion d'invitation/message), sinon `'linkedin_message'` par
- * défaut à la création (une invitation se crée aujourd'hui côté serveur, lot
- * 4 — ce tiroir ne propose que le message).
+ * Canal `channel_kind` réel d'une étape à écrire (R48). Les écrans distinguent désormais
+ * l'invitation du message, et disent donc le canal en toutes lettres.
+ *
+ * `linkedin` est la forme héritée, émise par les écrans d'avant cette ouverture : elle ne sait pas
+ * ce qu'elle veut, donc elle garde le canal déjà en base pour cette étape s'il y en a un, et vaut
+ * « message » à la création. La garder évite qu'un écran resté en cache écrase une invitation
+ * existante en message.
  */
-function canalReelEtape(canalFormulaire: 'email' | 'linkedin', canalExistant: string | undefined): CanalModele {
+function canalReelEtape(
+  canalFormulaire: 'email' | 'linkedin' | 'linkedin_invite' | 'linkedin_message',
+  canalExistant: string | undefined,
+): CanalModele {
   if (canalFormulaire === 'email') return 'email';
+  if (canalFormulaire === 'linkedin_invite' || canalFormulaire === 'linkedin_message') return canalFormulaire;
   if (canalExistant === 'linkedin_invite' || canalExistant === 'linkedin_message') return canalExistant;
   return 'linkedin_message';
 }
@@ -503,20 +528,38 @@ export async function enregistrerEtape(ctx: Contexte, entree: unknown): Promise<
   }
 
   const canalReel = canalReelEtape(e.canal, canalExistant);
-  const corpsNormalise = await validerVariables(ctx, e.corps, nature);
+  // Une invitation part sans note : elle n'a aucun message, donc aucun modèle. Le `null` compte
+  // autant que l'absence d'écriture — une étape qui passe de message à invitation DOIT perdre son
+  // modèle, sinon l'ancien corps resterait accroché et la campagne refuserait de se lancer.
+  const estInvitation = canalReel === 'linkedin_invite';
+  // Le canal réel n'est connu qu'ici : le formulaire peut dire `linkedin` (forme héritée) sur une
+  // étape qui est déjà une invitation. Sans ce contrôle, le corps saisi serait jeté en silence,
+  // exactement ce que le rendu de la note corrigeait.
+  if (estInvitation && e.corps.trim()) {
+    throw new ErreurEntree({
+      formErrors: [],
+      fieldErrors: { corps: ['Une invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.'] },
+    });
+  }
+  if (!estInvitation && !e.corps.trim()) {
+    throw new ErreurEntree({ formErrors: [], fieldErrors: { corps: ['Le message ne peut pas être vide.'] } });
+  }
+  const corpsNormalise = estInvitation ? '' : await validerVariables(ctx, e.corps, nature);
 
   const etapeId = await dansUneTransaction(ctx.ex, async (tx) => {
     const ctxTx = { ...ctx, ex: tx };
-    const nouveauTemplateId = await inserVersionModele(ctxTx, {
-      familyId: templateParentId,
-      nom: campagne.name,
-      canal: canalReel,
-      locale,
-      sujet: e.canal === 'email' ? e.sujet!.trim() : null,
-      corps: corpsNormalise,
-      origin: 'step',
-    });
-    const templateFamilyId = templateParentId ?? nouveauTemplateId;
+    const nouveauTemplateId = estInvitation
+      ? null
+      : await inserVersionModele(ctxTx, {
+          familyId: templateParentId,
+          nom: campagne.name,
+          canal: canalReel,
+          locale,
+          sujet: e.canal === 'email' ? e.sujet!.trim() : null,
+          corps: corpsNormalise,
+          origin: 'step',
+        });
+    const templateFamilyId = estInvitation ? null : (templateParentId ?? nouveauTemplateId);
 
     if (e.etapeId) {
       // `e.position` ne s'applique qu'à la création (ordre d'insertion) : ce

@@ -25,14 +25,28 @@ const schemaSourceAssistant = z.object({
 
 const schemaEtapeAssistant = z
   .object({
-    canal: z.enum(['email', 'linkedin']).default('email'),
+    /** `linkedin` est la forme héritée des écrans d'avant l'ouverture de l'invitation : elle vaut « message ». */
+    canal: z.enum(['email', 'linkedin', 'linkedin_invite', 'linkedin_message']).default('email'),
     sujet: z.string().max(200).optional(),
-    corps: z.string().min(1),
+    /** Vide pour une invitation, qui part sans note — exigé partout ailleurs, voir `superRefine`. */
+    corps: z.string().default(''),
     delaiHeures: z.number().int().min(0),
   })
   .superRefine((v, ctx) => {
     if (v.canal === 'email' && !v.sujet?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['sujet'], message: 'Un email a besoin d’un objet.' });
+    }
+    // Même règle que `schemaEnregistrerEtape` : une note d'invitation ne serait pas transmise,
+    // donc on la refuse à la saisie plutôt que de l'écrire pour la jeter au départ.
+    if (v.canal === 'linkedin_invite' && v.corps.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['corps'],
+        message: 'Une invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.',
+      });
+    }
+    if (v.canal !== 'linkedin_invite' && !v.corps.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['corps'], message: 'Le message ne peut pas être vide.' });
     }
   });
 

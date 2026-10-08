@@ -3,9 +3,15 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import type { CanalEtape } from '@jay-reach/core';
 import { Bouton, Champ, Puce, Tiroir, TuileLogo } from '../ui';
 import { actionEnregistrerEtape, actionEnvoyerTest, actionSupprimerEtape } from '../../app/actions/step-message';
 import { ApercuMessage } from './ApercuMessage';
+
+/** Valeur du select, ramenée au type : tout ce qui n'est pas un canal connu retombe sur l'email. */
+function lireCanal(valeur: string): CanalEtape {
+  return valeur === 'linkedin_invite' || valeur === 'linkedin_message' ? valeur : 'email';
+}
 
 /** Étape existante à réécrire — `null` en création. */
 export interface EtapeAModifier {
@@ -13,7 +19,7 @@ export interface EtapeAModifier {
   /** 1-based, pour le titre du tiroir. */
   readonly position: number;
   readonly titre: string;
-  readonly canal: 'email' | 'linkedin';
+  readonly canal: CanalEtape;
   readonly sujet: string;
   readonly corps: string;
   readonly delaiHeures: number;
@@ -108,7 +114,9 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
   const [testMessage, setTestMessage] = useState<string | null>(null);
 
   const initial = heuresVersUnite(etape?.delaiHeures ?? 0);
-  const [canal, setCanal] = useState<'email' | 'linkedin'>(etape?.canal ?? 'email');
+  const [canal, setCanal] = useState<CanalEtape>(etape?.canal ?? 'email');
+  // Une invitation n'a pas de message : ni corps, ni variables, ni aperçu, ni envoi de test.
+  const estInvitation = canal === 'linkedin_invite';
   const [sujet, setSujet] = useState(etape?.sujet ?? '');
   const [corps, setCorps] = useState(etape?.corps ?? '');
   const [delaiValeur, setDelaiValeur] = useState(String(initial.valeur));
@@ -182,7 +190,13 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
     });
   }
 
-  const libelleCanal = t(canal === 'linkedin' ? 'drawer.channelLinkedin' : 'drawer.channelEmail');
+  const libelleCanal = t(
+    canal === 'linkedin_invite'
+      ? 'drawer.channelLinkedinInvite'
+      : canal === 'linkedin_message'
+        ? 'drawer.channelLinkedinMessage'
+        : 'drawer.channelEmail',
+  );
   const puces = [
     <Puce key="canal">{libelleCanal}</Puce>,
     ...(etape
@@ -201,7 +215,7 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
       onFermer={fermer}
       libelleFermer={t('drawer.close')}
       titre={etape ? t('drawer.titleEdit', { n: etape.position, titre: etape.titre }) : t('drawer.titleNew')}
-      icone={<TuileLogo marque={canal === 'linkedin' ? 'linkedin' : 'email'} taille="grande" />}
+      icone={<TuileLogo marque={canal === 'email' ? 'email' : 'linkedin'} taille="grande" />}
       puces={puces}
       pied={
         <>
@@ -231,9 +245,10 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
       <div className="jr-formulaire">
         <div className="ligne">
           <Champ libelle={t('drawer.channel')}>
-            <select value={canal} onChange={(e) => setCanal(e.target.value as 'email' | 'linkedin')}>
+            <select value={canal} onChange={(e) => setCanal(lireCanal(e.target.value))}>
               <option value="email">{t('drawer.channelEmail')}</option>
-              <option value="linkedin">{t('drawer.channelLinkedin')}</option>
+              <option value="linkedin_invite">{t('drawer.channelLinkedinInvite')}</option>
+              <option value="linkedin_message">{t('drawer.channelLinkedinMessage')}</option>
             </select>
           </Champ>
           <div>
@@ -274,6 +289,10 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
           </Champ>
         )}
 
+        {estInvitation ? (
+          // Montrer un champ vide à remplir serait promettre une note que l'envoi jetterait.
+          <p className="jr-aide">{t('drawer.inviteSansNote')}</p>
+        ) : (
         <div>
           {/* `Champ` porte désormais son propre libellé (tour de correction F6, point 26) : le
               `<textarea>` avait un id (`useId()`) mais aucun `label[for]` réel, seulement ce
@@ -305,6 +324,7 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
             libelles={{ listVariables: t('drawer.listVariables'), listVariablesEmpty: t('drawer.listVariablesEmpty') }}
           />
         </div>
+        )}
 
         {issues && issues.length > 0 && (
           <div className="jr-notification erreur" role="alert">
@@ -318,7 +338,7 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
         )}
         {testMessage && <div className="jr-notification bon">{testMessage}</div>}
 
-        {apercu && (
+        {apercu && !estInvitation && (
           <ApercuMessage sujet={apercu.sujet} corps={apercu.corps} variablesManquantes={apercu.variablesManquantes} />
         )}
 

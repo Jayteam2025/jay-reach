@@ -409,13 +409,53 @@ describe('enregistrerEtape', () => {
       campagneId,
       etapeId,
       canal: 'linkedin',
-      corps: 'Corps mis à jour {{prenom}}',
+      corps: '',
       delaiHeures: 0,
     });
 
     expect(res).toEqual({ etapeId });
     const maj = appelsDe(ctx).find((a) => /jr:sequence_etape_maj/i.test(String(a[0])));
-    expect(maj?.[1]).toEqual([templateParentId, 0, 'linkedin_invite', etapeId, campagneId]);
+    // Une invitation n'a pas de message : elle perd son modèle, sinon un ancien corps resterait
+    // accroché et la campagne refuserait de se lancer.
+    expect(maj?.[1]).toEqual([null, 0, 'linkedin_invite', etapeId, campagneId]);
+  });
+
+  // Mesuré le 08/10 : par la forme héritée `linkedin`, un corps saisi sur une étape déjà
+  // invitation était jeté sans un mot. On refuse, on ne jette pas.
+  it('une note sur une invitation est REFUSÉE, même quand le formulaire dit seulement « linkedin »', async () => {
+    const ctx = faux(
+      {
+        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: null, locale: 'fr' }],
+        'jr:sequence_etape_existante': [{ template_parent_id: templateParentId, channel: 'linkedin_invite' }],
+      },
+      'admin',
+    );
+
+    await expect(
+      enregistrerEtape(ctx, { campagneId, etapeId, canal: 'linkedin', corps: 'Une note', delaiHeures: 0 }),
+    ).rejects.toThrow('Entrée invalide');
+    // Rien n'a été écrit : ni modèle, ni étape.
+    expect(appelsDe(ctx).some((a) => /jr:sequence_etape_maj|jr:sequence_modele_versionner/i.test(String(a[0])))).toBe(
+      false,
+    );
+  });
+
+  it('créer une invitation n’écrit aucun modèle : pas de note, donc pas de message', async () => {
+    const ctx = faux(
+      {
+        'jr:sequence_etape_campagne_lire': [{ name: 'Directeur commercial', source_id: null, locale: 'fr' }],
+        'jr:sequence_etape_position': [{ n: 0 }],
+        'jr:sequence_etape_creer': [{ id: etapeId }],
+      },
+      'admin',
+    );
+
+    const res = await enregistrerEtape(ctx, { campagneId, canal: 'linkedin_invite', corps: '', delaiHeures: 0 });
+
+    expect(res).toEqual({ etapeId });
+    expect(appelsDe(ctx).some((a) => /jr:sequence_modele_versionner/i.test(String(a[0])))).toBe(false);
+    const ins = appelsDe(ctx).find((a) => /jr:sequence_etape_creer/i.test(String(a[0])));
+    expect(ins?.[1]).toEqual([campagneId, 0, 'linkedin_invite', 0, null]);
   });
 });
 
