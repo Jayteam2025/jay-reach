@@ -1074,6 +1074,8 @@
         "title": "LinkedIn-accounts",
         "lead": "LinkedIn-acties vertrekken vanaf een toegewijd residentieel IP-adres, nooit vanaf de server.",
         "empty": "Geen LinkedIn-account verbonden.",
+        "emptyServeur": "Het LinkedIn-kanaal draait op de sessie die op de server openstaat, zonder extensie en zonder account hier.",
+        "emptyServeurLien": "Ritme en verzenduren instellen",
         "connected": "Verbonden",
         "notConnected": "Niet verbonden",
         "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
@@ -1604,6 +1606,37 @@
         "collecte": "Laatste verzameling",
         "inconnu": "Onbekend",
         "jamais": "Nooit"
+      },
+      "rythme": {
+        "titre": "Verzendritme",
+        "lead": "Hoeveel en wanneer de motor verstuurt. Deze instellingen beschermen het LinkedIn-account.",
+        "invitationsParSemaine": {
+          "nom": "Uitnodigingen per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Berichten per week",
+          "usage": "{n, plural, =0 {Geen in de laatste 7 dagen} one {# in de laatste 7 dagen} other {# in de laatste 7 dagen}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Uren",
+            "aide": "Er vertrekt niets voor het eerste uur of na het laatste.",
+            "debut": "Beginuur",
+            "fin": "Einduur"
+          },
+          "jours": {
+            "nom": "Dagen",
+            "aide": "De weekdagen waarop de motor verstuurt."
+          },
+          "fuseau": {
+            "nom": "Tijdzone",
+            "aide": "De uren hierboven gelden in deze tijdzone."
+          },
+          "enregistrer": "Opslaan",
+          "erreurOrdre": "Het einduur moet na het beginuur liggen.",
+          "erreurJours": "Kies minstens een dag."
+        }
       },
       "plafonds": {
         "titre": "Verzamellimieten",

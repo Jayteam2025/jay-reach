@@ -1074,6 +1074,8 @@
         "title": "LinkedIn accounts",
         "lead": "LinkedIn actions go out from a dedicated residential IP, never from the server.",
         "empty": "No LinkedIn account connected.",
+        "emptyServeur": "The LinkedIn channel runs on the session opened on the server, with no extension and no account linked here.",
+        "emptyServeurLien": "Set the sending pace and hours",
         "connected": "Connected",
         "notConnected": "Not connected",
         "senderMissing": "Nothing will go out: sender not activated",
@@ -1604,6 +1606,37 @@
         "collecte": "Last collection",
         "inconnu": "Unknown",
         "jamais": "Never"
+      },
+      "rythme": {
+        "titre": "Sending pace",
+        "lead": "How much and when the engine sends. These settings protect the LinkedIn account.",
+        "invitationsParSemaine": {
+          "nom": "Invitations per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages per week",
+          "usage": "{n, plural, =0 {None in the last 7 days} one {# in the last 7 days} other {# in the last 7 days}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Hours",
+            "aide": "Nothing goes out before the first hour or after the last.",
+            "debut": "Start hour",
+            "fin": "End hour"
+          },
+          "jours": {
+            "nom": "Days",
+            "aide": "The weekdays the engine sends on."
+          },
+          "fuseau": {
+            "nom": "Time zone",
+            "aide": "The hours above are read in this time zone."
+          },
+          "enregistrer": "Save",
+          "erreurOrdre": "The end hour must come after the start hour.",
+          "erreurJours": "Pick at least one day."
+        }
       },
       "plafonds": {
         "titre": "Collection limits",

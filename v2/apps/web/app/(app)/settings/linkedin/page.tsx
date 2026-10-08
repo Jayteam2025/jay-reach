@@ -3,6 +3,7 @@ import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
   jourCourantDansFuseau,
+  lireHeuresEnvoiLinkedIn,
   lirePlafondLinkedIn,
   lireReglages,
   prochainEnvoiLinkedIn,
@@ -12,6 +13,7 @@ import { contexteCourant } from '../../../../lib/contexte';
 import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { Carte, TuileLogo } from '../../../../components/ui';
+import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
 import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
@@ -29,9 +31,11 @@ export default async function ReglagesLinkedinPage() {
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
   const maintenant = new Date();
 
-  const [session, prochain, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] = await Promise.all([
+  const [session, prochain, heuresEnvoi, plafondPosts, plafondRequetes, plafondPersonnes, postsDuJour, requetesDeLHeure] =
+    await Promise.all([
     lireSessionLinkedInCourante(ctx),
     prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
+    lireHeuresEnvoiLinkedIn(ctx),
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
@@ -131,6 +135,16 @@ export default async function ReglagesLinkedinPage() {
             </dd>
           </div>
         </dl>
+      </Carte>
+
+      {/* Envoi d'abord, collecte ensuite : les deux cartes se lisent dans l'ordre des
+          deux métiers du canal, et chacune porte ses propres réglages. Sans cette
+          carte, la fenêtre d'envoi n'était réglable que depuis la carte d'un compte
+          d'extension — donc par personne, sur une instance tenue par la session du
+          serveur. */}
+      <Carte titre={t('rythme.titre')}>
+        <p className="jr-aide">{t('rythme.lead')}</p>
+        <FenetreEnvoiLinkedin valeur={heuresEnvoi} peutModifier={peutModifier} />
       </Carte>
 
       <Carte titre={t('plafonds.titre')}>

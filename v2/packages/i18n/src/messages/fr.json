@@ -1074,6 +1074,8 @@
         "title": "Comptes LinkedIn",
         "lead": "Les actions LinkedIn partent d'une IP résidentielle dédiée, jamais du serveur.",
         "empty": "Aucun compte LinkedIn connecté.",
+        "emptyServeur": "Le canal LinkedIn est tenu par la session ouverte sur le serveur, sans extension ni compte relié ici.",
+        "emptyServeurLien": "Régler le rythme et les heures d'envoi",
         "connected": "Connecté",
         "notConnected": "Non connecté",
         "senderMissing": "Aucun envoi ne partira : expéditeur non activé",
@@ -1604,6 +1606,37 @@
         "collecte": "Dernière collecte",
         "inconnu": "Inconnu",
         "jamais": "Jamais"
+      },
+      "rythme": {
+        "titre": "Rythme d'envoi",
+        "lead": "À quel volume et à quelles heures le moteur envoie. Ces réglages protègent le compte LinkedIn.",
+        "invitationsParSemaine": {
+          "nom": "Invitations par semaine",
+          "usage": "{n, plural, =0 {Aucune sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
+        "messagesParSemaine": {
+          "nom": "Messages par semaine",
+          "usage": "{n, plural, =0 {Aucun sur les 7 derniers jours} one {# sur les 7 derniers jours} other {# sur les 7 derniers jours}}"
+        },
+        "fenetre": {
+          "heures": {
+            "nom": "Heures",
+            "aide": "Un envoi part entre ces deux heures, jamais avant ni après.",
+            "debut": "Heure de début",
+            "fin": "Heure de fin"
+          },
+          "jours": {
+            "nom": "Jours",
+            "aide": "Les jours de la semaine où le moteur envoie."
+          },
+          "fuseau": {
+            "nom": "Fuseau",
+            "aide": "Les heures ci-dessus se lisent dans ce fuseau."
+          },
+          "enregistrer": "Enregistrer",
+          "erreurOrdre": "L'heure de fin doit venir après l'heure de début.",
+          "erreurJours": "Choisissez au moins un jour."
+        }
       },
       "plafonds": {
         "titre": "Plafonds de collecte",
