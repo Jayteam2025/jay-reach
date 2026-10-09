@@ -9,7 +9,7 @@
  *    dont la première étape a été sautée, porte quand même la mention au premier
  *    email, et jamais plus d'une fois ;
  *  - le contact est NÉ de l'engageur (signal `post_engagement` ET fiche créée après
- *    lui). Même définition que la garde de `ecarterEngageur` : une fiche importée par
+ *    lui). Même définition que la garde de `ecarterSignalDePersonne` : une fiche importée par
  *    l'opérateur, rattachée à un engageur, n'a pas été trouvée sur LinkedIn, lui
  *    écrire que oui serait une fausse information légale.
  */
@@ -17,6 +17,7 @@ import type { Pool } from 'pg';
 import fr from '../../../../packages/i18n/src/messages/fr.json';
 import en from '../../../../packages/i18n/src/messages/en.json';
 import nl from '../../../../packages/i18n/src/messages/nl.json';
+import { sqlEstSignalDePersonne } from '@jay-reach/core';
 
 const CATALOGUES: Readonly<Record<string, unknown>> = { fr, en, nl };
 
@@ -48,7 +49,7 @@ export interface DemandeMention {
 export async function mentionOrigineDuMessage(pool: Pool, d: DemandeMention): Promise<string | null> {
   const res = await pool.query<{ premier_email: boolean; ne_de_l_engageur: boolean; locale: string | null }>(
     `select c.locale,
-            (s.kind = 'post_engagement' and c.created_at >= s.occurred_at) as ne_de_l_engageur,
+            (${sqlEstSignalDePersonne('s')} and c.created_at >= s.occurred_at) as ne_de_l_engageur,
             not exists (
               select 1 from actions a join enrollments e2 on e2.id = a.enrollment_id
                where e2.organization_id = c.organization_id and e2.contact_id = c.id

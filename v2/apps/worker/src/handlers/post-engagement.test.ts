@@ -6,8 +6,8 @@ vi.mock('@jay-reach/providers/enrichment', () => ({
 }));
 
 import { resolveCompanyNaf } from '@jay-reach/providers/enrichment';
-import { normaliserUrlPost } from '@jay-reach/core';
-import { ecarterEngageur, empreinteEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
+import { normaliserUrlPost , sqlEstSignalDePersonne} from '@jay-reach/core';
+import { ecarterSignalDePersonne, empreinteEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
 import { runQualify } from './qualify.js';
 import { runScore } from './score.js';
 import { persistEnrichedContact } from '../enrichment-persist.js';
@@ -57,13 +57,13 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       const formes = p[1] as string[];
       return { rows: formes.some((f) => (init.supprimes ?? []).includes(f)) ? [{ one: 1 }] : [], rowCount: 0 };
     }
-    // Verrous de `ecarterEngageur` (`for update`) : le signal rend son external_id, les contacts rien.
+    // Verrous de `ecarterSignalDePersonne` (`for update`) : le signal rend son external_id, les contacts rien.
     if (/for update/i.test(sql) && /from signals/i.test(sql)) {
       const ext = [...etat.signals].find(([, id]) => id === p[1])?.[0];
       return { rows: ext ? [{ external_id: ext }] : [], rowCount: ext ? 1 : 0 };
     }
     if (/for update/i.test(sql) && /from contacts/i.test(sql)) return { rows: [], rowCount: 0 };
-    // Garde de `ecarterEngageur` : personne contactée ? Ici, jamais (le modèle n'inscrit pas).
+    // Garde de `ecarterSignalDePersonne` : personne contactée ? Ici, jamais (le modèle n'inscrit pas).
     if (/as contacte/i.test(sql)) return { rows: [{ contacte: false }], rowCount: 1 };
     if (/from linkedin_engageurs_ecartes/i.test(sql)) {
       return { rows: etat.ecartes.has(String(p[1])) ? [{ one: 1 }] : [], rowCount: 0 };
@@ -72,7 +72,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       const id = etat.signals.get(String(p[1]));
       return { rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 };
     }
-    // Ancré sur `select` : `ecarterEngageur` nomme `enrollments` dans une
+    // Ancré sur `select` : `ecarterSignalDePersonne` nomme `enrollments` dans une
     // sous-requête de son `delete`, qui ne doit pas tomber ici.
     if (/^\s*select[\s\S]*from enrollments/i.test(sql)) {
       return { rows: etat.enrolled.has(String(p[1])) || etat.enrolledMembres.has(String(p[3])) ? [{ one: 1 }] : [], rowCount: 0 };
@@ -87,7 +87,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
       const c = etat.contacts.find((x) => x.linkedin_url === p[1] || (p[2] && x.linkedin_provider_id === p[2]));
       return { rows: c ? [{ id: c.id, source_signal_id: c.source_signal_id }] : [], rowCount: c ? 1 : 0 };
     }
-    // Détachement des survivants de `ecarterEngageur` : l'inverse du rattachement.
+    // Détachement des survivants de `ecarterSignalDePersonne` : l'inverse du rattachement.
     if (/update contacts set source_signal_id = null/i.test(sql)) {
       for (const c of etat.contacts) if (c.source_signal_id === p[1]) c.source_signal_id = null;
       return { rows: [], rowCount: 1 };
@@ -225,7 +225,7 @@ describe('enregistrerEngageur', () => {
   it('un engageur deja ecarte n\'est pas rescore au passage suivant', async () => {
     const m = modele();
     await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
-    await ecarterEngageur(m.pool, ORG, 'signal-1');
+    await ecarterSignalDePersonne(m.pool, ORG, 'signal-1');
     const avant = m.etat.insertsSignal;
     const r = await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
     expect(r).toBe('ecarte');
@@ -287,13 +287,13 @@ describe('liste de suppression', () => {
   });
 });
 
-describe('ecarterEngageur', () => {
+describe('ecarterSignalDePersonne', () => {
   it('un engageur ecarte est efface avec son contact, et son external_id reste dans linkedin_engageurs_ecartes', async () => {
     const m = modele();
     await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
     expect(m.etat.contacts).toHaveLength(1);
 
-    await ecarterEngageur(m.pool, ORG, 'signal-1');
+    await ecarterSignalDePersonne(m.pool, ORG, 'signal-1');
 
     expect(m.etat.contacts).toHaveLength(0);
     expect(m.etat.signals.size).toBe(0);
@@ -308,18 +308,18 @@ describe('ecarterEngageur', () => {
   });
 });
 
-describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
+describe('ecarterSignalDePersonne : ce qui n a pas ete juge n est pas memorise', () => {
   it('un ecart par le scoring incremente le passage qui a collecte la personne', async () => {
     const m = modele();
     await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
-    await ecarterEngageur(m.pool, ORG, 'signal-1');
+    await ecarterSignalDePersonne(m.pool, ORG, 'signal-1');
     expect(m.etat.runsIncrementes).toEqual(['run-1']);
   });
 
   it('un ecart pour peremption n est ni memorise ni compte comme ecart du scoring', async () => {
     const m = modele();
     await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
-    await ecarterEngageur(m.pool, ORG, 'signal-1', { juge: false });
+    await ecarterSignalDePersonne(m.pool, ORG, 'signal-1', { juge: false });
     expect(m.etat.contacts).toHaveLength(0);
     expect(m.etat.signals.size).toBe(0);
     expect(m.etat.ecartes.size).toBe(0);
@@ -331,7 +331,7 @@ describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
     await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
     // Cas de la purge d'anciennete : la personne a ete jugee (memoire), mais le
     // passage qui l'a collectee est clos, son compteur ne doit pas changer.
-    await ecarterEngageur(m.pool, ORG, 'signal-1', { juge: true, compter: false });
+    await ecarterSignalDePersonne(m.pool, ORG, 'signal-1', { juge: true, compter: false });
     expect(m.etat.ecartes.size).toBe(1);
     expect(m.etat.runsIncrementes).toEqual([]);
   });
@@ -343,7 +343,7 @@ describe('ecarterEngageur : ce qui n a pas ete juge n est pas memorise', () => {
       release: vi.fn(),
     };
     const pool = { connect: vi.fn(async () => client), query: vi.fn() } as unknown as Pool;
-    await ecarterEngageur(pool, ORG, 'signal-1');
+    await ecarterSignalDePersonne(pool, ORG, 'signal-1');
     expect(appels[0]).toBe('begin');
     expect(appels[appels.length - 1]).toBe('commit');
     expect((pool as unknown as { query: ReturnType<typeof vi.fn> }).query).not.toHaveBeenCalled();
@@ -393,7 +393,9 @@ describe('score', () => {
     expect(scorer.mock.calls[0]?.[1]).toBe(CONSIGNE_PERSONA);
     expect(r.qualified).toBe(1);
     const selection = requetes.find((s) => /limit \$2/i.test(s)) ?? '';
-    expect(selection).toMatch(/s\.kind = 'post_engagement'/);
+    // Dérivé de la source de vérité, pas recopié : si la forme du fragment change, ce contrôle
+    // suit. Écrit en dur, il figeait une typographie et tombait au premier changement de clause.
+    expect(selection).toContain(sqlEstSignalDePersonne('s'));
     expect(selection).toMatch(/personas/);
   });
 });
@@ -459,7 +461,9 @@ describe('garde-fous du chemin entreprise et de la purge', () => {
     await ecarterSignauxTropAnciens(pool, 14);
     const maj = requetes.filter((r) => /^\s*update signals/i.test(r));
     expect(maj).toHaveLength(2);
-    for (const r of maj) expect(r).toMatch(/kind <> 'post_engagement'|kind != 'post_engagement'/);
+    // Les deux requêtes écartent les signaux de PERSONNE, chacune avec son propre alias.
+    const refus = ['signals', 's'].map((alias) => `not ${sqlEstSignalDePersonne(alias)}`);
+    for (const r of maj) expect(refus.some((f) => r.includes(f))).toBe(true);
     expect(requetes.some((r) => /delete from contacts/i.test(r))).toBe(true);
   });
 

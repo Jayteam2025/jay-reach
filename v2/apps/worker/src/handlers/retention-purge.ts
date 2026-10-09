@@ -15,13 +15,13 @@
  * (pg-boss archive un job terminé au bout de 12 h et libère son identifiant).
  *
  * Deux garde-fous distincts : la sélection exclut les personnes contactées, ET la
- * fonction qui détruit (`ecarterEngageur`) les refuse elle-même. Le second est
+ * fonction qui détruit (`ecarterSignalDePersonne`) les refuse elle-même. Le second est
  * celui qui compte ; le premier évite de le solliciter pour rien.
  */
 import type { Pool } from 'pg';
-import { INTERVALLE_PURGE_MAX_MS, RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
+import { INTERVALLE_PURGE_MAX_MS, RETENTION_PERSONNES_NON_CONTACTEES_JOURS, sqlEstSignalDePersonne} from '@jay-reach/core';
 import { enregistrerPurge, identiteDepuisEnvironnement, type IdentiteMoteur } from '../battement.js';
-import { ecarterEngageur, sqlPersonneContactee, type FragmentSql } from './post-engagement.js';
+import { ecarterSignalDePersonne, sqlPersonneContactee, type FragmentSql } from './post-engagement.js';
 
 /**
  * Cadence de la purge, depuis la variable d'environnement brute. Absente ou illisible, ou sous une
@@ -57,7 +57,7 @@ export async function purgerEngageursPerimes(
   const candidats = await pool.query<{ id: string; organization_id: string; juge: boolean }>(
     `select s.id, s.organization_id, (s.score is not null) as juge
        from signals s
-      where s.kind = 'post_engagement'
+      where ${sqlEstSignalDePersonne('s')}
         and s.occurred_at < now() - make_interval(days => $1)
         -- Jamais contactée à cause de cet engageur (même définition que la garde de
         -- la fonction qui détruit).
@@ -73,7 +73,7 @@ export async function purgerEngageursPerimes(
     // `juge` : une personne déjà scorée garde sa mémoire d'écart (sinon le collecteur
     // la recréerait et la rescorerait, donc la repaierait). `compter: false` : le
     // passage qui l'a collectée est clos depuis des semaines.
-    const issue = await ecarterEngageur(pool, p.organization_id, p.id, { juge: p.juge, compter: false });
+    const issue = await ecarterSignalDePersonne(pool, p.organization_id, p.id, { juge: p.juge, compter: false });
     if (issue === 'efface') effaces += 1;
     else if (issue === 'conserve') conserves += 1;
     else absents += 1;

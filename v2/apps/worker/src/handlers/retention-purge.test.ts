@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { INTERVALLE_PURGE_MAX_MS, RETENTION_PERSONNES_NON_CONTACTEES_JOURS } from '@jay-reach/core';
-import { ecarterEngageur } from './post-engagement.js';
+import { ecarterSignalDePersonne } from './post-engagement.js';
 import { cadencePurge, purgerEngageursPerimes, traiterRetentionPurge } from './retention-purge.js';
 
 /**
@@ -10,11 +10,19 @@ import { cadencePurge, purgerEngageursPerimes, traiterRetentionPurge } from './r
  * lui-même, avec de vraies dates, est exécuté sur Postgres par
  * test/pg-verify/linkedin-retention.sh.
  */
+/**
+ * Ce qui identifie la requête de sélection des candidats : sa table et sa borne d'âge. Écrit
+ * sur le texte exact de la clause de kind, ce motif cessait de reconnaître la requête dès que
+ * cette clause changeait — le faux pool rendait alors zéro ligne, et deux contrôles tombaient
+ * en annonçant un défaut de purge qui n'existait pas.
+ */
+const SELECTION_CANDIDATS = /from signals s\b[\s\S]*occurred_at </i;
+
 function poolFactice(opts: { candidats: Array<{ id: string; organization_id: string; juge: boolean }>; contactes?: Set<string> }) {
   const sql: string[] = [];
   const params: unknown[][] = [];
   const reponse = (sqlTexte: string, p: unknown[]) => {
-    if (/from signals s\s+where s\.kind = 'post_engagement'/i.test(sqlTexte)) return { rows: opts.candidats, rowCount: opts.candidats.length };
+    if (SELECTION_CANDIDATS.test(sqlTexte)) return { rows: opts.candidats, rowCount: opts.candidats.length };
     if (/for update/i.test(sqlTexte) && /from signals/i.test(sqlTexte)) return { rows: [{ external_id: 'post:urn' }], rowCount: 1 };
     if (/for update/i.test(sqlTexte)) return { rows: [], rowCount: 0 };
     if (/as contacte/i.test(sqlTexte)) return { rows: [{ contacte: opts.contactes?.has(String(p[1])) ?? false }], rowCount: 1 };
@@ -36,7 +44,7 @@ describe('retention.purge', () => {
     const bilan = await purgerEngageursPerimes(m.pool);
     // La durée vient de la constante que la mention de Réglages › LinkedIn affiche.
     expect(RETENTION_PERSONNES_NON_CONTACTEES_JOURS).toBe(90);
-    const selection = m.params[m.sql.findIndex((s) => /from signals s\s+where s\.kind = 'post_engagement'/i.test(s))];
+    const selection = m.params[m.sql.findIndex((s) => SELECTION_CANDIDATS.test(s))];
     expect(selection?.[0]).toBe(RETENTION_PERSONNES_NON_CONTACTEES_JOURS);
     expect(m.sql.some((s) => /delete from signals/i.test(s))).toBe(true);
     expect(bilan).toEqual({ candidats: 1, effaces: 1, conserves: 0, absents: 0, memoiresEffacees: 0 });
@@ -61,9 +69,9 @@ describe('retention.purge', () => {
     expect(m.params[i]?.[0]).toBe(RETENTION_PERSONNES_NON_CONTACTEES_JOURS);
   });
 
-  it('ecarterEngageur conserve une personne contactee, sans rien effacer', async () => {
+  it('ecarterSignalDePersonne conserve une personne contactee, sans rien effacer', async () => {
     const m = poolFactice({ candidats: [], contactes: new Set(['signal-9']) });
-    const issue = await ecarterEngageur(m.pool, 'org-1', 'signal-9', { juge: false });
+    const issue = await ecarterSignalDePersonne(m.pool, 'org-1', 'signal-9', { juge: false });
     expect(issue).toBe('conserve');
     expect(m.sql.some((s) => /delete from/i.test(s))).toBe(false);
   });

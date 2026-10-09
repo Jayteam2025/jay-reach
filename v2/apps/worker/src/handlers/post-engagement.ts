@@ -21,8 +21,7 @@ import {
   lienProfilDeduit,
   normaliserUrlPost,
   normaliserUrlProfil,
-  type Executeur,
-} from '@jay-reach/core';
+  type Executeur, sqlEstSignalDePersonne} from '@jay-reach/core';
 
 export type Engageur = {
   urn: string;
@@ -330,7 +329,7 @@ export function empreinteEngageur(externalId: string): string {
 /**
  * « Cette personne a été contactée à cause de cet engageur », en SQL : une
  * expression booléenne, partagée par la purge (qui l'exclut de sa sélection) et par
- * `ecarterEngageur` (qui refuse de détruire). Une seule définition : deux copies
+ * `ecarterSignalDePersonne` (qui refuse de détruire). Une seule définition : deux copies
  * auraient fini par diverger, et la divergence se paie par une personne effacée.
  *
  * Contactée = une inscription portée par le signal, ou une inscription / un fil de
@@ -387,7 +386,7 @@ export type IssueEffacement = 'efface' | 'conserve' | 'absent';
  * appartient à une liste importée, ou à qui on a déjà écrit, est conservée et
  * simplement détachée de son signal.
  */
-export async function ecarterEngageur(
+export async function ecarterSignalDePersonne(
   pool: Pool,
   organizationId: string,
   signalId: string,
@@ -414,7 +413,7 @@ export async function ecarterEngageur(
     );
     const verrouille = await tx.query<{ external_id: string }>(
       `select external_id from signals
-        where id = $2 and organization_id = $1 and kind = 'post_engagement' for update`,
+        where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')} for update`,
       [organizationId, signalId],
     );
     const externalId = verrouille.rows[0]?.external_id;
@@ -438,7 +437,7 @@ export async function ecarterEngageur(
       await poserMemoire();
       await tx.query(
         `update signals set status = 'discarded', discard_reason = 'contacted', scored_at = coalesce(scored_at, now())
-          where id = $2 and organization_id = $1 and kind = 'post_engagement' and status = 'new'`,
+          where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')} and status = 'new'`,
         [organizationId, signalId],
       );
       return 'conserve';
@@ -480,7 +479,7 @@ export async function ecarterEngageur(
     // l'instruction elle-même, évaluée avant le détachement des survivants (qui
     // vide `source_signal_id`, donc la moitié de la condition).
     const supprime = await tx.query<{ source_run_id: string | null }>(
-      `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement'
+      `delete from signals where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')}
           and not ${sqlPersonneContactee(PARAM_ORG, PARAM_SIGNAL, 'signals.occurred_at' as FragmentSql)}
         returning source_run_id`,
       [organizationId, signalId],

@@ -22,8 +22,7 @@ import {
   nettoyerMessageErreurJournal,
   plafondDuJour,
   fuseauDeLOrganisation,
-  jourCourantDansFuseau,
-} from '@jay-reach/core';
+  jourCourantDansFuseau, estSignalDePersonne} from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables, type ScoreSummary } from './handlers/score.js';
@@ -342,8 +341,8 @@ export async function traiterDiscover(ctx: Contexte, data: DiscoverJob): Promise
 
 export async function traiterQualify(ctx: Contexte, data: QualifyJob): Promise<void> {
   const { pool } = ctx;
-  // Un engageur est une personne : ni résolution, ni compte créé à son nom.
-  if (data.kind === 'post_engagement') return;
+  // Un signal de personne : ni résolution d'entreprise, ni compte créé à son nom.
+  if (estSignalDePersonne(data.kind ?? '')) return;
   const resolved = await runQualify(data);
   const accountId = await upsertResolvedAccount(pool, {
     organizationId: data.organizationId,
