@@ -9,6 +9,7 @@ import {
   activerSource,
   collecteImplementee,
   configFormulaireDepuisStockee,
+  configLinkedInCreateur,
   configLinkedInPost,
   construireConfigStocke,
   creerSource,
@@ -20,6 +21,8 @@ import {
   normaliserUrlPost,
   providerIdReel,
   sirensConnus,
+  TYPES_LINKEDIN_COLLECTES,
+  TYPES_VEILLE,
   type ConfigAdzuna,
   type ConfigFranceTravail,
 } from './sources.js';
@@ -828,6 +831,7 @@ describe('collecteImplementee / providerIdReel — deux décisions, deux fonctio
   it('les deux sources d’engageurs sont collectées, les deux autres non (lot 4b, étape 2)', () => {
     expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
     expect(collecteImplementee('linkedin_competitor_posts')).toBe(true);
+    expect(collecteImplementee('linkedin_creator_posts')).toBe(true);
     // Pas encore de collecteur : leurs points d’entrée Voyager n’ont pas été relevés.
     expect(collecteImplementee('linkedin_keywords')).toBe(false);
     expect(collecteImplementee('linkedin_job_change')).toBe(false);
@@ -846,5 +850,34 @@ describe('collecteImplementee / providerIdReel — deux décisions, deux fonctio
   it('les offres gardent le provider_id que le worker route', () => {
     expect(providerIdReel('adzuna')).toBe('adzuna');
     expect(providerIdReel('france_travail')).toBe('francetravail');
+  });
+});
+
+describe('source « posts d’un créateur »', () => {
+  const valide = { profilsCreateurs: ['https://www.linkedin.com/in/une-personne/'], garder: ['reagi'] as const };
+
+  it('le schéma exige au moins un profil et au moins un type d’engagement', () => {
+    expect(configLinkedInCreateur.safeParse(valide).success).toBe(true);
+    expect(configLinkedInCreateur.safeParse({ ...valide, profilsCreateurs: [] }).success).toBe(false);
+    expect(configLinkedInCreateur.safeParse({ ...valide, garder: [] }).success).toBe(false);
+  });
+
+  it('le schéma est strict : les pages concurrentes ne passent pas pour des profils', () => {
+    expect(configLinkedInCreateur.safeParse({ ...valide, pagesConcurrentes: ['x'] }).success).toBe(false);
+    expect(configLinkedInCreateur.safeParse({ pagesConcurrentes: ['x'], garder: ['reagi'] }).success).toBe(false);
+  });
+
+  it('relit les profils et le persona depuis la config stockée', () => {
+    const f = configFormulaireDepuisStockee('linkedin_creator_posts', {
+      sourceType: 'linkedin_creator_posts',
+      ...valide,
+      personaId: 'p1',
+    });
+    expect(f).toEqual({ ...valide, personaId: 'p1' });
+  });
+
+  it('est enregistrée comme type de veille et collectée par le serveur', () => {
+    expect(TYPES_VEILLE).toContain('linkedin_creator_posts');
+    expect(TYPES_LINKEDIN_COLLECTES).toContain('linkedin_creator_posts');
   });
 });

@@ -54,6 +54,7 @@ export const TYPES_SOURCES = [
   'france_travail',
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
+  'linkedin_creator_posts',
   'linkedin_keywords',
   'linkedin_job_change',
   'csv',
@@ -72,6 +73,7 @@ export const TYPES_VEILLE = [
   'france_travail',
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
+  'linkedin_creator_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ] as const;
@@ -80,6 +82,7 @@ export type TypeVeille = (typeof TYPES_VEILLE)[number];
 const TYPES_LINKEDIN = [
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
+  'linkedin_creator_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ] as const;
@@ -129,7 +132,11 @@ export function collecteImplementee(providerId: string): boolean {
  * l'opérateur lit « cette source n'est reliée à aucune campagne active » devant une campagne
  * parfaitement active.
  */
-export const TYPES_LINKEDIN_COLLECTES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
+export const TYPES_LINKEDIN_COLLECTES: readonly string[] = [
+  'linkedin_post_engagers',
+  'linkedin_competitor_posts',
+  'linkedin_creator_posts',
+];
 
 /**
  * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
@@ -212,6 +219,21 @@ export const configLinkedInConcurrent = z
   .strict();
 export type ConfigLinkedInConcurrent = z.infer<typeof configLinkedInConcurrent>;
 
+/**
+ * Posts d'un créateur : l'opérateur donne des adresses de PROFILS de personnes, le serveur trouve
+ * leurs posts récents puis lit leurs engageurs. Même aval que `configLinkedInConcurrent`, d'où
+ * les mêmes `garder` et `personaId`.
+ */
+export const configLinkedInCreateur = z
+  .object({
+    profilsCreateurs: z.array(z.string().min(1)).min(1),
+    garder: z.array(z.enum(['commente', 'reagi'])).min(1),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
+  })
+  .strict();
+export type ConfigLinkedInCreateur = z.infer<typeof configLinkedInCreateur>;
+
 export const configLinkedInMotsCles = z
   .object({
     sujets: z.array(z.string().min(1)).min(1),
@@ -241,6 +263,8 @@ function schemaConfigDuType(providerId: TypeVeille): z.ZodTypeAny {
       return configLinkedInPost;
     case 'linkedin_competitor_posts':
       return configLinkedInConcurrent;
+    case 'linkedin_creator_posts':
+      return configLinkedInCreateur;
     case 'linkedin_keywords':
       return configLinkedInMotsCles;
     case 'linkedin_job_change':
@@ -279,6 +303,7 @@ export type ConfigFormulaire =
   | ConfigFranceTravail
   | ConfigLinkedInPost
   | ConfigLinkedInConcurrent
+  | ConfigLinkedInCreateur
   | ConfigLinkedInMotsCles
   | ConfigLinkedInChangementPoste;
 
@@ -359,6 +384,15 @@ export function configFormulaireDepuisStockee(
   if (providerId === 'linkedin_competitor_posts') {
     return {
       pagesConcurrentes: tableauDeChaines(c.pagesConcurrentes),
+      garder: tableauDeChaines(c.garder).filter(
+        (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
+      ),
+      personaId: chaineOuIndefinie(c.personaId),
+    };
+  }
+  if (providerId === 'linkedin_creator_posts') {
+    return {
+      profilsCreateurs: tableauDeChaines(c.profilsCreateurs),
       garder: tableauDeChaines(c.garder).filter(
         (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
       ),
@@ -1021,8 +1055,18 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
     ...(ligne.config ?? {}),
     ...construireConfigStocke(providerId, configValide),
   };
-  // Le formulaire envoie la config complète : un `personaId` absent a été retiré, il ne doit pas survivre à la fusion.
-  if (providerId === 'linkedin_post_engagers' && (configValide as ConfigLinkedInPost).personaId === undefined) {
+  // Le formulaire envoie la config complète : un `personaId` absent a été retiré, il ne doit pas
+  // survivre à la fusion.
+  //
+  // La règle valait pour TOUS les types LinkedIn, elle était écrite sur un seul. Les posts d'un
+  // concurrent et ceux d'un créateur portent aussi un `personaId` : retiré à l'écran, il restait
+  // en base, et la collecte continuait d'attribuer les personnes à un persona que l'opérateur
+  // croyait avoir enlevé. Les types LinkedIn qui n'en portent pas ne sont pas touchés — la clé
+  // n'est pas là, la suppression ne fait rien.
+  if (
+    (TYPES_LINKEDIN as readonly string[]).includes(providerId) &&
+    (configValide as { personaId?: string }).personaId === undefined
+  ) {
     delete (configStocke as Record<string, unknown>).personaId;
   }
 

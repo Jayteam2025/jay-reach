@@ -221,6 +221,23 @@ async function personasTrous() {
   await modifierSource(ctx, { sourceId: sc, nom: 'E', schedule: 'every 24h', config: { urlPost: `${POST}-c`, garder: ['commente'] } });
   const cfg = (await q(`select config from sources where id = $1`, [sc])).rows[0].config;
   check('25. personaId retiré du formulaire : retiré du stockage', !('personaId' in cfg), JSON.stringify(cfg));
+  // Et la même règle pour les AUTRES types LinkedIn qui portent un persona. Elle était écrite
+  // sur `linkedin_post_engagers` seul : un persona retiré de la source d'un créateur ou d'un
+  // concurrent survivait en base, et la collecte continuait de lui attribuer les personnes.
+  const { id: scr } = await creerSource(ctx, {
+    campagneId: cc,
+    providerId: 'linkedin_creator_posts',
+    nom: 'Createur',
+    config: { profilsCreateurs: ['https://www.linkedin.com/in/une-personne/'], garder: ['reagi'], personaId: p1 },
+  });
+  await modifierSource(ctx, {
+    sourceId: scr,
+    nom: 'Createur',
+    schedule: 'every 24h',
+    config: { profilsCreateurs: ['https://www.linkedin.com/in/une-personne/'], garder: ['reagi'] },
+  });
+  const cfgCr = (await q(`select config from sources where id = $1`, [scr])).rows[0].config;
+  check('25b. posts d un createur : le personaId retiré ne survit pas non plus', !('personaId' in cfgCr), JSON.stringify(cfgCr));
   // d. un personaId étranger est refusé même avec un seul persona.
   const cd = await campagne(org, 'Un seul', [p1]);
   const ed = await refus(lierPost(ctx, cd, `${POST}-d`, { personaId: p3 }));

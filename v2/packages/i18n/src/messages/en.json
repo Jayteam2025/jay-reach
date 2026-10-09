@@ -77,6 +77,7 @@
       "francetravail": "France Travail",
       "linkedin_post_engagers": "LinkedIn · post engagers",
       "linkedin_competitor_posts": "LinkedIn · engagers of a competitor's posts",
+      "linkedin_creator_posts": "LinkedIn · engagers of a creator's posts",
       "linkedin_keywords": "LinkedIn · keywords",
       "linkedin_job_change": "LinkedIn · job change",
       "csv": "CSV file",
@@ -578,6 +579,10 @@
           "title": "Engagers of a competitor's posts",
           "description": "People who react to or comment on a competitor page's posts"
         },
+        "linkedinCreatorPosts": {
+          "title": "Engagers of a creator's posts",
+          "description": "People who react to or comment on a creator's posts"
+        },
         "linkedinKeywords": {
           "title": "Keywords",
           "description": "People who post about a topic"
@@ -670,6 +675,8 @@
         "profilesPerDay": "Profiles read per day",
         "competitorPages": "Competitor LinkedIn pages",
         "competitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
+        "creatorProfiles": "Creator LinkedIn profiles",
+        "creatorProfilesHint": "The profile address, for example linkedin.com/in/creator-name. Separate several profiles with a comma.",
         "topics": "Topics followed",
         "sinceDays": "Started role since (days)",
         "csvIntro": "Contacts from the file enter the campaign as already qualified people: no scoring.",
@@ -914,6 +921,8 @@
         "menuLinkedinPostEngagersDescription": "People who liked or commented on a post.",
         "menuLinkedinCompetitorPostsTitle": "Engagers of a competitor's posts",
         "menuLinkedinCompetitorPostsDescription": "People who react to or comment on a competitor page's posts.",
+        "menuLinkedinCreatorPostsTitle": "Engagers of a creator's posts",
+        "menuLinkedinCreatorPostsDescription": "People who react to or comment on a content creator's posts.",
         "menuLinkedinKeywordsTitle": "Keywords",
         "menuLinkedinKeywordsDescription": "People who post about a topic.",
         "menuLinkedinJobChangeTitle": "Job change",
@@ -935,6 +944,8 @@
         "formLinkedinPostOneCampaign": "A post can only serve one campaign.",
         "formLinkedinCompetitorPages": "Competitor LinkedIn pages",
         "formLinkedinCompetitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
+        "formLinkedinCreatorProfiles": "Creator LinkedIn profiles",
+        "formLinkedinCreatorProfilesHint": "The profile address, for example linkedin.com/in/creator-name. Separate several profiles with a comma.",
         "formLinkedinTopics": "Topics followed",
         "formLinkedinSinceDays": "Started role since (days)",
         "formLinkedinAccountId": "LinkedIn account",

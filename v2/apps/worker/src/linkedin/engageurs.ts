@@ -361,6 +361,18 @@ export function frictionDeLUrl(url: string): Friction | null {
 }
 
 /** Friction lue sur le statut HTTP. Tout autre statut hors 2xx est une panne, pas une friction. */
+/**
+ * Ce que l'opérateur lit quand LinkedIn rend un verdict sur son compte. Mêmes mots que le
+ * handler (`MSG.defi`, `MSG.cookie_refuse`) : une seule cause, une seule phrase, d'où qu'elle
+ * vienne.
+ */
+export const MESSAGES_FRICTION: Record<Friction['type'], string> = {
+  defi: 'LinkedIn demande une vérification : collecte arrêtée.',
+  cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
+  liste_vide: 'LinkedIn n’a livré aucun post : collecte arrêtée.',
+  post_introuvable: 'Page ou post introuvable, supprimé ou privé : vérifiez l’adresse.',
+};
+
 export function frictionDuStatut(statut: number): Friction | null {
   if (statut === 999) return { type: 'defi' };
   if (statut === 401 || statut === 403) return { type: 'cookie_refuse' };

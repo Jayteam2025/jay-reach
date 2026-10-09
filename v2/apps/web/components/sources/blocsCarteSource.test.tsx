@@ -219,6 +219,42 @@ describe('construireBlocsLinkedIn : une source d’engageurs', () => {
   });
 });
 
+describe('construireBlocsLinkedIn : une source « posts d’un créateur »', () => {
+  const t = fabriquerT();
+  const carte = (config: Record<string, unknown>) =>
+    carteDeBase({ providerId: 'linkedin_creator_posts', providerIds: ['linkedin_creator_posts'], config });
+  const rendu = (c: SourceCarte) =>
+    construireBlocsLinkedIn(c, t)
+      .map((b) => renderToStaticMarkup(<>{b.contenu}</>))
+      .join('|');
+
+  it('montre les profils suivis et ce qu’on garde, sans rouvrir le tiroir', () => {
+    const html = rendu(
+      carte({ profilsCreateurs: ['https://www.linkedin.com/in/une-personne/'], garder: ['reagi'] }),
+    );
+    expect(html).toContain('https://www.linkedin.com/in/une-personne/');
+    expect(html).toContain(t('drawer.reacted'));
+    expect(html).not.toContain(t('drawer.commented'));
+  });
+});
+
+describe('le sous-titre d’une source « posts d’un créateur »', () => {
+  const carte = (config: Record<string, unknown>) =>
+    ({ providerId: 'linkedin_creator_posts', config }) as unknown as SourceCarte;
+
+  it('nomme les profils suivis par leur nom public, pas un tiret', () => {
+    const s = sousTitreDe(
+      carte({ profilsCreateurs: ['https://www.linkedin.com/in/une-personne/', 'linkedin.com/in/une-autre?x=1'] }),
+      fabriquerT(),
+    );
+    expect(s).toBe('une-personne, une-autre');
+  });
+
+  it('une source sans profil garde le tiret', () => {
+    expect(sousTitreDe(carte({ profilsCreateurs: [] }), fabriquerT())).toBe('—');
+  });
+});
+
 describe('le sous-titre d’une source « posts d’un concurrent »', () => {
   const carte = (config: Record<string, unknown>) =>
     ({ providerId: 'linkedin_competitor_posts', config }) as unknown as SourceCarte;

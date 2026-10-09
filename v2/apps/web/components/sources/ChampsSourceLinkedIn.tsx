@@ -7,6 +7,7 @@ import { CaseACocher } from './CaseACocher';
 export type TypeLinkedIn =
   | 'linkedin_post_engagers'
   | 'linkedin_competitor_posts'
+  | 'linkedin_creator_posts'
   | 'linkedin_keywords'
   | 'linkedin_job_change';
 
@@ -20,6 +21,7 @@ export interface EtatChampsLinkedIn {
   readonly garderCommente: boolean;
   readonly garderReagi: boolean;
   readonly pagesConcurrentes: string;
+  readonly profilsCreateurs: string;
   readonly sujets: string;
   readonly depuisJours: string;
 }
@@ -50,6 +52,7 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     garderCommente: Array.isArray(config.garder) ? config.garder.includes('commente') : true,
     garderReagi: Array.isArray(config.garder) ? config.garder.includes('reagi') : true,
     pagesConcurrentes: listeVersTexte(config.pagesConcurrentes),
+    profilsCreateurs: listeVersTexte(config.profilsCreateurs),
     sujets: listeVersTexte(config.sujets),
     depuisJours: typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
   };
@@ -74,6 +77,17 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       if (etat.garderReagi) garder.push('reagi');
       return {
         pagesConcurrentes: texteVersListe(etat.pagesConcurrentes),
+        garder,
+        ...(etat.personaId ? { personaId: etat.personaId } : {}),
+      };
+    }
+    case 'linkedin_creator_posts': {
+      // Même collecteur d'engageurs que le concurrent : seule l'entrée change (des profils).
+      const garder: string[] = [];
+      if (etat.garderCommente) garder.push('commente');
+      if (etat.garderReagi) garder.push('reagi');
+      return {
+        profilsCreateurs: texteVersListe(etat.profilsCreateurs),
         garder,
         ...(etat.personaId ? { personaId: etat.personaId } : {}),
       };
@@ -103,6 +117,12 @@ export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChamps
         (etat.garderCommente || etat.garderReagi) &&
         (nbPersonas <= 1 || etat.personaId.length > 0)
       );
+    case 'linkedin_creator_posts':
+      return (
+        texteVersListe(etat.profilsCreateurs).length > 0 &&
+        (etat.garderCommente || etat.garderReagi) &&
+        (nbPersonas <= 1 || etat.personaId.length > 0)
+      );
     case 'linkedin_keywords':
       return texteVersListe(etat.sujets).length > 0;
     case 'linkedin_job_change':
@@ -118,6 +138,8 @@ export interface ChampsSourceLinkedInLibelles {
   readonly postOneCampaign: string;
   readonly competitorPages: string;
   readonly competitorPagesHint: string;
+  readonly creatorProfiles: string;
+  readonly creatorProfilesHint: string;
   readonly topics: string;
   readonly sinceDays: string;
   readonly accountId: string;
@@ -227,6 +249,23 @@ export function ChampsSourceLinkedIn({
             />
           </Champ>
           <p className="jr-aide">{libelles.competitorPagesHint}</p>
+          {quiGarder}
+          {choixPersona}
+        </>
+      )}
+      {providerId === 'linkedin_creator_posts' && (
+        <>
+          <Champ libelle={libelles.creatorProfiles} id={`${idPrefix}-creator-profiles`}>
+            <input
+              id={`${idPrefix}-creator-profiles`}
+              name="profilsCreateurs"
+              value={etat.profilsCreateurs}
+              onChange={(e) => onChange({ profilsCreateurs: e.target.value })}
+              disabled={disabled}
+              placeholder="https://www.linkedin.com/in/…"
+            />
+          </Champ>
+          <p className="jr-aide">{libelles.creatorProfilesHint}</p>
           {quiGarder}
           {choixPersona}
         </>

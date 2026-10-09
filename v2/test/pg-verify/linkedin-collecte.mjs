@@ -376,6 +376,11 @@ async function plafondPosts() {
   const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
   const comptes = await compterPostsLinkedInDuJour(m2.ctx, jour, 'Europe/Paris');
   check('18c. un passage d un AUTRE type de source LinkedIn compte dans le même plafond', comptes === 1, String(comptes));
+  const srcCreateur = await sourceCreateur(m2, ['https://www.linkedin.com/in/une-personne/']);
+  const runCreateur = await startSourceRun(pool, srcCreateur);
+  await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m2.org, runCreateur]);
+  const comptesAvecCreateur = await compterPostsLinkedInDuJour(m2.ctx, jour, 'Europe/Paris');
+  check('18d. un passage de source « posts d un créateur » compte aussi dans le même plafond', comptesAvecCreateur === 2, String(comptesAvecCreateur));
 
   // Et une source qui n'est pas LinkedIn n'a rien à y faire : son passage ne doit rien consommer.
   // Elle vit sur une campagne BROUILLON : posée sur la campagne active, le tour périodique
@@ -394,7 +399,10 @@ async function plafondPosts() {
   const apres = await compterPostsLinkedInDuJour(m2.ctx, jour, 'Europe/Paris');
   // Invariant, pas une valeur absolue : le compte ne doit pas BOUGER. Écrit `=== 1`, ce
   // contrôle rougissait pour la mauvaise raison quand le filtre était trop étroit.
-  check('18d. un passage d une source NON LinkedIn ne change pas le compte', apres === comptes, `${comptes} -> ${apres}`);
+  // Reference = la mesure qui PRECEDE immediatement, pas celle d'avant le controle 18d : un
+  // controle insere entre la mesure et sa comparaison rendrait ce controle rouge sans qu'aucun
+  // code de production ait change (arrive le 09/10, a l'ajout de la source createur).
+  check('18e. un passage d une source NON LinkedIn ne change pas le compte', apres === comptesAvecCreateur, `${comptesAvecCreateur} -> ${apres}`);
 }
 
 // ---------------------------------------------------------------- 5. frictions
@@ -1216,6 +1224,17 @@ async function sourceConcurrente(m, pages) {
     providerId: 'linkedin_competitor_posts',
     nom: 'Concurrent',
     config: { pagesConcurrentes: pages, garder: ['reagi'], personaId: m.persona },
+  });
+  return id;
+}
+
+/** Une source de posts de créateur sur la campagne active de `m` (profils de personnes inventées). */
+async function sourceCreateur(m, profils) {
+  const { id } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_creator_posts',
+    nom: 'Créateur',
+    config: { profilsCreateurs: profils, garder: ['reagi'], personaId: m.persona },
   });
   return id;
 }

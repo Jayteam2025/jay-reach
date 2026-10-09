@@ -59,6 +59,7 @@ describe('collecteServeurDisponible', () => {
   it('les deux sources d’engageurs sont collectees par le serveur', () => {
     expect(collecteServeurDisponible('linkedin_post_engagers')).toBe(true);
     expect(collecteServeurDisponible('linkedin_competitor_posts')).toBe(true);
+    expect(collecteServeurDisponible('linkedin_creator_posts')).toBe(true);
   });
 
   it('les types sans collecteur ne le sont pas', () => {

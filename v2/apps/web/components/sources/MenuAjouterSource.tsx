@@ -76,6 +76,12 @@ export function MenuAjouterSource({ campagneId }: MenuAjouterSourceProps) {
                   },
                   {
                     icone: <TuileLogo marque="linkedin" />,
+                    titre: t('menu.linkedinCreatorPosts.title'),
+                    description: t('menu.linkedinCreatorPosts.description'),
+                    onSelectionner: () => ouvrirTiroir('linkedin_creator_posts'),
+                  },
+                  {
+                    icone: <TuileLogo marque="linkedin" />,
                     titre: t('menu.linkedinKeywords.title'),
                     description: t('menu.linkedinKeywords.description'),
                     onSelectionner: () => ouvrirTiroir('linkedin_keywords'),

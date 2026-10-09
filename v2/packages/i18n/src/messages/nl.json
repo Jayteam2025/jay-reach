@@ -77,6 +77,7 @@
       "francetravail": "France Travail",
       "linkedin_post_engagers": "LinkedIn · engagers van een post",
       "linkedin_competitor_posts": "LinkedIn · reageerders op posts van een concurrent",
+      "linkedin_creator_posts": "LinkedIn · reageerders op posts van een creator",
       "linkedin_keywords": "LinkedIn · trefwoorden",
       "linkedin_job_change": "LinkedIn · functiewijziging",
       "csv": "CSV-bestand",
@@ -578,6 +579,10 @@
           "title": "Reageerders op posts van een concurrent",
           "description": "Mensen die reageren op of commentaar geven op berichten van een concurrentpagina"
         },
+        "linkedinCreatorPosts": {
+          "title": "Reageerders op posts van een creator",
+          "description": "Mensen die reageren op of commentaar geven op berichten van een creator"
+        },
         "linkedinKeywords": {
           "title": "Trefwoorden",
           "description": "Personen die over een onderwerp publiceren"
@@ -670,6 +675,8 @@
         "profilesPerDay": "Profielen gelezen per dag",
         "competitorPages": "LinkedIn-pagina's van concurrenten",
         "competitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
+        "creatorProfiles": "LinkedIn-profielen van creators",
+        "creatorProfilesHint": "Het adres van het profiel, bijvoorbeeld linkedin.com/in/naam-creator. Scheid meerdere profielen met een komma.",
         "topics": "Gevolgde onderwerpen",
         "sinceDays": "Functie aangetreden sinds (dagen)",
         "csvIntro": "Contacten uit het bestand komen de campagne binnen als al gekwalificeerde personen: geen scoring.",
@@ -914,6 +921,8 @@
         "menuLinkedinPostEngagersDescription": "Personen die een post hebben geliket of erop hebben gereageerd.",
         "menuLinkedinCompetitorPostsTitle": "Reageerders op posts van een concurrent",
         "menuLinkedinCompetitorPostsDescription": "Mensen die reageren op of commentaar geven op berichten van een concurrentpagina.",
+        "menuLinkedinCreatorPostsTitle": "Reageerders op posts van een creator",
+        "menuLinkedinCreatorPostsDescription": "Mensen die reageren op of commentaar geven op berichten van een contentcreator.",
         "menuLinkedinKeywordsTitle": "Trefwoorden",
         "menuLinkedinKeywordsDescription": "Personen die over een onderwerp publiceren.",
         "menuLinkedinJobChangeTitle": "Functiewijziging",
@@ -935,6 +944,8 @@
         "formLinkedinPostOneCampaign": "Een post kan maar voor één campagne dienen.",
         "formLinkedinCompetitorPages": "LinkedIn-pagina's van concurrenten",
         "formLinkedinCompetitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
+        "formLinkedinCreatorProfiles": "LinkedIn-profielen van creators",
+        "formLinkedinCreatorProfilesHint": "Het adres van het profiel, bijvoorbeeld linkedin.com/in/naam-creator. Scheid meerdere profielen met een komma.",
         "formLinkedinTopics": "Gevolgde onderwerpen",
         "formLinkedinSinceDays": "Functie aangetreden sinds (dagen)",
         "formLinkedinAccountId": "LinkedIn-account",

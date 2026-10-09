@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { collecteServeurDisponible } from '../../sources/collecte-maintenant';
 import { describe, expect, it, vi } from 'vitest';
 import { configAdzuna, configFranceTravail, configLinkedInPost } from '@jay-reach/core';
 import {
@@ -39,6 +40,8 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   menuLinkedinPostEngagersDescription: 'Les personnes qui ont aimé ou commenté un post.',
   menuLinkedinCompetitorPostsTitre: "Engageurs des posts d'un concurrent",
   menuLinkedinCompetitorPostsDescription: 'Les personnes qui réagissent ou commentent les publications d’une page concurrente.',
+  menuLinkedinCreatorPostsTitre: "Engageurs des posts d'un créateur",
+  menuLinkedinCreatorPostsDescription: 'Les personnes qui réagissent ou commentent les publications d’un créateur de contenu.',
   menuLinkedinKeywordsTitre: 'Mots-clés',
   menuLinkedinKeywordsDescription: 'Les personnes qui publient sur un sujet.',
   menuLinkedinJobChangeTitre: 'Changement de poste',
@@ -60,6 +63,8 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinPostOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
   formLinkedinCompetitorPages: 'Pages LinkedIn des concurrents',
   formLinkedinCompetitorPagesHint: 'L’adresse de la page entreprise.',
+  formLinkedinCreatorProfiles: 'Profils LinkedIn des créateurs',
+  formLinkedinCreatorProfilesHint: 'L’adresse du profil.',
   formLinkedinTopics: 'Sujets suivis',
   formLinkedinSinceDays: 'Poste pris depuis (jours)',
   formLinkedinAccountId: 'Compte LinkedIn',
@@ -75,6 +80,7 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
 const IDS_LINKEDIN: readonly TypeLinkedIn[] = [
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
+  'linkedin_creator_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ];
@@ -94,22 +100,26 @@ describe('construireGroupesMenu (R57 — catalogue complet du menu « + Ajouter 
     expect(ouvrir).toHaveBeenNthCalledWith(2, 'france_travail');
   });
 
-  it('groupe LinkedIn : les quatre sous-types sélectionnables ; le badge « en attente » reste sur les trois que le serveur ne collecte pas (lot 4a)', () => {
+  it('groupe LinkedIn : le badge « en attente » est sur les types que le serveur ne collecte pas, et sur eux seuls', () => {
     const ouvrir = vi.fn();
     const groupes = construireGroupesMenu(LIBELLES_SOURCES, ouvrir);
     expect(groupes[1]!.titre).toBe(LIBELLES_SOURCES.menuLinkedin);
-    expect(groupes[1]!.entrees).toHaveLength(4);
-    const [engageurs, ...autres] = groupes[1]!.entrees;
-    // Les engageurs d'un post sont collectés : plus de badge qui prétend le contraire.
-    const htmlEngageurs = renderToStaticMarkup(<>{engageurs!.titre}</>);
-    expect(htmlEngageurs).toContain('Engageurs');
-    expect(htmlEngageurs).not.toContain('jr-puce');
-    expect(htmlEngageurs).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
-    for (const entree of autres) {
-      const html = renderToStaticMarkup(<>{entree.titre}</>);
-      expect(html).toContain('jr-puce gris');
-      expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
-    }
+    expect(groupes[1]!.entrees).toHaveLength(IDS_LINKEDIN.length);
+
+    // La RÈGLE, pas une liste figée. Écrit « tous sauf les engageurs d'un post », ce contrôle
+    // restait vert alors que deux types de plus étaient collectés et portaient encore un badge
+    // qui dit l'inverse. Il interroge donc la même source de vérité que le composant, et un type
+    // branché le fait basculer tout seul.
+    IDS_LINKEDIN.forEach((id, i) => {
+      const html = renderToStaticMarkup(<>{groupes[1]!.entrees[i]!.titre}</>);
+      const attendu = !collecteServeurDisponible(id);
+      expect({ id, badge: html.includes(LIBELLES_SOURCES.menuLinkedinBadge) }).toEqual({ id, badge: attendu });
+      expect(html.includes('jr-puce gris')).toBe(attendu);
+    });
+    // Et au moins un de chaque côté : sans cela, la boucle passerait si tout était collecté.
+    expect(IDS_LINKEDIN.some((id) => collecteServeurDisponible(id))).toBe(true);
+    expect(IDS_LINKEDIN.some((id) => !collecteServeurDisponible(id))).toBe(true);
+
     groupes[1]!.entrees.forEach((entree) => entree.onSelectionner?.());
     IDS_LINKEDIN.forEach((id, i) => expect(ouvrir).toHaveBeenNthCalledWith(i + 1, id));
   });
@@ -630,6 +640,8 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     postOneCampaign: 'Un post ne peut servir qu\'à une seule campagne.',
     competitorPages: 'Pages LinkedIn des concurrents',
     competitorPagesHint: 'L’adresse de la page entreprise.',
+    creatorProfiles: 'Profils LinkedIn des créateurs',
+    creatorProfilesHint: 'L’adresse du profil.',
     topics: 'Sujets suivis',
     sinceDays: 'Poste pris depuis (jours)',
     accountId: 'Compte LinkedIn',

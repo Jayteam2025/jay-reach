@@ -454,3 +454,75 @@ describe('la source « posts d’un concurrent »', () => {
     expect(String(clos(b)!.params[3])).toContain('vérification');
   });
 });
+
+/**
+ * La source « posts d'un créateur » : même boucle que le concurrent, la recherche de posts passe
+ * par `trouverPostsDeProfil` (résolution du nom public, puis page d'activité).
+ */
+describe('la source « posts d’un créateur »', () => {
+  const PROFIL = 'https://www.linkedin.com/in/ada-exemple/';
+  const ARRIVEE = 'https://www.linkedin.com/in/ada-exemple/';
+  const A = 'urn:li:activity:7271000000000000021';
+  const B = 'urn:li:activity:7271000000000000022';
+  const htmlActivite = (urns: string[]) =>
+    `<html>${urns.map((u) => `<a href="https://www.linkedin.com/feed/update/${u}/">post</a>`).join('')}</html>`;
+  const sourceCreateur = (profils: string[]) => ({ sourceType: 'linkedin_creator_posts', profilsCreateurs: profils, garder: ['reagi'] });
+  const UNE = { id: 'ACoAAccc', prenom: 'Cleo', nom: 'Martin', titre: 'Directrice commerciale' };
+  const AUTRE = { id: 'ACoAAddd', prenom: 'Dan', nom: 'Leroy', titre: 'Directeur commercial' };
+
+  const repondre = (urns: string[], profils: Record<string, Parameters<typeof voyager>[0]>) => (u: string) => {
+    if (u.includes('recent-activity')) return { statut: 200, corps: htmlActivite(urns) };
+    const post = urns.find((x) => u.includes(x.split(':').pop() ?? ''));
+    return { statut: 200, corps: voyager(profils[post ?? ''] ?? []) };
+  };
+
+  it('trouve les posts du profil, lit leurs engageurs et compte les posts ouverts', async () => {
+    const b = base({ source: sourceCreateur([PROFIL]) });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[c.params.length - 1]).toBe(2);
+    expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
+  });
+
+  it('ne relit pas un post que la mémoire dit déjà traité', async () => {
+    const b = base({ source: sourceCreateur([PROFIL]), postsTraites: [A] });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[clos(b)!.params.length - 1]).toBe(1);
+  });
+
+  it('un profil illisible n’emporte pas les posts des autres profils', async () => {
+    const b = base({ source: sourceCreateur([PROFIL, 'Upsell']) });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A], { [A]: [UNE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[c.params.length - 1]).toBe(1);
+    expect(String(c.params[3])).toContain('Upsell');
+  });
+
+  it('tous les profils illisibles : le passage échoue et dit pourquoi', async () => {
+    const b = base({ source: sourceCreateur(['Upsell']) });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([], {}) });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('error');
+    expect(String(c.params[3])).toContain('Upsell');
+  });
+
+  it('lit la liste `profilsCreateurs`, jamais `pagesConcurrentes`', async () => {
+    const b = base({ source: { sourceType: 'linkedin_creator_posts', pagesConcurrentes: [PROFIL], garder: ['reagi'] } });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A], { [A]: [UNE] }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    // Sans `profilsCreateurs`, la source est refusée avant toute requête vers LinkedIn.
+    expect(String(clos(b)?.params[3] ?? '')).toContain('Aucun profil de créateur');
+    expect(p.requetes).toEqual([]);
+  });
+});
