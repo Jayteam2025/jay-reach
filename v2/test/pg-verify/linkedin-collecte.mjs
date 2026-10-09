@@ -1149,7 +1149,13 @@ async function memoireDesPosts() {
     data: { data: { flux: { paging: { count: 10, start: 0, total: 2 }, '*elements': [A, B].map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`) } } },
   });
   const reponses = [{ statut: 200, corps: pageHtml }, { statut: 200, corps: lot }];
-  const pilote = { requete: async () => reponses.shift() ?? { statut: 500, corps: '' } };
+  // Le trouveur navigue AVANT d appeler Voyager (sinon le fetch same-origin leve depuis
+  // about:blank) : le pilote doit donc savoir aller quelque part et dire ou il est.
+  const pilote = {
+    aller: async () => undefined,
+    url: async () => 'https://www.linkedin.com/company/ma-cible/',
+    requete: async () => reponses.shift() ?? { statut: 500, corps: '' },
+  };
   const trouves = await trouverPostsDePage(pilote, 'https://www.linkedin.com/company/ma-cible/', {
     dejaTraites: await lirePostsTraites(pool, m.org, m.source),
     budget: { requetesRestantes: 10, postsRestants: 10 },
