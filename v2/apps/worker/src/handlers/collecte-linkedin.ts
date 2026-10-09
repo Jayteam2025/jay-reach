@@ -51,6 +51,7 @@ import {
   enregistrerEngageur,
   enregistrerPersonne,
   identiteDeRecherche,
+  normaliserIntitule,
   prefixeDeRecherche,
   sqlAdresseResolvable,
   type FragmentSql,
@@ -108,7 +109,22 @@ export const MSG = {
   mots_cles_absents: 'Aucun mot-clé n’est renseigné : ajoutez-en à la source.',
   recherche_vide: 'La recherche ne livre aucune personne nouvelle pour ces mots-clés.',
   aucun_a_relire: 'Aucun contact à relire : aucun contact de l’organisation n’a d’adresse LinkedIn lisible.',
+  changements_invraisemblables:
+    'Presque tous les profils relus semblent avoir changé de poste : la page LinkedIn a probablement changé de forme. Rien n’a été enregistré.',
 } as const;
+
+/**
+ * En deçà de ce nombre de profils lus, la proportion ne veut rien dire : deux changements sur
+ * deux arrivent pour de vrai.
+ */
+const PROFILS_POUR_JUGER = 5;
+
+/**
+ * La part de changements au-delà de laquelle un passage est refusé. Un changement de poste est
+ * rare, même sur des fiches anciennes ; au-dessus de ce seuil, ce n'est plus la réalité qu'on
+ * lit, c'est une page dont la forme a bougé.
+ */
+const PART_CHANGEMENTS_SUSPECTE = 0.8;
 
 const TITRE_ARRET = 'Collecte LinkedIn arrêtée';
 
@@ -300,7 +316,7 @@ async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite:
  * `intituleLu` : quand le contact n'avait aucun intitulé connu, l'intitulé lu devient sa référence
  * (sans rien déclarer : voir l'appelant). Un intitulé déjà connu n'est jamais écrasé ici.
  */
-async function marquerContactVerifie(
+export async function marquerContactVerifie(
   pool: Pool,
   job: CollecteLinkedInJob,
   contactId: string,
@@ -309,7 +325,7 @@ async function marquerContactVerifie(
   await pool.query(
     `update contacts /* jr:linkedin_collecte_verifie */
         set linkedin_verifie_le = now(),
-            job_title = coalesce(nullif(btrim(job_title), ''), $3)
+            job_title = coalesce(nullif(btrim(job_title), ''), nullif(btrim($3), ''))
       where id = $2 and organization_id = $1`,
     [job.organizationId, contactId, intituleLu],
   );
@@ -687,6 +703,20 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       }
       const frictionAArrivee = await arriverSurLeFil(pilote, surRequete);
       if (frictionAArrivee !== null) arretDeRecherche = frictionAArrivee;
+      /**
+       * Les changements constatés, gardés EN ATTENTE : ils ne s'écrivent qu'une fois tous les
+       * profils lus, et seulement si le contrôle de vraisemblance les accepte. Ecrire au fil de
+       * l'eau rendait le passage du 09/10 irréversible avant qu'on ait pu voir qu'il declarait un
+       * changement pour cinq profils sur cinq.
+       */
+      const changementsConstates: Array<{
+        contactId: string;
+        ancienIntitule: string;
+        nouvelIntitule: string;
+        urlProfil: string;
+      }> = [];
+      /** Les profils effectivement Lus : le dénominateur du contrôle. Un profil illisible n'en est pas. */
+      let profilsLus = 0;
       for (const contact of frictionAArrivee === null ? aRelire : []) {
         if (requetesRestantes() <= 0) {
           arretDeRecherche = 'plafond';
@@ -714,31 +744,55 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         bilan.vus += 1;
         // Plus de trafic LinkedIn pendant l'écriture : voir `traficTermine`.
         traficTermine = true;
+        const ancien = (contact.intitule ?? '').trim();
+        const nouveau = (lu?.intitule ?? '').trim();
         if (lu === null) {
           // Illisible (profil fermé, page changée, adresse illisible) : sauté pour aujourd'hui, et
           // marqué pour que la rotation avance. Jamais pris pour un changement.
           bilan.ignores += 1;
           await marquerContactVerifie(pool, job, contact.id, null);
-        } else if (contact.intitule === null || contact.intitule.trim().length === 0) {
-          // Aucun intitulé connu à comparer : le lu devient la référence, sans rien déclarer.
-          // Annoncer « a changé de poste » pour une fiche qui n'en avait pas réveillerait tout un
-          // fichier importé sans titre.
+        } else if (ancien.length === 0 || nouveau.length === 0 || normaliserIntitule(ancien) === normaliserIntitule(nouveau)) {
+          // Rien à déclarer. Trois cas dans le même panier, et c'est voulu :
+          //  - aucun intitulé connu : le lu devient la référence, sans réveiller personne (annoncer
+          //    « a changé de poste » pour une fiche sans titre réveillerait tout un fichier importé) ;
+          //  - aucun intitulé LU : la personne n'en affiche pas (mesuré : un intitulé valant « . »).
+          //    Vider son titre n'est pas changer de poste ;
+          //  - le même intitulé qu'hier.
+          profilsLus += 1;
           bilan.doublons += 1;
-          await marquerContactVerifie(pool, job, contact.id, lu.intitule);
+          await marquerContactVerifie(pool, job, contact.id, nouveau);
         } else {
-          const issue = await enregistrerChangementDePoste(
-            contexteEngageur,
-            { contactId: contact.id, ancienIntitule: contact.intitule, nouvelIntitule: lu.intitule, urlProfil: contact.urlProfil },
-            config.campagne,
-          );
-          if (issue === 'change') bilan.nouveaux += 1;
-          else if (issue === 'inchange') bilan.doublons += 1;
-          else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
-          await marquerContactVerifie(pool, job, contact.id, null);
+          // Un changement APPARENT. Rien n'est écrit tant que le passage n'a pas été jugé.
+          profilsLus += 1;
+          changementsConstates.push({
+            contactId: contact.id,
+            ancienIntitule: ancien,
+            nouvelIntitule: nouveau,
+            urlProfil: contact.urlProfil,
+          });
         }
         traficTermine = false;
       }
       traficTermine = true;
+
+      // Le contrôle de vraisemblance. Un passage qui déclare un changement pour presque tout le
+      // monde ne lit pas des changements : il lit mal. Le 09/10, cinq profils relus ont donné cinq
+      // « changements », dont deux venaient d'une ligne qui n'était pas l'intitulé.
+      //
+      // L'asymétrie décide, comme pour la garde sur l'intitulé absent : refuser coûte un jour de
+      // rotation, les contacts n'étant pas marqués ils repassent en tête demain. Écrire réveille
+      // des gens pour rien ET écrase leur intitulé, que plus rien ne permet de retrouver.
+      if (profilsLus >= PROFILS_POUR_JUGER && changementsConstates.length >= profilsLus * PART_CHANGEMENTS_SUSPECTE) {
+        await refuser(pool, job, MSG.changements_invraisemblables, { statut: 'error', bilan, sortie });
+        return;
+      }
+      for (const changement of changementsConstates) {
+        const issue = await enregistrerChangementDePoste(contexteEngageur, changement, config.campagne);
+        if (issue === 'change') bilan.nouveaux += 1;
+        else if (issue === 'inchange') bilan.doublons += 1;
+        else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
+        await marquerContactVerifie(pool, job, changement.contactId, null);
+      }
     } else if (config.mode === 'recherche') {
       for (const motsCles of config.entrees) {
         if (requetesRestantes() <= 0) {

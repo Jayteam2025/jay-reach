@@ -730,11 +730,23 @@ describe('la source « recherche par mot-clé »', () => {
  */
 describe('la source « changement de poste »', () => {
   const sourceChangement = { sourceType: 'linkedin_job_change' };
-  /** Une page de profil : le nom dans `<title>`, l'intitulé dans le premier `<p><span>`. */
-  const profil = (nom: string, intitule: string): { statut: number; corps: string } => ({
-    statut: 200,
-    corps: `<html><head><title>${nom} | LinkedIn</title></head><body><p><span>${intitule}</span></p></body></html>`,
-  });
+  /**
+   * Une page de profil dans sa forme réelle : le nom en `<h2>` et l'intitulé DANS la carte
+   * d'en-tête, après le degré de relation et avant la ligne entreprise. La forme compte : lire
+   * un `<p>` « quelque part dans la page » attrapait la ligne d'à côté, ou celle d'un profil
+   * suggéré (recette du 09/10).
+   */
+  const profil = (nom: string, intitule: string): { statut: number; corps: string } => {
+    const carte = 'com.linkedin.sdui.profile.card.refURN';
+    return {
+      statut: 200,
+      corps:
+        `<html><head><title>${nom} | LinkedIn</title></head><body>` +
+        `<div id="${carte}Topcard" componentkey="${carte}Topcard">` +
+        `<h2>${nom}</h2><p>· 3e</p>${intitule === '' ? '' : `<p>${intitule}</p>`}<p>Acme</p></div>` +
+        `<div id="${carte}Activity"></div></body></html>`,
+    };
+  };
   const url = (slug: string): string => `https://www.linkedin.com/in/${slug}/`;
   const contact = (slug: string, titre: string | null, extra: Partial<ContactFactice> = {}): ContactFactice => ({
     id: `c-${slug}`,
@@ -774,6 +786,83 @@ describe('la source « changement de poste »', () => {
     expect(c.params[5]).toBe(1);
     expect(c.params[7]).toBe(1);
     expect(c.params[c.params.length - 1]).toBe(0);
+  });
+
+  /**
+   * Le contrôle de vraisemblance, posé après la recette du 09/10 : cinq profils relus avaient
+   * donné cinq « changements », dont deux venaient d'une ligne qui n'était pas l'intitulé.
+   */
+  const cinqContacts = (titre: string): ContactFactice[] =>
+    ['a', 'b', 'c', 'd', 'e'].map((x) => contact(`${x}-exemple`, titre));
+  const cinqPages = (intitules: readonly string[]) =>
+    pagesDeProfils(
+      Object.fromEntries(
+        ['a', 'b', 'c', 'd', 'e'].map((x, i) => [`${x}-exemple`, profil(`${x} Exemple`, intitules[i] ?? 'Directrice commerciale')]),
+      ),
+    );
+
+  it('refuse le passage quand TOUS les profils relus semblent avoir changé, sans rien écrire', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: cinqContacts('Directrice commerciale') });
+    const p = pilote({ reponse: cinqPages(['Un', 'Deux', 'Trois', 'Quatre', 'Cinq']) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('error');
+    expect(c.params[3]).toContain('chang');
+    // Rien d'écrit : ni signal, ni intitulé écrasé. Les contacts ne sont pas marqués non plus,
+    // donc ils repassent en tête de la rotation demain.
+    expect(signaux(b)).toEqual([]);
+    expect(verifies(b)).toEqual([]);
+  });
+
+  it('refuse aussi à la limite du seuil : quatre changements sur cinq profils lus', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: cinqContacts('Directrice commerciale') });
+    const p = pilote({ reponse: cinqPages(['Un', 'Deux', 'Trois', 'Quatre', 'Directrice commerciale']) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('error');
+    expect(signaux(b)).toEqual([]);
+  });
+
+  it('laisse passer trois changements sur cinq : c’est sous le seuil, donc plausible', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: cinqContacts('Directrice commerciale') });
+    const p = pilote({ reponse: cinqPages(['Un', 'Deux', 'Trois', 'Directrice commerciale', 'Directrice commerciale']) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('success');
+    expect(signaux(b)).toHaveLength(3);
+  });
+
+  it('ne jugé pas un passage trop court : deux profils lus, deux changements, acceptés', async () => {
+    // En deçà de cinq profils, la proportion ne veut rien dire — deux changements sur deux
+    // arrivent pour de vrai. Refuser ici bloquerait une petite organisation en permanence.
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [contact('ada-exemple', 'Directrice commerciale'), contact('leo-exemple', 'Directeur commercial')],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'Directrice générale'),
+        'leo-exemple': profil('Leo Exemple', 'Directeur général'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('success');
+    expect(signaux(b)).toHaveLength(2);
+  });
+
+  it('un profil sans intitulé ne compte NI comme changement NI dans les écritures', async () => {
+    // Mesuré sur un profil réel : l'intitulé valait « . ». Ce n'est pas un changement de poste,
+    // et l'ancien intitulé de la fiche ne doit pas être écrasé par du vide.
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Directrice commerciale')] });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', '.') }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('success');
+    expect(signaux(b)).toEqual([]);
+    // Marqué vérifié, mais avec un intitulé vide : la requête ne remplace alors rien.
+    expect(verifies(b)).toEqual(['c-ada-exemple']);
   });
 
   it('arrive sur le fil avant de relire (le fetch part de la page courante), et trace chaque requête', async () => {

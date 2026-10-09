@@ -1,6 +1,7 @@
 // Point d'entrée du bundle de linkedin-chemin-personne.sh : réexporte, sans les
 // modifier, les fonctions de production dont le SQL est exécuté par le harnais.
 export { ecarterSignalDePersonne, enregistrerEngageur, enregistrerChangementDePoste } from '../../apps/worker/src/handlers/post-engagement.js';
+export { marquerContactVerifie } from '../../apps/worker/src/handlers/collecte-linkedin.js';
 export { compterSignauxScorables, runScore } from '../../apps/worker/src/handlers/score.js';
 export { persistEnrichedContact } from '../../apps/worker/src/enrichment-persist.js';
 export { ecarterSignauxTropAnciens, enqueueEnrollments } from '../../apps/worker/src/producer.js';

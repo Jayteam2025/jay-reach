@@ -34,6 +34,7 @@ import {
   KINDS_PERSONNE,
   sqlPredicatUniciteDePersonne,
   enregistrerChangementDePoste,
+  marquerContactVerifie,
 } from './_linkedin-chemin-personne-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -887,6 +888,30 @@ async function gardeDuChangementDePoste() {
   const issue3 = await enregistrerChangementDePoste(
     m.ctx, { contactId: avecTitre, ancienIntitule: 'Directrice generale', nouvelIntitule: 'Directrice generale', urlProfil: 'https://www.linkedin.com/in/ada2/' }, { personaId: m.persona });
   check('93. le meme intitule revu ne cree pas un second signal', issue3 === 'inchange' && (await signaux(avecTitre)) === 1, String(issue3));
+  // 2b. Le signal garde l'intitule D'AVANT : sans lui, un changement declare a tort n'est ni
+  // auditable ni annulable. Cinq fiches ont ete perdues comme ca le 09/10.
+  const brut = (await q(
+    `select s.raw from signals s join contacts ct on ct.source_signal_id = s.id where ct.id = $1 and s.kind = 'job_change'`,
+    [avecTitre],
+  )).rows[0].raw;
+  check('92b. le signal conserve l ancien intitule dans raw',
+    brut !== null && brut.ancienIntitule === 'Directrice regionale' && brut.nouvelIntitule === 'Directrice generale',
+    JSON.stringify(brut));
+
+  // 4. marquerContactVerifie : un intitule LU VIDE ne doit rien poser. Mesure le 09/10 : un
+  // profil reel affichait « . » comme intitule, que la lecture rend desormais en chaine vide.
+  const jobFactice = { organizationId: m.org, sourceRunId: null, sourceId: null };
+  const vierge = await creerContact(null);
+  await marquerContactVerifie(pool, jobFactice, vierge, '   ');
+  const fiche4 = (await q(`select job_title, linkedin_verifie_le from contacts where id = $1`, [vierge])).rows[0];
+  check('94a. un intitule vide ne devient pas la reference, mais la verification est marquee',
+    fiche4.job_title === null && fiche4.linkedin_verifie_le !== null, JSON.stringify(fiche4));
+  await marquerContactVerifie(pool, jobFactice, vierge, 'Directrice commerciale');
+  check('94b. un intitule lu, lui, devient bien la reference',
+    (await q(`select job_title from contacts where id = $1`, [vierge])).rows[0].job_title === 'Directrice commerciale');
+  await marquerContactVerifie(pool, jobFactice, vierge, 'Directrice generale');
+  check('94c. et il ne remplace jamais un intitule deja connu',
+    (await q(`select job_title from contacts where id = $1`, [vierge])).rows[0].job_title === 'Directrice commerciale');
 }
 
 async function uniciteDesPersonnes() {

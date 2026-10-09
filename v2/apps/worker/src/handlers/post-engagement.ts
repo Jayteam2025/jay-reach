@@ -260,13 +260,25 @@ export async function enregistrerChangementDePoste(
     // L'`external_id` porte le NOUVEL intitulé : le même changement, revu au passage suivant, ne
     // crée pas un second signal ; un changement DE PLUS, lui, en crée un.
     const externalId = `changement:${entree.urlProfil}:${normaliserIntitule(nouveau)}`;
+    // `raw` garde l'intitulé D'AVANT. C'est la seule trace de ce que la fiche disait : l'écriture
+    // qui suit écrase `contacts.job_title`, et rien d'autre ne conserve l'ancienne valeur (ni
+    // `audit_events`, ni `contacts.enrichment`). Sans elle, un changement déclaré à tort n'est ni
+    // auditable ni annulable : constaté le 09/10 sur cinq fiches, perdues définitivement.
     const signal = await tx.query<{ id: string }>(
       `insert into signals
-         (organization_id, source_id, source_run_id, provider_id, external_id, kind, occurred_at, title, url, status)
-       values ($1, $2, $6, 'linkedin', $3, 'job_change', now(), $4, $5, 'new')
+         (organization_id, source_id, source_run_id, provider_id, external_id, kind, occurred_at, title, url, status, raw)
+       values ($1, $2, $6, 'linkedin', $3, 'job_change', now(), $4, $5, 'new', $7::jsonb)
        on conflict (organization_id, external_id) where ${sqlPredicatUniciteDePersonne()} do nothing
        returning id`,
-      [org, ctx.sourceId, externalId, nouveau, entree.urlProfil, ctx.sourceRunId],
+      [
+        org,
+        ctx.sourceId,
+        externalId,
+        nouveau,
+        entree.urlProfil,
+        ctx.sourceRunId,
+        JSON.stringify({ ancienIntitule: entree.ancienIntitule, nouvelIntitule: nouveau }),
+      ],
     );
     const signalId = signal.rows[0]?.id;
     // Déjà enregistré par un passage précédent (ou concurrent) : la fiche est à jour, rien à faire.
