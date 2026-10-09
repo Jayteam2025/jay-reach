@@ -380,7 +380,7 @@ export function frictionDuStatut(statut: number): Friction | null {
   return null;
 }
 
-const delaiAleatoire = (): number => DELAI_MIN_MS + Math.floor(Math.random() * (DELAI_MAX_MS - DELAI_MIN_MS));
+export const delaiAleatoire = (): number => DELAI_MIN_MS + Math.floor(Math.random() * (DELAI_MAX_MS - DELAI_MIN_MS));
 const pauseReelle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**

@@ -2171,9 +2171,9 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
   }
 
   // Une campagne dont AUCUNE source n'est collectée se lance, s'affiche active, et n'ajoute
-  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Le changement de
-  // poste LinkedIn n'a pas encore de collecteur ; tant que c'est le cas, il faut le dire
-  // AVANT le lancement, pas le laisser découvrir au bout d'une semaine.
+  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Les cinq types
+  // LinkedIn ont leur collecteur ; la garde reste pour le prochain type qui n'en aura pas encore,
+  // car il faut le dire AVANT le lancement, pas le laisser découvrir au bout d'une semaine.
   //
   // Une campagne sans aucune source reste légitime : ses contacts peuvent être importés ou
   // ajoutés à la main. Ce n'est donc un manque que s'il y a des sources, et qu'aucune ne sert.
@@ -2198,9 +2198,7 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
  * Les types sans collecteur, nommés comme l'écran les nomme. En dur, comme `LIBELLES` plus haut :
  * ce module ne dépend pas de next-intl.
  */
-const LIBELLES_TYPE_SANS_COLLECTEUR: Record<string, string> = {
-  linkedin_job_change: 'changement de poste LinkedIn',
-};
+const LIBELLES_TYPE_SANS_COLLECTEUR: Record<string, string> = {};
 
 export async function lancer(ctx: Contexte, entree: unknown): Promise<{ ok: true } | { ok: false; manques: string[] }> {
   exiger(ctx, 'operator');

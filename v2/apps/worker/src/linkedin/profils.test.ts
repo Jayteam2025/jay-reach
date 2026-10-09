@@ -8,6 +8,8 @@ import {
   estUrnDeProfil,
   extrairePostsDeProfil,
   identifiantDeProfil,
+  lireProfil,
+  lireProfilCourant,
   resoudreNomPublic,
   trouverPostsDeProfil,
 } from './profils.js';
@@ -229,5 +231,67 @@ describe('trouverPostsDeProfil', () => {
         surRequete: async () => undefined,
       }),
     ).rejects.toMatchObject({ name: 'FrictionLinkedIn' });
+  });
+});
+
+describe('lireProfilCourant', () => {
+  const page = (nom: string, intitule: string): string =>
+    `<html><head><title>${nom} | LinkedIn</title></head><body>` +
+    `<p class="fmbkzy"><span>${intitule}</span></p>` +
+    `<p class="fmbkzy"><span>Une entreprise</span></p>` +
+    `<p class="fmbkzy"><span>Encart sans rapport avec la personne</span></p>` +
+    `</body></html>`;
+
+  it('lit le nom dans le titre de la page et l’intitulé dans le premier bloc', () => {
+    // Deux ancres relevées sur trois profils réels le 09/10. Les blocs SUIVANTS portent
+    // l'entreprise, l'école, puis des encarts : un même texte publicitaire est apparu en
+    // troisième position sur deux profils différents.
+    expect(lireProfilCourant(page('Ada Lemercier', 'Directrice commerciale chez Acme'))).toEqual({
+      nom: 'Ada Lemercier',
+      intitule: 'Directrice commerciale chez Acme',
+    });
+  });
+
+  it('décode les entités HTML, des deux côtés', () => {
+    // Mesuré : « Directeur Commercial &amp; Membre du comité de direction ». Comparer un
+    // intitulé encodé à un intitulé décodé ferait voir un changement de poste là où rien n'a
+    // bougé — et réveillerait la personne à CHAQUE passage.
+    const p = lireProfilCourant(page('Ada &amp; Bruno', 'Directrice &amp; associée'));
+    expect(p).toEqual({ nom: 'Ada & Bruno', intitule: 'Directrice & associée' });
+  });
+
+  it('refuse plutôt que de deviner quand la page ne livre pas d’intitulé', () => {
+    // Un mauvais intitulé annoncerait un changement de poste qui n'a pas eu lieu, et
+    // déclencherait un envoi. Rendre `null` ne fait que sauter la vérification du jour.
+    expect(lireProfilCourant('<html><head><title>Ada Lemercier | LinkedIn</title></head><body></body></html>')).toBeNull();
+    expect(lireProfilCourant('<html><body><p><span>Directrice</span></p></body></html>')).toBeNull();
+    expect(lireProfilCourant('')).toBeNull();
+  });
+});
+
+describe('lireProfil', () => {
+  it('rend le profil courant quand la page répond', async () => {
+    const p = pilote({
+      requete: async () => ({
+        statut: 200,
+        corps: '<title>Ada Lemercier | LinkedIn</title><p><span>Directrice commerciale</span></p>',
+      }),
+    });
+    expect(await lireProfil(p, 'ada-lemercier')).toEqual({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale' });
+  });
+
+  it('rend null sur un profil introuvable, sans suspendre la session', async () => {
+    // Un compte fermé ou renommé n'est pas un verdict sur le nôtre : on saute la personne.
+    for (const statut of [404, 410]) {
+      const p = pilote({ requete: async () => ({ statut, corps: '' }) });
+      expect(await lireProfil(p, 'ada-lemercier')).toBeNull();
+    }
+  });
+
+  it('remonte en revanche un défi ou un cookie refusé', async () => {
+    for (const statut of [999, 401, 403]) {
+      const p = pilote({ requete: async () => ({ statut, corps: '' }) });
+      await expect(lireProfil(p, 'ada-lemercier')).rejects.toMatchObject({ name: 'FrictionLinkedIn' });
+    }
   });
 });

@@ -83,13 +83,11 @@ export interface EtapeSourcesLibelles {
   formLinkedinCreatorProfilesHint: string;
   formLinkedinTopics: string;
   formLinkedinTopicsHint: string;
-  formLinkedinSinceDays: string;
-  formLinkedinAccountId: string;
-  formLinkedinProfilesPerDay: string;
+  formLinkedinJobChangeHint: string;
   formLinkedinErreur: string;
   /** Bandeau du formulaire des engageurs d'un post : l'assistant crée toujours un brouillon. */
   formLinkedinBrouillon: string;
-  resumeLinkedin: (n: number) => string;
+  resumeLinkedinJobChange: string;
   formAjouter: string;
   formAnnuler: string;
   formErreur: string;
@@ -287,8 +285,8 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
   if (source.providerId === 'linkedin_keywords') {
     return asListeChaines(source.config.sujets).join(', ');
   }
-  const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
-  return libelles.resumeLinkedin(profilsParJour);
+  // Changement de poste : rien à résumer, la source n'a aucun réglage. On dit ce qu'elle fait.
+  return libelles.resumeLinkedinJobChange;
 }
 
 /**
@@ -443,9 +441,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               creatorProfilesHint: libelles.formLinkedinCreatorProfilesHint,
               topics: libelles.formLinkedinTopics,
               topicsHint: libelles.formLinkedinTopicsHint,
-              sinceDays: libelles.formLinkedinSinceDays,
-              accountId: libelles.formLinkedinAccountId,
-              profilesPerDay: libelles.formLinkedinProfilesPerDay,
+              jobChangeHint: libelles.formLinkedinJobChangeHint,
             }}
           />
           {erreurLinkedin && <div className="jr-aide-erreur">{libelles.formLinkedinErreur}</div>}

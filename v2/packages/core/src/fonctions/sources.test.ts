@@ -9,6 +9,7 @@ import {
   activerSource,
   collecteImplementee,
   configFormulaireDepuisStockee,
+  configLinkedInChangementPoste,
   configLinkedInCreateur,
   configLinkedInMotsCles,
   configLinkedInPost,
@@ -829,13 +830,12 @@ describe('listerListesOrganisation', () => {
 // `collecteDisponible` portait deux décisions sans rapport : écrire une ligne `source_providers`
 // (jamais pour LinkedIn) et afficher l'interrupteur d'une carte. Les deux sont désormais séparées.
 describe('collecteImplementee / providerIdReel — deux décisions, deux fonctions', () => {
-  it('les quatre sources collectées par le serveur le sont, le changement de poste non (lot 4b)', () => {
+  it('les cinq types LinkedIn sont collectés par le serveur', () => {
     expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
     expect(collecteImplementee('linkedin_competitor_posts')).toBe(true);
     expect(collecteImplementee('linkedin_creator_posts')).toBe(true);
     expect(collecteImplementee('linkedin_keywords')).toBe(true);
-    // Pas encore de collecteur : son point d’entrée n’a pas été relevé.
-    expect(collecteImplementee('linkedin_job_change')).toBe(false);
+    expect(collecteImplementee('linkedin_job_change')).toBe(true);
   });
 
   it('les offres restent collectées', () => {
@@ -915,5 +915,35 @@ describe('source « recherche par mot-clé »', () => {
   it('est enregistrée comme type de veille et collectée par le serveur', () => {
     expect(TYPES_VEILLE).toContain('linkedin_keywords');
     expect(TYPES_LINKEDIN_COLLECTES).toContain('linkedin_keywords');
+  });
+});
+
+describe('source « changement de poste »', () => {
+  it('le schéma n’a aucun réglage : un objet vide passe, le persona est optionnel', () => {
+    expect(configLinkedInChangementPoste.safeParse({}).success).toBe(true);
+    expect(configLinkedInChangementPoste.safeParse({ personaId: 'p1' }).success).toBe(true);
+    expect(configLinkedInChangementPoste.safeParse({ personaId: '' }).success).toBe(false);
+  });
+
+  it('le schéma est strict : ni compte, ni cadence, ni ancienneté ne passent plus', () => {
+    expect(configLinkedInChangementPoste.safeParse({ compteId: 'c1' }).success).toBe(false);
+    expect(configLinkedInChangementPoste.safeParse({ profilsParJour: 40 }).success).toBe(false);
+    expect(configLinkedInChangementPoste.safeParse({ depuisJours: 90 }).success).toBe(false);
+  });
+
+  it('relit le persona depuis la config stockée, sans les champs retirés', () => {
+    const f = configFormulaireDepuisStockee('linkedin_job_change', {
+      sourceType: 'linkedin_job_change',
+      personaId: 'p1',
+      compteId: 'ancien',
+      profilsParJour: 40,
+      depuisJours: 90,
+    });
+    expect(f).toEqual({ personaId: 'p1' });
+  });
+
+  it('est enregistrée comme type de veille et collectée par le serveur', () => {
+    expect(TYPES_VEILLE).toContain('linkedin_job_change');
+    expect(TYPES_LINKEDIN_COLLECTES).toContain('linkedin_job_change');
   });
 });

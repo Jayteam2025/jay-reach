@@ -38,19 +38,22 @@ import {
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
-import { ErreurCollecte, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
+import { ErreurCollecte, delaiAleatoire, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
-import { trouverPostsDeProfil } from '../linkedin/profils.js';
+import { arriverSurLeFil, identifiantDeProfil, lireProfil, trouverPostsDeProfil } from '../linkedin/profils.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
 import { arriverSurLaRecherche, chercherPersonnes } from '../linkedin/recherche.js';
-import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
+import { TYPES_LINKEDIN_COLLECTES, lienProfilDeduit } from '@jay-reach/core';
 import {
   adresseDeduite,
   engageurSchema,
+  enregistrerChangementDePoste,
   enregistrerEngageur,
   enregistrerPersonne,
   identiteDeRecherche,
   prefixeDeRecherche,
+  sqlAdresseResolvable,
+  type FragmentSql,
   type IssueEngageur,
 } from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
@@ -104,6 +107,7 @@ export const MSG = {
   rien_de_neuf: 'Aucun post nouveau à lire sur ces pages ou ces profils : tout a déjà été collecté.',
   mots_cles_absents: 'Aucun mot-clé n’est renseigné : ajoutez-en à la source.',
   recherche_vide: 'La recherche ne livre aucune personne nouvelle pour ces mots-clés.',
+  aucun_a_relire: 'Aucun contact à relire : aucun contact de l’organisation n’a d’adresse LinkedIn lisible.',
 } as const;
 
 const TITRE_ARRET = 'Collecte LinkedIn arrêtée';
@@ -145,7 +149,10 @@ const bilanVierge = (): Bilan => ({
 });
 
 /**
- * Quatre sources, un seul collecteur.
+ * Cinq sources, un seul collecteur.
+ *
+ * `changement` : aucune découverte. On relit, par roulement, le profil de contacts DÉJÀ connus et
+ * on compare l'intitulé ; un intitulé qui a changé réveille la personne (`enregistrerChangementDePoste`).
  *
  * `recherche` : aucun post. L'opérateur donne des mots-clés, on cherche des PERSONNES et on les
  * enregistre directement, sous leur nom public.
@@ -162,6 +169,7 @@ type ConfigCollecte = {
   | { readonly mode: 'post'; readonly urlPost: string }
   | { readonly mode: 'pages' | 'profils'; readonly entrees: string[] }
   | { readonly mode: 'recherche'; readonly entrees: string[] }
+  | { readonly mode: 'changement' }
 );
 
 /**
@@ -204,6 +212,7 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
   if (personaId === undefined || personaId === null) return { erreur: MSG.persona };
   const campagne = { id: ligne.campagne_id, personaId };
 
+  if (config.sourceType === 'linkedin_job_change') return { mode: 'changement', garder, campagne };
   if (config.sourceType === 'linkedin_keywords') {
     const entrees = (Array.isArray(config.sujets) ? config.sujets : []).map((v) => String(v).trim()).filter((v) => v.length > 0);
     if (entrees.length === 0) return { erreur: MSG.mots_cles_absents };
@@ -244,6 +253,66 @@ async function lireNomsPublicsEnregistres(
     [job.organizationId, job.sourceId, prefixe, prefixe.length],
   );
   return new Set(res.rows.map((r) => r.external_id.slice(prefixe.length)));
+}
+
+/** Un contact à relire : de quoi comparer son intitulé, et de quoi aller le chercher. */
+interface ContactARelire {
+  readonly id: string;
+  readonly urlProfil: string;
+  readonly intitule: string | null;
+}
+
+/**
+ * Les contacts à relire, en rotation : ceux qu'on n'a jamais relus d'abord, puis le moins
+ * récemment relu (`contacts_linkedin_a_verifier_idx`, même ordre).
+ *
+ * Une adresse DÉDUITE d'un URN ne mène à aucune page lisible (`sqlAdresseResolvable`, la même
+ * définition que l'enrichissement) : la relire coûterait une requête pour rien, et sa place dans
+ * la rotation serait prise sans jamais avancer. Une personne sur la liste de suppression n'est pas
+ * relue non plus : lire son profil pour la réveiller serait la traiter, comme `enregistrerPersonne`
+ * le refuse dès la collecte.
+ */
+async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite: number): Promise<ContactARelire[]> {
+  const res = await pool.query<{ id: string; linkedin_url: string; job_title: string | null }>(
+    `select c.id, c.linkedin_url, c.job_title /* jr:linkedin_collecte_a_relire */
+       from contacts c
+      where c.organization_id = $1
+        and c.linkedin_url is not null
+        and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
+        and not exists (
+          select 1 from suppressions su
+           where su.organization_id = c.organization_id and su.scope = 'linkedin'
+             and (su.expires_at is null or su.expires_at > now())
+             and app.url_linkedin_normalisee(su.value) = app.url_linkedin_normalisee(c.linkedin_url))
+      order by c.linkedin_verifie_le nulls first, c.id
+      limit $2`,
+    [job.organizationId, limite, lienProfilDeduit('')],
+  );
+  return res.rows.map((r) => ({ id: r.id, urlProfil: r.linkedin_url, intitule: r.job_title }));
+}
+
+/**
+ * Pose `linkedin_verifie_le` : TOUJOURS, qu'il y ait eu changement, aucun changement ou une lecture
+ * ratée. Sans cela la rotation resterait collée sur les mêmes profils (ceux qu'on ne sait pas lire
+ * en tête) et n'atteindrait jamais les suivants. `enregistrerChangementDePoste` ne le pose que dans
+ * le cas `change` ; c'est ici que les autres cas le reçoivent.
+ *
+ * `intituleLu` : quand le contact n'avait aucun intitulé connu, l'intitulé lu devient sa référence
+ * (sans rien déclarer : voir l'appelant). Un intitulé déjà connu n'est jamais écrasé ici.
+ */
+async function marquerContactVerifie(
+  pool: Pool,
+  job: CollecteLinkedInJob,
+  contactId: string,
+  intituleLu: string | null,
+): Promise<void> {
+  await pool.query(
+    `update contacts /* jr:linkedin_collecte_verifie */
+        set linkedin_verifie_le = now(),
+            job_title = coalesce(nullif(btrim(job_title), ''), $3)
+      where id = $2 and organization_id = $1`,
+    [job.organizationId, contactId, intituleLu],
+  );
 }
 
 /**
@@ -521,8 +590,10 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     }
 
     const budget = await calculerBudget(ctx, job.sourceRunId);
-    // Une recherche ne lit aucun post : le plafond de posts du jour ne la concerne pas.
-    const postsEpuises = config.mode !== 'recherche' && budget.postsRestants <= 0;
+    // Une recherche et une relecture de profils ne lisent aucun post : le plafond de posts du jour
+    // ne les concerne pas.
+    const sansPost = config.mode === 'recherche' || config.mode === 'changement';
+    const postsEpuises = !sansPost && budget.postsRestants <= 0;
     if (postsEpuises || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
       // Plafond : un passage à vide, pas un échec. Le rejouer redépasserait le
       // même plafond.
@@ -599,10 +670,75 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     let arretRecherche: ArretCollecte | null = null;
     /** Les entrées (pages ou profils) qu'on n'a pas su lire. Une seule n'arrête pas le passage ; toutes, si. */
     const pagesEnEchec: string[] = [];
-    /** Résultat du mode `recherche`, qui ne lit aucun post. */
+    /** Résultat des modes `recherche` et `changement`, qui ne lisent aucun post. */
     let arretDeRecherche: ArretCollecte = 'fini';
     if (config.mode === 'post') {
       postsALire.push(config.urlPost);
+    } else if (config.mode === 'changement') {
+      // Chaque profil relu coûte une requête : le passage est borné par le budget de requêtes
+      // comme par le plafond de personnes, le plus bas des deux. Une requête de plus part pour
+      // arriver sur LinkedIn (`arriverSurLeFil`).
+      const aRelire = await lireContactsARelire(pool, job, Math.min(budget.personnesMax, Math.max(0, requetesRestantes() - 1)));
+      if (aRelire.length === 0) {
+        traficTermine = true;
+        // Rien à relire n'est pas un échec : le dire plutôt que d'afficher « 0 » sans motif.
+        await refuser(pool, job, requetesRestantes() <= 1 ? MSG.plafond_requetes : MSG.aucun_a_relire, { statut: 'success', bilan, sortie });
+        return;
+      }
+      const frictionAArrivee = await arriverSurLeFil(pilote, surRequete);
+      if (frictionAArrivee !== null) arretDeRecherche = frictionAArrivee;
+      for (const contact of frictionAArrivee === null ? aRelire : []) {
+        if (requetesRestantes() <= 0) {
+          arretDeRecherche = 'plafond';
+          break;
+        }
+        const nomPublic = identifiantDeProfil(contact.urlProfil);
+        let lu: Awaited<ReturnType<typeof lireProfil>> = null;
+        if (nomPublic !== null) {
+          // Toujours une pause : relire des profils à la suite est ce qui se repère le mieux.
+          await d.pause(delaiAleatoire());
+          try {
+            await surRequete();
+            lu = await lireProfil(pilote, nomPublic);
+          } catch (err) {
+            if (!(err instanceof ErreurCollecte)) throw err;
+            // Un défi ou un cookie refusé arrêtent TOUT, et le contact n'est pas marqué : il
+            // n'a pas été lu, il garde sa place en tête de la rotation.
+            if (err.friction) {
+              arretDeRecherche = err.friction;
+              break;
+            }
+            console.warn(`[collecte-linkedin] profil ignoré (${err.name})`);
+          }
+        }
+        bilan.vus += 1;
+        // Plus de trafic LinkedIn pendant l'écriture : voir `traficTermine`.
+        traficTermine = true;
+        if (lu === null) {
+          // Illisible (profil fermé, page changée, adresse illisible) : sauté pour aujourd'hui, et
+          // marqué pour que la rotation avance. Jamais pris pour un changement.
+          bilan.ignores += 1;
+          await marquerContactVerifie(pool, job, contact.id, null);
+        } else if (contact.intitule === null || contact.intitule.trim().length === 0) {
+          // Aucun intitulé connu à comparer : le lu devient la référence, sans rien déclarer.
+          // Annoncer « a changé de poste » pour une fiche qui n'en avait pas réveillerait tout un
+          // fichier importé sans titre.
+          bilan.doublons += 1;
+          await marquerContactVerifie(pool, job, contact.id, lu.intitule);
+        } else {
+          const issue = await enregistrerChangementDePoste(
+            contexteEngageur,
+            { contactId: contact.id, ancienIntitule: contact.intitule, nouvelIntitule: lu.intitule, urlProfil: contact.urlProfil },
+            config.campagne,
+          );
+          if (issue === 'change') bilan.nouveaux += 1;
+          else if (issue === 'inchange') bilan.doublons += 1;
+          else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
+          await marquerContactVerifie(pool, job, contact.id, null);
+        }
+        traficTermine = false;
+      }
+      traficTermine = true;
     } else if (config.mode === 'recherche') {
       for (const motsCles of config.entrees) {
         if (requetesRestantes() <= 0) {
@@ -731,7 +867,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       }
     }
 
-    let arret: ArretCollecte = config.mode === 'recherche' ? arretDeRecherche : (arretRecherche ?? 'fini');
+    let arret: ArretCollecte = sansPost ? arretDeRecherche : (arretRecherche ?? 'fini');
     for (const post of postsALire) {
       // Le trouveur rend des URN : la mémoire les garde sous cette identité. Le collecteur, lui,
       // charge la page du post, donc il lui faut une adresse.

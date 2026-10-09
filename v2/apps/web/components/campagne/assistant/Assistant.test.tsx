@@ -67,12 +67,10 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinCreatorProfilesHint: 'L’adresse du profil.',
   formLinkedinTopics: 'Mots-clés de recherche',
   formLinkedinTopicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
-  formLinkedinSinceDays: 'Poste pris depuis (jours)',
-  formLinkedinAccountId: 'Compte LinkedIn',
-  formLinkedinProfilesPerDay: 'Profils lus par jour',
-  formLinkedinErreur: 'Le compte LinkedIn et le champ propre à ce type de source sont nécessaires.',
+  formLinkedinJobChangeHint: 'Cette source ne trouve personne de nouveau : elle surveille les contacts que vous avez déjà.',
+  formLinkedinErreur: 'Le champ propre à ce type de source est nécessaire.',
   formLinkedinBrouillon: "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
-  resumeLinkedin: (n: number) => `${n} profils par jour`,
+  resumeLinkedinJobChange: 'Relit les contacts déjà connus',
   formAjouter: 'Ajouter',
   formAnnuler: 'Annuler',
   formErreur: 'Au moins un mot-clé est nécessaire.',
@@ -101,7 +99,7 @@ describe('construireGroupesMenu (R57 — catalogue complet du menu « + Ajouter 
     expect(ouvrir).toHaveBeenNthCalledWith(2, 'france_travail');
   });
 
-  it('groupe LinkedIn : le badge « en attente » est sur les types que le serveur ne collecte pas, et sur eux seuls', () => {
+  it('groupe LinkedIn : le badge « en attente » suit la règle du serveur (aucun type n’en porte plus)', () => {
     const ouvrir = vi.fn();
     const groupes = construireGroupesMenu(LIBELLES_SOURCES, ouvrir);
     expect(groupes[1]!.titre).toBe(LIBELLES_SOURCES.menuLinkedin);
@@ -117,9 +115,10 @@ describe('construireGroupesMenu (R57 — catalogue complet du menu « + Ajouter 
       expect({ id, badge: html.includes(LIBELLES_SOURCES.menuLinkedinBadge) }).toEqual({ id, badge: attendu });
       expect(html.includes('jr-puce gris')).toBe(attendu);
     });
-    // Et au moins un de chaque côté : sans cela, la boucle passerait si tout était collecté.
-    expect(IDS_LINKEDIN.some((id) => collecteServeurDisponible(id))).toBe(true);
-    expect(IDS_LINKEDIN.some((id) => !collecteServeurDisponible(id))).toBe(true);
+    // Les cinq types sont collectés : plus aucun badge. Le contrôle ci-dessus reste la règle, et
+    // celui-ci garde la boucle de passer à vide si la liste des types se vidait.
+    expect(IDS_LINKEDIN).toHaveLength(5);
+    expect(IDS_LINKEDIN.every((id) => collecteServeurDisponible(id))).toBe(true);
 
     groupes[1]!.entrees.forEach((entree) => entree.onSelectionner?.());
     IDS_LINKEDIN.forEach((id, i) => expect(ouvrir).toHaveBeenNthCalledWith(i + 1, id));
@@ -256,18 +255,19 @@ describe('construireEntreeAssistant — sélection des boîtes d’envoi (R71, t
 });
 
 describe('EtapeSources — sources déjà ajoutées', () => {
-  it('une source LinkedIn ajoutée affiche son résumé (profils par jour) et le badge « collecte activée au lot 4 »', () => {
+  it('une source « changement de poste » ajoutée dit ce qu’elle fait, sans chiffre inventé ni badge « en attente »', () => {
     const source: SourceAssistant = {
       cle: 'k1',
       providerId: 'linkedin_job_change',
       nom: 'Changement de poste',
-      config: { compteId: 'c1', profilsParJour: 25, depuisJours: 60 },
+      config: {},
     };
     const html = renderToStaticMarkup(
       <EtapeSources sources={[source]} onAjouter={() => {}} onRetirer={() => {}} disabled={false} libelles={LIBELLES_SOURCES} />,
     );
-    expect(html).toContain('25 profils par jour');
-    expect(html).toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+    expect(html).toContain('Relit les contacts déjà connus');
+    expect(html).not.toContain('profils par jour');
+    expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
   });
 
   it('le formulaire des engageurs d’un post porte le bandeau de brouillon, les autres types non', () => {
@@ -308,12 +308,12 @@ describe('EtapeSources — sources déjà ajoutées', () => {
     expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
   });
 
-  it('le menu : la recherche par mot-clé ne porte plus le badge, le changement de poste le garde', () => {
+  it('le menu : plus aucun type LinkedIn ne porte le badge « en attente »', () => {
     const groupes = construireGroupesMenu(LIBELLES_SOURCES, vi.fn());
     const badgePour = (id: TypeLinkedIn) =>
       renderToStaticMarkup(<>{groupes[1]!.entrees[IDS_LINKEDIN.indexOf(id)]!.titre}</>).includes(LIBELLES_SOURCES.menuLinkedinBadge);
     expect(badgePour('linkedin_keywords')).toBe(false);
-    expect(badgePour('linkedin_job_change')).toBe(true);
+    expect(badgePour('linkedin_job_change')).toBe(false);
   });
 
   it('une source Adzuna ajoutée résume mots-clés et lieux, sans badge LinkedIn', () => {
@@ -668,26 +668,20 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     creatorProfilesHint: 'L’adresse du profil.',
     topics: 'Mots-clés de recherche',
     topicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
-    sinceDays: 'Poste pris depuis (jours)',
-    accountId: 'Compte LinkedIn',
-    profilesPerDay: 'Profils lus par jour',
+    jobChangeHint: 'Cette source ne trouve personne de nouveau : elle surveille les contacts que vous avez déjà.',
   };
 
   it('chaque champ du sous-type affiché a un id (préfixé par idPrefix) relié à son libellé', () => {
     const html = renderToStaticMarkup(
       <ChampsSourceLinkedIn
-        providerId="linkedin_job_change"
+        providerId="linkedin_keywords"
         etat={etatChampsLinkedInDepuisConfig()}
         onChange={() => {}}
         libelles={LIBELLES}
         idPrefix="assistant-sources-linkedin"
       />,
     );
-    for (const id of [
-      'assistant-sources-linkedin-since-days',
-      'assistant-sources-linkedin-account-id',
-      'assistant-sources-linkedin-profiles-per-day',
-    ]) {
+    for (const id of ['assistant-sources-linkedin-topics']) {
       expect(html).toContain(`for="${id}"`);
       expect(html).toContain(`id="${id}"`);
     }

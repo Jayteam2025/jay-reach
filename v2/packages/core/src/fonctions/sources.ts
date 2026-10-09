@@ -137,6 +137,7 @@ export const TYPES_LINKEDIN_COLLECTES: readonly string[] = [
   'linkedin_competitor_posts',
   'linkedin_creator_posts',
   'linkedin_keywords',
+  'linkedin_job_change',
 ];
 
 /**
@@ -250,11 +251,19 @@ export const configLinkedInMotsCles = z
   .strict();
 export type ConfigLinkedInMotsCles = z.infer<typeof configLinkedInMotsCles>;
 
+/**
+ * Changement de poste : la seule source qui ne DÉCOUVRE personne. Sans Sales Navigator, LinkedIn
+ * n'offre aucun filtre « a changé de poste » : le serveur relit, par roulement, le profil des
+ * contacts de l'organisation qu'il connaît déjà et compare l'intitulé. Elle RÉVEILLE des contacts
+ * existants. Aucun réglage propre : le rythme est celui des plafonds (`linkedin_settings`), et
+ * `depuisJours` (« poste pris depuis N jours ») est retiré : la page lue ne livre que l'intitulé,
+ * jamais une date de prise de poste, donc rien n'aurait pu l'appliquer — seule la comparaison avec
+ * l'intitulé déjà connu décide.
+ */
 export const configLinkedInChangementPoste = z
   .object({
-    depuisJours: z.number().int().positive().max(365).default(90),
-    compteId: z.string().min(1),
-    profilsParJour: z.number().int().positive().max(200).default(40),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
   })
   .strict();
 export type ConfigLinkedInChangementPoste = z.infer<typeof configLinkedInChangementPoste>;
@@ -412,11 +421,7 @@ export function configFormulaireDepuisStockee(
       personaId: chaineOuIndefinie(c.personaId),
     };
   }
-  return {
-    depuisJours: nombreOuIndefini(c.depuisJours) ?? 90,
-    compteId: chaineOuVide(c.compteId),
-    profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
-  };
+  return { personaId: chaineOuIndefinie(c.personaId) };
 }
 
 function lireSourceType(config: Record<string, unknown> | null): TypeVeille {

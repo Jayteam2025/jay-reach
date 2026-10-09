@@ -12,7 +12,13 @@ export type ChannelKind = 'email' | 'linkedin' | 'mail';
  * ajouté ici, ce qui n'a rien cassé parce que rien ne s'en sert pour décider. Le laisser faux
  * entretenait l'idée qu'il n'y avait que trois natures.
  */
-export type SignalKind = 'job_posting' | 'appointment' | 'tradeshow' | 'post_engagement' | 'people_search';
+export type SignalKind =
+  | 'job_posting'
+  | 'appointment'
+  | 'tradeshow'
+  | 'post_engagement'
+  | 'people_search'
+  | 'job_change';
 
 /**
  * Les signaux qui décrivent une PERSONNE, par opposition à une entreprise (une offre d'emploi,
@@ -27,8 +33,21 @@ export type SignalKind = 'job_posting' | 'appointment' | 'tradeshow' | 'post_eng
  * `sqlCampagneSansEmail`) — brancher une troisième source de personnes ne doit toucher que
  * cette ligne.
  */
-export const KINDS_PERSONNE = ['post_engagement', 'people_search'] as const satisfies readonly SignalKind[];
+export const KINDS_PERSONNE = ['post_engagement', 'people_search', 'job_change'] as const satisfies readonly SignalKind[];
 export type KindPersonne = (typeof KINDS_PERSONNE)[number];
+
+/**
+ * Le prédicat de l'index unique partiel `signals_personne_uidx`, mot pour mot.
+ *
+ * Un `on conflict (cols) where <prédicat>` n'infère un index partiel que si le prédicat
+ * CORRESPOND. Écrit à la main dans chaque insertion, il finit par ne plus couvrir un kind qu'on
+ * vient d'ajouter — et Postgres refuse alors l'insertion (« no unique or exclusion constraint
+ * matching »), au premier enregistrement réel et nulle part avant. Un harnais vérifie que
+ * l'index en base porte exactement ce prédicat.
+ */
+export function sqlPredicatUniciteDePersonne(): string {
+  return `kind in (${KINDS_PERSONNE.map((k) => `'${k}'`).join(', ')})`;
+}
 
 /** Vrai quand ce signal décrit une personne. À préférer à toute comparaison en dur. */
 export function estSignalDePersonne(kind: string): kind is KindPersonne {

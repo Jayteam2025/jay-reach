@@ -21,6 +21,11 @@
 //   8. collecte-linkedin.ts : supprimer l'appel à `verifierDisjoncteur` — 26 rougit.
 //   9. collecte-linkedin.ts : relire la session APRÈS avoir ouvert le navigateur —
 //      le contrôle 21 rougit.
+//  10. collecte-linkedin.ts, `lireContactsARelire` : retirer `sqlAdresseResolvable` — le
+//      contrôle 95 rougit (l'adresse déduite, en tête de rotation, est relue).
+//  11. collecte-linkedin.ts, `lireContactsARelire` : ordonner par `c.id` seul — 94b rougit.
+//  12. collecte-linkedin.ts : ne plus appeler `marquerContactVerifie` pour un profil illisible —
+//      94b ou 96 rougit (la rotation reste collée sur le profil fermé).
 import pg from 'pg';
 import {
   DUREE_VERROU_COLLECTE_MS,
@@ -707,13 +712,16 @@ async function producteur() {
   // Une demande sur un type LinkedIn que le worker ne sait pas collecter. `lancerCampagne` en
   // produit à CHAQUE lancement, sur toutes les sources actives : tant que le refus ne vivait
   // que dans les journaux du conteneur, l'opérateur voyait sa campagne partir et n'obtenait
-  // jamais ni contact ni explication.
-  const { id: srcNonCollectee } = await creerSource(m.ctx, {
-    campagneId: m.campagne,
-    providerId: 'linkedin_job_change',
-    nom: 'Changement de poste',
-    config: { depuisJours: 90, compteId: 'compte-1', profilsParJour: 40 },
-  });
+  // jamais ni contact ni explication. Les cinq types connus sont collectés depuis le changement
+  // de poste : le cas se joue avec un type pas encore branché, posé en SQL (aucune fonction de
+  // production ne crée un type qui n'existe pas).
+  const srcNonCollectee = (
+    await q(
+      `insert into sources (organization_id, name, config, schedule, is_active) values ($1, 'Type pas encore branché', $2::jsonb, 'every 24h', true) returning id`,
+      [m.org, JSON.stringify({ sourceType: 'linkedin_pas_encore_branche' })],
+    )
+  ).rows[0].id;
+  await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [m.campagne, srcNonCollectee]);
   envoyes.length = 0;
   await q(`update sources set run_requested_at = now() where id = $1`, [srcNonCollectee]);
   const refusees = await enqueueRequestedRuns(boss, pool);
@@ -1473,7 +1481,11 @@ async function lancementSansCollecteur() {
     q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'call')`, [campagne]);
 
   // 1. Une source dont le type n'a pas de collecteur : le manque doit être signalé, et NOMMER
-  // le type, sinon l'opérateur ne sait pas quoi corriger.
+  // le type, sinon l'opérateur ne sait pas quoi corriger. Le changement de poste ayant son
+  // collecteur, ce cas ne se construit plus avec un type connu : la fonction de production ne
+  // crée que les types de veille, et tous sont collectés. Le contrôle joue donc l'autre moitié
+  // de la règle, qui reste vraie : une campagne dont la seule source est un changement de poste
+  // se lance, elle n'est plus dite « sans collecteur ».
   const m = await monde();
   await etapeAppel(m.campagne);
   await q(`delete from campaign_sources where source_id = $1`, [m.source]);
@@ -1481,17 +1493,17 @@ async function lancementSansCollecteur() {
     campagneId: m.campagne,
     providerId: 'linkedin_job_change',
     nom: 'Changement de poste',
-    config: { depuisJours: 90, compteId: 'compte-1' },
+    config: {},
   });
   const manques = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
   const leManque = manques.find((x) => x.includes('n’est collectée aujourd’hui'));
-  check('80. une campagne dont aucune source n’est collectée refuse de se lancer', leManque !== undefined, JSON.stringify(manques));
-  check('80b. le manque nomme le type en cause', (leManque ?? '').includes('changement de poste LinkedIn'), String(leManque));
+  check('80. une campagne dont la seule source est un changement de poste n’est plus dite « sans collecteur »', leManque === undefined, JSON.stringify(manques));
+  check('80b. et rien dans les manques ne parle de changement de poste', !manques.some((x) => x.includes('changement de poste')), JSON.stringify(manques));
 
   // 2. La même campagne, avec en plus une source d'engageurs de concurrent : le manque tombe.
   await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
   const manques2 = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
-  check('81. une seule source collectable suffit à lever le manque',
+  check('81. ajouter une source d’engageurs ne fait pas apparaître le manque',
     !manques2.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques2));
 
   // 3. Une campagne SANS aucune source reste légitime : ses contacts peuvent être importés ou
@@ -1672,12 +1684,120 @@ async function interrupteurCollecteAuto() {
   check('93. un rôle non administrateur est refusé', refuse);
 }
 
+// ------------------------------------------------ 28. la source « changement de poste »
+
+/** La page d'un profil telle que `lireProfilCourant` la lit : le nom dans `<title>`, l'intitulé dans le premier `<p><span>`. */
+const pageProfil = (nom, intitule) => ({
+  statut: 200,
+  corps: `<html><head><title>${nom} | LinkedIn</title></head><body><p><span>${intitule}</span></p></body></html>`,
+});
+
+/** Un contact déjà connu, comme l'enrichissement ou une collecte précédente l'aurait laissé. */
+async function contactConnu(m, { slug, titre, urn = null }) {
+  return (
+    await q(
+      `insert into contacts (organization_id, persona_id, first_name, job_title, linkedin_url, linkedin_provider_id)
+       values ($1, $2, $3, $4, $5, $6) returning id`,
+      [m.org, m.persona, slug, titre, `https://www.linkedin.com/in/${slug}`, urn],
+    )
+  ).rows[0].id;
+}
+
+/**
+ * Lot 4b, dernière source : elle ne découvre personne, elle relit des contacts DÉJÀ connus. Ce que
+ * le pool factice du test unitaire ne peut pas prouver, et que ce harnais prouve sur Postgres :
+ * l'ordre de la rotation, l'exclusion des adresses déduites et des personnes opposées, et le
+ * changement réellement écrit (signal, fiche, `linkedin_verifie_le`).
+ */
+async function changementDePoste() {
+  console.log('\n28. la source « changement de poste » : relecture en rotation');
+  const m = await monde();
+  const { id: src } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_job_change',
+    nom: 'Changement de poste',
+    config: {},
+  });
+  // Deux profils relus par passage : quatre contacts lisibles font donc deux passages pleins.
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_personnes_par_passage', '2')`, [m.org]);
+
+  const A = await contactConnu(m, { slug: 'ada-exemple', titre: 'Directrice commerciale' });
+  const B = await contactConnu(m, { slug: 'bob-exemple', titre: 'Directeur commercial' });
+  const C = await contactConnu(m, { slug: 'carla-exemple', titre: 'Responsable ventes' });
+  const D = await contactConnu(m, { slug: 'denis-exemple', titre: null });
+  // Une adresse FABRIQUÉE depuis un URN : aucune page lisible derrière. Elle arrive en tête de la
+  // rotation (jamais relue), donc c'est elle qui prendrait la place d'un vrai contact si rien ne
+  // l'écartait.
+  const E = await contactConnu(m, { slug: 'ACoAAdeduit', titre: 'Directeur commercial', urn: 'ACoAAdeduit' });
+  // Une personne qui a demandé à ne plus être contactée.
+  const F = await contactConnu(m, { slug: 'fanny-exemple', titre: 'Directrice commerciale' });
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'linkedin', $2, 'operator_do_not_contact', 'manual')`,
+    [m.org, 'https://www.linkedin.com/in/fanny-exemple']);
+
+  const pages = (u) => {
+    const slug = /\/in\/([^/]+)\//.exec(u)?.[1];
+    if (slug === 'ada-exemple') return pageProfil('Ada Exemple', 'Directrice générale');
+    if (slug === 'bob-exemple') return pageProfil('Bob Exemple', 'Directeur commercial');
+    if (slug === 'denis-exemple') return pageProfil('Denis Exemple', 'Responsable ventes');
+    return { statut: 404, corps: '' }; // carla : profil fermé
+  };
+  const passer = async () => {
+    const r = await startSourceRun(pool, src);
+    const pil = pilote({ reponse: pages });
+    await traiterCollecteLinkedIn(deps(pil), { organizationId: m.org, sourceId: src, sourceRunId: r });
+    return { r, lus: pil.requetes.map((u) => /\/in\/([^/]+)\//.exec(u)?.[1]) };
+  };
+
+  const p1 = await passer();
+  const p2 = await passer();
+  const p3 = await passer();
+
+  check('94. un passage relit deux contacts, pas plus : le plafond de personnes borne la sélection', p1.lus.length === 2 && p2.lus.length === 2 && p3.lus.length === 2, JSON.stringify([p1.lus, p2.lus, p3.lus]));
+  check('94b. le second passage relit les DEUX AUTRES : la rotation avance', p1.lus.every((x) => !p2.lus.includes(x)), JSON.stringify([p1.lus, p2.lus]));
+  check('94c. le troisième repart du moins récemment relu : la rotation boucle', [...p3.lus].sort().join() === [...p1.lus].sort().join(), JSON.stringify([p1.lus, p3.lus]));
+  const tous = [...p1.lus, ...p2.lus, ...p3.lus];
+  check('95. une adresse déduite d’un URN n’est jamais relue, même en tête de rotation', !tous.includes('ACoAAdeduit'), JSON.stringify(tous));
+  check('95b. une personne sur la liste de suppression n’est jamais relue', !tous.includes('fanny-exemple'), JSON.stringify(tous));
+
+  const lignes = (await q(`select id, job_title, linkedin_verifie_le is not null as verifie, source_signal_id from contacts where organization_id = $1`, [m.org])).rows;
+  const de = (id) => lignes.find((l) => l.id === id);
+  check('96. linkedin_verifie_le est posé pour les quatre lus : changé, inchangé, profil fermé, sans intitulé connu',
+    [A, B, C, D].every((id) => de(id).verifie === true), JSON.stringify(lignes.map((l) => [l.job_title, l.verifie])));
+  check('96b. et jamais pour l’adresse déduite ni la personne opposée', de(E).verifie === false && de(F).verifie === false);
+
+  const signaux = (await q(`select id, kind, external_id, title, source_run_id from signals where organization_id = $1`, [m.org])).rows;
+  check('97. un seul signal « job_change » : celui du contact dont l’intitulé a bougé', signaux.length === 1 && signaux[0].kind === 'job_change', JSON.stringify(signaux));
+  check('97b. la fiche annonce le nouveau poste et pointe le nouveau signal', de(A).job_title === 'Directrice générale' && de(A).source_signal_id === signaux[0]?.id, JSON.stringify(de(A)));
+  check('97c. l’intitulé inchangé ne crée rien, et le profil fermé garde son intitulé', de(B).job_title === 'Directeur commercial' && de(C).job_title === 'Responsable ventes' && de(B).source_signal_id === null);
+  check('97d. un contact sans intitulé reçoit l’intitulé lu pour référence, sans signal', de(D).job_title === 'Responsable ventes' && de(D).source_signal_id === null, JSON.stringify(de(D)));
+  check('97e. relu au troisième passage, le même changement ne crée pas un second signal', signaux.length === 1);
+
+  const bilan = (await q(
+    `select status, error, vus, nouveaux, doublons, ignores, posts from source_runs where id = any($1::uuid[]) order by started_at`,
+    [[p1.r, p2.r, p3.r]],
+  )).rows;
+  check('98. chaque passage est un succès et n’ouvre aucun post', bilan.every((b) => b.status === 'success' && b.posts === 0), JSON.stringify(bilan));
+  check('98b. vus = relus, nouveaux = changements trouvés, le reste en doublons ou ignorés',
+    bilan.reduce((n, b) => n + b.nouveaux, 0) === 1 && bilan.every((b) => b.vus === b.nouveaux + b.doublons + b.ignores), JSON.stringify(bilan));
+
+  // Rien de lisible à relire : un passage à vide qui le dit, sans ouvrir LinkedIn.
+  const vide = await monde();
+  const { id: srcVide } = await creerSource(vide.ctx, { campagneId: vide.campagne, providerId: 'linkedin_job_change', nom: 'Changement de poste', config: {} });
+  await contactConnu(vide, { slug: 'ACoAAseul', titre: 'Directeur commercial', urn: 'ACoAAseul' });
+  const rVide = await startSourceRun(pool, srcVide);
+  const pilVide = pilote({ reponse: pages });
+  await traiterCollecteLinkedIn(deps(pilVide), { organizationId: vide.org, sourceId: srcVide, sourceRunId: rVide });
+  const passageVide = await lirePassage(rVide);
+  check('99. sans contact lisible, le passage est à vide, le dit, et ne lit rien', passageVide.status === 'success' && passageVide.error === MSG.aucun_a_relire && pilVide.requetes.length === 0, JSON.stringify(passageVide));
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur, tourLinkedInAutomatique, interrupteurCollecteAuto);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur, tourLinkedInAutomatique, interrupteurCollecteAuto,
+    changementDePoste);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
