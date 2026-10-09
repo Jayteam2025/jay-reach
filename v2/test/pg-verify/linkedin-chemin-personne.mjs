@@ -550,6 +550,30 @@ async function scoringCampagneLinkedInSeule() {
     },
   });
   check('74. le compteur et la selection isolent le meme ensemble', r.considered === 1 && juges.length === 1, `considered=${r.considered} juges=${juges.length}`);
+
+  // Scorer ne suffit pas : il faut encore ENTRER dans la campagne. `enqueueEnrollments`
+  // ecartait tout engageur sans email, sans regarder les canaux de la sequence -- une
+  // campagne 100 % LinkedIn etait donc sterile pour toujours, puisque rien ne viendra
+  // jamais remplir `ct.email` pour un engageur. Mesure le 09/10 sur la recette du lot 4b :
+  // deux engageurs qualifies a 95 et 90, jamais inscrits, sans trace ni erreur.
+  const jobs = [];
+  const boss = { insert: async (lot) => { jobs.push(...lot); } };
+  const inscrit = (id) => jobs.some((j) => j.name === 'sequence.enroll' && j.data.contactId === id && j.data.campaignId === m.campagne);
+  const contactDede = (await q(`select id from contacts where organization_id=$1 and email is null`, [m.org])).rows[0].id;
+  await enqueueEnrollments(boss, pool);
+  check('74b. dans une campagne 100 % LinkedIn, un engageur sans email EST inscrit',
+    inscrit(contactDede), JSON.stringify(jobs.map((j) => j.data.contactId)));
+
+  // Symetrique, et preuve que la garde d'origine tient toujours : une seule etape email
+  // dans la sequence, et un engageur sans email redevient retenu jusqu'a l'enrichissement.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 1, 'email')`, [m.campagne]);
+  await enregistrer(m, eng('mina', 'Mina Mornet', 'Directrice commerciale'));
+  await runScore({ pool, organizationId: m.org, scorer: async (ps) => ps.map((pr) => ({ id: pr.id, score: 85, reason: 'ok' })) });
+  const contactMina = (await q(`select id from contacts where organization_id=$1 and first_name='Mina'`, [m.org])).rows[0].id;
+  jobs.length = 0;
+  await enqueueEnrollments(boss, pool);
+  check('74c. une etape email dans la sequence, et l engageur sans email attend son adresse',
+    !inscrit(contactMina), JSON.stringify(jobs.map((j) => j.data.contactId)));
 }
 
 async function entreprise() {

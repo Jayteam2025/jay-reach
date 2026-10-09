@@ -745,11 +745,25 @@ export async function enqueueEnrollments(
        -- La persona du contact doit être explicitement acceptée.
         and ct.persona_id is not null
         and c.entry_rules -> 'personas' ? ct.persona_id::text
-       -- Un engageur naît SANS email : l'inscrire maintenant brûlerait une place du
-       -- plafond du jour et le tick l'arrêterait (not_sendable), puis l'email
-       -- arrivé plus tard relancerait une seconde inscription. Restreint à ce kind
-       -- par construction : le chemin des offres d'emploi n'est pas touché.
-        and not (s.kind = 'post_engagement' and ct.email is null)
+       -- Un engageur naît SANS email. Dans une campagne qui écrit des emails, l'inscrire
+       -- maintenant brûlerait une place du plafond du jour et le tick l'arrêterait
+       -- (not_sendable), puis l'email arrivé plus tard relancerait une seconde inscription.
+       -- Mais une campagne 100 % LinkedIn n'attend aucun email, et rien ne viendra jamais
+       -- remplir ct.email pour un engageur : la garde non conditionnée la stérilisait pour
+       -- toujours. Mesuré le 09/10 sur la recette du lot 4b -- deux engageurs qualifiés à 95
+       -- et 90 dans une séquence linkedin_message, jamais inscrits, sans trace ni erreur.
+       -- On ne retient donc l'engageur que si la séquence comporte au moins une étape email
+       -- (symétrique de la réserve du scoring, conditionSourceScorable).
+       -- Restreint à ce kind par construction : le chemin des offres d'emploi n'est pas touché.
+        and not (s.kind = 'post_engagement' and ct.email is null
+                 -- Lever la garde exige une sequence CONNUE et sans aucune etape email. Une
+                 -- campagne qui n'a pas encore d'etape ne dit pas par quel canal elle ecrira :
+                 -- la traiter comme « 100 % LinkedIn » inscrirait a l'aveugle (controle 25 du
+                 -- harnais, qui est passe au rouge sur une premiere version de ce correctif).
+                 -- Meme forme que la reserve du scoring, conditionSourceScorable.
+                 and not (exists (select 1 from sequence_steps st where st.campaign_id = c.id)
+                          and not exists (select 1 from sequence_steps st
+                                           where st.campaign_id = c.id and st.channel = 'email')))
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
