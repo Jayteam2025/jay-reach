@@ -670,3 +670,38 @@ export async function lireFuseauLinkedIn(ctx: Contexte): Promise<string> {
   );
   return res.rows[0]?.timezone ?? 'Europe/Paris';
 }
+
+/**
+ * La collecte LinkedIn part-elle toute seule ?
+ *
+ * Faux par défaut, y compris pour une organisation qui n'a aucune ligne de réglages : ce
+ * réglage fait sortir du trafic vers LinkedIn tous les jours sans que personne ne clique, et ce
+ * n'est pas au produit d'en décider à la place de l'opérateur.
+ *
+ * Lu sur la TABLE, jamais sur une vue : une vue soumise à RLS interrogée par le pool de service
+ * du worker rend zéro ligne sans lever, et le tour croirait le réglage éteint partout.
+ */
+export async function lireCollecteAutoLinkedIn(ctx: Contexte): Promise<boolean> {
+  const res = await ctx.ex.query<{ collect_auto: boolean }>(
+    `select collect_auto from linkedin_settings /* jr:linkedin_collecte_auto_lire */ where organization_id = $1`,
+    [ctx.organisationId],
+  );
+  return res.rows[0]?.collect_auto ?? false;
+}
+
+/**
+ * Allume ou éteint la collecte automatique.
+ *
+ * `insert … on conflict` plutôt qu'un `update` : une organisation qui n'a jamais ouvert l'écran
+ * des réglages n'a pas de ligne, et un `update` n'aurait rien écrit — en rendant « enregistré »
+ * à un opérateur dont le réglage n'aurait jamais pris.
+ */
+export async function ecrireCollecteAutoLinkedIn(ctx: Contexte, actif: boolean): Promise<void> {
+  exiger(ctx, 'admin');
+  await ctx.ex.query(
+    `insert into linkedin_settings (organization_id, collect_auto) /* jr:linkedin_collecte_auto_ecrire */
+     values ($1, $2)
+     on conflict (organization_id) do update set collect_auto = excluded.collect_auto, updated_at = now()`,
+    [ctx.organisationId, actif],
+  );
+}

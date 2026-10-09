@@ -24,6 +24,7 @@ import {
   TICK_INTERVAL_MS,
   type Contexte,
 } from './traitements.js';
+import { enqueueLinkedInTours } from './producer.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
@@ -61,6 +62,13 @@ const RETENTION_PURGE_POLL_MS = cadencePurge(process.env.RETENTION_PURGE_POLL_MS
  * Réglable : `LINKEDIN_ENVOI_POLL_MS`.
  */
 const LINKEDIN_ENVOI_POLL_MS = cadenceEnvoiLinkedIn(process.env.LINKEDIN_ENVOI_POLL_MS);
+
+/**
+ * Cadence du tour des sources LinkedIn : une demi-heure. Il n'enfile qu'un passage par source et
+ * par jour — ce minuteur ne décide que du délai avant qu'une fenêtre d'envoi qui s'ouvre soit
+ * remarquée, jamais du volume.
+ */
+const LINKEDIN_TOUR_POLL_MS = 30 * 60 * 1000;
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -180,6 +188,25 @@ async function main(): Promise<void> {
     envoiLinkedIn.unref();
   }
 
+  /**
+   * Le tour des sources LinkedIn. Toutes les demi-heures : il n'enfile au plus qu'un passage par
+   * source et par jour, donc la cadence du minuteur ne décide de rien d'autre que du délai avant
+   * que la fenêtre d'envoi soit remarquée. Comme l'envoi, il ne tourne que si le canal est actif,
+   * et il ne part chez une organisation que si elle l'a demandé.
+   */
+  let tourLinkedIn: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.collecte')) {
+    const enfilerTourLinkedIn = (): void => {
+      void enqueueLinkedInTours(boss, pool).catch((err: unknown) => {
+        console.error('[tour-linkedin] tour impossible (linkedin_tour_enqueue)');
+        void journaliserErreurMoteur(pool, err instanceof Error ? err : new Error(String(err)), 'tour LinkedIn');
+      });
+    };
+    enfilerTourLinkedIn();
+    tourLinkedIn = setInterval(enfilerTourLinkedIn, LINKEDIN_TOUR_POLL_MS);
+    tourLinkedIn.unref();
+  }
+
   const enfilerPurge = (): void => {
     void boss.send('retention.purge', {}).catch(() => {
       console.error('[retention-purge] enfilage impossible (retention_purge_enqueue)');
@@ -193,6 +220,7 @@ async function main(): Promise<void> {
     console.log(`[worker] ${signal} reçu, arrêt propre…`);
     clearInterval(producer);
     clearInterval(demandes);
+    if (tourLinkedIn) clearInterval(tourLinkedIn);
     clearInterval(ticker);
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);

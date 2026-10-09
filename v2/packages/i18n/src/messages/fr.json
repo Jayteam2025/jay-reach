@@ -1640,6 +1640,13 @@
           "erreurJours": "Choisissez au moins un jour."
         }
       },
+      "collecteAuto": {
+        "titre": "Collecte automatique",
+        "aideActive": "Le serveur lit vos sources LinkedIn tout seul, un passage par source et par jour, dans votre fenêtre d’envoi.",
+        "aideInactive": "Vos sources LinkedIn n’avancent que si vous cliquez « Collecter maintenant ».",
+        "activer": "Activer",
+        "desactiver": "Désactiver"
+      },
       "plafonds": {
         "titre": "Plafonds de collecte",
         "lead": "Ce sont les mêmes réglages que dans Réglages › Plafonds.",

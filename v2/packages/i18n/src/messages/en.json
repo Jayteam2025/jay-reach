@@ -1640,6 +1640,13 @@
           "erreurJours": "Pick at least one day."
         }
       },
+      "collecteAuto": {
+        "titre": "Automatic collection",
+        "aideActive": "The server reads your LinkedIn sources on its own, one run per source per day, within your sending window.",
+        "aideInactive": "Your LinkedIn sources only move when you click \"Collect now\".",
+        "activer": "Turn on",
+        "desactiver": "Turn off"
+      },
       "plafonds": {
         "titre": "Collection limits",
         "lead": "These are the same settings as in Settings › Limits.",

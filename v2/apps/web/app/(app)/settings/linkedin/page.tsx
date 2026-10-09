@@ -4,6 +4,7 @@ import {
   compterRequetesLinkedIn,
   jourCourantDansFuseau,
   lireHeuresEnvoiLinkedIn,
+  lireCollecteAutoLinkedIn,
   lirePlafondLinkedIn,
   lireVolumeEnvoiLinkedIn,
   lireReglages,
@@ -16,6 +17,7 @@ import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { Carte, TuileLogo } from '../../../../components/ui';
 import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
+import { CollecteAutoLinkedin } from '../../../../components/reglages/CollecteAutoLinkedin';
 import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
@@ -42,6 +44,7 @@ export default async function ReglagesLinkedinPage() {
     plafondPersonnes,
     postsDuJour,
     requetesDeLHeure,
+    collecteAuto,
   ] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
     prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
@@ -52,6 +55,7 @@ export default async function ReglagesLinkedinPage() {
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
+    lireCollecteAutoLinkedIn(ctx),
   ]);
 
   const phrase = phraseEtatSession(session);
@@ -206,6 +210,18 @@ export default async function ReglagesLinkedinPage() {
 
       <Carte titre={t('plafonds.titre')}>
         <p className="jr-aide">{t('plafonds.lead')}</p>
+        {/* L'interrupteur commande la collecte, les plafonds la bornent : il se lit avant eux. */}
+        <CollecteAutoLinkedin
+          actif={collecteAuto}
+          peutModifier={peutModifier}
+          libelles={{
+            titre: t('collecteAuto.titre'),
+            aideActive: t('collecteAuto.aideActive'),
+            aideInactive: t('collecteAuto.aideInactive'),
+            activer: t('collecteAuto.activer'),
+            desactiver: t('collecteAuto.desactiver'),
+          }}
+        />
         <PlafondsLinkedin
           peutModifier={peutModifier}
           lignes={[

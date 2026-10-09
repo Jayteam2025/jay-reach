@@ -6,7 +6,7 @@
  * `actions/campagne-reglages.ts`.
  */
 import { revalidatePath } from 'next/cache';
-import { ecrireReglage, ErreurEntree, ForbiddenError } from '@jay-reach/core';
+import { ecrireCollecteAutoLinkedIn, ecrireReglage, ErreurEntree, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { revaliderCoquille } from '../../lib/revalidation-layouts';
 
@@ -35,6 +35,24 @@ export async function actionEcrireReglage(cle: string, valeur: number | string):
     // les autres réglages (scoring, enrichissement, âge des offres…) n'y apparaissent pas, et la
     // jauge de gauche suit les quotas des boîtes (`senders`), pas cette table.
     if (cle === 'fuseau') revaliderCoquille();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
+  }
+}
+
+/**
+ * Allume ou éteint la collecte LinkedIn automatique.
+ *
+ * Même façade fine que `actionEcrireReglage`, mais une clé à part : ce n'est pas un plafond,
+ * c'est un interrupteur, et le confondre avec un nombre dans la même table de réglages ferait
+ * écrire « 0 » là où l'opérateur lit « désactivée ».
+ */
+export async function actionCollecteAutoLinkedin(actif: boolean): Promise<ResultatPlafond> {
+  try {
+    const ctx = await contexteCourant();
+    await ecrireCollecteAutoLinkedIn(ctx, actif);
+    revalidatePath('/settings/linkedin');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

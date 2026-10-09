@@ -9,7 +9,7 @@ export {
 export { lireEngageurs, extraireEngageurs, fusionner } from '../../apps/worker/src/linkedin/engageurs.js';
 export { trouverPostsDePage } from '../../apps/worker/src/linkedin/posts.js';
 export { lirePostsTraites, marquerPostTraite } from '../../apps/worker/src/linkedin/posts-traites.js';
-export { enqueueDiscoverForActiveSources, enqueueRequestedRuns } from '../../apps/worker/src/producer.js';
+export { enqueueDiscoverForActiveSources, enqueueLinkedInTours, enqueueRequestedRuns } from '../../apps/worker/src/producer.js';
 export { closeStaleSourceRuns, startSourceRun, SOURCE_RUN_TIMEOUT_MIN } from '../../apps/worker/src/db.js';
 export {
   activerSessionLinkedIn,
@@ -17,7 +17,12 @@ export {
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
 } from '../../packages/core/src/fonctions/linkedin-session.js';
-export { compterRequetesLinkedIn, compterPostsLinkedInDuJour } from '../../packages/core/src/fonctions/plafonds.js';
+export {
+  compterRequetesLinkedIn,
+  compterPostsLinkedInDuJour,
+  ecrireCollecteAutoLinkedIn,
+  lireCollecteAutoLinkedIn,
+} from '../../packages/core/src/fonctions/plafonds.js';
 export { creerSource, listerSourcesCampagne } from '../../packages/core/src/fonctions/sources.js';
 export { nePlusContacter } from '../../packages/core/src/fonctions/contacts.js';
 export { manquesPourLancer } from '../../packages/core/src/fonctions/campagnes.js';

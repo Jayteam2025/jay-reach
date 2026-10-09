@@ -46,6 +46,9 @@ import {
   lirePostsTraites,
   marquerPostTraite,
   manquesPourLancer,
+  enqueueLinkedInTours,
+  ecrireCollecteAutoLinkedIn,
+  lireCollecteAutoLinkedIn,
 } from './_linkedin-collecte-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1336,12 +1339,162 @@ async function lancementSansCollecteur() {
     !manques3.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques3));
 }
 
+/**
+ * Lot 4b, étape 2 : le tour automatique des sources LinkedIn.
+ *
+ * Sans lui, une veille de concurrent attend un clic : le tour périodique exclut délibérément
+ * les sources LinkedIn (96 passages par jour pour un plafond de 3). Ce tour-ci a sa cadence, et
+ * surtout il REFUSE d'enfiler plutôt que de laisser le handler refuser — un passage refusé
+ * laisse une ligne à l'écran.
+ */
+async function tourLinkedInAutomatique() {
+  console.log('\n26. le tour automatique des sources LinkedIn');
+  // Toujours dans la fenêtre : les jours et heures du réglage sont posés autour de MAINTENANT,
+  // sinon le harnais passerait ou échouerait selon l'heure à laquelle on le joue.
+  const ouvrirLaFenetre = async (org, auto = true) => {
+    const { rows } = await q(`select extract(isodow from now() at time zone 'UTC')::int as j, extract(hour from now() at time zone 'UTC')::int as h`);
+    await q(
+      `insert into linkedin_settings (organization_id, collect_auto, send_days, send_from_hour, send_to_hour, timezone)
+       values ($1, $2, array[$3::int], 0, 24, 'UTC')
+       on conflict (organization_id) do update
+         set collect_auto = excluded.collect_auto, send_days = excluded.send_days,
+             send_from_hour = excluded.send_from_hour, send_to_hour = excluded.send_to_hour,
+             timezone = excluded.timezone`,
+      [org, auto, rows[0].j],
+    );
+    return rows[0].h;
+  };
+  const bossFactice = () => {
+    const envoyes = [];
+    return { boss: { send: async (name, data, options) => envoyes.push({ name, data, options }), insert: async () => undefined }, envoyes };
+  };
+
+  // 1. Reglage a faux : rien ne part. C'est le defaut, et il fait sortir du trafic vers
+  // LinkedIn tous les jours — il ne doit jamais s'activer tout seul.
+  const m = await monde();
+  await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m.org, false);
+  const b0 = bossFactice();
+  check('83. collecte automatique desactivee : aucun passage n’est enfile', (await enqueueLinkedInTours(b0.boss, pool)) === 0 && b0.envoyes.length === 0);
+
+  // 2. Reglage a vrai, dans la fenetre : un passage part.
+  await ouvrirLaFenetre(m.org, true);
+  const b1 = bossFactice();
+  const n1 = await enqueueLinkedInTours(b1.boss, pool);
+  check('84. collecte automatique activee : un passage part tout seul', n1 === 1 && b1.envoyes[0]?.name === 'linkedin.collecte', `${n1} / ${JSON.stringify(b1.envoyes.map((e) => e.name))}`);
+
+  // 3. UNE source par tour, et UN passage par source et par jour. L'organisation en a deux (le
+  // post de `monde()` et la page concurrente) : elles partent l'une apres l'autre, la moins
+  // recemment passee d'abord, puis plus rien du tout ce jour-la. Sans cette borne, un tour
+  // toutes les demi-heures enfilerait quarante-huit passages qui se feraient tous refuser.
+  const sourcesLinkedIn = (
+    await q(`select count(*)::int n from sources where organization_id = $1 and config->>'sourceType' like 'linkedin%'`, [m.org])
+  ).rows[0].n;
+  let tours = 1; // le tour 2 ci-dessus en a deja servi une
+  for (let i = 0; i < 10; i += 1) {
+    const b = bossFactice();
+    const n = await enqueueLinkedInTours(b.boss, pool);
+    if (n === 0) break;
+    check(`85-${i}. un tour ne sert jamais plus d’une source`, n === 1, String(n));
+    tours += n;
+  }
+  check('85. chaque source a eu son passage du jour, et pas un de plus', tours === sourcesLinkedIn, `${tours} passages pour ${sourcesLinkedIn} sources`);
+  const servies = (
+    await q(
+      `select count(distinct sr.source_id)::int n from source_runs sr
+         join sources so on so.id = sr.source_id
+        where so.organization_id = $1 and so.config->>'sourceType' like 'linkedin%'`,
+      [m.org],
+    )
+  ).rows[0].n;
+  check('85b. ce sont bien des sources DIFFERENTES, pas deux fois la meme', servies === sourcesLinkedIn, `${servies} servies`);
+
+  // 4. Hors fenetre : rien. Un compte qui n'ecrit a personne la nuit et lit deux cents profils
+  // a quatre heures du matin se repere.
+  const m3 = await monde();
+  await sourceConcurrente(m3, ['https://www.linkedin.com/company/acme/']);
+  await q(
+    `insert into linkedin_settings (organization_id, collect_auto, send_days, send_from_hour, send_to_hour, timezone)
+     values ($1, true, array[1,2,3,4,5,6,7], 0, 1, 'UTC')
+     on conflict (organization_id) do update set collect_auto = true, send_days = excluded.send_days,
+       send_from_hour = 0, send_to_hour = 1, timezone = 'UTC'`,
+    [m3.org],
+  );
+  const heure = (await q(`select extract(hour from now() at time zone 'UTC')::int as h`)).rows[0].h;
+  const b3 = bossFactice();
+  const n3 = await enqueueLinkedInTours(b3.boss, pool);
+  check('86. hors de la fenetre d’envoi, rien ne part', heure === 0 ? n3 === 1 : n3 === 0, `heure UTC ${heure}, enfiles ${n3}`);
+
+  // 5. Session bloquee : rien. Sinon chaque passage serait refuse « session », une ligne par
+  // jour et par source, sans que rien ne soit lu.
+  const m4 = await monde({ session: 'bloquee' });
+  await sourceConcurrente(m4, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m4.org, true);
+  const b4 = bossFactice();
+  check('87. session LinkedIn bloquee : aucun passage n’est enfile', (await enqueueLinkedInTours(b4.boss, pool)) === 0);
+
+  // 6. Plafond de posts du jour atteint : rien, et surtout aucun passage ouvert pour le faire
+  // refuser. C'est la difference entre un tour discret et un journal illisible.
+  const m5 = await monde();
+  const src5 = await sourceConcurrente(m5, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m5.org, true);
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '1')`, [m5.org]);
+  // Un post reellement lu aujourd'hui par une AUTRE source : le plafond est par organisation.
+  const autreSrc = await sourceConcurrente(m5, ['https://www.linkedin.com/company/autre/']);
+  const runPasse = await startSourceRun(pool, autreSrc);
+  await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m5.org, runPasse]);
+  const avant = (await q(`select count(*)::int n from source_runs where source_id = $1`, [src5])).rows[0].n;
+  const b5 = bossFactice();
+  const n5 = await enqueueLinkedInTours(b5.boss, pool);
+  const apres = (await q(`select count(*)::int n from source_runs where source_id = $1`, [src5])).rows[0].n;
+  check('88. plafond du jour atteint : rien n’est enfile', n5 === 0, String(n5));
+  check('88b. et aucun passage n’est ouvert pour etre refuse', apres === avant, `${avant} -> ${apres}`);
+}
+
+/**
+ * Lot 4b, étape 2 : l'interrupteur de l'écran écrit vraiment, y compris pour une organisation
+ * qui n'a jamais ouvert ses réglages.
+ */
+async function interrupteurCollecteAuto() {
+  console.log('\n27. l’interrupteur de la collecte automatique');
+  const m = await monde();
+  const admin = { ...m.ctx, role: 'admin' };
+
+  check('89. une organisation sans ligne de réglages lit « désactivée »', (await lireCollecteAutoLinkedIn(admin)) === false);
+
+  // Le piège : un `update` n'aurait rien écrit ici, et l'écran aurait répondu « enregistré » à
+  // un opérateur dont le réglage n'aurait jamais pris.
+  const lignesAvant = (await q(`select count(*)::int n from linkedin_settings where organization_id = $1`, [m.org])).rows[0].n;
+  await ecrireCollecteAutoLinkedIn(admin, true);
+  const lignesApres = (await q(`select count(*)::int n from linkedin_settings where organization_id = $1`, [m.org])).rows[0].n;
+  check('90. activer crée la ligne de réglages quand elle n’existe pas', lignesAvant === 0 && lignesApres === 1, `${lignesAvant} -> ${lignesApres}`);
+  check('90b. et la relecture le confirme', (await lireCollecteAutoLinkedIn(admin)) === true);
+
+  await ecrireCollecteAutoLinkedIn(admin, false);
+  check('91. désactiver revient en arrière', (await lireCollecteAutoLinkedIn(admin)) === false);
+
+  // Les réglages déjà posés ne doivent pas être écrasés par l'interrupteur.
+  await q(`update linkedin_settings set send_from_hour = 7, timezone = 'Europe/Lisbon' where organization_id = $1`, [m.org]);
+  await ecrireCollecteAutoLinkedIn(admin, true);
+  const r = (await q(`select send_from_hour, timezone, collect_auto from linkedin_settings where organization_id = $1`, [m.org])).rows[0];
+  check('92. il ne touche à aucun autre réglage', r.send_from_hour === 7 && r.timezone === 'Europe/Lisbon' && r.collect_auto === true, JSON.stringify(r));
+
+  // Et il demande le droit d'administrer : un simple opérateur ne règle pas le trafic sortant.
+  let refuse = false;
+  try {
+    await ecrireCollecteAutoLinkedIn({ ...m.ctx, role: 'operator' }, false);
+  } catch {
+    refuse = true;
+  }
+  check('93. un rôle non administrateur est refusé', refuse);
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur, tourLinkedInAutomatique, interrupteurCollecteAuto);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

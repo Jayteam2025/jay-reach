@@ -14,7 +14,18 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau, QUEUES } from '@jay-reach/core';
+import {
+  bornerParCampagne,
+  compterPostsLinkedInDuJour,
+  normaliserPlafond,
+  placesRestantes,
+  plafondDuJour,
+  fuseauDeLOrganisation,
+  jourCourantDansFuseau,
+  lireFuseauLinkedIn,
+  lirePlafondLinkedIn,
+  QUEUES,
+} from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
 import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
@@ -906,4 +917,96 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
     }
   }
   return enqueued;
+}
+
+/**
+ * Le tour des sources LinkedIn : un passage par source et par jour, tout seul.
+ *
+ * **Pourquoi un tour à part.** Le tour périodique exclut délibérément les sources LinkedIn : il
+ * revient toutes les quinze minutes, soit quatre-vingt-seize passages par jour pour un plafond
+ * de trois posts. Mais sans aucun tour, une veille de concurrent ne veille pas — elle attend un
+ * clic sur « Collecter maintenant », ce qui n'est pas une veille. Ce tour-ci a donc sa propre
+ * cadence, et il refuse d'enfiler plutôt que de laisser le handler refuser : un passage refusé
+ * laisse une ligne à l'écran, et trois lignes « plafond atteint » par jour valent un écran qui
+ * ment.
+ *
+ * **Il ne part que si l'opérateur l'a demandé** (`linkedin_settings.collect_auto`, faux par
+ * défaut) : ce réglage fait sortir du trafic vers LinkedIn tous les jours sans que personne ne
+ * clique.
+ *
+ * **Dans la fenêtre d'envoi**, jours et heures compris. La collecte n'est pas un envoi, mais un
+ * compte qui n'écrit à personne la nuit et lit deux cents profils à quatre heures du matin se
+ * repère. Même fenêtre, même fuseau, mêmes jours.
+ */
+export async function enqueueLinkedInTours(boss: PgBoss, pool: Pool): Promise<number> {
+  const orgs = await pool.query<{ organization_id: string }>(
+    `select organization_id /* jr:linkedin_tour_organisations */
+       from linkedin_settings s
+      where s.collect_auto
+        -- La fenêtre de l'organisation, dans SON fuseau. extract(isodow) rend 1 pour lundi,
+        -- comme send_days.
+        and extract(isodow from (now() at time zone s.timezone))::int = any(s.send_days)
+        and extract(hour from (now() at time zone s.timezone))::int >= s.send_from_hour
+        and extract(hour from (now() at time zone s.timezone))::int < s.send_to_hour
+        -- Une session bloquée ou absente ferait refuser chaque passage, une ligne par jour et
+        -- par source, sans que rien ne soit lu.
+        and exists (
+          select 1 from linkedin_server_sessions ls
+           where ls.organization_id = s.organization_id and ls.status = 'active'
+        )`,
+  );
+
+  let enfiles = 0;
+  for (const org of orgs.rows) {
+    const ctx = { ex: pool, organisationId: org.organization_id, utilisateurId: null, role: null };
+    try {
+      const fuseau = await lireFuseauLinkedIn(ctx);
+      const [plafond, dejaLus] = await Promise.all([
+        lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
+        compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau),
+      ]);
+      // Le plafond du jour est atteint : ne rien enfiler, et surtout ne pas ouvrir de passage
+      // pour le faire refuser. C'est la différence entre un tour discret et un journal illisible.
+      if (dejaLus >= plafond) continue;
+
+      // Une seule source par organisation et par tour, la moins récemment passée : avec deux
+      // sources et trois posts de plafond, la première prendrait tout et la seconde ne verrait
+      // jamais rien. Elles alternent d'un jour sur l'autre.
+      const due = await pool.query<{ id: string; organization_id: string; type: string }>(
+        `select so.id, so.organization_id, so.config->>'sourceType' as type /* jr:linkedin_tour_source_due */
+           from sources so
+          where so.organization_id = $1
+            and so.is_active
+            and so.config->>'sourceType' = any($2::text[])
+            and exists (
+              select 1 from campaign_sources cs
+                join campaigns c on c.id = cs.campaign_id
+               where cs.source_id = so.id and c.status = 'active'
+            )
+            -- Aucun passage aujourd'hui, dans le fuseau de l'organisation. Un passage refusé
+            -- compte : il a consommé le tour du jour, et le rejouer en boucle serait pire.
+            and not exists (
+              select 1 from source_runs sr
+               where sr.source_id = so.id
+                 and sr.started_at >= ($3::date::timestamp at time zone $4)
+                 and sr.started_at < (($3::date + 1)::timestamp at time zone $4)
+            )
+          order by (
+            select max(sr.started_at) from source_runs sr where sr.source_id = so.id
+          ) asc nulls first
+          limit 1`,
+        [org.organization_id, TYPES_LINKEDIN_EXECUTABLES, jourCourantDansFuseau(fuseau), fuseau],
+      );
+      const src = due.rows[0];
+      if (!src) continue;
+      enfiles += await enfilerCollecteLinkedIn(boss, pool, src, src.type);
+    } catch (err) {
+      // Une organisation qui échoue ne doit pas emporter les autres : chacune a ses réglages,
+      // sa session et ses sources.
+      console.error(
+        `[producer] tour LinkedIn impossible pour une organisation (${err instanceof Error ? err.name : 'erreur'})`,
+      );
+    }
+  }
+  return enfiles;
 }

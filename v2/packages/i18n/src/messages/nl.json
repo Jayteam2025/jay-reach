@@ -1640,6 +1640,13 @@
           "erreurJours": "Kies minstens een dag."
         }
       },
+      "collecteAuto": {
+        "titre": "Automatisch verzamelen",
+        "aideActive": "De server leest uw LinkedIn-bronnen zelf, één doorloop per bron per dag, binnen uw verzendvenster.",
+        "aideInactive": "Uw LinkedIn-bronnen komen alleen in beweging als u op \"Nu verzamelen\" klikt.",
+        "activer": "Inschakelen",
+        "desactiver": "Uitschakelen"
+      },
       "plafonds": {
         "titre": "Verzamellimieten",
         "lead": "Dit zijn dezelfde instellingen als in Instellingen › Limieten.",
