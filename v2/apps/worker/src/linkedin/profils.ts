@@ -145,6 +145,80 @@ export async function resoudreNomPublic(
   return resolu;
 }
 
+/** Ce qu'une page de profil dit de la personne AUJOURD'HUI. */
+export interface ProfilCourant {
+  readonly nom: string;
+  /** L'intitulé affiché sous le nom, entités HTML décodées. */
+  readonly intitule: string;
+}
+
+/**
+ * Les quelques entités que LinkedIn laisse dans le HTML des intitulés.
+ *
+ * Mesuré : « Directeur Commercial &amp; Membre du comité de direction ». Comparer un intitulé
+ * encodé à un intitulé décodé ferait voir un changement de poste là où rien n'a bougé, et une
+ * personne serait réveillée à chaque passage.
+ */
+function decoderEntites(texte: string): string {
+  return texte
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(?:39|x27);/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
+ * Le nom et l'intitulé COURANTS d'un profil, lus dans le HTML de sa page.
+ *
+ * Deux ancres, relevées le 09/10 sur trois profils réels :
+ *  - le nom vient de `<title>`, qui vaut « <Nom> | LinkedIn » ;
+ *  - l'intitulé est le PREMIER `<p><span>…</span></p>` du document.
+ *
+ * La seconde est positionnelle, et c'est le point faible assumé : les classes CSS de LinkedIn
+ * sont obfusquées et changent, il n'y a aucun attribut sémantique sur cet élément. Les suivants
+ * portent l'entreprise, l'école, puis des encarts qui n'ont rien à voir avec la personne — un
+ * même texte publicitaire est apparu en troisième position sur deux profils différents. D'où le
+ * refus net plutôt qu'un repli : rendre `null` fait sauter la vérification du jour, alors qu'un
+ * mauvais intitulé annoncerait un changement de poste qui n'a pas eu lieu, et déclencherait un
+ * envoi.
+ */
+export function lireProfilCourant(html: string): ProfilCourant | null {
+  const titre = /<title[^>]*>([^<|]{2,160})\|/i.exec(html);
+  const intitule = /<p[^>]*><span>([^<]{3,300})<\/span><\/p>/.exec(html);
+  const nom = decoderEntites((titre?.[1] ?? '').trim());
+  const poste = decoderEntites((intitule?.[1] ?? '').trim());
+  if (nom.length === 0 || poste.length === 0) return null;
+  return { nom, intitule: poste };
+}
+
+/**
+ * Lit la page d'un profil et rend ce qu'elle dit de la personne aujourd'hui.
+ *
+ * `null` quand la page ne livre pas d'intitulé lisible : le profil peut être supprimé, privé, ou
+ * la page avoir changé de forme. L'appelant saute cette personne pour aujourd'hui plutôt que de
+ * conclure à un changement.
+ */
+export async function lireProfil(pilote: Pilote, nomPublic: string): Promise<ProfilCourant | null> {
+  const rep = await pilote.requete(adresseDeProfil(nomPublic));
+  if (rep.statut < 200 || rep.statut >= 300) {
+    const friction = frictionDuStatut(rep.statut);
+    // Un profil introuvable n'est pas un verdict sur notre compte : la personne a fermé son
+    // compte ou changé de nom public. On la saute, on ne suspend rien.
+    if (friction && friction.type !== 'post_introuvable') {
+      throw new ErreurCollecte(
+        MESSAGES_FRICTION[friction.type],
+        'FrictionLinkedIn',
+        friction.type === 'defi' || friction.type === 'cookie_refuse',
+        friction,
+      );
+    }
+    return null;
+  }
+  return lireProfilCourant(rep.corps);
+}
+
 /**
  * Les posts récents d'un créateur, prêts à passer au collecteur d'engageurs.
  *
