@@ -12,8 +12,8 @@
  * autres viendront derrière la même interface quand leurs points d'entrée seront connus — on
  * ne code pas ce qu'on n'a pas observé.
  */
-import { ErreurCollecte, ENTETES_VOYAGER, frictionDeLUrl, frictionDuStatut, urnDActivite } from './engageurs.js';
-import type { ArretCollecte, Budget, Friction } from './engageurs.js';
+import { ErreurCollecte, ENTETES_VOYAGER, MESSAGES_FRICTION, frictionDeLUrl, frictionDuStatut, urnDActivite } from './engageurs.js';
+import type { ArretCollecte, Budget } from './engageurs.js';
 import type { Pilote } from './navigateur.js';
 
 /**
@@ -48,18 +48,6 @@ export const TENTATIVES_RESOLUTION = 3;
 export const DELAI_RETENTATIVE_MS = 5_000;
 
 const pauseReelle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Ce que l'opérateur lit quand LinkedIn rend un verdict sur son compte. Mêmes mots que le
- * handler (`MSG.defi`, `MSG.cookie_refuse`) : une seule cause, une seule phrase, d'où qu'elle
- * vienne.
- */
-const MESSAGES_FRICTION: Record<Friction['type'], string> = {
-  defi: 'LinkedIn demande une vérification : collecte arrêtée.',
-  cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
-  liste_vide: 'LinkedIn n’a livré aucun post : collecte arrêtée.',
-  post_introuvable: 'Page ou post introuvable, supprimé ou privé : vérifiez l’adresse.',
-};
 
 /**
  * L'identifiant de la société dont la page porte ce nom public, lu dans le HTML rendu par
