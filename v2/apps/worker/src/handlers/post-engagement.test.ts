@@ -68,7 +68,10 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
     if (/from linkedin_engageurs_ecartes/i.test(sql)) {
       return { rows: etat.ecartes.has(String(p[1])) ? [{ one: 1 }] : [], rowCount: 0 };
     }
-    if (/from signals/i.test(sql) && /post_engagement/i.test(sql) && /^\s*select/i.test(sql)) {
+    // Reconnue par ce qui l'IDENTIFIE — sa table et sa clé — et non par le kind écrit en
+    // toutes lettres : ce dernier est devenu un paramètre, et seize contrôles sont tombés d'un
+    // coup en annonçant « requête non prévue », alors que rien de leur sujet n'avait changé.
+    if (/^\s*select id from signals/i.test(sql) && /external_id/i.test(sql)) {
       const id = etat.signals.get(String(p[1]));
       return { rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 };
     }
