@@ -33,7 +33,7 @@ interface SourceRow {
 }
 
 /** Les types LinkedIn que le worker sait exécuter. Les autres sont saisissables, pas collectés. */
-const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers'];
+const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
 
 /**
  * Ce que l'opérateur lit sur la carte de sa source quand il demande une collecte que le
@@ -41,7 +41,7 @@ const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers']
  * `lireCartesSources` va déjà chercher la cause d'un refus.
  */
 const MSG_TYPE_NON_COLLECTE =
-  'Ce type de source n’est pas encore collecté : rien n’a été lu. Les engageurs d’un post le sont.';
+  'Ce type de source n’est pas encore collecté : rien n’a été lu. Les engageurs d’un post et ceux des posts d’un concurrent le sont.';
 
 /** La politique de reprise déclarée pour la file de collecte, reprise sur chaque job (comme `REPRISE_CONTACT_CONNU`). */
 const REPRISE_COLLECTE_LINKEDIN = QUEUES.find((q) => q.name === 'linkedin.collecte')?.retry;

@@ -825,9 +825,10 @@ describe('listerListesOrganisation', () => {
 // `collecteDisponible` portait deux décisions sans rapport : écrire une ligne `source_providers`
 // (jamais pour LinkedIn) et afficher l'interrupteur d'une carte. Les deux sont désormais séparées.
 describe('collecteImplementee / providerIdReel — deux décisions, deux fonctions', () => {
-  it('seuls les engageurs d’un post sont collectés côté LinkedIn (lot 4a)', () => {
+  it('les deux sources d’engageurs sont collectées, les deux autres non (lot 4b, étape 2)', () => {
     expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
-    expect(collecteImplementee('linkedin_competitor_followers')).toBe(false);
+    expect(collecteImplementee('linkedin_competitor_posts')).toBe(true);
+    // Pas encore de collecteur : leurs points d’entrée Voyager n’ont pas été relevés.
     expect(collecteImplementee('linkedin_keywords')).toBe(false);
     expect(collecteImplementee('linkedin_job_change')).toBe(false);
   });

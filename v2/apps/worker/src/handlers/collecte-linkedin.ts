@@ -38,7 +38,9 @@ import {
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
-import { ErreurCollecte, lireEngageurs, type Budget, type Friction } from '../linkedin/engageurs.js';
+import { ErreurCollecte, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
+import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
+import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
 import { adresseDeduite, engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
 
@@ -81,11 +83,13 @@ export const MSG = {
   releve: 'Impossible de relever l’IP de sortie du navigateur : le proxy ne répond pas.',
   plafond_posts: 'Plafond de posts du jour atteint.',
   plafond_requetes: 'Plafond de requêtes de l’heure atteint.',
-  plafond_personnes: 'Plafond de personnes par passage atteint : le reste du post n’a pas été enregistré.',
+  plafond_personnes: 'Plafond de personnes par passage atteint : le reste n’a pas été enregistré.',
   defi: 'LinkedIn demande une vérification : collecte arrêtée.',
   cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
   liste_vide: 'Le post annonce des réactions mais LinkedIn n’en livre aucune : collecte arrêtée.',
   post_introuvable: 'Post introuvable, supprimé ou privé : vérifiez l’adresse.',
+  pages_absentes: 'Aucune page de concurrent n’est renseignée : ajoutez-en une à la source.',
+  rien_de_neuf: 'Aucun post nouveau à lire sur ces pages : tout a déjà été collecté.',
 } as const;
 
 const TITRE_ARRET = 'Collecte LinkedIn arrêtée';
@@ -118,11 +122,17 @@ const bilanVierge = (): Bilan => ({
   plafondPersonnes: false,
 });
 
-interface ConfigCollecte {
-  readonly urlPost: string;
+/**
+ * Deux sources, un seul collecteur.
+ *
+ * `post` : l'opérateur donne le post, on lit ses engageurs. `pages` : l'opérateur donne des pages
+ * concurrentes, on CHERCHE leurs posts, puis on lit les engageurs de chacun. La lecture des
+ * engageurs est identique — c'est la façon de trouver les posts qui diffère.
+ */
+type ConfigCollecte = {
   readonly garder: string[];
   readonly campagne: { id: string; personaId: string };
-}
+} & ({ readonly mode: 'post'; readonly urlPost: string } | { readonly mode: 'pages'; readonly pages: string[] });
 
 /**
  * La source, sa campagne ACTIVE et le persona qui jugera les personnes.
@@ -149,23 +159,35 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
        join campaign_sources cs on cs.source_id = so.id
        join campaigns c on c.id = cs.campaign_id
       where so.id = $2 and so.organization_id = $1
-        and so.config->>'sourceType' = 'linkedin_post_engagers'
+        and so.config->>'sourceType' = any($3::text[])
         and c.status = 'active'
       limit 1`,
-    [job.organizationId, job.sourceId],
+    [job.organizationId, job.sourceId, TYPES_COLLECTES],
   );
   const ligne = res.rows[0];
   if (!ligne) return null;
   const config = ligne.config ?? {};
-  const urlPost = typeof config.urlPost === 'string' ? config.urlPost.trim() : '';
-  if (urlPost.length === 0) return { erreur: MSG.post_introuvable };
   const garder = Array.isArray(config.garder) ? config.garder.map((g) => String(g)) : [];
   const personas = ligne.personas ?? [];
   const brut = typeof config.personaId === 'string' && config.personaId.length > 0 ? config.personaId : null;
   const personaId = brut ?? (personas.length === 1 ? personas[0] : null);
   if (personaId === undefined || personaId === null) return { erreur: MSG.persona };
-  return { urlPost, garder, campagne: { id: ligne.campagne_id, personaId } };
+  const campagne = { id: ligne.campagne_id, personaId };
+
+  if (config.sourceType === 'linkedin_competitor_posts') {
+    const pages = (Array.isArray(config.pagesConcurrentes) ? config.pagesConcurrentes : [])
+      .map((v) => String(v).trim())
+      .filter((v) => v.length > 0);
+    if (pages.length === 0) return { erreur: MSG.pages_absentes };
+    return { mode: 'pages', pages, garder, campagne };
+  }
+  const urlPost = typeof config.urlPost === 'string' ? config.urlPost.trim() : '';
+  if (urlPost.length === 0) return { erreur: MSG.post_introuvable };
+  return { mode: 'post', urlPost, garder, campagne };
 }
+
+/** Les types de sources que ce handler sait collecter. Le producteur tient la même liste. */
+const TYPES_COLLECTES = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
 
 /**
  * Clôt le passage : statut, compteurs du journal (`source_runs`, migration de la
@@ -460,12 +482,6 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       await tracerRequeteLinkedIn(ctx, job.sourceRunId);
       bilan.requetes += 1;
     };
-    const { personnes, arret } = await lireEngageurs(pilote, config.urlPost, config.garder, budget, surRequete, d.pause);
-    // Plus une seule requête LinkedIn après ce point : tout ce qui suit est du
-    // Postgres. Une erreur qui survient là ne dit RIEN du compte.
-    traficTermine = true;
-    bilan.vus = personnes.length;
-
     const contexteEngageur = {
       pool,
       organizationId: job.organizationId,
@@ -474,33 +490,128 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // compté sur le mauvais passage.
       sourceRunId: job.sourceRunId,
     };
-    for (const [rang, personne] of personnes.entries()) {
-      // `enregistrerEngageur` LÈVE sur une entrée invalide : un seul profil
-      // malformé emporterait tout le passage. On valide ici, et on compte ce
-      // qu'on laisse de côté.
-      const valide = engageurSchema.safeParse(personne);
-      if (!valide.success) {
-        bilan.ignores += 1;
-        continue;
-      }
-      const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, config.urlPost);
-      if (issue === 'nouveau') {
-        bilan.nouveaux += 1;
-        if (adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
-      } else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
-      else if (issue === 'supprime') bilan.opposes += 1;
-      else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
 
-      // Plafond de personnes ENREGISTRÉES : il compte les nouvelles, pas les lues. Les étages
-      // aval sont plafonnés (scoring, enrichissement) à un ou deux ordres de grandeur de ce
-      // que soixante requêtes laissent entrer ; ce qui déborde serait effacé à quatorze jours
-      // sans mémoire, recollecté, recréé. Compter les NOUVELLES fait avancer un second passage
-      // au-delà des doublons du premier ; le reste n'est jamais écrit en base.
-      if (bilan.nouveaux >= budget.personnesMax) {
-        bilan.plafondPersonnes = rang < personnes.length - 1;
+    /** Enregistre les personnes d'un post. Rend vrai si le plafond de personnes a tout arrêté. */
+    const enregistrer = async (personnes: readonly unknown[], urlPost: string): Promise<boolean> => {
+      for (const [rang, personne] of personnes.entries()) {
+        // `enregistrerEngageur` LÈVE sur une entrée invalide : un seul profil
+        // malformé emporterait tout le passage. On valide ici, et on compte ce
+        // qu'on laisse de côté.
+        const valide = engageurSchema.safeParse(personne);
+        if (!valide.success) {
+          bilan.ignores += 1;
+          continue;
+        }
+        const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, urlPost);
+        if (issue === 'nouveau') {
+          bilan.nouveaux += 1;
+          if (adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
+        } else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
+        else if (issue === 'supprime') bilan.opposes += 1;
+        else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
+
+        // Plafond de personnes ENREGISTRÉES : il compte les nouvelles, pas les lues. Les étages
+        // aval sont plafonnés (scoring, enrichissement) à un ou deux ordres de grandeur de ce
+        // que soixante requêtes laissent entrer ; ce qui déborde serait effacé à quatorze jours
+        // sans mémoire, recollecté, recréé. Compter les NOUVELLES fait avancer un second passage
+        // au-delà des doublons du premier ; le reste n'est jamais écrit en base.
+        if (bilan.nouveaux >= budget.personnesMax) {
+          bilan.plafondPersonnes = rang < personnes.length - 1;
+          return true;
+        }
+      }
+      return false;
+    };
+
+    /** Ce qui reste du budget de requêtes : `surRequete` incrémente `bilan.requetes` à chaque appel. */
+    const requetesRestantes = (): number => budget.requetesRestantes - bilan.requetes;
+
+    // Les posts à lire. En mode « post », l'opérateur l'a donné. En mode « pages », il faut les
+    // chercher — et cette recherche part vers LinkedIn, donc elle se paie sur le MÊME budget de
+    // requêtes que la lecture des engageurs. La compter à part ferait valoir le trafic réel
+    // « plafond + ce qu'a coûté la recherche », sur un plafond censé le borner.
+    const postsALire: string[] = [];
+    let arretRecherche: ArretCollecte | null = null;
+    if (config.mode === 'post') {
+      postsALire.push(config.urlPost);
+    } else {
+      // Deux pages concurrentes peuvent republier le même post : la mémoire se complète au fur et
+      // à mesure, sinon le post serait lu deux fois dans le même passage.
+      const dejaTraites = new Set(await lirePostsTraites(pool, job.organizationId, job.sourceId));
+      for (const page of config.pages) {
+        const restant = { requetesRestantes: requetesRestantes(), postsRestants: budget.postsRestants - postsALire.length };
+        if (restant.requetesRestantes <= 0 || restant.postsRestants <= 0) break;
+        const trouve = await trouverPostsDePage(pilote, page, { dejaTraites, budget: restant, surRequete, pause: d.pause });
+        for (const urn of trouve.urns) {
+          postsALire.push(urn);
+          dejaTraites.add(urn);
+        }
+        // Une friction sur une page arrête le passage : elle dit quelque chose de notre compte ou
+        // de la session, et la page suivante tomberait sur la même.
+        if (typeof trouve.arret === 'object') {
+          // Une page sans post nouveau n'est pas une friction du passage : les autres pages de la
+          // source ont encore leur mot à dire.
+          if (trouve.arret.type !== 'liste_vide') {
+            arretRecherche = trouve.arret;
+            break;
+          }
+        }
+      }
+      if (arretRecherche === null && postsALire.length === 0) {
+        // Rien de neuf : un passage à vide, pas un échec. Le dire plutôt que de laisser l'écran
+        // afficher « 0 personne » sans motif.
+        traficTermine = true;
+        await refuser(pool, job, MSG.rien_de_neuf, { statut: 'success', bilan, sortie });
+        return;
+      }
+    }
+
+    let arret: ArretCollecte = arretRecherche ?? 'fini';
+    for (const post of postsALire) {
+      // Le trouveur rend des URN : la mémoire les garde sous cette identité. Le collecteur, lui,
+      // charge la page du post, donc il lui faut une adresse.
+      const urlPost = config.mode === 'pages' ? urlDePost(post) : post;
+      if (arretRecherche !== null) break;
+      if (requetesRestantes() <= 0) {
+        arret = 'plafond';
+        break;
+      }
+      const { personnes, arret: arretDuPost } = await lireEngageurs(
+        pilote,
+        urlPost,
+        config.garder,
+        { requetesRestantes: requetesRestantes(), postsRestants: 1 },
+        surRequete,
+        d.pause,
+      );
+      bilan.vus += personnes.length;
+      // Marqué dès que ses engageurs sont lus, avant même d'être enregistrés : la requête est
+      // partie, elle est payée, et relire ce post au passage suivant la repaierait. Un post qui
+      // n'a produit personne est justement celui qu'il ne faut pas rouvrir.
+      if (config.mode === 'pages') await marquerPostTraite(pool, job.organizationId, job.sourceId, post);
+
+      // Plus une requête LinkedIn pendant l'enregistrement, qui ne fait que du Postgres : une
+      // erreur inconnue qui survient là ne dit RIEN du compte. Le drapeau se rouvre avant le
+      // post suivant, où le trafic reprend.
+      traficTermine = true;
+      const plafondPersonnes = await enregistrer(personnes, urlPost);
+      traficTermine = false;
+
+      if (typeof arretDuPost === 'object') {
+        arret = arretDuPost;
+        break;
+      }
+      if (plafondPersonnes) {
+        // Il reste des posts que ce passage ne lira pas : l'écran doit le dire. Mais on ne touche
+        // PAS `arret` : un plafond de personnes atteint pile sur le dernier post n'a rien laissé
+        // de côté, et l'annoncer en « plafond de requêtes » serait doublement faux.
+        if (!bilan.plafondPersonnes) bilan.plafondPersonnes = post !== postsALire[postsALire.length - 1];
         break;
       }
     }
+    // Plus une seule requête LinkedIn après ce point : tout ce qui suit est du
+    // Postgres. Une erreur qui survient là ne dit RIEN du compte.
+    traficTermine = true;
 
     if (typeof arret === 'object') {
       const message = await traiterFriction(ctx, pool, arret);

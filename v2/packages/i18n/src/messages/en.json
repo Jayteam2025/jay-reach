@@ -76,7 +76,7 @@
       "adzuna": "Adzuna",
       "francetravail": "France Travail",
       "linkedin_post_engagers": "LinkedIn · post engagers",
-      "linkedin_competitor_followers": "LinkedIn · competitor followers",
+      "linkedin_competitor_posts": "LinkedIn · engagers of a competitor's posts",
       "linkedin_keywords": "LinkedIn · keywords",
       "linkedin_job_change": "LinkedIn · job change",
       "csv": "CSV file",
@@ -574,9 +574,9 @@
           "title": "Post engagers",
           "description": "People who liked or commented on a post"
         },
-        "linkedinCompetitorFollowers": {
-          "title": "Competitor followers",
-          "description": "People active around a company page"
+        "linkedinCompetitorPosts": {
+          "title": "Engagers of a competitor's posts",
+          "description": "People who react to or comment on a competitor page's posts"
         },
         "linkedinKeywords": {
           "title": "Keywords",
@@ -668,7 +668,8 @@
         "personaRequis": "Choose this source's persona.",
         "accountId": "LinkedIn account",
         "profilesPerDay": "Profiles read per day",
-        "competitorPages": "Company pages followed",
+        "competitorPages": "Competitor LinkedIn pages",
+        "competitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
         "topics": "Topics followed",
         "sinceDays": "Started role since (days)",
         "csvIntro": "Contacts from the file enter the campaign as already qualified people: no scoring.",
@@ -911,8 +912,8 @@
         "menuLinkedinBadge": "Collection enabled with the LinkedIn channel",
         "menuLinkedinPostEngagersTitle": "Post engagers",
         "menuLinkedinPostEngagersDescription": "People who liked or commented on a post.",
-        "menuLinkedinCompetitorFollowersTitle": "Competitor followers",
-        "menuLinkedinCompetitorFollowersDescription": "People active around a company page.",
+        "menuLinkedinCompetitorPostsTitle": "Engagers of a competitor's posts",
+        "menuLinkedinCompetitorPostsDescription": "People who react to or comment on a competitor page's posts.",
         "menuLinkedinKeywordsTitle": "Keywords",
         "menuLinkedinKeywordsDescription": "People who post about a topic.",
         "menuLinkedinJobChangeTitle": "Job change",
@@ -932,7 +933,8 @@
         "formLinkedinCommented": "commented",
         "formLinkedinReacted": "reacted",
         "formLinkedinPostOneCampaign": "A post can only serve one campaign.",
-        "formLinkedinCompetitorPages": "Company pages followed",
+        "formLinkedinCompetitorPages": "Competitor LinkedIn pages",
+        "formLinkedinCompetitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
         "formLinkedinTopics": "Topics followed",
         "formLinkedinSinceDays": "Started role since (days)",
         "formLinkedinAccountId": "LinkedIn account",

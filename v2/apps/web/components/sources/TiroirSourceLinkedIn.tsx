@@ -43,7 +43,7 @@ export interface TiroirSourceLinkedInProps {
 
 const CLE_TITRE: Record<TypeLinkedIn, string> = {
   linkedin_post_engagers: 'menu.linkedinPostEngagers.title',
-  linkedin_competitor_followers: 'menu.linkedinCompetitorFollowers.title',
+  linkedin_competitor_posts: 'menu.linkedinCompetitorPosts.title',
   linkedin_keywords: 'menu.linkedinKeywords.title',
   linkedin_job_change: 'menu.linkedinJobChange.title',
 };
@@ -162,6 +162,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             reacted: t('drawer.reacted'),
             postOneCampaign: t('drawer.postOneCampaign'),
             competitorPages: t('drawer.competitorPages'),
+            competitorPagesHint: t('drawer.competitorPagesHint'),
             topics: t('drawer.topics'),
             sinceDays: t('drawer.sinceDays'),
             accountId: t('drawer.accountId'),

@@ -16,7 +16,7 @@ export type ProviderIdAssistant = 'adzuna' | 'france_travail' | TypeLinkedIn;
 
 const TYPES_LINKEDIN: readonly TypeLinkedIn[] = [
   'linkedin_post_engagers',
-  'linkedin_competitor_followers',
+  'linkedin_competitor_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ];
@@ -52,8 +52,8 @@ export interface EtapeSourcesLibelles {
   menuLinkedinBadge: string;
   menuLinkedinPostEngagersTitre: string;
   menuLinkedinPostEngagersDescription: string;
-  menuLinkedinCompetitorFollowersTitre: string;
-  menuLinkedinCompetitorFollowersDescription: string;
+  menuLinkedinCompetitorPostsTitre: string;
+  menuLinkedinCompetitorPostsDescription: string;
   menuLinkedinKeywordsTitre: string;
   menuLinkedinKeywordsDescription: string;
   menuLinkedinJobChangeTitre: string;
@@ -74,6 +74,7 @@ export interface EtapeSourcesLibelles {
   formLinkedinReacted: string;
   formLinkedinPostOneCampaign: string;
   formLinkedinCompetitorPages: string;
+  formLinkedinCompetitorPagesHint: string;
   formLinkedinTopics: string;
   formLinkedinSinceDays: string;
   formLinkedinAccountId: string;
@@ -110,8 +111,8 @@ function titreLinkedin(providerId: TypeLinkedIn, libelles: EtapeSourcesLibelles)
   switch (providerId) {
     case 'linkedin_post_engagers':
       return libelles.menuLinkedinPostEngagersTitre;
-    case 'linkedin_competitor_followers':
-      return libelles.menuLinkedinCompetitorFollowersTitre;
+    case 'linkedin_competitor_posts':
+      return libelles.menuLinkedinCompetitorPostsTitre;
     case 'linkedin_keywords':
       return libelles.menuLinkedinKeywordsTitre;
     case 'linkedin_job_change':
@@ -188,11 +189,11 @@ export function construireGroupesMenu(
           icone: <TuileLogo marque="linkedin" />,
           titre: (
             <>
-              {libelles.menuLinkedinCompetitorFollowersTitre} {badgeLinkedin}
+              {libelles.menuLinkedinCompetitorPostsTitre} {badgeLinkedin}
             </>
           ),
-          description: libelles.menuLinkedinCompetitorFollowersDescription,
-          onSelectionner: () => ouvrirFormulaire('linkedin_competitor_followers'),
+          description: libelles.menuLinkedinCompetitorPostsDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_competitor_posts'),
         },
         {
           icone: <TuileLogo marque="linkedin" />,
@@ -401,6 +402,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               reacted: libelles.formLinkedinReacted,
               postOneCampaign: libelles.formLinkedinPostOneCampaign,
               competitorPages: libelles.formLinkedinCompetitorPages,
+              competitorPagesHint: libelles.formLinkedinCompetitorPagesHint,
               topics: libelles.formLinkedinTopics,
               sinceDays: libelles.formLinkedinSinceDays,
               accountId: libelles.formLinkedinAccountId,

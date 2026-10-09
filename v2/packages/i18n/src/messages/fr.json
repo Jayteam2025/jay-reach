@@ -76,7 +76,7 @@
       "adzuna": "Adzuna",
       "francetravail": "France Travail",
       "linkedin_post_engagers": "LinkedIn · engageurs d'un post",
-      "linkedin_competitor_followers": "LinkedIn · abonnés d'un concurrent",
+      "linkedin_competitor_posts": "LinkedIn · engageurs des posts d'un concurrent",
       "linkedin_keywords": "LinkedIn · mots-clés",
       "linkedin_job_change": "LinkedIn · changement de poste",
       "csv": "Fichier CSV",
@@ -574,9 +574,9 @@
           "title": "Engageurs d'un post",
           "description": "Les personnes qui ont aimé ou commenté un post"
         },
-        "linkedinCompetitorFollowers": {
-          "title": "Abonnés d'un concurrent",
-          "description": "Les personnes actives autour d'une page entreprise"
+        "linkedinCompetitorPosts": {
+          "title": "Engageurs des posts d'un concurrent",
+          "description": "Les personnes qui réagissent ou commentent les publications d'une page concurrente"
         },
         "linkedinKeywords": {
           "title": "Mots-clés",
@@ -668,7 +668,8 @@
         "personaRequis": "Choisissez le persona de cette source.",
         "accountId": "Compte LinkedIn",
         "profilesPerDay": "Profils lus par jour",
-        "competitorPages": "Pages entreprise suivies",
+        "competitorPages": "Pages LinkedIn des concurrents",
+        "competitorPagesHint": "L’adresse de la page entreprise, par exemple linkedin.com/company/nom-du-concurrent. Séparez plusieurs pages par une virgule.",
         "topics": "Sujets suivis",
         "sinceDays": "Poste pris depuis (jours)",
         "csvIntro": "Les contacts du fichier entrent dans la campagne comme des personnes déjà qualifiées : pas de scoring.",
@@ -911,8 +912,8 @@
         "menuLinkedinBadge": "Collecte activée avec le canal LinkedIn",
         "menuLinkedinPostEngagersTitle": "Engageurs d'un post",
         "menuLinkedinPostEngagersDescription": "Les personnes qui ont aimé ou commenté un post.",
-        "menuLinkedinCompetitorFollowersTitle": "Abonnés d'un concurrent",
-        "menuLinkedinCompetitorFollowersDescription": "Les personnes actives autour d'une page entreprise.",
+        "menuLinkedinCompetitorPostsTitle": "Engageurs des posts d'un concurrent",
+        "menuLinkedinCompetitorPostsDescription": "Les personnes qui réagissent ou commentent les publications d'une page concurrente.",
         "menuLinkedinKeywordsTitle": "Mots-clés",
         "menuLinkedinKeywordsDescription": "Les personnes qui publient sur un sujet.",
         "menuLinkedinJobChangeTitle": "Changement de poste",
@@ -932,7 +933,8 @@
         "formLinkedinCommented": "ont commenté",
         "formLinkedinReacted": "ont réagi",
         "formLinkedinPostOneCampaign": "Un post ne peut servir qu'à une seule campagne.",
-        "formLinkedinCompetitorPages": "Pages entreprise suivies",
+        "formLinkedinCompetitorPages": "Pages LinkedIn des concurrents",
+        "formLinkedinCompetitorPagesHint": "L’adresse de la page entreprise, par exemple linkedin.com/company/nom-du-concurrent. Séparez plusieurs pages par une virgule.",
         "formLinkedinTopics": "Sujets suivis",
         "formLinkedinSinceDays": "Poste pris depuis (jours)",
         "formLinkedinAccountId": "Compte LinkedIn",

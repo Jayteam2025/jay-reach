@@ -363,9 +363,9 @@ async function plafondPosts() {
   const m2 = await monde();
   const { id: srcConcurrent } = await creerSource(m2.ctx, {
     campagneId: m2.campagne,
-    providerId: 'linkedin_competitor_followers',
+    providerId: 'linkedin_competitor_posts',
     nom: 'Posts d un concurrent',
-    config: { comptesConcurrents: ['https://www.linkedin.com/company/acme/'], compteId: 'compte-1', profilsParJour: 40 },
+    config: { pagesConcurrentes: ['https://www.linkedin.com/company/acme/'], garder: ['reagi'], personaId: m2.persona },
   });
   const runConcurrent = await startSourceRun(pool, srcConcurrent);
   await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m2.org, runConcurrent]);
@@ -1180,12 +1180,124 @@ async function memoireDesPosts() {
   check('72b. un utilisateur étranger n’en lit aucune ligne', vuEtranger === 0, String(vuEtranger));
 }
 
+// --------------------------------------------- lot 4b, étape 2 : la source « concurrent »
+
+/** Le HTML d'une page entreprise, tel que LinkedIn l'embarque : guillemets échappés. */
+const htmlPage = (nom, id) =>
+  `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:${id}&quot;,&quot;universalName&quot;:&quot;${nom}&quot;}</code></html>`;
+
+/** Une page de posts, à la forme relevée en réel le 09/10. */
+const lotDePosts = (urns, total = urns.length, debut = 0) =>
+  JSON.stringify({
+    data: {
+      data: {
+        feedDashOrganizationalPageUpdatesByOrganizationalPageRelevanceFeed: {
+          paging: { count: 10, start: debut, total },
+          '*elements': urns.map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`),
+        },
+      },
+    },
+  });
+
+/** Une source de posts de concurrent sur la campagne active de `m`. */
+async function sourceConcurrente(m, pages) {
+  const { id } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_competitor_posts',
+    nom: 'Concurrent',
+    config: { pagesConcurrentes: pages, garder: ['reagi'], personaId: m.persona },
+  });
+  return id;
+}
+
+/**
+ * Lot 4b, étape 2 : une source « posts d'un concurrent » collecte réellement.
+ *
+ * Le pilote répond selon ce qu'on lui demande : le HTML de la page, puis la liste de ses posts,
+ * puis les engageurs de chaque post. Le handler de production est exécuté tel quel.
+ */
+async function sourceConcurrent() {
+  console.log('\n24. la source « posts d’un concurrent »');
+  const m = await monde();
+  const src = await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  const P1 = 'urn:li:activity:7271000000000000011';
+  const P2 = 'urn:li:activity:7271000000000000012';
+
+  const repondre = (urns, profilsParPost) => (u) => {
+    if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+    if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts(urns) };
+    const post = urns.find((x) => u.includes(x.split(':').pop()));
+    return { statut: 200, corps: voyager(profilsParPost[post] ?? []) };
+  };
+
+  const r1 = await startSourceRun(pool, src);
+  const p1 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p1), { organizationId: m.org, sourceId: src, sourceRunId: r1 });
+  const passage1 = await lirePassage(r1);
+  check('73. la source concurrent collecte les engageurs des posts trouvés',
+    passage1.status === 'success' && passage1.vus === 2 && passage1.nouveaux === 2, JSON.stringify(passage1));
+
+  const contacts = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n;
+  check('74. les personnes des deux posts sont enregistrées', contacts === 2, String(contacts));
+
+  const traites = (await q(`select post_urn from linkedin_posts_traites where organization_id = $1 and source_id = $2 order by 1`, [m.org, src])).rows.map((l) => l.post_urn);
+  check('75. les deux posts lus sont mémorisés', traites.length === 2 && traites[0] === P1 && traites[1] === P2, JSON.stringify(traites));
+
+  // Le passage suivant : LinkedIn sert les mêmes posts en tête de page. Sans la mémoire, il les
+  // relirait et paierait deux requêtes de plus pour zéro personne.
+  const r2 = await startSourceRun(pool, src);
+  const p2 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p2), { organizationId: m.org, sourceId: src, sourceRunId: r2 });
+  const passage2 = await lirePassage(r2);
+  check('76. le passage suivant ne relit pas les mêmes posts et le dit', passage2.status === 'success' && passage2.vus === 0, JSON.stringify(passage2));
+  check('76b. il n’a lu que la page et sa liste de posts, pas les posts eux-mêmes', p2.requetes.length === 2, JSON.stringify(p2.requetes.map((u) => u.slice(0, 60))));
+
+  // Le plafond de posts du jour borne le NOMBRE DE POSTS lus, pas le nombre de pages.
+  const m3 = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '1')`, [m3.org]);
+  const src3 = await sourceConcurrente(m3, ['https://www.linkedin.com/company/acme/']);
+  const r3 = await startSourceRun(pool, src3);
+  const p3 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p3), { organizationId: m3.org, sourceId: src3, sourceRunId: r3 });
+  const traites3 = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1`, [m3.org])).rows[0].n;
+  check('77. le plafond de posts du jour borne les posts lus, pas les pages', traites3 === 1, String(traites3));
+
+  // Le plafond de personnes atteint alors qu'il RESTE des posts : l'écran doit le dire, sinon
+  // l'opérateur croit la page épuisée. Inversement, atteint pile sur le dernier post, il n'a rien
+  // laissé de côté — et l'annoncer serait faux (c'est le défaut corrigé en écrivant la boucle).
+  const m5 = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_personnes_par_passage', '1')`, [m5.org]);
+  const src5 = await sourceConcurrente(m5, ['https://www.linkedin.com/company/acme/']);
+  const r5 = await startSourceRun(pool, src5);
+  const p5 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p5), { organizationId: m5.org, sourceId: src5, sourceRunId: r5 });
+  const passage5 = await lirePassage(r5);
+  check('79. le plafond de personnes atteint avec des posts en attente est annoncé',
+    /personnes par passage/i.test(passage5.error ?? '') && passage5.nouveaux === 1, JSON.stringify(passage5.error));
+  const traites5 = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1`, [m5.org])).rows[0].n;
+  check('79b. le post non lu n’est pas marqué traité : le passage suivant le lira', traites5 === 1, String(traites5));
+
+  // Une source dont la page ne livre pas son identifiant doit le DIRE, pas finir en « (Error) ».
+  const m4 = await monde();
+  const src4 = await sourceConcurrente(m4, ['https://www.linkedin.com/company/fantome/']);
+  const r4 = await startSourceRun(pool, src4);
+  const p4 = pilote({ reponse: () => ({ statut: 200, corps: '<html>{&quot;universalName&quot;:&quot;autre&quot;,&quot;entityUrn&quot;:&quot;urn:li:fsd_company:9&quot;}</html>' }) });
+  await traiterCollecteLinkedIn(deps(p4), { organizationId: m4.org, sourceId: src4, sourceRunId: r4 }).catch(() => undefined);
+  const passage4 = await lirePassage(r4);
+  check('78. une page illisible donne un message lisible à l’écran, pas un nom de classe',
+    passage4.status === 'error' && /fantome/.test(passage4.error ?? ''), JSON.stringify(passage4.error));
+
+  // Et elle ne doit PAS faire croire à un problème de compte LinkedIn.
+  const sess = (await q(`select status from linkedin_server_sessions where organization_id = $1`, [m4.org])).rows[0];
+  check('78b. elle ne bloque pas la session LinkedIn', sess?.status === 'active', JSON.stringify(sess));
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

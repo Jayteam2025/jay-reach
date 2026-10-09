@@ -9,10 +9,12 @@ import {
   nomPublicDePage,
   resoudrePageEntreprise,
   trouverPostsDePage,
+  urlDePost,
   urlPostsDePage,
   urnPageDepuisId,
 } from './posts.js';
 import type { Pilote } from './navigateur.js';
+import { urnDActivite } from './engageurs.js';
 
 /**
  * Les fixtures reproduisent la FORME relevee en reel le 09/10/2026
@@ -102,6 +104,16 @@ describe('nomPublicDePage et urnPageDepuisId', () => {
 
   it('l identifiant de page est celui de la societe (mesure sur trois exemples reels)', () => {
     expect(urnPageDepuisId('1035')).toBe('urn:li:fsd_organizationalPage:1035');
+  });
+});
+
+describe('urlDePost', () => {
+  it('rend une adresse chargeable, et que urnDActivite relit sous le meme URN', () => {
+    const url = urlDePost('urn:li:activity:7271000000000000011');
+    expect(url).toBe('https://www.linkedin.com/feed/update/urn:li:activity:7271000000000000011/');
+    // Aller-retour : ce que le collecteur d engageurs lira doit etre l URN de depart, sinon la
+    // memoire et la collecte ne parleraient pas du meme post.
+    expect(urnDActivite(url)).toBe('urn:li:activity:7271000000000000011');
   });
 });
 

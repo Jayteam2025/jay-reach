@@ -70,9 +70,9 @@ export function MenuAjouterSource({ campagneId }: MenuAjouterSourceProps) {
                   },
                   {
                     icone: <TuileLogo marque="linkedin" />,
-                    titre: t('menu.linkedinCompetitorFollowers.title'),
-                    description: t('menu.linkedinCompetitorFollowers.description'),
-                    onSelectionner: () => ouvrirTiroir('linkedin_competitor_followers'),
+                    titre: t('menu.linkedinCompetitorPosts.title'),
+                    description: t('menu.linkedinCompetitorPosts.description'),
+                    onSelectionner: () => ouvrirTiroir('linkedin_competitor_posts'),
                   },
                   {
                     icone: <TuileLogo marque="linkedin" />,

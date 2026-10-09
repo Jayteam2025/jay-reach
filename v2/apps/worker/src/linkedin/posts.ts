@@ -204,6 +204,19 @@ export async function resoudrePageEntreprise(
   );
 }
 
+/**
+ * L'adresse d'un post à partir de son URN.
+ *
+ * Le trouveur rend des URN, parce que c'est sous cette identité que la mémoire les garde et que
+ * `urnDActivite` les reconnaît. Mais le collecteur d'engageurs commence par CHARGER la page du
+ * post (`pilote.aller`) : il lui faut une adresse. Donner l'URN brut à une navigation ne mène
+ * nulle part, et l'URL se retrouverait telle quelle dans `signals.url`, où elle doit rester
+ * cliquable pour l'opérateur.
+ */
+export function urlDePost(urn: string): string {
+  return `https://www.linkedin.com/feed/update/${urn}/`;
+}
+
 /** Le nom public d'une adresse de page : `linkedin.com/company/<nom>/…`. */
 export function nomPublicDePage(url: string): string | null {
   const m = /linkedin\.com\/(?:company|showcase)\/([^/?#]+)/i.exec(url.trim());

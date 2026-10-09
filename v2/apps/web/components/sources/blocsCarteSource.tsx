@@ -116,7 +116,7 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
   const config = carte.config as {
     urlPost?: string;
     garder?: string[];
-    comptesConcurrents?: string[];
+    pagesConcurrentes?: string[];
     sujets?: string[];
     depuisJours?: number;
   };
@@ -128,10 +128,10 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
       config.garder?.includes('reagi') ? t('drawer.reacted') : null,
     ].filter((v): v is string => Boolean(v));
     blocs.push({ libelle: t('card.keep'), contenu: <ListePuces valeurs={garde} /> });
-  } else if (carte.providerId === 'linkedin_competitor_followers') {
+  } else if (carte.providerId === 'linkedin_competitor_posts') {
     blocs.push({
       libelle: t('drawer.competitorPages'),
-      contenu: <ListePuces valeurs={config.comptesConcurrents ?? []} />,
+      contenu: <ListePuces valeurs={config.pagesConcurrentes ?? []} />,
     });
   } else if (carte.providerId === 'linkedin_keywords') {
     blocs.push({
