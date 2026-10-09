@@ -130,7 +130,7 @@ describe('urlPostsDePage', () => {
 describe('extrairePostsDePage', () => {
   it('sort les URN d activite de *elements, et le total annonce', () => {
     const page = extrairePostsDePage(reponsePosts(['urn:li:activity:111', 'urn:li:activity:222'], 501, 3));
-    expect(page).toEqual({ urns: ['urn:li:activity:111', 'urn:li:activity:222'], total: 501 });
+    expect(page).toEqual({ urns: ['urn:li:activity:111', 'urn:li:activity:222'], total: 501, servis: 2 });
   });
 
   it('ne compte jamais deux fois le meme post', () => {
@@ -149,8 +149,17 @@ describe('extrairePostsDePage', () => {
     expect(extrairePostsDePage({ data: { data: { flux: { '*elements': 'pas un tableau' } } } })).toBeNull();
   });
 
+  // Un element qu'on ne sait pas lire ne doit pas decaler la pagination : l'offset avance du
+  // nombre d'elements SERVIS, sinon la page suivante redemande des posts deja vus.
+  it('compte les elements servis, pas seulement les URN retenus', () => {
+    const page = extrairePostsDePage({
+      data: { data: { flux: { paging: { total: 9 }, '*elements': ['urn:li:fsd_update:(urn:li:activity:111,X)', 42, 'pas-un-urn'] } } },
+    });
+    expect(page).toEqual({ urns: ['urn:li:activity:111'], total: 9, servis: 3 });
+  });
+
   it('une page reellement vide garde sa forme : liste vide ET total', () => {
-    expect(extrairePostsDePage(reponsePosts([], 0))).toEqual({ urns: [], total: 0 });
+    expect(extrairePostsDePage(reponsePosts([], 0))).toEqual({ urns: [], total: 0, servis: 0 });
   });
 });
 
@@ -162,6 +171,7 @@ describe('listerPostsDePage', () => {
     await expect(listerPostsDePage(p, 'urn:li:fsd_organizationalPage:777', 0)).resolves.toEqual({
       urns: ['urn:li:activity:111'],
       total: 42,
+      servis: 1,
     });
     expect(urls[0]).toContain('start:0');
   });
@@ -256,12 +266,43 @@ describe('resoudrePageEntreprise', () => {
     expect(urls).toHaveLength(1);
   });
 
-  it('un 999 de LinkedIn engage le compte', async () => {
+  // Un 999 n'est pas « la page n'a pas repondu » : c'est un verdict de LinkedIn sur NOTRE compte.
+  // Il doit remonter comme friction `defi`, sinon la session reste active et le tour automatique
+  // repart le lendemain sur un compte conteste.
+  it('un 999 remonte une friction defi, pas une page introuvable', async () => {
     const { p } = piloteFactice([{ statut: 999, corps: '' }]);
     await expect(resoudrePageEntreprise(p, 'https://www.linkedin.com/company/ma-cible/')).rejects.toMatchObject({
-      name: 'PageIntrouvable',
+      name: 'FrictionLinkedIn',
       engageLeCompte: true,
+      friction: { type: 'defi' },
     });
+  });
+
+  it('un 403 remonte un cookie refuse', async () => {
+    const { p } = piloteFactice([{ statut: 403, corps: '' }]);
+    await expect(resoudrePageEntreprise(p, 'https://www.linkedin.com/company/ma-cible/')).rejects.toMatchObject({
+      name: 'FrictionLinkedIn',
+      engageLeCompte: true,
+      friction: { type: 'cookie_refuse' },
+    });
+  });
+
+  it('une vraie panne reste une panne, sans engager le compte', async () => {
+    const { p } = piloteFactice([{ statut: 500, corps: '' }]);
+    await expect(resoudrePageEntreprise(p, 'https://www.linkedin.com/company/ma-cible/')).rejects.toMatchObject({
+      name: 'PageIntrouvable',
+      engageLeCompte: false,
+    });
+  });
+
+  // Le budget doit etre relu AVANT chaque tentative : sinon trois requetes partent quoi qu'il
+  // arrive, et le plafond horaire est depasse de deux.
+  it('ne part pas quand le budget de requetes est epuise', async () => {
+    const { p, urls } = piloteFactice([{ statut: 200, corps: htmlDePage('ma-cible', '777') }]);
+    await expect(
+      resoudrePageEntreprise(p, 'https://www.linkedin.com/company/ma-cible/', undefined, sansAttendre, () => 0),
+    ).rejects.toMatchObject({ name: 'PlafondAvantResolution' });
+    expect(urls).toHaveLength(0);
   });
 
   it('chaque requete est comptee avant de partir', async () => {

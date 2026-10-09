@@ -984,13 +984,27 @@ export async function enqueueLinkedInTours(boss: PgBoss, pool: Pool): Promise<nu
                 join campaigns c on c.id = cs.campaign_id
                where cs.source_id = so.id and c.status = 'active'
             )
-            -- Aucun passage aujourd'hui, dans le fuseau de l'organisation. Un passage refusé
-            -- compte : il a consommé le tour du jour, et le rejouer en boucle serait pire.
+            -- Aucun passage ABOUTI aujourd'hui, dans le fuseau de l'organisation.
+            --
+            -- « Abouti » veut dire : qui a parlé à LinkedIn, ou qui s'est clos en succès (un
+            -- plafond atteint est durable sur la journée). Un refus TRANSITOIRE ne consomme pas
+            -- le tour : l'opérateur clique « Collecter maintenant » à 10h02, le passage prend le
+            -- verrou pour dix minutes, le tour tombe à 10h05 et se fait refuser — cette ligne-là
+            -- ne doit pas priver la source de sa journée pour six minutes d'attente.
             and not exists (
               select 1 from source_runs sr
                where sr.source_id = so.id
                  and sr.started_at >= ($3::date::timestamp at time zone $4)
                  and sr.started_at < (($3::date + 1)::timestamp at time zone $4)
+                 and (
+                   -- Un passage EN COURS consomme le tour : sans ça, le tour suivant en
+                   -- empilerait un second qui se disputerait le verrou du navigateur avec le
+                   -- premier, et se ferait refuser.
+                   sr.status = 'running'
+                   -- Un plafond atteint se clôt en succès, et il est durable sur la journée.
+                   or sr.status = 'success'
+                   or exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)
+                 )
             )
           order by (
             select max(sr.started_at) from source_runs sr where sr.source_id = so.id

@@ -633,7 +633,11 @@ export async function compterPostsLinkedInDuJour(
   sauf?: string,
 ): Promise<number> {
   const res = await ctx.ex.query<{ n: number }>(
-    `select count(*)::int as n /* jr:linkedin_posts_du_jour */
+    // Somme des posts RÉELLEMENT ouverts, pas un par passage : depuis que le collecteur boucle
+    // sur plusieurs posts dans un seul passage, compter les lignes laissait passer N(N+1)/2 posts
+    // pour un plafond de N. `coalesce(…, 1)` ramène à un les passages antérieurs à cette colonne,
+    // qui en ouvraient exactement un.
+    `select coalesce(sum(coalesce(sr.posts, 1)), 0)::int as n /* jr:linkedin_posts_du_jour */
        from source_runs sr
        join sources so on so.id = sr.source_id
       where so.organization_id = $1

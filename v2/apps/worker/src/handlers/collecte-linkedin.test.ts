@@ -93,6 +93,8 @@ function base(opts: {
   plafonds?: { posts?: number; requetes?: number; personnes?: number };
   postsDuJour?: number;
   requetesDeLHeure?: number;
+  /** Les posts que cette source a deja traites, pour la boucle multi-posts du lot 4b etape 2. */
+  postsTraites?: string[];
 }) {
   const ecritures: Ecriture[] = [];
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
@@ -135,6 +137,13 @@ function base(opts: {
       return rep([{ value: String(valeur) }]);
     }
     if (t.includes('jr:linkedin_posts_du_jour')) return rep([{ n: opts.postsDuJour ?? 1 }]);
+    if (t.includes('linkedin_posts_traites')) {
+      if (t.includes('insert')) {
+        ecritures.push({ sql: 'post_traite', params });
+        return rep([]);
+      }
+      return rep((opts.postsTraites ?? []).map((post_urn) => ({ post_urn })));
+    }
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_requete_tracer')) {
       ecritures.push({ sql: 'tracer', params });
@@ -366,5 +375,82 @@ describe('le bilan du passage', () => {
   it('compte les personnes enregistrées sous une adresse déduite de l’URN', async () => {
     const { c } = await passer([...P(2), ...P(2, { public: true }).map((x, i) => ({ ...x, id: `ACoAB${i}` }))], 100);
     expect(colonnes(c)).toMatchObject({ nouveaux: 4, deduites: 2 });
+  });
+});
+
+/**
+ * Lot 4b, etape 2 : la boucle multi-posts d'une source « posts d'un concurrent ».
+ *
+ * Le harnais pg-verify l'eprouve sur un vrai Postgres, mais il ne tourne pas en CI : ces
+ * controles-ci gardent la LOGIQUE du handler (branchements, compteurs, ce qui est ecrit) a chaque
+ * build.
+ */
+describe('la source « posts d’un concurrent »', () => {
+  const PAGE = 'https://www.linkedin.com/company/acme/';
+  const A = 'urn:li:activity:7271000000000000011';
+  const B = 'urn:li:activity:7271000000000000012';
+  const htmlPage = (nom: string, id: string) =>
+    `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:${id}&quot;,&quot;universalName&quot;:&quot;${nom}&quot;}</code></html>`;
+  const lotDePosts = (urns: string[]) =>
+    JSON.stringify({
+      data: { data: { flux: { paging: { count: 10, start: 0, total: urns.length }, '*elements': urns.map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`) } } },
+    });
+  const sourceConcurrent = (pages: string[]) => ({ sourceType: 'linkedin_competitor_posts', pagesConcurrentes: pages, garder: ['reagi'] });
+  // Deux personnes inventees : le depot interdit les fixtures portant de vraies personnes.
+  const UNE = { id: 'ACoAAaaa', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale' };
+  const AUTRE = { id: 'ACoAAbbb', prenom: 'Bob', nom: 'Durand', titre: 'Directeur commercial' };
+
+  /** Repond selon ce qui est demande : le HTML de la page, la liste de ses posts, puis les engageurs. */
+  const repondre = (urns: string[], profils: Record<string, Parameters<typeof voyager>[0]>) => (u: string) => {
+    if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+    if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts(urns) };
+    const post = urns.find((x) => u.includes(x.split(':').pop() ?? ''));
+    return { statut: 200, corps: voyager(profils[post ?? ''] ?? []) };
+  };
+
+  it('lit les engageurs de chaque post trouve, et compte les posts ouverts', async () => {
+    const b = base({ source: sourceConcurrent([PAGE]) });
+    const p = pilote({ reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    // `posts` est le DERNIER parametre de la cloture : c'est lui que le plafond du jour additionne.
+    expect(c.params[c.params.length - 1]).toBe(2);
+    expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
+  });
+
+  it('ne relit pas un post que la memoire dit deja traite', async () => {
+    const b = base({ source: sourceConcurrent([PAGE]), postsTraites: [A] });
+    const p = pilote({ reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[c.params.length - 1]).toBe(1);
+  });
+
+  // Avant ce correctif, une seule adresse mal collee faisait perdre les posts deja trouves sur
+  // les autres pages — et comme rien n'etait marque traite, tous les jours a l'identique.
+  it('une page illisible n’emporte pas les posts des autres pages', async () => {
+    const b = base({ source: sourceConcurrent([PAGE, 'Upsell']) });
+    const p = pilote({ reponse: repondre([A], { [A]: [UNE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[c.params.length - 1]).toBe(1);
+    // L'ecran dit quand meme qu'une page n'a pas pu etre lue : la recolte est partielle.
+    expect(String(c.params[3])).toContain('Upsell');
+  });
+
+  // Un 999 rencontre en CHERCHANT les posts est un verdict sur le compte, pas sur la page :
+  // sans ca la session restait active et le tour automatique repartait le lendemain.
+  it('un defi pendant la recherche suspend la session', async () => {
+    const b = base({ source: sourceConcurrent([PAGE]) });
+    const p = pilote({ reponse: () => ({ statut: 999, corps: '' }) });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB).catch(() => undefined);
+    expect(bloque(b)).toContain('defi');
+    expect(String(clos(b)!.params[3])).toContain('vérification');
   });
 });

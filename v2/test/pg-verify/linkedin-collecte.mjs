@@ -1256,15 +1256,71 @@ async function sourceConcurrent() {
   check('76. le passage suivant ne relit pas les mêmes posts et le dit', passage2.status === 'success' && passage2.vus === 0, JSON.stringify(passage2));
   check('76b. il n’a lu que la page et sa liste de posts, pas les posts eux-mêmes', p2.requetes.length === 2, JSON.stringify(p2.requetes.map((u) => u.slice(0, 60))));
 
-  // Le plafond de posts du jour borne le NOMBRE DE POSTS lus, pas le nombre de pages.
+  // Le plafond de posts du jour borne le NOMBRE DE POSTS lus, pas le nombre de passages.
+  //
+  // Le plafond vaut 2, PAS 1 : avec 1, un compteur qui compterait les passages au lieu des posts
+  // donnerait le meme resultat qu'un compteur juste (la serie N(N+1)/2 vaut N pour N=1). C'est
+  // exactement le defaut qui avait traverse la premiere ecriture de ce controle — un controle
+  // pose sur la seule valeur ou la formule degenere ne prouve rien.
   const m3 = await monde();
-  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '1')`, [m3.org]);
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '2')`, [m3.org]);
   const src3 = await sourceConcurrente(m3, ['https://www.linkedin.com/company/acme/']);
-  const r3 = await startSourceRun(pool, src3);
-  const p3 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
-  await traiterCollecteLinkedIn(deps(p3), { organizationId: m3.org, sourceId: src3, sourceRunId: r3 });
+  const P3 = 'urn:li:activity:7271000000000000013';
+  const P4 = 'urn:li:activity:7271000000000000014';
+  const profils = { [P1]: [ADA], [P2]: [BOB], [P3]: [ADA], [P4]: [BOB] };
+  // Trois passages de suite. Si le compteur comptait les passages : 2 posts, puis 1, puis 0 = 3.
+  // En comptant les posts : 2 au premier, 0 ensuite.
+  for (let i = 0; i < 3; i += 1) {
+    const r = await startSourceRun(pool, src3);
+    const p = pilote({ reponse: repondre([P1, P2, P3, P4], profils) });
+    await traiterCollecteLinkedIn(deps(p), { organizationId: m3.org, sourceId: src3, sourceRunId: r });
+  }
   const traites3 = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1`, [m3.org])).rows[0].n;
-  check('77. le plafond de posts du jour borne les posts lus, pas les pages', traites3 === 1, String(traites3));
+  check('77. le plafond du jour borne les POSTS, pas les passages', traites3 === 2, `${traites3} posts ouverts pour un plafond de 2`);
+  const comptePosts = (await q(`select coalesce(sum(coalesce(sr.posts, 1)), 0)::int n from source_runs sr join sources so on so.id = sr.source_id where so.organization_id = $1 and exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)`, [m3.org])).rows[0].n;
+  check('77b. et le compteur du jour dit le meme nombre que la memoire', comptePosts === traites3, `${comptePosts} comptes / ${traites3} memorises`);
+
+  // Une page fautive ne doit pas emporter les posts deja trouves sur les autres pages. Avant,
+  // une seule adresse mal collee faisait perdre tout le passage, tous les jours.
+  const m6 = await monde();
+  const src6 = await sourceConcurrente(m6, ['https://www.linkedin.com/company/acme/', 'Upsell']);
+  const r6 = await startSourceRun(pool, src6);
+  const p6 = pilote({ reponse: repondre([P1], { [P1]: [ADA] }) });
+  await traiterCollecteLinkedIn(deps(p6), { organizationId: m6.org, sourceId: src6, sourceRunId: r6 });
+  const passage6 = await lirePassage(r6);
+  check('77c. une page illisible ne fait pas perdre les posts des autres pages',
+    passage6.nouveaux === 1, JSON.stringify({ statut: passage6.status, nouveaux: passage6.nouveaux, erreur: passage6.error }));
+  check('77d. et l’ecran dit quand meme qu’une page n’a pas pu etre lue', /illisible|Adresse/i.test(passage6.error ?? ''), JSON.stringify(passage6.error));
+
+  // Le disjoncteur doit voir les sources « concurrent » comme les autres. Tant qu'il ne regardait
+  // qu'un seul type, une organisation dont la source est une page concurrente pouvait enchainer
+  // trente passages en erreur sans que la session soit jamais suspendue — avec la collecte
+  // automatique, le serveur serait reparti vers LinkedIn tous les jours.
+  const mD = await monde();
+  const srcD = await sourceConcurrente(mD, ['https://www.linkedin.com/company/acme/']);
+  await q(`delete from campaign_sources where source_id = $1`, [mD.source]);
+  for (let i = 0; i < 3; i += 1) {
+    const r = await startSourceRun(pool, srcD);
+    // Un echec qui ENGAGE le compte : proxy injoignable au moment de relever la sortie.
+    await traiterCollecteLinkedIn(
+      { ...deps(pilote({ reponse: () => ({ statut: 200, corps: '' }) })), releverSortie: async () => { throw new Error('proxy mort'); } },
+      { organizationId: mD.org, sourceId: srcD, sourceRunId: r },
+    ).catch(() => undefined);
+  }
+  const sessD = (await q(`select status, blocked_reason from linkedin_server_sessions where organization_id = $1`, [mD.org])).rows[0];
+  check('77g. trois echecs sur une source concurrent suspendent la session', sessD?.status === 'bloquee', JSON.stringify(sessD));
+
+  // Un defi rencontre en CHERCHANT les posts est un verdict sur le compte, pas sur la page.
+  const m7 = await monde();
+  const src7 = await sourceConcurrente(m7, ['https://www.linkedin.com/company/acme/']);
+  const r7 = await startSourceRun(pool, src7);
+  const p7 = pilote({ reponse: () => ({ statut: 999, corps: '' }) });
+  await traiterCollecteLinkedIn(deps(p7), { organizationId: m7.org, sourceId: src7, sourceRunId: r7 }).catch(() => undefined);
+  const passage7 = await lirePassage(r7);
+  const sess7 = (await q(`select status, blocked_reason from linkedin_server_sessions where organization_id = $1`, [m7.org])).rows[0];
+  check('77e. un 999 pendant la recherche suspend la session', sess7?.status === 'bloquee' && sess7?.blocked_reason === 'defi', JSON.stringify(sess7));
+  check('77f. et l’ecran parle de verification, pas d’une page qui ne repond pas',
+    /v[ée]rification/i.test(passage7.error ?? ''), JSON.stringify(passage7.error));
 
   // Le plafond de personnes atteint alors qu'il RESTE des posts : l'écran doit le dire, sinon
   // l'opérateur croit la page épuisée. Inversement, atteint pile sur le dernier post, il n'a rien
@@ -1383,31 +1439,49 @@ async function tourLinkedInAutomatique() {
   const n1 = await enqueueLinkedInTours(b1.boss, pool);
   check('84. collecte automatique activee : un passage part tout seul', n1 === 1 && b1.envoyes[0]?.name === 'linkedin.collecte', `${n1} / ${JSON.stringify(b1.envoyes.map((e) => e.name))}`);
 
+  // 3 bis. Un refus TRANSITOIRE ne consomme pas le tour du jour : l'opérateur clique « Collecter
+  // maintenant » a 10h02, le passage prend le verrou, le tour tombe a 10h05 et se fait refuser —
+  // cette ligne-la ne doit pas priver la source de sa journee pour six minutes d'attente.
+  const mT = await monde();
+  const srcT = await sourceConcurrente(mT, ['https://www.linkedin.com/company/acme/']);
+  await q(`delete from campaign_sources where source_id = $1`, [mT.source]);
+  await ouvrirLaFenetre(mT.org, true);
+  const refuse = await startSourceRun(pool, srcT);
+  await q(`update source_runs set status = 'error', finished_at = now(), error = 'verrou' where id = $1`, [refuse]);
+  // Le tour sert TOUTES les organisations : on regarde ce qui part pour CETTE source, pas le
+  // total, sinon une organisation voisine du harnais fausse la mesure.
+  const bT = bossFactice();
+  await enqueueLinkedInTours(bT.boss, pool);
+  const pourSrcT = (b) => b.envoyes.filter((e) => e.data?.sourceId === srcT).length;
+  check('84b. un refus sans la moindre requete ne consomme pas le tour du jour', pourSrcT(bT) === 1, JSON.stringify(bT.envoyes.map((e) => e.data?.sourceId)));
+  // Et le passage qui vient d'etre ouvert, lui, le consomme : sinon deux passages se
+  // disputeraient le verrou du navigateur.
+  const bT2 = bossFactice();
+  await enqueueLinkedInTours(bT2.boss, pool);
+  check('84c. mais un passage EN COURS le consomme', pourSrcT(bT2) === 0, JSON.stringify(bT2.envoyes.map((e) => e.data?.sourceId)));
+
   // 3. UNE source par tour, et UN passage par source et par jour. L'organisation en a deux (le
   // post de `monde()` et la page concurrente) : elles partent l'une apres l'autre, la moins
   // recemment passee d'abord, puis plus rien du tout ce jour-la. Sans cette borne, un tour
   // toutes les demi-heures enfilerait quarante-huit passages qui se feraient tous refuser.
-  const sourcesLinkedIn = (
-    await q(`select count(*)::int n from sources where organization_id = $1 and config->>'sourceType' like 'linkedin%'`, [m.org])
-  ).rows[0].n;
-  let tours = 1; // le tour 2 ci-dessus en a deja servi une
+  // L'invariant qui compte, mesure sur la BASE et pas sur le nombre de tours : quand plus rien
+  // ne part, chaque source de l'organisation a EXACTEMENT un passage du jour. Compter les tours
+  // serait faux — un tour sert aussi les autres organisations du harnais.
   for (let i = 0; i < 10; i += 1) {
     const b = bossFactice();
-    const n = await enqueueLinkedInTours(b.boss, pool);
-    if (n === 0) break;
-    check(`85-${i}. un tour ne sert jamais plus d’une source`, n === 1, String(n));
-    tours += n;
+    if ((await enqueueLinkedInTours(b.boss, pool)) === 0) break;
   }
-  check('85. chaque source a eu son passage du jour, et pas un de plus', tours === sourcesLinkedIn, `${tours} passages pour ${sourcesLinkedIn} sources`);
-  const servies = (
+  const parSource = (
     await q(
-      `select count(distinct sr.source_id)::int n from source_runs sr
-         join sources so on so.id = sr.source_id
-        where so.organization_id = $1 and so.config->>'sourceType' like 'linkedin%'`,
+      `select so.id, count(sr.id)::int n from sources so
+         left join source_runs sr on sr.source_id = so.id
+        where so.organization_id = $1 and so.config->>'sourceType' like 'linkedin%'
+        group by so.id`,
       [m.org],
     )
-  ).rows[0].n;
-  check('85b. ce sont bien des sources DIFFERENTES, pas deux fois la meme', servies === sourcesLinkedIn, `${servies} servies`);
+  ).rows;
+  check('85. chaque source a eu son passage du jour, et pas un de plus',
+    parSource.length > 1 && parSource.every((l) => l.n === 1), JSON.stringify(parSource.map((l) => l.n)));
 
   // 4. Hors fenetre : rien. Un compte qui n'ecrit a personne la nuit et lit deux cents profils
   // a quatre heures du matin se repere.

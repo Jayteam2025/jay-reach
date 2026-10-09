@@ -251,6 +251,13 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
   if (source.providerId === 'linkedin_post_engagers') {
     return typeof source.config.urlPost === 'string' ? source.config.urlPost : '';
   }
+  // La source « posts d'un concurrent » se résume par ses pages, comme le post par son adresse.
+  // Elle ne porte plus `profilsParJour` : afficher le repli à 40 annoncerait « 40 profils par
+  // jour » alors que les plafonds réels sont les posts du jour et les personnes par passage —
+  // un chiffre que le produit ne mesure pas.
+  if (source.providerId === 'linkedin_competitor_posts') {
+    return asListeChaines(source.config.pagesConcurrentes).join(', ');
+  }
   const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
   return libelles.resumeLinkedin(profilsParJour);
 }

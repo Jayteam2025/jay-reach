@@ -12,8 +12,8 @@
  * autres viendront derrière la même interface quand leurs points d'entrée seront connus — on
  * ne code pas ce qu'on n'a pas observé.
  */
-import { ErreurCollecte, ENTETES_VOYAGER, urnDActivite } from './engageurs.js';
-import type { ArretCollecte, Budget } from './engageurs.js';
+import { ErreurCollecte, ENTETES_VOYAGER, frictionDuStatut, urnDActivite } from './engageurs.js';
+import type { ArretCollecte, Budget, Friction } from './engageurs.js';
 import type { Pilote } from './navigateur.js';
 
 /**
@@ -48,6 +48,18 @@ export const TENTATIVES_RESOLUTION = 3;
 export const DELAI_RETENTATIVE_MS = 5_000;
 
 const pauseReelle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Ce que l'opérateur lit quand LinkedIn rend un verdict sur son compte. Mêmes mots que le
+ * handler (`MSG.defi`, `MSG.cookie_refuse`) : une seule cause, une seule phrase, d'où qu'elle
+ * vienne.
+ */
+const MESSAGES_FRICTION: Record<Friction['type'], string> = {
+  defi: 'LinkedIn demande une vérification : collecte arrêtée.',
+  cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
+  liste_vide: 'LinkedIn n’a livré aucun post : collecte arrêtée.',
+  post_introuvable: 'Page ou post introuvable, supprimé ou privé : vérifiez l’adresse.',
+};
 
 /**
  * L'identifiant de la société dont la page porte ce nom public, lu dans le HTML rendu par
@@ -99,6 +111,14 @@ export function urlPostsDePage(urnPage: string, debut: number, nombre: number = 
 export interface PagePosts {
   readonly urns: readonly string[];
   readonly total: number;
+  /**
+   * Combien d'éléments LinkedIn a servis, retenus ou non.
+   *
+   * L'offset de la pagination avance de CE nombre, pas du nombre d'URN gardés : un élément
+   * qu'on ne sait pas lire décalerait sinon toute la suite, et la page suivante redemanderait
+   * des posts déjà vus jusqu'au garde-fou de boucle. Du trafic payé pour rien.
+   */
+  readonly servis: number;
 }
 
 /**
@@ -140,7 +160,7 @@ export function extrairePostsDePage(corps: unknown): PagePosts | null {
     typeof paging === 'object' && paging !== null && typeof (paging as { total?: unknown }).total === 'number'
       ? (paging as { total: number }).total
       : urns.length;
-  return { urns, total };
+  return { urns, total, servis: elements.length };
 }
 
 /**
@@ -175,6 +195,13 @@ export async function resoudrePageEntreprise(
   surRequete: () => Promise<void> = async () => undefined,
   /** Injectée pour que les tests n'attendent pas réellement. */
   pause: (ms: number) => Promise<void> = pauseReelle,
+  /**
+   * Combien de requêtes il reste au budget, relu AVANT chaque tentative.
+   *
+   * Sans lui, trois tentatives de résolution partaient quoi qu'il arrive : avec une seule requête
+   * de budget, le plafond horaire était dépassé de deux requêtes — tracées, donc bien réelles.
+   */
+  restantes: () => number = () => Number.POSITIVE_INFINITY,
 ): Promise<string> {
   const nom = nomPublicDePage(urlPage);
   if (nom === null) {
@@ -183,11 +210,29 @@ export async function resoudrePageEntreprise(
   const adresse = `https://www.linkedin.com/company/${encodeURIComponent(nom)}/`;
 
   for (let tentative = 0; tentative < TENTATIVES_RESOLUTION; tentative += 1) {
+    if (restantes() <= 0) {
+      throw new ErreurCollecte(
+        `Plafond de requêtes atteint avant d’avoir pu lire la page ${nom}.`,
+        'PlafondAvantResolution',
+        false,
+      );
+    }
     if (tentative > 0) await pause(DELAI_RETENTATIVE_MS);
     await surRequete();
     const rep = await pilote.requete(adresse);
     if (rep.statut < 200 || rep.statut >= 300) {
-      throw new ErreurCollecte(`La page ${nom} n’a pas répondu (${rep.statut}).`, 'PageIntrouvable', rep.statut === 999);
+      // Un défi ou un cookie refusé sont des verdicts sur NOTRE compte, pas sur cette page :
+      // ils remontent comme frictions pour que la session soit suspendue et l'opérateur prévenu.
+      const friction = frictionDuStatut(rep.statut);
+      if (friction) {
+        throw new ErreurCollecte(
+          MESSAGES_FRICTION[friction.type],
+          'FrictionLinkedIn',
+          friction.type === 'defi' || friction.type === 'cookie_refuse',
+          friction,
+        );
+      }
+      throw new ErreurCollecte(`La page ${nom} n’a pas répondu (${rep.statut}).`, 'PageIntrouvable', false);
     }
     const id = idSocieteDepuisHtml(rep.corps, nom);
     if (id !== null) return urnPageDepuisId(id);
@@ -231,10 +276,20 @@ export function nomPublicDePage(url: string): string | null {
 export async function listerPostsDePage(pilote: Pilote, urnPage: string, debut: number): Promise<PagePosts> {
   const rep = await pilote.requete(urlPostsDePage(urnPage, debut), ENTETES_VOYAGER);
   if (rep.statut < 200 || rep.statut >= 300) {
+    const friction = frictionDuStatut(rep.statut);
+    if (friction) {
+      throw new ErreurCollecte(
+        MESSAGES_FRICTION[friction.type],
+        'FrictionLinkedIn',
+        friction.type === 'defi' || friction.type === 'cookie_refuse',
+        friction,
+      );
+    }
+    // Un 429 n'est pas une friction nommée mais reste un verdict sur notre rythme.
     throw new ErreurCollecte(
       `La liste des posts n’a pas répondu (${rep.statut}).`,
       'PostsIndisponibles',
-      rep.statut === 999 || rep.statut === 429,
+      rep.statut === 429,
     );
   }
   let corps: unknown;
@@ -293,7 +348,7 @@ export async function trouverPostsDePage(
     restantes -= 1;
   };
 
-  const urnPage = await resoudrePageEntreprise(pilote, urlPage, compter, pause);
+  const urnPage = await resoudrePageEntreprise(pilote, urlPage, compter, pause, () => restantes);
 
   const retenus: string[] = [];
   let debut = 0;
@@ -309,10 +364,10 @@ export async function trouverPostsDePage(
       retenus.push(urn);
       if (retenus.length >= budget.postsRestants) return { urns: retenus, arret: 'plafond' };
     }
-    debut += lot.urns.length;
+    debut += lot.servis;
     // Une page vide ou un total atteint : il n'y a plus rien à parcourir. Le premier cas compte,
     // sinon une page qui ne sert soudain plus rien ferait tourner la boucle jusqu'à PAGES_MAX.
-    if (lot.urns.length === 0 || debut >= lot.total) {
+    if (lot.servis === 0 || debut >= lot.total) {
       return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini' };
     }
   }

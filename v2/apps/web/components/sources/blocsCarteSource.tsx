@@ -121,18 +121,29 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
     depuisJours?: number;
   };
   const blocs: BlocCarteSource[] = [];
+  // « Qui garder » vaut pour les deux sources d'engageurs : c'est le même collecteur derrière,
+  // et l'opérateur vient de le saisir — ne pas le relire sur la carte lui ferait rouvrir le
+  // tiroir pour vérifier.
+  const quiGarder = (): BlocCarteSource => ({
+    libelle: t('card.keep'),
+    contenu: (
+      <ListePuces
+        valeurs={[
+          config.garder?.includes('commente') ? t('drawer.commented') : null,
+          config.garder?.includes('reagi') ? t('drawer.reacted') : null,
+        ].filter((v): v is string => Boolean(v))}
+      />
+    ),
+  });
   if (carte.providerId === 'linkedin_post_engagers') {
     blocs.push({ libelle: t('card.postFollowed'), contenu: <AdressePost url={config.urlPost} /> });
-    const garde = [
-      config.garder?.includes('commente') ? t('drawer.commented') : null,
-      config.garder?.includes('reagi') ? t('drawer.reacted') : null,
-    ].filter((v): v is string => Boolean(v));
-    blocs.push({ libelle: t('card.keep'), contenu: <ListePuces valeurs={garde} /> });
+    blocs.push(quiGarder());
   } else if (carte.providerId === 'linkedin_competitor_posts') {
     blocs.push({
       libelle: t('drawer.competitorPages'),
       contenu: <ListePuces valeurs={config.pagesConcurrentes ?? []} />,
     });
+    blocs.push(quiGarder());
   } else if (carte.providerId === 'linkedin_keywords') {
     blocs.push({
       libelle: t('drawer.topics'),

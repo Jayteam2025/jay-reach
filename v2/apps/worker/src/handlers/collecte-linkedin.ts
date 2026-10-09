@@ -109,6 +109,13 @@ interface Bilan {
   adressesDeduites: number;
   /** Le passage s'est arrêté sur le plafond de personnes enregistrées par passage. */
   plafondPersonnes: boolean;
+  /**
+   * Combien de posts ce passage a réellement ouverts.
+   *
+   * C'est ce que `compterPostsLinkedInDuJour` additionne pour borner le plafond du jour. Compter
+   * les passages au lieu des posts laissait passer N(N+1)/2 posts pour un plafond de N.
+   */
+  posts: number;
 }
 
 const bilanVierge = (): Bilan => ({
@@ -121,6 +128,7 @@ const bilanVierge = (): Bilan => ({
   opposes: 0,
   adressesDeduites: 0,
   plafondPersonnes: false,
+  posts: 0,
 });
 
 /**
@@ -223,7 +231,8 @@ async function cloreCollecte(
             items_found = $5, items_new = $6,
             requetes = $7, vus = $5, nouveaux = $6, doublons = $8, deja_en_campagne = $9,
             ip_sortie = $10, operateur_sortie = $11, verdict_linkedin = $12,
-            ignores = $13, opposes = $14, adresses_deduites = $15, plafond_personnes_atteint = $16
+            ignores = $13, opposes = $14, adresses_deduites = $15, plafond_personnes_atteint = $16,
+            posts = $17
       where sr.id = $2
         and sr.source_id in (select id from sources where organization_id = $1)`,
     [
@@ -243,6 +252,7 @@ async function cloreCollecte(
       b.opposes,
       b.adressesDeduites,
       b.plafondPersonnes,
+      b.posts,
     ],
   );
 }
@@ -287,7 +297,7 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
        from source_runs sr
        join sources so on so.id = sr.source_id
       where so.organization_id = $1
-        and so.config->>'sourceType' = 'linkedin_post_engagers'
+        and so.config->>'sourceType' = any($2::text[])
         and sr.finished_at is not null
         and sr.verdict_linkedin
         and sr.finished_at > coalesce(
@@ -295,7 +305,7 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
               '-infinity'::timestamptz)
       order by sr.finished_at desc
       limit 3`,
-    [ctx.organisationId],
+    [ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
   );
   if (res.rows.length === 3 && res.rows.every((r) => r.status === 'error')) {
     await bloquerSessionLinkedIn(ctx, 'disjoncteur');
@@ -531,6 +541,8 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // « plafond + ce qu'a coûté la recherche », sur un plafond censé le borner.
     const postsALire: string[] = [];
     let arretRecherche: ArretCollecte | null = null;
+    /** Les pages qu'on n'a pas su lire. Une seule n'arrête pas le passage ; toutes, si. */
+    const pagesEnEchec: string[] = [];
     if (config.mode === 'post') {
       postsALire.push(config.urlPost);
     } else {
@@ -540,21 +552,40 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       for (const page of config.pages) {
         const restant = { requetesRestantes: requetesRestantes(), postsRestants: budget.postsRestants - postsALire.length };
         if (restant.requetesRestantes <= 0 || restant.postsRestants <= 0) break;
-        const trouve = await trouverPostsDePage(pilote, page, { dejaTraites, budget: restant, surRequete, pause: d.pause });
-        for (const urn of trouve.urns) {
-          postsALire.push(urn);
-          dejaTraites.add(urn);
-        }
-        // Une friction sur une page arrête le passage : elle dit quelque chose de notre compte ou
-        // de la session, et la page suivante tomberait sur la même.
-        if (typeof trouve.arret === 'object') {
+        try {
+          const trouve = await trouverPostsDePage(pilote, page, { dejaTraites, budget: restant, surRequete, pause: d.pause });
+          for (const urn of trouve.urns) {
+            postsALire.push(urn);
+            dejaTraites.add(urn);
+          }
           // Une page sans post nouveau n'est pas une friction du passage : les autres pages de la
           // source ont encore leur mot à dire.
-          if (trouve.arret.type !== 'liste_vide') {
+          if (typeof trouve.arret === 'object' && trouve.arret.type !== 'liste_vide') {
             arretRecherche = trouve.arret;
             break;
           }
+        } catch (err) {
+          if (!(err instanceof ErreurCollecte)) throw err;
+          // Un verdict de LinkedIn sur notre compte (défi, cookie refusé) arrête TOUT : la page
+          // suivante tomberait sur le même, et la session doit être suspendue.
+          if (err.friction) {
+            arretRecherche = err.friction;
+            break;
+          }
+          // Une page fautive, elle, ne doit pas emporter les autres. Avant, une seule adresse mal
+          // collée faisait perdre les posts déjà trouvés sur les pages précédentes — et comme
+          // rien n'était marqué traité, le passage recommençait à l'identique tous les jours.
+          console.warn(`[collecte-linkedin] page ignorée (${err.name})`);
+          pagesEnEchec.push(err.message);
         }
+      }
+      // Toutes les pages sont fautives : c'est bien le passage qui échoue, et l'opérateur doit
+      // lire pourquoi. Une seule sur plusieurs ne fait que réduire la récolte.
+      if (arretRecherche === null && pagesEnEchec.length === config.pages.length) {
+        traficTermine = true;
+        const premier = pagesEnEchec[0] ?? MSG.pages_absentes;
+        await cloreCollecte(pool, job, { statut: 'error', erreur: premier, bilan, sortie, verdictLinkedIn: false });
+        return;
       }
       if (arretRecherche === null && postsALire.length === 0) {
         // Rien de neuf : un passage à vide, pas un échec. Le dire plutôt que de laisser l'écran
@@ -583,6 +614,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         surRequete,
         d.pause,
       );
+      bilan.posts += 1;
       bilan.vus += personnes.length;
       // Marqué dès que ses engageurs sont lus, avant même d'être enregistrés : la requête est
       // partie, elle est payée, et relire ce post au passage suivant la repaierait. Un post qui
@@ -630,7 +662,12 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     await marquerCollecteLinkedIn(ctx);
     await cloreCollecte(pool, job, {
       statut: 'success',
-      erreur: bilan.plafondPersonnes ? MSG.plafond_personnes : arret === 'plafond' ? MSG.plafond_requetes : null,
+      erreur: bilan.plafondPersonnes
+        ? MSG.plafond_personnes
+        : arret === 'plafond'
+          ? MSG.plafond_requetes
+          : // Une page sur plusieurs n'a pas pu être lue : la récolte est partielle, l'écran le dit.
+            (pagesEnEchec[0] ?? null),
       bilan,
       sortie,
       // Un passage qui a parlé à LinkedIn et abouti est le verdict qui remet le
