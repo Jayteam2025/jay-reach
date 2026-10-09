@@ -7,6 +7,8 @@ export {
   MSG,
 } from '../../apps/worker/src/handlers/collecte-linkedin.js';
 export { lireEngageurs, extraireEngageurs, fusionner } from '../../apps/worker/src/linkedin/engageurs.js';
+export { trouverPostsDePage } from '../../apps/worker/src/linkedin/posts.js';
+export { lirePostsTraites, marquerPostTraite } from '../../apps/worker/src/linkedin/posts-traites.js';
 export { enqueueDiscoverForActiveSources, enqueueRequestedRuns } from '../../apps/worker/src/producer.js';
 export { closeStaleSourceRuns, startSourceRun, SOURCE_RUN_TIMEOUT_MIN } from '../../apps/worker/src/db.js';
 export {

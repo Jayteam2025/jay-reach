@@ -42,6 +42,9 @@ import {
   QUEUES,
   startSourceRun,
   traiterCollecteLinkedIn,
+  trouverPostsDePage,
+  lirePostsTraites,
+  marquerPostTraite,
 } from './_linkedin-collecte-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1099,12 +1102,90 @@ async function repriseDuJob() {
   check('67. le job porte retryLimit 0 et pas de backoff, indépendamment de l’état de la file', options?.retryLimit === 0 && options?.retryBackoff === false, JSON.stringify(options));
 }
 
+/**
+ * Lot 4b, étape 2 : la mémoire des posts déjà collectés, prouvée sur la vraie table.
+ *
+ * Le SQL est celui de production (`posts-traites.ts`), exécuté sur le vrai Postgres. Un test à
+ * pool factice ne prouverait rien ici : il ne jouerait jamais la requête.
+ */
+async function memoireDesPosts() {
+  const m = await monde();
+  const autre = await sourceDePost(m, 'https://www.linkedin.com/feed/update/urn:li:activity:7271000000000000099/');
+  const A = 'urn:li:activity:7271000000000000001';
+  const B = 'urn:li:activity:7271000000000000002';
+
+  check('68. une source neuve n’a aucune mémoire', (await lirePostsTraites(pool, m.org, m.source)).size === 0);
+
+  await marquerPostTraite(pool, m.org, m.source, A);
+  const apres = await lirePostsTraites(pool, m.org, m.source);
+  check('68b. un post marqué est relu dans la mémoire de sa source', apres.size === 1 && apres.has(A));
+
+  // Un post relu au passage suivant est marqué de nouveau : l'écriture doit être idempotente,
+  // sinon le passage entier échoue sur une violation de clé.
+  let leve = null;
+  try {
+    await marquerPostTraite(pool, m.org, m.source, A);
+  } catch (e) {
+    leve = String(e?.message ?? e);
+  }
+  const compte = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1 and source_id = $2`, [m.org, m.source])).rows[0].n;
+  check('69. remarquer le même post ne lève pas et ne duplique pas', leve === null && compte === 1, leve ?? `n=${compte}`);
+
+  // Deux sources peuvent viser le même post (une page concurrente et un mot-clé) : chacune tient
+  // sa propre avance. Les écarter globalement ferait taire la seconde.
+  await marquerPostTraite(pool, m.org, autre, B);
+  const vueSource = await lirePostsTraites(pool, m.org, m.source);
+  const vueAutre = await lirePostsTraites(pool, m.org, autre);
+  check('70. la mémoire d’une source n’est pas celle de sa voisine',
+    vueSource.has(A) && !vueSource.has(B) && vueAutre.has(B) && !vueAutre.has(A));
+
+  // Bout en bout : ce qui est EN BASE retire bien des posts rendus par le trouveur.
+  const pageHtml = `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:777&quot;,&quot;universalName&quot;:&quot;ma-cible&quot;}</code></html>`;
+  const lot = JSON.stringify({
+    data: { data: { flux: { paging: { count: 10, start: 0, total: 2 }, '*elements': [A, B].map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`) } } },
+  });
+  const reponses = [{ statut: 200, corps: pageHtml }, { statut: 200, corps: lot }];
+  const pilote = { requete: async () => reponses.shift() ?? { statut: 500, corps: '' } };
+  const trouves = await trouverPostsDePage(pilote, 'https://www.linkedin.com/company/ma-cible/', {
+    dejaTraites: await lirePostsTraites(pool, m.org, m.source),
+    budget: { requetesRestantes: 10, postsRestants: 10 },
+    surRequete: async () => undefined,
+    pause: async () => undefined,
+  });
+  check('71. le trouveur ne rend pas le post que la base dit déjà traité',
+    trouves.urns.length === 1 && trouves.urns[0] === B, JSON.stringify(trouves.urns));
+
+  // La RLS doit tenir. Le superuser la contourne : il faut vraiment prendre le rôle
+  // `authenticated`, et l'éprouver DEUX fois — un membre de l'organisation voit sa ligne, un
+  // utilisateur étranger n'en voit aucune. Sans le premier cas, une table verrouillée par erreur
+  // pour tout le monde passerait pour sûre.
+  const etranger = await userNeuf();
+  const lirePar = async (userId) => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query(`select set_config('test.user_id', $1, true)`, [userId]);
+      return (await c.query(`select count(*)::int n from linkedin_posts_traites`)).rows[0].n;
+    } catch (e) {
+      return `erreur: ${String(e?.message ?? e)}`;
+    } finally {
+      await c.query('rollback').catch(() => {});
+      c.release();
+    }
+  };
+  const vuMembre = await lirePar(m.admin);
+  const vuEtranger = await lirePar(etranger);
+  check('72. un membre de l’organisation lit la mémoire de ses sources', vuMembre === 2, String(vuMembre));
+  check('72b. un utilisateur étranger n’en lit aucune ligne', vuEtranger === 0, String(vuEtranger));
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
