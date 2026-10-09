@@ -19,10 +19,9 @@ import {
   meetsScoreThreshold,
   passesRules,
   type Score,
-  type ScoringProspect,
-} from '@jay-reach/core';
+  type ScoringProspect, estSignalDePersonne, sqlEstSignalDePersonne} from '@jay-reach/core';
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
-import { ecarterEngageur, sqlAdresseResolvable, sqlSourceSansEmail, type FragmentSql } from './post-engagement.js';
+import { ecarterSignalDePersonne, sqlAdresseResolvable, sqlSourceSansEmail, type FragmentSql } from './post-engagement.js';
 
 /**
  * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
@@ -83,8 +82,8 @@ interface CandidateRow {
 async function markDiscarded(pool: Pool, org: string, c: CandidateRow, reason: string): Promise<void> {
   const id = c.id;
   // Une personne écartée s'efface avec son contact : ne reste que sa mémoire d'écart.
-  if (c.kind === 'post_engagement') {
-    await ecarterEngageur(pool, org, id, { juge: false });
+  if (estSignalDePersonne(c.kind)) {
+    await ecarterSignalDePersonne(pool, org, id, { juge: false });
     return;
   }
   await pool.query(
@@ -105,11 +104,11 @@ async function persistScore(
   discardReason: string | null,
 ): Promise<void> {
   const id = c.id;
-  if (status === 'discarded' && c.kind === 'post_engagement') {
+  if (status === 'discarded' && estSignalDePersonne(c.kind)) {
     // Si la personne a été contactée, la fonction CONSERVE le signal (marqué
     // `contacted`) au lieu de l'effacer : le score et le motif d'écart ne sont alors
     // pas écrits, volontairement, et l'issue n'a pas à être relue ici.
-    await ecarterEngageur(pool, org, id);
+    await ecarterSignalDePersonne(pool, org, id);
     return;
   }
   await pool.query(
@@ -130,7 +129,7 @@ async function persistScore(
 const JOINTURE_PERSONA = `left join lateral (
           select p.scoring_prompt
             from public.personas p
-           where s.kind = 'post_engagement'
+           where ${sqlEstSignalDePersonne('s')}
              and p.organization_id = s.organization_id
              and p.id::text = coalesce(
                    nullif(so.config ->> 'personaId', ''),
@@ -146,7 +145,7 @@ const JOINTURE_PERSONA = `left join lateral (
         ) pe on true`;
 
 /** La consigne qui juge le signal : celle du persona pour une personne, de la source sinon. */
-const CONSIGNE_DE_SCORING = `case when s.kind = 'post_engagement' then pe.scoring_prompt
+const CONSIGNE_DE_SCORING = `case when ${sqlEstSignalDePersonne('s')} then pe.scoring_prompt
              else so.config ->> 'scoring_prompt' end`;
 
 /**
@@ -175,7 +174,7 @@ function conditionSourceScorable(paramIndex: number, paramPrefixeDeduit: number)
         -- qui lirait enfin l'identifiant public, et alors scorable.
         -- Même définition que le producteur (sqlAdresseResolvable), et ICI parce que le
         -- compteur de crédit et la sélection doivent isoler EXACTEMENT le même ensemble.
-        and (s.kind <> 'post_engagement'
+        and (not ${sqlEstSignalDePersonne('s')}
              or not exists (
               select 1 from public.contacts c
                where c.organization_id = s.organization_id and c.source_signal_id = s.id
@@ -362,7 +361,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       }
       // Auto-apprentissage : score nul + motif « cabinet » → blacklist de l'org.
       // (Une personne n'est pas un cabinet : pas d'apprentissage pour elle.)
-      if (s.score === 0 && isCabinetVerdict(s.reason) && c.kind !== 'post_engagement') {
+      if (s.score === 0 && isCabinetVerdict(s.reason) && !estSignalDePersonne(c.kind)) {
         await learnRecruitmentAgency(pool, org, c.company ?? '');
         await persistScore(pool, org, c, s.score, s.reason, 'discarded', 'recruitment_agency');
         learned++;

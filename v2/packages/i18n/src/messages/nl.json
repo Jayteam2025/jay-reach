@@ -585,7 +585,7 @@
         },
         "linkedinKeywords": {
           "title": "Trefwoorden",
-          "description": "Personen die over een onderwerp publiceren"
+          "description": "Personen van wie het profiel overeenkomt met een zoekopdracht op trefwoorden"
         },
         "linkedinJobChange": {
           "title": "Functiewijziging",
@@ -677,7 +677,8 @@
         "competitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
         "creatorProfiles": "LinkedIn-profielen van creators",
         "creatorProfilesHint": "Het adres van het profiel, bijvoorbeeld linkedin.com/in/naam-creator. Scheid meerdere profielen met een komma.",
-        "topics": "Gevolgde onderwerpen",
+        "topics": "Zoektermen",
+        "topicsHint": "Wat u in de personenzoekopdracht van LinkedIn zou typen, bijvoorbeeld “salesdirecteur CRM”. Scheid meerdere zoekopdrachten met een komma: elke zoekopdracht wordt apart uitgevoerd.",
         "sinceDays": "Functie aangetreden sinds (dagen)",
         "csvIntro": "Contacten uit het bestand komen de campagne binnen als al gekwalificeerde personen: geen scoring.",
         "csvFile": "Bestand",
@@ -924,7 +925,7 @@
         "menuLinkedinCreatorPostsTitle": "Reageerders op posts van een creator",
         "menuLinkedinCreatorPostsDescription": "Mensen die reageren op of commentaar geven op berichten van een contentcreator.",
         "menuLinkedinKeywordsTitle": "Trefwoorden",
-        "menuLinkedinKeywordsDescription": "Personen die over een onderwerp publiceren.",
+        "menuLinkedinKeywordsDescription": "Personen van wie het profiel overeenkomt met een zoekopdracht op trefwoorden.",
         "menuLinkedinJobChangeTitle": "Functiewijziging",
         "menuLinkedinJobChangeDescription": "Persona-profielen die recent een nieuwe functie zijn begonnen.",
         "menuGroupManual": "Handmatig",
@@ -946,7 +947,8 @@
         "formLinkedinCompetitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
         "formLinkedinCreatorProfiles": "LinkedIn-profielen van creators",
         "formLinkedinCreatorProfilesHint": "Het adres van het profiel, bijvoorbeeld linkedin.com/in/naam-creator. Scheid meerdere profielen met een komma.",
-        "formLinkedinTopics": "Gevolgde onderwerpen",
+        "formLinkedinTopics": "Zoektermen",
+        "formLinkedinTopicsHint": "Wat u in de personenzoekopdracht van LinkedIn zou typen, bijvoorbeeld “salesdirecteur CRM”. Scheid meerdere zoekopdrachten met een komma: elke zoekopdracht wordt apart uitgevoerd.",
         "formLinkedinSinceDays": "Functie aangetreden sinds (dagen)",
         "formLinkedinAccountId": "LinkedIn-account",
         "formLinkedinProfilesPerDay": "Profielen gelezen per dag",

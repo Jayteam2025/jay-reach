@@ -23,7 +23,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import {
   compterSignauxScorables,
-  ecarterEngageur,
+  ecarterSignalDePersonne,
   ecarterSignauxTropAnciens,
   enqueueEnrollments,
   enregistrerEngageur,
@@ -413,12 +413,12 @@ async function purgeEtRegression() {
 }
 
 /**
- * La garde vit dans `ecarterEngageur`, donc elle vaut pour TOUS ses appelants.
+ * La garde vit dans `ecarterSignalDePersonne`, donc elle vaut pour TOUS ses appelants.
  * Portée par le `select` de la purge, elle ne protégeait que celle-ci : le
  * scoring et la purge des `new` effaçaient la fiche d'un opérateur sans condition.
  */
 async function gardeDeLEffacement() {
-  console.log('ecarterEngageur : seule une fiche née de cet engageur est effacée');
+  console.log('ecarterSignalDePersonne : seule une fiche née de cet engageur est effacée');
 
   // Odile : importée par l'opérateur (liste), séquence TERMINÉE — `completed` n'est
   // pas un statut vivant, donc l'étape 3 ne rend pas `deja_en_campagne` — et sans
@@ -635,7 +635,7 @@ const refuse = async (c, sql, params) => {
 };
 
 async function atomicite() {
-  console.log('ecarterEngageur : une panne au milieu défait tout');
+  console.log('ecarterSignalDePersonne : une panne au milieu défait tout');
   const m = await monde();
   await enregistrerEngageur(m.ctx, eng('panne', 'Pia Panne', 'Directrice commerciale'), { id: m.campagne, personaId: m.persona }, POST);
   const sigId = (await q(`select id from signals where organization_id=$1`, [m.org])).rows[0].id;
@@ -657,7 +657,7 @@ async function atomicite() {
   await q(`create trigger t6_panne before delete on signals for each row when (old.id = '${sigId}') execute function public.t6_panne()`);
   let e = null;
   try {
-    e = await erreur(ecarterEngageur(pool, m.org, sigId));
+    e = await erreur(ecarterSignalDePersonne(pool, m.org, sigId));
   } finally {
     await q(`drop trigger if exists t6_panne on signals`);
     await q(`drop function if exists public.t6_panne()`);
@@ -665,7 +665,7 @@ async function atomicite() {
   const etat = await compter();
   check('45. l’erreur vient bien de la panne provoquée (pas d’une autre cause)', e !== null && String(e.message).includes('panne provoquee t6'), String(e?.message));
   check('45b. rollback complet : la mémoire est ABSENTE, le contact et le signal intacts', etat.memoire === 0 && etat.contacts === 1 && etat.signaux === 1, JSON.stringify(etat));
-  await ecarterEngageur(pool, m.org, sigId);
+  await ecarterSignalDePersonne(pool, m.org, sigId);
   const fin = await compter();
   check('45c. panne retirée, le même appel aboutit (mémoire posée, contact et signal effacés)', fin.memoire === 1 && fin.contacts === 0 && fin.signaux === 0, JSON.stringify(fin));
 }

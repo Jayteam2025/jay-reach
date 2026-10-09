@@ -136,6 +136,7 @@ export const TYPES_LINKEDIN_COLLECTES: readonly string[] = [
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
   'linkedin_creator_posts',
+  'linkedin_keywords',
 ];
 
 /**
@@ -234,11 +235,17 @@ export const configLinkedInCreateur = z
   .strict();
 export type ConfigLinkedInCreateur = z.infer<typeof configLinkedInCreateur>;
 
+/**
+ * Recherche par mot-clé : aucun post, le serveur cherche des PERSONNES et les enregistre. Chaque
+ * sujet est une recherche à part. `compteId` et `profilsParJour` sont retirés comme pour les
+ * autres sources collectées : un seul compte par instance, et les plafonds vivent dans
+ * `linkedin_settings`.
+ */
 export const configLinkedInMotsCles = z
   .object({
     sujets: z.array(z.string().min(1)).min(1),
-    compteId: z.string().min(1),
-    profilsParJour: z.number().int().positive().max(200).default(40),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
   })
   .strict();
 export type ConfigLinkedInMotsCles = z.infer<typeof configLinkedInMotsCles>;
@@ -402,8 +409,7 @@ export function configFormulaireDepuisStockee(
   if (providerId === 'linkedin_keywords') {
     return {
       sujets: tableauDeChaines(c.sujets),
-      compteId: chaineOuVide(c.compteId),
-      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+      personaId: chaineOuIndefinie(c.personaId),
     };
   }
   return {

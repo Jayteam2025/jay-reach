@@ -93,7 +93,8 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       };
     }
     case 'linkedin_keywords':
-      return { ...commun, sujets: texteVersListe(etat.sujets) };
+      // Même collecteur côté serveur : ni compte ni cadence, des mots-clés et le persona.
+      return { sujets: texteVersListe(etat.sujets), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     case 'linkedin_job_change':
       return { ...commun, depuisJours: Number(etat.depuisJours) || 90 };
   }
@@ -124,7 +125,7 @@ export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChamps
         (nbPersonas <= 1 || etat.personaId.length > 0)
       );
     case 'linkedin_keywords':
-      return texteVersListe(etat.sujets).length > 0;
+      return texteVersListe(etat.sujets).length > 0 && (nbPersonas <= 1 || etat.personaId.length > 0);
     case 'linkedin_job_change':
       return true;
   }
@@ -141,6 +142,7 @@ export interface ChampsSourceLinkedInLibelles {
   readonly creatorProfiles: string;
   readonly creatorProfilesHint: string;
   readonly topics: string;
+  readonly topicsHint: string;
   readonly sinceDays: string;
   readonly accountId: string;
   readonly profilesPerDay: string;
@@ -271,16 +273,20 @@ export function ChampsSourceLinkedIn({
         </>
       )}
       {providerId === 'linkedin_keywords' && (
-        <Champ libelle={libelles.topics} id={`${idPrefix}-topics`}>
-          <input
-            id={`${idPrefix}-topics`}
-            name="sujets"
-            value={etat.sujets}
-            onChange={(e) => onChange({ sujets: e.target.value })}
-            disabled={disabled}
-            placeholder="CRM commercial, pipe de vente"
-          />
-        </Champ>
+        <>
+          <Champ libelle={libelles.topics} id={`${idPrefix}-topics`}>
+            <input
+              id={`${idPrefix}-topics`}
+              name="sujets"
+              value={etat.sujets}
+              onChange={(e) => onChange({ sujets: e.target.value })}
+              disabled={disabled}
+              placeholder="CRM commercial, pipe de vente"
+            />
+          </Champ>
+          <p className="jr-aide">{libelles.topicsHint}</p>
+          {choixPersona}
+        </>
       )}
       {providerId === 'linkedin_job_change' && (
         <Champ libelle={libelles.sinceDays} id={`${idPrefix}-since-days`}>

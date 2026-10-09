@@ -3,6 +3,7 @@
  * (SIREN / NAF) via l'annuaire légal — code moteur repris du legacy (INSEE).
  */
 import { resolveCompanyNaf, type CompanyNafResolution } from '@jay-reach/providers/enrichment';
+import { estSignalDePersonne } from '@jay-reach/core';
 
 export interface QualifyJob {
   readonly organizationId: string;
@@ -28,6 +29,6 @@ export interface QualifyJob {
 }
 
 export async function runQualify(job: QualifyJob): Promise<CompanyNafResolution | null> {
-  if (job.kind === 'post_engagement') return null;
+  if (estSignalDePersonne(job.kind ?? '')) return null;
   return resolveCompanyNaf(job.companyName);
 }

@@ -65,7 +65,8 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinCompetitorPagesHint: 'L’adresse de la page entreprise.',
   formLinkedinCreatorProfiles: 'Profils LinkedIn des créateurs',
   formLinkedinCreatorProfilesHint: 'L’adresse du profil.',
-  formLinkedinTopics: 'Sujets suivis',
+  formLinkedinTopics: 'Mots-clés de recherche',
+  formLinkedinTopicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
   formLinkedinSinceDays: 'Poste pris depuis (jours)',
   formLinkedinAccountId: 'Compte LinkedIn',
   formLinkedinProfilesPerDay: 'Profils lus par jour',
@@ -290,6 +291,29 @@ describe('EtapeSources — sources déjà ajoutées', () => {
     );
     expect(html).toContain('https://www.linkedin.com/posts/x');
     expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+  });
+
+  it('une source « recherche par mot-clé » ajoutée se résume par ses mots-clés, sans badge « en attente »', () => {
+    const source: SourceAssistant = {
+      cle: 'k4',
+      providerId: 'linkedin_keywords',
+      nom: 'Recherche par mot-clé',
+      config: { sujets: ['CRM commercial', 'pipe de vente'] },
+    };
+    const html = renderToStaticMarkup(
+      <EtapeSources sources={[source]} onAjouter={() => {}} onRetirer={() => {}} disabled={false} libelles={LIBELLES_SOURCES} />,
+    );
+    expect(html).toContain('CRM commercial, pipe de vente');
+    expect(html).not.toContain('profils par jour');
+    expect(html).not.toContain(LIBELLES_SOURCES.menuLinkedinBadge);
+  });
+
+  it('le menu : la recherche par mot-clé ne porte plus le badge, le changement de poste le garde', () => {
+    const groupes = construireGroupesMenu(LIBELLES_SOURCES, vi.fn());
+    const badgePour = (id: TypeLinkedIn) =>
+      renderToStaticMarkup(<>{groupes[1]!.entrees[IDS_LINKEDIN.indexOf(id)]!.titre}</>).includes(LIBELLES_SOURCES.menuLinkedinBadge);
+    expect(badgePour('linkedin_keywords')).toBe(false);
+    expect(badgePour('linkedin_job_change')).toBe(true);
   });
 
   it('une source Adzuna ajoutée résume mots-clés et lieux, sans badge LinkedIn', () => {
@@ -642,7 +666,8 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     competitorPagesHint: 'L’adresse de la page entreprise.',
     creatorProfiles: 'Profils LinkedIn des créateurs',
     creatorProfilesHint: 'L’adresse du profil.',
-    topics: 'Sujets suivis',
+    topics: 'Mots-clés de recherche',
+    topicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
     sinceDays: 'Poste pris depuis (jours)',
     accountId: 'Compte LinkedIn',
     profilesPerDay: 'Profils lus par jour',

@@ -255,6 +255,19 @@ describe('le sous-titre d’une source « posts d’un créateur »', () => {
   });
 });
 
+describe('le sous-titre d’une source « recherche par mot-clé »', () => {
+  const carte = (config: Record<string, unknown>) =>
+    ({ providerId: 'linkedin_keywords', config }) as unknown as SourceCarte;
+
+  it('nomme les mots-clés cherchés, pas un tiret', () => {
+    expect(sousTitreDe(carte({ sujets: ['CRM commercial', 'pipe de vente'] }), fabriquerT())).toBe('CRM commercial, pipe de vente');
+  });
+
+  it('une source sans mot-clé garde le tiret', () => {
+    expect(sousTitreDe(carte({ sujets: [] }), fabriquerT())).toBe('—');
+  });
+});
+
 describe('le sous-titre d’une source « posts d’un concurrent »', () => {
   const carte = (config: Record<string, unknown>) =>
     ({ providerId: 'linkedin_competitor_posts', config }) as unknown as SourceCarte;

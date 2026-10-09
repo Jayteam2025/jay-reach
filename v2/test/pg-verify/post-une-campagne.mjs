@@ -95,7 +95,7 @@ async function regle() {
 
   // Un autre type de source n'est pas un post.
   const c3 = await campagne(org, 'Campagne 3');
-  await creerSource(ctx, { campagneId: c3, providerId: 'linkedin_keywords', nom: 'Mots', config: { sujets: ['crm'], compteId: 'c1' } });
+  await creerSource(ctx, { campagneId: c3, providerId: 'linkedin_keywords', nom: 'Mots', config: { sujets: ['crm'] } });
   check('7. une source d\'un autre type ne bloque rien', (await nbLiens(c3)) === 1);
 }
 

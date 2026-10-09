@@ -10,6 +10,7 @@ import {
   collecteImplementee,
   configFormulaireDepuisStockee,
   configLinkedInCreateur,
+  configLinkedInMotsCles,
   configLinkedInPost,
   construireConfigStocke,
   creerSource,
@@ -828,12 +829,12 @@ describe('listerListesOrganisation', () => {
 // `collecteDisponible` portait deux décisions sans rapport : écrire une ligne `source_providers`
 // (jamais pour LinkedIn) et afficher l'interrupteur d'une carte. Les deux sont désormais séparées.
 describe('collecteImplementee / providerIdReel — deux décisions, deux fonctions', () => {
-  it('les deux sources d’engageurs sont collectées, les deux autres non (lot 4b, étape 2)', () => {
+  it('les quatre sources collectées par le serveur le sont, le changement de poste non (lot 4b)', () => {
     expect(collecteImplementee('linkedin_post_engagers')).toBe(true);
     expect(collecteImplementee('linkedin_competitor_posts')).toBe(true);
     expect(collecteImplementee('linkedin_creator_posts')).toBe(true);
-    // Pas encore de collecteur : leurs points d’entrée Voyager n’ont pas été relevés.
-    expect(collecteImplementee('linkedin_keywords')).toBe(false);
+    expect(collecteImplementee('linkedin_keywords')).toBe(true);
+    // Pas encore de collecteur : son point d’entrée n’a pas été relevé.
     expect(collecteImplementee('linkedin_job_change')).toBe(false);
   });
 
@@ -879,5 +880,40 @@ describe('source « posts d’un créateur »', () => {
   it('est enregistrée comme type de veille et collectée par le serveur', () => {
     expect(TYPES_VEILLE).toContain('linkedin_creator_posts');
     expect(TYPES_LINKEDIN_COLLECTES).toContain('linkedin_creator_posts');
+  });
+});
+
+describe('source « recherche par mot-clé »', () => {
+  const valide = { sujets: ['crm commercial', 'pipe de vente'] };
+
+  it('le schéma exige au moins un mot-clé non vide', () => {
+    expect(configLinkedInMotsCles.safeParse(valide).success).toBe(true);
+    expect(configLinkedInMotsCles.safeParse({ sujets: [] }).success).toBe(false);
+    expect(configLinkedInMotsCles.safeParse({ sujets: [''] }).success).toBe(false);
+  });
+
+  it('le schéma est strict : les champs de l’extension navigateur ne passent plus', () => {
+    expect(configLinkedInMotsCles.safeParse({ ...valide, compteId: 'c1' }).success).toBe(false);
+    expect(configLinkedInMotsCles.safeParse({ ...valide, profilsParJour: 40 }).success).toBe(false);
+  });
+
+  it('accepte un persona, optionnel', () => {
+    expect(configLinkedInMotsCles.safeParse({ ...valide, personaId: 'p1' }).success).toBe(true);
+  });
+
+  it('relit les mots-clés et le persona depuis la config stockée, sans les champs retirés', () => {
+    const f = configFormulaireDepuisStockee('linkedin_keywords', {
+      sourceType: 'linkedin_keywords',
+      ...valide,
+      personaId: 'p1',
+      compteId: 'ancien',
+      profilsParJour: 40,
+    });
+    expect(f).toEqual({ ...valide, personaId: 'p1' });
+  });
+
+  it('est enregistrée comme type de veille et collectée par le serveur', () => {
+    expect(TYPES_VEILLE).toContain('linkedin_keywords');
+    expect(TYPES_LINKEDIN_COLLECTES).toContain('linkedin_keywords');
   });
 });

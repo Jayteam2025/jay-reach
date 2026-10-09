@@ -6,7 +6,7 @@
 // Mutations qui font rougir (observées, voir le rapport de la tâche 11) :
 //   1. core : RETENTION_PERSONNES_NON_CONTACTEES_JOURS 90 -> 60 (1, 3, 4) ou -> 120 (1, 2, 4, 9, 18, 19) ;
 //   2. retention-purge.ts : retirer `occurred_at <` de la sélection — 3 et 4 ;
-//   3. post-engagement.ts : neutraliser la garde `contacte` de ecarterEngageur — 15 et 15c. La purge
+//   3. post-engagement.ts : neutraliser la garde `contacte` de ecarterSignalDePersonne — 15 et 15c. La purge
 //      reste SÛRE (la sélection exclut déjà les contactés) : c'est la défense en profondeur ;
 //   4. retention-purge.ts : retirer les trois `not exists` de la sélection — 7, 8, 11b (le bilan compte des
 //      `conserves` : la fonction qui détruit a refusé, les données restent intactes) ;
@@ -31,7 +31,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import {
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
-  ecarterEngageur,
+  ecarterSignalDePersonne,
   enregistrerEngageur,
   envoyerEmailSalesBlink,
   mentionOrigineDuMessage,
@@ -175,11 +175,11 @@ async function jamaisLesContactes() {
 
   // La garde vit dans la fonction qui détruit : appelée DIRECTEMENT, sans passer par la sélection.
   const avant = await memoire(m);
-  const issue = await ecarterEngageur(pool, m.org, a.signal, { juge: false });
-  check('15. ecarterEngageur appelée directement sur une personne contactée : refuse (conserve) et ne détruit rien',
+  const issue = await ecarterSignalDePersonne(pool, m.org, a.signal, { juge: false });
+  check('15. ecarterSignalDePersonne appelée directement sur une personne contactée : refuse (conserve) et ne détruit rien',
     issue === 'conserve' && (await existe('signals', a.signal)) && (await existe('contacts', a.contact)), issue);
   check('15b. elle n’écrit aucune mémoire quand elle n’a rien jugé', (await memoire(m)) === avant);
-  const issueJugee = await ecarterEngageur(pool, m.org, c.signal, { juge: true, compter: false });
+  const issueJugee = await ecarterSignalDePersonne(pool, m.org, c.signal, { juge: true, compter: false });
   check('15c. jugée et contactée : conservée aussi, la mémoire d’écart est posée',
     issueJugee === 'conserve' && (await existe('signals', c.signal)) && (await memoire(m)) === avant + 1, issueJugee);
   const etat = (await q(`select status, discard_reason from signals where id = $1`, [a.signal])).rows[0];
@@ -187,17 +187,17 @@ async function jamaisLesContactes() {
   const qualifie = await collecter(m, eng('qualifie'));
   await q(`update signals set status = 'qualified', score = 90 where id = $1`, [qualifie.signal]);
   await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1,$2,$3,'active')`, [m.org, m.campagne, qualifie.contact]);
-  await ecarterEngageur(pool, m.org, qualifie.signal, { juge: false });
+  await ecarterSignalDePersonne(pool, m.org, qualifie.signal, { juge: false });
   check('16b. un signal qualifié contacté garde son statut', (await q(`select status from signals where id = $1`, [qualifie.signal])).rows[0].status === 'qualified');
 
   // Isolation : la bonne personne mais la mauvaise organisation ne détruit rien.
   const libre = await collecter(m, eng('libre'));
-  const mauvaiseOrg = await ecarterEngageur(pool, autre.org, libre.signal, { juge: false });
+  const mauvaiseOrg = await ecarterSignalDePersonne(pool, autre.org, libre.signal, { juge: false });
   check('16c. une organisation ne peut pas effacer le signal (ni le contact) d’une autre, et le bilan dit « absent », pas « effacé »',
     mauvaiseOrg === 'absent' && (await existe('signals', libre.signal)) && (await existe('contacts', libre.contact)), mauvaiseOrg);
-  check('16e. un signal déjà parti rend « absent »', (await ecarterEngageur(pool, m.org, '00000000-0000-0000-0000-000000000000', { juge: false })) === 'absent');
+  check('16e. un signal déjà parti rend « absent »', (await ecarterSignalDePersonne(pool, m.org, '00000000-0000-0000-0000-000000000000', { juge: false })) === 'absent');
   // Chemin « contactée » par enrollments.signal_id SEUL : l'inscription porte le signal, le contact né de lui n'en a aucune.
-  const viaSignal = await ecarterEngageur(pool, m.org, b.signal, { juge: false });
+  const viaSignal = await ecarterSignalDePersonne(pool, m.org, b.signal, { juge: false });
   check('16d. contactée par enrollments.signal_id seul (le contact né du signal n’a aucune inscription) : conservée, appel direct',
     viaSignal === 'conserve' && (await existe('signals', b.signal)) && (await existe('contacts', b.contact)), viaSignal);
 }
@@ -319,7 +319,7 @@ async function memoireBornee() {
   const m = await monde();
   const note = await collecter(m, eng('note2'));
   await q(`update signals set score = 12, status = 'new' where id = $1`, [note.signal]);
-  await ecarterEngageur(pool, m.org, note.signal); // jugé par le scoring : mémoire posée
+  await ecarterSignalDePersonne(pool, m.org, note.signal); // jugé par le scoring : mémoire posée
   const lignes = (await q(`select external_id, scored_at from linkedin_engageurs_ecartes where organization_id = $1`, [m.org])).rows;
   const attendue = await empreinteDe('note2');
   check('31. la mémoire stocke le sha256 de `<post>:<urn>`, calculé côté code comme côté base', lignes.length === 1 && lignes[0].external_id === attendue, JSON.stringify(lignes));
@@ -396,7 +396,7 @@ async function course() {
       await client.query('begin');
       await inserer(client, m, a);
       let fini = false;
-      const effacement = ecarterEngageur(pool, m.org, a.signal, { juge: false }).then((x) => { fini = true; return x; });
+      const effacement = ecarterSignalDePersonne(pool, m.org, a.signal, { juge: false }).then((x) => { fini = true; return x; });
       await new Promise((r) => setTimeout(r, 700));
       check(`39${suffixe}. ${nom} en cours : l’effacement ATTEND (verrou), il ne passe pas entre la lecture et la suppression`, fini === false);
       await client.query('commit');
@@ -442,7 +442,7 @@ async function ordreDesVerrous() {
   try {
     await A2.query('begin');
     await A2.query(`select 1 from contacts where id = $1 for key share`, [b.contact]);
-    const purge = ecarterEngageur(pool, m.org, b.signal, { juge: false }).then((x) => { issue = x; }, (e) => { erreurPurge = e; });
+    const purge = ecarterSignalDePersonne(pool, m.org, b.signal, { juge: false }).then((x) => { issue = x; }, (e) => { erreurPurge = e; });
     await new Promise((r) => setTimeout(r, 500));
     await A2.query(`insert into enrollments (organization_id, campaign_id, contact_id, signal_id, status) values ($1,$2,$3,$4,'active')`, [m.org, m.campagne, b.contact, b.signal]).catch((e) => { erreurInscription = e; });
     await A2.query(erreurInscription ? 'rollback' : 'commit');

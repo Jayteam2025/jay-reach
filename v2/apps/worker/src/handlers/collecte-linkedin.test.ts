@@ -11,7 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QUEUES } from '@jay-reach/core';
 import type { Pilote } from '../linkedin/navigateur.js';
 import { lireEngageurs, type Budget } from '../linkedin/engageurs.js';
-import { traiterCollecteLinkedIn, type DependancesCollecte } from './collecte-linkedin.js';
+import { MSG, traiterCollecteLinkedIn, type DependancesCollecte } from './collecte-linkedin.js';
+import { urlRecherche } from '../linkedin/recherche.js';
 
 // --------------------------------------------------------------- pilote factice
 
@@ -95,6 +96,8 @@ function base(opts: {
   requetesDeLHeure?: number;
   /** Les posts que cette source a deja traites, pour la boucle multi-posts du lot 4b etape 2. */
   postsTraites?: string[];
+  /** Les `external_id` des personnes que la recherche par mots-clés a déjà enregistrées pour cette source. */
+  personnesEnregistrees?: string[];
 }) {
   const ecritures: Ecriture[] = [];
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
@@ -144,6 +147,10 @@ function base(opts: {
       }
       return rep((opts.postsTraites ?? []).map((post_urn) => ({ post_urn })));
     }
+    // Reconnue par son marqueur, jamais par son texte : voir l'en-tête.
+    if (t.includes('jr:linkedin_collecte_recherche_vus')) {
+      return rep((opts.personnesEnregistrees ?? []).map((external_id) => ({ external_id })));
+    }
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_requete_tracer')) {
       ecritures.push({ sql: 'tracer', params });
@@ -151,7 +158,10 @@ function base(opts: {
     }
     if (t.includes('jr:linkedin_fuseau')) return rep([]);
     // Un engageur inconnu : l'insertion du signal rend son identifiant, donc l'issue est `nouveau`.
-    if (t.includes('insert into signals')) return rep([{ id: `signal-${params[2]}` }]);
+    if (t.includes('insert into signals')) {
+      ecritures.push({ sql: 'signal', params });
+      return rep([{ id: `signal-${params[2]}` }]);
+    }
     if (t.includes('begin') || t.includes('commit') || t.includes('rollback')) return rep([]);
     // Notifications, journal d'activité, enregistrement d'un engageur : sans effet ici.
     ecritures.push({ sql: t.trim().slice(0, 40), params });
@@ -524,5 +534,154 @@ describe('la source « posts d’un créateur »', () => {
     // Sans `profilsCreateurs`, la source est refusée avant toute requête vers LinkedIn.
     expect(String(clos(b)?.params[3] ?? '')).toContain('Aucun profil de créateur');
     expect(p.requetes).toEqual([]);
+  });
+});
+
+/**
+ * La source « recherche par mot-clé » : aucun post, des personnes trouvées par recherche et
+ * enregistrées directement. Le bilan et les plafonds sont ceux des autres sources.
+ */
+describe('la source « recherche par mot-clé »', () => {
+  const MOTS = 'CRM  commercial';
+  const sourceMots = (sujets: string[]) => ({ sourceType: 'linkedin_keywords', sujets });
+  const resultat = (slug: string, nom: string, intitule: string): string =>
+    `role="listitem"><a href="https://www.linkedin.com/in/${slug}/" aria-label="${nom}">` +
+    `<span>${nom}</span><span>• 2e</span><span>${intitule}</span></a>`;
+  const ADA = resultat('ada-exemple', 'Ada Exemple', 'Directrice commerciale chez Acme');
+  const LEO = resultat('leo-exemple', 'Leo Exemple', 'Directeur commercial chez Beta');
+  /** Une page de résultats par numéro ; au-delà, une page vide (fin des résultats). */
+  const pages = (...html: string[]) => (u: string) => {
+    const n = Number(/[?&]page=(\d+)/.exec(u)?.[1] ?? '1');
+    return { statut: 200, corps: `<html>${html[n - 1] ?? ''}</html>` };
+  };
+  const signaux = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'signal').map((e) => e.params[2]);
+  const sansBruit = () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  };
+
+  it('enregistre les personnes trouvées sous leurs mots-clés normalisés, sans lire aucun post', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]) });
+    const p = pilote({ reponse: pages(ADA + LEO) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(signaux(b)).toEqual(['crm commercial:ada-exemple', 'crm commercial:leo-exemple']);
+    // vus, nouveaux : les deux personnes. posts : aucun, la source n'ouvre aucun post.
+    expect(c.params[4]).toBe(2);
+    expect(c.params[5]).toBe(2);
+    expect(c.params[c.params.length - 1]).toBe(0);
+    // Arrivée sur la recherche, puis la page 1, puis la page 2 (vide : fin des résultats).
+    expect(p.navigations).toEqual([urlRecherche(MOTS, 1)]);
+    expect(p.requetes).toEqual([urlRecherche(MOTS, 1), urlRecherche(MOTS, 2)]);
+  });
+
+  it('chaque requête, arrivée comprise, est tracée et comptée dans le bilan', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]) });
+    const p = pilote({ reponse: pages(ADA) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(b.ecritures.filter((e) => e.sql === 'tracer')).toHaveLength(3);
+    expect(clos(b)!.params[6]).toBe(3);
+  });
+
+  it('ne rejoue pas les personnes déjà enregistrées pour ces mots-clés', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]), personnesEnregistrees: ['crm commercial:ada-exemple'] });
+    const p = pilote({ reponse: pages(ADA + LEO) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(signaux(b)).toEqual(['crm commercial:leo-exemple']);
+    expect(clos(b)!.params[4]).toBe(1);
+  });
+
+  it('un sujet par recherche : chacun cherche sous ses propres mots-clés', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots(['crm', 'erp']) });
+    const p = pilote({ reponse: (u) => ({ statut: 200, corps: u.includes('keywords=crm') ? (u.includes('page=2') ? '' : ADA) : u.includes('page=2') ? '' : LEO }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(signaux(b)).toEqual(['crm:ada-exemple', 'erp:leo-exemple']);
+    expect(p.navigations).toEqual([urlRecherche('crm', 1), urlRecherche('erp', 1)]);
+  });
+
+  it('le plafond de posts du jour, épuisé, ne l’arrête pas : elle ne lit aucun post', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]), plafonds: { posts: 3 }, postsDuJour: 3 });
+    const p = pilote({ reponse: pages(ADA) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[3]).not.toBe(MSG.plafond_posts);
+    expect(signaux(b)).toHaveLength(1);
+  });
+
+  it('le plafond de requêtes de l’heure la borne, arrivée comprise, et le dit', async () => {
+    sansBruit();
+    // Deux requêtes restantes : l'arrivée en prend une, la page 1 l'autre, la page 2 ne part pas.
+    const b = base({ source: sourceMots([MOTS]), requetesDeLHeure: 58 });
+    const p = pilote({ reponse: pages(ADA, LEO) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(p.requetes).toEqual([urlRecherche(MOTS, 1)]);
+    expect(signaux(b)).toHaveLength(1); // ce qui a été lu avant l'arrêt est gardé
+    expect(c.params[2]).toBe('success');
+    expect(c.params[3]).toBe(MSG.plafond_requetes);
+  });
+
+  it('le plafond de personnes par passage arrête l’enregistrement et le dit', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]), plafonds: { personnes: 1 } });
+    const p = pilote({ reponse: pages(ADA + LEO) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(signaux(b)).toEqual(['crm commercial:ada-exemple']);
+    expect(c.params[3]).toBe(MSG.plafond_personnes);
+    expect(c.params[c.params.length - 2]).toBe(true);
+  });
+
+  it('une recherche qui ne livre rien de neuf est un passage à vide, pas un échec', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]) });
+    const p = pilote({ reponse: pages('') });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[3]).toBe(MSG.recherche_vide);
+  });
+
+  it('sans mot-clé, la source est refusée avant toute requête vers LinkedIn', async () => {
+    const b = base({ source: sourceMots(['  ']) });
+    const p = pilote({});
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[3]).toBe(MSG.mots_cles_absents);
+    expect(p.requetes).toEqual([]);
+    expect(p.navigations).toEqual([]);
+  });
+
+  it('un défi pendant la recherche suspend la session', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]) });
+    const p = pilote({ reponse: () => ({ statut: 999, corps: '' }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB).catch(() => undefined);
+    expect(bloque(b)).toContain('defi');
+  });
+
+  it('un défi sur la page d’arrivée suspend la session avant toute requête de résultats', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots([MOTS]) });
+    const p = pilote({ url: 'https://www.linkedin.com/checkpoint/challenge/', reponse: pages(ADA) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toEqual([]);
+    expect(bloque(b)).toContain('defi');
+  });
+
+  it('un sujet qui ne répond pas n’emporte pas les autres', async () => {
+    sansBruit();
+    const b = base({ source: sourceMots(['crm', 'erp']) });
+    const p = pilote({ reponse: (u) => (u.includes('keywords=crm') ? { statut: 500, corps: '' } : u.includes('page=2') ? { statut: 200, corps: '' } : { statut: 200, corps: LEO }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(signaux(b)).toEqual(['erp:leo-exemple']);
+    expect(String(c.params[3])).toContain('500');
   });
 });

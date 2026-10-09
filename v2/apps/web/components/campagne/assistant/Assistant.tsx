@@ -269,6 +269,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             formLinkedinCreatorProfiles: t('sources.formLinkedinCreatorProfiles'),
             formLinkedinCreatorProfilesHint: t('sources.formLinkedinCreatorProfilesHint'),
             formLinkedinTopics: t('sources.formLinkedinTopics'),
+            formLinkedinTopicsHint: t('sources.formLinkedinTopicsHint'),
             formLinkedinSinceDays: t('sources.formLinkedinSinceDays'),
             formLinkedinAccountId: t('sources.formLinkedinAccountId'),
             formLinkedinProfilesPerDay: t('sources.formLinkedinProfilesPerDay'),

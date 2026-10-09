@@ -82,6 +82,7 @@ export interface EtapeSourcesLibelles {
   formLinkedinCreatorProfiles: string;
   formLinkedinCreatorProfilesHint: string;
   formLinkedinTopics: string;
+  formLinkedinTopicsHint: string;
   formLinkedinSinceDays: string;
   formLinkedinAccountId: string;
   formLinkedinProfilesPerDay: string;
@@ -283,6 +284,9 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
   if (source.providerId === 'linkedin_creator_posts') {
     return asListeChaines(source.config.profilsCreateurs).join(', ');
   }
+  if (source.providerId === 'linkedin_keywords') {
+    return asListeChaines(source.config.sujets).join(', ');
+  }
   const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
   return libelles.resumeLinkedin(profilsParJour);
 }
@@ -438,6 +442,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               creatorProfiles: libelles.formLinkedinCreatorProfiles,
               creatorProfilesHint: libelles.formLinkedinCreatorProfilesHint,
               topics: libelles.formLinkedinTopics,
+              topicsHint: libelles.formLinkedinTopicsHint,
               sinceDays: libelles.formLinkedinSinceDays,
               accountId: libelles.formLinkedinAccountId,
               profilesPerDay: libelles.formLinkedinProfilesPerDay,

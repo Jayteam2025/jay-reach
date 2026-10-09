@@ -585,7 +585,7 @@
         },
         "linkedinKeywords": {
           "title": "Mots-clés",
-          "description": "Les personnes qui publient sur un sujet"
+          "description": "Les personnes dont le profil correspond à une recherche par mots-clés"
         },
         "linkedinJobChange": {
           "title": "Changement de poste",
@@ -677,7 +677,8 @@
         "competitorPagesHint": "L’adresse de la page entreprise, par exemple linkedin.com/company/nom-du-concurrent. Séparez plusieurs pages par une virgule.",
         "creatorProfiles": "Profils LinkedIn des créateurs",
         "creatorProfilesHint": "L’adresse du profil, par exemple linkedin.com/in/nom-du-createur. Séparez plusieurs profils par une virgule.",
-        "topics": "Sujets suivis",
+        "topics": "Mots-clés de recherche",
+        "topicsHint": "Ce que vous taperiez dans la recherche de personnes de LinkedIn, par exemple « directeur commercial CRM ». Séparez plusieurs recherches par une virgule : chacune est lancée à part.",
         "sinceDays": "Poste pris depuis (jours)",
         "csvIntro": "Les contacts du fichier entrent dans la campagne comme des personnes déjà qualifiées : pas de scoring.",
         "csvFile": "Fichier",
@@ -924,7 +925,7 @@
         "menuLinkedinCreatorPostsTitle": "Engageurs des posts d'un créateur",
         "menuLinkedinCreatorPostsDescription": "Les personnes qui réagissent ou commentent les publications d'un créateur de contenu.",
         "menuLinkedinKeywordsTitle": "Mots-clés",
-        "menuLinkedinKeywordsDescription": "Les personnes qui publient sur un sujet.",
+        "menuLinkedinKeywordsDescription": "Les personnes dont le profil correspond à une recherche par mots-clés.",
         "menuLinkedinJobChangeTitle": "Changement de poste",
         "menuLinkedinJobChangeDescription": "Les profils du persona arrivés en poste récemment.",
         "menuGroupManual": "Manuel",
@@ -946,7 +947,8 @@
         "formLinkedinCompetitorPagesHint": "L’adresse de la page entreprise, par exemple linkedin.com/company/nom-du-concurrent. Séparez plusieurs pages par une virgule.",
         "formLinkedinCreatorProfiles": "Profils LinkedIn des créateurs",
         "formLinkedinCreatorProfilesHint": "L’adresse du profil, par exemple linkedin.com/in/nom-du-createur. Séparez plusieurs profils par une virgule.",
-        "formLinkedinTopics": "Sujets suivis",
+        "formLinkedinTopics": "Mots-clés de recherche",
+        "formLinkedinTopicsHint": "Ce que vous taperiez dans la recherche de personnes de LinkedIn, par exemple « directeur commercial CRM ». Séparez plusieurs recherches par une virgule : chacune est lancée à part.",
         "formLinkedinSinceDays": "Poste pris depuis (jours)",
         "formLinkedinAccountId": "Compte LinkedIn",
         "formLinkedinProfilesPerDay": "Profils lus par jour",

@@ -25,15 +25,14 @@ import {
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   QUEUES,
-  TYPES_LINKEDIN_COLLECTES,
-} from '@jay-reach/core';
+  TYPES_LINKEDIN_COLLECTES, sqlEstSignalDePersonne} from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
 import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { finishSourceRun, startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
-import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, sqlCampagneSansEmail, sqlSourceSansEmail, type FragmentSql } from './handlers/post-engagement.js';
+import { ecarterSignalDePersonne, lienProfilDeduit, sqlAdresseResolvable, sqlCampagneSansEmail, sqlSourceSansEmail, type FragmentSql } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -184,14 +183,14 @@ export async function ecarterSignauxTropAnciens(
   // elle ne l'empêche pas de revenir par un autre post.
   const personnes = await pool.query<{ id: string; organization_id: string }>(
     `select id, organization_id from signals
-      where kind = 'post_engagement' and status = 'new' and score is null
+      where ${sqlEstSignalDePersonne('signals')} and status = 'new' and score is null
         and occurred_at < now() - make_interval(days => $1)`,
     [maxJours],
   );
-  for (const p of personnes.rows) await ecarterEngageur(pool, p.organization_id, p.id, { juge: false });
+  for (const p of personnes.rows) await ecarterSignalDePersonne(pool, p.organization_id, p.id, { juge: false });
   const qualifiesPersonnes = await pool.query<{ id: string; organization_id: string }>(
     `select s.id, s.organization_id from signals s
-      where s.kind = 'post_engagement' and s.status = 'qualified'
+      where ${sqlEstSignalDePersonne('s')} and s.status = 'qualified'
         and s.occurred_at < now() - make_interval(days => $1)
         and not exists (
           select 1 from contacts ct
@@ -249,11 +248,11 @@ export async function ecarterSignauxTropAnciens(
   // l'a collectée est clos depuis des semaines — son compteur d'écarts ne doit pas
   // bouger rétroactivement, sinon le rendement comparé des sources est faussé.
   for (const p of qualifiesPersonnes.rows)
-    await ecarterEngageur(pool, p.organization_id, p.id, { juge: true, compter: false });
+    await ecarterSignalDePersonne(pool, p.organization_id, p.id, { juge: true, compter: false });
   const nouveaux = await pool.query(
     `update signals
         set status = 'discarded', discard_reason = 'stale', scored_at = coalesce(scored_at, now())
-      where status = 'new' and score is null and kind <> 'post_engagement'
+      where status = 'new' and score is null and not ${sqlEstSignalDePersonne('signals')}
         and occurred_at < now() - make_interval(days => $1)`,
     [maxJours],
   );
@@ -262,7 +261,7 @@ export async function ecarterSignauxTropAnciens(
   const qualifies = await pool.query(
     `update signals s
         set status = 'discarded', discard_reason = 'stale_unenriched'
-      where s.status = 'qualified' and s.kind <> 'post_engagement'
+      where s.status = 'qualified' and not ${sqlEstSignalDePersonne('s')}
         and s.occurred_at < now() - make_interval(days => $1)
         and not exists (select 1 from accounts a where a.id = s.account_id and a.enriched_at is not null)`,
     [maxJours],
@@ -759,7 +758,7 @@ export async function enqueueEnrollments(
        -- On ne retient donc l'engageur que si la séquence comporte au moins une étape email
        -- (symétrique de la réserve du scoring, conditionSourceScorable).
        -- Restreint à ce kind par construction : le chemin des offres d'emploi n'est pas touché.
-        and not (s.kind = 'post_engagement' and ct.email is null
+        and not (${sqlEstSignalDePersonne('s')} and ct.email is null
                  -- Lever la garde exige une sequence CONNUE et sans aucune etape email. Une
                  -- campagne qui n'a pas encore d'etape ne dit pas par quel canal elle ecrira :
                  -- la traiter comme « 100 % LinkedIn » inscrirait a l'aveugle (controle 25 du

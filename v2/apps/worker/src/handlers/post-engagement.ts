@@ -21,8 +21,8 @@ import {
   lienProfilDeduit,
   normaliserUrlPost,
   normaliserUrlProfil,
-  type Executeur,
-} from '@jay-reach/core';
+  type Executeur, sqlEstSignalDePersonne, type KindPersonne} from '@jay-reach/core';
+import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 
 export type Engageur = {
   urn: string;
@@ -106,19 +106,101 @@ function separerNom(nom: string): { prenom: string | null; nomFamille: string | 
 
 const STATUTS_VIVANTS = ['active', 'paused', 'paused_absence'];
 
+/**
+ * Une personne à enregistrer, dont l'identité est DÉJÀ résolue par l'appelant.
+ *
+ * Ce qui change d'une source à l'autre tient dans ce type, et rien d'autre : un engageur est
+ * identifié par son URN et n'a d'adresse que déduite, une personne trouvée par mot-clé porte son
+ * nom public, donc une adresse réelle et enrichissable. Tout ce qui suit — suppression, mémoire
+ * d'écart, doublon, inscription vivante, rattachement d'une fiche existante — est identique, et
+ * le dupliquer par source aurait fini par diverger.
+ */
+export interface IdentitePersonne {
+  /** Nature du signal créé. Décide aussi de l'index partiel qu'infère le `on conflict`. */
+  readonly kind: KindPersonne;
+  /** Clé d'unicité (organisation, external_id), déjà normalisée par l'appelant. */
+  readonly externalId: string;
+  /** Adresse de profil retenue : réelle quand on l'a, déduite de l'URN sinon. */
+  readonly url: string;
+  /** `linkedin_provider_id` : l'identifiant de membre, `null` quand il n'y a pas d'URN. */
+  readonly membre: string | null;
+  /** Les adresses à confronter à la liste de suppression (une seule si on n'a pas d'URN). */
+  readonly formes: readonly string[];
+  /** Ce que l'opérateur ouvre pour voir d'où vient la personne (`signals.url`). */
+  readonly urlSignal: string;
+  readonly nom: string;
+  readonly intitule: string;
+  readonly entreprise: string | null;
+}
+
+/** L'identité d'un engageur de post : son URN, et l'adresse du post comme origine. */
+export function identiteDEngageur(entree: Engageur, urlPost: string): IdentitePersonne {
+  const engageur = engageurSchema.parse(entree);
+  const url = lienProfil(engageur);
+  return {
+    kind: 'post_engagement',
+    // Normalisée ICI : l'unicité d'un engageur ne doit pas dépendre de la forme
+    // sous laquelle l'appelant écrit l'adresse du post.
+    externalId: `${normaliserUrlPost(urlPost)}:${engageur.urn}`,
+    url,
+    membre: identifiantMembre(engageur.urn),
+    // Les deux formes : celle qu'on a retenue, et celle qu'on aurait déduite de l'URN.
+    formes: [...new Set([url, lienProfilDeduit(engageur.urn)])],
+    urlSignal: urlPost,
+    nom: engageur.nom,
+    intitule: engageur.intitule,
+    entreprise: engageur.entreprise ?? null,
+  };
+}
+
+/** Les mots-clés tels que l'unicité les compare : sans casse, espaces réduits et rognés. */
+export function normaliserMotsCles(motsCles: string): string {
+  return motsCles.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Le début de l'`external_id` de toute personne trouvée par ces mots-clés (voir `identiteDeRecherche`). */
+export function prefixeDeRecherche(motsCles: string): string {
+  return `${normaliserMotsCles(motsCles)}:`;
+}
+
+/**
+ * L'identité d'une personne trouvée par recherche de mots-clés : son nom public, sous les mots-clés
+ * qui l'ont fait trouver. Aucun URN, donc `membre` reste nul et l'adresse est la vraie — c'est ce
+ * qui rend la personne enrichissable (voir `sqlAdresseResolvable`).
+ */
+export function identiteDeRecherche(personne: PersonneTrouvee, motsCles: string): IdentitePersonne {
+  return {
+    kind: 'people_search',
+    // Normalisé ICI, comme l'adresse du post pour un engageur : l'unicité ne doit pas dépendre
+    // de la casse ni des espaces que l'opérateur a saisis.
+    externalId: `${prefixeDeRecherche(motsCles)}${personne.nomPublic}`,
+    url: personne.urlProfil,
+    membre: null,
+    formes: [personne.urlProfil],
+    urlSignal: urlRecherche(motsCles, 1),
+    nom: personne.nom,
+    intitule: personne.intitule,
+    entreprise: null,
+  };
+}
+
+/** Conservé pour les appelants du chemin « engageurs d'un post » : construit l'identité, puis enregistre. */
 export async function enregistrerEngageur(
   ctx: ContexteEngageur,
   entree: Engageur,
   campagne: { id: string; personaId: string },
   urlPost: string,
 ): Promise<IssueEngageur> {
-  const engageur = engageurSchema.parse(entree);
+  return enregistrerPersonne(ctx, identiteDEngageur(entree, urlPost), campagne);
+}
+
+export async function enregistrerPersonne(
+  ctx: ContexteEngageur,
+  identite: IdentitePersonne,
+  campagne: { id: string; personaId: string },
+): Promise<IssueEngageur> {
   const { pool, organizationId: org } = ctx;
-  // Normalisée ICI : l'unicité d'un engageur ne doit pas dépendre de la forme
-  // sous laquelle l'appelant écrit l'adresse du post.
-  const externalId = `${normaliserUrlPost(urlPost)}:${engageur.urn}`;
-  const url = lienProfil(engageur);
-  const membre = identifiantMembre(engageur.urn);
+  const { externalId, url, membre } = identite;
 
   // 0) Sur la liste de suppression : refusé DÈS LA COLLECTE, sur l'adresse de profil.
   //    Ne pas attendre l'envoi : la personne a demandé à ne plus être contactée,
@@ -127,7 +209,7 @@ export async function enregistrerEngageur(
   //    sont testées, et la casse ne compte pas.
   // Les deux formes partent BRUTES : c'est le SQL qui normalise les deux côtés, pour qu'une
   // seule implémentation de « c'est la même adresse » décide (migration 20261008170000).
-  const formes = [...new Set([url, lienProfilDeduit(engageur.urn)])];
+  const formes = [...identite.formes];
   const supprime = await pool.query(
     `select 1 as one from suppressions
       where organization_id = $1 and scope = 'linkedin'
@@ -148,8 +230,8 @@ export async function enregistrerEngageur(
 
   // 2) Même personne, même post : déjà vue.
   const connu = await pool.query(
-    `select id from signals where organization_id = $1 and external_id = $2 and kind = 'post_engagement'`,
-    [org, externalId],
+    `select id from signals where organization_id = $1 and external_id = $2 and kind = $3::signal_kind`,
+    [org, externalId, identite.kind],
   );
   if (connu.rows.length > 0) return 'doublon';
 
@@ -166,7 +248,7 @@ export async function enregistrerEngageur(
   );
   if (inscrit.rows.length > 0) return 'deja_en_campagne';
 
-  const { prenom, nomFamille } = separerNom(engageur.nom);
+  const { prenom, nomFamille } = separerNom(identite.nom);
 
   // Un contact peut déjà exister, né d'un signal d'entreprise, avec son email :
   // on le RATTACHE. Il garde son email et son signal d'origine (l'historique de
@@ -196,7 +278,7 @@ export async function enregistrerEngageur(
             -- inscriptible (enqueueEnrollments joint sur source_signal_id).
             source_signal_id = coalesce(source_signal_id, $9)
           where id = $2 and organization_id = $1`,
-        [org, contact.id, url, membre, campagne.personaId, prenom, nomFamille, engageur.intitule, signalId],
+        [org, contact.id, url, membre, campagne.personaId, prenom, nomFamille, identite.intitule, signalId],
       );
     } catch (err) {
       // 23505 : l'adresse est déjà portée par un autre contact. On ne fusionne pas
@@ -217,10 +299,13 @@ export async function enregistrerEngageur(
   const signal = await pool.query<{ id: string }>(
     `insert into signals
        (organization_id, source_id, source_run_id, provider_id, external_id, kind, occurred_at, title, url, status)
-     values ($1, $2, $6, 'linkedin', $3, 'post_engagement', now(), $4, $5, 'new')
-     on conflict (organization_id, external_id) where kind = 'post_engagement' do nothing
+     values ($1, $2, $6, 'linkedin', $3, $7::signal_kind, now(), $4, $5, 'new')
+     -- Le prédicat est écrit À L'IDENTIQUE de celui de signals_personne_uidx : c'est ce qui
+     -- permet à Postgres d'inférer l'index. Restreint à un seul kind, il n'en inférait plus
+     -- aucun dès qu'un second kind de personne existait, et l'insertion échouait.
+     on conflict (organization_id, external_id) where kind in ('post_engagement', 'people_search') do nothing
      returning id`,
-    [org, ctx.sourceId, externalId, engageur.intitule, urlPost, ctx.sourceRunId],
+    [org, ctx.sourceId, externalId, identite.intitule, identite.urlSignal, ctx.sourceRunId, identite.kind],
   );
   const signalId = signal.rows[0]?.id;
   if (!signalId) return 'doublon'; // course : un autre passage vient de l'insérer
@@ -241,12 +326,12 @@ export async function enregistrerEngageur(
       campagne.personaId,
       prenom,
       nomFamille,
-      engageur.intitule,
+      identite.intitule,
       url,
       membre,
       signalId,
       // L'entreprise lue dans l'intitulé reste un texte libre, sans identifiant.
-      JSON.stringify({ entreprise: engageur.entreprise ?? null }),
+      JSON.stringify({ entreprise: identite.entreprise }),
     ],
   );
   return 'nouveau';
@@ -330,7 +415,7 @@ export function empreinteEngageur(externalId: string): string {
 /**
  * « Cette personne a été contactée à cause de cet engageur », en SQL : une
  * expression booléenne, partagée par la purge (qui l'exclut de sa sélection) et par
- * `ecarterEngageur` (qui refuse de détruire). Une seule définition : deux copies
+ * `ecarterSignalDePersonne` (qui refuse de détruire). Une seule définition : deux copies
  * auraient fini par diverger, et la divergence se paie par une personne effacée.
  *
  * Contactée = une inscription portée par le signal, ou une inscription / un fil de
@@ -387,7 +472,7 @@ export type IssueEffacement = 'efface' | 'conserve' | 'absent';
  * appartient à une liste importée, ou à qui on a déjà écrit, est conservée et
  * simplement détachée de son signal.
  */
-export async function ecarterEngageur(
+export async function ecarterSignalDePersonne(
   pool: Pool,
   organizationId: string,
   signalId: string,
@@ -414,7 +499,7 @@ export async function ecarterEngageur(
     );
     const verrouille = await tx.query<{ external_id: string }>(
       `select external_id from signals
-        where id = $2 and organization_id = $1 and kind = 'post_engagement' for update`,
+        where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')} for update`,
       [organizationId, signalId],
     );
     const externalId = verrouille.rows[0]?.external_id;
@@ -438,7 +523,7 @@ export async function ecarterEngageur(
       await poserMemoire();
       await tx.query(
         `update signals set status = 'discarded', discard_reason = 'contacted', scored_at = coalesce(scored_at, now())
-          where id = $2 and organization_id = $1 and kind = 'post_engagement' and status = 'new'`,
+          where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')} and status = 'new'`,
         [organizationId, signalId],
       );
       return 'conserve';
@@ -480,7 +565,7 @@ export async function ecarterEngageur(
     // l'instruction elle-même, évaluée avant le détachement des survivants (qui
     // vide `source_signal_id`, donc la moitié de la condition).
     const supprime = await tx.query<{ source_run_id: string | null }>(
-      `delete from signals where id = $2 and organization_id = $1 and kind = 'post_engagement'
+      `delete from signals where id = $2 and organization_id = $1 and ${sqlEstSignalDePersonne('signals')}
           and not ${sqlPersonneContactee(PARAM_ORG, PARAM_SIGNAL, 'signals.occurred_at' as FragmentSql)}
         returning source_run_id`,
       [organizationId, signalId],
