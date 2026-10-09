@@ -45,6 +45,7 @@ import {
   trouverPostsDePage,
   lirePostsTraites,
   marquerPostTraite,
+  manquesPourLancer,
 } from './_linkedin-collecte-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1292,12 +1293,55 @@ async function sourceConcurrent() {
   check('78b. elle ne bloque pas la session LinkedIn', sess?.status === 'active', JSON.stringify(sess));
 }
 
+/**
+ * Lot 4b, étape 2 : une campagne dont AUCUNE source n'est collectée doit le dire AVANT d'être
+ * lancée. Sans ça elle s'active, s'affiche en marche, et n'ajoute jamais personne.
+ */
+async function lancementSansCollecteur() {
+  console.log('\n25. le lancement d’une campagne sans source collectable');
+  // Une étape d'appel : elle n'exige ni message, ni expéditeur, ni clé. Les autres manques ne
+  // viennent donc pas brouiller ce qui est mesuré ici.
+  const etapeAppel = (campagne) =>
+    q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'call')`, [campagne]);
+
+  // 1. Une source dont le type n'a pas de collecteur : le manque doit être signalé, et NOMMER
+  // le type, sinon l'opérateur ne sait pas quoi corriger.
+  const m = await monde();
+  await etapeAppel(m.campagne);
+  await q(`delete from campaign_sources where source_id = $1`, [m.source]);
+  await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_keywords',
+    nom: 'Mots-clés',
+    config: { sujets: ['CRM commercial'], compteId: 'compte-1' },
+  });
+  const manques = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
+  const leManque = manques.find((x) => x.includes('n’est collectée aujourd’hui'));
+  check('80. une campagne dont aucune source n’est collectée refuse de se lancer', leManque !== undefined, JSON.stringify(manques));
+  check('80b. le manque nomme le type en cause', (leManque ?? '').includes('mots-clés LinkedIn'), String(leManque));
+
+  // 2. La même campagne, avec en plus une source d'engageurs de concurrent : le manque tombe.
+  await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  const manques2 = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
+  check('81. une seule source collectable suffit à lever le manque',
+    !manques2.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques2));
+
+  // 3. Une campagne SANS aucune source reste légitime : ses contacts peuvent être importés ou
+  // ajoutés à la main. En faire un manque bloquerait un usage qui marche.
+  const m3 = await monde();
+  await etapeAppel(m3.campagne);
+  await q(`delete from campaign_sources where campaign_id = $1`, [m3.campagne]);
+  const manques3 = await manquesPourLancer(m3.ctx, { campagneId: m3.campagne });
+  check('82. une campagne sans aucune source n’est pas bloquée pour autant',
+    !manques3.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques3));
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

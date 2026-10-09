@@ -21,7 +21,7 @@ import { construireValeursContact, normalizeListColumnName, renderTemplatePartia
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
-import { SQL_PROVIDER_ID_AFFICHAGE, exigerPersonaSource, exigerPostLibre, personaSourceValide } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, collecteImplementee, exigerPersonaSource, exigerPostLibre, personaSourceValide } from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -2160,8 +2160,38 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
     for (const m of transportManques) manques.push(LIBELLES[m]);
   }
 
+  // Une campagne dont AUCUNE source n'est collectée se lance, s'affiche active, et n'ajoute
+  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Deux des quatre
+  // types LinkedIn n'ont pas encore de collecteur ; tant que c'est le cas, il faut le dire
+  // AVANT le lancement, pas le laisser découvrir au bout d'une semaine.
+  //
+  // Une campagne sans aucune source reste légitime : ses contacts peuvent être importés ou
+  // ajoutés à la main. Ce n'est donc un manque que s'il y a des sources, et qu'aucune ne sert.
+  const sourcesRes = await ctx.ex.query<{ type: string | null }>(
+    `select coalesce(so.config->>'sourceType', sp.provider_id) as type /* jr:manques_sources */
+       from campaign_sources cs
+       join sources so on so.id = cs.source_id
+       left join source_providers sp on sp.source_id = so.id
+      where cs.campaign_id = $1 and so.organization_id = $2 and so.is_active`,
+    [campagneId, ctx.organisationId],
+  );
+  const types = sourcesRes.rows.map((r) => r.type).filter((t): t is string => t !== null);
+  if (types.length > 0 && !types.some((t) => collecteImplementee(t))) {
+    const sansCollecteur = [...new Set(types)].map((t) => LIBELLES_TYPE_SANS_COLLECTEUR[t] ?? t).join(', ');
+    manques.push(`aucune source de cette campagne n’est collectée aujourd’hui (${sansCollecteur}) : personne n’y entrerait`);
+  }
+
   return manques;
 }
+
+/**
+ * Les types sans collecteur, nommés comme l'écran les nomme. En dur, comme `LIBELLES` plus haut :
+ * ce module ne dépend pas de next-intl.
+ */
+const LIBELLES_TYPE_SANS_COLLECTEUR: Record<string, string> = {
+  linkedin_keywords: 'mots-clés LinkedIn',
+  linkedin_job_change: 'changement de poste LinkedIn',
+};
 
 export async function lancer(ctx: Contexte, entree: unknown): Promise<{ ok: true } | { ok: false; manques: string[] }> {
   exiger(ctx, 'operator');

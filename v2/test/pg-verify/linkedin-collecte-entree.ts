@@ -20,4 +20,5 @@ export {
 export { compterRequetesLinkedIn, compterPostsLinkedInDuJour } from '../../packages/core/src/fonctions/plafonds.js';
 export { creerSource, listerSourcesCampagne } from '../../packages/core/src/fonctions/sources.js';
 export { nePlusContacter } from '../../packages/core/src/fonctions/contacts.js';
+export { manquesPourLancer } from '../../packages/core/src/fonctions/campagnes.js';
 export { QUEUES } from '../../packages/core/src/queues.js';
