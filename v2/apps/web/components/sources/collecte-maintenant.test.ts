@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etatCollecteMaintenant } from './collecte-maintenant';
+import { collecteServeurDisponible, etatCollecteMaintenant } from './collecte-maintenant';
 
 // « Collecter maintenant » obéit à la règle du worker (R72) : sans campagne ACTIVE rattachée, une
 // demande est consommée sans rien collecter. Le bouton ne promet donc que ce que le worker fera.
@@ -46,5 +46,23 @@ describe('etatCollecteMaintenant', () => {
       bandeauBrouillon: false,
       cleAide: 'collectNowInactive',
     });
+  });
+});
+
+/**
+ * Le bouton « Collecter maintenant » et le bandeau « collecte a venir » se decident sur cette
+ * seule question. Elle etait ecrite en dur sur `linkedin_post_engagers` dans le tiroir : la
+ * source « posts d'un concurrent » n'avait aucun bouton pour partir, et lisait un bandeau qui
+ * annoncait une collecte a venir alors qu'elle tournait.
+ */
+describe('collecteServeurDisponible', () => {
+  it('les deux sources d’engageurs sont collectees par le serveur', () => {
+    expect(collecteServeurDisponible('linkedin_post_engagers')).toBe(true);
+    expect(collecteServeurDisponible('linkedin_competitor_posts')).toBe(true);
+  });
+
+  it('les types sans collecteur ne le sont pas', () => {
+    expect(collecteServeurDisponible('linkedin_keywords')).toBe(false);
+    expect(collecteServeurDisponible('linkedin_job_change')).toBe(false);
   });
 });

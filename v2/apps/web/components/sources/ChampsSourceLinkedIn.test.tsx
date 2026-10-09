@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
+import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import {
   ChampsSourceLinkedIn,
   champsLinkedInValides,
@@ -141,5 +142,30 @@ describe('le formulaire rendu', () => {
     const html = rendre('linkedin_keywords');
     expect(html).toContain('name="compteId"');
     expect(html).toContain('name="profilsParJour"');
+  });
+});
+
+/**
+ * Le bouton « Collecter maintenant » et le bandeau « collecte a venir » se decident sur UNE
+ * question : le serveur collecte-t-il ce type ? Elle etait codee sur `linkedin_post_engagers`
+ * seul, ce qui privait la source « posts d'un concurrent » de tout moyen de lancer un passage,
+ * et lui affichait « la lecture demarrera des que le canal sera actif » alors qu'il l'est.
+ */
+describe('les types collectes par le serveur', () => {
+  it('sont les deux sources d’engageurs, et elles seules', () => {
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_post_engagers')).toBe(true);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_competitor_posts')).toBe(true);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_keywords')).toBe(false);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_job_change')).toBe(false);
+  });
+
+  // Le lien qui compte : l'ecran de saisie et l'ecran de collecte doivent repondre la MEME chose.
+  // Tant qu'ils avaient chacun leur liste, une source se saisissait sans compte LinkedIn mais
+  // n'avait aucun bouton pour partir.
+  it('decident aussi des champs du formulaire : une seule liste pour les deux ecrans', () => {
+    for (const type of ['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_keywords', 'linkedin_job_change'] as const) {
+      const demandeLeCompte = !champsLinkedInValides(type, { ...VIDE, urlPost: 'x', pagesConcurrentes: 'x', sujets: 'x', garderReagi: true });
+      expect(demandeLeCompte).toBe(!TYPES_LINKEDIN_COLLECTES.includes(type));
+    }
   });
 });
