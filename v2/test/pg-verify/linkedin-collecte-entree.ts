@@ -15,7 +15,7 @@ export {
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
 } from '../../packages/core/src/fonctions/linkedin-session.js';
-export { compterRequetesLinkedIn } from '../../packages/core/src/fonctions/plafonds.js';
+export { compterRequetesLinkedIn, compterPostsLinkedInDuJour } from '../../packages/core/src/fonctions/plafonds.js';
 export { creerSource, listerSourcesCampagne } from '../../packages/core/src/fonctions/sources.js';
 export { nePlusContacter } from '../../packages/core/src/fonctions/contacts.js';
 export { QUEUES } from '../../packages/core/src/queues.js';

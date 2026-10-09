@@ -602,10 +602,16 @@ export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organi
 }
 
 /**
- * Posts `linkedin_post_engagers` RÉELLEMENT OUVERTS chez LinkedIn pendant `jour`
- * (AAAA-MM-JJ) dans `fuseau`. Une source n'a pas de ligne `source_providers` pour
- * ce type : le repère est `config.sourceType` (cf. `construireConfigStocke`,
- * `sources.ts`). La borne s'écrit `::date::timestamp at time zone` : sans le cast
+ * Posts RÉELLEMENT OUVERTS chez LinkedIn pendant `jour` (AAAA-MM-JJ) dans `fuseau`,
+ * TOUS TYPES DE SOURCE LINKEDIN CONFONDUS. Une source LinkedIn n'a pas de ligne
+ * `source_providers` : le repère est `config.sourceType` (cf. `construireConfigStocke`,
+ * `sources.ts`), et le préfixe `linkedin%` est le même critère que celui par lequel
+ * `producer.ts` les écarte de la planification.
+ *
+ * Le filtre portait sur le seul `linkedin_post_engagers`, parce qu'il était le seul type
+ * collecté. Ce plafond protège le COMPTE LinkedIn, pas un type de source : laisser ce
+ * filtre en branchant un deuxième type le ferait échapper au plafond, c'est-à-dire
+ * exactement sur la source la plus volumineuse. La borne s'écrit `::date::timestamp at time zone` : sans le cast
  * intermédiaire, Postgres repart du fuseau de la session.
  *
  * Ne comptent que les passages ayant émis AU MOINS UNE requête (`linkedin_requetes`).
@@ -631,7 +637,7 @@ export async function compterPostsLinkedInDuJour(
        from source_runs sr
        join sources so on so.id = sr.source_id
       where so.organization_id = $1
-        and so.config->>'sourceType' = 'linkedin_post_engagers'
+        and so.config->>'sourceType' like 'linkedin%'
         and sr.started_at >= ($2::date::timestamp at time zone $3)
         and sr.started_at < (($2::date + 1)::timestamp at time zone $3)
         and ($4::uuid is null or sr.id <> $4::uuid)
