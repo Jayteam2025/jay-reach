@@ -22,7 +22,7 @@ import {
   type ScoringProspect,
 } from '@jay-reach/core';
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
-import { ecarterEngageur, sqlAdresseResolvable, type FragmentSql } from './post-engagement.js';
+import { ecarterEngageur, sqlAdresseResolvable, sqlSourceSansEmail, type FragmentSql } from './post-engagement.js';
 
 /**
  * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
@@ -193,14 +193,7 @@ function conditionSourceScorable(paramIndex: number, paramPrefixeDeduit: number)
              -- La campagne doit AVOIR une sequence : une campagne qui n'envoie rien encore ne
              -- beneficie pas de la reserve, sinon on paierait des jetons pour des personnes que
              -- personne ne contactera.
-             or (exists (
-                  select 1 from public.campaign_sources cs
-                    join public.sequence_steps st on st.campaign_id = cs.campaign_id
-                   where cs.source_id = s.source_id)
-                 and not exists (
-                  select 1 from public.campaign_sources cs
-                    join public.sequence_steps st on st.campaign_id = cs.campaign_id
-                   where cs.source_id = s.source_id and st.channel = 'email')))`;
+             or ${sqlSourceSansEmail('s.source_id' as FragmentSql)})`;
 }
 
 /**

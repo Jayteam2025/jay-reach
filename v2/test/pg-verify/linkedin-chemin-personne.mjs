@@ -574,6 +574,10 @@ async function scoringCampagneLinkedInSeule() {
   await enqueueEnrollments(boss, pool);
   check('74c. une etape email dans la sequence, et l engageur sans email attend son adresse',
     !inscrit(contactMina), JSON.stringify(jobs.map((j) => j.data.contactId)));
+
+  // Le troisieme etage de la meme regle -- ne pas ACHETER d'adresse a une campagne qui
+  // n'en enverra jamais -- se verifie dans linkedin-enrichissement.sh (section 12), seul
+  // harnais a monter le vrai pg-boss que le producteur d'achat interroge.
 }
 
 async function entreprise() {

@@ -810,7 +810,36 @@ async function pannes() {
     r3.valeur === 'introuvable' && (await usage(m3.org)) === null, String(r3.valeur));
 }
 
-await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes);
+// ------------------------------- 12. une campagne 100 % LinkedIn n'achete aucune adresse
+
+async function campagneLinkedInSeule() {
+  console.log('une sequence 100 % LinkedIn n achete pas d adresse email');
+  const m = await monde();
+  // La sequence n'ecrit QUE par LinkedIn. L'URN suffit a envoyer le message : acheter une
+  // adresse email serait une depense dont personne ne se servira jamais.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'linkedin_message')`, [m.campagne]);
+  // Adresse PUBLIQUE, donc resolvable : sans cela l'exclusion des adresses deduites
+  // suffirait a ecarter le contact, et le controle ne prouverait rien de la regle visee.
+  const paul = await engageurQualifie(m, 'pub1', 'Paul Public', 'Directeur commercial', 'https://www.linkedin.com/in/paul-public');
+
+  const enFilePour = async (id) =>
+    (await q(`select count(*)::int n from pgboss.job where name='enrichment.contact_connu' and data->>'contactId' = $1`, [id])).rows[0].n;
+
+  await enqueueEnrichmentContactsConnus(boss, pool);
+  check('12a. sequence 100 % LinkedIn : aucune adresse n est achetee pour ce contact',
+    (await enFilePour(paul.id)) === 0, `en file = ${await enFilePour(paul.id)}`);
+
+  // Preuve par retrait : une seule etape email dans la sequence, et le MEME contact
+  // redevient un achat legitime. Sans ce second controle, 12a passerait aussi bien si
+  // l'enrichissement etait casse de bout en bout, ou si le contact etait ecarte pour
+  // une tout autre raison.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 1, 'email')`, [m.campagne]);
+  await enqueueEnrichmentContactsConnus(boss, pool);
+  check('12b. une etape email dans la sequence, et le meme contact redevient un achat legitime',
+    (await enFilePour(paul.id)) === 1, `en file = ${await enFilePour(paul.id)}`);
+}
+
+await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes, campagneLinkedInSeule);
 await boss.stop({ graceful: false });
 await pool.end();
 console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);

@@ -33,7 +33,7 @@ import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
 import { finishSourceRun, startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
-import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, type FragmentSql } from './handlers/post-engagement.js';
+import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, sqlCampagneSansEmail, sqlSourceSansEmail, type FragmentSql } from './handlers/post-engagement.js';
 
 interface SourceRow {
   readonly id: string;
@@ -621,6 +621,10 @@ export async function enqueueEnrichmentContactsConnus(
           and c.linkedin_url is not null
           and s.status = 'qualified'
           and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
+          -- Et ne pas ACHETER une adresse email a une campagne qui n'en enverra jamais : une
+          -- sequence 100 % LinkedIn ecrit avec l'URN. Troisieme etage de la meme regle (voir
+          -- sqlSourceSansEmail) ; ici elle n'empeche rien, elle evite une depense.
+          and not ${sqlSourceSansEmail('s.source_id' as FragmentSql)}
      )
      select organization_id, contact_id from candidats
       where rang <= $1
@@ -761,9 +765,7 @@ export async function enqueueEnrollments(
                  -- la traiter comme « 100 % LinkedIn » inscrirait a l'aveugle (controle 25 du
                  -- harnais, qui est passe au rouge sur une premiere version de ce correctif).
                  -- Meme forme que la reserve du scoring, conditionSourceScorable.
-                 and not (exists (select 1 from sequence_steps st where st.campaign_id = c.id)
-                          and not exists (select 1 from sequence_steps st
-                                           where st.campaign_id = c.id and st.channel = 'email')))
+                 and not ${sqlCampagneSansEmail('c.id' as FragmentSql)})
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
