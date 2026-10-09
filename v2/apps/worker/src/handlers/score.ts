@@ -22,7 +22,7 @@ import {
   type ScoringProspect,
 } from '@jay-reach/core';
 import { loadRecruitmentBlacklist, learnRecruitmentAgency } from '../blacklist.js';
-import { ecarterEngageur, sqlAdresseResolvable, type FragmentSql } from './post-engagement.js';
+import { ecarterEngageur, sqlAdresseResolvable, sqlSourceSansEmail, type FragmentSql } from './post-engagement.js';
 
 /**
  * Injection du modèle. Reçoit les prospects et le prompt système (de la source),
@@ -175,10 +175,25 @@ function conditionSourceScorable(paramIndex: number, paramPrefixeDeduit: number)
         -- qui lirait enfin l'identifiant public, et alors scorable.
         -- Même définition que le producteur (sqlAdresseResolvable), et ICI parce que le
         -- compteur de crédit et la sélection doivent isoler EXACTEMENT le même ensemble.
-        and (s.kind <> 'post_engagement' or not exists (
+        and (s.kind <> 'post_engagement'
+             or not exists (
               select 1 from public.contacts c
                where c.organization_id = s.organization_id and c.source_signal_id = s.id
-                 and not ${sqlAdresseResolvable('c' as FragmentSql, `$${paramPrefixeDeduit}` as FragmentSql)}))`;
+                 and not ${sqlAdresseResolvable('c' as FragmentSql, `$${paramPrefixeDeduit}` as FragmentSql)})
+             -- …SAUF si la campagne n'envoie que par LinkedIn. L'exclusion ci-dessus vise
+             -- l'EMAIL : une adresse deduite n'est ni cherchable ni enrichissable. Mais pour
+             -- ecrire un message LinkedIn, l'URN suffit : resoudreProfil interroge
+             -- voyagerIdentityDashProfiles avec memberIdentity, qui accepte l'URN aussi bien
+             -- qu'un nom public.
+             --
+             -- Sans cette reserve, la source « posts d'un concurrent » ne produit JAMAIS rien :
+             -- un post de page ne livre pas les noms publics de ses reacteurs, donc TOUTES ses
+             -- personnes ont une adresse deduite, donc aucune n'etait scoree. Mesure le 09/10 :
+             -- 37 personnes collectees, 37 laissees en « new » pour toujours.
+             -- La campagne doit AVOIR une sequence : une campagne qui n'envoie rien encore ne
+             -- beneficie pas de la reserve, sinon on paierait des jetons pour des personnes que
+             -- personne ne contactera.
+             or ${sqlSourceSansEmail('s.source_id' as FragmentSql)})`;
 }
 
 /**

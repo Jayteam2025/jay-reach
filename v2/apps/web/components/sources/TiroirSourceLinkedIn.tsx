@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import type { CampaignStatus, TypeSource } from '@jay-reach/core';
 import { Bouton, Champ, Tiroir, TuileLogo } from '../ui';
 import { actionCreerSource, actionLancerPassageCampagne, actionModifierSourceCampagne } from '../../app/actions/sources';
-import { etatCollecteMaintenant } from './collecte-maintenant';
+import { collecteServeurDisponible, etatCollecteMaintenant } from './collecte-maintenant';
 import {
   ChampsSourceLinkedIn,
   construireConfigLinkedIn,
@@ -113,7 +113,15 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
     });
   }
 
-  const collecteDuPost = providerId === 'linkedin_post_engagers';
+  /**
+   * Cette source est-elle collectée par le serveur ?
+   *
+   * La condition portait le seul `linkedin_post_engagers`. Une source « posts d'un concurrent »
+   * n'avait donc PAS de bouton « Collecter maintenant », et recevait en prime le bandeau « la
+   * lecture des profils démarrera dès que le canal sera actif » — alors que le canal est actif et
+   * que sa collecte est livrée. Deux mensonges, et aucun moyen de lancer un passage à la main.
+   */
+  const collecteServeur = collecteServeurDisponible(providerId);
   const collecte = etatCollecteMaintenant(statutCampagne, source);
 
   function collecterMaintenant() {
@@ -144,8 +152,8 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
       }
     >
       <div className="jr-formulaire">
-        {!collecteDuPost && <div className="jr-bandeau attention">{t('drawer.linkedinPending')}</div>}
-        {collecteDuPost && collecte.bandeauBrouillon && <div className="jr-bandeau attention">{t('drawer.brouillon')}</div>}
+        {!collecteServeur && <div className="jr-bandeau attention">{t('drawer.linkedinPending')}</div>}
+        {collecteServeur && collecte.bandeauBrouillon && <div className="jr-bandeau attention">{t('drawer.brouillon')}</div>}
         <Champ libelle={t('drawer.name')}>
           <input value={nom} onChange={(e) => setNom(e.target.value)} />
         </Champ>
@@ -178,7 +186,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             <option value="every 48h">{t('card.everyNHours', { n: 48 })}</option>
           </select>
         </Champ>
-        {collecteDuPost && (
+        {collecteServeur && (
           <div>
             <Bouton onClick={collecterMaintenant} disabled={pending || !collecte.actif}>
               {t('drawer.collectNow')}

@@ -28,7 +28,15 @@ export function marquesDe(providerIds: SourceCarte['providerIds']): TuileLogoMar
  */
 export function sousTitreDe(carte: SourceCarte, t: Traducteur): string {
   if (carte.providerId !== 'adzuna' && carte.providerId !== 'france_travail') {
-    const config = carte.config as { compteId?: string };
+    const config = carte.config as { compteId?: string; pagesConcurrentes?: string[] };
+    // La source « posts d'un concurrent » n'a plus de `compteId` (un seul compte LinkedIn par
+    // instance) : sans ça, sa carte affichait un tiret là où l'opérateur attend de voir QUI il
+    // suit. On y met les noms publics des pages, qui tiennent sur une ligne — l'adresse complète
+    // est juste en dessous.
+    const pages = (config.pagesConcurrentes ?? [])
+      .map((u) => /linkedin\.com\/(?:company|showcase)\/([^/?#]+)/i.exec(u)?.[1] ?? u)
+      .filter((v) => v.length > 0);
+    if (pages.length > 0) return pages.join(', ');
     return config.compteId ?? '—';
   }
   const config = configFormulaireDepuisStockee(carte.providerId, carte.config) as {

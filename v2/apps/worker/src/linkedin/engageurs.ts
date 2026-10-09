@@ -297,6 +297,39 @@ export function extraireEngageurs(corps: unknown): { personnes: EngageurVu[]; tr
         vus.set(urn, connu === undefined ? candidat : fusionner(connu, candidat));
       }
     }
+
+    // Un post de PAGE ENTREPRISE ne décore pas ses réacteurs. Mesuré le 09/10 sur la première
+    // source réelle : la réponse annonce huit réactions, ne contient AUCUN objet `Profile`, et le
+    // collecteur rendait « LinkedIn n'en livre aucune ». Tout est pourtant là — chaque `Reaction`
+    // embarque un `reactorLockup` qui porte le nom, l'intitulé et l'adresse du réacteur.
+    //
+    // On ne prend pas `publicIdentifier` : `navigationUrl` pointe sur `/in/<URN>`, pas sur un nom
+    // public. L'adresse sera donc déduite de l'URN, comme pour toute personne que LinkedIn ne
+    // nomme pas publiquement — et le bilan la comptera dans « à adresse déduite ».
+    const urnActeur =
+      urnDeProfil(o.actorUrn) ??
+      urnDeProfil((o.actorUnion as { profileUrn?: unknown } | undefined)?.profileUrn);
+    const vignette = o.reactorLockup;
+    if (urnActeur !== null && vignette !== null && typeof vignette === 'object') {
+      const l = vignette as Record<string, unknown>;
+      const nom = texteDe(l.title) ?? '';
+      const intitule = texteDe(l.subtitle) ?? '';
+      if (nom.length > 0 || intitule.length > 0) {
+        const entreprise = entrepriseDeLIntitule(intitule);
+        const candidat: EngageurVu = {
+          urn: urnActeur,
+          nom,
+          intitule,
+          // Une vignette, donc le rang d'une vignette : si une entité profil complète arrive par
+          // ailleurs (une autre liste, une autre page), c'est elle qui l'emporte.
+          provenance: { rangNom: nom.length === 0 ? 0 : 1, rangIntitule: intitule.length === 0 ? 0 : 1 },
+          ...(entreprise !== undefined ? { entreprise } : {}),
+        };
+        const connu = vus.get(urnActeur);
+        vus.set(urnActeur, connu === undefined ? candidat : fusionner(connu, candidat));
+      }
+    }
+
     for (const v of Object.values(o)) visiter(v, profondeur + 1);
   };
   visiter(corps, 0);
@@ -384,6 +417,9 @@ export async function lireEngageurs(
   const frictionArrivee = frictionDeLUrl(await pilote.url());
   if (frictionArrivee) return { personnes: [], arret: frictionArrivee };
 
+  // Combien de listes ont abouti. Sert à distinguer « ce post n'existe pas » de « cette
+  // liste-ci n'existe pas pour ce post ».
+  let listesAbouties = 0;
   for (const fabriquer of adressesDemandees(garder)) {
     let debut = 0;
     for (let page = 0; page < PAGES_MAX; page += 1) {
@@ -396,7 +432,15 @@ export async function lireEngageurs(
 
       const rep = await pilote.requete(fabriquer(urn, debut), ENTETES_VOYAGER);
       const friction = frictionDuStatut(rep.statut);
-      if (friction) return { personnes: personnes(), arret: friction };
+      if (friction) {
+        // Une liste SECONDAIRE introuvable n'est pas un post introuvable. Mesuré le 09/10 : sur
+        // un post de page entreprise, l'API des commentaires répond 404 alors que celle des
+        // réactions vient de livrer huit personnes. Clore sur « post supprimé ou privé »
+        // enverrait l'opérateur vérifier une adresse parfaitement valide, et jetterait le
+        // passage entier.
+        if (friction.type === 'post_introuvable' && listesAbouties > 0) break;
+        return { personnes: personnes(), arret: friction };
+      }
       if (rep.statut < 200 || rep.statut >= 300) {
         // Un statut anormal est un verdict de LinkedIn sur nous (429, 5xx répétés) :
         // il engage le compte.
@@ -433,6 +477,7 @@ export async function lireEngageurs(
         return { personnes: [], arret: { type: 'liste_vide' } };
       }
       premiereReponse = false;
+      listesAbouties += 1;
       // Fusion ENTRE réponses, pas seulement à l'intérieur de l'une : quelqu'un qui
       // réagit et commente apparaît dans les deux listes, et les réactions, demandées
       // en premier, ne sont pas forcément les mieux décorées.

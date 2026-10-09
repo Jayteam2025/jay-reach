@@ -218,3 +218,26 @@ describe('construireBlocsLinkedIn : une source d’engageurs', () => {
     expect(rendu(engageurs())).toContain('Jamais lancé');
   });
 });
+
+describe('le sous-titre d’une source « posts d’un concurrent »', () => {
+  const carte = (config: Record<string, unknown>) =>
+    ({ providerId: 'linkedin_competitor_posts', config }) as unknown as SourceCarte;
+
+  // Elle n'a plus de `compteId` : la carte affichait un tiret la ou l'operateur attend de voir
+  // QUI il suit. Mesure sur la premiere source reelle.
+  it('nomme les pages suivies, pas un tiret', () => {
+    expect(sousTitreDe(carte({ pagesConcurrentes: ['https://www.linkedin.com/company/une-page/'] }), fabriquerT())).toBe('une-page');
+  });
+
+  it('les nomme toutes quand il y en a plusieurs', () => {
+    const s = sousTitreDe(
+      carte({ pagesConcurrentes: ['https://www.linkedin.com/company/une-page/', 'linkedin.com/showcase/une-vitrine'] }),
+      fabriquerT(),
+    );
+    expect(s).toBe('une-page, une-vitrine');
+  });
+
+  it('une source sans page garde le tiret', () => {
+    expect(sousTitreDe(carte({ pagesConcurrentes: [] }), fabriquerT())).toBe('—');
+  });
+});

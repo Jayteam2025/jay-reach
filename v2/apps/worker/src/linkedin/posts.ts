@@ -12,7 +12,7 @@
  * autres viendront derrière la même interface quand leurs points d'entrée seront connus — on
  * ne code pas ce qu'on n'a pas observé.
  */
-import { ErreurCollecte, ENTETES_VOYAGER, frictionDuStatut, urnDActivite } from './engageurs.js';
+import { ErreurCollecte, ENTETES_VOYAGER, frictionDeLUrl, frictionDuStatut, urnDActivite } from './engageurs.js';
 import type { ArretCollecte, Budget, Friction } from './engageurs.js';
 import type { Pilote } from './navigateur.js';
 
@@ -204,10 +204,10 @@ export async function resoudrePageEntreprise(
   restantes: () => number = () => Number.POSITIVE_INFINITY,
 ): Promise<string> {
   const nom = nomPublicDePage(urlPage);
-  if (nom === null) {
+  const adresse = adresseDePage(urlPage);
+  if (nom === null || adresse === null) {
     throw new ErreurCollecte(`Adresse de page entreprise illisible : ${urlPage}`, 'PageIllisible', false);
   }
-  const adresse = `https://www.linkedin.com/company/${encodeURIComponent(nom)}/`;
 
   for (let tentative = 0; tentative < TENTATIVES_RESOLUTION; tentative += 1) {
     if (restantes() <= 0) {
@@ -260,6 +260,17 @@ export async function resoudrePageEntreprise(
  */
 export function urlDePost(urn: string): string {
   return `https://www.linkedin.com/feed/update/${urn}/`;
+}
+
+/**
+ * L'adresse canonique d'une page entreprise, reconstruite depuis son nom public.
+ *
+ * Reconstruite, jamais reprise telle quelle : c'est ce qui empêche une adresse saisie par
+ * l'opérateur d'envoyer le navigateur ailleurs que sur linkedin.com.
+ */
+export function adresseDePage(urlPage: string): string | null {
+  const nom = nomPublicDePage(urlPage);
+  return nom === null ? null : `https://www.linkedin.com/company/${encodeURIComponent(nom)}/`;
 }
 
 /** Le nom public d'une adresse de page : `linkedin.com/company/<nom>/…`. */
@@ -347,6 +358,24 @@ export async function trouverPostsDePage(
     await surRequete();
     restantes -= 1;
   };
+
+  // Il faut être SUR une page LinkedIn avant d'appeler Voyager : `pilote.requete` part en
+  // `same-origin`, donc depuis `about:blank` le fetch lève une DOMException et le passage
+  // s'arrête sur « Collecte interrompue » dès la première requête. Mesuré en réel le 09/10, sur
+  // la toute première source créée — aucun pilote factice ne pouvait l'attraper, puisque le
+  // contexte de page n'existe que dans un vrai navigateur.
+  //
+  // On va directement sur la page visée : c'est la navigation la plus naturelle pour qui
+  // s'apprête à lire ses posts, et elle sert aussi à voir une friction sur l'URL d'arrivée
+  // (authwall, checkpoint) que le statut HTTP ne dirait pas.
+  const adresse = adresseDePage(urlPage);
+  if (adresse === null) {
+    throw new ErreurCollecte(`Adresse de page entreprise illisible : ${urlPage}`, 'PageIllisible', false);
+  }
+  await compter();
+  await pilote.aller(adresse);
+  const frictionArrivee = frictionDeLUrl(await pilote.url());
+  if (frictionArrivee) return { urns: [], arret: frictionArrivee };
 
   const urnPage = await resoudrePageEntreprise(pilote, urlPage, compter, pause, () => restantes);
 

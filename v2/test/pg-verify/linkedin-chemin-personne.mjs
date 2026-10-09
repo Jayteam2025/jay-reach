@@ -507,6 +507,79 @@ async function scoringAdresseDeduite() {
   check('70. une fois l’adresse publique connue, le même signal redevient scorable', (await compterSignauxScorables(pool, m.org)) === 1);
 }
 
+/**
+ * Lot 4b, etape 2 : une campagne qui n'envoie QUE par LinkedIn score ses personnes a adresse
+ * deduite.
+ *
+ * L'exclusion d'au-dessus vise l'EMAIL : une adresse deduite n'est ni cherchable ni
+ * enrichissable. Mais pour ecrire un message LinkedIn, l'URN suffit. Sans cette reserve, la
+ * source « posts d'un concurrent » ne produit JAMAIS rien — un post de page ne livre pas les
+ * noms publics de ses reacteurs, donc TOUTES ses personnes sont exclues. Mesure le 09/10 : 37
+ * collectees, 37 laissees en « new » pour toujours.
+ */
+async function scoringCampagneLinkedInSeule() {
+  console.log('une campagne 100 % LinkedIn score les adresses deduites : l URN suffit a ecrire');
+  const m = await monde();
+  await enregistrer(m, eng('dedu2', 'Dede Duval', 'Directeur commercial'));
+
+  // Sans sequence : la reserve ne s'applique pas, le comportement d'origine tient.
+  check('71. sans sequence, une adresse deduite n est toujours pas scoree',
+    (await compterSignauxScorables(pool, m.org)) === 0, String(await compterSignauxScorables(pool, m.org)));
+
+  // Une sequence qui n'envoie que par LinkedIn : elle devient scorable.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'linkedin_message')`, [m.campagne]);
+  check('72. avec une sequence 100 % LinkedIn, elle le devient',
+    (await compterSignauxScorables(pool, m.org)) === 1, String(await compterSignauxScorables(pool, m.org)));
+
+  // Une etape email quelque part dans la sequence, et l'exclusion revient : il faudra un email,
+  // donc un enrichissement, donc une adresse cherchable.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 1, 'email')`, [m.campagne]);
+  check('73. une seule etape email suffit a la rendre de nouveau inutile a scorer',
+    (await compterSignauxScorables(pool, m.org)) === 0, String(await compterSignauxScorables(pool, m.org)));
+
+  // Et la selection de runScore isole le MEME ensemble que le compteur : c'est la regle que la
+  // revue du 10/09 avait posee, elle doit tenir sur ce chemin aussi.
+  await q(`delete from sequence_steps where campaign_id = $1 and channel = 'email'`, [m.campagne]);
+  const juges = [];
+  const r = await runScore({
+    pool,
+    organizationId: m.org,
+    scorer: async (ps) => {
+      juges.push(...ps.map((p) => p.title));
+      return ps.map((p) => ({ id: p.id, score: 85, reason: 'ok' }));
+    },
+  });
+  check('74. le compteur et la selection isolent le meme ensemble', r.considered === 1 && juges.length === 1, `considered=${r.considered} juges=${juges.length}`);
+
+  // Scorer ne suffit pas : il faut encore ENTRER dans la campagne. `enqueueEnrollments`
+  // ecartait tout engageur sans email, sans regarder les canaux de la sequence -- une
+  // campagne 100 % LinkedIn etait donc sterile pour toujours, puisque rien ne viendra
+  // jamais remplir `ct.email` pour un engageur. Mesure le 09/10 sur la recette du lot 4b :
+  // deux engageurs qualifies a 95 et 90, jamais inscrits, sans trace ni erreur.
+  const jobs = [];
+  const boss = { insert: async (lot) => { jobs.push(...lot); } };
+  const inscrit = (id) => jobs.some((j) => j.name === 'sequence.enroll' && j.data.contactId === id && j.data.campaignId === m.campagne);
+  const contactDede = (await q(`select id from contacts where organization_id=$1 and email is null`, [m.org])).rows[0].id;
+  await enqueueEnrollments(boss, pool);
+  check('74b. dans une campagne 100 % LinkedIn, un engageur sans email EST inscrit',
+    inscrit(contactDede), JSON.stringify(jobs.map((j) => j.data.contactId)));
+
+  // Symetrique, et preuve que la garde d'origine tient toujours : une seule etape email
+  // dans la sequence, et un engageur sans email redevient retenu jusqu'a l'enrichissement.
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 1, 'email')`, [m.campagne]);
+  await enregistrer(m, eng('mina', 'Mina Mornet', 'Directrice commerciale'));
+  await runScore({ pool, organizationId: m.org, scorer: async (ps) => ps.map((pr) => ({ id: pr.id, score: 85, reason: 'ok' })) });
+  const contactMina = (await q(`select id from contacts where organization_id=$1 and first_name='Mina'`, [m.org])).rows[0].id;
+  jobs.length = 0;
+  await enqueueEnrollments(boss, pool);
+  check('74c. une etape email dans la sequence, et l engageur sans email attend son adresse',
+    !inscrit(contactMina), JSON.stringify(jobs.map((j) => j.data.contactId)));
+
+  // Le troisieme etage de la meme regle -- ne pas ACHETER d'adresse a une campagne qui
+  // n'en enverra jamais -- se verifie dans linkedin-enrichissement.sh (section 12), seul
+  // harnais a monter le vrai pg-boss que le producteur d'achat interroge.
+}
+
 async function entreprise() {
   console.log('le chemin entreprise ne bouge pas');
   const m = await monde();
@@ -759,7 +832,7 @@ async function rls() {
 }
 
 try {
-  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
+  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, scoringCampagneLinkedInSeule, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

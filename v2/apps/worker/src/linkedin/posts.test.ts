@@ -57,11 +57,17 @@ const COQUILLE = '<!DOCTYPE html><html><head><script>!function(i,n){}(document,w
 /** Une pause factice : les tests ne doivent pas attendre les cinq secondes reelles. */
 const sansAttendre = async () => undefined;
 
-function piloteFactice(reponses: Array<{ statut: number; corps: string }>): { p: Pilote; urls: string[] } {
+function piloteFactice(
+  reponses: Array<{ statut: number; corps: string }>,
+  urlApresNavigation = 'https://www.linkedin.com/company/ma-cible/',
+): { p: Pilote; urls: string[]; navigations: string[] } {
   const urls: string[] = [];
+  const navigations: string[] = [];
   const p = {
-    aller: async () => undefined,
-    url: async () => 'https://www.linkedin.com/',
+    aller: async (u: string) => {
+      navigations.push(u);
+    },
+    url: async () => urlApresNavigation,
     saisir: async () => undefined,
     presserEntree: async () => undefined,
     texte: async () => '',
@@ -72,7 +78,7 @@ function piloteFactice(reponses: Array<{ statut: number; corps: string }>): { p:
     },
     fermer: async () => undefined,
   } as unknown as Pilote;
-  return { p, urls };
+  return { p, urls, navigations };
 }
 
 describe('idSocieteDepuisHtml', () => {
@@ -370,17 +376,48 @@ describe('trouverPostsDePage', () => {
   });
 
   it('s arrete au budget de requetes sans rien perdre', async () => {
-    // Deux requetes de budget : la resolution en prend une, il en reste une pour les posts.
+    // Trois requetes de budget : la navigation en prend une, la resolution une, il en reste une
+    // pour une seule page de posts.
     const { p, urls } = piloteFactice([html, lot([1, 2], 99, 0), lot([3, 4], 99, 2)]);
     const r = await trouverPostsDePage(p, url, {
       dejaTraites: new Set(),
-      budget: { requetesRestantes: 2, postsRestants: 50 },
+      budget: { requetesRestantes: 3, postsRestants: 50 },
       surRequete: async () => undefined,
       pause: sansAttendre,
     });
     expect(r.urns).toEqual([page(1), page(2)]);
     expect(r.arret).toBe('plafond');
     expect(urls).toHaveLength(2);
+  });
+
+  // Le defaut mesure en reel le 09/10 : sans navigation prealable, `pilote.requete` part en
+  // `same-origin` depuis about:blank, leve une DOMException, et le passage s'arrete des la
+  // premiere requete. Aucun pilote factice ne pouvait l'attraper — ce test-ci garde au moins
+  // que la navigation a lieu, et qu'elle precede le premier appel Voyager.
+  it('va sur la page LinkedIn AVANT d appeler Voyager', async () => {
+    const { p, urls, navigations } = piloteFactice([html, lot([1], 1, 0)]);
+    await trouverPostsDePage(p, 'https://www.linkedin.com/company/ma-cible/posts/?x=1', {
+      dejaTraites: new Set(),
+      budget: { requetesRestantes: 10, postsRestants: 10 },
+      surRequete: async () => undefined,
+      pause: sansAttendre,
+    });
+    // Adresse RECONSTRUITE depuis le nom public : une adresse saisie n envoie jamais le
+    // navigateur ailleurs que sur linkedin.com.
+    expect(navigations).toEqual(['https://www.linkedin.com/company/ma-cible/']);
+    expect(urls.length).toBeGreaterThan(0);
+  });
+
+  it('une arrivee sur l authwall est une friction, pas une panne', async () => {
+    const { p, urls } = piloteFactice([html], 'https://www.linkedin.com/authwall?x=1');
+    const r = await trouverPostsDePage(p, url, {
+      dejaTraites: new Set(),
+      budget: { requetesRestantes: 10, postsRestants: 10 },
+      surRequete: async () => undefined,
+      pause: sansAttendre,
+    });
+    expect(r.arret).toEqual({ type: 'cookie_refuse' });
+    expect(urls).toHaveLength(0);
   });
 
   it('un budget deja epuise ne fait partir aucune requete', async () => {

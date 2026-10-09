@@ -279,6 +279,49 @@ export function sqlAdresseResolvable(contact: FragmentSql, prefixeDeduit: Fragme
   return `(${contact}.linkedin_provider_id is null or ${contact}.linkedin_url <> ${prefixeDeduit} || ${contact}.linkedin_provider_id)`;
 }
 
+/**
+ * « Cette campagne a une séquence CONNUE, et cette séquence n'envoie aucun email. »
+ *
+ * Trois étages décident quelque chose à partir de l'adresse email d'un engageur, et les trois
+ * se trompaient de la même façon : ils posaient leur règle sans regarder par quel canal la
+ * campagne écrit. Pour un engageur, l'adresse ne vient JAMAIS — ni LinkedIn ni FullEnrich ne la
+ * résolvent quand le profil n'a livré qu'un URN. Une campagne 100 % LinkedIn était donc stérile
+ * pour toujours, alors que l'URN suffit à lui écrire.
+ *
+ *  - le SCORING ne payait pas de jetons pour une adresse déduite (`conditionSourceScorable`) ;
+ *  - l'INSCRIPTION n'inscrivait pas un contact sans email (`enqueueEnrollments`) ;
+ *  - l'ENRICHISSEMENT achetait une adresse dont personne n'avait besoin
+ *    (`enqueueEnrichmentContactsConnus`).
+ *
+ * La séquence doit EXISTER : une campagne sans aucune étape ne dit pas par quel canal elle
+ * écrira, et la traiter comme « 100 % LinkedIn » ferait scorer, inscrire et contacter à
+ * l'aveugle. Une définition unique plutôt que trois copies — elles auraient divergé, et les
+ * trois étages doivent isoler exactement le même ensemble de personnes.
+ *
+ * @param campagne alias ou expression SQL qui donne l'id de la campagne (`c.id`)
+ */
+export function sqlCampagneSansEmail(campagne: FragmentSql): string {
+  return `(exists (select 1 from public.sequence_steps st where st.campaign_id = ${campagne})
+            and not exists (select 1 from public.sequence_steps st
+                             where st.campaign_id = ${campagne} and st.channel = 'email'))`;
+}
+
+/**
+ * La même question, posée à l'échelle d'une SOURCE : toutes les campagnes qui l'utilisent ont
+ * une séquence connue, et aucune n'envoie d'email. Le scoring et l'enrichissement partent d'un
+ * signal, qui connaît sa source mais pas sa campagne ; une source partagée par deux campagnes
+ * dont l'une écrit des emails garde donc le comportement d'origine — il faudra une adresse.
+ *
+ * @param source alias ou expression SQL qui donne l'id de la source (`s.source_id`)
+ */
+export function sqlSourceSansEmail(source: FragmentSql): string {
+  const jointure = `from public.campaign_sources cs
+                      join public.sequence_steps st on st.campaign_id = cs.campaign_id
+                     where cs.source_id = ${source}`;
+  return `(exists (select 1 ${jointure})
+            and not exists (select 1 ${jointure} and st.channel = 'email'))`;
+}
+
 /** Empreinte (sha256 hexadécimal) d'un `external_id` : ce que `linkedin_engageurs_ecartes` stocke. */
 export function empreinteEngageur(externalId: string): string {
   return createHash('sha256').update(externalId, 'utf8').digest('hex');

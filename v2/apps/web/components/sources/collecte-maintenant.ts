@@ -1,3 +1,4 @@
+import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import type { CampaignStatus } from '@jay-reach/core';
 
 export interface EtatCollecteMaintenant {
@@ -25,4 +26,20 @@ export function etatCollecteMaintenant(
   if (!source) return { actif: false, bandeauBrouillon: false, cleAide: 'collectNowUnsaved' };
   if (!source.active) return { actif: false, bandeauBrouillon: false, cleAide: 'collectNowPaused' };
   return { actif: true, bandeauBrouillon: false, cleAide: null };
+}
+
+/**
+ * Ce type de source est-il collecté par le serveur ?
+ *
+ * C'est la question qui décide du bouton « Collecter maintenant » ET du bandeau « la lecture des
+ * profils démarrera dès que le canal sera actif ». Elle vit ici, nommée et testée, parce qu'elle
+ * était écrite en dur sur `linkedin_post_engagers` dans le tiroir : une source « posts d'un
+ * concurrent » n'avait aucun moyen de lancer un passage, et lisait un bandeau qui annonçait une
+ * collecte à venir alors qu'elle était livrée et que le canal tournait.
+ *
+ * Une seule liste, la même que celle du worker : brancher un type de plus le rend collectable
+ * partout d'un coup, ou nulle part — jamais à moitié.
+ */
+export function collecteServeurDisponible(providerId: string): boolean {
+  return TYPES_LINKEDIN_COLLECTES.includes(providerId);
 }

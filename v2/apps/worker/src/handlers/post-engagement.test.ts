@@ -399,11 +399,24 @@ describe('score', () => {
 });
 
 describe('garde-fous du chemin entreprise et de la purge', () => {
-  it('enqueueEnrollments n\'inscrit pas un engageur sans email', async () => {
+  // L'inscription d'un engageur sans email dependait d'une clause SQL que ce fichier
+  // verifiait par une expression reguliere sur le texte de la requete, pool factice a
+  // l'appui : la regle n'etait jamais EXECUTEE. Elle a change le 09/10 (une campagne
+  // 100 % LinkedIn n'attend aucun email et restait sterile pour toujours), et le test
+  // n'a su dire que « le texte ne correspond plus ». Il est remplace par une preuve par
+  // execution, sur un vrai Postgres, dans test/pg-verify/linkedin-chemin-personne.mjs :
+  //   25.  sans sequence connue, un engageur sans email n'est pas inscrit
+  //   25b. son email pose par l'enrichissement, il l'est
+  //   74b. dans une sequence 100 % LinkedIn, il l'est sans email
+  //   74c. une seule etape email dans la sequence, et il attend de nouveau son adresse
+  it('enqueueEnrollments lit la sequence de la campagne pour decider d\'un engageur sans email', async () => {
     const requetes: string[] = [];
     const pool = { query: vi.fn(async (sql: string) => { requetes.push(sql); return { rows: [], rowCount: 0 }; }) } as unknown as Pool;
     await enqueueEnrollments({ insert: vi.fn() } as never, pool);
-    expect(requetes[0]).toMatch(/not \(s\.kind = 'post_engagement' and ct\.email is null\)/);
+    // Seule assertion qui garde un sens ici : la decision regarde bien la sequence. Ce
+    // qu'elle en DEDUIT est prouve par le harnais, pas par une regex.
+    expect(requetes[0]).toMatch(/sequence_steps/);
+    expect(requetes[0]).toMatch(/post_engagement/);
   });
 
   it('persistEnrichedContact rend null, sans lever, quand l\'adresse LinkedIn appartient deja a un autre contact', async () => {
