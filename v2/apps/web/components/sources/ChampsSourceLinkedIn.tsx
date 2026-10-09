@@ -1,6 +1,5 @@
 'use client';
 
-import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import { Champ } from '../ui';
 import { CaseACocher } from './CaseACocher';
 
@@ -11,10 +10,8 @@ export type TypeLinkedIn =
   | 'linkedin_keywords'
   | 'linkedin_job_change';
 
-/** État des champs communs aux quatre sous-types LinkedIn, PLUS ceux propres à chacun (en pratique, seuls ceux du sous-type affiché sont lus par `construireConfigLinkedIn`). */
+/** État des champs communs aux sous-types LinkedIn, PLUS ceux propres à chacun (en pratique, seuls ceux du sous-type affiché sont lus par `construireConfigLinkedIn`). */
 export interface EtatChampsLinkedIn {
-  readonly compteId: string;
-  readonly profilsParJour: string;
   readonly urlPost: string;
   /** Persona de la source d'engageurs : n'a de sens que si la campagne en porte plusieurs. */
   readonly personaId: string;
@@ -23,7 +20,6 @@ export interface EtatChampsLinkedIn {
   readonly pagesConcurrentes: string;
   readonly profilsCreateurs: string;
   readonly sujets: string;
-  readonly depuisJours: string;
 }
 
 function listeVersTexte(v: unknown): string {
@@ -45,8 +41,6 @@ function texteVersListe(t: string): string[] {
  */
 export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> = {}): EtatChampsLinkedIn {
   return {
-    compteId: typeof config.compteId === 'string' ? config.compteId : '',
-    profilsParJour: typeof config.profilsParJour === 'number' ? String(config.profilsParJour) : '40',
     urlPost: typeof config.urlPost === 'string' ? config.urlPost : '',
     personaId: typeof config.personaId === 'string' ? config.personaId : '',
     garderCommente: Array.isArray(config.garder) ? config.garder.includes('commente') : true,
@@ -54,13 +48,11 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     pagesConcurrentes: listeVersTexte(config.pagesConcurrentes),
     profilsCreateurs: listeVersTexte(config.profilsCreateurs),
     sujets: listeVersTexte(config.sujets),
-    depuisJours: typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
   };
 }
 
 /** Construit la `config` envoyée à `creerSource`/`modifierSource` (schémas `configLinkedIn*`, `packages/core/src/fonctions/sources.ts`) : uniquement les clés du sous-type choisi, jamais celles des trois autres. */
 export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn): Record<string, unknown> {
-  const commun = { compteId: etat.compteId, profilsParJour: Number(etat.profilsParJour) || 40 };
   switch (providerId) {
     case 'linkedin_post_engagers': {
       const garder: string[] = [];
@@ -96,15 +88,14 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       // Même collecteur côté serveur : ni compte ni cadence, des mots-clés et le persona.
       return { sujets: texteVersListe(etat.sujets), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     case 'linkedin_job_change':
-      return { ...commun, depuisJours: Number(etat.depuisJours) || 90 };
+      // Aucun réglage propre : la source relit les contacts déjà connus, au rythme des plafonds.
+      return etat.personaId ? { personaId: etat.personaId } : {};
   }
 }
 
 /** Champ requis du sous-type (en plus du compte LinkedIn, commun aux trois autres) rempli — condition d'activation du bouton d'enregistrement. */
 /** `nbPersonas` : personas de la campagne ; au-delà d'un, le persona de la source est obligatoire (règle serveur de `creerSource`). */
 export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn, nbPersonas = 0): boolean {
-  // Le compte n'est demandé que par les types qui n'ont pas encore de collecteur serveur.
-  if (!TYPES_LINKEDIN_COLLECTES.includes(providerId) && !etat.compteId.trim()) return false;
   switch (providerId) {
     case 'linkedin_post_engagers':
       return (
@@ -127,7 +118,7 @@ export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChamps
     case 'linkedin_keywords':
       return texteVersListe(etat.sujets).length > 0 && (nbPersonas <= 1 || etat.personaId.length > 0);
     case 'linkedin_job_change':
-      return true;
+      return nbPersonas <= 1 || etat.personaId.length > 0;
   }
 }
 
@@ -143,9 +134,7 @@ export interface ChampsSourceLinkedInLibelles {
   readonly creatorProfilesHint: string;
   readonly topics: string;
   readonly topicsHint: string;
-  readonly sinceDays: string;
-  readonly accountId: string;
-  readonly profilesPerDay: string;
+  readonly jobChangeHint: string;
   /** Seulement si `personas` est fourni (campagne à plusieurs personas). */
   readonly persona?: string;
   readonly personaChoisir?: string;
@@ -169,7 +158,7 @@ export interface ChampsSourceLinkedInProps {
 }
 
 /**
- * Champs propres aux quatre sous-types LinkedIn (maquette
+ * Champs propres aux cinq sous-types LinkedIn (maquette
  * `tiroir-source-linkedin.html`) — partie PURE (valeur/onChange) extraite de
  * `TiroirSourceLinkedIn` pour être réutilisée par l'assistant de création de
  * campagne (R57) sans copie : ni tiroir, ni bouton d'enregistrement, ni appel
@@ -289,39 +278,10 @@ export function ChampsSourceLinkedIn({
         </>
       )}
       {providerId === 'linkedin_job_change' && (
-        <Champ libelle={libelles.sinceDays} id={`${idPrefix}-since-days`}>
-          <input
-            id={`${idPrefix}-since-days`}
-            name="depuisJours"
-            value={etat.depuisJours}
-            onChange={(e) => onChange({ depuisJours: e.target.value })}
-            disabled={disabled}
-            placeholder="90"
-          />
-        </Champ>
-      )}
-      {!TYPES_LINKEDIN_COLLECTES.includes(providerId) && (
-      <div className="ligne">
-        <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
-          <input
-            id={`${idPrefix}-account-id`}
-            name="compteId"
-            value={etat.compteId}
-            onChange={(e) => onChange({ compteId: e.target.value })}
-            disabled={disabled}
-          />
-        </Champ>
-        <Champ libelle={libelles.profilesPerDay} id={`${idPrefix}-profiles-per-day`}>
-          <input
-            id={`${idPrefix}-profiles-per-day`}
-            name="profilsParJour"
-            value={etat.profilsParJour}
-            onChange={(e) => onChange({ profilsParJour: e.target.value })}
-            disabled={disabled}
-            placeholder="40"
-          />
-        </Champ>
-      </div>
+        <>
+          <p className="jr-aide">{libelles.jobChangeHint}</p>
+          {choixPersona}
+        </>
       )}
     </>
   );

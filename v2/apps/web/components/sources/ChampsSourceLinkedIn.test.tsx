@@ -26,9 +26,6 @@ const VIDE: EtatChampsLinkedIn = {
   pagesConcurrentes: '',
   profilsCreateurs: '',
   sujets: '',
-  depuisJours: '',
-  compteId: '',
-  profilsParJour: '',
 };
 
 describe('source « posts d’un concurrent »', () => {
@@ -142,18 +139,21 @@ describe('source « recherche par mot-clé »', () => {
   });
 });
 
-describe('les types sans collecteur serveur gardent leurs anciens champs', () => {
-  it('le changement de poste exige toujours un compte LinkedIn', () => {
-    expect(champsLinkedInValides('linkedin_job_change', VIDE)).toBe(false);
-    expect(champsLinkedInValides('linkedin_job_change', { ...VIDE, compteId: 'c1' })).toBe(true);
+describe('source « changement de poste »', () => {
+  it('n’envoie aucun réglage : ni compte, ni cadence, ni ancienneté', () => {
+    expect(construireConfigLinkedIn('linkedin_job_change', VIDE)).toEqual({});
+    expect(construireConfigLinkedIn('linkedin_job_change', { ...VIDE, personaId: 'p1' })).toEqual({ personaId: 'p1' });
   });
 
-  it('et il garde son compte et sa cadence à l’écran', () => {
-    expect(construireConfigLinkedIn('linkedin_job_change', { ...VIDE, compteId: 'c1', depuisJours: '30' })).toEqual({
-      compteId: 'c1',
-      profilsParJour: 40,
-      depuisJours: 30,
-    });
+  it('n’exige rien d’autre que le persona, dès que la campagne en porte plusieurs', () => {
+    expect(champsLinkedInValides('linkedin_job_change', VIDE)).toBe(true);
+    expect(champsLinkedInValides('linkedin_job_change', VIDE, 2)).toBe(false);
+    expect(champsLinkedInValides('linkedin_job_change', { ...VIDE, personaId: 'p1' }, 2)).toBe(true);
+  });
+
+  it('se reconstitue depuis une config stockée (édition), les vestiges de l’extension ignorés', () => {
+    const etat = etatChampsLinkedInDepuisConfig({ personaId: 'p1', compteId: 'ancien', profilsParJour: 40, depuisJours: 90 });
+    expect(etat).toEqual({ ...VIDE, garderCommente: true, garderReagi: true, personaId: 'p1' });
   });
 });
 
@@ -177,9 +177,7 @@ describe('le formulaire rendu', () => {
     creatorProfilesHint: d.creatorProfilesHint,
     topics: d.topics,
     topicsHint: d.topicsHint,
-    sinceDays: d.sinceDays,
-    accountId: d.accountId,
-    profilesPerDay: d.profilesPerDay,
+    jobChangeHint: d.jobChangeHint,
     persona: d.persona,
     personaChoisir: d.personaChoisir,
   };
@@ -235,10 +233,23 @@ describe('le formulaire rendu', () => {
     expect(html).toContain('Directeur commercial');
   });
 
-  it('les types sans collecteur serveur gardent leur compte et leur cadence', () => {
+  // Le libellé doit dire la vérité : cette source ne trouve personne, elle surveille des contacts
+  // déjà connus. Le texte vient de fr.json, comme l'écran.
+  it('le changement de poste dit qu’il surveille des contacts déjà connus, sans compte, cadence ni champ de saisie', () => {
     const html = rendre('linkedin_job_change');
-    expect(html).toContain('name="compteId"');
-    expect(html).toContain('name="profilsParJour"');
+    expect(html).toContain(libelles.jobChangeHint);
+    expect(libelles.jobChangeHint).toContain('ne trouve personne de nouveau');
+    expect(libelles.jobChangeHint).toContain('contacts que vous avez déjà');
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('name="compteId"');
+    expect(html).not.toContain('name="profilsParJour"');
+    expect(html).not.toContain('name="depuisJours"');
+    expect(html).not.toContain(libelles.keepPeople);
+  });
+
+  it('le changement de poste demande le persona dès que la campagne en porte plusieurs', () => {
+    expect(rendre('linkedin_job_change')).not.toContain('name="personaId"');
+    expect(rendre('linkedin_job_change', [{ id: 'p1', nom: 'Directeur commercial' }, { id: 'p2', nom: 'DRH' }])).toContain('name="personaId"');
   });
 
   it('la recherche par mot-clé demande ses mots-clés, avec leur aide, sans compte ni cadence', () => {
@@ -264,21 +275,22 @@ describe('le formulaire rendu', () => {
  * et lui affichait « la lecture demarrera des que le canal sera actif » alors qu'il l'est.
  */
 describe('les types collectes par le serveur', () => {
-  it('sont les trois sources d’engageurs et la recherche par mot-clé, et elles seules', () => {
+  it('sont les cinq types LinkedIn : les trois sources d’engageurs, la recherche par mot-clé et le changement de poste', () => {
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_post_engagers')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_competitor_posts')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_creator_posts')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_keywords')).toBe(true);
-    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_job_change')).toBe(false);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_job_change')).toBe(true);
+    expect(TYPES_LINKEDIN_COLLECTES).toHaveLength(5);
   });
 
   // Le lien qui compte : l'ecran de saisie et l'ecran de collecte doivent repondre la MEME chose.
-  // Tant qu'ils avaient chacun leur liste, une source se saisissait sans compte LinkedIn mais
-  // n'avait aucun bouton pour partir.
-  it('decident aussi des champs du formulaire : une seule liste pour les deux ecrans', () => {
+  // Les cinq types etant collectes par le serveur, aucun ne demande plus de compte LinkedIn :
+  // chacun est valide des que ses champs propres sont remplis.
+  it('aucun type ne demande plus de compte : valide des que ses champs propres sont remplis', () => {
     for (const type of ['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_creator_posts', 'linkedin_keywords', 'linkedin_job_change'] as const) {
-      const demandeLeCompte = !champsLinkedInValides(type, { ...VIDE, urlPost: 'x', pagesConcurrentes: 'x', profilsCreateurs: 'x', sujets: 'x', garderReagi: true });
-      expect(demandeLeCompte).toBe(!TYPES_LINKEDIN_COLLECTES.includes(type));
+      expect(TYPES_LINKEDIN_COLLECTES.includes(type)).toBe(true);
+      expect(champsLinkedInValides(type, { ...VIDE, urlPost: 'x', pagesConcurrentes: 'x', profilsCreateurs: 'x', sujets: 'x', garderReagi: true })).toBe(true);
     }
   });
 });

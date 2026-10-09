@@ -56,14 +56,15 @@ describe('etatCollecteMaintenant', () => {
  * annoncait une collecte a venir alors qu'elle tournait.
  */
 describe('collecteServeurDisponible', () => {
-  it('les sources d’engageurs et la recherche par mot-clé sont collectees par le serveur', () => {
+  it('les sources d’engageurs, la recherche par mot-clé et le changement de poste sont collectes par le serveur', () => {
     expect(collecteServeurDisponible('linkedin_post_engagers')).toBe(true);
     expect(collecteServeurDisponible('linkedin_competitor_posts')).toBe(true);
     expect(collecteServeurDisponible('linkedin_creator_posts')).toBe(true);
     expect(collecteServeurDisponible('linkedin_keywords')).toBe(true);
+    expect(collecteServeurDisponible('linkedin_job_change')).toBe(true);
   });
 
-  it('les types sans collecteur ne le sont pas', () => {
-    expect(collecteServeurDisponible('linkedin_job_change')).toBe(false);
+  it('un type qui n’est pas LinkedIn n’est pas collecte par ce chemin', () => {
+    expect(collecteServeurDisponible('adzuna')).toBe(false);
   });
 });

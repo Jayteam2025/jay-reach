@@ -268,6 +268,19 @@ describe('le sous-titre d’une source « recherche par mot-clé »', () => {
   });
 });
 
+describe('le sous-titre d’une source « changement de poste »', () => {
+  const carte = (config: Record<string, unknown>) =>
+    ({ providerId: 'linkedin_job_change', config }) as unknown as SourceCarte;
+
+  it('dit sur qui elle porte, pas un tiret : les contacts déjà connus', () => {
+    expect(sousTitreDe(carte({}), fabriquerT())).toBe('Contacts déjà connus');
+  });
+
+  it('ignore les vestiges de l’extension : ni compte ni cadence ne s’affichent', () => {
+    expect(sousTitreDe(carte({ compteId: 'ancien', profilsParJour: 40, depuisJours: 90 }), fabriquerT())).toBe('Contacts déjà connus');
+  });
+});
+
 describe('le sous-titre d’une source « posts d’un concurrent »', () => {
   const carte = (config: Record<string, unknown>) =>
     ({ providerId: 'linkedin_competitor_posts', config }) as unknown as SourceCarte;

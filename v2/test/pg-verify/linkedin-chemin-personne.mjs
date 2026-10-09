@@ -33,6 +33,7 @@ import {
   normaliserUrlPost,
   KINDS_PERSONNE,
   sqlPredicatUniciteDePersonne,
+  enregistrerChangementDePoste,
 } from './_linkedin-chemin-personne-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -843,6 +844,51 @@ try {
  * part avant : ni le typage, ni les tests unitaires, ni la CI ne le voient. Le piège s'est posé
  * deux fois dans la même journée (people_search, puis job_change).
  */
+/**
+ * La garde du « sans intitulé connu » est-elle dans la FONCTION, et pas seulement chez son
+ * appelant ?
+ *
+ * Elle décide d'un réveil, donc d'un envoi. Posée chez l'appelant, elle ne protège que celui-là :
+ * le prochain collecteur qui voudrait réveiller des contacts écrirait à tout un fichier importé
+ * sans titre, parce que « null » n'est pas un ancien poste. L'asymétrie décide — réveiller à tort
+ * écrit à quelqu'un sans raison, ne pas réveiller fait seulement rater une occasion.
+ */
+async function gardeDuChangementDePoste() {
+  console.log('la garde du changement de poste vit dans la fonction qui cree le signal');
+  const m = await monde({ avecPrompt: false });
+  const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
+  const creerContact = async (titre) => (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, job_title, linkedin_url)
+     values ($1,$2,$3,'Ada','Lemercier',$4,$5) returning id`,
+    [m.org, compte, m.persona, titre, `https://www.linkedin.com/in/ada-${Date.now()}${Math.random().toString(36).slice(2, 8)}`],
+  )).rows[0].id;
+  const signaux = async (c) => (await q(
+    `select count(*)::int n from signals s join contacts ct on ct.source_signal_id = s.id where ct.id = $1 and s.kind = 'job_change'`, [c],
+  )).rows[0].n;
+
+  // 1. Sans intitulé connu : AUCUN signal, et le lu devient la référence.
+  const sansTitre = await creerContact(null);
+  const issue1 = await enregistrerChangementDePoste(
+    m.ctx, { contactId: sansTitre, ancienIntitule: null, nouvelIntitule: 'Directrice commerciale', urlProfil: 'https://www.linkedin.com/in/ada/' }, { personaId: m.persona });
+  const fiche1 = (await q(`select job_title, linkedin_verifie_le from contacts where id = $1`, [sansTitre])).rows[0];
+  check('91. sans intitule connu, la fonction ne cree aucun signal', issue1 === 'inchange' && (await signaux(sansTitre)) === 0, String(issue1));
+  check('91b. mais elle pose l intitule lu comme reference, et marque la verification',
+    fiche1.job_title === 'Directrice commerciale' && fiche1.linkedin_verifie_le !== null, JSON.stringify(fiche1));
+
+  // 2. Un vrai changement, lui, cree bien le signal et fait pointer la fiche dessus.
+  const avecTitre = await creerContact('Directrice regionale');
+  const issue2 = await enregistrerChangementDePoste(
+    m.ctx, { contactId: avecTitre, ancienIntitule: 'Directrice regionale', nouvelIntitule: 'Directrice generale', urlProfil: 'https://www.linkedin.com/in/ada2/' }, { personaId: m.persona });
+  const fiche2 = (await q(`select job_title from contacts where id = $1`, [avecTitre])).rows[0];
+  check('92. un vrai changement cree le signal et la fiche pointe dessus',
+    issue2 === 'change' && (await signaux(avecTitre)) === 1 && fiche2.job_title === 'Directrice generale', String(issue2));
+
+  // 3. Le meme changement, revu au passage suivant, ne cree pas un second signal.
+  const issue3 = await enregistrerChangementDePoste(
+    m.ctx, { contactId: avecTitre, ancienIntitule: 'Directrice generale', nouvelIntitule: 'Directrice generale', urlProfil: 'https://www.linkedin.com/in/ada2/' }, { personaId: m.persona });
+  check('93. le meme intitule revu ne cree pas un second signal', issue3 === 'inchange' && (await signaux(avecTitre)) === 1, String(issue3));
+}
+
 async function uniciteDesPersonnes() {
   console.log('l index unique des signaux de personne suit la famille');
   const idx = (await q(
@@ -879,7 +925,7 @@ async function uniciteDesPersonnes() {
   }
 }
 
-  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, scoringCampagneLinkedInSeule, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls, uniciteDesPersonnes);
+  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, scoringCampagneLinkedInSeule, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls, uniciteDesPersonnes, gardeDuChangementDePoste);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

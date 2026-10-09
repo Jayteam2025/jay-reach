@@ -228,6 +228,24 @@ export async function enregistrerChangementDePoste(
   const { pool, organizationId: org } = ctx;
   const nouveau = entree.nouvelIntitule.trim();
   if (nouveau.length === 0) return 'inchange';
+
+  // AUCUN intitulé connu : il n'y a rien à comparer, donc rien à déclarer. L'intitulé lu devient
+  // simplement la référence.
+  //
+  // La garde est ICI, dans la fonction qui crée le signal, et non chez l'appelant : c'est elle
+  // qui déclenche un réveil, donc un envoi. Posée chez l'appelant, elle ne protégerait que
+  // celui-là, et le prochain collecteur qui voudrait réveiller des contacts ferait partir un
+  // message à tout un fichier importé sans titre — « null » n'est pas un ancien poste.
+  // L'asymétrie décide : réveiller à tort écrit à quelqu'un sans raison, ne pas réveiller fait
+  // seulement rater une occasion.
+  if ((entree.ancienIntitule ?? '').trim().length === 0) {
+    await pool.query(
+      `update contacts set job_title = coalesce(job_title, $3), linkedin_verifie_le = now()
+        where id = $2 and organization_id = $1`,
+      [org, entree.contactId, nouveau],
+    );
+    return 'inchange';
+  }
   if (normaliserIntitule(entree.ancienIntitule ?? '') === normaliserIntitule(nouveau)) return 'inchange';
 
   return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<IssueChangement> => {

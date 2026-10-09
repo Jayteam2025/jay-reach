@@ -28,7 +28,7 @@ export function marquesDe(providerIds: SourceCarte['providerIds']): TuileLogoMar
  */
 export function sousTitreDe(carte: SourceCarte, t: Traducteur): string {
   if (carte.providerId !== 'adzuna' && carte.providerId !== 'france_travail') {
-    const config = carte.config as { compteId?: string; pagesConcurrentes?: string[]; profilsCreateurs?: string[]; sujets?: string[] };
+    const config = carte.config as { pagesConcurrentes?: string[]; profilsCreateurs?: string[]; sujets?: string[] };
     // La source « posts d'un concurrent » n'a plus de `compteId` (un seul compte LinkedIn par
     // instance) : sans ça, sa carte affichait un tiret là où l'opérateur attend de voir QUI il
     // suit. On y met les noms publics des pages, qui tiennent sur une ligne — l'adresse complète
@@ -45,7 +45,9 @@ export function sousTitreDe(carte: SourceCarte, t: Traducteur): string {
     // Et pour la recherche par mot-clé : les mots-clés eux-mêmes.
     const sujets = (config.sujets ?? []).filter((v) => v.length > 0);
     if (sujets.length > 0) return sujets.join(', ');
-    return config.compteId ?? '—';
+    // Le changement de poste n'a ni entrée ni réglage : on dit sur qui il porte, pas un tiret.
+    if (carte.providerId === 'linkedin_job_change') return t('card.jobChangeSubtitle');
+    return '—';
   }
   const config = configFormulaireDepuisStockee(carte.providerId, carte.config) as {
     lieux: string[];
@@ -135,7 +137,6 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
     pagesConcurrentes?: string[];
     profilsCreateurs?: string[];
     sujets?: string[];
-    depuisJours?: number;
   };
   const blocs: BlocCarteSource[] = [];
   // « Qui garder » vaut pour les deux sources d'engageurs : c'est le même collecteur derrière,
@@ -171,11 +172,6 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
     blocs.push({
       libelle: t('drawer.topics'),
       contenu: <ListePuces valeurs={config.sujets ?? []} />,
-    });
-  } else if (carte.providerId === 'linkedin_job_change') {
-    blocs.push({
-      libelle: t('drawer.sinceDays'),
-      contenu: <span>{config.depuisJours ?? 90}</span>,
     });
   }
   if (carte.providerId === 'linkedin_post_engagers') {

@@ -50,12 +50,11 @@ const CLE_TITRE: Record<TypeLinkedIn, string> = {
 };
 
 /**
- * Tiroir des quatre types LinkedIn (maquette `tiroir-source-linkedin.html`) :
- * réglables tous les quatre, mais seuls les engageurs d'un post sont collectés
- * par le serveur (lot 4a) : eux portent le bouton « Collecter maintenant » et,
+ * Tiroir des types LinkedIn (maquette `tiroir-source-linkedin.html`) : les cinq sont
+ * collectés par le serveur et portent le bouton « Collecter maintenant » et,
  * sur une campagne en brouillon, le bandeau qui dit que rien ne partira avant
- * le lancement. Les trois autres gardent l'avertissement « en attente du
- * canal » (`collecteImplementee`, `packages/core/src/fonctions/sources.ts`).
+ * le lancement. L'avertissement « en attente du canal » ne sert plus qu'à un type
+ * pas encore branché (`collecteImplementee`, `packages/core/src/fonctions/sources.ts`).
  * Un seul sous-formulaire à
  * la fois (le type vient du menu qui a ouvert ce tiroir), pas d'onglets
  * internes pour prévisualiser les quatre variantes comme la maquette.
@@ -176,9 +175,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             creatorProfilesHint: t('drawer.creatorProfilesHint'),
             topics: t('drawer.topics'),
             topicsHint: t('drawer.topicsHint'),
-            sinceDays: t('drawer.sinceDays'),
-            accountId: t('drawer.accountId'),
-            profilesPerDay: t('drawer.profilesPerDay'),
+            jobChangeHint: t('drawer.jobChangeHint'),
             persona: t('drawer.persona'),
             personaChoisir: t('drawer.personaChoisir'),
           }}

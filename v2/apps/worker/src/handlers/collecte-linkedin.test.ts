@@ -8,7 +8,7 @@
  * qui exécute le même code de production sur un vrai Postgres.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { QUEUES } from '@jay-reach/core';
+import { QUEUES, lienProfilDeduit } from '@jay-reach/core';
 import type { Pilote } from '../linkedin/navigateur.js';
 import { lireEngageurs, type Budget } from '../linkedin/engageurs.js';
 import { MSG, traiterCollecteLinkedIn, type DependancesCollecte } from './collecte-linkedin.js';
@@ -98,7 +98,11 @@ function base(opts: {
   postsTraites?: string[];
   /** Les `external_id` des personnes que la recherche par mots-clés a déjà enregistrées pour cette source. */
   personnesEnregistrees?: string[];
+  /** Les contacts de l'organisation, pour la source « changement de poste ». L'état se met à jour comme la base. */
+  contacts?: ContactFactice[];
 }) {
+  const contacts = (opts.contacts ?? []).map((c) => ({ ...c }));
+  let horloge = 0;
   const ecritures: Ecriture[] = [];
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
   const query = async (sql: string, params: unknown[] = []) => {
@@ -151,6 +155,29 @@ function base(opts: {
     if (t.includes('jr:linkedin_collecte_recherche_vus')) {
       return rep((opts.personnesEnregistrees ?? []).map((external_id) => ({ external_id })));
     }
+    // La sélection de la rotation. Le pool factice rejoue le CONTRAT (jamais-relus d'abord, puis le
+    // moins récemment relu, au plus `limite`, adresses déduites écartées SI le préfixe est fourni) :
+    // il ne prouve pas le SQL, c'est le rôle du harnais Postgres.
+    if (t.includes('jr:linkedin_collecte_a_relire')) {
+      const limite = Number(params[1]);
+      const prefixeDeduit = params[2];
+      const lisibles = contacts.filter((c) => !(c.deduite === true && prefixeDeduit === lienProfilDeduit('')));
+      lisibles.sort((a, b) => (a.verifieLe ?? -1) - (b.verifieLe ?? -1) || a.id.localeCompare(b.id));
+      return rep(lisibles.slice(0, limite).map((c) => ({ id: c.id, linkedin_url: c.url, job_title: c.titre })));
+    }
+    if (t.includes('jr:linkedin_collecte_verifie')) {
+      ecritures.push({ sql: 'verifie', params });
+      const contact = contacts.find((c) => c.id === params[1]);
+      if (contact) {
+        contact.verifieLe = ++horloge;
+        if (!contact.titre?.trim() && typeof params[2] === 'string') contact.titre = params[2];
+      }
+      return rep([]);
+    }
+    // `enregistrerChangementDePoste` verrouille la fiche : reconnue par sa table et son verrou.
+    if (t.includes('from contacts') && t.includes('for update')) {
+      return rep(contacts.some((c) => c.id === params[1]) ? [{ id: params[1] }] : []);
+    }
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_requete_tracer')) {
       ecritures.push({ sql: 'tracer', params });
@@ -168,7 +195,17 @@ function base(opts: {
     return rep([]);
   };
   const pool = { query, connect: async () => ({ query, release: () => undefined }) };
-  return { pool, ecritures };
+  return { pool, ecritures, contacts };
+}
+
+/** Un contact de la base factice : de quoi l'ordonner, le relire et le comparer. */
+interface ContactFactice {
+  readonly id: string;
+  readonly url: string;
+  titre: string | null;
+  verifieLe: number | null;
+  /** Adresse fabriquée depuis un URN : ne mène à aucune page lisible. */
+  readonly deduite?: boolean;
 }
 
 function deps(
@@ -683,5 +720,248 @@ describe('la source « recherche par mot-clé »', () => {
     expect(c.params[2]).toBe('success');
     expect(signaux(b)).toEqual(['erp:leo-exemple']);
     expect(String(c.params[3])).toContain('500');
+  });
+});
+
+/**
+ * La source « changement de poste » : elle ne découvre personne. Elle relit, par roulement, des
+ * contacts DÉJÀ connus et compare l'intitulé. Le pool factice rejoue le contrat de la sélection
+ * (voir `base`) : l'ordre et l'exclusion réels vivent dans le harnais Postgres.
+ */
+describe('la source « changement de poste »', () => {
+  const sourceChangement = { sourceType: 'linkedin_job_change' };
+  /** Une page de profil : le nom dans `<title>`, l'intitulé dans le premier `<p><span>`. */
+  const profil = (nom: string, intitule: string): { statut: number; corps: string } => ({
+    statut: 200,
+    corps: `<html><head><title>${nom} | LinkedIn</title></head><body><p><span>${intitule}</span></p></body></html>`,
+  });
+  const url = (slug: string): string => `https://www.linkedin.com/in/${slug}/`;
+  const contact = (slug: string, titre: string | null, extra: Partial<ContactFactice> = {}): ContactFactice => ({
+    id: `c-${slug}`,
+    url: url(slug),
+    titre,
+    verifieLe: null,
+    ...extra,
+  });
+  const signaux = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'signal').map((e) => e.params[2]);
+  const verifies = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'verifie').map((e) => e.params[1]);
+  const sansBruit = () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  };
+  const pagesDeProfils = (parSlug: Record<string, { statut: number; corps: string }>) => (u: string) =>
+    parSlug[/\/in\/([^/]+)\//.exec(u)?.[1] ?? ''] ?? { statut: 404, corps: '' };
+
+  it('relit les contacts connus et n’enregistre un changement que pour l’intitulé qui a bougé', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [contact('ada-exemple', 'Directrice commerciale'), contact('leo-exemple', 'Directeur commercial')],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'Directrice générale'),
+        'leo-exemple': profil('Leo Exemple', 'directeur  commercial'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(signaux(b)).toEqual([`changement:${url('ada-exemple')}:directrice générale`]);
+    // vus : les deux profils relus. nouveaux : le seul changement. doublons : l'intitulé inchangé
+    // (la casse et les espaces ne font pas un changement). posts : aucun, la source n'en ouvre pas.
+    expect(c.params[4]).toBe(2);
+    expect(c.params[5]).toBe(1);
+    expect(c.params[7]).toBe(1);
+    expect(c.params[c.params.length - 1]).toBe(0);
+  });
+
+  it('arrive sur le fil avant de relire (le fetch part de la page courante), et trace chaque requête', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Directrice commerciale')] });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Directrice commerciale') }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.navigations).toEqual(['https://www.linkedin.com/feed/']);
+    expect(p.requetes).toEqual([url('ada-exemple')]);
+    // L'arrivée et la lecture : deux requêtes tracées et comptées.
+    expect(b.ecritures.filter((e) => e.sql === 'tracer')).toHaveLength(2);
+    expect(clos(b)!.params[6]).toBe(2);
+  });
+
+  it('pose linkedin_verifie_le même quand rien n’a changé, quand la lecture échoue et quand le profil est illisible', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [
+        contact('inchange', 'Directrice commerciale'),
+        contact('change', 'Directeur commercial'),
+        contact('ferme', 'Responsable ventes'),
+        contact('sans-forme', 'Responsable ventes', { url: 'https://example.com/pas-un-profil' }),
+      ],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        inchange: profil('Ada Exemple', 'Directrice commerciale'),
+        change: profil('Leo Exemple', 'Directeur général'),
+        // `ferme` : 404, profil supprimé ou fermé.
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(verifies(b).sort()).toEqual(['c-change', 'c-ferme', 'c-inchange', 'c-sans-forme']);
+    expect(b.contacts.every((c) => c.verifieLe !== null)).toBe(true);
+    // Les deux illisibles sont comptés à part, jamais pris pour un changement.
+    const c = clos(b)!;
+    expect(c.params[12]).toBe(2); // ignores
+    expect(signaux(b)).toHaveLength(1);
+    // Aucune requête pour une adresse qui n'est pas celle d'un profil.
+    expect(p.requetes.sort()).toEqual([url('change'), url('ferme'), url('inchange')]);
+  });
+
+  it('la rotation : deux passages successifs ne relisent pas les mêmes contacts', async () => {
+    sansBruit();
+    const lots = ['a', 'b', 'c', 'd'].map((s) => contact(s, 'Directrice commerciale'));
+    const b = base({ source: sourceChangement, contacts: lots, plafonds: { personnes: 2 } });
+    const reponse = pagesDeProfils(Object.fromEntries(['a', 'b', 'c', 'd'].map((s) => [s, profil('Ada Exemple', 'Directrice commerciale')])));
+    const p1 = pilote({ reponse });
+    await traiterCollecteLinkedIn(deps(p1, b), JOB);
+    const p2 = pilote({ reponse });
+    await traiterCollecteLinkedIn(deps(p2, b), JOB);
+    const p3 = pilote({ reponse });
+    await traiterCollecteLinkedIn(deps(p3, b), JOB);
+    expect(p1.requetes).toEqual([url('a'), url('b')]);
+    expect(p2.requetes).toEqual([url('c'), url('d')]);
+    // Le troisième repart du moins récemment relu : la rotation boucle, elle ne s'arrête pas.
+    expect(p3.requetes).toEqual([url('a'), url('b')]);
+  });
+
+  it('la rotation avance même quand les premiers profils sont illisibles', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [contact('ferme-1', 'X'), contact('ferme-2', 'X'), contact('ok', 'Directrice commerciale')],
+      plafonds: { personnes: 2 },
+    });
+    const reponse = pagesDeProfils({ ok: profil('Ada Exemple', 'Directrice commerciale') });
+    const p1 = pilote({ reponse });
+    await traiterCollecteLinkedIn(deps(p1, b), JOB);
+    const p2 = pilote({ reponse });
+    await traiterCollecteLinkedIn(deps(p2, b), JOB);
+    expect(p1.requetes).toEqual([url('ferme-1'), url('ferme-2')]);
+    // Sans le marquage des illisibles, le second passage relirait les deux mêmes et n'atteindrait jamais `ok`.
+    expect(p2.requetes).toEqual([url('ok'), url('ferme-1')]);
+  });
+
+  it('un contact à adresse déduite d’un URN n’est jamais relu', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [
+        contact('ACoAAexemple', 'Directrice commerciale', { deduite: true }),
+        contact('ada-exemple', 'Directrice commerciale'),
+      ],
+    });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Directrice commerciale') }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toEqual([url('ada-exemple')]);
+    expect(b.contacts.find((c) => c.deduite)!.verifieLe).toBeNull();
+  });
+
+  it('un contact sans intitulé connu prend l’intitulé lu pour référence, sans rien déclarer', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', null), contact('leo-exemple', '  ')] });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'Directrice commerciale'),
+        'leo-exemple': profil('Leo Exemple', 'Directeur commercial'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(signaux(b)).toEqual([]);
+    expect(b.contacts.map((c) => c.titre)).toEqual(['Directrice commerciale', 'Directeur commercial']);
+    expect(clos(b)!.params[5]).toBe(0);
+  });
+
+  it('le plafond de posts du jour, épuisé, ne l’arrête pas : elle ne lit aucun post', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Directrice commerciale')], plafonds: { posts: 3 }, postsDuJour: 3 });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Directrice commerciale') }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[3]).not.toBe(MSG.plafond_posts);
+    expect(p.requetes).toEqual([url('ada-exemple')]);
+  });
+
+  it('le plafond de requêtes de l’heure borne la sélection, arrivée comprise', async () => {
+    sansBruit();
+    const sl = ['a', 'b', 'c', 'd', 'e'];
+    const b = base({ source: sourceChangement, contacts: sl.map((s) => contact(s, 'X')), requetesDeLHeure: 56 });
+    const p = pilote({ reponse: pagesDeProfils(Object.fromEntries(sl.map((s) => [s, profil('Ada Exemple', 'X')]))) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    // Quatre requêtes restantes : l'arrivée en prend une, trois profils sont relus, pas cinq.
+    expect(p.requetes).toEqual([url('a'), url('b'), url('c')]);
+    expect(clos(b)!.params[6]).toBe(4);
+  });
+
+  it('le plafond de personnes par passage borne le nombre de profils relus', async () => {
+    sansBruit();
+    const sl = ['a', 'b', 'c'];
+    const b = base({ source: sourceChangement, contacts: sl.map((s) => contact(s, 'X')), plafonds: { personnes: 1 } });
+    const p = pilote({ reponse: pagesDeProfils(Object.fromEntries(sl.map((s) => [s, profil('Ada Exemple', 'X')]))) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toEqual([url('a')]);
+  });
+
+  it('sans contact à relire, le passage est à vide et le dit, sans ouvrir LinkedIn', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [] });
+    const p = pilote({});
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[3]).toBe(MSG.aucun_a_relire);
+    expect(p.navigations).toEqual([]);
+    expect(p.requetes).toEqual([]);
+  });
+
+  it('un défi sur la page d’arrivée suspend la session avant toute lecture, et ne marque personne', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Directrice commerciale')] });
+    const p = pilote({ url: 'https://www.linkedin.com/checkpoint/challenge/', reponse: () => profil('Ada Exemple', 'X') });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toEqual([]);
+    expect(bloque(b)).toContain('defi');
+    expect(b.contacts[0]!.verifieLe).toBeNull();
+  });
+
+  it('un défi en cours de route arrête tout : le contact en cause garde sa place en tête de la rotation', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [contact('ada-exemple', 'Directrice commerciale'), contact('leo-exemple', 'Directeur commercial')],
+    });
+    const p = pilote({
+      reponse: (u) => (u.includes('leo-exemple') ? { statut: 999, corps: '' } : profil('Ada Exemple', 'Directrice commerciale')),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(bloque(b)).toContain('defi');
+    expect(clos(b)!.params[2]).toBe('error');
+    expect(b.contacts.find((c) => c.id === 'c-ada-exemple')!.verifieLe).not.toBeNull();
+    expect(b.contacts.find((c) => c.id === 'c-leo-exemple')!.verifieLe).toBeNull();
+  });
+
+  it('une erreur de base pendant l’écriture ne suspend pas la session', async () => {
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Directrice commerciale')] });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Directrice commerciale') }) });
+    const sain = b.pool.query;
+    b.pool.query = async (sql: string, params: unknown[] = []) => {
+      if (String(sql).includes('jr:linkedin_collecte_verifie')) throw new Error('statement timeout');
+      return sain(sql, params);
+    };
+    await expect(traiterCollecteLinkedIn(deps(p, b), JOB)).rejects.toThrow('statement timeout');
+    expect(bloque(b)).toEqual([]);
+    // Le trafic LinkedIn est derrière nous : l'incident n'est pas un verdict sur le compte, donc il
+    // ne compte pas pour le disjoncteur (`verdict_linkedin` faux).
+    expect(clos(b)!.params[2]).toBe('error');
+    expect(clos(b)!.params[11]).toBe(false);
   });
 });

@@ -193,6 +193,26 @@ export function lireProfilCourant(html: string): ProfilCourant | null {
   return { nom, intitule: poste };
 }
 
+const URL_FIL = 'https://www.linkedin.com/feed/';
+
+/**
+ * Pose le navigateur sur LinkedIn avant de relire des profils.
+ *
+ * `lireProfil` passe par `pilote.requete`, qui est un `fetch` lancé DEPUIS la page courante :
+ * après la relève de sortie, celle-ci est `about:blank`, d'où une requête sans cookie et sans
+ * origine LinkedIn. Les autres modes y arrivent en naviguant vers leur propre cible ; relire des
+ * profils n'en a aucune, donc on ouvre le fil, comme le fait l'envoi. Rend la friction vue à
+ * l'arrivée (défi, session refusée), `null` sinon.
+ */
+export async function arriverSurLeFil(
+  pilote: Pilote,
+  surRequete: () => Promise<void>,
+): Promise<Exclude<ArretCollecte, 'fini' | 'plafond'> | null> {
+  await surRequete();
+  await pilote.aller(URL_FIL);
+  return frictionDeLUrl(await pilote.url()) ?? null;
+}
+
 /**
  * Lit la page d'un profil et rend ce qu'elle dit de la personne aujourd'hui.
  *
