@@ -76,7 +76,7 @@
       "adzuna": "Adzuna",
       "francetravail": "France Travail",
       "linkedin_post_engagers": "LinkedIn · engagers van een post",
-      "linkedin_competitor_followers": "LinkedIn · volgers van een concurrent",
+      "linkedin_competitor_posts": "LinkedIn · reageerders op posts van een concurrent",
       "linkedin_keywords": "LinkedIn · trefwoorden",
       "linkedin_job_change": "LinkedIn · functiewijziging",
       "csv": "CSV-bestand",
@@ -574,9 +574,9 @@
           "title": "Engagers van een post",
           "description": "Personen die een post hebben geliket of erop hebben gereageerd"
         },
-        "linkedinCompetitorFollowers": {
-          "title": "Volgers van een concurrent",
-          "description": "Personen actief rond een bedrijfspagina"
+        "linkedinCompetitorPosts": {
+          "title": "Reageerders op posts van een concurrent",
+          "description": "Mensen die reageren op of commentaar geven op berichten van een concurrentpagina"
         },
         "linkedinKeywords": {
           "title": "Trefwoorden",
@@ -668,7 +668,8 @@
         "personaRequis": "Kies de persona van deze bron.",
         "accountId": "LinkedIn-account",
         "profilesPerDay": "Profielen gelezen per dag",
-        "competitorPages": "Gevolgde bedrijfspagina's",
+        "competitorPages": "LinkedIn-pagina's van concurrenten",
+        "competitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
         "topics": "Gevolgde onderwerpen",
         "sinceDays": "Functie aangetreden sinds (dagen)",
         "csvIntro": "Contacten uit het bestand komen de campagne binnen als al gekwalificeerde personen: geen scoring.",
@@ -911,8 +912,8 @@
         "menuLinkedinBadge": "Verzameling geactiveerd met het LinkedIn-kanaal",
         "menuLinkedinPostEngagersTitle": "Engagers van een post",
         "menuLinkedinPostEngagersDescription": "Personen die een post hebben geliket of erop hebben gereageerd.",
-        "menuLinkedinCompetitorFollowersTitle": "Volgers van een concurrent",
-        "menuLinkedinCompetitorFollowersDescription": "Personen actief rond een bedrijfspagina.",
+        "menuLinkedinCompetitorPostsTitle": "Reageerders op posts van een concurrent",
+        "menuLinkedinCompetitorPostsDescription": "Mensen die reageren op of commentaar geven op berichten van een concurrentpagina.",
         "menuLinkedinKeywordsTitle": "Trefwoorden",
         "menuLinkedinKeywordsDescription": "Personen die over een onderwerp publiceren.",
         "menuLinkedinJobChangeTitle": "Functiewijziging",
@@ -932,7 +933,8 @@
         "formLinkedinCommented": "hebben een reactie geplaatst",
         "formLinkedinReacted": "hebben gereageerd",
         "formLinkedinPostOneCampaign": "Een post kan maar voor één campagne dienen.",
-        "formLinkedinCompetitorPages": "Gevolgde bedrijfspagina's",
+        "formLinkedinCompetitorPages": "LinkedIn-pagina's van concurrenten",
+        "formLinkedinCompetitorPagesHint": "Het adres van de bedrijfspagina, bijvoorbeeld linkedin.com/company/naam-concurrent. Scheid meerdere pagina's met een komma.",
         "formLinkedinTopics": "Gevolgde onderwerpen",
         "formLinkedinSinceDays": "Functie aangetreden sinds (dagen)",
         "formLinkedinAccountId": "LinkedIn-account",
@@ -1637,6 +1639,13 @@
           "erreurOrdre": "Het einduur moet na het beginuur liggen.",
           "erreurJours": "Kies minstens een dag."
         }
+      },
+      "collecteAuto": {
+        "titre": "Automatisch verzamelen",
+        "aideActive": "De server leest uw LinkedIn-bronnen zelf, één doorloop per bron per dag, binnen uw verzendvenster.",
+        "aideInactive": "Uw LinkedIn-bronnen komen alleen in beweging als u op \"Nu verzamelen\" klikt.",
+        "activer": "Inschakelen",
+        "desactiver": "Uitschakelen"
       },
       "plafonds": {
         "titre": "Verzamellimieten",

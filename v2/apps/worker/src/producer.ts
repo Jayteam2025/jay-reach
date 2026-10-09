@@ -14,7 +14,19 @@
  */
 import type PgBoss from 'pg-boss';
 import type { Pool } from 'pg';
-import { bornerParCampagne, normaliserPlafond, placesRestantes, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau, QUEUES } from '@jay-reach/core';
+import {
+  bornerParCampagne,
+  compterPostsLinkedInDuJour,
+  normaliserPlafond,
+  placesRestantes,
+  plafondDuJour,
+  fuseauDeLOrganisation,
+  jourCourantDansFuseau,
+  lireFuseauLinkedIn,
+  lirePlafondLinkedIn,
+  QUEUES,
+  TYPES_LINKEDIN_COLLECTES,
+} from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
 import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
@@ -33,7 +45,7 @@ interface SourceRow {
 }
 
 /** Les types LinkedIn que le worker sait exécuter. Les autres sont saisissables, pas collectés. */
-const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers'];
+
 
 /**
  * Ce que l'opérateur lit sur la carte de sa source quand il demande une collecte que le
@@ -41,7 +53,7 @@ const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers']
  * `lireCartesSources` va déjà chercher la cause d'un refus.
  */
 const MSG_TYPE_NON_COLLECTE =
-  'Ce type de source n’est pas encore collecté : rien n’a été lu. Les engageurs d’un post le sont.';
+  'Ce type de source n’est pas encore collecté : rien n’a été lu. Les engageurs d’un post et ceux des posts d’un concurrent le sont.';
 
 /** La politique de reprise déclarée pour la file de collecte, reprise sur chaque job (comme `REPRISE_CONTACT_CONNU`). */
 const REPRISE_COLLECTE_LINKEDIN = QUEUES.find((q) => q.name === 'linkedin.collecte')?.retry;
@@ -62,7 +74,7 @@ async function enfilerCollecteLinkedIn(
   src: { id: string; organization_id: string },
   type: string,
 ): Promise<number> {
-  if (!TYPES_LINKEDIN_EXECUTABLES.includes(type)) {
+  if (!TYPES_LINKEDIN_COLLECTES.includes(type)) {
     // Un refus muet est pire que pas de bouton. `lancerCampagne` demande une collecte à TOUTES
     // les sources actives : sans cette trace, l'opérateur voyait sa campagne partir, n'obtenait
     // aucun contact, et la seule explication vivait dans les journaux du conteneur. On ouvre
@@ -906,4 +918,110 @@ export async function enqueueRequestedRuns(boss: PgBoss, pool: Pool): Promise<nu
     }
   }
   return enqueued;
+}
+
+/**
+ * Le tour des sources LinkedIn : un passage par source et par jour, tout seul.
+ *
+ * **Pourquoi un tour à part.** Le tour périodique exclut délibérément les sources LinkedIn : il
+ * revient toutes les quinze minutes, soit quatre-vingt-seize passages par jour pour un plafond
+ * de trois posts. Mais sans aucun tour, une veille de concurrent ne veille pas — elle attend un
+ * clic sur « Collecter maintenant », ce qui n'est pas une veille. Ce tour-ci a donc sa propre
+ * cadence, et il refuse d'enfiler plutôt que de laisser le handler refuser : un passage refusé
+ * laisse une ligne à l'écran, et trois lignes « plafond atteint » par jour valent un écran qui
+ * ment.
+ *
+ * **Il ne part que si l'opérateur l'a demandé** (`linkedin_settings.collect_auto`, faux par
+ * défaut) : ce réglage fait sortir du trafic vers LinkedIn tous les jours sans que personne ne
+ * clique.
+ *
+ * **Dans la fenêtre d'envoi**, jours et heures compris. La collecte n'est pas un envoi, mais un
+ * compte qui n'écrit à personne la nuit et lit deux cents profils à quatre heures du matin se
+ * repère. Même fenêtre, même fuseau, mêmes jours.
+ */
+export async function enqueueLinkedInTours(boss: PgBoss, pool: Pool): Promise<number> {
+  const orgs = await pool.query<{ organization_id: string }>(
+    `select organization_id /* jr:linkedin_tour_organisations */
+       from linkedin_settings s
+      where s.collect_auto
+        -- La fenêtre de l'organisation, dans SON fuseau. extract(isodow) rend 1 pour lundi,
+        -- comme send_days.
+        and extract(isodow from (now() at time zone s.timezone))::int = any(s.send_days)
+        and extract(hour from (now() at time zone s.timezone))::int >= s.send_from_hour
+        and extract(hour from (now() at time zone s.timezone))::int < s.send_to_hour
+        -- Une session bloquée ou absente ferait refuser chaque passage, une ligne par jour et
+        -- par source, sans que rien ne soit lu.
+        and exists (
+          select 1 from linkedin_server_sessions ls
+           where ls.organization_id = s.organization_id and ls.status = 'active'
+        )`,
+  );
+
+  let enfiles = 0;
+  for (const org of orgs.rows) {
+    const ctx = { ex: pool, organisationId: org.organization_id, utilisateurId: null, role: null };
+    try {
+      const fuseau = await lireFuseauLinkedIn(ctx);
+      const [plafond, dejaLus] = await Promise.all([
+        lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
+        compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau),
+      ]);
+      // Le plafond du jour est atteint : ne rien enfiler, et surtout ne pas ouvrir de passage
+      // pour le faire refuser. C'est la différence entre un tour discret et un journal illisible.
+      if (dejaLus >= plafond) continue;
+
+      // Une seule source par organisation et par tour, la moins récemment passée : avec deux
+      // sources et trois posts de plafond, la première prendrait tout et la seconde ne verrait
+      // jamais rien. Elles alternent d'un jour sur l'autre.
+      const due = await pool.query<{ id: string; organization_id: string; type: string }>(
+        `select so.id, so.organization_id, so.config->>'sourceType' as type /* jr:linkedin_tour_source_due */
+           from sources so
+          where so.organization_id = $1
+            and so.is_active
+            and so.config->>'sourceType' = any($2::text[])
+            and exists (
+              select 1 from campaign_sources cs
+                join campaigns c on c.id = cs.campaign_id
+               where cs.source_id = so.id and c.status = 'active'
+            )
+            -- Aucun passage ABOUTI aujourd'hui, dans le fuseau de l'organisation.
+            --
+            -- « Abouti » veut dire : qui a parlé à LinkedIn, ou qui s'est clos en succès (un
+            -- plafond atteint est durable sur la journée). Un refus TRANSITOIRE ne consomme pas
+            -- le tour : l'opérateur clique « Collecter maintenant » à 10h02, le passage prend le
+            -- verrou pour dix minutes, le tour tombe à 10h05 et se fait refuser — cette ligne-là
+            -- ne doit pas priver la source de sa journée pour six minutes d'attente.
+            and not exists (
+              select 1 from source_runs sr
+               where sr.source_id = so.id
+                 and sr.started_at >= ($3::date::timestamp at time zone $4)
+                 and sr.started_at < (($3::date + 1)::timestamp at time zone $4)
+                 and (
+                   -- Un passage EN COURS consomme le tour : sans ça, le tour suivant en
+                   -- empilerait un second qui se disputerait le verrou du navigateur avec le
+                   -- premier, et se ferait refuser.
+                   sr.status = 'running'
+                   -- Un plafond atteint se clôt en succès, et il est durable sur la journée.
+                   or sr.status = 'success'
+                   or exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)
+                 )
+            )
+          order by (
+            select max(sr.started_at) from source_runs sr where sr.source_id = so.id
+          ) asc nulls first
+          limit 1`,
+        [org.organization_id, TYPES_LINKEDIN_COLLECTES, jourCourantDansFuseau(fuseau), fuseau],
+      );
+      const src = due.rows[0];
+      if (!src) continue;
+      enfiles += await enfilerCollecteLinkedIn(boss, pool, src, src.type);
+    } catch (err) {
+      // Une organisation qui échoue ne doit pas emporter les autres : chacune a ses réglages,
+      // sa session et ses sources.
+      console.error(
+        `[producer] tour LinkedIn impossible pour une organisation (${err instanceof Error ? err.name : 'erreur'})`,
+      );
+    }
+  }
+  return enfiles;
 }

@@ -21,7 +21,14 @@ import { construireValeursContact, normalizeListColumnName, renderTemplatePartia
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
 import type { EnvoiPrevu, CanalFil } from './aujourdhui.js';
-import { SQL_PROVIDER_ID_AFFICHAGE, exigerPersonaSource, exigerPostLibre, personaSourceValide } from './sources.js';
+import {
+  SQL_PROVIDER_ID_AFFICHAGE,
+  TYPES_LINKEDIN_COLLECTES,
+  collecteImplementee,
+  exigerPersonaSource,
+  exigerPostLibre,
+  personaSourceValide,
+} from './sources.js';
 
 // ---------------------------------------------------------------------------
 // Statut dérivé d'un contact de campagne
@@ -1917,8 +1924,8 @@ export async function creerCampagne(ctx: Contexte, entree: unknown): Promise<{ i
     // Un post d'engageurs déjà relié à une campagne ne se rattache pas à une seconde (règle posée aussi dans `creerSource`).
     const postsRes = await ctx.ex.query<{ id: string; url: string | null; persona_id: string | null }>(
       `select id, config->>'urlPost' as url, config->>'personaId' as persona_id from sources /* jr:creer_campagne_posts */
-        where organization_id = $1 and id = any($2::uuid[]) and config->>'sourceType' = 'linkedin_post_engagers'`,
-      [ctx.organisationId, themes],
+        where organization_id = $1 and id = any($2::uuid[]) and config->>'sourceType' = any($3::text[])`,
+      [ctx.organisationId, themes, TYPES_LINKEDIN_COLLECTES],
     );
     for (const p of postsRes.rows) {
       exigerPersonaSource(personaIds ?? [], p.persona_id ?? undefined);
@@ -1981,13 +1988,16 @@ export async function modifierReglagesCampagne(ctx: Contexte, entree: unknown): 
     if (collision) throw new ErreurConflit(collision);
   }
 
-  // Changer les personas ne doit pas laisser une source d'engageurs sans persona valide, en silence.
+  // Changer les personas ne doit pas laisser une source d'engageurs sans persona valide, en
+  // silence — pour TOUS les types collectés, pas seulement le post nommé : une source de page
+  // concurrente garderait sinon un persona que la campagne ne vise plus, et ses personnes
+  // seraient jugées avec la consigne d'un autre.
   if (e.personaIds !== undefined) {
     const postsRes = await ctx.ex.query<{ nom: string; persona_id: string | null }>(
       `select s.name as nom, s.config->>'personaId' as persona_id
          from campaign_sources cs join sources s on s.id = cs.source_id /* jr:reglages_sources_post */
-        where cs.campaign_id = $1 and s.organization_id = $2 and s.config->>'sourceType' = 'linkedin_post_engagers'`,
-      [e.campagneId, ctx.organisationId],
+        where cs.campaign_id = $1 and s.organization_id = $2 and s.config->>'sourceType' = any($3::text[])`,
+      [e.campagneId, ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
     );
     // Refus de formulaire, pas de champ : cet écran n'a pas de `personaId`. Il nomme chaque source
     // bloquante ; `sourcesSansPersona` laisse la façade traduire sans relire le texte.
@@ -2160,8 +2170,38 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
     for (const m of transportManques) manques.push(LIBELLES[m]);
   }
 
+  // Une campagne dont AUCUNE source n'est collectée se lance, s'affiche active, et n'ajoute
+  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Deux des quatre
+  // types LinkedIn n'ont pas encore de collecteur ; tant que c'est le cas, il faut le dire
+  // AVANT le lancement, pas le laisser découvrir au bout d'une semaine.
+  //
+  // Une campagne sans aucune source reste légitime : ses contacts peuvent être importés ou
+  // ajoutés à la main. Ce n'est donc un manque que s'il y a des sources, et qu'aucune ne sert.
+  const sourcesRes = await ctx.ex.query<{ type: string | null }>(
+    `select coalesce(so.config->>'sourceType', sp.provider_id) as type /* jr:manques_sources */
+       from campaign_sources cs
+       join sources so on so.id = cs.source_id
+       left join source_providers sp on sp.source_id = so.id
+      where cs.campaign_id = $1 and so.organization_id = $2 and so.is_active`,
+    [campagneId, ctx.organisationId],
+  );
+  const types = sourcesRes.rows.map((r) => r.type).filter((t): t is string => t !== null);
+  if (types.length > 0 && !types.some((t) => collecteImplementee(t))) {
+    const sansCollecteur = [...new Set(types)].map((t) => LIBELLES_TYPE_SANS_COLLECTEUR[t] ?? t).join(', ');
+    manques.push(`aucune source de cette campagne n’est collectée aujourd’hui (${sansCollecteur}) : personne n’y entrerait`);
+  }
+
   return manques;
 }
+
+/**
+ * Les types sans collecteur, nommés comme l'écran les nomme. En dur, comme `LIBELLES` plus haut :
+ * ce module ne dépend pas de next-intl.
+ */
+const LIBELLES_TYPE_SANS_COLLECTEUR: Record<string, string> = {
+  linkedin_keywords: 'mots-clés LinkedIn',
+  linkedin_job_change: 'changement de poste LinkedIn',
+};
 
 export async function lancer(ctx: Contexte, entree: unknown): Promise<{ ok: true } | { ok: false; manques: string[] }> {
   exiger(ctx, 'operator');

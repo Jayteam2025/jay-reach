@@ -633,7 +633,11 @@ export async function compterPostsLinkedInDuJour(
   sauf?: string,
 ): Promise<number> {
   const res = await ctx.ex.query<{ n: number }>(
-    `select count(*)::int as n /* jr:linkedin_posts_du_jour */
+    // Somme des posts RÉELLEMENT ouverts, pas un par passage : depuis que le collecteur boucle
+    // sur plusieurs posts dans un seul passage, compter les lignes laissait passer N(N+1)/2 posts
+    // pour un plafond de N. `coalesce(…, 1)` ramène à un les passages antérieurs à cette colonne,
+    // qui en ouvraient exactement un.
+    `select coalesce(sum(coalesce(sr.posts, 1)), 0)::int as n /* jr:linkedin_posts_du_jour */
        from source_runs sr
        join sources so on so.id = sr.source_id
       where so.organization_id = $1
@@ -669,4 +673,39 @@ export async function lireFuseauLinkedIn(ctx: Contexte): Promise<string> {
     [ctx.organisationId],
   );
   return res.rows[0]?.timezone ?? 'Europe/Paris';
+}
+
+/**
+ * La collecte LinkedIn part-elle toute seule ?
+ *
+ * Faux par défaut, y compris pour une organisation qui n'a aucune ligne de réglages : ce
+ * réglage fait sortir du trafic vers LinkedIn tous les jours sans que personne ne clique, et ce
+ * n'est pas au produit d'en décider à la place de l'opérateur.
+ *
+ * Lu sur la TABLE, jamais sur une vue : une vue soumise à RLS interrogée par le pool de service
+ * du worker rend zéro ligne sans lever, et le tour croirait le réglage éteint partout.
+ */
+export async function lireCollecteAutoLinkedIn(ctx: Contexte): Promise<boolean> {
+  const res = await ctx.ex.query<{ collect_auto: boolean }>(
+    `select collect_auto from linkedin_settings /* jr:linkedin_collecte_auto_lire */ where organization_id = $1`,
+    [ctx.organisationId],
+  );
+  return res.rows[0]?.collect_auto ?? false;
+}
+
+/**
+ * Allume ou éteint la collecte automatique.
+ *
+ * `insert … on conflict` plutôt qu'un `update` : une organisation qui n'a jamais ouvert l'écran
+ * des réglages n'a pas de ligne, et un `update` n'aurait rien écrit — en rendant « enregistré »
+ * à un opérateur dont le réglage n'aurait jamais pris.
+ */
+export async function ecrireCollecteAutoLinkedIn(ctx: Contexte, actif: boolean): Promise<void> {
+  exiger(ctx, 'admin');
+  await ctx.ex.query(
+    `insert into linkedin_settings (organization_id, collect_auto) /* jr:linkedin_collecte_auto_ecrire */
+     values ($1, $2)
+     on conflict (organization_id) do update set collect_auto = excluded.collect_auto, updated_at = now()`,
+    [ctx.organisationId, actif],
+  );
 }

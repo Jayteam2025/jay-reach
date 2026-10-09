@@ -1,11 +1,12 @@
 'use client';
 
+import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import { Champ } from '../ui';
 import { CaseACocher } from './CaseACocher';
 
 export type TypeLinkedIn =
   | 'linkedin_post_engagers'
-  | 'linkedin_competitor_followers'
+  | 'linkedin_competitor_posts'
   | 'linkedin_keywords'
   | 'linkedin_job_change';
 
@@ -18,7 +19,7 @@ export interface EtatChampsLinkedIn {
   readonly personaId: string;
   readonly garderCommente: boolean;
   readonly garderReagi: boolean;
-  readonly comptesConcurrents: string;
+  readonly pagesConcurrentes: string;
   readonly sujets: string;
   readonly depuisJours: string;
 }
@@ -48,7 +49,7 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     personaId: typeof config.personaId === 'string' ? config.personaId : '',
     garderCommente: Array.isArray(config.garder) ? config.garder.includes('commente') : true,
     garderReagi: Array.isArray(config.garder) ? config.garder.includes('reagi') : true,
-    comptesConcurrents: listeVersTexte(config.comptesConcurrents),
+    pagesConcurrentes: listeVersTexte(config.pagesConcurrentes),
     sujets: listeVersTexte(config.sujets),
     depuisJours: typeof config.depuisJours === 'number' ? String(config.depuisJours) : '90',
   };
@@ -65,8 +66,18 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       // Ni compte ni cadence : l'exécution est côté serveur, le post suffit.
       return { urlPost: etat.urlPost, garder, ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     }
-    case 'linkedin_competitor_followers':
-      return { ...commun, comptesConcurrents: texteVersListe(etat.comptesConcurrents) };
+    case 'linkedin_competitor_posts': {
+      // Mêmes besoins que le post : c'est le même collecteur d'engageurs derrière, seule la
+      // façon de trouver les posts change. Ni compte ni cadence : l'exécution est côté serveur.
+      const garder: string[] = [];
+      if (etat.garderCommente) garder.push('commente');
+      if (etat.garderReagi) garder.push('reagi');
+      return {
+        pagesConcurrentes: texteVersListe(etat.pagesConcurrentes),
+        garder,
+        ...(etat.personaId ? { personaId: etat.personaId } : {}),
+      };
+    }
     case 'linkedin_keywords':
       return { ...commun, sujets: texteVersListe(etat.sujets) };
     case 'linkedin_job_change':
@@ -77,7 +88,8 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
 /** Champ requis du sous-type (en plus du compte LinkedIn, commun aux trois autres) rempli — condition d'activation du bouton d'enregistrement. */
 /** `nbPersonas` : personas de la campagne ; au-delà d'un, le persona de la source est obligatoire (règle serveur de `creerSource`). */
 export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn, nbPersonas = 0): boolean {
-  if (providerId !== 'linkedin_post_engagers' && !etat.compteId.trim()) return false;
+  // Le compte n'est demandé que par les types qui n'ont pas encore de collecteur serveur.
+  if (!TYPES_LINKEDIN_COLLECTES.includes(providerId) && !etat.compteId.trim()) return false;
   switch (providerId) {
     case 'linkedin_post_engagers':
       return (
@@ -85,8 +97,12 @@ export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChamps
         (etat.garderCommente || etat.garderReagi) &&
         (nbPersonas <= 1 || etat.personaId.length > 0)
       );
-    case 'linkedin_competitor_followers':
-      return texteVersListe(etat.comptesConcurrents).length > 0;
+    case 'linkedin_competitor_posts':
+      return (
+        texteVersListe(etat.pagesConcurrentes).length > 0 &&
+        (etat.garderCommente || etat.garderReagi) &&
+        (nbPersonas <= 1 || etat.personaId.length > 0)
+      );
     case 'linkedin_keywords':
       return texteVersListe(etat.sujets).length > 0;
     case 'linkedin_job_change':
@@ -101,6 +117,7 @@ export interface ChampsSourceLinkedInLibelles {
   readonly reacted: string;
   readonly postOneCampaign: string;
   readonly competitorPages: string;
+  readonly competitorPagesHint: string;
   readonly topics: string;
   readonly sinceDays: string;
   readonly accountId: string;
@@ -144,6 +161,40 @@ export function ChampsSourceLinkedIn({
   personas = [],
   idPrefix = 'linkedin',
 }: ChampsSourceLinkedInProps) {
+  // « Qui garder » et le persona valent pour les deux sources d'engageurs : c'est le même
+  // collecteur, et le même jugement derrière.
+  const quiGarder = (
+    <div>
+      <span className="jr-libelle">{libelles.keepPeople}</span>
+      <CaseACocher coche={etat.garderCommente} onChange={(v) => onChange({ garderCommente: v })}>
+        {libelles.commented}
+      </CaseACocher>
+      <CaseACocher coche={etat.garderReagi} onChange={(v) => onChange({ garderReagi: v })}>
+        {libelles.reacted}
+      </CaseACocher>
+    </div>
+  );
+  const choixPersona =
+    personas.length > 1 ? (
+      <Champ libelle={libelles.persona ?? ''} id={`${idPrefix}-persona`}>
+        <select
+          id={`${idPrefix}-persona`}
+          name="personaId"
+          value={etat.personaId}
+          onChange={(e) => onChange({ personaId: e.target.value })}
+          disabled={disabled}
+          required
+        >
+          <option value="">{libelles.personaChoisir ?? ''}</option>
+          {personas.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nom}
+            </option>
+          ))}
+        </select>
+      </Champ>
+    ) : null;
+
   return (
     <>
       {providerId === 'linkedin_post_engagers' && (
@@ -158,48 +209,27 @@ export function ChampsSourceLinkedIn({
               placeholder="https://www.linkedin.com/posts/…"
             />
           </Champ>
-          <div>
-            <span className="jr-libelle">{libelles.keepPeople}</span>
-            <CaseACocher coche={etat.garderCommente} onChange={(v) => onChange({ garderCommente: v })}>
-              {libelles.commented}
-            </CaseACocher>
-            <CaseACocher coche={etat.garderReagi} onChange={(v) => onChange({ garderReagi: v })}>
-              {libelles.reacted}
-            </CaseACocher>
-          </div>
+          {quiGarder}
           <p className="jr-aide">{libelles.postOneCampaign}</p>
-          {personas.length > 1 && (
-            <Champ libelle={libelles.persona ?? ''} id={`${idPrefix}-persona`}>
-              <select
-                id={`${idPrefix}-persona`}
-                name="personaId"
-                value={etat.personaId}
-                onChange={(e) => onChange({ personaId: e.target.value })}
-                disabled={disabled}
-                required
-              >
-                <option value="">{libelles.personaChoisir ?? ''}</option>
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nom}
-                  </option>
-                ))}
-              </select>
-            </Champ>
-          )}
+          {choixPersona}
         </>
       )}
-      {providerId === 'linkedin_competitor_followers' && (
-        <Champ libelle={libelles.competitorPages} id={`${idPrefix}-competitor-pages`}>
-          <input
-            id={`${idPrefix}-competitor-pages`}
-            name="comptesConcurrents"
-            value={etat.comptesConcurrents}
-            onChange={(e) => onChange({ comptesConcurrents: e.target.value })}
-            disabled={disabled}
-            placeholder="Upsell, Uptoo"
-          />
-        </Champ>
+      {providerId === 'linkedin_competitor_posts' && (
+        <>
+          <Champ libelle={libelles.competitorPages} id={`${idPrefix}-competitor-pages`}>
+            <input
+              id={`${idPrefix}-competitor-pages`}
+              name="pagesConcurrentes"
+              value={etat.pagesConcurrentes}
+              onChange={(e) => onChange({ pagesConcurrentes: e.target.value })}
+              disabled={disabled}
+              placeholder="https://www.linkedin.com/company/…"
+            />
+          </Champ>
+          <p className="jr-aide">{libelles.competitorPagesHint}</p>
+          {quiGarder}
+          {choixPersona}
+        </>
       )}
       {providerId === 'linkedin_keywords' && (
         <Champ libelle={libelles.topics} id={`${idPrefix}-topics`}>
@@ -225,7 +255,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       )}
-      {providerId !== 'linkedin_post_engagers' && (
+      {!TYPES_LINKEDIN_COLLECTES.includes(providerId) && (
       <div className="ligne">
         <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
           <input

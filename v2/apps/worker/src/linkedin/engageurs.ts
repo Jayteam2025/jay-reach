@@ -42,6 +42,16 @@ export class ErreurCollecte extends Error {
     message: string,
     type: string,
     readonly engageLeCompte: boolean,
+    /**
+     * La friction LinkedIn à l'origine de cet échec, quand il y en a une.
+     *
+     * Un défi (999) ou un cookie refusé (401/403) ne sont pas des pannes : ce sont des verdicts
+     * de LinkedIn sur NOTRE compte, et ils doivent suspendre la session et prévenir l'opérateur.
+     * Sans ce champ, un défi rencontré en cherchant des posts ressortait en « la page n'a pas
+     * répondu (999) » : message faux, session laissée active, et le tour automatique qui repart
+     * le lendemain sur un compte contesté.
+     */
+    readonly friction?: Friction,
   ) {
     super(message);
     this.name = type;

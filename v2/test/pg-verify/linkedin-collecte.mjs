@@ -42,6 +42,13 @@ import {
   QUEUES,
   startSourceRun,
   traiterCollecteLinkedIn,
+  trouverPostsDePage,
+  lirePostsTraites,
+  marquerPostTraite,
+  manquesPourLancer,
+  enqueueLinkedInTours,
+  ecrireCollecteAutoLinkedIn,
+  lireCollecteAutoLinkedIn,
 } from './_linkedin-collecte-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -360,9 +367,9 @@ async function plafondPosts() {
   const m2 = await monde();
   const { id: srcConcurrent } = await creerSource(m2.ctx, {
     campagneId: m2.campagne,
-    providerId: 'linkedin_competitor_followers',
+    providerId: 'linkedin_competitor_posts',
     nom: 'Posts d un concurrent',
-    config: { comptesConcurrents: ['https://www.linkedin.com/company/acme/'], compteId: 'compte-1', profilsParJour: 40 },
+    config: { pagesConcurrentes: ['https://www.linkedin.com/company/acme/'], garder: ['reagi'], personaId: m2.persona },
   });
   const runConcurrent = await startSourceRun(pool, srcConcurrent);
   await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m2.org, runConcurrent]);
@@ -1099,12 +1106,469 @@ async function repriseDuJob() {
   check('67. le job porte retryLimit 0 et pas de backoff, indépendamment de l’état de la file', options?.retryLimit === 0 && options?.retryBackoff === false, JSON.stringify(options));
 }
 
+/**
+ * Lot 4b, étape 2 : la mémoire des posts déjà collectés, prouvée sur la vraie table.
+ *
+ * Le SQL est celui de production (`posts-traites.ts`), exécuté sur le vrai Postgres. Un test à
+ * pool factice ne prouverait rien ici : il ne jouerait jamais la requête.
+ */
+async function memoireDesPosts() {
+  const m = await monde();
+  const autre = await sourceDePost(m, 'https://www.linkedin.com/feed/update/urn:li:activity:7271000000000000099/');
+  const A = 'urn:li:activity:7271000000000000001';
+  const B = 'urn:li:activity:7271000000000000002';
+
+  check('68. une source neuve n’a aucune mémoire', (await lirePostsTraites(pool, m.org, m.source)).size === 0);
+
+  await marquerPostTraite(pool, m.org, m.source, A);
+  const apres = await lirePostsTraites(pool, m.org, m.source);
+  check('68b. un post marqué est relu dans la mémoire de sa source', apres.size === 1 && apres.has(A));
+
+  // Un post relu au passage suivant est marqué de nouveau : l'écriture doit être idempotente,
+  // sinon le passage entier échoue sur une violation de clé.
+  let leve = null;
+  try {
+    await marquerPostTraite(pool, m.org, m.source, A);
+  } catch (e) {
+    leve = String(e?.message ?? e);
+  }
+  const compte = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1 and source_id = $2`, [m.org, m.source])).rows[0].n;
+  check('69. remarquer le même post ne lève pas et ne duplique pas', leve === null && compte === 1, leve ?? `n=${compte}`);
+
+  // Deux sources peuvent viser le même post (une page concurrente et un mot-clé) : chacune tient
+  // sa propre avance. Les écarter globalement ferait taire la seconde.
+  await marquerPostTraite(pool, m.org, autre, B);
+  const vueSource = await lirePostsTraites(pool, m.org, m.source);
+  const vueAutre = await lirePostsTraites(pool, m.org, autre);
+  check('70. la mémoire d’une source n’est pas celle de sa voisine',
+    vueSource.has(A) && !vueSource.has(B) && vueAutre.has(B) && !vueAutre.has(A));
+
+  // Bout en bout : ce qui est EN BASE retire bien des posts rendus par le trouveur.
+  const pageHtml = `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:777&quot;,&quot;universalName&quot;:&quot;ma-cible&quot;}</code></html>`;
+  const lot = JSON.stringify({
+    data: { data: { flux: { paging: { count: 10, start: 0, total: 2 }, '*elements': [A, B].map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`) } } },
+  });
+  const reponses = [{ statut: 200, corps: pageHtml }, { statut: 200, corps: lot }];
+  const pilote = { requete: async () => reponses.shift() ?? { statut: 500, corps: '' } };
+  const trouves = await trouverPostsDePage(pilote, 'https://www.linkedin.com/company/ma-cible/', {
+    dejaTraites: await lirePostsTraites(pool, m.org, m.source),
+    budget: { requetesRestantes: 10, postsRestants: 10 },
+    surRequete: async () => undefined,
+    pause: async () => undefined,
+  });
+  check('71. le trouveur ne rend pas le post que la base dit déjà traité',
+    trouves.urns.length === 1 && trouves.urns[0] === B, JSON.stringify(trouves.urns));
+
+  // La RLS doit tenir. Le superuser la contourne : il faut vraiment prendre le rôle
+  // `authenticated`, et l'éprouver DEUX fois — un membre de l'organisation voit sa ligne, un
+  // utilisateur étranger n'en voit aucune. Sans le premier cas, une table verrouillée par erreur
+  // pour tout le monde passerait pour sûre.
+  const etranger = await userNeuf();
+  const lirePar = async (userId) => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query(`select set_config('test.user_id', $1, true)`, [userId]);
+      return (await c.query(`select count(*)::int n from linkedin_posts_traites`)).rows[0].n;
+    } catch (e) {
+      return `erreur: ${String(e?.message ?? e)}`;
+    } finally {
+      await c.query('rollback').catch(() => {});
+      c.release();
+    }
+  };
+  const vuMembre = await lirePar(m.admin);
+  const vuEtranger = await lirePar(etranger);
+  check('72. un membre de l’organisation lit la mémoire de ses sources', vuMembre === 2, String(vuMembre));
+  check('72b. un utilisateur étranger n’en lit aucune ligne', vuEtranger === 0, String(vuEtranger));
+}
+
+// --------------------------------------------- lot 4b, étape 2 : la source « concurrent »
+
+/** Le HTML d'une page entreprise, tel que LinkedIn l'embarque : guillemets échappés. */
+const htmlPage = (nom, id) =>
+  `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:${id}&quot;,&quot;universalName&quot;:&quot;${nom}&quot;}</code></html>`;
+
+/** Une page de posts, à la forme relevée en réel le 09/10. */
+const lotDePosts = (urns, total = urns.length, debut = 0) =>
+  JSON.stringify({
+    data: {
+      data: {
+        feedDashOrganizationalPageUpdatesByOrganizationalPageRelevanceFeed: {
+          paging: { count: 10, start: debut, total },
+          '*elements': urns.map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`),
+        },
+      },
+    },
+  });
+
+/** Une source de posts de concurrent sur la campagne active de `m`. */
+async function sourceConcurrente(m, pages) {
+  const { id } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_competitor_posts',
+    nom: 'Concurrent',
+    config: { pagesConcurrentes: pages, garder: ['reagi'], personaId: m.persona },
+  });
+  return id;
+}
+
+/**
+ * Lot 4b, étape 2 : une source « posts d'un concurrent » collecte réellement.
+ *
+ * Le pilote répond selon ce qu'on lui demande : le HTML de la page, puis la liste de ses posts,
+ * puis les engageurs de chaque post. Le handler de production est exécuté tel quel.
+ */
+async function sourceConcurrent() {
+  console.log('\n24. la source « posts d’un concurrent »');
+  const m = await monde();
+  const src = await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  const P1 = 'urn:li:activity:7271000000000000011';
+  const P2 = 'urn:li:activity:7271000000000000012';
+
+  const repondre = (urns, profilsParPost) => (u) => {
+    if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+    if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts(urns) };
+    const post = urns.find((x) => u.includes(x.split(':').pop()));
+    return { statut: 200, corps: voyager(profilsParPost[post] ?? []) };
+  };
+
+  const r1 = await startSourceRun(pool, src);
+  const p1 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p1), { organizationId: m.org, sourceId: src, sourceRunId: r1 });
+  const passage1 = await lirePassage(r1);
+  check('73. la source concurrent collecte les engageurs des posts trouvés',
+    passage1.status === 'success' && passage1.vus === 2 && passage1.nouveaux === 2, JSON.stringify(passage1));
+
+  const contacts = (await q(`select count(*)::int n from contacts where organization_id = $1`, [m.org])).rows[0].n;
+  check('74. les personnes des deux posts sont enregistrées', contacts === 2, String(contacts));
+
+  const traites = (await q(`select post_urn from linkedin_posts_traites where organization_id = $1 and source_id = $2 order by 1`, [m.org, src])).rows.map((l) => l.post_urn);
+  check('75. les deux posts lus sont mémorisés', traites.length === 2 && traites[0] === P1 && traites[1] === P2, JSON.stringify(traites));
+
+  // Le passage suivant : LinkedIn sert les mêmes posts en tête de page. Sans la mémoire, il les
+  // relirait et paierait deux requêtes de plus pour zéro personne.
+  const r2 = await startSourceRun(pool, src);
+  const p2 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p2), { organizationId: m.org, sourceId: src, sourceRunId: r2 });
+  const passage2 = await lirePassage(r2);
+  check('76. le passage suivant ne relit pas les mêmes posts et le dit', passage2.status === 'success' && passage2.vus === 0, JSON.stringify(passage2));
+  check('76b. il n’a lu que la page et sa liste de posts, pas les posts eux-mêmes', p2.requetes.length === 2, JSON.stringify(p2.requetes.map((u) => u.slice(0, 60))));
+
+  // Le plafond de posts du jour borne le NOMBRE DE POSTS lus, pas le nombre de passages.
+  //
+  // Le plafond vaut 2, PAS 1 : avec 1, un compteur qui compterait les passages au lieu des posts
+  // donnerait le meme resultat qu'un compteur juste (la serie N(N+1)/2 vaut N pour N=1). C'est
+  // exactement le defaut qui avait traverse la premiere ecriture de ce controle — un controle
+  // pose sur la seule valeur ou la formule degenere ne prouve rien.
+  const m3 = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '2')`, [m3.org]);
+  const src3 = await sourceConcurrente(m3, ['https://www.linkedin.com/company/acme/']);
+  const P3 = 'urn:li:activity:7271000000000000013';
+  const P4 = 'urn:li:activity:7271000000000000014';
+  const profils = { [P1]: [ADA], [P2]: [BOB], [P3]: [ADA], [P4]: [BOB] };
+  // Trois passages de suite. Si le compteur comptait les passages : 2 posts, puis 1, puis 0 = 3.
+  // En comptant les posts : 2 au premier, 0 ensuite.
+  for (let i = 0; i < 3; i += 1) {
+    const r = await startSourceRun(pool, src3);
+    const p = pilote({ reponse: repondre([P1, P2, P3, P4], profils) });
+    await traiterCollecteLinkedIn(deps(p), { organizationId: m3.org, sourceId: src3, sourceRunId: r });
+  }
+  const traites3 = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1`, [m3.org])).rows[0].n;
+  check('77. le plafond du jour borne les POSTS, pas les passages', traites3 === 2, `${traites3} posts ouverts pour un plafond de 2`);
+  const comptePosts = (await q(`select coalesce(sum(coalesce(sr.posts, 1)), 0)::int n from source_runs sr join sources so on so.id = sr.source_id where so.organization_id = $1 and exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)`, [m3.org])).rows[0].n;
+  check('77b. et le compteur du jour dit le meme nombre que la memoire', comptePosts === traites3, `${comptePosts} comptes / ${traites3} memorises`);
+
+  // Une page fautive ne doit pas emporter les posts deja trouves sur les autres pages. Avant,
+  // une seule adresse mal collee faisait perdre tout le passage, tous les jours.
+  const m6 = await monde();
+  const src6 = await sourceConcurrente(m6, ['https://www.linkedin.com/company/acme/', 'Upsell']);
+  const r6 = await startSourceRun(pool, src6);
+  const p6 = pilote({ reponse: repondre([P1], { [P1]: [ADA] }) });
+  await traiterCollecteLinkedIn(deps(p6), { organizationId: m6.org, sourceId: src6, sourceRunId: r6 });
+  const passage6 = await lirePassage(r6);
+  check('77c. une page illisible ne fait pas perdre les posts des autres pages',
+    passage6.nouveaux === 1, JSON.stringify({ statut: passage6.status, nouveaux: passage6.nouveaux, erreur: passage6.error }));
+  check('77d. et l’ecran dit quand meme qu’une page n’a pas pu etre lue', /illisible|Adresse/i.test(passage6.error ?? ''), JSON.stringify(passage6.error));
+
+  // Le disjoncteur doit voir les sources « concurrent » comme les autres. Tant qu'il ne regardait
+  // qu'un seul type, une organisation dont la source est une page concurrente pouvait enchainer
+  // trente passages en erreur sans que la session soit jamais suspendue — avec la collecte
+  // automatique, le serveur serait reparti vers LinkedIn tous les jours.
+  const mD = await monde();
+  const srcD = await sourceConcurrente(mD, ['https://www.linkedin.com/company/acme/']);
+  await q(`delete from campaign_sources where source_id = $1`, [mD.source]);
+  for (let i = 0; i < 3; i += 1) {
+    const r = await startSourceRun(pool, srcD);
+    // Un echec qui ENGAGE le compte : proxy injoignable au moment de relever la sortie.
+    await traiterCollecteLinkedIn(
+      { ...deps(pilote({ reponse: () => ({ statut: 200, corps: '' }) })), releverSortie: async () => { throw new Error('proxy mort'); } },
+      { organizationId: mD.org, sourceId: srcD, sourceRunId: r },
+    ).catch(() => undefined);
+  }
+  const sessD = (await q(`select status, blocked_reason from linkedin_server_sessions where organization_id = $1`, [mD.org])).rows[0];
+  check('77g. trois echecs sur une source concurrent suspendent la session', sessD?.status === 'bloquee', JSON.stringify(sessD));
+
+  // Un defi rencontre en CHERCHANT les posts est un verdict sur le compte, pas sur la page.
+  const m7 = await monde();
+  const src7 = await sourceConcurrente(m7, ['https://www.linkedin.com/company/acme/']);
+  const r7 = await startSourceRun(pool, src7);
+  const p7 = pilote({ reponse: () => ({ statut: 999, corps: '' }) });
+  await traiterCollecteLinkedIn(deps(p7), { organizationId: m7.org, sourceId: src7, sourceRunId: r7 }).catch(() => undefined);
+  const passage7 = await lirePassage(r7);
+  const sess7 = (await q(`select status, blocked_reason from linkedin_server_sessions where organization_id = $1`, [m7.org])).rows[0];
+  check('77e. un 999 pendant la recherche suspend la session', sess7?.status === 'bloquee' && sess7?.blocked_reason === 'defi', JSON.stringify(sess7));
+  check('77f. et l’ecran parle de verification, pas d’une page qui ne repond pas',
+    /v[ée]rification/i.test(passage7.error ?? ''), JSON.stringify(passage7.error));
+
+  // Le plafond de personnes atteint alors qu'il RESTE des posts : l'écran doit le dire, sinon
+  // l'opérateur croit la page épuisée. Inversement, atteint pile sur le dernier post, il n'a rien
+  // laissé de côté — et l'annoncer serait faux (c'est le défaut corrigé en écrivant la boucle).
+  const m5 = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_personnes_par_passage', '1')`, [m5.org]);
+  const src5 = await sourceConcurrente(m5, ['https://www.linkedin.com/company/acme/']);
+  const r5 = await startSourceRun(pool, src5);
+  const p5 = pilote({ reponse: repondre([P1, P2], { [P1]: [ADA], [P2]: [BOB] }) });
+  await traiterCollecteLinkedIn(deps(p5), { organizationId: m5.org, sourceId: src5, sourceRunId: r5 });
+  const passage5 = await lirePassage(r5);
+  check('79. le plafond de personnes atteint avec des posts en attente est annoncé',
+    /personnes par passage/i.test(passage5.error ?? '') && passage5.nouveaux === 1, JSON.stringify(passage5.error));
+  const traites5 = (await q(`select count(*)::int n from linkedin_posts_traites where organization_id = $1`, [m5.org])).rows[0].n;
+  check('79b. le post non lu n’est pas marqué traité : le passage suivant le lira', traites5 === 1, String(traites5));
+
+  // Une source dont la page ne livre pas son identifiant doit le DIRE, pas finir en « (Error) ».
+  const m4 = await monde();
+  const src4 = await sourceConcurrente(m4, ['https://www.linkedin.com/company/fantome/']);
+  const r4 = await startSourceRun(pool, src4);
+  const p4 = pilote({ reponse: () => ({ statut: 200, corps: '<html>{&quot;universalName&quot;:&quot;autre&quot;,&quot;entityUrn&quot;:&quot;urn:li:fsd_company:9&quot;}</html>' }) });
+  await traiterCollecteLinkedIn(deps(p4), { organizationId: m4.org, sourceId: src4, sourceRunId: r4 }).catch(() => undefined);
+  const passage4 = await lirePassage(r4);
+  check('78. une page illisible donne un message lisible à l’écran, pas un nom de classe',
+    passage4.status === 'error' && /fantome/.test(passage4.error ?? ''), JSON.stringify(passage4.error));
+
+  // Et elle ne doit PAS faire croire à un problème de compte LinkedIn.
+  const sess = (await q(`select status from linkedin_server_sessions where organization_id = $1`, [m4.org])).rows[0];
+  check('78b. elle ne bloque pas la session LinkedIn', sess?.status === 'active', JSON.stringify(sess));
+}
+
+/**
+ * Lot 4b, étape 2 : une campagne dont AUCUNE source n'est collectée doit le dire AVANT d'être
+ * lancée. Sans ça elle s'active, s'affiche en marche, et n'ajoute jamais personne.
+ */
+async function lancementSansCollecteur() {
+  console.log('\n25. le lancement d’une campagne sans source collectable');
+  // Une étape d'appel : elle n'exige ni message, ni expéditeur, ni clé. Les autres manques ne
+  // viennent donc pas brouiller ce qui est mesuré ici.
+  const etapeAppel = (campagne) =>
+    q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'call')`, [campagne]);
+
+  // 1. Une source dont le type n'a pas de collecteur : le manque doit être signalé, et NOMMER
+  // le type, sinon l'opérateur ne sait pas quoi corriger.
+  const m = await monde();
+  await etapeAppel(m.campagne);
+  await q(`delete from campaign_sources where source_id = $1`, [m.source]);
+  await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_keywords',
+    nom: 'Mots-clés',
+    config: { sujets: ['CRM commercial'], compteId: 'compte-1' },
+  });
+  const manques = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
+  const leManque = manques.find((x) => x.includes('n’est collectée aujourd’hui'));
+  check('80. une campagne dont aucune source n’est collectée refuse de se lancer', leManque !== undefined, JSON.stringify(manques));
+  check('80b. le manque nomme le type en cause', (leManque ?? '').includes('mots-clés LinkedIn'), String(leManque));
+
+  // 2. La même campagne, avec en plus une source d'engageurs de concurrent : le manque tombe.
+  await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  const manques2 = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
+  check('81. une seule source collectable suffit à lever le manque',
+    !manques2.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques2));
+
+  // 3. Une campagne SANS aucune source reste légitime : ses contacts peuvent être importés ou
+  // ajoutés à la main. En faire un manque bloquerait un usage qui marche.
+  const m3 = await monde();
+  await etapeAppel(m3.campagne);
+  await q(`delete from campaign_sources where campaign_id = $1`, [m3.campagne]);
+  const manques3 = await manquesPourLancer(m3.ctx, { campagneId: m3.campagne });
+  check('82. une campagne sans aucune source n’est pas bloquée pour autant',
+    !manques3.some((x) => x.includes('n’est collectée aujourd’hui')), JSON.stringify(manques3));
+}
+
+/**
+ * Lot 4b, étape 2 : le tour automatique des sources LinkedIn.
+ *
+ * Sans lui, une veille de concurrent attend un clic : le tour périodique exclut délibérément
+ * les sources LinkedIn (96 passages par jour pour un plafond de 3). Ce tour-ci a sa cadence, et
+ * surtout il REFUSE d'enfiler plutôt que de laisser le handler refuser — un passage refusé
+ * laisse une ligne à l'écran.
+ */
+async function tourLinkedInAutomatique() {
+  console.log('\n26. le tour automatique des sources LinkedIn');
+  // Toujours dans la fenêtre : les jours et heures du réglage sont posés autour de MAINTENANT,
+  // sinon le harnais passerait ou échouerait selon l'heure à laquelle on le joue.
+  const ouvrirLaFenetre = async (org, auto = true) => {
+    const { rows } = await q(`select extract(isodow from now() at time zone 'UTC')::int as j, extract(hour from now() at time zone 'UTC')::int as h`);
+    await q(
+      `insert into linkedin_settings (organization_id, collect_auto, send_days, send_from_hour, send_to_hour, timezone)
+       values ($1, $2, array[$3::int], 0, 24, 'UTC')
+       on conflict (organization_id) do update
+         set collect_auto = excluded.collect_auto, send_days = excluded.send_days,
+             send_from_hour = excluded.send_from_hour, send_to_hour = excluded.send_to_hour,
+             timezone = excluded.timezone`,
+      [org, auto, rows[0].j],
+    );
+    return rows[0].h;
+  };
+  const bossFactice = () => {
+    const envoyes = [];
+    return { boss: { send: async (name, data, options) => envoyes.push({ name, data, options }), insert: async () => undefined }, envoyes };
+  };
+
+  // 1. Reglage a faux : rien ne part. C'est le defaut, et il fait sortir du trafic vers
+  // LinkedIn tous les jours — il ne doit jamais s'activer tout seul.
+  const m = await monde();
+  await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m.org, false);
+  const b0 = bossFactice();
+  check('83. collecte automatique desactivee : aucun passage n’est enfile', (await enqueueLinkedInTours(b0.boss, pool)) === 0 && b0.envoyes.length === 0);
+
+  // 2. Reglage a vrai, dans la fenetre : un passage part.
+  await ouvrirLaFenetre(m.org, true);
+  const b1 = bossFactice();
+  const n1 = await enqueueLinkedInTours(b1.boss, pool);
+  check('84. collecte automatique activee : un passage part tout seul', n1 === 1 && b1.envoyes[0]?.name === 'linkedin.collecte', `${n1} / ${JSON.stringify(b1.envoyes.map((e) => e.name))}`);
+
+  // 3 bis. Un refus TRANSITOIRE ne consomme pas le tour du jour : l'opérateur clique « Collecter
+  // maintenant » a 10h02, le passage prend le verrou, le tour tombe a 10h05 et se fait refuser —
+  // cette ligne-la ne doit pas priver la source de sa journee pour six minutes d'attente.
+  const mT = await monde();
+  const srcT = await sourceConcurrente(mT, ['https://www.linkedin.com/company/acme/']);
+  await q(`delete from campaign_sources where source_id = $1`, [mT.source]);
+  await ouvrirLaFenetre(mT.org, true);
+  const refuse = await startSourceRun(pool, srcT);
+  await q(`update source_runs set status = 'error', finished_at = now(), error = 'verrou' where id = $1`, [refuse]);
+  // Le tour sert TOUTES les organisations : on regarde ce qui part pour CETTE source, pas le
+  // total, sinon une organisation voisine du harnais fausse la mesure.
+  const bT = bossFactice();
+  await enqueueLinkedInTours(bT.boss, pool);
+  const pourSrcT = (b) => b.envoyes.filter((e) => e.data?.sourceId === srcT).length;
+  check('84b. un refus sans la moindre requete ne consomme pas le tour du jour', pourSrcT(bT) === 1, JSON.stringify(bT.envoyes.map((e) => e.data?.sourceId)));
+  // Et le passage qui vient d'etre ouvert, lui, le consomme : sinon deux passages se
+  // disputeraient le verrou du navigateur.
+  const bT2 = bossFactice();
+  await enqueueLinkedInTours(bT2.boss, pool);
+  check('84c. mais un passage EN COURS le consomme', pourSrcT(bT2) === 0, JSON.stringify(bT2.envoyes.map((e) => e.data?.sourceId)));
+
+  // 3. UNE source par tour, et UN passage par source et par jour. L'organisation en a deux (le
+  // post de `monde()` et la page concurrente) : elles partent l'une apres l'autre, la moins
+  // recemment passee d'abord, puis plus rien du tout ce jour-la. Sans cette borne, un tour
+  // toutes les demi-heures enfilerait quarante-huit passages qui se feraient tous refuser.
+  // L'invariant qui compte, mesure sur la BASE et pas sur le nombre de tours : quand plus rien
+  // ne part, chaque source de l'organisation a EXACTEMENT un passage du jour. Compter les tours
+  // serait faux — un tour sert aussi les autres organisations du harnais.
+  for (let i = 0; i < 10; i += 1) {
+    const b = bossFactice();
+    if ((await enqueueLinkedInTours(b.boss, pool)) === 0) break;
+  }
+  const parSource = (
+    await q(
+      `select so.id, count(sr.id)::int n from sources so
+         left join source_runs sr on sr.source_id = so.id
+        where so.organization_id = $1 and so.config->>'sourceType' like 'linkedin%'
+        group by so.id`,
+      [m.org],
+    )
+  ).rows;
+  check('85. chaque source a eu son passage du jour, et pas un de plus',
+    parSource.length > 1 && parSource.every((l) => l.n === 1), JSON.stringify(parSource.map((l) => l.n)));
+
+  // 4. Hors fenetre : rien. Un compte qui n'ecrit a personne la nuit et lit deux cents profils
+  // a quatre heures du matin se repere.
+  const m3 = await monde();
+  await sourceConcurrente(m3, ['https://www.linkedin.com/company/acme/']);
+  await q(
+    `insert into linkedin_settings (organization_id, collect_auto, send_days, send_from_hour, send_to_hour, timezone)
+     values ($1, true, array[1,2,3,4,5,6,7], 0, 1, 'UTC')
+     on conflict (organization_id) do update set collect_auto = true, send_days = excluded.send_days,
+       send_from_hour = 0, send_to_hour = 1, timezone = 'UTC'`,
+    [m3.org],
+  );
+  const heure = (await q(`select extract(hour from now() at time zone 'UTC')::int as h`)).rows[0].h;
+  const b3 = bossFactice();
+  const n3 = await enqueueLinkedInTours(b3.boss, pool);
+  check('86. hors de la fenetre d’envoi, rien ne part', heure === 0 ? n3 === 1 : n3 === 0, `heure UTC ${heure}, enfiles ${n3}`);
+
+  // 5. Session bloquee : rien. Sinon chaque passage serait refuse « session », une ligne par
+  // jour et par source, sans que rien ne soit lu.
+  const m4 = await monde({ session: 'bloquee' });
+  await sourceConcurrente(m4, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m4.org, true);
+  const b4 = bossFactice();
+  check('87. session LinkedIn bloquee : aucun passage n’est enfile', (await enqueueLinkedInTours(b4.boss, pool)) === 0);
+
+  // 6. Plafond de posts du jour atteint : rien, et surtout aucun passage ouvert pour le faire
+  // refuser. C'est la difference entre un tour discret et un journal illisible.
+  const m5 = await monde();
+  const src5 = await sourceConcurrente(m5, ['https://www.linkedin.com/company/acme/']);
+  await ouvrirLaFenetre(m5.org, true);
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_posts_par_jour', '1')`, [m5.org]);
+  // Un post reellement lu aujourd'hui par une AUTRE source : le plafond est par organisation.
+  const autreSrc = await sourceConcurrente(m5, ['https://www.linkedin.com/company/autre/']);
+  const runPasse = await startSourceRun(pool, autreSrc);
+  await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m5.org, runPasse]);
+  const avant = (await q(`select count(*)::int n from source_runs where source_id = $1`, [src5])).rows[0].n;
+  const b5 = bossFactice();
+  const n5 = await enqueueLinkedInTours(b5.boss, pool);
+  const apres = (await q(`select count(*)::int n from source_runs where source_id = $1`, [src5])).rows[0].n;
+  check('88. plafond du jour atteint : rien n’est enfile', n5 === 0, String(n5));
+  check('88b. et aucun passage n’est ouvert pour etre refuse', apres === avant, `${avant} -> ${apres}`);
+}
+
+/**
+ * Lot 4b, étape 2 : l'interrupteur de l'écran écrit vraiment, y compris pour une organisation
+ * qui n'a jamais ouvert ses réglages.
+ */
+async function interrupteurCollecteAuto() {
+  console.log('\n27. l’interrupteur de la collecte automatique');
+  const m = await monde();
+  const admin = { ...m.ctx, role: 'admin' };
+
+  check('89. une organisation sans ligne de réglages lit « désactivée »', (await lireCollecteAutoLinkedIn(admin)) === false);
+
+  // Le piège : un `update` n'aurait rien écrit ici, et l'écran aurait répondu « enregistré » à
+  // un opérateur dont le réglage n'aurait jamais pris.
+  const lignesAvant = (await q(`select count(*)::int n from linkedin_settings where organization_id = $1`, [m.org])).rows[0].n;
+  await ecrireCollecteAutoLinkedIn(admin, true);
+  const lignesApres = (await q(`select count(*)::int n from linkedin_settings where organization_id = $1`, [m.org])).rows[0].n;
+  check('90. activer crée la ligne de réglages quand elle n’existe pas', lignesAvant === 0 && lignesApres === 1, `${lignesAvant} -> ${lignesApres}`);
+  check('90b. et la relecture le confirme', (await lireCollecteAutoLinkedIn(admin)) === true);
+
+  await ecrireCollecteAutoLinkedIn(admin, false);
+  check('91. désactiver revient en arrière', (await lireCollecteAutoLinkedIn(admin)) === false);
+
+  // Les réglages déjà posés ne doivent pas être écrasés par l'interrupteur.
+  await q(`update linkedin_settings set send_from_hour = 7, timezone = 'Europe/Lisbon' where organization_id = $1`, [m.org]);
+  await ecrireCollecteAutoLinkedIn(admin, true);
+  const r = (await q(`select send_from_hour, timezone, collect_auto from linkedin_settings where organization_id = $1`, [m.org])).rows[0];
+  check('92. il ne touche à aucun autre réglage', r.send_from_hour === 7 && r.timezone === 'Europe/Lisbon' && r.collect_auto === true, JSON.stringify(r));
+
+  // Et il demande le droit d'administrer : un simple opérateur ne règle pas le trafic sortant.
+  let refuse = false;
+  try {
+    await ecrireCollecteAutoLinkedIn({ ...m.ctx, role: 'operator' }, false);
+  } catch {
+    refuse = true;
+  }
+  check('93. un rôle non administrateur est refusé', refuse);
+}
+
 async function main() {
   await jouer(nominal, profilIncomplet, plafondHoraire, plafondPosts, frictions, gardes, disjoncteur, producteur,
     memeTour, disjoncteurRefusLocaux, disjoncteurReleveSortie, fusionDesObjets, profondeur,
     fusionEntreReponses, navigateurInjoignable, postIntrouvableNeDisjonctePas,
     disjoncteurBorneParLaReconnexion, panneDeBaseApresLeTrafic, sortieInattendueNeDisjonctePas,
-    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob);
+    messagesDesPannesDeLecture, ecranEtBilan, oppositionDeuxGraphies, repriseDuJob, memoireDesPosts, sourceConcurrent, lancementSansCollecteur, tourLinkedInAutomatique, interrupteurCollecteAuto);
   console.log(`\n[linkedin-collecte] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

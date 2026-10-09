@@ -53,7 +53,7 @@ export const TYPES_SOURCES = [
   'adzuna',
   'france_travail',
   'linkedin_post_engagers',
-  'linkedin_competitor_followers',
+  'linkedin_competitor_posts',
   'linkedin_keywords',
   'linkedin_job_change',
   'csv',
@@ -71,7 +71,7 @@ export const TYPES_VEILLE = [
   'adzuna',
   'france_travail',
   'linkedin_post_engagers',
-  'linkedin_competitor_followers',
+  'linkedin_competitor_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ] as const;
@@ -79,7 +79,7 @@ export type TypeVeille = (typeof TYPES_VEILLE)[number];
 
 const TYPES_LINKEDIN = [
   'linkedin_post_engagers',
-  'linkedin_competitor_followers',
+  'linkedin_competitor_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ] as const;
@@ -117,8 +117,19 @@ function estTypeLinkedIn(v: string): v is (typeof TYPES_LINKEDIN)[number] {
  * `provider_id` nul pour une source LinkedIn.
  */
 export function collecteImplementee(providerId: string): boolean {
-  return !estTypeLinkedIn(providerId) || providerId === 'linkedin_post_engagers';
+  return !estTypeLinkedIn(providerId) || TYPES_LINKEDIN_COLLECTES.includes(providerId);
 }
+
+/**
+ * Les types LinkedIn que le serveur sait collecter. **Une seule liste, partout.**
+ *
+ * Elle était recopiée à quatre endroits — le producteur, le handler, l'écran de création d'une
+ * source et ici. Brancher un type de plus en oubliant une seule copie donne un défaut pénible à
+ * diagnostiquer : le producteur enfile un passage, le handler ne reconnaît pas la source, et
+ * l'opérateur lit « cette source n'est reliée à aucune campagne active » devant une campagne
+ * parfaitement active.
+ */
+export const TYPES_LINKEDIN_COLLECTES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
 
 /**
  * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
@@ -179,11 +190,24 @@ export const configLinkedInPost = z
   .strict();
 export type ConfigLinkedInPost = z.infer<typeof configLinkedInPost>;
 
+/**
+ * `compteId` et `profilsParJour` ont été retirés en branchant la collecte (lot 4b, étape 2).
+ *
+ * `compteId` venait d'une conception où l'opérateur choisissait son compte LinkedIn parmi
+ * plusieurs : il y en a UN par instance, ouvert côté serveur. `profilsParJour` annonçait un
+ * quota que rien ne lisait — les plafonds réels vivent dans `linkedin_settings`
+ * (`linkedin_posts_par_jour`, `linkedin_personnes_par_passage`) et se règlent à l'écran. Deux
+ * plafonds dont un seul mord, c'est un chiffre affiché que le produit ne mesure pas.
+ *
+ * `garder` et `personaId` les remplacent : ce sont ceux dont la collecte a besoin, exactement
+ * comme pour un post isolé — le collecteur d'engageurs est le même.
+ */
 export const configLinkedInConcurrent = z
   .object({
-    comptesConcurrents: z.array(z.string().min(1)).min(1),
-    compteId: z.string().min(1),
-    profilsParJour: z.number().int().positive().max(200).default(40),
+    pagesConcurrentes: z.array(z.string().min(1)).min(1),
+    garder: z.array(z.enum(['commente', 'reagi'])).min(1),
+    /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
+    personaId: z.string().min(1).optional(),
   })
   .strict();
 export type ConfigLinkedInConcurrent = z.infer<typeof configLinkedInConcurrent>;
@@ -215,7 +239,7 @@ function schemaConfigDuType(providerId: TypeVeille): z.ZodTypeAny {
       return configFranceTravail;
     case 'linkedin_post_engagers':
       return configLinkedInPost;
-    case 'linkedin_competitor_followers':
+    case 'linkedin_competitor_posts':
       return configLinkedInConcurrent;
     case 'linkedin_keywords':
       return configLinkedInMotsCles;
@@ -332,11 +356,13 @@ export function configFormulaireDepuisStockee(
       personaId: chaineOuIndefinie(c.personaId),
     };
   }
-  if (providerId === 'linkedin_competitor_followers') {
+  if (providerId === 'linkedin_competitor_posts') {
     return {
-      comptesConcurrents: tableauDeChaines(c.comptesConcurrents),
-      compteId: chaineOuVide(c.compteId),
-      profilsParJour: nombreOuIndefini(c.profilsParJour) ?? 40,
+      pagesConcurrentes: tableauDeChaines(c.pagesConcurrentes),
+      garder: tableauDeChaines(c.garder).filter(
+        (v): v is 'commente' | 'reagi' => v === 'commente' || v === 'reagi',
+      ),
+      personaId: chaineOuIndefinie(c.personaId),
     };
   }
   if (providerId === 'linkedin_keywords') {
@@ -888,10 +914,15 @@ export async function creerSource(ctx: Contexte, entree: unknown): Promise<{ id:
   const { personas } = await verifierCampagne(ctx, campagneId);
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
-  if (providerId === 'linkedin_post_engagers') {
-    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
-    exigerPersonaSource(personas, personaId);
-    await exigerPostLibre(ctx, urlPost, null);
+  if (TYPES_LINKEDIN_COLLECTES.includes(providerId)) {
+    // Le persona vaut pour les deux : la collecte juge les personnes avec sa consigne, qu'elles
+    // viennent d'un post donné ou d'un post trouvé.
+    exigerPersonaSource(personas, (configValide as { personaId?: string }).personaId);
+    // L'unicité, elle, ne concerne que le post : une page concurrente peut nourrir plusieurs
+    // campagnes, un post nommé une seule.
+    if (providerId === 'linkedin_post_engagers') {
+      await exigerPostLibre(ctx, (configValide as ConfigLinkedInPost).urlPost, null);
+    }
   }
   const configStocke = construireConfigStocke(providerId, configValide);
   const sourceRes = await ctx.ex.query<{ id: string }>(
@@ -962,8 +993,8 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
   )[0]!;
 
   const configValide = valider(schemaConfigDuType(providerId), config) as Record<string, unknown>;
-  if (providerId === 'linkedin_post_engagers') {
-    const { urlPost, personaId } = configValide as ConfigLinkedInPost;
+  if (TYPES_LINKEDIN_COLLECTES.includes(providerId)) {
+    const { personaId } = configValide as { personaId?: string };
     const campagnesRes = await ctx.ex.query<{ personas: unknown }>(
       `select c.entry_rules->'personas' as personas
          from campaign_sources cs join campaigns c on c.id = cs.campaign_id /* jr:sources_personas_campagnes */
@@ -976,7 +1007,11 @@ export async function modifierSource(ctx: Contexte, entree: unknown): Promise<vo
         personaId,
       );
     }
-    await exigerPostLibre(ctx, urlPost, sourceId);
+    // L'unicité ne concerne que le post nommé : une page concurrente peut nourrir plusieurs
+    // campagnes.
+    if (providerId === 'linkedin_post_engagers') {
+      await exigerPostLibre(ctx, (configValide as ConfigLinkedInPost).urlPost, sourceId);
+    }
   }
   // Fusionné à la config EXISTANTE, jamais remplacé en bloc : une source
   // créée avant ce lot porte des clés que ce formulaire ne gère pas
