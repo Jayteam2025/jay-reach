@@ -19,7 +19,7 @@ import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
 import type { CollecteLinkedInJob } from './handlers/collecte-linkedin.js';
 import { compterEntreesDuJour } from './handlers/sequence.js';
-import { startSourceRun } from './db.js';
+import { finishSourceRun, startSourceRun } from './db.js';
 import { deterministicUuid } from './ids.js';
 import { ecarterEngageur, lienProfilDeduit, sqlAdresseResolvable, type FragmentSql } from './handlers/post-engagement.js';
 
@@ -32,8 +32,16 @@ interface SourceRow {
   readonly config: { keywords?: unknown; location?: unknown; ageMaxJours?: unknown; sourceType?: unknown } | null;
 }
 
-/** Le seul type LinkedIn que le worker sait exécuter au lot 4a. Les trois autres arrivent au 4b. */
-const TYPE_LINKEDIN_EXECUTABLE = 'linkedin_post_engagers';
+/** Les types LinkedIn que le worker sait exécuter. Les autres sont saisissables, pas collectés. */
+const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers'];
+
+/**
+ * Ce que l'opérateur lit sur la carte de sa source quand il demande une collecte que le
+ * worker ne sait pas encore faire. Le message part dans `source_runs.error`, là où
+ * `lireCartesSources` va déjà chercher la cause d'un refus.
+ */
+const MSG_TYPE_NON_COLLECTE =
+  'Ce type de source n’est pas encore collecté : rien n’a été lu. Les engageurs d’un post le sont.';
 
 /** La politique de reprise déclarée pour la file de collecte, reprise sur chaque job (comme `REPRISE_CONTACT_CONNU`). */
 const REPRISE_COLLECTE_LINKEDIN = QUEUES.find((q) => q.name === 'linkedin.collecte')?.retry;
@@ -54,8 +62,19 @@ async function enfilerCollecteLinkedIn(
   src: { id: string; organization_id: string },
   type: string,
 ): Promise<number> {
-  if (type !== TYPE_LINKEDIN_EXECUTABLE) {
-    console.warn(`[producer] collecte demandée pour la source ${src.id} : type LinkedIn pas encore exécutable — ignorée`);
+  if (!TYPES_LINKEDIN_EXECUTABLES.includes(type)) {
+    // Un refus muet est pire que pas de bouton. `lancerCampagne` demande une collecte à TOUTES
+    // les sources actives : sans cette trace, l'opérateur voyait sa campagne partir, n'obtenait
+    // aucun contact, et la seule explication vivait dans les journaux du conteneur. On ouvre
+    // donc un passage et on le referme aussitôt en erreur, là où l'écran regarde déjà.
+    console.warn(`[producer] collecte demandée pour la source ${src.id} : type LinkedIn pas encore exécutable — refusée`);
+    try {
+      const runRefuse = await startSourceRun(pool, src.id);
+      await finishSourceRun(pool, runRefuse, { status: 'error', found: 0, added: 0, error: MSG_TYPE_NON_COLLECTE });
+    } catch (err) {
+      // Le refus doit se voir, mais il ne doit pas faire tomber l'enfilage des AUTRES sources.
+      console.error(`[producer] refus non enregistré pour la source ${src.id} (${err instanceof Error ? err.name : 'erreur'})`);
+    }
     return 0;
   }
   const sourceRunId = await startSourceRun(pool, src.id);

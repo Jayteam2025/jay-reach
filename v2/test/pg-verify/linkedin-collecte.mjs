@@ -688,6 +688,31 @@ async function producteur() {
   check('35. le passage est réellement ouvert en base avant le job', ouvert?.status === 'running', JSON.stringify(ouvert));
   const demande = (await q(`select run_requested_at from sources where id = $1`, [m.source])).rows[0];
   check('36. la demande est consommée', demande.run_requested_at === null);
+
+  // Une demande sur un type LinkedIn que le worker ne sait pas collecter. `lancerCampagne` en
+  // produit à CHAQUE lancement, sur toutes les sources actives : tant que le refus ne vivait
+  // que dans les journaux du conteneur, l'opérateur voyait sa campagne partir et n'obtenait
+  // jamais ni contact ni explication.
+  const { id: srcNonCollectee } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_keywords',
+    nom: 'Mots-clés',
+    config: { sujets: ['vente externalisée'], compteId: 'compte-1', profilsParJour: 40 },
+  });
+  envoyes.length = 0;
+  await q(`update sources set run_requested_at = now() where id = $1`, [srcNonCollectee]);
+  const refusees = await enqueueRequestedRuns(boss, pool);
+  check('36b. un type non collecté n’enfile aucun job', refusees === 0 && envoyes.length === 0, `${refusees} / ${JSON.stringify(envoyes)}`);
+  const passageRefuse = (
+    await q(`select status, error from source_runs where source_id = $1 order by started_at desc limit 1`, [srcNonCollectee])
+  ).rows[0];
+  check(
+    '36c. mais le refus s’écrit là où l’écran regarde : un passage en erreur, avec sa cause',
+    passageRefuse?.status === 'error' && typeof passageRefuse.error === 'string' && passageRefuse.error.length > 0,
+    JSON.stringify(passageRefuse),
+  );
+  const demandeRefusee = (await q(`select run_requested_at from sources where id = $1`, [srcNonCollectee])).rows[0];
+  check('36d. et la demande est consommée : elle ne repart pas en boucle', demandeRefusee.run_requested_at === null);
 }
 
 // ------------------------------------- 9. plusieurs passages dans le meme tour
