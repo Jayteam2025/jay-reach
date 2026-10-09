@@ -21,7 +21,7 @@ import {
   lienProfilDeduit,
   normaliserUrlPost,
   normaliserUrlProfil,
-  type Executeur, sqlEstSignalDePersonne, type KindPersonne} from '@jay-reach/core';
+  type Executeur, sqlEstSignalDePersonne, type KindPersonne, sqlPredicatUniciteDePersonne} from '@jay-reach/core';
 import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 
 export type Engageur = {
@@ -194,6 +194,79 @@ export async function enregistrerEngageur(
   return enregistrerPersonne(ctx, identiteDEngageur(entree, urlPost), campagne);
 }
 
+/** Ce qu'un passage de « changement de poste » a constaté sur un contact. */
+export type IssueChangement = 'change' | 'inchange' | 'absent';
+
+/** Normalise un intitulé pour la COMPARAISON : la casse et les espaces ne font pas un changement. */
+export function normaliserIntitule(intitule: string): string {
+  return intitule.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Enregistre qu'un contact a changé de poste : un signal neuf, et la fiche qui le suit.
+ *
+ * Pourquoi un chemin à part plutôt qu'`enregistrerPersonne` : celle-ci REFUSE délibérément de
+ * créer un second signal pour un contact qui en porte déjà un, parce qu'un signal de plus serait
+ * scoré — donc payé — sans rien apporter. Ici, c'est exactement ce qu'on veut : le NOUVEAU poste
+ * doit être jugé pour lui-même. Une personne qui n'intéressait pas à son ancien poste peut
+ * intéresser au nouveau, et l'inverse est vrai aussi — si le nouveau poste ne correspond pas à
+ * l'ICP, le scoring l'écarte et rien ne part.
+ *
+ * L'ancien signal est CONSERVÉ : il porte l'historique. Seul `contacts.source_signal_id` bascule,
+ * parce que c'est lui que l'inscription lit (`enqueueEnrollments`). Une personne déjà en séquence
+ * vivante n'est pas réinscrite pour autant : la règle existante s'en charge, et ce n'est pas à
+ * cette fonction de la redire.
+ *
+ * Tout se fait dans UNE transaction : une coupure ne doit pas laisser une fiche qui annonce le
+ * nouveau poste et un `source_signal_id` qui pointe l'ancien, ni l'inverse.
+ */
+export async function enregistrerChangementDePoste(
+  ctx: ContexteEngageur,
+  entree: { readonly contactId: string; readonly ancienIntitule: string | null; readonly nouvelIntitule: string; readonly urlProfil: string },
+  campagne: { readonly personaId: string },
+): Promise<IssueChangement> {
+  const { pool, organizationId: org } = ctx;
+  const nouveau = entree.nouvelIntitule.trim();
+  if (nouveau.length === 0) return 'inchange';
+  if (normaliserIntitule(entree.ancienIntitule ?? '') === normaliserIntitule(nouveau)) return 'inchange';
+
+  return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<IssueChangement> => {
+    // Verrou d'abord : deux passages simultanés sur la même organisation ne doivent pas créer
+    // deux signaux pour un seul changement.
+    const verrou = await tx.query<{ id: string }>(
+      `select id from contacts where id = $2 and organization_id = $1 for update`,
+      [org, entree.contactId],
+    );
+    if (verrou.rows.length === 0) return 'absent';
+
+    // L'`external_id` porte le NOUVEL intitulé : le même changement, revu au passage suivant, ne
+    // crée pas un second signal ; un changement DE PLUS, lui, en crée un.
+    const externalId = `changement:${entree.urlProfil}:${normaliserIntitule(nouveau)}`;
+    const signal = await tx.query<{ id: string }>(
+      `insert into signals
+         (organization_id, source_id, source_run_id, provider_id, external_id, kind, occurred_at, title, url, status)
+       values ($1, $2, $6, 'linkedin', $3, 'job_change', now(), $4, $5, 'new')
+       on conflict (organization_id, external_id) where ${sqlPredicatUniciteDePersonne()} do nothing
+       returning id`,
+      [org, ctx.sourceId, externalId, nouveau, entree.urlProfil, ctx.sourceRunId],
+    );
+    const signalId = signal.rows[0]?.id;
+    // Déjà enregistré par un passage précédent (ou concurrent) : la fiche est à jour, rien à faire.
+    if (signalId === undefined) return 'inchange';
+
+    await tx.query(
+      `update contacts
+          set job_title = $3,
+              source_signal_id = $4,
+              persona_id = coalesce(persona_id, $5),
+              linkedin_verifie_le = now()
+        where id = $2 and organization_id = $1`,
+      [org, entree.contactId, nouveau, signalId, campagne.personaId],
+    );
+    return 'change';
+  });
+}
+
 export async function enregistrerPersonne(
   ctx: ContexteEngageur,
   identite: IdentitePersonne,
@@ -303,7 +376,7 @@ export async function enregistrerPersonne(
      -- Le prédicat est écrit À L'IDENTIQUE de celui de signals_personne_uidx : c'est ce qui
      -- permet à Postgres d'inférer l'index. Restreint à un seul kind, il n'en inférait plus
      -- aucun dès qu'un second kind de personne existait, et l'insertion échouait.
-     on conflict (organization_id, external_id) where kind in ('post_engagement', 'people_search') do nothing
+     on conflict (organization_id, external_id) where ${sqlPredicatUniciteDePersonne()} do nothing
      returning id`,
     [org, ctx.sourceId, externalId, identite.intitule, identite.urlSignal, ctx.sourceRunId, identite.kind],
   );

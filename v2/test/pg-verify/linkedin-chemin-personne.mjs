@@ -31,6 +31,8 @@ import {
   persistEnrichedContact,
   runScore,
   normaliserUrlPost,
+  KINDS_PERSONNE,
+  sqlPredicatUniciteDePersonne,
 } from './_linkedin-chemin-personne-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -832,7 +834,52 @@ async function rls() {
 }
 
 try {
-  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, scoringCampagneLinkedInSeule, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls);
+/**
+ * L'index unique des signaux de personne couvre-t-il EXACTEMENT la famille ?
+ *
+ * Un `on conflict (cols) where <prédicat>` n'infère un index partiel que si le prédicat
+ * correspond. Un kind ajouté à `KINDS_PERSONNE` sans que l'index suive fait échouer l'insertion
+ * sur « no unique or exclusion constraint matching », AU PREMIER enregistrement réel et nulle
+ * part avant : ni le typage, ni les tests unitaires, ni la CI ne le voient. Le piège s'est posé
+ * deux fois dans la même journée (people_search, puis job_change).
+ */
+async function uniciteDesPersonnes() {
+  console.log('l index unique des signaux de personne suit la famille');
+  const idx = (await q(
+    `select indexdef from pg_indexes where tablename = 'signals' and indexdef like '%organization_id, external_id%' and indexdef like 'CREATE UNIQUE%'`,
+  )).rows.map((r) => r.indexdef);
+  check('90. il existe un index unique partiel sur (organisation, external_id)', idx.length === 1, JSON.stringify(idx));
+
+  const def = idx[0] ?? '';
+  for (const kind of KINDS_PERSONNE) {
+    check(`90.${kind} — l index le couvre`, def.includes(`'${kind}'`), def);
+  }
+  // Et rien de plus : un kind d entreprise dans cet index ferait dedoublonner des signaux qui
+  // n ont pas la meme cle.
+  const cites = [...def.matchAll(/'([a-z_]+)'::signal_kind/g)].map((m) => m[1]).sort();
+  check('90b. et rien d autre que la famille', JSON.stringify(cites) === JSON.stringify([...KINDS_PERSONNE].sort()),
+    `index=${JSON.stringify(cites)} famille=${JSON.stringify([...KINDS_PERSONNE].sort())}`);
+
+  // La preuve par l usage : le `on conflict` du code infere bien cet index, pour CHAQUE kind.
+  for (const kind of KINDS_PERSONNE) {
+    const m = await monde({ avecPrompt: false });
+    const ext = `preuve-${kind}`;
+    const insere = async () => q(
+      `insert into signals (organization_id, source_id, provider_id, external_id, kind, occurred_at, title, url, status)
+       values ($1, $2, 'linkedin', $3, $4::signal_kind, now(), 't', 'u', 'new')
+       on conflict (organization_id, external_id) where ${sqlPredicatUniciteDePersonne()} do nothing
+       returning id`,
+      [m.org, m.source, ext, kind],
+    );
+    const premier = await insere();
+    const second = await insere();
+    check(`90c.${kind} — le on conflict infere l index et dedoublonne`,
+      premier.rows.length === 1 && second.rows.length === 0,
+      `premier=${premier.rows.length} second=${second.rows.length}`);
+  }
+}
+
+  await jouer(index, rattachement, chaine, purgeEtRegression, gardeDeLEffacement, sansConsigne, scoringAdresseDeduite, scoringCampagneLinkedInSeule, entreprise, enrichissement, importCsv, migrationAdresses, atomicite, rls, uniciteDesPersonnes);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

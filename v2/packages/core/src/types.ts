@@ -36,6 +36,19 @@ export type SignalKind =
 export const KINDS_PERSONNE = ['post_engagement', 'people_search', 'job_change'] as const satisfies readonly SignalKind[];
 export type KindPersonne = (typeof KINDS_PERSONNE)[number];
 
+/**
+ * Le prédicat de l'index unique partiel `signals_personne_uidx`, mot pour mot.
+ *
+ * Un `on conflict (cols) where <prédicat>` n'infère un index partiel que si le prédicat
+ * CORRESPOND. Écrit à la main dans chaque insertion, il finit par ne plus couvrir un kind qu'on
+ * vient d'ajouter — et Postgres refuse alors l'insertion (« no unique or exclusion constraint
+ * matching »), au premier enregistrement réel et nulle part avant. Un harnais vérifie que
+ * l'index en base porte exactement ce prédicat.
+ */
+export function sqlPredicatUniciteDePersonne(): string {
+  return `kind in (${KINDS_PERSONNE.map((k) => `'${k}'`).join(', ')})`;
+}
+
 /** Vrai quand ce signal décrit une personne. À préférer à toute comparaison en dur. */
 export function estSignalDePersonne(kind: string): kind is KindPersonne {
   return (KINDS_PERSONNE as readonly string[]).includes(kind);
