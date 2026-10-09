@@ -27,7 +27,7 @@ import {
   SOURCE_RUN_TIMEOUT_MIN,
   activerSessionLinkedIn,
   closeStaleSourceRuns,
-  compterRequetesLinkedIn,
+  compterRequetesLinkedIn, compterPostsLinkedInDuJour,
   confirmerIpAttendue,
   creerSource,
   enqueueDiscoverForActiveSources,
@@ -353,6 +353,41 @@ async function plafondPosts() {
   const passage = await lirePassage(r2);
   check('18. le second passage du même jour est refusé avant toute requête', p2.requetes.length === 0, `${p2.requetes.length}`);
   check('18b. il se termine en succès (le rejouer redépasserait le même plafond)', passage.status === 'success', `${passage.status} / ${passage.error}`);
+
+  // Ce plafond protège le COMPTE LinkedIn, pas un type de source. Tant qu'il ne comptait que
+  // `linkedin_post_engagers`, brancher un second type l'aurait fait échapper au plafond —
+  // c'est-à-dire sur la source la plus volumineuse.
+  const m2 = await monde();
+  const { id: srcConcurrent } = await creerSource(m2.ctx, {
+    campagneId: m2.campagne,
+    providerId: 'linkedin_competitor_followers',
+    nom: 'Posts d un concurrent',
+    config: { comptesConcurrents: ['https://www.linkedin.com/company/acme/'], compteId: 'compte-1', profilsParJour: 40 },
+  });
+  const runConcurrent = await startSourceRun(pool, srcConcurrent);
+  await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m2.org, runConcurrent]);
+  const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+  const comptes = await compterPostsLinkedInDuJour(m2.ctx, jour, 'Europe/Paris');
+  check('18c. un passage d un AUTRE type de source LinkedIn compte dans le même plafond', comptes === 1, String(comptes));
+
+  // Et une source qui n'est pas LinkedIn n'a rien à y faire : son passage ne doit rien consommer.
+  // Elle vit sur une campagne BROUILLON : posée sur la campagne active, le tour périodique
+  // l'enfilerait et polluerait la liste de jobs que lisent les contrôles 32 à 35.
+  const campagneBrouillon = (
+    await q(`insert into campaigns (organization_id, name, status) values ($1, 'Brouillon', 'draft') returning id`, [m2.org])
+  ).rows[0].id;
+  const { id: srcAdzuna } = await creerSource(m2.ctx, {
+    campagneId: campagneBrouillon,
+    providerId: 'adzuna',
+    nom: 'Offres',
+    config: { motsCles: ['commercial'], lieux: ['Paris'] },
+  });
+  const runAdzuna = await startSourceRun(pool, srcAdzuna);
+  await q(`insert into linkedin_requetes (organization_id, source_run_id) values ($1, $2)`, [m2.org, runAdzuna]);
+  const apres = await compterPostsLinkedInDuJour(m2.ctx, jour, 'Europe/Paris');
+  // Invariant, pas une valeur absolue : le compte ne doit pas BOUGER. Écrit `=== 1`, ce
+  // contrôle rougissait pour la mauvaise raison quand le filtre était trop étroit.
+  check('18d. un passage d une source NON LinkedIn ne change pas le compte', apres === comptes, `${comptes} -> ${apres}`);
 }
 
 // ---------------------------------------------------------------- 5. frictions

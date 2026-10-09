@@ -432,7 +432,10 @@ describe('plafonds LinkedIn', () => {
     const ctx = faux({ 'from source_runs': [{ n: 2 }] });
     expect(await compterPostsLinkedInDuJour(ctx, '2026-10-05', 'Europe/Paris', 'run-courant')).toBe(2);
     const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
-    expect(sql).toMatch(/linkedin_post_engagers/);
+    // Tous les types LinkedIn, pas le seul collecteur d'origine : ce plafond protege le
+    // COMPTE, et un type branche plus tard lui echapperait (voir le harnais, controle 18c).
+    expect(sql).toMatch(/sourceType' like 'linkedin%'/);
+    expect(sql).not.toMatch(/linkedin_post_engagers/);
     expect(sql).toContain('$2::date::timestamp at time zone $3');
     expect(sql).toContain('($2::date + 1)::timestamp at time zone $3');
     expect(params).toEqual(['org-1', '2026-10-05', 'Europe/Paris', 'run-courant']);
