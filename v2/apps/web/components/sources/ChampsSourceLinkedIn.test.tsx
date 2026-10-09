@@ -6,6 +6,7 @@ import {
   ChampsSourceLinkedIn,
   champsLinkedInValides,
   construireConfigLinkedIn,
+  etatChampsLinkedInDepuisConfig,
   type EtatChampsLinkedIn,
   type TypeLinkedIn,
 } from './ChampsSourceLinkedIn';
@@ -23,6 +24,7 @@ const VIDE: EtatChampsLinkedIn = {
   garderReagi: false,
   personaId: '',
   pagesConcurrentes: '',
+  profilsCreateurs: '',
   sujets: '',
   depuisJours: '',
   compteId: '',
@@ -65,6 +67,50 @@ describe('source « posts d’un concurrent »', () => {
   });
 });
 
+describe('source « posts d’un créateur »', () => {
+  const rempli: EtatChampsLinkedIn = {
+    ...VIDE,
+    profilsCreateurs: 'https://www.linkedin.com/in/une-personne/',
+    garderReagi: true,
+  };
+
+  it('envoie les profils, qui garder et le persona — jamais de compte ni de cadence', () => {
+    const config = construireConfigLinkedIn('linkedin_creator_posts', { ...rempli, personaId: 'p1' });
+    expect(config).toEqual({
+      profilsCreateurs: ['https://www.linkedin.com/in/une-personne/'],
+      garder: ['reagi'],
+      personaId: 'p1',
+    });
+  });
+
+  it('n’exige pas le compte LinkedIn, que le serveur tient lui-même', () => {
+    expect(champsLinkedInValides('linkedin_creator_posts', rempli)).toBe(true);
+  });
+
+  it('exige au moins un type d’engagement', () => {
+    expect(champsLinkedInValides('linkedin_creator_posts', { ...rempli, garderReagi: false })).toBe(false);
+  });
+
+  it('exige un profil, et les pages concurrentes ne le remplacent pas', () => {
+    expect(champsLinkedInValides('linkedin_creator_posts', { ...rempli, profilsCreateurs: '  ' })).toBe(false);
+    expect(
+      champsLinkedInValides('linkedin_creator_posts', { ...rempli, profilsCreateurs: '', pagesConcurrentes: 'x' }),
+    ).toBe(false);
+  });
+
+  it('exige le persona dès que la campagne en porte plusieurs', () => {
+    expect(champsLinkedInValides('linkedin_creator_posts', rempli, 2)).toBe(false);
+    expect(champsLinkedInValides('linkedin_creator_posts', { ...rempli, personaId: 'p1' }, 2)).toBe(true);
+  });
+
+  it('se reconstitue depuis une config stockée (édition)', () => {
+    const etat = etatChampsLinkedInDepuisConfig({
+      profilsCreateurs: ['https://www.linkedin.com/in/une-personne/', 'https://www.linkedin.com/in/une-autre/'],
+    });
+    expect(etat.profilsCreateurs).toBe('https://www.linkedin.com/in/une-personne/, https://www.linkedin.com/in/une-autre/');
+  });
+});
+
 describe('les types sans collecteur serveur gardent leurs anciens champs', () => {
   it('les mots-cles exigent toujours un compte LinkedIn', () => {
     const etat = { ...VIDE, sujets: 'CRM' };
@@ -89,6 +135,8 @@ describe('le formulaire rendu', () => {
     postOneCampaign: d.postOneCampaign,
     competitorPages: d.competitorPages,
     competitorPagesHint: d.competitorPagesHint,
+    creatorProfiles: d.creatorProfiles,
+    creatorProfilesHint: d.creatorProfilesHint,
     topics: d.topics,
     sinceDays: d.sinceDays,
     accountId: d.accountId,
@@ -112,6 +160,16 @@ describe('le formulaire rendu', () => {
     const html = rendre('linkedin_competitor_posts');
     expect(html).toContain('https://www.linkedin.com/company/');
     expect(html).toContain('linkedin.com/company/nom-du-concurrent');
+  });
+
+  it('demande une adresse de PROFIL pour un créateur, avec son champ à lui', () => {
+    const html = rendre('linkedin_creator_posts');
+    expect(html).toContain('name="profilsCreateurs"');
+    expect(html).toContain('https://www.linkedin.com/in/');
+    expect(html).toContain('linkedin.com/in/nom-du-createur');
+    expect(html).not.toContain('name="pagesConcurrentes"');
+    expect(html).not.toContain('name="compteId"');
+    expect(html).toContain(libelles.keepPeople);
   });
 
   it('propose les memes choix d engagement que pour un post', () => {
@@ -155,6 +213,7 @@ describe('les types collectes par le serveur', () => {
   it('sont les deux sources d’engageurs, et elles seules', () => {
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_post_engagers')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_competitor_posts')).toBe(true);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_creator_posts')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_keywords')).toBe(false);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_job_change')).toBe(false);
   });
@@ -163,8 +222,8 @@ describe('les types collectes par le serveur', () => {
   // Tant qu'ils avaient chacun leur liste, une source se saisissait sans compte LinkedIn mais
   // n'avait aucun bouton pour partir.
   it('decident aussi des champs du formulaire : une seule liste pour les deux ecrans', () => {
-    for (const type of ['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_keywords', 'linkedin_job_change'] as const) {
-      const demandeLeCompte = !champsLinkedInValides(type, { ...VIDE, urlPost: 'x', pagesConcurrentes: 'x', sujets: 'x', garderReagi: true });
+    for (const type of ['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_creator_posts', 'linkedin_keywords', 'linkedin_job_change'] as const) {
+      const demandeLeCompte = !champsLinkedInValides(type, { ...VIDE, urlPost: 'x', pagesConcurrentes: 'x', profilsCreateurs: 'x', sujets: 'x', garderReagi: true });
       expect(demandeLeCompte).toBe(!TYPES_LINKEDIN_COLLECTES.includes(type));
     }
   });

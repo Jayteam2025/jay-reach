@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { Bouton, Carte, Champ, EtatVide, Menu, Puce, TuileLogo } from '../../ui';
+import { collecteServeurDisponible } from '../../sources/collecte-maintenant';
 import type { GroupeMenu } from '../../ui';
 import {
   ChampsSourceLinkedIn,
@@ -17,6 +18,7 @@ export type ProviderIdAssistant = 'adzuna' | 'france_travail' | TypeLinkedIn;
 const TYPES_LINKEDIN: readonly TypeLinkedIn[] = [
   'linkedin_post_engagers',
   'linkedin_competitor_posts',
+  'linkedin_creator_posts',
   'linkedin_keywords',
   'linkedin_job_change',
 ];
@@ -54,6 +56,8 @@ export interface EtapeSourcesLibelles {
   menuLinkedinPostEngagersDescription: string;
   menuLinkedinCompetitorPostsTitre: string;
   menuLinkedinCompetitorPostsDescription: string;
+  menuLinkedinCreatorPostsTitre: string;
+  menuLinkedinCreatorPostsDescription: string;
   menuLinkedinKeywordsTitre: string;
   menuLinkedinKeywordsDescription: string;
   menuLinkedinJobChangeTitre: string;
@@ -75,6 +79,8 @@ export interface EtapeSourcesLibelles {
   formLinkedinPostOneCampaign: string;
   formLinkedinCompetitorPages: string;
   formLinkedinCompetitorPagesHint: string;
+  formLinkedinCreatorProfiles: string;
+  formLinkedinCreatorProfilesHint: string;
   formLinkedinTopics: string;
   formLinkedinSinceDays: string;
   formLinkedinAccountId: string;
@@ -113,6 +119,8 @@ function titreLinkedin(providerId: TypeLinkedIn, libelles: EtapeSourcesLibelles)
       return libelles.menuLinkedinPostEngagersTitre;
     case 'linkedin_competitor_posts':
       return libelles.menuLinkedinCompetitorPostsTitre;
+    case 'linkedin_creator_posts':
+      return libelles.menuLinkedinCreatorPostsTitre;
     case 'linkedin_keywords':
       return libelles.menuLinkedinKeywordsTitre;
     case 'linkedin_job_change':
@@ -141,11 +149,14 @@ export function construireConfigOffre(
 
 /**
  * Groupes du menu « + Ajouter une source » (maquette `nouvelle-campagne-2.html`,
- * tour de correction 1, R57) : Offres d'emploi, LinkedIn (badge « collecte
- * activée avec le canal LinkedIn » sur les trois types que le serveur ne collecte pas encore ;
- * les engageurs d'un post n'en portent plus, ils le disent par le bandeau de brouillon du
- * formulaire) et Manuel
+ * tour de correction 1, R57) : Offres d'emploi, LinkedIn et Manuel
  * (Fichier CSV, affiché mais inerte — l'import exige une campagne déjà créée).
+ *
+ * Le badge marque les types que le serveur NE COLLECTE PAS ENCORE. La liste était écrite à la
+ * main — « tous sauf les engageurs d'un post » — et chaque type branché la rendait fausse sans
+ * que rien ne le signale : le 09/10, les posts d'un concurrent étaient collectés depuis la
+ * veille et portaient toujours le badge. Il se décide donc par `collecteServeurDisponible`, la
+ * même question que le bouton « Collecter maintenant » et que le worker.
  * Pure et exportée pour être testée sans ouvrir le menu (état interne du
  * composant, invisible à `renderToStaticMarkup`).
  */
@@ -153,7 +164,8 @@ export function construireGroupesMenu(
   libelles: EtapeSourcesLibelles,
   ouvrirFormulaire: (providerId: ProviderIdAssistant) => void,
 ): GroupeMenu[] {
-  const badgeLinkedin = <Puce ton="gris">{libelles.menuLinkedinBadge}</Puce>;
+  const badge = (providerId: ProviderIdAssistant): ReactNode =>
+    collecteServeurDisponible(providerId) ? null : <Puce ton="gris">{libelles.menuLinkedinBadge}</Puce>;
   return [
     {
       titre: libelles.menuOffres,
@@ -189,7 +201,7 @@ export function construireGroupesMenu(
           icone: <TuileLogo marque="linkedin" />,
           titre: (
             <>
-              {libelles.menuLinkedinCompetitorPostsTitre} {badgeLinkedin}
+              {libelles.menuLinkedinCompetitorPostsTitre} {badge('linkedin_competitor_posts')}
             </>
           ),
           description: libelles.menuLinkedinCompetitorPostsDescription,
@@ -199,7 +211,17 @@ export function construireGroupesMenu(
           icone: <TuileLogo marque="linkedin" />,
           titre: (
             <>
-              {libelles.menuLinkedinKeywordsTitre} {badgeLinkedin}
+              {libelles.menuLinkedinCreatorPostsTitre} {badge('linkedin_creator_posts')}
+            </>
+          ),
+          description: libelles.menuLinkedinCreatorPostsDescription,
+          onSelectionner: () => ouvrirFormulaire('linkedin_creator_posts'),
+        },
+        {
+          icone: <TuileLogo marque="linkedin" />,
+          titre: (
+            <>
+              {libelles.menuLinkedinKeywordsTitre} {badge('linkedin_keywords')}
             </>
           ),
           description: libelles.menuLinkedinKeywordsDescription,
@@ -209,7 +231,7 @@ export function construireGroupesMenu(
           icone: <TuileLogo marque="linkedin" />,
           titre: (
             <>
-              {libelles.menuLinkedinJobChangeTitre} {badgeLinkedin}
+              {libelles.menuLinkedinJobChangeTitre} {badge('linkedin_job_change')}
             </>
           ),
           description: libelles.menuLinkedinJobChangeDescription,
@@ -257,6 +279,9 @@ function resumeSource(source: SourceAssistant, libelles: EtapeSourcesLibelles): 
   // un chiffre que le produit ne mesure pas.
   if (source.providerId === 'linkedin_competitor_posts') {
     return asListeChaines(source.config.pagesConcurrentes).join(', ');
+  }
+  if (source.providerId === 'linkedin_creator_posts') {
+    return asListeChaines(source.config.profilsCreateurs).join(', ');
   }
   const profilsParJour = typeof source.config.profilsParJour === 'number' ? source.config.profilsParJour : 40;
   return libelles.resumeLinkedin(profilsParJour);
@@ -382,7 +407,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
             <small>{resumeSource(source, libelles)}</small>
           </span>
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {estLinkedIn(source.providerId) && source.providerId !== 'linkedin_post_engagers' && badgeLinkedin}
+            {estLinkedIn(source.providerId) && !collecteServeurDisponible(source.providerId) && badgeLinkedin}
             <Bouton taille="petit" onClick={() => onRetirer(source.cle)} disabled={disabled}>
               {libelles.retirer}
             </Bouton>
@@ -410,6 +435,8 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               postOneCampaign: libelles.formLinkedinPostOneCampaign,
               competitorPages: libelles.formLinkedinCompetitorPages,
               competitorPagesHint: libelles.formLinkedinCompetitorPagesHint,
+              creatorProfiles: libelles.formLinkedinCreatorProfiles,
+              creatorProfilesHint: libelles.formLinkedinCreatorProfilesHint,
               topics: libelles.formLinkedinTopics,
               sinceDays: libelles.formLinkedinSinceDays,
               accountId: libelles.formLinkedinAccountId,

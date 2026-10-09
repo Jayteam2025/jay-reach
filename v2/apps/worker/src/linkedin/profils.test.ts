@@ -35,7 +35,6 @@ function pilote(partiel: Partial<Pilote>): Pilote {
 const budget = (postsRestants: number, requetesRestantes: number): Budget => ({
   postsRestants,
   requetesRestantes,
-  personnesMax: 100,
 });
 
 describe('extrairePostsDeProfil', () => {
