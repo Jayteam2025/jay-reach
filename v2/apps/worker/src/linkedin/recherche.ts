@@ -12,11 +12,14 @@
  *
  * Deux choses relevées, chacune contre-intuitive :
  *
- *  1. **Le découpage se fait sur `role="listitem"`, pas sur les liens.** Compter les `/in/<nom>`
- *     du document donne 23 liens là où la page affiche 10 résultats : le reste est de la
- *     navigation, présente sur toutes les pages. Mesuré avant correction : 4 « résultats »
- *     communs entre la page 1 et la page 2. Découpé par `role="listitem"`, le chevauchement
- *     tombe à ZÉRO.
+ *  1. **Deux gardes, et elles ne font pas le même travail.** Compter les `/in/<nom>` du document
+ *     donne 32 liens là où la page affiche 10 résultats, et ce bruit est le MÊME d'une page à
+ *     l'autre : 4 « résultats » communs entre la page 1 et la page 2, avant correction.
+ *     - C'est l'`aria-label` qui écarte le bruit : mesuré sur une page entière, AUCUN lien de
+ *       navigation n'en porte, et tous les liens de résultat en portent un. Le chevauchement
+ *       tombe alors à zéro.
+ *     - Le découpage sur `role="listitem"` sert à autre chose : délimiter UNE personne, pour
+ *       que son intitulé soit bien le sien et non celui du résultat suivant.
  *  2. **La pagination passe par l'URL, pas par le défilement.** Faire défiler n'ajoute rien, ce
  *     qui avait fait croire la source impossible. `&page=N` sert bien une page distincte.
  */
