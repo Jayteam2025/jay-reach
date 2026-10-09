@@ -41,6 +41,7 @@ import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ErreurCollecte, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
+import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import { adresseDeduite, engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
 
@@ -162,7 +163,7 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
         and so.config->>'sourceType' = any($3::text[])
         and c.status = 'active'
       limit 1`,
-    [job.organizationId, job.sourceId, TYPES_COLLECTES],
+    [job.organizationId, job.sourceId, TYPES_LINKEDIN_COLLECTES],
   );
   const ligne = res.rows[0];
   if (!ligne) return null;
@@ -186,8 +187,6 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
   return { mode: 'post', urlPost, garder, campagne };
 }
 
-/** Les types de sources que ce handler sait collecter. Le producteur tient la même liste. */
-const TYPES_COLLECTES = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
 
 /**
  * Clôt le passage : statut, compteurs du journal (`source_runs`, migration de la

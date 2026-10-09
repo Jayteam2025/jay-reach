@@ -120,8 +120,16 @@ export function collecteImplementee(providerId: string): boolean {
   return !estTypeLinkedIn(providerId) || TYPES_LINKEDIN_COLLECTES.includes(providerId);
 }
 
-/** Les types LinkedIn que le serveur sait collecter. Le worker tient la même liste. */
-const TYPES_LINKEDIN_COLLECTES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
+/**
+ * Les types LinkedIn que le serveur sait collecter. **Une seule liste, partout.**
+ *
+ * Elle était recopiée à quatre endroits — le producteur, le handler, l'écran de création d'une
+ * source et ici. Brancher un type de plus en oubliant une seule copie donne un défaut pénible à
+ * diagnostiquer : le producteur enfile un passage, le handler ne reconnaît pas la source, et
+ * l'opérateur lit « cette source n'est reliée à aucune campagne active » devant une campagne
+ * parfaitement active.
+ */
+export const TYPES_LINKEDIN_COLLECTES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
 
 /**
  * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type

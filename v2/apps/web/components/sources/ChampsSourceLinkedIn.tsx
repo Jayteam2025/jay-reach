@@ -1,5 +1,6 @@
 'use client';
 
+import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
 import { Champ } from '../ui';
 import { CaseACocher } from './CaseACocher';
 
@@ -84,17 +85,11 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
   }
 }
 
-/**
- * Les types que le serveur collecte lui-même (lot 4b, étape 2). Les autres gardent les champs
- * `compteId` et `profilsParJour` de l'ancienne conception, le temps que leur collecteur existe.
- */
-const COLLECTES_COTE_SERVEUR: readonly TypeLinkedIn[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
-
 /** Champ requis du sous-type (en plus du compte LinkedIn, commun aux trois autres) rempli — condition d'activation du bouton d'enregistrement. */
 /** `nbPersonas` : personas de la campagne ; au-delà d'un, le persona de la source est obligatoire (règle serveur de `creerSource`). */
 export function champsLinkedInValides(providerId: TypeLinkedIn, etat: EtatChampsLinkedIn, nbPersonas = 0): boolean {
   // Le compte n'est demandé que par les types qui n'ont pas encore de collecteur serveur.
-  if (!COLLECTES_COTE_SERVEUR.includes(providerId) && !etat.compteId.trim()) return false;
+  if (!TYPES_LINKEDIN_COLLECTES.includes(providerId) && !etat.compteId.trim()) return false;
   switch (providerId) {
     case 'linkedin_post_engagers':
       return (
@@ -260,7 +255,7 @@ export function ChampsSourceLinkedIn({
           />
         </Champ>
       )}
-      {!COLLECTES_COTE_SERVEUR.includes(providerId) && (
+      {!TYPES_LINKEDIN_COLLECTES.includes(providerId) && (
       <div className="ligne">
         <Champ libelle={libelles.accountId} id={`${idPrefix}-account-id`}>
           <input

@@ -25,6 +25,7 @@ import {
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   QUEUES,
+  TYPES_LINKEDIN_COLLECTES,
 } from '@jay-reach/core';
 import type { DiscoverJob } from './handlers/discover.js';
 // Type seul : aucune de ces deux importations ne charge `puppeteer-core`.
@@ -44,7 +45,7 @@ interface SourceRow {
 }
 
 /** Les types LinkedIn que le worker sait exécuter. Les autres sont saisissables, pas collectés. */
-const TYPES_LINKEDIN_EXECUTABLES: readonly string[] = ['linkedin_post_engagers', 'linkedin_competitor_posts'];
+
 
 /**
  * Ce que l'opérateur lit sur la carte de sa source quand il demande une collecte que le
@@ -73,7 +74,7 @@ async function enfilerCollecteLinkedIn(
   src: { id: string; organization_id: string },
   type: string,
 ): Promise<number> {
-  if (!TYPES_LINKEDIN_EXECUTABLES.includes(type)) {
+  if (!TYPES_LINKEDIN_COLLECTES.includes(type)) {
     // Un refus muet est pire que pas de bouton. `lancerCampagne` demande une collecte à TOUTES
     // les sources actives : sans cette trace, l'opérateur voyait sa campagne partir, n'obtenait
     // aucun contact, et la seule explication vivait dans les journaux du conteneur. On ouvre
@@ -995,7 +996,7 @@ export async function enqueueLinkedInTours(boss: PgBoss, pool: Pool): Promise<nu
             select max(sr.started_at) from source_runs sr where sr.source_id = so.id
           ) asc nulls first
           limit 1`,
-        [org.organization_id, TYPES_LINKEDIN_EXECUTABLES, jourCourantDansFuseau(fuseau), fuseau],
+        [org.organization_id, TYPES_LINKEDIN_COLLECTES, jourCourantDansFuseau(fuseau), fuseau],
       );
       const src = due.rows[0];
       if (!src) continue;
