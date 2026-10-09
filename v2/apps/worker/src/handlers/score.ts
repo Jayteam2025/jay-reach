@@ -175,10 +175,32 @@ function conditionSourceScorable(paramIndex: number, paramPrefixeDeduit: number)
         -- qui lirait enfin l'identifiant public, et alors scorable.
         -- Même définition que le producteur (sqlAdresseResolvable), et ICI parce que le
         -- compteur de crédit et la sélection doivent isoler EXACTEMENT le même ensemble.
-        and (s.kind <> 'post_engagement' or not exists (
+        and (s.kind <> 'post_engagement'
+             or not exists (
               select 1 from public.contacts c
                where c.organization_id = s.organization_id and c.source_signal_id = s.id
-                 and not ${sqlAdresseResolvable('c' as FragmentSql, `$${paramPrefixeDeduit}` as FragmentSql)}))`;
+                 and not ${sqlAdresseResolvable('c' as FragmentSql, `$${paramPrefixeDeduit}` as FragmentSql)})
+             -- …SAUF si la campagne n'envoie que par LinkedIn. L'exclusion ci-dessus vise
+             -- l'EMAIL : une adresse deduite n'est ni cherchable ni enrichissable. Mais pour
+             -- ecrire un message LinkedIn, l'URN suffit : resoudreProfil interroge
+             -- voyagerIdentityDashProfiles avec memberIdentity, qui accepte l'URN aussi bien
+             -- qu'un nom public.
+             --
+             -- Sans cette reserve, la source « posts d'un concurrent » ne produit JAMAIS rien :
+             -- un post de page ne livre pas les noms publics de ses reacteurs, donc TOUTES ses
+             -- personnes ont une adresse deduite, donc aucune n'etait scoree. Mesure le 09/10 :
+             -- 37 personnes collectees, 37 laissees en « new » pour toujours.
+             -- La campagne doit AVOIR une sequence : une campagne qui n'envoie rien encore ne
+             -- beneficie pas de la reserve, sinon on paierait des jetons pour des personnes que
+             -- personne ne contactera.
+             or (exists (
+                  select 1 from public.campaign_sources cs
+                    join public.sequence_steps st on st.campaign_id = cs.campaign_id
+                   where cs.source_id = s.source_id)
+                 and not exists (
+                  select 1 from public.campaign_sources cs
+                    join public.sequence_steps st on st.campaign_id = cs.campaign_id
+                   where cs.source_id = s.source_id and st.channel = 'email')))`;
 }
 
 /**
