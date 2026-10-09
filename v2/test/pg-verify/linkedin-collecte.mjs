@@ -1286,6 +1286,90 @@ async function sourceConcurrent() {
   const comptePosts = (await q(`select coalesce(sum(coalesce(sr.posts, 1)), 0)::int n from source_runs sr join sources so on so.id = sr.source_id where so.organization_id = $1 and exists (select 1 from linkedin_requetes lr where lr.source_run_id = sr.id)`, [m3.org])).rows[0].n;
   check('77b. et le compteur du jour dit le meme nombre que la memoire', comptePosts === traites3, `${comptePosts} comptes / ${traites3} memorises`);
 
+  // La forme que sert un post de PAGE ENTREPRISE : aucun objet Profile, mais chaque reaction
+  // embarque la vignette de son auteur. Relevee en reel le 09/10 sur la premiere source creee,
+  // avec des identifiants inventes ici. Sans ce lecteur, le post annonce huit reactions et le
+  // collecteur n'en livre aucune personne.
+  const voyagerPostDePage = (gens) =>
+    JSON.stringify({
+      data: {
+        paging: { count: 50, start: 0, total: gens.length },
+        '*elements': gens.map((g) => `urn:li:fsd_reaction:(urn:li:fsd_profile:${g.id},urn:li:activity:1,0)`),
+      },
+      included: gens.map((g) => ({
+        actorUrn: `urn:li:fsd_profile:${g.id}`,
+        reactionType: 'LIKE',
+        entityUrn: `urn:li:fsd_reaction:(urn:li:fsd_profile:${g.id},urn:li:activity:1,0)`,
+        actorUnion: { profileUrn: `urn:li:fsd_profile:${g.id}` },
+        reactorLockup: {
+          navigationUrl: `https://www.linkedin.com/in/${g.id}`,
+          title: { text: g.nom, $type: 'com.linkedin.voyager.dash.common.text.TextViewModel' },
+          subtitle: { text: g.titre, $type: 'com.linkedin.voyager.dash.common.text.TextViewModel' },
+          $type: 'com.linkedin.voyager.dash.common.ux.EntityLockupViewModel',
+        },
+        $type: 'com.linkedin.voyager.dash.social.Reaction',
+      })),
+    });
+
+  const mP = await monde();
+  const srcP = await sourceConcurrente(mP, ['https://www.linkedin.com/company/acme/']);
+  const rP = await startSourceRun(pool, srcP);
+  const gens = [
+    { id: 'ACoAAAzz1', nom: 'Camille Martin', titre: 'Directrice commerciale chez Societe Un' },
+    { id: 'ACoAAAzz2', nom: 'Rene Dupont', titre: 'Directeur commercial chez Societe Deux' },
+  ];
+  const pP = pilote({
+    reponse: (u) => {
+      if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+      if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts([P1]) };
+      return { statut: 200, corps: voyagerPostDePage(gens) };
+    },
+  });
+  await traiterCollecteLinkedIn(deps(pP), { organizationId: mP.org, sourceId: srcP, sourceRunId: rP });
+  const passageP = await lirePassage(rP);
+  check('77h. un post de page livre ses reacteurs par leur vignette, pas par un profil',
+    passageP.vus === 2 && passageP.nouveaux === 2, JSON.stringify({ vus: passageP.vus, nouveaux: passageP.nouveaux, err: passageP.error }));
+  const nomsP = (await q(`select first_name, last_name, job_title from contacts where organization_id = $1 order by first_name`, [mP.org])).rows;
+  check('77i. le nom ET l intitule de la vignette sont enregistres',
+    nomsP.length === 2 && nomsP[0].first_name === 'Camille' && nomsP[0].last_name === 'Martin' && /Directrice commerciale/.test(nomsP[0].job_title ?? ''), JSON.stringify(nomsP));
+  const deduitesP = (await q(`select adresses_deduites, posts from source_runs where id = $1`, [rP])).rows[0];
+  check('77j. ces personnes sont comptees comme a adresse deduite (pas de nom public)',
+    deduitesP.adresses_deduites === 2 && deduitesP.posts === 1, JSON.stringify(deduitesP));
+
+  // Sur un post de page entreprise, l'API des COMMENTAIRES repond 404 alors que celle des
+  // reactions vient de livrer des personnes. Clore sur « post supprime ou prive » enverrait
+  // l'operateur verifier une adresse valide, et jetterait tout le passage.
+  const mC = await monde();
+  const srcC = await sourceConcurrente(mC, ['https://www.linkedin.com/company/acme/']);
+  const rC = await startSourceRun(pool, srcC);
+  const pC = pilote({
+    reponse: (u) => {
+      if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+      if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts([P1]) };
+      if (u.includes('/comments')) return { statut: 404, corps: '<html>Error</html>' };
+      return { statut: 200, corps: voyagerPostDePage(gens) };
+    },
+  });
+  await traiterCollecteLinkedIn(deps(pC), { organizationId: mC.org, sourceId: srcC, sourceRunId: rC });
+  const passageC = await lirePassage(rC);
+  check('77k. une liste de commentaires absente ne fait pas passer le post pour supprime',
+    passageC.status === 'success' && passageC.nouveaux === 2, JSON.stringify({ s: passageC.status, n: passageC.nouveaux, e: passageC.error }));
+
+  // Mais un post REELLEMENT introuvable, lui, doit toujours le dire : la premiere liste echoue.
+  const mX = await monde();
+  const srcX = await sourceConcurrente(mX, ['https://www.linkedin.com/company/acme/']);
+  const rX = await startSourceRun(pool, srcX);
+  const pX = pilote({
+    reponse: (u) => {
+      if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+      if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts([P1]) };
+      return { statut: 404, corps: '' };
+    },
+  });
+  await traiterCollecteLinkedIn(deps(pX), { organizationId: mX.org, sourceId: srcX, sourceRunId: rX });
+  const passageX = await lirePassage(rX);
+  check('77l. un post vraiment introuvable le dit toujours', /introuvable/i.test(passageX.error ?? ''), JSON.stringify(passageX.error));
+
   // Une page fautive ne doit pas emporter les posts deja trouves sur les autres pages. Avant,
   // une seule adresse mal collee faisait perdre tout le passage, tous les jours.
   const m6 = await monde();
