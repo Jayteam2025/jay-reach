@@ -129,6 +129,15 @@ export async function chercherPersonnes(
 
   const retenues: PersonneTrouvee[] = [];
   const vus = new Set(dejaVus);
+  /**
+   * Combien de personnes LinkedIn a servies, celles déjà connues comprises.
+   *
+   * C'est ce qui sépare « LinkedIn n'a rien livré » — anormal, et qui mérite qu'on le dise —
+   * de « rien de neuf », qui est le cas ORDINAIRE d'une recherche rejouée le lendemain. Sans
+   * cette distinction, une source qui tourne normalement rendait une friction `liste_vide`,
+   * dont le message annonce une collecte arrêtée.
+   */
+  let serviesEnTout = 0;
   for (let page = 1; page <= PAGES_MAX_RECHERCHE; page += 1) {
     if (requetesRestantes() <= 0) return { personnes: retenues, arret: 'plafond' };
     // Toujours une pause avant d'appeler : enchaîner sans délai est ce qui se repère le mieux.
@@ -138,7 +147,11 @@ export async function chercherPersonnes(
     const rep = await pilote.requete(urlRecherche(motsCles, page));
     if (rep.statut < 200 || rep.statut >= 300) {
       const friction = frictionDuStatut(rep.statut);
-      if (friction) {
+      // `post_introuvable` est exclu À DESSEIN : son message dit « Page ou post introuvable,
+      // supprimé ou privé », ce qui ne veut rien dire pour une recherche et enverrait
+      // l'opérateur vérifier une adresse de post qui n'existe pas. Un 404 ici n'est pas non
+      // plus un verdict sur le compte — seuls le défi et le cookie refusé en sont.
+      if (friction && friction.type !== 'post_introuvable') {
         throw new ErreurCollecte(
           MESSAGES_FRICTION[friction.type],
           'FrictionLinkedIn',
@@ -154,6 +167,7 @@ export async function chercherPersonnes(
     // n'apporte que des personnes déjà vues, elle, ne l'arrête pas — les pages suivantes peuvent
     // encore en porter de nouvelles.
     if (lot.length === 0) break;
+    serviesEnTout += lot.length;
     for (const p of lot) {
       if (vus.has(p.nomPublic)) continue;
       vus.add(p.nomPublic);
@@ -161,7 +175,7 @@ export async function chercherPersonnes(
       if (retenues.length >= personnesMax) return { personnes: retenues, arret: 'plafond' };
     }
   }
-  return { personnes: retenues, arret: retenues.length === 0 ? { type: 'liste_vide' } : 'fini' };
+  return { personnes: retenues, arret: serviesEnTout === 0 ? { type: 'liste_vide' } : 'fini' };
 }
 
 /**

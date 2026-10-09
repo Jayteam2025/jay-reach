@@ -175,6 +175,7 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             creatorProfiles: t('drawer.creatorProfiles'),
             creatorProfilesHint: t('drawer.creatorProfilesHint'),
             topics: t('drawer.topics'),
+            topicsHint: t('drawer.topicsHint'),
             sinceDays: t('drawer.sinceDays'),
             accountId: t('drawer.accountId'),
             profilesPerDay: t('drawer.profilesPerDay'),

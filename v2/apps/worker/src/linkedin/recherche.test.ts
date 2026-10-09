@@ -167,9 +167,31 @@ describe('chercherPersonnes', () => {
     expect(r.personnes.map((p) => p.nomPublic)).toEqual(['bruno-valtier']);
   });
 
-  it('rend « liste vide » quand la recherche ne donne rien', async () => {
+  it('rend « liste vide » seulement quand LinkedIn n’a servi personne', async () => {
     const r = await chercherPersonnes(pages([[]]), 'directeur commercial', options(50, 10));
     expect(r).toEqual({ personnes: [], arret: { type: 'liste_vide' } });
+  });
+
+  it('une recherche rejouée, dont tout le monde est déjà connu, se termine normalement', async () => {
+    // C'est le cas ORDINAIRE d'une source qui tourne tous les jours. Rendre `liste_vide` ici
+    // ferait remonter une friction dont le message annonce une collecte arrêtée, pour une
+    // recherche qui s'est parfaitement déroulée.
+    const r = await chercherPersonnes(
+      pages([[['ada-lemercier', 'Ada'], ['bruno-valtier', 'Bruno']], []]),
+      'directeur commercial',
+      options(50, 10, ['ada-lemercier', 'bruno-valtier']),
+    );
+    expect(r).toEqual({ personnes: [], arret: 'fini' });
+  });
+
+  it('un 404 ne parle pas de post : ce n’est ni une friction ni un verdict sur le compte', async () => {
+    // `frictionDuStatut` rend `post_introuvable` sur un 404, dont le message dit « Page ou post
+    // introuvable, supprimé ou privé » — ce qui enverrait l'opérateur vérifier l'adresse d'un
+    // post qui n'existe pas dans cette source.
+    const p = pilote({ requete: async () => ({ statut: 404, corps: '' }) });
+    await expect(chercherPersonnes(p, 'directeur commercial', options(50, 10))).rejects.toMatchObject({
+      name: 'RechercheIndisponible',
+    });
   });
 
   it('ne part pas du tout quand le budget est déjà épuisé', async () => {

@@ -111,11 +111,49 @@ describe('source « posts d’un créateur »', () => {
   });
 });
 
+describe('source « recherche par mot-clé »', () => {
+  const rempli: EtatChampsLinkedIn = { ...VIDE, sujets: 'CRM commercial, pipe de vente' };
+
+  it('envoie les mots-clés et le persona — jamais de compte ni de cadence', () => {
+    expect(construireConfigLinkedIn('linkedin_keywords', { ...rempli, personaId: 'p1' })).toEqual({
+      sujets: ['CRM commercial', 'pipe de vente'],
+      personaId: 'p1',
+    });
+    expect(construireConfigLinkedIn('linkedin_keywords', rempli)).toEqual({ sujets: ['CRM commercial', 'pipe de vente'] });
+  });
+
+  it('n’exige plus le compte LinkedIn, que le serveur tient lui-même', () => {
+    expect(champsLinkedInValides('linkedin_keywords', rempli)).toBe(true);
+  });
+
+  it('exige un mot-clé', () => {
+    expect(champsLinkedInValides('linkedin_keywords', { ...rempli, sujets: ' , ' })).toBe(false);
+  });
+
+  it('exige le persona dès que la campagne en porte plusieurs', () => {
+    expect(champsLinkedInValides('linkedin_keywords', rempli, 2)).toBe(false);
+    expect(champsLinkedInValides('linkedin_keywords', { ...rempli, personaId: 'p1' }, 2)).toBe(true);
+  });
+
+  it('se reconstitue depuis une config stockée (édition)', () => {
+    const etat = etatChampsLinkedInDepuisConfig({ sujets: ['CRM commercial', 'pipe de vente'], personaId: 'p1' });
+    expect(etat.sujets).toBe('CRM commercial, pipe de vente');
+    expect(etat.personaId).toBe('p1');
+  });
+});
+
 describe('les types sans collecteur serveur gardent leurs anciens champs', () => {
-  it('les mots-cles exigent toujours un compte LinkedIn', () => {
-    const etat = { ...VIDE, sujets: 'CRM' };
-    expect(champsLinkedInValides('linkedin_keywords', etat)).toBe(false);
-    expect(champsLinkedInValides('linkedin_keywords', { ...etat, compteId: 'c1' })).toBe(true);
+  it('le changement de poste exige toujours un compte LinkedIn', () => {
+    expect(champsLinkedInValides('linkedin_job_change', VIDE)).toBe(false);
+    expect(champsLinkedInValides('linkedin_job_change', { ...VIDE, compteId: 'c1' })).toBe(true);
+  });
+
+  it('et il garde son compte et sa cadence à l’écran', () => {
+    expect(construireConfigLinkedIn('linkedin_job_change', { ...VIDE, compteId: 'c1', depuisJours: '30' })).toEqual({
+      compteId: 'c1',
+      profilsParJour: 40,
+      depuisJours: 30,
+    });
   });
 });
 
@@ -138,6 +176,7 @@ describe('le formulaire rendu', () => {
     creatorProfiles: d.creatorProfiles,
     creatorProfilesHint: d.creatorProfilesHint,
     topics: d.topics,
+    topicsHint: d.topicsHint,
     sinceDays: d.sinceDays,
     accountId: d.accountId,
     profilesPerDay: d.profilesPerDay,
@@ -197,9 +236,24 @@ describe('le formulaire rendu', () => {
   });
 
   it('les types sans collecteur serveur gardent leur compte et leur cadence', () => {
-    const html = rendre('linkedin_keywords');
+    const html = rendre('linkedin_job_change');
     expect(html).toContain('name="compteId"');
     expect(html).toContain('name="profilsParJour"');
+  });
+
+  it('la recherche par mot-clé demande ses mots-clés, avec leur aide, sans compte ni cadence', () => {
+    const html = rendre('linkedin_keywords');
+    expect(html).toContain('name="sujets"');
+    expect(html).toContain(libelles.topicsHint);
+    expect(html).not.toContain('name="compteId"');
+    expect(html).not.toContain('name="profilsParJour"');
+    // Aucune lecture de post : ni « qui garder », qui n'a de sens que pour les engageurs.
+    expect(html).not.toContain(libelles.keepPeople);
+  });
+
+  it('la recherche par mot-clé demande le persona dès que la campagne en porte plusieurs', () => {
+    expect(rendre('linkedin_keywords')).not.toContain('name="personaId"');
+    expect(rendre('linkedin_keywords', [{ id: 'p1', nom: 'Directeur commercial' }, { id: 'p2', nom: 'DRH' }])).toContain('name="personaId"');
   });
 });
 
@@ -210,11 +264,11 @@ describe('le formulaire rendu', () => {
  * et lui affichait « la lecture demarrera des que le canal sera actif » alors qu'il l'est.
  */
 describe('les types collectes par le serveur', () => {
-  it('sont les deux sources d’engageurs, et elles seules', () => {
+  it('sont les trois sources d’engageurs et la recherche par mot-clé, et elles seules', () => {
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_post_engagers')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_competitor_posts')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_creator_posts')).toBe(true);
-    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_keywords')).toBe(false);
+    expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_keywords')).toBe(true);
     expect(TYPES_LINKEDIN_COLLECTES.includes('linkedin_job_change')).toBe(false);
   });
 

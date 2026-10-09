@@ -2171,8 +2171,8 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
   }
 
   // Une campagne dont AUCUNE source n'est collectée se lance, s'affiche active, et n'ajoute
-  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Deux des quatre
-  // types LinkedIn n'ont pas encore de collecteur ; tant que c'est le cas, il faut le dire
+  // jamais personne : l'opérateur attend devant un écran qui ne lui dit rien. Le changement de
+  // poste LinkedIn n'a pas encore de collecteur ; tant que c'est le cas, il faut le dire
   // AVANT le lancement, pas le laisser découvrir au bout d'une semaine.
   //
   // Une campagne sans aucune source reste légitime : ses contacts peuvent être importés ou
@@ -2199,7 +2199,6 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
  * ce module ne dépend pas de next-intl.
  */
 const LIBELLES_TYPE_SANS_COLLECTEUR: Record<string, string> = {
-  linkedin_keywords: 'mots-clés LinkedIn',
   linkedin_job_change: 'changement de poste LinkedIn',
 };
 

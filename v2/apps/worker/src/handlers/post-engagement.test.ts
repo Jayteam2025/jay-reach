@@ -7,7 +7,15 @@ vi.mock('@jay-reach/providers/enrichment', () => ({
 
 import { resolveCompanyNaf } from '@jay-reach/providers/enrichment';
 import { normaliserUrlPost , sqlEstSignalDePersonne} from '@jay-reach/core';
-import { ecarterSignalDePersonne, empreinteEngageur, enregistrerEngageur, type Engageur } from './post-engagement.js';
+import {
+  ecarterSignalDePersonne,
+  empreinteEngageur,
+  enregistrerEngageur,
+  enregistrerPersonne,
+  identiteDeRecherche,
+  type Engageur,
+} from './post-engagement.js';
+import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 import { runQualify } from './qualify.js';
 import { runScore } from './score.js';
 import { persistEnrichedContact } from '../enrichment-persist.js';
@@ -110,7 +118,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
         id: `contact-${++n}`,
         email: null,
         linkedin_url: String(p[5]),
-        linkedin_provider_id: String(p[6]),
+        linkedin_provider_id: p[6] === null ? null : String(p[6]),
         source_signal_id: String(p[7]),
         persona_id: String(p[1]),
         first_name: String(p[2]),
@@ -240,6 +248,50 @@ describe('enregistrerEngageur', () => {
     const r = await enregistrerEngageur(ctxDe(m.pool), ALICE, CAMPAGNE, URL_POST);
     expect(r).toBe('deja_en_campagne');
     expect(m.etat.insertsSignal).toBe(0);
+  });
+});
+
+describe('identiteDeRecherche : une personne trouvée par mots-clés', () => {
+  const EVA: PersonneTrouvee = {
+    nomPublic: 'eva-exemple',
+    urlProfil: 'https://www.linkedin.com/in/eva-exemple/',
+    nom: 'Eva Exemple',
+    intitule: 'Directrice commerciale chez Acme',
+  };
+
+  it('porte l’adresse réelle, aucun URN, et l’adresse de la recherche comme origine', () => {
+    expect(identiteDeRecherche(EVA, 'crm commercial')).toEqual({
+      kind: 'people_search',
+      externalId: 'crm commercial:eva-exemple',
+      url: EVA.urlProfil,
+      membre: null,
+      formes: [EVA.urlProfil],
+      urlSignal: urlRecherche('crm commercial', 1),
+      nom: 'Eva Exemple',
+      intitule: 'Directrice commerciale chez Acme',
+      entreprise: null,
+    });
+  });
+
+  it('l’unicité ne dépend ni de la casse ni des espaces saisis', () => {
+    const a = identiteDeRecherche(EVA, '  CRM   Commercial ');
+    expect(a.externalId).toBe('crm commercial:eva-exemple');
+    expect(a.externalId).toBe(identiteDeRecherche(EVA, 'crm commercial').externalId);
+  });
+
+  it('deux recherches différentes ne se confondent pas, ni deux personnes sous la même', () => {
+    const autre: PersonneTrouvee = { ...EVA, nomPublic: 'leo-exemple' };
+    expect(identiteDeRecherche(EVA, 'crm').externalId).not.toBe(identiteDeRecherche(EVA, 'erp').externalId);
+    expect(identiteDeRecherche(EVA, 'crm').externalId).not.toBe(identiteDeRecherche(autre, 'crm').externalId);
+  });
+
+  it('enregistre la personne sans URN, et ne la recrée pas sous des mots-clés écrits autrement', async () => {
+    const m = modele();
+    const c = ctxDe(m.pool);
+    expect(await enregistrerPersonne(c, identiteDeRecherche(EVA, 'crm commercial'), CAMPAGNE)).toBe('nouveau');
+    expect(await enregistrerPersonne(c, identiteDeRecherche(EVA, ' CRM  Commercial'), CAMPAGNE)).toBe('doublon');
+    expect(m.etat.insertsSignal).toBe(1);
+    expect(m.etat.contacts[0]).toMatchObject({ linkedin_url: EVA.urlProfil, linkedin_provider_id: null });
   });
 });
 

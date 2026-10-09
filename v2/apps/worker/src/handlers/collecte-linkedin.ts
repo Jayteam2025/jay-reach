@@ -42,8 +42,17 @@ import { ErreurCollecte, lireEngageurs, type ArretCollecte, type Budget, type Fr
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { trouverPostsDeProfil } from '../linkedin/profils.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
+import { arriverSurLaRecherche, chercherPersonnes } from '../linkedin/recherche.js';
 import { TYPES_LINKEDIN_COLLECTES } from '@jay-reach/core';
-import { adresseDeduite, engageurSchema, enregistrerEngageur, type IssueEngageur } from './post-engagement.js';
+import {
+  adresseDeduite,
+  engageurSchema,
+  enregistrerEngageur,
+  enregistrerPersonne,
+  identiteDeRecherche,
+  prefixeDeRecherche,
+  type IssueEngageur,
+} from './post-engagement.js';
 import type { Pilote } from '../linkedin/navigateur.js';
 
 /** Charge utile de la file. Le passage est ouvert par le producteur : c'est lui qui a décidé de collecter. */
@@ -93,6 +102,8 @@ export const MSG = {
   pages_absentes: 'Aucune page de concurrent n’est renseignée : ajoutez-en une à la source.',
   profils_absents: 'Aucun profil de créateur n’est renseigné : ajoutez-en un à la source.',
   rien_de_neuf: 'Aucun post nouveau à lire sur ces pages ou ces profils : tout a déjà été collecté.',
+  mots_cles_absents: 'Aucun mot-clé n’est renseigné : ajoutez-en à la source.',
+  recherche_vide: 'La recherche ne livre aucune personne nouvelle pour ces mots-clés.',
 } as const;
 
 const TITRE_ARRET = 'Collecte LinkedIn arrêtée';
@@ -134,7 +145,10 @@ const bilanVierge = (): Bilan => ({
 });
 
 /**
- * Trois sources, un seul collecteur.
+ * Quatre sources, un seul collecteur.
+ *
+ * `recherche` : aucun post. L'opérateur donne des mots-clés, on cherche des PERSONNES et on les
+ * enregistre directement, sous leur nom public.
  *
  * `post` : l'opérateur donne le post, on lit ses engageurs. `pages` : l'opérateur donne des pages
  * concurrentes, on CHERCHE leurs posts, puis on lit les engageurs de chacun. `profils` : même
@@ -147,6 +161,7 @@ type ConfigCollecte = {
 } & (
   | { readonly mode: 'post'; readonly urlPost: string }
   | { readonly mode: 'pages' | 'profils'; readonly entrees: string[] }
+  | { readonly mode: 'recherche'; readonly entrees: string[] }
 );
 
 /**
@@ -189,6 +204,11 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
   if (personaId === undefined || personaId === null) return { erreur: MSG.persona };
   const campagne = { id: ligne.campagne_id, personaId };
 
+  if (config.sourceType === 'linkedin_keywords') {
+    const entrees = (Array.isArray(config.sujets) ? config.sujets : []).map((v) => String(v).trim()).filter((v) => v.length > 0);
+    if (entrees.length === 0) return { erreur: MSG.mots_cles_absents };
+    return { mode: 'recherche', entrees, garder, campagne };
+  }
   if (config.sourceType === 'linkedin_competitor_posts' || config.sourceType === 'linkedin_creator_posts') {
     const profils = config.sourceType === 'linkedin_creator_posts';
     const brutes = profils ? config.profilsCreateurs : config.pagesConcurrentes;
@@ -201,6 +221,30 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
   return { mode: 'post', urlPost, garder, campagne };
 }
 
+
+/**
+ * Les noms publics déjà enregistrés pour cette source sous ces mots-clés.
+ *
+ * Une personne trouvée par recherche n'a pas de post : son identité est son nom public, que
+ * `identiteDeRecherche` écrit dans `signals.external_id` derrière les mots-clés normalisés. Lire
+ * ces signaux évite une seconde mémoire (comme `linkedin_posts_traites` pour les posts) qui
+ * pourrait diverger de ce qui est réellement enregistré. Une personne écartée par le scoring n'y
+ * figure plus (son signal est effacé) : elle revient, et `enregistrerPersonne` la reconnaît.
+ */
+async function lireNomsPublicsEnregistres(
+  pool: Pool,
+  job: CollecteLinkedInJob,
+  motsCles: string,
+): Promise<Set<string>> {
+  const prefixe = prefixeDeRecherche(motsCles);
+  const res = await pool.query<{ external_id: string }>(
+    `select external_id from signals /* jr:linkedin_collecte_recherche_vus */
+      where organization_id = $1 and source_id = $2 and kind = 'people_search'::signal_kind
+        and left(external_id, $4::int) = $3`,
+    [job.organizationId, job.sourceId, prefixe, prefixe.length],
+  );
+  return new Set(res.rows.map((r) => r.external_id.slice(prefixe.length)));
+}
 
 /**
  * Clôt le passage : statut, compteurs du journal (`source_runs`, migration de la
@@ -477,13 +521,15 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     }
 
     const budget = await calculerBudget(ctx, job.sourceRunId);
-    if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
+    // Une recherche ne lit aucun post : le plafond de posts du jour ne la concerne pas.
+    const postsEpuises = config.mode !== 'recherche' && budget.postsRestants <= 0;
+    if (postsEpuises || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
       // Plafond : un passage à vide, pas un échec. Le rejouer redépasserait le
       // même plafond.
       await refuser(
         pool,
         job,
-        budget.postsRestants <= 0
+        postsEpuises
           ? MSG.plafond_posts
           : budget.requetesRestantes <= 0
             ? MSG.plafond_requetes
@@ -506,6 +552,14 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       sourceRunId: job.sourceRunId,
     };
 
+    /** Range l'issue d'un enregistrement dans le bilan. Commun aux engageurs et aux personnes trouvées. */
+    const compterIssue = (issue: IssueEngageur): void => {
+      if (issue === 'nouveau') bilan.nouveaux += 1;
+      else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
+      else if (issue === 'supprime') bilan.opposes += 1;
+      else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
+    };
+
     /** Enregistre les personnes d'un post. Rend vrai si le plafond de personnes a tout arrêté. */
     const enregistrer = async (personnes: readonly unknown[], urlPost: string): Promise<boolean> => {
       for (const [rang, personne] of personnes.entries()) {
@@ -518,12 +572,8 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           continue;
         }
         const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, urlPost);
-        if (issue === 'nouveau') {
-          bilan.nouveaux += 1;
-          if (adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
-        } else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
-        else if (issue === 'supprime') bilan.opposes += 1;
-        else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
+        compterIssue(issue);
+        if (issue === 'nouveau' && adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
 
         // Plafond de personnes ENREGISTRÉES : il compte les nouvelles, pas les lues. Les étages
         // aval sont plafonnés (scoring, enrichissement) à un ou deux ordres de grandeur de ce
@@ -549,8 +599,83 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     let arretRecherche: ArretCollecte | null = null;
     /** Les entrées (pages ou profils) qu'on n'a pas su lire. Une seule n'arrête pas le passage ; toutes, si. */
     const pagesEnEchec: string[] = [];
+    /** Résultat du mode `recherche`, qui ne lit aucun post. */
+    let arretDeRecherche: ArretCollecte = 'fini';
     if (config.mode === 'post') {
       postsALire.push(config.urlPost);
+    } else if (config.mode === 'recherche') {
+      for (const motsCles of config.entrees) {
+        if (requetesRestantes() <= 0) {
+          arretDeRecherche = 'plafond';
+          break;
+        }
+        try {
+          const friction = await arriverSurLaRecherche(pilote, motsCles, surRequete);
+          if (friction !== null) {
+            arretDeRecherche = friction;
+            break;
+          }
+          const trouve = await chercherPersonnes(pilote, motsCles, {
+            dejaVus: await lireNomsPublicsEnregistres(pool, job, motsCles),
+            // Le plafond compte les NOUVELLES : la recherche ne s'arrête pas aux doublons du début.
+            personnesMax: budget.personnesMax - bilan.nouveaux,
+            requetesRestantes,
+            surRequete,
+            pause: d.pause,
+          });
+          bilan.vus += trouve.personnes.length;
+          // Plus de trafic LinkedIn pendant l'enregistrement : voir `traficTermine`.
+          traficTermine = true;
+          for (const [rang, personne] of trouve.personnes.entries()) {
+            compterIssue(await enregistrerPersonne(contexteEngageur, identiteDeRecherche(personne, motsCles), config.campagne));
+            if (bilan.nouveaux >= budget.personnesMax) {
+              // Ce qui n'est pas enregistré reste à trouver : le reste de la page, les pages
+              // suivantes, ou les sujets suivants.
+              bilan.plafondPersonnes =
+                rang < trouve.personnes.length - 1 ||
+                trouve.arret === 'plafond' ||
+                motsCles !== config.entrees[config.entrees.length - 1];
+              break;
+            }
+          }
+          traficTermine = false;
+          if (bilan.nouveaux >= budget.personnesMax) break;
+          // Une page sans résultat (ou que des personnes déjà vues) n'est pas une friction : les
+          // autres sujets ont encore leur mot à dire.
+          if (typeof trouve.arret === 'object' && trouve.arret.type !== 'liste_vide') {
+            arretDeRecherche = trouve.arret;
+            break;
+          }
+          if (trouve.arret === 'plafond') {
+            if (requetesRestantes() <= 0) {
+              arretDeRecherche = 'plafond';
+              break;
+            }
+            // Requêtes disponibles : c'est le plafond de personnes de CE sujet qui a coupé la
+            // recherche (les doublons y comptent aussi). Le reste n'a pas été enregistré, et
+            // l'écran doit le dire plutôt que d'annoncer un plafond de requêtes.
+            bilan.plafondPersonnes = true;
+          }
+        } catch (err) {
+          if (!(err instanceof ErreurCollecte)) throw err;
+          if (err.friction) {
+            arretDeRecherche = err.friction;
+            break;
+          }
+          // Un sujet fautif ne doit pas emporter les autres.
+          console.warn(`[collecte-linkedin] sujet ignoré (${err.name})`);
+          pagesEnEchec.push(err.message);
+        }
+      }
+      traficTermine = true;
+      if (arretDeRecherche === 'fini' && pagesEnEchec.length === config.entrees.length) {
+        await cloreCollecte(pool, job, { statut: 'error', erreur: pagesEnEchec[0] ?? MSG.mots_cles_absents, bilan, sortie, verdictLinkedIn: false });
+        return;
+      }
+      if (arretDeRecherche === 'fini' && bilan.vus === 0) {
+        await refuser(pool, job, MSG.recherche_vide, { statut: 'success', bilan, sortie });
+        return;
+      }
     } else {
       // Deux entrées peuvent porter le même post (une page qui republie, un créateur qui partage) :
       // la mémoire se complète au fur et à mesure, sinon le post serait lu deux fois dans le passage.
@@ -606,7 +731,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       }
     }
 
-    let arret: ArretCollecte = arretRecherche ?? 'fini';
+    let arret: ArretCollecte = config.mode === 'recherche' ? arretDeRecherche : (arretRecherche ?? 'fini');
     for (const post of postsALire) {
       // Le trouveur rend des URN : la mémoire les garde sous cette identité. Le collecteur, lui,
       // charge la page du post, donc il lui faut une adresse.

@@ -585,7 +585,7 @@
         },
         "linkedinKeywords": {
           "title": "Keywords",
-          "description": "People who post about a topic"
+          "description": "People whose profile matches a keyword search"
         },
         "linkedinJobChange": {
           "title": "Job change",
@@ -677,7 +677,8 @@
         "competitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
         "creatorProfiles": "Creator LinkedIn profiles",
         "creatorProfilesHint": "The profile address, for example linkedin.com/in/creator-name. Separate several profiles with a comma.",
-        "topics": "Topics followed",
+        "topics": "Search keywords",
+        "topicsHint": "What you would type in LinkedIn's people search, for example “sales director CRM”. Separate several searches with a comma: each one runs on its own.",
         "sinceDays": "Started role since (days)",
         "csvIntro": "Contacts from the file enter the campaign as already qualified people: no scoring.",
         "csvFile": "File",
@@ -924,7 +925,7 @@
         "menuLinkedinCreatorPostsTitle": "Engagers of a creator's posts",
         "menuLinkedinCreatorPostsDescription": "People who react to or comment on a content creator's posts.",
         "menuLinkedinKeywordsTitle": "Keywords",
-        "menuLinkedinKeywordsDescription": "People who post about a topic.",
+        "menuLinkedinKeywordsDescription": "People whose profile matches a keyword search.",
         "menuLinkedinJobChangeTitle": "Job change",
         "menuLinkedinJobChangeDescription": "Persona profiles who recently started a new role.",
         "menuGroupManual": "Manual",
@@ -946,7 +947,8 @@
         "formLinkedinCompetitorPagesHint": "The company page address, for example linkedin.com/company/competitor-name. Separate several pages with a comma.",
         "formLinkedinCreatorProfiles": "Creator LinkedIn profiles",
         "formLinkedinCreatorProfilesHint": "The profile address, for example linkedin.com/in/creator-name. Separate several profiles with a comma.",
-        "formLinkedinTopics": "Topics followed",
+        "formLinkedinTopics": "Search keywords",
+        "formLinkedinTopicsHint": "What you would type in LinkedIn's people search, for example “sales director CRM”. Separate several searches with a comma: each one runs on its own.",
         "formLinkedinSinceDays": "Started role since (days)",
         "formLinkedinAccountId": "LinkedIn account",
         "formLinkedinProfilesPerDay": "Profiles read per day",

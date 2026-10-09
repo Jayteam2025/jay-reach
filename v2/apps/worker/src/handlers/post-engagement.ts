@@ -22,6 +22,7 @@ import {
   normaliserUrlPost,
   normaliserUrlProfil,
   type Executeur, sqlEstSignalDePersonne, type KindPersonne} from '@jay-reach/core';
+import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 
 export type Engageur = {
   urn: string;
@@ -149,6 +150,37 @@ export function identiteDEngageur(entree: Engageur, urlPost: string): IdentitePe
     nom: engageur.nom,
     intitule: engageur.intitule,
     entreprise: engageur.entreprise ?? null,
+  };
+}
+
+/** Les mots-clés tels que l'unicité les compare : sans casse, espaces réduits et rognés. */
+export function normaliserMotsCles(motsCles: string): string {
+  return motsCles.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Le début de l'`external_id` de toute personne trouvée par ces mots-clés (voir `identiteDeRecherche`). */
+export function prefixeDeRecherche(motsCles: string): string {
+  return `${normaliserMotsCles(motsCles)}:`;
+}
+
+/**
+ * L'identité d'une personne trouvée par recherche de mots-clés : son nom public, sous les mots-clés
+ * qui l'ont fait trouver. Aucun URN, donc `membre` reste nul et l'adresse est la vraie — c'est ce
+ * qui rend la personne enrichissable (voir `sqlAdresseResolvable`).
+ */
+export function identiteDeRecherche(personne: PersonneTrouvee, motsCles: string): IdentitePersonne {
+  return {
+    kind: 'people_search',
+    // Normalisé ICI, comme l'adresse du post pour un engageur : l'unicité ne doit pas dépendre
+    // de la casse ni des espaces que l'opérateur a saisis.
+    externalId: `${prefixeDeRecherche(motsCles)}${personne.nomPublic}`,
+    url: personne.urlProfil,
+    membre: null,
+    formes: [personne.urlProfil],
+    urlSignal: urlRecherche(motsCles, 1),
+    nom: personne.nom,
+    intitule: personne.intitule,
+    entreprise: null,
   };
 }
 

@@ -710,9 +710,9 @@ async function producteur() {
   // jamais ni contact ni explication.
   const { id: srcNonCollectee } = await creerSource(m.ctx, {
     campagneId: m.campagne,
-    providerId: 'linkedin_keywords',
-    nom: 'Mots-clés',
-    config: { sujets: ['vente externalisée'], compteId: 'compte-1', profilsParJour: 40 },
+    providerId: 'linkedin_job_change',
+    nom: 'Changement de poste',
+    config: { depuisJours: 90, compteId: 'compte-1', profilsParJour: 40 },
   });
   envoyes.length = 0;
   await q(`update sources set run_requested_at = now() where id = $1`, [srcNonCollectee]);
@@ -1479,14 +1479,14 @@ async function lancementSansCollecteur() {
   await q(`delete from campaign_sources where source_id = $1`, [m.source]);
   await creerSource(m.ctx, {
     campagneId: m.campagne,
-    providerId: 'linkedin_keywords',
-    nom: 'Mots-clés',
-    config: { sujets: ['CRM commercial'], compteId: 'compte-1' },
+    providerId: 'linkedin_job_change',
+    nom: 'Changement de poste',
+    config: { depuisJours: 90, compteId: 'compte-1' },
   });
   const manques = await manquesPourLancer(m.ctx, { campagneId: m.campagne });
   const leManque = manques.find((x) => x.includes('n’est collectée aujourd’hui'));
   check('80. une campagne dont aucune source n’est collectée refuse de se lancer', leManque !== undefined, JSON.stringify(manques));
-  check('80b. le manque nomme le type en cause', (leManque ?? '').includes('mots-clés LinkedIn'), String(leManque));
+  check('80b. le manque nomme le type en cause', (leManque ?? '').includes('changement de poste LinkedIn'), String(leManque));
 
   // 2. La même campagne, avec en plus une source d'engageurs de concurrent : le manque tombe.
   await sourceConcurrente(m, ['https://www.linkedin.com/company/acme/']);
