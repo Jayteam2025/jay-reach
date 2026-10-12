@@ -1686,11 +1686,26 @@ async function interrupteurCollecteAuto() {
 
 // ------------------------------------------------ 28. la source « changement de poste »
 
-/** La page d'un profil telle que `lireProfilCourant` la lit : le nom dans `<title>`, l'intitulé dans le premier `<p><span>`. */
-const pageProfil = (nom, intitule) => ({
-  statut: 200,
-  corps: `<html><head><title>${nom} | LinkedIn</title></head><body><p><span>${intitule}</span></p></body></html>`,
-});
+/**
+ * La page d'un profil dans sa forme RÉELLE : le nom en `<h2>` et l'intitulé DANS la carte
+ * d'en-tête, après le degré de relation et avant la ligne entreprise.
+ *
+ * Cette fixture était restée à l'ancienne forme (un `<p><span>` nu) après le correctif d'ancre
+ * du 12/10 : `lireProfilCourant` y rendait `null`, les trois profils servis plus bas passaient
+ * pour illisibles, et les contrôles 97, 97b, 97d et 98b tombaient. Un harnais qui ne suit pas
+ * le format qu'il est censé prouver ne prouve plus rien.
+ */
+const pageProfil = (nom, intitule) => {
+  const carte = 'com.linkedin.sdui.profile.card.refACoAAExemple';
+  return {
+    statut: 200,
+    corps:
+      `<html><head><title>${nom} | LinkedIn</title></head><body>` +
+      `<div id="${carte}Topcard" componentkey="${carte}Topcard">` +
+      `<h2>${nom}</h2><p>\u00b7 3e</p>${intitule === '' ? '' : `<p>${intitule}</p>`}<p>Acme</p></div>` +
+      `<div id="${carte}Activity"></div></body></html>`,
+  };
+};
 
 /** Un contact déjà connu, comme l'enrichissement ou une collecte précédente l'aurait laissé. */
 async function contactConnu(m, { slug, titre, urn = null }) {

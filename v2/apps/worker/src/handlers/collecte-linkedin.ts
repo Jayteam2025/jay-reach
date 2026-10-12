@@ -51,6 +51,7 @@ import {
   enregistrerEngageur,
   enregistrerPersonne,
   identiteDeRecherche,
+  normaliserIntitule,
   prefixeDeRecherche,
   sqlAdresseResolvable,
   type FragmentSql,
@@ -108,7 +109,24 @@ export const MSG = {
   mots_cles_absents: 'Aucun mot-clé n’est renseigné : ajoutez-en à la source.',
   recherche_vide: 'La recherche ne livre aucune personne nouvelle pour ces mots-clés.',
   aucun_a_relire: 'Aucun contact à relire : aucun contact de l’organisation n’a d’adresse LinkedIn lisible.',
+  profils_tous_illisibles:
+    'Aucun des profils relus n’a livré d’intitulé : la page LinkedIn a probablement changé de forme. Rien n’a été enregistré.',
+  changements_invraisemblables:
+    'Presque tous les profils relus semblent avoir changé de poste : la page LinkedIn a probablement changé de forme. Rien n’a été enregistré.',
 } as const;
+
+/**
+ * En deçà de ce nombre de profils lus, la proportion ne veut rien dire : deux changements sur
+ * deux arrivent pour de vrai.
+ */
+const PROFILS_POUR_JUGER = 5;
+
+/**
+ * La part de changements à partir de laquelle un passage est refusé (l'égalité refuse aussi). Un changement de poste est
+ * rare, même sur des fiches anciennes ; au-dessus de ce seuil, ce n'est plus la réalité qu'on
+ * lit, c'est une page dont la forme a bougé.
+ */
+const PART_CHANGEMENTS_SUSPECTE = 0.8;
 
 const TITRE_ARRET = 'Collecte LinkedIn arrêtée';
 
@@ -300,7 +318,7 @@ async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite:
  * `intituleLu` : quand le contact n'avait aucun intitulé connu, l'intitulé lu devient sa référence
  * (sans rien déclarer : voir l'appelant). Un intitulé déjà connu n'est jamais écrasé ici.
  */
-async function marquerContactVerifie(
+export async function marquerContactVerifie(
   pool: Pool,
   job: CollecteLinkedInJob,
   contactId: string,
@@ -309,7 +327,7 @@ async function marquerContactVerifie(
   await pool.query(
     `update contacts /* jr:linkedin_collecte_verifie */
         set linkedin_verifie_le = now(),
-            job_title = coalesce(nullif(btrim(job_title), ''), $3)
+            job_title = coalesce(nullif(btrim(job_title), ''), nullif(btrim($3), ''))
       where id = $2 and organization_id = $1`,
     [job.organizationId, contactId, intituleLu],
   );
@@ -687,6 +705,34 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       }
       const frictionAArrivee = await arriverSurLeFil(pilote, surRequete);
       if (frictionAArrivee !== null) arretDeRecherche = frictionAArrivee;
+      /**
+       * Les changements constatés, gardés EN ATTENTE : ils ne s'écrivent qu'une fois tous les
+       * profils lus, et seulement si le contrôle de vraisemblance les accepte. Ecrire au fil de
+       * l'eau rendait le passage du 09/10 irréversible avant qu'on ait pu voir qu'il declarait un
+       * changement pour cinq profils sur cinq.
+       */
+      const changementsConstates: Array<{
+        contactId: string;
+        ancienIntitule: string;
+        nouvelIntitule: string;
+        urlProfil: string;
+      }> = [];
+      /**
+       * Les marquages aussi attendent la fin du passage.
+       *
+       * Les différer n'est pas un détail de symétrie : `marquerContactVerifie` POSE l'intitulé lu
+       * comme référence quand la fiche n'en avait pas. Écrit en ligne, il grave une valeur fausse
+       * sur une fiche vierge avant même que le contrôle ait jugé le passage, et le passage refusé
+       * annonce alors « Rien n'a été enregistré » en mentant. Pire, cette fausse référence prépare
+       * un vrai faux changement : le jour où la page redevient lisible, l'écart entre elle et le
+       * vrai intitulé devient un « changement de poste », et il est trop isolé pour que le
+       * contrôle le voie.
+       */
+      const aMarquer: Array<{ readonly contactId: string; readonly intituleLu: string | null }> = [];
+      /** Les profils effectivement LUS : le dénominateur du contrôle. Un profil illisible n'en est pas. */
+      let profilsLus = 0;
+      /** Les profils TENTÉS, illisibles compris : de quoi voir qu'aucun n'a livré d'intitulé. */
+      let profilsTentes = 0;
       for (const contact of frictionAArrivee === null ? aRelire : []) {
         if (requetesRestantes() <= 0) {
           arretDeRecherche = 'plafond';
@@ -712,33 +758,98 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           }
         }
         bilan.vus += 1;
+        profilsTentes += 1;
         // Plus de trafic LinkedIn pendant l'écriture : voir `traficTermine`.
         traficTermine = true;
+        const ancien = (contact.intitule ?? '').trim();
+        const nouveau = (lu?.intitule ?? '').trim();
         if (lu === null) {
           // Illisible (profil fermé, page changée, adresse illisible) : sauté pour aujourd'hui, et
           // marqué pour que la rotation avance. Jamais pris pour un changement.
           bilan.ignores += 1;
-          await marquerContactVerifie(pool, job, contact.id, null);
-        } else if (contact.intitule === null || contact.intitule.trim().length === 0) {
-          // Aucun intitulé connu à comparer : le lu devient la référence, sans rien déclarer.
-          // Annoncer « a changé de poste » pour une fiche qui n'en avait pas réveillerait tout un
-          // fichier importé sans titre.
+          aMarquer.push({ contactId: contact.id, intituleLu: null });
+        } else if (ancien.length === 0 || nouveau.length === 0 || normaliserIntitule(ancien) === normaliserIntitule(nouveau)) {
+          // Rien à déclarer. Trois cas dans le même panier, et c'est voulu :
+          //  - aucun intitulé connu : le lu devient la référence, sans réveiller personne (annoncer
+          //    « a changé de poste » pour une fiche sans titre réveillerait tout un fichier importé) ;
+          //  - aucun intitulé LU : la personne n'en affiche pas (mesuré : un intitulé valant « . »).
+          //    Vider son titre n'est pas changer de poste ;
+          //  - le même intitulé qu'hier.
+          profilsLus += 1;
           bilan.doublons += 1;
-          await marquerContactVerifie(pool, job, contact.id, lu.intitule);
+          aMarquer.push({ contactId: contact.id, intituleLu: nouveau });
         } else {
-          const issue = await enregistrerChangementDePoste(
-            contexteEngageur,
-            { contactId: contact.id, ancienIntitule: contact.intitule, nouvelIntitule: lu.intitule, urlProfil: contact.urlProfil },
-            config.campagne,
-          );
-          if (issue === 'change') bilan.nouveaux += 1;
-          else if (issue === 'inchange') bilan.doublons += 1;
-          else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
-          await marquerContactVerifie(pool, job, contact.id, null);
+          // Un changement APPARENT. Rien n'est écrit tant que le passage n'a pas été jugé.
+          profilsLus += 1;
+          changementsConstates.push({
+            contactId: contact.id,
+            ancienIntitule: ancien,
+            nouvelIntitule: nouveau,
+            urlProfil: contact.urlProfil,
+          });
         }
         traficTermine = false;
       }
       traficTermine = true;
+
+      /**
+       * Un passage ARRÊTÉ n'a pas de dénominateur honnête : le contrôle de vraisemblance ne dit
+       * rien d'un passage coupé au troisième profil, et plus il est coupé tôt, moins il protège.
+       * Un défi servi au milieu d'une page devenue illisible donnerait deux changements sur deux,
+       * donc sous le seuil, donc écrits. On n'écrit donc aucun changement : les contacts ne sont
+       * pas marqués pour autant et repassent en tête demain.
+       *
+       * Le plafond, lui, est un arrêt PRÉVU et non un symptôme : il laisse écrire ce qui a été lu,
+       * sans quoi un plafond qui tombe toujours au même endroit figerait la rotation pour de bon.
+       */
+      const arretAnormal = arretDeRecherche !== 'fini' && arretDeRecherche !== 'plafond';
+
+      // Le contrôle symétrique du précédent. Un passage où PERSONNE n'a livré d'intitulé ne lit
+      // pas des profils fermés : il lit mal. Sans lui, le jour où l'ancre du nom ou de l'en-tête
+      // cesse de mordre, la source s'éteint en silence — chaque contact en « illisible », passage
+      // clos en succès, carte « 0 nouvelle », et rien dans `source_runs.error` pour le dire.
+      if (!arretAnormal && profilsTentes >= PROFILS_POUR_JUGER && profilsLus === 0) {
+        await refuser(pool, job, MSG.profils_tous_illisibles, { statut: 'error', bilan, sortie });
+        return;
+      }
+
+      // Le contrôle de vraisemblance. Un passage qui déclare un changement pour presque tout le
+      // monde ne lit pas des changements : il lit mal. Le 09/10, cinq profils relus ont donné cinq
+      // « changements », dont deux venaient d'une ligne qui n'était pas l'intitulé.
+      //
+      // L'asymétrie décide, comme pour la garde sur l'intitulé absent : refuser coûte un jour de
+      // rotation, les contacts n'étant pas marqués ils repassent en tête demain. Écrire réveille
+      // des gens pour rien ET écrase leur intitulé, que plus rien ne permet de retrouver.
+      //
+      // Une FRICTION passe devant ce verdict, et c'est tout l'objet du `!arretAnormal` : refuser
+      // ici rendrait la main tout de suite, en sautant la queue commune qui traite la friction.
+      // Un défi ne bloquerait alors pas la session, aucune notification ne partirait, et le
+      // passage ne compterait pas pour le disjoncteur — l'opérateur lirait « presque tous les
+      // profils ont changé » là où le fait marquant est que LinkedIn nous a défiés.
+      if (
+        !arretAnormal &&
+        profilsLus >= PROFILS_POUR_JUGER &&
+        changementsConstates.length >= profilsLus * PART_CHANGEMENTS_SUSPECTE
+      ) {
+        await refuser(pool, job, MSG.changements_invraisemblables, { statut: 'error', bilan, sortie });
+        return;
+      }
+      for (const marquage of aMarquer) {
+        // La vérification est marquée même sur un arrêt anormal, sans quoi un défi qui revient
+        // chaque jour figerait la rotation sur les mêmes contacts. Mais AUCUNE référence n'est
+        // posée dans ce cas : ce qu'on a lu ne vaut rien tant que le passage n'est pas allé au
+        // bout, et une référence fausse ne se rattrape pas.
+        await marquerContactVerifie(pool, job, marquage.contactId, arretAnormal ? null : marquage.intituleLu);
+      }
+      if (!arretAnormal) {
+        for (const changement of changementsConstates) {
+          const issue = await enregistrerChangementDePoste(contexteEngageur, changement, config.campagne);
+          if (issue === 'change') bilan.nouveaux += 1;
+          else if (issue === 'inchange') bilan.doublons += 1;
+          else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
+          await marquerContactVerifie(pool, job, changement.contactId, null);
+        }
+      }
     } else if (config.mode === 'recherche') {
       for (const motsCles of config.entrees) {
         if (requetesRestantes() <= 0) {

@@ -67,6 +67,17 @@ describe('extrairePersonnes', () => {
     }
   });
 
+  it('un intitulé qui CONTIENT des points médians n’est pas pris pour un degré', () => {
+    // `DEGRE_DE_RELATION` est partagé avec la lecture d'un profil, dont la page utilise « · »
+    // là où les résultats de recherche utilisent « • ». L'élargissement du motif ne doit écarter
+    // que le degré lui-même : mesuré, une seule chaîne change de verdict (« · 3e »), et les
+    // intitulés à points médians gardent le leur.
+    for (const intitule of ['Consultant · Formateur', 'Data · IA · Cloud', '· Directrice commerciale']) {
+      const [p] = extrairePersonnes(resultat('ada-lemercier', 'Ada Lemercier', intitule));
+      expect(p?.intitule).toBe(intitule);
+    }
+  });
+
   it('ignore sans bruit un bloc qui n’est pas une personne', () => {
     // La liste porte aussi des encarts et des « voir tous les résultats » : 9 personnes pour
     // 10 `role="listitem"` sur une page mesurée. Les compter comme des échecs ferait passer

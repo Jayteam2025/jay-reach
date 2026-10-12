@@ -24,6 +24,7 @@
  *     qui avait fait croire la source impossible. `&page=N` sert bien une page distincte.
  */
 import {
+  DEGRE_DE_RELATION,
   ErreurCollecte,
   MESSAGES_FRICTION,
   frictionDeLUrl,
@@ -42,13 +43,6 @@ export interface PersonneTrouvee {
   /** L'intitulé affiché sous le nom (« Directeur commercial chez … »). Jamais vide. */
   readonly intitule: string;
 }
-
-/**
- * Le degré de relation, affiché entre le nom et l'intitulé (« • 2e »). Ce n'est pas un intitulé,
- * et c'est le seul texte qui s'intercale systématiquement : sans ce filtre, une personne sur deux
- * serait scorée sur la chaîne « • 2e ».
- */
-const DEGRE_DE_RELATION = /^[•\s]*(1er|2e|3e\+?|Hors réseau|Out of network)$/i;
 
 /** Au-delà, LinkedIn ne sert plus de résultats nouveaux : garde-fou, pas une cible. */
 export const PAGES_MAX_RECHERCHE = 10;

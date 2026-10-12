@@ -21,6 +21,7 @@
  *     ce que l'écran affiche. Extraire les URN bruts donnerait quinze faux posts sur dix-sept.
  */
 import {
+  DEGRE_DE_RELATION,
   ErreurCollecte,
   MESSAGES_FRICTION,
   frictionDeLUrl,
@@ -148,7 +149,11 @@ export async function resoudreNomPublic(
 /** Ce qu'une page de profil dit de la personne AUJOURD'HUI. */
 export interface ProfilCourant {
   readonly nom: string;
-  /** L'intitulé affiché sous le nom, entités HTML décodées. */
+  /**
+   * L'intitulé affiché sous le nom, entités HTML décodées. **Vide quand la personne n'en a
+   * pas** : c'est un état ordinaire, pas une erreur de lecture, et l'appelant n'a alors rien à
+   * comparer. Une page illisible, elle, se dit `null` sur le profil entier.
+   */
   readonly intitule: string;
 }
 
@@ -170,27 +175,104 @@ function decoderEntites(texte: string): string {
 }
 
 /**
- * Le nom et l'intitulé COURANTS d'un profil, lus dans le HTML de sa page.
- *
- * Deux ancres, relevées le 09/10 sur trois profils réels :
- *  - le nom vient de `<title>`, qui vaut « <Nom> | LinkedIn » ;
- *  - l'intitulé est le PREMIER `<p><span>…</span></p>` du document.
- *
- * La seconde est positionnelle, et c'est le point faible assumé : les classes CSS de LinkedIn
- * sont obfusquées et changent, il n'y a aucun attribut sémantique sur cet élément. Les suivants
- * portent l'entreprise, l'école, puis des encarts qui n'ont rien à voir avec la personne — un
- * même texte publicitaire est apparu en troisième position sur deux profils différents. D'où le
- * refus net plutôt qu'un repli : rendre `null` fait sauter la vérification du jour, alors qu'un
- * mauvais intitulé annoncerait un changement de poste qui n'a pas eu lieu, et déclencherait un
- * envoi.
+ * Le préfixe que porte chaque carte de la page de profil : l'en-tête en est une, et les blocs
+ * qui suivent (activité, expériences, profils suggérés) aussi.
  */
+const CARTE_DE_PROFIL = 'com.linkedin.sdui.profile.card.ref';
+
+/**
+ * La taille au-delà de laquelle ce qu'on tient n'est plus un en-tête. Mesuré le 09/10 sur deux
+ * profils réels : 12 072 et 14 290 octets. La marge est large, elle ne sert qu'à garder une borne
+ * quand la page ne porte aucune carte après celle de l'en-tête.
+ */
+const OCTETS_MAX_ENTETE = 40_000;
+
+/** L'identifiant de la carte d'en-tête : un URN qui change à chaque personne, puis `Topcard`. */
+const IDENTIFIANT_ENTETE = /^[^"]*Topcard"/;
+
+/**
+ * L'en-tête du profil, découpé du reste de la page.
+ *
+ * C'est la correction du défaut trouvé en recette le 09/10 : lire un `<p>` « quelque part dans
+ * la page » attrape ce qui appartient a quelqu'un d'autre. Plus bas dans le même document, les
+ * profils suggérés (« Explorer les profils Premium ») portent exactement la même forme de
+ * balises que la personne. Borné a l'en-tête, le pire cas devient « on a lu la mauvaise ligne
+ * de LA BONNE personne » au lieu de « on a lu le poste d'un inconnu ».
+ *
+ * `null` quand la carte n'est pas la : page changée de forme, profil fermé, réponse tronquée.
+ */
+export function enteteDeProfil(html: string): string | null {
+  // L'élément porte son identifiant DEUX fois, en `id` puis en `componentkey` — mesuré sur deux
+  // profils réels. Les morceaux consécutifs qui le répètent appartiennent donc à la même carte,
+  // et la zone s'arrête à la première carte qui porte un autre identifiant.
+  const morceaux = html.split(CARTE_DE_PROFIL);
+  const debut = morceaux.findIndex((m) => IDENTIFIANT_ENTETE.test(m));
+  if (debut === -1) return null;
+  const zone: string[] = [];
+  for (let i = debut; i < morceaux.length; i += 1) {
+    const morceau = morceaux[i] ?? '';
+    if (i > debut && !IDENTIFIANT_ENTETE.test(morceau)) break;
+    zone.push(morceau);
+  }
+  // Faute de carte SUIVANTE, le dernier morceau porte tout le reste du document — et la borne
+  // haute annoncée n'existe plus. Mesuré : l'en-tête d'un profil réel fait 12 à 14 Ko ; au-delà
+  // de la marge ci-dessous, ce qu'on tient n'est plus un en-tête. Couper garde l'invariant vrai
+  // plutôt que de laisser un commentaire mentir, ce qui est précisément ce qui a coûté la
+  // recette du 09/10.
+  return zone.join(CARTE_DE_PROFIL).slice(0, OCTETS_MAX_ENTETE);
+}
+
+/** Le texte d'un `<p>`, balises internes et commentaires retirés. Mesuré : `· 3e<!-- -->`. */
+function texteDeParagraphe(brut: string): string {
+  return decoderEntites(brut.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, '')).trim();
+}
+
+/**
+ * Le nom et l'intitulé COURANTS d'un profil, lus dans l'en-tête de sa page.
+ *
+ * L'ordre des lignes de l'en-tête, relevé le 09/10 sur deux profils réels : le nom en `<h2>`,
+ * le degré de relation, l'intitulé, l'entreprise ou l'école, puis le lieu. L'intitulé est donc
+ * la première ligne qui n'est ni vide ni un degré.
+ *
+ * **Un intitulé vaut parfois `.`** -- mesuré tel quel sur un profil réel. C'est un intitulé
+ * ABSENT, pas une page illisible : on rend une chaîne vide, que l'appelant traite comme « rien
+ * a comparer ». La version précédente exigeait trois caractères, ce qui ne filtrait pas cette
+ * ligne mais la SAUTAIT : la lecture glissait sur la ligne suivante (l'entreprise), et de la
+ * jusqu'aux profils suggérés. Cinq « changements de poste » sur cinq profils relus, dont deux
+ * faux, le 09/10. Une borne de longueur posée sur une ancre positionnelle ne filtre pas : elle
+ * décale.
+ */
+/**
+ * Le nom de la personne : le `<h2>` de l'en-tête, `<title>` en repli.
+ *
+ * Le contenu du `<h2>` est nettoyé comme un paragraphe, et non lu en texte nu. LinkedIn glisse
+ * déjà des commentaires `<!-- -->` dans ses blocs, et un badge, un pronom ou une mention
+ * imbriqués dans le nom suffiraient à le rendre vide. Comme un nom vide refuse le profil ENTIER,
+ * cela éteindrait la source en silence : chaque contact partirait en « illisible », le passage se
+ * clôturerait en succès, et la carte afficherait « 0 nouvelle » sans un mot d'erreur.
+ */
+function nomDeProfil(entete: string, html: string): string {
+  const h2 = /<h2[^>]*>([\s\S]{1,400}?)<\/h2>/.exec(entete)?.[1];
+  const lu = h2 === undefined ? '' : texteDeParagraphe(h2);
+  if (lu.length > 0) return lu;
+  return decoderEntites((/<title[^>]*>([^<|]{2,160})\|/i.exec(html)?.[1] ?? '').trim());
+}
+
 export function lireProfilCourant(html: string): ProfilCourant | null {
-  const titre = /<title[^>]*>([^<|]{2,160})\|/i.exec(html);
-  const intitule = /<p[^>]*><span>([^<]{3,300})<\/span><\/p>/.exec(html);
-  const nom = decoderEntites((titre?.[1] ?? '').trim());
-  const poste = decoderEntites((intitule?.[1] ?? '').trim());
-  if (nom.length === 0 || poste.length === 0) return null;
-  return { nom, intitule: poste };
+  const entete = enteteDeProfil(html);
+  if (entete === null) return null;
+  const nom = nomDeProfil(entete, html);
+  if (nom.length === 0) return null;
+  // L'intitulé se cherche APRÈS le nom : l'en-tête porte aussi des boutons d'action (« Suivre »,
+  // « Se connecter ») qui sont des `<p>` comme les autres, et le premier venu deviendrait
+  // l'intitulé s'il était placé plus haut dans la carte.
+  const finDuNom = entete.indexOf('</h2>');
+  const sousLeNom = finDuNom === -1 ? entete : entete.slice(finDuNom + '</h2>'.length);
+  const lignes = [...sousLeNom.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)]
+    .map((m) => texteDeParagraphe(m[1] ?? ''))
+    .filter((t) => t.length > 0 && !DEGRE_DE_RELATION.test(t));
+  const premiere = lignes[0] ?? '';
+  return { nom, intitule: /[\p{L}\p{N}]/u.test(premiere) ? premiere : '' };
 }
 
 const URL_FIL = 'https://www.linkedin.com/feed/';
