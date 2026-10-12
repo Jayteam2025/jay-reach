@@ -23,8 +23,13 @@ import {
   SQL_ACCUSER_RECEPTION,
   SQL_CLORE_ORPHELINES,
   SQL_CLORE_SI_EN_COURS,
+  SQL_DECONNEXIONS_EN_ATTENTE,
+  SQL_EFFACER_DECONNEXION_A_LA_CONNEXION,
+  SQL_LIRE_DECONNEXION,
   SQL_LIRE_DEMANDE_A_TRAITER,
   SQL_LIRE_ISSUE,
+  SQL_POSER_DECONNEXION,
+  SQL_SOLDER_DECONNEXION,
 } from './traiter-connexion-sql.js';
 
 interface LigneAtraiter {
@@ -45,13 +50,8 @@ export interface OptionsTraitement {
 /** Connexions en cours dans CE processus : demande -> organisation et dépendances (pour livrer le code). */
 const enCours = new Map<string, { organisationId: string; dependances: DependancesWeb }>();
 
-/**
- * Organisations dont une déconnexion est arrivée PENDANT une connexion. Elle n'est ni ignorée (l'utilisateur
- * aurait cliqué pour rien, et le compte resterait connecté contre sa dernière volonté) ni jouée tout de suite
- * (un seul navigateur : effacer ses cookies sous une connexion la ferait échouer en désordre). Elle se joue
- * dès que la connexion est terminée : la dernière intention exprimée l'emporte.
- */
-const deconnexionsDifferees = new Set<string>();
+/** Une déconnexion pilote le navigateur : une à la fois dans ce processus. */
+let deconnexionEnCours = false;
 
 const nomErreur = (e: unknown): string => (e instanceof Error ? e.name : 'erreur');
 
@@ -157,6 +157,8 @@ async function conduireConnexion(
     // entre-temps (course avec la lecture de l'écran) : on ne pilote rien.
     const accuse = await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
     if (accuse.rowCount !== 1) throw new ErreurDemandeInterrompue();
+    // Une intention de déconnexion plus ancienne est caduque : l'utilisateur reconnecte.
+    await pool.query(SQL_EFFACER_DECONNEXION_A_LA_CONNEXION, [organizationId]);
     ctxConnexion = await dependances.contexte();
     codeRetour = await (options.connecter ?? connecter)(ctxConnexion, dependances);
   } catch (e) {
@@ -179,20 +181,37 @@ async function conduireConnexion(
       // nettoyage voit encore la connexion en cours, au lieu de piloter le navigateur en même temps.
       enCours.delete(demandeId);
     }
-    if (deconnexionsDifferees.delete(organizationId)) await conduireDeconnexion(pool, organizationId, options);
+    // Une déconnexion demandée pendant la connexion (intention persistée) se joue maintenant : la dernière
+    // volonté exprimée l'emporte, et elle survit à un arrêt du worker (reprise au démarrage).
+    await reprendreDeconnexion(pool, organizationId, options);
   }
 }
 
-async function conduireDeconnexion(
-  pool: pg.Pool,
-  organisationId: string,
-  options: OptionsTraitement,
-): Promise<void> {
-  if (enCours.size > 0) {
-    deconnexionsDifferees.add(organisationId);
-    console.error('[traiter-connexion] déconnexion différée (une connexion est en cours)');
+/**
+ * Joue la déconnexion en attente de l'organisation, si elle l'est. L'intention n'est soldée que si `deconnecter`
+ * a RÉUSSI (code 0 : cookies effacés) : un échec la laisse en place, le démarrage suivant la reprendra. Le
+ * résultat est consigné au journal d'audit (`linkedin.deconnexion_terminee`), sans secret : statut et code.
+ */
+async function reprendreDeconnexion(pool: pg.Pool, organisationId: string, options: OptionsTraitement): Promise<void> {
+  let demandee: unknown;
+  try {
+    demandee = (await pool.query<{ demandee_at: unknown }>(SQL_LIRE_DECONNEXION, [organisationId])).rows[0]?.demandee_at;
+  } catch (e) {
+    console.error(`[traiter-connexion] intention de déconnexion illisible (${nomErreur(e)})`);
     return;
   }
+  if (demandee === undefined || demandee === null) return;
+  if (deconnexionEnCours) return; // celle qui tourne soldera l'intention
+  deconnexionEnCours = true;
+  try {
+    await jouerDeconnexion(pool, organisationId, demandee, options);
+  } finally {
+    deconnexionEnCours = false;
+  }
+}
+
+async function jouerDeconnexion(pool: pg.Pool, organisationId: string, demandee: unknown, options: OptionsTraitement): Promise<void> {
+
   const d: Dependances = {
     env: options.env ?? process.env,
     ecrire: (ligne) => console.log(ligne),
@@ -202,10 +221,40 @@ async function conduireDeconnexion(
     demander: () => Promise.reject(new Error('invite_inattendue')),
     demanderMasque: () => Promise.reject(new Error('invite_inattendue')),
   };
+  let code = 1;
   try {
-    await (options.deconnecter ?? deconnecter)(await d.contexte(), d);
+    code = await (options.deconnecter ?? deconnecter)(await d.contexte(), d);
   } catch (e) {
     console.error(`[traiter-connexion] déconnexion échouée (${nomErreur(e)})`);
+  }
+  try {
+    if (code === 0) await pool.query(SQL_SOLDER_DECONNEXION, [organisationId, demandee]);
+    else console.error('[traiter-connexion] déconnexion NON aboutie : le compte peut rester joignable, reprise au prochain démarrage');
+    await ecrireEvenement(pool, {
+      organisationId,
+      entityType: 'sender',
+      entityId: null,
+      action: 'linkedin.deconnexion_terminee',
+      actorId: null,
+      diff: {
+        libelle: code === 0 ? 'Compte LinkedIn déconnecté' : 'Déconnexion du compte LinkedIn non aboutie',
+        statut: code === 0 ? 'reussi' : 'echec',
+      },
+    });
+  } catch (e) {
+    console.error(`[traiter-connexion] issue de déconnexion non écrite (${nomErreur(e)})`);
+  }
+}
+
+/** Au démarrage : toute déconnexion demandée et non aboutie est rejouée (le message d'origine est perdu). */
+export async function reprendreDeconnexionsEnAttente(pool: pg.Pool, options: OptionsTraitement = {}): Promise<number> {
+  try {
+    const r = await pool.query<{ organization_id: string }>(SQL_DECONNEXIONS_EN_ATTENTE);
+    for (const { organization_id } of r.rows) await reprendreDeconnexion(pool, organization_id, options);
+    return r.rows.length;
+  } catch (e) {
+    console.error(`[traiter-connexion] déconnexions en attente non reprises (${nomErreur(e)})`);
+    return 0;
   }
 }
 
@@ -227,7 +276,10 @@ export async function traiterMessageConnexion(
         return;
       }
       case 'deconnexion':
-        await conduireDeconnexion(pool, message.organizationId, options);
+        // D'abord durable, ensuite jouée : si un navigateur est déjà piloté, la fin de cette connexion s'en charge.
+        await pool.query(SQL_POSER_DECONNEXION, [message.organizationId]);
+        if (enCours.size > 0) console.error('[traiter-connexion] déconnexion différée (une connexion est en cours)');
+        else await reprendreDeconnexion(pool, message.organizationId, options);
         return;
     }
   } catch (e) {
@@ -238,5 +290,5 @@ export async function traiterMessageConnexion(
 /** Vide l'état du processus (tests). */
 export function oublierConnexionsEnCours(): void {
   enCours.clear();
-  deconnexionsDifferees.clear();
+  deconnexionEnCours = false;
 }

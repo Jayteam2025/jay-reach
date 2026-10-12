@@ -69,3 +69,13 @@ export const SQL_ATTEND_UN_CODE = `select id from linkedin_connexion_demandes
 export const SQL_ECHEC_TRANSMISSION = `update linkedin_connexion_demandes
           set statut = 'echec', motif = 'worker_absent', etape = null, updated_at = now()
         where id = $1 and statut in ${EN_COURS}`;
+
+/**
+ * $1 = organisation. Persiste l'intention de déconnexion (crée la ligne de session au besoin) : le worker la
+ * reprend au démarrage et à la fin d'une connexion, le message `pg_notify` n'étant pas rejoué. Garde la plus
+ * ancienne demande tant qu'elle n'a pas abouti.
+ */
+export const SQL_POSER_DECONNEXION = `insert into linkedin_server_sessions (organization_id, deconnexion_demandee_at)
+       values ($1, now())
+       on conflict (organization_id) do update
+          set deconnexion_demandee_at = coalesce(linkedin_server_sessions.deconnexion_demandee_at, now())`;

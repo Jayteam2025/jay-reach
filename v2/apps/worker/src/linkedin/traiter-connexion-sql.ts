@@ -35,3 +35,35 @@ export const SQL_CLORE_ORPHELINES = `update linkedin_connexion_demandes
 
 /** Purge des demandes abandonnées (fonction `service_role`, migration 20261012130000). */
 export const SQL_PURGER = 'select public.purger_linkedin_connexion_demandes() as supprimees';
+
+/**
+ * $1 = organisation. Le worker pose lui aussi l'intention de déconnexion dès qu'il reçoit le message : elle est
+ * durable avant d'être jouée (le cœur la pose déjà côté écran ; ceci couvre un message arrivé d'ailleurs).
+ */
+export const SQL_POSER_DECONNEXION = `insert into linkedin_server_sessions (organization_id, deconnexion_demandee_at)
+       values ($1, now())
+       on conflict (organization_id) do update
+          set deconnexion_demandee_at = coalesce(linkedin_server_sessions.deconnexion_demandee_at, now())`;
+
+/** $1 = organisation. L'intention de déconnexion en attente, ou aucune ligne. */
+export const SQL_LIRE_DECONNEXION = `select deconnexion_demandee_at::text as demandee_at
+         from linkedin_server_sessions where organization_id = $1 and deconnexion_demandee_at is not null`;
+
+/** Au démarrage : les organisations dont une déconnexion n'a pas abouti. */
+export const SQL_DECONNEXIONS_EN_ATTENTE = `select organization_id from linkedin_server_sessions where deconnexion_demandee_at is not null`;
+
+/**
+ * $1 = organisation, $2 = l'intention telle qu'elle a été LUE au départ (en TEXTE : un `Date` JS perd les
+ * microsecondes et l'égalité ne tiendrait jamais). Solde l'intention seulement si c'est
+ * encore la même : une nouvelle demande arrivée pendant l'exécution reste en attente.
+ */
+export const SQL_SOLDER_DECONNEXION = `update linkedin_server_sessions set deconnexion_demandee_at = null
+        where organization_id = $1 and deconnexion_demandee_at = $2::timestamptz`;
+
+/**
+ * $1 = organisation. Une nouvelle connexion remplace une intention de déconnexion plus ancienne : sans cela, le
+ * démarrage suivant déconnecterait un compte que l'utilisateur vient de reconnecter. Posée au début de la
+ * connexion : une déconnexion demandée PENDANT elle (plus récente) survit.
+ */
+export const SQL_EFFACER_DECONNEXION_A_LA_CONNEXION = `update linkedin_server_sessions set deconnexion_demandee_at = null
+        where organization_id = $1 and deconnexion_demandee_at is not null`;

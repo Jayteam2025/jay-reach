@@ -30,7 +30,7 @@ import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
 import { ecouterCanalConnexion } from './linkedin/ecoute-connexion.js';
-import { cloreDemandesOrphelines, traiterMessageConnexion } from './linkedin/traiter-connexion.js';
+import { cloreDemandesOrphelines, reprendreDeconnexionsEnAttente, traiterMessageConnexion } from './linkedin/traiter-connexion.js';
 import { SQL_PURGER } from './linkedin/traiter-connexion-sql.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
@@ -229,6 +229,9 @@ async function main(): Promise<void> {
       // Pas d'écoute : la connexion depuis l'écran se ferme d'elle-même en « worker absent », le reste du moteur tourne.
       console.error(`[ecoute-connexion] démarrage impossible (${err instanceof Error ? err.name : 'erreur'})`);
     }
+    // Une déconnexion demandée et non aboutie (worker arrêté entre-temps) est rejouée : le message d'origine est perdu.
+    // Après l'écoute, sans bloquer le démarrage : le navigateur peut mettre longtemps à répondre.
+    void reprendreDeconnexionsEnAttente(pool);
     const purgerConnexions = (): void => {
       void pool.query(SQL_PURGER).catch((err: unknown) => {
         console.error(`[connexion-linkedin] purge impossible (${err instanceof Error ? err.name : 'erreur'})`);

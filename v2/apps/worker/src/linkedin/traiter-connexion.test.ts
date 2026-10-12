@@ -3,12 +3,17 @@ import type pg from 'pg';
 import type { MessageConnexion } from '@jay-reach/core';
 import type { DependancesWeb } from './dependances-web.js';
 import { ErreurDelaiCode } from './dependances-web.js';
-import { oublierConnexionsEnCours, traiterMessageConnexion } from './traiter-connexion.js';
+import { oublierConnexionsEnCours, reprendreDeconnexionsEnAttente, traiterMessageConnexion } from './traiter-connexion.js';
 import {
   SQL_ACCUSER_RECEPTION,
   SQL_CLORE_SI_EN_COURS,
+  SQL_DECONNEXIONS_EN_ATTENTE,
+  SQL_EFFACER_DECONNEXION_A_LA_CONNEXION,
+  SQL_LIRE_DECONNEXION,
   SQL_LIRE_DEMANDE_A_TRAITER,
   SQL_LIRE_ISSUE,
+  SQL_POSER_DECONNEXION,
+  SQL_SOLDER_DECONNEXION,
 } from './traiter-connexion-sql.js';
 
 // Orchestration seulement. Le SQL est prouvé par exécution réelle : test/pg-verify/linkedin-connexion-actions.sh.
@@ -25,8 +30,18 @@ interface Appel {
 
 function fauxPool(enCours = true, orgDeLaDemande = ORG, accuses = 1, statutFinal = 'echec') {
   const appels: Appel[] = [];
+  // L'intention de déconnexion persistée : `null` = aucune.
+  const etat: { intention: string | null } = { intention: null };
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     appels.push({ sql, params });
+    if (sql === SQL_POSER_DECONNEXION) etat.intention ??= '2026-10-12 10:00:00.123456+00';
+    if (sql === SQL_EFFACER_DECONNEXION_A_LA_CONNEXION) etat.intention = null;
+    if (sql === SQL_LIRE_DECONNEXION) return { rows: etat.intention ? [{ demandee_at: etat.intention }] : [] };
+    if (sql === SQL_DECONNEXIONS_EN_ATTENTE) return { rows: etat.intention ? [{ organization_id: ORG }] : [] };
+    if (sql === SQL_SOLDER_DECONNEXION) {
+      if (etat.intention && params[1] === etat.intention) etat.intention = null;
+      return { rows: [] };
+    }
     if (sql === SQL_LIRE_DEMANDE_A_TRAITER) {
       return { rows: [{ organization_id: orgDeLaDemande, demandee_par: 'user-1', en_cours: enCours }] };
     }
@@ -34,7 +49,7 @@ function fauxPool(enCours = true, orgDeLaDemande = ORG, accuses = 1, statutFinal
     if (sql === SQL_ACCUSER_RECEPTION) return { rows: [], rowCount: accuses };
     return { rows: [] };
   });
-  return { pool: { query } as unknown as pg.Pool, appels };
+  return { pool: { query } as unknown as pg.Pool, appels, etat };
 }
 
 function fausseDependances() {
@@ -183,17 +198,39 @@ describe('traiterMessageConnexion : code et déconnexion', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('deconnexion appelle la fonction deconnecter du terminal', async () => {
-    const { pool } = fauxPool();
+  it('deconnexion pose l intention, appelle deconnecter du terminal, et la solde quand elle reussit', async () => {
+    const { pool, appels, etat } = fauxPool();
     const deconnecter = vi.fn(async () => 0);
     await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
     expect(deconnecter).toHaveBeenCalledTimes(1);
     const ctx = (deconnecter.mock.calls[0] as unknown as [{ organisationId: string }])[0];
     expect(ctx.organisationId).toBe(ORG);
+    expect(etat.intention).toBeNull();
+    const issue = appels.find((a) => a.sql.includes('audit_events'));
+    expect(JSON.parse(String(issue?.params[5]))).toMatchObject({ statut: 'reussi' });
   });
 
-  it('une deconnexion arrivee PENDANT une connexion est differee a sa fin, jamais perdue ni jouee en parallele', async () => {
-    const { pool } = fauxPool();
+  it('un code retour 1 (cookies non effaces) ne solde PAS l intention et est consigne en echec', async () => {
+    const { pool, appels, etat } = fauxPool();
+    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter: async () => 1 });
+    expect(etat.intention).not.toBeNull();
+    expect(appels.some((a) => a.sql === SQL_SOLDER_DECONNEXION)).toBe(false);
+    const issue = appels.find((a) => a.sql.includes('audit_events'));
+    expect(JSON.parse(String(issue?.params[5]))).toMatchObject({ statut: 'echec' });
+  });
+
+  it('une deconnexion qui leve ne solde pas non plus l intention', async () => {
+    const { pool, etat } = fauxPool();
+    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, {
+      deconnecter: async () => {
+        throw new Error('panne');
+      },
+    });
+    expect(etat.intention).not.toBeNull();
+  });
+
+  it('une deconnexion arrivee PENDANT une connexion est persistee, puis jouee a sa fin, jamais en parallele', async () => {
+    const { pool, etat } = fauxPool();
     const { d } = fausseDependances();
     const ordre: string[] = [];
     let liberer: () => void = () => undefined;
@@ -215,24 +252,28 @@ describe('traiterMessageConnexion : code et déconnexion', () => {
     await vi.waitFor(() => expect(ordre).toEqual(['connecter debut']));
     await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
     expect(deconnecter).not.toHaveBeenCalled();
+    expect(etat.intention).not.toBeNull(); // durable AVANT d'être jouée
     liberer();
     await premiere;
     expect(ordre).toEqual(['connecter debut', 'connecter fin', 'deconnecter']);
-    expect(deconnecter).toHaveBeenCalledTimes(1);
+    expect(etat.intention).toBeNull();
   });
 
-  it('une deconnexion differee ne se rejoue pas a la connexion suivante', async () => {
-    const { pool } = fauxPool();
-    const { d } = fausseDependances();
+  it('une intention laissee par un worker arrete est rejouee au demarrage', async () => {
+    const { pool, etat } = fauxPool();
+    etat.intention = '2026-10-12 09:00:00.654321+00';
     const deconnecter = vi.fn(async () => 0);
-    let liberer: () => void = () => undefined;
-    const bloquee = new Promise<number>((r) => (liberer = () => r(0)));
-    const premiere = traiterMessageConnexion(pool, message, { connecter: () => bloquee, dependances: () => d, deconnecter });
-    await vi.waitFor(() => expect(erreurs).toEqual([]));
-    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
-    liberer();
-    await premiere;
-    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => d, deconnecter });
+    expect(await reprendreDeconnexionsEnAttente(pool, { deconnecter })).toBe(1);
     expect(deconnecter).toHaveBeenCalledTimes(1);
+    expect(etat.intention).toBeNull();
+    expect(await reprendreDeconnexionsEnAttente(pool, { deconnecter })).toBe(0);
+  });
+
+  it('une nouvelle connexion remplace une intention plus ancienne (elle ne sera pas rejouee au demarrage)', async () => {
+    const { pool, appels } = fauxPool();
+    const { d } = fausseDependances();
+    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => d });
+    const sqls = appels.map((a) => a.sql);
+    expect(sqls.indexOf(SQL_EFFACER_DECONNEXION_A_LA_CONNEXION)).toBeGreaterThan(sqls.indexOf(SQL_ACCUSER_RECEPTION));
   });
 });

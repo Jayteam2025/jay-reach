@@ -463,7 +463,7 @@ describe('effacerCookies', () => {
       send: async (methode: string, params?: unknown) => {
         envoyes.push([methode, params]);
         if (echec && methode === 'Storage.clearDataForOrigin') throw echec;
-        return methode === 'Network.getAllCookies' ? { cookies } : {};
+        return methode === 'Storage.getCookies' ? { cookies } : {};
       },
       detach,
     };
@@ -496,7 +496,7 @@ describe('effacerCookies', () => {
     const { envoyes, detach } = piloteCDP([{ domain: '.exemple.org' }]);
     const pilote = await ouvrirNavigateur();
     await pilote.effacerCookies();
-    expect(envoyes.map(([m]) => m)).toEqual(['Network.clearBrowserCookies', 'Storage.clearDataForOrigin', 'Network.getAllCookies']);
+    expect(envoyes.map(([m]) => m)).toEqual(['Network.clearBrowserCookies', 'Storage.clearDataForOrigin', 'Storage.getCookies']);
     expect(envoyes[1]?.[1]).toEqual({ origin: 'https://www.linkedin.com', storageTypes: 'all' });
     expect(detach).toHaveBeenCalledTimes(1);
   });

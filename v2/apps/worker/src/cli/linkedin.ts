@@ -219,23 +219,18 @@ async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<b
 }
 
 /** Repli quand ni `/me` ni la session ne disent qui est connecté : jamais un nom inventé, un libellé neutre. */
-const IDENTITE_INCONNUE = 'compte-linkedin';
+const IDENTITE_INCONNUE = 'compte-non-lu';
 
 /**
  * Connexion réussie : l'expéditeur LinkedIn existe, est actif, et il n'y en a qu'un (spec §9). Le
- * compte est lu par `/me` ; à défaut, l'identité déjà connue de la session. Une panne ici ne défait
- * pas la connexion (la session est active), elle est dite à l'opérateur : c'est une écriture en
- * base, jamais un secret, et on n'écrit que le NOM de l'erreur.
+ * compte est lu par `/me` ; à défaut, l'identité déjà connue de la session. LÈVE si la garantie échoue :
+ * l'appelant révoque alors la session, pour que « connecté » veuille toujours dire « expéditeur actif ».
  */
-async function garantirExpediteur(ctx: Contexte, pilote: Pilote, connue: string | null, d: Dependances): Promise<void> {
+async function garantirExpediteur(ctx: Contexte, pilote: Pilote, connue: string | null): Promise<void> {
   const compte = await lireCompteConnecte(pilote);
   const identite = compte?.identifiantPublic ?? connue ?? IDENTITE_INCONNUE;
-  try {
-    if (compte) await enregistrerCompteLinkedIn(ctx, compte);
-    await garantirExpediteurLinkedIn(ctx, identite, `${identite} (LinkedIn)`);
-  } catch (e) {
-    d.ecrire(`Expéditeur LinkedIn non garanti (${typeErreur(e)}) : le relancer en reconnectant le compte.`);
-  }
+  if (compte) await enregistrerCompteLinkedIn(ctx, compte);
+  await garantirExpediteurLinkedIn(ctx, identite, `${identite} (LinkedIn)`);
 }
 
 export async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
@@ -270,7 +265,14 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
     if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
       await activerSessionLinkedIn(ctx, session?.ipAttendue ?? sortie.ip);
-      await garantirExpediteur(ctx, pilote, session?.compteIdentifiant ?? null, d);
+      try {
+        await garantirExpediteur(ctx, pilote, session?.compteIdentifiant ?? null);
+      } catch (e) {
+        // Une session active sans expéditeur actif n'enverrait rien et ne dirait pas pourquoi : on la révoque.
+        await bloquerSessionLinkedIn(ctx, 'revoquee');
+        d.ecrire(`Expéditeur LinkedIn non garanti (${typeErreur(e)}) : session révoquée, reconnecter le compte.`);
+        return 1;
+      }
       d.ecrire('Session LinkedIn active.');
       return 0;
     }
@@ -291,33 +293,43 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
 }
 
 export async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
-  let cookiesRestent = false;
+  // Le succès se définit par l'EFFACEMENT des cookies, pas par la navigation : si `/m/logout/` expire ou reste
+  // bloquée, le profil garde pourtant le compte, et l'annoncer déconnecté serait le pire mensonge possible.
+  let effacee = false;
+  let pilote: Pilote | null = null;
   try {
-    const pilote = await d.ouvrirNavigateur();
+    pilote = await d.ouvrirNavigateur();
+  } catch (e) {
+    d.ecrire(`Navigateur injoignable (${typeErreur(e)}) : la session est révoquée côté Jay Reach seulement.`);
+  }
+  if (pilote) {
     try {
-      await pilote.aller(URL_DECONNEXION);
-      // Après la navigation vers /m/logout/, avant tout : le conteneur garde son profil, donc sans
-      // cet effacement le compte déconnecté resterait joignable pour le suivant.
+      try {
+        await pilote.aller(URL_DECONNEXION);
+      } catch (e) {
+        d.ecrire(`Page de déconnexion non atteinte (${typeErreur(e)}) : effacement des cookies tenté quand même.`);
+      }
+      // Tenté quoi qu'il arrive à la navigation : le conteneur garde son profil, donc sans cet effacement le
+      // compte déconnecté resterait joignable pour le suivant.
       try {
         await pilote.effacerCookies();
+        effacee = true;
       } catch (e) {
-        cookiesRestent = true;
-        d.ecrire(`Cookies du navigateur non effacés (${typeErreur(e)}) : le compte reste joignable dans le conteneur.`);
+        d.ecrire(`Cookies du navigateur non effacés (${typeErreur(e)}).`);
       }
     } finally {
       await pilote.fermer().catch(() => undefined);
     }
-  } catch (e) {
-    d.ecrire(
-      `Navigateur injoignable (${typeErreur(e)}) : la session est révoquée côté Jay Reach seulement.`,
-    );
   }
   // Révoquée et expéditeur désactivé même si le navigateur a échoué : rien ne doit plus envoyer.
   await bloquerSessionLinkedIn(ctx, 'revoquee');
   await desactiverExpediteurLinkedIn(ctx);
+  if (!effacee) {
+    d.ecrire('Session révoquée côté Jay Reach, mais le compte reste joignable dans le navigateur : déconnexion NON aboutie.');
+    return 1;
+  }
   d.ecrire('Session LinkedIn révoquée.');
-  // Révoquée côté Jay Reach, mais le compte reste joignable dans le conteneur : pas un succès.
-  return cookiesRestent ? 1 : 0;
+  return 0;
 }
 
 async function ip(ctx: Contexte, d: Dependances, confirmer: boolean): Promise<number> {

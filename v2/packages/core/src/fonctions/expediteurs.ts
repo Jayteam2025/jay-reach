@@ -19,6 +19,7 @@ import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { fuseauDeLOrganisation } from './plafonds.js';
 import { dansUneTransaction } from '../transaction.js';
+import { ecrireEvenement } from '../journal.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from '../linkedin/reglages-envoi.js';
 
 // ---------------------------------------------------------------------------
@@ -557,6 +558,7 @@ async function synchroniserExpediteurLinkedIn(
 ): Promise<void> {
   const businessHours = JSON.stringify({ startHour: reglages.debut, endHour: reglages.fin, days: reglages.jours });
 
+  try {
   await ctx.ex.query(
     `insert into senders /* jr:expediteurs_linkedin_sync */
        (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone,
@@ -579,6 +581,16 @@ async function synchroniserExpediteurLinkedIn(
       compteId,
     ],
   );
+  } catch (e) {
+    // L'index `senders_un_linkedin_actif_par_organisation` refuse une seconde ligne active : deux lignes
+    // actives pour un même compte réel doubleraient les plafonds. Mieux vaut échouer bruyamment.
+    if ((e as { code?: string }).code === '23505' && /senders_un_linkedin_actif/.test(String((e as { constraint?: string }).constraint ?? ''))) {
+      throw new Error(
+        'Un expéditeur LinkedIn est déjà actif pour cette organisation : en activer un second doublerait les plafonds d’envoi.',
+      );
+    }
+    throw e;
+  }
 }
 
 /**
@@ -601,42 +613,69 @@ const QUOTA_JOUR_LINKEDIN_PAR_DEFAUT = 25;
  * contacts déjà liés ; deux lignes actives pour un même compte réel feraient envoyer le double du
  * plafond au même compte, donc le feraient restreindre par LinkedIn.
  *
- * Une seule instruction (CTE) : le choix de la ligne, la désactivation des autres et la création
- * éventuelle se voient les uns les autres, aucun `select` préalable ne laisse deux appels
- * concurrents se croire seuls. Ne dépend pas d'`extension_tokens` (l'extension est gelée) : c'est
- * ce qui la distingue de `synchroniserExpediteurLinkedIn`.
+ * Trois protections qui se complètent :
+ *  - un verrou de transaction par organisation (deux appels simultanés sur une organisation sans
+ *    ligne verraient chacun « aucune ligne » et créeraient chacun la leur) ;
+ *  - les autres lignes sont désactivées AVANT que la cible soit activée : l'index unique partiel
+ *    `senders_un_linkedin_actif_par_organisation` (migration 20261012160000) refuse deux lignes
+ *    actives à tout instant, y compris au milieu de cette fonction ;
+ *  - cet index est aussi ce qui arrête l'ancien chemin (`synchroniserExpediteurLinkedIn`, extension).
+ *
+ * Changement de compte : l'instance ne tient qu'UNE session LinkedIn, l'expéditeur LinkedIn de
+ * l'organisation est donc un singleton de fait ; quand le compte connecté n'est plus celui que la
+ * ligne portait (Alexandre remplace JB), la ligne est gardée (les contacts liés restent liés) et le
+ * basculement est consigné au journal d'audit, anciennes et nouvelles identités publiques, sans secret.
  *
  * Pas de contrôle de rôle : appelée par le worker (contexte sans rôle) à l'issue d'une connexion
  * déjà autorisée en amont par `demanderConnexion`.
  */
 export async function garantirExpediteurLinkedIn(ctx: Contexte, identite: string, nomAffiche: string): Promise<string> {
-  // Verrou de transaction par organisation : sans lui, deux appels simultanés sur une organisation sans
-  // ligne verraient chacun `cible` vide (leurs instantanés précèdent l'écriture de l'autre) et créeraient
-  // chacun la leur : deux lignes actives. Le second attend ici la validation du premier, puis voit sa ligne.
-  const res = await dansUneTransaction(ctx.ex, async (tx) => {
+  return dansUneTransaction(ctx.ex, async (tx) => {
     await tx.query('select pg_advisory_xact_lock(hashtext($1)) /* jr:expediteur_linkedin_verrou */', [
       `expediteur_linkedin:${ctx.organisationId}`,
     ]);
-    return tx.query<{ id: string }>(
-    `with cible as (
-       select id from senders /* jr:expediteur_linkedin_cible */
-        where organization_id = $1 and kind = 'linkedin'
-        order by created_at asc, id asc
-        limit 1
-     ),
-     repris as (
-       update senders set identity = $2, display_name = $3, is_active = true /* jr:expediteur_linkedin_reprendre */
-        where id in (select id from cible)
-        returning id
-     ),
-     desactives as (
-       update senders set is_active = false /* jr:expediteur_linkedin_doublons */
+    const cible = (
+      await tx.query<{ id: string; identity: string }>(
+        `select id, identity from senders /* jr:expediteur_linkedin_cible */
+          where organization_id = $1 and kind = 'linkedin'
+          order by created_at asc, id asc
+          limit 1`,
+        [ctx.organisationId],
+      )
+    ).rows[0];
+
+    await tx.query(
+      `update senders set is_active = false /* jr:expediteur_linkedin_doublons */
         where organization_id = $1 and kind = 'linkedin' and is_active
-          and id not in (select id from cible)
-        returning id
-     ),
-     cree as (
-       insert into senders /* jr:expediteur_linkedin_creer */
+          and id is distinct from $2::uuid`,
+      [ctx.organisationId, cible?.id ?? null],
+    );
+
+    if (cible) {
+      await tx.query(
+        `update senders set identity = $2, display_name = $3, is_active = true /* jr:expediteur_linkedin_reprendre */
+          where id = $1`,
+        [cible.id, identite, nomAffiche],
+      );
+      if (cible.identity !== identite) {
+        await ecrireEvenement(tx, {
+          organisationId: ctx.organisationId,
+          entityType: 'sender',
+          entityId: cible.id,
+          action: 'linkedin.expediteur_compte_change',
+          actorId: ctx.utilisateurId,
+          diff: {
+            libelle: 'Le compte LinkedIn de l’expéditeur a changé',
+            ancienneIdentite: cible.identity,
+            nouvelleIdentite: identite,
+          },
+        });
+      }
+      return cible.id;
+    }
+
+    const cree = await tx.query<{ id: string }>(
+      `insert into senders /* jr:expediteur_linkedin_creer */
          (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone, is_active, provider_id)
        select $1, 'linkedin', $2, $3,
               coalesce(ls.daily_cap, $4::int),
@@ -647,27 +686,22 @@ export async function garantirExpediteurLinkedIn(ctx: Contexte, identite: string
               true, 'serveur'
          from (select 1) un
          left join linkedin_settings ls on ls.organization_id = $1
-        where not exists (select 1 from cible)
-       returning id
-     )
-     select id from repris
-     union all
-     select id from cree`,
-    [
-      ctx.organisationId,
-      identite,
-      nomAffiche,
-      QUOTA_JOUR_LINKEDIN_PAR_DEFAUT,
-      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
-      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
-      [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
-      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
-    ],
+       returning id`,
+      [
+        ctx.organisationId,
+        identite,
+        nomAffiche,
+        QUOTA_JOUR_LINKEDIN_PAR_DEFAUT,
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+        [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
+      ],
     );
+    const id = cree.rows[0]?.id;
+    if (!id) throw new Error('Expéditeur LinkedIn non garanti');
+    return id;
   });
-  const id = res.rows[0]?.id;
-  if (!id) throw new Error('Expéditeur LinkedIn non garanti');
-  return id;
 }
 
 /**

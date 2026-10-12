@@ -465,8 +465,8 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
         // Tout le profil : les cookies, puis le stockage (local, session, IndexedDB) de LinkedIn.
         await session.send('Network.clearBrowserCookies');
         await session.send('Storage.clearDataForOrigin', { origin: ORIGINE_LINKEDIN, storageTypes: 'all' });
-        const restants = await session.send('Network.getAllCookies');
-        if (restants.cookies.some((c) => /(^|\.)linkedin\.com$/.test(c.domain.replace(/^\./, '')))) {
+        const restants = await session.send('Storage.getCookies');
+        if (restants.cookies.some((c) => /(^|\.)(linkedin|licdn)\.com$/.test(c.domain.replace(/^\./, '')))) {
           throw erreurNommee('CookiesNonEfface', 'Des cookies LinkedIn restent dans le navigateur');
         }
       } catch (e) {

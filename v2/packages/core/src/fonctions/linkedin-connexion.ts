@@ -12,6 +12,7 @@ import { exiger, valider, type Contexte } from './contexte.js';
 import { emettreMessageConnexion } from './linkedin-canal.js';
 import {
   SQL_ANNULER,
+  SQL_POSER_DECONNEXION,
   SQL_ATTEND_UN_CODE,
   SQL_CREER_DEMANDE,
   SQL_ECHEC_TRANSMISSION,
@@ -220,6 +221,8 @@ export async function demanderDeconnexion(ctx: Contexte): Promise<void> {
   const demandeId = globalThis.crypto.randomUUID();
   // Journalisée AVANT l'émission : un message perdu laisse au moins la trace de la demande.
   await journaliser(ctx, 'linkedin.deconnexion_demandee', demandeId, 'Déconnexion du compte LinkedIn demandée');
+  // Intention persistée AVANT l'émission : un worker arrêté, redémarré ou occupé la retrouve en base.
+  await ctx.ex.query(SQL_POSER_DECONNEXION, [ctx.organisationId]);
   try {
     await emettreMessageConnexion(ctx, { type: 'deconnexion', demandeId, organizationId: ctx.organisationId });
   } catch {

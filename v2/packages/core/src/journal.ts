@@ -87,7 +87,9 @@ export type ActionJournal =
   | 'linkedin.connexion_demandee'
   | 'linkedin.connexion_annulee'
   | 'linkedin.connexion_terminee'
-  | 'linkedin.deconnexion_demandee';
+  | 'linkedin.deconnexion_demandee'
+  | 'linkedin.deconnexion_terminee'
+  | 'linkedin.expediteur_compte_change';
 
 export interface EvenementJournal {
   readonly organisationId: string;
