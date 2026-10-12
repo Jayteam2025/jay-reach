@@ -278,6 +278,12 @@ interface ContactARelire {
   readonly id: string;
   readonly urlProfil: string;
   readonly intitule: string | null;
+  /**
+   * `false` tant que ce profil n'a JAMAIS été lu sur LinkedIn. L'intitulé que porte la fiche
+   * vient alors d'ailleurs — de l'enrichissement, d'un import — et ne se compare pas à ce que
+   * LinkedIn affiche.
+   */
+  readonly dejaLuSurLinkedIn: boolean;
 }
 
 /**
@@ -291,8 +297,13 @@ interface ContactARelire {
  * le refuse dès la collecte.
  */
 async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite: number): Promise<ContactARelire[]> {
-  const res = await pool.query<{ id: string; linkedin_url: string; job_title: string | null }>(
-    `select c.id, c.linkedin_url, c.job_title /* jr:linkedin_collecte_a_relire */
+  const res = await pool.query<{
+    id: string;
+    linkedin_url: string;
+    job_title: string | null;
+    linkedin_verifie_le: string | null;
+  }>(
+    `select c.id, c.linkedin_url, c.job_title, c.linkedin_verifie_le /* jr:linkedin_collecte_a_relire */
        from contacts c
       where c.organization_id = $1
         and c.linkedin_url is not null
@@ -306,7 +317,12 @@ async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite:
       limit $2`,
     [job.organizationId, limite, lienProfilDeduit('')],
   );
-  return res.rows.map((r) => ({ id: r.id, urlProfil: r.linkedin_url, intitule: r.job_title }));
+  return res.rows.map((r) => ({
+    id: r.id,
+    urlProfil: r.linkedin_url,
+    intitule: r.job_title,
+    dejaLuSurLinkedIn: r.linkedin_verifie_le !== null,
+  }));
 }
 
 /**
@@ -317,19 +333,29 @@ async function lireContactsARelire(pool: Pool, job: CollecteLinkedInJob, limite:
  *
  * `intituleLu` : quand le contact n'avait aucun intitulé connu, l'intitulé lu devient sa référence
  * (sans rien déclarer : voir l'appelant). Un intitulé déjà connu n'est jamais écrasé ici.
+ *
+ * `remplacer` fait exception, et sert au PREMIER passage LinkedIn sur une fiche : l'intitulé
+ * qu'elle portait venait d'ailleurs (enrichissement, import) et ne se compare pas à ce que
+ * LinkedIn affiche. Il faut donc le remplacer par la valeur lue pour que la comparaison du
+ * passage suivant porte sur deux lectures de la MÊME source. Mesuré le 12/10 sur cinq fiches :
+ * « Responsable RH région » contre « Responsable RH région Rhône-Alpes chez Chausson Matériaux »,
+ * quatre écarts de ce genre sur cinq, et pas un seul vrai changement de poste.
  */
 export async function marquerContactVerifie(
   pool: Pool,
   job: CollecteLinkedInJob,
   contactId: string,
   intituleLu: string | null,
+  remplacer = false,
 ): Promise<void> {
   await pool.query(
     `update contacts /* jr:linkedin_collecte_verifie */
         set linkedin_verifie_le = now(),
-            job_title = coalesce(nullif(btrim(job_title), ''), nullif(btrim($3), ''))
+            job_title = case when $4
+                             then coalesce(nullif(btrim($3), ''), job_title)
+                             else coalesce(nullif(btrim(job_title), ''), nullif(btrim($3), '')) end
       where id = $2 and organization_id = $1`,
-    [job.organizationId, contactId, intituleLu],
+    [job.organizationId, contactId, intituleLu, remplacer],
   );
 }
 
@@ -728,7 +754,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
        * vrai intitulé devient un « changement de poste », et il est trop isolé pour que le
        * contrôle le voie.
        */
-      const aMarquer: Array<{ readonly contactId: string; readonly intituleLu: string | null }> = [];
+      const aMarquer: Array<{ readonly contactId: string; readonly intituleLu: string | null; readonly remplacer?: boolean }> = [];
       /** Les profils effectivement LUS : le dénominateur du contrôle. Un profil illisible n'en est pas. */
       let profilsLus = 0;
       /** Les profils TENTÉS, illisibles compris : de quoi voir qu'aucun n'a livré d'intitulé. */
@@ -768,6 +794,17 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           // marqué pour que la rotation avance. Jamais pris pour un changement.
           bilan.ignores += 1;
           aMarquer.push({ contactId: contact.id, intituleLu: null });
+        } else if (nouveau.length > 0 && !contact.dejaLuSurLinkedIn) {
+          // PREMIER passage LinkedIn sur cette fiche. L'intitulé qu'elle porte vient d'ailleurs —
+          // de l'enrichissement, d'un import — et ne se compare pas à ce que LinkedIn affiche :
+          // mesuré le 12/10, quatre fiches sur cinq différaient par la seule formulation
+          // (« … chez Chausson Matériaux » ajouté, « de Territoires » retiré) sans qu'une seule
+          // personne ait changé de poste. On pose donc la lecture comme référence, sans rien
+          // déclarer ; la comparaison n'aura lieu qu'au passage suivant, entre deux lectures de
+          // la MÊME source.
+          profilsLus += 1;
+          bilan.doublons += 1;
+          aMarquer.push({ contactId: contact.id, intituleLu: nouveau, remplacer: true });
         } else if (ancien.length === 0 || nouveau.length === 0 || normaliserIntitule(ancien) === normaliserIntitule(nouveau)) {
           // Rien à déclarer. Trois cas dans le même panier, et c'est voulu :
           //  - aucun intitulé connu : le lu devient la référence, sans réveiller personne (annoncer
@@ -839,7 +876,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         // chaque jour figerait la rotation sur les mêmes contacts. Mais AUCUNE référence n'est
         // posée dans ce cas : ce qu'on a lu ne vaut rien tant que le passage n'est pas allé au
         // bout, et une référence fausse ne se rattrape pas.
-        await marquerContactVerifie(pool, job, marquage.contactId, arretAnormal ? null : marquage.intituleLu);
+        await marquerContactVerifie(pool, job, marquage.contactId, arretAnormal ? null : marquage.intituleLu, !arretAnormal && marquage.remplacer === true);
       }
       if (!arretAnormal) {
         for (const changement of changementsConstates) {

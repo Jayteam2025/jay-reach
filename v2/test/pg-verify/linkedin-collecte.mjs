@@ -1708,12 +1708,18 @@ const pageProfil = (nom, intitule) => {
 };
 
 /** Un contact déjà connu, comme l'enrichissement ou une collecte précédente l'aurait laissé. */
-async function contactConnu(m, { slug, titre, urn = null }) {
+async function contactConnu(m, { slug, titre, urn = null, dejaLu = true }) {
+  // `dejaLu` pose `linkedin_verifie_le`. Sans lui, la fiche n'a JAMAIS été lue sur LinkedIn :
+  // son intitulé vient d'ailleurs (enrichissement, import) et ne se compare pas à ce que la page
+  // affiche — le passage pose alors la lecture comme référence sans rien déclarer. Mesuré le
+  // 12/10 : quatre fiches sur cinq différaient par la seule formulation, sans un seul changement
+  // de poste réel.
   return (
     await q(
-      `insert into contacts (organization_id, persona_id, first_name, job_title, linkedin_url, linkedin_provider_id)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
-      [m.org, m.persona, slug, titre, `https://www.linkedin.com/in/${slug}`, urn],
+      `insert into contacts (organization_id, persona_id, first_name, job_title, linkedin_url, linkedin_provider_id, linkedin_verifie_le)
+       values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+      [m.org, m.persona, slug, titre, `https://www.linkedin.com/in/${slug}`, urn,
+       dejaLu ? new Date(Date.now() - 86_400_000) : null],
     )
   ).rows[0].id;
 }
@@ -1743,9 +1749,9 @@ async function changementDePoste() {
   // Une adresse FABRIQUÉE depuis un URN : aucune page lisible derrière. Elle arrive en tête de la
   // rotation (jamais relue), donc c'est elle qui prendrait la place d'un vrai contact si rien ne
   // l'écartait.
-  const E = await contactConnu(m, { slug: 'ACoAAdeduit', titre: 'Directeur commercial', urn: 'ACoAAdeduit' });
+  const E = await contactConnu(m, { slug: 'ACoAAdeduit', titre: 'Directeur commercial', urn: 'ACoAAdeduit', dejaLu: false });
   // Une personne qui a demandé à ne plus être contactée.
-  const F = await contactConnu(m, { slug: 'fanny-exemple', titre: 'Directrice commerciale' });
+  const F = await contactConnu(m, { slug: 'fanny-exemple', titre: 'Directrice commerciale', dejaLu: false });
   await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'linkedin', $2, 'operator_do_not_contact', 'manual')`,
     [m.org, 'https://www.linkedin.com/in/fanny-exemple']);
 

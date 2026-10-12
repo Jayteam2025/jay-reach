@@ -858,17 +858,20 @@ async function gardeDuChangementDePoste() {
   console.log('la garde du changement de poste vit dans la fonction qui cree le signal');
   const m = await monde({ avecPrompt: false });
   const compte = (await q(`insert into accounts (organization_id, name) values ($1,'Acme') returning id`, [m.org])).rows[0].id;
-  const creerContact = async (titre) => (await q(
-    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, job_title, linkedin_url)
-     values ($1,$2,$3,'Ada','Lemercier',$4,$5) returning id`,
-    [m.org, compte, m.persona, titre, `https://www.linkedin.com/in/ada-${Date.now()}${Math.random().toString(36).slice(2, 8)}`],
+  // `dejaLu` pose `linkedin_verifie_le` : sans lui, la fiche n'a jamais ete lue sur LinkedIn et
+  // son intitule vient d'ailleurs (enrichissement, import), donc il ne se compare pas.
+  const creerContact = async (titre, dejaLu = true) => (await q(
+    `insert into contacts (organization_id, account_id, persona_id, first_name, last_name, job_title, linkedin_url, linkedin_verifie_le)
+     values ($1,$2,$3,'Ada','Lemercier',$4,$5,$6) returning id`,
+    [m.org, compte, m.persona, titre, `https://www.linkedin.com/in/ada-${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+     dejaLu ? new Date(Date.now() - 86_400_000) : null],
   )).rows[0].id;
   const signaux = async (c) => (await q(
     `select count(*)::int n from signals s join contacts ct on ct.source_signal_id = s.id where ct.id = $1 and s.kind = 'job_change'`, [c],
   )).rows[0].n;
 
   // 1. Sans intitulé connu : AUCUN signal, et le lu devient la référence.
-  const sansTitre = await creerContact(null);
+  const sansTitre = await creerContact(null, false);
   const issue1 = await enregistrerChangementDePoste(
     m.ctx, { contactId: sansTitre, ancienIntitule: null, nouvelIntitule: 'Directrice commerciale', urlProfil: 'https://www.linkedin.com/in/ada/' }, { personaId: m.persona });
   const fiche1 = (await q(`select job_title, linkedin_verifie_le from contacts where id = $1`, [sansTitre])).rows[0];
@@ -888,6 +891,22 @@ async function gardeDuChangementDePoste() {
   const issue3 = await enregistrerChangementDePoste(
     m.ctx, { contactId: avecTitre, ancienIntitule: 'Directrice generale', nouvelIntitule: 'Directrice generale', urlProfil: 'https://www.linkedin.com/in/ada2/' }, { personaId: m.persona });
   check('93. le meme intitule revu ne cree pas un second signal', issue3 === 'inchange' && (await signaux(avecTitre)) === 1, String(issue3));
+
+  // 4. Une fiche JAMAIS lue sur LinkedIn : son intitule vient d'ailleurs et ne se compare pas.
+  // Mesure le 12/10 : « Responsable RH region » en base contre « Responsable RH region
+  // Rhone-Alpes chez Chausson Materiaux » sur LinkedIn, sans aucun changement de poste.
+  const jamaisLu = await creerContact('Responsable RH region', false);
+  const issue4 = await enregistrerChangementDePoste(
+    m.ctx,
+    { contactId: jamaisLu, ancienIntitule: 'Responsable RH region', nouvelIntitule: 'Responsable RH region Rhone-Alpes chez Acme', urlProfil: 'https://www.linkedin.com/in/ada4/' },
+    { personaId: m.persona },
+  );
+  const fiche5 = (await q(`select job_title, linkedin_verifie_le from contacts where id = $1`, [jamaisLu])).rows[0];
+  check('95. une fiche jamais lue sur LinkedIn ne declare aucun changement',
+    issue4 === 'inchange' && (await signaux(jamaisLu)) === 0, String(issue4));
+  check('95b. et la lecture REMPLACE la reference venue d ailleurs, pour que le passage suivant compare',
+    fiche5.job_title === 'Responsable RH region Rhone-Alpes chez Acme' && fiche5.linkedin_verifie_le !== null,
+    JSON.stringify(fiche5));
   // 2b. Le signal garde l'intitule D'AVANT : sans lui, un changement declare a tort n'est ni
   // auditable ni annulable. Cinq fiches ont ete perdues comme ca le 09/10.
   const brut = (await q(
