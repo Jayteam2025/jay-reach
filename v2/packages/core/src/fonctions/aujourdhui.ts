@@ -337,7 +337,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, sourcesLinkedinRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -404,6 +404,15 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and c.status = 'active'
           and exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))
           and not exists (select 1 from senders sd where sd.organization_id = c.organization_id and sd.kind = 'linkedin' and sd.is_active)`,
+      [ctx.organisationId],
+    ),
+    // Sources LinkedIn actives : sans elles, un plafond de collecte bas ne bride rien.
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:sources_linkedin_actives */
+         from sources so
+        where so.organization_id = $1
+          and so.is_active
+          and ${SQL_PROVIDER_ID_AFFICHAGE} like 'linkedin\\_%'`,
       [ctx.organisationId],
     ),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
@@ -558,10 +567,14 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     });
   }
   const personnesParPassage = reglages.linkedin_personnes_par_passage;
-  if (typeof personnesParPassage === 'number' && personnesParPassage < SEUIL_COLLECTE_ETRANGLEE) {
+  if (
+    typeof personnesParPassage === 'number' &&
+    personnesParPassage < SEUIL_COLLECTE_ETRANGLEE &&
+    (sourcesLinkedinRes.rows[0]?.n ?? 0) > 0
+  ) {
     alertes.push({
       type: 'collecte_etranglee',
-      texte: `La collecte LinkedIn est étranglée : elle enregistre au plus ${personnesParPassage} personne(s) par passage.`,
+      texte: `La collecte LinkedIn est étranglée : elle enregistre au plus ${personnesParPassage} ${personnesParPassage > 1 ? 'personnes' : 'personne'} par passage.`,
       lien: '/settings/linkedin',
     });
   }

@@ -429,12 +429,38 @@ describe('lireAujourdhui', () => {
     });
 
     it('un plafond de collecte sous dix est signalé', async () => {
-      const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 9 }] }));
+      const source = { 'jr:sources_linkedin_actives': [{ n: 1 }] };
+      const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 9 }], ...source }));
       const alerte = a.alertes.find((al) => al.type === 'collecte_etranglee');
       expect(alerte).toBeDefined();
       expect(alerte?.lien).toBe('/settings/linkedin');
-      const limite = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 10 }] }));
+      expect(alerte?.texte).toContain('9 personnes');
+      const une = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 1 }], ...source }));
+      expect(une.alertes.find((al) => al.type === 'collecte_etranglee')?.texte).toContain('1 personne par');
+      const limite = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 10 }], ...source }));
       expect(types(limite)).not.toContain('collecte_etranglee');
+    });
+
+    it('un plafond de collecte bas sans source LinkedIn active n’alerte pas, avec une source active il alerte', async () => {
+      const reglage = { 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 5 }] };
+      const sans = await lireAujourdhui(faux({ ...reglage, 'jr:sources_linkedin_actives': [{ n: 0 }] }));
+      expect(types(sans)).not.toContain('collecte_etranglee');
+      const avec = await lireAujourdhui(faux({ ...reglage, 'jr:sources_linkedin_actives': [{ n: 1 }] }));
+      expect(types(avec)).toContain('collecte_etranglee');
+    });
+
+    it('les requêtes des nouveaux contrôles filtrent par organisation', async () => {
+      const appels: string[] = [];
+      const query = vi.fn(async (sql: string) => {
+        appels.push(sql);
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      const canal = appels.find((t) => /jr:canal_sans_expediteur/i.test(t))!;
+      expect(canal).toContain('c.organization_id = $1');
+      expect(canal).toContain('sd.organization_id = c.organization_id');
+      const sources = appels.find((t) => /jr:sources_linkedin_actives/i.test(t))!;
+      expect(sources).toContain('so.organization_id = $1');
     });
 
     it('une organisation neuve, sans aucun réglage en base, n’alerte sur aucun des trois', async () => {
@@ -449,6 +475,7 @@ describe('lireAujourdhui', () => {
           return { rows: [{ key: 'scoring_par_jour', value: 0 }, { key: 'linkedin_personnes_par_passage', value: 1 }], rowCount: 2 };
         }
         if (/jr:canal_sans_expediteur/i.test(sql) && autre) return { rows: [{ n: 1 }], rowCount: 1 };
+        if (/jr:sources_linkedin_actives/i.test(sql) && autre) return { rows: [{ n: 1 }], rowCount: 1 };
         return { rows: [], rowCount: 0 };
       }) as unknown as Executeur['query'];
       const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
