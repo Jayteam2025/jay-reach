@@ -59,11 +59,3 @@ export const SQL_DECONNEXIONS_EN_ATTENTE = `select organization_id from linkedin
  */
 export const SQL_SOLDER_DECONNEXION = `update linkedin_server_sessions set deconnexion_demandee_at = null
         where organization_id = $1 and deconnexion_demandee_at = $2::timestamptz`;
-
-/**
- * $1 = organisation. Une nouvelle connexion remplace une intention de déconnexion plus ancienne : sans cela, le
- * démarrage suivant déconnecterait un compte que l'utilisateur vient de reconnecter. Posée au début de la
- * connexion : une déconnexion demandée PENDANT elle (plus récente) survit.
- */
-export const SQL_EFFACER_DECONNEXION_A_LA_CONNEXION = `update linkedin_server_sessions set deconnexion_demandee_at = null
-        where organization_id = $1 and deconnexion_demandee_at is not null`;

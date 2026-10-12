@@ -8,7 +8,6 @@ import {
   SQL_ACCUSER_RECEPTION,
   SQL_CLORE_SI_EN_COURS,
   SQL_DECONNEXIONS_EN_ATTENTE,
-  SQL_EFFACER_DECONNEXION_A_LA_CONNEXION,
   SQL_LIRE_DECONNEXION,
   SQL_LIRE_DEMANDE_A_TRAITER,
   SQL_LIRE_ISSUE,
@@ -35,7 +34,6 @@ function fauxPool(enCours = true, orgDeLaDemande = ORG, accuses = 1, statutFinal
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     appels.push({ sql, params });
     if (sql === SQL_POSER_DECONNEXION) etat.intention ??= '2026-10-12 10:00:00.123456+00';
-    if (sql === SQL_EFFACER_DECONNEXION_A_LA_CONNEXION) etat.intention = null;
     if (sql === SQL_LIRE_DECONNEXION) return { rows: etat.intention ? [{ demandee_at: etat.intention }] : [] };
     if (sql === SQL_DECONNEXIONS_EN_ATTENTE) return { rows: etat.intention ? [{ organization_id: ORG }] : [] };
     if (sql === SQL_SOLDER_DECONNEXION) {
@@ -269,11 +267,36 @@ describe('traiterMessageConnexion : code et déconnexion', () => {
     expect(await reprendreDeconnexionsEnAttente(pool, { deconnecter })).toBe(0);
   });
 
-  it('une nouvelle connexion remplace une intention plus ancienne (elle ne sera pas rejouee au demarrage)', async () => {
-    const { pool, appels } = fauxPool();
+  it('la connexion ne touche pas l intention de deconnexion : le solde revient a connecter, sur succes seulement', async () => {
+    const { pool, etat } = fauxPool();
+    etat.intention = '2026-10-12 08:00:00.5+00';
     const { d } = fausseDependances();
-    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => d });
-    const sqls = appels.map((a) => a.sql);
-    expect(sqls.indexOf(SQL_EFFACER_DECONNEXION_A_LA_CONNEXION)).toBeGreaterThan(sqls.indexOf(SQL_ACCUSER_RECEPTION));
+    await traiterMessageConnexion(pool, message, { connecter: async () => 1, dependances: () => d });
+    expect(etat.intention).not.toBeNull();
+  });
+
+  it('une deconnexion demandee PENDANT une deconnexion en cours est rejouee ensuite, et le rejeu s arrete', async () => {
+    const { pool, etat } = fauxPool();
+    etat.intention = '2026-10-12 08:00:00.1+00';
+    let appels = 0;
+    const deconnecter = vi.fn(async () => {
+      appels += 1;
+      if (appels === 1) {
+        // Arrive pendant la première : horodatage renouvelé, et le message est ignoré (une seule à la fois).
+        etat.intention = '2026-10-12 08:00:09.9+00';
+        await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
+      }
+      return 0;
+    });
+    await reprendreDeconnexionsEnAttente(pool, { deconnecter });
+    expect(deconnecter).toHaveBeenCalledTimes(2);
+    expect(etat.intention).toBeNull();
+  });
+
+  it('un echec ne reboucle pas', async () => {
+    const { pool } = fauxPool();
+    const deconnecter = vi.fn(async () => 1);
+    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
+    expect(deconnecter).toHaveBeenCalledTimes(1);
   });
 });

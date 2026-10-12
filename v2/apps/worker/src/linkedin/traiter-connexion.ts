@@ -24,7 +24,6 @@ import {
   SQL_CLORE_ORPHELINES,
   SQL_CLORE_SI_EN_COURS,
   SQL_DECONNEXIONS_EN_ATTENTE,
-  SQL_EFFACER_DECONNEXION_A_LA_CONNEXION,
   SQL_LIRE_DECONNEXION,
   SQL_LIRE_DEMANDE_A_TRAITER,
   SQL_LIRE_ISSUE,
@@ -157,8 +156,6 @@ async function conduireConnexion(
     // entre-temps (course avec la lecture de l'écran) : on ne pilote rien.
     const accuse = await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
     if (accuse.rowCount !== 1) throw new ErreurDemandeInterrompue();
-    // Une intention de déconnexion plus ancienne est caduque : l'utilisateur reconnecte.
-    await pool.query(SQL_EFFACER_DECONNEXION_A_LA_CONNEXION, [organizationId]);
     ctxConnexion = await dependances.contexte();
     codeRetour = await (options.connecter ?? connecter)(ctxConnexion, dependances);
   } catch (e) {
@@ -192,7 +189,14 @@ async function conduireConnexion(
  * a RÉUSSI (code 0 : cookies effacés) : un échec la laisse en place, le démarrage suivant la reprendra. Le
  * résultat est consigné au journal d'audit (`linkedin.deconnexion_terminee`), sans secret : statut et code.
  */
-async function reprendreDeconnexion(pool: pg.Pool, organisationId: string, options: OptionsTraitement): Promise<void> {
+const PROFONDEUR_MAX_REJEU = 5;
+
+async function reprendreDeconnexion(
+  pool: pg.Pool,
+  organisationId: string,
+  options: OptionsTraitement,
+  profondeur = 0,
+): Promise<void> {
   let demandee: unknown;
   try {
     demandee = (await pool.query<{ demandee_at: unknown }>(SQL_LIRE_DECONNEXION, [organisationId])).rows[0]?.demandee_at;
@@ -201,19 +205,24 @@ async function reprendreDeconnexion(pool: pg.Pool, organisationId: string, optio
     return;
   }
   if (demandee === undefined || demandee === null) return;
-  if (deconnexionEnCours) return; // celle qui tourne soldera l'intention
+  if (deconnexionEnCours) return; // celle qui tourne relira l'intention en finissant
   // Un navigateur déjà piloté par une connexion : on n'efface pas ses cookies sous elle. L'intention reste en
   // base, la fin de cette connexion la jouera.
   if (enCours.size > 0) return;
   deconnexionEnCours = true;
+  let code = 1;
   try {
-    await jouerDeconnexion(pool, organisationId, demandee, options);
+    code = await jouerDeconnexion(pool, organisationId, demandee, options);
   } finally {
     deconnexionEnCours = false;
   }
+  // Une demande arrivée PENDANT cette déconnexion (elle a renouvelé l'horodatage, donc n'a pas été soldée) :
+  // la rejouer maintenant plutôt que la laisser dormir jusqu'au prochain redémarrage. Seulement après un succès,
+  // sinon un navigateur en panne bouclerait ; et au plus `profondeur` fois.
+  if (code === 0 && profondeur < PROFONDEUR_MAX_REJEU) await reprendreDeconnexion(pool, organisationId, options, profondeur + 1);
 }
 
-async function jouerDeconnexion(pool: pg.Pool, organisationId: string, demandee: unknown, options: OptionsTraitement): Promise<void> {
+async function jouerDeconnexion(pool: pg.Pool, organisationId: string, demandee: unknown, options: OptionsTraitement): Promise<number> {
 
   const d: Dependances = {
     env: options.env ?? process.env,
@@ -247,6 +256,7 @@ async function jouerDeconnexion(pool: pg.Pool, organisationId: string, demandee:
   } catch (e) {
     console.error(`[traiter-connexion] issue de déconnexion non écrite (${nomErreur(e)})`);
   }
+  return code;
 }
 
 /** Au démarrage : toute déconnexion demandée et non aboutie est rejouée (le message d'origine est perdu). */

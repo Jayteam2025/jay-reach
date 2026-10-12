@@ -277,7 +277,7 @@ async function fenetres() {
   const bloquee = new Promise((r) => (liberer = () => r(0)));
   let jouee = 0;
   const fausseDep = { contexte: async () => o.ctx, livrerCode: () => {}, vider: async () => {} };
-  // La connexion efface l'intention à son début (chemin web) : on la repose ensuite, comme une demande arrivée pendant.
+  // Une demande de déconnexion arrive pendant la connexion.
   const premiere = traiterMessageConnexion(pool, { type: 'secrets', demandeId, organizationId: o.id, identifiant: 'x', motDePasse: 'y' },
     { connecter: () => bloquee, dependances: () => fausseDep, deconnecter: async () => { jouee += 1; return 0; } });
   await new Promise((r) => setTimeout(r, 300));
@@ -287,6 +287,36 @@ async function fenetres() {
   liberer();
   await premiere;
   check('11a. la fin de la connexion la joue', jouee === 1 && (await lire(o)) === null, `jouee=${jouee}`);
+
+  // 13. une connexion qui ÉCHOUE ne solde rien.
+  o = await org();
+  await poser(o);
+  const echec = {
+    ...pilote(),
+    url: async () => 'https://www.linkedin.com/login',
+    texte: async () => 'Mot de passe incorrect',
+    attendre: async () => false,
+  };
+  const dEchec = { ...dep(o, echec), demander: async () => 'x', demanderMasque: async () => 'y' };
+  const code3 = await connecter(o.ctx, dEchec);
+  check('13. une connexion refusée rend 1 et laisse l\'intention de déconnexion en place', code3 === 1 && (await lire(o)) !== null, `code=${code3}`);
+
+  // 14. une déconnexion demandée pendant une déconnexion qui joue : rejouée ensuite, puis le rejeu s'arrête.
+  o = await org();
+  await poser(o);
+  let n = 0;
+  // Le rejeu parcourt TOUTES les organisations en attente (restes des cas précédents) : on ne compte que la nôtre.
+  const jouerDeconnexion = async (ctx) => {
+    if (ctx.organisationId !== o.id) return 0;
+    n += 1;
+    if (n === 1) {
+      await poser(o); // horodatage renouvelé pendant l'exécution
+      await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: '00000000-0000-4000-8000-000000000002', organizationId: o.id }, { deconnecter: jouerDeconnexion });
+    }
+    return 0;
+  };
+  await reprendreDeconnexionsEnAttente(pool, { deconnecter: jouerDeconnexion });
+  check('14. la demande arrivée pendant une déconnexion est rejouée, puis tout est soldé', n === 2 && (await lire(o)) === null, `appels=${n}`);
 
   // 12. identité de repli : pas d'audit parasite.
   o = await org();

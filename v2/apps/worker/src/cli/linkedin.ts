@@ -263,9 +263,6 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
       return 1;
     }
 
-    // La dernière volonté exprimée est cette reconnexion : sans cela, le prochain démarrage du worker
-    // rejouerait la déconnexion demandée avant elle et couperait un compte que personne ne veut couper.
-    if (intentionDeconnexion) await solderDeconnexionLinkedIn(ctx, intentionDeconnexion);
     const resultat = await ouvrirLinkedIn(ctx, pilote, d);
     if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
@@ -278,6 +275,11 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
         d.ecrire(`Expéditeur LinkedIn non garanti (${typeErreur(e)}) : session révoquée, reconnecter le compte.`);
         return 1;
       }
+      // La dernière volonté exprimée est cette reconnexion, ABOUTIE : sans cela, le prochain démarrage du worker
+      // rejouerait la déconnexion demandée avant elle et couperait un compte que personne ne veut couper. Une
+      // connexion qui échoue ne solde rien (la session déjà active resterait sinon active, sans que personne
+      // ait annulé la déconnexion) ; une demande plus récente que la lecture du début survit.
+      if (intentionDeconnexion) await solderDeconnexionLinkedIn(ctx, intentionDeconnexion);
       d.ecrire('Session LinkedIn active.');
       return 0;
     }
