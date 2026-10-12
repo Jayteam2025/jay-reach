@@ -109,6 +109,8 @@ export const MSG = {
   mots_cles_absents: 'Aucun mot-clé n’est renseigné : ajoutez-en à la source.',
   recherche_vide: 'La recherche ne livre aucune personne nouvelle pour ces mots-clés.',
   aucun_a_relire: 'Aucun contact à relire : aucun contact de l’organisation n’a d’adresse LinkedIn lisible.',
+  profils_tous_illisibles:
+    'Aucun des profils relus n’a livré d’intitulé : la page LinkedIn a probablement changé de forme. Rien n’a été enregistré.',
   changements_invraisemblables:
     'Presque tous les profils relus semblent avoir changé de poste : la page LinkedIn a probablement changé de forme. Rien n’a été enregistré.',
 } as const;
@@ -120,7 +122,7 @@ export const MSG = {
 const PROFILS_POUR_JUGER = 5;
 
 /**
- * La part de changements au-delà de laquelle un passage est refusé. Un changement de poste est
+ * La part de changements à partir de laquelle un passage est refusé (l'égalité refuse aussi). Un changement de poste est
  * rare, même sur des fiches anciennes ; au-dessus de ce seuil, ce n'est plus la réalité qu'on
  * lit, c'est une page dont la forme a bougé.
  */
@@ -729,6 +731,8 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       const aMarquer: Array<{ readonly contactId: string; readonly intituleLu: string | null }> = [];
       /** Les profils effectivement LUS : le dénominateur du contrôle. Un profil illisible n'en est pas. */
       let profilsLus = 0;
+      /** Les profils TENTÉS, illisibles compris : de quoi voir qu'aucun n'a livré d'intitulé. */
+      let profilsTentes = 0;
       for (const contact of frictionAArrivee === null ? aRelire : []) {
         if (requetesRestantes() <= 0) {
           arretDeRecherche = 'plafond';
@@ -754,6 +758,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           }
         }
         bilan.vus += 1;
+        profilsTentes += 1;
         // Plus de trafic LinkedIn pendant l'écriture : voir `traficTermine`.
         traficTermine = true;
         const ancien = (contact.intitule ?? '').trim();
@@ -798,6 +803,15 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
        * sans quoi un plafond qui tombe toujours au même endroit figerait la rotation pour de bon.
        */
       const arretAnormal = arretDeRecherche !== 'fini' && arretDeRecherche !== 'plafond';
+
+      // Le contrôle symétrique du précédent. Un passage où PERSONNE n'a livré d'intitulé ne lit
+      // pas des profils fermés : il lit mal. Sans lui, le jour où l'ancre du nom ou de l'en-tête
+      // cesse de mordre, la source s'éteint en silence — chaque contact en « illisible », passage
+      // clos en succès, carte « 0 nouvelle », et rien dans `source_runs.error` pour le dire.
+      if (!arretAnormal && profilsTentes >= PROFILS_POUR_JUGER && profilsLus === 0) {
+        await refuser(pool, job, MSG.profils_tous_illisibles, { statut: 'error', bilan, sortie });
+        return;
+      }
 
       // Le contrôle de vraisemblance. Un passage qui déclare un changement pour presque tout le
       // monde ne lit pas des changements : il lit mal. Le 09/10, cinq profils relus ont donné cinq

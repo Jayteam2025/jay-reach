@@ -18,17 +18,17 @@ import type { Pilote } from './navigateur.js';
 import type { Engageur } from '../handlers/post-engagement.js';
 
 /** Ce qu'il reste à dépenser quand le passage démarre. Les deux plafonds de la tâche 4. */
+export type Budget = { requetesRestantes: number; postsRestants: number };
+
 /**
- * Le degré de relation, affiche entre le nom et l'intitulé d'une personne.
+ * Le degré de relation, affiché entre le nom et l'intitulé d'une personne.
  *
  * Deux écrans, deux puces, chacune mesurée : « • 2e » dans les résultats de recherche, « · 3e »
- * dans l'en-tete d'une page de profil. Une seule définition pour les deux, parce que deux copies
+ * dans l'en-tête d'une page de profil. Une seule définition pour les deux, parce que deux copies
  * divergent : sans ce filtre, une personne sur deux serait scorée sur la chaîne du degré, et sur
- * une page de profil c'est la ligne qui Précède l'intitulé.
+ * une page de profil c'est la ligne qui PRÉCÈDE l'intitulé.
  */
 export const DEGRE_DE_RELATION = /^[•·\s]*(1er|2e|3e\+?|Hors réseau|Out of network)$/i;
-
-export type Budget = { requetesRestantes: number; postsRestants: number };
 
 /** Ce qui arrête un passage sans que ce soit une panne. */
 export type Friction = { type: 'defi' | 'cookie_refuse' | 'liste_vide' | 'post_introuvable' };

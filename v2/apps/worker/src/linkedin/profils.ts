@@ -175,21 +175,21 @@ function decoderEntites(texte: string): string {
 }
 
 /**
- * Le préfixe que porte chaque carte de la page de profil : l'en-tete en est une, et les blocs
+ * Le préfixe que porte chaque carte de la page de profil : l'en-tête en est une, et les blocs
  * qui suivent (activité, expériences, profils suggérés) aussi.
  */
 const CARTE_DE_PROFIL = 'com.linkedin.sdui.profile.card.ref';
 
-/** L'identifiant de la carte d'en-tete : un URN qui change a chaque personne, puis `Topcard`. */
+/** L'identifiant de la carte d'en-tête : un URN qui change a chaque personne, puis `Topcard`. */
 const IDENTIFIANT_ENTETE = /^[^"]*Topcard"/;
 
 /**
- * L'en-tete du profil, découpé du reste de la page.
+ * L'en-tête du profil, découpé du reste de la page.
  *
  * C'est la correction du défaut trouvé en recette le 09/10 : lire un `<p>` « quelque part dans
  * la page » attrape ce qui appartient a quelqu'un d'autre. Plus bas dans le même document, les
  * profils suggérés (« Explorer les profils Premium ») portent exactement la même forme de
- * balises que la personne. Borné a l'en-tete, le pire cas devient « on a lu la mauvaise ligne
+ * balises que la personne. Borné a l'en-tête, le pire cas devient « on a lu la mauvaise ligne
  * de LA BONNE personne » au lieu de « on a lu le poste d'un inconnu ».
  *
  * `null` quand la carte n'est pas la : page changée de forme, profil fermé, réponse tronquée.
@@ -216,9 +216,9 @@ function texteDeParagraphe(brut: string): string {
 }
 
 /**
- * Le nom et l'intitulé COURANTS d'un profil, lus dans l'en-tete de sa page.
+ * Le nom et l'intitulé COURANTS d'un profil, lus dans l'en-tête de sa page.
  *
- * L'ordre des lignes de l'en-tete, relevé le 09/10 sur deux profils réels : le nom en `<h2>`,
+ * L'ordre des lignes de l'en-tête, relevé le 09/10 sur deux profils réels : le nom en `<h2>`,
  * le degré de relation, l'intitulé, l'entreprise ou l'école, puis le lieu. L'intitulé est donc
  * la première ligne qui n'est ni vide ni un degré.
  *
@@ -227,15 +227,36 @@ function texteDeParagraphe(brut: string): string {
  * a comparer ». La version précédente exigeait trois caractères, ce qui ne filtrait pas cette
  * ligne mais la SAUTAIT : la lecture glissait sur la ligne suivante (l'entreprise), et de la
  * jusqu'aux profils suggérés. Cinq « changements de poste » sur cinq profils relus, dont deux
- * faux, le 09/10. Une borné de longueur posée sur une ancre positionnelle ne filtre pas : elle
+ * faux, le 09/10. Une borne de longueur posée sur une ancre positionnelle ne filtre pas : elle
  * décale.
  */
+/**
+ * Le nom de la personne : le `<h2>` de l'en-tête, `<title>` en repli.
+ *
+ * Le contenu du `<h2>` est nettoyé comme un paragraphe, et non lu en texte nu. LinkedIn glisse
+ * déjà des commentaires `<!-- -->` dans ses blocs, et un badge, un pronom ou une mention
+ * imbriqués dans le nom suffiraient à le rendre vide. Comme un nom vide refuse le profil ENTIER,
+ * cela éteindrait la source en silence : chaque contact partirait en « illisible », le passage se
+ * clôturerait en succès, et la carte afficherait « 0 nouvelle » sans un mot d'erreur.
+ */
+function nomDeProfil(entete: string, html: string): string {
+  const h2 = /<h2[^>]*>([\s\S]{1,400}?)<\/h2>/.exec(entete)?.[1];
+  const lu = h2 === undefined ? '' : texteDeParagraphe(h2);
+  if (lu.length > 0) return lu;
+  return decoderEntites((/<title[^>]*>([^<|]{2,160})\|/i.exec(html)?.[1] ?? '').trim());
+}
+
 export function lireProfilCourant(html: string): ProfilCourant | null {
   const entete = enteteDeProfil(html);
   if (entete === null) return null;
-  const nom = decoderEntites((/<h2[^>]*>([^<]{1,160})<\/h2>/.exec(entete)?.[1] ?? '').trim());
+  const nom = nomDeProfil(entete, html);
   if (nom.length === 0) return null;
-  const lignes = [...entete.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)]
+  // L'intitulé se cherche APRÈS le nom : l'en-tête porte aussi des boutons d'action (« Suivre »,
+  // « Se connecter ») qui sont des `<p>` comme les autres, et le premier venu deviendrait
+  // l'intitulé s'il était placé plus haut dans la carte.
+  const finDuNom = entete.indexOf('</h2>');
+  const sousLeNom = finDuNom === -1 ? entete : entete.slice(finDuNom + '</h2>'.length);
+  const lignes = [...sousLeNom.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)]
     .map((m) => texteDeParagraphe(m[1] ?? ''))
     .filter((t) => t.length > 0 && !DEGRE_DE_RELATION.test(t));
   const premiere = lignes[0] ?? '';

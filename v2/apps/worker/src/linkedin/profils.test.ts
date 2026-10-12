@@ -240,7 +240,7 @@ describe('lireProfilCourant', () => {
    * Une page de profil dans sa forme réelle, relevée le 09/10 sur deux profils.
    *
    * Tout ce qui est reproduit ici a mordu au moins une fois :
-   *  - la barre d'outils MASQUEE qui précède l'en-tete et porte, elle, un `<p><span>` ;
+   *  - la barre d'outils MASQUEE qui précède l'en-tête et porte, elle, un `<p><span>` ;
    *  - l'identifiant de la carte, present deux fois (`id` puis `componentkey`) ;
    *  - le degré de relation, intercale entre le nom et l'intitulé ;
    *  - la ligne entreprise, juste APRES l'intitulé : c'est elle qu'on lisait a tort ;
@@ -256,10 +256,10 @@ describe('lireProfilCourant', () => {
     const carte = `com.linkedin.sdui.profile.card.ref${urn}`;
     return (
       `<html><head><title>${opts.nom} | LinkedIn</title></head><body>` +
-      // La barre sticky, masquee, qui précède l'en-tete : elle porte le même intitulé.
+      // La barre sticky, masquee, qui précède l'en-tête : elle porte le même intitulé.
       `<div role="toolbar" aria-hidden="true" inert=""><a aria-label="${opts.nom}"></a>` +
       `<p class="fmbkzy"><span>${opts.intitule ?? '.'}</span></p></div>` +
-      // L'en-tete.
+      // L'en-tête.
       `<div class="fmblit" id="${carte}Topcard" componentkey="${carte}Topcard">` +
       `<div><h2 class="fmbqux">${opts.nom}</h2></div>` +
       `<p class="fmbkzy">· 3e<!-- --></p>` +
@@ -267,7 +267,7 @@ describe('lireProfilCourant', () => {
       `<p class="fmbkzy">${opts.entreprise ?? 'Acme'}</p>` +
       `<div><p>Lille, France</p><p>·</p><p><a href="/overlay/contact-info/">Coordonnees</a></p></div>` +
       `</div>` +
-      // La carte suivante : elle borné l'en-tete.
+      // La carte suivante : elle borne l'en-tête.
       `<div id="${carte}Activity" componentkey="${carte}Activity"><p>Activite</p></div>` +
       // Les profils suggérés, même forme de balises, plus bas dans le document.
       `<section><h2>Explorer les profils Premium</h2>` +
@@ -277,7 +277,7 @@ describe('lireProfilCourant', () => {
     );
   };
 
-  it('lit le nom et l’intitulé dans l’en-tete de la personne', () => {
+  it('lit le nom et l’intitulé dans l’en-tête de la personne', () => {
     expect(page({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale chez Acme' })).toContain('Topcard');
     expect(lireProfilCourant(page({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale chez Acme' }))).toEqual({
       nom: 'Ada Lemercier',
@@ -294,15 +294,15 @@ describe('lireProfilCourant', () => {
     expect(lu?.intitule).not.toBe('Supergroupe');
   });
 
-  it('ne lit jamais l’intitulé d’un profil suggéré, même sans en-tete exploitable', () => {
+  it('ne lit jamais l’intitulé d’un profil suggéré, même sans en-tête exploitable', () => {
     // Le pire cas du défaut : attribuer a un contact le poste de quelqu'un d'autre. Sans carte
-    // d'en-tete, on refuse — on ne descend pas chercher plus bas dans la page.
+    // d'en-tête, on refuse — on ne descend pas chercher plus bas dans la page.
     const sansEntete = page({ nom: 'Ada Lemercier', intitule: null }).replace(/Topcard/g, 'Autre');
     expect(lireProfilCourant(sansEntete)).toBeNull();
   });
 
   it('un bloc d’intitulé absent ne fait pas descendre au-delà de la personne', () => {
-    // Cas non observe mais possible. La lecture reste bornee a l'en-tete : au pire on rend la
+    // Cas non observe mais possible. La lecture reste bornee a l'en-tête : au pire on rend la
     // ligne entreprise de LA BONNE personne, jamais le poste d'un inconnu.
     const lu = lireProfilCourant(page({ nom: 'Ada Lemercier', intitule: null, entreprise: 'Acme' }));
     expect(lu?.intitule).toBe('Acme');
@@ -316,6 +316,37 @@ describe('lireProfilCourant', () => {
     expect(lu?.intitule).toBe('Directrice commerciale');
   });
 
+  it('lit le nom même quand LinkedIn imbrique une balise dedans', () => {
+    // Un nom vide refuse le profil ENTIER : un badge, un pronom ou un commentaire glissé dans le
+    // `<h2>` éteindrait toute la source en silence — chaque contact en « illisible », le passage
+    // clos en succès, et la carte annonçant « 0 nouvelle » sans un mot d'erreur.
+    const html = page({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale' }).replace(
+      '<h2 class="fmbqux">Ada Lemercier</h2>',
+      '<h2 class="fmbqux"><span>Ada Lemercier</span><!-- --><span aria-label="Vérifié"></span></h2>',
+    );
+    expect(lireProfilCourant(html)).toEqual({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale' });
+  });
+
+  it('se rabat sur le titre de la page quand l’en-tête ne porte pas de nom lisible', () => {
+    const html = page({ nom: 'Ada Lemercier', intitule: 'Directrice commerciale' }).replace(
+      '<h2 class="fmbqux">Ada Lemercier</h2>',
+      '<h2 class="fmbqux"></h2>',
+    );
+    expect(lireProfilCourant(html)?.nom).toBe('Ada Lemercier');
+  });
+
+  it('ne prend pas un bouton d’action pour un intitulé', () => {
+    // L'en-tête porte aussi « Suivre » ou « Se connecter », qui sont des `<p>` comme les autres.
+    // L'intitulé se cherche sous le nom, pas au premier `<p>` venu.
+    const carte = 'com.linkedin.sdui.profile.card.refACoAAExemple';
+    const html =
+      `<html><head><title>Ada Lemercier | LinkedIn</title></head><body>` +
+      `<div id="${carte}Topcard" componentkey="${carte}Topcard">` +
+      `<p>Suivre</p><h2>Ada Lemercier</h2><p>· 3e</p><p>Directrice commerciale</p><p>Acme</p></div>` +
+      `<div id="${carte}Activity"></div></body></html>`;
+    expect(lireProfilCourant(html)?.intitule).toBe('Directrice commerciale');
+  });
+
   it('décode les entités HTML, des deux côtés', () => {
     // Mesuré : « Directeur Commercial &amp; Membre du comité de direction ». Comparer un
     // intitulé encodé à un intitulé décodé ferait voir un changement de poste là où rien n'a
@@ -324,7 +355,7 @@ describe('lireProfilCourant', () => {
     expect(p).toEqual({ nom: 'Ada & Bruno', intitule: 'Directrice & associée' });
   });
 
-  it('refuse plutot que de deviner quand la page ne porte pas d’en-tete', () => {
+  it('refuse plutot que de deviner quand la page ne porte pas d’en-tête', () => {
     expect(lireProfilCourant('<html><head><title>Ada Lemercier | LinkedIn</title></head><body></body></html>')).toBeNull();
     expect(lireProfilCourant('<html><body><p><span>Directrice</span></p></body></html>')).toBeNull();
     expect(lireProfilCourant('')).toBeNull();
@@ -343,7 +374,7 @@ describe('enteteDeProfil', () => {
     expect(entete).not.toContain('avant');
   });
 
-  it('rend null quand aucune carte d’en-tete n’est la', () => {
+  it('rend null quand aucune carte d’en-tête n’est la', () => {
     expect(enteteDeProfil('<div id="com.linkedin.sdui.profile.card.refURNActivity"></div>')).toBeNull();
     expect(enteteDeProfil('')).toBeNull();
   });

@@ -833,7 +833,7 @@ describe('la source « changement de poste »', () => {
     expect(signaux(b)).toHaveLength(3);
   });
 
-  it('ne jugé pas un passage trop court : deux profils lus, deux changements, acceptés', async () => {
+  it('ne juge pas un passage trop court : deux profils lus, deux changements, acceptés', async () => {
     // En deçà de cinq profils, la proportion ne veut rien dire — deux changements sur deux
     // arrivent pour de vrai. Refuser ici bloquerait une petite organisation en permanence.
     sansBruit();
@@ -850,6 +850,20 @@ describe('la source « changement de poste »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     expect(clos(b)!.params[2]).toBe('success');
     expect(signaux(b)).toHaveLength(2);
+  });
+
+  it('refuse un passage où PERSONNE n’a livré d’intitulé, au lieu de le clore en succès', async () => {
+    // Le symétrique du contrôle de vraisemblance. Le jour où l'ancre du nom ou de l'en-tête cesse
+    // de mordre, tous les profils passent pour illisibles : sans ce contrôle la source s'éteint en
+    // silence, carte « 0 nouvelle » et `source_runs.error` vide.
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: cinqContacts('Directrice commerciale') });
+    const p = pilote({ reponse: () => ({ statut: 200, corps: '<html><body>une page sans en-tête</body></html>' }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('error');
+    expect(c.params[3]).toContain('intitulé');
+    expect(verifies(b)).toEqual([]);
   });
 
   it('un défi passe devant le verdict de vraisemblance : la session est bloquée, pas juste le passage', async () => {
