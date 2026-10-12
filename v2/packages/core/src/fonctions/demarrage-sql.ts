@@ -10,7 +10,7 @@
 export const SQL_DEMARRAGE = `
   select
     (select count(*)::int from credentials c
-      where c.organization_id = $1) as cles,
+      where c.organization_id = $1 and c.status = 'configured') as cles,
     (select count(*)::int from senders s
       where s.organization_id = $1 and s.kind = 'email' and s.is_active) as boites,
     (select count(*)::int from personas p

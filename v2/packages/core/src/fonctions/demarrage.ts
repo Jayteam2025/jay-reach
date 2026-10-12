@@ -70,9 +70,10 @@ export async function lireDemarrage(ctx: Contexte): Promise<Demarrage> {
       cle: 'linkedin',
       faite: statutLinkedIn === 'active',
       compte: null,
-      // Une session qui existe sans être active a été branchée puis a lâché : ce n'est pas la
-      // même chose que « jamais branchée », et la phrase affichée en tient compte.
-      casse: statutLinkedIn !== null && statutLinkedIn !== 'active',
+      // Une session branchée puis tombée n'est pas une session jamais branchée. Mais une
+      // session RÉVOQUÉE est un choix de l'opérateur, pas une panne : l'accueil ne doit pas
+      // titrer « un branchement a lâché » parce que quelqu'un vient de cliquer « Déconnecter ».
+      casse: statutLinkedIn !== null && statutLinkedIn !== 'active' && statutLinkedIn !== 'revoquee',
       lien: '/settings/linkedin',
     },
     { cle: 'source', faite: sources > 0, compte: sources, casse: false, lien: '/campaigns' },

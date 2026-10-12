@@ -23,6 +23,12 @@ import {
   type ResultatConnexion,
 } from '../../app/actions/linkedin-connexion';
 
+/**
+ * La fenêtre de saisie du code, côté web. Elle doit rester égale à `FENETRE_CODE_WEB_MS`
+ * (`apps/worker/src/linkedin/dependances-web.ts`) : l'écran annonce ce que le worker applique.
+ */
+const FENETRE_CODE_MS = 5 * 60_000;
+
 /** L'ordre réel du parcours. La base borne `etape` à ces six valeurs (migration 20261012150000). */
 const ETAPES: readonly EtapeConnexion[] = [
   'recue',
@@ -96,7 +102,11 @@ export function ConnexionLinkedin({
     if (!enCours(demande)) return;
     const id = setInterval(async () => {
       const res = await actionLireDemandeEnCours();
-      if (res.ok) setDemande(res.valeur);
+      if (!res.ok) return;
+      // Quand la demande se clôt, l'action revalide elle-même l'écran côté serveur : sans cela,
+      // la page réafficherait « Connecter mon compte » juste après une connexion réussie, au seul
+      // moment où l'utilisateur attend une confirmation.
+      setDemande(res.valeur);
     }, 2000);
     return () => clearInterval(id);
   }, [demande]);
@@ -107,7 +117,9 @@ export function ConnexionLinkedin({
       setRestant(null);
       return;
     }
-    const fin = new Date(demande.expireLe).getTime();
+    // `expireLe` borne la demande entière (15 min). La saisie du code, elle, dispose de la
+    // fenêtre que le worker applique, et c'est elle qu'il faut annoncer.
+    const fin = Math.min(new Date(demande.expireLe).getTime(), Date.now() + FENETRE_CODE_MS);
     const tic = () => setRestant(Math.max(0, Math.round((fin - Date.now()) / 1000)));
     tic();
     const id = setInterval(tic, 1000);

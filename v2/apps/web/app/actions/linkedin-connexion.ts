@@ -22,7 +22,19 @@ import {
   repondreDefi,
   type Demande,
 } from '@jay-reach/core';
+import { revalidatePath } from 'next/cache';
 import { contexteCourant } from '../../lib/contexte';
+
+/**
+ * Les deux écrans que l'état d'une connexion change : Réglages › LinkedIn (la carte de session) et
+ * Aujourd'hui (la ligne « votre compte LinkedIn » de la liste de démarrage). On revalide côté
+ * serveur plutôt que de faire rafraîchir le client — règle du dépôt, `rafraichissement.test.ts`.
+ */
+function revaliderEcransLinkedin(): void {
+  revalidatePath('/settings/linkedin');
+  revalidatePath('/settings/senders');
+  revalidatePath('/');
+}
 
 export type ResultatConnexion<T = void> =
   | { ok: true; valeur: T }
@@ -43,7 +55,9 @@ function resultatDErreur<T>(err: unknown): ResultatConnexion<T> {
 /** Lance la connexion : identifiant et mot de passe voyagent dans le corps de l'action (HTTPS), jamais dans une URL. */
 export async function actionDemanderConnexion(entree: unknown): Promise<ResultatConnexion<{ demandeId: string }>> {
   try {
-    return { ok: true, valeur: await demanderConnexion(await contexteCourant(), entree) };
+    const valeur = await demanderConnexion(await contexteCourant(), entree);
+    revaliderEcransLinkedin();
+    return { ok: true, valeur };
   } catch (err) {
     return resultatDErreur(err);
   }
@@ -52,7 +66,12 @@ export async function actionDemanderConnexion(entree: unknown): Promise<Resultat
 /** Sondage de l'écran (toutes les 2 s) : tranche aussi le cas du worker absent. */
 export async function actionLireDemandeEnCours(): Promise<ResultatConnexion<Demande | null>> {
   try {
-    return { ok: true, valeur: await lireDemandeEnCours(await contexteCourant()) };
+    const demande = await lireDemandeEnCours(await contexteCourant());
+    // Close ou disparue : la session a changé d'état côté serveur, les écrans doivent le montrer.
+    if (demande === null || demande.statut === 'reussi' || demande.statut === 'echec') {
+      revaliderEcransLinkedin();
+    }
+    return { ok: true, valeur: demande };
   } catch (err) {
     return resultatDErreur(err);
   }
@@ -70,6 +89,7 @@ export async function actionRepondreDefi(demandeId: unknown, code: unknown): Pro
 export async function actionAnnulerConnexion(demandeId: unknown): Promise<ResultatConnexion> {
   try {
     await annulerConnexion(await contexteCourant(), String(demandeId));
+    revaliderEcransLinkedin();
     return { ok: true, valeur: undefined };
   } catch (err) {
     return resultatDErreur(err);
@@ -79,6 +99,7 @@ export async function actionAnnulerConnexion(demandeId: unknown): Promise<Result
 export async function actionDemanderDeconnexion(): Promise<ResultatConnexion> {
   try {
     await demanderDeconnexion(await contexteCourant());
+    revaliderEcransLinkedin();
     return { ok: true, valeur: undefined };
   } catch (err) {
     return resultatDErreur(err);

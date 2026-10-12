@@ -9,6 +9,8 @@ insert into organizations (id, name, slug) values (:'A', 'Org A', 'org-a'), (:'B
 
 -- Org A : tout est branché. Org B : rien, et des lignes qui NE doivent pas compter pour A.
 insert into credentials (organization_id, provider_id, status) values (:'A', 'anthropic', 'configured');
+-- Une clé déclarée mais jamais posée ne doit pas faire passer la ligne au vert (spec §13).
+insert into credentials (organization_id, provider_id, status) values (:'A', 'fullenrich', 'unconfigured');
 insert into credentials (organization_id, provider_id, status) values (:'B', 'anthropic', 'configured');
 insert into senders (organization_id, kind, identity, display_name, is_active)
   values (:'A', 'email', 'a@exemple.fr', 'A', true),
@@ -30,7 +32,7 @@ declare r record;
 begin
   execute format('execute demarrage(%L)', '11111111-1111-1111-1111-111111111111') into r;
   -- 1 : les comptes d'A, sans un seul emprunt à B.
-  if r.cles <> 1 then raise exception 'FAIL 1a : cles = %, attendu 1 (B ne doit pas compter)', r.cles; end if;
+  if r.cles <> 1 then raise exception 'FAIL 1a : cles = %, attendu 1 (ni celle de B, ni une cle unconfigured)', r.cles; end if;
   if r.boites <> 1 then raise exception 'FAIL 1b : boites = %, attendu 1 (ni la boite inactive, ni celle de B, ni le sender linkedin)', r.boites; end if;
   if r.personas <> 1 then raise exception 'FAIL 1c : personas = %, attendu 1', r.personas; end if;
   if r.sources <> 1 then raise exception 'FAIL 1d : sources = %, attendu 1 (la source eteinte ne compte pas)', r.sources; end if;

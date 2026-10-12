@@ -64,6 +64,15 @@ describe('la liste de démarrage', () => {
     expect(d.terminee).toBe(false);
   });
 
+  // Une déconnexion volontaire n'est pas une panne : l'accueil ne doit pas annoncer « un
+  // branchement a lâché » parce que l'opérateur vient de cliquer « Déconnecter ».
+  it('une session révoquée à la demande n’est pas annoncée comme cassée', async () => {
+    const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: 'revoquee' }));
+    const li = d.lignes.find((l) => l.cle === 'linkedin');
+    expect(li?.faite).toBe(false);
+    expect(li?.casse).toBe(false);
+  });
+
   it('une session jamais ouverte n’est pas cassée, elle est seulement à faire', async () => {
     const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: null }));
     const li = d.lignes.find((l) => l.cle === 'linkedin');
