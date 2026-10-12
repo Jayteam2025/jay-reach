@@ -381,7 +381,7 @@ export async function lireRythme(ctx: Contexte): Promise<Rythme> {
  *
  * NON atomique : trois écritures successives, sans transaction (`Contexte.ex` n'en expose pas). Le
  * rôle admin et le cran sont vérifiés AVANT la première (erreurs sèches : `ForbiddenError`,
- * `ErreurEntree`), et le fuseau est lu avant elle. Si une écriture échoue en base, une `ErreurRythme`
+ * `ErreurEntree`), et le fuseau est lu avant elle (dans le même `try`, donc un échec de lecture se dit « rien n'a changé »). Si une lecture ou une écriture échoue en base, une `ErreurRythme`
  * au message lisible remonte (partielle ou non, selon `ecrites`) et l'organisation garde un mélange des anciennes et des nouvelles
  * valeurs ; `lireRythme` lit alors `personnalise` (ou, par coïncidence, un cran dont les valeurs
  * se trouvent réunies), jamais un cran qui ne serait pas celui appliqué. Rejouer l'écriture répare.
@@ -389,11 +389,11 @@ export async function lireRythme(ctx: Contexte): Promise<Rythme> {
 export async function ecrireRythme(ctx: Contexte, rythme: Exclude<Rythme, 'personnalise'>): Promise<void> {
   exiger(ctx, 'admin');
   const c = RYTHMES[valider(schemaRythme, rythme)];
-  const { fuseau } = await lireHeuresEnvoiLinkedIn(ctx);
-  // Dès ici les échecs viennent de la base. Le message dit à l'opérateur ce qui est vrai (rien posé,
+  // Dès ici les échecs (lecture du fuseau comprise) viennent de la base. Le message dit à l'opérateur ce qui est vrai (rien posé,
   // ou posé en partie) et qu'il peut réessayer ; le texte brut de la base n'est jamais montré.
   let ecrites = 0;
   try {
+    const { fuseau } = await lireHeuresEnvoiLinkedIn(ctx);
     await ecrireReglage(ctx, { cle: 'linkedin_invitations_par_semaine', valeur: c.invitations });
     ecrites += 1;
     await ecrireReglage(ctx, { cle: 'linkedin_messages_par_semaine', valeur: c.messages });

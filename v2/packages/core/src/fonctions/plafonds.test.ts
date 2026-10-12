@@ -501,7 +501,7 @@ describe('schemaEcrireReglage — les plafonds d envoi LinkedIn sont bornes', ()
  * lu par `lireRythme` est celui que `ecrireRythme` a réellement posé. `echecSurInsert` fait échouer
  * la N-ième écriture (1-based), pour le cas de l'écriture partielle.
  */
-function poolRythme(opts: { role?: Contexte['role']; echecSurInsert?: number; reglages?: Record<string, unknown>; heures?: { from: number; to: number; days: number[] } } = {}) {
+function poolRythme(opts: { role?: Contexte['role']; echecSurInsert?: number; echecLectureHeures?: boolean; reglages?: Record<string, unknown>; heures?: { from: number; to: number; days: number[] } } = {}) {
   const reglages = new Map<string, unknown>(Object.entries(opts.reglages ?? {}));
   let heures = opts.heures ? { ...opts.heures, tz: 'Europe/Lisbonne' } : undefined;
   const sqls: { sql: string; params: unknown[] }[] = [];
@@ -512,6 +512,7 @@ function poolRythme(opts: { role?: Contexte['role']; echecSurInsert?: number; re
       inserts += 1;
       if (opts.echecSurInsert === inserts) throw new Error('écriture refusée');
     }
+    if (opts.echecLectureHeures && /from linkedin_settings/i.test(sql)) throw new Error('connexion refusée par la base');
     if (/from organization_settings/i.test(sql)) {
       const rows = [...reglages].map(([key, value]) => ({ key, value }));
       return { rows, rowCount: rows.length };
@@ -649,6 +650,17 @@ describe('le rythme en trois crans', () => {
       expect(p.reglages.get('linkedin_invitations_par_semaine')).toBe(50);
       expect(p.reglages.get('linkedin_messages_par_semaine')).toBe(100);
       expect(p.heures()).toBeUndefined();
+    });
+
+    it('si la lecture du fuseau échoue : « rien n’a changé », sans texte de base, et aucune écriture', async () => {
+      const p = poolRythme({ echecLectureHeures: true });
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(0);
+      expect(e.message).toMatch(/rien n'a changé/);
+      expect(e.message).not.toMatch(/connexion/);
+      expect(p.sqls.filter((s) => /insert into/i.test(s.sql))).toHaveLength(0);
     });
 
     it('si la première écriture échoue : message « rien n’a changé », distinct du partiel', async () => {
