@@ -154,8 +154,8 @@ const SEUIL_COLLECTE_ETRANGLEE = 10;
  * (le moteur espace les actions de 1 à 20 min, soit environ 10 min en moyenne, tous types confondus).
  * Pas 10 : à 10 minutes, les valeurs par défaut du dépôt (100 + 200 sur 9 h - 18 h, cinq jours, soit
  * 9 min par action) se dénonceraient elles-mêmes alors qu'elles écoulent environ 85 % de leur volume,
- * et le cran « Normal » proposé en façade porte exactement ces valeurs. À 7 minutes on ne signale que
- * les configurations qui perdent plus d'un tiers de leur volume réglé.
+ * alors qu'elles écoulent l'essentiel de leur volume. À 7 minutes on ne signale que les configurations
+ * qui perdent plus d'un tiers de leur volume réglé.
  */
 const SEUIL_MINUTES_PAR_ACTION = 7;
 
@@ -465,10 +465,13 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       [ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
     ),
     // Campagnes actives : sans elles, aucun des contrôles « le rythme ne sort rien » n'a de sens.
-    // `anciennes` : créées avant la fenêtre d'observation, pour ne pas accuser une campagne neuve.
-    ctx.ex.query<{ actives: number; avec_linkedin: number; anciennes: number }>(
+    // `avec_invitations` / `avec_messages` : campagnes actives portant au moins une étape de ce type, seuls
+    // plafonds qui comptent dans le volume LinkedIn. `anciennes` : activées (à défaut créées) avant la
+    // fenêtre d'observation, pour ne pas accuser une campagne neuve ou tout juste relancée.
+    ctx.ex.query<{ actives: number; avec_invitations: number; avec_messages: number; anciennes: number }>(
       `select count(*)::int as actives, /* jr:campagnes_actives */
-              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))))::int as avec_linkedin,
+              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel = 'linkedin_invite')))::int as avec_invitations,
+              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel = 'linkedin_message')))::int as avec_messages,
               (count(*) filter (where coalesce(c.activated_at, c.created_at) < ($2::date::timestamp at time zone $3)))::int as anciennes
          from campaigns c
         where c.organization_id = $1
@@ -691,10 +694,12 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     // plafond hebdomadaire (raboté à `HARD_CAP_7_DAYS`) réparti sur les jours d'envoi, au moins 1.
     const plafondQuotidien = (hebdo: unknown): number =>
       Math.max(1, Math.ceil((typeof hebdo === 'number' ? Math.min(hebdo, HARD_CAP_7_DAYS) : 0) / Math.max(1, heuresLinkedin.jours.length)));
+    // Un type sans aucune étape dans les campagnes actives n'enfile rien : son plafond n'entre pas dans la somme.
     const actionsParJour =
-      plafondQuotidien(reglages.linkedin_invitations_par_semaine) + plafondQuotidien(reglages.linkedin_messages_par_semaine);
+      ((campagnesActives?.avec_invitations ?? 0) > 0 ? plafondQuotidien(reglages.linkedin_invitations_par_semaine) : 0) +
+      ((campagnesActives?.avec_messages ?? 0) > 0 ? plafondQuotidien(reglages.linkedin_messages_par_semaine) : 0);
     const minutesParAction = actionsParJour > 0 ? ((heuresLinkedin.finHeure - heuresLinkedin.debutHeure) * 60) / actionsParJour : Infinity;
-    if ((campagnesActives?.avec_linkedin ?? 0) > 0 && minutesParAction < SEUIL_MINUTES_PAR_ACTION) {
+    if (actionsParJour > 0 && minutesParAction < SEUIL_MINUTES_PAR_ACTION) {
       alertes.push({
         type: 'fenetre_trop_etroite',
         texte: `La fenêtre d'envoi LinkedIn (de ${heuresLinkedin.debutHeure} h à ${heuresLinkedin.finHeure} h) est trop étroite : elle laisse ${minutesParAction.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} minutes par action pour ${actionsParJour} actions par jour, le moteur n'enverra pas tout ce qui est réglé.`,

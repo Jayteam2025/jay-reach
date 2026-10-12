@@ -368,6 +368,20 @@ async function alertesRythme() {
   await q(`update organizations set sending_paused_at = now() where id = $1`, [enPauseOrg]);
   const pauseTypes = (await lireAujourdhui(ctxDe(enPauseOrg))).alertes.map((a) => a.type);
   check('5.15 organisation en pause : pause_envoi seule, pas rien_ne_part', pauseTypes.includes('pause_envoi') && !pauseTypes.includes('rien_ne_part'), pauseTypes.join(','));
+  // Fenêtre LinkedIn : seuls les plafonds des types présents dans les campagnes actives comptent. Curseurs à 200 et
+  // 200 sur 9 h - 18 h (défaut) : 80 actions par jour si les deux types existent, 40 sinon.
+  const orgLinkedin = async (etapes) => {
+    const org = await orgNeuve();
+    for (const cle of ['linkedin_invitations_par_semaine', 'linkedin_messages_par_semaine']) {
+      await q(`insert into organization_settings (organization_id, key, value) values ($1, $2, '200'::jsonb)`, [org, cle]);
+    }
+    await campagneEmail(org, { etapes: etapes.map((channel, position) => ({ position, channel })) });
+    return org;
+  };
+  check('5.16 campagne 100 % messages, 200/200 : pas d’alerte', (await alerteDe(await orgLinkedin(['linkedin_message']), 'fenetre_trop_etroite')) === undefined);
+  check('5.17 campagne 100 % invitations, 200/200 : pas d’alerte', (await alerteDe(await orgLinkedin(['linkedin_invite']), 'fenetre_trop_etroite')) === undefined);
+  const lesDeux = await alerteDe(await orgLinkedin(['linkedin_invite', 'linkedin_message']), 'fenetre_trop_etroite');
+  check('5.18 invitations et messages, 200/200 : alerte à 80 actions par jour', /80 actions par jour/.test(lesDeux?.texte ?? ''), lesDeux?.texte);
 }
 
 await plafondSansLimite();

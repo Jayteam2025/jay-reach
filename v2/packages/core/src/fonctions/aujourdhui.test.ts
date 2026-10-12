@@ -528,8 +528,9 @@ describe('lireAujourdhui', () => {
 
   describe('alertes « le rythme ne sort rien »', () => {
     const types = (a: Awaited<ReturnType<typeof lireAujourdhui>>) => a.alertes.map((al) => al.type);
-    const campagneLinkedin = { 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 1, anciennes: 1 }] };
-    const campagneEmail = { 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 0, anciennes: 1 }] };
+    const campagneLinkedin = { 'jr:campagnes_actives': [{ actives: 1, avec_invitations: 1, avec_messages: 1, anciennes: 1 }] };
+    const seulement = (invitations: number, messages: number) => ({ 'jr:campagnes_actives': [{ actives: 1, avec_invitations: invitations, avec_messages: messages, anciennes: 1 }] });
+    const campagneEmail = { 'jr:campagnes_actives': [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 1 }] };
     const plafonds = (invitations: number, messages: number) => ({
       'from organization_settings': [
         { key: 'linkedin_invitations_par_semaine', value: invitations },
@@ -570,6 +571,16 @@ describe('lireAujourdhui', () => {
       // Au-delà du plafond dur, le moteur rabote : 400 + 400 donne la même chose que 200 + 200.
       const au_dela = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(400, 400), ...fenetre(9, 18) }));
       expect(au_dela.alertes.find((al) => al.type === 'fenetre_trop_etroite')?.texte).toContain('80 actions par jour');
+    });
+
+    it('seuls les plafonds des types réellement présents dans les campagnes actives comptent', async () => {
+      const reglages = { ...plafonds(200, 200), ...fenetre(9, 18) };
+      // 100 % messages : 40 actions par jour au plus, 13,5 minutes. Rien à dire.
+      expect(types(await lireAujourdhui(faux({ ...seulement(0, 1), ...reglages })))).not.toContain('fenetre_trop_etroite');
+      // 100 % invitations : idem.
+      expect(types(await lireAujourdhui(faux({ ...seulement(1, 0), ...reglages })))).not.toContain('fenetre_trop_etroite');
+      // Les deux types : 80 actions par jour, 6,75 minutes.
+      expect(types(await lireAujourdhui(faux({ ...seulement(1, 1), ...reglages })))).toContain('fenetre_trop_etroite');
     });
 
     it('les réglages par défaut du dépôt (9 h - 18 h, 100 invitations et 200 messages, soit 9 min par action) n’alertent pas', async () => {
@@ -677,7 +688,7 @@ describe('lireAujourdhui', () => {
     });
 
     it('rien_ne_part n’alerte pas pour une campagne créée depuis moins de trois jours ouvrés', async () => {
-      const a = await lireAujourdhui(faux({ 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 0, anciennes: 0 }], 'jr:actions_recentes': [{ n: 0 }] }));
+      const a = await lireAujourdhui(faux({ 'jr:campagnes_actives': [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 0 }], 'jr:actions_recentes': [{ n: 0 }] }));
       expect(types(a)).not.toContain('rien_ne_part');
     });
 
@@ -722,7 +733,7 @@ describe('lireAujourdhui', () => {
     it('une organisation sans aucune campagne active ne déclenche aucun des trois', async () => {
       const a = await lireAujourdhui(
         faux({
-          'jr:campagnes_actives': [{ actives: 0, avec_linkedin: 0, anciennes: 0 }],
+          'jr:campagnes_actives': [{ actives: 0, avec_invitations: 0, avec_messages: 0, anciennes: 0 }],
           'jr:actions_recentes': [{ n: 0 }],
           'jr:envois_par_jour': [lundi],
           ...plafonds(125, 125),
@@ -740,7 +751,7 @@ describe('lireAujourdhui', () => {
     it('les lignes d’une AUTRE organisation ne déclenchent rien', async () => {
       const query = vi.fn(async (sql: string, params?: unknown[]) => {
         if (params?.[0] !== 'org-2') return { rows: [], rowCount: 0 };
-        if (/jr:campagnes_actives/i.test(sql)) return { rows: [{ actives: 1, avec_linkedin: 0, anciennes: 1 }], rowCount: 1 };
+        if (/jr:campagnes_actives/i.test(sql)) return { rows: [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 1 }], rowCount: 1 };
         if (/jr:envois_par_jour/i.test(sql)) return { rows: [lundi], rowCount: 1 };
         if (/jr:actions_recentes/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
         return { rows: [], rowCount: 0 };
