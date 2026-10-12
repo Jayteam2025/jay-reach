@@ -260,6 +260,51 @@
     },
     "alerts": {
       "action": "Instellen"
+    },
+    "demarrage": {
+      "titre": "Jay Reach opstarten",
+      "titreCasse": "Een koppeling is weggevallen",
+      "sousTitre": "Zes koppelingen voordat de prospectie vanzelf loopt.",
+      "sousTitreCasse": "De rest blijft draaien.",
+      "avancement": "{faites} van {total}",
+      "lignes": {
+        "fournisseurs": {
+          "titre": "Uw providersleutels",
+          "aide": "Zonder deze geen beoordeling en geen verzending.",
+          "bouton": "Invullen",
+          "mesure": "{n} ingesteld"
+        },
+        "boites": {
+          "titre": "Uw mailboxen",
+          "aide": "De mailboxen die uw prospects aanschrijven.",
+          "bouton": "Koppelen",
+          "mesure": "{n} actief"
+        },
+        "persona": {
+          "titre": "Uw persona",
+          "aide": "Wie u zoekt, en hoe u die herkent.",
+          "bouton": "Aanmaken",
+          "mesure": "{n} aangemaakt"
+        },
+        "linkedin": {
+          "titre": "Uw LinkedIn-account",
+          "aide": "Zonder dit geen LinkedIn-verzameling en geen LinkedIn-bericht.",
+          "bouton": "Koppelen",
+          "mesure": "gekoppeld"
+        },
+        "source": {
+          "titre": "Een bron die verzamelt",
+          "aide": "Mensen die reageren op posts van een concurrent, een vacature, een lijst.",
+          "bouton": "Toevoegen",
+          "mesure": "{n} actief"
+        },
+        "campagne": {
+          "titre": "Een lopende campagne",
+          "aide": "Die verbindt persona, bronnen en reeks.",
+          "bouton": "Openen",
+          "mesure": "{n} actief"
+        }
+      }
     }
   },
   "campagne": {

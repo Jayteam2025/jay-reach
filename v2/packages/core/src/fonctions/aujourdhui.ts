@@ -135,7 +135,6 @@ export interface CampagneResume {
 export type TypeAlerte =
   | 'pause_envoi'
   | 'boite_deconnectee'
-  | 'fournisseur_sans_cle'
   | 'source_orpheline'
   | 'moteur_silencieux'
   | 'plafond_a_zero'

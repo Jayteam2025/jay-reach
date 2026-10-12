@@ -2,6 +2,7 @@ export * from './contexte.js';
 export * from './plafonds.js';
 export * from './moteur.js';
 export * from './aujourdhui.js';
+export * from './demarrage.js';
 export * from './transport-email.js';
 export * from './campagnes.js';
 export * from './file-du-jour.js';

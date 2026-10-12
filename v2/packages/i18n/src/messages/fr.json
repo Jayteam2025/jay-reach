@@ -260,6 +260,51 @@
     },
     "alerts": {
       "action": "Régler"
+    },
+    "demarrage": {
+      "titre": "Démarrer Jay Reach",
+      "titreCasse": "Un branchement a lâché",
+      "sousTitre": "Six branchements avant que la prospection parte toute seule.",
+      "sousTitreCasse": "Le reste continue de tourner.",
+      "avancement": "{faites} sur {total}",
+      "lignes": {
+        "fournisseurs": {
+          "titre": "Vos clés fournisseurs",
+          "aide": "Sans elles, ni notation ni envoi.",
+          "bouton": "Renseigner",
+          "mesure": "{n} posées"
+        },
+        "boites": {
+          "titre": "Vos boîtes e-mail",
+          "aide": "Les boîtes qui écriront à vos prospects.",
+          "bouton": "Relier",
+          "mesure": "{n} actives"
+        },
+        "persona": {
+          "titre": "Votre persona",
+          "aide": "Qui vous cherchez, et comment le reconnaître.",
+          "bouton": "Créer",
+          "mesure": "{n} créés"
+        },
+        "linkedin": {
+          "titre": "Votre compte LinkedIn",
+          "aide": "Sans lui, ni collecte ni message LinkedIn.",
+          "bouton": "Connecter",
+          "mesure": "connecté"
+        },
+        "source": {
+          "titre": "Une source qui collecte",
+          "aide": "Les gens qui réagissent aux posts d'un concurrent, une offre d'emploi, une liste.",
+          "bouton": "Ajouter",
+          "mesure": "{n} actives"
+        },
+        "campagne": {
+          "titre": "Une campagne lancée",
+          "aide": "Elle relie le persona, les sources et la séquence.",
+          "bouton": "Ouvrir",
+          "mesure": "{n} active"
+        }
+      }
     }
   },
   "campagne": {

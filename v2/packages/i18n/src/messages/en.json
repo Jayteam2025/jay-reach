@@ -260,6 +260,51 @@
     },
     "alerts": {
       "action": "Configure"
+    },
+    "demarrage": {
+      "titre": "Get Jay Reach started",
+      "titreCasse": "A connection has dropped",
+      "sousTitre": "Six connections before prospecting runs on its own.",
+      "sousTitreCasse": "The rest keeps running.",
+      "avancement": "{faites} of {total}",
+      "lignes": {
+        "fournisseurs": {
+          "titre": "Your provider keys",
+          "aide": "Without them, no scoring and no sending.",
+          "bouton": "Add keys",
+          "mesure": "{n} set"
+        },
+        "boites": {
+          "titre": "Your mailboxes",
+          "aide": "The mailboxes that will write to your prospects.",
+          "bouton": "Connect",
+          "mesure": "{n} active"
+        },
+        "persona": {
+          "titre": "Your persona",
+          "aide": "Who you are looking for, and how to recognise them.",
+          "bouton": "Create",
+          "mesure": "{n} created"
+        },
+        "linkedin": {
+          "titre": "Your LinkedIn account",
+          "aide": "Without it, no LinkedIn collection and no LinkedIn message.",
+          "bouton": "Connect",
+          "mesure": "connected"
+        },
+        "source": {
+          "titre": "A source that collects",
+          "aide": "People reacting to a competitor's posts, a job ad, a list.",
+          "bouton": "Add",
+          "mesure": "{n} active"
+        },
+        "campagne": {
+          "titre": "A live campaign",
+          "aide": "It ties the persona, the sources and the sequence together.",
+          "bouton": "Open",
+          "mesure": "{n} live"
+        }
+      }
     }
   },
   "campagne": {
