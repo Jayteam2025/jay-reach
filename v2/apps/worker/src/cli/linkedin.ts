@@ -31,6 +31,15 @@ import { ipDuProcessus } from '../linkedin/ip.js';
 // Type seul : effacé à la compilation. L'import réel du navigateur est dynamique (voir `dependancesReelles`).
 import type { Pilote } from '../linkedin/navigateur.js';
 
+/** Ce que la mécanique demande à l'opérateur ; chaque façade (terminal, écran) l'habille à sa façon. */
+export type Invite = 'identifiant' | 'motDePasse' | 'code';
+
+const LIBELLES: Record<Invite, string> = {
+  identifiant: 'Identifiant LinkedIn : ',
+  motDePasse: 'Mot de passe : ',
+  code: 'Code reçu de LinkedIn : ',
+};
+
 export interface Dependances {
   env: Record<string, string | undefined>;
   ecrire(ligne: string): void;
@@ -41,8 +50,8 @@ export interface Dependances {
   releverTitulaire(pilote: Pilote, ip: string): Promise<Titulaire | null>;
   /** IP publique du processus worker, donc du VPS (voir `ip.ts`). */
   ipDuProcessus(): Promise<string>;
-  demander(invite: string): Promise<string>;
-  demanderMasque(invite: string): Promise<string>;
+  demander(invite: Invite): Promise<string>;
+  demanderMasque(invite: Invite): Promise<string>;
   pause(ms: number): Promise<void>;
 }
 
@@ -158,8 +167,8 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
   await pilote.aller(URL_CONNEXION);
   if (surLinkedIn(await pilote.url(), '/feed')) return { issue: 'connecte' };
 
-  const identifiant = await d.demander('Identifiant LinkedIn : ');
-  const motDePasse = await d.demanderMasque('Mot de passe : ');
+  const identifiant = await d.demander('identifiant');
+  const motDePasse = await d.demanderMasque('motDePasse');
   await pilote.saisir(SEL.identifiant, identifiant);
   await pilote.saisir(SEL.motDePasse, motDePasse);
   // Entrée depuis le champ soumet le formulaire : aucun clic de bouton, donc aucune dépendance à la langue.
@@ -174,7 +183,7 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
     if (surLinkedIn(url, '/feed')) return { issue: 'connecte' };
     if (surLinkedIn(url, '/checkpoint')) {
       if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
-        const code = await d.demanderMasque('Code reçu de LinkedIn : ');
+        const code = await d.demanderMasque('code');
         await pilote.saisir(SEL.code, code);
         await pilote.presserEntree(SEL.code);
         codeEnvoyeA = ecoule;
@@ -352,6 +361,17 @@ async function organisationCourante(
   return res.rows[0]!.id;
 }
 
+/** Navigateur et relevés réels, partagés par le terminal et le chemin web. */
+export const pilotageReel = {
+  // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
+  ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
+  releverSortie: async (p: Pilote) => (await import('../linkedin/navigateur.js')).releverSortie(p),
+  releverTitulaire: async (p: Pilote, ip: string) =>
+    (await import('../linkedin/navigateur.js')).releverTitulaire(p, ip),
+  ipDuProcessus,
+  pause: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+};
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   const etat: { pool: ReturnType<typeof createPool> | null } = { pool: null };
@@ -364,14 +384,9 @@ async function main(): Promise<void> {
       const organisationId = await organisationCourante(pool, process.env);
       return { ex: pool, organisationId, utilisateurId: null, role: null };
     },
-    // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
-    ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
-    releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
-    releverTitulaire: async (p, ip) => (await import('../linkedin/navigateur.js')).releverTitulaire(p, ip),
-    ipDuProcessus,
-    demander,
-    demanderMasque,
-    pause: (ms) => new Promise((r) => setTimeout(r, ms)),
+    ...pilotageReel,
+    demander: (i) => demander(LIBELLES[i]),
+    demanderMasque: (i) => demanderMasque(LIBELLES[i]),
   };
   const code = await executerCommande(process.argv.slice(2), d);
   await etat.pool?.end();
