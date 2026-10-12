@@ -82,7 +82,7 @@ describe('dependancesWeb', () => {
     const { d, appels } = monter({});
     const attente = d.demanderMasque('code');
     await d.vider();
-    expect(ecrituresEtat(appels).at(-1)?.params).toEqual(['demande-1', 'code_demande', 'code_demande', null]);
+    expect(ecrituresEtat(appels).at(-1)?.params).toEqual(['demande-1', 'code_demande', 'code_demande', null, FENETRE_CODE_WEB_MS]);
     d.livrerCode('654321');
     expect(await attente).toBe('654321');
   });
@@ -143,6 +143,6 @@ describe('dependancesWeb', () => {
     expect(await executerCommande(['connecter'], d)).toBe(1);
     await d.vider();
     expect(code).not.toHaveBeenCalledWith('code');
-    expect(ecrituresEtat(appels).at(-1)?.params).toEqual(['demande-1', null, 'echec', 'defi']);
+    expect(ecrituresEtat(appels).at(-1)?.params).toEqual(['demande-1', null, 'echec', 'defi', null]);
   });
 });

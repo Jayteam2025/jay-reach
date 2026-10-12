@@ -101,16 +101,21 @@ export function dependancesWeb(
   }
 
   /** Ne touche qu'une demande encore en cours : une annulation n'est jamais écrasée. */
-  async function ecrireEtat(etape: Etape | null, statut: string | null, motif: Motif | null): Promise<void> {
+  async function ecrireEtat(
+    etape: Etape | null,
+    statut: string | null,
+    motif: Motif | null,
+    delaiMs: number | null,
+  ): Promise<void> {
     await pool.query(
       SQL_ECRIRE_ETAT,
-      [demandeId, etape, statut, motif],
+      [demandeId, etape, statut, motif, delaiMs],
     );
   }
 
-  const enfiler = (etape: Etape | null, statut: string | null, motif: Motif | null): void => {
+  const enfiler = (etape: Etape | null, statut: string | null, motif: Motif | null, delaiMs: number | null = null): void => {
     ecritures = ecritures
-      .then(() => ecrireEtat(etape, statut, motif))
+      .then(() => ecrireEtat(etape, statut, motif, delaiMs))
       // Type seul : une erreur de base peut porter la requête.
       .catch((e: unknown) =>
         console.error(`[dependances-web] écriture d'état abandonnée (${e instanceof Error ? e.name : 'erreur'})`),
@@ -173,7 +178,8 @@ export function dependancesWeb(
         return secrets.motDePasse;
       }
       if (invite !== 'code') throw new Error('invite_inattendue');
-      enfiler('code_demande', 'code_demande', null);
+      // L'échéance de la demande devient celle de la saisie du code : c'est elle que l'écran annonce.
+      enfiler('code_demande', 'code_demande', null, fenetre);
       return attendreCode();
     },
     livrerCode(code) {

@@ -10,7 +10,7 @@
  * ni un délai de code ni une demande interrompue clôt la demande en `echec / erreur_interne`, pour
  * que l'écran ne reste pas figé un quart d'heure.
  */
-import { bloquerSessionLinkedIn, ecrireEvenement, type Contexte, type MessageConnexion } from '@jay-reach/core';
+import { bloquerSessionLinkedIn, desactiverExpediteurLinkedIn, ecrireEvenement, type Contexte, type MessageConnexion } from '@jay-reach/core';
 import type pg from 'pg';
 import { connecter, deconnecter, pilotageReel, type Dependances } from '../cli/linkedin.js';
 import {
@@ -43,6 +43,7 @@ export interface OptionsTraitement {
   deconnecter?: (ctx: Contexte, d: Dependances) => Promise<number>;
   dependances?: (demandeId: string, secrets: { identifiant: string; motDePasse: string }, pool: pg.Pool) => DependancesWeb;
   bloquer?: (ctx: Contexte, motif: 'revoquee') => Promise<void>;
+  desactiver?: (ctx: Contexte) => Promise<number>;
   env?: Record<string, string | undefined>;
 }
 
@@ -100,6 +101,8 @@ async function revoquerSiAnnuleeTropTard(
     const r = await pool.query<{ statut: string }>(SQL_LIRE_ISSUE, [demandeId]);
     if (r.rows[0]?.statut === 'reussi') return;
     await (options.bloquer ?? bloquerSessionLinkedIn)(ctx, 'revoquee');
+    // Invariant « session active ⇔ expéditeur actif » : comme `connecter` et `deconnecter`, on désactive aussi l'expéditeur.
+    await (options.desactiver ?? desactiverExpediteurLinkedIn)(ctx);
     console.error('[traiter-connexion] annulation tardive : session révoquée');
   } catch (e) {
     console.error(`[traiter-connexion] révocation impossible (${nomErreur(e)})`);
@@ -135,9 +138,17 @@ async function conduireConnexion(
     console.error('[traiter-connexion] message ignoré (cette demande est déjà conduite)');
     return;
   }
+  // L'accusé de réception d'abord : `pg_notify` diffuse à TOUS les écouteurs, un seul worker doit piloter. Exactement
+  // une ligne : la demande était `demandee` et sans accusé. Sinon un autre worker l'a prise, ou elle a été annulée
+  // ou close entre-temps : on ne touche à rien (ni état, ni motif), la demande n'est pas la nôtre.
+  const accuse = await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
+  if (accuse.rowCount !== 1) {
+    console.error('[traiter-connexion] message ignoré (demande non accusée par ce worker)');
+    return;
+  }
   if (enCours.size > 0) {
-    // Un seul navigateur par processus. L'écran doit le savoir : sans état écrit, cette demande finirait en
-    // `worker_absent` alors que le worker est bien là.
+    // Un seul navigateur par processus. La demande est à nous (accusée) : l'écran doit le savoir, sans état écrit
+    // elle finirait en `worker_absent` alors que le worker est bien là.
     console.error('[traiter-connexion] message ignoré (une autre connexion est déjà conduite par ce worker)');
     await pool
       .query(SQL_CLORE_SI_EN_COURS, [demandeId, 'verrou_occupe'])
@@ -152,10 +163,6 @@ async function conduireConnexion(
   let codeRetour: number | null = null;
   let ctxConnexion: Contexte | null = null;
   try {
-    // Exactement une ligne : la demande était `demandee` et sans accusé. Sinon elle a été annulée ou close
-    // entre-temps (course avec la lecture de l'écran) : on ne pilote rien.
-    const accuse = await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
-    if (accuse.rowCount !== 1) throw new ErreurDemandeInterrompue();
     ctxConnexion = await dependances.contexte();
     codeRetour = await (options.connecter ?? connecter)(ctxConnexion, dependances);
   } catch (e) {

@@ -1,8 +1,8 @@
 /**
  * Chiffrement AES-256-GCM de la clé d'instance (`ENCRYPTION_KEY`), Web Crypto.
  *
- * Source unique : `@jay-reach/providers` (token-encryption) la réexporte, `packages/core`
- * ne pouvant pas dépendre de lui. La clé est un secret de 32 octets, en hex (64 car.) ou
+ * Source unique (le réexport de `@jay-reach/providers` a été retiré : son import ne résolvait pas à
+ * l'exécution, l'export map pointant vers le `.ts`). La clé est un secret de 32 octets, en hex (64 car.) ou
  * en base64 (44 car.). Chaque chiffrement tire un IV neuf ; le résultat est le base64 de
  * `IV || chiffré`.
  *

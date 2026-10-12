@@ -141,6 +141,15 @@ describe('traiterMessageConnexion : cas limites', () => {
     expect(connecter).not.toHaveBeenCalled();
   });
 
+  it('un worker qui n’obtient pas l’accusé ne touche à rien : ni clôture, ni journal, ni déconnexion', async () => {
+    const { pool, appels } = fauxPool(true, ORG, 0);
+    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d });
+    const sqls = appels.map((a) => a.sql);
+    expect(sqls).not.toContain(SQL_CLORE_SI_EN_COURS);
+    expect(sqls).not.toContain(SQL_LIRE_ISSUE);
+    expect(sqls).not.toContain(SQL_LIRE_DECONNEXION);
+  });
+
   it('une seconde demande pendant une connexion est close en verrou_occupe, pas laissée sans état', async () => {
     const { pool, appels } = fauxPool();
     let liberer: () => void = () => undefined;
@@ -157,15 +166,19 @@ describe('traiterMessageConnexion : cas limites', () => {
   it('une réussite ignorée parce que la demande a été annulée révoque la session', async () => {
     const { pool } = fauxPool(true, ORG, 1, 'echec');
     const bloquer = vi.fn(async () => undefined);
-    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer });
+    const desactiver = vi.fn(async () => 1);
+    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer, desactiver });
     expect(bloquer).toHaveBeenCalledWith(expect.anything(), 'revoquee');
+    expect(desactiver).toHaveBeenCalledTimes(1);
   });
 
   it('une réussite enregistrée ne révoque rien, ni un échec ordinaire', async () => {
     const bloquer = vi.fn(async () => undefined);
-    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'reussi').pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer });
-    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'echec').pool, message, { connecter: async () => 1, dependances: () => fausseDependances().d, bloquer });
+    const desactiver = vi.fn(async () => 1);
+    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'reussi').pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer, desactiver });
+    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'echec').pool, message, { connecter: async () => 1, dependances: () => fausseDependances().d, bloquer, desactiver });
     expect(bloquer).not.toHaveBeenCalled();
+    expect(desactiver).not.toHaveBeenCalled();
   });
 });
 

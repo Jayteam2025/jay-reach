@@ -9,8 +9,13 @@ const EN_COURS = "('demandee','navigateur_ouvert','code_demande')";
 export const SQL_VERIFIER_EN_COURS = `select (statut in ${EN_COURS} and expires_at > now()) as ok
          from linkedin_connexion_demandes where id = $1`;
 
-/** $1 = id, $2 = étape, $3 = statut, $4 = motif ; null = ne pas toucher. Ne touche qu'une demande en cours. */
+/**
+ * $1 = id, $2 = étape, $3 = statut, $4 = motif ; null = ne pas toucher. $5 = délai en millisecondes : s'il est
+ * fourni, `expires_at` devient l'échéance RÉELLE de la saisie du code (maintenant + délai), que l'écran annonce.
+ * Ne touche qu'une demande en cours.
+ */
 export const SQL_ECRIRE_ETAT = `update linkedin_connexion_demandes
           set etape = coalesce($2, etape), statut = coalesce($3, statut), motif = coalesce($4, motif),
+              expires_at = case when $5::int is null then expires_at else now() + $5::int * interval '1 millisecond' end,
               updated_at = now()
         where id = $1 and statut in ${EN_COURS}`;

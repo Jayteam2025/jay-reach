@@ -39,7 +39,7 @@ psql < "$DIR/test/pg-verify/grants.sql" >/dev/null || { echo "$T GRANTS_FAIL"; f
 PRELUDE="$(node --input-type=module -e "
 import { SQL_VERIFIER_EN_COURS as v, SQL_ECRIRE_ETAT as e } from '$DIR/apps/worker/src/linkedin/dependances-web-sql.ts';
 console.log('prepare verifier(uuid) as ' + v + ';');
-console.log('prepare ecrire(uuid, text, text, text) as ' + e + ';');
+console.log('prepare ecrire(uuid, text, text, text, int) as ' + e + ';');
 ")" || { echo "$T PRELUDE_FAIL"; fin; exit 9; }
 OUT="$({ echo "$PRELUDE"; cat "$DIR/test/pg-verify/linkedin-connexion-web.sql"; } | psql 2>&1)"
 RC=$?

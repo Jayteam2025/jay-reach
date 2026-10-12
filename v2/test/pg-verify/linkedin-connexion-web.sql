@@ -57,11 +57,11 @@ execute verifier('00000000-0000-0000-0000-000000000000');
 do $$ begin raise notice 'OK 1b verifier : id inconnu sans ligne (traité comme interrompu par le code)'; end $$;
 
 -- 2. ecrire pose les cinq étapes autorisées (déclarées par la contrainte), une par une.
-create or replace function pg_temp.ecrire(n text, e text, s text, m text) returns void language plpgsql as $$
+create or replace function pg_temp.ecrire(n text, e text, s text, m text, d int default null) returns void language plpgsql as $$
 declare i uuid;
 begin
   select id into i from cas where nom = n;
-  execute format('execute ecrire(%L, %L, %L, %L)', i, e, s, m);
+  execute format('execute ecrire(%L, %L, %L, %L, %L)', i, e, s, m, d);
 end $$;
 -- format %L rend NULL (sans guillemets) pour null.
 do $$
@@ -113,5 +113,23 @@ begin
                   where c.nom = 'demandee' and l.statut = 'echec' and l.motif = 'defi')
     then raise exception 'FAIL 5 : echec + motif non posés'; end if;
   raise notice 'OK 5 ecrire : demande close non réécrite, echec + motif posés';
+end $$;
+-- 6. Le délai fourni pose l'échéance RÉELLE du code (maintenant + délai) ; sans délai, expires_at ne bouge pas.
+do $$
+declare avant timestamptz; apres timestamptz;
+begin
+  select l.expires_at into avant from linkedin_connexion_demandes l join cas c on c.id = l.id where c.nom = 'ouvert';
+  perform pg_temp.ecrire('ouvert', 'identifiants_transmis', null, null);
+  select l.expires_at into apres from linkedin_connexion_demandes l join cas c on c.id = l.id where c.nom = 'ouvert';
+  if apres is distinct from avant then raise exception 'FAIL 6 : expires_at a bougé sans délai'; end if;
+  perform pg_temp.ecrire('ouvert', 'code_demande', 'code_demande', null, 300000);
+  select l.expires_at into apres from linkedin_connexion_demandes l join cas c on c.id = l.id where c.nom = 'ouvert';
+  if apres not between now() + interval '299 seconds' and now() + interval '301 seconds'
+    then raise exception 'FAIL 6 : expires_at % ne vaut pas maintenant + 5 min', apres; end if;
+  select l.expires_at into avant from linkedin_connexion_demandes l join cas c on c.id = l.id where c.nom = 'echec';
+  perform pg_temp.ecrire('echec', null, null, null, 300000);
+  if (select l.expires_at from linkedin_connexion_demandes l join cas c on c.id = l.id where c.nom = 'echec') is distinct from avant
+    then raise exception 'FAIL 6 : une demande close a vu son échéance réécrite'; end if;
+  raise notice 'OK 6 ecrire : le délai pose expires_at = maintenant + 5 min, sans délai rien ne bouge, demande close intacte';
 end $$;
 select 'VERIFY_OK';
