@@ -8,8 +8,20 @@
  * déjà posé par `composants.css`).
  */
 import { useState, useTransition } from 'react';
-import { Bouton, Champ } from '../ui';
+import { BarreProgression, Bouton, Champ } from '../ui';
 import { actionEcrireReglage } from '../../app/actions/plafonds';
+
+/**
+ * Ce qui a été consommé aujourd'hui sur ce plafond. Composé côté serveur, comme `modifie` :
+ * ce composant ne compte rien et ne formate rien. `null` pour un réglage qui n'est pas un
+ * volume — un score minimum ou un âge d'offre ne se consomment pas.
+ */
+export interface ConsommationLigne {
+  /** Déjà composé (« 12 sur 300 », « sans limite »). */
+  texte: string;
+  pourcentage: number;
+  ton: 'normal' | 'attention' | 'erreur';
+}
 
 export interface LignePlafond {
   cle: string;
@@ -23,6 +35,14 @@ export interface LignePlafond {
   modifie: string;
   type: 'nombre' | 'texte';
   suffixe?: string;
+  /** `null` quand le réglage n'est pas un volume consommable. */
+  consommation?: ConsommationLigne | null;
+  /**
+   * Ce plafond vaut zéro et arrête donc la production. Distingué à l'œil parce que c'est le
+   * réglage qui a coupé l'enrichissement pendant des jours sans que l'écran le dise — c'est aussi
+   * ce que l'alerte `plafond_a_zero` du tableau de bord signale.
+   */
+  arrete?: boolean;
 }
 
 export interface TablePlafondsProps {
@@ -30,6 +50,7 @@ export interface TablePlafondsProps {
   peutModifier: boolean;
   libelles: {
     colReglage: string;
+    colAujourdhui: string;
     colValeur: string;
     colDefaut: string;
     colRepli: string;
@@ -39,6 +60,8 @@ export interface TablePlafondsProps {
     annuler: string;
     aucunRepli: string;
     erreurNombre: string;
+    sansObjet: string;
+    arrete: string;
   };
 }
 
@@ -82,6 +105,9 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
         <thead>
           <tr>
             <th>{libelles.colReglage}</th>
+            {/* La consommation passe devant le réglage : c'est elle qu'on vient lire, et un
+                plafond seul ne dit jamais s'il est sur le point de bloquer. */}
+            <th>{libelles.colAujourdhui}</th>
             <th>{libelles.colValeur}</th>
             <th className="masquable">{libelles.colDefaut}</th>
             <th className="masquable">{libelles.colRepli}</th>
@@ -100,9 +126,21 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                   </small>
                 </td>
                 <td>
+                  {ligne.consommation ? (
+                    <>
+                      <b style={{ fontSize: 15 }}>{ligne.consommation.texte}</b>
+                      <BarreProgression valeur={ligne.consommation.pourcentage} ton={ligne.consommation.ton} />
+                    </>
+                  ) : (
+                    <span className="jr-secondaire" style={{ fontSize: 12.5 }}>
+                      {libelles.sansObjet}
+                    </span>
+                  )}
+                </td>
+                <td>
                   {!enEdition ? (
                     <>
-                      <b style={{ fontSize: 15 }}>
+                      <b style={{ fontSize: 15 }} className={ligne.arrete ? 'jr-valeur-arretee' : undefined}>
                         {ligne.valeur}
                         {ligne.suffixe ? ` ${ligne.suffixe}` : ''}
                       </b>
@@ -115,6 +153,11 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                         >
                           {libelles.modifier}
                         </button>
+                      )}
+                      {/* Après « Modifier », pas avant : `jr-etat-detail` est un bloc, et le
+                          placer plus haut rejetait le lien d'édition sur une ligne à lui. */}
+                      {ligne.arrete && (
+                        <small className="jr-valeur-arretee jr-etat-detail">{libelles.arrete}</small>
                       )}
                     </>
                   ) : (

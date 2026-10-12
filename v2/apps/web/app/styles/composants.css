@@ -697,3 +697,7 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
   .jr-rythmes { grid-template-columns: minmax(0, 1fr); }
   .jr-rythme-pied { flex-direction: column; align-items: stretch; gap: 10px; }
 }
+
+/* Un plafond de production à zéro arrête la machine sans rien dire : il se voit, et il se dit.
+   Même situation que l'alerte `plafond_a_zero` du tableau de bord, même ton. */
+.jr-valeur-arretee { color: var(--jr-attention); }

@@ -61,7 +61,7 @@ describe('le choix du rythme d’envoi', () => {
     expect(html).toContain(libelles.surMesureTitre);
     expect(html).toContain(libelles.surMesureTexte);
     // Sinon l'opérateur voit trois cases vides et cherche l'explication après avoir cliqué.
-    expect(html.indexOf(libelles.surMesureTexte)).toBeLessThan(html.indexOf(crans[0].nom));
+    expect(html.indexOf(libelles.surMesureTexte)).toBeLessThan(html.indexOf(l.crans.prudent));
     expect(html).not.toContain('checked');
     // Et surtout : ne jamais dire qu'un cran s'applique quand aucun ne correspond.
     expect(html).not.toContain(libelles.applique);

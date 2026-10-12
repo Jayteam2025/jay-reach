@@ -1051,7 +1051,8 @@
         "disconnected": "Déconnectée de SalesBlink",
         "healthUnavailable": "État SalesBlink indisponible",
         "notLinked": "Non reliée à SalesBlink",
-        "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}"
+        "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}",
+        "stopped": "Quota à zéro : cette boîte n'enverra rien"
       },
       "drawer": {
         "title": "Modifier {identite}",
@@ -1155,7 +1156,10 @@
         "jamaisModifie": "jamais",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modifié {date}} other {Modifié le {date}}}",
-        "erreurNombre": "Entrez un nombre entier positif ou nul."
+        "erreurNombre": "Entrez un nombre entier positif ou nul.",
+        "colAujourdhui": "Aujourd'hui",
+        "sansObjet": "Ne se consomme pas",
+        "arrete": "Arrêté : plus rien ne se produit"
       },
       "lignes": {
         "scoringParJour": {

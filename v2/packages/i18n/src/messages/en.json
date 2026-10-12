@@ -1051,7 +1051,8 @@
         "disconnected": "Disconnected from SalesBlink",
         "healthUnavailable": "SalesBlink status unavailable",
         "notLinked": "Not linked to SalesBlink",
-        "todayValue": "{etat, select, pause {{utilise} · on hold} sansLimite {{utilise} · no cap} other {{utilise} / {plafond}}}"
+        "todayValue": "{etat, select, pause {{utilise} · on hold} sansLimite {{utilise} · no cap} other {{utilise} / {plafond}}}",
+        "stopped": "Quota at zero: this mailbox will send nothing"
       },
       "drawer": {
         "title": "Edit {identite}",
@@ -1155,7 +1156,10 @@
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
-        "erreurNombre": "Enter a whole number, zero or positive."
+        "erreurNombre": "Enter a whole number, zero or positive.",
+        "colAujourdhui": "Today",
+        "sansObjet": "Not a volume",
+        "arrete": "Stopped: nothing is produced"
       },
       "lignes": {
         "scoringParJour": {

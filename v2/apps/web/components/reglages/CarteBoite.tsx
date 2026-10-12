@@ -8,7 +8,7 @@ import type { TuileLogoMarque } from '../ui';
 import { actionModifierBoite } from '../../app/actions/senders';
 import { parametresValeurConsommation } from '../../lib/plafonds-affichage';
 import { libelleJoursEnvoi } from '../../lib/jours-envoi';
-import { puceEtatBoite } from './boite-affichage';
+import { boiteArretee, puceEtatBoite } from './boite-affichage';
 import { TiroirBoite } from './TiroirBoite';
 
 const MARQUE_TUILE: Record<Boite['marque'], TuileLogoMarque> = {
@@ -98,9 +98,12 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
               nullable (aucune limite réglée, le moteur envoie sans plafond) et peut valoir zéro
               (pause). Cette carte affichait « 0 / ∞ », un symbole en dur hors du catalogue de
               libellés, là où les trois autres écrans disent « sans limite ». */}
-          <b style={{ fontSize: 22 }}>
+          <b style={{ fontSize: 22 }} className={boiteArretee(boite) ? 'jr-valeur-arretee' : undefined}>
             {t('box.todayValue', parametresValeurConsommation(boite.usageDuJour, boite.quotas.jour))}
           </b>
+          {/* Une boîte active dont le quota vaut zéro n'enverra rien, et sa puce verte dit le
+              contraire : c'est le réglage qu'il faut nommer, pas l'état qu'il contredit. */}
+          {boiteArretee(boite) && <small className="jr-valeur-arretee jr-etat-detail">{t('box.stopped')}</small>}
           {boite.quotas.jour !== null && boite.quotas.jour > 0 && (
             <BarreProgression valeur={(boite.usageDuJour / boite.quotas.jour) * 100} />
           )}

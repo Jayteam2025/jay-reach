@@ -1051,7 +1051,8 @@
         "disconnected": "Losgekoppeld van SalesBlink",
         "healthUnavailable": "SalesBlink-status niet beschikbaar",
         "notLinked": "Niet gekoppeld aan SalesBlink",
-        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}"
+        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}",
+        "stopped": "Quotum op nul: deze mailbox verstuurt niets"
       },
       "drawer": {
         "title": "{identite} bewerken",
@@ -1155,7 +1156,10 @@
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
-        "erreurNombre": "Voer een geheel getal in, nul of positief."
+        "erreurNombre": "Voer een geheel getal in, nul of positief.",
+        "colAujourdhui": "Vandaag",
+        "sansObjet": "Geen volume",
+        "arrete": "Gestopt: er wordt niets meer geproduceerd"
       },
       "lignes": {
         "scoringParJour": {
