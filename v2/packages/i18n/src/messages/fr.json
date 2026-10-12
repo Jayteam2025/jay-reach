@@ -1648,7 +1648,29 @@
           "enregistrer": "Enregistrer",
           "erreurOrdre": "L'heure de fin doit venir après l'heure de début.",
           "erreurJours": "Choisissez au moins un jour."
-        }
+        },
+        "conso": {
+          "invitations": "Invitations cette semaine",
+          "messages": "Messages cette semaine",
+          "surPlafond": "sur {plafond}"
+        },
+        "crans": {
+          "prudent": "Prudent",
+          "normal": "Normal",
+          "soutenu": "Soutenu",
+          "invitations": "Invitations",
+          "messages": "Messages",
+          "horaires": "Horaires"
+        },
+        "applique": "appliqué",
+        "appliquer": "Appliquer",
+        "jours": "Du lundi au vendredi. Le moteur espace les envois dans la plage horaire.",
+        "surMesure": {
+          "titre": "Sur mesure.",
+          "texte": "Vos réglages ne correspondent à aucun rythme. Choisir un rythme les remplacera."
+        },
+        "avances": "Réglages avancés",
+        "avancesLead": "Les cinq valeurs qu'un rythme pose, modifiables une par une. En changer une fait passer le rythme en sur mesure."
       },
       "collecteAuto": {
         "titre": "Collecte automatique",
@@ -1673,7 +1695,9 @@
           "usage": "Nouvelles personnes enregistrées par passage ; au-delà, le passage s’arrête"
         },
         "enregistrer": "Enregistrer",
-        "erreurNombre": "Saisissez un nombre entier."
+        "erreurNombre": "Saisissez un nombre entier.",
+        "avances": "Réglages avancés",
+        "avancesLead": "Les trois plafonds de la collecte, modifiables un par un."
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",

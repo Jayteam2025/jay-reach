@@ -1648,7 +1648,29 @@
           "enregistrer": "Save",
           "erreurOrdre": "The end hour must come after the start hour.",
           "erreurJours": "Pick at least one day."
-        }
+        },
+        "conso": {
+          "invitations": "Invitations this week",
+          "messages": "Messages this week",
+          "surPlafond": "of {plafond}"
+        },
+        "crans": {
+          "prudent": "Cautious",
+          "normal": "Normal",
+          "soutenu": "Brisk",
+          "invitations": "Invitations",
+          "messages": "Messages",
+          "horaires": "Hours"
+        },
+        "applique": "in use",
+        "appliquer": "Apply",
+        "jours": "Monday to Friday. The engine spaces sends across the time window.",
+        "surMesure": {
+          "titre": "Custom.",
+          "texte": "Your settings match none of these rhythms. Choosing one will replace them."
+        },
+        "avances": "Advanced settings",
+        "avancesLead": "The five values a rhythm sets, editable one by one. Changing any of them switches the rhythm to custom."
       },
       "collecteAuto": {
         "titre": "Automatic collection",
@@ -1673,7 +1695,9 @@
           "usage": "New people saved per run; beyond that, the run stops"
         },
         "enregistrer": "Save",
-        "erreurNombre": "Enter a whole number."
+        "erreurNombre": "Enter a whole number.",
+        "avances": "Advanced settings",
+        "avancesLead": "The three collection caps, editable one by one."
       },
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",

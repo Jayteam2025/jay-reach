@@ -643,3 +643,57 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-avertissement { background: var(--jr-attention-doux); border: 1px solid color-mix(in srgb, var(--jr-attention) 30%, transparent); border-radius: var(--jr-rayon); padding: 15px 18px; }
 .jr-avertissement p { margin: 0; font-size: var(--jr-petit); line-height: 1.6; max-width: 72ch; }
 .jr-avertissement p + p { margin-top: 7px; }
+
+/* Rythme d'envoi LinkedIn : la consommation prend la tête de la carte, le choix vient ensuite,
+   les réglages fins descendent sous un repli (chantier « les réglages passent derrière »).
+   Le chiffre consommé est plus gros que le titre de la carte : c'est délibéré, c'est lui qu'on
+   vient lire. */
+.jr-conso { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 0 0 16px; }
+.jr-conso > div { min-width: 0; }
+.jr-conso b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
+.jr-conso b span { font-weight: 400; color: var(--jr-secondaire); font-size: 15px; }
+.jr-conso small { display: block; color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 2px 0 6px; }
+
+/* Trois cartes radio plutôt qu'un sélecteur segmenté : ce qui distingue les crans n'est pas leur
+   nom mais leurs chiffres, et il faut les voir avant de choisir. */
+.jr-rythmes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.jr-rythme { position: relative; display: block; border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 10px 12px 11px; cursor: pointer; background: var(--jr-surface); }
+.jr-rythme:hover { border-color: var(--jr-secondaire); }
+.jr-rythme:has(input:disabled) { cursor: default; }
+.jr-rythme:has(input:disabled):hover { border-color: var(--jr-filet); }
+/* Le bouton radio natif porte le groupe et le clavier ; il est masqué, pas supprimé — son focus
+   se rend sur le nom du cran, sans quoi la navigation au clavier deviendrait invisible. */
+.jr-rythme input { position: absolute; opacity: 0; width: 0; height: 0; }
+.jr-rythme input:focus-visible + .jr-rythme-nom { outline: 2px solid var(--jr-accent); outline-offset: 3px; border-radius: 3px; }
+.jr-rythme-nom { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-weight: 600; }
+.jr-rythme-nom em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--jr-accent); }
+.jr-rythme dl { margin: 7px 0 0; font-size: var(--jr-petit); color: var(--jr-secondaire); line-height: 1.5; }
+.jr-rythme dl div { display: flex; justify-content: space-between; gap: 8px; }
+.jr-rythme dt, .jr-rythme dd { margin: 0; }
+.jr-rythme dd { color: var(--jr-encre); }
+.jr-rythme.choisi { border-color: var(--jr-accent); background: var(--jr-accent-doux); }
+.jr-rythme-pied { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.jr-rythme-pied p { margin: 0; font-size: var(--jr-petit); color: var(--jr-secondaire); max-width: 56ch; }
+/* L'état « sur mesure » se dit AVANT les crans : annoncé après, l'opérateur voit d'abord trois
+   cases vides et cherche pourquoi. */
+.jr-rythme-tete { margin: 0 0 10px; font-size: var(--jr-petit); color: var(--jr-secondaire); max-width: 70ch; }
+.jr-rythme-tete b { color: var(--jr-encre); font-weight: 600; }
+
+/* Repli natif `<details>` : l'accessibilité et le clavier viennent avec, sans une ligne de script. */
+.jr-repli { margin-top: 16px; border-top: 1px solid var(--jr-filet); padding-top: 12px; }
+.jr-repli > summary { cursor: pointer; list-style: none; font-size: var(--jr-petit); font-weight: 500; color: var(--jr-secondaire); display: flex; align-items: center; gap: 6px; }
+.jr-repli > summary::-webkit-details-marker { display: none; }
+.jr-repli > summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-left: 2px; transition: transform .12s ease; }
+.jr-repli[open] > summary::before { transform: rotate(45deg) translate(-2px, -2px); }
+.jr-repli > summary:hover { color: var(--jr-encre); }
+.jr-repli-corps { padding-top: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jr-repli > summary::before { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .jr-conso { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .jr-rythmes { grid-template-columns: minmax(0, 1fr); }
+  .jr-rythme-pied { flex-direction: column; align-items: stretch; gap: 10px; }
+}
