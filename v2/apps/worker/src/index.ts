@@ -29,6 +29,9 @@ import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
+import { ecouterCanalConnexion } from './linkedin/ecoute-connexion.js';
+import { cloreDemandesOrphelines, reprendreDeconnexionsEnAttente, traiterMessageConnexion } from './linkedin/traiter-connexion.js';
+import { SQL_PURGER } from './linkedin/traiter-connexion-sql.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
 // ressent l'opérateur entre son clic et le départ de la collecte. La requête est
@@ -46,6 +49,13 @@ const RELEVE_SALESBLINK_POLL_MS = 60_000;
 
 /** Même raison que `RELEVE_SALESBLINK_POLL_MS` : `produire()` est trop lâche pour un `sync_interval_min` Graph par défaut de cinq minutes. */
 const RELEVE_GRAPH_POLL_MS = 60_000;
+
+/**
+ * Purge des demandes de connexion LinkedIn abandonnées : sans elle, une demande dont l'onglet a été fermé
+ * garderait la place de l'index unique, et plus aucune connexion ne pourrait être lancée. Une minute :
+ * l'expiration est de quinze, et la lecture de l'écran ferme déjà seule une demande sans worker.
+ */
+const CONNEXION_LINKEDIN_PURGE_POLL_MS = Number(process.env.LINKEDIN_CONNEXION_PURGE_POLL_MS ?? 60_000);
 
 /**
  * Cadence de la purge de rétention. Aucune urgence : la durée se compte en jours,
@@ -207,6 +217,31 @@ async function main(): Promise<void> {
     tourLinkedIn.unref();
   }
 
+  // La connexion du compte LinkedIn depuis l'écran : écoute du canal chiffré, et purge des demandes abandonnées.
+  let arreterEcouteConnexion: (() => void) | null = null;
+  let purgeConnexions: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1') {
+    // Avant l'écoute : une demande laissée en cours par le processus précédent n'a plus personne pour la conduire.
+    await cloreDemandesOrphelines(pool);
+    // Une déconnexion demandée et non aboutie (worker arrêté entre-temps) est rejouée : le message d'origine est perdu.
+    // AVANT l'écoute : aucune connexion ne peut encore être en cours, donc aucun navigateur à piétiner.
+    await reprendreDeconnexionsEnAttente(pool);
+    try {
+      arreterEcouteConnexion = await ecouterCanalConnexion(pool, (m) => traiterMessageConnexion(pool, m));
+    } catch (err: unknown) {
+      // Pas d'écoute : la connexion depuis l'écran se ferme d'elle-même en « worker absent », le reste du moteur tourne.
+      console.error(`[ecoute-connexion] démarrage impossible (${err instanceof Error ? err.name : 'erreur'})`);
+    }
+    const purgerConnexions = (): void => {
+      void pool.query(SQL_PURGER).catch((err: unknown) => {
+        console.error(`[connexion-linkedin] purge impossible (${err instanceof Error ? err.name : 'erreur'})`);
+      });
+    };
+    purgerConnexions();
+    purgeConnexions = setInterval(purgerConnexions, CONNEXION_LINKEDIN_PURGE_POLL_MS);
+    purgeConnexions.unref();
+  }
+
   const enfilerPurge = (): void => {
     void boss.send('retention.purge', {}).catch(() => {
       console.error('[retention-purge] enfilage impossible (retention_purge_enqueue)');
@@ -226,6 +261,8 @@ async function main(): Promise<void> {
     clearInterval(releveGraph);
     clearInterval(purge);
     if (envoiLinkedIn) clearInterval(envoiLinkedIn);
+    if (purgeConnexions) clearInterval(purgeConnexions);
+    arreterEcouteConnexion?.();
     await boss.stop({ graceful: true });
     process.exit(0);
   };

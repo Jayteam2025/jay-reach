@@ -34,6 +34,7 @@ function pilote(reponses: Record<string, Reponse>): {
       if (r instanceof Error) throw r;
       return r;
     },
+    effacerCookies: async () => undefined,
     fermer: async () => undefined,
   };
   return { p, requetes, pages };
@@ -451,3 +452,71 @@ describe('requete : GET et POST depuis la page', () => {
     expect(appels[2]?.init.headers['csrf-token']).toBeUndefined();
   });
 });
+describe('effacerCookies', () => {
+  const URL_CDP = 'http://127.0.0.1:9223';
+
+  /** `cookies` : ce que le navigateur rend APRES les deux effacements (le test simule un effacement raté). */
+  function piloteCDP(cookies: { domain: string }[], echec?: Error) {
+    const envoyes: [string, unknown][] = [];
+    const detach = vi.fn(async () => undefined);
+    const session = {
+      send: async (methode: string, params?: unknown) => {
+        envoyes.push([methode, params]);
+        if (echec && methode === 'Storage.clearDataForOrigin') throw echec;
+        return methode === 'Storage.getCookies' ? { cookies } : {};
+      },
+      detach,
+    };
+    const page = {
+      setDefaultTimeout: () => undefined,
+      setUserAgent: async () => undefined,
+      authenticate: async () => undefined,
+      close: async () => undefined,
+      createCDPSession: async () => session,
+    };
+    faux.connect.mockResolvedValue({
+      newPage: async () => page,
+      disconnect: async () => undefined,
+      version: async () => 'Chromium/129.0.6668.89',
+    });
+    return { envoyes, detach };
+  }
+
+  beforeEach(() => {
+    faux.connect.mockReset();
+    process.env.LINKEDIN_BROWSER_URL = URL_CDP;
+    delete process.env.LINKEDIN_PROXY_USER;
+    delete process.env.LINKEDIN_PROXY_PASSWORD;
+  });
+  afterEach(() => {
+    delete process.env.LINKEDIN_BROWSER_URL;
+  });
+
+  it('efface les cookies et le stockage de LinkedIn, relit, et rend la session CDP', async () => {
+    const { envoyes, detach } = piloteCDP([{ domain: '.exemple.org' }]);
+    const pilote = await ouvrirNavigateur();
+    await pilote.effacerCookies();
+    expect(envoyes.map(([m]) => m)).toEqual(['Network.clearBrowserCookies', 'Storage.clearDataForOrigin', 'Storage.getCookies']);
+    expect(envoyes[1]?.[1]).toEqual({ origin: 'https://www.linkedin.com', storageTypes: 'all' });
+    expect(detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('leve CookiesNonEfface quand un cookie LinkedIn reste, au lieu de se dire reussi', async () => {
+    const { detach } = piloteCDP([{ domain: '.www.linkedin.com' }]);
+    const pilote = await ouvrirNavigateur();
+    await expect(pilote.effacerCookies()).rejects.toMatchObject({ name: 'CookiesNonEfface' });
+    expect(detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('une panne CDP devient EffacementCookies, sans reprendre son message', async () => {
+    piloteCDP([], new Error('Protocol error http://u:mdp-secret@proxy'));
+    const pilote = await ouvrirNavigateur();
+    const e = await pilote.effacerCookies().then(
+      () => new Error('aucune erreur'),
+      (x: unknown) => x as Error,
+    );
+    expect(e.name).toBe('EffacementCookies');
+    expect(`${e.name}${e.message}`).not.toContain('mdp-secret');
+  });
+});
+

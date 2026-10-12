@@ -16,7 +16,13 @@ import {
   activerSessionLinkedIn,
   bloquerSessionLinkedIn,
   confirmerIpAttendue,
+  desactiverExpediteurLinkedIn,
+  enregistrerCompteLinkedIn,
   enregistrerObservationSortie,
+  garantirExpediteurLinkedIn,
+  IDENTITE_LINKEDIN_NON_LUE,
+  lireDeconnexionDemandeeLinkedIn,
+  solderDeconnexionLinkedIn,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
   type Contexte,
@@ -28,8 +34,18 @@ import { createPool } from '../db.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { demander, demanderMasque } from './saisie.js';
 import { ipDuProcessus } from '../linkedin/ip.js';
+import { lireCompteConnecte } from '../linkedin/envoi.js';
 // Type seul : effacé à la compilation. L'import réel du navigateur est dynamique (voir `dependancesReelles`).
 import type { Pilote } from '../linkedin/navigateur.js';
+
+/** Ce que la mécanique demande à l'opérateur ; chaque façade (terminal, écran) l'habille à sa façon. */
+export type Invite = 'identifiant' | 'motDePasse' | 'code';
+
+const LIBELLES: Record<Invite, string> = {
+  identifiant: 'Identifiant LinkedIn : ',
+  motDePasse: 'Mot de passe : ',
+  code: 'Code reçu de LinkedIn : ',
+};
 
 export interface Dependances {
   env: Record<string, string | undefined>;
@@ -41,8 +57,8 @@ export interface Dependances {
   releverTitulaire(pilote: Pilote, ip: string): Promise<Titulaire | null>;
   /** IP publique du processus worker, donc du VPS (voir `ip.ts`). */
   ipDuProcessus(): Promise<string>;
-  demander(invite: string): Promise<string>;
-  demanderMasque(invite: string): Promise<string>;
+  demander(invite: Invite): Promise<string>;
+  demanderMasque(invite: Invite): Promise<string>;
   pause(ms: number): Promise<void>;
 }
 
@@ -158,8 +174,8 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
   await pilote.aller(URL_CONNEXION);
   if (surLinkedIn(await pilote.url(), '/feed')) return { issue: 'connecte' };
 
-  const identifiant = await d.demander('Identifiant LinkedIn : ');
-  const motDePasse = await d.demanderMasque('Mot de passe : ');
+  const identifiant = await d.demander('identifiant');
+  const motDePasse = await d.demanderMasque('motDePasse');
   await pilote.saisir(SEL.identifiant, identifiant);
   await pilote.saisir(SEL.motDePasse, motDePasse);
   // Entrée depuis le champ soumet le formulaire : aucun clic de bouton, donc aucune dépendance à la langue.
@@ -174,7 +190,7 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
     if (surLinkedIn(url, '/feed')) return { issue: 'connecte' };
     if (surLinkedIn(url, '/checkpoint')) {
       if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
-        const code = await d.demanderMasque('Code reçu de LinkedIn : ');
+        const code = await d.demanderMasque('code');
         await pilote.saisir(SEL.code, code);
         await pilote.presserEntree(SEL.code);
         codeEnvoyeA = ecoule;
@@ -205,8 +221,22 @@ async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<b
   return true;
 }
 
-async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
+/**
+ * Connexion réussie : l'expéditeur LinkedIn existe, est actif, et il n'y en a qu'un (spec §9). Le
+ * compte est lu par `/me` ; à défaut, l'identité déjà connue de la session. LÈVE si la garantie échoue :
+ * l'appelant révoque alors la session, pour que « connecté » veuille toujours dire « expéditeur actif ».
+ */
+async function garantirExpediteur(ctx: Contexte, pilote: Pilote, connue: string | null): Promise<void> {
+  const compte = await lireCompteConnecte(pilote);
+  const identite = compte?.identifiantPublic ?? connue ?? IDENTITE_LINKEDIN_NON_LUE;
+  if (compte) await enregistrerCompteLinkedIn(ctx, compte);
+  await garantirExpediteurLinkedIn(ctx, identite, `${identite} (LinkedIn)`);
+}
+
+export async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   const session = await lireSessionLinkedIn(ctx);
+  // Lue AVANT tout : seule une déconnexion demandée avant cette connexion est périmée par elle.
+  const intentionDeconnexion = await lireDeconnexionDemandeeLinkedIn(ctx);
   const proprietaire = `cli-${process.pid}`;
   const pilote = await d.ouvrirNavigateur();
   let verrouPris = false;
@@ -237,6 +267,19 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
     if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
       await activerSessionLinkedIn(ctx, session?.ipAttendue ?? sortie.ip);
+      try {
+        await garantirExpediteur(ctx, pilote, session?.compteIdentifiant ?? null);
+      } catch (e) {
+        // Une session active sans expéditeur actif n'enverrait rien et ne dirait pas pourquoi : on la révoque.
+        await bloquerSessionLinkedIn(ctx, 'revoquee');
+        d.ecrire(`Expéditeur LinkedIn non garanti (${typeErreur(e)}) : session révoquée, reconnecter le compte.`);
+        return 1;
+      }
+      // La dernière volonté exprimée est cette reconnexion, ABOUTIE : sans cela, le prochain démarrage du worker
+      // rejouerait la déconnexion demandée avant elle et couperait un compte que personne ne veut couper. Une
+      // connexion qui échoue ne solde rien (la session déjà active resterait sinon active, sans que personne
+      // ait annulé la déconnexion) ; une demande plus récente que la lecture du début survit.
+      if (intentionDeconnexion) await solderDeconnexionLinkedIn(ctx, intentionDeconnexion);
       d.ecrire('Session LinkedIn active.');
       return 0;
     }
@@ -256,20 +299,42 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   }
 }
 
-async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
+export async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
+  // Le succès se définit par l'EFFACEMENT des cookies, pas par la navigation : si `/m/logout/` expire ou reste
+  // bloquée, le profil garde pourtant le compte, et l'annoncer déconnecté serait le pire mensonge possible.
+  let effacee = false;
+  let pilote: Pilote | null = null;
   try {
-    const pilote = await d.ouvrirNavigateur();
+    pilote = await d.ouvrirNavigateur();
+  } catch (e) {
+    d.ecrire(`Navigateur injoignable (${typeErreur(e)}) : la session est révoquée côté Jay Reach seulement.`);
+  }
+  if (pilote) {
     try {
-      await pilote.aller(URL_DECONNEXION);
+      try {
+        await pilote.aller(URL_DECONNEXION);
+      } catch (e) {
+        d.ecrire(`Page de déconnexion non atteinte (${typeErreur(e)}) : effacement des cookies tenté quand même.`);
+      }
+      // Tenté quoi qu'il arrive à la navigation : le conteneur garde son profil, donc sans cet effacement le
+      // compte déconnecté resterait joignable pour le suivant.
+      try {
+        await pilote.effacerCookies();
+        effacee = true;
+      } catch (e) {
+        d.ecrire(`Cookies du navigateur non effacés (${typeErreur(e)}).`);
+      }
     } finally {
       await pilote.fermer().catch(() => undefined);
     }
-  } catch (e) {
-    d.ecrire(
-      `Navigateur injoignable (${typeErreur(e)}) : la session est révoquée côté Jay Reach seulement.`,
-    );
   }
+  // Révoquée et expéditeur désactivé même si le navigateur a échoué : rien ne doit plus envoyer.
   await bloquerSessionLinkedIn(ctx, 'revoquee');
+  await desactiverExpediteurLinkedIn(ctx);
+  if (!effacee) {
+    d.ecrire('Session révoquée côté Jay Reach, mais le compte reste joignable dans le navigateur : déconnexion NON aboutie.');
+    return 1;
+  }
   d.ecrire('Session LinkedIn révoquée.');
   return 0;
 }
@@ -352,6 +417,17 @@ async function organisationCourante(
   return res.rows[0]!.id;
 }
 
+/** Navigateur et relevés réels, partagés par le terminal et le chemin web. */
+export const pilotageReel = {
+  // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
+  ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
+  releverSortie: async (p: Pilote) => (await import('../linkedin/navigateur.js')).releverSortie(p),
+  releverTitulaire: async (p: Pilote, ip: string) =>
+    (await import('../linkedin/navigateur.js')).releverTitulaire(p, ip),
+  ipDuProcessus,
+  pause: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+};
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   const etat: { pool: ReturnType<typeof createPool> | null } = { pool: null };
@@ -364,14 +440,9 @@ async function main(): Promise<void> {
       const organisationId = await organisationCourante(pool, process.env);
       return { ex: pool, organisationId, utilisateurId: null, role: null };
     },
-    // Import dynamique : puppeteer-core ne se charge que si une commande ouvre le navigateur.
-    ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
-    releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
-    releverTitulaire: async (p, ip) => (await import('../linkedin/navigateur.js')).releverTitulaire(p, ip),
-    ipDuProcessus,
-    demander,
-    demanderMasque,
-    pause: (ms) => new Promise((r) => setTimeout(r, ms)),
+    ...pilotageReel,
+    demander: (i) => demander(LIBELLES[i]),
+    demanderMasque: (i) => demanderMasque(LIBELLES[i]),
   };
   const code = await executerCommande(process.argv.slice(2), d);
   await etat.pool?.end();

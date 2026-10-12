@@ -18,6 +18,8 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { fuseauDeLOrganisation } from './plafonds.js';
+import { dansUneTransaction } from '../transaction.js';
+import { ecrireEvenement } from '../journal.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from '../linkedin/reglages-envoi.js';
 
 // ---------------------------------------------------------------------------
@@ -556,6 +558,7 @@ async function synchroniserExpediteurLinkedIn(
 ): Promise<void> {
   const businessHours = JSON.stringify({ startHour: reglages.debut, endHour: reglages.fin, days: reglages.jours });
 
+  try {
   await ctx.ex.query(
     `insert into senders /* jr:expediteurs_linkedin_sync */
        (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone,
@@ -578,6 +581,143 @@ async function synchroniserExpediteurLinkedIn(
       compteId,
     ],
   );
+  } catch (e) {
+    // L'index `senders_un_linkedin_actif_par_organisation` refuse une seconde ligne active : deux lignes
+    // actives pour un même compte réel doubleraient les plafonds. Mieux vaut échouer bruyamment.
+    if ((e as { code?: string }).code === '23505' && /senders_un_linkedin_actif/.test(String((e as { constraint?: string }).constraint ?? ''))) {
+      throw new Error(
+        'Un expéditeur LinkedIn est déjà actif pour cette organisation : en activer un second doublerait les plafonds d’envoi.',
+      );
+    }
+    throw e;
+  }
+}
+
+/**
+ * Quota journalier d'une ligne LinkedIn créée alors que l'organisation n'a encore jamais
+ * enregistré de réglage : la valeur par défaut de `linkedin_settings.daily_cap`. Jamais `null` :
+ * un quota nul se lit « sans plafond » côté séquenceur.
+ */
+const QUOTA_JOUR_LINKEDIN_PAR_DEFAUT = 25;
+
+/** Identité de repli quand le compte connecté n'a pas pu être lu : ni vraie identité, ni motif d'audit de changement de compte. */
+export const IDENTITE_LINKEDIN_NON_LUE = 'compte-non-lu';
+
+/**
+ * Garantit qu'il existe UNE ligne `senders` de genre `linkedin` active pour l'organisation, et une
+ * seule, portant l'identité du compte réellement connecté. Rend son identifiant.
+ *
+ * - une ou plusieurs lignes existent : la PLUS ANCIENNE est reprise (`identity`, `display_name`,
+ *   `is_active = true`) et toutes les autres sont désactivées ;
+ * - aucune : une ligne est créée, quotas et fenêtre d'envoi lus dans `linkedin_settings`.
+ *
+ * Pourquoi reprendre plutôt que créer : `resolveSender` lie chaque contact à vie à l'expéditeur qui
+ * lui a écrit le premier, et les plafonds se comptent PAR LIGNE. Une ligne neuve orphelinerait les
+ * contacts déjà liés ; deux lignes actives pour un même compte réel feraient envoyer le double du
+ * plafond au même compte, donc le feraient restreindre par LinkedIn.
+ *
+ * Trois protections qui se complètent :
+ *  - un verrou de transaction par organisation (deux appels simultanés sur une organisation sans
+ *    ligne verraient chacun « aucune ligne » et créeraient chacun la leur) ;
+ *  - les autres lignes sont désactivées AVANT que la cible soit activée : l'index unique partiel
+ *    `senders_un_linkedin_actif_par_organisation` (migration 20261012160000) refuse deux lignes
+ *    actives à tout instant, y compris au milieu de cette fonction ;
+ *  - cet index est aussi ce qui arrête l'ancien chemin (`synchroniserExpediteurLinkedIn`, extension).
+ *
+ * Changement de compte : l'instance ne tient qu'UNE session LinkedIn, l'expéditeur LinkedIn de
+ * l'organisation est donc un singleton de fait ; quand le compte connecté n'est plus celui que la
+ * ligne portait (Alexandre remplace JB), la ligne est gardée (les contacts liés restent liés) et le
+ * basculement est consigné au journal d'audit, anciennes et nouvelles identités publiques, sans secret.
+ *
+ * Pas de contrôle de rôle : appelée par le worker (contexte sans rôle) à l'issue d'une connexion
+ * déjà autorisée en amont par `demanderConnexion`.
+ */
+export async function garantirExpediteurLinkedIn(ctx: Contexte, identite: string, nomAffiche: string): Promise<string> {
+  return dansUneTransaction(ctx.ex, async (tx) => {
+    await tx.query('select pg_advisory_xact_lock(hashtext($1)) /* jr:expediteur_linkedin_verrou */', [
+      `expediteur_linkedin:${ctx.organisationId}`,
+    ]);
+    const cible = (
+      await tx.query<{ id: string; identity: string }>(
+        `select id, identity from senders /* jr:expediteur_linkedin_cible */
+          where organization_id = $1 and kind = 'linkedin'
+          order by created_at asc, id asc
+          limit 1`,
+        [ctx.organisationId],
+      )
+    ).rows[0];
+
+    await tx.query(
+      `update senders set is_active = false /* jr:expediteur_linkedin_doublons */
+        where organization_id = $1 and kind = 'linkedin' and is_active
+          and id is distinct from $2::uuid`,
+      [ctx.organisationId, cible?.id ?? null],
+    );
+
+    if (cible) {
+      await tx.query(
+        `update senders set identity = $2, display_name = $3, is_active = true /* jr:expediteur_linkedin_reprendre */
+          where id = $1`,
+        [cible.id, identite, nomAffiche],
+      );
+      if (cible.identity !== identite && cible.identity !== IDENTITE_LINKEDIN_NON_LUE && identite !== IDENTITE_LINKEDIN_NON_LUE) {
+        await ecrireEvenement(tx, {
+          organisationId: ctx.organisationId,
+          entityType: 'sender',
+          entityId: cible.id,
+          action: 'linkedin.expediteur_compte_change',
+          actorId: ctx.utilisateurId,
+          diff: {
+            libelle: 'Le compte LinkedIn de l’expéditeur a changé',
+            ancienneIdentite: cible.identity,
+            nouvelleIdentite: identite,
+          },
+        });
+      }
+      return cible.id;
+    }
+
+    const cree = await tx.query<{ id: string }>(
+      `insert into senders /* jr:expediteur_linkedin_creer */
+         (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone, is_active, provider_id)
+       select $1, 'linkedin', $2, $3,
+              coalesce(ls.daily_cap, $4::int),
+              jsonb_build_object('startHour', coalesce(ls.send_from_hour, $5::int),
+                                 'endHour', coalesce(ls.send_to_hour, $6::int),
+                                 'days', to_jsonb(coalesce(ls.send_days, $7::int[]))),
+              coalesce(ls.timezone, $8::text),
+              true, 'serveur'
+         from (select 1) un
+         left join linkedin_settings ls on ls.organization_id = $1
+       returning id`,
+      [
+        ctx.organisationId,
+        identite,
+        nomAffiche,
+        QUOTA_JOUR_LINKEDIN_PAR_DEFAUT,
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+        [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+        HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
+      ],
+    );
+    const id = cree.rows[0]?.id;
+    if (!id) throw new Error('Expéditeur LinkedIn non garanti');
+    return id;
+  });
+}
+
+/**
+ * Désactive TOUTE ligne LinkedIn active de l'organisation (déconnexion du compte). Les lignes sont
+ * gardées : elles portent les liaisons contact/expéditeur, que la reconnexion reprendra.
+ */
+export async function desactiverExpediteurLinkedIn(ctx: Contexte): Promise<number> {
+  const res = await ctx.ex.query(
+    `update senders set is_active = false /* jr:expediteur_linkedin_desactiver */
+      where organization_id = $1 and kind = 'linkedin' and is_active`,
+    [ctx.organisationId],
+  );
+  return res.rowCount ?? 0;
 }
 
 export const schemaModifierCompteLinkedIn = z.object({

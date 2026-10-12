@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import type { CampagneResume } from '@jay-reach/core';
+import type { CampagneResume, CleDemarrage } from '@jay-reach/core';
+import { alertesSansDoublonDemarrage, lireDemarrage } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
 import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../lib/plafonds-affichage';
+import { ListeDemarrage } from '../../components/accueil/ListeDemarrage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
 
@@ -49,12 +51,25 @@ export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
   // `tPlafonds` : le gabarit des jauges vit avec l'écran Plafonds, et les trois écrans qui
   // montrent ces jauges le partagent plutôt que d'en recopier chacun une variante.
-  const [t, tPlafonds, locale, a] = await Promise.all([
+  const [t, tPlafonds, locale, a, demarrage] = await Promise.all([
     getTranslations('aujourdhui'),
     getTranslations('reglages.plafonds'),
     localeCourante(),
     lireAujourdhuiCourant(ctx),
+    lireDemarrage(ctx),
   ]);
+
+  // Tant que la mise en route est à l'écran, l'alerte qui dirait la même chose s'efface.
+  const alertes = alertesSansDoublonDemarrage(a.alertes, demarrage);
+
+  // Les six clés sont écrites une à une : le typage garantit qu'aucune ne manque, là où un
+  // `Object.fromEntries` rendrait un objet que rien n'oblige à être complet.
+  const libellesLigne = (cle: CleDemarrage) => ({
+    titre: t(`demarrage.lignes.${cle}.titre`),
+    aide: t(`demarrage.lignes.${cle}.aide`),
+    bouton: t(`demarrage.lignes.${cle}.bouton`),
+    mesure: t(`demarrage.lignes.${cle}.mesure`, { n: '{n}' }),
+  });
 
   const jour = capitaliser(
     new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: a.fuseau }).format(
@@ -66,7 +81,26 @@ export default async function AujourdhuiPage() {
 
   return (
     <>
-      {a.alertes.map((alerte, index) => (
+      <ListeDemarrage
+        demarrage={demarrage}
+        libelles={{
+          titre: t('demarrage.titre'),
+          titreCasse: t('demarrage.titreCasse'),
+          sousTitre: t('demarrage.sousTitre'),
+          sousTitreCasse: t('demarrage.sousTitreCasse'),
+          avancement: t('demarrage.avancement', { faites: '{faites}', total: '{total}' }),
+          lignes: {
+            fournisseurs: libellesLigne('fournisseurs'),
+            boites: libellesLigne('boites'),
+            persona: libellesLigne('persona'),
+            linkedin: libellesLigne('linkedin'),
+            source: libellesLigne('source'),
+            campagne: libellesLigne('campagne'),
+          },
+        }}
+      />
+
+      {alertes.map((alerte, index) => (
         // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
         <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
           <span>{alerte.texte}</span>

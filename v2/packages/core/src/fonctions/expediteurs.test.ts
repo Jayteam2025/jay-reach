@@ -5,6 +5,8 @@ import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import {
   boitesSalesBlinkNonReliees,
+  desactiverExpediteurLinkedIn,
+  garantirExpediteurLinkedIn,
   listerBoites,
   listerComptesLinkedIn,
   modifierBoite,
@@ -557,5 +559,69 @@ describe('modifierCompteLinkedIn', () => {
       false,
       UTILISATEUR_1,
     ]);
+  });
+});
+
+// Orchestration seulement : le SQL (reprise de la plus ancienne, doublons desactives, creation, idempotence)
+// est prouve par execution reelle dans test/pg-verify/linkedin-expediteur.sh.
+describe('garantirExpediteurLinkedIn', () => {
+  function ctxAvec(rows: unknown[]): { ctx: Contexte; appels: { sql: string; params: unknown[] }[] } {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      return { rows, rowCount: rows.length };
+    }) as unknown as Executeur['query'];
+    return { ctx: { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null }, appels };
+  }
+
+  it('rend l identifiant de la ligne reprise : verrou, lecture, doublons desactives AVANT la reprise, sans extension_tokens', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      return /expediteur_linkedin_cible/.test(sql)
+        ? { rows: [{ id: 'ligne-1', identity: 'jb-linkedin' }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null };
+    expect(await garantirExpediteurLinkedIn(ctx, 'jb-linkedin', 'JB (LinkedIn)')).toBe('ligne-1');
+    const tags = appels.map((a) => /jr:(expediteur_linkedin_\w+)/.exec(a.sql)?.[1] ?? 'audit');
+    expect(tags).toEqual(['expediteur_linkedin_verrou', 'expediteur_linkedin_cible', 'expediteur_linkedin_doublons', 'expediteur_linkedin_reprendre']);
+    expect(appels.some((a) => /extension_tokens/i.test(a.sql))).toBe(false);
+    expect(appels.some((a) => /audit_events/.test(a.sql))).toBe(false); // même identité : rien à consigner
+  });
+
+  it('un changement de compte est consigné au journal d audit, anciennes et nouvelles identites, sans plus', async () => {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      return /expediteur_linkedin_cible/.test(sql)
+        ? { rows: [{ id: 'ligne-1', identity: 'jb-linkedin' }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+    }) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null };
+    await garantirExpediteurLinkedIn(ctx, 'alexandre-declercq', 'A (LinkedIn)');
+    const audit = appels.find((a) => /audit_events/.test(a.sql));
+    expect(audit?.params[4]).toBe('linkedin.expediteur_compte_change');
+    expect(JSON.parse(String(audit?.params[5]))).toMatchObject({ ancienneIdentite: 'jb-linkedin', nouvelleIdentite: 'alexandre-declercq' });
+  });
+
+  it('une creation rend l identifiant de la ligne creee', async () => {
+    const query = vi.fn(async (sql: string) =>
+      /expediteur_linkedin_creer/.test(sql) ? { rows: [{ id: 'neuve' }], rowCount: 1 } : { rows: [], rowCount: 0 },
+    ) as unknown as Executeur['query'];
+    const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null };
+    expect(await garantirExpediteurLinkedIn(ctx, 'x', 'X')).toBe('neuve');
+  });
+
+  it('leve plutot que de rendre un identifiant inventé quand rien n est garanti', async () => {
+    const { ctx } = ctxAvec([]);
+    await expect(garantirExpediteurLinkedIn(ctx, 'x', 'X')).rejects.toThrow(/non garanti/);
+  });
+
+  it('desactiver rend le nombre de lignes touchees, limite a l organisation et au genre linkedin', async () => {
+    const { ctx, appels } = ctxAvec([{}, {}]);
+    expect(await desactiverExpediteurLinkedIn(ctx)).toBe(2);
+    expect(appels[0]?.params).toEqual(['org-1']);
+    expect(appels[0]?.sql).toMatch(/kind = 'linkedin'/);
   });
 });

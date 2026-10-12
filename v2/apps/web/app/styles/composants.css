@@ -629,6 +629,26 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-session-detail { color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 3px 0 0; }
 .jr-session-detail.jr-session-consigne { margin: 0; }
 .jr-session-action { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--jr-filet); }
+
+/* Le relevé d'étapes de la connexion LinkedIn (lot 5) : une ligne par étape, l'étape en cours en
+   accent, un filet qui relie. L'utilisateur vient de confier son mot de passe : il doit voir où en
+   est le serveur, et non un indicateur qui tourne. */
+.jr-releve { list-style: none; margin: 12px 0 0; padding: 0; }
+.jr-releve-ligne { position: relative; padding: 0 0 14px 24px; font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-releve-ligne:last-child { padding-bottom: 0; }
+.jr-releve-ligne::before { content: ""; position: absolute; left: 3px; top: 5px; width: 9px; height: 9px; border-radius: 999px; border: 1px solid var(--jr-filet); background: var(--jr-surface); }
+.jr-releve-ligne::after { content: ""; position: absolute; left: 7px; top: 15px; bottom: 0; width: 1px; background: var(--jr-filet); }
+.jr-releve-ligne:last-child::after { display: none; }
+.jr-releve-ligne--faite { color: var(--jr-encre); }
+.jr-releve-ligne--faite::before { background: var(--jr-bon); border-color: var(--jr-bon); }
+.jr-releve-ligne--encours { color: var(--jr-accent); font-weight: 600; }
+.jr-releve-ligne--encours::before { background: var(--jr-accent); border-color: var(--jr-accent); }
+
+.jr-session-boutons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.jr-connexion-code { margin-top: 14px; max-width: 320px; }
+.jr-connexion-code label { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin-bottom: 6px; }
+.jr-connexion-code .jr-champ { max-width: 190px; }
+.jr-connexion-code .jr-champ input { letter-spacing: 0.3em; text-align: center; }
 .jr-session-commande { display: block; margin-top: 7px; padding: 7px 10px; font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--jr-fond); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow-x: auto; white-space: pre; }
 .jr-session-faits { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; margin: 16px 0 0; background: var(--jr-filet); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow: hidden; }
 .jr-session-faits > div { background: var(--jr-surface); padding: 11px 13px; min-width: 0; }
@@ -701,3 +721,26 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 /* Un plafond de production à zéro arrête la machine sans rien dire : il se voit, et il se dit.
    Même situation que l'alerte `plafond_a_zero` du tableau de bord, même ton. */
 .jr-valeur-arretee { color: var(--jr-attention); }
+
+/* La liste de démarrage de l'écran Aujourd'hui (lot 5). Elle n'est pas un tutoriel : elle lit six
+   vérités en base, disparaît quand tout tient, et revient quand un branchement lâche. */
+.jr-demarrage { margin-bottom: 12px; }
+.jr-demarrage-entete { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.jr-demarrage-entete h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.jr-demarrage-entete p { margin: 2px 0 0; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-demarrage-avancement { color: var(--jr-secondaire); font-size: var(--jr-petit); white-space: nowrap; }
+.jr-demarrage-liste { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); overflow: hidden; }
+.jr-demarrage-ligne { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--jr-filet); }
+.jr-demarrage-ligne:first-child { border-top: 0; }
+.jr-demarrage-marque { position: relative; flex: none; width: 16px; height: 16px; border-radius: 999px; border: 1px solid var(--jr-filet); background: var(--jr-surface); }
+.jr-demarrage-marque--faite { background: var(--jr-bon); border-color: var(--jr-bon); }
+.jr-demarrage-marque--faite::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid var(--jr-surface); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.jr-demarrage-marque--cassee { border-color: var(--jr-erreur); }
+.jr-demarrage-marque--cassee::after { content: ""; position: absolute; left: 6.5px; top: 3px; width: 2px; height: 9px; background: var(--jr-erreur); }
+.jr-demarrage-quoi { flex: 1; min-width: 0; }
+.jr-demarrage-quoi b { display: block; font-weight: 600; font-size: var(--jr-corps); }
+.jr-demarrage-quoi small { display: block; margin-top: 1px; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-demarrage-ligne--faite .jr-demarrage-quoi b { font-weight: 500; color: var(--jr-secondaire); }
+.jr-demarrage-ligne--cassee .jr-demarrage-quoi small { color: var(--jr-erreur); }
+.jr-demarrage-mesure { flex: none; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+@media (max-width: 620px) { .jr-demarrage-ligne { flex-wrap: wrap; } }

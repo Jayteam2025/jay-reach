@@ -314,6 +314,27 @@ export function identiteExpediteurMemorisee(pilote: Pilote): IdentiteExpediteur 
 }
 
 /**
+ * Le compte actuellement connecté dans ce navigateur, lu par `/me`. Meilleur effort : `null` quand
+ * la lecture échoue (refus, réponse illisible, panne), sans jamais lever ni rendre un message —
+ * appelée juste après une connexion réussie, où une panne de lecture ne doit pas la défaire.
+ * Mémorise l'identité, comme le fait l'envoi, pour ne pas rappeler `/me` ensuite.
+ */
+export async function lireCompteConnecte(pilote: Pilote): Promise<IdentiteExpediteur | null> {
+  try {
+    const memorisee = expediteurs.get(pilote);
+    if (memorisee !== undefined) return memorisee;
+    await surLinkedin(pilote);
+    const moi = await pilote.requete(URL_MOI, ENTETES);
+    if (moi.statut < 200 || moi.statut >= 300) return null;
+    const lu = lireExpediteur(lireJson(moi.corps));
+    if (lu !== null) expediteurs.set(pilote, lu);
+    return lu;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Chaîne de 16 caractères dont chacun a le code d'un octet aléatoire (0 à 255), comme
  * l'extension : ce n'est ni du base64 ni de l'hexadécimal, et sur le fil JSON elle
  * occupe 16 à 32 octets selon l'encodage UTF-8 des caractères au-dessus de 127.

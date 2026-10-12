@@ -213,6 +213,7 @@ function monde(opts: {
       if (r instanceof Error) throw r;
       return { statut: r.statut, corps: typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps ?? {}) };
     },
+    effacerCookies: async () => undefined,
     fermer: w.fermer as unknown as Pilote['fermer'],
   };
   w.ouvrir = vi.fn(async () => {

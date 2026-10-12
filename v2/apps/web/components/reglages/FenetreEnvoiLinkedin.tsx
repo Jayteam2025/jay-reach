@@ -16,7 +16,7 @@ import { useTranslations } from 'next-intl';
 import { Bouton } from '../ui';
 import { actionEnregistrerHeuresEnvoiLinkedIn } from '../../app/actions/linkedin';
 
-/** Même liste restreinte que `CarteCompteLinkedIn` et `LinkedInPanel`. */
+/** Même liste restreinte que `LinkedInPanel`. */
 const FUSEAUX = ['Europe/Paris', 'Europe/Brussels', 'Europe/London', 'America/Montreal'] as const;
 
 /** Abréviation traduite via `reglages.days.short.*` — jamais câblée en dur. */

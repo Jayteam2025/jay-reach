@@ -260,6 +260,51 @@
     },
     "alerts": {
       "action": "Instellen"
+    },
+    "demarrage": {
+      "titre": "Jay Reach opstarten",
+      "titreCasse": "Een koppeling is weggevallen",
+      "sousTitre": "Zes koppelingen voordat de prospectie vanzelf loopt.",
+      "sousTitreCasse": "De rest blijft draaien.",
+      "avancement": "{faites} van {total}",
+      "lignes": {
+        "fournisseurs": {
+          "titre": "Uw providersleutels",
+          "aide": "Zonder deze geen beoordeling en geen verzending.",
+          "bouton": "Invullen",
+          "mesure": "{n} ingesteld"
+        },
+        "boites": {
+          "titre": "Uw mailboxen",
+          "aide": "De mailboxen die uw prospects aanschrijven.",
+          "bouton": "Koppelen",
+          "mesure": "{n} actief"
+        },
+        "persona": {
+          "titre": "Uw persona",
+          "aide": "Wie u zoekt, en hoe u die herkent.",
+          "bouton": "Aanmaken",
+          "mesure": "{n} aangemaakt"
+        },
+        "linkedin": {
+          "titre": "Uw LinkedIn-account",
+          "aide": "Zonder dit geen LinkedIn-verzameling en geen LinkedIn-bericht.",
+          "bouton": "Koppelen",
+          "mesure": "gekoppeld"
+        },
+        "source": {
+          "titre": "Een bron die verzamelt",
+          "aide": "Mensen die reageren op posts van een concurrent, een vacature, een lijst.",
+          "bouton": "Toevoegen",
+          "mesure": "{n} actief"
+        },
+        "campagne": {
+          "titre": "Een lopende campagne",
+          "aide": "Die verbindt persona, bronnen en reeks.",
+          "bouton": "Openen",
+          "mesure": "{n} actief"
+        }
+      }
     }
   },
   "campagne": {
@@ -1081,26 +1126,18 @@
       "linkedin": {
         "title": "LinkedIn-accounts",
         "lead": "LinkedIn-acties vertrekken vanaf een toegewijd residentieel IP-adres, nooit vanaf de server.",
-        "empty": "Geen LinkedIn-account verbonden.",
-        "emptyServeur": "Het LinkedIn-kanaal draait op de sessie die op de server openstaat, zonder extensie en zonder account hier.",
-        "emptyServeurLien": "Ritme en verzenduren instellen",
-        "connected": "Verbonden",
-        "notConnected": "Niet verbonden",
-        "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
-        "activeSenderMissing": "Actief, maar er wordt niets verstuurd: afzender niet geactiveerd",
-        "perDay": "{n} per dag",
-        "perWeek": "{n} per week",
-        "edit": "Bewerken",
-        "active": "Actief",
-        "inactive": "Inactief",
-        "drawerTitle": "{nom} bewerken",
-        "save": "Opslaan",
-        "saving": "Bezig met opslaan",
-        "cancel": "Annuleren",
-        "close": "Sluiten",
-        "drawerDailyQuota": "Gelezen profielen en acties per dag",
-        "drawerWeeklyQuota": "Weeklimiet",
-        "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn."
+        "serveur": {
+          "titre": "LinkedIn-account",
+          "sousTitre": "De sessie die op de server openstaat",
+          "compte": "Gekoppeld account",
+          "comptePasEncore": "Geen account gekoppeld",
+          "sortie": "Netwerkuitgang",
+          "envoisSemaine": "Verzonden deze week",
+          "derniereCollecte": "Laatste verzameling",
+          "jamais": "Nog geen verzameling",
+          "regler": "Tempo en limieten instellen",
+          "connecter": "Een LinkedIn-account koppelen"
+        }
       }
     },
     "days": {
@@ -1545,7 +1582,7 @@
       "etat": {
         "absente": {
           "phrase": "Geen sessie.",
-          "detail": "Open de sessie vanaf de server: het wachtwoord en de code lopen niet via deze pagina."
+          "detail": "Koppel uw account om profielen te verzamelen en uw berichten te versturen."
         },
         "prete": {
           "phrase": "Klaar om te verzamelen.",
@@ -1609,10 +1646,6 @@
         "plafondHoraireDate": {
           "phrase": "Het LinkedIn-verzoekbudget van dit uur is op, het verzamelen deelt het met het versturen. Rond {quand} weer beschikbaar."
         }
-      },
-      "commande": {
-        "consigne": "Open de sessie opnieuw in een terminal op de server:",
-        "consigneDefi": "Los de verificatie op en open de sessie daarna opnieuw in een terminal op de server:"
       },
       "faits": {
         "compte": "Verbonden account",
@@ -1708,6 +1741,52 @@
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
         "risque": "Het gebruikte account kan worden beperkt of gesloten. De operator van deze instantie is daarvoor verantwoordelijk.",
         "baseLegale": "Rechtsgrond van de verwerking: gerechtvaardigd belang, prospectie tussen professionals. Verzamelde personen die nooit worden gecontacteerd, worden na {jours} dagen gewist. Wie we al hebben beoordeeld, laat een onleesbare vingerafdruk achter (niet de identificatie zelf), hoogstens {jours} dagen bewaard, zodat we niemand twee keer beoordelen."
+      },
+      "connexion": {
+        "connecter": "Mijn LinkedIn-account koppelen",
+        "reconnecter": "Opnieuw koppelen",
+        "deconnecter": "Dit account ontkoppelen",
+        "annuler": "Annuleren",
+        "valider": "Code bevestigen",
+        "identifiant": "LinkedIn-gebruikersnaam",
+        "motDePasse": "Wachtwoord",
+        "code": "Code van LinkedIn",
+        "codeAide": "LinkedIn heeft hem net naar het e-mailadres van uw account gestuurd.",
+        "tempsRestant": "Nog {temps} om hem in te voeren.",
+        "modaleTitre": "Uw LinkedIn-account koppelen",
+        "avertissementSortie": "LinkedIn stuurt u een e-mail over een aanmelding vanaf een ongewone locatie. Dat is onze netwerkuitgang, geen inbraak: wijzig uw wachtwoord niet.",
+        "avertissementRemplace": "Het nu gekoppelde account wordt afgemeld: de server houdt één sessie tegelijk.",
+        "avertissementMotDePasse": "Uw wachtwoord wordt één keer gebruikt om de sessie te openen. Het wordt nergens bewaard.",
+        "enCours": "Bezig met koppelen.",
+        "etapes": {
+          "recue": "Aanvraag ontvangen door de server",
+          "sortie_controlee": "Netwerkuitgang gecontroleerd",
+          "navigateur_ouvert": "Browser geopend",
+          "identifiants_transmis": "Gegevens naar LinkedIn gestuurd",
+          "code_demande": "LinkedIn vraagt om een verificatiecode",
+          "session_active": "Sessie actief"
+        },
+        "motifs": {
+          "sortie_inattendue": "De netwerkuitgang was niet de verwachte: de sessie is uit voorzorg geblokkeerd. Waarschuw de beheerder van deze instantie.",
+          "sortie_serveur": "De browser ging naar buiten via het serveradres in plaats van het eigen adres. Waarschuw de beheerder van deze instantie.",
+          "verrou_occupe": "Een andere koppeling gebruikte de browser al. Probeer het over een paar minuten opnieuw.",
+          "refuse": "LinkedIn heeft de gebruikersnaam of het wachtwoord geweigerd.",
+          "defi": "LinkedIn vraagt om een verificatie die dit scherm niet kan afronden. Open de LinkedIn-app op uw telefoon, keur de aanmelding goed en koppel hier opnieuw.",
+          "delai": "LinkedIn heeft niet op tijd geantwoord. Probeer het opnieuw.",
+          "worker_absent": "De server heeft niet geantwoord. Controleer of hij draait en probeer het opnieuw.",
+          "trop_essais": "Drie pogingen zijn mislukt. Het formulier gaat over een kwartier weer open, zodat LinkedIn uw account niet vergrendelt.",
+          "annulee": "Koppeling geannuleerd.",
+          "erreur_interne": "De koppeling is onderbroken. Probeer het opnieuw."
+        },
+        "erreurs": {
+          "en_cours": "Er loopt al een koppeling.",
+          "ferme": "Drie pogingen zijn mislukt. Het formulier gaat over een kwartier weer open.",
+          "droit": "Alleen een beheerder kan een LinkedIn-account koppelen.",
+          "entree": "Gebruikersnaam of wachtwoord ontbreekt.",
+          "aucun_code": "Er wordt nu geen code verwacht.",
+          "transmission": "De server kon niet worden bereikt. Probeer het opnieuw.",
+          "inconnue": "Er is iets misgegaan. Probeer het opnieuw."
+        }
       }
     }
   },

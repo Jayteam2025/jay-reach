@@ -219,3 +219,28 @@ export async function confirmerIpAttendue(ctx: Contexte, ip: string): Promise<bo
   );
   return (res.rowCount ?? 0) > 0;
 }
+
+/**
+ * L'intention de déconnexion en attente, en TEXTE (un `Date` JS perd les microsecondes : l'égalité de
+ * `solderDeconnexionLinkedIn` ne tiendrait jamais), ou `null`.
+ */
+export async function lireDeconnexionDemandeeLinkedIn(ctx: Contexte): Promise<string | null> {
+  const r = await ctx.ex.query<{ demandee_at: string | null }>(
+    `select deconnexion_demandee_at::text as demandee_at /* jr:linkedin_deconnexion_lire */
+       from linkedin_server_sessions where organization_id = $1`,
+    [ctx.organisationId],
+  );
+  return r.rows[0]?.demandee_at ?? null;
+}
+
+/**
+ * Solde l'intention de déconnexion telle qu'elle a été LUE (`lireDeconnexionDemandeeLinkedIn`), et seulement
+ * elle : une déconnexion demandée depuis (plus récente) reste en attente.
+ */
+export async function solderDeconnexionLinkedIn(ctx: Contexte, lue: string): Promise<void> {
+  await ctx.ex.query(
+    `update linkedin_server_sessions set deconnexion_demandee_at = null /* jr:linkedin_deconnexion_solder */
+      where organization_id = $1 and deconnexion_demandee_at = $2::timestamptz`,
+    [ctx.organisationId, lue],
+  );
+}

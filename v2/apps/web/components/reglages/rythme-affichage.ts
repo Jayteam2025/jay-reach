@@ -1,7 +1,7 @@
 /**
  * Ce que l'écran montre pour le rythme d'envoi LinkedIn : quel cran le moteur applique, lequel
  * l'opérateur a sélectionné, et s'il reste quelque chose à écrire. Aucun React, aucune traduction
- * — même découpage que `boite-affichage.ts` et `compte-linkedin-affichage.ts`, pour que la règle
+ * — même découpage que `boite-affichage.ts`, pour que la règle
  * se teste sans DOM et que le composant ne fasse plus que du rendu.
  *
  * Le mot « appliqué » n'est pas « choisi » : `lireRythme` lit les valeurs réellement en vigueur,

@@ -68,6 +68,7 @@ function piloteFaux(
     texte: async (s) => textes[s] ?? '',
     attendre: async (s) => presents.includes(s),
     requete: async () => ({ statut: 200, corps: '' }),
+    effacerCookies: vi.fn(async () => undefined),
     fermer: vi.fn(async () => undefined),
   };
   return { p, saisies, entrees };
@@ -528,6 +529,47 @@ describe('la commande ip', () => {
   });
 });
 
+describe('la connexion garantit l expediteur', () => {
+  it('apres l activation de la session, avec l identite lue par /me', async () => {
+    const { p } = piloteFaux(['https://www.linkedin.com/login', 'https://www.linkedin.com/feed/']);
+    p.requete = async () => ({
+      statut: 200,
+      corps: JSON.stringify({
+        data: { '*miniProfile': 'urn:li:fs_miniProfile:ACoAAA1' },
+        included: [{ entityUrn: 'urn:li:fs_miniProfile:ACoAAA1', publicIdentifier: 'alexandre-declercq' }],
+      }),
+    });
+    const { d, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'moi@exemple.fr',
+      demanderMasque: async () => 'mot-de-passe-secret',
+    });
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    const iActive = appels.findIndex((a) => /jr:linkedin_session_activer/.test(a.sql));
+    const iGarantie = appels.findIndex((a) => /jr:expediteur_linkedin_reprendre/.test(a.sql));
+    expect(iActive).toBeGreaterThanOrEqual(0);
+    expect(iGarantie).toBeGreaterThan(iActive);
+    expect(appels[iGarantie]?.params.slice(1, 3)).toEqual(['alexandre-declercq', 'alexandre-declercq (LinkedIn)']);
+    expect(JSON.stringify(appels)).not.toMatch(/mot-de-passe-secret|moi@exemple\.fr/);
+  });
+
+  it('une panne de /me ne defait pas la connexion : repli sur l identite connue de la session', async () => {
+    const { p } = piloteFaux(['https://www.linkedin.com/feed/']);
+    p.requete = async () => {
+      throw new Error('panne');
+    };
+    const { d, appels } = dependances({
+      env: ACTIF,
+      session: ligneSession({ account_public_id: 'jb-linkedin' }),
+      pilote: p,
+    });
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(appels.find((a) => /jr:expediteur_linkedin_reprendre/.test(a.sql))?.params[1]).toBe('jb-linkedin');
+  });
+});
+
 describe('la commande deconnecter', () => {
   it('revoque la session', async () => {
     const { p } = piloteFaux();
@@ -540,10 +582,90 @@ describe('la commande deconnecter', () => {
     ).toBe(true);
   });
 
-  it('revoque quand meme si le navigateur est injoignable', async () => {
-    const { d, appels } = dependances({ env: ACTIF, session: ligneSession() });
+  it('efface les cookies APRES la navigation de deconnexion, AVANT la revocation, puis desactive l expediteur', async () => {
+    const ordre: string[] = [];
+    const { p } = piloteFaux();
+    p.aller = vi.fn(async () => void ordre.push('aller'));
+    p.effacerCookies = vi.fn(async () => void ordre.push('effacer'));
+    p.fermer = vi.fn(async () => void ordre.push('fermer'));
+    const { d, appels } = dependances({ env: ACTIF, session: ligneSession(), pilote: p });
+    const query = (await d.contexte()).ex.query as unknown as { mock: { calls: unknown[][] } };
+    const base = query.mock.calls.length;
     expect(await executerCommande(['deconnecter'], d)).toBe(0);
+    expect(ordre).toEqual(['aller', 'effacer', 'fermer']);
+    expect(p.aller).toHaveBeenCalledWith('https://www.linkedin.com/m/logout/');
+    const sqls = appels.slice(base).map((a) => a.sql);
+    const iRevoque = sqls.findIndex((x) => /jr:linkedin_session_bloquer/.test(x));
+    const iDesactive = sqls.findIndex((x) => /jr:expediteur_linkedin_desactiver/.test(x));
+    expect(iRevoque).toBeGreaterThanOrEqual(0);
+    expect(iDesactive).toBeGreaterThan(iRevoque);
+    expect(appels.find((a) => /jr:expediteur_linkedin_desactiver/.test(a.sql))?.params).toEqual(['org-1']);
+  });
+
+  it('un effacement de cookies en echec revoque et desactive quand meme, mais ne se dit pas reussi', async () => {
+    const { p } = piloteFaux();
+    p.effacerCookies = vi.fn(async () => {
+      const e = new Error('detail sensible http://u:mdp@proxy');
+      e.name = 'EffacementCookies';
+      throw e;
+    });
+    const { d, appels, sortie } = dependances({ env: ACTIF, session: ligneSession(), pilote: p });
+    expect(await executerCommande(['deconnecter'], d)).toBe(1);
+    expect(appels.some((a) => /jr:linkedin_session_bloquer/.test(a.sql))).toBe(true);
+    expect(appels.some((a) => /jr:expediteur_linkedin_desactiver/.test(a.sql))).toBe(true);
+    const dit = sortie.join('\n');
+    expect(dit).toMatch(/EffacementCookies/);
+    expect(dit).not.toMatch(/mdp/);
+  });
+
+  it('navigateur injoignable : revoque et desactive quand meme, mais ne se dit PAS reussi (les cookies n ont pas ete effaces)', async () => {
+    const { d, appels, sortie } = dependances({ env: ACTIF, session: ligneSession() });
+    expect(await executerCommande(['deconnecter'], d)).toBe(1);
     expect(appels.some((a) => a.params.includes('revoquee'))).toBe(true);
+    expect(appels.some((a) => /jr:expediteur_linkedin_desactiver/.test(a.sql))).toBe(true);
+    expect(sortie.join('\n')).toMatch(/NON aboutie/);
+  });
+
+  it('une navigation de deconnexion qui leve n empeche PAS l effacement, qui seul decide du succes', async () => {
+    const { p } = piloteFaux();
+    p.aller = vi.fn(async () => {
+      const e = new Error('timeout http://u:mdp@proxy');
+      e.name = 'TimeoutError';
+      throw e;
+    });
+    const { d, sortie } = dependances({ env: ACTIF, session: ligneSession(), pilote: p });
+    expect(await executerCommande(['deconnecter'], d)).toBe(0);
+    expect(p.effacerCookies).toHaveBeenCalledTimes(1);
+    expect(sortie.join('\n')).not.toMatch(/mdp/);
+  });
+
+  it('navigation en echec ET effacement en echec : echec, jamais 0', async () => {
+    const { p } = piloteFaux();
+    p.aller = vi.fn(async () => {
+      throw new Error('timeout');
+    });
+    p.effacerCookies = vi.fn(async () => {
+      throw new Error('cdp');
+    });
+    const { d } = dependances({ env: ACTIF, session: ligneSession(), pilote: p });
+    expect(await executerCommande(['deconnecter'], d)).toBe(1);
+    expect(p.fermer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('une garantie d expediteur en echec fait echouer la connexion', () => {
+  it('revoque la session et rend 1, au lieu de la laisser active sans expediteur', async () => {
+    const { p } = piloteFaux(['https://www.linkedin.com/feed/']);
+    const { d, appels, sortie } = dependances({ env: ACTIF, session: ligneSession(), pilote: p });
+    const ctx = await d.contexte();
+    const base = ctx.ex.query as unknown as (sql: string, params?: unknown[]) => Promise<unknown>;
+    ctx.ex.query = (async (sql: string, params?: unknown[]) => {
+      if (/jr:expediteur_linkedin_cible/.test(sql)) throw new Error('base');
+      return base(sql, params);
+    }) as typeof ctx.ex.query;
+    expect(await executerCommande(['connecter'], d)).toBe(1);
+    expect(appels.some((a) => /jr:linkedin_session_bloquer/.test(a.sql) && a.params.includes('revoquee'))).toBe(true);
+    expect(sortie.join('\n')).toMatch(/non garanti/);
   });
 });
 

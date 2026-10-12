@@ -1,14 +1,15 @@
 import { getTranslations } from 'next-intl/server';
-import { hasMinRole, lireReglages } from '@jay-reach/core';
+import { HARD_CAP_7_DAYS, hasMinRole, lireReglages, lireVolumeEnvoiLinkedIn } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
-import { dateCourte, estDateRelative } from '../../../../lib/dates';
+import { dateCourte, dateRelativeCourte, estDateRelative } from '../../../../lib/dates';
 import { listerBoitesExpediteurs } from '../../../actions/senders';
-import { listerComptesLinkedInAction } from '../../../actions/linkedin';
+import { parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
 import { Puce } from '../../../../components/ui';
 import { CarteBoite } from '../../../../components/reglages/CarteBoite';
-import { CarteCompteLinkedIn } from '../../../../components/reglages/CarteCompteLinkedIn';
+import { CarteSessionLinkedIn } from '../../../../components/reglages/CarteSessionLinkedIn';
 import { BoutonRelierBoite } from '../../../../components/reglages/BoutonRelierBoite';
+import { phraseEtatSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 /**
  * Réglages › Expéditeurs (tâche 20) : boîtes email (état SalesBlink,
@@ -20,16 +21,19 @@ export default async function ReglagesExpediteursPage() {
   const ctx = await contexteCourant();
   const peutModifier = ctx.role !== null && hasMinRole(ctx.role, 'admin');
 
-  const [t, boitesResultat, comptesResultat, reglages, sessionLinkedIn] = await Promise.all([
+  const maintenantCharge = new Date();
+  const [t, tLinkedin, tPlafonds, boitesResultat, reglages, sessionLinkedIn, volumeEnvoi] = await Promise.all([
     getTranslations('reglages.expediteurs'),
+    // La phrase d'état vit avec l'écran LinkedIn : une seule formulation pour les deux écrans.
+    getTranslations('reglages.linkedin'),
+    getTranslations('reglages.plafonds'),
     listerBoitesExpediteurs(),
-    listerComptesLinkedInAction(),
     lireReglages(ctx),
     lireSessionLinkedInCourante(ctx),
+    lireVolumeEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenantCharge),
   ]);
 
   const boites = boitesResultat.ok ? boitesResultat.valeur : [];
-  const comptes = comptesResultat.ok ? comptesResultat.valeur : [];
   const fuseau = String(reglages.fuseau);
   const maintenant = new Date();
 
@@ -81,26 +85,40 @@ export default async function ReglagesExpediteursPage() {
         </div>
       </div>
 
-      {!comptesResultat.ok ? (
-        <div className="jr-notification erreur" role="alert">
-          {comptesResultat.error}
-        </div>
-      ) : comptes.length === 0 ? (
-        <div className="jr-carte">
-          {/* « Aucun compte connecté » est faux dès qu'une session tourne sur le serveur :
-              cette section ne liste que les comptes reliés par l'extension, et le canal
-              n'en passe plus par là. Le renvoi ne promet que ce que l'autre page porte
-              réellement, c'est à dire le rythme et les heures d'envoi. */}
-          <div className="jr-vide">{sessionLinkedIn ? t('linkedin.emptyServeur') : t('linkedin.empty')}</div>
-          {sessionLinkedIn && (
-            <a className="jr-lien" href="/settings/linkedin">
-              {t('linkedin.emptyServeurLien')}
-            </a>
-          )}
-        </div>
-      ) : (
-        comptes.map((compte) => <CarteCompteLinkedIn key={compte.id} compte={compte} peutModifier={peutModifier} />)
-      )}
+      {/* La seule chose qui envoie : la session du serveur. Cette section listait les jetons de
+          l'extension gelée, et déclarait « aucun envoi ne partira » sur un expéditeur actif. */}
+      <CarteSessionLinkedIn
+        session={sessionLinkedIn}
+        etat={{
+          ton: phraseEtatSession(sessionLinkedIn).ton,
+          phrase: tLinkedin(`etat.${phraseEtatSession(sessionLinkedIn).cle}.phrase`),
+        }}
+        envoisTexte={
+          sessionLinkedIn
+            ? tPlafonds(
+                'consommation.valeur',
+                parametresValeurConsommation(
+                  volumeEnvoi.message.envoyes7Jours,
+                  Math.min(volumeEnvoi.message.plafondHebdo, HARD_CAP_7_DAYS),
+                ),
+              )
+            : null
+        }
+        formaterCollecte={(quand) => dateRelativeCourte(quand.toISOString(), maintenant, fuseau)}
+        libelles={{
+          titre: t('linkedin.serveur.titre'),
+          sousTitre: t('linkedin.serveur.sousTitre'),
+          compte: t('linkedin.serveur.compte'),
+          comptePasEncore: t('linkedin.serveur.comptePasEncore'),
+          sortie: t('linkedin.serveur.sortie'),
+          envoisSemaine: t('linkedin.serveur.envoisSemaine'),
+          derniereCollecte: t('linkedin.serveur.derniereCollecte'),
+          jamais: t('linkedin.serveur.jamais'),
+          inconnu: t('linkedin.serveur.comptePasEncore'),
+          regler: t('linkedin.serveur.regler'),
+          connecter: t('linkedin.serveur.connecter'),
+        }}
+      />
     </>
   );
 }

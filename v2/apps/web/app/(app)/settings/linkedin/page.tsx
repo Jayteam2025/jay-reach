@@ -14,6 +14,7 @@ import {
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
   RYTHMES,
 } from '@jay-reach/core';
+import { lireDemandeEnCours } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { pourcentageJauge, tonJauge } from '../../../../lib/plafonds-affichage';
 import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
@@ -22,15 +23,21 @@ import { BarreProgression, Carte, TuileLogo } from '../../../../components/ui';
 import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
 import { CollecteAutoLinkedin } from '../../../../components/reglages/CollecteAutoLinkedin';
+import { ConnexionLinkedin } from '../../../../components/reglages/ConnexionLinkedin';
 import { ChoixRythme } from '../../../../components/reglages/ChoixRythme';
 import type { CranRythme } from '../../../../components/reglages/rythme-affichage';
 import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
 
-/** Commande de l'opérateur : la session s'ouvre dans un terminal du serveur, jamais depuis cette page. */
-const COMMANDE_CONNEXION = 'jay-reach linkedin connecter';
 const UNE_HEURE_MS = 3_600_000;
+
+/** Les motifs et codes d'erreur traduits : mêmes listes que `linkedin-connexion.ts` du cœur. */
+const MOTIFS = [
+  'sortie_inattendue', 'sortie_serveur', 'verrou_occupe', 'refuse', 'defi',
+  'delai', 'worker_absent', 'trop_essais', 'annulee', 'erreur_interne',
+] as const;
+const CODES_ERREUR = ['en_cours', 'ferme', 'droit', 'entree', 'aucun_code', 'transmission', 'inconnue'] as const;
 
 /** L'ordre d'affichage des crans, du plus prudent au plus soutenu. */
 const CRANS_RYTHME: readonly CranRythme[] = ['prudent', 'normal', 'soutenu'];
@@ -66,6 +73,7 @@ export default async function ReglagesLinkedinPage() {
     requetesDeLHeure,
     collecteAuto,
     rythme,
+    demandeEnCours,
   ] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
     prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
@@ -78,6 +86,9 @@ export default async function ReglagesLinkedinPage() {
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
     lireCollecteAutoLinkedIn(ctx),
     lireRythme(ctx),
+    // L'état de départ de la connexion : sans lui, l'écran afficherait « aucune connexion » le
+    // temps du premier sondage, puis se corrigerait sous les yeux de l'utilisateur.
+    lireDemandeEnCours(ctx),
   ]);
 
   const phrase = phraseEtatSession(session);
@@ -140,14 +151,44 @@ export default async function ReglagesLinkedinPage() {
           <div>
             <p className="jr-session-phrase">{t(`etat.${phrase.cle}.phrase`)}</p>
             <p className="jr-session-detail">{detail}</p>
-            {phrase.avecCommande && (
-              <div className="jr-session-action">
-                <p className="jr-session-detail jr-session-consigne">
-                  {phrase.cle === 'defi' ? t('commande.consigneDefi') : t('commande.consigne')}
-                </p>
-                <code className="jr-session-commande">{COMMANDE_CONNEXION}</code>
-              </div>
-            )}
+            <ConnexionLinkedin
+              sessionActive={phrase.cle === 'prete'}
+              demandeInitiale={demandeEnCours}
+              peutModifier={peutModifier}
+              libelles={{
+                connecter: t('connexion.connecter'),
+                reconnecter: t('connexion.reconnecter'),
+                deconnecter: t('connexion.deconnecter'),
+                annuler: t('connexion.annuler'),
+                valider: t('connexion.valider'),
+                identifiant: t('connexion.identifiant'),
+                motDePasse: t('connexion.motDePasse'),
+                code: t('connexion.code'),
+                codeAide: t('connexion.codeAide'),
+                tempsRestant: t('connexion.tempsRestant', { temps: '{temps}' }),
+                modaleTitre: t('connexion.modaleTitre'),
+                avertissementSortie: t('connexion.avertissementSortie'),
+                avertissementRemplace: t('connexion.avertissementRemplace'),
+                avertissementMotDePasse: t('connexion.avertissementMotDePasse'),
+                enCours: t('connexion.enCours'),
+                etapes: {
+                  recue: t('connexion.etapes.recue'),
+                  sortie_controlee: t('connexion.etapes.sortie_controlee'),
+                  navigateur_ouvert: t('connexion.etapes.navigateur_ouvert'),
+                  identifiants_transmis: t('connexion.etapes.identifiants_transmis'),
+                  code_demande: t('connexion.etapes.code_demande'),
+                  session_active: t('connexion.etapes.session_active'),
+                },
+                motifs: MOTIFS.reduce<Record<string, string>>((acc, m) => {
+                  acc[m] = t(`connexion.motifs.${m}`);
+                  return acc;
+                }, {}),
+                erreurs: CODES_ERREUR.reduce<Record<string, string>>((acc, c) => {
+                  acc[c] = t(`connexion.erreurs.${c}`);
+                  return acc;
+                }, {}),
+              }}
+            />
           </div>
         </div>
         {/* Second fait du même canal : « est-ce que ça envoie maintenant ». Il ne peut pas

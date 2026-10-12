@@ -37,6 +37,12 @@ export type Pilote = {
    * fait partir un POST JSON ; sans `corps`, c'est un GET.
    */
   requete(url: string, entetes?: Record<string, string>, corps?: unknown): Promise<{ statut: number; corps: string }>;
+  /**
+   * Efface les cookies et le stockage du profil du navigateur (tout le navigateur, pas seulement
+   * l'onglet), puis VÉRIFIE qu'aucun cookie LinkedIn n'en reste : lève sinon. Sans cela, déconnecter
+   * un compte laisserait le précédent joignable dans le conteneur, qui garde son profil.
+   */
+  effacerCookies(): Promise<void>;
   fermer(): Promise<void>;
 };
 
@@ -55,6 +61,7 @@ function erreurNommee(type: string, message: string): Error {
 
 const ECHO_IP = 'https://api.ipify.org?format=json';
 const PAGE_NEUTRE = 'about:blank';
+const ORIGINE_LINKEDIN = 'https://www.linkedin.com';
 const DELAI_ACTION_MS = 30_000;
 
 const SchemaEcho = z.object({
@@ -451,6 +458,25 @@ export async function ouvrirNavigateur(): Promise<Pilote> {
         // Sérialisé ici : l'argument traverse le protocole du navigateur, et `undefined` y reste `undefined`.
         corps === undefined ? undefined : JSON.stringify(corps),
       ),
+    effacerCookies: async () => {
+      let session;
+      try {
+        session = await onglet.createCDPSession();
+        // Tout le profil : les cookies, puis le stockage (local, session, IndexedDB) de LinkedIn.
+        await session.send('Network.clearBrowserCookies');
+        await session.send('Storage.clearDataForOrigin', { origin: ORIGINE_LINKEDIN, storageTypes: 'all' });
+        const restants = await session.send('Storage.getCookies');
+        if (restants.cookies.some((c) => /(^|\.)(linkedin|licdn)\.com$/.test(c.domain.replace(/^\./, '')))) {
+          throw erreurNommee('CookiesNonEfface', 'Des cookies LinkedIn restent dans le navigateur');
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === 'CookiesNonEfface') throw e;
+        // Le message d'une erreur CDP peut porter une URL : on ne rend que son nom.
+        throw erreurNommee('EffacementCookies', 'Effacement des cookies impossible');
+      } finally {
+        await session?.detach().catch(() => undefined);
+      }
+    },
     // On ferme NOTRE page puis on se détache sans fermer le navigateur : il garde le profil et ses cookies.
     fermer: async () => {
       await onglet.close().catch(() => undefined);

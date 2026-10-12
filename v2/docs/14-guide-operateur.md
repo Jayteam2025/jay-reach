@@ -9,7 +9,8 @@ apparaissent réellement dans l'application.
 Le menu de gauche donne accès à cinq entrées, toujours visibles :
 
 - **Aujourd'hui** : l'écran d'ouverture, ce qu'il y a à traiter, ce qui part aujourd'hui, l'état du
-  moteur, les plafonds du jour et la liste des campagnes.
+  moteur, les plafonds du jour et la liste des campagnes. Tant que l'installation n'est pas complète, il
+  s'ouvre sur la liste **Démarrer Jay Reach** (voir plus bas).
 - **Campagnes** : la liste de toutes les campagnes, et le bouton pour en créer une nouvelle.
 - **Contacts** : tous les contacts trouvés par les sources, les entreprises, et les clients et exclusions.
 - **Réception** : les fils de conversation avec les prospects, et la réponse depuis l'application.
@@ -20,6 +21,21 @@ En bas du menu, deux indicateurs restent visibles en permanence : l'état du mot
 dernier et prochain passage) et les envois du jour. Le badge posé sur Réception compte les fils qui
 attendent une réponse.
 
+## La liste de démarrage
+
+Sur Aujourd'hui, **Démarrer Jay Reach** liste six branchements, chacun avec un bouton qui mène au bon écran :
+
+- **Vos clés fournisseurs** (**Renseigner**) : sans elles, ni notation ni envoi.
+- **Vos boîtes e-mail** (**Relier**) : les boîtes qui écriront à vos prospects.
+- **Votre persona** (**Créer**) : qui vous cherchez, et comment le reconnaître.
+- **Votre compte LinkedIn** (**Connecter**) : sans lui, ni collecte ni message LinkedIn.
+- **Une source qui collecte** (**Ajouter**).
+- **Une campagne lancée** (**Ouvrir**).
+
+Chaque ligne se coche d'après ce qui existe réellement, pas d'après ce que vous avez cliqué. Une fois les six
+faits, la liste disparaît. Si un branchement lâche plus tard (clé retirée, session LinkedIn perdue), elle
+revient sous le titre **Un branchement a lâché**, et le reste continue de tourner.
+
 ## Créer une campagne
 
 Le bouton **Nouvelle campagne**, sur Aujourd'hui comme sur Campagnes, ouvre un assistant en quatre étapes.
@@ -28,10 +44,10 @@ Rien n'est enregistré avant le dernier bouton : vous pouvez revenir en arrière
 1. **Qui** : donnez un nom à la campagne, choisissez le persona recherché (ou créez-en un nouveau), réglez
    le score minimal d'entrée si le défaut de l'organisation ne convient pas.
 2. **Sources** : ajoutez au moins une source. Offres d'emploi (Adzuna, France Travail). LinkedIn
-   (engageurs d'un post, abonnés d'un concurrent, mots-clés, changement de poste : seule la collecte des
-   engageurs d'un post tourne aujourd'hui, à la demande avec **Collecter maintenant** ; les trois autres
-   se règlent mais ne collectent pas encore). Ou manuel (fichier CSV, liste
-   existante, annuaire d'entreprises).
+   (engageurs d'un post, engageurs des posts d'un concurrent, engageurs des posts d'un créateur,
+   mots-clés, changement de poste : les cinq collectent, automatiquement à chaque passage ou à la
+   demande avec **Collecter maintenant**).
+   Ou manuel (fichier CSV, liste existante, annuaire d'entreprises).
 3. **Séquence** : partez d'un modèle tout prêt ou composez vos étapes une par une : canal, objet, corps
    avec variables, délai avant la relance suivante.
 4. **Envoi** : cochez les boîtes qui enverront, réglez le plafond quotidien de nouveaux contacts et, si
@@ -129,22 +145,31 @@ Les **boîtes email** : une carte par boîte, avec son état de connexion, son u
 ses heures d'envoi. **Modifier** ajuste ces réglages ; **Relier une boîte** en connecte une nouvelle. Une
 boîte peut aussi être réglée pour lire ses réponses directement, sans attendre la relève habituelle.
 
-Les **comptes LinkedIn** : une carte par compte, avec ses quotas d'actions par jour et par semaine, sa
-fenêtre horaire, ses jours d'envoi et son fuseau. Ces réglages (`linkedin_settings`) sont le seul réglage du
-volume d'envoi LinkedIn : le serveur les lit avant chaque envoi d'invitation ou de message. Cette carte
-n'apparaît toutefois que pour un compte relié par l'ancienne extension : si la session a été ouverte par
-`jay-reach linkedin connecter`, l'écran reste vide et ces valeurs gardent celles de la base. La collecte a ses
-propres plafonds (voir Réglages › LinkedIn ci-dessous). L'extension de navigateur est gelée et ne pilote
-plus rien. Cet écran ne permet pas de connecter un nouveau compte.
+Le **compte LinkedIn** : la session ouverte sur le serveur (compte connecté, sortie réseau, envois de la
+semaine, dernière collecte), avec un lien vers **Régler le rythme et les plafonds** et, s'il n'y a encore
+aucun compte, **Brancher un compte LinkedIn**. Cet écran montre la session du serveur, plus les jetons de
+l'ancienne extension, qui est gelée et ne pilote plus rien. L'expéditeur LinkedIn est créé et activé
+automatiquement par une connexion réussie : il n'y a rien à ajouter à la main. Le volume d'envoi se règle dans
+Réglages › LinkedIn.
 
 ### LinkedIn
 
 La **session du serveur** : l'état de la connexion à LinkedIn (prête, arrêtée par un défi, par un cookie
 refusé, par précaution après trois échecs d'affilée, ou fermée), l'adresse par laquelle le navigateur du
-serveur sort, et la date de la dernière collecte. Rien ne se saisit ici : le mot de passe et le code ne
-transitent jamais par l'application, la session s'ouvre depuis un terminal sur le serveur
-(`jay-reach linkedin connecter`) et ne repart pas seule une fois arrêtée. La page porte aussi les trois
-plafonds de collecte, réglables comme dans Plafonds.
+serveur sort, et la date de la dernière collecte.
+
+**Connecter mon compte LinkedIn** ouvre une fenêtre : saisissez votre identifiant LinkedIn et votre mot de
+passe. Ils ne servent qu'une fois, pour ouvrir la session, et ne sont enregistrés nulle part. Un suivi
+d'étapes montre l'avancement (demande reçue, navigateur ouvert, identifiants transmis...). Si LinkedIn demande
+un code de vérification, il arrive par e-mail : saisissez-le dans **Code reçu de LinkedIn** puis **Valider le
+code**. LinkedIn vous écrira que la connexion vient d'un lieu inhabituel : c'est la sortie réseau du serveur,
+pas une intrusion. Le serveur ne tient qu'une session à la fois : connecter un autre compte déconnecte le
+précédent. Après trois échecs, le formulaire se rouvre un quart d'heure plus tard. Seul un administrateur peut
+brancher un compte. **Reconnecter** rouvre la session après un arrêt, et **Déconnecter ce compte** la ferme en
+effaçant les cookies du navigateur du serveur ; la session ne repart pas seule une fois arrêtée. Depuis un
+terminal du serveur, `jay-reach linkedin connecter` reste valable.
+
+La page porte aussi les trois plafonds de collecte, réglables comme dans Plafonds.
 
 Le résultat d'une collecte se lit sur la carte de la source (Sources) : pour le dernier passage, ses
 personnes vues, nouvelles, doublons, déjà en campagne et écartées par le scoring, et la raison quand il
