@@ -21,10 +21,6 @@ import {
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const q = (sql, params) => pool.query(sql, params);
 let failures = 0;
-function check(label, cond, extra = '') {
-  console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
-  if (!cond) failures += 1;
-}
 
 // Ce que le worker écrit en console : capté pour être balayé (les erreurs et les journaux).
 const journal = [];

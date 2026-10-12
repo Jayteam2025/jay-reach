@@ -52,6 +52,10 @@ export default tseslint.config(
         URLSearchParams: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
+        // Les compagnons d'annulation manquaient : un script qui pose un delai
+        // et l'annule echouait au lint sur « clearTimeout is not defined ».
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
         // Globales du runtime Node depuis la version 18. La liste etait
         // incomplete : un script d'outillage qui appelle une API HTTP echouait
         // au lint sur « fetch is not defined ».
