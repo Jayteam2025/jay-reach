@@ -18,6 +18,8 @@ import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
 import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
+import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
+import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -139,10 +141,42 @@ export type TypeAlerte =
   | 'moteur_silencieux'
   | 'plafond_a_zero'
   | 'canal_sans_expediteur'
-  | 'collecte_etranglee';
+  | 'collecte_etranglee'
+  | 'fenetre_trop_etroite'
+  | 'envois_entasses'
+  | 'rien_ne_part';
 
 /** Sous ce nombre de personnes par passage, la collecte LinkedIn ne nourrit plus le moteur. */
 const SEUIL_COLLECTE_ETRANGLEE = 10;
+
+/** Sous ce nombre de minutes par action, la fenêtre LinkedIn ne peut pas écouler le volume réglé (intervalle de 1 à 20 min, soit environ 10 min en moyenne). */
+const SEUIL_MINUTES_PAR_ACTION = 10;
+
+/** Fenêtre d'observation de `rien_ne_part`, en jours ouvrés du calendrier (lundi au vendredi). */
+const JOURS_OUVRES_SANS_ACTION = 3;
+
+/**
+ * Premier des `JOURS_OUVRES_SANS_ACTION` derniers lundis-vendredis STRICTEMENT avant `jour`
+ * (`AAAA-MM-JJ`, déjà lu dans le fuseau de l'organisation). Calendrier pur : ce ne sont pas
+ * les jours d'ouverture des boîtes, qu'une configuration à trois jours rendrait inatteignables.
+ */
+function premierDesDerniersJoursOuvres(jour: string): string {
+  const d = new Date(`${jour}T12:00:00Z`);
+  let restants = JOURS_OUVRES_SANS_ACTION;
+  while (restants > 0) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    const semaine = d.getUTCDay();
+    if (semaine !== 0 && semaine !== 6) restants -= 1;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+interface LigneEnvoisParJour {
+  jour: string;
+  dus: number;
+  capacite: number;
+  illimitee: boolean;
+}
 
 export interface Alerte {
   type: TypeAlerte;
@@ -337,7 +371,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, sourcesLinkedinRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const debutSansAction = premierDesDerniersJoursOuvres(jourRef);
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, sourcesLinkedinRes, campagnesActivesRes, envoisParJourRes, actionsRecentesRes, heuresLinkedin, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -422,6 +457,58 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           )`,
       [ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
     ),
+    // Campagnes actives : sans elles, aucun des contrôles « le rythme ne sort rien » n'a de sens.
+    // `anciennes` : créées avant la fenêtre d'observation, pour ne pas accuser une campagne neuve.
+    ctx.ex.query<{ actives: number; avec_linkedin: number; anciennes: number }>(
+      `select count(*)::int as actives, /* jr:campagnes_actives */
+              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))))::int as avec_linkedin,
+              (count(*) filter (where c.created_at < ($2::date::timestamp at time zone $3)))::int as anciennes
+         from campaigns c
+        where c.organization_id = $1
+          and c.status = 'active'`,
+      [ctx.organisationId, debutSansAction, fuseau],
+    ),
+    // Les sept jours à venir : envois email dus (prochaine étape email d'une inscription active d'une
+    // campagne active) contre la capacité du jour (somme des `daily_quota` des boîtes ouvertes ce jour-là,
+    // `business_hours.days` en convention ISO, défaut lundi-vendredi comme `heuresOuvreesDe`). Une boîte
+    // sans quota n'a pas de limite : `illimitee`. Bornes du jour dans le fuseau de l'organisation.
+    ctx.ex.query<LigneEnvoisParJour>(
+      `select to_char(d.jour, 'YYYY-MM-DD') as jour, /* jr:envois_par_jour */
+              (select count(*)::int
+                 from enrollments e
+                 join campaigns c on c.id = e.campaign_id
+                 join sequence_steps ss on ss.campaign_id = e.campaign_id and ss.position = e.current_step
+                where e.organization_id = $1
+                  and e.status = 'active'
+                  and c.organization_id = e.organization_id
+                  and c.status = 'active'
+                  and ss.channel = 'email'
+                  and e.next_action_at >= (d.jour::timestamp at time zone $3)
+                  and e.next_action_at < ((d.jour + 1)::timestamp at time zone $3)) as dus,
+              (select coalesce(sum(sd.daily_quota), 0)::int
+                 from senders sd
+                where sd.organization_id = $1
+                  and sd.kind = 'email'
+                  and sd.is_active
+                  and coalesce(sd.business_hours->'days', '[1,2,3,4,5]'::jsonb) @> to_jsonb(extract(isodow from d.jour)::int)) as capacite,
+              (select coalesce(bool_or(sd.daily_quota is null), false)
+                 from senders sd
+                where sd.organization_id = $1
+                  and sd.kind = 'email'
+                  and sd.is_active
+                  and coalesce(sd.business_hours->'days', '[1,2,3,4,5]'::jsonb) @> to_jsonb(extract(isodow from d.jour)::int)) as illimitee
+         from (select ($2::date + g) as jour from generate_series(1, 7) g) d
+        order by d.jour`,
+      [ctx.organisationId, jourRef, fuseau],
+    ),
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:actions_recentes */
+         from actions a
+        where a.organization_id = $1
+          and a.created_at >= ($2::date::timestamp at time zone $3)`,
+      [ctx.organisationId, debutSansAction, fuseau],
+    ),
+    lireHeuresEnvoiLinkedIn(ctx),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
       `select sending_paused_at, sending_paused_reason /* jr:pause_envoi */
          from organizations
@@ -584,6 +671,47 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       texte: `La collecte LinkedIn est étranglée : elle enregistre au plus ${personnesParPassage} ${personnesParPassage > 1 ? 'personnes' : 'personne'} par passage.`,
       lien: '/settings/linkedin',
     });
+  }
+  const campagnesActives = campagnesActivesRes.rows[0];
+  if ((campagnesActives?.actives ?? 0) > 0) {
+    // Le volume réglé par jour : le plus grand des deux plafonds hebdomadaires (rabotés comme le moteur)
+    // réparti sur les jours ouvrés. Le plus grand et non la somme : la somme ferait alerter les
+    // réglages par défaut (100 invitations + 200 messages), qui ne sont pas une panne.
+    const invitations = reglages.linkedin_invitations_par_semaine;
+    const messages = reglages.linkedin_messages_par_semaine;
+    const parSemaine = Math.max(
+      typeof invitations === 'number' ? Math.min(invitations, HARD_CAP_7_DAYS) : 0,
+      typeof messages === 'number' ? Math.min(messages, HARD_CAP_7_DAYS) : 0,
+    );
+    const actionsParJour = Math.ceil(parSemaine / heuresLinkedin.jours.length);
+    const minutesParAction = actionsParJour > 0 ? ((heuresLinkedin.finHeure - heuresLinkedin.debutHeure) * 60) / actionsParJour : Infinity;
+    if ((campagnesActives?.avec_linkedin ?? 0) > 0 && minutesParAction < SEUIL_MINUTES_PAR_ACTION) {
+      alertes.push({
+        type: 'fenetre_trop_etroite',
+        texte: `La fenêtre d'envoi LinkedIn (de ${heuresLinkedin.debutHeure} h à ${heuresLinkedin.finHeure} h) est trop étroite : elle laisse ${minutesParAction.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} minutes par action pour ${actionsParJour} actions par jour, le moteur n'enverra pas tout ce qui est réglé.`,
+        lien: '/settings/linkedin',
+      });
+    }
+    // Un jour sans aucune boîte ouverte (capacité nulle) n'alerte pas : ses envois glissent au jour ouvert
+    // suivant. Une boîte sans quota ne borne rien.
+    const entasse = envoisParJourRes.rows.find((j) => !j.illimitee && j.capacite > 0 && j.dus > j.capacite);
+    if (entasse) {
+      const jourLisible = new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(
+        new Date(`${entasse.jour}T12:00:00Z`),
+      );
+      alertes.push({
+        type: 'envois_entasses',
+        texte: `Le ${jourLisible}, ${entasse.dus} envois sont dus pour une capacité de ${entasse.capacite} : le surplus partira les jours suivants.`,
+        lien: '/settings/senders',
+      });
+    }
+    if ((campagnesActives?.anciennes ?? 0) > 0 && (actionsRecentesRes.rows[0]?.n ?? 0) === 0) {
+      alertes.push({
+        type: 'rien_ne_part',
+        texte: `Rien n'est parti depuis trois jours ouvrés alors qu'une campagne est active.`,
+        lien: '/settings/senders',
+      });
+    }
   }
   const organisation = organisationRes.rows[0];
   if (organisation?.sending_paused_at) {

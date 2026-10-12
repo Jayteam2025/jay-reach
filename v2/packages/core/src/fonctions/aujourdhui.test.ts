@@ -526,6 +526,176 @@ describe('lireAujourdhui', () => {
     });
   });
 
+  describe('alertes « le rythme ne sort rien »', () => {
+    const types = (a: Awaited<ReturnType<typeof lireAujourdhui>>) => a.alertes.map((al) => al.type);
+    const campagneLinkedin = { 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 1, anciennes: 1 }] };
+    const campagneEmail = { 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 0, anciennes: 1 }] };
+    const plafonds = (invitations: number, messages: number) => ({
+      'from organization_settings': [
+        { key: 'linkedin_invitations_par_semaine', value: invitations },
+        { key: 'linkedin_messages_par_semaine', value: messages },
+      ],
+    });
+    const fenetre = (debut: number, fin: number, jours = [1, 2, 3, 4, 5]) => ({
+      'from linkedin_settings': [{ send_from_hour: debut, send_to_hour: fin, send_days: jours, timezone: 'Europe/Paris' }],
+    });
+
+    it('une fenêtre qui laisse moins de dix minutes par action est signalée', async () => {
+      // 20 h - 21 h pour 25 actions par jour (125 par semaine sur cinq jours) : une toutes les 2,4 minutes.
+      const a = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(125, 125), ...fenetre(20, 21) }));
+      const alerte = a.alertes.find((al) => al.type === 'fenetre_trop_etroite');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/linkedin');
+      expect(alerte?.texte).toContain('2,4 minutes');
+      expect(alerte?.texte).toContain('25 actions par jour');
+      expect(alerte?.texte).not.toMatch(/send_from_hour|linkedin_settings/);
+    });
+
+    it('une fenêtre large pour le même volume ne l’est pas', async () => {
+      const a = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(125, 125), ...fenetre(8, 20) }));
+      expect(types(a)).not.toContain('fenetre_trop_etroite');
+      // Frontière : 9 h - 18 h pour 54 actions par jour = exactement 10 minutes, pas « moins de dix ».
+      const limite = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(270, 270), ...fenetre(9, 18) }));
+      expect(types(limite)).not.toContain('fenetre_trop_etroite');
+    });
+
+    it('les réglages par défaut (9 h - 18 h, 100 invitations et 200 messages) n’alertent pas', async () => {
+      const a = await lireAujourdhui(faux(campagneLinkedin));
+      expect(types(a)).not.toContain('fenetre_trop_etroite');
+    });
+
+    it('une fenêtre étroite sans campagne active à étape LinkedIn n’alerte pas', async () => {
+      const reglages = { ...plafonds(125, 125), ...fenetre(20, 21) };
+      expect(types(await lireAujourdhui(faux({ ...reglages, ...campagneEmail })))).not.toContain('fenetre_trop_etroite');
+      expect(types(await lireAujourdhui(faux(reglages)))).not.toContain('fenetre_trop_etroite');
+    });
+
+    const lundi = { jour: '2026-10-19', dus: 40, capacite: 16, illimitee: false };
+    const mardi = { jour: '2026-10-20', dus: 97, capacite: 135, illimitee: false };
+
+    it('un jour qui porte plus d’envois dus que la capacité de ce jour est signalé', async () => {
+      // Mesuré le 12/10 : 97 dus le mardi pour une capacité de 135 (rien à dire) ; le cas réel est l’écart au lundi à 16.
+      const a = await lireAujourdhui(faux({ ...campagneEmail, 'jr:envois_par_jour': [lundi, mardi] }));
+      const alerte = a.alertes.find((al) => al.type === 'envois_entasses');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/senders');
+      expect(alerte?.texte).toContain('lundi 19 octobre');
+      expect(alerte?.texte).toContain('40');
+      expect(alerte?.texte).toContain('16');
+      const sain = await lireAujourdhui(faux({ ...campagneEmail, 'jr:envois_par_jour': [{ ...lundi, dus: 16 }, mardi] }));
+      expect(types(sain)).not.toContain('envois_entasses');
+    });
+
+    it('une capacité nulle (jour fermé) ou illimitée (boîte sans quota) ne déclenche pas envois_entasses', async () => {
+      const ferme = await lireAujourdhui(faux({ ...campagneEmail, 'jr:envois_par_jour': [{ jour: '2026-10-17', dus: 5, capacite: 0, illimitee: false }] }));
+      expect(types(ferme)).not.toContain('envois_entasses');
+      const illimite = await lireAujourdhui(faux({ ...campagneEmail, 'jr:envois_par_jour': [{ ...lundi, illimitee: true }] }));
+      expect(types(illimite)).not.toContain('envois_entasses');
+    });
+
+    it('la requête des envois dus par jour est bornée à l’organisation, aux campagnes actives et à l’email', async () => {
+      const appels: { sql: string; params: unknown[] | undefined }[] = [];
+      const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        appels.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      const dus = appels.find((c) => /jr:envois_par_jour/i.test(c.sql))!;
+      expect(dus.params?.[0]).toBe('org-1');
+      expect(dus.sql).toContain('e.organization_id = $1');
+      expect(dus.sql).toContain('sd.organization_id = $1');
+      expect(dus.sql).toContain("c.status = 'active'");
+      expect(dus.sql).toContain("ss.channel = 'email'");
+      expect(dus.sql).toContain("sd.kind = 'email'");
+    });
+
+    it('rien parti depuis trois jours ouvrés alors qu’une campagne est active est signalé', async () => {
+      const a = await lireAujourdhui(faux({ ...campagneEmail, 'jr:actions_recentes': [{ n: 0 }] }));
+      const alerte = a.alertes.find((al) => al.type === 'rien_ne_part');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/senders');
+      const parti = await lireAujourdhui(faux({ ...campagneEmail, 'jr:actions_recentes': [{ n: 3 }] }));
+      expect(types(parti)).not.toContain('rien_ne_part');
+    });
+
+    it('rien_ne_part n’alerte pas pour une campagne créée depuis moins de trois jours ouvrés', async () => {
+      const a = await lireAujourdhui(faux({ 'jr:campagnes_actives': [{ actives: 1, avec_linkedin: 0, anciennes: 0 }], 'jr:actions_recentes': [{ n: 0 }] }));
+      expect(types(a)).not.toContain('rien_ne_part');
+    });
+
+    it('les trois jours ouvrés sont les trois derniers lundis-vendredis du calendrier, dans le fuseau de l’organisation', async () => {
+      const debutPour = async (instant: string) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(instant));
+        try {
+          const appels: { sql: string; params: unknown[] | undefined }[] = [];
+          const query = vi.fn(async (sql: string, params?: unknown[]) => {
+            appels.push({ sql, params });
+            return { rows: [], rowCount: 0 };
+          }) as unknown as Executeur['query'];
+          await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+          return appels.find((c) => /jr:actions_recentes/i.test(c.sql))!.params?.[1];
+        } finally {
+          vi.useRealTimers();
+        }
+      };
+      // Lundi 12/10 : vendredi 9, jeudi 8, mercredi 7 (le week-end ne compte pas).
+      expect(await debutPour('2026-10-12T10:00:00Z')).toBe('2026-10-07');
+      // Mercredi 14/10 : mardi 13, lundi 12, vendredi 9.
+      expect(await debutPour('2026-10-14T10:00:00Z')).toBe('2026-10-09');
+      // Dimanche 22 h 30 UTC = lundi 00 h 30 à Paris : « aujourd’hui » est déjà lundi, comme pour le reste de l’écran.
+      expect(await debutPour('2026-10-11T22:30:00Z')).toBe('2026-10-07');
+    });
+
+    it('la requête des actions récentes filtre par organisation', async () => {
+      const appels: { sql: string; params: unknown[] | undefined }[] = [];
+      const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        appels.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      const recentes = appels.find((c) => /jr:actions_recentes/i.test(c.sql))!;
+      expect(recentes.params?.[0]).toBe('org-1');
+      expect(recentes.sql).toContain('a.organization_id = $1');
+      const campagnes = appels.find((c) => /jr:campagnes_actives/i.test(c.sql))!;
+      expect(campagnes.sql).toContain('c.organization_id = $1');
+    });
+
+    it('une organisation sans aucune campagne active ne déclenche aucun des trois', async () => {
+      const a = await lireAujourdhui(
+        faux({
+          'jr:campagnes_actives': [{ actives: 0, avec_linkedin: 0, anciennes: 0 }],
+          'jr:actions_recentes': [{ n: 0 }],
+          'jr:envois_par_jour': [lundi],
+          ...plafonds(125, 125),
+          ...fenetre(20, 21),
+        }),
+      );
+      for (const t of ['fenetre_trop_etroite', 'envois_entasses', 'rien_ne_part'] as const) expect(types(a)).not.toContain(t);
+    });
+
+    it('une organisation neuve, sans aucune ligne en base, n’alerte sur aucun des trois', async () => {
+      const a = await lireAujourdhui(faux({}));
+      for (const t of ['fenetre_trop_etroite', 'envois_entasses', 'rien_ne_part'] as const) expect(types(a)).not.toContain(t);
+    });
+
+    it('les lignes d’une AUTRE organisation ne déclenchent rien', async () => {
+      const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        if (params?.[0] !== 'org-2') return { rows: [], rowCount: 0 };
+        if (/jr:campagnes_actives/i.test(sql)) return { rows: [{ actives: 1, avec_linkedin: 0, anciennes: 1 }], rowCount: 1 };
+        if (/jr:envois_par_jour/i.test(sql)) return { rows: [lundi], rowCount: 1 };
+        if (/jr:actions_recentes/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+      const a = await lireAujourdhui(ctx);
+      for (const t of ['envois_entasses', 'rien_ne_part'] as const) expect(types(a)).not.toContain(t);
+      // Garde-fou : le faux pool rend bien ces lignes pour l'autre organisation.
+      const autre = await lireAujourdhui({ ...ctx, organisationId: 'org-2' });
+      expect(types(autre)).toEqual(expect.arrayContaining(['envois_entasses', 'rien_ne_part']));
+    });
+  });
+
   it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [

@@ -14,6 +14,9 @@
 //   3. Deux définitions du plafond vivent côte à côte — `lirePlafondEnvois`
 //      (`plafonds.ts`) et `plafondEnvoisOrganisation` (`campagnes.ts`) — alors que le
 //      commentaire de la première annonce « une seule définition ».
+//   4. (section 5) Les alertes « le rythme ne sort rien » de `lireAujourdhui` : capacité par
+//      jour (`senders.business_hours` jsonb) contre envois dus (`enrollments.next_action_at`),
+//      et silence de trois jours ouvrés, exécutés sur Postgres.
 import pg from 'pg';
 import {
   lirePlafondEnvois,
@@ -206,10 +209,132 @@ async function uneSeuleDefinition() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// (5) Les alertes « le rythme ne sort rien » : capacité par jour, envois dus, silence
+// ---------------------------------------------------------------------------
+/** Un sender email aux jours et au quota choisis (`days` : convention ISO, 1 = lundi). */
+async function senderAuxJours(org, { daily, days }) {
+  return (
+    await q(
+      `insert into senders (organization_id, kind, identity, daily_quota, timezone, is_active, business_hours)
+       values ($1, 'email', $2, $3, 'UTC', true, $4::jsonb) returning id`,
+      [org, `j-${uniq()}@example.test`, daily, JSON.stringify({ startHour: 0, endHour: 24, days })],
+    )
+  ).rows[0].id;
+}
+
+/** Une campagne à une étape email (position 0), `statut` au choix, créée il y a `ageJours` jours. */
+async function campagneEmail(org, { statut = 'active', ageJours = 10 } = {}) {
+  const id = (
+    await q(`insert into campaigns (organization_id, name, status, created_at) values ($1, $2, $3, now() - ($4 || ' days')::interval) returning id`, [org, `c-${uniq()}`, statut, String(ageJours)])
+  ).rows[0].id;
+  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'email')`, [id]);
+  return id;
+}
+
+/** `n` inscriptions actives dont la prochaine action est due à midi UTC, `decalage` jours après aujourd'hui. */
+async function envoisDus(org, campagne, decalage, n) {
+  for (let i = 0; i < n; i += 1) {
+    const ct = (await q(`insert into contacts (organization_id, email) values ($1, $2) returning id`, [org, `d-${uniq()}@example.test`])).rows[0].id;
+    await q(
+      `insert into enrollments (organization_id, campaign_id, contact_id, status, current_step, next_action_at)
+       values ($1, $2, $3, 'active', 0, date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' + ($4 || ' days')::interval + interval '12 hours')`,
+      [org, campagne, ct, String(decalage)],
+    );
+  }
+}
+
+const isoJour = async (decalage) =>
+  Number((await q(`select extract(isodow from (now() at time zone 'UTC')::date + $1::int)::int as j`, [decalage])).rows[0].j);
+const alerteDe = async (org, type) => (await lireAujourdhui(ctxDe(org))).alertes.find((a) => a.type === type);
+
+async function alertesRythme() {
+  console.log('\n[5] Alertes « le rythme ne sort rien » : exécution réelle de leur SQL');
+
+  // Deux boîtes aux jours différents : A ouverte le jour +1 (quota 10), B le jour +2 (quota 20).
+  // Le jour +3 n'est ouvert pour aucune des deux (jour fermé), ISO jour +1 / +2 / +3 distincts.
+  const jA = await isoJour(1);
+  const jB = await isoJour(2);
+  const monde = async () => {
+    const org = await orgNeuve();
+    await senderAuxJours(org, { daily: 10, days: [jA] });
+    await senderAuxJours(org, { daily: 20, days: [jB] });
+    return { org, camp: await campagneEmail(org) };
+  };
+
+  // 5.1 Jour +1 : 11 dus pour la seule boîte A (10). Une somme sans le filtre `days` annoncerait 30 et se tairait.
+  const x = await monde();
+  await envoisDus(x.org, x.camp, 1, 11);
+  // Une voisine bien plus chargée, sans boîte : elle ne doit pas changer le texte de x.
+  const voisine = await orgNeuve();
+  await senderAuxJours(voisine, { daily: 500, days: [1, 2, 3, 4, 5, 6, 7] });
+  await envoisDus(voisine, await campagneEmail(voisine), 1, 99);
+  const a1 = await alerteDe(x.org, 'envois_entasses');
+  check('5.1 11 envois dus un jour où seule la boîte à 10 est ouverte : alerte', a1 !== undefined, `texte=${a1?.texte}`);
+  check('5.2 la capacité annoncée est 10, pas la somme 30 des deux boîtes', /11 envois sont dus pour une capacité de 10\b/.test(a1?.texte ?? ''), a1?.texte);
+  check('5.3 les envois dus d’une autre organisation ne comptent pas', !/\b(99|110)\b/.test(a1?.texte ?? ''), a1?.texte);
+
+  // 5.4 Jour +2 : 15 dus pour la boîte B (20) : rien à dire. Sa capacité n'est pas celle de A.
+  const y = await monde();
+  await envoisDus(y.org, y.camp, 2, 15);
+  check('5.4 15 dus pour la boîte à 20 ouverte ce jour-là : pas d’alerte', (await alerteDe(y.org, 'envois_entasses')) === undefined);
+
+  // 5.5 Jour +3 fermé : 40 dus, capacité nulle (et non 30). Les envois glissent au prochain jour ouvert.
+  const z = await monde();
+  await envoisDus(z.org, z.camp, 3, 40);
+  check('5.5 un jour sans boîte ouverte a une capacité nulle : pas d’alerte à 40 dus', (await alerteDe(z.org, 'envois_entasses')) === undefined);
+
+  // 5.6 Une boîte ouverte sans quota ne borne rien.
+  const sansQuota = await orgNeuve();
+  await senderAuxJours(sansQuota, { daily: null, days: [jA] });
+  await senderAuxJours(sansQuota, { daily: 10, days: [jA] });
+  await envoisDus(sansQuota, await campagneEmail(sansQuota), 1, 50);
+  check('5.6 une boîte sans quota ouverte ce jour-là : pas d’alerte', (await alerteDe(sansQuota, 'envois_entasses')) === undefined);
+
+  // 5.7 Les envois dus d'une campagne en pause ne comptent pas (une campagne active, elle, existe).
+  const enPause = await orgNeuve();
+  await senderAuxJours(enPause, { daily: 10, days: [jA] });
+  await campagneEmail(enPause);
+  await envoisDus(enPause, await campagneEmail(enPause, { statut: 'paused' }), 1, 50);
+  check('5.7 50 dus dans une campagne en pause : pas d’alerte', (await alerteDe(enPause, 'envois_entasses')) === undefined);
+
+  // 5.8 Sans campagne active, rien ne se déclenche, même avec des envois dus.
+  const sansCampagne = await orgNeuve();
+  await senderAuxJours(sansCampagne, { daily: 10, days: [jA] });
+  await envoisDus(sansCampagne, await campagneEmail(sansCampagne, { statut: 'paused' }), 1, 50);
+  const toutes = (await lireAujourdhui(ctxDe(sansCampagne))).alertes.map((a) => a.type);
+  check(
+    '5.8 aucune campagne active : aucun des trois contrôles',
+    !['fenetre_trop_etroite', 'envois_entasses', 'rien_ne_part'].some((t) => toutes.includes(t)),
+    toutes.join(','),
+  );
+
+  // 5.9 rien_ne_part : campagne active ancienne et aucune action depuis trois jours ouvrés.
+  const silence = await orgNeuve();
+  await campagneEmail(silence);
+  check('5.9 campagne active ancienne, aucune action : alerte', (await alerteDe(silence, 'rien_ne_part')) !== undefined);
+  // Les actions d'une AUTRE organisation ne la lèvent pas.
+  const bavarde = await orgNeuve();
+  const sb = await senderNeuf(bavarde, { daily: 100 });
+  await actionDuJour(bavarde, { sender: sb, status: 'delivered', dispatchedAt: await midiAujourdhui() });
+  check('5.10 les actions d’une autre organisation ne comptent pas', (await alerteDe(silence, 'rien_ne_part')) !== undefined);
+  // Une action créée aujourd'hui dans l'organisation la lève.
+  const parti = await orgNeuve();
+  await campagneEmail(parti);
+  const sp = await senderNeuf(parti, { daily: 100 });
+  await actionDuJour(parti, { sender: sp, status: 'delivered', dispatchedAt: await midiAujourdhui() });
+  check('5.11 une action créée aujourd’hui : pas d’alerte', (await alerteDe(parti, 'rien_ne_part')) === undefined);
+  // Une campagne créée hier n'est pas accusée : trois jours ouvrés n'ont pas pu s'écouler.
+  const neuve = await orgNeuve();
+  await campagneEmail(neuve, { ageJours: 0 });
+  check('5.12 campagne créée aujourd’hui : pas d’alerte', (await alerteDe(neuve, 'rien_ne_part')) === undefined);
+}
+
 await plafondSansLimite();
 await accordAvecLeMoteur();
 await memePopulation();
 await uneSeuleDefinition();
+await alertesRythme();
 
 await pool.end();
 if (failures > 0) {
