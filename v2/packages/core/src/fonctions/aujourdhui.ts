@@ -15,7 +15,7 @@ import {
   type JaugeEnvois,
 } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
-import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
@@ -412,7 +412,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
          from sources so
         where so.organization_id = $1
           and so.is_active
-          and ${SQL_PROVIDER_ID_AFFICHAGE} like 'linkedin\\_%'
+          and so.config->>'sourceType' = any($2::text[])
           -- Même critère que le tour de collecte du worker (producer.ts, jr:linkedin_tour_source_due) :
           -- une source sans campagne active ne collecte rien.
           and exists (
@@ -420,7 +420,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
               join campaigns c on c.id = cs.campaign_id
              where cs.source_id = so.id and c.organization_id = so.organization_id and c.status = 'active'
           )`,
-      [ctx.organisationId],
+      [ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
     ),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
       `select sending_paused_at, sending_paused_reason /* jr:pause_envoi */

@@ -468,6 +468,23 @@ describe('lireAujourdhui', () => {
       expect(types(await lancer('active'))).toContain('collecte_etranglee');
     });
 
+    it('seuls les types de source collectés par le worker comptent, pas un type linkedin_* inventé', async () => {
+      const lancer = async (type: string) => {
+        const query = vi.fn(async (sql: string, params?: unknown[]) => {
+          if (/from organization_settings/i.test(sql)) return { rows: [{ key: 'linkedin_personnes_par_passage', value: 5 }], rowCount: 1 };
+          if (/jr:sources_linkedin_actives/i.test(sql)) {
+            const types = params?.[1] as string[] | undefined;
+            const n = /so\.config->>'sourceType' = any\(\$2::text\[\]\)/.test(sql) && types?.includes(type) ? 1 : 0;
+            return { rows: [{ n }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        }) as unknown as Executeur['query'];
+        return lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      };
+      expect(types(await lancer('linkedin_post_engagers'))).toContain('collecte_etranglee');
+      expect(types(await lancer('linkedin_type_invente'))).not.toContain('collecte_etranglee');
+    });
+
     it('les requêtes des nouveaux contrôles filtrent par organisation', async () => {
       const appels: string[] = [];
       const query = vi.fn(async (sql: string) => {
@@ -481,6 +498,7 @@ describe('lireAujourdhui', () => {
       const sources = appels.find((t) => /jr:sources_linkedin_actives/i.test(t))!;
       expect(sources).toContain('so.organization_id = $1');
       expect(sources).toContain('c.organization_id = so.organization_id');
+      expect(sources).toContain("so.config->>'sourceType' = any($2::text[])");
       expect(sources).toContain("c.status = 'active'");
     });
 
