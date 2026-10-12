@@ -416,15 +416,18 @@ describe('lireAujourdhui', () => {
       // Zéro par défaut, jamais une panne.
       const relecture = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'relecture_premiers_envois_defaut', value: 0 }] }));
       expect(types(relecture)).not.toContain('plafond_a_zero');
-      // Les deux plafonds de collecte LinkedIn arrêtent la collecte : l'écran des limites le dit, le tableau de bord aussi.
+      // Les deux plafonds de collecte LinkedIn arrêtent la collecte : l'écran des limites le dit, le tableau de bord aussi,
+      // mais seulement pour une organisation qui a une source LinkedIn active (comme collecte_etranglee).
       for (const cle of ['linkedin_posts_par_jour', 'linkedin_requetes_par_heure']) {
-        const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 0 }] }));
+        const sansSource = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 0 }] }));
+        expect(types(sansSource), cle).not.toContain('plafond_a_zero');
+        const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 0 }], 'jr:sources_linkedin_actives': [{ n: 1 }] }));
         const alerte = a.alertes.find((al) => al.type === 'plafond_a_zero');
         expect(alerte, cle).toBeDefined();
         // Ces deux réglages se modifient sur l'écran LinkedIn, pas sur celui des limites de production.
         expect(alerte?.lien).toBe('/settings/linkedin');
         expect(alerte?.texte).not.toContain(cle);
-        const positif = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 5 }] }));
+        const positif = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 5 }], 'jr:sources_linkedin_actives': [{ n: 1 }] }));
         expect(types(positif)).not.toContain('plafond_a_zero');
       }
       // Un plafond de collecte à zéro relève de collecte_etranglee seule, pas de deux alertes.
@@ -794,6 +797,23 @@ describe('lireAujourdhui', () => {
       // Garde-fou : le faux pool rend bien ces lignes pour l'autre organisation.
       const autre = await lireAujourdhui({ ...ctx, organisationId: 'org-2' });
       expect(types(autre)).toContain('rien_ne_part');
+    });
+
+    it('les envois dus d’une AUTRE organisation ne déclenchent pas envois_entasses', async () => {
+      // Monde où envois_entasses est seul à pouvoir sortir : des actions récentes existent, donc rien_ne_part est hors jeu,
+      // et l'assertion ne dépend pas de la subordination de rien_ne_part.
+      const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        if (/jr:engine_status/i.test(sql)) return { rows: moteurSain['jr:engine_status'], rowCount: 1 };
+        if (params?.[0] !== 'org-2') return { rows: [], rowCount: 0 };
+        if (/jr:campagnes_actives/i.test(sql)) return { rows: [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 1 }], rowCount: 1 };
+        if (/jr:envois_par_jour/i.test(sql)) return { rows: [lundi], rowCount: 1 };
+        if (/jr:actions_recentes/i.test(sql)) return { rows: [{ n: 3 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+      expect(types(await lireAujourdhui(ctx))).not.toContain('envois_entasses');
+      // Garde-fou : le faux pool rend bien ces lignes pour l'autre organisation.
+      expect(types(await lireAujourdhui({ ...ctx, organisationId: 'org-2' }))).toContain('envois_entasses');
     });
   });
 

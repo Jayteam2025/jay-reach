@@ -657,10 +657,13 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   const PLAFONDS_A_ZERO = [
     { cle: 'scoring_par_jour', texte: 'Aucune offre ne sera évaluée : le plafond de scoring par jour est à zéro.', lien: '/settings/limits' },
     { cle: 'enrichissements_par_jour', texte: "Aucun contact ne sera enrichi : le plafond d'enrichissements par jour est à zéro.", lien: '/settings/limits' },
-    { cle: 'linkedin_posts_par_jour', texte: 'La collecte LinkedIn est arrêtée : le plafond de posts par jour est à zéro.', lien: '/settings/linkedin' },
-    { cle: 'linkedin_requetes_par_heure', texte: 'La collecte LinkedIn est arrêtée : le plafond de requêtes par heure est à zéro.', lien: '/settings/linkedin' },
+    { cle: 'linkedin_posts_par_jour', texte: 'La collecte LinkedIn est arrêtée : le plafond de posts par jour est à zéro.', lien: '/settings/linkedin', canalLinkedin: true },
+    { cle: 'linkedin_requetes_par_heure', texte: 'La collecte LinkedIn est arrêtée : le plafond de requêtes par heure est à zéro.', lien: '/settings/linkedin', canalLinkedin: true },
   ] as const;
   for (const plafond of PLAFONDS_A_ZERO) {
+    // Les plafonds de collecte LinkedIn ne comptent que si une source LinkedIn est active : une organisation
+    // email seule les met à zéro à raison, et un bandeau fantôme éteindrait `rien_ne_part` pour toujours.
+    if ('canalLinkedin' in plafond && (sourcesLinkedinRes.rows[0]?.n ?? 0) === 0) continue;
     if (reglages[plafond.cle] === 0) {
       alertes.push({ type: 'plafond_a_zero', texte: plafond.texte, lien: plafond.lien });
     }
