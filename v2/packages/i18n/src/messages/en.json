@@ -1545,7 +1545,7 @@
       "etat": {
         "absente": {
           "phrase": "No session.",
-          "detail": "Open it from the server: the password and the code never go through this page."
+          "detail": "Connect your account to collect profiles and send your messages."
         },
         "prete": {
           "phrase": "Ready to collect.",
@@ -1609,10 +1609,6 @@
         "plafondHoraireDate": {
           "phrase": "This hour's LinkedIn request budget is used up, and collection shares it with sending. Back around {quand}."
         }
-      },
-      "commande": {
-        "consigne": "In a terminal on the server, reopen the session:",
-        "consigneDefi": "Complete the verification, then reopen the session from a terminal on the server:"
       },
       "faits": {
         "compte": "Connected account",
@@ -1708,6 +1704,52 @@
         "titre": "Collecting from LinkedIn is against its terms of use.",
         "risque": "The account used may be restricted or closed. The operator of this instance is responsible.",
         "baseLegale": "Legal basis for processing: legitimate interest, business-to-business prospecting. People collected who are never contacted are deleted after {jours} days. Those we have already assessed leave an unreadable fingerprint (not their identifier), kept for at most {jours} days, so that we do not assess them twice."
+      },
+      "connexion": {
+        "connecter": "Connect my LinkedIn account",
+        "reconnecter": "Reconnect",
+        "deconnecter": "Disconnect this account",
+        "annuler": "Cancel",
+        "valider": "Submit code",
+        "identifiant": "LinkedIn username",
+        "motDePasse": "Password",
+        "code": "Code from LinkedIn",
+        "codeAide": "LinkedIn has just sent it to your account's email address.",
+        "tempsRestant": "{temps} left to enter it.",
+        "modaleTitre": "Connect your LinkedIn account",
+        "avertissementSortie": "LinkedIn will email you about a sign-in from an unusual location. That is our network exit, not an intruder: do not change your password.",
+        "avertissementRemplace": "The account currently connected will be signed out: the server holds one session at a time.",
+        "avertissementMotDePasse": "Your password is used once, to open the session. It is not stored anywhere.",
+        "enCours": "Connection in progress.",
+        "etapes": {
+          "recue": "Request received by the server",
+          "sortie_controlee": "Network exit checked",
+          "navigateur_ouvert": "Browser opened",
+          "identifiants_transmis": "Credentials sent to LinkedIn",
+          "code_demande": "LinkedIn is asking for a verification code",
+          "session_active": "Session active"
+        },
+        "motifs": {
+          "sortie_inattendue": "The network exit was not the expected one: the session was blocked as a precaution. Tell the instance administrator.",
+          "sortie_serveur": "The browser went out through the server address instead of the dedicated one. Tell the instance administrator.",
+          "verrou_occupe": "Another connection was already using the browser. Try again in a few minutes.",
+          "refuse": "LinkedIn rejected the username or password.",
+          "defi": "LinkedIn is asking for a verification this screen cannot complete. Open the LinkedIn app on your phone, approve the sign-in, then reconnect here.",
+          "delai": "LinkedIn did not answer in time. Try again.",
+          "worker_absent": "The server did not answer. Check that it is running, then try again.",
+          "trop_essais": "Three attempts failed. The form reopens in fifteen minutes, so LinkedIn does not lock your account.",
+          "annulee": "Connection cancelled.",
+          "erreur_interne": "The connection was interrupted. Try again."
+        },
+        "erreurs": {
+          "en_cours": "A connection is already in progress.",
+          "ferme": "Three attempts failed. The form reopens in fifteen minutes.",
+          "droit": "Only an administrator can connect a LinkedIn account.",
+          "entree": "Username or password missing.",
+          "aucun_code": "No code is expected right now.",
+          "transmission": "The server could not be reached. Try again.",
+          "inconnue": "Something went wrong. Try again."
+        }
       }
     }
   },

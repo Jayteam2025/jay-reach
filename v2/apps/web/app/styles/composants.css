@@ -629,6 +629,26 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 .jr-session-detail { color: var(--jr-secondaire); font-size: var(--jr-petit); margin: 3px 0 0; }
 .jr-session-detail.jr-session-consigne { margin: 0; }
 .jr-session-action { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--jr-filet); }
+
+/* Le relevé d'étapes de la connexion LinkedIn (lot 5) : une ligne par étape, l'étape en cours en
+   accent, un filet qui relie. L'utilisateur vient de confier son mot de passe : il doit voir où en
+   est le serveur, et non un indicateur qui tourne. */
+.jr-releve { list-style: none; margin: 12px 0 0; padding: 0; }
+.jr-releve-ligne { position: relative; padding: 0 0 14px 24px; font-size: var(--jr-petit); color: var(--jr-secondaire); }
+.jr-releve-ligne:last-child { padding-bottom: 0; }
+.jr-releve-ligne::before { content: ""; position: absolute; left: 3px; top: 5px; width: 9px; height: 9px; border-radius: 999px; border: 1px solid var(--jr-filet); background: var(--jr-surface); }
+.jr-releve-ligne::after { content: ""; position: absolute; left: 7px; top: 15px; bottom: 0; width: 1px; background: var(--jr-filet); }
+.jr-releve-ligne:last-child::after { display: none; }
+.jr-releve-ligne--faite { color: var(--jr-encre); }
+.jr-releve-ligne--faite::before { background: var(--jr-bon); border-color: var(--jr-bon); }
+.jr-releve-ligne--encours { color: var(--jr-accent); font-weight: 600; }
+.jr-releve-ligne--encours::before { background: var(--jr-accent); border-color: var(--jr-accent); }
+
+.jr-session-boutons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.jr-connexion-code { margin-top: 14px; max-width: 320px; }
+.jr-connexion-code label { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin-bottom: 6px; }
+.jr-connexion-code .jr-champ { max-width: 190px; }
+.jr-connexion-code .jr-champ input { letter-spacing: 0.3em; text-align: center; }
 .jr-session-commande { display: block; margin-top: 7px; padding: 7px 10px; font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--jr-fond); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow-x: auto; white-space: pre; }
 .jr-session-faits { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; margin: 16px 0 0; background: var(--jr-filet); border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); overflow: hidden; }
 .jr-session-faits > div { background: var(--jr-surface); padding: 11px 13px; min-width: 0; }

@@ -31,42 +31,40 @@ const bloquee = (motif: NonNullable<SessionLinkedIn['motif']>): SessionLinkedIn 
 // enregistré, jamais deux affirmations concurrentes (même règle que `puceEtatCompteLinkedIn`).
 describe('phraseEtatSession', () => {
   it('aucune ligne en base : « absente », ton gris, la commande est proposée', () => {
-    expect(phraseEtatSession(null)).toEqual({ ton: 'gris', cle: 'absente', avecCommande: true });
+    expect(phraseEtatSession(null)).toEqual({ ton: 'gris', cle: 'absente' });
   });
 
   it('état « absente » : même phrase que l’absence de ligne', () => {
     expect(phraseEtatSession({ ...base, etat: 'absente', connecteeLe: null })).toEqual({
       ton: 'gris',
       cle: 'absente',
-      avecCommande: true,
     });
   });
 
   it('active : « prête », ton bon, aucune commande à coller', () => {
-    expect(phraseEtatSession(base)).toEqual({ ton: 'bon', cle: 'prete', avecCommande: false });
+    expect(phraseEtatSession(base)).toEqual({ ton: 'bon', cle: 'prete' });
   });
 
   it('bloquée par une vérification (défi) : ton erreur, la commande est proposée', () => {
-    expect(phraseEtatSession(bloquee('defi'))).toEqual({ ton: 'erreur', cle: 'defi', avecCommande: true });
+    expect(phraseEtatSession(bloquee('defi'))).toEqual({ ton: 'erreur', cle: 'defi' });
   });
 
   it('bloquée par un cookie refusé : ton erreur, la commande est proposée', () => {
-    expect(phraseEtatSession(bloquee('cookie_refuse'))).toEqual({ ton: 'erreur', cle: 'cookieRefuse', avecCommande: true });
+    expect(phraseEtatSession(bloquee('cookie_refuse'))).toEqual({ ton: 'erreur', cle: 'cookieRefuse' });
   });
 
   it('bloquée par le disjoncteur : ton erreur, la commande est proposée', () => {
-    expect(phraseEtatSession(bloquee('disjoncteur'))).toEqual({ ton: 'erreur', cle: 'disjoncteur', avecCommande: true });
+    expect(phraseEtatSession(bloquee('disjoncteur'))).toEqual({ ton: 'erreur', cle: 'disjoncteur' });
   });
 
   it('révoquée par l’opérateur : ton gris (c’est son choix), la commande est proposée', () => {
-    expect(phraseEtatSession(bloquee('revoquee'))).toEqual({ ton: 'gris', cle: 'revoquee', avecCommande: true });
+    expect(phraseEtatSession(bloquee('revoquee'))).toEqual({ ton: 'gris', cle: 'revoquee' });
   });
 
   it('sortie inattendue : ton erreur, PAS de commande (reconnecter ne corrige pas un proxy qui sort mal)', () => {
     expect(phraseEtatSession(bloquee('sortie_inattendue'))).toEqual({
       ton: 'erreur',
       cle: 'sortieInattendue',
-      avecCommande: false,
     });
   });
 
@@ -74,7 +72,6 @@ describe('phraseEtatSession', () => {
     expect(phraseEtatSession({ ...base, etat: 'active', motif: 'sortie_inattendue' })).toEqual({
       ton: 'erreur',
       cle: 'sortieInattendue',
-      avecCommande: false,
     });
   });
 

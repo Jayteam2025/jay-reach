@@ -1545,7 +1545,7 @@
       "etat": {
         "absente": {
           "phrase": "Aucune session.",
-          "detail": "Ouvrez-la depuis le serveur : le mot de passe et le code ne transitent pas par cette page."
+          "detail": "Branchez votre compte pour collecter des profils et envoyer vos messages."
         },
         "prete": {
           "phrase": "Prête à collecter.",
@@ -1609,10 +1609,6 @@
         "plafondHoraireDate": {
           "phrase": "Le budget de requêtes LinkedIn de l'heure est épuisé, la collecte le partage avec l'envoi. Reprise vers {quand}."
         }
-      },
-      "commande": {
-        "consigne": "Dans un terminal sur le serveur, rouvrez la session :",
-        "consigneDefi": "Résolvez la vérification, puis rouvrez la session depuis un terminal sur le serveur :"
       },
       "faits": {
         "compte": "Compte connecté",
@@ -1708,6 +1704,52 @@
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
         "risque": "Le compte utilisé peut être restreint ou fermé. L'opérateur de cette instance en répond.",
         "baseLegale": "Base légale du traitement : intérêt légitime, prospection entre professionnels. Les personnes collectées qui ne sont jamais contactées sont effacées au bout de {jours} jours. Celles que nous avons déjà évaluées laissent une empreinte illisible (pas leur identifiant), conservée au plus {jours} jours, pour ne pas les évaluer deux fois."
+      },
+      "connexion": {
+        "connecter": "Connecter mon compte LinkedIn",
+        "reconnecter": "Reconnecter",
+        "deconnecter": "Déconnecter ce compte",
+        "annuler": "Annuler",
+        "valider": "Valider le code",
+        "identifiant": "Identifiant LinkedIn",
+        "motDePasse": "Mot de passe",
+        "code": "Code reçu de LinkedIn",
+        "codeAide": "LinkedIn vient de l'envoyer à l'adresse e-mail de votre compte.",
+        "tempsRestant": "Il reste {temps} pour le saisir.",
+        "modaleTitre": "Connecter votre compte LinkedIn",
+        "avertissementSortie": "LinkedIn va vous envoyer un courriel signalant une connexion depuis un lieu inhabituel. C'est notre sortie réseau, pas une intrusion : ne changez pas votre mot de passe.",
+        "avertissementRemplace": "Le compte actuellement connecté sera déconnecté : le serveur ne tient qu'une session à la fois.",
+        "avertissementMotDePasse": "Votre mot de passe sert une seule fois, pour ouvrir la session. Il n'est enregistré nulle part.",
+        "enCours": "Connexion en cours.",
+        "etapes": {
+          "recue": "Demande reçue par le serveur",
+          "sortie_controlee": "Sortie réseau contrôlée",
+          "navigateur_ouvert": "Navigateur ouvert",
+          "identifiants_transmis": "Identifiants transmis à LinkedIn",
+          "code_demande": "LinkedIn demande un code de vérification",
+          "session_active": "Session active"
+        },
+        "motifs": {
+          "sortie_inattendue": "La sortie réseau n'était pas celle attendue : la session a été bloquée par précaution. Prévenez l'administrateur de l'instance.",
+          "sortie_serveur": "Le navigateur est sorti par l'adresse du serveur au lieu de l'adresse dédiée. Prévenez l'administrateur de l'instance.",
+          "verrou_occupe": "Une autre connexion occupait déjà le navigateur. Réessayez dans quelques minutes.",
+          "refuse": "Identifiant ou mot de passe refusé par LinkedIn.",
+          "defi": "LinkedIn demande une vérification que cet écran ne sait pas passer. Ouvrez l'application LinkedIn sur votre téléphone, approuvez la connexion, puis reconnectez-vous ici.",
+          "delai": "LinkedIn n'a pas répondu à temps. Réessayez.",
+          "worker_absent": "Le serveur n'a pas répondu. Vérifiez qu'il tourne, puis réessayez.",
+          "trop_essais": "Trois tentatives ont échoué. Le formulaire rouvre dans un quart d'heure, pour ne pas faire verrouiller votre compte par LinkedIn.",
+          "annulee": "Connexion annulée.",
+          "erreur_interne": "La connexion s'est interrompue. Réessayez."
+        },
+        "erreurs": {
+          "en_cours": "Une connexion est déjà en cours.",
+          "ferme": "Trois tentatives ont échoué. Le formulaire rouvre dans un quart d'heure.",
+          "droit": "Seul un administrateur peut brancher un compte LinkedIn.",
+          "entree": "Identifiant ou mot de passe manquant.",
+          "aucun_code": "Aucun code n'est attendu pour l'instant.",
+          "transmission": "Le serveur n'a pas pu être joint. Réessayez.",
+          "inconnue": "Une erreur est survenue. Réessayez."
+        }
       }
     }
   },

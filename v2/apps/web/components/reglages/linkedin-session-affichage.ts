@@ -47,7 +47,6 @@ const TON_PAR_CLE: Record<CleEtatSession, PuceTon> = {
 export function phraseEtatSession(session: SessionLinkedIn | null): {
   ton: PuceTon;
   cle: string;
-  avecCommande: boolean;
 } {
   const cle = cleDeLaSession(session);
   return {
@@ -55,7 +54,6 @@ export function phraseEtatSession(session: SessionLinkedIn | null): {
     cle,
     // Reconnecter ne corrige pas un proxy qui sort par la mauvaise adresse : proposer la
     // commande ferait croire que c'est la session qui est en cause. Rien à coller quand elle marche.
-    avecCommande: cle !== 'prete' && cle !== 'sortieInattendue',
   };
 }
 
