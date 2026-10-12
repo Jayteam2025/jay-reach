@@ -449,6 +449,25 @@ describe('lireAujourdhui', () => {
       expect(types(avec)).toContain('collecte_etranglee');
     });
 
+    it('un plafond de collecte bas avec une source LinkedIn active mais sans campagne active n’alerte pas', async () => {
+      // Faux pool qui applique le critère campagne active lu dans le SQL : il ne compte la source
+      // que si le texte de la requête exige une campagne `active`.
+      const lancer = async (statutCampagne: string) => {
+        const query = vi.fn(async (sql: string) => {
+          if (/from organization_settings/i.test(sql)) return { rows: [{ key: 'linkedin_personnes_par_passage', value: 5 }], rowCount: 1 };
+          if (/jr:sources_linkedin_actives/i.test(sql)) {
+            const exigeActive = /c\.status = 'active'/.test(sql);
+            const n = !exigeActive || statutCampagne === 'active' ? 1 : 0;
+            return { rows: [{ n }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        }) as unknown as Executeur['query'];
+        return lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      };
+      expect(types(await lancer('paused'))).not.toContain('collecte_etranglee');
+      expect(types(await lancer('active'))).toContain('collecte_etranglee');
+    });
+
     it('les requêtes des nouveaux contrôles filtrent par organisation', async () => {
       const appels: string[] = [];
       const query = vi.fn(async (sql: string) => {
@@ -461,6 +480,8 @@ describe('lireAujourdhui', () => {
       expect(canal).toContain('sd.organization_id = c.organization_id');
       const sources = appels.find((t) => /jr:sources_linkedin_actives/i.test(t))!;
       expect(sources).toContain('so.organization_id = $1');
+      expect(sources).toContain('c.organization_id = so.organization_id');
+      expect(sources).toContain("c.status = 'active'");
     });
 
     it('une organisation neuve, sans aucun réglage en base, n’alerte sur aucun des trois', async () => {

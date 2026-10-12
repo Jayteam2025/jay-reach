@@ -406,13 +406,20 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and not exists (select 1 from senders sd where sd.organization_id = c.organization_id and sd.kind = 'linkedin' and sd.is_active)`,
       [ctx.organisationId],
     ),
-    // Sources LinkedIn actives : sans elles, un plafond de collecte bas ne bride rien.
+    // Sources LinkedIn actives et rattachées à une campagne active : sans elles, un plafond de collecte bas ne bride rien.
     ctx.ex.query<{ n: number }>(
       `select count(*)::int as n /* jr:sources_linkedin_actives */
          from sources so
         where so.organization_id = $1
           and so.is_active
-          and ${SQL_PROVIDER_ID_AFFICHAGE} like 'linkedin\\_%'`,
+          and ${SQL_PROVIDER_ID_AFFICHAGE} like 'linkedin\\_%'
+          -- Même critère que le tour de collecte du worker (producer.ts, jr:linkedin_tour_source_due) :
+          -- une source sans campagne active ne collecte rien.
+          and exists (
+            select 1 from campaign_sources cs
+              join campaigns c on c.id = cs.campaign_id
+             where cs.source_id = so.id and c.organization_id = so.organization_id and c.status = 'active'
+          )`,
       [ctx.organisationId],
     ),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
