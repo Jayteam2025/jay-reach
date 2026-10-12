@@ -8,9 +8,9 @@ const EN_COURS = "('demandee','navigateur_ouvert','code_demande')";
 export const SQL_LIRE_DEMANDE_A_TRAITER = `select organization_id, demandee_par, (statut in ${EN_COURS} and expires_at > now()) as en_cours
          from linkedin_connexion_demandes where id = $1`;
 
-/** $1 = demande. Accusé de réception : le worker a pris la demande (sans lui, la lecture de l'écran la juge sans worker après 15 s). */
+/** $1 = demande. Accusé de réception (étape `recue`, le navigateur n'est PAS encore ouvert) : le worker a pris la demande (sans lui, la lecture de l'écran la juge sans worker après 15 s). */
 export const SQL_ACCUSER_RECEPTION = `update linkedin_connexion_demandes
-          set etape = 'navigateur_ouvert', updated_at = now()
+          set etape = 'recue', updated_at = now()
         where id = $1 and statut = 'demandee' and etape is null`;
 
 /**
@@ -24,6 +24,14 @@ export const SQL_CLORE_SI_EN_COURS = `update linkedin_connexion_demandes
 
 /** $1 = demande. Issue finale, pour le journal d'audit. */
 export const SQL_LIRE_ISSUE = `select statut, motif from linkedin_connexion_demandes where id = $1`;
+
+/**
+ * Au démarrage du worker : aucune demande ne survit à un redémarrage (un navigateur par processus, état en
+ * mémoire). Toute demande encore en cours est donc orpheline ; elle se clôt tout de suite en `worker_absent`.
+ */
+export const SQL_CLORE_ORPHELINES = `update linkedin_connexion_demandes
+          set statut = 'echec', motif = 'worker_absent', etape = null, updated_at = now()
+        where statut in ${EN_COURS}`;
 
 /** Purge des demandes abandonnées (fonction `service_role`, migration 20261012130000). */
 export const SQL_PURGER = 'select public.purger_linkedin_connexion_demandes() as supprimees';

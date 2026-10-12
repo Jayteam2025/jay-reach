@@ -35,6 +35,7 @@ export type MotifConnexion =
   | 'annulee'
   | 'erreur_interne';
 export type EtapeConnexion =
+  | 'recue'
   | 'sortie_controlee'
   | 'navigateur_ouvert'
   | 'identifiants_transmis'
@@ -217,10 +218,11 @@ export async function annulerConnexion(ctx: Contexte, demandeId: string): Promis
 export async function demanderDeconnexion(ctx: Contexte): Promise<void> {
   exiger(ctx, 'admin');
   const demandeId = globalThis.crypto.randomUUID();
+  // Journalisée AVANT l'émission : un message perdu laisse au moins la trace de la demande.
+  await journaliser(ctx, 'linkedin.deconnexion_demandee', demandeId, 'Déconnexion du compte LinkedIn demandée');
   try {
     await emettreMessageConnexion(ctx, { type: 'deconnexion', demandeId, organizationId: ctx.organisationId });
   } catch {
     throw new ErreurTransmissionConnexion();
   }
-  await journaliser(ctx, 'linkedin.deconnexion_demandee', demandeId, 'Déconnexion du compte LinkedIn demandée');
 }

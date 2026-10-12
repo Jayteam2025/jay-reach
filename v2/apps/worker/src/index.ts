@@ -30,7 +30,7 @@ import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
 import { cadencePurge } from './handlers/retention-purge.js';
 import { ecouterCanalConnexion } from './linkedin/ecoute-connexion.js';
-import { traiterMessageConnexion } from './linkedin/traiter-connexion.js';
+import { cloreDemandesOrphelines, traiterMessageConnexion } from './linkedin/traiter-connexion.js';
 import { SQL_PURGER } from './linkedin/traiter-connexion-sql.js';
 
 // Relève des collectes demandées à la main. Court exprès : c'est le délai que
@@ -221,6 +221,8 @@ async function main(): Promise<void> {
   let arreterEcouteConnexion: (() => void) | null = null;
   let purgeConnexions: NodeJS.Timeout | null = null;
   if (process.env.JAY_REACH_LINKEDIN === '1') {
+    // Avant l'écoute : une demande laissée en cours par le processus précédent n'a plus personne pour la conduire.
+    await cloreDemandesOrphelines(pool);
     try {
       arreterEcouteConnexion = await ecouterCanalConnexion(pool, (m) => traiterMessageConnexion(pool, m));
     } catch (err: unknown) {

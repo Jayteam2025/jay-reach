@@ -10,7 +10,7 @@
  * ni un délai de code ni une demande interrompue clôt la demande en `echec / erreur_interne`, pour
  * que l'écran ne reste pas figé un quart d'heure.
  */
-import { ecrireEvenement, type Contexte, type MessageConnexion } from '@jay-reach/core';
+import { bloquerSessionLinkedIn, ecrireEvenement, type Contexte, type MessageConnexion } from '@jay-reach/core';
 import type pg from 'pg';
 import { connecter, deconnecter, pilotageReel, type Dependances } from '../cli/linkedin.js';
 import {
@@ -21,6 +21,7 @@ import {
 } from './dependances-web.js';
 import {
   SQL_ACCUSER_RECEPTION,
+  SQL_CLORE_ORPHELINES,
   SQL_CLORE_SI_EN_COURS,
   SQL_LIRE_DEMANDE_A_TRAITER,
   SQL_LIRE_ISSUE,
@@ -37,6 +38,7 @@ export interface OptionsTraitement {
   connecter?: (ctx: Contexte, d: Dependances) => Promise<number>;
   deconnecter?: (ctx: Contexte, d: Dependances) => Promise<number>;
   dependances?: (demandeId: string, secrets: { identifiant: string; motDePasse: string }, pool: pg.Pool) => DependancesWeb;
+  bloquer?: (ctx: Contexte, motif: 'revoquee') => Promise<void>;
   env?: Record<string, string | undefined>;
 }
 
@@ -73,6 +75,42 @@ async function journaliserIssue(pool: pg.Pool, organisationId: string, demandeeP
   }
 }
 
+/**
+ * `connecter` active la session AVANT d'écrire « Session LinkedIn active. » : une annulation posée entre les
+ * deux fait ignorer la réussite (l'écran dit « annulée ») alors que la session est active en base. L'utilisateur
+ * a renoncé : on révoque, pour que ce qu'il voit soit ce qui est vrai. Se reconnaît à : la mécanique a rendu 0
+ * (session activée) et pourtant la demande n'est pas `reussi`.
+ */
+async function revoquerSiAnnuleeTropTard(
+  pool: pg.Pool,
+  demandeId: string,
+  codeRetour: number | null,
+  ctx: Contexte | null,
+  options: OptionsTraitement,
+): Promise<void> {
+  if (codeRetour !== 0 || !ctx) return;
+  try {
+    const r = await pool.query<{ statut: string }>(SQL_LIRE_ISSUE, [demandeId]);
+    if (r.rows[0]?.statut === 'reussi') return;
+    await (options.bloquer ?? bloquerSessionLinkedIn)(ctx, 'revoquee');
+    console.error('[traiter-connexion] annulation tardive : session révoquée');
+  } catch (e) {
+    console.error(`[traiter-connexion] révocation impossible (${nomErreur(e)})`);
+  }
+}
+
+/** Au démarrage : aucune demande ne survit à un redémarrage du worker, on clôt les orphelines. */
+export async function cloreDemandesOrphelines(pool: pg.Pool): Promise<number> {
+  try {
+    const r = await pool.query(SQL_CLORE_ORPHELINES);
+    if (r.rowCount) console.log(`[traiter-connexion] ${r.rowCount} demande(s) de connexion orpheline(s) closes au démarrage`);
+    return r.rowCount ?? 0;
+  } catch (e) {
+    console.error(`[traiter-connexion] orphelines non closes (${nomErreur(e)})`);
+    return 0;
+  }
+}
+
 async function conduireConnexion(
   pool: pg.Pool,
   message: Extract<MessageConnexion, { type: 'secrets' }>,
@@ -86,8 +124,17 @@ async function conduireConnexion(
     console.error('[traiter-connexion] message ignoré (demande absente, close ou d’une autre organisation)');
     return;
   }
-  if (enCours.has(demandeId) || enCours.size > 0) {
-    console.error('[traiter-connexion] message ignoré (une connexion est déjà conduite par ce worker)');
+  if (enCours.has(demandeId)) {
+    console.error('[traiter-connexion] message ignoré (cette demande est déjà conduite)');
+    return;
+  }
+  if (enCours.size > 0) {
+    // Un seul navigateur par processus. L'écran doit le savoir : sans état écrit, cette demande finirait en
+    // `worker_absent` alors que le worker est bien là.
+    console.error('[traiter-connexion] message ignoré (une autre connexion est déjà conduite par ce worker)');
+    await pool
+      .query(SQL_CLORE_SI_EN_COURS, [demandeId, 'verrou_occupe'])
+      .catch((e: unknown) => console.error(`[traiter-connexion] clôture impossible (${nomErreur(e)})`));
     return;
   }
 
@@ -95,10 +142,15 @@ async function conduireConnexion(
   const dependances = fabrique(demandeId, { identifiant: message.identifiant, motDePasse: message.motDePasse }, pool);
   enCours.set(demandeId, { organisationId: organizationId, dependances });
   let motifRepli: 'delai' | 'erreur_interne' | null = null;
+  let codeRetour: number | null = null;
+  let ctxConnexion: Contexte | null = null;
   try {
-    await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
-    const ctx = await dependances.contexte();
-    await (options.connecter ?? connecter)(ctx, dependances);
+    // Exactement une ligne : la demande était `demandee` et sans accusé. Sinon elle a été annulée ou close
+    // entre-temps (course avec la lecture de l'écran) : on ne pilote rien.
+    const accuse = await pool.query(SQL_ACCUSER_RECEPTION, [demandeId]);
+    if (accuse.rowCount !== 1) throw new ErreurDemandeInterrompue();
+    ctxConnexion = await dependances.contexte();
+    codeRetour = await (options.connecter ?? connecter)(ctxConnexion, dependances);
   } catch (e) {
     // Une annulation n'est pas une panne : l'état est déjà `echec / annulee`.
     if (!(e instanceof ErreurDemandeInterrompue)) {
@@ -108,6 +160,7 @@ async function conduireConnexion(
   } finally {
     enCours.delete(demandeId);
     await dependances.vider();
+    await revoquerSiAnnuleeTropTard(pool, demandeId, codeRetour, ctxConnexion, options);
     // Quoi qu'il se soit passé (exception, ou retour sans motif posé), plus rien ne reste « en cours ».
     await pool
       .query(SQL_CLORE_SI_EN_COURS, [demandeId, motifRepli ?? 'erreur_interne'])

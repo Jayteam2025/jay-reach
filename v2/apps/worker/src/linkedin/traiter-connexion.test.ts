@@ -23,14 +23,15 @@ interface Appel {
   params: unknown[];
 }
 
-function fauxPool(enCours = true, orgDeLaDemande = ORG) {
+function fauxPool(enCours = true, orgDeLaDemande = ORG, accuses = 1, statutFinal = 'echec') {
   const appels: Appel[] = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     appels.push({ sql, params });
     if (sql === SQL_LIRE_DEMANDE_A_TRAITER) {
       return { rows: [{ organization_id: orgDeLaDemande, demandee_par: 'user-1', en_cours: enCours }] };
     }
-    if (sql === SQL_LIRE_ISSUE) return { rows: [{ statut: 'echec', motif: 'erreur_interne' }] };
+    if (sql === SQL_LIRE_ISSUE) return { rows: [{ statut: statutFinal, motif: 'erreur_interne' }] };
+    if (sql === SQL_ACCUSER_RECEPTION) return { rows: [], rowCount: accuses };
     return { rows: [] };
   });
   return { pool: { query } as unknown as pg.Pool, appels };
@@ -116,6 +117,42 @@ describe('traiterMessageConnexion : secrets', () => {
     expect(connecter).toHaveBeenCalledTimes(1);
     liberer();
     await premiere;
+  });
+});
+
+describe('traiterMessageConnexion : cas limites', () => {
+  it('un accusé qui ne touche aucune ligne (demande annulée entre-temps) ne pilote rien', async () => {
+    const { pool } = fauxPool(true, ORG, 0);
+    const connecter = vi.fn(async () => 0);
+    await traiterMessageConnexion(pool, message, { connecter, dependances: () => fausseDependances().d });
+    expect(connecter).not.toHaveBeenCalled();
+  });
+
+  it('une seconde demande pendant une connexion est close en verrou_occupe, pas laissée sans état', async () => {
+    const { pool, appels } = fauxPool();
+    let liberer: () => void = () => undefined;
+    const bloquee = new Promise<number>((r) => (liberer = () => r(0)));
+    const premiere = traiterMessageConnexion(pool, message, { connecter: () => bloquee, dependances: () => fausseDependances().d });
+    await vi.waitFor(() => expect(appels.some((a) => a.sql === SQL_ACCUSER_RECEPTION)).toBe(true));
+    const autre = '22222222-2222-4222-8222-222222222222';
+    await traiterMessageConnexion(pool, { ...message, demandeId: autre }, { connecter: async () => 0, dependances: () => fausseDependances().d });
+    expect(appels.find((a) => a.sql === SQL_CLORE_SI_EN_COURS && a.params[0] === autre)?.params).toEqual([autre, 'verrou_occupe']);
+    liberer();
+    await premiere;
+  });
+
+  it('une réussite ignorée parce que la demande a été annulée révoque la session', async () => {
+    const { pool } = fauxPool(true, ORG, 1, 'echec');
+    const bloquer = vi.fn(async () => undefined);
+    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer });
+    expect(bloquer).toHaveBeenCalledWith(expect.anything(), 'revoquee');
+  });
+
+  it('une réussite enregistrée ne révoque rien, ni un échec ordinaire', async () => {
+    const bloquer = vi.fn(async () => undefined);
+    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'reussi').pool, message, { connecter: async () => 0, dependances: () => fausseDependances().d, bloquer });
+    await traiterMessageConnexion(fauxPool(true, ORG, 1, 'echec').pool, message, { connecter: async () => 1, dependances: () => fausseDependances().d, bloquer });
+    expect(bloquer).not.toHaveBeenCalled();
   });
 });
 

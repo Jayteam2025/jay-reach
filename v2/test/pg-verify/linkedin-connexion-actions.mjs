@@ -11,13 +11,16 @@
 //   5. SQL_EXPIRER_DE_L_ORGANISATION : retirer l'appel dans demanderConnexion — 6 rougit.
 //   6. traiter-connexion.ts : retirer SQL_CLORE_SI_EN_COURS du `finally` — 8 et 8b rougissent.
 //   7. SQL_CLORE_SI_EN_COURS : retirer `and statut in ...` — 8c rougit.
+//   9. (tâche 5, reprise) cloreDemandesOrphelines : retirer la requête — 9b rougit ; SQL_ACCUSER_RECEPTION `set etape = 'recue'`
+//      remis à 'navigateur_ouvert' — 8f rougit ; retirer le test `rowCount !== 1` — 8h rougit ; retirer
+//      `revoquerSiAnnuleeTropTard` — 8j rougit ; retirer la clôture `verrou_occupe` — 8i rougit.
 //   8. migration 20261012150000 : retirer 'erreur_interne' de la contrainte — 8 rougit (23514).
 import pg from 'pg';
 import {
   annulerConnexion, demanderConnexion, lireDemandeEnCours, repondreDefi,
   ErreurAucunCodeAttendu, ErreurConnexionEnCours, ErreurFormulaireFerme,
   traiterMessageConnexion, oublierConnexionsEnCours,
-  SQL_ACCUSER_RECEPTION, SQL_PURGER,
+  SQL_ACCUSER_RECEPTION, SQL_PURGER, cloreDemandesOrphelines, activerSessionLinkedIn, lireSessionLinkedIn,
 } from '__BUNDLE__';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -118,7 +121,7 @@ async function workerAbsent() {
   check('4b. demandee depuis 10 s : encore en attente', (await ligne(recente)).statut === 'demandee');
 
   const m3 = await monde();
-  const accusee = await demande(m3, 'demandee', { ageSecondes: 20, etape: 'navigateur_ouvert' });
+  const accusee = await demande(m3, 'demandee', { ageSecondes: 20, etape: 'recue' });
   await lireDemandeEnCours(m3.ctx);
   check('4c. demandee depuis 20 s MAIS accusée par le worker (ouverture lente) : jamais jugée sans worker', (await ligne(accusee)).statut === 'demandee');
 
@@ -200,7 +203,7 @@ async function reponseDuWorker() {
   check('8b. la connexion rend la main sans issue : clôturée, pas laissée en cours', l.statut === 'echec' && l.motif === 'erreur_interne', JSON.stringify(l));
 
   m = await monde();
-  id = await demande(m, 'navigateur_ouvert');
+  id = await demande(m, 'demandee');
   await lancer(m, id, async () => { await q(`update linkedin_connexion_demandes set statut='echec', motif='annulee' where id=$1`, [id]); throw new Error('x'); });
   l = await ligne(id);
   check('8c. une annulation, ou un motif précis déjà posé, n\'est jamais écrasé par le repli', l.motif === 'annulee', JSON.stringify(l));
@@ -220,8 +223,79 @@ async function reponseDuWorker() {
 
   m = await monde();
   id = await demande(m, 'demandee');
-  await q(SQL_ACCUSER_RECEPTION, [id]);
-  check('8f. l\'accusé de réception pose une étape sans changer le statut', (await ligne(id)).etape === 'navigateur_ouvert' && (await ligne(id)).statut === 'demandee');
+  const acc = await q(SQL_ACCUSER_RECEPTION, [id]);
+  check('8f. l\'accusé de réception pose l\'étape `recue` (pas « navigateur ouvert ») sans changer le statut',
+    (await ligne(id)).etape === 'recue' && (await ligne(id)).statut === 'demandee');
+  check('8g0. le premier accusé touche exactement une ligne', acc.rowCount === 1);
+  const acc2 = await q(SQL_ACCUSER_RECEPTION, [id]);
+  await q(`update linkedin_connexion_demandes set statut = 'echec', motif = 'annulee', etape = null where id = $1`, [id]);
+  const acc3 = await q(SQL_ACCUSER_RECEPTION, [id]);
+  check('8g. accusé déjà posé : 0 ligne ; demande annulée : 0 ligne', acc2.rowCount === 0 && acc3.rowCount === 0, `${acc2.rowCount}/${acc3.rowCount}`);
+
+  m = await monde();
+  id = await demande(m, 'demandee');
+  let piloter = false;
+  await q(`update linkedin_connexion_demandes set statut = 'echec', motif = 'annulee' where id = $1`, [id]);
+  await traiterMessageConnexion(pool, message(m, id), { connecter: async () => { piloter = true; return 0; } });
+  check('8h. une demande annulée avant l\'accusé ne pilote aucun navigateur', piloter === false);
+
+  // Accusé déjà posé (message reçu deux fois) : l'accusé ne touche aucune ligne, rien n'est piloté.
+  m = await monde();
+  id = await demande(m, 'demandee', { etape: 'recue' });
+  piloter = false;
+  await traiterMessageConnexion(pool, message(m, id), { connecter: async () => { piloter = true; return 0; } });
+  check('8h2. un accusé qui ne touche aucune ligne (rowCount 0) ne pilote aucun navigateur', piloter === false);
+
+  // Deux demandes dans le même processus : la seconde est close en verrou_occupe (un seul navigateur).
+  m = await monde();
+  const encours = await demande(m, 'demandee');
+  let liberer;
+  const bloquee = new Promise((r) => (liberer = r));
+  const p1 = traiterMessageConnexion(pool, message(m, encours), { connecter: () => bloquee.then(() => 1) });
+  await new Promise((r) => setTimeout(r, 300));
+  // Autre organisation : l'index unique n'empêche pas une seconde demande ailleurs, le worker n'a qu'un navigateur.
+  const m2 = await monde();
+  const seconde = await demande(m2, 'demandee');
+  await traiterMessageConnexion(pool, message(m2, seconde), { connecter: async () => 0 });
+  const ls = await ligne(seconde);
+  check('8i. une seconde demande pendant une connexion est close en verrou_occupe', ls.statut === 'echec' && ls.motif === 'verrou_occupe', JSON.stringify(ls));
+  liberer();
+  await p1;
+
+  // Annulation entre l'activation de la session et la ligne « Session LinkedIn active. ».
+  m = await monde();
+  id = await demande(m, 'demandee');
+  await traiterMessageConnexion(pool, message(m, id), {
+    connecter: async (ctx) => {
+      await activerSessionLinkedIn(ctx, '203.0.113.9');
+      await q(`update linkedin_connexion_demandes set statut = 'echec', motif = 'annulee', etape = null where id = $1`, [id]);
+      return 0;
+    },
+  });
+  const sess = await lireSessionLinkedIn({ ex: pool, organisationId: m.org, utilisateurId: null, role: null });
+  check('8j. annulée juste après l\'activation : la session est révoquée, pas laissée connectée', sess?.etat === 'bloquee' && sess.motif === 'revoquee', JSON.stringify(sess));
+  check('8k. et la demande reste « annulee »', (await ligne(id)).motif === 'annulee');
+
+  m = await monde();
+  id = await demande(m, 'demandee');
+  await traiterMessageConnexion(pool, message(m, id), {
+    connecter: async (ctx, d) => { await activerSessionLinkedIn(ctx, '203.0.113.9'); d.ecrire('Session LinkedIn active.'); return 0; },
+  });
+  const sess2 = await lireSessionLinkedIn({ ex: pool, organisationId: m.org, utilisateurId: null, role: null });
+  check('8l. connexion menée à terme : demande reussi, session active (rien n\'est révoqué)', (await ligne(id)).statut === 'reussi' && sess2?.etat === 'active', JSON.stringify(sess2));
+}
+
+async function redemarrage() {
+  console.log('\n9b. un redémarrage du worker ne fige pas l\'écran');
+  const m = await monde();
+  const code = await demande(m, 'code_demande', { ageSecondes: 120 });
+  const ouvert = await demande(await monde(), 'navigateur_ouvert', { ageSecondes: 60 });
+  const fini = await demande(await monde(), 'reussi');
+  const n = await cloreDemandesOrphelines(pool);
+  const l = await ligne(code);
+  check('9b. au démarrage, une demande au défi non expirée est close en worker_absent', l.statut === 'echec' && l.motif === 'worker_absent', JSON.stringify(l));
+  check('9b2. navigateur_ouvert aussi ; une demande réussie est intacte', (await ligne(ouvert)).motif === 'worker_absent' && (await ligne(fini)).statut === 'reussi');
+  check('9b3. l\'organisation peut relancer tout de suite', (await erreurDe(() => demanderConnexion(m.ctx, secrets))) === null && n >= 2);
 }
 
 async function purge() {
@@ -244,7 +318,7 @@ async function roles() {
   check('10. un viewer ne crée aucune demande', e?.name === 'ForbiddenError' && (await q(`select count(*)::int n from linkedin_connexion_demandes where organization_id = $1`, [m.org])).rows[0].n === 0);
 }
 
-for (const s of [uneSeuleEnCours, fermeture, workerAbsent, annulation, expiration, defi, reponseDuWorker, purge, roles]) {
+for (const s of [uneSeuleEnCours, fermeture, workerAbsent, annulation, expiration, defi, reponseDuWorker, redemarrage, purge, roles]) {
   try { await s(); } catch (e) { failures += 1; console.log(`  FAIL section ${s.name} a levé : ${e.stack ?? e.message}`); }
 }
 oublierConnexionsEnCours();

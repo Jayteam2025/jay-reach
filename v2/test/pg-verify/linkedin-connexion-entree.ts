@@ -11,8 +11,10 @@ export {
   ErreurFormulaireFerme,
   CANAL_CONNEXION_LINKEDIN,
   lireMessageConnexion,
+  activerSessionLinkedIn,
+  lireSessionLinkedIn,
 } from '../../packages/core/src/index.js';
-export { traiterMessageConnexion, oublierConnexionsEnCours } from '../../apps/worker/src/linkedin/traiter-connexion.js';
+export { traiterMessageConnexion, oublierConnexionsEnCours, cloreDemandesOrphelines } from '../../apps/worker/src/linkedin/traiter-connexion.js';
 export { dependancesWeb } from '../../apps/worker/src/linkedin/dependances-web.js';
 export {
   SQL_ACCUSER_RECEPTION,
