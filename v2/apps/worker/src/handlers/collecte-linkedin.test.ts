@@ -852,6 +852,48 @@ describe('la source « changement de poste »', () => {
     expect(signaux(b)).toHaveLength(2);
   });
 
+  it('un passage refusé ne pose AUCUNE référence sur une fiche sans intitulé', async () => {
+    // Le constat bloquant de la revue du 12/10. Les changements étaient bien mis en attente, mais
+    // le marquage restait en ligne : une fiche vierge recevait la ligne lue comme référence AVANT
+    // que le contrôle ait jugé, et le passage refusé annonçait « Rien n'a été enregistré » en
+    // mentant. Cette fausse référence prépare un vrai faux changement : le jour où la page
+    // redevient lisible, l'écart entre elle et le vrai intitulé passe pour un changement de poste,
+    // et il est trop isolé pour que le contrôle le voie.
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [...['a', 'b', 'c', 'd'].map((x) => contact(`${x}-exemple`, 'Directrice commerciale')), contact('e-exemple', null)],
+    });
+    const p = pilote({ reponse: cinqPages(['Un', 'Deux', 'Trois', 'Quatre', 'Cinq']) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    // Quatre changements sur cinq profils lus : le seuil mord.
+    expect(clos(b)!.params[2]).toBe('error');
+    expect(signaux(b)).toEqual([]);
+    expect(verifies(b)).toEqual([]);
+    expect(b.contacts.find((c) => c.id === 'c-e-exemple')!.titre).toBeNull();
+  });
+
+  it('un défi au milieu d’un passage n’écrit aucun des changements déjà constatés', async () => {
+    // Un passage ARRÊTÉ n'a pas de dénominateur honnête : deux changements sur deux profils lus
+    // passent sous le seuil, donc sans cette règle ils s'écriraient — alors que c'est justement
+    // la page illisible qui les a fabriqués.
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: ['a', 'b', 'c'].map((x) => contact(`${x}-exemple`, 'Directrice commerciale')),
+    });
+    const p = pilote({
+      reponse: (u) =>
+        u.includes('c-exemple') ? { statut: 999, corps: '' } : profil('Quelqu’un', 'Un intitulé tout autre'),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('error');
+    expect(signaux(b)).toEqual([]);
+    // Aucun des deux n'est marqué : ils repassent en tête de la rotation demain.
+    expect(b.contacts.find((c) => c.id === 'c-a-exemple')!.verifieLe).toBeNull();
+    expect(b.contacts.find((c) => c.id === 'c-b-exemple')!.verifieLe).toBeNull();
+  });
+
   it('un profil sans intitulé ne compte NI comme changement NI dans les écritures', async () => {
     // Mesuré sur un profil réel : l'intitulé valait « . ». Ce n'est pas un changement de poste,
     // et l'ancien intitulé de la fiche ne doit pas être écrasé par du vide.

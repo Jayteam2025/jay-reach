@@ -715,7 +715,19 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         nouvelIntitule: string;
         urlProfil: string;
       }> = [];
-      /** Les profils effectivement Lus : le dénominateur du contrôle. Un profil illisible n'en est pas. */
+      /**
+       * Les marquages aussi attendent la fin du passage.
+       *
+       * Les différer n'est pas un détail de symétrie : `marquerContactVerifie` POSE l'intitulé lu
+       * comme référence quand la fiche n'en avait pas. Écrit en ligne, il grave une valeur fausse
+       * sur une fiche vierge avant même que le contrôle ait jugé le passage, et le passage refusé
+       * annonce alors « Rien n'a été enregistré » en mentant. Pire, cette fausse référence prépare
+       * un vrai faux changement : le jour où la page redevient lisible, l'écart entre elle et le
+       * vrai intitulé devient un « changement de poste », et il est trop isolé pour que le
+       * contrôle le voie.
+       */
+      const aMarquer: Array<{ readonly contactId: string; readonly intituleLu: string | null }> = [];
+      /** Les profils effectivement LUS : le dénominateur du contrôle. Un profil illisible n'en est pas. */
       let profilsLus = 0;
       for (const contact of frictionAArrivee === null ? aRelire : []) {
         if (requetesRestantes() <= 0) {
@@ -750,7 +762,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           // Illisible (profil fermé, page changée, adresse illisible) : sauté pour aujourd'hui, et
           // marqué pour que la rotation avance. Jamais pris pour un changement.
           bilan.ignores += 1;
-          await marquerContactVerifie(pool, job, contact.id, null);
+          aMarquer.push({ contactId: contact.id, intituleLu: null });
         } else if (ancien.length === 0 || nouveau.length === 0 || normaliserIntitule(ancien) === normaliserIntitule(nouveau)) {
           // Rien à déclarer. Trois cas dans le même panier, et c'est voulu :
           //  - aucun intitulé connu : le lu devient la référence, sans réveiller personne (annoncer
@@ -760,7 +772,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           //  - le même intitulé qu'hier.
           profilsLus += 1;
           bilan.doublons += 1;
-          await marquerContactVerifie(pool, job, contact.id, nouveau);
+          aMarquer.push({ contactId: contact.id, intituleLu: nouveau });
         } else {
           // Un changement APPARENT. Rien n'est écrit tant que le passage n'a pas été jugé.
           profilsLus += 1;
@@ -786,12 +798,32 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         await refuser(pool, job, MSG.changements_invraisemblables, { statut: 'error', bilan, sortie });
         return;
       }
-      for (const changement of changementsConstates) {
-        const issue = await enregistrerChangementDePoste(contexteEngageur, changement, config.campagne);
-        if (issue === 'change') bilan.nouveaux += 1;
-        else if (issue === 'inchange') bilan.doublons += 1;
-        else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
-        await marquerContactVerifie(pool, job, changement.contactId, null);
+      /**
+       * Un passage ARRÊTÉ n'a pas de dénominateur honnête : le contrôle ci-dessus ne dit rien
+       * d'un passage coupé au troisième profil, et plus il est coupé tôt, moins il protège. Un
+       * défi servi au milieu d'une page devenue illisible donnerait deux changements sur deux,
+       * donc sous le seuil, donc écrits. On n'écrit donc rien du tout : les contacts ne sont pas
+       * marqués et repassent en tête demain.
+       *
+       * Le plafond, lui, est un arrêt PRÉVU et non un symptôme : il laisse écrire ce qui a été lu,
+       * sans quoi un plafond qui tombe toujours au même endroit figerait la rotation pour de bon.
+       */
+      const arretAnormal = arretDeRecherche !== 'fini' && arretDeRecherche !== 'plafond';
+      for (const marquage of aMarquer) {
+        // La vérification est marquée même sur un arrêt anormal, sans quoi un défi qui revient
+        // chaque jour figerait la rotation sur les mêmes contacts. Mais AUCUNE référence n'est
+        // posée dans ce cas : ce qu'on a lu ne vaut rien tant que le passage n'est pas allé au
+        // bout, et une référence fausse ne se rattrape pas.
+        await marquerContactVerifie(pool, job, marquage.contactId, arretAnormal ? null : marquage.intituleLu);
+      }
+      if (!arretAnormal) {
+        for (const changement of changementsConstates) {
+          const issue = await enregistrerChangementDePoste(contexteEngageur, changement, config.campagne);
+          if (issue === 'change') bilan.nouveaux += 1;
+          else if (issue === 'inchange') bilan.doublons += 1;
+          else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
+          await marquerContactVerifie(pool, job, changement.contactId, null);
+        }
       }
     } else if (config.mode === 'recherche') {
       for (const motsCles of config.entrees) {
