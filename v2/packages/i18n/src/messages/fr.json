@@ -1052,7 +1052,7 @@
         "healthUnavailable": "État SalesBlink indisponible",
         "notLinked": "Non reliée à SalesBlink",
         "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}",
-        "stopped": "Quota à zéro : cette boîte n'enverra rien"
+        "stopped": "Active, mais son quota l'empêche d'envoyer"
       },
       "drawer": {
         "title": "Modifier {identite}",
@@ -1157,9 +1157,9 @@
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modifié {date}} other {Modifié le {date}}}",
         "erreurNombre": "Entrez un nombre entier positif ou nul.",
-        "colAujourdhui": "Aujourd'hui",
         "sansObjet": "Ne se consomme pas",
-        "arrete": "Arrêté : plus rien ne se produit"
+        "arrete": "Arrêté : plus rien ne se produit",
+        "colConsomme": "Consommé"
       },
       "lignes": {
         "scoringParJour": {
@@ -1664,7 +1664,8 @@
           "soutenu": "Soutenu",
           "invitations": "Invitations",
           "messages": "Messages",
-          "horaires": "Horaires"
+          "horaires": "Horaires",
+          "plage": "{debut}h-{fin}h"
         },
         "applique": "appliqué",
         "appliquer": "Appliquer",

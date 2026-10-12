@@ -65,6 +65,13 @@ describe('le choix du rythme d’envoi', () => {
     expect(html).not.toContain('checked');
     // Et surtout : ne jamais dire qu'un cran s'applique quand aucun ne correspond.
     expect(html).not.toContain(libelles.applique);
+    // « Du lundi au vendredi » décrit ce que POSE un cran. En sur mesure, les jours réels sont
+    // tout autres — c'était le cas du constat d'origine, réglé sur mardi à jeudi.
+    expect(html).not.toContain(libelles.jours);
+  });
+
+  it('un rythme appliqué, lui, peut annoncer ses jours', () => {
+    expect(rendu({ applique: 'normal' })).toContain(libelles.jours);
   });
 
   it('un rythme appliqué coche son cran', () => {

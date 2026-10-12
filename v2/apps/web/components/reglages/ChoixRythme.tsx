@@ -19,7 +19,7 @@ import { useState, useTransition } from 'react';
 import type { Rythme } from '@jay-reach/core';
 import { Bouton } from '../ui';
 import { actionEcrireRythme } from '../../app/actions/plafonds';
-import { etatChoixRythme, type CranRythme } from './rythme-affichage';
+import { appliquerRythme, etatChoixRythme, type CranRythme } from './rythme-affichage';
 
 export interface CranAffiche {
   cle: CranRythme;
@@ -60,11 +60,9 @@ export function ChoixRythme({ applique, crans, peutModifier, libelles }: ChoixRy
   function appliquer(cran: CranRythme) {
     setErreur(null);
     startTransition(async () => {
-      const res = await actionEcrireRythme(cran);
-      // On relâche la sélection dans les deux cas : en succès l'écran re-rendu porte le nouveau
-      // cran appliqué, en échec il porte l'ancien — et dans les deux cas c'est lui qui dit vrai.
+      const message = await appliquerRythme(cran, actionEcrireRythme);
       setSelection(null);
-      if (!res.ok) setErreur(res.error);
+      setErreur(message);
     });
   }
 
@@ -113,7 +111,10 @@ export function ChoixRythme({ applique, crans, peutModifier, libelles }: ChoixRy
       </div>
 
       <div className="jr-rythme-pied">
-        <p>{libelles.jours}</p>
+        {/* « Du lundi au vendredi » décrit ce que pose un cran, pas ce qui est réglé. En sur
+            mesure, les jours réels sont tout autres — l'afficher quand même ferait dire à l'écran
+            exactement le genre de chose fausse que ce chantier corrige. */}
+        <p>{etat.surMesure ? null : libelles.jours}</p>
         {etat.aAppliquer && peutModifier && (
           <Bouton
             variante="principal"

@@ -202,7 +202,7 @@ export default async function PlafondsPage() {
         peutModifier={peutModifier}
         libelles={{
           colReglage: t('table.colReglage'),
-          colAujourdhui: t('table.colAujourdhui'),
+          colConsomme: t('table.colConsomme'),
           colValeur: t('table.colValeur'),
           colDefaut: t('table.colDefaut'),
           colRepli: t('table.colRepli'),

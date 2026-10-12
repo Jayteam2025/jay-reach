@@ -52,3 +52,23 @@ export function etatChoixRythme(
     aAppliquer,
   };
 }
+
+/** Ce que rend l'écriture d'un cran : `null` en succès, le message à afficher sinon. */
+export type ResultatEcriture = { ok: true } | { ok: false; error: string };
+
+/**
+ * Pose un cran, et rend l'erreur à montrer ou `null`. L'action est injectée pour que cette règle
+ * se teste sans App Router ni Server Action — `CarteBoite` et les autres composants de cet écran
+ * suivent la même convention, le dépôt n'ayant ni DOM ni testing-library.
+ *
+ * La sélection est relâchée dans les deux cas, et c'est volontaire : en succès l'écran re-rendu
+ * porte le nouveau cran appliqué, en échec il porte l'ancien, et dans les deux cas c'est lui qui
+ * dit vrai — garder une sélection fantôme ferait montrer un cran qui ne s'applique pas.
+ */
+export async function appliquerRythme(
+  cran: CranRythme,
+  ecrire: (cran: string) => Promise<ResultatEcriture>,
+): Promise<string | null> {
+  const res = await ecrire(cran);
+  return res.ok ? null : res.error;
+}

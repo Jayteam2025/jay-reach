@@ -10,10 +10,12 @@ import {
   lireVolumeEnvoiLinkedIn,
   lireReglages,
   prochainEnvoiLinkedIn,
+  HARD_CAP_7_DAYS,
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
   RYTHMES,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { pourcentageJauge, tonJauge } from '../../../../lib/plafonds-affichage';
 import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { BarreProgression, Carte, TuileLogo } from '../../../../components/ui';
@@ -34,11 +36,13 @@ const UNE_HEURE_MS = 3_600_000;
 const CRANS_RYTHME: readonly CranRythme[] = ['prudent', 'normal', 'soutenu'];
 
 /**
- * Part consommée, en pourcentage, pour la jauge. Un plafond nul ou négatif ne se divise pas :
- * la barre reste vide plutôt que d'afficher un infini.
+ * Le plafond que le MOTEUR applique, pas celui que la saisie porte : `schemaEcrireReglage` n'a
+ * pas de maximum, mais le moteur rabote à `HARD_CAP_7_DAYS` sur sept jours glissants
+ * (`linkedin/file.ts`). Un écran qui annoncerait « 12 sur 500 » promettrait 300 envois qui ne
+ * partiront jamais — exactement le mensonge que ce chantier supprime.
  */
-function pourcentage(consomme: number, plafond: number): number {
-  return plafond > 0 ? (consomme / plafond) * 100 : 0;
+function plafondEffectif(regle: number): number {
+  return Math.min(regle, HARD_CAP_7_DAYS);
 }
 
 export default async function ReglagesLinkedinPage() {
@@ -214,17 +218,23 @@ export default async function ReglagesLinkedinPage() {
             <small>{t('rythme.conso.invitations')}</small>
             <b>
               {volumeEnvoi.invite.envoyes7Jours}{' '}
-              <span>{t('rythme.conso.surPlafond', { plafond: volumeEnvoi.invite.plafondHebdo })}</span>
+              <span>{t('rythme.conso.surPlafond', { plafond: plafondEffectif(volumeEnvoi.invite.plafondHebdo) })}</span>
             </b>
-            <BarreProgression valeur={pourcentage(volumeEnvoi.invite.envoyes7Jours, volumeEnvoi.invite.plafondHebdo)} />
+            <BarreProgression
+              valeur={pourcentageJauge(volumeEnvoi.invite.envoyes7Jours, plafondEffectif(volumeEnvoi.invite.plafondHebdo))}
+              ton={tonJauge(volumeEnvoi.invite.envoyes7Jours, plafondEffectif(volumeEnvoi.invite.plafondHebdo))}
+            />
           </div>
           <div>
             <small>{t('rythme.conso.messages')}</small>
             <b>
               {volumeEnvoi.message.envoyes7Jours}{' '}
-              <span>{t('rythme.conso.surPlafond', { plafond: volumeEnvoi.message.plafondHebdo })}</span>
+              <span>{t('rythme.conso.surPlafond', { plafond: plafondEffectif(volumeEnvoi.message.plafondHebdo) })}</span>
             </b>
-            <BarreProgression valeur={pourcentage(volumeEnvoi.message.envoyes7Jours, volumeEnvoi.message.plafondHebdo)} />
+            <BarreProgression
+              valeur={pourcentageJauge(volumeEnvoi.message.envoyes7Jours, plafondEffectif(volumeEnvoi.message.plafondHebdo))}
+              ton={tonJauge(volumeEnvoi.message.envoyes7Jours, plafondEffectif(volumeEnvoi.message.plafondHebdo))}
+            />
           </div>
         </div>
 
@@ -236,7 +246,7 @@ export default async function ReglagesLinkedinPage() {
             nom: t(`rythme.crans.${cle}`),
             invitations: RYTHMES[cle].invitations,
             messages: RYTHMES[cle].messages,
-            horaires: `${RYTHMES[cle].debutHeure}h-${RYTHMES[cle].finHeure}h`,
+            horaires: t('rythme.crans.plage', { debut: RYTHMES[cle].debutHeure, fin: RYTHMES[cle].finHeure }),
           }))}
           libelles={{
             groupe: t('rythme.titre'),

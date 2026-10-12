@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etatChoixRythme, type CranRythme } from './rythme-affichage';
+import { appliquerRythme, etatChoixRythme, type CranRythme } from './rythme-affichage';
 
 const CRANS: readonly CranRythme[] = ['prudent', 'normal', 'soutenu'];
 
@@ -42,5 +42,22 @@ describe('l’état du choix de rythme', () => {
     const apres = etatChoixRythme(CRANS, 'personnalise', 'prudent');
     expect(apres.aAppliquer).toBe('prudent');
     expect(apres.crans.some((c) => c.applique)).toBe(false);
+  });
+});
+
+describe('l’application d’un cran', () => {
+  it('appelle l’action une seule fois, avec le cran choisi', async () => {
+    const appels: string[] = [];
+    const erreur = await appliquerRythme('soutenu', async (c) => {
+      appels.push(c);
+      return { ok: true };
+    });
+    expect(appels).toEqual(['soutenu']);
+    expect(erreur).toBeNull();
+  });
+
+  it('rend le message de l’action quand elle refuse', async () => {
+    const erreur = await appliquerRythme('prudent', async () => ({ ok: false, error: 'Droit administrateur requis.' }));
+    expect(erreur).toBe('Droit administrateur requis.');
   });
 });

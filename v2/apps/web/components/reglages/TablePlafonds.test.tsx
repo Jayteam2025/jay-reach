@@ -12,7 +12,7 @@ vi.mock('../../app/actions/plafonds', () => ({
 const t = fr.reglages.plafonds.table;
 const libelles = {
   colReglage: t.colReglage,
-  colAujourdhui: t.colAujourdhui,
+  colConsomme: t.colConsomme,
   colValeur: t.colValeur,
   colDefaut: t.colDefaut,
   colRepli: t.colRepli,
@@ -53,7 +53,7 @@ describe('la table des plafonds', () => {
     expect(html).toContain('12 sur 300');
     // C'est tout l'objet du chantier : un plafond seul ne dit pas s'il est sur le point de
     // bloquer, donc ce qui est consommé se lit en premier.
-    expect(html.indexOf(libelles.colAujourdhui)).toBeLessThan(html.indexOf(libelles.colValeur));
+    expect(html.indexOf(libelles.colConsomme)).toBeLessThan(html.indexOf(libelles.colValeur));
     expect(html.indexOf('12 sur 300')).toBeLessThan(html.indexOf('300<'));
     expect(html).not.toContain(libelles.sansObjet);
   });

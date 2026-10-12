@@ -56,6 +56,9 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
     }
   }
 
+  // Évaluée une fois : le chiffre et son explication parlent forcément du même état.
+  const arretee = boiteArretee(boite);
+
   const cadenceJour = boite.quotas.jour !== null ? t('box.perDay', { n: boite.quotas.jour }) : t('box.perDayNoLimit');
   const cadenceHeure = boite.quotas.heure !== null ? t('box.perHour', { n: boite.quotas.heure }) : t('box.perHourNoLimit');
 
@@ -98,12 +101,12 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
               nullable (aucune limite réglée, le moteur envoie sans plafond) et peut valoir zéro
               (pause). Cette carte affichait « 0 / ∞ », un symbole en dur hors du catalogue de
               libellés, là où les trois autres écrans disent « sans limite ». */}
-          <b style={{ fontSize: 22 }} className={boiteArretee(boite) ? 'jr-valeur-arretee' : undefined}>
+          <b style={{ fontSize: 22 }} className={arretee ? 'jr-valeur-arretee' : undefined}>
             {t('box.todayValue', parametresValeurConsommation(boite.usageDuJour, boite.quotas.jour))}
           </b>
-          {/* Une boîte active dont le quota vaut zéro n'enverra rien, et sa puce verte dit le
-              contraire : c'est le réglage qu'il faut nommer, pas l'état qu'il contredit. */}
-          {boiteArretee(boite) && <small className="jr-valeur-arretee jr-etat-detail">{t('box.stopped')}</small>}
+          {/* Le gabarit dit déjà « 0 · en pause » ; ce qu'il ne dit pas, c'est que la puce
+              d'état juste au-dessus annonce « Active ». C'est cette contradiction qu'on nomme. */}
+          {arretee && <small className="jr-valeur-arretee jr-etat-detail">{t('box.stopped')}</small>}
           {boite.quotas.jour !== null && boite.quotas.jour > 0 && (
             <BarreProgression valeur={(boite.usageDuJour / boite.quotas.jour) * 100} />
           )}

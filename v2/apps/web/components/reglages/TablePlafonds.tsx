@@ -50,7 +50,7 @@ export interface TablePlafondsProps {
   peutModifier: boolean;
   libelles: {
     colReglage: string;
-    colAujourdhui: string;
+    colConsomme: string;
     colValeur: string;
     colDefaut: string;
     colRepli: string;
@@ -107,7 +107,7 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
             <th>{libelles.colReglage}</th>
             {/* La consommation passe devant le réglage : c'est elle qu'on vient lire, et un
                 plafond seul ne dit jamais s'il est sur le point de bloquer. */}
-            <th>{libelles.colAujourdhui}</th>
+            <th>{libelles.colConsomme}</th>
             <th>{libelles.colValeur}</th>
             <th className="masquable">{libelles.colDefaut}</th>
             <th className="masquable">{libelles.colRepli}</th>

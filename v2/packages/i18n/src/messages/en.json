@@ -1052,7 +1052,7 @@
         "healthUnavailable": "SalesBlink status unavailable",
         "notLinked": "Not linked to SalesBlink",
         "todayValue": "{etat, select, pause {{utilise} · on hold} sansLimite {{utilise} · no cap} other {{utilise} / {plafond}}}",
-        "stopped": "Quota at zero: this mailbox will send nothing"
+        "stopped": "Active, but its quota stops it sending"
       },
       "drawer": {
         "title": "Edit {identite}",
@@ -1157,9 +1157,9 @@
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
         "erreurNombre": "Enter a whole number, zero or positive.",
-        "colAujourdhui": "Today",
         "sansObjet": "Not a volume",
-        "arrete": "Stopped: nothing is produced"
+        "arrete": "Stopped: nothing is produced",
+        "colConsomme": "Used"
       },
       "lignes": {
         "scoringParJour": {
@@ -1664,7 +1664,8 @@
           "soutenu": "Brisk",
           "invitations": "Invitations",
           "messages": "Messages",
-          "horaires": "Hours"
+          "horaires": "Hours",
+          "plage": "{debut}:00-{fin}:00"
         },
         "applique": "in use",
         "appliquer": "Apply",
