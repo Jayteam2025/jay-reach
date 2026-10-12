@@ -398,6 +398,68 @@ describe('lireAujourdhui', () => {
     expect(a.alertes.some((al) => al.type === 'boite_deconnectee')).toBe(false);
   });
 
+  describe('alertes « un réglage bloque »', () => {
+    const types = (a: Awaited<ReturnType<typeof lireAujourdhui>>) => a.alertes.map((al) => al.type);
+
+    it('un plafond de production à zéro est signalé, les autres non', async () => {
+      const zero = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'enrichissements_par_jour', value: 0 }] }));
+      const alerte = zero.alertes.find((al) => al.type === 'plafond_a_zero');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/limits');
+      expect(alerte?.texte).not.toContain('enrichissements_par_jour');
+
+      const scoring = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'scoring_par_jour', value: 0 }] }));
+      expect(types(scoring)).toContain('plafond_a_zero');
+
+      // Zéro par défaut, jamais une panne.
+      const relecture = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'relecture_premiers_envois_defaut', value: 0 }] }));
+      expect(types(relecture)).not.toContain('plafond_a_zero');
+      // Un plafond de collecte à zéro relève de collecte_etranglee seule, pas de deux alertes.
+      const collecte = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 0 }] }));
+      expect(types(collecte)).not.toContain('plafond_a_zero');
+    });
+
+    it('une campagne à étapes LinkedIn sans expéditeur LinkedIn actif est signalée', async () => {
+      const a = await lireAujourdhui(faux({ 'jr:canal_sans_expediteur': [{ n: 1 }] }));
+      const alerte = a.alertes.find((al) => al.type === 'canal_sans_expediteur');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/senders');
+      const ok = await lireAujourdhui(faux({ 'jr:canal_sans_expediteur': [{ n: 0 }] }));
+      expect(types(ok)).not.toContain('canal_sans_expediteur');
+    });
+
+    it('un plafond de collecte sous dix est signalé', async () => {
+      const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 9 }] }));
+      const alerte = a.alertes.find((al) => al.type === 'collecte_etranglee');
+      expect(alerte).toBeDefined();
+      expect(alerte?.lien).toBe('/settings/linkedin');
+      const limite = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 10 }] }));
+      expect(types(limite)).not.toContain('collecte_etranglee');
+    });
+
+    it('une organisation neuve, sans aucun réglage en base, n’alerte sur aucun des trois', async () => {
+      const a = await lireAujourdhui(faux({}));
+      for (const t of ['plafond_a_zero', 'canal_sans_expediteur', 'collecte_etranglee'] as const) expect(types(a)).not.toContain(t);
+    });
+
+    it('les réglages d’une AUTRE organisation ne déclenchent rien', async () => {
+      const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        const autre = params?.[0] === 'org-2';
+        if (/from organization_settings/i.test(sql) && autre) {
+          return { rows: [{ key: 'scoring_par_jour', value: 0 }, { key: 'linkedin_personnes_par_passage', value: 1 }], rowCount: 2 };
+        }
+        if (/jr:canal_sans_expediteur/i.test(sql) && autre) return { rows: [{ n: 1 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
+      const a = await lireAujourdhui(ctx);
+      for (const t of ['plafond_a_zero', 'canal_sans_expediteur', 'collecte_etranglee'] as const) expect(types(a)).not.toContain(t);
+      // Garde-fou : le faux pool rend bien ces lignes pour l'autre organisation.
+      const autre = await lireAujourdhui({ ...ctx, organisationId: 'org-2' });
+      expect(types(autre)).toEqual(expect.arrayContaining(['plafond_a_zero', 'canal_sans_expediteur', 'collecte_etranglee']));
+    });
+  });
+
   it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [

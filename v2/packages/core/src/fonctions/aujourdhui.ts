@@ -131,7 +131,18 @@ export interface CampagneResume {
   listeSource: { nom: string; autresListes: number } | null;
 }
 
-export type TypeAlerte = 'pause_envoi' | 'boite_deconnectee' | 'fournisseur_sans_cle' | 'source_orpheline' | 'moteur_silencieux';
+export type TypeAlerte =
+  | 'pause_envoi'
+  | 'boite_deconnectee'
+  | 'fournisseur_sans_cle'
+  | 'source_orpheline'
+  | 'moteur_silencieux'
+  | 'plafond_a_zero'
+  | 'canal_sans_expediteur'
+  | 'collecte_etranglee';
+
+/** Sous ce nombre de personnes par passage, la collecte LinkedIn ne nourrit plus le moteur. */
+const SEUIL_COLLECTE_ETRANGLEE = 10;
 
 export interface Alerte {
   type: TypeAlerte;
@@ -326,7 +337,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -383,6 +394,16 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
         where s.organization_id = $1
           and s.is_active
           and not exists (select 1 from campaign_sources cs where cs.source_id = s.id)`,
+      [ctx.organisationId],
+    ),
+    // Campagnes actives dont une étape passe par LinkedIn, tant qu'aucun expéditeur LinkedIn n'est actif.
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:canal_sans_expediteur */
+         from campaigns c
+        where c.organization_id = $1
+          and c.status = 'active'
+          and exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))
+          and not exists (select 1 from senders sd where sd.organization_id = c.organization_id and sd.kind = 'linkedin' and sd.is_active)`,
       [ctx.organisationId],
     ),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
@@ -510,6 +531,38 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           ? "Une source active n'alimente aucune campagne."
           : `${nbOrphelines} sources actives n'alimentent aucune campagne.`,
       lien: '/campaigns',
+    });
+  }
+  // Un plafond de production à zéro arrête le moteur sans qu'aucun écran ne le dise. Seuls ces deux
+  // plafonds : `linkedin_personnes_par_passage` relève de `collecte_etranglee`, et
+  // `relecture_premiers_envois_defaut` vaut 0 par défaut (jamais une panne).
+  if (reglages.scoring_par_jour === 0) {
+    alertes.push({
+      type: 'plafond_a_zero',
+      texte: "Aucune offre ne sera évaluée : le plafond de scoring par jour est à zéro.",
+      lien: '/settings/limits',
+    });
+  }
+  if (reglages.enrichissements_par_jour === 0) {
+    alertes.push({
+      type: 'plafond_a_zero',
+      texte: "Aucun contact ne sera enrichi : le plafond d'enrichissements par jour est à zéro.",
+      lien: '/settings/limits',
+    });
+  }
+  if ((linkedinSansExpediteurRes.rows[0]?.n ?? 0) > 0) {
+    alertes.push({
+      type: 'canal_sans_expediteur',
+      texte: "Aucun message LinkedIn ne peut partir : aucun expéditeur LinkedIn n'est actif.",
+      lien: '/settings/senders',
+    });
+  }
+  const personnesParPassage = reglages.linkedin_personnes_par_passage;
+  if (typeof personnesParPassage === 'number' && personnesParPassage < SEUIL_COLLECTE_ETRANGLEE) {
+    alertes.push({
+      type: 'collecte_etranglee',
+      texte: `La collecte LinkedIn est étranglée : elle enregistre au plus ${personnesParPassage} personne(s) par passage.`,
+      lien: '/settings/linkedin',
     });
   }
   const organisation = organisationRes.rows[0];
