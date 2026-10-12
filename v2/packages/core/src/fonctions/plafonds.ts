@@ -337,6 +337,18 @@ export const RYTHMES: Record<
   soutenu: { invitations: 150, messages: 200, debutHeure: 8, finHeure: 19, jours: [1, 2, 3, 4, 5] },
 };
 
+/** Échec d'écriture en base d'un cran ; `ecrites` = nombre d'écritures déjà réussies (0 = rien n'a changé). */
+export class ErreurRythme extends Error {
+  constructor(
+    message: string,
+    readonly ecrites: number,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'ErreurRythme';
+  }
+}
+
 const schemaRythme = z.enum(['prudent', 'normal', 'soutenu']);
 
 /**
@@ -368,9 +380,9 @@ export async function lireRythme(ctx: Contexte): Promise<Rythme> {
  * (`linkedin_settings`), toujours explicitement, « normal » compris.
  *
  * NON atomique : trois écritures successives, sans transaction (`Contexte.ex` n'en expose pas). Le
- * rôle admin et le cran sont vérifiés AVANT la première, et le fuseau est lu avant elle, donc les
- * échecs prévisibles ne laissent rien derrière eux. Si une écriture échoue en base après la
- * précédente, l'erreur remonte et l'organisation garde un mélange des anciennes et des nouvelles
+ * rôle admin et le cran sont vérifiés AVANT la première (erreurs sèches : `ForbiddenError`,
+ * `ErreurEntree`), et le fuseau est lu avant elle. Si une écriture échoue en base, une `ErreurRythme`
+ * au message lisible remonte (partielle ou non, selon `ecrites`) et l'organisation garde un mélange des anciennes et des nouvelles
  * valeurs ; `lireRythme` lit alors `personnalise` (ou, par coïncidence, un cran dont les valeurs
  * se trouvent réunies), jamais un cran qui ne serait pas celui appliqué. Rejouer l'écriture répare.
  */
@@ -378,9 +390,24 @@ export async function ecrireRythme(ctx: Contexte, rythme: Exclude<Rythme, 'perso
   exiger(ctx, 'admin');
   const c = RYTHMES[valider(schemaRythme, rythme)];
   const { fuseau } = await lireHeuresEnvoiLinkedIn(ctx);
-  await ecrireReglage(ctx, { cle: 'linkedin_invitations_par_semaine', valeur: c.invitations });
-  await ecrireReglage(ctx, { cle: 'linkedin_messages_par_semaine', valeur: c.messages });
-  await enregistrerHeuresEnvoiLinkedIn(ctx, { debutHeure: c.debutHeure, finHeure: c.finHeure, jours: [...c.jours], fuseau });
+  // Dès ici les échecs viennent de la base. Le message dit à l'opérateur ce qui est vrai (rien posé,
+  // ou posé en partie) et qu'il peut réessayer ; le texte brut de la base n'est jamais montré.
+  let ecrites = 0;
+  try {
+    await ecrireReglage(ctx, { cle: 'linkedin_invitations_par_semaine', valeur: c.invitations });
+    ecrites += 1;
+    await ecrireReglage(ctx, { cle: 'linkedin_messages_par_semaine', valeur: c.messages });
+    ecrites += 1;
+    await enregistrerHeuresEnvoiLinkedIn(ctx, { debutHeure: c.debutHeure, finHeure: c.finHeure, jours: [...c.jours], fuseau });
+  } catch (cause) {
+    throw new ErreurRythme(
+      ecrites === 0
+        ? "Le rythme n'a pas pu être enregistré : rien n'a changé. Réessayez."
+        : "Le rythme n'a été appliqué qu'en partie : une partie des réglages a changé, pas tous. Réessayez pour terminer.",
+      ecrites,
+      { cause },
+    );
+  }
 }
 
 /** Une ligne de la table éditable de l'écran Réglages › Plafonds (tâche 21) : valeur réellement appliquée, défaut, repli d'environnement, et qui a modifié quand. */

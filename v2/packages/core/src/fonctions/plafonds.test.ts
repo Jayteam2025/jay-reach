@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
+import { ErreurEntree } from './contexte.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
@@ -9,6 +10,7 @@ import {
   RYTHMES,
   ecrireReglage,
   ecrireRythme,
+  ErreurRythme,
   lireRythme,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
@@ -607,17 +609,16 @@ describe('le rythme en trois crans', () => {
     expect(await lireRythme(p.ctx)).toBe('normal');
   });
 
-  it('refuse un rôle sous admin avant toute écriture', async () => {
+  it('refuse un rôle sous admin sans aucune requête, lecture comprise', async () => {
     const p = poolRythme({ role: 'operator' });
     await expect(ecrireRythme(p.ctx, 'soutenu')).rejects.toBeInstanceOf(ForbiddenError);
-    expect(p.sqls.filter((s) => /insert into/i.test(s.sql))).toHaveLength(0);
+    expect(p.sqls).toHaveLength(0);
   });
 
-  it('refuse un cran inconnu, « personnalise » compris, avant toute écriture', async () => {
+  it.each(['turbo', 'personnalise'])('refuse le cran « %s » en erreur d’entrée, sans aucune requête', async (cran) => {
     const p = poolRythme();
-    await expect(ecrireRythme(p.ctx, 'turbo' as never)).rejects.toThrow();
-    await expect(ecrireRythme(p.ctx, 'personnalise' as never)).rejects.toThrow();
-    expect(p.sqls.filter((s) => /insert into/i.test(s.sql))).toHaveLength(0);
+    await expect(ecrireRythme(p.ctx, cran as never)).rejects.toBeInstanceOf(ErreurEntree);
+    expect(p.sqls).toHaveLength(0);
   });
 
   it('chaque requête filtre ou écrit par organization_id, dans le texte du SQL', async () => {
@@ -634,24 +635,43 @@ describe('le rythme en trois crans', () => {
   });
 
   describe('écriture partielle', () => {
-    it('si la fenêtre échoue après les deux plafonds, rien n’est annulé et la lecture dit ce qui est appliqué', async () => {
+    it('si la fenêtre échoue après les deux plafonds : message « en partie », sans texte de base, cause conservée', async () => {
       const p = poolRythme({ echecSurInsert: 3 });
-      await ecrireRythme(p.ctx, 'prudent').then(
-        () => expect.unreachable(),
-        (e: unknown) => expect((e as Error).message).toBe('écriture refusée'),
-      );
-      // Plafonds prudent (50/100) posés, fenêtre restée celle par défaut 9-18 jours 1-5, identique à celle de prudent :
-      // les valeurs appliquées SONT celles de prudent, la lecture le dit (rien d'inventé).
-      expect(await lireRythme(p.ctx)).toBe('prudent');
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(2);
+      expect(e.message).toMatch(/qu'en partie/);
+      expect(e.message).toMatch(/Réessayez/);
+      expect(e.message).not.toMatch(/écriture refusée/);
+      expect((e.cause as Error).message).toBe('écriture refusée');
+      // Rien n'est annulé : les deux plafonds de prudent sont posés, la fenêtre n'a pas été écrite.
       expect(p.reglages.get('linkedin_invitations_par_semaine')).toBe(50);
       expect(p.reglages.get('linkedin_messages_par_semaine')).toBe(100);
       expect(p.heures()).toBeUndefined();
     });
 
+    it('si la première écriture échoue : message « rien n’a changé », distinct du partiel', async () => {
+      const p = poolRythme({ echecSurInsert: 1 });
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(0);
+      expect(e.message).toMatch(/rien n'a changé/);
+      expect(e.message).not.toMatch(/partie/);
+      expect(p.reglages.size).toBe(0);
+    });
+
     it('un cran dont la fenêtre diffère, interrompu avant elle, se lit « personnalisé »', async () => {
       const p = poolRythme({ echecSurInsert: 3, heures: { from: 9, to: 18, days: [1, 2, 3, 4, 5] } });
-      await expect(ecrireRythme(p.ctx, 'soutenu')).rejects.toThrow('écriture refusée');
+      await expect(ecrireRythme(p.ctx, 'soutenu')).rejects.toBeInstanceOf(ErreurRythme);
       expect(await lireRythme(p.ctx)).toBe('personnalise');
+    });
+
+    it('un cran interrompu dont la fenêtre déjà posée est la sienne se lit comme ce cran (valeurs appliquées)', async () => {
+      const p = poolRythme({ echecSurInsert: 3 });
+      await expect(ecrireRythme(p.ctx, 'prudent')).rejects.toBeInstanceOf(ErreurRythme);
+      expect(await lireRythme(p.ctx)).toBe('prudent');
     });
   });
 });
