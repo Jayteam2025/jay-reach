@@ -163,14 +163,32 @@ begin
   n := public.purger_linkedin_connexion_demandes();
   if n <> 1 then raise exception 'FAIL 7b : % ligne(s) supprimée(s), 1 attendue', n; end if;
   if (select count(*) from linkedin_connexion_demandes
-       where organization_id = 'c2000000-0000-0000-0000-00000000000a') <> 1 then
-    raise exception 'FAIL 7c : la demande en cours de A a été touchée';
+       where organization_id = 'c2000000-0000-0000-0000-00000000000a') <> 1
+     or (select statut from linkedin_connexion_demandes
+          where organization_id = 'c2000000-0000-0000-0000-00000000000a') is distinct from 'demandee' then
+    raise exception 'FAIL 7c : la demande en cours de A a été touchée (supprimée ou statut changé)';
   end if;
   if (select motif from linkedin_connexion_demandes
        where organization_id = 'c2000000-0000-0000-0000-00000000000b') is distinct from 'delai' then
     raise exception 'FAIL 7d : la demande expirée de B n''est pas passée en échec delai';
   end if;
   raise notice 'OK 7b/7c/7d purge : terminée à 24 h supprimée, en cours conservée, expirée -> delai';
+end $$;
+
+-- 8. `etape` est une liste fermée : une phrase libre (donc un secret) est refusée.
+do $$
+begin
+  insert into linkedin_connexion_demandes(organization_id, demandee_par, statut, etape)
+    values ('c2000000-0000-0000-0000-00000000000b', 'c1000000-0000-0000-0000-000000000004', 'echec', 'mot de passe: hunter2');
+  raise exception 'FAIL 8a : etape hors liste fermée acceptée';
+exception when check_violation then
+  raise notice 'OK 8a etape hors liste refusée';
+end $$;
+do $$
+begin
+  update linkedin_connexion_demandes set etape = 'identifiants_transmis'
+    where organization_id = 'c2000000-0000-0000-0000-00000000000b';
+  raise notice 'OK 8b etape de la liste acceptée';
 end $$;
 reset role;
 select 'VERIFY_OK' as resultat;
