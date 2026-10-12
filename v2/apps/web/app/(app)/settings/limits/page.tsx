@@ -1,5 +1,13 @@
 import { getTranslations } from 'next-intl/server';
-import { lireConsommationDuJour, lireReglages, lireReglagesDetail, type ClePlafond } from '@jay-reach/core';
+import {
+  compterPostsLinkedInDuJour,
+  compterRequetesLinkedIn,
+  jourCourantDansFuseau,
+  lireConsommationDuJour,
+  lireReglages,
+  lireReglagesDetail,
+  type ClePlafond,
+} from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
 import { libelleModification } from '../../../../lib/libelle-modification';
@@ -26,18 +34,37 @@ const ORDRE_LIGNES: readonly ClePlafond[] = [
   'age_max_offres_jours',
 ];
 
+/**
+ * Les plafonds qui bornent un VOLUME produit : à zéro, ils arrêtent la machine, et l'écran doit
+ * le montrer. Les trois autres lignes sont des seuils (score minimum, relecture, âge des offres) :
+ * un zéro y est une valeur ordinaire, et `relecture_premiers_envois_defaut` vaut même zéro par
+ * défaut. Les confondre ferait crier l'écran sur une organisation parfaitement saine.
+ */
+const PLAFONDS_DE_VOLUME: ReadonlySet<string> = new Set<ClePlafond>([
+  'scoring_par_jour',
+  'enrichissements_par_jour',
+  'linkedin_posts_par_jour',
+  'linkedin_requetes_par_heure',
+  'linkedin_personnes_par_passage',
+]);
+
+const UNE_HEURE_MS = 3_600_000;
+
 export default async function PlafondsPage() {
   const t = await getTranslations('reglages.plafonds');
   const ctx = await contexteCourant();
 
   const reglages = await lireReglages(ctx);
-  const [detail, consommation] = await Promise.all([
-    lireReglagesDetail(ctx, reglages),
-    lireConsommationDuJour(ctx, reglages),
-  ]);
-
   const maintenant = new Date();
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
+  const [detail, consommation, postsDuJour, requetesDeLHeure] = await Promise.all([
+    lireReglagesDetail(ctx, reglages),
+    lireConsommationDuJour(ctx, reglages),
+    // Les deux compteurs de la collecte LinkedIn : les mêmes que ceux de l'écran LinkedIn, pour
+    // que les deux pages ne puissent pas annoncer des chiffres différents du même plafond.
+    compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
+    compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
+  ]);
   const parCle = new Map(detail.map((d) => [d.cle, d]));
   const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
 
@@ -71,13 +98,36 @@ export default async function PlafondsPage() {
     },
   };
 
+  /**
+   * Ce qui est déjà consommé sur chaque plafond, composé ici et pas dans le composant. Une clé
+   * absente de cette table n'a pas de compteur : `linkedin_personnes_par_passage` se compte par
+   * passage et non par période, et les trois seuils ne se consomment pas du tout.
+   */
+  const utiliseParCle: Partial<Record<ClePlafond, number>> = {
+    scoring_par_jour: consommation.scoring.utilise,
+    enrichissements_par_jour: consommation.enrichissement.utilise,
+    linkedin_posts_par_jour: postsDuJour,
+    linkedin_requetes_par_heure: requetesDeLHeure,
+  };
+
   const lignes: LignePlafond[] = ORDRE_LIGNES.map((cle) => {
     const d = parCle.get(cle)!;
     const libelle = libellesLignes[cle]!;
+    const utilise = utiliseParCle[cle];
+    const plafond = typeof d.valeur === 'number' ? d.valeur : null;
     return {
       cle,
       nom: libelle.nom,
       description: libelle.description,
+      consommation:
+        utilise === undefined
+          ? null
+          : {
+              texte: t('consommation.valeur', parametresValeurConsommation(utilise, plafond)),
+              pourcentage: pourcentageJauge(utilise, plafond),
+              ton: tonJauge(utilise, plafond),
+            },
+      arrete: PLAFONDS_DE_VOLUME.has(cle) && d.valeur === 0,
       valeur: d.valeur,
       defaut: d.defaut,
       repli: d.repli,
@@ -152,6 +202,7 @@ export default async function PlafondsPage() {
         peutModifier={peutModifier}
         libelles={{
           colReglage: t('table.colReglage'),
+          colConsomme: t('table.colConsomme'),
           colValeur: t('table.colValeur'),
           colDefaut: t('table.colDefaut'),
           colRepli: t('table.colRepli'),
@@ -161,6 +212,8 @@ export default async function PlafondsPage() {
           annuler: t('table.annuler'),
           aucunRepli: t('table.aucunRepli'),
           erreurNombre: t('table.erreurNombre'),
+          sansObjet: t('table.sansObjet'),
+          arrete: t('table.arrete'),
         }}
       />
 

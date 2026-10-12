@@ -1051,7 +1051,8 @@
         "disconnected": "Déconnectée de SalesBlink",
         "healthUnavailable": "État SalesBlink indisponible",
         "notLinked": "Non reliée à SalesBlink",
-        "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}"
+        "todayValue": "{etat, select, pause {{utilise} · en pause} sansLimite {{utilise} · sans limite} other {{utilise} / {plafond}}}",
+        "stopped": "Active, mais son quota l'empêche d'envoyer"
       },
       "drawer": {
         "title": "Modifier {identite}",
@@ -1155,7 +1156,10 @@
         "jamaisModifie": "jamais",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modifié {date}} other {Modifié le {date}}}",
-        "erreurNombre": "Entrez un nombre entier positif ou nul."
+        "erreurNombre": "Entrez un nombre entier positif ou nul.",
+        "sansObjet": "Ne se consomme pas",
+        "arrete": "Arrêté : plus rien ne se produit",
+        "colConsomme": "Consommé"
       },
       "lignes": {
         "scoringParJour": {
@@ -1648,7 +1652,30 @@
           "enregistrer": "Enregistrer",
           "erreurOrdre": "L'heure de fin doit venir après l'heure de début.",
           "erreurJours": "Choisissez au moins un jour."
-        }
+        },
+        "conso": {
+          "invitations": "Invitations cette semaine",
+          "messages": "Messages cette semaine",
+          "surPlafond": "sur {plafond}"
+        },
+        "crans": {
+          "prudent": "Prudent",
+          "normal": "Normal",
+          "soutenu": "Soutenu",
+          "invitations": "Invitations",
+          "messages": "Messages",
+          "horaires": "Horaires",
+          "plage": "{debut}h-{fin}h"
+        },
+        "applique": "appliqué",
+        "appliquer": "Appliquer",
+        "jours": "Du lundi au vendredi. Le moteur espace les envois dans la plage horaire.",
+        "surMesure": {
+          "titre": "Sur mesure.",
+          "texte": "Vos réglages ne correspondent à aucun rythme. Choisir un rythme les remplacera."
+        },
+        "avances": "Réglages avancés",
+        "avancesLead": "Les cinq valeurs qu'un rythme pose, modifiables une par une. En changer une fait passer le rythme en sur mesure."
       },
       "collecteAuto": {
         "titre": "Collecte automatique",
@@ -1673,7 +1700,9 @@
           "usage": "Nouvelles personnes enregistrées par passage ; au-delà, le passage s’arrête"
         },
         "enregistrer": "Enregistrer",
-        "erreurNombre": "Saisissez un nombre entier."
+        "erreurNombre": "Saisissez un nombre entier.",
+        "avances": "Réglages avancés",
+        "avancesLead": "Les trois plafonds de la collecte, modifiables un par un."
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",

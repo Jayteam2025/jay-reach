@@ -8,7 +8,7 @@ import type { TuileLogoMarque } from '../ui';
 import { actionModifierBoite } from '../../app/actions/senders';
 import { parametresValeurConsommation } from '../../lib/plafonds-affichage';
 import { libelleJoursEnvoi } from '../../lib/jours-envoi';
-import { puceEtatBoite } from './boite-affichage';
+import { boiteArretee, puceEtatBoite } from './boite-affichage';
 import { TiroirBoite } from './TiroirBoite';
 
 const MARQUE_TUILE: Record<Boite['marque'], TuileLogoMarque> = {
@@ -56,6 +56,9 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
     }
   }
 
+  // Évaluée une fois : le chiffre et son explication parlent forcément du même état.
+  const arretee = boiteArretee(boite);
+
   const cadenceJour = boite.quotas.jour !== null ? t('box.perDay', { n: boite.quotas.jour }) : t('box.perDayNoLimit');
   const cadenceHeure = boite.quotas.heure !== null ? t('box.perHour', { n: boite.quotas.heure }) : t('box.perHourNoLimit');
 
@@ -98,9 +101,12 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
               nullable (aucune limite réglée, le moteur envoie sans plafond) et peut valoir zéro
               (pause). Cette carte affichait « 0 / ∞ », un symbole en dur hors du catalogue de
               libellés, là où les trois autres écrans disent « sans limite ». */}
-          <b style={{ fontSize: 22 }}>
+          <b style={{ fontSize: 22 }} className={arretee ? 'jr-valeur-arretee' : undefined}>
             {t('box.todayValue', parametresValeurConsommation(boite.usageDuJour, boite.quotas.jour))}
           </b>
+          {/* Le gabarit dit déjà « 0 · en pause » ; ce qu'il ne dit pas, c'est que la puce
+              d'état juste au-dessus annonce « Active ». C'est cette contradiction qu'on nomme. */}
+          {arretee && <small className="jr-valeur-arretee jr-etat-detail">{t('box.stopped')}</small>}
           {boite.quotas.jour !== null && boite.quotas.jour > 0 && (
             <BarreProgression valeur={(boite.usageDuJour / boite.quotas.jour) * 100} />
           )}

@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
+import { ErreurEntree } from './contexte.js';
 import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
+import { SEUIL_MINUTES_PAR_ACTION } from './aujourdhui.js';
 import {
   CLES_REGLAGES,
+  RYTHMES,
   ecrireReglage,
+  ecrireRythme,
+  ErreurRythme,
+  lireRythme,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
   compterPostsLinkedInDuJour,
@@ -488,3 +494,196 @@ describe('schemaEcrireReglage — les plafonds d envoi LinkedIn sont bornes', ()
   });
 });
 
+
+/**
+ * Pool à état : `organization_settings` et `linkedin_settings` sont de vraies tables en mémoire, lues
+ * et écrites par les requêtes du code. Rien n'est préparé à la main pour la branche visée : l'état
+ * lu par `lireRythme` est celui que `ecrireRythme` a réellement posé. `echecSurInsert` fait échouer
+ * la N-ième écriture (1-based), pour le cas de l'écriture partielle.
+ */
+function poolRythme(opts: { role?: Contexte['role']; echecSurInsert?: number; echecLectureHeures?: boolean; reglages?: Record<string, unknown>; heures?: { from: number; to: number; days: number[] } } = {}) {
+  const reglages = new Map<string, unknown>(Object.entries(opts.reglages ?? {}));
+  let heures = opts.heures ? { ...opts.heures, tz: 'Europe/Lisbonne' } : undefined;
+  const sqls: { sql: string; params: unknown[] }[] = [];
+  let inserts = 0;
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    sqls.push({ sql, params });
+    if (/insert into/i.test(sql)) {
+      inserts += 1;
+      if (opts.echecSurInsert === inserts) throw new Error('écriture refusée');
+    }
+    if (opts.echecLectureHeures && /from linkedin_settings/i.test(sql)) throw new Error('connexion refusée par la base');
+    if (/from organization_settings/i.test(sql)) {
+      const rows = [...reglages].map(([key, value]) => ({ key, value }));
+      return { rows, rowCount: rows.length };
+    }
+    if (/insert into organization_settings/i.test(sql)) {
+      reglages.set(params[1] as string, JSON.parse(params[2] as string));
+      return { rows: [], rowCount: 1 };
+    }
+    if (/from linkedin_settings/i.test(sql)) {
+      return heures
+        ? { rows: [{ send_from_hour: heures.from, send_to_hour: heures.to, send_days: heures.days, timezone: heures.tz }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+    }
+    if (/insert into linkedin_settings/i.test(sql)) {
+      heures = { from: params[1] as number, to: params[2] as number, days: params[3] as number[], tz: params[4] as string };
+      return { rows: [], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }) as unknown as Executeur['query'];
+  const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: opts.role ?? 'admin' };
+  return { ctx, sqls, reglages, heures: () => heures };
+}
+
+describe('le rythme en trois crans', () => {
+  const CRANS = Object.keys(RYTHMES) as (keyof typeof RYTHMES)[];
+
+  it('expose exactement prudent, normal, soutenu avec les valeurs de la spec', () => {
+    expect(RYTHMES).toEqual({
+      prudent: { invitations: 50, messages: 100, debutHeure: 9, finHeure: 18, jours: [1, 2, 3, 4, 5] },
+      normal: { invitations: 100, messages: 200, debutHeure: 9, finHeure: 18, jours: [1, 2, 3, 4, 5] },
+      soutenu: { invitations: 150, messages: 200, debutHeure: 8, finHeure: 19, jours: [1, 2, 3, 4, 5] },
+    });
+  });
+
+  it.each(CRANS)('le cran %s ne dépasse pas HARD_CAP_7_DAYS', (cran) => {
+    expect(RYTHMES[cran].invitations).toBeLessThanOrEqual(HARD_CAP_7_DAYS);
+    expect(RYTHMES[cran].messages).toBeLessThanOrEqual(HARD_CAP_7_DAYS);
+  });
+
+  it.each(CRANS)('le cran %s laisse au moins le seuil de minutes par action (formule de l’alerte fenêtre trop étroite)', (cran) => {
+    const r = RYTHMES[cran];
+    const plafondQuotidien = (hebdo: number): number => Math.max(1, Math.ceil(Math.min(hebdo, HARD_CAP_7_DAYS) / Math.max(1, r.jours.length)));
+    const actionsParJour = plafondQuotidien(r.invitations) + plafondQuotidien(r.messages);
+    const minutesParAction = ((r.finHeure - r.debutHeure) * 60) / actionsParJour;
+    expect(minutesParAction).toBeGreaterThanOrEqual(SEUIL_MINUTES_PAR_ACTION);
+  });
+
+  it.each(CRANS)('écrire le cran %s pose les quatre valeurs, fuseau existant conservé', async (cran) => {
+    const p = poolRythme({ heures: { from: 10, to: 12, days: [6, 7] } });
+    await ecrireRythme(p.ctx, cran);
+    expect(p.reglages.get('linkedin_invitations_par_semaine')).toBe(RYTHMES[cran].invitations);
+    expect(p.reglages.get('linkedin_messages_par_semaine')).toBe(RYTHMES[cran].messages);
+    expect(p.heures()).toEqual({ from: RYTHMES[cran].debutHeure, to: RYTHMES[cran].finHeure, days: RYTHMES[cran].jours, tz: 'Europe/Lisbonne' });
+  });
+
+  it('écrire « normal » inscrit explicitement les valeurs en base, même si elles égalent les défauts', async () => {
+    const p = poolRythme();
+    await ecrireRythme(p.ctx, 'normal');
+    expect(p.reglages.get('linkedin_invitations_par_semaine')).toBe(100);
+    expect(p.reglages.get('linkedin_messages_par_semaine')).toBe(200);
+    expect(p.heures()).toMatchObject({ from: 9, to: 18, days: [1, 2, 3, 4, 5] });
+  });
+
+  it.each(CRANS)('lire rend %s quand les quatre valeurs correspondent', async (cran) => {
+    const p = poolRythme();
+    await ecrireRythme(p.ctx, cran);
+    expect(await lireRythme(p.ctx)).toBe(cran);
+  });
+
+  it('une organisation qui n’a rien réglé applique les valeurs du cran normal et lit « normal »', async () => {
+    expect(await lireRythme(poolRythme().ctx)).toBe('normal');
+  });
+
+  it.each([
+    ['les invitations', async (p: ReturnType<typeof poolRythme>) => ecrireReglage(p.ctx, { cle: 'linkedin_invitations_par_semaine', valeur: 101 })],
+    ['les messages', async (p: ReturnType<typeof poolRythme>) => ecrireReglage(p.ctx, { cle: 'linkedin_messages_par_semaine', valeur: 199 })],
+  ])('lire rend « personnalisé » dès que %s ont été changés à la main', async (_nom, changer) => {
+    const p = poolRythme();
+    await ecrireRythme(p.ctx, 'prudent');
+    await changer(p);
+    expect(await lireRythme(p.ctx)).toBe('personnalise');
+  });
+
+  it.each([
+    ['le début', { from: 10, to: 18, days: [1, 2, 3, 4, 5] }],
+    ['la fin', { from: 9, to: 17, days: [1, 2, 3, 4, 5] }],
+    ['les jours', { from: 9, to: 18, days: [1, 2, 3, 4] }],
+  ])('lire rend « personnalisé » quand %s de la fenêtre diffère', async (_nom, heures) => {
+    const p = poolRythme({ heures, reglages: { linkedin_invitations_par_semaine: 100, linkedin_messages_par_semaine: 200 } });
+    expect(await lireRythme(p.ctx)).toBe('personnalise');
+  });
+
+  it('les jours sont comparés sans tenir compte de l’ordre', async () => {
+    const p = poolRythme({ heures: { from: 9, to: 18, days: [5, 3, 1, 2, 4] } });
+    expect(await lireRythme(p.ctx)).toBe('normal');
+  });
+
+  it('refuse un rôle sous admin sans aucune requête, lecture comprise', async () => {
+    const p = poolRythme({ role: 'operator' });
+    await expect(ecrireRythme(p.ctx, 'soutenu')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(p.sqls).toHaveLength(0);
+  });
+
+  it.each(['turbo', 'personnalise'])('refuse le cran « %s » en erreur d’entrée, sans aucune requête', async (cran) => {
+    const p = poolRythme();
+    await expect(ecrireRythme(p.ctx, cran as never)).rejects.toBeInstanceOf(ErreurEntree);
+    expect(p.sqls).toHaveLength(0);
+  });
+
+  it('chaque requête filtre ou écrit par organization_id, dans le texte du SQL', async () => {
+    const p = poolRythme();
+    await ecrireRythme(p.ctx, 'soutenu');
+    await lireRythme(p.ctx);
+    const lectures = p.sqls.filter((s) => /^\s*select/i.test(s.sql));
+    expect(lectures.length).toBeGreaterThan(0);
+    for (const l of lectures) expect(l.sql).toMatch(/where\s+organization_id\s*=\s*\$1/i);
+    const ecritures = p.sqls.filter((s) => /insert into/i.test(s.sql));
+    expect(ecritures).toHaveLength(3);
+    for (const e of ecritures) expect(e.sql).toMatch(/\(\s*organization_id\b/i);
+    for (const s of p.sqls) expect(s.params[0]).toBe('org-1');
+  });
+
+  describe('écriture partielle', () => {
+    it('si la fenêtre échoue après les deux plafonds : message « en partie », sans texte de base, cause conservée', async () => {
+      const p = poolRythme({ echecSurInsert: 3 });
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(2);
+      expect(e.message).toMatch(/qu'en partie/);
+      expect(e.message).toMatch(/Réessayez/);
+      expect(e.message).not.toMatch(/écriture refusée/);
+      expect((e.cause as Error).message).toBe('écriture refusée');
+      // Rien n'est annulé : les deux plafonds de prudent sont posés, la fenêtre n'a pas été écrite.
+      expect(p.reglages.get('linkedin_invitations_par_semaine')).toBe(50);
+      expect(p.reglages.get('linkedin_messages_par_semaine')).toBe(100);
+      expect(p.heures()).toBeUndefined();
+    });
+
+    it('si la lecture du fuseau échoue : « rien n’a changé », sans texte de base, et aucune écriture', async () => {
+      const p = poolRythme({ echecLectureHeures: true });
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(0);
+      expect(e.message).toMatch(/rien n'a changé/);
+      expect(e.message).not.toMatch(/connexion/);
+      expect(p.sqls.filter((s) => /insert into/i.test(s.sql))).toHaveLength(0);
+    });
+
+    it('si la première écriture échoue : message « rien n’a changé », distinct du partiel', async () => {
+      const p = poolRythme({ echecSurInsert: 1 });
+      const err = await ecrireRythme(p.ctx, 'prudent').then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(ErreurRythme);
+      const e = err as ErreurRythme;
+      expect(e.ecrites).toBe(0);
+      expect(e.message).toMatch(/rien n'a changé/);
+      expect(e.message).not.toMatch(/partie/);
+      expect(p.reglages.size).toBe(0);
+    });
+
+    it('un cran dont la fenêtre diffère, interrompu avant elle, se lit « personnalisé »', async () => {
+      const p = poolRythme({ echecSurInsert: 3, heures: { from: 9, to: 18, days: [1, 2, 3, 4, 5] } });
+      await expect(ecrireRythme(p.ctx, 'soutenu')).rejects.toBeInstanceOf(ErreurRythme);
+      expect(await lireRythme(p.ctx)).toBe('personnalise');
+    });
+
+    it('un cran interrompu dont la fenêtre déjà posée est la sienne se lit comme ce cran (valeurs appliquées)', async () => {
+      const p = poolRythme({ echecSurInsert: 3 });
+      await expect(ecrireRythme(p.ctx, 'prudent')).rejects.toBeInstanceOf(ErreurRythme);
+      expect(await lireRythme(p.ctx)).toBe('prudent');
+    });
+  });
+});

@@ -6,18 +6,24 @@ import {
   lireHeuresEnvoiLinkedIn,
   lireCollecteAutoLinkedIn,
   lirePlafondLinkedIn,
+  lireRythme,
   lireVolumeEnvoiLinkedIn,
   lireReglages,
   prochainEnvoiLinkedIn,
+  HARD_CAP_7_DAYS,
   RETENTION_PERSONNES_NON_CONTACTEES_JOURS,
+  RYTHMES,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { pourcentageJauge, tonJauge } from '../../../../lib/plafonds-affichage';
 import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
-import { Carte, TuileLogo } from '../../../../components/ui';
+import { BarreProgression, Carte, TuileLogo } from '../../../../components/ui';
 import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
 import { PlafondsLinkedin } from '../../../../components/reglages/PlafondsLinkedin';
 import { CollecteAutoLinkedin } from '../../../../components/reglages/CollecteAutoLinkedin';
+import { ChoixRythme } from '../../../../components/reglages/ChoixRythme';
+import type { CranRythme } from '../../../../components/reglages/rythme-affichage';
 import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
@@ -25,6 +31,20 @@ export const revalidate = 0;
 /** Commande de l'opérateur : la session s'ouvre dans un terminal du serveur, jamais depuis cette page. */
 const COMMANDE_CONNEXION = 'jay-reach linkedin connecter';
 const UNE_HEURE_MS = 3_600_000;
+
+/** L'ordre d'affichage des crans, du plus prudent au plus soutenu. */
+const CRANS_RYTHME: readonly CranRythme[] = ['prudent', 'normal', 'soutenu'];
+
+/**
+ * Le plafond que le MOTEUR applique, pas celui que la saisie porte. L'écriture par l'écran est déjà
+ * bornée à `HARD_CAP_7_DAYS` (`schemaEcrireReglage`, `plafonds.ts`), mais une valeur peut aussi
+ * arriver par un repli de variable d'environnement, que rien ne borne : le moteur rabote alors à
+ * `HARD_CAP_7_DAYS` sur sept jours glissants (`linkedin/file.ts`). Un écran qui annoncerait « 12 sur
+ * 500 » promettrait 300 envois qui ne partiront jamais — exactement le mensonge que ce chantier supprime.
+ */
+function plafondEffectif(regle: number): number {
+  return Math.min(regle, HARD_CAP_7_DAYS);
+}
 
 export default async function ReglagesLinkedinPage() {
   const ctx = await contexteCourant();
@@ -45,6 +65,7 @@ export default async function ReglagesLinkedinPage() {
     postsDuJour,
     requetesDeLHeure,
     collecteAuto,
+    rythme,
   ] = await Promise.all([
     lireSessionLinkedInCourante(ctx),
     prochainEnvoiLinkedIn(ctx.ex, ctx.organisationId, maintenant),
@@ -56,6 +77,7 @@ export default async function ReglagesLinkedinPage() {
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
     lireCollecteAutoLinkedIn(ctx),
+    lireRythme(ctx),
   ]);
 
   const phrase = phraseEtatSession(session);
@@ -181,33 +203,94 @@ export default async function ReglagesLinkedinPage() {
           deux métiers du canal, et chacune porte ses propres réglages. Sans cette
           carte, la fenêtre d'envoi n'était réglable que depuis la carte d'un compte
           d'extension — donc par personne, sur une instance tenue par la session du
-          serveur. */}
+          serveur.
+
+          Depuis le chantier « les réglages passent derrière » : ce qu'on vient lire ici,
+          c'est ce qui est parti cette semaine, pas la valeur d'un champ de saisie. Le
+          choix de rythme pose les quatre valeurs d'un coup ; les cinq champs qu'il écrit
+          restent réglables un par un, sous le repli. Les chiffres de consommation viennent
+          de la fonction que le moteur consulte avant chaque envoi, jamais d'un second
+          comptage. */}
       <Carte titre={t('rythme.titre')}>
         <p className="jr-aide">{t('rythme.lead')}</p>
-        {/* Le plafond et sa consommation côte à côte : un plafond seul ne dit pas s'il
-            est sur le point de bloquer. Les deux chiffres viennent de la fonction que le
-            moteur consulte avant chaque envoi, jamais d'un second comptage. */}
-        <PlafondsLinkedin
+
+        <div className="jr-conso">
+          <div>
+            <small>{t('rythme.conso.invitations')}</small>
+            <b>
+              {volumeEnvoi.invite.envoyes7Jours}{' '}
+              <span>{t('rythme.conso.surPlafond', { plafond: plafondEffectif(volumeEnvoi.invite.plafondHebdo) })}</span>
+            </b>
+            <BarreProgression
+              valeur={pourcentageJauge(volumeEnvoi.invite.envoyes7Jours, plafondEffectif(volumeEnvoi.invite.plafondHebdo))}
+              ton={tonJauge(volumeEnvoi.invite.envoyes7Jours, plafondEffectif(volumeEnvoi.invite.plafondHebdo))}
+            />
+          </div>
+          <div>
+            <small>{t('rythme.conso.messages')}</small>
+            <b>
+              {volumeEnvoi.message.envoyes7Jours}{' '}
+              <span>{t('rythme.conso.surPlafond', { plafond: plafondEffectif(volumeEnvoi.message.plafondHebdo) })}</span>
+            </b>
+            <BarreProgression
+              valeur={pourcentageJauge(volumeEnvoi.message.envoyes7Jours, plafondEffectif(volumeEnvoi.message.plafondHebdo))}
+              ton={tonJauge(volumeEnvoi.message.envoyes7Jours, plafondEffectif(volumeEnvoi.message.plafondHebdo))}
+            />
+          </div>
+        </div>
+
+        <ChoixRythme
+          applique={rythme}
           peutModifier={peutModifier}
-          lignes={[
-            {
-              cle: 'linkedin_invitations_par_semaine',
-              nom: t('rythme.invitationsParSemaine.nom'),
-              usage: t('rythme.invitationsParSemaine.usage', { n: volumeEnvoi.invite.envoyes7Jours }),
-              valeur: volumeEnvoi.invite.plafondHebdo,
-            },
-            {
-              cle: 'linkedin_messages_par_semaine',
-              nom: t('rythme.messagesParSemaine.nom'),
-              usage: t('rythme.messagesParSemaine.usage', { n: volumeEnvoi.message.envoyes7Jours }),
-              valeur: volumeEnvoi.message.plafondHebdo,
-            },
-          ]}
-          libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
+          crans={CRANS_RYTHME.map((cle) => ({
+            cle,
+            nom: t(`rythme.crans.${cle}`),
+            invitations: RYTHMES[cle].invitations,
+            messages: RYTHMES[cle].messages,
+            horaires: t('rythme.crans.plage', { debut: RYTHMES[cle].debutHeure, fin: RYTHMES[cle].finHeure }),
+          }))}
+          libelles={{
+            groupe: t('rythme.titre'),
+            invitations: t('rythme.crans.invitations'),
+            messages: t('rythme.crans.messages'),
+            horaires: t('rythme.crans.horaires'),
+            applique: t('rythme.applique'),
+            appliquer: t('rythme.appliquer'),
+            jours: t('rythme.jours'),
+            surMesureTitre: t('rythme.surMesure.titre'),
+            surMesureTexte: t('rythme.surMesure.texte'),
+          }}
         />
-        <FenetreEnvoiLinkedin valeur={heuresEnvoi} peutModifier={peutModifier} />
+
+        <details className="jr-repli">
+          <summary>{t('rythme.avances')}</summary>
+          <div className="jr-repli-corps">
+            <p className="jr-aide">{t('rythme.avancesLead')}</p>
+            <PlafondsLinkedin
+              peutModifier={peutModifier}
+              lignes={[
+                {
+                  cle: 'linkedin_invitations_par_semaine',
+                  nom: t('rythme.invitationsParSemaine.nom'),
+                  usage: t('rythme.invitationsParSemaine.usage', { n: volumeEnvoi.invite.envoyes7Jours }),
+                  valeur: volumeEnvoi.invite.plafondHebdo,
+                },
+                {
+                  cle: 'linkedin_messages_par_semaine',
+                  nom: t('rythme.messagesParSemaine.nom'),
+                  usage: t('rythme.messagesParSemaine.usage', { n: volumeEnvoi.message.envoyes7Jours }),
+                  valeur: volumeEnvoi.message.plafondHebdo,
+                },
+              ]}
+              libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
+            />
+            <FenetreEnvoiLinkedin valeur={heuresEnvoi} peutModifier={peutModifier} />
+          </div>
+        </details>
       </Carte>
 
+      {/* La collecte garde sa carte et son repli à elle : un cran de rythme ne pose aucun de
+          ces trois plafonds, les ranger sous le même repli laisserait croire le contraire. */}
       <Carte titre={t('plafonds.titre')}>
         <p className="jr-aide">{t('plafonds.lead')}</p>
         {/* L'interrupteur commande la collecte, les plafonds la bornent : il se lit avant eux. */}
@@ -222,30 +305,36 @@ export default async function ReglagesLinkedinPage() {
             desactiver: t('collecteAuto.desactiver'),
           }}
         />
-        <PlafondsLinkedin
-          peutModifier={peutModifier}
-          lignes={[
-            {
-              cle: 'linkedin_posts_par_jour',
-              nom: t('plafonds.postsParJour.nom'),
-              usage: t('plafonds.postsParJour.usage', { n: postsDuJour }),
-              valeur: plafondPosts,
-            },
-            {
-              cle: 'linkedin_requetes_par_heure',
-              nom: t('plafonds.requetesParHeure.nom'),
-              usage: t('plafonds.requetesParHeure.usage', { n: requetesDeLHeure }),
-              valeur: plafondRequetes,
-            },
-            {
-              cle: 'linkedin_personnes_par_passage',
-              nom: t('plafonds.personnesParPassage.nom'),
-              usage: t('plafonds.personnesParPassage.usage'),
-              valeur: plafondPersonnes,
-            },
-          ]}
-          libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
-        />
+        <details className="jr-repli">
+          <summary>{t('plafonds.avances')}</summary>
+          <div className="jr-repli-corps">
+            <p className="jr-aide">{t('plafonds.avancesLead')}</p>
+            <PlafondsLinkedin
+              peutModifier={peutModifier}
+              lignes={[
+                {
+                  cle: 'linkedin_posts_par_jour',
+                  nom: t('plafonds.postsParJour.nom'),
+                  usage: t('plafonds.postsParJour.usage', { n: postsDuJour }),
+                  valeur: plafondPosts,
+                },
+                {
+                  cle: 'linkedin_requetes_par_heure',
+                  nom: t('plafonds.requetesParHeure.nom'),
+                  usage: t('plafonds.requetesParHeure.usage', { n: requetesDeLHeure }),
+                  valeur: plafondRequetes,
+                },
+                {
+                  cle: 'linkedin_personnes_par_passage',
+                  nom: t('plafonds.personnesParPassage.nom'),
+                  usage: t('plafonds.personnesParPassage.usage'),
+                  valeur: plafondPersonnes,
+                },
+              ]}
+              libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}
+            />
+          </div>
+        </details>
       </Carte>
 
       <div className="jr-avertissement">

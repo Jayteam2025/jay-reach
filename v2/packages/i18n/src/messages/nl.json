@@ -1051,7 +1051,8 @@
         "disconnected": "Losgekoppeld van SalesBlink",
         "healthUnavailable": "SalesBlink-status niet beschikbaar",
         "notLinked": "Niet gekoppeld aan SalesBlink",
-        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}"
+        "todayValue": "{etat, select, pause {{utilise} · op pauze} sansLimite {{utilise} · geen limiet} other {{utilise} / {plafond}}}",
+        "stopped": "Actief, maar het quotum verhindert verzenden"
       },
       "drawer": {
         "title": "{identite} bewerken",
@@ -1155,7 +1156,10 @@
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
-        "erreurNombre": "Voer een geheel getal in, nul of positief."
+        "erreurNombre": "Voer een geheel getal in, nul of positief.",
+        "sansObjet": "Geen volume",
+        "arrete": "Gestopt: er wordt niets meer geproduceerd",
+        "colConsomme": "Verbruikt"
       },
       "lignes": {
         "scoringParJour": {
@@ -1648,7 +1652,30 @@
           "enregistrer": "Opslaan",
           "erreurOrdre": "Het einduur moet na het beginuur liggen.",
           "erreurJours": "Kies minstens een dag."
-        }
+        },
+        "conso": {
+          "invitations": "Uitnodigingen deze week",
+          "messages": "Berichten deze week",
+          "surPlafond": "van {plafond}"
+        },
+        "crans": {
+          "prudent": "Voorzichtig",
+          "normal": "Normaal",
+          "soutenu": "Vlot",
+          "invitations": "Uitnodigingen",
+          "messages": "Berichten",
+          "horaires": "Uren",
+          "plage": "{debut}:00-{fin}:00"
+        },
+        "applique": "in gebruik",
+        "appliquer": "Toepassen",
+        "jours": "Maandag tot en met vrijdag. De motor spreidt de verzendingen over het tijdvenster.",
+        "surMesure": {
+          "titre": "Op maat.",
+          "texte": "Uw instellingen komen met geen enkel ritme overeen. Een ritme kiezen vervangt ze."
+        },
+        "avances": "Geavanceerde instellingen",
+        "avancesLead": "De vijf waarden die een ritme instelt, één voor één aan te passen. Eén ervan wijzigen zet het ritme op maat."
       },
       "collecteAuto": {
         "titre": "Automatisch verzamelen",
@@ -1673,7 +1700,9 @@
           "usage": "Nieuwe personen opgeslagen per run; daarna stopt de run"
         },
         "enregistrer": "Opslaan",
-        "erreurNombre": "Voer een geheel getal in."
+        "erreurNombre": "Voer een geheel getal in.",
+        "avances": "Geavanceerde instellingen",
+        "avancesLead": "De drie verzamelplafonds, één voor één aan te passen."
       },
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",

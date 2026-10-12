@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { puceEtatBoite } from './boite-affichage';
+import { boiteArretee, puceEtatBoite } from './boite-affichage';
 
 describe('puceEtatBoite', () => {
   it('boîte non reliée à SalesBlink : priorité absolue, même active', () => {
@@ -32,5 +32,27 @@ describe('puceEtatBoite', () => {
       ton: 'gris',
       cle: 'inactive',
     });
+  });
+});
+
+describe('une boîte dont le quota du jour est à zéro', () => {
+  const quotas = (jour: number | null) => ({ active: true, quotas: { jour, heure: null } });
+
+  it('est signalée comme arrêtée', () => {
+    expect(boiteArretee(quotas(0))).toBe(true);
+  });
+
+  it('ne l’est pas quand aucune limite n’est réglée', () => {
+    // `null` veut dire « sans limite », pas « zéro » : les confondre couperait l'affichage d'une
+    // boîte qui envoie sans plafond.
+    expect(boiteArretee(quotas(null))).toBe(false);
+  });
+
+  it('ne l’est pas quand elle envoie', () => {
+    expect(boiteArretee(quotas(30))).toBe(false);
+  });
+
+  it('ne l’est pas quand la boîte est déjà inactive : sa puce le dit déjà', () => {
+    expect(boiteArretee({ active: false, quotas: { jour: 0, heure: null } })).toBe(false);
   });
 });

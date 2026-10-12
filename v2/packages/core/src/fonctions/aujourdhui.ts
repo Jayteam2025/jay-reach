@@ -15,9 +15,10 @@ import {
   type JaugeEnvois,
 } from './plafonds.js';
 import { lireEtatMoteur, type EtatMoteurResume } from './moteur.js';
-import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.js';
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
+import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -131,7 +132,57 @@ export interface CampagneResume {
   listeSource: { nom: string; autresListes: number } | null;
 }
 
-export type TypeAlerte = 'pause_envoi' | 'boite_deconnectee' | 'fournisseur_sans_cle' | 'source_orpheline' | 'moteur_silencieux';
+export type TypeAlerte =
+  | 'pause_envoi'
+  | 'boite_deconnectee'
+  | 'fournisseur_sans_cle'
+  | 'source_orpheline'
+  | 'moteur_silencieux'
+  | 'plafond_a_zero'
+  | 'canal_sans_expediteur'
+  | 'collecte_etranglee'
+  | 'fenetre_trop_etroite'
+  | 'envois_entasses'
+  | 'rien_ne_part';
+
+/** Sous ce nombre de personnes par passage, la collecte LinkedIn ne nourrit plus le moteur. */
+const SEUIL_COLLECTE_ETRANGLEE = 10;
+
+/**
+ * Sous ce nombre de minutes par action, la fenêtre LinkedIn ne peut pas écouler le volume réglé
+ * (le moteur espace les actions de 1 à 20 min, soit environ 10 min en moyenne, tous types confondus).
+ * Pas 10 : à 10 minutes, les valeurs par défaut du dépôt (100 + 200 sur 9 h - 18 h, cinq jours, soit
+ * 9 min par action) se dénonceraient elles-mêmes alors qu'elles écoulent environ 85 % de leur volume,
+ * alors qu'elles écoulent l'essentiel de leur volume. À 7 minutes on ne signale que les configurations
+ * qui perdent plus d'un tiers de leur volume réglé.
+ */
+export const SEUIL_MINUTES_PAR_ACTION = 7;
+
+/** Fenêtre d'observation de `rien_ne_part`, en jours ouvrés du calendrier (lundi au vendredi). */
+const JOURS_OUVRES_SANS_ACTION = 3;
+
+/**
+ * Premier des `JOURS_OUVRES_SANS_ACTION` derniers lundis-vendredis STRICTEMENT avant `jour`
+ * (`AAAA-MM-JJ`, déjà lu dans le fuseau de l'organisation). Calendrier pur : ce ne sont pas
+ * les jours d'ouverture des boîtes, qu'une configuration à trois jours rendrait inatteignables.
+ */
+function premierDesDerniersJoursOuvres(jour: string): string {
+  const d = new Date(`${jour}T12:00:00Z`);
+  let restants = JOURS_OUVRES_SANS_ACTION;
+  while (restants > 0) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    const semaine = d.getUTCDay();
+    if (semaine !== 0 && semaine !== 6) restants -= 1;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+interface LigneEnvoisParJour {
+  jour: string;
+  dus: number;
+  capacite: number;
+  illimitee: boolean;
+}
 
 export interface Alerte {
   type: TypeAlerte;
@@ -326,7 +377,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   // rendu (même règle que `campagnes.ts::lireEnvoisDuJour`, R53) : la file du jour classait
   // sinon un envoi tardif ou matinal dans le mauvais jour près du changement de fuseau.
   const jourRef = jourDansFuseau(new Date(), fuseau);
-  const [filsRes, actionsRes, campagnesRes, orphelinesRes, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
+  const debutSansAction = premierDesDerniersJoursOuvres(jourRef);
+  const [filsRes, actionsRes, campagnesRes, orphelinesRes, linkedinSansExpediteurRes, sourcesLinkedinRes, campagnesActivesRes, envoisParJourRes, actionsRecentesRes, heuresLinkedin, organisationRes, boitesDeconnecteesRes, absencesNonTraiteesRes, moteur, plafonds, contraintesParSender] = await Promise.all([
     ctx.ex.query<LigneFil>(
       `select t.id, t.channel, t.classification, t.last_message_at,
               c.first_name, c.last_name, c.job_title, ac.name as account_name,
@@ -385,6 +437,91 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
           and not exists (select 1 from campaign_sources cs where cs.source_id = s.id)`,
       [ctx.organisationId],
     ),
+    // Campagnes actives dont une étape passe par LinkedIn, tant qu'aucun expéditeur LinkedIn n'est actif.
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:canal_sans_expediteur */
+         from campaigns c
+        where c.organization_id = $1
+          and c.status = 'active'
+          and exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))
+          and not exists (select 1 from senders sd where sd.organization_id = c.organization_id and sd.kind = 'linkedin' and sd.is_active)`,
+      [ctx.organisationId],
+    ),
+    // Sources LinkedIn actives et rattachées à une campagne active : sans elles, un plafond de collecte bas ne bride rien.
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:sources_linkedin_actives */
+         from sources so
+        where so.organization_id = $1
+          and so.is_active
+          and so.config->>'sourceType' = any($2::text[])
+          -- Même critère que le tour de collecte du worker (producer.ts, jr:linkedin_tour_source_due) :
+          -- une source sans campagne active ne collecte rien.
+          and exists (
+            select 1 from campaign_sources cs
+              join campaigns c on c.id = cs.campaign_id
+             where cs.source_id = so.id and c.organization_id = so.organization_id and c.status = 'active'
+          )`,
+      [ctx.organisationId, TYPES_LINKEDIN_COLLECTES],
+    ),
+    // Campagnes actives : sans elles, aucun des contrôles « le rythme ne sort rien » n'a de sens.
+    // `avec_invitations` / `avec_messages` : campagnes actives portant au moins une étape de ce type, seuls
+    // plafonds qui comptent dans le volume LinkedIn. `anciennes` : activées (à défaut créées) avant la
+    // fenêtre d'observation, pour ne pas accuser une campagne neuve ou tout juste relancée.
+    ctx.ex.query<{ actives: number; avec_invitations: number; avec_messages: number; anciennes: number }>(
+      `select count(*)::int as actives, /* jr:campagnes_actives */
+              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel = 'linkedin_invite')))::int as avec_invitations,
+              (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel = 'linkedin_message')))::int as avec_messages,
+              (count(*) filter (where coalesce(c.activated_at, c.created_at) < ($2::date::timestamp at time zone $3)))::int as anciennes
+         from campaigns c
+        where c.organization_id = $1
+          and c.status = 'active'`,
+      [ctx.organisationId, debutSansAction, fuseau],
+    ),
+    // Les sept jours à venir : envois email dus (prochaine étape email d'une inscription active d'une
+    // campagne active) contre la capacité du jour (somme des `daily_quota` des boîtes ouvertes ce jour-là,
+    // `business_hours.days` en convention ISO, défaut lundi-vendredi comme `heuresOuvreesDe`). Une boîte
+    // sans quota n'a pas de limite : `illimitee`. Bornes du jour dans le fuseau de l'organisation.
+    ctx.ex.query<LigneEnvoisParJour>(
+      `select to_char(d.jour, 'YYYY-MM-DD') as jour, /* jr:envois_par_jour */
+              (select count(*)::int
+                 from enrollments e
+                 join campaigns c on c.id = e.campaign_id
+                 -- current_step est un RANG, pas une position : les positions ne sont pas contiguës
+                 -- après la suppression d'une étape (même lecture que reprendreInscription).
+                 join lateral (select s.channel from sequence_steps s where s.campaign_id = e.campaign_id order by s.position offset e.current_step limit 1) ss on true
+                where e.organization_id = $1
+                  and e.status = 'active'
+                  and c.organization_id = e.organization_id
+                  and c.status = 'active'
+                  and ss.channel = 'email'
+                  and e.next_action_at >= (d.jour::timestamp at time zone $3)
+                  and e.next_action_at < ((d.jour + 1)::timestamp at time zone $3)) as dus,
+              (select coalesce(sum(sd.daily_quota), 0)::int
+                 from senders sd
+                where sd.organization_id = $1
+                  and sd.kind = 'email'
+                  and sd.is_active
+                  and coalesce(sd.business_hours->'days', '[1,2,3,4,5]'::jsonb) @> to_jsonb(extract(isodow from d.jour)::int)) as capacite,
+              (select coalesce(bool_or(sd.daily_quota is null), false)
+                 from senders sd
+                where sd.organization_id = $1
+                  and sd.kind = 'email'
+                  and sd.is_active
+                  and coalesce(sd.business_hours->'days', '[1,2,3,4,5]'::jsonb) @> to_jsonb(extract(isodow from d.jour)::int)) as illimitee
+         from (select ($2::date + g) as jour from generate_series(1, 7) g) d
+        order by d.jour`,
+      [ctx.organisationId, jourRef, fuseau],
+    ),
+    ctx.ex.query<{ n: number }>(
+      `select count(*)::int as n /* jr:actions_recentes */
+         from actions a
+        where a.organization_id = $1
+          -- Parti = remis au transporteur : une action blocked (refus d'émettre) est créée mais ne part pas.
+          and a.dispatched_at is not null
+          and a.dispatched_at >= ($2::date::timestamp at time zone $3)`,
+      [ctx.organisationId, debutSansAction, fuseau],
+    ),
+    lireHeuresEnvoiLinkedIn(ctx),
     ctx.ex.query<{ sending_paused_at: string | null; sending_paused_reason: string | null }>(
       `select sending_paused_at, sending_paused_reason /* jr:pause_envoi */
          from organizations
@@ -512,7 +649,80 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       lien: '/campaigns',
     });
   }
+  // Un plafond de volume à zéro arrête le moteur sans qu'aucun écran ne le dise : les cinq plafonds que
+  // la table des limites déclare « arrêtés », moins un. `linkedin_personnes_par_passage` relève de
+  // `collecte_etranglee` (son seuil couvre déjà zéro : deux bandeaux pour un réglage), et
+  // `relecture_premiers_envois_defaut` vaut 0 par défaut (jamais une panne). Les deux plafonds de collecte
+  // LinkedIn se règlent sur `/settings/linkedin`, les deux de production sur `/settings/limits`.
+  const PLAFONDS_A_ZERO = [
+    { cle: 'scoring_par_jour', texte: 'Aucune offre ne sera évaluée : le plafond de scoring par jour est à zéro.', lien: '/settings/limits' },
+    { cle: 'enrichissements_par_jour', texte: "Aucun contact ne sera enrichi : le plafond d'enrichissements par jour est à zéro.", lien: '/settings/limits' },
+    { cle: 'linkedin_posts_par_jour', texte: 'La collecte LinkedIn est arrêtée : le plafond de posts par jour est à zéro.', lien: '/settings/linkedin', canalLinkedin: true },
+    { cle: 'linkedin_requetes_par_heure', texte: 'La collecte LinkedIn est arrêtée : le plafond de requêtes par heure est à zéro.', lien: '/settings/linkedin', canalLinkedin: true },
+  ] as const;
+  for (const plafond of PLAFONDS_A_ZERO) {
+    // Les plafonds de collecte LinkedIn ne comptent que si une source LinkedIn est active : une organisation
+    // email seule les met à zéro à raison, et un bandeau fantôme éteindrait `rien_ne_part` pour toujours.
+    if ('canalLinkedin' in plafond && (sourcesLinkedinRes.rows[0]?.n ?? 0) === 0) continue;
+    if (reglages[plafond.cle] === 0) {
+      alertes.push({ type: 'plafond_a_zero', texte: plafond.texte, lien: plafond.lien });
+    }
+  }
+  if ((linkedinSansExpediteurRes.rows[0]?.n ?? 0) > 0) {
+    alertes.push({
+      type: 'canal_sans_expediteur',
+      texte: "Aucun message LinkedIn ne peut partir : aucun expéditeur LinkedIn n'est actif.",
+      lien: '/settings/senders',
+    });
+  }
+  const personnesParPassage = reglages.linkedin_personnes_par_passage;
+  if (
+    typeof personnesParPassage === 'number' &&
+    personnesParPassage < SEUIL_COLLECTE_ETRANGLEE &&
+    (sourcesLinkedinRes.rows[0]?.n ?? 0) > 0
+  ) {
+    alertes.push({
+      type: 'collecte_etranglee',
+      texte: `La collecte LinkedIn est étranglée : elle enregistre au plus ${personnesParPassage} ${personnesParPassage > 1 ? 'personnes' : 'personne'} par passage.`,
+      lien: '/settings/linkedin',
+    });
+  }
+  const campagnesActives = campagnesActivesRes.rows[0];
   const organisation = organisationRes.rows[0];
+  if ((campagnesActives?.actives ?? 0) > 0) {
+    // Le volume réglé par jour : la SOMME des deux plafonds quotidiens, car le moteur plafonne par type
+    // mais espace les actions tous types confondus. Formule de `chargerStatsRythme` (`linkedin/file.ts`) :
+    // plafond hebdomadaire réparti sur les jours d'envoi, au moins 1. Pas
+    // de rabotage à `HARD_CAP_7_DAYS` ici : `chargerStatsRythme` n'en fait pas, il ne rabote que `cap7Days`, et un
+    // plafond de 400 posé par repli d'environnement enfile bien 80 actions par jour.
+    const plafondQuotidien = (hebdo: unknown): number =>
+      Math.max(1, Math.ceil((typeof hebdo === 'number' ? hebdo : 0) / Math.max(1, heuresLinkedin.jours.length)));
+    // Un type sans aucune étape dans les campagnes actives n'enfile rien : son plafond n'entre pas dans la somme.
+    const actionsParJour =
+      ((campagnesActives?.avec_invitations ?? 0) > 0 ? plafondQuotidien(reglages.linkedin_invitations_par_semaine) : 0) +
+      ((campagnesActives?.avec_messages ?? 0) > 0 ? plafondQuotidien(reglages.linkedin_messages_par_semaine) : 0);
+    const minutesParAction = actionsParJour > 0 ? ((heuresLinkedin.finHeure - heuresLinkedin.debutHeure) * 60) / actionsParJour : Infinity;
+    if (actionsParJour > 0 && minutesParAction < SEUIL_MINUTES_PAR_ACTION) {
+      alertes.push({
+        type: 'fenetre_trop_etroite',
+        texte: `La fenêtre d'envoi LinkedIn (de ${heuresLinkedin.debutHeure} h à ${heuresLinkedin.finHeure} h) est trop étroite : elle laisse ${minutesParAction.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} minutes par action pour ${actionsParJour} actions par jour, le moteur n'enverra pas tout ce qui est réglé.`,
+        lien: '/settings/linkedin',
+      });
+    }
+    // Un jour sans aucune boîte ouverte (capacité nulle) n'alerte pas : ses envois glissent au jour ouvert
+    // suivant. Une boîte sans quota ne borne rien.
+    const entasse = envoisParJourRes.rows.find((j) => !j.illimitee && j.capacite > 0 && j.dus > j.capacite);
+    if (entasse) {
+      const jourLisible = new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(
+        new Date(`${entasse.jour}T12:00:00Z`),
+      );
+      alertes.push({
+        type: 'envois_entasses',
+        texte: `Le ${jourLisible}, ${entasse.dus} envois sont dus pour une capacité de ${entasse.capacite} : le surplus partira les jours suivants.`,
+        lien: '/settings/senders',
+      });
+    }
+  }
   if (organisation?.sending_paused_at) {
     const heurePause = formatterHeure(organisation.sending_paused_at, fuseau);
     alertes.push({
@@ -528,6 +738,23 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     alertes.push({
       type: 'boite_deconnectee',
       texte: `La boîte ${boite.identity} est déconnectée : elle n'envoie plus.`,
+      lien: '/settings/senders',
+    });
+  }
+
+  // Le symptôme final, « quelle qu'en soit la cause » : il ne se montre que si aucune autre alerte
+  // n'explique déjà le silence (pause, boîte coupée, expéditeur absent, plafond à zéro…). Une cause
+  // nommée vaut mieux qu'un symptôme, et deux bandeaux pour un même fait apprennent à les ignorer.
+  // Évalué en dernier : la règle n'a de sens qu'une fois toutes les autres alertes poussées.
+  if (
+    alertes.length === 0 &&
+    (campagnesActives?.actives ?? 0) > 0 &&
+    (campagnesActives?.anciennes ?? 0) > 0 &&
+    (actionsRecentesRes.rows[0]?.n ?? 0) === 0
+  ) {
+    alertes.push({
+      type: 'rien_ne_part',
+      texte: `Rien n'est parti depuis trois jours ouvrés alors qu'une campagne est active.`,
       lien: '/settings/senders',
     });
   }
