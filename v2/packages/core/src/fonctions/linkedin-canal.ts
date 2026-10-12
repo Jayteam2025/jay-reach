@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { chiffrer, dechiffrer, ErreurChiffrement } from '../chiffrement.js';
-import type { Contexte } from './contexte.js';
+import { exiger, type Contexte } from './contexte.js';
 
 export const CANAL_CONNEXION_LINKEDIN = 'jr_linkedin_connexion';
 
@@ -24,9 +24,22 @@ export const schemaMessageConnexion = z.discriminatedUnion('type', [
 
 export type MessageConnexion = z.infer<typeof schemaMessageConnexion>;
 
-/** Valide, chiffre, puis émet. Une entrée invalide lève sans rien émettre. */
+/** Le message ne vise jamais une autre organisation que celle du contexte. */
+export class ErreurOrganisationConnexion extends Error {
+  constructor() {
+    super('Le message vise une autre organisation que celle de l\'appelant');
+    this.name = 'ErreurOrganisationConnexion';
+  }
+}
+
+/**
+ * Autorise (admin), valide, lie à l'organisation du contexte, chiffre, puis émet. Toute entrée
+ * refusée lève sans rien émettre. L'écoute ne rattrape rien : c'est ici que ça se ferme.
+ */
 export async function emettreMessageConnexion(ctx: Contexte, message: MessageConnexion): Promise<void> {
+  exiger(ctx, 'admin');
   const valide = schemaMessageConnexion.parse(message);
+  if (valide.organizationId !== ctx.organisationId) throw new ErreurOrganisationConnexion();
   const charge = await chiffrer(JSON.stringify(valide));
   await ctx.ex.query('select pg_notify($1, $2) /* jr:connexion_linkedin */', [CANAL_CONNEXION_LINKEDIN, charge]);
 }

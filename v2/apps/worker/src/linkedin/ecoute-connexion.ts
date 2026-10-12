@@ -18,7 +18,13 @@ const ATTENTE_MAX_MS = 30_000;
 
 /** Même URL, port forcé en mode session. */
 export function urlModeSession(url: string): string {
-  const u = new URL(url);
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    // La TypeError native porte l'URL complète (donc le mot de passe) dans `input` : on la remplace.
+    throw new Error('ecoute_connexion: chaîne de connexion illisible');
+  }
   u.port = PORT_MODE_SESSION;
   return u.toString();
 }

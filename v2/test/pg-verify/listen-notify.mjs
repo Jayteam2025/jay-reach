@@ -41,7 +41,7 @@ try {
   });
   recu.catch(() => {});
   await new Promise((r) => setTimeout(r, 1500)); // laisse le LISTEN s'installer
-  await emettreMessageConnexion({ ex: emet, organisationId: 'essai', utilisateurId: null, role: null }, attendu);
+  await emettreMessageConnexion({ ex: emet, organisationId: 'essai', utilisateurId: null, role: 'admin' }, attendu);
   const m = await recu;
   const ok = isDeepStrictEqual(m, attendu);
   console.log(`[listen] émission port ${port}, écoute imposée 5432 : ${ok ? 'PASS message déchiffré identique à l\'émis' : 'FAIL charge différente'}`);

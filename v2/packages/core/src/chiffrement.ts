@@ -15,9 +15,16 @@ const LONGUEUR_TAG = 128;
 
 export type CodeErreurChiffrement = 'cle_absente' | 'cle_invalide' | 'charge_illisible';
 
+const CONSEILS: Record<CodeErreurChiffrement, string> = {
+  cle_absente: 'Définir ENCRYPTION_KEY (32 octets, base64 ou hex ; en générer une : openssl rand -base64 32).',
+  cle_invalide:
+    'ENCRYPTION_KEY doit faire exactement 32 octets, en base64 (44 caractères) ou en hex (64) ; en générer une : openssl rand -base64 32. Une phrase libre ne convient pas ici.',
+  charge_illisible: 'Vérifier que ENCRYPTION_KEY est identique côté app et côté worker.',
+};
+
 export class ErreurChiffrement extends Error {
   constructor(public readonly code: CodeErreurChiffrement) {
-    super(`Chiffrement : ${code}`);
+    super(`Chiffrement : ${code}. ${CONSEILS[code]}`);
     this.name = 'ErreurChiffrement';
   }
 }

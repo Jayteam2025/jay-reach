@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chiffrer, ErreurChiffrement } from '../chiffrement.js';
+import { chiffrer, dechiffrer, ErreurChiffrement } from '../chiffrement.js';
 import type { Contexte } from './contexte.js';
-import { CANAL_CONNEXION_LINKEDIN, emettreMessageConnexion, lireMessageConnexion, type MessageConnexion } from './linkedin-canal.js';
+import { CANAL_CONNEXION_LINKEDIN, emettreMessageConnexion, ErreurOrganisationConnexion, lireMessageConnexion, type MessageConnexion } from './linkedin-canal.js';
 
 const CLE = 'a'.repeat(64);
 const AUTRE_CLE = 'b'.repeat(64);
@@ -52,7 +52,8 @@ describe('canal chiffré de connexion LinkedIn', () => {
     for (const m of messages) {
       const { recu, charge } = await allerRetour(m);
       expect(recu).toEqual(m);
-      expect(charge).not.toContain('motdepasse');
+      expect(atob(charge)).not.toContain('motdepasse');
+      expect(JSON.parse(await dechiffrer(charge))).toEqual(m);
     }
   });
 
@@ -62,19 +63,38 @@ describe('canal chiffré de connexion LinkedIn', () => {
       demandeId: 'd1', organizationId: 'o1', type: 'secrets', identifiant: 'a@b.fr', motDePasse,
     });
     expect(recu).toMatchObject({ type: 'secrets', motDePasse });
-    expect(charge).not.toContain('passé');
+    expect((JSON.parse(await dechiffrer(charge)) as { motDePasse: string }).motDePasse).toBe(motDePasse);
+    expect(atob(charge)).not.toContain('Mot d');
   });
 
   it('test_une_charge_indechiffrable_leve_une_erreur_sans_citer_la_charge', async () => {
     const charge = await chiffrer(JSON.stringify({ type: 'code', demandeId: 'd', organizationId: 'o', code: '654321' }));
+    const verifier = (erreur: unknown): void => {
+      expect(erreur).toBeInstanceOf(ErreurChiffrement);
+      const texte = `${(erreur as Error).message} ${(erreur as Error).stack ?? ''} ${JSON.stringify(erreur)}`;
+      for (const secret of [charge, charge.slice(0, 12), CLE, AUTRE_CLE, '654321']) expect(texte).not.toContain(secret);
+    };
+    // 1. mauvaise clé
     process.env.ENCRYPTION_KEY = AUTRE_CLE;
-    const erreur = await lireMessageConnexion(charge).catch((e: unknown) => e);
-    expect(erreur).toBeInstanceOf(ErreurChiffrement);
-    const texte = `${(erreur as Error).message} ${(erreur as Error).stack ?? ''}`;
-    expect(texte).not.toContain(charge);
-    expect(texte).not.toContain(CLE);
-    expect(texte).not.toContain(AUTRE_CLE);
-    expect(texte).not.toContain('654321');
+    verifier(await lireMessageConnexion(charge).catch((e: unknown) => e));
+    // 2. charge altérée, bonne clé
+    process.env.ENCRYPTION_KEY = CLE;
+    const altere = charge.slice(0, -4) + (charge.endsWith('AAAA') ? 'BBBB' : 'AAAA');
+    verifier(await lireMessageConnexion(altere).catch((e: unknown) => e));
+    // 3. clé invalide : ni la clé ni la charge dans le message, mais un conseil lisible
+    process.env.ENCRYPTION_KEY = 'zzsecretzz';
+    const e3 = await lireMessageConnexion(charge).catch((e: unknown) => e);
+    expect((e3 as Error).message).not.toContain('zzsecretzz');
+    expect((e3 as Error).message).toContain('openssl rand -base64 32');
+  });
+
+  it('refuse un non-admin et une organisation différente, sans rien émettre', async () => {
+    const m: MessageConnexion = { demandeId: 'd', organizationId: 'o1', type: 'deconnexion' };
+    const { ctx, appels } = ctxCapture();
+    await expect(emettreMessageConnexion({ ...ctx, role: 'viewer' }, m)).rejects.toThrow();
+    await expect(emettreMessageConnexion({ ...ctx, role: null }, m)).rejects.toThrow();
+    await expect(emettreMessageConnexion(ctx, { ...m, organizationId: 'autre-org' })).rejects.toBeInstanceOf(ErreurOrganisationConnexion);
+    expect(appels).toHaveLength(0);
   });
 
   it('une charge déchiffrée de forme inattendue est refusée comme illisible', async () => {
