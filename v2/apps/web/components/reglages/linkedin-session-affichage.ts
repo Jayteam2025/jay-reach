@@ -1,7 +1,7 @@
 /**
  * Logique d'affichage pure de la session LinkedIn du serveur (lot 4a) — séparée de la page et
  * du pied de barre latérale pour rester testable sans contexte next-intl, même convention que
- * `compte-linkedin-affichage.ts`.
+ * `boite-affichage.ts`.
  *
  * UNE phrase par session : ce qui empêche réellement de collecter (un motif de blocage)
  * l'emporte sur l'état enregistré. Un motif `sortie_inattendue` sur une session encore marquée

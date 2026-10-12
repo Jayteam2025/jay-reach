@@ -1081,13 +1081,6 @@
       "linkedin": {
         "title": "Comptes LinkedIn",
         "lead": "Les actions LinkedIn partent d'une IP résidentielle dédiée, jamais du serveur.",
-        "empty": "Aucun compte LinkedIn connecté.",
-        "emptyServeur": "Le canal LinkedIn est tenu par la session ouverte sur le serveur, sans extension ni compte relié ici.",
-        "emptyServeurLien": "Régler le rythme et les heures d'envoi",
-        "connected": "Connecté",
-        "notConnected": "Non connecté",
-        "senderMissing": "Aucun envoi ne partira : expéditeur non activé",
-        "activeSenderMissing": "Active, mais aucun envoi ne partira : expéditeur non activé",
         "perDay": "{n} par jour",
         "perWeek": "{n} par semaine",
         "edit": "Modifier",
@@ -1100,7 +1093,19 @@
         "close": "Fermer",
         "drawerDailyQuota": "Profils lus et actions par jour",
         "drawerWeeklyQuota": "Plafond par semaine",
-        "plafondsExtension": "Ces plafonds ne valent que pour l'envoi par l'extension. Le volume de l'envoi par le serveur se règle dans Réglages, LinkedIn."
+        "plafondsExtension": "Ces plafonds ne valent que pour l'envoi par l'extension. Le volume de l'envoi par le serveur se règle dans Réglages, LinkedIn.",
+        "serveur": {
+          "titre": "Compte LinkedIn",
+          "sousTitre": "La session ouverte sur le serveur",
+          "compte": "Compte connecté",
+          "comptePasEncore": "Aucun compte branché",
+          "sortie": "Sortie réseau",
+          "envoisSemaine": "Envois cette semaine",
+          "derniereCollecte": "Dernière collecte",
+          "jamais": "Aucune collecte pour l'instant",
+          "regler": "Régler le rythme et les plafonds",
+          "connecter": "Brancher un compte LinkedIn"
+        }
       }
     },
     "days": {

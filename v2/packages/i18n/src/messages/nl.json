@@ -1081,13 +1081,6 @@
       "linkedin": {
         "title": "LinkedIn-accounts",
         "lead": "LinkedIn-acties vertrekken vanaf een toegewijd residentieel IP-adres, nooit vanaf de server.",
-        "empty": "Geen LinkedIn-account verbonden.",
-        "emptyServeur": "Het LinkedIn-kanaal draait op de sessie die op de server openstaat, zonder extensie en zonder account hier.",
-        "emptyServeurLien": "Ritme en verzenduren instellen",
-        "connected": "Verbonden",
-        "notConnected": "Niet verbonden",
-        "senderMissing": "Er wordt niets verstuurd: afzender niet geactiveerd",
-        "activeSenderMissing": "Actief, maar er wordt niets verstuurd: afzender niet geactiveerd",
         "perDay": "{n} per dag",
         "perWeek": "{n} per week",
         "edit": "Bewerken",
@@ -1100,7 +1093,19 @@
         "close": "Sluiten",
         "drawerDailyQuota": "Gelezen profielen en acties per dag",
         "drawerWeeklyQuota": "Weeklimiet",
-        "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn."
+        "plafondsExtension": "Deze limieten gelden alleen voor verzenden via de extensie. Het volume van verzenden via de server stel je in bij Instellingen, LinkedIn.",
+        "serveur": {
+          "titre": "LinkedIn-account",
+          "sousTitre": "De sessie die op de server openstaat",
+          "compte": "Gekoppeld account",
+          "comptePasEncore": "Geen account gekoppeld",
+          "sortie": "Netwerkuitgang",
+          "envoisSemaine": "Verzonden deze week",
+          "derniereCollecte": "Laatste verzameling",
+          "jamais": "Nog geen verzameling",
+          "regler": "Tempo en limieten instellen",
+          "connecter": "Een LinkedIn-account koppelen"
+        }
       }
     },
     "days": {
