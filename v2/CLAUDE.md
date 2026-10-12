@@ -79,7 +79,7 @@ La v1 vise l'auto-hébergement — usage propre de l'éditeur et co-constructeur
 ## Ce qu'il ne faut pas faire
 
 - Ne pas coder de client SMTP maison. SalesBlink gère l'envoi email en v1.
-- Ne pas coller de cookie LinkedIn à la main, ni réactiver l'extension navigateur (gelée), ni laisser le trafic LinkedIn sortir par l'IP du VPS. La session s'ouvre côté serveur par `jay-reach linkedin connecter` et sort par une IP résidentielle dédiée, sous plafonds réglables et trace par requête.
+- Ne pas coller de cookie LinkedIn à la main, ni réactiver l'extension navigateur (gelée), ni laisser le trafic LinkedIn sortir par l'IP du VPS. La session s'ouvre côté serveur, depuis l'écran Réglages › LinkedIn ou par `jay-reach linkedin connecter` depuis un terminal du serveur, et sort par une IP résidentielle dédiée, sous plafonds réglables et trace par requête.
 - Ne pas stocker un message de boîte de réception qui ne correspond à aucun contact connu.
 - Ne pas inventer de fonctionnalité absente du backlog.
 - Ne pas générer de fixtures avec de vraies personnes ou de vraies entreprises.

@@ -8,44 +8,42 @@ Chronométrage sportif et dossard de course. Pas cyberpunk, pas terminal de hack
 
 ## Couleurs
 
-| Token | Hex | Usage |
+Thème **clair**, sobre. Source unique : `apps/web/app/styles/jetons.css`, aucun composant ne porte de valeur hexadécimale.
+
+| Token | Valeur | Usage |
 |---|---|---|
-| `--lime` | `#C6FF3D` | Accent principal, série de graphique 1, actions, valeurs actives |
-| `--volt` | `#EDFF66` | Survol et focus du lime |
-| `--lime2` | `#8FCB2E` | Série 2, icônes de lien |
-| `--lime3` | `#4E7A1C` | Série 3, états passés |
-| `--limeghost` | `rgba(198,255,61,.12)` | Fonds teintés |
-| `--limeline` | `rgba(198,255,61,.32)` | Bordures teintées |
-| `--ink` | `#0A130E` | Fond de page |
-| `--slate` | `#18271F` | Cartes |
-| `--slate2` | `#243629` | Bordures, séparateurs |
-| `--slate3` | `#31473A` | Bordures fortes, survol |
-| `--chalk` | `#EEF3E9` | Texte principal |
-| `--moss` | `#8B9C91` | Texte secondaire |
-| `--moss2` | `#65766B` | Métadonnées, légendes |
-| `--flare` | `#FF5A1F` | Erreur, quota dépassé, arbitrage requis |
+| `--jr-fond` | `#F3F5F3` | Fond de page |
+| `--jr-surface` | `#FFFFFF` | Cartes, tiroirs, menus |
+| `--jr-encre` | `#1A2622` | Texte principal |
+| `--jr-secondaire` | `#63736D` | Texte secondaire, métadonnées, légendes |
+| `--jr-filet` | `#DCE2DE` | Bordures, séparateurs |
+| `--jr-accent` | `#146C5A` | Accent principal : action primaire, valeurs actives |
+| `--jr-accent-doux` | `#E2F0EA` | Fonds teintés de l'accent |
+| `--jr-accent-encre` | `#FFFFFF` | Texte posé sur l'accent |
+| `--jr-bon` / `--jr-bon-doux` | `#1F7A4D` / `#E6F3EC` | Réussi, livré |
+| `--jr-attention` / `--jr-attention-doux` | `#B7791F` / `#FBF1DE` | À surveiller |
+| `--jr-erreur` / `--jr-erreur-doux` | `#B4423A` / `#F9E6E4` | Erreur, quota dépassé, arbitrage requis |
+| `--jr-linkedin` / `--jr-linkedin-doux` | `#0A66C2` / `#E7EEF9` | Canal LinkedIn |
+| `--jr-voile` | `rgba(20, 30, 26, 0.28)` | Voile derrière tiroirs et modales |
 
-**La règle du lime :** il signale ce qui est **vivant ou réussi**. Campagne active, signal bien noté, réponse obtenue, valeur qui progresse, étape en cours. Ce qui est inerte, passé, planifié ou neutre reste en chalk ou en moss. Un lime posé sur un élément mort casse le code et rend l'interface illisible.
+**La règle de l'accent :** il signale ce qui est **vivant ou actionnable**. Campagne active, action primaire, étape en cours. Ce qui est inerte, passé, planifié ou neutre reste en encre ou en secondaire. Une seule action primaire en accent plein par vue ; les autres boutons sont en contour ou neutres.
 
-Une seule action primaire en lime plein par vue. Les autres boutons sont en contour lime ou neutres.
+**L'erreur est réservée à ce qui exige une action immédiate** : erreur fournisseur, quota dépassé, contact à arbitrer. Une absence détectée n'est pas une urgence.
 
-**Flare est réservé à ce qui exige une action immédiate.** Erreur provider, quota dépassé, contact à arbitrer. Une absence détectée n'est pas une urgence : elle porte un badge lime, pas du Flare.
-
-Mode clair : non prioritaire. Tokens en variables CSS pour ne pas fermer la porte, mais ne pas concevoir deux thèmes en v1.
+Un seul thème : le mode sombre n'existe pas.
 
 ## Typographie
 
 | Rôle | Police | Usage |
 |---|---|---|
-| Display | **Archivo** (variable, largeur 112–122, graisse 600) | Titres, chiffres clés |
-| Corps | **Geist Sans** | Interface, libellés, textes |
-| Données | **Geist Mono** | Chronos, scores, compteurs, montants, SIREN, pourcentages |
+| Interface | **Instrument Sans** (`--jr-police`) | Titres, corps, libellés, textes. `display` n'est qu'un alias du corps |
+| Données | **Geist Mono** | Compteurs, scores, montants, pourcentages, codes courts |
 
-Chargées via `next/font` — aucun appel externe à l'exécution, condition d'un vrai self-hosted.
+Chargées via `next/font` (`apps/web/app/fonts.ts`) : self-hébergées, aucun appel externe à l'exécution.
 
-Le mono n'est pas décoratif : il porte tout ce qui est mesuré. Cette séparation stricte donne à l'interface son air d'instrument.
+Le mono n'est pas décoratif : il porte ce qui est mesuré.
 
-Échelle : 32 / 26 / 18 / 15 / 13 / 11 px. Interlignage 1,5 pour le corps, 1,15 pour le display. Casse phrase partout, capitales réservées aux codes courts en mono.
+Tailles (jetons) : titre 24 px (`--jr-titre`), corps 14 px (`--jr-corps`), petit 12,5 px (`--jr-petit`). Casse phrase partout, capitales réservées aux codes courts en mono.
 
 ## Formes
 
