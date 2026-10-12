@@ -180,7 +180,14 @@ function decoderEntites(texte: string): string {
  */
 const CARTE_DE_PROFIL = 'com.linkedin.sdui.profile.card.ref';
 
-/** L'identifiant de la carte d'en-tête : un URN qui change a chaque personne, puis `Topcard`. */
+/**
+ * La taille au-delà de laquelle ce qu'on tient n'est plus un en-tête. Mesuré le 09/10 sur deux
+ * profils réels : 12 072 et 14 290 octets. La marge est large, elle ne sert qu'à garder une borne
+ * quand la page ne porte aucune carte après celle de l'en-tête.
+ */
+const OCTETS_MAX_ENTETE = 40_000;
+
+/** L'identifiant de la carte d'en-tête : un URN qui change à chaque personne, puis `Topcard`. */
 const IDENTIFIANT_ENTETE = /^[^"]*Topcard"/;
 
 /**
@@ -195,9 +202,9 @@ const IDENTIFIANT_ENTETE = /^[^"]*Topcard"/;
  * `null` quand la carte n'est pas la : page changée de forme, profil fermé, réponse tronquée.
  */
 export function enteteDeProfil(html: string): string | null {
-  // L'élément porte son identifiant DEUX fois, en `id` puis en `componentkey` -- mesuré sur deux
-  // profils réels. Les morceaux consécutifs qui le répètent appartiennent donc a la même carte,
-  // et la zone s'arrête a la première carte qui porte un autre identifiant.
+  // L'élément porte son identifiant DEUX fois, en `id` puis en `componentkey` — mesuré sur deux
+  // profils réels. Les morceaux consécutifs qui le répètent appartiennent donc à la même carte,
+  // et la zone s'arrête à la première carte qui porte un autre identifiant.
   const morceaux = html.split(CARTE_DE_PROFIL);
   const debut = morceaux.findIndex((m) => IDENTIFIANT_ENTETE.test(m));
   if (debut === -1) return null;
@@ -207,7 +214,12 @@ export function enteteDeProfil(html: string): string | null {
     if (i > debut && !IDENTIFIANT_ENTETE.test(morceau)) break;
     zone.push(morceau);
   }
-  return zone.join(CARTE_DE_PROFIL);
+  // Faute de carte SUIVANTE, le dernier morceau porte tout le reste du document — et la borne
+  // haute annoncée n'existe plus. Mesuré : l'en-tête d'un profil réel fait 12 à 14 Ko ; au-delà
+  // de la marge ci-dessous, ce qu'on tient n'est plus un en-tête. Couper garde l'invariant vrai
+  // plutôt que de laisser un commentaire mentir, ce qui est précisément ce qui a coûté la
+  // recette du 09/10.
+  return zone.join(CARTE_DE_PROFIL).slice(0, OCTETS_MAX_ENTETE);
 }
 
 /** Le texte d'un `<p>`, balises internes et commentaires retirés. Mesuré : `· 3e<!-- -->`. */

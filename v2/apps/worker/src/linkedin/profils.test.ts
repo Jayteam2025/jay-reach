@@ -374,6 +374,20 @@ describe('enteteDeProfil', () => {
     expect(entete).not.toContain('avant');
   });
 
+  it('garde une borne même quand la page ne porte aucune carte après l’en-tête', () => {
+    // Sans carte suivante, le découpage rendait tout le reste du document : la borne annoncée
+    // n'existait plus et les profils suggérés rentraient dans la zone. Mesuré sur deux profils
+    // réels, un en-tête fait 12 à 14 Ko.
+    const carte = 'com.linkedin.sdui.profile.card.refACoAAExemple';
+    const html =
+      `<div id="${carte}Topcard" componentkey="${carte}Topcard"><h2>Ada Lemercier</h2><p>· 3e</p>` +
+      `<p>Directrice commerciale</p></div>` +
+      `<section>${'<p>du remplissage</p>'.repeat(5000)}</section>`;
+    const entete = enteteDeProfil(html);
+    expect((entete ?? '').length).toBeLessThanOrEqual(40_000);
+    expect(lireProfilCourant(html)?.intitule).toBe('Directrice commerciale');
+  });
+
   it('rend null quand aucune carte d’en-tête n’est la', () => {
     expect(enteteDeProfil('<div id="com.linkedin.sdui.profile.card.refURNActivity"></div>')).toBeNull();
     expect(enteteDeProfil('')).toBeNull();
