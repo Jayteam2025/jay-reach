@@ -11,6 +11,7 @@
  */
 import type pg from 'pg';
 import type { Contexte } from '@jay-reach/core';
+import { SQL_ECRIRE_ETAT, SQL_VERIFIER_EN_COURS } from './dependances-web-sql.js';
 import { pilotageReel, type Dependances, type Invite } from '../cli/linkedin.js';
 
 /** Un humain va chercher son code dans sa boîte mail : le terminal garde ses 90 s, l'écran a 5 minutes. */
@@ -60,7 +61,6 @@ const LIGNES: { debut: string; effet: { etape: Etape } | { motif: Motif } | { re
   { debut: 'Connexion refusée', effet: { motif: 'refuse' } },
 ];
 
-const EN_COURS = "('demandee','navigateur_ouvert','code_demande')";
 
 export interface OptionsWeb {
   env?: Record<string, string | undefined>;
@@ -94,8 +94,7 @@ export function dependancesWeb(
   /** Relit l'état : une demande annulée, expirée ou close interrompt. */
   async function verifierEnCours(): Promise<void> {
     const r = await pool.query<{ ok: boolean }>(
-      `select (statut in ${EN_COURS} and expires_at > now()) as ok
-         from linkedin_connexion_demandes where id = $1`,
+      SQL_VERIFIER_EN_COURS,
       [demandeId],
     );
     if (r.rows[0]?.ok !== true) throw new ErreurDemandeInterrompue();
@@ -104,10 +103,7 @@ export function dependancesWeb(
   /** Ne touche qu'une demande encore en cours : une annulation n'est jamais écrasée. */
   async function ecrireEtat(etape: Etape | null, statut: string | null, motif: Motif | null): Promise<void> {
     await pool.query(
-      `update linkedin_connexion_demandes
-          set etape = coalesce($2, etape), statut = coalesce($3, statut), motif = coalesce($4, motif),
-              updated_at = now()
-        where id = $1 and statut in ${EN_COURS}`,
+      SQL_ECRIRE_ETAT,
       [demandeId, etape, statut, motif],
     );
   }
