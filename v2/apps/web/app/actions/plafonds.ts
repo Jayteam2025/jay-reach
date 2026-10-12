@@ -6,7 +6,7 @@
  * `actions/campagne-reglages.ts`.
  */
 import { revalidatePath } from 'next/cache';
-import { ecrireCollecteAutoLinkedIn, ecrireReglage, ErreurEntree, ForbiddenError } from '@jay-reach/core';
+import { ecrireCollecteAutoLinkedIn, ecrireReglage, ecrireRythme, ErreurEntree, ForbiddenError } from '@jay-reach/core';
 import { contexteCourant } from '../../lib/contexte';
 import { revaliderCoquille } from '../../lib/revalidation-layouts';
 
@@ -35,6 +35,24 @@ export async function actionEcrireReglage(cle: string, valeur: number | string):
     // les autres réglages (scoring, enrichissement, âge des offres…) n'y apparaissent pas, et la
     // jauge de gauche suit les quotas des boîtes (`senders`), pas cette table.
     if (cle === 'fuseau') revaliderCoquille();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: messageDErreur(err) };
+  }
+}
+
+/**
+ * Pose un cran de rythme (prudent, normal, soutenu) : plafonds, fenêtre et jours d'un coup.
+ * `ecrireRythme` exige le rôle admin, comme les deux écritures qu'il enchaîne ; un nom de cran
+ * inconnu (y compris « personnalise », qui se lit mais ne s'écrit pas) est refusé en entrée.
+ */
+export async function actionEcrireRythme(rythme: string): Promise<ResultatPlafond> {
+  try {
+    const ctx = await contexteCourant();
+    if (rythme !== 'prudent' && rythme !== 'normal' && rythme !== 'soutenu') return { ok: false, error: 'Rythme inconnu.' };
+    await ecrireRythme(ctx, rythme);
+    revalidatePath('/settings/limits');
+    revalidatePath('/settings/linkedin');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: messageDErreur(err) };

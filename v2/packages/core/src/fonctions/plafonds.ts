@@ -29,6 +29,7 @@ import { exiger, valider } from './contexte.js';
 import { normaliserPlafond } from '../plafonds.js';
 import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 import type { Executeur } from '../executeur.js';
+import { enregistrerHeuresEnvoiLinkedIn, lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
 
 export type ClePlafond =
   | 'scoring_par_jour'
@@ -316,6 +317,70 @@ export async function ecrireReglage(ctx: Contexte, entree: unknown): Promise<voi
        set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
     [ctx.organisationId, cle, JSON.stringify(valeur), ctx.utilisateurId],
   );
+}
+
+export type Rythme = 'prudent' | 'normal' | 'soutenu' | 'personnalise';
+
+/**
+ * Les trois crans du rythme d'envoi LinkedIn (spec §4.2) : un choix qui pose d'un coup les quatre
+ * valeurs qui doivent rester cohérentes entre elles (deux plafonds hebdomadaires, la fenêtre, les
+ * jours). Chaque cran reste au-dessous de `HARD_CAP_7_DAYS` et laisse au moins
+ * `SEUIL_MINUTES_PAR_ACTION` minutes par action, sans quoi l'alerte « fenêtre trop étroite »
+ * dénoncerait un cran que l'écran propose (test dans `plafonds.test.ts`).
+ */
+export const RYTHMES: Record<
+  Exclude<Rythme, 'personnalise'>,
+  { invitations: number; messages: number; debutHeure: number; finHeure: number; jours: number[] }
+> = {
+  prudent: { invitations: 50, messages: 100, debutHeure: 9, finHeure: 18, jours: [1, 2, 3, 4, 5] },
+  normal: { invitations: 100, messages: 200, debutHeure: 9, finHeure: 18, jours: [1, 2, 3, 4, 5] },
+  soutenu: { invitations: 150, messages: 200, debutHeure: 8, finHeure: 19, jours: [1, 2, 3, 4, 5] },
+};
+
+const schemaRythme = z.enum(['prudent', 'normal', 'soutenu']);
+
+/**
+ * Cran correspondant aux valeurs APPLIQUÉES (`lireReglages` : base, sinon environnement, sinon
+ * défaut ; `lireHeuresEnvoiLinkedIn` : base, sinon fenêtre par défaut), `personnalise` quand aucun
+ * cran ne les reproduit toutes les quatre. Une organisation qui n'a rien réglé applique exactement
+ * le cran « normal » et le lit donc : c'est ce qui part réellement.
+ */
+export async function lireRythme(ctx: Contexte): Promise<Rythme> {
+  const [reglages, heures] = await Promise.all([lireReglages(ctx), lireHeuresEnvoiLinkedIn(ctx)]);
+  const jours = [...heures.jours].sort((a, b) => a - b);
+  for (const [nom, c] of Object.entries(RYTHMES) as [Exclude<Rythme, 'personnalise'>, (typeof RYTHMES)['normal']][]) {
+    if (
+      reglages.linkedin_invitations_par_semaine === c.invitations &&
+      reglages.linkedin_messages_par_semaine === c.messages &&
+      heures.debutHeure === c.debutHeure &&
+      heures.finHeure === c.finHeure &&
+      jours.length === c.jours.length &&
+      jours.every((j, i) => j === c.jours[i])
+    ) {
+      return nom;
+    }
+  }
+  return 'personnalise';
+}
+
+/**
+ * Pose un cran : deux plafonds hebdomadaires (`organization_settings`) puis la fenêtre et les jours
+ * (`linkedin_settings`), toujours explicitement, « normal » compris.
+ *
+ * NON atomique : trois écritures successives, sans transaction (`Contexte.ex` n'en expose pas). Le
+ * rôle admin et le cran sont vérifiés AVANT la première, et le fuseau est lu avant elle, donc les
+ * échecs prévisibles ne laissent rien derrière eux. Si une écriture échoue en base après la
+ * précédente, l'erreur remonte et l'organisation garde un mélange des anciennes et des nouvelles
+ * valeurs ; `lireRythme` lit alors `personnalise` (ou, par coïncidence, un cran dont les valeurs
+ * se trouvent réunies), jamais un cran qui ne serait pas celui appliqué. Rejouer l'écriture répare.
+ */
+export async function ecrireRythme(ctx: Contexte, rythme: Exclude<Rythme, 'personnalise'>): Promise<void> {
+  exiger(ctx, 'admin');
+  const c = RYTHMES[valider(schemaRythme, rythme)];
+  const { fuseau } = await lireHeuresEnvoiLinkedIn(ctx);
+  await ecrireReglage(ctx, { cle: 'linkedin_invitations_par_semaine', valeur: c.invitations });
+  await ecrireReglage(ctx, { cle: 'linkedin_messages_par_semaine', valeur: c.messages });
+  await enregistrerHeuresEnvoiLinkedIn(ctx, { debutHeure: c.debutHeure, finHeure: c.finHeure, jours: [...c.jours], fuseau });
 }
 
 /** Une ligne de la table éditable de l'écran Réglages › Plafonds (tâche 21) : valeur réellement appliquée, défaut, repli d'environnement, et qui a modifié quand. */

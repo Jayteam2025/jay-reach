@@ -157,7 +157,7 @@ const SEUIL_COLLECTE_ETRANGLEE = 10;
  * alors qu'elles écoulent l'essentiel de leur volume. À 7 minutes on ne signale que les configurations
  * qui perdent plus d'un tiers de leur volume réglé.
  */
-const SEUIL_MINUTES_PAR_ACTION = 7;
+export const SEUIL_MINUTES_PAR_ACTION = 7;
 
 /** Fenêtre d'observation de `rien_ne_part`, en jours ouvrés du calendrier (lundi au vendredi). */
 const JOURS_OUVRES_SANS_ACTION = 3;
