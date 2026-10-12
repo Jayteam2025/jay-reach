@@ -331,6 +331,15 @@ async function alertesRythme() {
     toutes.join(','),
   );
 
+  // rien_ne_part est le symptôme final : il se tait si une autre alerte nomme déjà la cause, et un moteur
+  // sans battement (`moteur_silencieux`) en est une. Le moteur est global à l'instance : on le fait battre
+  // maintenant, pour que les contrôles qui suivent jugent rien_ne_part et non l'absence de moteur.
+  await q(
+    `insert into engine_status (instance_id, hostname, started_at, last_tick_at) values ($1, 'harnais', now(), now())
+     on conflict (instance_id) do update set last_tick_at = now()`,
+    [`jauge-${uniq()}`],
+  );
+
   // 5.9 rien_ne_part : campagne active ancienne et aucune action depuis trois jours ouvrés.
   const silence = await orgNeuve();
   await campagneEmail(silence);

@@ -19,7 +19,6 @@ import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.j
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
 import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
-import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -650,22 +649,21 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       lien: '/campaigns',
     });
   }
-  // Un plafond de production à zéro arrête le moteur sans qu'aucun écran ne le dise. Seuls ces deux
-  // plafonds : `linkedin_personnes_par_passage` relève de `collecte_etranglee`, et
-  // `relecture_premiers_envois_defaut` vaut 0 par défaut (jamais une panne).
-  if (reglages.scoring_par_jour === 0) {
-    alertes.push({
-      type: 'plafond_a_zero',
-      texte: "Aucune offre ne sera évaluée : le plafond de scoring par jour est à zéro.",
-      lien: '/settings/limits',
-    });
-  }
-  if (reglages.enrichissements_par_jour === 0) {
-    alertes.push({
-      type: 'plafond_a_zero',
-      texte: "Aucun contact ne sera enrichi : le plafond d'enrichissements par jour est à zéro.",
-      lien: '/settings/limits',
-    });
+  // Un plafond de volume à zéro arrête le moteur sans qu'aucun écran ne le dise : les cinq plafonds que
+  // la table des limites déclare « arrêtés », moins un. `linkedin_personnes_par_passage` relève de
+  // `collecte_etranglee` (son seuil couvre déjà zéro : deux bandeaux pour un réglage), et
+  // `relecture_premiers_envois_defaut` vaut 0 par défaut (jamais une panne). Les deux plafonds de collecte
+  // LinkedIn se règlent sur `/settings/linkedin`, les deux de production sur `/settings/limits`.
+  const PLAFONDS_A_ZERO = [
+    { cle: 'scoring_par_jour', texte: 'Aucune offre ne sera évaluée : le plafond de scoring par jour est à zéro.', lien: '/settings/limits' },
+    { cle: 'enrichissements_par_jour', texte: "Aucun contact ne sera enrichi : le plafond d'enrichissements par jour est à zéro.", lien: '/settings/limits' },
+    { cle: 'linkedin_posts_par_jour', texte: 'La collecte LinkedIn est arrêtée : le plafond de posts par jour est à zéro.', lien: '/settings/linkedin' },
+    { cle: 'linkedin_requetes_par_heure', texte: 'La collecte LinkedIn est arrêtée : le plafond de requêtes par heure est à zéro.', lien: '/settings/linkedin' },
+  ] as const;
+  for (const plafond of PLAFONDS_A_ZERO) {
+    if (reglages[plafond.cle] === 0) {
+      alertes.push({ type: 'plafond_a_zero', texte: plafond.texte, lien: plafond.lien });
+    }
   }
   if ((linkedinSansExpediteurRes.rows[0]?.n ?? 0) > 0) {
     alertes.push({
@@ -691,9 +689,11 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
   if ((campagnesActives?.actives ?? 0) > 0) {
     // Le volume réglé par jour : la SOMME des deux plafonds quotidiens, car le moteur plafonne par type
     // mais espace les actions tous types confondus. Formule de `chargerStatsRythme` (`linkedin/file.ts`) :
-    // plafond hebdomadaire (raboté à `HARD_CAP_7_DAYS`) réparti sur les jours d'envoi, au moins 1.
+    // plafond hebdomadaire réparti sur les jours d'envoi, au moins 1. Pas
+    // de rabotage à `HARD_CAP_7_DAYS` ici : `chargerStatsRythme` n'en fait pas, il ne rabote que `cap7Days`, et un
+    // plafond de 400 posé par repli d'environnement enfile bien 80 actions par jour.
     const plafondQuotidien = (hebdo: unknown): number =>
-      Math.max(1, Math.ceil((typeof hebdo === 'number' ? Math.min(hebdo, HARD_CAP_7_DAYS) : 0) / Math.max(1, heuresLinkedin.jours.length)));
+      Math.max(1, Math.ceil((typeof hebdo === 'number' ? hebdo : 0) / Math.max(1, heuresLinkedin.jours.length)));
     // Un type sans aucune étape dans les campagnes actives n'enfile rien : son plafond n'entre pas dans la somme.
     const actionsParJour =
       ((campagnesActives?.avec_invitations ?? 0) > 0 ? plafondQuotidien(reglages.linkedin_invitations_par_semaine) : 0) +
@@ -719,14 +719,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
         lien: '/settings/senders',
       });
     }
-    // Pas en pause : le balayage du worker exclut ces organisations, l'alerte doublerait `pause_envoi`.
-    if (!organisation?.sending_paused_at && (campagnesActives?.anciennes ?? 0) > 0 && (actionsRecentesRes.rows[0]?.n ?? 0) === 0) {
-      alertes.push({
-        type: 'rien_ne_part',
-        texte: `Rien n'est parti depuis trois jours ouvrés alors qu'une campagne est active.`,
-        lien: '/settings/senders',
-      });
-    }
   }
   if (organisation?.sending_paused_at) {
     const heurePause = formatterHeure(organisation.sending_paused_at, fuseau);
@@ -743,6 +735,23 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     alertes.push({
       type: 'boite_deconnectee',
       texte: `La boîte ${boite.identity} est déconnectée : elle n'envoie plus.`,
+      lien: '/settings/senders',
+    });
+  }
+
+  // Le symptôme final, « quelle qu'en soit la cause » : il ne se montre que si aucune autre alerte
+  // n'explique déjà le silence (pause, boîte coupée, expéditeur absent, plafond à zéro…). Une cause
+  // nommée vaut mieux qu'un symptôme, et deux bandeaux pour un même fait apprennent à les ignorer.
+  // Évalué en dernier : la règle n'a de sens qu'une fois toutes les autres alertes poussées.
+  if (
+    alertes.length === 0 &&
+    (campagnesActives?.actives ?? 0) > 0 &&
+    (campagnesActives?.anciennes ?? 0) > 0 &&
+    (actionsRecentesRes.rows[0]?.n ?? 0) === 0
+  ) {
+    alertes.push({
+      type: 'rien_ne_part',
+      texte: `Rien n'est parti depuis trois jours ouvrés alors qu'une campagne est active.`,
       lien: '/settings/senders',
     });
   }

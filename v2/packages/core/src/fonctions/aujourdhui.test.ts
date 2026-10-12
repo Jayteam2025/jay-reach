@@ -400,6 +400,8 @@ describe('lireAujourdhui', () => {
 
   describe('alertes « un réglage bloque »', () => {
     const types = (a: Awaited<ReturnType<typeof lireAujourdhui>>) => a.alertes.map((al) => al.type);
+    // Un moteur qui tourne : sans cela `moteur_silencieux` s'ajoute, et c'est lui la cause nommée.
+    const moteurSain = { 'jr:engine_status': [{ version: 'abc', last_tick_at: new Date().toISOString(), last_error: null }] };
 
     it('un plafond de production à zéro est signalé, les autres non', async () => {
       const zero = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'enrichissements_par_jour', value: 0 }] }));
@@ -414,9 +416,24 @@ describe('lireAujourdhui', () => {
       // Zéro par défaut, jamais une panne.
       const relecture = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'relecture_premiers_envois_defaut', value: 0 }] }));
       expect(types(relecture)).not.toContain('plafond_a_zero');
+      // Les deux plafonds de collecte LinkedIn arrêtent la collecte : l'écran des limites le dit, le tableau de bord aussi.
+      for (const cle of ['linkedin_posts_par_jour', 'linkedin_requetes_par_heure']) {
+        const a = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 0 }] }));
+        const alerte = a.alertes.find((al) => al.type === 'plafond_a_zero');
+        expect(alerte, cle).toBeDefined();
+        // Ces deux réglages se modifient sur l'écran LinkedIn, pas sur celui des limites de production.
+        expect(alerte?.lien).toBe('/settings/linkedin');
+        expect(alerte?.texte).not.toContain(cle);
+        const positif = await lireAujourdhui(faux({ 'from organization_settings': [{ key: cle, value: 5 }] }));
+        expect(types(positif)).not.toContain('plafond_a_zero');
+      }
       // Un plafond de collecte à zéro relève de collecte_etranglee seule, pas de deux alertes.
       const collecte = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 0 }] }));
       expect(types(collecte)).not.toContain('plafond_a_zero');
+      // Et avec une source LinkedIn active, ce même zéro ne produit qu'UNE alerte, pas deux bandeaux pour un réglage.
+      const source = { 'jr:sources_linkedin_actives': [{ n: 1 }] };
+      const une = await lireAujourdhui(faux({ 'from organization_settings': [{ key: 'linkedin_personnes_par_passage', value: 0 }], ...source, ...moteurSain }));
+      expect(types(une)).toEqual(['collecte_etranglee']);
     });
 
     it('une campagne à étapes LinkedIn sans expéditeur LinkedIn actif est signalée', async () => {
@@ -531,6 +548,8 @@ describe('lireAujourdhui', () => {
     const campagneLinkedin = { 'jr:campagnes_actives': [{ actives: 1, avec_invitations: 1, avec_messages: 1, anciennes: 1 }] };
     const seulement = (invitations: number, messages: number) => ({ 'jr:campagnes_actives': [{ actives: 1, avec_invitations: invitations, avec_messages: messages, anciennes: 1 }] });
     const campagneEmail = { 'jr:campagnes_actives': [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 1 }] };
+    // Un moteur qui tourne : sans cela `moteur_silencieux` s'ajoute, et c'est lui la cause nommée.
+    const moteurSain = { 'jr:engine_status': [{ version: 'abc', last_tick_at: new Date().toISOString(), last_error: null }] };
     const plafonds = (invitations: number, messages: number) => ({
       'from organization_settings': [
         { key: 'linkedin_invitations_par_semaine', value: invitations },
@@ -568,9 +587,11 @@ describe('lireAujourdhui', () => {
       const alerte = a.alertes.find((al) => al.type === 'fenetre_trop_etroite');
       expect(alerte).toBeDefined();
       expect(alerte?.texte).toContain('80 actions par jour');
-      // Au-delà du plafond dur, le moteur rabote : 400 + 400 donne la même chose que 200 + 200.
+      // Au-delà du plafond dur (repli d'environnement), `chargerStatsRythme` ne rabote PAS le plafond quotidien : il le déduit
+      // du plafond hebdomadaire brut, 400 / 5 jours = 80 par type. Seul `cap7Days` est raboté, ce qui ne change pas l'espacement.
+      // L'alerte doit donc calculer comme le moteur : 160 actions par jour, pas 80.
       const au_dela = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(400, 400), ...fenetre(9, 18) }));
-      expect(au_dela.alertes.find((al) => al.type === 'fenetre_trop_etroite')?.texte).toContain('80 actions par jour');
+      expect(au_dela.alertes.find((al) => al.type === 'fenetre_trop_etroite')?.texte).toContain('160 actions par jour');
     });
 
     it('seuls les plafonds des types réellement présents dans les campagnes actives comptent', async () => {
@@ -637,11 +658,11 @@ describe('lireAujourdhui', () => {
     });
 
     it('rien parti depuis trois jours ouvrés alors qu’une campagne est active est signalé', async () => {
-      const a = await lireAujourdhui(faux({ ...campagneEmail, 'jr:actions_recentes': [{ n: 0 }] }));
+      const a = await lireAujourdhui(faux({ ...campagneEmail, ...moteurSain, 'jr:actions_recentes': [{ n: 0 }] }));
       const alerte = a.alertes.find((al) => al.type === 'rien_ne_part');
       expect(alerte).toBeDefined();
       expect(alerte?.lien).toBe('/settings/senders');
-      const parti = await lireAujourdhui(faux({ ...campagneEmail, 'jr:actions_recentes': [{ n: 3 }] }));
+      const parti = await lireAujourdhui(faux({ ...campagneEmail, ...moteurSain, 'jr:actions_recentes': [{ n: 3 }] }));
       expect(types(parti)).not.toContain('rien_ne_part');
     });
 
@@ -650,6 +671,16 @@ describe('lireAujourdhui', () => {
       const a = await lireAujourdhui(faux({ ...campagneEmail, ...pause, 'jr:actions_recentes': [{ n: 0 }] }));
       expect(types(a)).toContain('pause_envoi');
       expect(types(a)).not.toContain('rien_ne_part');
+    });
+
+    it('rien_ne_part se tait dès qu’une autre alerte nomme la cause, et l’autre alerte reste', async () => {
+      const seule = await lireAujourdhui(faux({ ...campagneEmail, ...moteurSain, 'jr:actions_recentes': [{ n: 0 }] }));
+      expect(types(seule)).toEqual(['rien_ne_part']);
+      // Même silence, mais une cause est nommée : aucun expéditeur LinkedIn actif.
+      const cause = await lireAujourdhui(faux({ ...campagneEmail, ...moteurSain, 'jr:actions_recentes': [{ n: 0 }], 'jr:canal_sans_expediteur': [{ n: 1 }] }));
+      expect(types(cause)).toEqual(['canal_sans_expediteur']);
+      const boite = await lireAujourdhui(faux({ ...campagneEmail, ...moteurSain, 'jr:actions_recentes': [{ n: 0 }], 'jr:boites_deconnectees': [{ identity: 'a@b.fr' }] }));
+      expect(types(boite)).toEqual(['boite_deconnectee']);
     });
 
     it('rien_ne_part compte les actions PARTIES (dispatched_at), pas les actions seulement créées', async () => {
@@ -750,18 +781,19 @@ describe('lireAujourdhui', () => {
 
     it('les lignes d’une AUTRE organisation ne déclenchent rien', async () => {
       const query = vi.fn(async (sql: string, params?: unknown[]) => {
+        // L'état du moteur est global à l'instance, pas à une organisation.
+        if (/jr:engine_status/i.test(sql)) return { rows: moteurSain['jr:engine_status'], rowCount: 1 };
         if (params?.[0] !== 'org-2') return { rows: [], rowCount: 0 };
         if (/jr:campagnes_actives/i.test(sql)) return { rows: [{ actives: 1, avec_invitations: 0, avec_messages: 0, anciennes: 1 }], rowCount: 1 };
-        if (/jr:envois_par_jour/i.test(sql)) return { rows: [lundi], rowCount: 1 };
         if (/jr:actions_recentes/i.test(sql)) return { rows: [{ n: 0 }], rowCount: 1 };
         return { rows: [], rowCount: 0 };
       }) as unknown as Executeur['query'];
       const ctx: Contexte = { ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' };
       const a = await lireAujourdhui(ctx);
-      for (const t of ['envois_entasses', 'rien_ne_part'] as const) expect(types(a)).not.toContain(t);
+      expect(types(a)).not.toContain('rien_ne_part');
       // Garde-fou : le faux pool rend bien ces lignes pour l'autre organisation.
       const autre = await lireAujourdhui({ ...ctx, organisationId: 'org-2' });
-      expect(types(autre)).toEqual(expect.arrayContaining(['envois_entasses', 'rien_ne_part']));
+      expect(types(autre)).toContain('rien_ne_part');
     });
   });
 
