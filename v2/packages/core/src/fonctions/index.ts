@@ -19,3 +19,4 @@ export * from './compte.js';
 export * from './linkedin-session.js';
 export * from './linkedin-sortie.js';
 export * from './linkedin-canal.js';
+export * from './linkedin-connexion.js';

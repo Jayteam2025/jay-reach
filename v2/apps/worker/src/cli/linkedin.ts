@@ -214,7 +214,7 @@ async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<b
   return true;
 }
 
-async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
+export async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   const session = await lireSessionLinkedIn(ctx);
   const proprietaire = `cli-${process.pid}`;
   const pilote = await d.ouvrirNavigateur();
@@ -265,7 +265,7 @@ async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   }
 }
 
-async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
+export async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
   try {
     const pilote = await d.ouvrirNavigateur();
     try {

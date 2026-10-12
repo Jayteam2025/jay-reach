@@ -81,7 +81,13 @@ export type ActionJournal =
   // d'`enrollment_resumed` (reprise par un opérateur) : symétrique côté
   // écriture, jamais écrite jusqu'ici, ce qui laissait le fil d'activité muet
   // sur les pauses malgré des inscriptions réellement mises en pause.
-  | 'enrollment_paused';
+  | 'enrollment_paused'
+  // Connexion du compte LinkedIn depuis l'écran (lot 5, `fonctions/linkedin-connexion.ts` et
+  // `apps/worker/src/linkedin/traiter-connexion.ts`). Jamais un secret dans `diff` : qui, quand, quel résultat.
+  | 'linkedin.connexion_demandee'
+  | 'linkedin.connexion_annulee'
+  | 'linkedin.connexion_terminee'
+  | 'linkedin.deconnexion_demandee';
 
 export interface EvenementJournal {
   readonly organisationId: string;
