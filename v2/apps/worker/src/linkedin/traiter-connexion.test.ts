@@ -191,4 +191,48 @@ describe('traiterMessageConnexion : code et déconnexion', () => {
     const ctx = (deconnecter.mock.calls[0] as unknown as [{ organisationId: string }])[0];
     expect(ctx.organisationId).toBe(ORG);
   });
+
+  it('une deconnexion arrivee PENDANT une connexion est differee a sa fin, jamais perdue ni jouee en parallele', async () => {
+    const { pool } = fauxPool();
+    const { d } = fausseDependances();
+    const ordre: string[] = [];
+    let liberer: () => void = () => undefined;
+    const bloquee = new Promise<number>((r) => (liberer = () => r(0)));
+    const deconnecter = vi.fn(async () => {
+      ordre.push('deconnecter');
+      return 0;
+    });
+    const premiere = traiterMessageConnexion(pool, message, {
+      connecter: async () => {
+        ordre.push('connecter debut');
+        const code = await bloquee;
+        ordre.push('connecter fin');
+        return code;
+      },
+      dependances: () => d,
+      deconnecter,
+    });
+    await vi.waitFor(() => expect(ordre).toEqual(['connecter debut']));
+    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
+    expect(deconnecter).not.toHaveBeenCalled();
+    liberer();
+    await premiere;
+    expect(ordre).toEqual(['connecter debut', 'connecter fin', 'deconnecter']);
+    expect(deconnecter).toHaveBeenCalledTimes(1);
+  });
+
+  it('une deconnexion differee ne se rejoue pas a la connexion suivante', async () => {
+    const { pool } = fauxPool();
+    const { d } = fausseDependances();
+    const deconnecter = vi.fn(async () => 0);
+    let liberer: () => void = () => undefined;
+    const bloquee = new Promise<number>((r) => (liberer = () => r(0)));
+    const premiere = traiterMessageConnexion(pool, message, { connecter: () => bloquee, dependances: () => d, deconnecter });
+    await vi.waitFor(() => expect(erreurs).toEqual([]));
+    await traiterMessageConnexion(pool, { type: 'deconnexion', demandeId: DEMANDE, organizationId: ORG }, { deconnecter });
+    liberer();
+    await premiere;
+    await traiterMessageConnexion(pool, message, { connecter: async () => 0, dependances: () => d, deconnecter });
+    expect(deconnecter).toHaveBeenCalledTimes(1);
+  });
 });

@@ -16,7 +16,10 @@ import {
   activerSessionLinkedIn,
   bloquerSessionLinkedIn,
   confirmerIpAttendue,
+  desactiverExpediteurLinkedIn,
+  enregistrerCompteLinkedIn,
   enregistrerObservationSortie,
+  garantirExpediteurLinkedIn,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
   type Contexte,
@@ -28,6 +31,7 @@ import { createPool } from '../db.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { demander, demanderMasque } from './saisie.js';
 import { ipDuProcessus } from '../linkedin/ip.js';
+import { lireCompteConnecte } from '../linkedin/envoi.js';
 // Type seul : effacé à la compilation. L'import réel du navigateur est dynamique (voir `dependancesReelles`).
 import type { Pilote } from '../linkedin/navigateur.js';
 
@@ -214,6 +218,26 @@ async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<b
   return true;
 }
 
+/** Repli quand ni `/me` ni la session ne disent qui est connecté : jamais un nom inventé, un libellé neutre. */
+const IDENTITE_INCONNUE = 'compte-linkedin';
+
+/**
+ * Connexion réussie : l'expéditeur LinkedIn existe, est actif, et il n'y en a qu'un (spec §9). Le
+ * compte est lu par `/me` ; à défaut, l'identité déjà connue de la session. Une panne ici ne défait
+ * pas la connexion (la session est active), elle est dite à l'opérateur : c'est une écriture en
+ * base, jamais un secret, et on n'écrit que le NOM de l'erreur.
+ */
+async function garantirExpediteur(ctx: Contexte, pilote: Pilote, connue: string | null, d: Dependances): Promise<void> {
+  const compte = await lireCompteConnecte(pilote);
+  const identite = compte?.identifiantPublic ?? connue ?? IDENTITE_INCONNUE;
+  try {
+    if (compte) await enregistrerCompteLinkedIn(ctx, compte);
+    await garantirExpediteurLinkedIn(ctx, identite, `${identite} (LinkedIn)`);
+  } catch (e) {
+    d.ecrire(`Expéditeur LinkedIn non garanti (${typeErreur(e)}) : le relancer en reconnectant le compte.`);
+  }
+}
+
 export async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   const session = await lireSessionLinkedIn(ctx);
   const proprietaire = `cli-${process.pid}`;
@@ -246,6 +270,7 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
     if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
       await activerSessionLinkedIn(ctx, session?.ipAttendue ?? sortie.ip);
+      await garantirExpediteur(ctx, pilote, session?.compteIdentifiant ?? null, d);
       d.ecrire('Session LinkedIn active.');
       return 0;
     }
@@ -266,10 +291,19 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
 }
 
 export async function deconnecter(ctx: Contexte, d: Dependances): Promise<number> {
+  let cookiesRestent = false;
   try {
     const pilote = await d.ouvrirNavigateur();
     try {
       await pilote.aller(URL_DECONNEXION);
+      // Après la navigation vers /m/logout/, avant tout : le conteneur garde son profil, donc sans
+      // cet effacement le compte déconnecté resterait joignable pour le suivant.
+      try {
+        await pilote.effacerCookies();
+      } catch (e) {
+        cookiesRestent = true;
+        d.ecrire(`Cookies du navigateur non effacés (${typeErreur(e)}) : le compte reste joignable dans le conteneur.`);
+      }
     } finally {
       await pilote.fermer().catch(() => undefined);
     }
@@ -278,9 +312,12 @@ export async function deconnecter(ctx: Contexte, d: Dependances): Promise<number
       `Navigateur injoignable (${typeErreur(e)}) : la session est révoquée côté Jay Reach seulement.`,
     );
   }
+  // Révoquée et expéditeur désactivé même si le navigateur a échoué : rien ne doit plus envoyer.
   await bloquerSessionLinkedIn(ctx, 'revoquee');
+  await desactiverExpediteurLinkedIn(ctx);
   d.ecrire('Session LinkedIn révoquée.');
-  return 0;
+  // Révoquée côté Jay Reach, mais le compte reste joignable dans le conteneur : pas un succès.
+  return cookiesRestent ? 1 : 0;
 }
 
 async function ip(ctx: Contexte, d: Dependances, confirmer: boolean): Promise<number> {

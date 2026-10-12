@@ -46,6 +46,7 @@ function pilote(opts: {
         if (!r) throw new Error(`requête non prévue : ${u}`);
         return r;
       },
+      effacerCookies: async () => undefined,
       fermer: async () => undefined,
     },
   };

@@ -45,6 +45,7 @@ function pilote(
       if (!r) throw new Error(`requete non prevue : ${url}`);
       return { statut: r.statut, corps: typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps ?? {}) };
     },
+    effacerCookies: async () => undefined,
     fermer: async () => undefined,
   };
   return { p, appels, pages, journal };

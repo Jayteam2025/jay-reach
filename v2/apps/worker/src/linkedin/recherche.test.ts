@@ -16,6 +16,7 @@ function pilote(partiel: Partial<Pilote>): Pilote {
     texte: partiel.texte ?? refuser('texte'),
     attendre: partiel.attendre ?? refuser('attendre'),
     requete: partiel.requete ?? refuser('requete'),
+    effacerCookies: partiel.effacerCookies ?? refuser('effacerCookies'),
     fermer: partiel.fermer ?? refuser('fermer'),
   };
 }

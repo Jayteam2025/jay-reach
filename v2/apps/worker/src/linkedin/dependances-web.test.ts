@@ -42,6 +42,7 @@ function piloteFaux(urls: string[], presents: string[] = []) {
     texte: async () => '',
     attendre: async (s) => presents.includes(s),
     requete: async () => ({ statut: 200, corps: '' }),
+    effacerCookies: vi.fn(async () => undefined),
     fermer: vi.fn(async () => undefined),
   };
   return { p, saisies };

@@ -4,7 +4,7 @@
  *  - `secrets`     : conduit la connexion avec la fonction EXISTANTE du terminal (`connecter`), derrière
  *                    `dependancesWeb` ; le code, plus tard, arrive par `code` ;
  *  - `code`        : remis à la connexion en cours de cette demande (`livrerCode`) ;
- *  - `deconnexion` : `deconnecter`, la fonction du terminal (la tâche 6 l'enrichira).
+ *  - `deconnexion` : `deconnecter`, la fonction du terminal (efface aussi les cookies et désactive l'expéditeur) ; si une connexion est en cours, elle est différée à sa fin.
  *
  * Aucune exception n'est journalisée ni écrite en base : seul son NOM l'est. Une exception qui n'est
  * ni un délai de code ni une demande interrompue clôt la demande en `echec / erreur_interne`, pour
@@ -44,6 +44,14 @@ export interface OptionsTraitement {
 
 /** Connexions en cours dans CE processus : demande -> organisation et dépendances (pour livrer le code). */
 const enCours = new Map<string, { organisationId: string; dependances: DependancesWeb }>();
+
+/**
+ * Organisations dont une déconnexion est arrivée PENDANT une connexion. Elle n'est ni ignorée (l'utilisateur
+ * aurait cliqué pour rien, et le compte resterait connecté contre sa dernière volonté) ni jouée tout de suite
+ * (un seul navigateur : effacer ses cookies sous une connexion la ferait échouer en désordre). Elle se joue
+ * dès que la connexion est terminée : la dernière intention exprimée l'emporte.
+ */
+const deconnexionsDifferees = new Set<string>();
 
 const nomErreur = (e: unknown): string => (e instanceof Error ? e.name : 'erreur');
 
@@ -158,14 +166,20 @@ async function conduireConnexion(
       console.error(`[traiter-connexion] connexion interrompue (${nomErreur(e)})`);
     }
   } finally {
-    enCours.delete(demandeId);
-    await dependances.vider();
-    await revoquerSiAnnuleeTropTard(pool, demandeId, codeRetour, ctxConnexion, options);
-    // Quoi qu'il se soit passé (exception, ou retour sans motif posé), plus rien ne reste « en cours ».
-    await pool
-      .query(SQL_CLORE_SI_EN_COURS, [demandeId, motifRepli ?? 'erreur_interne'])
-      .catch((e: unknown) => console.error(`[traiter-connexion] clôture impossible (${nomErreur(e)})`));
-    await journaliserIssue(pool, organizationId, demande.demandee_par, demandeId);
+    try {
+      await dependances.vider();
+      await revoquerSiAnnuleeTropTard(pool, demandeId, codeRetour, ctxConnexion, options);
+      // Quoi qu'il se soit passé (exception, ou retour sans motif posé), plus rien ne reste « en cours ».
+      await pool
+        .query(SQL_CLORE_SI_EN_COURS, [demandeId, motifRepli ?? 'erreur_interne'])
+        .catch((e: unknown) => console.error(`[traiter-connexion] clôture impossible (${nomErreur(e)})`));
+      await journaliserIssue(pool, organizationId, demande.demandee_par, demandeId);
+    } finally {
+      // Le verrou du processus ne tombe qu'ici : une déconnexion ou une seconde demande arrivée pendant le
+      // nettoyage voit encore la connexion en cours, au lieu de piloter le navigateur en même temps.
+      enCours.delete(demandeId);
+    }
+    if (deconnexionsDifferees.delete(organizationId)) await conduireDeconnexion(pool, organizationId, options);
   }
 }
 
@@ -175,7 +189,8 @@ async function conduireDeconnexion(
   options: OptionsTraitement,
 ): Promise<void> {
   if (enCours.size > 0) {
-    console.error('[traiter-connexion] déconnexion ignorée (une connexion est en cours)');
+    deconnexionsDifferees.add(organisationId);
+    console.error('[traiter-connexion] déconnexion différée (une connexion est en cours)');
     return;
   }
   const d: Dependances = {
@@ -223,4 +238,5 @@ export async function traiterMessageConnexion(
 /** Vide l'état du processus (tests). */
 export function oublierConnexionsEnCours(): void {
   enCours.clear();
+  deconnexionsDifferees.clear();
 }

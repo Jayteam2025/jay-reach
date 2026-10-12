@@ -18,6 +18,7 @@ import { exiger, valider, ErreurIntrouvable } from './contexte.js';
 import { marqueBoite } from './campagnes.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { fuseauDeLOrganisation } from './plafonds.js';
+import { dansUneTransaction } from '../transaction.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from '../linkedin/reglages-envoi.js';
 
 // ---------------------------------------------------------------------------
@@ -578,6 +579,108 @@ async function synchroniserExpediteurLinkedIn(
       compteId,
     ],
   );
+}
+
+/**
+ * Quota journalier d'une ligne LinkedIn créée alors que l'organisation n'a encore jamais
+ * enregistré de réglage : la valeur par défaut de `linkedin_settings.daily_cap`. Jamais `null` :
+ * un quota nul se lit « sans plafond » côté séquenceur.
+ */
+const QUOTA_JOUR_LINKEDIN_PAR_DEFAUT = 25;
+
+/**
+ * Garantit qu'il existe UNE ligne `senders` de genre `linkedin` active pour l'organisation, et une
+ * seule, portant l'identité du compte réellement connecté. Rend son identifiant.
+ *
+ * - une ou plusieurs lignes existent : la PLUS ANCIENNE est reprise (`identity`, `display_name`,
+ *   `is_active = true`) et toutes les autres sont désactivées ;
+ * - aucune : une ligne est créée, quotas et fenêtre d'envoi lus dans `linkedin_settings`.
+ *
+ * Pourquoi reprendre plutôt que créer : `resolveSender` lie chaque contact à vie à l'expéditeur qui
+ * lui a écrit le premier, et les plafonds se comptent PAR LIGNE. Une ligne neuve orphelinerait les
+ * contacts déjà liés ; deux lignes actives pour un même compte réel feraient envoyer le double du
+ * plafond au même compte, donc le feraient restreindre par LinkedIn.
+ *
+ * Une seule instruction (CTE) : le choix de la ligne, la désactivation des autres et la création
+ * éventuelle se voient les uns les autres, aucun `select` préalable ne laisse deux appels
+ * concurrents se croire seuls. Ne dépend pas d'`extension_tokens` (l'extension est gelée) : c'est
+ * ce qui la distingue de `synchroniserExpediteurLinkedIn`.
+ *
+ * Pas de contrôle de rôle : appelée par le worker (contexte sans rôle) à l'issue d'une connexion
+ * déjà autorisée en amont par `demanderConnexion`.
+ */
+export async function garantirExpediteurLinkedIn(ctx: Contexte, identite: string, nomAffiche: string): Promise<string> {
+  // Verrou de transaction par organisation : sans lui, deux appels simultanés sur une organisation sans
+  // ligne verraient chacun `cible` vide (leurs instantanés précèdent l'écriture de l'autre) et créeraient
+  // chacun la leur : deux lignes actives. Le second attend ici la validation du premier, puis voit sa ligne.
+  const res = await dansUneTransaction(ctx.ex, async (tx) => {
+    await tx.query('select pg_advisory_xact_lock(hashtext($1)) /* jr:expediteur_linkedin_verrou */', [
+      `expediteur_linkedin:${ctx.organisationId}`,
+    ]);
+    return tx.query<{ id: string }>(
+    `with cible as (
+       select id from senders /* jr:expediteur_linkedin_cible */
+        where organization_id = $1 and kind = 'linkedin'
+        order by created_at asc, id asc
+        limit 1
+     ),
+     repris as (
+       update senders set identity = $2, display_name = $3, is_active = true /* jr:expediteur_linkedin_reprendre */
+        where id in (select id from cible)
+        returning id
+     ),
+     desactives as (
+       update senders set is_active = false /* jr:expediteur_linkedin_doublons */
+        where organization_id = $1 and kind = 'linkedin' and is_active
+          and id not in (select id from cible)
+        returning id
+     ),
+     cree as (
+       insert into senders /* jr:expediteur_linkedin_creer */
+         (organization_id, kind, identity, display_name, daily_quota, business_hours, timezone, is_active, provider_id)
+       select $1, 'linkedin', $2, $3,
+              coalesce(ls.daily_cap, $4::int),
+              jsonb_build_object('startHour', coalesce(ls.send_from_hour, $5::int),
+                                 'endHour', coalesce(ls.send_to_hour, $6::int),
+                                 'days', to_jsonb(coalesce(ls.send_days, $7::int[]))),
+              coalesce(ls.timezone, $8::text),
+              true, 'serveur'
+         from (select 1) un
+         left join linkedin_settings ls on ls.organization_id = $1
+        where not exists (select 1 from cible)
+       returning id
+     )
+     select id from repris
+     union all
+     select id from cree`,
+    [
+      ctx.organisationId,
+      identite,
+      nomAffiche,
+      QUOTA_JOUR_LINKEDIN_PAR_DEFAUT,
+      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.debutHeure,
+      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.finHeure,
+      [...HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.jours],
+      HEURES_ENVOI_LINKEDIN_PAR_DEFAUT.fuseau,
+    ],
+    );
+  });
+  const id = res.rows[0]?.id;
+  if (!id) throw new Error('Expéditeur LinkedIn non garanti');
+  return id;
+}
+
+/**
+ * Désactive TOUTE ligne LinkedIn active de l'organisation (déconnexion du compte). Les lignes sont
+ * gardées : elles portent les liaisons contact/expéditeur, que la reconnexion reprendra.
+ */
+export async function desactiverExpediteurLinkedIn(ctx: Contexte): Promise<number> {
+  const res = await ctx.ex.query(
+    `update senders set is_active = false /* jr:expediteur_linkedin_desactiver */
+      where organization_id = $1 and kind = 'linkedin' and is_active`,
+    [ctx.organisationId],
+  );
+  return res.rowCount ?? 0;
 }
 
 export const schemaModifierCompteLinkedIn = z.object({

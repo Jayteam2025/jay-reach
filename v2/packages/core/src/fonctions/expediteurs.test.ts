@@ -5,6 +5,8 @@ import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import {
   boitesSalesBlinkNonReliees,
+  desactiverExpediteurLinkedIn,
+  garantirExpediteurLinkedIn,
   listerBoites,
   listerComptesLinkedIn,
   modifierBoite,
@@ -557,5 +559,41 @@ describe('modifierCompteLinkedIn', () => {
       false,
       UTILISATEUR_1,
     ]);
+  });
+});
+
+// Orchestration seulement : le SQL (reprise de la plus ancienne, doublons desactives, creation, idempotence)
+// est prouve par execution reelle dans test/pg-verify/linkedin-expediteur.sh.
+describe('garantirExpediteurLinkedIn', () => {
+  function ctxAvec(rows: unknown[]): { ctx: Contexte; appels: { sql: string; params: unknown[] }[] } {
+    const appels: { sql: string; params: unknown[] }[] = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      appels.push({ sql, params });
+      return { rows, rowCount: rows.length };
+    }) as unknown as Executeur['query'];
+    return { ctx: { ex: { query }, organisationId: 'org-1', utilisateurId: null, role: null }, appels };
+  }
+
+  it('rend l identifiant de la ligne active, en une seule instruction, sans extension_tokens', async () => {
+    const { ctx, appels } = ctxAvec([{ id: 'ligne-1' }]);
+    expect(await garantirExpediteurLinkedIn(ctx, 'jb-linkedin', 'JB (LinkedIn)')).toBe('ligne-1');
+    // Le verrou d'organisation, puis l'instruction unique.
+    expect(appels).toHaveLength(2);
+    expect(appels[0]?.sql).toMatch(/pg_advisory_xact_lock/);
+    expect(appels[1]?.params.slice(0, 3)).toEqual(['org-1', 'jb-linkedin', 'JB (LinkedIn)']);
+    expect(appels[1]?.sql).not.toMatch(/extension_tokens/i);
+    expect(appels[1]?.sql).toMatch(/order by created_at asc/i);
+  });
+
+  it('leve plutot que de rendre un identifiant inventé quand rien n est garanti', async () => {
+    const { ctx } = ctxAvec([]);
+    await expect(garantirExpediteurLinkedIn(ctx, 'x', 'X')).rejects.toThrow(/non garanti/);
+  });
+
+  it('desactiver rend le nombre de lignes touchees, limite a l organisation et au genre linkedin', async () => {
+    const { ctx, appels } = ctxAvec([{}, {}]);
+    expect(await desactiverExpediteurLinkedIn(ctx)).toBe(2);
+    expect(appels[0]?.params).toEqual(['org-1']);
+    expect(appels[0]?.sql).toMatch(/kind = 'linkedin'/);
   });
 });
