@@ -44,8 +44,9 @@ Rien n'est enregistré avant le dernier bouton : vous pouvez revenir en arrière
 1. **Qui** : donnez un nom à la campagne, choisissez le persona recherché (ou créez-en un nouveau), réglez
    le score minimal d'entrée si le défaut de l'organisation ne convient pas.
 2. **Sources** : ajoutez au moins une source. Offres d'emploi (Adzuna, France Travail). LinkedIn
-   (engageurs d'un post, abonnés d'un concurrent, mots-clés, changement de poste, activité d'un profil :
-   les cinq collectent, automatiquement à chaque passage ou à la demande avec **Collecter maintenant**).
+   (engageurs d'un post, engageurs des posts d'un concurrent, engageurs des posts d'un créateur,
+   mots-clés, changement de poste : les cinq collectent, automatiquement à chaque passage ou à la
+   demande avec **Collecter maintenant**).
    Ou manuel (fichier CSV, liste existante, annuaire d'entreprises).
 3. **Séquence** : partez d'un modèle tout prêt ou composez vos étapes une par une : canal, objet, corps
    avec variables, délai avant la relance suivante.
