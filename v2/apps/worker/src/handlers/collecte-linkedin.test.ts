@@ -163,20 +163,36 @@ function base(opts: {
       const prefixeDeduit = params[2];
       const lisibles = contacts.filter((c) => !(c.deduite === true && prefixeDeduit === lienProfilDeduit('')));
       lisibles.sort((a, b) => (a.verifieLe ?? -1) - (b.verifieLe ?? -1) || a.id.localeCompare(b.id));
-      return rep(lisibles.slice(0, limite).map((c) => ({ id: c.id, linkedin_url: c.url, job_title: c.titre })));
+      // `linkedin_verifie_le` compte : c'est lui qui dit si ce profil a DÉJÀ été lu sur LinkedIn,
+      // donc si l'intitulé de la fiche se compare à ce que la page affiche.
+      return rep(
+        lisibles.slice(0, limite).map((c) => ({
+          id: c.id,
+          linkedin_url: c.url,
+          job_title: c.titre,
+          linkedin_verifie_le: c.verifieLe === null ? null : new Date(c.verifieLe).toISOString(),
+        })),
+      );
     }
     if (t.includes('jr:linkedin_collecte_verifie')) {
       ecritures.push({ sql: 'verifie', params });
       const contact = contacts.find((c) => c.id === params[1]);
       if (contact) {
         contact.verifieLe = ++horloge;
-        if (!contact.titre?.trim() && typeof params[2] === 'string') contact.titre = params[2];
+        if (params[3] === true && typeof params[2] === 'string' && params[2].trim()) contact.titre = params[2];
+        else if (!contact.titre?.trim() && typeof params[2] === 'string') contact.titre = params[2];
       }
       return rep([]);
     }
     // `enregistrerChangementDePoste` verrouille la fiche : reconnue par sa table et son verrou.
+    // Elle relit `linkedin_verifie_le` au passage : c'est sa garde contre un premier passage.
     if (t.includes('from contacts') && t.includes('for update')) {
-      return rep(contacts.some((c) => c.id === params[1]) ? [{ id: params[1] }] : []);
+      const fiche = contacts.find((c) => c.id === params[1]);
+      return rep(
+        fiche
+          ? [{ id: fiche.id, linkedin_verifie_le: fiche.verifieLe === null ? null : new Date(fiche.verifieLe).toISOString() }]
+          : [],
+      );
     }
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_requete_tracer')) {
@@ -755,6 +771,13 @@ describe('la source « changement de poste »', () => {
     verifieLe: null,
     ...extra,
   });
+  /**
+   * Un contact DÉJÀ lu sur LinkedIn : son intitulé vient d'une lecture de la même source, donc il
+   * se compare. Sans ce marqueur, le passage pose simplement la référence et ne déclare rien —
+   * c'est le cas du premier passage, couvert par son propre test.
+   */
+  const contactDejaLu = (slug: string, titre: string | null): ContactFactice =>
+    contact(slug, titre, { verifieLe: 1 });
   const signaux = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'signal').map((e) => e.params[2]);
   const verifies = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'verifie').map((e) => e.params[1]);
   const sansBruit = () => {
@@ -768,7 +791,7 @@ describe('la source « changement de poste »', () => {
     sansBruit();
     const b = base({
       source: sourceChangement,
-      contacts: [contact('ada-exemple', 'Directrice commerciale'), contact('leo-exemple', 'Directeur commercial')],
+      contacts: [contactDejaLu('ada-exemple', 'Directrice commerciale'), contactDejaLu('leo-exemple', 'Directeur commercial')],
     });
     const p = pilote({
       reponse: pagesDeProfils({
@@ -793,7 +816,7 @@ describe('la source « changement de poste »', () => {
    * donné cinq « changements », dont deux venaient d'une ligne qui n'était pas l'intitulé.
    */
   const cinqContacts = (titre: string): ContactFactice[] =>
-    ['a', 'b', 'c', 'd', 'e'].map((x) => contact(`${x}-exemple`, titre));
+    ['a', 'b', 'c', 'd', 'e'].map((x) => contactDejaLu(`${x}-exemple`, titre));
   const cinqPages = (intitules: readonly string[]) =>
     pagesDeProfils(
       Object.fromEntries(
@@ -839,7 +862,7 @@ describe('la source « changement de poste »', () => {
     sansBruit();
     const b = base({
       source: sourceChangement,
-      contacts: [contact('ada-exemple', 'Directrice commerciale'), contact('leo-exemple', 'Directeur commercial')],
+      contacts: [contactDejaLu('ada-exemple', 'Directrice commerciale'), contactDejaLu('leo-exemple', 'Directeur commercial')],
     });
     const p = pilote({
       reponse: pagesDeProfils({
@@ -850,6 +873,45 @@ describe('la source « changement de poste »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     expect(clos(b)!.params[2]).toBe('success');
     expect(signaux(b)).toHaveLength(2);
+  });
+
+  it('au PREMIER passage, la lecture devient la référence et ne déclare aucun changement', async () => {
+    // Mesuré le 12/10 sur cinq fiches : « Responsable RH région » en base contre « Responsable RH
+    // région Rhône-Alpes chez Chausson Matériaux » sur LinkedIn, et pas une seule personne n'avait
+    // changé de poste. L'intitulé d'une fiche jamais relue vient de l'enrichissement ou d'un
+    // import : il ne se compare pas à ce que LinkedIn affiche.
+    sansBruit();
+    const b = base({ source: sourceChangement, contacts: [contact('ada-exemple', 'Responsable RH région')] });
+    const p = pilote({
+      reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Responsable RH région Rhône-Alpes chez Acme') }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[2]).toBe('success');
+    expect(signaux(b)).toEqual([]);
+    // La lecture REMPLACE la valeur venue d'ailleurs, sans quoi le passage suivant rejouerait
+    // exactement le même écart.
+    const fiche = b.contacts.find((c) => c.id === 'c-ada-exemple')!;
+    expect(fiche.titre).toBe('Responsable RH région Rhône-Alpes chez Acme');
+    expect(fiche.verifieLe).not.toBeNull();
+  });
+
+  it('au passage SUIVANT, le même intitulé ne déclare rien et un vrai changement se déclare', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [
+        contactDejaLu('stable', 'Responsable RH région Rhône-Alpes chez Acme'),
+        contactDejaLu('promu', 'Responsable RH région Rhône-Alpes chez Acme'),
+      ],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        stable: profil('Ada Exemple', 'Responsable RH région Rhône-Alpes chez Acme'),
+        promu: profil('Leo Exemple', 'Directeur des ressources humaines chez Acme'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(signaux(b)).toEqual([`changement:${url('promu')}:directeur des ressources humaines chez acme`]);
   });
 
   it('refuse un passage où PERSONNE n’a livré d’intitulé, au lieu de le clore en succès', async () => {
@@ -875,7 +937,7 @@ describe('la source « changement de poste »', () => {
     const noms = ['a', 'b', 'c', 'd', 'e', 'f'];
     const b = base({
       source: sourceChangement,
-      contacts: noms.map((x) => contact(`${x}-exemple`, 'Directrice commerciale')),
+      contacts: noms.map((x) => contactDejaLu(`${x}-exemple`, 'Directrice commerciale')),
     });
     const p = pilote({
       reponse: (u) =>
@@ -898,7 +960,7 @@ describe('la source « changement de poste »', () => {
     sansBruit();
     const b = base({
       source: sourceChangement,
-      contacts: [...['a', 'b', 'c', 'd'].map((x) => contact(`${x}-exemple`, 'Directrice commerciale')), contact('e-exemple', null)],
+      contacts: [...['a', 'b', 'c', 'd'].map((x) => contactDejaLu(`${x}-exemple`, 'Directrice commerciale')), contactDejaLu('e-exemple', null)],
     });
     const p = pilote({ reponse: cinqPages(['Un', 'Deux', 'Trois', 'Quatre', 'Cinq']) });
     await traiterCollecteLinkedIn(deps(p, b), JOB);
@@ -916,7 +978,7 @@ describe('la source « changement de poste »', () => {
     sansBruit();
     const b = base({
       source: sourceChangement,
-      contacts: ['a', 'b', 'c'].map((x) => contact(`${x}-exemple`, 'Directrice commerciale')),
+      contacts: ['a', 'b', 'c'].map((x) => contactDejaLu(`${x}-exemple`, 'Directrice commerciale')),
     });
     const p = pilote({
       reponse: (u) =>
@@ -925,9 +987,9 @@ describe('la source « changement de poste »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     expect(clos(b)!.params[2]).toBe('error');
     expect(signaux(b)).toEqual([]);
-    // Aucun des deux n'est marqué : ils repassent en tête de la rotation demain.
-    expect(b.contacts.find((c) => c.id === 'c-a-exemple')!.verifieLe).toBeNull();
-    expect(b.contacts.find((c) => c.id === 'c-b-exemple')!.verifieLe).toBeNull();
+    // Aucun des deux n'est re-marqué : ils gardent leur rang et repassent en tête demain.
+    expect(b.contacts.find((c) => c.id === 'c-a-exemple')!.verifieLe).toBe(1);
+    expect(b.contacts.find((c) => c.id === 'c-b-exemple')!.verifieLe).toBe(1);
   });
 
   it('un profil sans intitulé ne compte NI comme changement NI dans les écritures', async () => {
@@ -960,10 +1022,10 @@ describe('la source « changement de poste »', () => {
     const b = base({
       source: sourceChangement,
       contacts: [
-        contact('inchange', 'Directrice commerciale'),
-        contact('change', 'Directeur commercial'),
-        contact('ferme', 'Responsable ventes'),
-        contact('sans-forme', 'Responsable ventes', { url: 'https://example.com/pas-un-profil' }),
+        contactDejaLu('inchange', 'Directrice commerciale'),
+        contactDejaLu('change', 'Directeur commercial'),
+        contactDejaLu('ferme', 'Responsable ventes'),
+        contact('sans-forme', 'Responsable ventes', { url: 'https://example.com/pas-un-profil', verifieLe: 1 }),
       ],
     });
     const p = pilote({

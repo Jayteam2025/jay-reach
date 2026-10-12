@@ -251,11 +251,28 @@ export async function enregistrerChangementDePoste(
   return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<IssueChangement> => {
     // Verrou d'abord : deux passages simultanés sur la même organisation ne doivent pas créer
     // deux signaux pour un seul changement.
-    const verrou = await tx.query<{ id: string }>(
-      `select id from contacts where id = $2 and organization_id = $1 for update`,
+    const verrou = await tx.query<{ id: string; linkedin_verifie_le: string | null }>(
+      `select id, linkedin_verifie_le from contacts where id = $2 and organization_id = $1 for update`,
       [org, entree.contactId],
     );
     if (verrou.rows.length === 0) return 'absent';
+
+    // Ce profil n'a JAMAIS été lu sur LinkedIn : l'intitulé que porte la fiche vient d'ailleurs —
+    // de l'enrichissement, d'un import — et ne se compare pas à ce que LinkedIn affiche. Mesuré le
+    // 12/10 : quatre fiches sur cinq différaient par la seule formulation (« … chez Chausson
+    // Matériaux » ajouté, « de Territoires » retiré) sans qu'une personne ait changé de poste.
+    //
+    // La garde est ICI comme celle de l'intitulé absent, et pour la même raison : c'est cette
+    // fonction qui crée le signal, donc qui réveille, donc qui fait partir un message. Posée chez
+    // l'appelant seul, elle ne protégerait que lui.
+    if (verrou.rows[0]?.linkedin_verifie_le == null) {
+      await tx.query(
+        `update contacts set job_title = $3, linkedin_verifie_le = now()
+          where id = $2 and organization_id = $1`,
+        [org, entree.contactId, nouveau],
+      );
+      return 'inchange';
+    }
 
     // L'`external_id` porte le NOUVEL intitulé : le même changement, revu au passage suivant, ne
     // crée pas un second signal ; un changement DE PLUS, lui, en crée un.
