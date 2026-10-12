@@ -43,7 +43,7 @@ export const SQL_PURGER = 'select public.purger_linkedin_connexion_demandes() as
 export const SQL_POSER_DECONNEXION = `insert into linkedin_server_sessions (organization_id, deconnexion_demandee_at)
        values ($1, now())
        on conflict (organization_id) do update
-          set deconnexion_demandee_at = coalesce(linkedin_server_sessions.deconnexion_demandee_at, now())`;
+          set deconnexion_demandee_at = now()`;
 
 /** $1 = organisation. L'intention de déconnexion en attente, ou aucune ligne. */
 export const SQL_LIRE_DECONNEXION = `select deconnexion_demandee_at::text as demandee_at

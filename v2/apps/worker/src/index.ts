@@ -223,15 +223,15 @@ async function main(): Promise<void> {
   if (process.env.JAY_REACH_LINKEDIN === '1') {
     // Avant l'écoute : une demande laissée en cours par le processus précédent n'a plus personne pour la conduire.
     await cloreDemandesOrphelines(pool);
+    // Une déconnexion demandée et non aboutie (worker arrêté entre-temps) est rejouée : le message d'origine est perdu.
+    // AVANT l'écoute : aucune connexion ne peut encore être en cours, donc aucun navigateur à piétiner.
+    await reprendreDeconnexionsEnAttente(pool);
     try {
       arreterEcouteConnexion = await ecouterCanalConnexion(pool, (m) => traiterMessageConnexion(pool, m));
     } catch (err: unknown) {
       // Pas d'écoute : la connexion depuis l'écran se ferme d'elle-même en « worker absent », le reste du moteur tourne.
       console.error(`[ecoute-connexion] démarrage impossible (${err instanceof Error ? err.name : 'erreur'})`);
     }
-    // Une déconnexion demandée et non aboutie (worker arrêté entre-temps) est rejouée : le message d'origine est perdu.
-    // Après l'écoute, sans bloquer le démarrage : le navigateur peut mettre longtemps à répondre.
-    void reprendreDeconnexionsEnAttente(pool);
     const purgerConnexions = (): void => {
       void pool.query(SQL_PURGER).catch((err: unknown) => {
         console.error(`[connexion-linkedin] purge impossible (${err instanceof Error ? err.name : 'erreur'})`);

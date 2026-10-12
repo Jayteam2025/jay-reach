@@ -600,6 +600,9 @@ async function synchroniserExpediteurLinkedIn(
  */
 const QUOTA_JOUR_LINKEDIN_PAR_DEFAUT = 25;
 
+/** Identité de repli quand le compte connecté n'a pas pu être lu : ni vraie identité, ni motif d'audit de changement de compte. */
+export const IDENTITE_LINKEDIN_NON_LUE = 'compte-non-lu';
+
 /**
  * Garantit qu'il existe UNE ligne `senders` de genre `linkedin` active pour l'organisation, et une
  * seule, portant l'identité du compte réellement connecté. Rend son identifiant.
@@ -657,7 +660,7 @@ export async function garantirExpediteurLinkedIn(ctx: Contexte, identite: string
           where id = $1`,
         [cible.id, identite, nomAffiche],
       );
-      if (cible.identity !== identite) {
+      if (cible.identity !== identite && cible.identity !== IDENTITE_LINKEDIN_NON_LUE && identite !== IDENTITE_LINKEDIN_NON_LUE) {
         await ecrireEvenement(tx, {
           organisationId: ctx.organisationId,
           entityType: 'sender',

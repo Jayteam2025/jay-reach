@@ -15,7 +15,7 @@
 //  10. linkedin-connexion.ts : retirer SQL_POSER_DECONNEXION de demanderDeconnexion — 9a rougit.
 import pg from 'pg';
 import {
-  garantirExpediteurLinkedIn, deconnecter, modifierCompteLinkedIn, demanderDeconnexion,
+  garantirExpediteurLinkedIn, deconnecter, connecter, modifierCompteLinkedIn, demanderDeconnexion,
   traiterMessageConnexion, oublierConnexionsEnCours, reprendreDeconnexionsEnAttente,
 } from '__BUNDLE__';
 
@@ -239,7 +239,65 @@ async function intentionDeDeconnexion() {
   check('9c2. à la fin de la connexion : jouée une fois, soldée', jouee === 1 && (await lire(o)) === null, `jouee=${jouee}`);
 }
 
-await jouer(creation, reprise, cas_reel, idempotence, concurrence, changementDeCompte, deconnexion, indexUnique, intentionDeDeconnexion);
+async function fenetres() {
+  console.log('\n10. reconnexion au terminal, rejeu au démarrage, identité de repli');
+  const lire = (o) => q(`select deconnexion_demandee_at at from linkedin_server_sessions where organization_id = $1`, [o.id]).then((r) => r.rows[0]?.at ?? null);
+  const dep = (o, pilote) => ({
+    env: {}, ecrire: () => {}, contexte: async () => o.ctx, ouvrirNavigateur: async () => pilote,
+    releverSortie: async () => ({ ip: '203.0.113.7' }), releverTitulaire: async () => null, ipDuProcessus: async () => '10.0.0.1',
+    demander: async () => { throw new Error('non'); }, demanderMasque: async () => { throw new Error('non'); }, pause: async () => {},
+  });
+  const pilote = (surAller = async () => {}) => ({
+    aller: surAller, url: async () => 'https://www.linkedin.com/feed/', saisir: async () => {}, presserEntree: async () => {},
+    texte: async () => '', attendre: async () => false, requete: async () => ({ statut: 200, corps: '{}' }),
+    effacerCookies: async () => {}, fermer: async () => {},
+  });
+  const poser = (o) => q(`insert into linkedin_server_sessions (organization_id, deconnexion_demandee_at) values ($1, now())
+                          on conflict (organization_id) do update set deconnexion_demandee_at = now()`, [o.id]);
+
+  let o = await org();
+  await poser(o);
+  const code = await connecter(o.ctx, dep(o, pilote()));
+  check('10. connecter (terminal) réussit et efface l\'intention antérieure', code === 0 && (await lire(o)) === null, `code=${code}`);
+
+  o = await org();
+  await poser(o);
+  // Entre la lecture de l'intention (début) et son solde (après le verrou) : la relève de sortie.
+  const d2 = { ...dep(o, pilote()), releverSortie: async () => { await poser(o); return { ip: '203.0.113.7' }; } };
+  const code2 = await connecter(o.ctx, d2);
+  check('10b. une déconnexion demandée PENDANT la reconnexion (après la lecture, avant le solde) survit', code2 === 0 && (await lire(o)) !== null, `code=${code2}`);
+
+  // 11. rejeu pendant une connexion : rien d'effacé sous elle.
+  o = await org();
+  await poser(o);
+  const demandeur = (await q(`insert into auth.users (email) values ($1) returning id`, [`r-${Date.now()}@t.local`])).rows[0].id;
+  await q(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [o.id, demandeur]);
+  const demandeId = (await q(`insert into linkedin_connexion_demandes (organization_id, demandee_par, statut) values ($1, $2, 'demandee') returning id`, [o.id, demandeur])).rows[0].id;
+  let liberer = () => {};
+  const bloquee = new Promise((r) => (liberer = () => r(0)));
+  let jouee = 0;
+  const fausseDep = { contexte: async () => o.ctx, livrerCode: () => {}, vider: async () => {} };
+  // La connexion efface l'intention à son début (chemin web) : on la repose ensuite, comme une demande arrivée pendant.
+  const premiere = traiterMessageConnexion(pool, { type: 'secrets', demandeId, organizationId: o.id, identifiant: 'x', motDePasse: 'y' },
+    { connecter: () => bloquee, dependances: () => fausseDep, deconnecter: async () => { jouee += 1; return 0; } });
+  await new Promise((r) => setTimeout(r, 300));
+  await poser(o);
+  await reprendreDeconnexionsEnAttente(pool, { deconnecter: async () => { jouee += 1; return 0; } });
+  check('11. le rejeu ne joue rien tant qu\'une connexion est en cours', jouee === 0 && (await lire(o)) !== null, `jouee=${jouee}`);
+  liberer();
+  await premiere;
+  check('11a. la fin de la connexion la joue', jouee === 1 && (await lire(o)) === null, `jouee=${jouee}`);
+
+  // 12. identité de repli : pas d'audit parasite.
+  o = await org();
+  await garantirExpediteurLinkedIn(o.ctx, 'compte-non-lu', 'compte-non-lu (LinkedIn)');
+  await garantirExpediteurLinkedIn(o.ctx, 'alexandre-declercq', 'alexandre-declercq (LinkedIn)');
+  check('12. repli puis vraie identité : aucun « changement de compte »', (await audit(o, 'linkedin.expediteur_compte_change')).length === 0);
+  await garantirExpediteurLinkedIn(o.ctx, 'autre-personne', 'autre-personne (LinkedIn)');
+  check('12a. deux vraies identités différentes : consigné', (await audit(o, 'linkedin.expediteur_compte_change')).length === 1);
+}
+
+await jouer(creation, reprise, cas_reel, idempotence, concurrence, changementDeCompte, deconnexion, indexUnique, intentionDeDeconnexion, fenetres);
 await pool.end();
 console.log(failures === 0 ? '\nVERIFY_OK' : `\n${failures} ÉCHEC(S)`);
 process.exit(failures === 0 ? 0 : 1);

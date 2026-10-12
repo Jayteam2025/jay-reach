@@ -24,4 +24,4 @@ export {
   SQL_CLORE_SI_EN_COURS,
   SQL_PURGER,
 } from '../../apps/worker/src/linkedin/traiter-connexion-sql.js';
-export { deconnecter } from '../../apps/worker/src/cli/linkedin.js';
+export { connecter, deconnecter } from '../../apps/worker/src/cli/linkedin.js';

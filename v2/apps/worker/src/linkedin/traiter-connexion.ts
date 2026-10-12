@@ -202,6 +202,9 @@ async function reprendreDeconnexion(pool: pg.Pool, organisationId: string, optio
   }
   if (demandee === undefined || demandee === null) return;
   if (deconnexionEnCours) return; // celle qui tourne soldera l'intention
+  // Un navigateur déjà piloté par une connexion : on n'efface pas ses cookies sous elle. L'intention reste en
+  // base, la fin de cette connexion la jouera.
+  if (enCours.size > 0) return;
   deconnexionEnCours = true;
   try {
     await jouerDeconnexion(pool, organisationId, demandee, options);

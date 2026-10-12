@@ -72,10 +72,10 @@ export const SQL_ECHEC_TRANSMISSION = `update linkedin_connexion_demandes
 
 /**
  * $1 = organisation. Persiste l'intention de déconnexion (crée la ligne de session au besoin) : le worker la
- * reprend au démarrage et à la fin d'une connexion, le message `pg_notify` n'étant pas rejoué. Garde la plus
- * ancienne demande tant qu'elle n'a pas abouti.
+ * reprend au démarrage et à la fin d'une connexion, le message `pg_notify` n'étant pas rejoué. Chaque demande
+ * RENOUVELLE l'horodatage : un solde « tel que lu » ne peut donc jamais effacer une demande plus récente.
  */
 export const SQL_POSER_DECONNEXION = `insert into linkedin_server_sessions (organization_id, deconnexion_demandee_at)
        values ($1, now())
        on conflict (organization_id) do update
-          set deconnexion_demandee_at = coalesce(linkedin_server_sessions.deconnexion_demandee_at, now())`;
+          set deconnexion_demandee_at = now()`;

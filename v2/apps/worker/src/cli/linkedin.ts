@@ -20,6 +20,9 @@ import {
   enregistrerCompteLinkedIn,
   enregistrerObservationSortie,
   garantirExpediteurLinkedIn,
+  IDENTITE_LINKEDIN_NON_LUE,
+  lireDeconnexionDemandeeLinkedIn,
+  solderDeconnexionLinkedIn,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
   type Contexte,
@@ -218,9 +221,6 @@ async function sortieEstCelleDuServeur(d: Dependances, ipVue: string): Promise<b
   return true;
 }
 
-/** Repli quand ni `/me` ni la session ne disent qui est connecté : jamais un nom inventé, un libellé neutre. */
-const IDENTITE_INCONNUE = 'compte-non-lu';
-
 /**
  * Connexion réussie : l'expéditeur LinkedIn existe, est actif, et il n'y en a qu'un (spec §9). Le
  * compte est lu par `/me` ; à défaut, l'identité déjà connue de la session. LÈVE si la garantie échoue :
@@ -228,13 +228,15 @@ const IDENTITE_INCONNUE = 'compte-non-lu';
  */
 async function garantirExpediteur(ctx: Contexte, pilote: Pilote, connue: string | null): Promise<void> {
   const compte = await lireCompteConnecte(pilote);
-  const identite = compte?.identifiantPublic ?? connue ?? IDENTITE_INCONNUE;
+  const identite = compte?.identifiantPublic ?? connue ?? IDENTITE_LINKEDIN_NON_LUE;
   if (compte) await enregistrerCompteLinkedIn(ctx, compte);
   await garantirExpediteurLinkedIn(ctx, identite, `${identite} (LinkedIn)`);
 }
 
 export async function connecter(ctx: Contexte, d: Dependances): Promise<number> {
   const session = await lireSessionLinkedIn(ctx);
+  // Lue AVANT tout : seule une déconnexion demandée avant cette connexion est périmée par elle.
+  const intentionDeconnexion = await lireDeconnexionDemandeeLinkedIn(ctx);
   const proprietaire = `cli-${process.pid}`;
   const pilote = await d.ouvrirNavigateur();
   let verrouPris = false;
@@ -261,6 +263,9 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
       return 1;
     }
 
+    // La dernière volonté exprimée est cette reconnexion : sans cela, le prochain démarrage du worker
+    // rejouerait la déconnexion demandée avant elle et couperait un compte que personne ne veut couper.
+    if (intentionDeconnexion) await solderDeconnexionLinkedIn(ctx, intentionDeconnexion);
     const resultat = await ouvrirLinkedIn(ctx, pilote, d);
     if (resultat.issue === 'connecte') {
       // Première connexion : l'IP attendue se fige sur la sortie vue.
