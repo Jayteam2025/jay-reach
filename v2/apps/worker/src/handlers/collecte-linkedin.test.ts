@@ -852,6 +852,28 @@ describe('la source « changement de poste »', () => {
     expect(signaux(b)).toHaveLength(2);
   });
 
+  it('un défi passe devant le verdict de vraisemblance : la session est bloquée, pas juste le passage', async () => {
+    // Les deux conditions tiennent ensemble : cinq profils lus qui changent tous (le seuil mord)
+    // ET un défi au sixième. Refuser pour invraisemblance rendrait la main aussitôt, en sautant
+    // la queue qui traite la friction : la session resterait active sur un compte contesté, aucune
+    // notification ne partirait, et le passage ne compterait pas pour le disjoncteur.
+    sansBruit();
+    const noms = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const b = base({
+      source: sourceChangement,
+      contacts: noms.map((x) => contact(`${x}-exemple`, 'Directrice commerciale')),
+    });
+    const p = pilote({
+      reponse: (u) =>
+        u.includes('f-exemple') ? { statut: 999, corps: '' } : profil('Quelqu’un', 'Un intitulé tout autre'),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(bloque(b)).toContain('defi');
+    expect(clos(b)!.params[2]).toBe('error');
+    // Et rien n'est écrit : le passage arrêté n'a pas de dénominateur honnête.
+    expect(signaux(b)).toEqual([]);
+  });
+
   it('un passage refusé ne pose AUCUNE référence sur une fiche sans intitulé', async () => {
     // Le constat bloquant de la revue du 12/10. Les changements étaient bien mis en attente, mais
     // le marquage restait en ligne : une fiche vierge recevait la ligne lue comme référence AVANT

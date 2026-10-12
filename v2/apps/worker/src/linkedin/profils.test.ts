@@ -252,7 +252,7 @@ describe('lireProfilCourant', () => {
     entreprise?: string;
     urn?: string;
   }): string => {
-    const urn = opts.urn ?? 'ACoAAAwlBZEBqpbC4SKNDfximWgHzTrhGQJC8Mc';
+    const urn = opts.urn ?? 'ACoAAExemple';
     const carte = `com.linkedin.sdui.profile.card.ref${urn}`;
     return (
       `<html><head><title>${opts.nom} | LinkedIn</title></head><body>` +
@@ -271,8 +271,8 @@ describe('lireProfilCourant', () => {
       `<div id="${carte}Activity" componentkey="${carte}Activity"><p>Activite</p></div>` +
       // Les profils suggérés, même forme de balises, plus bas dans le document.
       `<section><h2>Explorer les profils Premium</h2>` +
-      `<p><span>Etudiante en M2 Chef de projet Data et IA</span></p>` +
-      `<p><span>Co-fondateur chez Juno</span></p></section>` +
+      `<p><span>Responsable logistique chez Acme</span></p>` +
+      `<p><span>Cofondateur chez Bêta</span></p></section>` +
       `</body></html>`
     );
   };
@@ -306,7 +306,7 @@ describe('lireProfilCourant', () => {
     // ligne entreprise de LA BONNE personne, jamais le poste d'un inconnu.
     const lu = lireProfilCourant(page({ nom: 'Ada Lemercier', intitule: null, entreprise: 'Acme' }));
     expect(lu?.intitule).toBe('Acme');
-    expect(lu?.intitule).not.toContain('Chef de projet');
+    expect(lu?.intitule).not.toContain('logistique');
   });
 
   it('ne prend jamais le degré de relation pour un intitulé', () => {

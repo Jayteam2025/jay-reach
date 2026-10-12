@@ -787,6 +787,18 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       }
       traficTermine = true;
 
+      /**
+       * Un passage ARRÊTÉ n'a pas de dénominateur honnête : le contrôle de vraisemblance ne dit
+       * rien d'un passage coupé au troisième profil, et plus il est coupé tôt, moins il protège.
+       * Un défi servi au milieu d'une page devenue illisible donnerait deux changements sur deux,
+       * donc sous le seuil, donc écrits. On n'écrit donc aucun changement : les contacts ne sont
+       * pas marqués pour autant et repassent en tête demain.
+       *
+       * Le plafond, lui, est un arrêt PRÉVU et non un symptôme : il laisse écrire ce qui a été lu,
+       * sans quoi un plafond qui tombe toujours au même endroit figerait la rotation pour de bon.
+       */
+      const arretAnormal = arretDeRecherche !== 'fini' && arretDeRecherche !== 'plafond';
+
       // Le contrôle de vraisemblance. Un passage qui déclare un changement pour presque tout le
       // monde ne lit pas des changements : il lit mal. Le 09/10, cinq profils relus ont donné cinq
       // « changements », dont deux venaient d'une ligne qui n'était pas l'intitulé.
@@ -794,21 +806,20 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // L'asymétrie décide, comme pour la garde sur l'intitulé absent : refuser coûte un jour de
       // rotation, les contacts n'étant pas marqués ils repassent en tête demain. Écrire réveille
       // des gens pour rien ET écrase leur intitulé, que plus rien ne permet de retrouver.
-      if (profilsLus >= PROFILS_POUR_JUGER && changementsConstates.length >= profilsLus * PART_CHANGEMENTS_SUSPECTE) {
+      //
+      // Une FRICTION passe devant ce verdict, et c'est tout l'objet du `!arretAnormal` : refuser
+      // ici rendrait la main tout de suite, en sautant la queue commune qui traite la friction.
+      // Un défi ne bloquerait alors pas la session, aucune notification ne partirait, et le
+      // passage ne compterait pas pour le disjoncteur — l'opérateur lirait « presque tous les
+      // profils ont changé » là où le fait marquant est que LinkedIn nous a défiés.
+      if (
+        !arretAnormal &&
+        profilsLus >= PROFILS_POUR_JUGER &&
+        changementsConstates.length >= profilsLus * PART_CHANGEMENTS_SUSPECTE
+      ) {
         await refuser(pool, job, MSG.changements_invraisemblables, { statut: 'error', bilan, sortie });
         return;
       }
-      /**
-       * Un passage ARRÊTÉ n'a pas de dénominateur honnête : le contrôle ci-dessus ne dit rien
-       * d'un passage coupé au troisième profil, et plus il est coupé tôt, moins il protège. Un
-       * défi servi au milieu d'une page devenue illisible donnerait deux changements sur deux,
-       * donc sous le seuil, donc écrits. On n'écrit donc rien du tout : les contacts ne sont pas
-       * marqués et repassent en tête demain.
-       *
-       * Le plafond, lui, est un arrêt PRÉVU et non un symptôme : il laisse écrire ce qui a été lu,
-       * sans quoi un plafond qui tombe toujours au même endroit figerait la rotation pour de bon.
-       */
-      const arretAnormal = arretDeRecherche !== 'fini' && arretDeRecherche !== 'plafond';
       for (const marquage of aMarquer) {
         // La vérification est marquée même sur un arrêt anormal, sans quoi un défi qui revient
         // chaque jour figerait la rotation sur les mêmes contacts. Mais AUCUNE référence n'est
