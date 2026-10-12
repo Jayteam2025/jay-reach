@@ -45,6 +45,7 @@ interface LigneComptes {
   boites: number;
   personas: number;
   linkedin_statut: string | null;
+  linkedin_motif: string | null;
   sources: number;
   campagnes: number;
 }
@@ -61,6 +62,7 @@ export async function lireDemarrage(ctx: Contexte): Promise<Demarrage> {
   const sources = n?.sources ?? 0;
   const campagnes = n?.campagnes ?? 0;
   const statutLinkedIn = n?.linkedin_statut ?? null;
+  const motifLinkedIn = n?.linkedin_motif ?? null;
 
   const lignes: LigneDemarrage[] = [
     { cle: 'fournisseurs', faite: cles > 0, compte: cles, casse: false, lien: '/settings/providers' },
@@ -73,7 +75,9 @@ export async function lireDemarrage(ctx: Contexte): Promise<Demarrage> {
       // Une session branchée puis tombée n'est pas une session jamais branchée. Mais une
       // session RÉVOQUÉE est un choix de l'opérateur, pas une panne : l'accueil ne doit pas
       // titrer « un branchement a lâché » parce que quelqu'un vient de cliquer « Déconnecter ».
-      casse: statutLinkedIn !== null && statutLinkedIn !== 'active' && statutLinkedIn !== 'revoquee',
+      // Le statut ne suffit pas à les distinguer — une révocation s'écrit `bloquee` comme une
+      // panne, et seul `blocked_reason` dit laquelle des deux c'est.
+      casse: statutLinkedIn !== null && statutLinkedIn !== 'active' && motifLinkedIn !== 'revoquee',
       lien: '/settings/linkedin',
     },
     { cle: 'source', faite: sources > 0, compte: sources, casse: false, lien: '/campaigns' },

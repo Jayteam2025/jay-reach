@@ -61,10 +61,25 @@ begin
      set status = 'bloquee', blocked_at = now(), blocked_reason = 'defi'
    where organization_id = '11111111-1111-1111-1111-111111111111';
   execute format('execute demarrage(%L)', '11111111-1111-1111-1111-111111111111') into r;
-  if r.linkedin_statut is distinct from 'bloquee' then
-    raise exception 'FAIL 3 : statut rendu = %, attendu bloquee', r.linkedin_statut;
+  if r.linkedin_statut is distinct from 'bloquee' or r.linkedin_motif is distinct from 'defi' then
+    raise exception 'FAIL 3 : statut = %, motif = %, attendu bloquee/defi', r.linkedin_statut, r.linkedin_motif;
   end if;
-  raise notice 'OK 3 : une session bloquee est rendue telle quelle, pas comme une absence';
+  raise notice 'OK 3 : une session bloquee rend son statut ET son motif';
+end $$;
+
+do $$
+declare r record;
+begin
+  -- 4 : une deconnexion VOULUE s'ecrit avec le meme statut qu'une panne. Seul le motif les
+  -- distingue, et c'est lui qui evite a l'accueil de titrer « un branchement a lache » quand
+  -- l'operateur vient de cliquer « Deconnecter ».
+  update linkedin_server_sessions set status = 'bloquee', blocked_at = now(), blocked_reason = 'revoquee'
+   where organization_id = '11111111-1111-1111-1111-111111111111';
+  execute format('execute demarrage(%L)', '11111111-1111-1111-1111-111111111111') into r;
+  if r.linkedin_motif is distinct from 'revoquee' then
+    raise exception 'FAIL 4 : motif rendu = %, attendu revoquee', r.linkedin_motif;
+  end if;
+  raise notice 'OK 4 : une deconnexion voulue est distinguee par son motif, pas par son statut';
 end $$;
 
 select 'VERIFY_OK' as resultat;

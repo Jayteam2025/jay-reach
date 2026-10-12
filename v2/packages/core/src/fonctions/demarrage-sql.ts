@@ -17,6 +17,10 @@ export const SQL_DEMARRAGE = `
       where p.organization_id = $1) as personas,
     (select l.status from linkedin_server_sessions l
       where l.organization_id = $1) as linkedin_statut,
+    -- Le motif distingue une panne d'une déconnexion voulue : une session révoquée s'écrit
+    -- avec le statut bloquee et le motif revoquee (migration 20261005130000).
+    (select l.blocked_reason from linkedin_server_sessions l
+      where l.organization_id = $1) as linkedin_motif,
     (select count(*)::int from sources so
       where so.organization_id = $1 and so.is_active) as sources,
     (select count(*)::int from campaigns ca

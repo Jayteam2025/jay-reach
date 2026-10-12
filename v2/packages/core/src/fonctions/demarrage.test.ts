@@ -21,6 +21,7 @@ const toutBranche = {
   boites: 3,
   personas: 2,
   linkedin_statut: 'active',
+  linkedin_motif: null,
   sources: 2,
   campagnes: 1,
 };
@@ -28,7 +29,7 @@ const toutBranche = {
 describe('la liste de démarrage', () => {
   it('neuve, elle ne coche rien et compte zéro sur six', async () => {
     const d = await lireDemarrage(
-      contexte({ cles: 0, boites: 0, personas: 0, linkedin_statut: null, sources: 0, campagnes: 0 }),
+      contexte({ cles: 0, boites: 0, personas: 0, linkedin_statut: null, linkedin_motif: null, sources: 0, campagnes: 0 }),
     );
     expect(d.faites).toBe(0);
     expect(d.total).toBe(6);
@@ -57,7 +58,9 @@ describe('la liste de démarrage', () => {
   // C'est ce qui distingue un diagnostic d'un tutoriel : une session branchée puis bloquée n'est
   // pas la même chose qu'une session jamais branchée, et la ligne doit le dire.
   it('une session LinkedIn bloquée est cassée, pas « jamais branchée »', async () => {
-    const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: 'bloquee' }));
+    const d = await lireDemarrage(
+      contexte({ ...toutBranche, linkedin_statut: 'bloquee', linkedin_motif: 'defi' }),
+    );
     const li = d.lignes.find((l) => l.cle === 'linkedin');
     expect(li?.faite).toBe(false);
     expect(li?.casse).toBe(true);
@@ -67,14 +70,19 @@ describe('la liste de démarrage', () => {
   // Une déconnexion volontaire n'est pas une panne : l'accueil ne doit pas annoncer « un
   // branchement a lâché » parce que l'opérateur vient de cliquer « Déconnecter ».
   it('une session révoquée à la demande n’est pas annoncée comme cassée', async () => {
-    const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: 'revoquee' }));
+    // L'état réel qu'écrit `bloquerSessionLinkedIn` : le statut vaut `bloquee` comme pour une
+    // panne, et seul le motif dit que c'est un choix. Un test sur un statut `revoquee` passerait
+    // en prouvant le contraire de la vérité — la contrainte du schéma l'interdit.
+    const d = await lireDemarrage(
+      contexte({ ...toutBranche, linkedin_statut: 'bloquee', linkedin_motif: 'revoquee' }),
+    );
     const li = d.lignes.find((l) => l.cle === 'linkedin');
     expect(li?.faite).toBe(false);
     expect(li?.casse).toBe(false);
   });
 
   it('une session jamais ouverte n’est pas cassée, elle est seulement à faire', async () => {
-    const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: null }));
+    const d = await lireDemarrage(contexte({ ...toutBranche, linkedin_statut: null, linkedin_motif: null }));
     const li = d.lignes.find((l) => l.cle === 'linkedin');
     expect(li?.faite).toBe(false);
     expect(li?.casse).toBe(false);
