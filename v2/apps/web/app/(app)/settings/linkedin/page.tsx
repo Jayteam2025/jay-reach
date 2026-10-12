@@ -36,10 +36,11 @@ const UNE_HEURE_MS = 3_600_000;
 const CRANS_RYTHME: readonly CranRythme[] = ['prudent', 'normal', 'soutenu'];
 
 /**
- * Le plafond que le MOTEUR applique, pas celui que la saisie porte : `schemaEcrireReglage` n'a
- * pas de maximum, mais le moteur rabote à `HARD_CAP_7_DAYS` sur sept jours glissants
- * (`linkedin/file.ts`). Un écran qui annoncerait « 12 sur 500 » promettrait 300 envois qui ne
- * partiront jamais — exactement le mensonge que ce chantier supprime.
+ * Le plafond que le MOTEUR applique, pas celui que la saisie porte. L'écriture par l'écran est déjà
+ * bornée à `HARD_CAP_7_DAYS` (`schemaEcrireReglage`, `plafonds.ts`), mais une valeur peut aussi
+ * arriver par un repli de variable d'environnement, que rien ne borne : le moteur rabote alors à
+ * `HARD_CAP_7_DAYS` sur sept jours glissants (`linkedin/file.ts`). Un écran qui annoncerait « 12 sur
+ * 500 » promettrait 300 envois qui ne partiront jamais — exactement le mensonge que ce chantier supprime.
  */
 function plafondEffectif(regle: number): number {
   return Math.min(regle, HARD_CAP_7_DAYS);

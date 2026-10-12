@@ -83,4 +83,13 @@ describe('le choix du rythme d’envoi', () => {
     expect(html.split('disabled=""')).toHaveLength(crans.length + 1);
     expect(html).not.toContain(libelles.appliquer);
   });
+
+  it('le bouton vise le cran SÉLECTIONNÉ, jamais celui qui est déjà appliqué', () => {
+    // Appliqué : normal. Sélectionné : soutenu. Écraser quatre réglages avec le cran déjà en
+    // vigueur ne changerait rien visible à l'écran, d'où la lecture dans le markup.
+    const html = rendu({ applique: 'normal', selectionInitiale: 'soutenu' });
+    expect(html).toContain('data-cran-vise="soutenu"');
+    expect(html).not.toContain('data-cran-vise="normal"');
+    expect(html).toContain(libelles.appliquer);
+  });
 });

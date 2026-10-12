@@ -34,6 +34,8 @@ export interface ChoixRythmeProps {
   applique: Rythme;
   crans: CranAffiche[];
   peutModifier: boolean;
+  /** Cran déjà sélectionné au premier rendu : sert aux tests, qui rendent en statique sans DOM. */
+  selectionInitiale?: CranRythme | null;
   libelles: {
     groupe: string;
     invitations: string;
@@ -47,8 +49,8 @@ export interface ChoixRythmeProps {
   };
 }
 
-export function ChoixRythme({ applique, crans, peutModifier, libelles }: ChoixRythmeProps) {
-  const [selection, setSelection] = useState<CranRythme | null>(null);
+export function ChoixRythme({ applique, crans, peutModifier, selectionInitiale = null, libelles }: ChoixRythmeProps) {
+  const [selection, setSelection] = useState<CranRythme | null>(selectionInitiale);
   const [erreur, setErreur] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const etat = etatChoixRythme(
@@ -56,6 +58,10 @@ export function ChoixRythme({ applique, crans, peutModifier, libelles }: ChoixRy
     applique,
     selection,
   );
+
+  // Le cran visé, lu une seule fois : l'attribut `data-cran-vise` et l'appel partent de la même
+  // variable, donc ce que le test lit dans le markup est ce que le clic enverra.
+  const cible = etat.aAppliquer;
 
   function appliquer(cran: CranRythme) {
     setErreur(null);
@@ -115,11 +121,12 @@ export function ChoixRythme({ applique, crans, peutModifier, libelles }: ChoixRy
             mesure, les jours réels sont tout autres — l'afficher quand même ferait dire à l'écran
             exactement le genre de chose fausse que ce chantier corrige. */}
         <p>{etat.surMesure ? null : libelles.jours}</p>
-        {etat.aAppliquer && peutModifier && (
+        {cible && peutModifier && (
           <Bouton
             variante="principal"
             taille="petit"
-            onClick={() => appliquer(etat.aAppliquer as CranRythme)}
+            data-cran-vise={cible}
+            onClick={() => appliquer(cible)}
             disabled={pending}
             aria-busy={pending}
           >
