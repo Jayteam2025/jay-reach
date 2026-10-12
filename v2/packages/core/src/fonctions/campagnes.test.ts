@@ -2173,6 +2173,8 @@ describe('lancer', () => {
     const iPassage = appels.findIndex((a) => /jr:lancer_premier_passage/i.test(String(a[0])));
     expect(iActivation).toBeGreaterThanOrEqual(0);
     expect(iPassage).toBeGreaterThan(iActivation);
+    // L'alerte « rien n'est parti » lit cette date : une relance doit la remettre à maintenant.
+    expect(String(appels[iActivation]![0])).toMatch(/activated_at\s*=\s*now\(\)/i);
     expect(String(appels[iPassage]![0])).toMatch(/run_requested_at\s*=\s*now\(\)/i);
     expect(appels[iPassage]![1]).toEqual([campagneId]);
   });

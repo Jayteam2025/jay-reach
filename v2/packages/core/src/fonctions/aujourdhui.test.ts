@@ -540,28 +540,44 @@ describe('lireAujourdhui', () => {
       'from linkedin_settings': [{ send_from_hour: debut, send_to_hour: fin, send_days: jours, timezone: 'Europe/Paris' }],
     });
 
-    it('une fenêtre qui laisse moins de dix minutes par action est signalée', async () => {
-      // 20 h - 21 h pour 25 actions par jour (125 par semaine sur cinq jours) : une toutes les 2,4 minutes.
+    it('une fenêtre qui laisse moins de sept minutes par action est signalée', async () => {
+      // 20 h - 21 h pour 25 invitations et 25 messages par jour (125 par semaine chacun, cinq jours) : 50 actions, une par 1,2 minute.
       const a = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(125, 125), ...fenetre(20, 21) }));
       const alerte = a.alertes.find((al) => al.type === 'fenetre_trop_etroite');
       expect(alerte).toBeDefined();
       expect(alerte?.lien).toBe('/settings/linkedin');
-      expect(alerte?.texte).toContain('2,4 minutes');
-      expect(alerte?.texte).toContain('25 actions par jour');
+      expect(alerte?.texte).toContain('1,2 minutes');
+      expect(alerte?.texte).toContain('50 actions par jour');
       expect(alerte?.texte).not.toMatch(/send_from_hour|linkedin_settings/);
     });
 
     it('une fenêtre large pour le même volume ne l’est pas', async () => {
       const a = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(125, 125), ...fenetre(8, 20) }));
       expect(types(a)).not.toContain('fenetre_trop_etroite');
-      // Frontière : 9 h - 18 h pour 54 actions par jour = exactement 10 minutes, pas « moins de dix ».
-      const limite = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(270, 270), ...fenetre(9, 18) }));
+      // Frontière : 7 h - 14 h (420 min) pour 30 + 30 actions par jour = exactement 7 minutes, pas « moins de sept »…
+      const limite = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(150, 150), ...fenetre(7, 14) }));
       expect(types(limite)).not.toContain('fenetre_trop_etroite');
+      // … et 30 + 31 actions (6,9 minutes) l'est.
+      const dessous = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(150, 155), ...fenetre(7, 14) }));
+      expect(types(dessous)).toContain('fenetre_trop_etroite');
     });
 
-    it('les réglages par défaut (9 h - 18 h, 100 invitations et 200 messages) n’alertent pas', async () => {
+    it('les deux curseurs au plafond dur (200 + 200) sur 9 h - 18 h sont signalés : 6,75 minutes par action', async () => {
+      const a = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(200, 200), ...fenetre(9, 18) }));
+      const alerte = a.alertes.find((al) => al.type === 'fenetre_trop_etroite');
+      expect(alerte).toBeDefined();
+      expect(alerte?.texte).toContain('80 actions par jour');
+      // Au-delà du plafond dur, le moteur rabote : 400 + 400 donne la même chose que 200 + 200.
+      const au_dela = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(400, 400), ...fenetre(9, 18) }));
+      expect(au_dela.alertes.find((al) => al.type === 'fenetre_trop_etroite')?.texte).toContain('80 actions par jour');
+    });
+
+    it('les réglages par défaut du dépôt (9 h - 18 h, 100 invitations et 200 messages, soit 9 min par action) n’alertent pas', async () => {
       const a = await lireAujourdhui(faux(campagneLinkedin));
       expect(types(a)).not.toContain('fenetre_trop_etroite');
+      // Même chose réglée explicitement : le garde-fou ne dépend pas des valeurs de repli.
+      const explicite = await lireAujourdhui(faux({ ...campagneLinkedin, ...plafonds(100, 200), ...fenetre(9, 18) }));
+      expect(types(explicite)).not.toContain('fenetre_trop_etroite');
     });
 
     it('une fenêtre étroite sans campagne active à étape LinkedIn n’alerte pas', async () => {
@@ -616,6 +632,48 @@ describe('lireAujourdhui', () => {
       expect(alerte?.lien).toBe('/settings/senders');
       const parti = await lireAujourdhui(faux({ ...campagneEmail, 'jr:actions_recentes': [{ n: 3 }] }));
       expect(types(parti)).not.toContain('rien_ne_part');
+    });
+
+    it('rien_ne_part se tait quand l’organisation est en pause : pause_envoi le dit déjà', async () => {
+      const pause = { 'jr:pause_envoi': [{ sending_paused_at: '2026-10-12T08:00:00.000Z', sending_paused_reason: null }] };
+      const a = await lireAujourdhui(faux({ ...campagneEmail, ...pause, 'jr:actions_recentes': [{ n: 0 }] }));
+      expect(types(a)).toContain('pause_envoi');
+      expect(types(a)).not.toContain('rien_ne_part');
+    });
+
+    it('rien_ne_part compte les actions PARTIES (dispatched_at), pas les actions seulement créées', async () => {
+      const appels: string[] = [];
+      const query = vi.fn(async (sql: string) => {
+        appels.push(sql);
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      const recentes = appels.find((t) => /jr:actions_recentes/i.test(t))!;
+      expect(recentes).toContain('a.dispatched_at is not null');
+      expect(recentes).toContain('a.dispatched_at >=');
+      expect(recentes).not.toContain('created_at');
+    });
+
+    it('l’âge d’une campagne se lit à son activation, avec repli sur sa création', async () => {
+      const appels: string[] = [];
+      const query = vi.fn(async (sql: string) => {
+        appels.push(sql);
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      expect(appels.find((t) => /jr:campagnes_actives/i.test(t))!).toContain('coalesce(c.activated_at, c.created_at)');
+    });
+
+    it('les envois dus se rattachent à l’étape par son RANG (offset), jamais par position = current_step', async () => {
+      const appels: string[] = [];
+      const query = vi.fn(async (sql: string) => {
+        appels.push(sql);
+        return { rows: [], rowCount: 0 };
+      }) as unknown as Executeur['query'];
+      await lireAujourdhui({ ex: { query }, organisationId: 'org-1', utilisateurId: 'user-1', role: 'viewer' });
+      const dus = appels.find((t) => /jr:envois_par_jour/i.test(t))!;
+      expect(dus).toContain('order by s.position offset e.current_step limit 1');
+      expect(dus).not.toMatch(/position\s*=\s*e\.current_step/);
     });
 
     it('rien_ne_part n’alerte pas pour une campagne créée depuis moins de trois jours ouvrés', async () => {

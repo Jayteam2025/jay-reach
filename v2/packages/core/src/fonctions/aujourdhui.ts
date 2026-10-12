@@ -149,8 +149,15 @@ export type TypeAlerte =
 /** Sous ce nombre de personnes par passage, la collecte LinkedIn ne nourrit plus le moteur. */
 const SEUIL_COLLECTE_ETRANGLEE = 10;
 
-/** Sous ce nombre de minutes par action, la fenêtre LinkedIn ne peut pas écouler le volume réglé (intervalle de 1 à 20 min, soit environ 10 min en moyenne). */
-const SEUIL_MINUTES_PAR_ACTION = 10;
+/**
+ * Sous ce nombre de minutes par action, la fenêtre LinkedIn ne peut pas écouler le volume réglé
+ * (le moteur espace les actions de 1 à 20 min, soit environ 10 min en moyenne, tous types confondus).
+ * Pas 10 : à 10 minutes, les valeurs par défaut du dépôt (100 + 200 sur 9 h - 18 h, cinq jours, soit
+ * 9 min par action) se dénonceraient elles-mêmes alors qu'elles écoulent environ 85 % de leur volume,
+ * et le cran « Normal » proposé en façade porte exactement ces valeurs. À 7 minutes on ne signale que
+ * les configurations qui perdent plus d'un tiers de leur volume réglé.
+ */
+const SEUIL_MINUTES_PAR_ACTION = 7;
 
 /** Fenêtre d'observation de `rien_ne_part`, en jours ouvrés du calendrier (lundi au vendredi). */
 const JOURS_OUVRES_SANS_ACTION = 3;
@@ -462,7 +469,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     ctx.ex.query<{ actives: number; avec_linkedin: number; anciennes: number }>(
       `select count(*)::int as actives, /* jr:campagnes_actives */
               (count(*) filter (where exists (select 1 from sequence_steps ss where ss.campaign_id = c.id and ss.channel in ('linkedin_invite', 'linkedin_message'))))::int as avec_linkedin,
-              (count(*) filter (where c.created_at < ($2::date::timestamp at time zone $3)))::int as anciennes
+              (count(*) filter (where coalesce(c.activated_at, c.created_at) < ($2::date::timestamp at time zone $3)))::int as anciennes
          from campaigns c
         where c.organization_id = $1
           and c.status = 'active'`,
@@ -477,7 +484,9 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
               (select count(*)::int
                  from enrollments e
                  join campaigns c on c.id = e.campaign_id
-                 join sequence_steps ss on ss.campaign_id = e.campaign_id and ss.position = e.current_step
+                 -- current_step est un RANG, pas une position : les positions ne sont pas contiguës
+                 -- après la suppression d'une étape (même lecture que reprendreInscription).
+                 join lateral (select s.channel from sequence_steps s where s.campaign_id = e.campaign_id order by s.position offset e.current_step limit 1) ss on true
                 where e.organization_id = $1
                   and e.status = 'active'
                   and c.organization_id = e.organization_id
@@ -505,7 +514,9 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       `select count(*)::int as n /* jr:actions_recentes */
          from actions a
         where a.organization_id = $1
-          and a.created_at >= ($2::date::timestamp at time zone $3)`,
+          -- Parti = remis au transporteur : une action blocked (refus d'émettre) est créée mais ne part pas.
+          and a.dispatched_at is not null
+          and a.dispatched_at >= ($2::date::timestamp at time zone $3)`,
       [ctx.organisationId, debutSansAction, fuseau],
     ),
     lireHeuresEnvoiLinkedIn(ctx),
@@ -673,17 +684,15 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     });
   }
   const campagnesActives = campagnesActivesRes.rows[0];
+  const organisation = organisationRes.rows[0];
   if ((campagnesActives?.actives ?? 0) > 0) {
-    // Le volume réglé par jour : le plus grand des deux plafonds hebdomadaires (rabotés comme le moteur)
-    // réparti sur les jours ouvrés. Le plus grand et non la somme : la somme ferait alerter les
-    // réglages par défaut (100 invitations + 200 messages), qui ne sont pas une panne.
-    const invitations = reglages.linkedin_invitations_par_semaine;
-    const messages = reglages.linkedin_messages_par_semaine;
-    const parSemaine = Math.max(
-      typeof invitations === 'number' ? Math.min(invitations, HARD_CAP_7_DAYS) : 0,
-      typeof messages === 'number' ? Math.min(messages, HARD_CAP_7_DAYS) : 0,
-    );
-    const actionsParJour = Math.ceil(parSemaine / heuresLinkedin.jours.length);
+    // Le volume réglé par jour : la SOMME des deux plafonds quotidiens, car le moteur plafonne par type
+    // mais espace les actions tous types confondus. Formule de `chargerStatsRythme` (`linkedin/file.ts`) :
+    // plafond hebdomadaire (raboté à `HARD_CAP_7_DAYS`) réparti sur les jours d'envoi, au moins 1.
+    const plafondQuotidien = (hebdo: unknown): number =>
+      Math.max(1, Math.ceil((typeof hebdo === 'number' ? Math.min(hebdo, HARD_CAP_7_DAYS) : 0) / Math.max(1, heuresLinkedin.jours.length)));
+    const actionsParJour =
+      plafondQuotidien(reglages.linkedin_invitations_par_semaine) + plafondQuotidien(reglages.linkedin_messages_par_semaine);
     const minutesParAction = actionsParJour > 0 ? ((heuresLinkedin.finHeure - heuresLinkedin.debutHeure) * 60) / actionsParJour : Infinity;
     if ((campagnesActives?.avec_linkedin ?? 0) > 0 && minutesParAction < SEUIL_MINUTES_PAR_ACTION) {
       alertes.push({
@@ -705,7 +714,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
         lien: '/settings/senders',
       });
     }
-    if ((campagnesActives?.anciennes ?? 0) > 0 && (actionsRecentesRes.rows[0]?.n ?? 0) === 0) {
+    // Pas en pause : le balayage du worker exclut ces organisations, l'alerte doublerait `pause_envoi`.
+    if (!organisation?.sending_paused_at && (campagnesActives?.anciennes ?? 0) > 0 && (actionsRecentesRes.rows[0]?.n ?? 0) === 0) {
       alertes.push({
         type: 'rien_ne_part',
         texte: `Rien n'est parti depuis trois jours ouvrés alors qu'une campagne est active.`,
@@ -713,7 +723,6 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       });
     }
   }
-  const organisation = organisationRes.rows[0];
   if (organisation?.sending_paused_at) {
     const heurePause = formatterHeure(organisation.sending_paused_at, fuseau);
     alertes.push({

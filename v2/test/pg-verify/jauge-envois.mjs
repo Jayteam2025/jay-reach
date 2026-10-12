@@ -223,23 +223,31 @@ async function senderAuxJours(org, { daily, days }) {
   ).rows[0].id;
 }
 
-/** Une campagne à une étape email (position 0), `statut` au choix, créée il y a `ageJours` jours. */
-async function campagneEmail(org, { statut = 'active', ageJours = 10 } = {}) {
+/**
+ * Une campagne, `statut` au choix, créée il y a `ageJours` jours et activée il y a `activeDepuisJours`
+ * (`null` : jamais renseigné, repli sur la création). `etapes` : positions ET canaux, qui peuvent ne pas
+ * être contigus (une étape supprimée ne renumérote pas les suivantes).
+ */
+async function campagneEmail(org, { statut = 'active', ageJours = 10, activeDepuisJours = null, etapes = [{ position: 0, channel: 'email' }] } = {}) {
   const id = (
-    await q(`insert into campaigns (organization_id, name, status, created_at) values ($1, $2, $3, now() - ($4 || ' days')::interval) returning id`, [org, `c-${uniq()}`, statut, String(ageJours)])
+    await q(
+      `insert into campaigns (organization_id, name, status, created_at, activated_at)
+       values ($1, $2, $3, now() - ($4 || ' days')::interval, case when $5::text is null then null else now() - ($5 || ' days')::interval end) returning id`,
+      [org, `c-${uniq()}`, statut, String(ageJours), activeDepuisJours === null ? null : String(activeDepuisJours)],
+    )
   ).rows[0].id;
-  await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, 0, 'email')`, [id]);
+  for (const e of etapes) await q(`insert into sequence_steps (campaign_id, position, channel) values ($1, $2, $3)`, [id, e.position, e.channel]);
   return id;
 }
 
-/** `n` inscriptions actives dont la prochaine action est due à midi UTC, `decalage` jours après aujourd'hui. */
-async function envoisDus(org, campagne, decalage, n) {
+/** `n` inscriptions actives au RANG `rang` (`current_step`) dont la prochaine action est due à midi UTC, `decalage` jours après aujourd'hui. */
+async function envoisDus(org, campagne, decalage, n, rang = 0) {
   for (let i = 0; i < n; i += 1) {
     const ct = (await q(`insert into contacts (organization_id, email) values ($1, $2) returning id`, [org, `d-${uniq()}@example.test`])).rows[0].id;
     await q(
       `insert into enrollments (organization_id, campaign_id, contact_id, status, current_step, next_action_at)
-       values ($1, $2, $3, 'active', 0, date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' + ($4 || ' days')::interval + interval '12 hours')`,
-      [org, campagne, ct, String(decalage)],
+       values ($1, $2, $3, 'active', $5, date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' + ($4 || ' days')::interval + interval '12 hours')`,
+      [org, campagne, ct, String(decalage), rang],
     );
   }
 }
@@ -298,6 +306,20 @@ async function alertesRythme() {
   await envoisDus(enPause, await campagneEmail(enPause, { statut: 'paused' }), 1, 50);
   check('5.7 50 dus dans une campagne en pause : pas d’alerte', (await alerteDe(enPause, 'envois_entasses')) === undefined);
 
+  // 5.7b Les positions ne sont pas contiguës (étape du milieu supprimée) : `current_step` est un RANG.
+  // Positions 0, 2, 3, toutes email ; inscriptions au rang 1 = position 2. Joindre `position = current_step`
+  // chercherait la position 1, qui n'existe plus, et ferait disparaître ces 11 envois du compte.
+  const trou = await orgNeuve();
+  await senderAuxJours(trou, { daily: 10, days: [jA] });
+  await envoisDus(trou, await campagneEmail(trou, { etapes: [{ position: 0, channel: 'email' }, { position: 2, channel: 'email' }, { position: 3, channel: 'email' }] }), 1, 11, 1);
+  check('5.7b rang 1 sur des positions 0, 2, 3 : les 11 dus sont comptés', (await alerteDe(trou, 'envois_entasses')) !== undefined);
+  // Et l'inverse : positions 1 (email) et 2 (LinkedIn), rang 1 = position 2 = LinkedIn. Lire `position = 1` y verrait
+  // un email et gonflerait le compte de 11 envois qui ne sont pas des emails.
+  const mauvaisCanal = await orgNeuve();
+  await senderAuxJours(mauvaisCanal, { daily: 10, days: [jA] });
+  await envoisDus(mauvaisCanal, await campagneEmail(mauvaisCanal, { etapes: [{ position: 1, channel: 'email' }, { position: 2, channel: 'linkedin_message' }] }), 1, 11, 1);
+  check('5.7c rang 1 sur des positions 1 (email), 2 (LinkedIn) : étape LinkedIn, pas comptée', (await alerteDe(mauvaisCanal, 'envois_entasses')) === undefined);
+
   // 5.8 Sans campagne active, rien ne se déclenche, même avec des envois dus.
   const sansCampagne = await orgNeuve();
   await senderAuxJours(sansCampagne, { daily: 10, days: [jA] });
@@ -318,6 +340,11 @@ async function alertesRythme() {
   const sb = await senderNeuf(bavarde, { daily: 100 });
   await actionDuJour(bavarde, { sender: sb, status: 'delivered', dispatchedAt: await midiAujourdhui() });
   check('5.10 les actions d’une autre organisation ne comptent pas', (await alerteDe(silence, 'rien_ne_part')) !== undefined);
+  // Une action seulement BLOQUÉE (créée, jamais remise) ne la lève pas : c'est le chemin nominal d'un refus d'émettre.
+  const bloquee = await orgNeuve();
+  await campagneEmail(bloquee);
+  await actionDuJour(bloquee, { status: 'blocked' });
+  check('5.10b une action bloquée créée aujourd’hui n’est pas un départ : alerte', (await alerteDe(bloquee, 'rien_ne_part')) !== undefined);
   // Une action créée aujourd'hui dans l'organisation la lève.
   const parti = await orgNeuve();
   await campagneEmail(parti);
@@ -328,6 +355,19 @@ async function alertesRythme() {
   const neuve = await orgNeuve();
   await campagneEmail(neuve, { ageJours: 0 });
   check('5.12 campagne créée aujourd’hui : pas d’alerte', (await alerteDe(neuve, 'rien_ne_part')) === undefined);
+  // Une vieille campagne RELANCÉE à l'instant (activated_at = maintenant) n'est pas accusée ; sans activated_at, repli sur la création.
+  const relancee = await orgNeuve();
+  await campagneEmail(relancee, { ageJours: 180, activeDepuisJours: 0 });
+  check('5.13 campagne de six mois relancée à l’instant : pas d’alerte', (await alerteDe(relancee, 'rien_ne_part')) === undefined);
+  const ancienneActivation = await orgNeuve();
+  await campagneEmail(ancienneActivation, { ageJours: 180, activeDepuisJours: 20 });
+  check('5.14 campagne activée il y a vingt jours, rien parti : alerte', (await alerteDe(ancienneActivation, 'rien_ne_part')) !== undefined);
+  // En pause, le silence est voulu : pause_envoi le dit, rien_ne_part se tait.
+  const enPauseOrg = await orgNeuve();
+  await campagneEmail(enPauseOrg);
+  await q(`update organizations set sending_paused_at = now() where id = $1`, [enPauseOrg]);
+  const pauseTypes = (await lireAujourdhui(ctxDe(enPauseOrg))).alertes.map((a) => a.type);
+  check('5.15 organisation en pause : pause_envoi seule, pas rien_ne_part', pauseTypes.includes('pause_envoi') && !pauseTypes.includes('rien_ne_part'), pauseTypes.join(','));
 }
 
 await plafondSansLimite();

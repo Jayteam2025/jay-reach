@@ -2223,7 +2223,7 @@ export async function lancer(ctx: Contexte, entree: unknown): Promise<{ ok: true
   // R72) pourrait ne rien enfiler avant le prochain cycle planifié.
   await dansUneTransaction(ctx.ex, async (tx) => {
     await tx.query(
-      `update campaigns /* jr:lancer_activer */ set status = 'active' where id = $1 and organization_id = $2`,
+      `update campaigns /* jr:lancer_activer */ set status = 'active', activated_at = now() where id = $1 and organization_id = $2`,
       [campagneId, ctx.organisationId],
     );
     await tx.query(
