@@ -31,3 +31,4 @@ supabase/.branches
 # le 07/10, l'un d'eux a ete ramasse par un `git add -A` et commite sans que
 # son message de commit le mentionne.
 apps/worker/_*.mjs
+.vercel
