@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 import type { Pilote } from './navigateur.js';
-import { executerCommande } from '../cli/linkedin.js';
+import { executerCommande } from './pilotage.js';
 import {
   dependancesWeb,
   ErreurDelaiCode,

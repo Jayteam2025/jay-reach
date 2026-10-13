@@ -12,7 +12,7 @@
  */
 import { bloquerSessionLinkedIn, desactiverExpediteurLinkedIn, ecrireEvenement, type Contexte, type MessageConnexion } from '@jay-reach/core';
 import type pg from 'pg';
-import { connecter, deconnecter, pilotageReel, type Dependances } from '../cli/linkedin.js';
+import { connecter, deconnecter, pilotageReel, type Dependances } from './pilotage.js';
 import {
   dependancesWeb,
   ErreurDelaiCode,
