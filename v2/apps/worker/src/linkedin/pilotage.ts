@@ -151,7 +151,10 @@ async function statut(ctx: Contexte, d: Dependances): Promise<number> {
   return 0;
 }
 
-type Issue = { issue: 'connecte' | 'refuse' | 'defi' } | { issue: 'delai'; chemin: string };
+type Issue =
+  | { issue: 'connecte' | 'refuse' | 'defi' }
+  | { issue: 'delai'; chemin: string }
+  | { issue: 'verification'; cle: string };
 
 /** Chemin seul : la requête d'une URL LinkedIn peut porter des jetons. */
 function cheminDe(url: string): string {
@@ -159,6 +162,35 @@ function cheminDe(url: string): string {
     return new URL(url).pathname;
   } catch {
     return '?';
+  }
+}
+
+/**
+ * La clé d'erreur que LinkedIn pose dans l'URL (`?errorKey=...`), et elle seule : le reste de la
+ * requête peut porter des jetons. Une valeur qui ne ressemble pas à une clé est écartée plutôt que
+ * recopiée dans un message ou un journal.
+ */
+function cleErreurDe(url: string): string | null {
+  try {
+    const v = new URL(url).searchParams.get('errorKey');
+    return v !== null && /^[a-z0-9_]{1,60}$/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function messageIssue(r: Issue): string {
+  switch (r.issue) {
+    case 'connecte':
+      return 'Session LinkedIn active.';
+    case 'defi':
+      return 'LinkedIn demande une vérification que ce terminal ne sait pas passer : session bloquée.';
+    case 'verification':
+      return `LinkedIn a refusé la vérification (${r.cle}) : réessayer plus tard, sans enchaîner les tentatives.`;
+    case 'delai':
+      return `Délai dépassé : LinkedIn est resté sur ${r.chemin}. La session n’est pas activée.`;
+    case 'refuse':
+      return 'Connexion refusée : identifiant ou mot de passe incorrect.';
   }
 }
 
@@ -186,6 +218,12 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
     const url = await pilote.url();
     dernierChemin = cheminDe(url);
     if (surLinkedIn(url, '/feed')) return { issue: 'connecte' };
+    // LinkedIn annonce son échec dans l'URL et reste sur une page qui n'est ni /feed ni /checkpoint
+    // (depuis sa refonte, `/flagship-web/login/`). Sans cette lecture, la boucle attend ses 90 s pour
+    // conclure `delai` alors que la réponse est là dès la première seconde — mesuré le 13/10, deux
+    // fois, sur `challenge_global_internal_error`.
+    const cleErreur = cleErreurDe(url);
+    if (cleErreur !== null) return { issue: 'verification', cle: cleErreur };
     if (surLinkedIn(url, '/checkpoint')) {
       if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
         const code = await d.demanderMasque('code');
@@ -278,16 +316,10 @@ export async function connecter(ctx: Contexte, d: Dependances): Promise<number> 
       // connexion qui échoue ne solde rien (la session déjà active resterait sinon active, sans que personne
       // ait annulé la déconnexion) ; une demande plus récente que la lecture du début survit.
       if (intentionDeconnexion) await solderDeconnexionLinkedIn(ctx, intentionDeconnexion);
-      d.ecrire('Session LinkedIn active.');
+      d.ecrire(messageIssue(resultat));
       return 0;
     }
-    d.ecrire(
-      resultat.issue === 'defi'
-        ? 'LinkedIn demande une vérification que ce terminal ne sait pas passer : session bloquée.'
-        : resultat.issue === 'delai'
-          ? `Délai dépassé : LinkedIn est resté sur ${resultat.chemin}. La session n’est pas activée.`
-          : 'Connexion refusée : identifiant ou mot de passe incorrect.',
-    );
+    d.ecrire(messageIssue(resultat));
     return 1;
   } finally {
     // Durée nulle, même propriétaire : le verrou expire tout de suite. Sans cela le

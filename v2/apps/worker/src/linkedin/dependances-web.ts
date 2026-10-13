@@ -56,6 +56,9 @@ const LIGNES: { debut: string; effet: { etape: Etape } | { motif: Motif } | { re
   { debut: 'Le navigateur sort par l’IP du serveur', effet: { motif: 'sortie_serveur' } },
   { debut: 'Un autre processus conduit', effet: { motif: 'verrou_occupe' } },
   { debut: 'LinkedIn demande une vérification', effet: { motif: 'defi' } },
+  // Panne du défi chez LinkedIn, pas un défi que nous aurions échoué à passer. Même motif en base
+  // (la demande a bien buté sur une vérification), mais un message qui dit laquelle, et quand.
+  { debut: 'LinkedIn a refusé la vérification', effet: { motif: 'defi' } },
   { debut: 'Délai dépassé', effet: { motif: 'delai' } },
   { debut: 'Échec (ErreurDelaiCode)', effet: { motif: 'delai' } },
   { debut: 'Connexion refusée', effet: { motif: 'refuse' } },
