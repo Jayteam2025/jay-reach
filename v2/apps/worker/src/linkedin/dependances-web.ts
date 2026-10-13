@@ -56,6 +56,9 @@ const LIGNES: { debut: string; effet: { etape: Etape } | { motif: Motif } | { re
   { debut: 'Le navigateur sort par l’IP du serveur', effet: { motif: 'sortie_serveur' } },
   { debut: 'Un autre processus conduit', effet: { motif: 'verrou_occupe' } },
   { debut: 'LinkedIn demande une vérification', effet: { motif: 'defi' } },
+  // Panne du défi chez LinkedIn, pas un défi que nous aurions échoué à passer. Même motif en base
+  // (la demande a bien buté sur une vérification), mais un message qui dit laquelle, et quand.
+  { debut: 'LinkedIn a refusé la vérification', effet: { motif: 'defi' } },
   { debut: 'Délai dépassé', effet: { motif: 'delai' } },
   { debut: 'Échec (ErreurDelaiCode)', effet: { motif: 'delai' } },
   { debut: 'Connexion refusée', effet: { motif: 'refuse' } },
@@ -139,7 +142,15 @@ export function dependancesWeb(
     env: options.env ?? process.env,
     ecrire(ligne) {
       const regle = LIGNES.find((l) => ligne.startsWith(l.debut));
-      if (!regle) return;
+      if (!regle) {
+        // Jamais son texte : une ligne imprévue peut porter autre chose que ce que nous écrivons.
+        console.error('[connexion-linkedin] ligne non reconnue, ignorée');
+        return;
+      }
+      // Les lignes de `LIGNES` sont les nôtres, et aucune n'interpole de secret. Ce sont les seules
+      // traces de ce qui s'est passé : la base ne garde que l'étape et le motif, donc le détail qui
+      // explique un échec (le chemin où LinkedIn s'est arrêté, l'IP de sortie vue) se perdait ici.
+      console.log(`[connexion-linkedin] ${ligne}`);
       if ('etape' in regle.effet) enfiler(regle.effet.etape, null, null);
       else if ('motif' in regle.effet) enfiler(null, 'echec', regle.effet.motif);
       else enfiler('session_active', 'reussi', null);

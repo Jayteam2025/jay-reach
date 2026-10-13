@@ -252,6 +252,37 @@ describe('la commande connecter', () => {
     expect(appels.some((a) => /jr:linkedin_session_activer/.test(a.sql))).toBe(true);
   });
 
+  // Mesure du 13/10 : LinkedIn repond `/flagship-web/login/?errorKey=challenge_global_internal_error`,
+  // qui n'est ni /feed ni /checkpoint. La boucle attendait ses 90 s pour conclure « delai » alors que
+  // la reponse etait dans l'URL des la premiere seconde, et l'ecran annoncait un delai sans raison.
+  it('quand LinkedIn pose une cle d’erreur dans l’URL, conclut tout de suite et la nomme', async () => {
+    const { p } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/flagship-web/login/?errorKey=challenge_global_internal_error&trk=jeton-secret',
+    ]);
+    const pauses: number[] = [];
+    const { d, sortie, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'x',
+    });
+    d.pause = async (ms) => void pauses.push(ms);
+    expect(await executerCommande(['connecter'], d)).not.toBe(0);
+    const texte = sortie.join('\n');
+    expect(texte).toMatch(/challenge_global_internal_error/);
+    expect(texte).toMatch(/réessayer plus tard/);
+    // Ni un refus d'identifiants, ni un delai : les deux diagnostics qu'on a faits a tort ce matin.
+    expect(texte).not.toMatch(/incorrect|Délai dépassé/);
+    // Le reste de la requete peut porter des jetons : seule la cle sort.
+    expect(texte).not.toMatch(/jeton-secret/);
+    // Conclu avant la deuxieme iteration : la boucle ne tourne pas 90 fois pour rien.
+    expect(pauses.length).toBeLessThan(2);
+    // Une panne du defi chez LinkedIn ne prouve rien contre le compte : on ne bloque pas la session.
+    expect(appels.some((a) => /jr:linkedin_session_bloquer/.test(a.sql))).toBe(false);
+  });
+
   it('au delai, annonce le chemin atteint et non un mot de passe incorrect', async () => {
     const { p } = piloteFaux([
       'https://www.linkedin.com/login',
