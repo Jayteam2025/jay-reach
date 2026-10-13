@@ -129,6 +129,31 @@ describe('dependancesWeb', () => {
     for (const a of maj) expect(JSON.stringify(a.params)).not.toMatch(/mdp-super-secret|987654|moi@exemple|203\.0\.113/);
   });
 
+  // Le 13/10, une connexion reelle a echoue sur `delai` et il a fallu vingt minutes et trois
+  // requetes SQL pour apprendre ce que la ligne disait deja : ou LinkedIn s'etait arrete. La base
+  // ne garde que le motif, donc le journal du worker est la seule trace du detail.
+  it('ecrire journalise la ligne reconnue, avec le detail que la base ne garde pas', () => {
+    const { d } = monter({});
+    const sortie = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    d.ecrire('Délai dépassé : LinkedIn est resté sur /checkpoint/challenge. La session n’est pas activée.');
+    expect(sortie.mock.calls.map((c) => String(c[0])).join('\n')).toContain('/checkpoint/challenge');
+    sortie.mockRestore();
+  });
+
+  // La contrepartie : ce qui n'est pas de nous ne s'ecrit nulle part. Une ligne imprevue pourrait
+  // porter un mot de passe, et un journal se lit par-dessus l'epaule.
+  it('une ligne non reconnue est signalee sans son texte', () => {
+    const { d } = monter({});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    d.ecrire(`texte libre avec ${SECRETS.motDePasse}`);
+    const tout = [...log.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join('\n');
+    expect(tout).not.toContain(SECRETS.motDePasse);
+    expect(tout).toContain('non reconnue');
+    log.mockRestore();
+    err.mockRestore();
+  });
+
   it("une demande annulee interrompt avant d'ouvrir le navigateur", async () => {
     const { p } = piloteFaux(['https://www.linkedin.com/login']);
     const { d, ouvrir } = monter({ pilote: p, enCours: false });
