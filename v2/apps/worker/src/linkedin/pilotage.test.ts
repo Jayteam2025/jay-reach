@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Contexte, Sortie, Titulaire } from '@jay-reach/core';
-import type { Pilote } from '../linkedin/navigateur.js';
-import { executerCommande, type Dependances } from './linkedin.js';
+import type { Pilote } from './navigateur.js';
+import { executerCommande, type Dependances } from './pilotage.js';
 
 interface Appel {
   sql: string;

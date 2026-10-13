@@ -12,7 +12,7 @@
 import type pg from 'pg';
 import type { Contexte } from '@jay-reach/core';
 import { SQL_ECRIRE_ETAT, SQL_VERIFIER_EN_COURS } from './dependances-web-sql.js';
-import { pilotageReel, type Dependances, type Invite } from '../cli/linkedin.js';
+import { pilotageReel, type Dependances, type Invite } from './pilotage.js';
 
 /** Un humain va chercher son code dans sa boîte mail : le terminal garde ses 90 s, l'écran a 5 minutes. */
 export const FENETRE_CODE_WEB_MS = 300_000;
