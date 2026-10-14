@@ -258,6 +258,7 @@ function DernierePassageLinkedIn({ carte, t }: { carte: SourceCarte; t: Traducte
               doublons: c.doublons,
               dejaEnCampagne: c.dejaEnCampagne,
               ecartes: c.ecartes,
+              ecartesFiltre: c.ecartesFiltre,
             })}
           </span>
           <br />

@@ -685,7 +685,7 @@
         "runSuccess": "afgerond",
         "runError": "gestopt",
         "runHeader": "{quand} · {statut}",
-        "runCounts": "{vus, plural, one {# persoon gezien} other {# personen gezien}} · {nouveaux, plural, one {# nieuw} other {# nieuw}} · {doublons, plural, one {# dubbel} other {# dubbel}} · {dejaEnCampagne} al in een campagne · {ecartes, plural, one {# afgewezen} other {# afgewezen}} door de scoring",
+        "runCounts": "{vus, plural, one {# persoon gezien} other {# personen gezien}} · {nouveaux, plural, one {# nieuw} other {# nieuw}} · {doublons, plural, one {# dubbel} other {# dubbel}} · {dejaEnCampagne} al in een campagne · {ecartes, plural, one {# afgewezen} other {# afgewezen}} door de scoring · {ecartesFiltre, plural, =0 {geen door het filter afgevallen} one {# door het filter afgevallen} other {# door het filter afgevallen}}",
         "runDetails": "{requetes, plural, one {# verzoek} other {# verzoeken}} · {ignores} overgeslagen (profiel te beperkt) · {opposes} bezwaar · {adressesDeduites} zonder openbaar adres"
       },
       "drawer": {
@@ -794,7 +794,11 @@
         "collectNowUnsaved": "Beschikbaar zodra de bron is opgeslagen.",
         "collectNowInactive": "Beschikbaar zodra de campagne actief is.",
         "collectRequested": "Verzameling aangevraagd.",
-        "collectNowPaused": "Beschikbaar wanneer de bron actief is."
+        "collectNowPaused": "Beschikbaar wanneer de bron actief is.",
+        "excludedTitles": "Functietitels om uit te sluiten",
+        "excludedTitlesHint": "Wie een van deze termen in zijn functietitel heeft, valt af vóór elke scoring, dus zonder kosten. Scheid met komma's. Kies een precieze term: “consultant” zou ook “Directeur, voormalig consultant” laten afvallen.",
+        "requiredTitles": "Verplichte functietitels",
+        "requiredTitlesHint": "Vul je er in, dan worden alleen mensen bewaard met een van deze termen in hun functietitel. Laat leeg om alleen met de lijst hierboven te filteren."
       }
     },
     "sequence": {
@@ -1007,7 +1011,11 @@
         "formSubmit": "Toevoegen",
         "formCancel": "Annuleren",
         "formError": "Er is minstens één trefwoord vereist.",
-        "formLinkedinBrouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd."
+        "formLinkedinBrouillon": "Deze campagne is een concept: er wordt niets verzameld zolang ze niet is gelanceerd.",
+        "formLinkedinExcludedTitles": "Functietitels om uit te sluiten",
+        "formLinkedinExcludedTitlesHint": "Wie een van deze termen in zijn functietitel heeft, valt af vóór elke scoring, dus zonder kosten. Scheid met komma's. Kies een precieze term: “consultant” zou ook “Directeur, voormalig consultant” laten afvallen.",
+        "formLinkedinRequiredTitles": "Verplichte functietitels",
+        "formLinkedinRequiredTitlesHint": "Vul je er in, dan worden alleen mensen bewaard met een van deze termen in hun functietitel. Laat leeg om alleen met de lijst hierboven te filteren."
       },
       "sequence": {
         "startFrom": "Beginnen vanaf",

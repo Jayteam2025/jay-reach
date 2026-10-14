@@ -414,12 +414,13 @@ describe('le bilan du passage', () => {
     return { b, c: clos(b)! };
   }
   // Positions des paramètres de `jr:linkedin_collecte_clore` : $5 vus, $6 nouveaux, $13 ignores,
-  // $15 adresses déduites, $16 plafond de personnes atteint.
+  // $15 adresses déduites, $16 plafond de personnes atteint, $17 posts, $18 écartées par le filtre.
   const colonnes = (c: Ecriture) => ({
     vus: c.params[4],
     nouveaux: c.params[5],
     ignores: c.params[12],
     opposes: c.params[13],
+    ecartesFiltre: c.params[17],
     deduites: c.params[14],
     plafond: c.params[15],
     erreur: c.params[3],
@@ -429,6 +430,17 @@ describe('le bilan du passage', () => {
     const { c } = await passer(P(5), 3);
     expect(colonnes(c)).toMatchObject({ vus: 5, nouveaux: 3, plafond: true, erreur: expect.stringContaining('Plafond de personnes') });
     expect(c.params[2]).toBe('success');
+  });
+
+  it('compte à part les personnes écartées par le filtre d’intitulé de la source', async () => {
+    const b = base({
+      plafonds: { personnes: 100 },
+      source: { sourceType: 'linkedin_post_engagers', urlPost: POST, garder: ['reagi'], exclusions: { intitulesExclus: ['directrice'] } },
+    });
+    const p = pilote({ reponse: () => ({ statut: 200, corps: voyager(P(3)) }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(colonnes(clos(b)!)).toMatchObject({ vus: 3, nouveaux: 0, ecartesFiltre: 3 });
   });
 
   it('un post qui tient exactement dans le plafond ne le déclenche pas', async () => {
@@ -479,7 +491,7 @@ describe('la source « posts d’un concurrent »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     const c = clos(b)!;
     // `posts` est le DERNIER parametre de la cloture : c'est lui que le plafond du jour additionne.
-    expect(c.params[c.params.length - 1]).toBe(2);
+    expect(c.params[16]).toBe(2);
     expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
   });
 
@@ -489,7 +501,7 @@ describe('la source « posts d’un concurrent »', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     const c = clos(b)!;
-    expect(c.params[c.params.length - 1]).toBe(1);
+    expect(c.params[16]).toBe(1);
   });
 
   // Avant ce correctif, une seule adresse mal collee faisait perdre les posts deja trouves sur
@@ -502,7 +514,7 @@ describe('la source « posts d’un concurrent »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     const c = clos(b)!;
     expect(c.params[2]).toBe('success');
-    expect(c.params[c.params.length - 1]).toBe(1);
+    expect(c.params[16]).toBe(1);
     // L'ecran dit quand meme qu'une page n'a pas pu etre lue : la recolte est partielle.
     expect(String(c.params[3])).toContain('Upsell');
   });
@@ -547,7 +559,7 @@ describe('la source « posts d’un créateur »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     const c = clos(b)!;
     expect(c.params[2]).toBe('success');
-    expect(c.params[c.params.length - 1]).toBe(2);
+    expect(c.params[16]).toBe(2);
     expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
   });
 
@@ -556,7 +568,7 @@ describe('la source « posts d’un créateur »', () => {
     const p = pilote({ url: ARRIVEE, reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     await traiterCollecteLinkedIn(deps(p, b), JOB);
-    expect(clos(b)!.params[clos(b)!.params.length - 1]).toBe(1);
+    expect(clos(b)!.params[16]).toBe(1);
   });
 
   it('un profil illisible n’emporte pas les posts des autres profils', async () => {
@@ -567,7 +579,7 @@ describe('la source « posts d’un créateur »', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     const c = clos(b)!;
     expect(c.params[2]).toBe('success');
-    expect(c.params[c.params.length - 1]).toBe(1);
+    expect(c.params[16]).toBe(1);
     expect(String(c.params[3])).toContain('Upsell');
   });
 
@@ -625,7 +637,7 @@ describe('la source « recherche par mot-clé »', () => {
     // vus, nouveaux : les deux personnes. posts : aucun, la source n'ouvre aucun post.
     expect(c.params[4]).toBe(2);
     expect(c.params[5]).toBe(2);
-    expect(c.params[c.params.length - 1]).toBe(0);
+    expect(c.params[16]).toBe(0);
     // Arrivée sur la recherche, puis la page 1, puis la page 2 (vide : fin des résultats).
     expect(p.navigations).toEqual([urlRecherche(MOTS, 1)]);
     expect(p.requetes).toEqual([urlRecherche(MOTS, 1), urlRecherche(MOTS, 2)]);
@@ -688,7 +700,7 @@ describe('la source « recherche par mot-clé »', () => {
     const c = clos(b)!;
     expect(signaux(b)).toEqual(['crm commercial:ada-exemple']);
     expect(c.params[3]).toBe(MSG.plafond_personnes);
-    expect(c.params[c.params.length - 2]).toBe(true);
+    expect(c.params[15]).toBe(true);
   });
 
   it('une recherche qui ne livre rien de neuf est un passage à vide, pas un échec', async () => {
@@ -809,7 +821,26 @@ describe('la source « changement de poste »', () => {
     expect(c.params[4]).toBe(2);
     expect(c.params[5]).toBe(1);
     expect(c.params[7]).toBe(1);
-    expect(c.params[c.params.length - 1]).toBe(0);
+    expect(c.params[16]).toBe(0);
+  });
+
+  it('ne réveille pas quelqu\u2019un dont le nouvel intitulé est exclu par le filtre de la source', async () => {
+    sansBruit();
+    const b = base({
+      source: { ...sourceChangement, exclusions: { intitulesExclus: ['en recherche'] } },
+      contacts: [contactDejaLu('ada-exemple', 'Directrice commerciale'), contactDejaLu('leo-exemple', 'Directeur commercial')],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'En recherche d\u2019opportunités'),
+        'leo-exemple': profil('Leo Exemple', 'Directeur général'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const c = clos(b)!;
+    expect(signaux(b)).toEqual([`changement:${url('leo-exemple')}:directeur général`]);
+    expect(c.params[5]).toBe(1);
+    expect(c.params[17]).toBe(1);
   });
 
   /**

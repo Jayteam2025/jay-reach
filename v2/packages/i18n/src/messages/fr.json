@@ -685,7 +685,7 @@
         "runSuccess": "terminé",
         "runError": "arrêté",
         "runHeader": "{quand} · {statut}",
-        "runCounts": "{vus, plural, one {# personne vue} other {# personnes vues}} · {nouveaux, plural, one {# nouvelle} other {# nouvelles}} · {doublons, plural, one {# doublon} other {# doublons}} · {dejaEnCampagne} déjà en campagne · {ecartes, plural, one {# écartée} other {# écartées}} par le scoring",
+        "runCounts": "{vus, plural, one {# personne vue} other {# personnes vues}} · {nouveaux, plural, one {# nouvelle} other {# nouvelles}} · {doublons, plural, one {# doublon} other {# doublons}} · {dejaEnCampagne} déjà en campagne · {ecartes, plural, one {# écartée} other {# écartées}} par le scoring · {ecartesFiltre, plural, =0 {aucune écartée par le filtre} one {# écartée par le filtre} other {# écartées par le filtre}}",
         "runDetails": "{requetes, plural, one {# requête} other {# requêtes}} · {ignores, plural, one {# ignoré} other {# ignorés}} (profil trop pauvre) · {opposes, plural, one {# opposé} other {# opposés}} · {adressesDeduites} sans adresse publique"
       },
       "drawer": {
@@ -794,7 +794,11 @@
         "collectNowUnsaved": "Disponible une fois la source enregistrée.",
         "collectNowInactive": "Disponible quand la campagne est active.",
         "collectRequested": "Collecte demandée.",
-        "collectNowPaused": "Disponible quand la source est active."
+        "collectNowPaused": "Disponible quand la source est active.",
+        "excludedTitles": "Intitulés à écarter",
+        "excludedTitlesHint": "Une personne dont l'intitulé contient l'un de ces termes est écartée avant tout scoring, donc sans rien coûter. Séparez par des virgules. Préférez un terme précis : « consultant » écarterait aussi « Directeur, ancien consultant ».",
+        "requiredTitles": "Intitulés obligatoires",
+        "requiredTitlesHint": "Si vous en indiquez, seules les personnes dont l'intitulé contient l'un d'eux sont gardées. Laissez vide pour n'écarter que par la liste du dessus."
       }
     },
     "sequence": {
@@ -1007,7 +1011,11 @@
         "formSubmit": "Ajouter",
         "formCancel": "Annuler",
         "formError": "Au moins un mot-clé est nécessaire.",
-        "formLinkedinBrouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée."
+        "formLinkedinBrouillon": "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
+        "formLinkedinExcludedTitles": "Intitulés à écarter",
+        "formLinkedinExcludedTitlesHint": "Une personne dont l'intitulé contient l'un de ces termes est écartée avant tout scoring, donc sans rien coûter. Séparez par des virgules. Préférez un terme précis : « consultant » écarterait aussi « Directeur, ancien consultant ».",
+        "formLinkedinRequiredTitles": "Intitulés obligatoires",
+        "formLinkedinRequiredTitlesHint": "Si vous en indiquez, seules les personnes dont l'intitulé contient l'un d'eux sont gardées. Laissez vide pour n'écarter que par la liste du dessus."
       },
       "sequence": {
         "startFrom": "Partir de",

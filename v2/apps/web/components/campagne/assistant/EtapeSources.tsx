@@ -84,6 +84,10 @@ export interface EtapeSourcesLibelles {
   formLinkedinTopics: string;
   formLinkedinTopicsHint: string;
   formLinkedinJobChangeHint: string;
+  formLinkedinExcludedTitles: string;
+  formLinkedinExcludedTitlesHint: string;
+  formLinkedinRequiredTitles: string;
+  formLinkedinRequiredTitlesHint: string;
   formLinkedinErreur: string;
   /** Bandeau du formulaire des engageurs d'un post : l'assistant crée toujours un brouillon. */
   formLinkedinBrouillon: string;
@@ -442,6 +446,10 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
               topics: libelles.formLinkedinTopics,
               topicsHint: libelles.formLinkedinTopicsHint,
               jobChangeHint: libelles.formLinkedinJobChangeHint,
+              excludedTitles: libelles.formLinkedinExcludedTitles,
+              excludedTitlesHint: libelles.formLinkedinExcludedTitlesHint,
+              requiredTitles: libelles.formLinkedinRequiredTitles,
+              requiredTitlesHint: libelles.formLinkedinRequiredTitlesHint,
             }}
           />
           {erreurLinkedin && <div className="jr-aide-erreur">{libelles.formLinkedinErreur}</div>}

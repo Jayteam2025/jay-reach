@@ -26,6 +26,8 @@ const VIDE: EtatChampsLinkedIn = {
   pagesConcurrentes: '',
   profilsCreateurs: '',
   sujets: '',
+  intitulesExclus: '',
+  intitulesObligatoires: '',
 };
 
 describe('source « posts d’un concurrent »', () => {
@@ -180,6 +182,10 @@ describe('le formulaire rendu', () => {
     jobChangeHint: d.jobChangeHint,
     persona: d.persona,
     personaChoisir: d.personaChoisir,
+    excludedTitles: 'Intitulés à écarter',
+    excludedTitlesHint: 'Aide exclus',
+    requiredTitles: 'Intitulés obligatoires',
+    requiredTitlesHint: 'Aide obligatoires',
   };
   const rendre = (providerId: TypeLinkedIn, personas: Array<{ id: string; nom: string }> = []) =>
     renderToStaticMarkup(
@@ -235,16 +241,22 @@ describe('le formulaire rendu', () => {
 
   // Le libellé doit dire la vérité : cette source ne trouve personne, elle surveille des contacts
   // déjà connus. Le texte vient de fr.json, comme l'écran.
-  it('le changement de poste dit qu’il surveille des contacts déjà connus, sans compte, cadence ni champ de saisie', () => {
+  it('le changement de poste dit qu’il surveille des contacts déjà connus, sans compte ni cadence, et ses seuls champs sont le filtre d’intitulé', () => {
     const html = rendre('linkedin_job_change');
     expect(html).toContain(libelles.jobChangeHint);
     expect(libelles.jobChangeHint).toContain('ne trouve personne de nouveau');
     expect(libelles.jobChangeHint).toContain('contacts que vous avez déjà');
-    expect(html).not.toContain('<input');
     expect(html).not.toContain('name="compteId"');
     expect(html).not.toContain('name="profilsParJour"');
     expect(html).not.toContain('name="depuisJours"');
     expect(html).not.toContain(libelles.keepPeople);
+    // Le filtre d'intitulé est le seul champ de cette source, et il y est volontairement
+    // (issue #164) : c'est le NOUVEL intitulé qu'on juge, et un contact passé à « en recherche
+    // d'opportunités » ne doit surtout pas être réveillé.
+    expect(html).toContain('name="intitulesExclus"');
+    expect(html).toContain('name="intitulesObligatoires"');
+    const champs = html.match(/<input/g) ?? [];
+    expect(champs).toHaveLength(2);
   });
 
   it('le changement de poste demande le persona dès que la campagne en porte plusieurs', () => {

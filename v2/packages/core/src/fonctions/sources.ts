@@ -189,12 +189,57 @@ export const configFranceTravail = z
   .strict();
 export type ConfigFranceTravail = z.infer<typeof configFranceTravail>;
 
+/**
+ * Filtre d'intitulé des sources LinkedIn, appliqué à la collecte AVANT le scoring (issue #164) :
+ * ce qu'une règle écarte gratuitement ne doit pas coûter un appel de modèle par personne. Les deux
+ * listes valent `[]` par défaut ; la règle elle-même vit dans `linkedin/exclusions.ts`.
+ */
+export const exclusionsSource = z
+  .object({
+    intitulesExclus: z.array(z.string()).default([]),
+    intitulesObligatoires: z.array(z.string()).default([]),
+  })
+  .strict();
+export type ExclusionsSource = z.infer<typeof exclusionsSource>;
+
+/**
+ * Pré-remplissage à la création d'une source LinkedIn. Ce sont les mentions que les gens en
+ * recherche d'emploi, ou qui ne sont pas des décideurs salariés, écrivent eux-mêmes dans leur
+ * intitulé LinkedIn (bandeau « Open to Work », « Freelance », « Étudiant »...) : on ne devine rien,
+ * on lit ce qu'ils déclarent.
+ *
+ * Une seule graphie par terme, accentuée quand le mot l'est : `jugerIntitule` compare sans
+ * accents, donc « etudiant » et « étudiant » sont déjà le même terme. Les doubler n'ajouterait
+ * aucune personne écartée, et l'opérateur qui relit sa liste à l'écran y verrait des doublons
+ * qu'il croirait devoir entretenir.
+ *
+ * Liste volontairement courte et précise : « consultant indépendant » plutôt que « consultant »,
+ * qui emporterait « Directeur, ancien consultant ». Elle est éditable à l'écran, source par
+ * source — c'est le marché de l'opérateur qui décide, pas nous.
+ */
+export const EXCLUSIONS_INTITULE_PAR_DEFAUT: readonly string[] = [
+  'open to work',
+  'opentowork',
+  'en recherche',
+  "à l'écoute",
+  'disponible immédiatement',
+  'freelance',
+  'indépendant',
+  'auto-entrepreneur',
+  'étudiant',
+  'stagiaire',
+  'alternant',
+  'en reconversion',
+  'retraité',
+];
+
 export const configLinkedInPost = z
   .object({
     urlPost: z.string().min(1),
     garder: z.array(z.enum(['commente', 'reagi'])).min(1),
     /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
     personaId: z.string().min(1).optional(),
+    exclusions: exclusionsSource.optional(),
   })
   .strict();
 export type ConfigLinkedInPost = z.infer<typeof configLinkedInPost>;
@@ -217,6 +262,7 @@ export const configLinkedInConcurrent = z
     garder: z.array(z.enum(['commente', 'reagi'])).min(1),
     /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
     personaId: z.string().min(1).optional(),
+    exclusions: exclusionsSource.optional(),
   })
   .strict();
 export type ConfigLinkedInConcurrent = z.infer<typeof configLinkedInConcurrent>;
@@ -232,6 +278,7 @@ export const configLinkedInCreateur = z
     garder: z.array(z.enum(['commente', 'reagi'])).min(1),
     /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
     personaId: z.string().min(1).optional(),
+    exclusions: exclusionsSource.optional(),
   })
   .strict();
 export type ConfigLinkedInCreateur = z.infer<typeof configLinkedInCreateur>;
@@ -247,6 +294,7 @@ export const configLinkedInMotsCles = z
     sujets: z.array(z.string().min(1)).min(1),
     /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
     personaId: z.string().min(1).optional(),
+    exclusions: exclusionsSource.optional(),
   })
   .strict();
 export type ConfigLinkedInMotsCles = z.infer<typeof configLinkedInMotsCles>;
@@ -264,6 +312,7 @@ export const configLinkedInChangementPoste = z
   .object({
     /** Présent seulement si la campagne porte plusieurs personas (obligatoire alors, vérifié par `creerSource`). */
     personaId: z.string().min(1).optional(),
+    exclusions: exclusionsSource.optional(),
   })
   .strict();
 export type ConfigLinkedInChangementPoste = z.infer<typeof configLinkedInChangementPoste>;
@@ -515,6 +564,8 @@ export interface BilanCollecte {
   readonly ignores: number;
   /** Personnes laissées de côté parce qu'elles se sont opposées. */
   readonly opposes: number;
+  /** Écartées à la collecte par le filtre d'intitulé de la source, avant tout scoring (distinct de `ecartes`). */
+  readonly ecartesFiltre: number;
   /** Nouvelles personnes enregistrées sous une adresse déduite : ni cherchables ni enrichissables. */
   readonly adressesDeduites: number;
   readonly plafondPersonnesAtteint: boolean;
@@ -617,6 +668,7 @@ export async function listerSourcesCampagne(
       ecartes: number;
       ignores: number;
       opposes: number;
+      ecartes_filtre: number;
       adresses_deduites: number;
       plafond_personnes_atteint: boolean;
     }>(
@@ -626,7 +678,7 @@ export async function listerSourcesCampagne(
       // seule clé fiable pour « le dernier passage de cette carte ».
       `select distinct on (source_id) source_id, started_at, items_found, items_new,
               status, error, requetes, vus, nouveaux, doublons, deja_en_campagne, ecartes,
-              ignores, opposes, adresses_deduites, plafond_personnes_atteint
+              ignores, opposes, ecartes_filtre, adresses_deduites, plafond_personnes_atteint
          from source_runs /* jr:sources_dernier_passage */
         where source_id = any($1::uuid[])
         order by source_id, started_at desc`,
@@ -720,6 +772,7 @@ export async function listerSourcesCampagne(
             ecartes: passage.ecartes,
             ignores: passage.ignores,
             opposes: passage.opposes,
+            ecartesFiltre: passage.ecartes_filtre,
             adressesDeduites: passage.adresses_deduites,
             plafondPersonnesAtteint: passage.plafond_personnes_atteint,
           }

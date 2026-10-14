@@ -21,7 +21,7 @@ import {
   lienProfilDeduit,
   normaliserUrlPost,
   normaliserUrlProfil,
-  type Executeur, sqlEstSignalDePersonne, type KindPersonne, sqlPredicatUniciteDePersonne} from '@jay-reach/core';
+  type Executeur, sqlEstSignalDePersonne, type KindPersonne, sqlPredicatUniciteDePersonne, jugerIntitule, type ExclusionsIntitule} from '@jay-reach/core';
 import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 
 export type Engageur = {
@@ -36,7 +36,11 @@ export type Engageur = {
   urlProfil?: string;
 };
 
-export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte' | 'supprime';
+/**
+ * `ecarte` = déjà écarté par le scoring (un passage antérieur) ; `ecarte_filtre` = refusé à la
+ * collecte par le filtre d'intitulé de la source, avant tout scoring. Deux sens, deux compteurs.
+ */
+export type IssueEngageur = 'nouveau' | 'doublon' | 'deja_en_campagne' | 'ecarte' | 'ecarte_filtre' | 'supprime';
 
 /**
  * Validation à l'entrée : un `urn` vide donnerait la même adresse de profil à
@@ -68,6 +72,12 @@ export interface ContexteEngageur {
    * sans aucune erreur. Le collecteur doit donc fournir la valeur.
    */
   readonly sourceRunId: string;
+  /**
+   * Filtre d'intitulé de la source (issue #164). Requis EXPRÈS, comme `sourceRunId` : optionnel, un
+   * collecteur qui l'oublierait laisserait passer au scoring payant ce que la source voulait écarter,
+   * sans aucune erreur. Une source sans filtre passe `{}`.
+   */
+  readonly exclusions: ExclusionsIntitule;
 }
 
 // `identifiantMembre` et `lienProfilDeduit` vivent dans le cœur (voir `sources.ts`) :
@@ -195,7 +205,8 @@ export async function enregistrerEngageur(
 }
 
 /** Ce qu'un passage de « changement de poste » a constaté sur un contact. */
-export type IssueChangement = 'change' | 'inchange' | 'absent';
+/** `ecarte_filtre` : le NOUVEL intitulé est exclu par le filtre de la source, la personne n'est pas réveillée. */
+export type IssueChangement = 'change' | 'inchange' | 'absent' | 'ecarte_filtre';
 
 /** Normalise un intitulé pour la COMPARAISON : la casse et les espaces ne font pas un changement. */
 export function normaliserIntitule(intitule: string): string {
@@ -247,6 +258,13 @@ export async function enregistrerChangementDePoste(
     return 'inchange';
   }
   if (normaliserIntitule(entree.ancienIntitule ?? '') === normaliserIntitule(nouveau)) return 'inchange';
+
+  // Filtre d'intitulé de la source, sur le NOUVEAU poste et avant la transaction qui écrit : passer
+  // de « Directeur commercial » à « En recherche d'opportunités » ne doit pas réveiller la personne,
+  // ni la faire scorer (et payer). Posé après les deux `inchange` pour que ceux-ci restent comptés
+  // comme tels. La référence d'intitulé n'est pas touchée : si l'opérateur assouplit le filtre, le
+  // changement sera encore constaté au tour suivant.
+  if (!jugerIntitule(nouveau, ctx.exclusions).garde) return 'ecarte_filtre';
 
   return dansUneTransaction(pool as unknown as Executeur, async (tx): Promise<IssueChangement> => {
     // Verrou d'abord : deux passages simultanés sur la même organisation ne doivent pas créer
@@ -340,6 +358,13 @@ export async function enregistrerPersonne(
     [org, formes],
   );
   if (supprime.rows.length > 0) return 'supprime';
+
+  // 0 bis) Filtre d'intitulé de la source : AVANT toute écriture, donc avant le scoring qui vient
+  //    après. Après la liste de suppression, qui est un droit de la personne et doit rester
+  //    comptée comme telle même si son intitulé aurait aussi été écarté. Rien n'est gardé : pas de
+  //    contact, pas de signal, pas de mémoire d'écart. Si l'opérateur assouplit le filtre, la
+  //    personne revient simplement au passage suivant.
+  if (!jugerIntitule(identite.intitule, ctx.exclusions).garde) return 'ecarte_filtre';
 
   // 1) Déjà écarté par le scoring : ni recréé, ni rescoré, donc jamais repayé.
   const ecarte = await pool.query(
