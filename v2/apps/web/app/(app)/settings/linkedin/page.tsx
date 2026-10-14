@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
   jourCourantDansFuseau,
   lireHeuresEnvoiLinkedIn,
   lireCollecteAutoLinkedIn,
@@ -69,8 +70,10 @@ export default async function ReglagesLinkedinPage() {
     plafondPosts,
     plafondRequetes,
     plafondPersonnes,
+    plafondVisites,
     postsDuJour,
     requetesDeLHeure,
+    visitesDeLaSemaine,
     collecteAuto,
     rythme,
     demandeEnCours,
@@ -82,8 +85,13 @@ export default async function ReglagesLinkedinPage() {
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
+    lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
+    // Sept jours glissants, la même fenêtre que le plafond : l'opérateur doit lire le
+    // chiffre que la garde regarde, pas un compte du jour qui lui ferait croire qu'il a
+    // de la marge quand la semaine est déjà pleine.
+    compterVisitesProfilLinkedIn(ctx, new Date(maintenant.getTime() - 7 * 24 * UNE_HEURE_MS)),
     lireCollecteAutoLinkedIn(ctx),
     lireRythme(ctx),
     // L'état de départ de la connexion : sans lui, l'écran afficherait « aucune connexion » le
@@ -373,6 +381,12 @@ export default async function ReglagesLinkedinPage() {
                   nom: t('plafonds.personnesParPassage.nom'),
                   usage: t('plafonds.personnesParPassage.usage'),
                   valeur: plafondPersonnes,
+                },
+                {
+                  cle: 'linkedin_visites_profil_par_semaine',
+                  nom: t('plafonds.visitesProfilParSemaine.nom'),
+                  usage: t('plafonds.visitesProfilParSemaine.usage', { n: visitesDeLaSemaine }),
+                  valeur: plafondVisites,
                 },
               ]}
               libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}

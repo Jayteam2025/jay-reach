@@ -1748,6 +1748,10 @@
           "nom": "Personnes par passage",
           "usage": "Nouvelles personnes enregistrées par passage ; au-delà, le passage s’arrête"
         },
+        "visitesProfilParSemaine": {
+          "nom": "Visites de profil par semaine",
+          "usage": "{n} sur les sept derniers jours ; au-delà, la collecte qui ouvre des profils s’arrête"
+        },
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
