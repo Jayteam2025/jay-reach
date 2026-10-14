@@ -247,10 +247,15 @@ export function ChampsSourceLinkedIn({
   // persona : on décrit d'abord d'où viennent les gens, puis qui on refuse parmi eux.
   const filtreIntitule = (
     <div className="jr-bloc-filtre">
+      {/* Un `textarea` et non un `input` : la liste par défaut fait treize termes, soit 178
+          caractères. Mesuré dans un navigateur, un champ d'une ligne n'en montrait que le tiers
+          (434 px de visible pour 1150 px de texte) — l'opérateur ne pouvait pas relire sa propre
+          liste sans la faire défiler à l'aveugle, donc pas la corriger. */}
       <Champ libelle={libelles.excludedTitles} id={`${idPrefix}-intitules-exclus`}>
-        <input
+        <textarea
           id={`${idPrefix}-intitules-exclus`}
           name="intitulesExclus"
+          rows={3}
           value={etat.intitulesExclus}
           onChange={(e) => onChange({ intitulesExclus: e.target.value })}
           disabled={disabled}
@@ -259,9 +264,10 @@ export function ChampsSourceLinkedIn({
       </Champ>
       <p className="jr-aide">{libelles.excludedTitlesHint}</p>
       <Champ libelle={libelles.requiredTitles} id={`${idPrefix}-intitules-obligatoires`}>
-        <input
+        <textarea
           id={`${idPrefix}-intitules-obligatoires`}
           name="intitulesObligatoires"
+          rows={2}
           value={etat.intitulesObligatoires}
           onChange={(e) => onChange({ intitulesObligatoires: e.target.value })}
           disabled={disabled}

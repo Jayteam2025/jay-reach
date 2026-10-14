@@ -255,7 +255,8 @@ describe('le formulaire rendu', () => {
     // d'opportunités » ne doit surtout pas être réveillé.
     expect(html).toContain('name="intitulesExclus"');
     expect(html).toContain('name="intitulesObligatoires"');
-    const champs = html.match(/<input/g) ?? [];
+    expect(html).not.toContain('<input');
+    const champs = html.match(/<textarea/g) ?? [];
     expect(champs).toHaveLength(2);
   });
 
