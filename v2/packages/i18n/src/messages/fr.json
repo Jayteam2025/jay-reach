@@ -171,7 +171,7 @@
       "gone": "{n, plural, one {# remis} other {# remis}}",
       "queued": "{n, plural, one {# en file} other {# en file}}",
       "none": "Aucun envoi",
-      "cap": "{etat, select, pause {en pause} sansLimite {sans limite} other {/ {plafond}}}"
+      "cap": "{etat, select, pause {en pause} sansLimite {sans limite} other {plafond {plafond}}}"
     },
     "role": {
       "owner": "Propriétaire",

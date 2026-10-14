@@ -171,7 +171,7 @@
       "gone": "{n, plural, one {# handed over} other {# handed over}}",
       "queued": "{n, plural, one {# queued} other {# queued}}",
       "none": "No sends",
-      "cap": "{etat, select, pause {on hold} sansLimite {no cap} other {/ {plafond}}}"
+      "cap": "{etat, select, pause {on hold} sansLimite {no cap} other {cap {plafond}}}"
     },
     "role": {
       "owner": "Owner",
