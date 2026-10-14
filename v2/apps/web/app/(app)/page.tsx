@@ -80,39 +80,48 @@ export default async function AujourdhuiPage() {
       new Date(),
     ),
   );
+  // Le conteneur de tête n'existe que s'il a quelque chose à porter : sans lui, le titre de
+  // l'écran garde son propre retrait haut.
+  const teteVisible = !demarrage.terminee || alertes.length > 0;
   const campagnesActives = a.campagnes.filter((c) => c.statut === 'active').length;
   const nbAutresEnvois = a.fileDuJour.total - a.fileDuJour.envois.length;
 
   return (
     <>
-      <ListeDemarrage
-        demarrage={demarrage}
-        libelles={{
-          titre: t('demarrage.titre'),
-          titreCasse: t('demarrage.titreCasse'),
-          sousTitre: t('demarrage.sousTitre'),
-          sousTitreCasse: t('demarrage.sousTitreCasse'),
-          avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
-          lignes: {
-            fournisseurs: libellesLigne('fournisseurs'),
-            boites: libellesLigne('boites'),
-            persona: libellesLigne('persona'),
-            linkedin: libellesLigne('linkedin'),
-            source: libellesLigne('source'),
-            campagne: libellesLigne('campagne'),
-          },
-        }}
-      />
+      {/* La mise en route et les alertes passent avant le titre : ce conteneur leur donne le
+          retrait horizontal de la page, qu'elles n'avaient pas, et l'espacement entre elles. */}
+      {teteVisible && (
+        <div className="jr-tete-accueil">
+          <ListeDemarrage
+            demarrage={demarrage}
+            libelles={{
+              titre: t('demarrage.titre'),
+              titreCasse: t('demarrage.titreCasse'),
+              sousTitre: t('demarrage.sousTitre'),
+              sousTitreCasse: t('demarrage.sousTitreCasse'),
+              avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
+              lignes: {
+                fournisseurs: libellesLigne('fournisseurs'),
+                boites: libellesLigne('boites'),
+                persona: libellesLigne('persona'),
+                linkedin: libellesLigne('linkedin'),
+                source: libellesLigne('source'),
+                campagne: libellesLigne('campagne'),
+              },
+            }}
+          />
 
-      {alertes.map((alerte, index) => (
-        // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
-        <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
-          <span>{alerte.texte}</span>
-          <Link href={alerte.lien} className="jr-lien">
-            {t('alerts.action')}
-          </Link>
+          {alertes.map((alerte, index) => (
+            // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
+            <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`}>
+              <span>{alerte.texte}</span>
+              <Link href={alerte.lien} className="jr-lien">
+                {t('alerts.action')}
+              </Link>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       <EnTetePage
         titre={jour}

@@ -48,6 +48,11 @@
 .jr-contenu.une-colonne { grid-template-columns: minmax(0, 1fr); }
 .jr-contenu .pleine { grid-column: 1 / -1; }
 .jr-aujourdhui { padding: 22px 28px 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 320px; gap: 16px; align-content: start; align-items: start; }
+/* Ce qui passe avant le titre de l'écran : la mise en route et les bandeaux d'alerte. Même retrait
+   horizontal que `.jr-entete-page` et `.jr-aujourdhui`, sinon ces blocs commencent 28 px à gauche
+   du titre qu'ils précèdent. Il ne porte rien quand il n'y a ni l'un ni l'autre : l'écran ne le
+   rend pas, et le titre garde son propre retrait haut. */
+.jr-tete-accueil { padding: 22px 28px 0; display: flex; flex-direction: column; gap: 8px; }
 .jr-aujourdhui .pleine { grid-column: 1 / -1; }
 .jr-moteur-plafonds { display: grid; gap: 16px; align-content: start; }
 .jr-deux-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
@@ -727,13 +732,16 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 
 /* La liste de démarrage de l'écran Aujourd'hui (lot 5). Elle n'est pas un tutoriel : elle lit six
    vérités en base, disparaît quand tout tient, et revient quand un branchement lâche. */
-.jr-demarrage { margin-bottom: 12px; }
-.jr-demarrage-entete { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+/* Le conteneur de tête porte l'espacement : la carte n'ajoute pas le sien. */
+.jr-demarrage { margin-bottom: 0; }
+.jr-demarrage-entete { padding: 14px 18px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .jr-demarrage-entete h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .jr-demarrage-entete p { margin: 2px 0 0; color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-demarrage-avancement { color: var(--jr-secondaire); font-size: var(--jr-petit); white-space: nowrap; }
-.jr-demarrage-liste { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); overflow: hidden; }
-.jr-demarrage-ligne { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--jr-filet); }
+/* Bord à bord sous l'entête : la carte porte déjà le cadre, une bordure ici doublerait son
+   filet. Un seul trait sépare l'entête de la première ligne. */
+.jr-demarrage-liste { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--jr-filet); }
+.jr-demarrage-ligne { display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-top: 1px solid var(--jr-filet); }
 .jr-demarrage-ligne:first-child { border-top: 0; }
 .jr-demarrage-marque { position: relative; flex: none; width: 16px; height: 16px; border-radius: 999px; border: 1px solid var(--jr-filet); background: var(--jr-surface); }
 .jr-demarrage-marque--faite { background: var(--jr-bon); border-color: var(--jr-bon); }
