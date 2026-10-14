@@ -229,6 +229,8 @@ select.jr-puce {
 .jr-reponse .depuis b { color: var(--jr-encre); font-weight: 600; }
 .jr-reponse .zone { padding: 12px 14px; min-height: 74px; color: var(--jr-secondaire); font-size: var(--jr-corps); }
 .jr-reponse textarea { width: 100%; border: 0; padding: 12px 14px; min-height: 90px; font: inherit; color: var(--jr-encre); resize: vertical; background: transparent; }
+.jr-reponse .jr-reponse-raison { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--jr-filet); color: var(--jr-encre); }
+.jr-reponse textarea:disabled { cursor: not-allowed; opacity: .6; resize: none; }
 .jr-reponse .pied { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--jr-filet); }
 
 /* Réception : liste et fil */
