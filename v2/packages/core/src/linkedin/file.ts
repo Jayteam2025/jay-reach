@@ -11,7 +11,7 @@
  */
 import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
-import { poserEcheanceApresDepart } from '../sequencer/echeance.js';
+import { cloreDepartReel } from '../sequencer/echeance.js';
 import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
 import {
@@ -414,23 +414,38 @@ export interface EntreeResultat {
  * Pose l'échéance de l'étape suivante au DÉPART RÉEL de l'action LinkedIn
  * (transition `processing -> sent`) — même point, même calcul et même garde que
  * côté SalesBlink (issue #111) : les deux transports appellent la même
- * implémentation partagée, `poserEcheanceApresDepart`. Ici, seule la résolution
+ * implémentation partagée, `cloreDepartReel`. Ici, seule la résolution
  * propre à LinkedIn : retrouver l'inscription (`campaign_id`, `current_step`) à
  * partir de l'`actionId` posé sur la ligne de file.
  */
 async function poserEcheanceApresDepartDepuisAction(ex: Executeur, actionId: string, now: Date): Promise<void> {
-  const inscription = await ex.query<{ enrollment_id: string; campaign_id: string; current_step: number }>(
-    `select en.id as enrollment_id, en.campaign_id, en.current_step
+  // Le rang de l'étape qui part se lit dans la même requête : `cloreDepartReel` le compare à
+  // `current_step` pour distinguer un envoi normal d'un rejeu après pause (issue #160).
+  const inscription = await ex.query<{
+    enrollment_id: string;
+    campaign_id: string;
+    current_step: number;
+    rang_etape: number;
+  }>(
+    `select en.id as enrollment_id, en.campaign_id, en.current_step,
+            (select count(*)::int from sequence_steps o
+              where o.campaign_id = s.campaign_id and o.position < s.position) as rang_etape
        from actions a
        join enrollments en on en.id = a.enrollment_id
+       join sequence_steps s on s.id = a.step_id
       where a.id = $1`,
     [actionId],
   );
   const ligne = inscription.rows[0];
   if (!ligne) return;
-  await poserEcheanceApresDepart(
+  await cloreDepartReel(
     ex,
-    { enrollmentId: ligne.enrollment_id, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
+    {
+      enrollmentId: ligne.enrollment_id,
+      campaignId: ligne.campaign_id,
+      currentStep: ligne.current_step,
+      rangEtapePartie: ligne.rang_etape,
+    },
     now,
   );
 }

@@ -164,6 +164,9 @@ const AUDIT_INSERT = /insert into audit_events/i;
 const DELAI_ETAPE_SUIVANTE =
   /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
 const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
+// Rang de l'etape qui vient de partir (`rangDeLEtapeDeLAction`) : `cloreDepartReel` le compare
+// a `current_step` pour distinguer un envoi normal d'un rejeu apres pause (issue #160).
+const RANG_ETAPE_ACTION = /jr:rang_etape_action/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -210,6 +213,8 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: MODE_FORCE, repondre: () => ligne([{ mode_force: null }]) },
     { motif: GABARIT_NEUTRE_LOOKUP, repondre: () => ligne([]) },
     { motif: MARK_DISPATCHED, repondre: () => ligne([{}]) },
+    // `current_step` vaut 1 dans la fixture et l'etape qui part est la 0 : cas normal.
+    { motif: RANG_ETAPE_ACTION, repondre: () => ligne([{ rang: 0 }]) },
     { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 48 }]) },
     { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
     { motif: UPDATE_SUCCES, repondre: () => ligne([]) },

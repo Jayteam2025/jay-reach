@@ -104,3 +104,111 @@ export async function poserEcheanceDepuisDispatch(
   if (instant === null) return false;
   return poserEcheanceApresDepart(ex, params, new Date(instant));
 }
+
+/**
+ * Referme le cycle d'une inscription dont l'action de l'ÉTAPE COURANTE vient de partir
+ * après un rejeu — le cas que ni `composeTick` ni `poserEcheanceApresDepart` ne traitent.
+ *
+ * Rappel du cycle normal : `composeTick` crée l'action de `steps[current_step]` ET avance
+ * `current_step` dans la foulée ; au départ réel, `poserEcheanceApresDepart` n'a plus qu'à poser
+ * l'échéance de l'étape déjà pointée. `current_step` y est donc toujours en AVANCE d'un rang sur
+ * l'action qui part.
+ *
+ * Après une pause, il ne l'est plus. `mettreInscriptionEnPause` (`apps/worker`) RAMÈNE
+ * `current_step` sur l'étape en échec, pour que l'inscription la refasse, et `reprendreInscription`
+ * (`fonctions/sequence.ts`) remet l'action existante `scheduled` plutôt que d'en créer une seconde
+ * — sa clé d'idempotence est déjà prise. Quand cette action part enfin, `current_step` pointe donc
+ * l'étape qui VIENT de partir, et plus rien ne l'avance : `poserEcheanceApresDepart` ne touche que
+ * `next_action_at`, et le tick suivant, retombant sur la même étape, bute sur la clé d'idempotence
+ * et n'avance plus jamais. Mesuré le 14/10 sur sept inscriptions de la campagne « Jay coach - RH »
+ * reprises après la panne SalesBlink du 13 : leur email est bien parti, et elles sont restées
+ * `current_step = 3` avec une échéance échue, une ligne de journal par minute et par inscription.
+ *
+ * Cette fonction écrit donc l'avancement et l'échéance EN UNE SEULE requête, avec la même garde
+ * que sa voisine (`current_step` inchangé, inscription toujours `active`), plus `next_action_at is
+ * null` pour ne jamais déplacer une échéance déjà calculée. Dernière étape : `completed` et aucune
+ * échéance, comme `composeTick` le ferait — mais seulement ICI, APRÈS le départ réel, jamais avant
+ * (hotfix PR #102 : un `completed` posé avant l'envoi faisait sauter le dernier email).
+ *
+ * `etapePartie` est le RANG ORDINAL de l'étape dont l'action vient de partir, c'est-à-dire la
+ * valeur courante de `current_step` dans ce cas — jamais la colonne `position`, qui n'est pas
+ * garantie contiguë.
+ */
+export async function avancerApresRejeuParti(
+  ex: Executeur,
+  params: { readonly enrollmentId: string; readonly campaignId: string; readonly etapePartie: number },
+  dispatchedAt: InstantPg,
+): Promise<boolean> {
+  const instant = versInstant(dispatchedAt);
+  if (instant === null) return false;
+
+  // Le délai cherché est celui de l'étape SUIVANTE, au rang `etapePartie + 1` : c'est elle que
+  // l'inscription devra jouer. Aucune ligne = l'étape partie était la dernière.
+  const suivante = await ex.query<{ delay_hours: number }>(
+    `select delay_hours from sequence_steps
+      where campaign_id = $1
+      order by position asc
+      offset $2
+      limit 1`,
+    [params.campaignId, params.etapePartie + 1],
+  );
+  const etaitLaDerniere = suivante.rows.length === 0;
+  const echeance = etaitLaDerniere
+    ? null
+    : echeanceEtapeSuivante(instant, params.enrollmentId, suivante.rows[0]?.delay_hours ?? null);
+
+  const ecrit = await ex.query(
+    `update enrollments
+        set current_step = $2 + 1,
+            next_action_at = $3,
+            status = case when $4 then 'completed' else status end,
+            ended_at = case when $4 then now() else ended_at end
+      where id = $1
+        and status = 'active'
+        and next_action_at is null
+        and current_step = $2`,
+    [
+      params.enrollmentId,
+      params.etapePartie,
+      echeance === null ? null : new Date(echeance).toISOString(),
+      etaitLaDerniere,
+    ],
+  );
+  return (ecrit.rowCount ?? 0) > 0;
+}
+
+/**
+ * Ce qu'il faut écrire sur l'inscription au DÉPART RÉEL d'une action, dans tous les cas —
+ * point d'entrée unique des transports d'envoi (SalesBlink, LinkedIn), qui n'ont plus à savoir
+ * lequel des deux chemins s'applique.
+ *
+ * L'invariant à tenir est simple : **une fois l'action de l'étape de rang R réellement partie,
+ * `current_step` vaut R + 1**. `composeTick` l'établit dès la création de l'action, et c'est
+ * pourquoi `poserEcheanceApresDepart` n'a normalement qu'une échéance à poser — `current_step`
+ * est déjà en avance d'un rang sur l'action qui part.
+ *
+ * Une pause le casse : `mettreInscriptionEnPause` ramène `current_step` sur l'étape en échec
+ * pour qu'elle soit rejouée, et `reprendreInscription` remet l'action existante `scheduled`
+ * plutôt que d'en créer une seconde (sa clé d'idempotence est prise). Au départ de cette action
+ * rejouée, `current_step` désigne donc l'étape qui VIENT de partir, et poser la seule échéance
+ * laisserait l'inscription tourner en boucle sur elle : le tick la verrait due, buterait sur la
+ * clé d'idempotence, et n'avancerait plus jamais. Sept inscriptions de « Jay coach - RH » y
+ * étaient le 14/10, leur email parti, bloquées à une étape de la fin.
+ *
+ * Comparer le rang de l'étape qui part à `current_step` distingue les deux sans ambiguïté, et
+ * c'est le transport — seul à connaître l'action — qui peut le faire.
+ */
+export async function cloreDepartReel(
+  ex: Executeur,
+  params: ParamsEcheanceApresDepart & { readonly rangEtapePartie: number | undefined },
+  now: Date,
+): Promise<boolean> {
+  if (params.rangEtapePartie !== undefined && params.rangEtapePartie === params.currentStep) {
+    return avancerApresRejeuParti(
+      ex,
+      { enrollmentId: params.enrollmentId, campaignId: params.campaignId, etapePartie: params.rangEtapePartie },
+      now,
+    );
+  }
+  return poserEcheanceApresDepart(ex, params, now);
+}
