@@ -97,7 +97,7 @@ export default async function CampagnesPage({
         titre={t('list.title')}
         description={t('list.description')}
         action={
-          <Link href="/campaigns/new" className="jr-bouton sombre">
+          <Link href="/campaigns/new" className="jr-bouton principal">
             {t('list.new')}
           </Link>
         }

@@ -379,7 +379,7 @@ export function EtapeSources({ sources, onAjouter, onRetirer, disabled, libelles
             <small>{libelles.description}</small>
           </span>
           <div className="jr-menu-ancre">
-            <Bouton variante="sombre" onClick={() => setMenuOuvert((v) => !v)} disabled={disabled}>
+            <Bouton variante="principal" onClick={() => setMenuOuvert((v) => !v)} disabled={disabled}>
               {libelles.ajouter}
             </Bouton>
             {menuOuvert && (

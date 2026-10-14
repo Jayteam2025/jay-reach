@@ -120,7 +120,6 @@ select.jr-puce {
 .jr-bouton:hover { background: var(--jr-fond); }
 .jr-bouton.principal { background: var(--jr-accent); color: var(--jr-accent-encre); border-color: var(--jr-accent); }
 .jr-bouton.principal:hover { filter: brightness(0.94); }
-.jr-bouton.sombre { background: var(--jr-encre); color: var(--jr-surface); border-color: var(--jr-encre); }
 .jr-bouton.danger { color: var(--jr-erreur); border-color: var(--jr-erreur-doux); background: var(--jr-erreur-doux); }
 .jr-bouton.petit { font-size: 13px; padding: 5px 10px; font-weight: 500; }
 .jr-bouton:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -133,9 +133,8 @@ export default async function AujourdhuiPage() {
         })}
         // Bouton mort avant ce correctif (G2) : le composant `Bouton`, sans `onClick` ni `href`,
         // rendait un simple bouton de formulaire hors formulaire, qui ne faisait rien au clic.
-        // Même route et même classe `jr-bouton` que `campaigns/page.tsx` (`list.new`/
-        // `list.empty.action`), qui y renvoie déjà correctement — seule la variante change
-        // (`principal`, pas `sombre`, pour garder l'apparence déjà en place ici).
+        // Même route, même classe et même variante que `campaigns/page.tsx` (`list.new`) : une
+        // action principale porte une seule couleur, quel que soit l'écran d'où on la déclenche.
         action={
           <Link href="/campaigns/new" className="jr-bouton principal">
             {t('newCampaign')}
