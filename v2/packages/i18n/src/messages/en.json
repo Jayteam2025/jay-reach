@@ -685,7 +685,7 @@
         "runSuccess": "finished",
         "runError": "stopped",
         "runHeader": "{quand} · {statut}",
-        "runCounts": "{vus, plural, one {# person seen} other {# people seen}} · {nouveaux, plural, one {# new} other {# new}} · {doublons, plural, one {# duplicate} other {# duplicates}} · {dejaEnCampagne} already in a campaign · {ecartes, plural, one {# dropped} other {# dropped}} by scoring",
+        "runCounts": "{vus, plural, one {# person seen} other {# people seen}} · {nouveaux, plural, one {# new} other {# new}} · {doublons, plural, one {# duplicate} other {# duplicates}} · {dejaEnCampagne} already in a campaign · {ecartes, plural, one {# dropped} other {# dropped}} by scoring · {ecartesFiltre, plural, =0 {none dropped by the filter} one {# dropped by the filter} other {# dropped by the filter}}",
         "runDetails": "{requetes, plural, one {# request} other {# requests}} · {ignores} skipped (profile too sparse) · {opposes} opted out · {adressesDeduites} without a public address"
       },
       "drawer": {
@@ -794,7 +794,11 @@
         "collectNowUnsaved": "Available once the source is saved.",
         "collectNowInactive": "Available once the campaign is active.",
         "collectRequested": "Collection requested.",
-        "collectNowPaused": "Available when the source is active."
+        "collectNowPaused": "Available when the source is active.",
+        "excludedTitles": "Job titles to exclude",
+        "excludedTitlesHint": "Anyone whose title contains one of these terms is dropped before any scoring, so at no cost. Separate with commas. Prefer a precise term: “consultant” would also drop “Director, former consultant”.",
+        "requiredTitles": "Required job titles",
+        "requiredTitlesHint": "If you list any, only people whose title contains one of them are kept. Leave empty to filter with the list above only."
       }
     },
     "sequence": {
@@ -1007,7 +1011,11 @@
         "formSubmit": "Add",
         "formCancel": "Cancel",
         "formError": "At least one keyword is required.",
-        "formLinkedinBrouillon": "This campaign is a draft: nothing will be collected until it is launched."
+        "formLinkedinBrouillon": "This campaign is a draft: nothing will be collected until it is launched.",
+        "formLinkedinExcludedTitles": "Job titles to exclude",
+        "formLinkedinExcludedTitlesHint": "Anyone whose title contains one of these terms is dropped before any scoring, so at no cost. Separate with commas. Prefer a precise term: “consultant” would also drop “Director, former consultant”.",
+        "formLinkedinRequiredTitles": "Required job titles",
+        "formLinkedinRequiredTitlesHint": "If you list any, only people whose title contains one of them are kept. Leave empty to filter with the list above only."
       },
       "sequence": {
         "startFrom": "Start from",

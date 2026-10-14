@@ -356,6 +356,17 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 }
 .jr-champ.erreur { border-color: var(--jr-erreur); }
 .jr-aide-erreur { color: var(--jr-erreur); font-size: var(--jr-petit); margin-top: 4px; }
+/* Filtre d'intitulé d'une source LinkedIn (issue 164). Un filet le sépare des champs qui le
+   précèdent parce qu'il répond à une AUTRE question : ceux du dessus disent d'où viennent les
+   gens, celui-ci dit qui on refuse parmi eux. Sans cette coupure, « Intitulés à écarter » se lit
+   comme un critère de recherche de plus, et on croit qu'il sert à trouver plutôt qu'à exclure. */
+.jr-bloc-filtre { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--jr-filet); }
+/* Les listes de termes se saisissent sur plusieurs lignes : `.jr-champ` aligne ses enfants au
+   centre et sur une ligne, ce qui convient a un input mais serre un textarea. On repasse en
+   colonne pour lui, et on le laisse redimensionnable en hauteur seulement — en largeur il
+   deborderait du tiroir. */
+.jr-bloc-filtre .jr-champ { align-items: stretch; }
+.jr-bloc-filtre textarea { resize: vertical; line-height: 1.45; }
 /* Boîte de clé masquée des Fournisseurs (tour de correction F6, point 2) : un identifiant long
    (ex. `client_id` France Travail, 78 caractères) débordait de la boîte à largeur fixe. Passe en
    colonne (identifiant sur sa ligne, clé masquée sur la sienne), replie n'importe où plutôt que de

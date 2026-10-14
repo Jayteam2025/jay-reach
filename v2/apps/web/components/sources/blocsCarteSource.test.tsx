@@ -160,6 +160,7 @@ describe('construireBlocsLinkedIn : une source d’engageurs', () => {
     doublons: 0,
     dejaEnCampagne: 0,
     ecartes: 0,
+    ecartesFiltre: 0,
     ignores: 0,
     opposes: 0,
     adressesDeduites: 0,

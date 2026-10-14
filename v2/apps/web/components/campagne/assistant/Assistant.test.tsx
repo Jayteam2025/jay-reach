@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { collecteServeurDisponible } from '../../sources/collecte-maintenant';
 import { describe, expect, it, vi } from 'vitest';
-import { configAdzuna, configFranceTravail, configLinkedInPost } from '@jay-reach/core';
+import { configAdzuna, configFranceTravail, configLinkedInPost, EXCLUSIONS_INTITULE_PAR_DEFAUT } from '@jay-reach/core';
 import {
   ChampsSourceLinkedIn,
   champsLinkedInValides,
@@ -68,6 +68,10 @@ const LIBELLES_SOURCES: EtapeSourcesLibelles = {
   formLinkedinTopics: 'Mots-clés de recherche',
   formLinkedinTopicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
   formLinkedinJobChangeHint: 'Cette source ne trouve personne de nouveau : elle surveille les contacts que vous avez déjà.',
+  formLinkedinExcludedTitles: 'Intitulés à écarter',
+  formLinkedinExcludedTitlesHint: 'Aide exclus',
+  formLinkedinRequiredTitles: 'Intitulés obligatoires',
+  formLinkedinRequiredTitlesHint: 'Aide obligatoires',
   formLinkedinErreur: 'Le champ propre à ce type de source est nécessaire.',
   formLinkedinBrouillon: "Cette campagne est un brouillon : rien ne sera collecté tant qu'elle n'est pas lancée.",
   resumeLinkedinJobChange: 'Relit les contacts déjà connus',
@@ -192,9 +196,16 @@ describe('construireEntreeAssistant — une source LinkedIn choisie dans l’ass
     expect(entree.sources).toHaveLength(1);
     expect(entree.sources[0]!.providerId).toBe('linkedin_post_engagers');
     expect(entree.sources[0]!.nom).toBe("Engageurs d'un post");
+    // `exclusions` porte la liste par défaut : une source créée dans l'assistant arrive avec son
+    // filtre d'intitulé déjà armé (issue #164), comme chez Gojiberry. C'est le but — une source
+    // d'engageurs sans filtre fait payer un scoring par profil « open to work » ramassé.
     expect(entree.sources[0]!.config).toEqual({
       urlPost: 'https://exemple.fr/post',
       garder: ['commente', 'reagi'],
+      exclusions: {
+        intitulesExclus: [...EXCLUSIONS_INTITULE_PAR_DEFAUT],
+        intitulesObligatoires: [],
+      },
     });
     // C'est exactement ce que `creerSource` validera (packages/core/src/fonctions/sources.ts).
     expect(() => configLinkedInPost.parse(entree.sources[0]!.config)).not.toThrow();
@@ -669,6 +680,10 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     topics: 'Mots-clés de recherche',
     topicsHint: 'Ce que vous taperiez dans la recherche de personnes.',
     jobChangeHint: 'Cette source ne trouve personne de nouveau : elle surveille les contacts que vous avez déjà.',
+    excludedTitles: 'Intitulés à écarter',
+    excludedTitlesHint: 'Aide exclus',
+    requiredTitles: 'Intitulés obligatoires',
+    requiredTitlesHint: 'Aide obligatoires',
   };
 
   it('chaque champ du sous-type affiché a un id (préfixé par idPrefix) relié à son libellé', () => {
@@ -739,6 +754,7 @@ describe('ChampsSourceLinkedIn — champs avec id (R66, tour de correction 2)', 
     expect(construireConfigLinkedIn('linkedin_post_engagers', { ...etat, personaId: 'p2' })).toEqual({
       urlPost: 'https://exemple.fr/p',
       garder: ['commente', 'reagi'],
+      exclusions: { intitulesExclus: [...EXCLUSIONS_INTITULE_PAR_DEFAUT], intitulesObligatoires: [] },
       personaId: 'p2',
     });
   });

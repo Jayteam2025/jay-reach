@@ -176,6 +176,10 @@ export function TiroirSourceLinkedIn({ campagneId, providerId, source, personas 
             topics: t('drawer.topics'),
             topicsHint: t('drawer.topicsHint'),
             jobChangeHint: t('drawer.jobChangeHint'),
+            excludedTitles: t('drawer.excludedTitles'),
+            excludedTitlesHint: t('drawer.excludedTitlesHint'),
+            requiredTitles: t('drawer.requiredTitles'),
+            requiredTitlesHint: t('drawer.requiredTitlesHint'),
             persona: t('drawer.persona'),
             personaChoisir: t('drawer.personaChoisir'),
           }}

@@ -1,5 +1,6 @@
 'use client';
 
+import { EXCLUSIONS_INTITULE_PAR_DEFAUT } from '@jay-reach/core';
 import { Champ } from '../ui';
 import { CaseACocher } from './CaseACocher';
 
@@ -20,6 +21,9 @@ export interface EtatChampsLinkedIn {
   readonly pagesConcurrentes: string;
   readonly profilsCreateurs: string;
   readonly sujets: string;
+  /** Filtre d'intitulé (issue #164), commun aux cinq types : saisi en texte, stocké en liste. */
+  readonly intitulesExclus: string;
+  readonly intitulesObligatoires: string;
 }
 
 function listeVersTexte(v: unknown): string {
@@ -40,6 +44,13 @@ function texteVersListe(t: string): string[] {
  * diffère.
  */
 export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> = {}): EtatChampsLinkedIn {
+  // Le filtre d'intitulé n'est pré-rempli QU'À LA CRÉATION (config vide). Une source existante
+  // qui n'en porte pas n'en reçoit pas en ouvrant son tiroir : on ne change pas le comportement
+  // d'une source qui tourne parce que quelqu'un a cliqué « Modifier ». Elle reste vide, et
+  // l'opérateur l'arme s'il le veut.
+  const creation = Object.keys(config).length === 0;
+  const exclusions = (config.exclusions ?? {}) as { intitulesExclus?: unknown; intitulesObligatoires?: unknown };
+  const exclusDefaut = creation ? EXCLUSIONS_INTITULE_PAR_DEFAUT.join(', ') : '';
   return {
     urlPost: typeof config.urlPost === 'string' ? config.urlPost : '',
     personaId: typeof config.personaId === 'string' ? config.personaId : '',
@@ -48,7 +59,23 @@ export function etatChampsLinkedInDepuisConfig(config: Record<string, unknown> =
     pagesConcurrentes: listeVersTexte(config.pagesConcurrentes),
     profilsCreateurs: listeVersTexte(config.profilsCreateurs),
     sujets: listeVersTexte(config.sujets),
+    intitulesExclus: Array.isArray(exclusions.intitulesExclus)
+      ? listeVersTexte(exclusions.intitulesExclus)
+      : exclusDefaut,
+    intitulesObligatoires: listeVersTexte(exclusions.intitulesObligatoires),
   };
+}
+
+/**
+ * Le bloc `exclusions` de la `config`, commun aux cinq types. Omis quand les deux listes sont
+ * vides : une clé `{intitulesExclus: [], intitulesObligatoires: []}` stockée partout n'apporterait
+ * rien et ferait croire, en relisant la base, qu'un filtre est posé.
+ */
+function exclusionsDe(etat: EtatChampsLinkedIn): Record<string, unknown> {
+  const intitulesExclus = texteVersListe(etat.intitulesExclus);
+  const intitulesObligatoires = texteVersListe(etat.intitulesObligatoires);
+  if (intitulesExclus.length === 0 && intitulesObligatoires.length === 0) return {};
+  return { exclusions: { intitulesExclus, intitulesObligatoires } };
 }
 
 /** Construit la `config` envoyée à `creerSource`/`modifierSource` (schémas `configLinkedIn*`, `packages/core/src/fonctions/sources.ts`) : uniquement les clés du sous-type choisi, jamais celles des trois autres. */
@@ -59,7 +86,7 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       if (etat.garderCommente) garder.push('commente');
       if (etat.garderReagi) garder.push('reagi');
       // Ni compte ni cadence : l'exécution est côté serveur, le post suffit.
-      return { urlPost: etat.urlPost, garder, ...(etat.personaId ? { personaId: etat.personaId } : {}) };
+      return { urlPost: etat.urlPost, garder, ...exclusionsDe(etat), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     }
     case 'linkedin_competitor_posts': {
       // Mêmes besoins que le post : c'est le même collecteur d'engageurs derrière, seule la
@@ -70,6 +97,7 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       return {
         pagesConcurrentes: texteVersListe(etat.pagesConcurrentes),
         garder,
+        ...exclusionsDe(etat),
         ...(etat.personaId ? { personaId: etat.personaId } : {}),
       };
     }
@@ -81,15 +109,16 @@ export function construireConfigLinkedIn(providerId: TypeLinkedIn, etat: EtatCha
       return {
         profilsCreateurs: texteVersListe(etat.profilsCreateurs),
         garder,
+        ...exclusionsDe(etat),
         ...(etat.personaId ? { personaId: etat.personaId } : {}),
       };
     }
     case 'linkedin_keywords':
       // Même collecteur côté serveur : ni compte ni cadence, des mots-clés et le persona.
-      return { sujets: texteVersListe(etat.sujets), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
+      return { sujets: texteVersListe(etat.sujets), ...exclusionsDe(etat), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
     case 'linkedin_job_change':
       // Aucun réglage propre : la source relit les contacts déjà connus, au rythme des plafonds.
-      return etat.personaId ? { personaId: etat.personaId } : {};
+      return { ...exclusionsDe(etat), ...(etat.personaId ? { personaId: etat.personaId } : {}) };
   }
 }
 
@@ -135,6 +164,11 @@ export interface ChampsSourceLinkedInLibelles {
   readonly topics: string;
   readonly topicsHint: string;
   readonly jobChangeHint: string;
+  /** Filtre d'intitulé (issue #164) : les deux listes et leurs aides, communes aux cinq types. */
+  readonly excludedTitles: string;
+  readonly excludedTitlesHint: string;
+  readonly requiredTitles: string;
+  readonly requiredTitlesHint: string;
   /** Seulement si `personas` est fourni (campagne à plusieurs personas). */
   readonly persona?: string;
   readonly personaChoisir?: string;
@@ -208,6 +242,42 @@ export function ChampsSourceLinkedIn({
       </Champ>
     ) : null;
 
+  // Filtre d'intitulé : le même bloc pour les cinq types, parce que la question est la même —
+  // qui écarter avant de payer un scoring. Posé APRÈS les champs propres au type et avant le
+  // persona : on décrit d'abord d'où viennent les gens, puis qui on refuse parmi eux.
+  const filtreIntitule = (
+    <div className="jr-bloc-filtre">
+      {/* Un `textarea` et non un `input` : la liste par défaut fait treize termes, soit 178
+          caractères. Mesuré dans un navigateur, un champ d'une ligne n'en montrait que le tiers
+          (434 px de visible pour 1150 px de texte) — l'opérateur ne pouvait pas relire sa propre
+          liste sans la faire défiler à l'aveugle, donc pas la corriger. */}
+      <Champ libelle={libelles.excludedTitles} id={`${idPrefix}-intitules-exclus`}>
+        <textarea
+          id={`${idPrefix}-intitules-exclus`}
+          name="intitulesExclus"
+          rows={3}
+          value={etat.intitulesExclus}
+          onChange={(e) => onChange({ intitulesExclus: e.target.value })}
+          disabled={disabled}
+          placeholder="open to work, freelance, stagiaire"
+        />
+      </Champ>
+      <p className="jr-aide">{libelles.excludedTitlesHint}</p>
+      <Champ libelle={libelles.requiredTitles} id={`${idPrefix}-intitules-obligatoires`}>
+        <textarea
+          id={`${idPrefix}-intitules-obligatoires`}
+          name="intitulesObligatoires"
+          rows={2}
+          value={etat.intitulesObligatoires}
+          onChange={(e) => onChange({ intitulesObligatoires: e.target.value })}
+          disabled={disabled}
+          placeholder="directeur, responsable, head of"
+        />
+      </Champ>
+      <p className="jr-aide">{libelles.requiredTitlesHint}</p>
+    </div>
+  );
+
   return (
     <>
       {providerId === 'linkedin_post_engagers' && (
@@ -224,6 +294,7 @@ export function ChampsSourceLinkedIn({
           </Champ>
           {quiGarder}
           <p className="jr-aide">{libelles.postOneCampaign}</p>
+          {filtreIntitule}
           {choixPersona}
         </>
       )}
@@ -241,6 +312,7 @@ export function ChampsSourceLinkedIn({
           </Champ>
           <p className="jr-aide">{libelles.competitorPagesHint}</p>
           {quiGarder}
+          {filtreIntitule}
           {choixPersona}
         </>
       )}
@@ -258,6 +330,7 @@ export function ChampsSourceLinkedIn({
           </Champ>
           <p className="jr-aide">{libelles.creatorProfilesHint}</p>
           {quiGarder}
+          {filtreIntitule}
           {choixPersona}
         </>
       )}
@@ -274,12 +347,14 @@ export function ChampsSourceLinkedIn({
             />
           </Champ>
           <p className="jr-aide">{libelles.topicsHint}</p>
+          {filtreIntitule}
           {choixPersona}
         </>
       )}
       {providerId === 'linkedin_job_change' && (
         <>
           <p className="jr-aide">{libelles.jobChangeHint}</p>
+          {filtreIntitule}
           {choixPersona}
         </>
       )}

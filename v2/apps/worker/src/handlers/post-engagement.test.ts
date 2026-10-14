@@ -146,7 +146,7 @@ function modele(init: { contacts?: Contact[]; ecartes?: string[]; enrolled?: str
   return { etat, query, pool: { query } as unknown as Pool };
 }
 
-const ctxDe = (pool: Pool) => ({ pool, organizationId: ORG, sourceId: SOURCE, sourceRunId: 'run-1' });
+const ctxDe = (pool: Pool) => ({ pool, organizationId: ORG, sourceId: SOURCE, sourceRunId: 'run-1', exclusions: {} });
 
 describe('enregistrerEngageur', () => {
   it('un engageur nouveau devient un signal et un contact portant persona, signal d origine et adresse', async () => {
@@ -216,6 +216,23 @@ describe('enregistrerEngageur', () => {
     await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, urn: 'ACoAAalice' }, CAMPAGNE, URL_POST)).rejects.toThrow();
     await expect(enregistrerEngageur(ctxDe(m.pool), { ...ALICE, nom: '   ' }, CAMPAGNE, URL_POST)).rejects.toThrow();
     expect(m.query).not.toHaveBeenCalled();
+  });
+
+  it('un intitule exclu par la source est ecarte avant toute ecriture', async () => {
+    const m = modele();
+    const ctx = { ...ctxDe(m.pool), exclusions: { intitulesExclus: ['commerciale'] } };
+    expect(await enregistrerEngageur(ctx, ALICE, CAMPAGNE, URL_POST)).toBe('ecarte_filtre');
+    expect(m.etat.insertsSignal).toBe(0);
+    expect(m.etat.contacts).toHaveLength(0);
+    // Seule la garde de suppression a parle a la base : aucune mémoire d'écart, aucun signal.
+    expect(m.query.mock.calls.every((c) => /from suppressions/i.test(String(c[0])))).toBe(true);
+  });
+
+  it('la liste de suppression passe avant le filtre d intitule', async () => {
+    const e: Engageur = { ...ALICE, urlProfil: 'https://www.linkedin.com/in/alice-martin-123' };
+    const m = modele({ supprimes: ['https://www.linkedin.com/in/alice-martin-123'] });
+    const ctx = { ...ctxDe(m.pool), exclusions: { intitulesExclus: ['commerciale'] } };
+    expect(await enregistrerEngageur(ctx, e, CAMPAGNE, URL_POST)).toBe('supprime');
   });
 
   it('le signal porte le passage qui l a collecte', async () => {

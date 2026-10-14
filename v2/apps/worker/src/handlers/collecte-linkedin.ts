@@ -43,7 +43,7 @@ import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { arriverSurLeFil, identifiantDeProfil, lireProfil, trouverPostsDeProfil } from '../linkedin/profils.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
 import { arriverSurLaRecherche, chercherPersonnes } from '../linkedin/recherche.js';
-import { TYPES_LINKEDIN_COLLECTES, lienProfilDeduit } from '@jay-reach/core';
+import { TYPES_LINKEDIN_COLLECTES, lienProfilDeduit, exclusionsSource, type ExclusionsIntitule } from '@jay-reach/core';
 import {
   adresseDeduite,
   engageurSchema,
@@ -140,6 +140,8 @@ interface Bilan {
   ignores: number;
   /** Personnes laissées de côté parce qu'elles figurent sur la liste de suppression : un fait qu'on peut avoir à démontrer. */
   opposes: number;
+  /** Personnes écartées à la collecte par le filtre d'intitulé de la source, avant tout scoring (issue #164). */
+  ecartesFiltre: number;
   /** Parmi les nouvelles, celles enregistrées sous une adresse déduite de l'URN (ni cherchable ni enrichissable). */
   adressesDeduites: number;
   /** Le passage s'est arrêté sur le plafond de personnes enregistrées par passage. */
@@ -161,6 +163,7 @@ const bilanVierge = (): Bilan => ({
   dejaEnCampagne: 0,
   ignores: 0,
   opposes: 0,
+  ecartesFiltre: 0,
   adressesDeduites: 0,
   plafondPersonnes: false,
   posts: 0,
@@ -183,6 +186,8 @@ const bilanVierge = (): Bilan => ({
 type ConfigCollecte = {
   readonly garder: string[];
   readonly campagne: { id: string; personaId: string };
+  /** Filtre d'intitulé de la source ; `{}` quand elle n'en porte pas ou que la valeur stockée est illisible. */
+  readonly exclusions: ExclusionsIntitule;
 } & (
   | { readonly mode: 'post'; readonly urlPost: string }
   | { readonly mode: 'pages' | 'profils'; readonly entrees: string[] }
@@ -229,23 +234,27 @@ async function lireConfigCollecte(pool: Pool, job: CollecteLinkedInJob): Promise
   const personaId = brut ?? (personas.length === 1 ? personas[0] : null);
   if (personaId === undefined || personaId === null) return { erreur: MSG.persona };
   const campagne = { id: ligne.campagne_id, personaId };
+  // Donnée stockée en jsonb : validée à la lecture. Illisible = pas de filtre, jamais un passage
+  // arrêté : la source est ouverte à tous plutôt que bloquée sur une liste qu'on ne sait pas lire.
+  const lues = exclusionsSource.safeParse(config.exclusions ?? {});
+  const exclusions: ExclusionsIntitule = lues.success ? lues.data : {};
 
-  if (config.sourceType === 'linkedin_job_change') return { mode: 'changement', garder, campagne };
+  if (config.sourceType === 'linkedin_job_change') return { mode: 'changement', garder, campagne, exclusions };
   if (config.sourceType === 'linkedin_keywords') {
     const entrees = (Array.isArray(config.sujets) ? config.sujets : []).map((v) => String(v).trim()).filter((v) => v.length > 0);
     if (entrees.length === 0) return { erreur: MSG.mots_cles_absents };
-    return { mode: 'recherche', entrees, garder, campagne };
+    return { mode: 'recherche', entrees, garder, campagne, exclusions };
   }
   if (config.sourceType === 'linkedin_competitor_posts' || config.sourceType === 'linkedin_creator_posts') {
     const profils = config.sourceType === 'linkedin_creator_posts';
     const brutes = profils ? config.profilsCreateurs : config.pagesConcurrentes;
     const entrees = (Array.isArray(brutes) ? brutes : []).map((v) => String(v).trim()).filter((v) => v.length > 0);
     if (entrees.length === 0) return { erreur: profils ? MSG.profils_absents : MSG.pages_absentes };
-    return { mode: profils ? 'profils' : 'pages', entrees, garder, campagne };
+    return { mode: profils ? 'profils' : 'pages', entrees, garder, campagne, exclusions };
   }
   const urlPost = typeof config.urlPost === 'string' ? config.urlPost.trim() : '';
   if (urlPost.length === 0) return { erreur: MSG.post_introuvable };
-  return { mode: 'post', urlPost, garder, campagne };
+  return { mode: 'post', urlPost, garder, campagne, exclusions };
 }
 
 
@@ -395,7 +404,7 @@ async function cloreCollecte(
             requetes = $7, vus = $5, nouveaux = $6, doublons = $8, deja_en_campagne = $9,
             ip_sortie = $10, operateur_sortie = $11, verdict_linkedin = $12,
             ignores = $13, opposes = $14, adresses_deduites = $15, plafond_personnes_atteint = $16,
-            posts = $17
+            posts = $17, ecartes_filtre = $18
       where sr.id = $2
         and sr.source_id in (select id from sources where organization_id = $1)`,
     [
@@ -416,6 +425,7 @@ async function cloreCollecte(
       b.adressesDeduites,
       b.plafondPersonnes,
       b.posts,
+      b.ecartesFiltre,
     ],
   );
 }
@@ -665,6 +675,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // Obligatoire depuis la tâche 6 : sans lui, l'écart par le scoring serait
       // compté sur le mauvais passage.
       sourceRunId: job.sourceRunId,
+      exclusions: config.exclusions,
     };
 
     /** Range l'issue d'un enregistrement dans le bilan. Commun aux engageurs et aux personnes trouvées. */
@@ -672,6 +683,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       if (issue === 'nouveau') bilan.nouveaux += 1;
       else if (issue === 'deja_en_campagne') bilan.dejaEnCampagne += 1;
       else if (issue === 'supprime') bilan.opposes += 1;
+      else if (issue === 'ecarte_filtre') bilan.ecartesFiltre += 1;
       else bilan.doublons += 1; // `doublon` et `ecarte` : déjà connus, rien de neuf
     };
 
@@ -883,6 +895,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           const issue = await enregistrerChangementDePoste(contexteEngageur, changement, config.campagne);
           if (issue === 'change') bilan.nouveaux += 1;
           else if (issue === 'inchange') bilan.doublons += 1;
+          else if (issue === 'ecarte_filtre') bilan.ecartesFiltre += 1;
           else bilan.ignores += 1; // `absent` : la fiche a disparu entre la sélection et la lecture
           await marquerContactVerifie(pool, job, changement.contactId, null);
         }
@@ -1094,7 +1107,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       verdictLinkedIn: bilan.requetes > 0,
     });
     console.log(
-      `[collecte-linkedin] ${bilan.requetes} requête(s), ${bilan.vus} personne(s) vue(s), ${bilan.nouveaux} nouvelle(s), ${bilan.doublons} doublon(s), ${bilan.dejaEnCampagne} déjà en campagne, ${bilan.ignores} ignorée(s), ${bilan.opposes} opposée(s), ${bilan.adressesDeduites} à adresse déduite${bilan.plafondPersonnes ? ', plafond de personnes atteint' : ''}`,
+      `[collecte-linkedin] ${bilan.requetes} requête(s), ${bilan.vus} personne(s) vue(s), ${bilan.nouveaux} nouvelle(s), ${bilan.doublons} doublon(s), ${bilan.dejaEnCampagne} déjà en campagne, ${bilan.ignores} ignorée(s), ${bilan.opposes} opposée(s), ${bilan.ecartesFiltre} écartée(s) par filtre, ${bilan.adressesDeduites} à adresse déduite${bilan.plafondPersonnes ? ', plafond de personnes atteint' : ''}`,
     );
   } catch (err) {
     // Le message d'origine peut porter l'URL du proxy avec ses identifiants :
