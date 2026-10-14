@@ -2,8 +2,8 @@
 // inscription → tick → action idempotente → job de dispatch → linkedin_action_queue.
 // Données fictives ; aucun envoi réel (les lignes restent en pending dans la file).
 import pg from 'pg';
-import { poserEcheanceApresDepart } from '@jay-reach/core';
-import { enrollContact, tickDueEnrollments } from './_seq.mjs';
+import { poserEcheanceApresDepart, cloreDepartReel } from '@jay-reach/core';
+import { enrollContact, tickDueEnrollments, mettreInscriptionEnPause, rattraperEcheancesManquantes } from './_seq.mjs';
 import { refreshDomainPatterns } from './_patterns.mjs';
 import { runLinkedInDispatch } from './_lkd.mjs';
 
@@ -644,6 +644,94 @@ async function main() {
   check('email : remise à la date prévue (lead time nul)',
     new Date(actJit.dispatch_after).getTime() === new Date(actJit.scheduled_for).getTime(),
     `${actJit?.dispatch_after}`);
+
+  // --- Section 9 : reprise apres pause, l'inscription doit REPARTIR (issue #160) ------
+  //
+  // Le defaut mesure le 14/10 sur « Jay coach - RH » : sept inscriptions mises en pause par un
+  // echec SalesBlink, reprises a l'ecran, dont l'email est bien parti et qui sont restees
+  // bloquees sur la meme etape, une ligne de journal par minute. Deux ruptures enchainees, et
+  // aucune ne se voit sur un pool factice : tout se joue dans le SQL.
+  //
+  // Le scenario les rejoue dans l'ordre, et chaque controle correspond a l'une d'elles.
+  console.log('\n[seq] 9. reprise apres pause (issue #160)');
+  {
+    const campR = await seedCampaign('seq-reprise-160', [
+      { channel: 'email', delay_hours: 0, body: 'Bonjour {{first_name}}, un.' },
+      { channel: 'email', delay_hours: 24, body: 'Bonjour {{first_name}}, deux.' },
+      { channel: 'email', delay_hours: 48, body: 'Bonjour {{first_name}}, trois.' },
+    ]);
+    // email_status 'valid' : seul lui passe le gate de delivrabilite (cf. section 7). Sans lui,
+    // l'action de l'etape 0 part en `blocked` et l'inscription se met en pause avant meme que le
+    // scenario commence.
+    const ctR = (await q(
+      `insert into contacts (organization_id, email, email_status, first_name, last_name, locale)
+       values ($1,$2,'valid'::email_status,'Reprise','Test','fr') returning id`,
+      [ORG, 'reprise-cent-soixante@example.test'])).rows[0].id;
+    const enrR = await enrollContact(pool, { organizationId: ORG, campaignId: campR, contactId: ctR });
+
+    // Etape 0 : creee puis reellement partie. `current_step` passe a 1, l'echeance est posee.
+    await q(`update enrollments set next_action_at = now() where id=$1`, [enrR]);
+    await tickDueEnrollments(pool, at(0));
+    const a0 = (await q(
+      `select a.id from actions a join sequence_steps s on s.id=a.step_id
+        where a.enrollment_id=$1 and s.position=0`, [enrR])).rows[0];
+    await q('select app.mark_action_dispatched($1)', [a0.id]);
+    const apres0 = (await q(`select current_step from enrollments where id=$1`, [enrR])).rows[0];
+    await cloreDepartReel(pool,
+      { enrollmentId: enrR, campaignId: campR, currentStep: apres0.current_step, rangEtapePartie: 0 }, at(0));
+
+    // Etape 1 : son action est creee par le tick, `current_step` passe a 2. Elle ne part pas.
+    await q(`update enrollments set next_action_at = now() where id=$1`, [enrR]);
+    await tickDueEnrollments(pool, at(0));
+    const a1 = (await q(
+      `select a.id from actions a join sequence_steps s on s.id=a.step_id
+        where a.enrollment_id=$1 and s.position=1`, [enrR])).rows[0];
+    check('action de l etape 1 creee', !!a1, `${a1?.id ?? 'absente'}`);
+
+    // L'envoi echoue cote fournisseur : la pause RAMENE `current_step` sur l'etape en echec.
+    await mettreInscriptionEnPause(pool, enrR, 1, 'salesblink_client_error');
+    const enPause = (await q(`select status, current_step, next_action_at from enrollments where id=$1`, [enrR])).rows[0];
+    check('pause : etape ramenee sur celle en echec, echeance effacee',
+      enPause.status === 'paused' && enPause.current_step === 1 && enPause.next_action_at === null,
+      `${enPause.status}/${enPause.current_step}`);
+
+    // Reprise a l'ecran : l'inscription redevient active et l'action existante est rejouee,
+    // sans echeance — c'est son depart reel qui la posera. (Ce que fait `reprendreInscription`.)
+    await q(`update enrollments set status='active', stop_reason=null, next_action_at=null where id=$1`, [enrR]);
+    await q(`update actions set status='scheduled', dispatched_at=null where id=$1`, [a1.id]);
+
+    // RUPTURE 1 — le rattrapage ne doit RIEN poser tant que l'action courante n'est pas partie.
+    // Avant le correctif il posait une echeance depuis le depart de l'etape 0, ce qui bloquait
+    // ensuite `poserEcheanceApresDepart` (sa garde exige `next_action_at is null`).
+    await rattraperEcheancesManquantes(pool);
+    const apresRattrapage1 = (await q(`select next_action_at from enrollments where id=$1`, [enrR])).rows[0];
+    check('rattrapage : aucune echeance posee tant que l action courante attend son depart',
+      apresRattrapage1.next_action_at === null, `${apresRattrapage1.next_action_at}`);
+
+    // L'action rejouee part pour de bon.
+    await q('select app.mark_action_dispatched($1)', [a1.id]);
+    // Exactement ce que font les transports : `cloreDepartReel` avec le rang de l'etape qui part.
+    // L'action rejouee est celle de l'etape 1, et `current_step` vaut 1 : c'est le cas « rejeu ».
+    await cloreDepartReel(pool,
+      { enrollmentId: enrR, campaignId: campR, currentStep: 1, rangEtapePartie: 1 }, at(0));
+
+    // RUPTURE 2 — personne n'avancait `current_step` apres un rejeu : `poserEcheanceApresDepart`
+    // ne touche que `next_action_at`. `cloreDepartReel` (appelee juste au-dessus) fait les deux.
+    const repris = (await q(`select current_step, status, next_action_at from enrollments where id=$1`, [enrR])).rows[0];
+    check('reprise : l etape avance apres le depart reel de l action rejouee',
+      repris.current_step === 2, `current_step=${repris.current_step}`);
+    check('reprise : une echeance est posee pour l etape suivante',
+      repris.next_action_at !== null && repris.status === 'active', `${repris.next_action_at}`);
+
+    // Et la preuve qui compte : le tick suivant fait VRAIMENT progresser l'inscription vers
+    // l'etape 2, au lieu de buter sur la cle d'idempotence de l'etape 1 a chaque passage.
+    await q(`update enrollments set next_action_at = now() where id=$1`, [enrR]);
+    await tickDueEnrollments(pool, at(0));
+    const a2 = (await q(
+      `select a.id from actions a join sequence_steps s on s.id=a.step_id
+        where a.enrollment_id=$1 and s.position=2`, [enrR])).rows[0];
+    check('le tick suivant cree bien l action de l etape 2 (plus de boucle)', !!a2, `${a2?.id ?? 'absente'}`);
+  }
 
   console.log(`\n[seq] ${failures === 0 ? '✅ TOUT VERT' : `❌ ${failures} échec(s)`}`);
   await pool.end();

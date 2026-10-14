@@ -133,7 +133,7 @@ const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 
 // `rattraperEcheancesManquantes` (tour de correction 2, issue #111) : une
 // seule requête (jointure latérale sur l'étape précédente puis sur `actions`)
 // renvoie déjà les vraies candidates, plus de requête par ligne.
-const RATTRAPAGE_CANDIDATS = /select e\.id, e\.campaign_id, e\.current_step, a\.dispatched_at\s+from enrollments e\s+join lateral/i;
+const RATTRAPAGE_CANDIDATS = /select e\.id, e\.campaign_id, e\.current_step, a\.dispatched_at,\s+courante\.dispatched_at as courante_partie_a\s+from enrollments e\s+left join lateral/i;
 // `reprendreAbsencesEchues` (F10) : tourne AVANT le rattrapage, même motif de
 // défaut neutre — aucune candidate par défaut, no-op pour les tests qui
 // l'ignorent (voir la suite dédiée `reprendreAbsencesEchues (F10)`). Jointure
@@ -619,6 +619,8 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
   const DELAI_ETAPE_SUIVANTE =
     /select delay_hours from sequence_steps\s+where campaign_id = \$1\s+order by position asc\s+offset \$2\s+limit 1/i;
   const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id = \$1/i;
+  // `avancerApresRejeuParti` (@jay-reach/core) : l'avancement et l'echeance dans le MEME `update`.
+  const AVANCE_APRES_REJEU = /update enrollments\s+set current_step = \$2 \+ 1,\s+next_action_at = \$3/i;
 
   it('trois inscriptions à échéance nulle (précédente `scheduled`, précédente `dispatched`, inscription `completed`) : une seule ligne candidate renvoyée par la requête, une seule échéance posée', async () => {
     // La requête (tour de correction 2) fait TOUT le filtrage en SQL — jointure
@@ -633,7 +635,7 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
     const { pool, appels } = creerPoolFactice([
       {
         motif: RATTRAPAGE_CANDIDATS,
-        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2, dispatched_at: dispatchedAt }]),
+        repondre: () => ligne([{ id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 2, dispatched_at: dispatchedAt, courante_partie_a: null }]),
       },
       { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 120 }]) },
       { motif: POSE_ECHEANCE, repondre: () => ({ rows: [], rowCount: 1 }) },
@@ -651,7 +653,7 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
     expect(requeteCandidats!.sql).toMatch(/e\.current_step > 0/i);
     expect(requeteCandidats!.sql).toMatch(/a\.status in \('dispatched', 'delivered'\)/i);
     expect(requeteCandidats!.sql).toMatch(/a\.dispatched_at is not null/i);
-    expect(requeteCandidats!.sql).toMatch(/order by a\.dispatched_at asc/i);
+    expect(requeteCandidats!.sql).toMatch(/order by coalesce\(courante\.dispatched_at, a\.dispatched_at\) asc/i);
 
     // Une seule ligne candidate → une seule échéance posée, aucune requête
     // « par ligne » supplémentaire pour filtrer davantage côté application.
@@ -666,6 +668,63 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
     // d'appels à `console.warn` (un autre passage aurait pu en émettre un autre) :
     // un `spyOn` non restauré ailleurs ne peut pas rendre cette assertion instable.
     expect(avertissement.mock.calls.some((appel) => String(appel[0]).includes('rattrapée'))).toBe(true);
+  });
+
+  it('issue #160 — action de l’étape COURANTE déjà partie (rejeu après pause) : l’étape avance et l’échéance se pose ensemble, jamais la simple pose de `poserEcheanceApresDepart`', async () => {
+    // Signature mesurée le 14/10 sur « Jay coach - RH » : `mettreInscriptionEnPause` a ramené
+    // `current_step` sur l’étape en échec, `reprendreInscription` a rejoué l’action, elle est
+    // partie — et plus rien n’avançait l’inscription. La branche doit viser
+    // `avancerApresRejeuParti` (un seul `update` qui fait les deux), pas `poserEcheanceApresDepart`.
+    const partieA = new Date('2026-10-14T11:01:53.000Z');
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: RATTRAPAGE_CANDIDATS,
+        repondre: () =>
+          ligne([
+            { id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 3, dispatched_at: null, courante_partie_a: partieA },
+          ]),
+      },
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 72 }]) },
+      { motif: AVANCE_APRES_REJEU, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await rattraperEcheancesManquantes(pool);
+
+    // Le délai lu est celui de l’étape SUIVANTE (rang 3 + 1), pas celui de l’étape qui vient de partir.
+    const lectureDelai = appels.find((a) => DELAI_ETAPE_SUIVANTE.test(a.sql));
+    expect(lectureDelai!.values).toEqual([CAMPAIGN_ID, 4]);
+
+    // Un seul écrit, qui avance ET planifie. Surtout : jamais la pose seule, qui laisserait
+    // `current_step` en arrière et ramènerait l’inscription en boucle sur la même étape.
+    expect(appels.filter((a) => POSE_ECHEANCE.test(a.sql))).toHaveLength(0);
+    const avance = appels.find((a) => AVANCE_APRES_REJEU.test(a.sql));
+    expect(avance).toBeDefined();
+    const attendu = echeanceEtapeSuivante(partieA.getTime(), ENROLLMENT_ID, 72);
+    expect(avance!.values).toEqual([ENROLLMENT_ID, 3, new Date(attendu!).toISOString(), false]);
+    expect(avertissement.mock.calls.some((appel) => String(appel[0]).includes('relancée'))).toBe(true);
+  });
+
+  it('issue #160 — l’étape partie était la DERNIÈRE : l’inscription se termine, sans échéance', async () => {
+    // Le `completed` se pose ICI, après le départ réel, jamais avant (hotfix PR #102 : un
+    // `completed` posé à la création faisait sauter le dernier email de la séquence).
+    const { pool, appels } = creerPoolFactice([
+      {
+        motif: RATTRAPAGE_CANDIDATS,
+        repondre: () =>
+          ligne([
+            { id: ENROLLMENT_ID, campaign_id: CAMPAIGN_ID, current_step: 4, dispatched_at: null, courante_partie_a: new Date('2026-10-14T11:02:00.000Z') },
+          ]),
+      },
+      { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([]) }, // aucune étape au-delà
+      { motif: AVANCE_APRES_REJEU, repondre: () => ({ rows: [], rowCount: 1 }) },
+    ]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await rattraperEcheancesManquantes(pool);
+
+    const avance = appels.find((a) => AVANCE_APRES_REJEU.test(a.sql));
+    expect(avance!.values).toEqual([ENROLLMENT_ID, 4, null, true]);
   });
 
   it('aucune candidate (requête vide) : aucune échéance posée, aucun avertissement', async () => {
@@ -685,8 +744,8 @@ describe('rattraperEcheancesManquantes (tour de correction 2, issue #111)', () =
         motif: RATTRAPAGE_CANDIDATS,
         repondre: () =>
           ligne([
-            { id: 'enrollment-a', campaign_id: CAMPAIGN_ID, current_step: 1, dispatched_at: dispatchedAt },
-            { id: 'enrollment-b', campaign_id: CAMPAIGN_ID, current_step: 2, dispatched_at: dispatchedAt },
+            { id: 'enrollment-a', campaign_id: CAMPAIGN_ID, current_step: 1, dispatched_at: dispatchedAt, courante_partie_a: null },
+            { id: 'enrollment-b', campaign_id: CAMPAIGN_ID, current_step: 2, dispatched_at: dispatchedAt, courante_partie_a: null },
           ]),
       },
       { motif: DELAI_ETAPE_SUIVANTE, repondre: () => ligne([{ delay_hours: 24 }]) },

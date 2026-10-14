@@ -22,7 +22,7 @@ import {
   objetPourSalesBlink,
   assurerFil,
   ecrireEvenement,
-  poserEcheanceApresDepart,
+  cloreDepartReel,
   type ModeEnvoi,
 } from '@jay-reach/core';
 import {
@@ -38,7 +38,13 @@ import {
 import { resolveProviderCredentials } from '../credentials.js';
 import { lirePlafondFournisseur } from '../producer.js';
 import { buildMessageValues, chargerLigneInscription, deciderPorteEmail, resolveTemplate } from './message-values.js';
-import { chargerContraintesSender, mettreInscriptionEnPause, quotaSenderRestant, rangDeLEtape } from './sequence.js';
+import {
+  chargerContraintesSender,
+  mettreInscriptionEnPause,
+  quotaSenderRestant,
+  rangDeLEtape,
+  rangDeLEtapeDeLAction,
+} from './sequence.js';
 import { mentionOrigineDuMessage } from './mention-origine.js';
 import type { DispatchJob } from './dispatch.js';
 
@@ -609,9 +615,17 @@ export async function envoyerEmailSalesBlink(
     await pool.query('select app.mark_action_dispatched($1)', [actionId]);
     // Échéance de l'étape suivante posée au DÉPART RÉEL (issue #111), pas à la
     // création de cette action : voir `poserEcheanceApresDepart` (@jay-reach/core).
-    await poserEcheanceApresDepart(
+    // `cloreDepartReel` et non `poserEcheanceApresDepart` : après une pause, `current_step` a été
+    // ramené sur l'étape en échec et l'action rejouée est celle de l'étape COURANTE — il faut
+    // alors avancer l'inscription en plus de poser l'échéance, sinon elle boucle (issue #160).
+    await cloreDepartReel(
       pool,
-      { enrollmentId: email.enrollmentId, campaignId: ligne.campaign_id, currentStep: ligne.current_step },
+      {
+        enrollmentId: email.enrollmentId,
+        campaignId: ligne.campaign_id,
+        currentStep: ligne.current_step,
+        rangEtapePartie: await rangDeLEtapeDeLAction(pool, actionId),
+      },
       new Date(),
     );
     await pool.query(

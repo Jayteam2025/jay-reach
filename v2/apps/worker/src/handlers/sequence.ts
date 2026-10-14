@@ -20,6 +20,7 @@ import {
   shiftIntoBusinessHours,
   applyLeadTime,
   poserEcheanceDepuisDispatch,
+  avancerApresRejeuParti,
   echeanceEtapeSuivante,
   plafondDuJour,
   relectureRequise,
@@ -505,6 +506,30 @@ const LEAD_TIME_HEURES: Record<string, number> = { letter: 72 };
  * un rang faux dès qu'une étape avait été supprimée, et la reprise ne retrouvait plus l'étape.
  * Rend undefined quand l'étape n'existe plus (suppression entre-temps).
  */
+/**
+ * Rang ordinal de l'etape d'une ACTION, en une requete — meme comptage que `rangDeLEtape`, mais
+ * en partant de l'action plutot que de l'etape. Les gestionnaires d'envoi tiennent un `actionId`,
+ * jamais un `step_id` (`DueRow` ne le porte pas) : sans cette variante ils devraient lire l'action
+ * d'abord, pour une donnee dont ils n'ont besoin que le temps d'un appel a `cloreDepartReel`.
+ *
+ * `undefined` si l'action ou son etape n'existe plus : l'appelant retombe alors sur la pose
+ * d'echeance simple, qui est le comportement d'avant l'issue #160.
+ */
+export async function rangDeLEtapeDeLAction(
+  pool: Pick<Pool, 'query'>,
+  actionId: string,
+): Promise<number | undefined> {
+  const res = await pool.query<{ rang: number }>(
+    `select (select count(*)::int from sequence_steps o /* jr:rang_etape_action */
+              where o.campaign_id = s.campaign_id and o.position < s.position) as rang
+       from actions a
+       join sequence_steps s on s.id = a.step_id
+      where a.id = $1`,
+    [actionId],
+  );
+  return res.rows[0]?.rang;
+}
+
 export async function rangDeLEtape(pool: Pick<Pool, 'query'>, stepId: string): Promise<number | undefined> {
   const res = await pool.query<{ rang: number }>(
     `select (select count(*)::int from sequence_steps o /* jr:rang_etape */
@@ -606,6 +631,26 @@ export async function mettreInscriptionEnPause(
  * (`@jay-reach/core`) l'accepte indifféremment en `Date` ou en chaîne
  * (`versInstant`, interne au cœur — cette fonction-ci suffit, rien d'autre à
  * importer).
+ *
+ * **Deux cas, et l'étape COURANTE prime sur la précédente** (issue #160, mesurée le 14/10 sur
+ * sept inscriptions de « Jay coach - RH » reprises après la panne SalesBlink du 13) :
+ *
+ *  - L'action de l'étape courante EST PARTIE. Signature d'un rejeu après pause :
+ *    `mettreInscriptionEnPause` a ramené `current_step` sur l'étape en échec,
+ *    `reprendreInscription` a remis l'action `scheduled` plutôt que d'en créer une seconde, et
+ *    au départ réel plus rien n'avance l'inscription — `poserEcheanceApresDepart` ne touche que
+ *    `next_action_at`. `avancerApresRejeuParti` écrit l'avancement ET l'échéance ensemble.
+ *  - L'action de l'étape courante N'EXISTE PAS. Cas d'origine (#111) : c'est le départ de la
+ *    PRÉCÉDENTE qui donne l'instant, et l'échéance se pose comme avant.
+ *
+ * Le troisième cas — l'action de l'étape courante existe mais n'est PAS encore partie — ne doit
+ * surtout RIEN déclencher, et c'est la raison d'être de la garde `courante.id is null`. C'est
+ * l'état normal de toute inscription entre la création de son action et son envoi. Sans cette
+ * garde, le rattrapage posait l'échéance depuis le départ de l'étape précédente, ce qui bloquait
+ * ensuite `poserEcheanceApresDepart` (sa garde exige `next_action_at is null`) : l'inscription
+ * revenait due à chaque tick sur une étape dont la clé d'idempotence était déjà prise, et
+ * n'avançait plus jamais. C'est exactement le défaut que la revue transversale du lot 2 avait
+ * fermé dans `reprendreInscription` — il rentrait par cette porte-ci.
  */
 export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Promise<void> {
   const candidats = await pool.query<{
@@ -613,31 +658,68 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
     campaign_id: string;
     current_step: number;
     dispatched_at: string | Date | null;
+    courante_partie_a: string | Date | null;
   }>(
-    `select e.id, e.campaign_id, e.current_step, a.dispatched_at
+    `select e.id, e.campaign_id, e.current_step, a.dispatched_at,
+            courante.dispatched_at as courante_partie_a
        from enrollments e
-       join lateral (
+       left join lateral (
          select id
            from sequence_steps
           where campaign_id = e.campaign_id
           order by position asc
-          offset e.current_step - 1
+          -- greatest(..., 0) et non current_step - 1 nu : dans un LEFT JOIN LATERAL la
+          -- sous-requete est evaluee AVANT la condition on, donc une inscription encore a
+          -- l'etape 0 faisait echouer tout le tick sur « OFFSET must not be negative »
+          -- (trouve par le harnais pg-verify, invisible sur un pool factice). La condition
+          -- on ci-dessous reste la vraie garde : a l'etape 0, pas d'etape precedente.
+          offset greatest(e.current_step - 1, 0)
           limit 1
-       ) s on true
-       join actions a
+       ) s on e.current_step > 0
+       left join actions a
          on a.step_id = s.id
         and a.enrollment_id = e.id
         and a.status in ('dispatched', 'delivered')
         and a.dispatched_at is not null
+       left join lateral (
+         select id
+           from sequence_steps
+          where campaign_id = e.campaign_id
+          order by position asc
+          offset e.current_step
+          limit 1
+       ) sc on true
+       left join actions courante
+         on courante.step_id = sc.id
+        and courante.enrollment_id = e.id
       where e.status = 'active'
         and e.next_action_at is null
-        and e.current_step > 0
-      order by a.dispatched_at asc
+        -- Soit l'etape COURANTE est deja partie (rejeu apres pause : c'est elle qui fait foi),
+        -- soit elle n'a aucune action en attente et c'est la PRECEDENTE qui donne l'instant.
+        and (
+          courante.dispatched_at is not null
+          or (courante.id is null and a.dispatched_at is not null)
+        )
+      order by coalesce(courante.dispatched_at, a.dispatched_at) asc
       limit $1`,
     [limit],
   );
   let rattrapees = 0;
+  let reprises = 0;
   for (const candidat of candidats.rows) {
+    // `!= null` volontaire (couvre `null` ET `undefined`) : une ligne à qui il manquerait la
+    // colonne partirait sinon dans la branche « rejeu » et avancerait une étape à tort.
+    if (candidat.courante_partie_a != null) {
+      // Rejeu après pause : l'action de l'étape courante est partie et rien n'a avancé
+      // l'inscription. `avancerApresRejeuParti` fait les deux d'un coup.
+      const ecrit = await avancerApresRejeuParti(
+        pool,
+        { enrollmentId: candidat.id, campaignId: candidat.campaign_id, etapePartie: candidat.current_step },
+        candidat.courante_partie_a,
+      );
+      if (ecrit) reprises += 1;
+      continue;
+    }
     const ecrit = await poserEcheanceDepuisDispatch(
       pool,
       { enrollmentId: candidat.id, campaignId: candidat.campaign_id, currentStep: candidat.current_step },
@@ -647,6 +729,9 @@ export async function rattraperEcheancesManquantes(pool: Pool, limit = 200): Pro
   }
   if (rattrapees > 0) {
     console.warn(`[tick] ${rattrapees} inscription(s) rattrapée(s) : échéance posée après coup (issue #111)`);
+  }
+  if (reprises > 0) {
+    console.warn(`[tick] ${reprises} inscription(s) relancée(s) après rejeu : étape avancée et échéance posée (issue #160)`);
   }
 }
 
