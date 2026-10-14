@@ -676,6 +676,8 @@
         "readAndKept": "{lus, plural, one {# vacature gelezen} other {# vacatures gelezen}}, {retenus, plural, one {# behouden} other {# behouden}} bij de laatste run",
         "nextPaused": "gepauzeerd",
         "nextOnLaunch": "bij het starten",
+        "cadenceAtLaunch": "{cadence}, bij de start van de campagne",
+        "cadencePausedSource": "{cadence}, zodra de bron actief is",
         "onDemand": "Op aanvraag: “Nu verzamelen”",
         "lastRun": "Laatste run",
         "lastRunNever": "Nog nooit uitgevoerd",
@@ -790,7 +792,7 @@
         "collectNow": "Nu verzamelen",
         "collectNowDraft": "Beschikbaar zodra de campagne is gelanceerd.",
         "collectNowUnsaved": "Beschikbaar zodra de bron is opgeslagen.",
-        "collectNowInactive": "Beschikbaar zolang de campagne actief is.",
+        "collectNowInactive": "Beschikbaar zodra de campagne actief is.",
         "collectRequested": "Verzameling aangevraagd.",
         "collectNowPaused": "Beschikbaar wanneer de bron actief is."
       }

@@ -676,6 +676,8 @@
         "readAndKept": "{lus, plural, one {# posting read} other {# postings read}}, {retenus, plural, one {# kept} other {# kept}} on the last run",
         "nextPaused": "paused",
         "nextOnLaunch": "at launch",
+        "cadenceAtLaunch": "{cadence}, when the campaign starts",
+        "cadencePausedSource": "{cadence}, once the source is active",
         "onDemand": "On demand: “Collect now”",
         "lastRun": "Last run",
         "lastRunNever": "Never run",
@@ -790,7 +792,7 @@
         "collectNow": "Collect now",
         "collectNowDraft": "Available once the campaign is launched.",
         "collectNowUnsaved": "Available once the source is saved.",
-        "collectNowInactive": "Available while the campaign is active.",
+        "collectNowInactive": "Available once the campaign is active.",
         "collectRequested": "Collection requested.",
         "collectNowPaused": "Available when the source is active."
       }

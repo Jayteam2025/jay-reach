@@ -676,6 +676,8 @@
         "readAndKept": "{lus, plural, one {# offre lue} other {# offres lues}}, {retenus, plural, one {# retenue} other {# retenues}} au dernier passage",
         "nextPaused": "en pause",
         "nextOnLaunch": "au lancement",
+        "cadenceAtLaunch": "{cadence}, au lancement de la campagne",
+        "cadencePausedSource": "{cadence}, quand la source sera active",
         "onDemand": "À la demande : « Collecter maintenant »",
         "lastRun": "Dernier passage",
         "lastRunNever": "Jamais lancé",
@@ -790,7 +792,7 @@
         "collectNow": "Collecter maintenant",
         "collectNowDraft": "Disponible une fois la campagne lancée.",
         "collectNowUnsaved": "Disponible une fois la source enregistrée.",
-        "collectNowInactive": "Disponible tant que la campagne est active.",
+        "collectNowInactive": "Disponible quand la campagne est active.",
         "collectRequested": "Collecte demandée.",
         "collectNowPaused": "Disponible quand la source est active."
       }
