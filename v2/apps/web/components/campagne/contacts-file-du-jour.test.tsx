@@ -359,7 +359,9 @@ describe('TableContacts', () => {
       expect(html).toContain('max-width:0');
       // Ellipse posée, mais SANS `jr-petit` : l'intitulé de poste est une donnée principale, pas une
       // justification, il garde sa taille de police normale (contrairement à `pourquoi`).
-      expect(html).toContain('<span class="jr-tronque">Responsable régional des ventes grands comptes</span>');
+      expect(html).toContain(
+        '<span class="jr-tronque" title="Responsable régional des ventes grands comptes">Responsable régional des ventes grands comptes</span>',
+      );
       expect(html).not.toContain('jr-petit');
     });
 

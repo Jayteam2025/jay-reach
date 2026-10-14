@@ -1,19 +1,49 @@
+import { createTranslator } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { Demarrage, LigneDemarrage } from '@jay-reach/core';
+import type { CleDemarrage, Demarrage, LigneDemarrage } from '@jay-reach/core';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { ListeDemarrage } from './ListeDemarrage';
+import { ListeDemarrage, type ListeDemarrageProps } from './ListeDemarrage';
 
 /** Les libellés réels : si une clé disparaît de `fr.json`, le typage le dit ici. */
 const d = fr.aujourdhui.demarrage;
-const libelles = {
-  titre: d.titre,
-  titreCasse: d.titreCasse,
-  sousTitre: d.sousTitre,
-  sousTitreCasse: d.sousTitreCasse,
-  avancement: d.avancement,
-  lignes: d.lignes,
-};
+const t = createTranslator({ locale: 'fr', messages: fr, namespace: 'aujourdhui.demarrage' });
+
+/**
+ * Les libellés sont résolus ici comme l'écran les résout : avec les vrais comptes, par le
+ * traducteur. Le composant n'interpole plus rien, donc lui passer les chaînes brutes de `fr.json`
+ * afficherait le message ICU tel quel — ce test ne prouverait plus ce qu'il prétend.
+ */
+function libellesPour(demarrage: Demarrage): ListeDemarrageProps['libelles'] {
+  const compteDe = (cle: CleDemarrage) => demarrage.lignes.find((l) => l.cle === cle)?.compte ?? 0;
+  const pour = (cle: CleDemarrage) => ({
+    titre: d.lignes[cle].titre,
+    aide: d.lignes[cle].aide,
+    bouton: d.lignes[cle].bouton,
+    mesure: t(`lignes.${cle}.mesure`, { n: compteDe(cle) }),
+  });
+  return {
+    titre: d.titre,
+    titreCasse: d.titreCasse,
+    sousTitre: d.sousTitre,
+    sousTitreCasse: d.sousTitreCasse,
+    avancement: t('avancement', { faites: demarrage.faites, total: demarrage.total }),
+    lignes: {
+      fournisseurs: pour('fournisseurs'),
+      boites: pour('boites'),
+      persona: pour('persona'),
+      linkedin: pour('linkedin'),
+      source: pour('source'),
+      campagne: pour('campagne'),
+    },
+  };
+}
+
+/** Le rendu complet, libellés compris, pour un jeu de lignes. */
+function rendre(lignes: LigneDemarrage[]): string {
+  const dem = demarrage(lignes);
+  return texte(renderToStaticMarkup(<ListeDemarrage demarrage={dem} libelles={libellesPour(dem)} />));
+}
 
 function ligne(cle: LigneDemarrage['cle'], p: Partial<LigneDemarrage> = {}): LigneDemarrage {
   return { cle, faite: true, compte: 1, casse: false, lien: '/x', ...p };
@@ -41,10 +71,7 @@ describe('la liste de démarrage', () => {
   // Elle ne survit pas à sa raison d'être : un bloc d'accueil qui reste pour toujours devient
   // du décor, et on cesse de le lire.
   it('tout branché, elle ne s’affiche pas du tout', () => {
-    const html = renderToStaticMarkup(
-      <ListeDemarrage demarrage={demarrage(toutesFaites)} libelles={libelles} />,
-    );
-    expect(html).toBe('');
+    expect(rendre(toutesFaites)).toBe('');
   });
 
   it('au premier passage, elle compte et montre le chemin de chaque ligne manquante', () => {
@@ -56,13 +83,13 @@ describe('la liste de démarrage', () => {
       ligne('source', { faite: false, compte: null, lien: '/campaigns' }),
       ligne('campagne', { faite: false, compte: null, lien: '/campaigns' }),
     ];
-    const html = texte(renderToStaticMarkup(<ListeDemarrage demarrage={demarrage(lignes)} libelles={libelles} />));
-    expect(html).toContain(libelles.titre);
+    const html = rendre(lignes);
+    expect(html).toContain(d.titre);
     expect(html).toContain('3 sur 6');
     // Les mesures des lignes faites, et l'aide seulement là où il reste à faire.
     expect(html).toContain('7 posées');
-    expect(html).toContain(libelles.lignes.linkedin.aide);
-    expect(html).not.toContain(libelles.lignes.fournisseurs.aide);
+    expect(html).toContain(d.lignes.linkedin.aide);
+    expect(html).not.toContain(d.lignes.fournisseurs.aide);
     expect(html).toContain('href="/settings/linkedin"');
   });
 
@@ -72,10 +99,10 @@ describe('la liste de démarrage', () => {
     const lignes = toutesFaites.map((l) =>
       l.cle === 'linkedin' ? ligne('linkedin', { faite: false, compte: null, casse: true }) : l,
     );
-    const html = texte(renderToStaticMarkup(<ListeDemarrage demarrage={demarrage(lignes)} libelles={libelles} />));
-    expect(html).toContain(libelles.titreCasse);
-    expect(html).toContain(libelles.sousTitreCasse);
-    expect(html).not.toContain(libelles.titre);
+    const html = rendre(lignes);
+    expect(html).toContain(d.titreCasse);
+    expect(html).toContain(d.sousTitreCasse);
+    expect(html).not.toContain(d.titre);
     expect(html).toContain('jr-demarrage-ligne--cassee');
     expect(html).toContain('5 sur 6');
   });
@@ -84,8 +111,8 @@ describe('la liste de démarrage', () => {
     const lignes = toutesFaites.map((l) =>
       l.cle === 'linkedin' ? ligne('linkedin', { faite: false, compte: null, casse: false }) : l,
     );
-    const html = renderToStaticMarkup(<ListeDemarrage demarrage={demarrage(lignes)} libelles={libelles} />);
+    const html = rendre(lignes);
     expect(html).not.toContain('jr-demarrage-ligne--cassee');
-    expect(texte(html)).toContain(libelles.titre);
+    expect(html).toContain(d.titre);
   });
 });

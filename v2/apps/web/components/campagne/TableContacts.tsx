@@ -5,6 +5,7 @@ import type { PuceTon } from '../ui';
 import { BoutonChercherEmail } from './BoutonChercherEmail';
 import { BoutonEcarterContact } from './BoutonEcarterContact';
 import { BoutonReprendre } from './BoutonReprendre';
+import { TexteTronque } from '../ui/TexteTronque';
 
 /**
  * Ligne affichée par `TableContacts` : `ContactCampagne`
@@ -182,7 +183,7 @@ export function TableContacts({
                   // Pas `jr-petit` (contrairement à `pourquoi`) : l'intitulé de poste est une
                   // donnée principale de la ligne, pas une justification, il garde sa taille normale.
                   posteListe: ligne.intitulePosteListe ? (
-                    <span className="jr-tronque">{ligne.intitulePosteListe}</span>
+                    <TexteTronque>{ligne.intitulePosteListe}</TexteTronque>
                   ) : (
                     <span className="jr-secondaire">—</span>
                   ),
@@ -190,7 +191,7 @@ export function TableContacts({
               : {}
             : {
                 pourquoi: ligne.pourquoi ? (
-                  <span className="jr-petit jr-tronque">{ligne.pourquoi}</span>
+                  <TexteTronque className="jr-petit">{ligne.pourquoi}</TexteTronque>
                 ) : (
                   <span className="jr-secondaire">—</span>
                 ),

@@ -48,6 +48,11 @@
 .jr-contenu.une-colonne { grid-template-columns: minmax(0, 1fr); }
 .jr-contenu .pleine { grid-column: 1 / -1; }
 .jr-aujourdhui { padding: 22px 28px 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 320px; gap: 16px; align-content: start; align-items: start; }
+/* Ce qui passe avant le titre de l'écran : la mise en route et les bandeaux d'alerte. Même retrait
+   horizontal que `.jr-entete-page` et `.jr-aujourdhui`, sinon ces blocs commencent 28 px à gauche
+   du titre qu'ils précèdent. Il ne porte rien quand il n'y a ni l'un ni l'autre : l'écran ne le
+   rend pas, et le titre garde son propre retrait haut. */
+.jr-tete-accueil { padding: 22px 28px 0; display: flex; flex-direction: column; gap: 8px; }
 .jr-aujourdhui .pleine { grid-column: 1 / -1; }
 .jr-moteur-plafonds { display: grid; gap: 16px; align-content: start; }
 .jr-deux-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
@@ -115,7 +120,6 @@ select.jr-puce {
 .jr-bouton:hover { background: var(--jr-fond); }
 .jr-bouton.principal { background: var(--jr-accent); color: var(--jr-accent-encre); border-color: var(--jr-accent); }
 .jr-bouton.principal:hover { filter: brightness(0.94); }
-.jr-bouton.sombre { background: var(--jr-encre); color: var(--jr-surface); border-color: var(--jr-encre); }
 .jr-bouton.danger { color: var(--jr-erreur); border-color: var(--jr-erreur-doux); background: var(--jr-erreur-doux); }
 .jr-bouton.petit { font-size: 13px; padding: 5px 10px; font-weight: 500; }
 .jr-bouton:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -332,7 +336,10 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-interrupteur { width: 34px; height: 20px; border-radius: 999px; background: var(--jr-accent); position: relative; display: inline-block; flex: none; border: 0; cursor: pointer; }
 .jr-interrupteur::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--jr-surface); }
 .jr-interrupteur.eteint { background: var(--jr-filet); } .jr-interrupteur.eteint::after { right: auto; left: 2px; }
-.jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-size: var(--jr-corps); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+/* `font-family` compte autant que la taille : un <input> ou un <select> qui porte lui-même cette
+   classe garderait sinon la police du navigateur (Arial), avec la bonne taille et la mauvaise
+   famille — un écart qu'on ne voit pas en relisant le composant. */
+.jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-family: inherit; font-size: var(--jr-corps); color: var(--jr-encre); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
 .jr-champ small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-champ input, .jr-champ select, .jr-champ textarea { border: 0; font: inherit; color: var(--jr-encre); background: transparent; width: 100%; outline: none; }
 /* Chevron dessiné plutôt que celui, natif, du navigateur (tour de correction F6, point 24) — que
@@ -544,6 +551,18 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
    `.jr-qui`) : `.jr-qui b`/`.jr-qui small` y posent déjà `display: block` avec une spécificité
    supérieure, qui l'emportait déjà quel que soit le `display` de `.jr-tronque`. */
 .jr-tronque { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Taille de cible minimale, critere 2.5.8 de WCAG 2.2 : 24 x 24 px pour tout element qu'on vise.
+   Mesure du 14/10 sur l'app deployee : les filtres en pastille tombaient a 23 px, et les 51 liens
+   de nom de la liste des contacts a 17 px.
+
+   Seules les pastilles CLIQUABLES sont concernees : une pastille d'etiquette ne se vise pas, et il
+   y en a 99 sur le seul ecran des contacts — les grossir aurait change le rythme des tableaux pour
+   rien. Pour les liens, un retrait vertical plutot qu'un `display` : il agrandit le rectangle et la
+   zone cliquable sans changer le flux, donc sans deplacer une seule ligne de tableau ni gener
+   l'ellipse posee au-dessus. */
+a.jr-puce, button.jr-puce { min-height: 24px; }
+.jr-table a.jr-lien { padding-block: 4px; }
 /* Cellule qui ne doit jamais couper au milieu d'un mot (tour de correction F6, point 4). */
 .jr-nowrap { white-space: nowrap; }
 /* Action à deux niveaux empilée verticalement plutôt que côte à côte (tour de correction F6,
@@ -727,13 +746,16 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
 
 /* La liste de démarrage de l'écran Aujourd'hui (lot 5). Elle n'est pas un tutoriel : elle lit six
    vérités en base, disparaît quand tout tient, et revient quand un branchement lâche. */
-.jr-demarrage { margin-bottom: 12px; }
-.jr-demarrage-entete { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+/* Le conteneur de tête porte l'espacement : la carte n'ajoute pas le sien. */
+.jr-demarrage { margin-bottom: 0; }
+.jr-demarrage-entete { padding: 14px 18px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .jr-demarrage-entete h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .jr-demarrage-entete p { margin: 2px 0 0; color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-demarrage-avancement { color: var(--jr-secondaire); font-size: var(--jr-petit); white-space: nowrap; }
-.jr-demarrage-liste { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon); overflow: hidden; }
-.jr-demarrage-ligne { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--jr-filet); }
+/* Bord à bord sous l'entête : la carte porte déjà le cadre, une bordure ici doublerait son
+   filet. Un seul trait sépare l'entête de la première ligne. */
+.jr-demarrage-liste { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--jr-filet); }
+.jr-demarrage-ligne { display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-top: 1px solid var(--jr-filet); }
 .jr-demarrage-ligne:first-child { border-top: 0; }
 .jr-demarrage-marque { position: relative; flex: none; width: 16px; height: 16px; border-radius: 999px; border: 1px solid var(--jr-filet); background: var(--jr-surface); }
 .jr-demarrage-marque--faite { background: var(--jr-bon); border-color: var(--jr-bon); }

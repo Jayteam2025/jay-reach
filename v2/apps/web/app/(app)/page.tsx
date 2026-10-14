@@ -11,6 +11,7 @@ import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../
 import { ListeDemarrage } from '../../components/accueil/ListeDemarrage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
+import { TexteTronque } from '../../components/ui/TexteTronque';
 
 export const revalidate = 60;
 
@@ -62,13 +63,17 @@ export default async function AujourdhuiPage() {
   // Tant que la mise en route est à l'écran, l'alerte qui dirait la même chose s'efface.
   const alertes = alertesSansDoublonDemarrage(a.alertes, demarrage);
 
+  // Le compte part au traducteur, pas au composant : les mesures françaises s'accordent
+  // (« 1 posée » contre « 7 posées »), ce qu'un `.replace('{n}', …)` posé après coup empêchait.
+  const compteDe = (cle: CleDemarrage) => demarrage.lignes.find((l) => l.cle === cle)?.compte ?? 0;
+
   // Les six clés sont écrites une à une : le typage garantit qu'aucune ne manque, là où un
   // `Object.fromEntries` rendrait un objet que rien n'oblige à être complet.
   const libellesLigne = (cle: CleDemarrage) => ({
     titre: t(`demarrage.lignes.${cle}.titre`),
     aide: t(`demarrage.lignes.${cle}.aide`),
     bouton: t(`demarrage.lignes.${cle}.bouton`),
-    mesure: t(`demarrage.lignes.${cle}.mesure`, { n: '{n}' }),
+    mesure: t(`demarrage.lignes.${cle}.mesure`, { n: compteDe(cle) }),
   });
 
   const jour = capitaliser(
@@ -76,39 +81,48 @@ export default async function AujourdhuiPage() {
       new Date(),
     ),
   );
+  // Le conteneur de tête n'existe que s'il a quelque chose à porter : sans lui, le titre de
+  // l'écran garde son propre retrait haut.
+  const teteVisible = !demarrage.terminee || alertes.length > 0;
   const campagnesActives = a.campagnes.filter((c) => c.statut === 'active').length;
   const nbAutresEnvois = a.fileDuJour.total - a.fileDuJour.envois.length;
 
   return (
     <>
-      <ListeDemarrage
-        demarrage={demarrage}
-        libelles={{
-          titre: t('demarrage.titre'),
-          titreCasse: t('demarrage.titreCasse'),
-          sousTitre: t('demarrage.sousTitre'),
-          sousTitreCasse: t('demarrage.sousTitreCasse'),
-          avancement: t('demarrage.avancement', { faites: '{faites}', total: '{total}' }),
-          lignes: {
-            fournisseurs: libellesLigne('fournisseurs'),
-            boites: libellesLigne('boites'),
-            persona: libellesLigne('persona'),
-            linkedin: libellesLigne('linkedin'),
-            source: libellesLigne('source'),
-            campagne: libellesLigne('campagne'),
-          },
-        }}
-      />
+      {/* La mise en route et les alertes passent avant le titre : ce conteneur leur donne le
+          retrait horizontal de la page, qu'elles n'avaient pas, et l'espacement entre elles. */}
+      {teteVisible && (
+        <div className="jr-tete-accueil">
+          <ListeDemarrage
+            demarrage={demarrage}
+            libelles={{
+              titre: t('demarrage.titre'),
+              titreCasse: t('demarrage.titreCasse'),
+              sousTitre: t('demarrage.sousTitre'),
+              sousTitreCasse: t('demarrage.sousTitreCasse'),
+              avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
+              lignes: {
+                fournisseurs: libellesLigne('fournisseurs'),
+                boites: libellesLigne('boites'),
+                persona: libellesLigne('persona'),
+                linkedin: libellesLigne('linkedin'),
+                source: libellesLigne('source'),
+                campagne: libellesLigne('campagne'),
+              },
+            }}
+          />
 
-      {alertes.map((alerte, index) => (
-        // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
-        <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`} style={{ marginBottom: 8 }}>
-          <span>{alerte.texte}</span>
-          <Link href={alerte.lien} className="jr-lien">
-            {t('alerts.action')}
-          </Link>
+          {alertes.map((alerte, index) => (
+            // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
+            <div key={`${alerte.type}-${index}`} className={`jr-bandeau ${alerte.type === 'moteur_silencieux' ? 'erreur' : 'attention'}`}>
+              <span>{alerte.texte}</span>
+              <Link href={alerte.lien} className="jr-lien">
+                {t('alerts.action')}
+              </Link>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       <EnTetePage
         titre={jour}
@@ -120,9 +134,8 @@ export default async function AujourdhuiPage() {
         })}
         // Bouton mort avant ce correctif (G2) : le composant `Bouton`, sans `onClick` ni `href`,
         // rendait un simple bouton de formulaire hors formulaire, qui ne faisait rien au clic.
-        // Même route et même classe `jr-bouton` que `campaigns/page.tsx` (`list.new`/
-        // `list.empty.action`), qui y renvoie déjà correctement — seule la variante change
-        // (`principal`, pas `sombre`, pour garder l'apparence déjà en place ici).
+        // Même route, même classe et même variante que `campaigns/page.tsx` (`list.new`) : une
+        // action principale porte une seule couleur, quel que soit l'écran d'où on la déclenche.
         action={
           <Link href="/campaigns/new" className="jr-bouton principal">
             {t('newCampaign')}
@@ -193,7 +206,7 @@ export default async function AujourdhuiPage() {
                         <div className="jr-qui">
                           <Avatar nom={envoi.contactNom} canal={envoi.canal} />
                           <span>
-                            <b className="jr-tronque">{envoi.contactNom}</b>
+                            <TexteTronque balise="b">{envoi.contactNom}</TexteTronque>
                             <small>
                               {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
                               {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}

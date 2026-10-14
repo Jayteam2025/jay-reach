@@ -29,7 +29,7 @@ export function MenuAjouterSource({ campagneId }: MenuAjouterSourceProps) {
 
   return (
     <div className="jr-menu-ancre">
-      <Bouton variante="sombre" onClick={() => setOuvert((v) => !v)}>
+      <Bouton variante="principal" onClick={() => setOuvert((v) => !v)}>
         {t('add')}
       </Bouton>
       {ouvert && (

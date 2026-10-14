@@ -171,7 +171,7 @@
       "gone": "{n, plural, one {# overgedragen} other {# overgedragen}}",
       "queued": "{n, plural, one {# in wachtrij} other {# in wachtrij}}",
       "none": "Geen verzendingen",
-      "cap": "{etat, select, pause {op pauze} sansLimite {geen limiet} other {/ {plafond}}}"
+      "cap": "{etat, select, pause {op pauze} sansLimite {geen limiet} other {limiet {plafond}}}"
     },
     "role": {
       "owner": "Eigenaar",
