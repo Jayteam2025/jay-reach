@@ -141,8 +141,9 @@ export default async function CampagnesPage({
                       <span>
                         <b>{campagne.nom}</b>
                         <small>
-                          {t('list.persona', { nom: campagne.nom })}
-                          {' · '}
+                          {/* Le persona est celui que la campagne vise (`entry_rules.personas`), jamais son
+                              propre nom ; une campagne qui n'en vise aucun n'en affiche pas. */}
+                          {campagne.personas.length > 0 ? `${t('list.persona', { nom: campagne.personas.join(', ') })} · ` : null}
                           {campagne.sources.length > 0
                             ? t('list.sourcesCount', { n: campagne.sources.length })
                             : campagne.listeSource

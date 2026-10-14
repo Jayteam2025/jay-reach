@@ -433,6 +433,12 @@ export interface CampagneListeResume {
   readonly statut: CampaignStatus;
   readonly boites: BoiteCampagne[];
   readonly sources: { providerId: string | null }[];
+  /**
+   * Noms des personas ciblés (`entry_rules.personas`, ceux de l'onglet Réglages) — vide quand
+   * la campagne n'en vise aucun. Jamais le nom de la campagne : l'écran affichait « Persona
+   * <nom de la campagne> », un persona qui n'existe dans aucune liste.
+   */
+  readonly personas: string[];
   readonly qualifies: number;
   /** Personnes distinctes (pas des offres/signaux) reliées aux signaux retenus de la campagne — R31 : la colonne « Contacts » de la liste compte des personnes, pas des offres. */
   readonly contacts: number;
@@ -666,6 +672,11 @@ function resoudreBoites(
   return retenues.map((b) => ({ id: b.id, identite: b.identite, marque: marqueBoite(b.identite, b.inboxProvider) }));
 }
 
+function personaIdsDe(entryRules: unknown): string[] {
+  const v = (entryRules as { personas?: unknown } | null)?.personas;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
 function boiteIdsDe(entryRules: unknown): string[] | undefined {
   const v = (entryRules as { boiteIds?: unknown } | null)?.boiteIds;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
@@ -780,6 +791,18 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
 
   const fuseau = String(reglages.fuseau);
   const ids = campagnesRes.rows.map((r) => r.id);
+
+  // Un seul aller-retour pour les noms de personas de TOUTES les campagnes (même lecture que
+  // `listerPersonasCampagne`, l'onglet Réglages — la source de vérité).
+  const personaIds = [...new Set(campagnesRes.rows.flatMap((r) => personaIdsDe(r.entry_rules)))];
+  const nomParPersona = new Map<string, string>();
+  if (personaIds.length > 0) {
+    const personasRes = await ctx.ex.query<{ id: string; name: string }>(
+      `select id, name from personas /* jr:personas_liste */ where organization_id = $1 and id = any($2::uuid[])`,
+      [ctx.organisationId, personaIds],
+    );
+    for (const p of personasRes.rows) nomParPersona.set(p.id, p.name);
+  }
   const tendanceParCampagne = new Map<string, number[]>();
   if (ids.length > 0) {
     // Groupé par jour DANS le fuseau de l'organisation, pas en UTC (I5, revue finale) : un
@@ -831,6 +854,9 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     statut: r.status,
     boites: resoudreBoites(toutesBoites, boiteIdsDe(r.entry_rules)),
     sources: (r.sources ?? []).map((providerId) => ({ providerId })),
+    personas: personaIdsDe(r.entry_rules)
+      .map((id) => nomParPersona.get(id))
+      .filter((nom): nom is string => nom !== undefined),
     qualifies: r.qualifies,
     contacts: r.contacts,
     enSequence: r.en_sequence,

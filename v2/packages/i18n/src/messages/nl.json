@@ -101,7 +101,10 @@
     },
     "liste": {
       "videTitre": "Niets in deze weergave",
-      "videTexte": "Geen enkel gesprek komt nu overeen met dit filter."
+      "videTexte": "Geen enkel gesprek komt nu overeen met dit filter.",
+      "tranche": "{debut}–{fin} van {total}",
+      "precedents": "Vorige",
+      "suivants": "Volgende"
     },
     "fil": {
       "choisirTitre": "Kies een gesprek",
@@ -599,6 +602,8 @@
     "sources": {
       "title": "Bronnen",
       "description": "Elke bron zoekt vacatures of profielen, de motor scoort ze en houdt de personen die overeenkomen met de persona \"{persona}\".",
+      "descriptionSansPersona": "Elke bron zoekt vacatures of profielen, de motor scoort ze en houdt de personen die overeenkomen met het doel van de campagne.",
+      "listSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}",
       "add": "+ Bron toevoegen",
       "empty": {
         "title": "Nog geen bron",
@@ -702,6 +707,7 @@
         "schedule": "Runs",
         "offresTitle": "{provider} · vacatures",
         "offresSubtitle": "De bron leest gepubliceerde vacatures, de motor scoort ze tegen de persona \"{persona}\".",
+        "offresSubtitleSansPersona": "De bron leest gepubliceerde vacatures, de motor scoort ze tegen het doel van de campagne.",
         "readSince": "{n, plural, one {# vacature gevonden} other {# vacatures gevonden}} sinds {date}",
         "alsoProvider": "ook {provider}",
         "runNow": "Nu uitvoeren",

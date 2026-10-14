@@ -266,6 +266,36 @@ describe('listerCampagnes', () => {
     await expect(listerCampagnes(faux({}, null))).rejects.toThrow(ForbiddenError);
   });
 
+  it(
+    'porte les NOMS des personas ciblés (entry_rules.personas), jamais le nom de la campagne — ' +
+      'une campagne sans persona en rend une liste vide',
+    async () => {
+      const ligne = {
+        status: 'active',
+        sources: [],
+        qualifies: 0,
+        contacts: 0,
+        en_sequence: 0,
+        en_pause: 0,
+        partis: 0,
+        reponses: 0,
+        interesses: 0,
+        derniere_activite: null,
+      };
+      const ctx = faux({
+        'jr:campagnes_liste': [
+          { ...ligne, id: 'camp-1', name: 'Jay coach - RH', entry_rules: {} },
+          { ...ligne, id: 'camp-2', name: 'Directeur commercial', entry_rules: { personas: ['p-1'] } },
+        ],
+        'jr:boites_actives': [],
+        'jr:tendance_partis': [],
+        'jr:personas_liste': [{ id: 'p-1', name: 'Directeur commercial (persona)' }],
+      });
+      const r = await listerCampagnes(ctx);
+      expect(r.map((c) => c.personas)).toEqual([[], ['Directeur commercial (persona)']]);
+    },
+  );
+
   it('résout les boîtes (avec marque) et calcule le taux de réponse', async () => {
     const ctx = faux({
       'jr:campagnes_liste': [

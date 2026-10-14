@@ -80,7 +80,9 @@ export function ZoneReponseFil({
       placeholder={placeholder}
       value={corps}
       onChange={setCorps}
-      note={message ?? raisonIndisponible ?? note}
+      // La raison se lit avant le champ (`raisonIndisponible`), plus dans le pied.
+      raisonIndisponible={reponsePossible ? undefined : raisonIndisponible}
+      note={message ?? (reponsePossible ? note : null)}
       actions={
         <>
           <Bouton taille="petit" disabled={enCours} aria-busy={marquageEnCours} onClick={basculerInteret}>
