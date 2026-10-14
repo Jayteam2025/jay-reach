@@ -62,13 +62,17 @@ export default async function AujourdhuiPage() {
   // Tant que la mise en route est à l'écran, l'alerte qui dirait la même chose s'efface.
   const alertes = alertesSansDoublonDemarrage(a.alertes, demarrage);
 
+  // Le compte part au traducteur, pas au composant : les mesures françaises s'accordent
+  // (« 1 posée » contre « 7 posées »), ce qu'un `.replace('{n}', …)` posé après coup empêchait.
+  const compteDe = (cle: CleDemarrage) => demarrage.lignes.find((l) => l.cle === cle)?.compte ?? 0;
+
   // Les six clés sont écrites une à une : le typage garantit qu'aucune ne manque, là où un
   // `Object.fromEntries` rendrait un objet que rien n'oblige à être complet.
   const libellesLigne = (cle: CleDemarrage) => ({
     titre: t(`demarrage.lignes.${cle}.titre`),
     aide: t(`demarrage.lignes.${cle}.aide`),
     bouton: t(`demarrage.lignes.${cle}.bouton`),
-    mesure: t(`demarrage.lignes.${cle}.mesure`, { n: '{n}' }),
+    mesure: t(`demarrage.lignes.${cle}.mesure`, { n: compteDe(cle) }),
   });
 
   const jour = capitaliser(
@@ -88,7 +92,7 @@ export default async function AujourdhuiPage() {
           titreCasse: t('demarrage.titreCasse'),
           sousTitre: t('demarrage.sousTitre'),
           sousTitreCasse: t('demarrage.sousTitreCasse'),
-          avancement: t('demarrage.avancement', { faites: '{faites}', total: '{total}' }),
+          avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
           lignes: {
             fournisseurs: libellesLigne('fournisseurs'),
             boites: libellesLigne('boites'),

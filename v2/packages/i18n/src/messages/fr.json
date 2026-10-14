@@ -275,19 +275,19 @@
           "titre": "Vos clés fournisseurs",
           "aide": "Sans elles, ni notation ni envoi.",
           "bouton": "Renseigner",
-          "mesure": "{n} posées"
+          "mesure": "{n, plural, one {# posée} other {# posées}}"
         },
         "boites": {
           "titre": "Vos boîtes e-mail",
           "aide": "Les boîtes qui écriront à vos prospects.",
           "bouton": "Relier",
-          "mesure": "{n} actives"
+          "mesure": "{n, plural, one {# active} other {# actives}}"
         },
         "persona": {
           "titre": "Votre persona",
           "aide": "Qui vous cherchez, et comment le reconnaître.",
           "bouton": "Créer",
-          "mesure": "{n} créés"
+          "mesure": "{n, plural, one {# créé} other {# créés}}"
         },
         "linkedin": {
           "titre": "Votre compte LinkedIn",
@@ -299,13 +299,13 @@
           "titre": "Une source qui collecte",
           "aide": "Les gens qui réagissent aux posts d'un concurrent, une offre d'emploi, une liste.",
           "bouton": "Ajouter",
-          "mesure": "{n} actives"
+          "mesure": "{n, plural, one {# active} other {# actives}}"
         },
         "campagne": {
           "titre": "Une campagne lancée",
           "aide": "Elle relie le persona, les sources et la séquence.",
           "bouton": "Ouvrir",
-          "mesure": "{n} active"
+          "mesure": "{n, plural, one {# active} other {# actives}}"
         }
       }
     }

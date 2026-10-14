@@ -6,6 +6,9 @@
  * tutoriel qu'on coche une fois.
  *
  * Composant serveur : chaque ligne non faite porte un lien vers l'écran qui la règle, rien d'autre.
+ *
+ * Il n'interpole aucun libellé. Les textes arrivent résolus depuis l'écran, qui seul connaît les
+ * comptes : c'est ce qui permet au français d'accorder ses mesures (« 1 posée », « 7 posées »).
  */
 import type { CleDemarrage, Demarrage, LigneDemarrage } from '@jay-reach/core';
 
@@ -40,11 +43,7 @@ export function ListeDemarrage({ demarrage, libelles }: ListeDemarrageProps) {
           <h2 id="jr-demarrage-titre">{casse ? libelles.titreCasse : libelles.titre}</h2>
           <p>{casse ? libelles.sousTitreCasse : libelles.sousTitre}</p>
         </div>
-        <span className="jr-demarrage-avancement mono">
-          {libelles.avancement
-            .replace('{faites}', String(demarrage.faites))
-            .replace('{total}', String(demarrage.total))}
-        </span>
+        <span className="jr-demarrage-avancement mono">{libelles.avancement}</span>
       </div>
 
       <ul className="jr-demarrage-liste">
@@ -59,11 +58,7 @@ export function ListeDemarrage({ demarrage, libelles }: ListeDemarrageProps) {
                 {/* L'aide n'apparaît que tant qu'elle sert : une ligne faite n'a plus rien à expliquer. */}
                 {!ligne.faite && <small>{l.aide}</small>}
               </div>
-              {ligne.faite && ligne.compte !== null ? (
-                <span className="jr-demarrage-mesure mono">
-                  {l.mesure.replace('{n}', String(ligne.compte))}
-                </span>
-              ) : ligne.faite ? (
+              {ligne.faite ? (
                 <span className="jr-demarrage-mesure mono">{l.mesure}</span>
               ) : (
                 <a className="jr-bouton petit" href={ligne.lien}>
