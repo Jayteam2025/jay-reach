@@ -11,6 +11,7 @@ import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../
 import { ListeDemarrage } from '../../components/accueil/ListeDemarrage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
 import type { PuceTon } from '../../components/ui';
+import { TexteTronque } from '../../components/ui/TexteTronque';
 
 export const revalidate = 60;
 
@@ -205,7 +206,7 @@ export default async function AujourdhuiPage() {
                         <div className="jr-qui">
                           <Avatar nom={envoi.contactNom} canal={envoi.canal} />
                           <span>
-                            <b className="jr-tronque">{envoi.contactNom}</b>
+                            <TexteTronque balise="b">{envoi.contactNom}</TexteTronque>
                             <small>
                               {envoi.etape !== null ? t('queue.step', { n: envoi.etape }) : ''}
                               {envoi.campagneNom ? ` · ${envoi.campagneNom}` : ''}

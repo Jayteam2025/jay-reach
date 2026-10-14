@@ -551,6 +551,18 @@ button.jr-case { border: 0; background: none; padding: 0; font-family: inherit; 
    `.jr-qui`) : `.jr-qui b`/`.jr-qui small` y posent déjà `display: block` avec une spécificité
    supérieure, qui l'emportait déjà quel que soit le `display` de `.jr-tronque`. */
 .jr-tronque { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Taille de cible minimale, critere 2.5.8 de WCAG 2.2 : 24 x 24 px pour tout element qu'on vise.
+   Mesure du 14/10 sur l'app deployee : les filtres en pastille tombaient a 23 px, et les 51 liens
+   de nom de la liste des contacts a 17 px.
+
+   Seules les pastilles CLIQUABLES sont concernees : une pastille d'etiquette ne se vise pas, et il
+   y en a 99 sur le seul ecran des contacts — les grossir aurait change le rythme des tableaux pour
+   rien. Pour les liens, un retrait vertical plutot qu'un `display` : il agrandit le rectangle et la
+   zone cliquable sans changer le flux, donc sans deplacer une seule ligne de tableau ni gener
+   l'ellipse posee au-dessus. */
+a.jr-puce, button.jr-puce { min-height: 24px; }
+.jr-table a.jr-lien { padding-block: 4px; }
 /* Cellule qui ne doit jamais couper au milieu d'un mot (tour de correction F6, point 4). */
 .jr-nowrap { white-space: nowrap; }
 /* Action à deux niveaux empilée verticalement plutôt que côte à côte (tour de correction F6,
