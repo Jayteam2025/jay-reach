@@ -165,6 +165,8 @@ export default async function ReglagesLinkedinPage() {
                 motDePasse: t('connexion.motDePasse'),
                 code: t('connexion.code'),
                 codeAide: t('connexion.codeAide'),
+                approbation: t('connexion.approbation'),
+                approbationAide: t('connexion.approbationAide'),
                 tempsRestant: t('connexion.tempsRestant', { temps: '{temps}' }),
                 modaleTitre: t('connexion.modaleTitre'),
                 avertissementSortie: t('connexion.avertissementSortie'),
@@ -177,6 +179,7 @@ export default async function ReglagesLinkedinPage() {
                   navigateur_ouvert: t('connexion.etapes.navigateur_ouvert'),
                   identifiants_transmis: t('connexion.etapes.identifiants_transmis'),
                   code_demande: t('connexion.etapes.code_demande'),
+                  approbation_demandee: t('connexion.etapes.approbation_demandee'),
                   session_active: t('connexion.etapes.session_active'),
                 },
                 motifs: MOTIFS.reduce<Record<string, string>>((acc, m) => {

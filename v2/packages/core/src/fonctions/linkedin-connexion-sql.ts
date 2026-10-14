@@ -3,7 +3,7 @@
  * `test/pg-verify/linkedin-connexion-actions.sh` l'exécute tel quel contre un vrai Postgres.
  * Un test sur pool factice ne prouve rien d'une requête.
  */
-const EN_COURS = "('demandee','navigateur_ouvert','code_demande')";
+const EN_COURS = "('demandee','navigateur_ouvert','code_demande','approbation_demandee')";
 
 /** Quinze minutes : la fermeture du formulaire, comme le verrou. */
 export const FERMETURE_FORMULAIRE_MINUTES = 15;

@@ -57,6 +57,13 @@ export interface Dependances {
   ipDuProcessus(): Promise<string>;
   demander(invite: Invite): Promise<string>;
   demanderMasque(invite: Invite): Promise<string>;
+  /**
+   * LinkedIn attend une approbation sur l'application mobile (« Essayez-vous de vous identifier
+   * sur un autre appareil ? »). Contrairement au code, rien n'est saisi ici : l'opérateur agit sur
+   * son téléphone et c'est l'URL qui nous l'apprendra. La façade annonce donc l'attente et son
+   * échéance, et rend la main tout de suite. Facultative : le terminal se contente de sa ligne.
+   */
+  annoncerApprobationMobile?(delaiMs: number): Promise<void>;
   pause(ms: number): Promise<void>;
 }
 
@@ -93,6 +100,13 @@ const PAS_MS = 1_000;
 const DELAI_APRES_CODE_MS = 20_000;
 // Un proxy résidentiel est lent : 1,5 s faisait conclure à un défi sur une simple lenteur.
 const DELAI_CHAMP_CODE_MS = 10_000;
+/**
+ * Le temps laissé à l'opérateur pour approuver sur son téléphone. Mesuré le 14/10 : la
+ * notification LinkedIn arrive environ 20 s après la tentative, et l'ancien code abandonnait à 15 s
+ * — la demande était donc perdue d'avance, quoi que fasse l'opérateur. Trois minutes couvrent le
+ * temps de sortir son téléphone, ouvrir l'application et toucher « Oui, c'est moi ».
+ */
+export const ATTENTE_APPROBATION_MS = 180_000;
 
 /** Nom du type de l'erreur, jamais son message. */
 function typeErreur(e: unknown): string {
@@ -153,6 +167,7 @@ async function statut(ctx: Contexte, d: Dependances): Promise<number> {
 
 type Issue =
   | { issue: 'connecte' | 'refuse' | 'defi' }
+  | { issue: 'approbationNonDonnee' }
   | { issue: 'delai'; chemin: string }
   | { issue: 'verification'; cle: string };
 
@@ -185,6 +200,8 @@ function messageIssue(r: Issue): string {
       return 'Session LinkedIn active.';
     case 'defi':
       return 'LinkedIn demande une vérification que ce terminal ne sait pas passer : session bloquée.';
+    case 'approbationNonDonnee':
+      return "LinkedIn attendait une approbation sur l’application mobile : elle n’est pas venue dans les trois minutes.";
     case 'verification':
       return `LinkedIn a refusé la vérification (${r.cle}) : réessayer plus tard, sans enchaîner les tentatives.`;
     case 'delai':
@@ -213,8 +230,12 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
 
   // Après l'envoi du code, LinkedIn met quelques secondes à quitter le défi : on patiente avant de conclure.
   let codeEnvoyeA: number | null = null;
+  let approbationDemandeeA: number | null = null;
   let dernierChemin = '?';
-  for (let ecoule = 0; ecoule < ATTENTE_MAX_CONNEXION_MS; ecoule += PAS_MS) {
+  // L'échéance s'allonge le jour où LinkedIn réclame une approbation mobile : l'opérateur doit
+  // prendre son téléphone, ce que les 90 s du cas courant ne permettent pas.
+  let limite = ATTENTE_MAX_CONNEXION_MS;
+  for (let ecoule = 0; ecoule < limite; ecoule += PAS_MS) {
     const url = await pilote.url();
     dernierChemin = cheminDe(url);
     if (surLinkedIn(url, '/feed')) return { issue: 'connecte' };
@@ -225,13 +246,25 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
     const cleErreur = cleErreurDe(url);
     if (cleErreur !== null) return { issue: 'verification', cle: cleErreur };
     if (surLinkedIn(url, '/checkpoint')) {
-      if (codeEnvoyeA === null && (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS))) {
-        const code = await d.demanderMasque('code');
-        await pilote.saisir(SEL.code, code);
-        await pilote.presserEntree(SEL.code);
-        codeEnvoyeA = ecoule;
-      } else if (codeEnvoyeA === null || ecoule - codeEnvoyeA >= DELAI_APRES_CODE_MS) {
-        // Captcha, validation sur l'application mobile, ou code refusé : rien que ce terminal sache passer.
+      if (codeEnvoyeA === null && approbationDemandeeA === null) {
+        // Premier passage sur le défi : il se saisit (un champ de code) ou il s'approuve ailleurs.
+        // `attendre` n'est appelé qu'ici, une seule fois : il coûte dix secondes quand il échoue.
+        if (await pilote.attendre(SEL.code, DELAI_CHAMP_CODE_MS)) {
+          const code = await d.demanderMasque('code');
+          await pilote.saisir(SEL.code, code);
+          await pilote.presserEntree(SEL.code);
+          codeEnvoyeA = ecoule;
+        } else {
+          // Pas de champ à remplir : LinkedIn attend un « Oui, c'est moi » sur l'application mobile.
+          // Abandonner ici, comme avant, rendait la demande impossible à satisfaire — la
+          // notification n'arrive sur le téléphone qu'après notre renoncement.
+          approbationDemandeeA = ecoule;
+          limite = ecoule + ATTENTE_APPROBATION_MS;
+          await d.annoncerApprobationMobile?.(ATTENTE_APPROBATION_MS);
+          d.ecrire('LinkedIn demande une approbation sur l’application mobile : en attente.');
+        }
+      } else if (codeEnvoyeA !== null && ecoule - codeEnvoyeA >= DELAI_APRES_CODE_MS) {
+        // Code envoyé et toujours sur le défi : refusé, ou captcha derrière.
         await bloquerSessionLinkedIn(ctx, 'defi');
         return { issue: 'defi' };
       }
@@ -240,6 +273,13 @@ async function ouvrirLinkedIn(ctx: Contexte, pilote: Pilote, d: Dependances): Pr
       return { issue: 'refuse' };
     }
     await d.pause(PAS_MS);
+  }
+  // La sortie de boucle porte l'échéance de l'approbation : `limite` vaut exactement cette
+  // échéance, donc un seuil testé DANS la boucle ne serait jamais atteint — elle sort d'abord.
+  // Et le dire ici évite un `delai` générique là où la cause est connue : personne n'a approuvé.
+  if (approbationDemandeeA !== null) {
+    await bloquerSessionLinkedIn(ctx, 'defi');
+    return { issue: 'approbationNonDonnee' };
   }
   return { issue: 'delai', chemin: dernierChemin };
 }

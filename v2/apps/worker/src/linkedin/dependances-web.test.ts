@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 import type { Pilote } from './navigateur.js';
-import { executerCommande } from './pilotage.js';
+import { ATTENTE_APPROBATION_MS, executerCommande } from './pilotage.js';
 import {
   dependancesWeb,
   ErreurDelaiCode,
@@ -161,13 +161,26 @@ describe('dependancesWeb', () => {
     expect(ouvrir).not.toHaveBeenCalled();
   });
 
-  it("un defi sans champ de code echoue tout de suite en defi", async () => {
+  // Un defi sans champ de code attend une approbation sur le telephone. L'ecran doit l'apprendre
+  // PENDANT l'attente, avec son echeance : c'est la seule facon qu'il ait de dire quoi faire au
+  // moment ou il faut le faire. Avant le 14/10 il se taisait, et n'en parlait qu'apres l'echec.
+  it("un defi sans champ de code annonce l’approbation mobile, puis echoue si elle ne vient pas", async () => {
     const { p } = piloteFaux(['https://www.linkedin.com/login', 'https://www.linkedin.com/checkpoint/mobile'], []);
     const { d, appels } = monter({ pilote: p });
     const code = vi.spyOn(d, 'demanderMasque');
     expect(await executerCommande(['connecter'], d)).toBe(1);
     await d.vider();
     expect(code).not.toHaveBeenCalledWith('code');
-    expect(ecrituresEtat(appels).at(-1)?.params).toEqual(['demande-1', null, 'echec', 'defi', null]);
+    const maj = ecrituresEtat(appels);
+    expect(
+      maj.some(
+        (a) =>
+          a.params[1] === 'approbation_demandee' &&
+          a.params[2] === 'approbation_demandee' &&
+          a.params[4] === ATTENTE_APPROBATION_MS,
+      ),
+      'l’attente n’a pas été annoncée à l’écran',
+    ).toBe(true);
+    expect(maj.at(-1)?.params).toEqual(['demande-1', null, 'echec', 'defi', null]);
   });
 });

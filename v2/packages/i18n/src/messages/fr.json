@@ -1758,6 +1758,8 @@
         "motDePasse": "Mot de passe",
         "code": "Code reçu de LinkedIn",
         "codeAide": "LinkedIn vient de l'envoyer à l'adresse e-mail de votre compte.",
+        "approbation": "Ouvrez LinkedIn sur votre téléphone et touchez « Oui, c’est moi ».",
+        "approbationAide": "LinkedIn vous demande de confirmer depuis un appareil qu’il connaît déjà. Cette page se met à jour toute seule dès que c’est fait.",
         "tempsRestant": "Il reste {temps} pour le saisir.",
         "modaleTitre": "Connecter votre compte LinkedIn",
         "avertissementSortie": "LinkedIn va vous envoyer un courriel signalant une connexion depuis un lieu inhabituel. C'est notre sortie réseau, pas une intrusion : ne changez pas votre mot de passe.",
@@ -1770,6 +1772,7 @@
           "navigateur_ouvert": "Navigateur ouvert",
           "identifiants_transmis": "Identifiants transmis à LinkedIn",
           "code_demande": "LinkedIn demande un code de vérification",
+          "approbation_demandee": "Approbation sur le téléphone",
           "session_active": "Session active"
         },
         "motifs": {
@@ -1777,7 +1780,7 @@
           "sortie_serveur": "Le navigateur est sorti par l'adresse du serveur au lieu de l'adresse dédiée. Prévenez l'administrateur de l'instance.",
           "verrou_occupe": "Une autre connexion occupait déjà le navigateur. Réessayez dans quelques minutes.",
           "refuse": "Identifiant ou mot de passe refusé par LinkedIn.",
-          "defi": "LinkedIn demande une vérification que cet écran ne sait pas passer. Ouvrez l'application LinkedIn sur votre téléphone, approuvez la connexion, puis reconnectez-vous ici.",
+          "defi": "LinkedIn attendait une approbation sur votre téléphone et ne l’a pas reçue à temps. Relancez la connexion, puis gardez l’application LinkedIn ouverte : la demande y arrive une vingtaine de secondes plus tard.",
           "delai": "LinkedIn n'a pas répondu à temps. Réessayez.",
           "worker_absent": "Le serveur n'a pas répondu. Vérifiez qu'il tourne, puis réessayez.",
           "trop_essais": "Trois tentatives ont échoué. Le formulaire rouvre dans un quart d'heure, pour ne pas faire verrouiller votre compte par LinkedIn.",

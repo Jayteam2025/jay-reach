@@ -16,6 +16,8 @@ const libelles = {
   motDePasse: c.motDePasse,
   code: c.code,
   codeAide: c.codeAide,
+  approbation: c.approbation,
+  approbationAide: c.approbationAide,
   tempsRestant: c.tempsRestant,
   modaleTitre: c.modaleTitre,
   avertissementSortie: c.avertissementSortie,
@@ -52,6 +54,38 @@ function demande(p: Partial<Demande>): Demande {
 }
 
 describe('la connexion LinkedIn depuis l’écran', () => {
+  /**
+   * Le défaut du 14/10 : pendant que LinkedIn attendait un « Oui, c'est moi » sur le téléphone,
+   * l'écran ne disait rien. Il ne parlait de l'application mobile qu'une fois l'échec consommé,
+   * et conseillait alors un ordre impossible — approuver, puis se reconnecter — alors que
+   * LinkedIn redemande une approbation à chaque tentative.
+   */
+  it('pendant l’attente d’approbation, elle dit d’ouvrir l’application mobile', () => {
+    const html = texte(
+      renderToStaticMarkup(
+        <ConnexionLinkedin
+          sessionActive={false}
+          demandeInitiale={demande({ statut: 'approbation_demandee', etape: 'approbation_demandee' })}
+          peutModifier
+          libelles={libelles}
+        />,
+      ),
+    );
+    expect(html).toContain(libelles.approbation);
+    expect(html).toContain(libelles.approbationAide);
+    // Rien à saisir : un champ de code ici laisserait croire qu'on attend quelque chose de l'écran.
+    expect(html).not.toContain('jr-connexion-code');
+    expect(html).not.toContain('one-time-code');
+    // Un seul moyen de sortir, pas deux : le bouton générique ne doit pas doubler celui du bloc.
+    expect(html.split(libelles.annuler).length - 1).toBe(1);
+  });
+
+  it('le motif d’échec ne conseille plus d’approuver puis de se reconnecter', () => {
+    // L'approbation ne vaut que pour la tentative en cours : l'ordre inverse ne marche pas.
+    expect(libelles.motifs.defi).not.toContain('puis reconnectez-vous');
+    expect(libelles.motifs.defi).toContain('téléphone');
+  });
+
   it('sans session ni demande, elle propose de brancher le compte', () => {
     const html = renderToStaticMarkup(
       <ConnexionLinkedin sessionActive={false} demandeInitiale={null} peutModifier libelles={libelles} />,
