@@ -115,6 +115,7 @@ export function FenetreEnvoiLinkedin({ valeur, peutModifier }: FenetreEnvoiLinke
         </div>
         <div className="jr-plafond-saisie">
           <select
+            className="jr-champ"
             id="linkedin-fenetre-debut"
             value={saisie.debutHeure}
             onChange={(e) => setSaisie((p) => ({ ...p, debutHeure: Number(e.target.value) }))}
@@ -129,6 +130,7 @@ export function FenetreEnvoiLinkedin({ valeur, peutModifier }: FenetreEnvoiLinke
           </select>
           <span aria-hidden="true">–</span>
           <select
+            className="jr-champ"
             value={saisie.finHeure}
             onChange={(e) => setSaisie((p) => ({ ...p, finHeure: Number(e.target.value) }))}
             disabled={!peutModifier || pending}
@@ -175,6 +177,7 @@ export function FenetreEnvoiLinkedin({ valeur, peutModifier }: FenetreEnvoiLinke
         </div>
         <div className="jr-plafond-saisie">
           <select
+            className="jr-champ"
             id="linkedin-fenetre-fuseau"
             value={saisie.fuseau}
             onChange={(e) => setSaisie((p) => ({ ...p, fuseau: e.target.value }))}

@@ -336,7 +336,10 @@ button.jr-puce.variable { font-family: ui-monospace, monospace; font-size: 11.5p
 .jr-interrupteur { width: 34px; height: 20px; border-radius: 999px; background: var(--jr-accent); position: relative; display: inline-block; flex: none; border: 0; cursor: pointer; }
 .jr-interrupteur::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--jr-surface); }
 .jr-interrupteur.eteint { background: var(--jr-filet); } .jr-interrupteur.eteint::after { right: auto; left: 2px; }
-.jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-size: var(--jr-corps); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+/* `font-family` compte autant que la taille : un <input> ou un <select> qui porte lui-même cette
+   classe garderait sinon la police du navigateur (Arial), avec la bonne taille et la mauvaise
+   famille — un écart qu'on ne voit pas en relisant le composant. */
+.jr-champ { border: 1px solid var(--jr-filet); border-radius: var(--jr-rayon-controle); padding: 8px 12px; background: var(--jr-surface); font-family: inherit; font-size: var(--jr-corps); color: var(--jr-encre); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
 .jr-champ small { color: var(--jr-secondaire); font-size: var(--jr-petit); }
 .jr-champ input, .jr-champ select, .jr-champ textarea { border: 0; font: inherit; color: var(--jr-encre); background: transparent; width: 100%; outline: none; }
 /* Chevron dessiné plutôt que celui, natif, du navigateur (tour de correction F6, point 24) — que

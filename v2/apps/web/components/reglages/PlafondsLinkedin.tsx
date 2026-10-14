@@ -73,6 +73,7 @@ function LigneEditable({
       </div>
       <div className="jr-plafond-saisie">
         <input
+          className="jr-champ"
           id={idChamp}
           type="number"
           min={0}
