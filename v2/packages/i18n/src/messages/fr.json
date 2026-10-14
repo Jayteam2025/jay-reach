@@ -602,6 +602,8 @@
     "sources": {
       "title": "Sources",
       "description": "Chaque source cherche des offres ou des profils, le moteur les score et garde ceux qui correspondent au persona « {persona} ».",
+      "descriptionSansPersona": "Chaque source cherche des offres ou des profils, le moteur les score et garde ceux qui correspondent à la cible de la campagne.",
+      "listSubtitle": "{n, plural, one {# contact} other {# contacts}} · importée le {date}",
       "add": "+ Ajouter une source",
       "empty": {
         "title": "Aucune source pour l'instant",
@@ -705,6 +707,7 @@
         "schedule": "Passages",
         "offresTitle": "{provider} · offres d'emploi",
         "offresSubtitle": "La source lit les offres publiées, le moteur les score contre le persona « {persona} ».",
+        "offresSubtitleSansPersona": "La source lit les offres publiées, le moteur les score contre la cible de la campagne.",
         "readSince": "{n, plural, one {# offre trouvée} other {# offres trouvées}} depuis le {date}",
         "alsoProvider": "aussi {provider}",
         "runNow": "Lancer un passage",

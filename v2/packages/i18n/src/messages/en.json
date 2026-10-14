@@ -602,6 +602,8 @@
     "sources": {
       "title": "Sources",
       "description": "Each source looks for job postings or profiles, the engine scores them and keeps the ones matching the \"{persona}\" persona.",
+      "descriptionSansPersona": "Each source looks for job postings or profiles, the engine scores them and keeps the ones matching the campaign's target.",
+      "listSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}",
       "add": "+ Add a source",
       "empty": {
         "title": "No source yet",
@@ -705,6 +707,7 @@
         "schedule": "Runs",
         "offresTitle": "{provider} · job postings",
         "offresSubtitle": "The source reads published postings, the engine scores them against the \"{persona}\" persona.",
+        "offresSubtitleSansPersona": "The source reads published postings, the engine scores them against the campaign's target.",
         "readSince": "{n, plural, one {# posting found} other {# postings found}} since {date}",
         "alsoProvider": "also {provider}",
         "runNow": "Run now",

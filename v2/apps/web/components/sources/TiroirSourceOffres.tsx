@@ -35,8 +35,8 @@ export interface TiroirSourceOffresProps {
   readonly campagneId: string;
   readonly providerId: 'adzuna' | 'france_travail';
   readonly source: SourceOffresExistante | null;
-  /** Nom de la campagne (persona), pour le sous-titre D1 — vrai en création comme en modification. */
-  readonly persona: string;
+  /** Noms des personas ciblés par la campagne, pour le sous-titre D1 — `null` quand elle n'en vise aucun. */
+  readonly persona: string | null;
 }
 
 function listeVersTexte(v: unknown): string {
@@ -191,7 +191,7 @@ export function TiroirSourceOffres({
       onFermer={fermer}
       libelleFermer={t('drawer.close')}
       titre={t('drawer.offresTitle', { provider: libelleProvider })}
-      description={t('drawer.offresSubtitle', { persona })}
+      description={persona ? t('drawer.offresSubtitle', { persona }) : t('drawer.offresSubtitleSansPersona')}
       icone={
         <TuileLogo marque={providerId === 'adzuna' ? 'adzuna' : 'francetravail'} taille="grande" />
       }

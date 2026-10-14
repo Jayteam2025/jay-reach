@@ -3,7 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { listerListesOrganisation, listerPersonasCampagne, listerSourcesCampagne, type ListeResume } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { lireVueDEnsembleCourante } from '../../../../../lib/campagne';
-import { EtatVide } from '../../../../../components/ui';
+import { EtatVide, TuileLogo } from '../../../../../components/ui';
+import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../../lib/dates';
 import { CarteSource } from '../../../../../components/sources/CarteSource';
 import {
   construireBlocsLinkedIn,
@@ -44,6 +45,10 @@ export default async function CampagneSourcesPage({
     listerPersonasCampagne(ctx, { campagneId: id }),
   ]);
 
+  // Le persona se lit où Réglages le lit (`entry_rules.personas`) : le nom de la campagne n'est pas
+  // un persona. Aucun persona ciblé => le texte ne prétend pas en citer un.
+  const nomsPersonas = personas.map((p) => p.nom).join(', ');
+
   const brutAjouter = Array.isArray(sp.ajouter) ? sp.ajouter[0] : sp.ajouter;
   const brutSource = Array.isArray(sp.source) ? sp.source[0] : sp.source;
 
@@ -74,7 +79,7 @@ export default async function CampagneSourcesPage({
             campagneId={id}
             providerId={carte.providerId}
             source={source}
-            persona={vue.campagne.nom}
+            persona={nomsPersonas || null}
           />
         ) : (
           <TiroirSourceLinkedIn
@@ -92,7 +97,7 @@ export default async function CampagneSourcesPage({
         campagneId={id}
         providerId={brutAjouter}
         source={null}
-        persona={vue.campagne.nom}
+        persona={nomsPersonas || null}
       />
     );
   } else if (brutAjouter && estLinkedIn(brutAjouter)) {
@@ -118,12 +123,32 @@ export default async function CampagneSourcesPage({
       <div className="jr-section-entete">
         <div>
           <h2>{t('title')}</h2>
-          <p>{t('description', { persona: vue.campagne.nom })}</p>
+          <p>{nomsPersonas ? t('description', { persona: nomsPersonas }) : t('descriptionSansPersona')}</p>
         </div>
         <MenuAjouterSource campagneId={id} />
       </div>
 
-      {sources.length === 0 ? (
+      {vue.listeSource ? (
+        // Campagne à liste importée : la liste EST sa source (même carte que la vue d'ensemble et
+        // la Séquence). Sans elle cet onglet affirmait « Aucune source » face à trois écrans qui
+        // en montraient une.
+        <div className="jr-carte">
+          <div className="jr-qui">
+            <TuileLogo marque="lettre" lettre={vue.listeSource.nom.charAt(0).toUpperCase()} />
+            <span>
+              <b>{vue.listeSource.nom}</b>
+              <small>
+                {t('listSubtitle', {
+                  n: vue.listeSource.contacts,
+                  date: dateCourte(vue.listeSource.importeeLe, new Date(), FUSEAU_PAR_DEFAUT),
+                })}
+              </small>
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {sources.length === 0 && !vue.listeSource ? (
         <EtatVide titre={t('empty.title')} texte={t('empty.text')} />
       ) : (
         sources.map((carte) => (
