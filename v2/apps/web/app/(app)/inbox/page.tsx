@@ -5,6 +5,7 @@ import {
   lireFiche,
   listerCampagnesPourFiltre,
   listerFils,
+  TAILLE_PAGE_RECEPTION,
   type FiltreReception,
   type FilDetail,
   type Fiche,
@@ -59,9 +60,11 @@ export default async function ReceptionPage({
   const filtre = filtreDemande(sp.filtre);
   const campagneId = idDemande(sp.campagneId) ?? null;
   const filDemandeId = idDemande(sp.fil) ?? null;
+  const brutPage = Number(idDemande(sp.page));
+  const page = Number.isInteger(brutPage) && brutPage >= 1 ? brutPage : 1;
 
   const [resultat, campagnes] = await Promise.all([
-    listerFils(ctx, { filtre, campagneId: campagneId ?? undefined, page: 1 }),
+    listerFils(ctx, { filtre, campagneId: campagneId ?? undefined, page }),
     listerCampagnesPourFiltre(ctx),
   ]);
 
@@ -125,6 +128,8 @@ export default async function ReceptionPage({
         campagneId={campagneId}
         campagnes={campagnes}
         filSelectionneId={filSelectionneId}
+        page={page}
+        taillePage={TAILLE_PAGE_RECEPTION}
       />
       {filDetail && filSelectionneId ? (
         <>

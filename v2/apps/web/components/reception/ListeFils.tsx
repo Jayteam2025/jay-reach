@@ -24,6 +24,9 @@ export interface ListeFilsProps {
   readonly campagneId: string | null;
   readonly campagnes: { id: string; nom: string }[];
   readonly filSelectionneId: string | null;
+  /** Page affichée (1 par défaut) et taille de page : le compteur du filtre compte TOUS les fils, la liste n'en rend qu'une tranche. */
+  readonly page?: number;
+  readonly taillePage?: number;
 }
 
 const FILTRES: FiltreReception[] = ['a_traiter', 'interesses', 'absences', 'traites', 'tous'];
@@ -32,18 +35,20 @@ function classePuce(actif: boolean): string {
   return ['jr-puce', actif ? 'accent' : undefined].filter(Boolean).join(' ');
 }
 
-function lienFiltre(filtre: FiltreReception, campagneId: string | null): string {
+function lienFiltre(filtre: FiltreReception, campagneId: string | null, page = 1): string {
   const params = new URLSearchParams();
   if (filtre !== 'a_traiter') params.set('filtre', filtre);
   if (campagneId) params.set('campagneId', campagneId);
+  if (page > 1) params.set('page', String(page));
   const qs = params.toString();
   return qs ? `/inbox?${qs}` : '/inbox';
 }
 
-function lienFil(filId: string, filtre: FiltreReception, campagneId: string | null): string {
+function lienFil(filId: string, filtre: FiltreReception, campagneId: string | null, page: number): string {
   const params = new URLSearchParams();
   if (filtre !== 'a_traiter') params.set('filtre', filtre);
   if (campagneId) params.set('campagneId', campagneId);
+  if (page > 1) params.set('page', String(page));
   params.set('fil', filId);
   return `/inbox?${params.toString()}`;
 }
@@ -54,7 +59,11 @@ function lienFil(filId: string, filtre: FiltreReception, campagneId: string | nu
  * sélection se fait par navigation serveur, même motif que
  * `FiltresStatuts`/la liste des campagnes (tâche 9), pas d'état client.
  */
-export function ListeFils({ t, fils, compteurs, filtreActif, campagneId, campagnes, filSelectionneId }: ListeFilsProps) {
+export function ListeFils({ t, fils, compteurs, filtreActif, campagneId, campagnes, filSelectionneId, page = 1, taillePage = 30 }: ListeFilsProps) {
+  const total = compteurs[filtreActif];
+  const debut = (page - 1) * taillePage + 1;
+  const fin = debut + fils.length - 1;
+  const paginer = total > taillePage && fils.length > 0;
   return (
     <div className="jr-liste">
       <h2>{t('title')}</h2>
@@ -72,7 +81,7 @@ export function ListeFils({ t, fils, compteurs, filtreActif, campagneId, campagn
         <ul className="jr-conversations">
           {fils.map((fil) => (
             <li key={fil.id} className={fil.id === filSelectionneId ? 'actif' : undefined}>
-              <Link href={lienFil(fil.id, filtreActif, campagneId)} aria-current={fil.id === filSelectionneId ? 'true' : undefined}>
+              <Link href={lienFil(fil.id, filtreActif, campagneId, page)} aria-current={fil.id === filSelectionneId ? 'true' : undefined}>
                 <Avatar nom={fil.nom} canal={fil.canal} />
                 <span>
                   <b>{fil.nom}</b>
@@ -100,6 +109,13 @@ export function ListeFils({ t, fils, compteurs, filtreActif, campagneId, campagn
           ))}
         </ul>
       )}
+      {paginer ? (
+        <nav className="jr-pagination" aria-label={t('liste.tranche', { debut, fin, total })}>
+          {page > 1 ? <Link href={lienFiltre(filtreActif, campagneId, page - 1)}>{t('liste.precedents')}</Link> : null}
+          <span className="jr-secondaire jr-petit">{t('liste.tranche', { debut, fin, total })}</span>
+          {fin < total ? <Link href={lienFiltre(filtreActif, campagneId, page + 1)}>{t('liste.suivants')}</Link> : null}
+        </nav>
+      ) : null}
     </div>
   );
 }

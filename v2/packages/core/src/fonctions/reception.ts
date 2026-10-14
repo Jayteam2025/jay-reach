@@ -153,7 +153,7 @@ export const schemaListerFils = z.object({
   page: z.number().int().min(1).default(1),
 });
 
-const TAILLE_PAGE_RECEPTION = 30;
+export const TAILLE_PAGE_RECEPTION = 30;
 
 /**
  * Fragment SQL de la règle canonique « à traiter » (spec §9, point 2) —

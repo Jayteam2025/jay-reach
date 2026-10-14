@@ -101,7 +101,10 @@
     },
     "liste": {
       "videTitre": "Niets in deze weergave",
-      "videTexte": "Geen enkel gesprek komt nu overeen met dit filter."
+      "videTexte": "Geen enkel gesprek komt nu overeen met dit filter.",
+      "tranche": "{debut}–{fin} van {total}",
+      "precedents": "Vorige",
+      "suivants": "Volgende"
     },
     "fil": {
       "choisirTitre": "Kies een gesprek",

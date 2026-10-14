@@ -101,7 +101,10 @@
     },
     "liste": {
       "videTitre": "Nothing in this view",
-      "videTexte": "No thread matches this filter right now."
+      "videTexte": "No thread matches this filter right now.",
+      "tranche": "{debut}–{fin} of {total}",
+      "precedents": "Previous",
+      "suivants": "Next"
     },
     "fil": {
       "choisirTitre": "Choose a thread",

@@ -245,6 +245,7 @@ select.jr-puce {
 .jr-colonne h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .jr-colonne h4 { margin: 16px 0 6px; font-size: var(--jr-petit); font-weight: 600; color: var(--jr-secondaire); }
 .jr-colonne p { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.jr-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; }
 .jr-conversations { list-style: none; margin: 0; padding: 0; }
 .jr-conversations li { border-bottom: 1px solid var(--jr-filet); }
 /* Ligne cliquable = un vrai lien (tâche 16, Réception) : la grille de la maquette portait sur le `li`, mais un `<li>` nu n'est pas navigable/accessible au clavier — le `<a>` porte donc la grille à sa place, `li` ne garde que le filet. */

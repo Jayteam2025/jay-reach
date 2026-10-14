@@ -101,7 +101,10 @@
     },
     "liste": {
       "videTitre": "Rien dans cette vue",
-      "videTexte": "Aucun fil ne correspond à ce filtre pour le moment."
+      "videTexte": "Aucun fil ne correspond à ce filtre pour le moment.",
+      "tranche": "{debut}–{fin} sur {total}",
+      "precedents": "Précédents",
+      "suivants": "Suivants"
     },
     "fil": {
       "choisirTitre": "Choisissez un fil",
