@@ -375,7 +375,36 @@ describe('la commande connecter', () => {
     expect(JSON.stringify([sortie, appels])).not.toMatch(/123456/);
   });
 
-  it('bloque en defi quand LinkedIn pose une verification que le terminal ne sait pas passer', async () => {
+  // Mesure du 14/10 : sur ce defi, LinkedIn n'offre aucun champ a remplir — il attend un
+  // « Oui, c'est moi » sur l'application mobile, et sa notification arrive une vingtaine de
+  // secondes apres la tentative. L'ancien code abandonnait a quinze : la demande etait perdue
+  // d'avance, quoi que fasse l'operateur.
+  it('attend l’approbation mobile, et aboutit quand elle est donnee', async () => {
+    const { p } = piloteFaux([
+      'https://www.linkedin.com/login',
+      'https://www.linkedin.com/checkpoint/challenge/abc',
+      'https://www.linkedin.com/feed/',
+    ]);
+    const lignes: string[] = [];
+    const { d, appels } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => 'x',
+    });
+    const ecrireOrigine = d.ecrire.bind(d);
+    d.ecrire = (l: string) => {
+      lignes.push(l);
+      ecrireOrigine(l);
+    };
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(lignes.join('\n')).toContain('approbation sur l’application mobile');
+    // Elle a abouti : aucun blocage posé.
+    expect(appels.some((a) => /jr:linkedin_session_bloquer/.test(a.sql))).toBe(false);
+  });
+
+  it('bloque en defi quand l’approbation mobile ne vient jamais', async () => {
     const { p } = piloteFaux([
       'https://www.linkedin.com/login',
       'https://www.linkedin.com/checkpoint/challenge/abc',
@@ -391,6 +420,35 @@ describe('la commande connecter', () => {
     expect(
       appels.some((a) => /jr:linkedin_session_bloquer/.test(a.sql) && a.params.includes('defi')),
     ).toBe(true);
+  });
+
+  // Le chemin du code reste intact : un defi AVEC champ se remplit, il ne s'attend pas.
+  it('saisit le code quand le defi en propose un, sans passer par l’approbation', async () => {
+    const CODE = 'input[autocomplete="one-time-code"], input[name="pin"]';
+    const { p, saisies } = piloteFaux(
+      [
+        'https://www.linkedin.com/login',
+        'https://www.linkedin.com/checkpoint/challenge/abc',
+        'https://www.linkedin.com/feed/',
+      ],
+      [CODE],
+    );
+    const lignes: string[] = [];
+    const { d } = dependances({
+      env: ACTIF,
+      session: null,
+      pilote: p,
+      demander: async () => 'a@b.fr',
+      demanderMasque: async () => '123456',
+    });
+    const ecrireOrigine = d.ecrire.bind(d);
+    d.ecrire = (l: string) => {
+      lignes.push(l);
+      ecrireOrigine(l);
+    };
+    expect(await executerCommande(['connecter'], d)).toBe(0);
+    expect(saisies.some(([sel, v]) => sel === CODE && v === '123456')).toBe(true);
+    expect(lignes.join('\n')).not.toContain('approbation sur l’application mobile');
   });
 
   it('saisit identifiant puis mot de passe, et presse Entree sur le mot de passe, pas sur un bouton', async () => {

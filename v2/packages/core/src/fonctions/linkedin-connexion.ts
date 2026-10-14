@@ -23,7 +23,13 @@ import {
 } from './linkedin-connexion-sql.js';
 import { ForbiddenError } from '../roles.js';
 
-export type StatutConnexion = 'demandee' | 'navigateur_ouvert' | 'code_demande' | 'reussi' | 'echec';
+export type StatutConnexion =
+  | 'demandee'
+  | 'navigateur_ouvert'
+  | 'code_demande'
+  | 'approbation_demandee'
+  | 'reussi'
+  | 'echec';
 export type MotifConnexion =
   | 'sortie_inattendue'
   | 'sortie_serveur'
@@ -41,6 +47,7 @@ export type EtapeConnexion =
   | 'navigateur_ouvert'
   | 'identifiants_transmis'
   | 'code_demande'
+  | 'approbation_demandee'
   | 'session_active';
 
 export interface Demande {

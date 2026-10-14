@@ -667,6 +667,10 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-releve-ligne--encours::before { background: var(--jr-accent); border-color: var(--jr-accent); }
 
 .jr-session-boutons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+/* L'attente d'une approbation sur le téléphone : aucun champ, donc une colonne plus large que
+   celle du code, et la consigne en premier — c'est elle qu'il faut lire tout de suite. */
+.jr-connexion-approbation { margin-top: 14px; max-width: 420px; }
+.jr-connexion-approbation-quoi { margin: 0 0 4px; font-weight: 600; }
 .jr-connexion-code { margin-top: 14px; max-width: 320px; }
 .jr-connexion-code label { display: block; font-size: var(--jr-petit); color: var(--jr-secondaire); margin-bottom: 6px; }
 .jr-connexion-code .jr-champ { max-width: 190px; }

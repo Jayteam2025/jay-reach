@@ -23,6 +23,7 @@ type Etape =
   | 'navigateur_ouvert'
   | 'identifiants_transmis'
   | 'code_demande'
+  | 'approbation_demandee'
   | 'session_active';
 type Motif =
   | 'sortie_inattendue'
@@ -56,6 +57,10 @@ const LIGNES: { debut: string; effet: { etape: Etape } | { motif: Motif } | { re
   { debut: 'Le navigateur sort par l’IP du serveur', effet: { motif: 'sortie_serveur' } },
   { debut: 'Un autre processus conduit', effet: { motif: 'verrou_occupe' } },
   { debut: 'LinkedIn demande une vérification', effet: { motif: 'defi' } },
+  // Même motif en base (la demande a bien buté sur une vérification), mais l'écran sait déjà
+  // laquelle : il affichait l'attente d'approbation juste avant. Sans cette ligne, l'échec
+  // n'écrirait aucun motif et l'écran resterait muet sur la cause.
+  { debut: 'LinkedIn attendait une approbation', effet: { motif: 'defi' } },
   // Panne du défi chez LinkedIn, pas un défi que nous aurions échoué à passer. Même motif en base
   // (la demande a bien buté sur une vérification), mais un message qui dit laquelle, et quand.
   { debut: 'LinkedIn a refusé la vérification', effet: { motif: 'defi' } },
@@ -192,6 +197,15 @@ export function dependancesWeb(
       // L'échéance de la demande devient celle de la saisie du code : c'est elle que l'écran annonce.
       enfiler('code_demande', 'code_demande', null, fenetre);
       return attendreCode();
+    },
+    /**
+     * Rien n'est attendu de l'écran ici : l'opérateur approuve sur son téléphone, et c'est l'URL
+     * que surveille la mécanique qui nous l'apprendra. On pose l'étape et son échéance — comme
+     * pour le code, c'est elle que l'écran affiche en compte à rebours — puis on rend la main.
+     */
+    async annoncerApprobationMobile(delaiMs) {
+      await verifierEnCours();
+      enfiler('approbation_demandee', 'approbation_demandee', null, delaiMs);
     },
     livrerCode(code) {
       codeRecu = code;

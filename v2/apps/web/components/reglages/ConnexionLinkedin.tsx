@@ -29,13 +29,14 @@ import {
  */
 const FENETRE_CODE_MS = 5 * 60_000;
 
-/** L'ordre réel du parcours. La base borne `etape` à ces six valeurs (migration 20261012150000). */
+/** L'ordre réel du parcours. La base borne `etape` à ces sept valeurs (migration 20261014113000). */
 const ETAPES: readonly EtapeConnexion[] = [
   'recue',
   'sortie_controlee',
   'navigateur_ouvert',
   'identifiants_transmis',
   'code_demande',
+  'approbation_demandee',
   'session_active',
 ];
 
@@ -61,6 +62,9 @@ export interface ConnexionLinkedinProps {
     motDePasse: string;
     code: string;
     codeAide: string;
+    /** L'attente d'un « Oui, c'est moi » sur l'application mobile : rien à saisir ici. */
+    approbation: string;
+    approbationAide: string;
     tempsRestant: string;
     modaleTitre: string;
     avertissementSortie: string;
@@ -208,6 +212,36 @@ export function ConnexionLinkedin({
         </>
       )}
 
+      {/*
+        Rien à saisir ici : LinkedIn attend un geste sur le téléphone. L'écran existe pour le DIRE
+        pendant l'attente — avant ce correctif, il se taisait les quinze secondes où il aurait fallu
+        agir, et ne parlait du téléphone qu'une fois l'échec consommé.
+      */}
+      {demande?.statut === 'approbation_demandee' && (
+        <div className="jr-connexion-approbation">
+          <p className="jr-connexion-approbation-quoi">{libelles.approbation}</p>
+          <p className="jr-session-detail">
+            {libelles.approbationAide}
+            {restant !== null && (
+              <>
+                {' '}
+                <span className="mono">
+                  {libelles.tempsRestant.replace(
+                    '{temps}',
+                    `${Math.floor(restant / 60)} min ${String(restant % 60).padStart(2, '0')} s`,
+                  )}
+                </span>
+              </>
+            )}
+          </p>
+          <div className="jr-session-boutons">
+            <button type="button" className="jr-bouton" onClick={annuler} disabled={pending}>
+              {libelles.annuler}
+            </button>
+          </div>
+        </div>
+      )}
+
       {demande?.statut === 'code_demande' && (
         <div className="jr-connexion-code">
           <label htmlFor="jr-code-linkedin">{libelles.code}</label>
@@ -247,7 +281,7 @@ export function ConnexionLinkedin({
         </div>
       )}
 
-      {active && demande?.statut !== 'code_demande' && (
+      {active && demande?.statut !== 'code_demande' && demande?.statut !== 'approbation_demandee' && (
         <div className="jr-session-boutons">
           <button type="button" className="jr-bouton" onClick={annuler} disabled={pending}>
             {libelles.annuler}

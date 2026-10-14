@@ -1758,6 +1758,8 @@
         "motDePasse": "Password",
         "code": "Code from LinkedIn",
         "codeAide": "LinkedIn has just sent it to your account's email address.",
+        "approbation": "Open LinkedIn on your phone and tap “Yes, it’s me”.",
+        "approbationAide": "LinkedIn wants you to confirm from a device it already knows. This page updates on its own as soon as you do.",
         "tempsRestant": "{temps} left to enter it.",
         "modaleTitre": "Connect your LinkedIn account",
         "avertissementSortie": "LinkedIn will email you about a sign-in from an unusual location. That is our network exit, not an intruder: do not change your password.",
@@ -1770,6 +1772,7 @@
           "navigateur_ouvert": "Browser opened",
           "identifiants_transmis": "Credentials sent to LinkedIn",
           "code_demande": "LinkedIn is asking for a verification code",
+          "approbation_demandee": "Phone approval",
           "session_active": "Session active"
         },
         "motifs": {
@@ -1777,7 +1780,7 @@
           "sortie_serveur": "The browser went out through the server address instead of the dedicated one. Tell the instance administrator.",
           "verrou_occupe": "Another connection was already using the browser. Try again in a few minutes.",
           "refuse": "LinkedIn rejected the username or password.",
-          "defi": "LinkedIn is asking for a verification this screen cannot complete. Open the LinkedIn app on your phone, approve the sign-in, then reconnect here.",
+          "defi": "LinkedIn was waiting for an approval on your phone and did not get one in time. Start the connection again, then keep the LinkedIn app open: the request arrives about twenty seconds later.",
           "delai": "LinkedIn did not answer in time. Try again.",
           "worker_absent": "The server did not answer. Check that it is running, then try again.",
           "trop_essais": "Three attempts failed. The form reopens in fifteen minutes, so LinkedIn does not lock your account.",

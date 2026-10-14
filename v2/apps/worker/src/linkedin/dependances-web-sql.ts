@@ -3,7 +3,7 @@
  * `test/pg-verify/linkedin-connexion-web.sh` l'exécute tel quel contre un vrai Postgres.
  * Un test sur pool factice ne prouve rien d'une requête.
  */
-const EN_COURS = "('demandee','navigateur_ouvert','code_demande')";
+const EN_COURS = "('demandee','navigateur_ouvert','code_demande','approbation_demandee')";
 
 /** $1 = id de la demande ; `ok` vrai si elle est encore en cours et non expirée. */
 export const SQL_VERIFIER_EN_COURS = `select (statut in ${EN_COURS} and expires_at > now()) as ok

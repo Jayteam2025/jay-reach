@@ -1758,6 +1758,8 @@
         "motDePasse": "Wachtwoord",
         "code": "Code van LinkedIn",
         "codeAide": "LinkedIn heeft hem net naar het e-mailadres van uw account gestuurd.",
+        "approbation": "Open LinkedIn op je telefoon en tik op “Ja, ik ben het”.",
+        "approbationAide": "LinkedIn vraagt je te bevestigen vanaf een apparaat dat het al kent. Deze pagina werkt zichzelf bij zodra dat gebeurd is.",
         "tempsRestant": "Nog {temps} om hem in te voeren.",
         "modaleTitre": "Uw LinkedIn-account koppelen",
         "avertissementSortie": "LinkedIn stuurt u een e-mail over een aanmelding vanaf een ongewone locatie. Dat is onze netwerkuitgang, geen inbraak: wijzig uw wachtwoord niet.",
@@ -1770,6 +1772,7 @@
           "navigateur_ouvert": "Browser geopend",
           "identifiants_transmis": "Gegevens naar LinkedIn gestuurd",
           "code_demande": "LinkedIn vraagt om een verificatiecode",
+          "approbation_demandee": "Goedkeuring op telefoon",
           "session_active": "Sessie actief"
         },
         "motifs": {
@@ -1777,7 +1780,7 @@
           "sortie_serveur": "De browser ging naar buiten via het serveradres in plaats van het eigen adres. Waarschuw de beheerder van deze instantie.",
           "verrou_occupe": "Een andere koppeling gebruikte de browser al. Probeer het over een paar minuten opnieuw.",
           "refuse": "LinkedIn heeft de gebruikersnaam of het wachtwoord geweigerd.",
-          "defi": "LinkedIn vraagt om een verificatie die dit scherm niet kan afronden. Open de LinkedIn-app op uw telefoon, keur de aanmelding goed en koppel hier opnieuw.",
+          "defi": "LinkedIn wachtte op een goedkeuring op je telefoon en kreeg die niet op tijd. Start de verbinding opnieuw en houd de LinkedIn-app open: het verzoek komt ongeveer twintig seconden later binnen.",
           "delai": "LinkedIn heeft niet op tijd geantwoord. Probeer het opnieuw.",
           "worker_absent": "De server heeft niet geantwoord. Controleer of hij draait en probeer het opnieuw.",
           "trop_essais": "Drie pogingen zijn mislukt. Het formulier gaat over een kwartier weer open, zodat LinkedIn uw account niet vergrendelt.",
