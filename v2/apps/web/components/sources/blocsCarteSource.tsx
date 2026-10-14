@@ -72,6 +72,28 @@ function cadenceDe(schedule: string, t: Traducteur): string {
   return heures === 24 ? t('card.dailySchedule') : t('card.everyNHours', { n: heures });
 }
 
+/**
+ * Cadence d'une source LinkedIn périodique, avec la réserve qui la rend vraie.
+ *
+ * « Une fois par jour » tout court promet un passage dans deux cas où il ne viendra jamais, et
+ * les deux se lisaient sur le même écran le 14/10 : une source en pause ne part pas, et une
+ * source active dont AUCUNE campagne rattachée n'est active ne part pas non plus — le tour
+ * LinkedIn du producteur exige `campaigns.status = 'active'` (`producer.ts`). La source
+ * « Engageurs des posts Uptoo » annonçait ainsi « Active · Une fois par jour » depuis le 9
+ * octobre sans qu'un seul passage soit possible, sa campagne étant en pause.
+ *
+ * `construireBlocsOffres` pose déjà cette réserve (R72) ; la branche LinkedIn l'avait oubliée.
+ * Elle la formule autrement : les offres composent « cadence · prochain <état> » là où une
+ * carte LinkedIn n'a pas de colonne « prochain » à remplir, et « prochain en pause » ne se lit
+ * pas. La phrase dit donc ce qui manque, pas seulement que rien ne vient.
+ */
+function cadenceLinkedIn(carte: SourceCarte, t: Traducteur): string {
+  const cadence = cadenceDe(carte.schedule, t);
+  if (!carte.active) return t('card.cadencePausedSource', { cadence });
+  if (!carte.campagneActive) return t('card.cadenceAtLaunch', { cadence });
+  return cadence;
+}
+
 export function construireBlocsOffres(carte: SourceCarte, t: Traducteur): BlocCarteSource[] {
   const config = configFormulaireDepuisStockee(carte.providerId, carte.config) as {
     motsCles: string[];
@@ -185,7 +207,7 @@ export function construireBlocsLinkedIn(carte: SourceCarte, t: Traducteur): Bloc
   }
   blocs.push({
     libelle: t('card.passages'),
-    contenu: <span>{cadenceDe(carte.schedule, t)}</span>,
+    contenu: <span>{cadenceLinkedIn(carte, t)}</span>,
   });
   return blocs;
 }

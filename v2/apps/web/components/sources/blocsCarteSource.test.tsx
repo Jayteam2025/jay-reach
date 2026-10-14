@@ -238,6 +238,42 @@ describe('construireBlocsLinkedIn : une source « posts d’un créateur »', ()
   });
 });
 
+describe('construireBlocsLinkedIn : la cadence d’une source périodique', () => {
+  const t = fabriquerT();
+  // Les quatre types LinkedIn qui portent une cadence. `linkedin_post_engagers` est exclu : il
+  // annonce « à la demande » et son test vit plus haut.
+  const periodiques = [
+    'linkedin_competitor_posts',
+    'linkedin_creator_posts',
+    'linkedin_keywords',
+    'linkedin_job_change',
+  ] as const;
+  const rendu = (o: Partial<SourceCarte>, type: (typeof periodiques)[number]) =>
+    construireBlocsLinkedIn(carteDeBase({ providerId: type, providerIds: [type], config: {}, ...o }), t)
+      .map((b) => renderToStaticMarkup(<>{b.contenu}</>))
+      .join('|');
+
+  it.each(periodiques)(
+    'R72 : %s active sans campagne active dit « au lancement de la campagne », pas une cadence seule',
+    (type) => {
+      const html = rendu({ active: true, campagneActive: false }, type);
+      expect(html).toContain('Une fois par jour, au lancement de la campagne');
+    },
+  );
+
+  it.each(periodiques)('%s en pause ne promet pas un passage quotidien', (type) => {
+    const html = rendu({ active: false, campagneActive: true }, type);
+    expect(html).toContain('Une fois par jour, quand la source sera active');
+  });
+
+  it.each(periodiques)('%s active dans une campagne active annonce sa cadence nue', (type) => {
+    const html = rendu({ active: true, campagneActive: true }, type);
+    expect(html).toContain('Une fois par jour');
+    expect(html).not.toContain('au lancement de la campagne');
+    expect(html).not.toContain('quand la source sera active');
+  });
+});
+
 describe('le sous-titre d’une source « posts d’un créateur »', () => {
   const carte = (config: Record<string, unknown>) =>
     ({ providerId: 'linkedin_creator_posts', config }) as unknown as SourceCarte;
