@@ -92,9 +92,11 @@ function base(opts: {
   source?: Record<string, unknown> | null;
   derniersPassages?: string[];
   verrou?: boolean;
-  plafonds?: { posts?: number; requetes?: number; personnes?: number };
+  plafonds?: { posts?: number; requetes?: number; personnes?: number; visites?: number };
   postsDuJour?: number;
   requetesDeLHeure?: number;
+  /** Visites de profil déjà tracées sur les sept derniers jours. */
+  visitesDeLaSemaine?: number;
   /** Les posts que cette source a deja traites, pour la boucle multi-posts du lot 4b etape 2. */
   postsTraites?: string[];
   /** Les `external_id` des personnes que la recherche par mots-clés a déjà enregistrées pour cette source. */
@@ -141,7 +143,9 @@ function base(opts: {
           ? (opts.plafonds?.posts ?? 3)
           : params[1] === 'linkedin_personnes_par_passage'
             ? (opts.plafonds?.personnes ?? 100)
-            : (opts.plafonds?.requetes ?? 60);
+            : params[1] === 'linkedin_visites_profil_par_semaine'
+              ? (opts.plafonds?.visites ?? 100)
+              : (opts.plafonds?.requetes ?? 60);
       return rep([{ value: String(valeur) }]);
     }
     if (t.includes('jr:linkedin_posts_du_jour')) return rep([{ n: opts.postsDuJour ?? 1 }]);
@@ -195,6 +199,7 @@ function base(opts: {
           : [],
       );
     }
+    if (t.includes('jr:linkedin_visites_profil_compter')) return rep([{ n: opts.visitesDeLaSemaine ?? 0 }]);
     if (t.includes('jr:linkedin_requetes_compter')) return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (t.includes('jr:linkedin_requete_tracer')) {
       ecritures.push({ sql: 'tracer', params });
@@ -563,6 +568,34 @@ describe('la source « posts d’un créateur »', () => {
     expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
   });
 
+  it('une visite de profil par créateur : la résolution se trace en `profil`, la page d\u2019activité non', async () => {
+    const b = base({ source: sourceCreateur([PROFIL]) });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A], { [A]: [UNE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const traces = b.ecritures.filter((e) => e.sql === 'tracer');
+    expect(traces.filter((e) => e.params[2] === 'profil')).toHaveLength(1);
+    expect(traces.length).toBeGreaterThan(1);
+  });
+
+  it('plafond de visites atteint : aucun profil de créateur n\u2019est ouvert, et le passage le dit', async () => {
+    const b = base({ source: sourceCreateur([PROFIL]), visitesDeLaSemaine: 100 });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A], { [A]: [UNE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.navigations).toEqual([]);
+    expect(p.requetes).toEqual([]);
+    expect(clos(b)!.params[3]).toBe(MSG.plafond_visites);
+  });
+
+  it('un plafond de visites épuisé ne gêne pas une source qui n\u2019ouvre aucun profil', async () => {
+    const b = base({ visitesDeLaSemaine: 100 });
+    const p = pilote({ reponse: () => ({ statut: 200, corps: voyager([UNE]) }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(clos(b)!.params[3]).not.toBe(MSG.plafond_visites);
+  });
+
   it('ne relit pas un post que la mémoire dit déjà traité', async () => {
     const b = base({ source: sourceCreateur([PROFIL]), postsTraites: [A] });
     const p = pilote({ url: ARRIVEE, reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
@@ -822,6 +855,73 @@ describe('la source « changement de poste »', () => {
     expect(c.params[5]).toBe(1);
     expect(c.params[7]).toBe(1);
     expect(c.params[16]).toBe(0);
+  });
+
+  /** Ce que le passage a tracé comme VISITES de profil : le troisième paramètre de l'insertion (`kind`). */
+  const visitesTracees = (b: ReturnType<typeof base>) => b.ecritures.filter((e) => e.sql === 'tracer' && e.params[2] === 'profil');
+
+  it('trace chaque profil relu comme une visite, et l\u2019arrivée sur le fil comme une simple requête', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      contacts: [contactDejaLu('ada-exemple', 'Directrice commerciale'), contactDejaLu('leo-exemple', 'Directeur commercial')],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'Directrice commerciale'),
+        'leo-exemple': profil('Leo Exemple', 'Directeur commercial'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(visitesTracees(b)).toHaveLength(2);
+    expect(b.ecritures.filter((e) => e.sql === 'tracer')).toHaveLength(3);
+  });
+
+  it('plafond de visites de la semaine atteint : aucun profil n\u2019est lu, et le passage le dit', async () => {
+    sansBruit();
+    const b = base({
+      source: sourceChangement,
+      plafonds: { visites: 100 },
+      visitesDeLaSemaine: 100,
+      contacts: [contactDejaLu('ada-exemple', 'Directrice commerciale')],
+    });
+    const p = pilote({ reponse: pagesDeProfils({ 'ada-exemple': profil('Ada Exemple', 'Directrice générale') }) });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toEqual([]);
+    expect(p.navigations).toEqual([]);
+    expect(b.ecritures.filter((e) => e.sql === 'tracer')).toHaveLength(0);
+    const c = clos(b)!;
+    expect(c.params[2]).toBe('success');
+    expect(c.params[3]).toBe(MSG.plafond_visites);
+  });
+
+  it('plafond atteint en cours de passage : s\u2019arrête avant la visite de trop, garde ce qui est lu', async () => {
+    sansBruit();
+    // Il reste deux visites sur trois contacts : les deux premiers sont lus, le troisième non.
+    const b = base({
+      source: sourceChangement,
+      plafonds: { visites: 100 },
+      visitesDeLaSemaine: 98,
+      contacts: [
+        contactDejaLu('ada-exemple', 'Directrice commerciale'),
+        contactDejaLu('leo-exemple', 'Directeur commercial'),
+        contactDejaLu('zoe-exemple', 'Directrice des ventes'),
+      ],
+    });
+    const p = pilote({
+      reponse: pagesDeProfils({
+        'ada-exemple': profil('Ada Exemple', 'Directrice générale'),
+        'leo-exemple': profil('Leo Exemple', 'Directeur commercial'),
+        'zoe-exemple': profil('Zoe Exemple', 'Directrice des ventes'),
+      }),
+    });
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    expect(p.requetes).toHaveLength(2);
+    expect(visitesTracees(b)).toHaveLength(2);
+    const c = clos(b)!;
+    expect(c.params[3]).toBe(MSG.plafond_visites);
+    expect(c.params[4]).toBe(2);
+    expect(signaux(b)).toEqual([`changement:${url('ada-exemple')}:directrice générale`]);
   });
 
   it('ne réveille pas quelqu\u2019un dont le nouvel intitulé est exclu par le filtre de la source', async () => {

@@ -338,21 +338,29 @@ export async function trouverPostsDeProfil(
     readonly dejaTraites: ReadonlySet<string>;
     readonly budget: Budget;
     readonly surRequete: () => Promise<void>;
+    /**
+     * Trace la VISITE du profil, qui est la seule des deux requêtes à charger la page d'une
+     * personne : la page d'activité n'est pas une vue de profil. Distinguer les deux évite de
+     * compter deux visites pour une, et de plafonner à moitié ce qu'on voulait borner.
+     * Par défaut `surRequete`, pour les appelants qui ne tiennent pas ce plafond.
+     */
+    readonly surVisiteProfil?: () => Promise<void>;
   },
 ): Promise<{ urns: string[]; arret: ArretCollecte }> {
   const { dejaTraites, budget, surRequete } = options;
+  const surVisite = options.surVisiteProfil ?? surRequete;
   if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { urns: [], arret: 'plafond' };
 
   let restantes = budget.requetesRestantes;
-  const compter = async (): Promise<void> => {
-    await surRequete();
+  const compter = async (tracer: () => Promise<void>): Promise<void> => {
+    await tracer();
     restantes -= 1;
   };
 
-  const nomPublic = await resoudreNomPublic(pilote, urlProfil, compter);
+  const nomPublic = await resoudreNomPublic(pilote, urlProfil, () => compter(surVisite));
   if (restantes <= 0) return { urns: [], arret: 'plafond' };
 
-  await compter();
+  await compter(surRequete);
   const rep = await pilote.requete(adresseActivite(nomPublic));
   if (rep.statut < 200 || rep.statut >= 300) {
     const friction = frictionDuStatut(rep.statut);

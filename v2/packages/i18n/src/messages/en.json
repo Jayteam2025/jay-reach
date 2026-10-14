@@ -1748,6 +1748,10 @@
           "nom": "People per run",
           "usage": "New people saved per run; beyond that, the run stops"
         },
+        "visitesProfilParSemaine": {
+          "nom": "Profile views per week",
+          "usage": "{n} over the last seven days; beyond that, collection that opens profiles stops"
+        },
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number.",
         "avances": "Advanced settings",

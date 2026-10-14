@@ -34,6 +34,7 @@ import {
   notifier,
   prendreVerrouLinkedIn,
   tracerRequeteLinkedIn,
+  compterVisitesProfilLinkedIn,
   type Contexte,
   type Sortie,
 } from '@jay-reach/core';
@@ -87,6 +88,9 @@ export const DUREE_VERROU_COLLECTE_MS = 10 * 60_000;
 /** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
 const UNE_HEURE_MS = 3_600_000;
 
+/** Fenêtre glissante du plafond de visites de profil : sept jours, comme les plafonds d'envoi. */
+const SEPT_JOURS_MS = 7 * 24 * UNE_HEURE_MS;
+
 export const MSG = {
   canal: 'Le canal LinkedIn serveur est désactivé (JAY_REACH_LINKEDIN).',
   session: 'La session LinkedIn n’est pas active : reconnectez le compte.',
@@ -99,6 +103,8 @@ export const MSG = {
   plafond_posts: 'Plafond de posts du jour atteint.',
   plafond_requetes: 'Plafond de requêtes de l’heure atteint.',
   plafond_personnes: 'Plafond de personnes par passage atteint : le reste n’a pas été enregistré.',
+  plafond_visites:
+    'Plafond de visites de profil de la semaine atteint : LinkedIn limite surtout ces vues, le passage s’est arrêté pour protéger le compte. Il reprendra quand des visites sortiront de la fenêtre de sept jours.',
   defi: 'LinkedIn demande une vérification : collecte arrêtée.',
   cookie_refuse: 'LinkedIn a refusé la session : collecte arrêtée.',
   liste_vide: 'Le post annonce des réactions mais LinkedIn n’en livre aucune : collecte arrêtée.',
@@ -146,6 +152,10 @@ interface Bilan {
   adressesDeduites: number;
   /** Le passage s'est arrêté sur le plafond de personnes enregistrées par passage. */
   plafondPersonnes: boolean;
+  /** Visites de profil émises par CE passage : elles se retranchent du plafond de la semaine. */
+  visitesProfil: number;
+  /** Le passage s'est arrêté, ou a renoncé à des profils, sur le plafond de visites de la semaine. */
+  plafondVisites: boolean;
   /**
    * Combien de posts ce passage a réellement ouverts.
    *
@@ -166,6 +176,8 @@ const bilanVierge = (): Bilan => ({
   ecartesFiltre: 0,
   adressesDeduites: 0,
   plafondPersonnes: false,
+  visitesProfil: 0,
+  plafondVisites: false,
   posts: 0,
 });
 
@@ -494,9 +506,13 @@ async function verifierDisjoncteur(ctx: Contexte, pool: Pool): Promise<void> {
  * la campagne à chaque activation. Compter les lignes faisait lire « quatre passages
  * aujourd'hui » aux quatre passages d'un coup, qui se clôturaient tous à vide.
  */
-async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budget & { personnesMax: number }> {
+async function calculerBudget(
+  ctx: Contexte,
+  sourceRunId: string,
+): Promise<Budget & { personnesMax: number; visitesRestantes: number }> {
   const fuseau = await lireFuseauLinkedIn(ctx);
-  const [plafondPosts, postsDuJour, plafondRequetes, requetesDeLHeure, personnesMax] = await Promise.all([
+  const [plafondPosts, postsDuJour, plafondRequetes, requetesDeLHeure, personnesMax, plafondVisites, visitesDeLaSemaine] =
+    await Promise.all([
     lirePlafondLinkedIn(ctx, 'linkedin_posts_par_jour'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau, sourceRunId),
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
@@ -505,11 +521,16 @@ async function calculerBudget(ctx: Contexte, sourceRunId: string): Promise<Budge
     // pleines charges à cheval sur la minute 59.
     compterRequetesLinkedIn(ctx, new Date(Date.now() - UNE_HEURE_MS)),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
+    lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
+    // Sept jours glissants, comme les plafonds d'envoi : un plafond calé sur la semaine civile
+    // laisserait passer deux pleines charges à cheval sur le lundi.
+    compterVisitesProfilLinkedIn(ctx, new Date(Date.now() - SEPT_JOURS_MS)),
   ]);
   return {
     postsRestants: Math.max(0, plafondPosts - postsDuJour),
     requetesRestantes: Math.max(0, plafondRequetes - requetesDeLHeure),
     personnesMax,
+    visitesRestantes: Math.max(0, plafondVisites - visitesDeLaSemaine),
   };
 }
 
@@ -648,13 +669,19 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // ne les concerne pas.
     const sansPost = config.mode === 'recherche' || config.mode === 'changement';
     const postsEpuises = !sansPost && budget.postsRestants <= 0;
-    if (postsEpuises || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
+    // Les deux modes qui lisent des pages de profil sont les seuls que ce plafond concerne : lire
+    // les réactions d'un post ou chercher des personnes n'ouvre aucun profil.
+    const litDesProfils = config.mode === 'changement' || config.mode === 'profils';
+    const visitesEpuisees = litDesProfils && budget.visitesRestantes <= 0;
+    if (visitesEpuisees || postsEpuises || budget.requetesRestantes <= 0 || budget.personnesMax <= 0) {
       // Plafond : un passage à vide, pas un échec. Le rejouer redépasserait le
       // même plafond.
       await refuser(
         pool,
         job,
-        postsEpuises
+        visitesEpuisees
+          ? MSG.plafond_visites
+          : postsEpuises
           ? MSG.plafond_posts
           : budget.requetesRestantes <= 0
             ? MSG.plafond_requetes
@@ -668,6 +695,21 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       await tracerRequeteLinkedIn(ctx, job.sourceRunId);
       bilan.requetes += 1;
     };
+    /**
+     * Une VISITE de profil : une requête comme les autres (elle compte dans le plafond horaire et
+     * dans `bilan.requetes`) qui se trace en plus sous son type, pour le plafond de la semaine.
+     * Un second traceur plutôt qu'un paramètre de `surRequete`, parce que `surRequete` est passé
+     * tel quel aux lecteurs d'engageurs, de recherche et de pages, qui ignorent tout de ce
+     * plafond : lui faire porter un type obligerait chacun à savoir lequel de ses appels ouvre un
+     * profil, et le premier oubli compterait une lecture de réactions comme une vue.
+     */
+    const surVisiteProfil = async (): Promise<void> => {
+      await tracerRequeteLinkedIn(ctx, job.sourceRunId, 'profil');
+      bilan.requetes += 1;
+      bilan.visitesProfil += 1;
+    };
+    /** Ce qui reste du plafond de visites de la semaine, visites de CE passage retranchées. */
+    const visitesRestantes = (): number => budget.visitesRestantes - bilan.visitesProfil;
     const contexteEngageur = {
       pool,
       organizationId: job.organizationId,
@@ -776,13 +818,21 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           arretDeRecherche = 'plafond';
           break;
         }
+        // Avant la lecture, jamais après : une visite partie est une visite comptée par LinkedIn.
+        // C'est un arrêt PRÉVU comme le plafond de requêtes : ce qui a été lu s'écrit, les contacts
+        // restants ne sont pas marqués et repassent en tête quand des visites seront libérées.
+        if (visitesRestantes() <= 0) {
+          arretDeRecherche = 'plafond';
+          bilan.plafondVisites = true;
+          break;
+        }
         const nomPublic = identifiantDeProfil(contact.urlProfil);
         let lu: Awaited<ReturnType<typeof lireProfil>> = null;
         if (nomPublic !== null) {
           // Toujours une pause : relire des profils à la suite est ce qui se repère le mieux.
           await d.pause(delaiAleatoire());
           try {
-            await surRequete();
+            await surVisiteProfil();
             lu = await lireProfil(pilote, nomPublic);
           } catch (err) {
             if (!(err instanceof ErreurCollecte)) throw err;
@@ -980,11 +1030,18 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       for (const page of config.entrees) {
         const restant = { requetesRestantes: requetesRestantes(), postsRestants: budget.postsRestants - postsALire.length };
         if (restant.requetesRestantes <= 0 || restant.postsRestants <= 0) break;
+        // Chaque entrée de créateur ouvre UNE page de profil (la résolution du nom public) : plus
+        // de visite disponible, on s'arrête, mais les posts déjà trouvés sur les entrées
+        // précédentes se lisent encore (lire des réactions n'ouvre aucun profil).
+        if (config.mode === 'profils' && visitesRestantes() <= 0) {
+          bilan.plafondVisites = true;
+          break;
+        }
         try {
           // Un profil n'a ni pagination ni ré-essai : pas de `pause` à lui passer.
           const trouve =
             config.mode === 'profils'
-              ? await trouverPostsDeProfil(pilote, page, { dejaTraites, budget: restant, surRequete })
+              ? await trouverPostsDeProfil(pilote, page, { dejaTraites, budget: restant, surRequete, surVisiteProfil })
               : await trouverPostsDePage(pilote, page, { dejaTraites, budget: restant, surRequete, pause: d.pause });
           for (const urn of trouve.urns) {
             postsALire.push(urn);
@@ -1023,7 +1080,8 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         // Rien de neuf : un passage à vide, pas un échec. Le dire plutôt que de laisser l'écran
         // afficher « 0 personne » sans motif.
         traficTermine = true;
-        await refuser(pool, job, MSG.rien_de_neuf, { statut: 'success', bilan, sortie });
+        // Le plafond de visites a coupé AVANT qu'une entrée ne soit lue : « rien de neuf » serait faux.
+        await refuser(pool, job, bilan.plafondVisites ? MSG.plafond_visites : MSG.rien_de_neuf, { statut: 'success', bilan, sortie });
         return;
       }
     }
@@ -1096,7 +1154,9 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       statut: 'success',
       erreur: bilan.plafondPersonnes
         ? MSG.plafond_personnes
-        : arret === 'plafond'
+        : bilan.plafondVisites
+          ? MSG.plafond_visites
+          : arret === 'plafond'
           ? MSG.plafond_requetes
           : // Une entrée sur plusieurs n'a pas pu être lue : la récolte est partielle, l'écran le dit.
             (pagesEnEchec[0] ?? null),

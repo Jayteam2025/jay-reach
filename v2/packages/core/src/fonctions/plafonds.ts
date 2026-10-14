@@ -39,6 +39,7 @@ export type ClePlafond =
   | 'linkedin_personnes_par_passage'
   | 'linkedin_invitations_par_semaine'
   | 'linkedin_messages_par_semaine'
+  | 'linkedin_visites_profil_par_semaine'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -52,6 +53,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_personnes_par_passage',
   'linkedin_invitations_par_semaine',
   'linkedin_messages_par_semaine',
+  'linkedin_visites_profil_par_semaine',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -73,6 +75,13 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // quotidien de chaque type se déduit du sien (`chargerStatsRythme`, linkedin/file.ts).
   { cle: 'linkedin_invitations_par_semaine', defaut: 100, env: 'LINKEDIN_INVITES_WEEKLY_CAP' },
   { cle: 'linkedin_messages_par_semaine', defaut: 200, env: 'LINKEDIN_MESSAGES_WEEKLY_CAP' },
+  // Les VUES DE PROFIL sont ce que LinkedIn limite le plus durement (80 à 100 par jour sans
+  // Premium ni Sales Navigator, ordre de grandeur connu). Elles ne figurent ni dans les envois ni
+  // dans le plafond horaire de requêtes, qui ne distingue pas une vue d'une lecture de réactions :
+  // la source « changement de poste » relit des profils par roulement et pouvait en consommer
+  // sans que rien l'arrête. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
+  // seuil quotidien ; pas de `HARD_CAP_7_DAYS` ici, qui ne borne que les envois.
+  { cle: 'linkedin_visites_profil_par_semaine', defaut: 100, env: 'LINKEDIN_PROFILE_VIEWS_WEEKLY_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -633,7 +642,8 @@ export type ClePlafondLinkedIn =
   | 'linkedin_requetes_par_heure'
   | 'linkedin_personnes_par_passage'
   | 'linkedin_invitations_par_semaine'
-  | 'linkedin_messages_par_semaine';
+  | 'linkedin_messages_par_semaine'
+  | 'linkedin_visites_profil_par_semaine';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
@@ -641,19 +651,26 @@ export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn
 }
 
 /**
+ * Nature d'une requête tracée. `null` (absent) = non qualifiée : toutes les requêtes d'avant la
+ * colonne, et celles qui ne relèvent d'aucun plafond propre. Seule 'profil' est lue aujourd'hui,
+ * par `compterVisitesProfilLinkedIn`.
+ */
+export type KindRequeteLinkedIn = 'profil';
+
+/**
  * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
  * doit appartenir à l'organisation : sans cette jointure, un identifiant de
  * passage d'une autre organisation serait accepté (le worker écrit avec la clé
  * de service, que la RLS ne borne pas).
  */
-export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string): Promise<void> {
+export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string, kind?: KindRequeteLinkedIn): Promise<void> {
   const res = await ctx.ex.query(
-    `insert into linkedin_requetes (organization_id, source_run_id) /* jr:linkedin_requete_tracer */
-     select so.organization_id, sr.id
+    `insert into linkedin_requetes (organization_id, source_run_id, kind) /* jr:linkedin_requete_tracer */
+     select so.organization_id, sr.id, $3::text
        from source_runs sr
        join sources so on so.id = sr.source_id
       where sr.id = $2 and so.organization_id = $1`,
-    [ctx.organisationId, sourceRunId],
+    [ctx.organisationId, sourceRunId, kind ?? null],
   );
   if (res.rowCount === 0) throw new Error("Passage de collecte introuvable pour cette organisation.");
 }
@@ -689,6 +706,24 @@ export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organi
         and requested_at >= $2
         and ($3::timestamptz is null or requested_at < $3)`,
     [ctx.organisationId, depuis, jusqua ?? null],
+  );
+  return res.rows[0]?.n ?? 0;
+}
+
+/**
+ * Visites de profil depuis `depuis` (inclus) : les requêtes tracées en `kind = 'profil'`. Même
+ * principe que `compterRequetesLinkedIn` (l'horodatage de chaque requête, jamais le démarrage du
+ * passage), sur une fenêtre que l'appelant fixe à sept jours glissants. Les requêtes d'avant la
+ * colonne ne sont pas requalifiables et ne comptent pas.
+ */
+export async function compterVisitesProfilLinkedIn(ctx: Pick<Contexte, 'ex' | 'organisationId'>, depuis: Date): Promise<number> {
+  const res = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n /* jr:linkedin_visites_profil_compter */
+       from linkedin_requetes
+      where organization_id = $1
+        and kind = 'profil'
+        and requested_at >= $2`,
+    [ctx.organisationId, depuis],
   );
   return res.rows[0]?.n ?? 0;
 }

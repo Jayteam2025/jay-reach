@@ -3,6 +3,7 @@
 export {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,

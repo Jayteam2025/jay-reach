@@ -1748,6 +1748,10 @@
           "nom": "Personen per run",
           "usage": "Nieuwe personen opgeslagen per run; daarna stopt de run"
         },
+        "visitesProfilParSemaine": {
+          "nom": "Profielweergaven per week",
+          "usage": "{n} in de afgelopen zeven dagen; daarboven stopt het verzamelen dat profielen opent"
+        },
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in.",
         "avances": "Geavanceerde instellingen",

@@ -9,6 +9,7 @@ import pg from 'pg';
 import {
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
@@ -279,9 +280,50 @@ async function rls() {
   });
 }
 
+async function visitesProfil() {
+  console.log('visitesProfil');
+  // Le plafond de visites de profil (#165) se compte en SQL : `kind = 'profil'` sur sept jours
+  // glissants, par organisation. Trois choses peuvent se casser sans qu'aucun test unitaire le
+  // voie, parce qu'aucun n'execute cette requete — c'est ce que les trois controles ci-dessous
+  // tiennent : le filtre sur le type, la borne des sept jours, et l'isolation par organisation.
+  const A = await orgNeuve();
+  const B = await orgNeuve();
+  const srcA = await sourceNeuve(A.id, 'linkedin_job_change');
+  const srcB = await sourceNeuve(B.id, 'linkedin_job_change');
+  const runA = await passage(srcA, '2026-10-04T21:55:00Z');
+  const runB = await passage(srcB, '2026-10-04T21:55:00Z');
+
+  await tracerRequeteLinkedIn(ctxDe(A), runA, 'profil');
+  await tracerRequeteLinkedIn(ctxDe(A), runA, 'profil');
+  await tracerRequeteLinkedIn(ctxDe(A), runA); // sans type : une lecture de reactions
+  await tracerRequeteLinkedIn(ctxDe(B), runB, 'profil');
+
+  const depuisSeptJours = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const vuesA = await compterVisitesProfilLinkedIn(ctxDe(A), depuisSeptJours);
+  check('13. seules les requetes typees profil comptent (deux sur trois)', vuesA === 2, `n=${vuesA}`);
+
+  const vuesB = await compterVisitesProfilLinkedIn(ctxDe(B), depuisSeptJours);
+  check('14. le compte est borne a l organisation', vuesB === 1, `n=${vuesB}`);
+
+  // Une visite plus vieille que la fenetre sort du compte : c'est ce qui fait « glisser » le
+  // plafond, et donc ce qui permet au passage de repartir tout seul le lendemain.
+  await q(
+    `insert into linkedin_requetes (organization_id, source_run_id, requested_at, kind)
+     values ($1, $2, now() - interval '8 days', 'profil')`,
+    [A.id, runA],
+  );
+  const toujoursDeux = await compterVisitesProfilLinkedIn(ctxDe(A), depuisSeptJours);
+  check('15. une visite de plus de sept jours ne compte plus', toujoursDeux === 2, `n=${toujoursDeux}`);
+
+  // Et la borne est bien celle qu'on lui passe, pas une constante figee dans la requete.
+  const depuisNeufJours = new Date(Date.now() - 9 * 24 * 3600 * 1000);
+  const avecLaVieille = await compterVisitesProfilLinkedIn(ctxDe(A), depuisNeufJours);
+  check('16. la borne vient du parametre, pas d une constante', avecLaVieille === 3, `n=${avecLaVieille}`);
+}
+
 try {
   await q('truncate organizations cascade');
-  await jouer(postsDuJour, requetes, plafonds, fenetre, rls);
+  await jouer(postsDuJour, requetes, plafonds, fenetre, rls, visitesProfil);
 } finally {
   await pool.end();
 }
