@@ -50,7 +50,14 @@ export function nomAffichePourAuteur(kind: 'person' | 'page', nom: string): stri
 export function auteurAvecRepli(lu: AuteurDePost | null, connu: AuteurDePost | null): AuteurDePost | null {
   if (connu === null) return lu;
   if (lu === null) return connu;
-  return { ...lu, kind: connu.kind, nomPublic: lu.nomPublic ?? connu.nomPublic, url: lu.url ?? connu.url };
+  return {
+    ...lu,
+    kind: connu.kind,
+    // Le nom affiché suit le type : prénom seul pour une personne, nom entier pour une page.
+    nomAffiche: connu.kind === lu.kind ? lu.nomAffiche : nomAffichePourAuteur(connu.kind, lu.nom),
+    nomPublic: lu.nomPublic ?? connu.nomPublic,
+    url: lu.url ?? connu.url,
+  };
 }
 
 const DEBUT_LINKEDIN_MS = Date.UTC(2003, 0, 1);

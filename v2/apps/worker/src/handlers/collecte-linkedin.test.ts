@@ -366,6 +366,28 @@ describe('la fiche du post, capturée pendant la collecte (mode post)', () => {
   });
 });
 
+describe('une capture de fiche qui échoue', () => {
+  it('n’empêche pas l’enregistrement des engageurs, et le signal naît sans post', async () => {
+    const b = base({});
+    const normal = b.pool.query;
+    const pool = {
+      query: async (sql: string, params?: unknown[]) => {
+        if (/insert into linkedin_posts\s*\(/.test(String(sql))) throw new Error('panne de base');
+        return normal(sql, params);
+      },
+      connect: b.pool.connect,
+    };
+    const p = pilote({ texte: 'Un texte', reponse: () => ({ statut: 200, corps: voyager([{ id: 'ACoAAaaa', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale' }]) }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const alerte = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn({ ...deps(p, b), pool: pool as unknown as DependancesCollecte['pool'] }, JOB);
+    expect(b.ecritures.filter((e) => e.sql === 'signal')).toHaveLength(1);
+    expect(b.ecritures.filter((e) => e.sql.startsWith('update signals set linkedin_post_id'))).toHaveLength(0);
+    expect(clos(b)?.params[2]).toBe('success');
+    expect(alerte).toHaveBeenCalled();
+  });
+});
+
 describe('le handler de collecte', () => {
   it('le handler sort immediatement si la session est bloquee', async () => {
     const b = base({ session: { status: 'bloquee', expected_egress_ip: null } });

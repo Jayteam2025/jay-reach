@@ -1139,18 +1139,25 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       // post suivant, où le trafic reprend.
       traficTermine = true;
       // La fiche s'enregistre AVANT les personnes : c'est son identifiant que chaque signal doit porter.
-      const linkedinPostId =
-        fiche === undefined
-          ? null
-          : (
-              await enregistrerFichePost(
-                pool,
-                job.organizationId,
-                // Repli sur l'auteur que la source connaît par construction.
-                { ...fiche, auteur: auteurAvecRepli(fiche.auteur, post.auteurConnu) },
-                { fenetreJours: FENETRE_DECISION_JOURS },
-              )
-            ).id;
+      // La capture est accessoire, la collecte ne l'est pas : en modes `pages` et `profils` le post
+      // est déjà marqué traité, donc une panne ici ne doit JAMAIS faire perdre ses engageurs. Sans
+      // fiche on perd l'accroche de ce post, que le travail de fond rattrapera.
+      let linkedinPostId: string | null = null;
+      if (fiche !== undefined) {
+        try {
+          linkedinPostId = (
+            await enregistrerFichePost(
+              pool,
+              job.organizationId,
+              // Repli sur l'auteur que la source connaît par construction.
+              { ...fiche, auteur: auteurAvecRepli(fiche.auteur, post.auteurConnu) },
+              { fenetreJours: FENETRE_DECISION_JOURS },
+            )
+          ).id;
+        } catch (err) {
+          console.warn(`[collecte-linkedin] fiche du post non enregistrée (${err instanceof Error ? err.name : 'erreur'})`);
+        }
+      }
       const plafondPersonnes = await enregistrer(personnes, urlPost, linkedinPostId);
       traficTermine = false;
 

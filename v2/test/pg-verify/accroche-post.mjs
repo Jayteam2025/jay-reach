@@ -12,6 +12,7 @@
 //   6. collecte-linkedin.ts : ne plus demander la capture (dernier argument de `lireEngageurs`) — 7b et 7c rougissent.
 //   8. collecte-linkedin.ts : ne pas passer `auteurAvecRepli` (fiche brute) — 8d rougit.
 //   9. collecte-linkedin.ts : ne pas passer `linkedinPostId` — 7c et 8c rougissent.
+//  10. collecte-linkedin.ts : retirer le try/catch autour de `enregistrerFichePost` — 9 à 9c rougissent.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
 import {
@@ -365,8 +366,71 @@ async function collecteEnModePages() {
     navigations.length === 3, `${navigations.length} navigation(s)`);
 }
 
+async function captureEnPanne() {
+  console.log('\n# une capture de fiche en panne ne perd pas les engageurs');
+  const IP = '203.0.113.7';
+  const m = await monde();
+  const { id: source } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_competitor_posts',
+    nom: 'Concurrent en panne',
+    config: { pagesConcurrentes: ['https://www.linkedin.com/company/acme/'], garder: ['reagi'], personaId: m.persona },
+  });
+  await activerSessionLinkedIn(m.ctx, IP);
+  const runId = await startSourceRun(pool, source);
+  const P1 = 'urn:li:activity:7271000000000000011';
+  const pilote = {
+    aller: async () => undefined,
+    url: async () => URL_POST,
+    saisir: async () => undefined,
+    presserEntree: async () => undefined,
+    texte: async () => '',
+    attendre: async () => false,
+    requete: async (u) => {
+      if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+      if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts([P1]) };
+      return { statut: 200, corps: voyager([{ id: 'ACoAAada', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale' }]) };
+    },
+    effacerCookies: async () => undefined,
+    fermer: async () => undefined,
+  };
+  // Le vrai pool, qui lève sur la SEULE insertion d'une fiche : tout le reste est exécuté.
+  const poolEnPanne = {
+    query: async (sql, params) => {
+      if (/insert into linkedin_posts\s*\(/.test(String(sql))) throw new Error('panne de base');
+      return pool.query(sql, params);
+    },
+    connect: () => pool.connect(),
+  };
+  const log = console.log;
+  const warn = console.warn;
+  console.log = () => undefined;
+  console.warn = () => undefined;
+  try {
+    await traiterCollecteLinkedIn(
+      {
+        pool: poolEnPanne,
+        env: { JAY_REACH_LINKEDIN: '1' },
+        ouvrirNavigateur: async () => pilote,
+        releverSortie: async () => ({ ip: IP, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
+        pause: async () => undefined,
+      },
+      { organizationId: m.org, sourceId: source, sourceRunId: runId },
+    );
+  } finally {
+    console.log = log;
+    console.warn = warn;
+  }
+  const passage = (await q(`select status, nouveaux from source_runs where id = $1`, [runId])).rows[0];
+  const signaux = (await q(`select linkedin_post_id from signals where organization_id = $1`, [m.org])).rows;
+  const traites = (await q(`select 1 from linkedin_posts_traites where organization_id = $1`, [m.org])).rowCount;
+  check('9. le passage réussit malgré la panne de capture', passage.status === 'success' && passage.nouveaux === 1, JSON.stringify(passage));
+  check('9b. l\'engageur est enregistré, sans post (rattrapé plus tard)', signaux.length === 1 && signaux[0].linkedin_post_id === null, JSON.stringify(signaux));
+  check('9c. le post est marqué traité : sans cette tolérance ses engageurs seraient perdus pour de bon', traites === 1, String(traites));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

@@ -160,10 +160,19 @@ describe('lireFichePost', () => {
 });
 
 describe('auteurAvecRepli', () => {
+  // Fixtures dérivées de la fonction réelle : jamais de `nomAffiche` écrit à la main.
+  const auteur = (kind: 'person' | 'page', nom: string, reste: Partial<AuteurDePost> = {}): AuteurDePost => ({
+    kind,
+    nom,
+    nomAffiche: nomAffichePourAuteur(kind, nom),
+    nomPublic: null,
+    url: null,
+    ...reste,
+  });
   const connu: AuteurDePost = { kind: 'page', nom: 'acme', nomAffiche: '', nomPublic: 'acme', url: 'https://www.linkedin.com/company/acme/' };
-  const lu: AuteurDePost = { kind: 'person', nom: 'Acme France', nomAffiche: 'Acme France', nomPublic: null, url: null };
 
   it('sans auteur connu, garde ce que la page a rendu', () => {
+    const lu = auteur('person', 'Ada Lovelace');
     expect(auteurAvecRepli(lu, null)).toBe(lu);
     expect(auteurAvecRepli(null, null)).toBeNull();
   });
@@ -171,7 +180,20 @@ describe('auteurAvecRepli', () => {
     expect(auteurAvecRepli(null, connu)).toBe(connu);
     expect(connu.nomAffiche).toBe('');
   });
-  it('garde le nom lisible de la page, complète le nom public et l’adresse, et croit le type connu', () => {
-    expect(auteurAvecRepli(lu, connu)).toEqual({ ...lu, kind: 'page', nomPublic: 'acme', url: connu.url });
+  it('même type : garde le nom affiché lu, complète le nom public et l’adresse', () => {
+    const lu = auteur('page', 'Acme France');
+    expect(auteurAvecRepli(lu, connu)).toEqual({ ...lu, nomPublic: 'acme', url: connu.url });
+  });
+  it('la page croit « personne », la source sait « page » : nom entier, pas le prénom', () => {
+    const lu = auteur('person', 'Acme France');
+    expect(lu.nomAffiche).toBe('Acme');
+    expect(auteurAvecRepli(lu, connu)?.nomAffiche).toBe('Acme France');
+    expect(auteurAvecRepli(lu, connu)?.kind).toBe('page');
+  });
+  it('la page croit « page », la source sait « personne » : prénom seul', () => {
+    const lu = auteur('page', 'Ada Lovelace');
+    expect(lu.nomAffiche).toBe('Ada Lovelace');
+    const personne = auteur('person', 'ada-lovelace', { nomAffiche: '', nomPublic: 'ada-lovelace' });
+    expect(auteurAvecRepli(lu, personne)?.nomAffiche).toBe('Ada');
   });
 });
