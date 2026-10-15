@@ -10,6 +10,8 @@
 //   4. post-engagement.ts : retirer l'appel à `rattacherSignalAuPost` — 5b et 5d rougissent.
 //   5. collecte-linkedin.ts : ne pas passer `linkedinPostId` à `enregistrerEngageur` — 7c rougit.
 //   6. collecte-linkedin.ts : ne plus demander la capture (dernier argument de `lireEngageurs`) — 7b et 7c rougissent.
+//   8. collecte-linkedin.ts : ne pas passer `auteurAvecRepli` (fiche brute) — 8d rougit.
+//   9. collecte-linkedin.ts : ne pas passer `linkedinPostId` — 7c et 8c rougissent.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
 import {
@@ -281,8 +283,90 @@ async function collecteEnModePost() {
     navigations.length === 1 && navigations[0] === URL_POST && requetes.length === 1, `${navigations.length} navigation(s), ${requetes.length} requête(s)`);
 }
 
+const htmlPage = (nom, id) =>
+  `<html><code>{&quot;entityUrn&quot;:&quot;urn:li:fsd_company:${id}&quot;,&quot;universalName&quot;:&quot;${nom}&quot;}</code></html>`;
+const lotDePosts = (urns) =>
+  JSON.stringify({
+    data: {
+      data: {
+        feedDashOrganizationalPageUpdatesByOrganizationalPageRelevanceFeed: {
+          paging: { count: 10, start: 0, total: urns.length },
+          '*elements': urns.map((u) => `urn:li:fsd_update:(${u},COMPANY_FEED_RELEVANCE)`),
+        },
+      },
+    },
+  });
+
+async function collecteEnModePages() {
+  console.log('\n# la collecte réelle en mode `pages` capture une fiche par post, rattachée, sans navigation de plus');
+  const IP = '203.0.113.7';
+  const m = await monde();
+  const { id: source } = await creerSource(m.ctx, {
+    campagneId: m.campagne,
+    providerId: 'linkedin_competitor_posts',
+    nom: 'Concurrent',
+    config: { pagesConcurrentes: ['https://www.linkedin.com/company/acme/'], garder: ['reagi'], personaId: m.persona },
+  });
+  await activerSessionLinkedIn(m.ctx, IP);
+  const runId = await startSourceRun(pool, source);
+  const P1 = 'urn:li:activity:7271000000000000011';
+  const P2 = 'urn:li:activity:7271000000000000012';
+  const parPost = {
+    '7271000000000000011': [{ id: 'ACoAAada', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale' }],
+    '7271000000000000012': [{ id: 'ACoAAbob', prenom: 'Bob', nom: 'Durand', titre: 'Directeur commercial' }],
+  };
+
+  const navigations = [];
+  const pilote = {
+    aller: async (u) => void navigations.push(u),
+    url: async () => URL_POST,
+    saisir: async () => undefined,
+    presserEntree: async () => undefined,
+    texte: async () => '', // la page ne rend aucun auteur : le repli sur la source est exercé
+    attendre: async () => false,
+    requete: async (u) => {
+      if (u.includes('/company/')) return { statut: 200, corps: htmlPage('acme', '777') };
+      if (u.includes('organizationalPageUrn')) return { statut: 200, corps: lotDePosts([P1, P2]) };
+      const id = Object.keys(parPost).find((x) => u.includes(x));
+      return { statut: 200, corps: voyager(parPost[id] ?? []) };
+    },
+    effacerCookies: async () => undefined,
+    fermer: async () => undefined,
+  };
+  const log = console.log;
+  console.log = () => undefined;
+  try {
+    await traiterCollecteLinkedIn(
+      {
+        pool,
+        env: { JAY_REACH_LINKEDIN: '1' },
+        ouvrirNavigateur: async () => pilote,
+        releverSortie: async () => ({ ip: IP, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
+        pause: async () => undefined,
+      },
+      { organizationId: m.org, sourceId: source, sourceRunId: runId },
+    );
+  } finally {
+    console.log = log;
+  }
+
+  const passage = (await q(`select status, error, nouveaux from source_runs where id = $1`, [runId])).rows[0];
+  check('8. le passage est un succès, deux personnes nouvelles', passage.status === 'success' && passage.nouveaux === 2, JSON.stringify(passage));
+  const posts = await lignesPost(m.org);
+  check('8b. une fiche par post', posts.length === 2, `${posts.length} fiche(s)`);
+  const signaux = (await q(`select linkedin_post_id from signals where organization_id = $1`, [m.org])).rows;
+  const ids = new Set(posts.map((p) => p.id));
+  check('8c. CHAQUE engageur est rattaché à la fiche de SON post',
+    signaux.length === 2 && signaux.every((s) => ids.has(s.linkedin_post_id)) && new Set(signaux.map((s) => s.linkedin_post_id)).size === 2, JSON.stringify(signaux));
+  check('8d. auteur de repli : la page, sans nom affiché (un slug ne s\'affiche pas)',
+    posts.every((p) => p.author_kind === 'page' && p.author_name === 'acme' && p.author_display_name === null && p.author_public_name === 'acme'),
+    JSON.stringify(posts.map((p) => [p.author_kind, p.author_name, p.author_display_name])));
+  check('8e. la capture est gratuite : la page entreprise, puis UNE navigation par post',
+    navigations.length === 3, `${navigations.length} navigation(s)`);
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

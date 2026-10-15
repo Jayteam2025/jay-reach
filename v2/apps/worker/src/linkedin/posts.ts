@@ -14,7 +14,7 @@
  */
 import { ErreurCollecte, ENTETES_VOYAGER, MESSAGES_FRICTION, frictionDeLUrl, frictionDuStatut, urnDActivite } from './engageurs.js';
 import type { ArretCollecte, Budget } from './engageurs.js';
-import { nomAffichePourAuteur, type AuteurDePost } from './fiche-post.js';
+import type { AuteurDePost } from './fiche-post.js';
 import type { Pilote } from './navigateur.js';
 
 /**
@@ -373,7 +373,8 @@ export async function trouverPostsDePage(
   const auteur: AuteurDePost = {
     kind: 'page',
     nom,
-    nomAffiche: nomAffichePourAuteur('page', nom),
+    // Un slug n'est pas un nom lisible : l'affichage reste vide, la garde retiendra le post.
+    nomAffiche: '',
     nomPublic: nom,
     url: adresse,
   };

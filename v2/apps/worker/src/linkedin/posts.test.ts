@@ -361,7 +361,7 @@ describe('trouverPostsDePage', () => {
     expect(r.auteur).toEqual({
       kind: 'page',
       nom: 'ma-cible',
-      nomAffiche: 'ma-cible',
+      nomAffiche: '',
       nomPublic: 'ma-cible',
       url: 'https://www.linkedin.com/company/ma-cible/',
     });

@@ -29,7 +29,7 @@ import {
   type ArretCollecte,
   type Budget,
 } from './engageurs.js';
-import { nomAffichePourAuteur, type AuteurDePost } from './fiche-post.js';
+import type { AuteurDePost } from './fiche-post.js';
 import type { Pilote } from './navigateur.js';
 
 /** Les trois types d'identifiant qu'un post peut porter dans un lien de la page d'activité. */
@@ -384,7 +384,8 @@ export async function trouverPostsDeProfil(
   const auteur: AuteurDePost = {
     kind: 'person',
     nom: nomPublic,
-    nomAffiche: nomAffichePourAuteur('person', nomPublic),
+    // Un slug n'est pas un nom lisible : l'affichage reste vide, la garde retiendra le post.
+    nomAffiche: '',
     nomPublic,
     url: adresseDeProfil(nomPublic),
   };

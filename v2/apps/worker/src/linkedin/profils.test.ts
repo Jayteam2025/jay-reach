@@ -181,7 +181,7 @@ describe('trouverPostsDeProfil', () => {
     expect(r.auteur).toEqual({
       kind: 'person',
       nom: 'prenom-nom',
-      nomAffiche: 'prenom-nom',
+      nomAffiche: '',
       nomPublic: 'prenom-nom',
       url: 'https://www.linkedin.com/in/prenom-nom/',
     });

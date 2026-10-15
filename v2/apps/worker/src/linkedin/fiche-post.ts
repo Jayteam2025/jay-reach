@@ -41,6 +41,18 @@ export function nomAffichePourAuteur(kind: 'person' | 'page', nom: string): stri
   return propre.split(' ')[0] ?? '';
 }
 
+/**
+ * L'auteur lu sur la page, complété par ce que la source sait par construction (la page ou le
+ * profil dont on lit les posts). Le connu prime sur `kind` (l'heuristique de la page est moins sûre)
+ * et fournit nom public et adresse, que la page ne rend pas. Sans auteur lu, le connu sert tel quel :
+ * `nomAffiche` y est vide, car un slug ne se lit pas dans « le post de ... ».
+ */
+export function auteurAvecRepli(lu: AuteurDePost | null, connu: AuteurDePost | null): AuteurDePost | null {
+  if (connu === null) return lu;
+  if (lu === null) return connu;
+  return { ...lu, kind: connu.kind, nomPublic: lu.nomPublic ?? connu.nomPublic, url: lu.url ?? connu.url };
+}
+
 const DEBUT_LINKEDIN_MS = Date.UTC(2003, 0, 1);
 
 /**

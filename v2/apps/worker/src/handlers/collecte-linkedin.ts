@@ -40,7 +40,7 @@ import {
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ErreurCollecte, delaiAleatoire, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
-import type { AuteurDePost } from '../linkedin/fiche-post.js';
+import { auteurAvecRepli, type AuteurDePost } from '../linkedin/fiche-post.js';
 import { enregistrerFichePost } from '../linkedin/posts-fiches.js';
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { arriverSurLeFil, identifiantDeProfil, lireProfil, trouverPostsDeProfil } from '../linkedin/profils.js';
@@ -1124,9 +1124,8 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
         { requetesRestantes: requetesRestantes(), postsRestants: 1 },
         surRequete,
         d.pause,
-        // Seul le mode `post` capture ici : sa page est déjà ouverte et lue, donc gratuite. Les deux
-        // autres modes rattachent leurs fiches par le travail de fond.
-        config.mode === 'post',
+        // La page du post vient d'être chargée dans les trois modes : la fiche s'y lit gratuitement.
+        true,
       );
       bilan.posts += 1;
       bilan.vus += personnes.length;
@@ -1143,7 +1142,15 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
       const linkedinPostId =
         fiche === undefined
           ? null
-          : (await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours: FENETRE_DECISION_JOURS })).id;
+          : (
+              await enregistrerFichePost(
+                pool,
+                job.organizationId,
+                // Repli sur l'auteur que la source connaît par construction.
+                { ...fiche, auteur: auteurAvecRepli(fiche.auteur, post.auteurConnu) },
+                { fenetreJours: FENETRE_DECISION_JOURS },
+              )
+            ).id;
       const plafondPersonnes = await enregistrer(personnes, urlPost, linkedinPostId);
       traficTermine = false;
 

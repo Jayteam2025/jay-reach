@@ -64,7 +64,8 @@ export async function enregistrerFichePost(
       fiche.url,
       a?.kind ?? null,
       a?.nom ?? null,
-      a?.nomAffiche ?? null,
+      // Une chaîne vide dit « pas de nom lisible » : elle ne s'écrit pas, un slug ne doit jamais s'afficher.
+      a?.nomAffiche || null,
       a?.nomPublic ?? null,
       a?.url ?? null,
       fiche.date,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  auteurAvecRepli,
+  type AuteurDePost,
   dateDeLActivite,
   lireFichePost,
   lireFichePostDepuisPageOuverte,
@@ -154,5 +156,22 @@ describe('lireFichePost', () => {
     expect(fiche.auteur).toBeNull();
     expect(fiche.urn).toBe(`urn:li:activity:${ID_ACTIVITE}`);
     expect(fiche.date?.toISOString()).toBe(DATE.toISOString());
+  });
+});
+
+describe('auteurAvecRepli', () => {
+  const connu: AuteurDePost = { kind: 'page', nom: 'acme', nomAffiche: '', nomPublic: 'acme', url: 'https://www.linkedin.com/company/acme/' };
+  const lu: AuteurDePost = { kind: 'person', nom: 'Acme France', nomAffiche: 'Acme France', nomPublic: null, url: null };
+
+  it('sans auteur connu, garde ce que la page a rendu', () => {
+    expect(auteurAvecRepli(lu, null)).toBe(lu);
+    expect(auteurAvecRepli(null, null)).toBeNull();
+  });
+  it('sans auteur lu, prend l’auteur connu, au nom affiché vide', () => {
+    expect(auteurAvecRepli(null, connu)).toBe(connu);
+    expect(connu.nomAffiche).toBe('');
+  });
+  it('garde le nom lisible de la page, complète le nom public et l’adresse, et croit le type connu', () => {
+    expect(auteurAvecRepli(lu, connu)).toEqual({ ...lu, kind: 'page', nomPublic: 'acme', url: connu.url });
   });
 });

@@ -541,6 +541,20 @@ describe('la source « posts d’un concurrent »', () => {
     return { statut: 200, corps: voyager(profils[post ?? ''] ?? []) };
   };
 
+  it('capture la fiche de chaque post sans navigation de plus, et retombe sur la page comme auteur', async () => {
+    const b = base({ source: sourceConcurrent([PAGE]) });
+    const p = pilote({ reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const fiches = b.ecritures.filter((e) => e.sql === 'fiche');
+    expect(fiches).toHaveLength(2);
+    // Navigations : la page entreprise, puis UNE par post. La fiche n'en ajoute aucune.
+    expect(p.navigations).toHaveLength(3);
+    // La page n'a rien rendu : l'auteur est celui que la source connaît, sans nom lisible (un slug ne s'affiche pas).
+    expect(fiches[0]?.params.slice(4, 9)).toEqual(['page', 'acme', null, 'acme', 'https://www.linkedin.com/company/acme/']);
+    expect(b.ecritures.filter((e) => e.sql.startsWith('update signals set linkedin_post_id'))).toHaveLength(2);
+  });
+
   it('lit les engageurs de chaque post trouve, et compte les posts ouverts', async () => {
     const b = base({ source: sourceConcurrent([PAGE]) });
     const p = pilote({ reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
@@ -618,6 +632,19 @@ describe('la source « posts d’un créateur »', () => {
     expect(c.params[2]).toBe('success');
     expect(c.params[16]).toBe(2);
     expect(b.ecritures.filter((e) => e.sql === 'post_traite')).toHaveLength(2);
+  });
+
+  it('capture la fiche de chaque post sans navigation de plus, et retombe sur le profil comme auteur', async () => {
+    const b = base({ source: sourceCreateur([PROFIL]) });
+    const p = pilote({ url: ARRIVEE, reponse: repondre([A, B], { [A]: [UNE], [B]: [AUTRE] }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    const fiches = b.ecritures.filter((e) => e.sql === 'fiche');
+    expect(fiches).toHaveLength(2);
+    // Le profil (résolution du nom public), puis UNE page par post.
+    expect(p.navigations).toHaveLength(3);
+    expect(fiches[0]?.params.slice(4, 9)).toEqual(['person', 'ada-exemple', null, 'ada-exemple', 'https://www.linkedin.com/in/ada-exemple/']);
+    expect(b.ecritures.filter((e) => e.sql.startsWith('update signals set linkedin_post_id'))).toHaveLength(2);
   });
 
   it('une visite de profil par créateur : la résolution se trace en `profil`, la page d\u2019activité non', async () => {
