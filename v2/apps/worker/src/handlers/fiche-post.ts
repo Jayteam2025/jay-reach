@@ -21,6 +21,11 @@
  * avant chaque page et une trace par lecture dans `linkedin_requetes` (même budget horaire que la
  * collecte). Le plafond du jour compte ces traces : une lecture compte, qu'elle réussisse ou non.
  *
+ * **Le verrou et le navigateur ne couvrent QUE les pages.** Un lot se joue en deux moitiés : les
+ * pages sous verrou, puis les sujets sans rien. Le verrou est pris seulement s'il y a une page à
+ * lire, et rendu dès la dernière — jamais tenu pendant vingt appels au modèle. Une session
+ * absente ou bloquée n'empêche donc que la première moitié.
+ *
  * Une page illisible ne lève pas : `capture_attempts` monte, la fiche reste `pending`, et la
  * sélection cesse de la proposer à la troisième tentative. Aucun secret ni URL de proxy dans un
  * message : seul le type d'erreur est consigné.
@@ -127,27 +132,54 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
   const { pool } = d;
   const ctx: Contexte = { ex: pool, organisationId: job.organizationId, utilisateurId: null, role: null };
   if (d.env.JAY_REACH_LINKEDIN !== '1') return;
+  // La session ne commande que la MOITIÉ du travail. Rédiger un sujet lit un texte déjà en base et
+  // n'émet rien vers LinkedIn : subordonner cette moitié à une session active rendrait l'opérateur
+  // aux sujets manuels (197 posts chez l'opérateur réel) le jour d'un défi de connexion, c'est-à-dire
+  // exactement le jour où il a le moins de temps à y passer.
   const session = await lireSessionLinkedIn(ctx);
-  if (!session || session.etat !== 'active') return;
+  const sessionActive = session?.etat === 'active';
 
-  // Le verrou AVANT le navigateur : tenu par une collecte, on sort sans avoir émis le moindre trafic.
+  // Les deux bornes, chacune sur sa population : les plafonds de requêtes LinkedIn pour les fiches
+  // à relire — zéro sans session, aucune page ne s'ouvrira — et une borne de passage pour celles
+  // qu'il suffit de rédiger.
+  const place = sessionActive ? await placeRestante(ctx) : 0;
+  const fiches = await fichesARattraper(pool, job.organizationId, {
+    aRelire: place,
+    aRediger: SUJETS_PAR_LOT_MAX,
+  });
+  if (fiches.length === 0) return;
+
   const proprietaire = `fiche-post-${job.organizationId}`;
-  if (!(await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_LOT_MS))) return;
   let pilote: Pilote | null = null;
-  try {
-    // Les deux bornes, chacune sur sa population : les plafonds de requêtes LinkedIn pour les
-    // fiches à relire, une borne de passage pour celles qu'il suffit de rédiger.
-    const place = await placeRestante(ctx);
-    const fiches = await fichesARattraper(pool, job.organizationId, {
-      aRelire: place,
-      aRediger: SUJETS_PAR_LOT_MAX,
-    });
-    if (fiches.length === 0) return;
-    const aRelire = fiches.some((f) => f.a_relire);
+  let verrouTenu = false;
+  /**
+   * Rend le navigateur ET le verrou, et ne le fait qu'une fois.
+   *
+   * Appelé dès la dernière page lue, pas à la fin du lot : RIEN ne doit tenir un verrou LinkedIn
+   * pour appeler un modèle. Vingt rédactions derrière un client sans délai d'expiration, sous un
+   * verrou de dix minutes, c'est la collecte qui attend pour rien — et le navigateur qui reste
+   * ouvert sans rien avoir à faire.
+   */
+  const relacher = async () => {
+    if (pilote) {
+      await pilote.fermer().catch(() => undefined);
+      pilote = null;
+    }
+    if (verrouTenu) {
+      verrouTenu = false;
+      await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);
+    }
+  };
 
-    // Le navigateur ne s'ouvre QUE s'il reste une page à lire : un lot qui ne fait que rédiger des
-    // sujets n'émet pas un octet vers LinkedIn.
-    if (aRelire) {
+  try {
+    // Le navigateur ne s'ouvre QUE s'il reste une page à lire, et le verrou ne se prend que là :
+    // un lot qui ne fait que rédiger des sujets n'émet pas un octet vers LinkedIn, et n'a donc
+    // aucune raison d'empêcher une collecte de tourner.
+    const aRelire = sessionActive && fiches.some((f) => f.a_relire);
+    // Le verrou AVANT le navigateur : tenu par une collecte, on sort sans avoir émis le moindre
+    // trafic — mais on garde les sujets à écrire, qui ne la dérangent pas.
+    if (aRelire) verrouTenu = await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_LOT_MS);
+    if (verrouTenu && session) {
       try {
         pilote = await d.ouvrirNavigateur();
       } catch (err) {
@@ -169,13 +201,15 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
       if (!controle.ok) return;
     }
 
-    // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
-    let redacteur: RedacteurDeSujet | null = null;
     // Lue UNE fois pour tout le lot, et seulement si une fiche doit être réécrite : c'est un
     // réglage d'organisation, pas une constante. `null` — et surtout pas 0 — quand il n'y a rien à
     // relire : une fenêtre de 0 jour ferait expirer chaque fiche à la seconde où elle naît, donc
     // ce chiffre ne doit jamais exister à portée de `enregistrerFichePost`.
-    const fenetreJours = aRelire ? await fenetreValidationPost(pool, job.organizationId) : null;
+    const fenetreJours = pilote ? await fenetreValidationPost(pool, job.organizationId) : null;
+
+    // PREMIÈRE MOITIÉ, sous le verrou : les pages. `order by f.a_relire desc` les a mises en tête,
+    // et le texte qu'elles rendent est ce que la rédaction lira ensuite.
+    const aRediger: { readonly id: string; readonly texte: string }[] = [];
     for (const ligne of fiches) {
       let texte = ligne.text_excerpt;
       if (ligne.a_relire && pilote && fenetreJours !== null) {
@@ -189,33 +223,46 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
         const fiche = await lireFichePost(pilote, ligne.url);
         await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours });
         texte = fiche.texte ?? ligne.text_excerpt;
+      } else if (ligne.a_relire) {
+        // Aucune page pour celle-ci (verrou tenu par une collecte) : on ne lui écrit PAS de sujet
+        // au passage. Son texte est partiel par définition — c'est ce qui la rend incomplète — et
+        // un sujet écrit dessus serait définitif (`where subject is null`) alors que la page qu'on
+        // relira au prochain lot dira mieux.
+        continue;
       }
-
       // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
-      if (ligne.subject === null && texte !== null) {
-        const indisponible: IssueSujet = { etat: 'impossible' };
-        redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => indisponible);
-        const issue = await redacteur(texte).catch(() => indisponible);
-        if (issue.etat === 'ecrit') {
-          await pool.query(
-            `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
-              where organization_id = $1 and id = $2 and subject is null`,
-            [job.organizationId, ligne.id, issue.sujet],
-          );
-        } else if (issue.etat === 'refuse') {
-          // Le modèle a vu ce texte et n'en a rien tiré : une tentative de moins avant de cesser
-          // de le lui redemander. `TENTATIVES_SUJET_MAX` dit pourquoi.
-          await pool.query(
-            `update linkedin_posts set subject_attempts = subject_attempts + 1 /* jr:fiche_post_sujet_tentative */
-              where organization_id = $1 and id = $2`,
-            [job.organizationId, ligne.id],
-          );
-        }
+      if (ligne.subject === null && texte !== null) aRediger.push({ id: ligne.id, texte });
+    }
+
+    // Le navigateur et le verrou n'ont plus rien à faire ici : rendus AVANT le premier appel au
+    // modèle, et pas dans le `finally`.
+    await relacher();
+
+    // SECONDE MOITIÉ, sans verrou ni navigateur : les sujets.
+    // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
+    let redacteur: RedacteurDeSujet | null = null;
+    for (const { id, texte } of aRediger) {
+      const indisponible: IssueSujet = { etat: 'impossible' };
+      redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => indisponible);
+      const issue = await redacteur(texte).catch(() => indisponible);
+      if (issue.etat === 'ecrit') {
+        await pool.query(
+          `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
+            where organization_id = $1 and id = $2 and subject is null`,
+          [job.organizationId, id, issue.sujet],
+        );
+      } else if (issue.etat === 'refuse') {
+        // Le modèle a vu ce texte et n'en a rien tiré : une tentative de moins avant de cesser
+        // de le lui redemander. `TENTATIVES_SUJET_MAX` dit pourquoi.
+        await pool.query(
+          `update linkedin_posts set subject_attempts = subject_attempts + 1 /* jr:fiche_post_sujet_tentative */
+            where organization_id = $1 and id = $2`,
+          [job.organizationId, id],
+        );
       }
     }
   } finally {
-    await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);
-    if (pilote) await pilote.fermer().catch(() => undefined);
+    await relacher();
   }
 }
 
@@ -247,23 +294,29 @@ export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string):
 }
 
 /**
- * Le rattrapage : dépose UN job de lot par organisation à session active qui a du travail — une
- * fiche à rouvrir sous les plafonds de requêtes, OU un sujet à rédiger, qui n'en consomme aucun.
- * Ne demander que le premier laisserait le chemin nominal sans job : une collecte qui réussit ne
- * produit que des fiches complètes. La clé de singleton est l'organisation et la file est
- * `stately` : un second `send` pendant qu'un job attend rend `null`, ce qui n'est pas une erreur.
- * Retourne le nombre de jobs RÉELLEMENT déposés.
+ * Le rattrapage : dépose UN job de lot par organisation qui a du travail — une fiche à rouvrir
+ * sous les plafonds de requêtes, OU un sujet à rédiger, qui n'en consomme aucun. Ne demander que
+ * le premier laisserait le chemin nominal sans job : une collecte qui réussit ne produit que des
+ * fiches complètes. La clé de singleton est l'organisation et la file est `stately` : un second
+ * `send` pendant qu'un job attend rend `null`, ce qui n'est pas une erreur. Retourne le nombre de
+ * jobs RÉELLEMENT déposés.
+ *
+ * Les organisations dont la session N'EST PAS active sont servies aussi, pour leurs sujets à
+ * écrire seulement : le lot leur donnera `place = 0`, donc aucune page, aucune trace, aucun
+ * verrou. Les filtrer ici rendrait l'opérateur aux sujets manuels à chaque défi de connexion.
+ * Une organisation sans AUCUNE ligne de session, elle, n'a jamais collecté et n'a donc pas de
+ * fiche : rien à déposer.
  */
 export async function enqueueFichesPostALire(boss: PgBoss, pool: Pool): Promise<number> {
-  const orgs = await pool.query<{ organization_id: string }>(
-    `select organization_id /* jr:fiche_post_organisations */
-       from linkedin_server_sessions where status = 'active'`,
+  const orgs = await pool.query<{ organization_id: string; status: string }>(
+    `select organization_id, status /* jr:fiche_post_organisations */
+       from linkedin_server_sessions`,
   );
   let deposes = 0;
-  for (const { organization_id: organizationId } of orgs.rows) {
+  for (const { organization_id: organizationId, status } of orgs.rows) {
     try {
       const ctx: Contexte = { ex: pool, organisationId: organizationId, utilisateurId: null, role: null };
-      const place = await placeRestante(ctx);
+      const place = status === 'active' ? await placeRestante(ctx) : 0;
       // Une fiche de chaque nature suffit à décider : le lot refera la sélection avec ses bornes.
       const travail = await fichesARattraper(pool, organizationId, { aRelire: place > 0 ? 1 : 0, aRediger: 1 });
       if (travail.length === 0) continue;

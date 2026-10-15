@@ -545,9 +545,12 @@ const traces = async (org) => (await q(`select kind, post_id, source_run_id from
 const IP_FICHE = '203.0.113.7';
 
 /** Un pilote qui consigne ses navigations ; `texte` est ce que rend n'importe quel sélecteur. */
-function piloteFiche(texte, navigations) {
+function piloteFiche(texte, navigations, journal = []) {
   return {
-    aller: async (u) => void navigations.push(u),
+    aller: async (u) => {
+      navigations.push(u);
+      journal.push('page');
+    },
     url: async () => URL_POST,
     saisir: async () => undefined,
     presserEntree: async () => undefined,
@@ -555,26 +558,37 @@ function piloteFiche(texte, navigations) {
     attendre: async () => texte !== '',
     requete: async () => { throw new Error('aucune requête attendue'); },
     effacerCookies: async () => undefined,
-    fermer: async () => undefined,
+    fermer: async () => void journal.push('ferme'),
   };
 }
-/** Les dépendances du lot, et ce qu'elles ont vu. */
 /** Un rédacteur factice qui écrit toujours le même sujet, dans la forme réelle (`IssueSujet`). */
 const ecrit = (sujet) => async () => ({ etat: 'ecrit', sujet });
 /** Le défaut : aucune clé de modèle, donc rien n'est demandé — et aucune tentative consommée. */
 const sansModele = async () => ({ etat: 'impossible' });
 
+/**
+ * Les dépendances du lot, et ce qu'elles ont vu. `vu.journal` garde l'ORDRE des événements
+ * (`ouvre`, `page`, `ferme`, `redige`) : c'est la seule façon de prouver que le navigateur est
+ * rendu AVANT la première rédaction, et non gardé ouvert pendant vingt appels au modèle.
+ */
 function depsLot(texte = 'Recruter un commercial coûte cher, voici ce que nous avons mesuré.', redacteur = sansModele) {
-  const vu = { navigations: [], ouvertures: 0, pauses: [] };
+  const vu = { navigations: [], ouvertures: 0, pauses: [], journal: [] };
   return {
     vu,
     deps: {
       pool,
       env: { JAY_REACH_LINKEDIN: '1' },
-      ouvrirNavigateur: async () => { vu.ouvertures += 1; return piloteFiche(texte, vu.navigations); },
+      ouvrirNavigateur: async () => {
+        vu.ouvertures += 1;
+        vu.journal.push('ouvre');
+        return piloteFiche(texte, vu.navigations, vu.journal);
+      },
       releverSortie: async () => ({ ip: IP_FICHE, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
       pause: async (ms) => void vu.pauses.push(ms),
-      redacteurPour: async () => redacteur,
+      redacteurPour: async () => async (t) => {
+        vu.journal.push('redige');
+        return redacteur(t);
+      },
     },
   };
 }
@@ -610,7 +624,9 @@ async function rattrapageSelection() {
   const autre = await monde();
   await enregistrerFichePost(pool, autre.org, ficheN(1, VIDE), { fenetreJours: FENETRE });
   await enqueueFichesPostALire(boss, pool);
-  check('10c. une organisation sans session LinkedIn active n\'est pas servie', (await jobsDe(autre.org)).length === 0);
+  // Depuis que les sujets s'écrivent sans session active, ce qui écarte cette organisation n'est
+  // plus le STATUT de sa session, c'est qu'elle n'en a aucune : elle n'a jamais collecté.
+  check('10c. une organisation sans aucune session LinkedIn n\'est pas servie', (await jobsDe(autre.org)).length === 0);
 
   // « Rien à rattraper » : une fiche complète ET pourvue d'un sujet. Une fiche complète SANS sujet,
   // elle, a du travail (la rédaction) — c'est la section `sujetSansRelecture`.
@@ -792,6 +808,51 @@ async function sujetSansRelecture() {
     JSON.stringify([parUrl[urlN(53)].subject, parUrl[urlN(54)].subject]));
   check('28i. et la fiche complète n\'a pas pris une tentative de capture de plus',
     parUrl[urlN(54)].capture_attempts === 1, String(parUrl[urlN(54)].capture_attempts));
+  // RIEN ne doit tenir un verrou LinkedIn pour appeler un modèle : vingt rédactions derrière un
+  // verrou de dix minutes, c'est la collecte qui attend pour rien.
+  check('28m. le navigateur est FERMÉ avant la première rédaction',
+    x.vu.journal.indexOf('ferme') >= 0 && x.vu.journal.indexOf('ferme') < x.vu.journal.indexOf('redige'), JSON.stringify(x.vu.journal));
+
+  // Le verrou, lu DEPUIS la rédaction elle-même : c'est le seul moment où la question se pose.
+  const mixteB = await monde();
+  await activerSessionLinkedIn(mixteB.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, mixteB.org, ficheN(57, VIDE), { fenetreJours: FENETRE });
+  await enregistrerFichePost(pool, mixteB.org, ficheN(58), { fenetreJours: FENETRE });
+  const verrousVus = [];
+  const z = depsLot('TEXTE RELU SUR LA PAGE', async () => {
+    verrousVus.push((await q(`select lock_until > now() as tenu from linkedin_server_sessions where organization_id = $1`, [mixteB.org])).rows[0].tenu);
+    return { etat: 'ecrit', sujet: 'un sujet' };
+  });
+  await traiterFichePost(z.deps, { organizationId: mixteB.org });
+  check('28n. et le verrou LinkedIn est rendu avant la première rédaction',
+    verrousVus.length === 2 && verrousVus.every((tenu) => tenu === false), JSON.stringify(verrousVus));
+
+  // Rédiger n'émet rien vers LinkedIn : une session bloquée ne doit pas rendre l'opérateur aux
+  // sujets manuels que ce travail de fond existe pour supprimer.
+  const bloquee = await monde();
+  await activerSessionLinkedIn(bloquee.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, bloquee.org, ficheN(59), { fenetreJours: FENETRE });
+  await q(`update linkedin_server_sessions set status = 'bloquee', blocked_reason = 'defi' where organization_id = $1`, [bloquee.org]);
+  await enqueueFichesPostALire(boss, pool);
+  check('28o. session bloquée : un job est déposé quand même, pour les sujets à écrire', (await jobsDe(bloquee.org)).length === 1, JSON.stringify((await jobsDe(bloquee.org)).map((j) => j.data)));
+  const w = depsLot('x', ecrit('un sujet malgré la session'));
+  await traiterFichePost(w.deps, { organizationId: bloquee.org });
+  const rBloquee = (await q(`select subject from linkedin_posts where organization_id = $1`, [bloquee.org])).rows[0];
+  check('28p. le sujet est écrit sans navigateur et sans trace de requête',
+    rBloquee.subject === 'un sujet malgré la session' && w.vu.ouvertures === 0 && (await traces(bloquee.org)).length === 0,
+    `${rBloquee.subject} / ${w.vu.ouvertures} ouverture(s)`);
+  const verrouBloquee = (await q(`select lock_until > now() as tenu from linkedin_server_sessions where organization_id = $1`, [bloquee.org])).rows[0];
+  check('28q. et le verrou LinkedIn n\'a jamais été pris', verrouBloquee.tenu !== true, String(verrouBloquee.tenu));
+
+  // Une fiche INCOMPLÈTE, elle, exige toujours la session : elle a besoin d'une page.
+  const sansSession = await monde();
+  await activerSessionLinkedIn(sansSession.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, sansSession.org, ficheN(60, VIDE), { fenetreJours: FENETRE });
+  await q(`update linkedin_server_sessions set status = 'bloquee', blocked_reason = 'defi' where organization_id = $1`, [sansSession.org]);
+  const v2 = depsLot('TEXTE RELU SUR LA PAGE', ecrit('jamais'));
+  await traiterFichePost(v2.deps, { organizationId: sansSession.org });
+  check('28r. une fiche à relire n\'est pas lue sans session : aucune page ouverte, aucun sujet écrit',
+    v2.vu.ouvertures === 0 && (await q(`select subject from linkedin_posts where organization_id = $1`, [sansSession.org])).rows[0].subject === null);
 
   // UN TEXTE RÉFRACTAIRE. Le modèle répond, rien n'en sort : sans compteur, la fiche le rappelle
   // à chaque passage pendant toute sa fenêtre, sur le crédit que le SCORING partage avec elle.
