@@ -11,15 +11,13 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import {
+  construireMessagePost,
   nettoyerSujetPost,
   resolveScoringModel,
   SUJET_POST_MAX_TOKENS,
   SUJET_POST_SYSTEM_PROMPT,
 } from '@jay-reach/core';
 import type { RedacteurDeSujet } from './handlers/fiche-post.js';
-
-/** Un post en dépasse rarement un millier ; le reste ne change pas le sujet et coûte des tokens. */
-const TEXTE_POST_MAX_CARACTERES = 4000;
 
 /** Ce que le modèle répond au texte d'un post (brut, avant nettoyage). */
 export type AppelModeleSujet = (texte: string) => Promise<string | null>;
@@ -60,7 +58,7 @@ export function createAnthropicRedacteurDeSujet(cfg: ConfigFournisseur): Redacte
         max_tokens: SUJET_POST_MAX_TOKENS,
         thinking: { type: 'disabled' },
         system: SUJET_POST_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: texte.slice(0, TEXTE_POST_MAX_CARACTERES) }],
+        messages: [{ role: 'user', content: construireMessagePost(texte) }],
       });
       return res.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')

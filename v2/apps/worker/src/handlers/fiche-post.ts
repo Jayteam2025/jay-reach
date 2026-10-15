@@ -181,7 +181,7 @@ export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string):
       if (!apiKey) return async () => null;
       return createAnthropicRedacteurDeSujet({
         apiKey,
-        config: credentials,
+        config: { model_smart: credentials?.model_smart },
         prendreCredit: () => prendreCreditAnthropic(pool, organizationId),
       });
     },
