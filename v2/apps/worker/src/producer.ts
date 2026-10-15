@@ -193,7 +193,8 @@ export async function ecarterSignauxTropAnciens(
         -- la validation inutile, puisqu'elle arriverait sur une personne qui n'existe plus. Même
         -- épargne que pour les qualifiées ci-dessous, et elle compte ici aussi : une personne
         -- collectée sur un post reste nouvelle tant que le scoring ne l'a pas prise (plafond du
-        -- jour, panne), et la fenêtre de décision dépasse le délai d'ancienneté par construction.
+        -- jour, panne), et la fenêtre de décision est tenue de dépasser le délai d'ancienneté
+        -- (schemaEcrireReglage le refuse autrement, fenetreValidationPost le dit sinon).
         and not ${sqlFichePostEnAttente('signals')}`,
     [maxJours],
   );

@@ -72,6 +72,12 @@ export function sqlCampagneNommeUnPost(campagne: string): string {
  *    exactement le silence que ce lot existe pour supprimer. Retenu, la personne est COMPTÉE
  *    (`compterRetenuesParPost`) et l'opérateur peut compléter la fiche.
  *
+ * Les deux champs sont exigés ENSEMBLE, sans regarder lesquelles des quatre variables la
+ * campagne écrit : une campagne qui ne citerait que `{{post_url}}` retient donc ses personnes
+ * jusqu'à ce que la fiche ait un auteur affiché et un sujet. C'est le sens d'erreur choisi —
+ * retenir à tort est visible et réversible (le décompte le dit, l'épargne garde la personne),
+ * inscrire à tort fabrique une action bloquée que personne ne regarde.
+ *
  * `author_display_name`, et JAMAIS `author_name` : en mode créateur, `author_name` peut valoir
  * un identifiant technique (« uptoo-france »), que le nom affiché laisse délibérément vide pour
  * qu'aucune accroche illisible ne parte. Tester `author_name` ferait entrer une personne dont le

@@ -8,6 +8,10 @@
 import { CLES_REGLAGES, normaliserUrlPost, plafondDuJour } from '@jay-reach/core';
 import type { Pool } from 'pg';
 import type { FichePost } from './fiche-post.js';
+// Sens d'import inhabituel (un utilitaire LinkedIn qui lit le moteur), et assumé : c'est la SEULE
+// façon de comparer la fenêtre de décision au délai d'ancienneté SANS recopier la lecture de
+// `SIGNAL_MAX_AGE_DAYS`, et deux copies finiraient par diverger. Constante de module, aucun
+// cycle : `producer.ts` n'importe de la collecte LinkedIn que des types.
 import { AGE_MAX_SIGNAL_JOURS } from '../producer.js';
 
 const URN_ACTIVITE = /^urn:li:(?:activity|ugcPost|share):(\d+)$/;

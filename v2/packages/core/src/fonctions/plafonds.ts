@@ -260,21 +260,23 @@ export async function plafondDuJour(ex: Executeur, organisationId: string, cle: 
   return resoudrePlafondNumerique(ex, organisationId, cle, res.rows[0]?.value, def.defaut, def.env);
 }
 
+/** Repli de `SIGNAL_MAX_AGE_DAYS`, le même que celui du moteur (`lireAgeMaxSignalJours`). */
+const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
+
 /**
  * Délai d'ancienneté des signaux, en jours, tel que le moteur l'applique.
  *
  * COPIE DÉLIBÉRÉE de `AGE_MAX_SIGNAL_JOURS` (`apps/worker/src/producer.ts`), et non un import :
  * `packages/core` ne dépend pas du worker, et ce délai est volontairement une constante de
  * module du moteur, globale et non réglable par organisation. Seule la VALIDATION ci-dessous en
- * a besoin — jamais le comportement.
+ * a besoin — jamais le comportement, qui reste entièrement côté moteur.
  *
  * Conséquence à connaître : si `SIGNAL_MAX_AGE_DAYS` est posé sur le worker mais pas sur le
  * processus web, la validation compare à 14 alors que le moteur applique autre chose. Elle
- * refuserait donc moins qu'il ne faudrait. Poser la variable des deux côtés, ou ne la poser nulle
- * part, est ce qui garde les deux d'accord.
+ * refuserait alors moins qu'il ne faudrait (le moteur, lui, le dit dans ses journaux —
+ * `fenetreValidationPost`). Poser la variable des deux côtés, ou ne la poser nulle part, est ce
+ * qui garde les deux d'accord.
  */
-const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
-
 function ageMaxSignalJours(): number {
   const brut = process.env.SIGNAL_MAX_AGE_DAYS;
   if (brut === undefined || brut.trim() === '') return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
