@@ -72,16 +72,46 @@ const schemaCampagne = z.object({ campagneId: z.string().uuid() });
 export const CHAMPS_ACCROCHE = ['auteur', 'sujet'] as const;
 export type ChampAccroche = (typeof CHAMPS_ACCROCHE)[number];
 
-/** Un morceau d'accroche : du texte déjà résolu, ou un champ que l'opérateur édite dans la phrase. */
-export type MorceauAccroche = { readonly texte: string } | { readonly champ: ChampAccroche };
+/**
+ * Les variables de post que la CAPTURE relève et que l'opérateur ne peut pas écrire : l'adresse
+ * du post et sa date de publication.
+ *
+ * La date n'est pas une chaîne, c'est un horodatage ; l'offrir à la saisie, c'est accepter qu'un
+ * message parte sur une date inventée. Elle n'a donc aucun champ à l'écran — ce qui oblige à la
+ * dire autrement quand elle manque, au lieu de laisser le jeton brut sous les yeux de
+ * l'opérateur et de compter la ligne validable (« Tout valider » butait dessus à chaque
+ * passage, et le refus du serveur lui demandait d'écrire ce qui ne s'écrit pas).
+ *
+ * `CHAMPS_ACCROCHE` et cette liste couvrent `VARIABLES_DE_POST` en entier, et `posts.test.ts` le
+ * vérifie : une cinquième variable de post doit choisir son camp, faute de quoi elle
+ * retomberait en silence du mauvais côté.
+ */
+export const VARIABLES_DE_POST_RELEVEES = ['post_url', 'post_date'] as const;
+export type VariableDePostRelevee = (typeof VARIABLES_DE_POST_RELEVEES)[number];
 
-/** Les jetons que l'écran rend éditables, et ceux qui suffisent à faire d'une phrase une accroche. */
-const JETON_CHAMP = new RegExp(`\\{\\{\\s*post_(${CHAMPS_ACCROCHE.join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'gi');
+/**
+ * Un morceau d'accroche : du texte déjà résolu, un champ que l'opérateur édite dans la phrase, ou
+ * une variable relevée par la capture qui n'a pas pu l'être (`manquant`) — celle-là ne s'écrit
+ * pas, elle se signale.
+ */
+export type MorceauAccroche =
+  | { readonly texte: string }
+  | { readonly champ: ChampAccroche }
+  | { readonly manquant: VariableDePostRelevee };
+
+/** Les jetons de post restés dans l'aperçu, et ceux qui suffisent à faire d'une phrase une accroche. */
+const JETON_DE_POST_RESTANT = new RegExp(`\\{\\{\\s*(${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'gi');
 const JETON_DE_POST = new RegExp(`\\{\\{\\s*(?:${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'i');
 
 /**
- * Coupe une accroche rendue en morceaux : le texte déjà résolu, et les champs que l'opérateur
- * édite DANS la phrase (le nom de l'auteur, le sujet).
+ * Coupe une accroche rendue en morceaux : le texte déjà résolu, les champs que l'opérateur édite
+ * DANS la phrase (le nom de l'auteur, le sujet), et ce que la capture n'a pas pu relever.
+ *
+ * L'entrée est un rendu PARTIEL (`listerPostsDeCampagne`) : l'adresse et la date y sont déjà
+ * substituées quand elles existent. Un jeton de post qui a survécu à ce rendu est donc, par
+ * construction, soit un champ laissé exprès à l'opérateur, soit une valeur cherchée et vide —
+ * d'où les deux issues de la boucle. C'est le SEUL endroit qui le sait, et c'est pour ça que
+ * c'est ici que la distinction se fait plutôt que dans l'écran.
  *
  * `null` seulement quand il n'y a pas d'accroche du tout (aucune étape de la campagne ne nomme le
  * post) : l'écran retombe alors sur sa phrase par défaut. Une accroche qui ne cite que
@@ -95,9 +125,11 @@ export function decouperAccroche(apercu: string | null): MorceauAccroche[] | nul
   if (apercu === null) return null;
   const morceaux: MorceauAccroche[] = [];
   let curseur = 0;
-  for (const m of apercu.matchAll(JETON_CHAMP)) {
+  for (const m of apercu.matchAll(JETON_DE_POST_RESTANT)) {
     if (m.index > curseur) morceaux.push({ texte: apercu.slice(curseur, m.index) });
-    morceaux.push({ champ: m[1]?.toLowerCase() === 'auteur' ? 'auteur' : 'sujet' });
+    const nom = (m[1] ?? '').toLowerCase();
+    const champ = CHAMPS_ACCROCHE.find((c) => `post_${c}` === nom);
+    morceaux.push(champ ? { champ } : { manquant: nom as VariableDePostRelevee });
     curseur = m.index + m[0].length;
   }
   if (curseur < apercu.length) morceaux.push({ texte: apercu.slice(curseur) });
@@ -248,6 +280,11 @@ const LIBELLE_VARIABLE_DE_POST: Readonly<Record<string, string>> = {
   post_date: 'la date de publication',
 };
 
+/** « L'opérateur écrit cette variable lui-même, dans la phrase. » Les deux champs de l'écran. */
+function sEcritDansLaPhrase(variable: string): boolean {
+  return CHAMPS_ACCROCHE.some((c) => `post_${c}` === variable);
+}
+
 /**
  * Les variables de post que CETTE campagne écrit et que la fiche ne résout pas — exactement ce que
  * la garde refuserait (`sqlFicheResoutCeQuEcritLaCampagne`, lu par les deux).
@@ -268,6 +305,22 @@ async function variablesManquantes(ctx: Contexte, postId: string, campagneId: st
 }
 
 /**
+ * La campagne nommée en entrée appartient-elle à l'organisation ?
+ *
+ * `campagneId` est une ENTRÉE, pas un id lu en base : l'écran le prend dans son URL, et le
+ * serveur MCP (#100) le recevra d'un appel. Un uuid absent ou étranger rend vraies toutes les
+ * exigences de `sqlFicheResoutCeQuEcritLaCampagne` (aucune étape ne nomme le post, donc rien
+ * n'est exigé) et ferait approuver la fiche sans relecture utile.
+ */
+async function exigerCampagneDeLOrganisation(ctx: Contexte, campagneId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `select 1 from campaigns where id = $2 and organization_id = $1`,
+    [ctx.organisationId, campagneId],
+  );
+  if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Campagne');
+}
+
+/**
  * Valide un post : ses personnes peuvent entrer en séquence.
  *
  * REFUSÉ tant que la fiche ne porte pas ce que la campagne ÉCRIT — ni plus, ni moins. Le même
@@ -281,25 +334,47 @@ async function variablesManquantes(ctx: Contexte, postId: string, campagneId: st
 export async function validerPost(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
   const { postId, campagneId } = valider(schemaValidation, entree);
+  // La campagne est JOINTE sur l'organisation, comme chez ses voisines : le filtre vit dans la
+  // requête qui écrit, pas dans une lecture préalable qu'une course pourrait contredire.
   const res = await ctx.ex.query(
     `update linkedin_posts p
         set review_status = 'approved', reviewed_at = now(), reviewed_by = $3
-      where p.organization_id = $1 and p.id = $2 and p.review_status = 'pending' and p.expires_at > now()
-        and ${sqlFicheResoutCeQuEcritLaCampagne('$4::uuid', 'p')}`,
+       from campaigns c
+      where c.id = $4::uuid and c.organization_id = $1
+        and p.organization_id = $1 and p.id = $2 and p.review_status = 'pending' and p.expires_at > now()
+        and ${sqlFicheResoutCeQuEcritLaCampagne('c.id', 'p')}`,
     [ctx.organisationId, postId, ctx.utilisateurId, campagneId],
   );
   if ((res.rowCount ?? 0) > 0) return;
+  // AVANT de diagnostiquer : sans campagne à nous, il n'y a rien à exiger, donc rien à dire.
+  await exigerCampagneDeLOrganisation(ctx, campagneId);
   const etat = await etatDuPost(ctx, postId);
   if (etat.review_status === 'approved') return;
   if (etat.review_status === 'rejected') throw refus('Ce post est rejeté : rouvrez-le avant de le valider.');
   if (etat.expired) throw refus(MESSAGE_ECHEANCE_PASSEE);
   const manquantes = await variablesManquantes(ctx, postId, campagneId);
-  if (manquantes.length === 1) {
-    throw refus(`Ce post n'a pas ${LIBELLE_VARIABLE_DE_POST[manquantes[0]!]} : écrivez-le dans la phrase avant de le valider.`);
+  // Les variables RELEVÉES par la capture d'abord : demander de les écrire est un ordre
+  // impossible à exécuter (aucun champ à l'écran ne les porte, et une date ne se saisit pas).
+  const relevees = manquantes.filter((v) => !sEcritDansLaPhrase(v));
+  const aEcrire = manquantes.filter(sEcritDansLaPhrase);
+  if (relevees.length > 0) {
+    const quoi = relevees.map((v) => LIBELLE_VARIABLE_DE_POST[v]).join(', ');
+    const constat =
+      relevees.length > 1
+        ? 'ces informations n\'ont pas pu être lues sur la page du post, et le rattrapage les reposera'
+        : 'cette information n\'a pas pu être lue sur la page du post, et le rattrapage la reposera';
+    const reste =
+      aEcrire.length > 0
+        ? ` Il manque aussi ${aEcrire.map((v) => LIBELLE_VARIABLE_DE_POST[v]).join(', ')}, qui se complète dans la phrase.`
+        : '';
+    throw refus(`Ce post n'a pas ${quoi} : ${constat}.${reste}`);
   }
-  if (manquantes.length > 1) {
+  if (aEcrire.length === 1) {
+    throw refus(`Ce post n'a pas ${LIBELLE_VARIABLE_DE_POST[aEcrire[0]!]} : écrivez-le dans la phrase avant de le valider.`);
+  }
+  if (aEcrire.length > 1) {
     throw refus(
-      `Ce post ne porte pas tout ce que votre message écrit (${manquantes.map((v) => LIBELLE_VARIABLE_DE_POST[v]).join(', ')}) : complétez la phrase avant de le valider.`,
+      `Ce post ne porte pas tout ce que votre message écrit (${aEcrire.map((v) => LIBELLE_VARIABLE_DE_POST[v]).join(', ')}) : complétez la phrase avant de le valider.`,
     );
   }
   throw refus('Ce post n\'a pas pu être validé : rechargez l\'écran.');

@@ -1111,7 +1111,12 @@
         "sujetInvite": "écrivez le sujet du post",
         "sujetEtiquette": "Sujet du post de {auteur}",
         "auteurInvite": "écrivez le nom de l'auteur",
-        "auteurEtiquette": "Nom de l'auteur du post, tel qu'il partira"
+        "auteurEtiquette": "Nom de l'auteur du post, tel qu'il partira",
+        "manquant": {
+          "post_url": "adresse indisponible",
+          "post_date": "date indisponible"
+        },
+        "manquantAide": "Cette information n'a pas pu être lue sur la page du post. Jay Reach la relira automatiquement ; vous n'avez rien à écrire ici."
       },
       "ligne": {
         "auteurInconnu": "Auteur inconnu",

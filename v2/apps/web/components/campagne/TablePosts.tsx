@@ -18,7 +18,7 @@
  * réversible (« Rouvrir »).
  */
 import { useRef, useState, useTransition } from 'react';
-import type { ChampAccroche, MorceauAccroche } from '@jay-reach/core';
+import type { ChampAccroche } from '@jay-reach/core';
 import { Bouton, Puce } from '../ui';
 import { creerEnregistreurDeChamp, validerApresEnregistrement } from './enregistreur-champ';
 import {
@@ -30,6 +30,12 @@ import {
   actionValiderPosts,
 } from '../../app/actions/posts';
 
+/**
+ * Un morceau de la phrase. `manquant` porte un libellé DÉJÀ composé (« date indisponible ») :
+ * comme le reste de cet écran, le texte arrive écrit du serveur — c'est lui qui a la langue.
+ */
+export type MorceauEcran = { texte: string } | { champ: ChampAccroche } | { manquant: string };
+
 export interface LignePostEcran {
   id: string;
   /** `null` : l'auteur n'a pas pu être lu, l'écran écrit « Auteur inconnu » et laisse l'écrire. */
@@ -39,7 +45,7 @@ export interface LignePostEcran {
   url: string;
   sujet: string | null;
   /** La phrase déjà résolue, découpée autour des champs que l'opérateur écrit lui-même. */
-  morceaux: MorceauAccroche[];
+  morceaux: MorceauEcran[];
   etat: 'pending' | 'approved' | 'rejected';
   etatLibelle: string;
   /** Déjà composé (« jusqu'à 47 personnes attendent »), `null` quand la campagne ne nomme aucun post. */
@@ -71,6 +77,8 @@ export interface TablePostsProps {
     toutValider: string | null;
     /** Pourquoi « Tout valider » est inactif : un champ modifié n'est pas encore enregistré. */
     lotBloque: string;
+    /** Ce qu'un morceau `manquant` veut dire, au survol : la capture n'a pas pu lire cette valeur. */
+    manquantAide: string;
   };
 }
 
@@ -83,9 +91,15 @@ function champsDeLaLigne(ligne: LignePostEcran): ChampAccroche[] {
  * Un post se valide en lot quand il attend sa relecture ET que tous les champs que la campagne
  * écrit sont remplis. « Tous », et pas « le sujet » : une campagne qui nomme l'auteur sans le
  * sujet se valide sur l'auteur, et le serveur refuserait l'inverse.
+ *
+ * Une variable que la campagne écrit, qui manque, et que l'opérateur ne peut PAS écrire (la date
+ * de publication) exclut la ligne du lot : le serveur la refuserait, « Tout valider » s'arrête au
+ * premier refus, et rien de ce que l'opérateur peut faire ne la débloquerait. Son bouton
+ * « Valider » à elle reste actif, lui : c'est la seule façon de lire pourquoi.
  */
 export function ligneValidable(ligne: LignePostEcran): boolean {
   if (ligne.etat !== 'pending') return false;
+  if (ligne.morceaux.some((m) => 'manquant' in m)) return false;
   return champsDeLaLigne(ligne).every((c) => ((c === 'auteur' ? ligne.auteur : ligne.sujet) ?? '').trim() !== '');
 }
 
@@ -312,6 +326,13 @@ function Ligne({
               editable={editable}
               pending={pending}
             />
+          ) : 'manquant' in m ? (
+            /* Ni un champ, ni du texte : une valeur que la capture n'a pas pu lire. Le jeton brut
+               (« votre réaction du {{post_date}} ») s'affichait ici, dans une phrase où rien ne
+               permettait de le corriger. */
+            <span key={i} className="jr-post-manquant" title={libelles.manquantAide}>
+              {m.manquant}
+            </span>
           ) : (
             <span key={i} className="fixe">
               {m.texte}

@@ -7,11 +7,10 @@ import {
   hasMinRole,
   listerPostsDeCampagne,
   retenuesAAfficher,
-  type MorceauAccroche,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
-import { TablePosts, ligneValidable, type LignePostEcran } from '../../../../../components/campagne/TablePosts';
+import { TablePosts, ligneValidable, type LignePostEcran, type MorceauEcran } from '../../../../../components/campagne/TablePosts';
 
 export const revalidate = 0;
 
@@ -36,13 +35,16 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
   const lignes: LignePostEcran[] = posts.map((p) => {
     const echeance = echeanceDePost(p.expireLe, maintenant, fuseau);
     // La phrase du gabarit de la campagne quand elle en a une, sinon la phrase par défaut : dans
-    // les deux cas l'auteur et le sujet s'éditent à l'intérieur.
-    const morceaux: MorceauAccroche[] = decouperAccroche(p.apercuAccroche) ?? [
-      { texte: t('phrase.avantAuteur') },
-      { champ: 'auteur' },
-      { texte: t('phrase.apresAuteur') },
-      { champ: 'sujet' },
-    ];
+    // les deux cas l'auteur et le sujet s'éditent à l'intérieur. Une variable que la capture n'a
+    // pas pu relever (la date) devient un libellé, jamais le jeton brut : la langue est ici.
+    const morceaux: MorceauEcran[] = (
+      decouperAccroche(p.apercuAccroche) ?? [
+        { texte: t('phrase.avantAuteur') },
+        { champ: 'auteur' },
+        { texte: t('phrase.apresAuteur') },
+        { champ: 'sujet' },
+      ]
+    ).map((m) => ('manquant' in m ? { manquant: t(`phrase.manquant.${m.manquant}`) } : m));
     return {
       id: p.id,
       auteur: p.auteur,
@@ -110,6 +112,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
               personnes: dit.enAttenteDeValidation > 0 ? t('bar.personnes', { n: dit.enAttenteDeValidation }) : '',
               lotBloque: t('bar.lotBloque'),
+              manquantAide: t('phrase.manquantAide'),
               toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}
           />

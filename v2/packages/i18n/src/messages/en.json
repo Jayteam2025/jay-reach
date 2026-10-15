@@ -1111,7 +1111,12 @@
         "sujetInvite": "write the post's subject",
         "sujetEtiquette": "Subject of {auteur}'s post",
         "auteurInvite": "write the author's name",
-        "auteurEtiquette": "Name of the post's author, as it will be sent"
+        "auteurEtiquette": "Name of the post's author, as it will be sent",
+        "manquant": {
+          "post_url": "link unavailable",
+          "post_date": "date unavailable"
+        },
+        "manquantAide": "This detail could not be read from the post page. Jay Reach will read it again automatically; there is nothing for you to write here."
       },
       "ligne": {
         "auteurInconnu": "Unknown author",

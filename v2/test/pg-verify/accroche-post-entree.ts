@@ -28,6 +28,7 @@ export {
   compterPostsAValiderDeCampagne,
   corrigerAuteurDePost,
   corrigerSujetDePost,
+  decouperAccroche,
   listerPostsDeCampagne,
   rejeterPost,
   reouvrirPost,

@@ -89,6 +89,7 @@ import {
   TENTATIVES_SUJET_MAX,
   compterPostsAValiderDeCampagne,
   corrigerAuteurDePost,
+  decouperAccroche,
   corrigerSujetDePost,
   listerPostsDeCampagne,
   rejeterPost,
@@ -1620,6 +1621,37 @@ async function validationExigeCeQuiPartira() {
   check('29b. une campagne qui ne cite que {{post_url}} valide sans sujet ni auteur', refusUrl === null && etatUrl === 'approved', `${refusUrl?.name} / ${etatUrl}`);
   await tourDInscription(u.org);
   check('29c. et ses personnes entrent réellement en séquence', (await inscritsDe(u.org)).includes(sansSujet.contact_id), JSON.stringify(await inscritsDe(u.org)));
+
+  // 3. La campagne cite la DATE, que la capture n'a pas pu lire (fiche de reprise, page illisible).
+  // L'opérateur ne peut pas l'écrire : ce n'est pas une chaîne, c'est un horodatage que seul le
+  // rattrapage peut reposer. L'écran ne doit donc ni montrer le jeton, ni la lui demander.
+  const d = await monde();
+  await etapeAvecCorps(d, ACCROCHE_DATE);
+  const sansDate = await engageurDUnPost(d, 63, { etat: 'pending', sujet: null, nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [sansDate.fiche]);
+  const ligneSansDate = (await listerPostsDeCampagne(d.ctx, { campagneId: d.campagne })).find((l) => l.id === sansDate.fiche);
+  // L'écran ne lit pas l'aperçu, il lit ses MORCEAUX : la preuve porte sur ce qu'il affichera.
+  const morceauxSansDate = decouperAccroche(ligneSansDate?.apercuAccroche ?? null) ?? [];
+  const texteAffiche = morceauxSansDate.filter((m) => 'texte' in m).map((m) => m.texte).join('');
+  check('29f. aucun jeton brut de variable de post ne parvient à l\'écran',
+    morceauxSansDate.length > 0 && !/\{\{/.test(texteAffiche), JSON.stringify(morceauxSansDate));
+  check('29f2. la date non lue est un morceau MANQUANT, ni un champ à écrire ni du texte',
+    morceauxSansDate.some((m) => m.manquant === 'post_date') && !morceauxSansDate.some((m) => m.champ !== undefined),
+    JSON.stringify(morceauxSansDate));
+  let refusDate = null;
+  await validerPost(d.ctx, { postId: sansDate.fiche, campagneId: d.campagne }).catch((e) => { refusDate = e; });
+  const messageDate = refusDate?.details?.formErrors?.[0] ?? '';
+  check('29g. valider est refusé, et le message ne demande pas d\'écrire ce qui ne s\'écrit pas',
+    refusDate !== null && !/écrivez/i.test(messageDate) && /pas pu être lue|rattrapage/i.test(messageDate), messageDate);
+
+  // 4. L'id de campagne est une ENTRÉE : la façade que le serveur MCP appellera doit vérifier
+  // qu'elle appartient à l'organisation. Un uuid étranger rend toutes les exigences vraies.
+  const voisin = await monde();
+  let intrus = null;
+  await validerPost(d.ctx, { postId: sansDate.fiche, campagneId: voisin.campagne }).catch((e) => { intrus = e; });
+  const etatIntrus = (await q(`select review_status from linkedin_posts where id = $1`, [sansDate.fiche])).rows[0].review_status;
+  check('29h. valider avec la campagne d\'une AUTRE organisation est refusé, la fiche ne bouge pas',
+    intrus !== null && etatIntrus === 'pending', `${intrus?.name} / ${etatIntrus}`);
 }
 
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */

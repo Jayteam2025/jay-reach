@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { BarreLot, TablePosts, type LignePostEcran, type TablePostsProps } from './TablePosts';
+import { BarreLot, TablePosts, ligneValidable, type LignePostEcran, type TablePostsProps } from './TablePosts';
 
 // Les actions ne sont pas le sujet : ce test juge ce que l'écran MONTRE.
 vi.mock('../../app/actions/posts', () => ({
@@ -27,7 +27,8 @@ const libelles: TablePostsProps['libelles'] = {
   resume: '3 posts attendent votre relecture',
   personnes: 'jusqu\'à 106 personnes n\'entrent pas en séquence tant que leur post n\'est pas validé',
   toutValider: 'Tout valider (2)',
-  lotBloque: 'Enregistrez ou annulez la modification d\'un sujet avant de tout valider.',
+  lotBloque: t.bar.lotBloque,
+  manquantAide: t.phrase.manquantAide,
 };
 
 /** La phrase par défaut, telle que la page la compose : l'auteur ET le sujet s'y écrivent. */
@@ -138,7 +139,9 @@ describe('la validation en lot', () => {
   it('est bloquée, avec une ligne qui dit pourquoi, tant qu\'un sujet modifié n\'est pas enregistré', () => {
     const html = rendre(true);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Tout valider \(2\)<\/button>/);
-    expect(html).toContain('Enregistrez ou annulez la modification d&#x27;un sujet avant de tout valider.');
+    // Le libellé lui-même (il ne doit nommer ni le sujet ni l'auteur, qui bloquent le lot tous
+    // les deux) est jugé dans les trois langues par `packages/i18n/src/messages.test.ts`.
+    expect(html).toContain(echappe(t.bar.lotBloque));
   });
 
   it('est active, sans explication, quand rien n\'est en cours d\'édition', () => {
@@ -203,6 +206,45 @@ describe('l\'auteur s\'écrit dans la phrase, comme le sujet', () => {
   it('une accroche sans aucun champ ne rend rien d\'éditable', () => {
     const html = rendu([ligne({ morceaux: [{ texte: 'Vu votre réaction à ce post.' }] })]);
     expect(html).not.toContain('contentEditable');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Valider<\/button>/);
+  });
+});
+
+/**
+ * La date de publication n'est pas une chaîne : elle n'a aucun champ dans la phrase. Quand la
+ * capture ne l'a pas lue, l'écran affichait « votre réaction du {{post_date}} », comptait la ligne
+ * validable — donc « Tout valider » la prenait — et le serveur répondait d'écrire dans la phrase
+ * un champ qui n'existe pas. Trois défauts, une seule cause.
+ */
+describe('une valeur que la capture n\'a pas pu lire', () => {
+  const SANS_DATE: LignePostEcran['morceaux'] = [
+    { texte: 'votre réaction du ' },
+    { manquant: 'date indisponible' },
+    { texte: ' m\'a interpellé' },
+  ];
+
+  it('s\'affiche en toutes lettres, jamais en jeton brut', () => {
+    const html = rendu([ligne({ morceaux: SANS_DATE })]);
+    expect(html).not.toContain('{{');
+    expect(html).toContain('date indisponible');
+    expect(html).toContain(echappe(t.phrase.manquantAide));
+  });
+
+  it('n\'est pas éditable : rien à écrire, donc rien qui s\'écrive', () => {
+    const html = rendu([ligne({ morceaux: SANS_DATE })]);
+    expect(html).not.toContain('contentEditable');
+  });
+
+  it('sort la ligne de « Tout valider » : le serveur la refuserait à chaque passage', () => {
+    expect(ligneValidable(ligne({ morceaux: SANS_DATE }))).toBe(false);
+    expect(ligneValidable(ligne())).toBe(true);
+    // Seule de son espèce, elle n'offre plus de validation en lot du tout.
+    expect(rendu([ligne({ morceaux: SANS_DATE })])).not.toContain('Tout valider');
+  });
+
+  it('laisse son bouton Valider actif : c\'est la seule façon de lire pourquoi', () => {
+    const html = rendu([ligne({ morceaux: SANS_DATE })]);
+    expect(html).toMatch(/<button[^>]*>Valider<\/button>/);
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Valider<\/button>/);
   });
 });

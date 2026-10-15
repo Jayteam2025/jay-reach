@@ -806,6 +806,9 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-post-champ:empty::before { content: attr(data-invite); color: var(--jr-attention); font-weight: 500; font-style: italic; }
 .jr-post-champ.vide { border-bottom-color: var(--jr-attention); }
 .jr-post-champ.fige { border-bottom-style: none; cursor: default; }
+/* Une valeur que la capture n'a pas pu lire : ni un champ (rien a ecrire), ni du texte fixe
+   (ce n'est pas ce qui partira). Le ton « attention », comme l'invite d'un champ vide. */
+.jr-post-manquant { color: var(--jr-attention); font-style: italic; cursor: help; }
 .jr-post-pied { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
 .jr-post-attente { font-size: var(--jr-petit); color: var(--jr-secondaire); }
 .jr-post-attente .n { color: var(--jr-encre); font-weight: 600; }

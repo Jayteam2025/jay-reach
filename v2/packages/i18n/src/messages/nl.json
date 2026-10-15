@@ -1111,7 +1111,12 @@
         "sujetInvite": "schrijf het onderwerp van de post",
         "sujetEtiquette": "Onderwerp van de post van {auteur}",
         "auteurInvite": "schrijf de naam van de auteur",
-        "auteurEtiquette": "Naam van de auteur van de post, zoals hij verstuurd wordt"
+        "auteurEtiquette": "Naam van de auteur van de post, zoals hij verstuurd wordt",
+        "manquant": {
+          "post_url": "link niet beschikbaar",
+          "post_date": "datum niet beschikbaar"
+        },
+        "manquantAide": "Deze informatie kon niet van de postpagina worden gelezen. Jay Reach leest ze automatisch opnieuw; je hoeft hier niets te schrijven."
       },
       "ligne": {
         "auteurInconnu": "Onbekende auteur",

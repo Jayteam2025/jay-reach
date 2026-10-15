@@ -3,8 +3,11 @@ import { ForbiddenError } from '../roles.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import type { Contexte } from './contexte.js';
 import type { Executeur } from '../executeur.js';
+import { VARIABLES_DE_POST } from '../messages/variables.js';
 import {
   AUTEUR_POST_MAX_CARACTERES,
+  CHAMPS_ACCROCHE,
+  VARIABLES_DE_POST_RELEVEES,
   compterPostsAValiderDeCampagne,
   corrigerAuteurDePost,
   corrigerSujetDePost,
@@ -53,6 +56,12 @@ function contexte(
 /** Valider se fait depuis une campagne : c'est elle qui dit ce que la fiche doit porter. */
 const DEPUIS_CAMPAGNE = { postId: POST, campagneId: CAMPAGNE };
 
+/**
+ * La campagne nommée en entrée est bien de l'organisation. À poser dans tout contexte qui doit
+ * ATTEINDRE le diagnostic : sans elle, `validerPost` s'arrête avant, sur « Campagne introuvable ».
+ */
+const CAMPAGNE_A_NOUS = { 'from campaigns where id': { rows: [{}] } };
+
 describe('validerPost', () => {
   it('écrit en une seule requête conditionnelle sur ce que la campagne ÉCRIT, pas sur le sujet seul', async () => {
     const { ctx, appels } = contexte({ 'set review_status = \'approved\'': { rowCount: 1 } });
@@ -68,6 +77,7 @@ describe('validerPost', () => {
 
   it('refuse quand une variable écrite par la campagne manque, et NOMME laquelle', async () => {
     const { ctx } = contexte({
+      ...CAMPAGNE_A_NOUS,
       'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
       'from linkedin_posts p where': { rows: [{ post_auteur: true, post_sujet: false, post_url: false, post_date: false }] },
     });
@@ -78,6 +88,7 @@ describe('validerPost', () => {
 
   it('dit les deux quand il en manque deux', async () => {
     const { ctx } = contexte({
+      ...CAMPAGNE_A_NOUS,
       'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
       'from linkedin_posts p where': { rows: [{ post_auteur: true, post_sujet: true, post_url: false, post_date: false }] },
     });
@@ -87,25 +98,67 @@ describe('validerPost', () => {
   });
 
   it('refuse un post rejeté : il faut le rouvrir', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'rejected', expired: false }] } });
+    const { ctx } = contexte({ ...CAMPAGNE_A_NOUS, 'select review_status': { rows: [{ review_status: 'rejected', expired: false }] } });
     await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({ details: { formErrors: [expect.stringMatching(/rouvrez/)] } });
   });
 
   it('refuse un post en attente dont l échéance est passée, avec le même message que la réouverture', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', expired: true }] } });
+    const { ctx } = contexte({ ...CAMPAGNE_A_NOUS, 'select review_status': { rows: [{ review_status: 'pending', expired: true }] } });
     await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
       details: { formErrors: [expect.stringMatching(/échéance.*passée.*plus en attente/)] },
     });
   });
 
   it('ne dit rien d un post déjà validé', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'approved', expired: false }] } });
+    const { ctx } = contexte({ ...CAMPAGNE_A_NOUS, 'select review_status': { rows: [{ review_status: 'approved', expired: false }] } });
     await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).resolves.toBeUndefined();
   });
 
   it('dit introuvable pour un post hors de l organisation', async () => {
-    const { ctx } = contexte();
+    const { ctx } = contexte(CAMPAGNE_A_NOUS);
     await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toBeInstanceOf(ErreurIntrouvable);
+  });
+
+  it('joint la campagne sur l organisation : un uuid étranger n approuve rien', async () => {
+    const { ctx, appels } = contexte({ 'set review_status = \'approved\'': { rowCount: 1 } });
+    await validerPost(ctx, DEPUIS_CAMPAGNE);
+    // Sans cette jointure, un uuid absent ou d'une autre organisation rend vraies TOUTES les
+    // exigences (aucune étape ne nomme le post) et la fiche est approuvée sans relecture utile.
+    expect(appels[0]?.sql).toMatch(/from campaigns c\s*\n?\s*where c\.id = \$4::uuid and c\.organization_id = \$1/);
+  });
+
+  it('dit introuvable quand la campagne n est pas de l organisation, sans toucher au post', async () => {
+    // L'update n'a rien touché, et la campagne n'existe pas chez nous : rien à diagnostiquer.
+    const { ctx, appels } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', expired: false }] } });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toBeInstanceOf(ErreurIntrouvable);
+    expect(appels.map((a) => a.sql).join(' ')).not.toMatch(/select review_status/);
+  });
+
+  it('ne demande PAS d écrire une variable que l opérateur ne peut pas écrire', async () => {
+    const { ctx } = contexte({
+      ...CAMPAGNE_A_NOUS,
+      'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
+      'from linkedin_posts p where': { rows: [{ post_auteur: false, post_sujet: false, post_url: false, post_date: true }] },
+    });
+    // La date est un horodatage que la capture relève : aucun champ de l'écran ne la porte, et
+    // « écrivez-le dans la phrase » serait un ordre impossible à exécuter.
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/date de publication.*pas pu être lue.*rattrapage/)] },
+    });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
+      details: { formErrors: [expect.not.stringMatching(/écrivez/i)] },
+    });
+  });
+
+  it('dit les deux natures quand il manque une valeur relevée ET un champ à écrire', async () => {
+    const { ctx } = contexte({
+      ...CAMPAGNE_A_NOUS,
+      'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
+      'from linkedin_posts p where': { rows: [{ post_auteur: false, post_sujet: true, post_url: false, post_date: true }] },
+    });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/date de publication.*rattrapage.*le sujet/)] },
+    });
   });
 
   it('refuse un identifiant qui n est pas un uuid, une campagne absente, et un lecteur', async () => {
@@ -286,6 +339,26 @@ describe('decouperAccroche', () => {
   });
   it('coupe deux champs collés sans texte entre eux', () => {
     expect(decouperAccroche('{{post_auteur}}{{post_sujet}}')).toEqual([{ champ: 'auteur' }, { champ: 'sujet' }]);
+  });
+
+  it('rend un morceau MANQUANT pour une variable relevée que l aperçu n a pas résolue', () => {
+    // `renderTemplatePartial` garde le gabarit quand la valeur est cherchée mais vide : sans ce
+    // morceau, « votre réaction du {{post_date}} » s'affichait tel quel dans la phrase relue.
+    expect(decouperAccroche('votre réaction du {{post_date}} m\'a interpellé.')).toEqual([
+      { texte: 'votre réaction du ' },
+      { manquant: 'post_date' },
+      { texte: ' m\'a interpellé.' },
+    ]);
+    expect(decouperAccroche('vu {{ POST_URL }}')).toEqual([{ texte: 'vu ' }, { manquant: 'post_url' }]);
+  });
+});
+
+describe('les quatre variables de post', () => {
+  it('choisissent toutes leur camp : écrite dans la phrase, ou relevée par la capture', () => {
+    // Une cinquième variable de post ajoutée sans choisir tomberait du côté « relevée » en
+    // silence : elle n'aurait ni champ à l'écran, ni libellé de morceau manquant.
+    const classees = [...CHAMPS_ACCROCHE.map((c) => `post_${c}`), ...VARIABLES_DE_POST_RELEVEES].sort();
+    expect(classees).toEqual([...VARIABLES_DE_POST].sort());
   });
 });
 
