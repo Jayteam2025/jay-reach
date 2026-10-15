@@ -24,23 +24,37 @@ function fabrique(textes: Record<string, string>, opts: { url?: string; lever?: 
   const requetes: string[] = [];
   const navigations: string[] = [];
   let courante = opts.url ?? URL_POST;
-  const p = {
-    aller: async (u: string) => {
+  /**
+   * Ce que lire une fiche de post n'appelle jamais. Le type `Pilote` les exige, le scenario non :
+   * elles levent plutot que de rendre une valeur plausible, et le double est DERIVE du type reel
+   * (aucun `as`, sinon un membre ajoute au pilote passerait inapercu ici).
+   */
+  const horsSujet =
+    (nom: string) =>
+    async (): Promise<never> => {
+      throw new Error(`${nom} : hors du chemin de lecture d une fiche de post`);
+    };
+  const p: Pilote = {
+    aller: async (u) => {
       navigations.push(u);
       if (opts.lever) throw new Error('navigation impossible');
       courante = u;
     },
     url: async () => courante,
-    texte: async (s: string) => {
+    texte: async (s) => {
       if (opts.lever) throw new Error('page fermee');
       return textes[s] ?? '';
     },
-    attendre: async (s: string) => s in textes,
-    requete: async (u: string) => {
+    attendre: async (s) => s in textes,
+    requete: async (u) => {
       requetes.push(u);
       return { statut: 200, corps: '' };
     },
-  } as unknown as Pilote;
+    saisir: horsSujet('saisir'),
+    presserEntree: horsSujet('presserEntree'),
+    effacerCookies: horsSujet('effacerCookies'),
+    fermer: horsSujet('fermer'),
+  };
   return { p, requetes, navigations };
 }
 

@@ -129,23 +129,65 @@ export const SQL_FICHE_INCOMPLETE = '(p.author_name is null or p.text_excerpt is
 /** Tentatives de capture au-delà desquelles une fiche n'est plus redemandée (un post supprimé ne se redemande pas). */
 export const TENTATIVES_MAX = 3;
 
-export type FicheARattraper = { id: string; url: string; text_excerpt: string | null; subject: string | null };
+export type FicheARattraper = {
+  id: string;
+  url: string;
+  text_excerpt: string | null;
+  subject: string | null;
+  /**
+   * Vrai : la page du post est à ROUVRIR (fiche incomplète) — une requête LinkedIn, une trace, une
+   * pause. Faux : tout ce qu'on sait du post est déjà en base, il ne manque que le sujet — aucune
+   * requête, seulement l'appel au rédacteur.
+   */
+  a_relire: boolean;
+};
 
 /**
- * Les fiches à rouvrir, au plus `limite` : incomplètes, sous le plafond de tentatives, dans leur
- * fenêtre. Les moins tentées d'abord, puis les plus récentes.
+ * Le travail d'un lot de rattrapage, en DEUX populations qui n'ont ni le même coût ni la même borne.
+ *
+ *  - **à relire** (`a_relire` vrai) : les fiches INCOMPLÈTES, sous le plafond de tentatives, dans
+ *    leur fenêtre. Chacune coûte une page LinkedIn, donc `limites.aRelire` est ce que les plafonds
+ *    de requêtes laissent passer. Les moins tentées d'abord, puis les plus récentes.
+ *  - **à rédiger seulement** (`a_relire` faux) : les fiches COMPLÈTES dont le sujet manque. C'est
+ *    le CHEMIN NOMINAL — une collecte qui réussit produit exactement ça — et sans cette seconde
+ *    moitié le rédacteur n'aurait servi que les fiches ratées : l'opérateur aurait écrit à la main
+ *    le sujet de chaque post collecté. Leur texte est déjà en base : rouvrir leur page dépenserait
+ *    une requête LinkedIn et du budget horaire pour un contenu qu'on a déjà.
+ *
+ * Dans les DEUX cas, une fiche `rejected` est écartée : un humain a dit non. La rouvrir dépenserait
+ * une page LinkedIn, puis un crédit de modèle, pour écrire le sujet d'un post qu'il vient de
+ * refuser — jusqu'à trois fois. Une fiche `approved` reste servie : elle peut encore nourrir une
+ * seconde campagne qui, elle, nomme le sujet.
  */
-export async function fichesARattraper(ex: Pick<Pool, 'query'>, organizationId: string, limite: number): Promise<FicheARattraper[]> {
+export async function fichesARattraper(
+  ex: Pick<Pool, 'query'>,
+  organizationId: string,
+  limites: { aRelire: number; aRediger: number },
+): Promise<FicheARattraper[]> {
   const r = await ex.query<FicheARattraper>(
-    `select p.id, p.url, p.text_excerpt, p.subject /* jr:fiche_post_candidates */
-       from linkedin_posts p
-      where p.organization_id = $1
-        and p.capture_attempts < $2
-        and p.expires_at > now()
-        and ${SQL_FICHE_INCOMPLETE}
-      order by p.capture_attempts, p.created_at desc
-      limit $3`,
-    [organizationId, TENTATIVES_MAX, limite],
+    `select * from ( /* jr:fiche_post_candidates */
+       (select p.id, p.url, p.text_excerpt, p.subject, true as a_relire
+          from linkedin_posts p
+         where p.organization_id = $1
+           and p.review_status <> 'rejected'
+           and p.capture_attempts < $2
+           and p.expires_at > now()
+           and ${SQL_FICHE_INCOMPLETE}
+         order by p.capture_attempts, p.created_at desc
+         limit $3)
+       union all
+       (select p.id, p.url, p.text_excerpt, p.subject, false as a_relire
+          from linkedin_posts p
+         where p.organization_id = $1
+           and p.review_status <> 'rejected'
+           and p.expires_at > now()
+           and not ${SQL_FICHE_INCOMPLETE}
+           and p.subject is null
+         order by p.created_at desc
+         limit $4)
+     ) f
+     order by f.a_relire desc`,
+    [organizationId, TENTATIVES_MAX, limites.aRelire, limites.aRediger],
   );
   return r.rows;
 }

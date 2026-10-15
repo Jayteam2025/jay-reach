@@ -1,11 +1,17 @@
 /**
- * Handler de la file `linkedin.fiche-post` : le RATTRAPAGE des fiches de post incomplètes.
+ * Handler de la file `linkedin.fiche-post` : ce qui manque aux fiches de post, en DEUX natures de
+ * travail que ce fichier ne doit jamais confondre.
  *
- * La collecte capture déjà la fiche de chaque post qu'elle ouvre, sans requête de plus. Ce travail
- * de fond ne sert qu'aux fiches que la collecte n'a pas pu remplir : celles nées de la reprise de
- * l'existant (ni auteur, ni texte, ni date), celles dont la capture a échoué en cours de passage,
- * et toute fiche restée incomplète. Il OUVRE des pages LinkedIn : la file est exclue de la route
- * cron de Vercel (`FILES_AVEC_NAVIGATEUR`), le navigateur ne vit que sur le serveur dédié.
+ *  - **relire une page** : les fiches que la collecte n'a pas pu remplir — nées de la reprise de
+ *    l'existant (ni auteur, ni texte, ni date), capture échouée en cours de passage, ou restées
+ *    incomplètes. Celles-là coûtent une page LinkedIn chacune : pause, trace, plafonds.
+ *  - **écrire un sujet** : les fiches COMPLÈTES dont le sujet manque, c'est-à-dire ce que produit
+ *    une collecte qui réussit. Leur texte est DÉJÀ en base : les rouvrir dépenserait une requête
+ *    LinkedIn pour un contenu qu'on a. Elles n'émettent donc rien vers LinkedIn, et le navigateur
+ *    ne s'ouvre même pas quand un lot n'en contient que de celles-là.
+ *
+ * Il OUVRE des pages LinkedIn : la file est exclue de la route cron de Vercel
+ * (`FILES_AVEC_NAVIGATEUR`), le navigateur ne vit que sur le serveur dédié.
  *
  * **Un job par ORGANISATION, pas par fiche.** Un job par fiche aurait ouvert jusqu'à vingt
  * navigateurs coup sur coup, chacun émettant du trafic par le proxy avant de savoir s'il avait le
@@ -60,6 +66,19 @@ export interface DependancesFichePost {
 
 /** Fiches lues au plus par lot : un lot par heure et par organisation, le plafond du jour borne le reste. */
 export const LOT_MAX = 5;
+/**
+ * Sujets rédigés au plus par lot. Borne PROPRE à la rédaction, délibérément distincte de
+ * `placeRestante` : rédiger n'ouvre aucune page LinkedIn, donc les plafonds de requêtes n'ont rien
+ * à dire ici — les y soumettre interdirait d'écrire le moindre sujet le jour où le quota de pages
+ * est épuisé, alors que le texte est déjà en base.
+ *
+ * Une CONSTANTE, et pas un réglage : c'est la borne la plus simple qui tienne, et la dépense a
+ * déjà son plafond réglable — `scoring_par_jour`, que `prendreCreditAnthropic` consulte avant
+ * chaque appel. Un second réglage pour le même crédit donnerait deux chiffres à tenir d'accord,
+ * pour un écran de plus. Celle-ci ne borne que le travail d'UN passage : vingt appels au modèle
+ * tiennent très au large dans les dix minutes du verrou, que la collecte attend derrière.
+ */
+export const SUJETS_PAR_LOT_MAX = 20;
 /** Le verrou couvre un lot entier : cinq pages espacées de quelques secondes, avec une large marge. */
 const DUREE_VERROU_LOT_MS = 10 * 60_000;
 const UNE_HEURE_MS = 3_600_000;
@@ -104,48 +123,61 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
   if (!(await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_LOT_MS))) return;
   let pilote: Pilote | null = null;
   try {
-    // Aucune place ou aucune fiche : rien n'est ouvert, rien n'est tracé.
+    // Les deux bornes, chacune sur sa population : les plafonds de requêtes LinkedIn pour les
+    // fiches à relire, une borne de passage pour celles qu'il suffit de rédiger.
     const place = await placeRestante(ctx);
-    if (place <= 0) return;
-    const fiches = await fichesARattraper(pool, job.organizationId, place);
+    const fiches = await fichesARattraper(pool, job.organizationId, {
+      aRelire: place,
+      aRediger: SUJETS_PAR_LOT_MAX,
+    });
     if (fiches.length === 0) return;
+    const aRelire = fiches.some((f) => f.a_relire);
 
-    try {
-      pilote = await d.ouvrirNavigateur();
-    } catch (err) {
-      // Le message peut porter l'URL du navigateur ou du proxy : seul le type sort. L'erreur est
-      // relancée pour que pg-boss reprenne le job (deux reprises).
-      const type = err instanceof Error ? err.name : 'Erreur';
-      console.error(`[fiche-post] navigateur indisponible (${type})`);
-      throw new Error(`Navigateur LinkedIn indisponible (${type}).`);
+    // Le navigateur ne s'ouvre QUE s'il reste une page à lire : un lot qui ne fait que rédiger des
+    // sujets n'émet pas un octet vers LinkedIn.
+    if (aRelire) {
+      try {
+        pilote = await d.ouvrirNavigateur();
+      } catch (err) {
+        // Le message peut porter l'URL du navigateur ou du proxy : seul le type sort. L'erreur est
+        // relancée pour que pg-boss reprenne le job (deux reprises).
+        const type = err instanceof Error ? err.name : 'Erreur';
+        console.error(`[fiche-post] navigateur indisponible (${type})`);
+        throw new Error(`Navigateur LinkedIn indisponible (${type}).`);
+      }
+      let brute: Sortie;
+      try {
+        brute = await d.releverSortie(pilote);
+      } catch {
+        throw new Error('Impossible de relever l’IP de sortie du navigateur.');
+      }
+      const controle = await controlerSortie(ctx, session.ipAttendue, async () => brute);
+      // `verifierSortie` a déjà bloqué la session : rien ne doit partir vers LinkedIn, et le lot
+      // s'arrête entier — une session bloquée n'est plus un contexte où l'on dépense.
+      if (!controle.ok) return;
     }
-    let brute: Sortie;
-    try {
-      brute = await d.releverSortie(pilote);
-    } catch {
-      throw new Error('Impossible de relever l’IP de sortie du navigateur.');
-    }
-    const controle = await controlerSortie(ctx, session.ipAttendue, async () => brute);
-    // `verifierSortie` a déjà bloqué la session : rien ne doit partir vers LinkedIn.
-    if (!controle.ok) return;
 
     // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
     let redacteur: RedacteurDeSujet | null = null;
-    // Lue UNE fois pour tout le lot : c'est un réglage d'organisation, pas une constante.
-    const fenetreJours = await fenetreValidationPost(pool, job.organizationId);
+    // Lue UNE fois pour tout le lot, et seulement si une fiche doit être réécrite : c'est un
+    // réglage d'organisation, pas une constante.
+    const fenetreJours = aRelire ? await fenetreValidationPost(pool, job.organizationId) : 0;
     for (const ligne of fiches) {
-      // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
-      await d.pause(delaiAleatoire());
-      // AVANT l'ouverture : la trace dit ce qui est parti, et une page dont la lecture échoue est
-      // quand même partie.
-      await tracerLectureFichePost(ctx, ligne.id);
-      // Ne lève jamais : une page illisible rend une fiche aux champs nuls, que `enregistrerFichePost`
-      // compte comme une tentative sans rien effacer.
-      const fiche = await lireFichePost(pilote, ligne.url);
-      await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours });
+      let texte = ligne.text_excerpt;
+      if (ligne.a_relire && pilote) {
+        // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
+        await d.pause(delaiAleatoire());
+        // AVANT l'ouverture : la trace dit ce qui est parti, et une page dont la lecture échoue est
+        // quand même partie.
+        await tracerLectureFichePost(ctx, ligne.id);
+        // Ne lève jamais : une page illisible rend une fiche aux champs nuls, que `enregistrerFichePost`
+        // compte comme une tentative sans rien effacer.
+        const fiche = await lireFichePost(pilote, ligne.url);
+        await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours });
+        texte = fiche.texte ?? ligne.text_excerpt;
+      }
 
       // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
-      const texte = fiche.texte ?? ligne.text_excerpt;
       if (ligne.subject === null && texte !== null) {
         redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => null);
         const sujet = await redacteur(texte).catch(() => null);
@@ -189,10 +221,12 @@ export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string):
 }
 
 /**
- * Le rattrapage : dépose UN job de lot par organisation à session active qui a de la place sous le
- * plafond du jour et au moins une fiche à rouvrir. La clé de singleton est l'organisation et la file
- * est `stately` : un second `send` pendant qu'un job attend rend `null`, ce qui n'est pas une
- * erreur. Retourne le nombre de jobs RÉELLEMENT déposés.
+ * Le rattrapage : dépose UN job de lot par organisation à session active qui a du travail — une
+ * fiche à rouvrir sous les plafonds de requêtes, OU un sujet à rédiger, qui n'en consomme aucun.
+ * Ne demander que le premier laisserait le chemin nominal sans job : une collecte qui réussit ne
+ * produit que des fiches complètes. La clé de singleton est l'organisation et la file est
+ * `stately` : un second `send` pendant qu'un job attend rend `null`, ce qui n'est pas une erreur.
+ * Retourne le nombre de jobs RÉELLEMENT déposés.
  */
 export async function enqueueFichesPostALire(boss: PgBoss, pool: Pool): Promise<number> {
   const orgs = await pool.query<{ organization_id: string }>(
@@ -203,8 +237,10 @@ export async function enqueueFichesPostALire(boss: PgBoss, pool: Pool): Promise<
   for (const { organization_id: organizationId } of orgs.rows) {
     try {
       const ctx: Contexte = { ex: pool, organisationId: organizationId, utilisateurId: null, role: null };
-      if ((await placeRestante(ctx)) <= 0) continue;
-      if ((await fichesARattraper(pool, organizationId, 1)).length === 0) continue;
+      const place = await placeRestante(ctx);
+      // Une fiche de chaque nature suffit à décider : le lot refera la sélection avec ses bornes.
+      const travail = await fichesARattraper(pool, organizationId, { aRelire: place > 0 ? 1 : 0, aRediger: 1 });
+      if (travail.length === 0) continue;
       const id = await boss.send(FILE, { organizationId } satisfies FichePostJob, { singletonKey: organizationId });
       if (id !== null) deposes += 1;
     } catch (err) {
