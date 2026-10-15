@@ -1752,6 +1752,10 @@
           "nom": "Profile views per week",
           "usage": "{n} over the last seven days; beyond that, collection that opens profiles stops"
         },
+        "fichesPostParJour": {
+          "nom": "Post sheets per day",
+          "usage": "Catches up post sheets that collection could not fill; each read opens a LinkedIn page"
+        },
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number.",
         "avances": "Advanced settings",
@@ -1941,7 +1945,8 @@
   },
   "jobs": {
     "q": {
-      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
+      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed.",
+      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete."
     }
   },
   "motifsPause": {

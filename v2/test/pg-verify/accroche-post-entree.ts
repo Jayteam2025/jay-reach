@@ -7,3 +7,4 @@ export { startSourceRun } from '../../apps/worker/src/db.js';
 export { creerSource } from '../../packages/core/src/fonctions/sources.js';
 export { traiterCollecteLinkedIn } from '../../apps/worker/src/handlers/collecte-linkedin.js';
 export { activerSessionLinkedIn } from '../../packages/core/src/fonctions/linkedin-session.js';
+export { enqueueFichesPostALire, traiterFichePost } from '../../apps/worker/src/handlers/fiche-post.js';

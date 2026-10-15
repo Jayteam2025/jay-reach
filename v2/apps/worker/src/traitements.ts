@@ -76,6 +76,7 @@ import {
   type CollecteLinkedInJob,
 } from './handlers/collecte-linkedin.js';
 import { dependancesEnvoiReelles, traiterEnvoiLinkedIn, type EnvoiLinkedInJob } from './handlers/envoi-linkedin.js';
+import { dependancesFichePostReelles, traiterFichePost, type FichePostJob } from './handlers/fiche-post.js';
 import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -113,6 +114,8 @@ export const FILES_BRANCHEES = [
   // Exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`) ; la garde `JAY_REACH_LINKEDIN`
   // en tête du handler n'est que la seconde barrière.
   'linkedin.envoi',
+  // Ouvre une page LinkedIn : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
+  'linkedin.fiche-post',
   'retention.purge',
 ] as const;
 
@@ -123,7 +126,7 @@ export const FILES_BRANCHEES = [
  * (ou la collecte) serait détruite sans un message d'erreur. Elles restent à qui a un navigateur :
  * le worker permanent.
  */
-export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi'];
+export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post'];
 
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
@@ -1186,6 +1189,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterCollecteLinkedIn(dependancesCollecteReelles(ctx.pool), donnees as CollecteLinkedInJob);
     case 'linkedin.envoi':
       return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
+    case 'linkedin.fiche-post':
+      return traiterFichePost(dependancesFichePostReelles(ctx.pool), donnees as FichePostJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

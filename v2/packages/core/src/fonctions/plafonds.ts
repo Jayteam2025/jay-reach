@@ -40,6 +40,7 @@ export type ClePlafond =
   | 'linkedin_invitations_par_semaine'
   | 'linkedin_messages_par_semaine'
   | 'linkedin_visites_profil_par_semaine'
+  | 'linkedin_fiches_post_par_jour'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -54,6 +55,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_invitations_par_semaine',
   'linkedin_messages_par_semaine',
   'linkedin_visites_profil_par_semaine',
+  'linkedin_fiches_post_par_jour',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -82,6 +84,10 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // sans que rien l'arrête. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
   // seuil quotidien ; pas de `HARD_CAP_7_DAYS` ici, qui ne borne que les envois.
   { cle: 'linkedin_visites_profil_par_semaine', defaut: 100, env: 'LINKEDIN_PROFILE_VIEWS_WEEKLY_CAP' },
+  // Le RATTRAPAGE des fiches de post : la collecte capture déjà chaque fiche gratuitement, ce travail
+  // de fond ne rouvre un post que pour une fiche restée incomplète. Chaque lecture est une page
+  // LinkedIn de plus : 20 par jour est large pour un rattrapage, et très en deçà du seuil des vues.
+  { cle: 'linkedin_fiches_post_par_jour', defaut: 20, env: 'LINKEDIN_POST_SHEETS_DAILY_CAP' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -643,7 +649,8 @@ export type ClePlafondLinkedIn =
   | 'linkedin_personnes_par_passage'
   | 'linkedin_invitations_par_semaine'
   | 'linkedin_messages_par_semaine'
-  | 'linkedin_visites_profil_par_semaine';
+  | 'linkedin_visites_profil_par_semaine'
+  | 'linkedin_fiches_post_par_jour';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {

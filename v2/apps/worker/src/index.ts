@@ -25,6 +25,7 @@ import {
   type Contexte,
 } from './traitements.js';
 import { enqueueLinkedInTours } from './producer.js';
+import { enqueueFichesPostALire } from './handlers/fiche-post.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
@@ -79,6 +80,11 @@ const LINKEDIN_ENVOI_POLL_MS = cadenceEnvoiLinkedIn(process.env.LINKEDIN_ENVOI_P
  * remarquée, jamais du volume.
  */
 const LINKEDIN_TOUR_POLL_MS = 30 * 60 * 1000;
+/**
+ * Cadence du rattrapage des fiches de post. Une heure : le plafond du jour et l'identifiant de
+ * job par jour bornent le volume, la cadence ne décide que du délai avant le rattrapage.
+ */
+const FICHE_POST_POLL_MS = 60 * 60 * 1000;
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -217,6 +223,20 @@ async function main(): Promise<void> {
     tourLinkedIn.unref();
   }
 
+  /** Le rattrapage des fiches de post incomplètes : même condition que la collecte, dont il partage le navigateur. */
+  let fichesPost: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.fiche-post')) {
+    const enfilerFichesPost = (): void => {
+      void enqueueFichesPostALire(boss, pool).catch((err: unknown) => {
+        console.error('[fiche-post] enfilage impossible (fiche_post_enqueue)');
+        void journaliserErreurMoteur(pool, err instanceof Error ? err : new Error(String(err)), 'fiches de post');
+      });
+    };
+    enfilerFichesPost();
+    fichesPost = setInterval(enfilerFichesPost, FICHE_POST_POLL_MS);
+    fichesPost.unref();
+  }
+
   // La connexion du compte LinkedIn depuis l'écran : écoute du canal chiffré, et purge des demandes abandonnées.
   let arreterEcouteConnexion: (() => void) | null = null;
   let purgeConnexions: NodeJS.Timeout | null = null;
@@ -256,6 +276,7 @@ async function main(): Promise<void> {
     clearInterval(producer);
     clearInterval(demandes);
     if (tourLinkedIn) clearInterval(tourLinkedIn);
+    if (fichesPost) clearInterval(fichesPost);
     clearInterval(ticker);
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);

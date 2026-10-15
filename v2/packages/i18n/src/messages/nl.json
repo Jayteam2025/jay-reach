@@ -1752,6 +1752,10 @@
           "nom": "Profielweergaven per week",
           "usage": "{n} in de afgelopen zeven dagen; daarboven stopt het verzamelen dat profielen opent"
         },
+        "fichesPostParJour": {
+          "nom": "Postfiches per dag",
+          "usage": "Vult postfiches aan die het verzamelen niet kon invullen; elke lezing opent een LinkedIn-pagina"
+        },
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in.",
         "avances": "Geavanceerde instellingen",
@@ -1941,7 +1945,8 @@
   },
   "jobs": {
     "q": {
-      "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn."
+      "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn.",
+      "linkedinFichePost": "Wachtrij voor het aanvullen van postfiches: opent een post opnieuw waarvan de fiche (auteur, tekst, datum) onvolledig bleef."
     }
   },
   "motifsPause": {

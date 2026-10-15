@@ -71,6 +71,7 @@ export default async function ReglagesLinkedinPage() {
     plafondRequetes,
     plafondPersonnes,
     plafondVisites,
+    plafondFiches,
     postsDuJour,
     requetesDeLHeure,
     visitesDeLaSemaine,
@@ -86,6 +87,7 @@ export default async function ReglagesLinkedinPage() {
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
     lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
+    lirePlafondLinkedIn(ctx, 'linkedin_fiches_post_par_jour'),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
     // Sept jours glissants, la même fenêtre que le plafond : l'opérateur doit lire le
@@ -387,6 +389,12 @@ export default async function ReglagesLinkedinPage() {
                   nom: t('plafonds.visitesProfilParSemaine.nom'),
                   usage: t('plafonds.visitesProfilParSemaine.usage', { n: visitesDeLaSemaine }),
                   valeur: plafondVisites,
+                },
+                {
+                  cle: 'linkedin_fiches_post_par_jour',
+                  nom: t('plafonds.fichesPostParJour.nom'),
+                  usage: t('plafonds.fichesPostParJour.usage'),
+                  valeur: plafondFiches,
                 },
               ]}
               libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}

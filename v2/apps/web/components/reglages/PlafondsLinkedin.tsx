@@ -16,7 +16,8 @@ export interface LignePlafondLinkedin {
     | 'linkedin_personnes_par_passage'
     | 'linkedin_invitations_par_semaine'
     | 'linkedin_messages_par_semaine'
-    | 'linkedin_visites_profil_par_semaine';
+    | 'linkedin_visites_profil_par_semaine'
+    | 'linkedin_fiches_post_par_jour';
   nom: string;
   /** Déjà composé (« 1 utilisé aujourd'hui ») — ce composant ne compte rien. */
   usage: string;

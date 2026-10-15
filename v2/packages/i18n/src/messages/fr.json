@@ -1752,6 +1752,10 @@
           "nom": "Visites de profil par semaine",
           "usage": "{n} sur les sept derniers jours ; au-delà, la collecte qui ouvre des profils s’arrête"
         },
+        "fichesPostParJour": {
+          "nom": "Fiches de post par jour",
+          "usage": "Rattrape les fiches de post que la collecte n’a pas pu remplir ; chaque lecture ouvre une page LinkedIn"
+        },
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
@@ -1941,7 +1945,8 @@
   },
   "jobs": {
     "q": {
-      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation."
+      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation.",
+      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète."
     }
   },
   "motifsPause": {
