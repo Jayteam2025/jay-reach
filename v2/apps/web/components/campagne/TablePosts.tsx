@@ -14,7 +14,7 @@
  */
 import { useRef, useState, useTransition } from 'react';
 import { Bouton, Puce } from '../ui';
-import { creerEnregistreurSujet } from './enregistreur-sujet';
+import { creerEnregistreurSujet, validerApresEnregistrement } from './enregistreur-sujet';
 import {
   actionCorrigerSujet,
   actionRejeterPost,
@@ -114,9 +114,9 @@ export function BarreLot({
  * L'auteur et le sujet sont les deux parties variables de l'accroche : le sujet se distingue par
  * son soulignement d'édition, l'auteur n'a que la graisse.
  */
-function avecAuteurEnGras(avant: string, auteur: string | null) {
-  const i = auteur ? avant.indexOf(auteur) : -1;
-  if (!auteur || i < 0) return avant;
+function avecAuteurEnGras(avant: string, auteur: string) {
+  const i = avant.indexOf(auteur);
+  if (i < 0) return avant;
   return (
     <>
       {avant.slice(0, i)}
@@ -178,9 +178,15 @@ function Ligne({
   function valider() {
     setErreur(null);
     startTransition(async () => {
-      if (!(await enregistrerSujet())) return;
-      const res = await actionValiderPost(campagneId, ligne.id);
-      if (!res.ok) setErreur(res.error);
+      await validerApresEnregistrement({
+        enregistreur,
+        valider: async () => {
+          const res = await actionValiderPost(campagneId, ligne.id);
+          return res.ok ? null : res.error;
+        },
+        surErreur: setErreur,
+      });
+      surEdition(ligne.id, lire() !== enregistreur.confirme());
     });
   }
 
@@ -205,7 +211,7 @@ function Ligne({
         </a>
       </div>
       <p className="jr-post-phrase">
-        <span className="fixe">« {avecAuteurEnGras(ligne.avant, ligne.auteur)}</span>
+        <span className="fixe">« {avecAuteurEnGras(ligne.avant, ligne.auteur ?? libelles.auteurInconnu)}</span>
         <span
           ref={refSujet}
           className={`jr-post-sujet${sansSujet ? ' vide' : ''}${editable ? '' : ' fige'}`}

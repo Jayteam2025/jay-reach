@@ -156,3 +156,14 @@ describe('la forme des lignes', () => {
     expect(source).not.toMatch(/style=\{\{/);
   });
 });
+
+describe('l\'auteur dans la phrase', () => {
+  it('un auteur inconnu est mis en gras comme un auteur connu', () => {
+    const html = rendu([ligne({ auteur: null, avant: `Je vous ai vu réagir au post de ${t.ligne.auteurInconnu} sur ` })]);
+    expect(html).toContain(`post de <b>${t.ligne.auteurInconnu}</b> sur `);
+  });
+
+  it('la phrase par défaut porte l\'auteur : sans lui, rien ne se mettrait en gras', () => {
+    expect(t.phrase.avant).toContain('{auteur}');
+  });
+});

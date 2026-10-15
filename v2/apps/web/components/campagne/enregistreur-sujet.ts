@@ -31,7 +31,9 @@ export function creerEnregistreurSujet(deps: {
     // Un sujet vidé n'est pas enregistrable : le serveur garde l'ancien, on ne valide pas dessus.
     if (sujet === '') return false;
     const envoi = (async () => {
-      const erreur = await deps.envoyer(sujet);
+      // Un échec est un échec, quelle que soit sa forme : une action qui jette (coupure réseau)
+      // passe par le même chemin que celle qui rend `{ ok: false }`.
+      const erreur = await deps.envoyer(sujet).catch(messageDException);
       if (erreur === null) {
         confirme = sujet;
         return true;
@@ -48,4 +50,24 @@ export function creerEnregistreurSujet(deps: {
   }
 
   return { enregistrer, confirme: () => confirme };
+}
+
+function messageDException(e: unknown): string {
+  return e instanceof Error && e.message !== '' ? e.message : 'Erreur inconnue.';
+}
+
+/**
+ * Le clic sur « Valider » : enregistre le sujet, et NE VALIDE PAS si l'enregistrement a échoué,
+ * par refus comme par exception. Séparé du composant pour que ce `return` précoce, qui empêche de
+ * valider un post sur l'ancien sujet, soit gardé par un test.
+ */
+export async function validerApresEnregistrement(deps: {
+  enregistreur: EnregistreurSujet;
+  /** Valide le post ; rend `null` si accepté, sinon le message d'erreur. */
+  valider: () => Promise<string | null>;
+  surErreur: (message: string) => void;
+}): Promise<void> {
+  if (!(await deps.enregistreur.enregistrer())) return;
+  const erreur = await deps.valider().catch(messageDException);
+  if (erreur !== null) deps.surErreur(erreur);
 }

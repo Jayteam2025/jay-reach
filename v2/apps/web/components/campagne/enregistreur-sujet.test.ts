@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { creerEnregistreurSujet } from './enregistreur-sujet';
+import { creerEnregistreurSujet, validerApresEnregistrement } from './enregistreur-sujet';
 
 /** Une réponse du serveur que le test libère à la main. */
 function differe() {
@@ -63,5 +63,75 @@ describe('l\'enregistrement du sujet', () => {
       surErreur: () => undefined,
     });
     expect(await enr.enregistrer()).toBe(false);
+  });
+});
+
+describe('un échec par exception est un échec comme un autre', () => {
+  it('perte de focus : l\'action qui jette affiche un message et ne rejette pas', async () => {
+    const erreurs: string[] = [];
+    const enr = creerEnregistreurSujet({
+      confirmeInitial: 'ancien',
+      lire: () => 'nouveau',
+      envoyer: async () => {
+        throw new Error('Failed to fetch');
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    await expect(enr.enregistrer()).resolves.toBe(false);
+    expect(erreurs).toEqual(['Failed to fetch']);
+    expect(enr.confirme()).toBe('ancien');
+  });
+});
+
+describe('le clic sur Valider', () => {
+  function monde(envoyer: () => Promise<string | null>) {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    const enr = creerEnregistreurSujet({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
+    const valider = () =>
+      validerApresEnregistrement({
+        enregistreur: enr,
+        valider: async () => {
+          validations.push('valide');
+          return null;
+        },
+        surErreur: (m) => erreurs.push(m),
+      });
+    return { erreurs, validations, valider };
+  }
+
+  it('ne valide pas quand l\'enregistrement est refusé, et le message est visible', async () => {
+    const m = monde(async () => 'Sujet trop long.');
+    await m.valider();
+    expect(m.validations).toEqual([]);
+    expect(m.erreurs).toEqual(['Sujet trop long.']);
+  });
+
+  it('ne valide pas quand l\'enregistrement jette, et le message est visible', async () => {
+    const m = monde(async () => {
+      throw new Error('Failed to fetch');
+    });
+    await m.valider();
+    expect(m.validations).toEqual([]);
+    expect(m.erreurs).toEqual(['Failed to fetch']);
+  });
+
+  it('valide quand l\'enregistrement a réussi', async () => {
+    const m = monde(async () => null);
+    await m.valider();
+    expect(m.validations).toEqual(['valide']);
+  });
+
+  it('affiche l\'exception de la validation elle-même', async () => {
+    const erreurs: string[] = [];
+    const enr = creerEnregistreurSujet({ confirmeInitial: 'a', lire: () => 'a', envoyer: async () => null, surErreur: () => undefined });
+    await validerApresEnregistrement({
+      enregistreur: enr,
+      valider: async () => {
+        throw new Error('coupure');
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(erreurs).toEqual(['coupure']);
   });
 });
