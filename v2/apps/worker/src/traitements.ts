@@ -22,7 +22,8 @@ import {
   nettoyerMessageErreurJournal,
   plafondDuJour,
   fuseauDeLOrganisation,
-  jourCourantDansFuseau, estSignalDePersonne} from '@jay-reach/core';
+  jourCourantDansFuseau, estSignalDePersonne,
+  envoiRetenuParUnPost} from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables, type ScoreSummary } from './handlers/score.js';
@@ -628,10 +629,11 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
     channel: 'linkedin_invite' | 'linkedin_message';
     contact_id: string;
     signal_id: string | null;
+    campaign_id: string;
     linkedin_url: string;
   }>(
     `select a.id as action_id, a.organization_id, e.id as enrollment_id, st.template_parent_id,
-            a.channel::text as channel, e.contact_id, e.signal_id, c.linkedin_url /* jr:linkedin_rejeu_attente */
+            a.channel::text as channel, e.contact_id, e.signal_id, e.campaign_id, c.linkedin_url /* jr:linkedin_rejeu_attente */
        from actions a
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
@@ -693,6 +695,20 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
           continue;
         }
         messageBody = corps.texte;
+      }
+      // La garde du post, ICI aussi : ce balayage RE-REND le corps depuis le gabarit COURANT,
+      // donc une accroche ajoutée après la création de l'action part par ce chemin sans jamais
+      // repasser par le tick. Les variables se résolvent (la fiche porte l'adresse dès la
+      // capture), `missing_variable` ne prend pas le relais, et le message nommerait un post que
+      // personne n'a relu. Le blocage est RELÂCHÉ par `validerPost` comme celui du tick.
+      if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_id)) {
+        await pool.query(
+          `update actions set status = 'blocked', block_reason = 'post_a_relire'
+            where id = $1 and organization_id = $2 and status = 'scheduled' and dispatched_at is null /* jr:linkedin_rejeu_attente_post */`,
+          [row.action_id, row.organization_id],
+        );
+        console.warn(`[tick] action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);
+        continue;
       }
       const job: DispatchJob = {
         organizationId: row.organization_id,
@@ -756,10 +772,14 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
     kind: 'invite' | 'message';
     contact_id: string;
     signal_id: string | null;
+    campaign_id: string;
+    /** Le signal de l'INSCRIPTION, celui que la garde du post juge — `q.signal_id` est celui de la file. */
+    signal_inscription: string | null;
     linkedin_url: string;
   }>(
     `select a.id as action_id, q.id as queue_id, e.id as enrollment_id, st.template_parent_id,
-            a.organization_id, q.kind, e.contact_id, q.signal_id,
+            a.organization_id, q.kind, e.contact_id, q.signal_id, e.campaign_id,
+            e.signal_id as signal_inscription,
             coalesce(c.linkedin_url, q.linkedin_url) as linkedin_url /* jr:linkedin_rejeu_reprises */
        from actions a
        left join sequence_steps st on st.id = a.step_id
@@ -822,6 +842,20 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
             where id = $1 and organization_id = $4 and status = 'scheduled' /* jr:linkedin_rejeu_bloque */`,
           [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
         );
+        continue;
+      }
+      // La garde du post, ICI aussi, et pour la même raison qu'au-dessus : ce balayage RE-REND le
+      // corps depuis le gabarit COURANT. Le chemin réel est celui-ci — un envoi LinkedIn échoue,
+      // l'opérateur ajoute l'accroche, clique « Reprendre », et le message repart en nommant un
+      // post que personne n'a relu. Le signal jugé est celui de l'INSCRIPTION, comme partout
+      // ailleurs dans cette garde, et non celui de la ligne de file.
+      if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_inscription)) {
+        await pool.query(
+          `update actions set status = 'blocked', block_reason = 'post_a_relire'
+            where id = $1 and organization_id = $2 and status = 'scheduled' /* jr:linkedin_rejeu_reprise_post */`,
+          [row.action_id, row.organization_id],
+        );
+        console.warn(`[tick] reprise de l'action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);
         continue;
       }
       const id = await enqueueLinkedInAction(pool, {
