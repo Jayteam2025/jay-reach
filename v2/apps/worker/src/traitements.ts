@@ -43,6 +43,7 @@ import {
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { rejeterFichesPostExpirees } from './linkedin/posts-fiches.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
 import {
@@ -1064,6 +1065,14 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
 export async function produire(ctx: Contexte): Promise<Error | null> {
   const { pool, boss } = ctx;
   try {
+    // AVANT la purge d'ancienneté, et c'est l'ordre qui compte : une fiche dont la fenêtre de
+    // décision est passée cesse d'épargner les personnes qui ont réagi à ce post, et celles-ci
+    // retombent sous la purge dès ce passage-ci plutôt qu'au suivant. Rien n'est effacé ici,
+    // seul le statut de la fiche change.
+    const fichesExpirees = await rejeterFichesPostExpirees(pool);
+    if (fichesExpirees > 0) {
+      console.log(`[produire] ${fichesExpirees} fiche(s) de post rejetée(s) faute de validation dans la fenêtre`);
+    }
     const ecartes = await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
     if (ecartes.nouveaux > 0 || ecartes.qualifies > 0) {
       console.log(`[produire] signaux ecartes pour anciennete (> ${AGE_MAX_SIGNAL_JOURS} j) : ${ecartes.nouveaux} non scores, ${ecartes.qualifies} qualifies non enrichis`);

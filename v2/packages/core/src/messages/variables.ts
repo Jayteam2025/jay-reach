@@ -60,8 +60,15 @@ export const STANDARD_VARIABLES: Readonly<Record<string, VariableAvailability>> 
   post_date: 'signal',
 };
 
-/** Les variables qui ne valent que si la campagne a une source de post. */
-const VARIABLES_DE_POST: ReadonlySet<string> = new Set(['post_auteur', 'post_sujet', 'post_url', 'post_date']);
+/**
+ * Les variables qui ne valent que si la campagne a une source de post.
+ *
+ * Exportée : la garde d'entrée en dérive le motif SQL qui reconnaît une accroche dans un corps
+ * de message (`MOTIF_SQL_VARIABLE_DE_POST`, `linkedin/accroche-post.ts`). Une cinquième variable
+ * de post ajoutée ici est donc gardée sans qu'on y pense ; une liste recopiée là-bas aurait fini
+ * par diverger, et la divergence se paierait par une accroche partie sans relecture.
+ */
+export const VARIABLES_DE_POST: ReadonlySet<string> = new Set(['post_auteur', 'post_sujet', 'post_url', 'post_date']);
 
 /**
  * Variables proposées à l'insertion (puces des écrans), dans l'ordre de `STANDARD_VARIABLES`.

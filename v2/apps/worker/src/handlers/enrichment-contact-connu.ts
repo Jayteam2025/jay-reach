@@ -38,7 +38,7 @@ import {
   type FullEnrichContactInput,
   type FullEnrichContactResult,
 } from '@jay-reach/providers/enrichment';
-import { plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
+import { achatRetenuParUnPost, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import { mapEmailStatus } from '../enrichment-persist.js';
 import { rawStatusOf } from './enrich.js';
 import { lienProfilDeduit } from './post-engagement.js';
@@ -123,6 +123,8 @@ export type IssueEnrichissement =
   | 'sans_cle'
   | 'introuvable'
   | 'deja_enrichi'
+  /** Le post qui a fait réagir cette personne n'est pas relu : aucune campagne ne peut l'inscrire. */
+  | 'post_a_relire'
   | 'panne_fournisseur'
   /** Le fournisseur a répondu et l'adresse est payée, mais NOTRE base refuse de l'écrire. */
   | 'ecriture_echouee'
@@ -190,6 +192,8 @@ export const MSG = {
   dejaEnrichi: (contactId: string) => `contact ${contactId} a déjà un email — rien à acheter`,
   refus: (contactId: string, raison: RaisonRefus) => `contact ${contactId} non enrichissable (${raison}) — aucun appel, aucun crédit`,
   sansCle: (organizationId: string) => `FullEnrich non configuré pour l’org ${organizationId} — job ignoré`,
+  postARelire: (contactId: string) =>
+    `le post qui a fait réagir le contact ${contactId} n'est pas validé — aucune campagne ne peut l'inscrire, aucun appel, aucun crédit`,
   plafond: (organizationId: string) => `plafond quotidien d'enrichissement atteint pour l'organisation ${organizationId} — contact reporté à demain`,
   tropDeTentatives: (contactId: string, tentatives: number) =>
     `contact ${contactId} abandonné après ${tentatives} tentative(s) PAYÉE(S) sans résultat — remettre enrichment_attempts à zéro pour réessayer`,
@@ -293,6 +297,20 @@ export async function enrichirContactConnu(
       await marquerTraite(pool, org, job.contactId);
     }
     return 'refuse';
+  }
+
+  // LE GEL DE LA DÉPENSE DU LOT « ACCROCHE DU POST », contrôle AUTORITAIRE : on ne paie pas une
+  // adresse pour une personne qu'aucune campagne ne peut encore inscrire, parce que le post qui
+  // l'a fait réagir attend sa relecture. Le producteur pose déjà le même filtre ; il ne suffit
+  // pas, pour la raison que `raisonDeNePasAcheter` énonce deux pas plus haut — un job déposé
+  // autrement partirait acheter. La garde vit donc dans la fonction qui DÉPENSE.
+  //
+  // Aucune marque posée sur le contact, délibérément : ce refus est TEMPORAIRE. Marquer
+  // `enriched_at` le sortirait du lot pour toujours, alors que la fiche validée demain le rend
+  // candidat au tour suivant. Rien à lever, rien à réparer.
+  if (await achatRetenuParUnPost(pool, org, job.contactId)) {
+    console.warn(`${MSG.prefixe} ${MSG.postARelire(job.contactId)}`);
+    return 'post_a_relire';
   }
 
   const apiKey = await deps.cleFullEnrich(org);

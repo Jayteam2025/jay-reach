@@ -1779,10 +1779,14 @@
           "nom": "Fiches de post par jour",
           "usage": "Rattrape les fiches de post que la collecte n’a pas pu remplir ; chaque lecture ouvre une page LinkedIn"
         },
+        "fenetreValidationPost": {
+          "nom": "Fenêtre de validation d’un post",
+          "usage": "{n, plural, =0 {Aucun post n’attend de validation} one {# post attend votre validation} other {# posts attendent votre validation}} ; passé ce délai, le post est rejeté et les personnes qui y ont réagi sont effacées"
+        },
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
-        "avancesLead": "Les trois plafonds de la collecte, modifiables un par un."
+        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un."
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",

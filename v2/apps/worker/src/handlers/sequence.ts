@@ -12,7 +12,9 @@
 import type { Pool } from 'pg';
 import {
   actionIdempotencyKey,
+  campagneNommeUnPost,
   composeTick,
+  fichePostUtilisable,
   ecrireEvenement,
   placesRestantes,
   runGuards,
@@ -97,6 +99,26 @@ export async function compterEntreesDuJour(pool: Pool, campaignId: string, organ
  * et le `on conflict do nothing` ci-dessus.
  */
 export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
+  // LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST », contrôle AUTORITAIRE : on n'inscrit personne
+  // sur un post qu'un humain n'a pas relu. Le pré-filtre du producteur pose déjà la même
+  // condition, mais il ne suffit pas — un job déposé autrement (reprise à la main, serveur MCP
+  // #100) arriverait ici sans être passé par lui, et partirait écrire « le post de … sur … »
+  // sur une fiche que personne n'a vue. La garde vit donc dans la fonction qui INSCRIT.
+  //
+  // Le signal jugé est `job.signalId`, celui que l'insertion ci-dessous écrit dans
+  // `enrollments.signal_id` : exactement celui que le chemin d'envoi relira pour résoudre les
+  // variables de post. Sans signal, aucune accroche n'est possible, donc aucune inscription.
+  //
+  // AVANT le plafond du jour, délibérément : une personne retenue ne doit pas consommer une
+  // place d'entrée que la campagne donnerait à quelqu'un d'envoyable.
+  if (await campagneNommeUnPost(pool, job.campaignId)) {
+    if (!(await fichePostUtilisable(pool, job.organizationId, job.signalId))) {
+      console.warn(
+        `[enroll] campagne ${job.campaignId} : le post du contact ${job.contactId} n'est pas validé (ou sa fiche est incomplète), inscription retenue`,
+      );
+      return null;
+    }
+  }
   // Compter puis insérer n'est pas atomique, mais ça suffit ici : le moteur ne
   // tourne qu'en une seule instance (deploy/vps/README.md), et pg-boss traite
   // cette file un job à la fois dans ce process sans `batchSize`. Si le worker

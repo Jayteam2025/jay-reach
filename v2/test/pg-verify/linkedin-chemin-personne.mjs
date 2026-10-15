@@ -98,7 +98,7 @@ async function monde({ avecPrompt = true, personaDansSource = true } = {}) {
   )).rows[0].id;
   await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [campagne, source]);
   const run = (await q(`insert into source_runs (source_id) values ($1) returning id`, [source])).rows[0].id;
-  return { org, admin, viewer, persona, source, campagne, run, ctx: { pool, organizationId: org, sourceId: source, sourceRunId: run } };
+  return { org, admin, viewer, persona, source, campagne, run, ctx: { pool, organizationId: org, sourceId: source, sourceRunId: run, exclusions: {} } };
 }
 
 const POST = 'https://www.linkedin.com/posts/x_y-1';

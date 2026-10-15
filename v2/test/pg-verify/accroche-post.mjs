@@ -27,6 +27,17 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
 import {
+  AGE_MAX_SIGNAL_JOURS,
+  campagneNommeUnPost,
+  compterRetenuesParPost,
+  ecrireReglage,
+  fenetreValidationPost,
+  rejeterFichesPostExpirees,
+  ecarterSignauxTropAnciens,
+  enqueueEnrichmentContactsConnus,
+  enqueueEnrollments,
+  enrichirContactConnu,
+  enrollContact,
   clePost,
   enregistrerEngageur,
   enregistrerFichePost,
@@ -695,6 +706,396 @@ async function deuxCheminsDeRendu() {
   check('15e. une fiche d\'une autre organisation n\'est lue par aucun des deux chemins', e3.post_auteur === undefined && a3.post_auteur === undefined, JSON.stringify([e3.post_auteur, a3.post_auteur]));
 }
 
+// ------------------------------------------------- la garde d'entrée (tâche 8)
+
+const ACCROCHE = 'Bonjour, je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}.';
+const SANS_ACCROCHE = 'Bonjour, parlons prospection.';
+
+/**
+ * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
+ * un post. Canal `linkedin_message` par défaut — une campagne 100 % LinkedIn inscrit un engageur
+ * sans email (`sqlCampagneSansEmail`), ce qui isole la garde du post de celle de l'adresse.
+ */
+async function etapeAvecCorps(m, corps, { canal = 'linkedin_message', position = 0, sujet = null } = {}) {
+  const gabarit = (
+    await q(
+      `insert into message_templates (organization_id, name, channel, locale, body, subject)
+       values ($1, 'Modele', $2::channel_kind, 'fr', $3, $4) returning id`,
+      [m.org, canal, corps, sujet],
+    )
+  ).rows[0].id;
+  await q(
+    `insert into sequence_steps (campaign_id, position, channel, template_parent_id) values ($1, $2, $3::channel_kind, $4)`,
+    [m.campagne, position, canal, gabarit],
+  );
+  return gabarit;
+}
+
+/**
+ * Une personne collectée sur le post `n`, par les fonctions de production, avec sa fiche dans
+ * l'état demandé. Une fiche par post : deux états à éprouver dans la même organisation
+ * demandent deux posts.
+ */
+async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement des commerciaux', nomAffiche = 'Ana' } = {}) {
+  const source = await sourceDePost(m, urlN(n), `Engageurs ${n}`);
+  const runId = await startSourceRun(pool, source);
+  const f = await enregistrerFichePost(pool, m.org, ficheN(n), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set review_status = $2, subject = $3, author_display_name = $4 where id = $1`, [
+    f.id,
+    etat,
+    sujet,
+    nomAffiche,
+  ]);
+  const ctx = { pool, organizationId: m.org, sourceId: source, sourceRunId: runId, exclusions: {} };
+  await enregistrerEngageur(
+    ctx,
+    {
+      urn: `urn:li:fsd_profile:ACoAA${n}${seq}`,
+      nom: `Bob ${n}`,
+      intitule: 'Directeur commercial',
+      // Adresse PUBLIQUE : sans elle, `sqlAdresseResolvable` écarte la personne de l'achat et la
+      // section du gel de la dépense ne prouverait rien.
+      urlProfil: `https://www.linkedin.com/in/bob-${n}-${seq}/`,
+    },
+    { id: m.campagne, personaId: m.persona },
+    urlN(n),
+    f.id,
+  );
+  const ligne = (
+    await q(
+      `select c.id as contact_id, s.id as signal_id from contacts c join signals s on s.id = c.source_signal_id
+        where c.organization_id = $1 and s.linkedin_post_id = $2`,
+      [m.org, f.id],
+    )
+  ).rows[0];
+  return { fiche: f.id, source, ...ligne };
+}
+
+/** Les inscriptions réellement créées pour une organisation, par la production seule. */
+const inscritsDe = async (org) =>
+  (await q(`select contact_id from enrollments where organization_id = $1`, [org])).rows.map((r) => r.contact_id);
+
+/**
+ * Un tour complet de production des inscriptions : le producteur dépose, le traitement inscrit.
+ * `limit` large car la requête balaie TOUTES les organisations du harnais d'un seul passage.
+ */
+async function tourDInscription(org) {
+  await demarrerBoss();
+  await enqueueEnrollments(boss, pool, { limit: 500 });
+  const jobs = (
+    await q(`select data from pgboss.job where name = 'sequence.enroll' and data->>'organizationId' = $1`, [org])
+  ).rows.map((r) => r.data);
+  for (const job of jobs) await enrollContact(pool, job);
+  return jobs;
+}
+
+async function gardeDEntree() {
+  console.log('\n# une campagne qui nomme le post n\'inscrit que sur une fiche validée');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const attente = await engageurDUnPost(m, 21, { etat: 'pending' });
+
+  const deposes = await tourDInscription(m.org);
+  check('17. fiche `pending` : personne n\'est inscrit', (await inscritsDe(m.org)).length === 0, JSON.stringify(await inscritsDe(m.org)));
+  // Le PRÉ-FILTRE du producteur, distinct du contrôle autoritaire : sans lui, un job serait
+  // déposé chaque jour pour une personne que l'inscription refuse, et la file se remplirait de
+  // travail nul sans que rien ne le dise.
+  check('17-a. et aucun job d\'inscription n\'est déposé pour elle', deposes.length === 0, JSON.stringify(deposes));
+
+  await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [attente.fiche]);
+  await tourDInscription(m.org);
+  check('17a. la fiche validée, la personne est inscrite au passage suivant', (await inscritsDe(m.org)).includes(attente.contact_id));
+
+  // Contrôle autoritaire : un job déposé autrement (reprise à la main, serveur MCP) ne contourne rien.
+  const n = await monde();
+  await etapeAvecCorps(n, ACCROCHE);
+  const direct = await engageurDUnPost(n, 22, { etat: 'pending' });
+  const job = { organizationId: n.org, campaignId: n.campagne, contactId: direct.contact_id, signalId: direct.signal_id };
+  check('17b. `enrollContact` appelé directement refuse aussi', (await enrollContact(pool, job)) === null);
+  await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [direct.fiche]);
+  check('17c. et accepte dès que la fiche est validée', typeof (await enrollContact(pool, job)) === 'string');
+
+  // Point de vigilance 1 : c'est le nom AFFICHÉ qui décide, jamais `author_name` (un slug de page).
+  const p = await monde();
+  await etapeAvecCorps(p, ACCROCHE);
+  const slug = await engageurDUnPost(p, 23, { etat: 'approved', nomAffiche: null });
+  await q(`update linkedin_posts set author_name = 'uptoo-france' where id = $1`, [slug.fiche]);
+  const sansSujet = await engageurDUnPost(p, 24, { etat: 'approved', sujet: null });
+  await tourDInscription(p.org);
+  const inscritsP = await inscritsDe(p.org);
+  check('17d. fiche validée SANS nom affiché : personne n\'est inscrit (le slug ne fait pas une accroche)',
+    !inscritsP.includes(slug.contact_id), JSON.stringify(inscritsP));
+  check('17e. fiche validée sans sujet : personne n\'est inscrit non plus', !inscritsP.includes(sansSujet.contact_id), JSON.stringify(inscritsP));
+  check('17f. ni l\'un ni l\'autre ne produit d\'action envoyable', inscritsP.length === 0, JSON.stringify(inscritsP));
+  // L'OBJET d'un email nomme le post aussi bien que son corps : la tâche 6 fabrique justement un
+  // objet qui le nomme. Un gabarit dont seul le sujet porte la variable doit être gardé pareil.
+  const o = await monde();
+  await etapeAvecCorps(o, SANS_ACCROCHE, { canal: 'email', sujet: 'Votre réaction au post de {{post_auteur}}' });
+  const parLeSujet = await engageurDUnPost(o, 41, { etat: 'pending' });
+  const refusSujet = await enrollContact(pool, {
+    organizationId: o.org,
+    campaignId: o.campagne,
+    contactId: parLeSujet.contact_id,
+    signalId: parLeSujet.signal_id,
+  });
+  check("17g. une campagne qui ne nomme le post que dans l'OBJET est gardée pareil", refusSujet === null, String(refusSujet));
+
+  // Point de vigilance 5, par le chemin des VERSIONS : l'opérateur ne réécrit pas le gabarit, il
+  // en publie une nouvelle version. L'ancienne reste en base, retirée. Seules les versions EN
+  // VIGUEUR comptent, sinon la campagne resterait « nomme le post » pour toujours et retiendrait
+  // ses personnes sans que rien ne l'explique.
+  const w = await monde();
+  const gabaritW = await etapeAvecCorps(w, ACCROCHE);
+  const versionne = await engageurDUnPost(w, 43, { etat: 'pending' });
+  const jobW = { organizationId: w.org, campaignId: w.campagne, contactId: versionne.contact_id, signalId: versionne.signal_id };
+  check('17h. retenu tant que la version en vigueur nomme le post', (await enrollContact(pool, jobW)) === null);
+  await q(`update message_templates set is_active = false where id = $1`, [gabaritW]);
+  await q(
+    `insert into message_templates (organization_id, name, channel, locale, version, body, parent_id, is_active)
+     values ($1, 'Modele', 'linkedin_message'::channel_kind, 'fr', 2, $2, $3, true)`,
+    [w.org, SANS_ACCROCHE, gabaritW],
+  );
+  check('17i. une nouvelle version sans la variable libère la personne, l\'ancienne version ne compte plus',
+    typeof (await enrollContact(pool, jobW)) === 'string');
+
+  // La fiche d'une AUTRE organisation ne valide rien, même rattachée par erreur au signal : la
+  // garde filtre par organisation, comme les deux chemins de rendu (contrôle 15e).
+  const x = await monde();
+  await etapeAvecCorps(x, ACCROCHE);
+  const local = await engageurDUnPost(x, 44, { etat: 'pending' });
+  const etrangere = await monde();
+  const ficheEtrangere = await enregistrerFichePost(pool, etrangere.org, ficheN(44), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set review_status = 'approved', subject = 'un sujet', author_display_name = 'Zoe' where id = $1`, [ficheEtrangere.id]);
+  await q(`update signals set linkedin_post_id = $2 where id = $1`, [local.signal_id, ficheEtrangere.id]);
+  check('17j. une fiche validée d\'une autre organisation ne fait entrer personne',
+    (await enrollContact(pool, { organizationId: x.org, campaignId: x.campagne, contactId: local.contact_id, signalId: local.signal_id })) === null);
+}
+
+async function campagneSansAccrocheNonGelee() {
+  console.log('\n# une campagne qui ne nomme pas le post n\'est pas gelée');
+  const m = await monde();
+  await etapeAvecCorps(m, SANS_ACCROCHE);
+  const attente = await engageurDUnPost(m, 25, { etat: 'pending' });
+  await tourDInscription(m.org);
+  check('18. fiche `pending`, campagne sans accroche : la personne est inscrite', (await inscritsDe(m.org)).includes(attente.contact_id));
+
+  const n = await monde();
+  await etapeAvecCorps(n, SANS_ACCROCHE);
+  const direct = await engageurDUnPost(n, 26, { etat: 'pending' });
+  const id = await enrollContact(pool, { organizationId: n.org, campaignId: n.campagne, contactId: direct.contact_id, signalId: direct.signal_id });
+  check('18b. le contrôle autoritaire ne refuse pas non plus', typeof id === 'string', String(id));
+}
+
+async function retraitDeLaVariable() {
+  console.log('\n# retirer la variable des étapes libère les retenues, sans intervention');
+  const m = await monde();
+  const gabarit = await etapeAvecCorps(m, ACCROCHE);
+  const retenu = await engageurDUnPost(m, 27, { etat: 'pending' });
+  const avant = await tourDInscription(m.org);
+  check('19. retenu tant que la campagne nomme le post', (await inscritsDe(m.org)).length === 0 && avant.length === 0, JSON.stringify(avant));
+
+  await q(`update message_templates set body = $2 where id = $1`, [gabarit, SANS_ACCROCHE]);
+  await tourDInscription(m.org);
+  check('19a. la variable retirée, la personne est inscrite au passage suivant', (await inscritsDe(m.org)).includes(retenu.contact_id));
+}
+
+async function epargneReelle() {
+  console.log('\n# la branche d\'épargne épargne réellement');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const qualifie = await engageurDUnPost(m, 28, { etat: 'pending' });
+  const neuf = await engageurDUnPost(m, 29, { etat: 'pending' });
+  const sansFiche = await engageurDUnPost(m, 30, { etat: 'pending' });
+  await q(`update signals set linkedin_post_id = null where id = $1`, [sansFiche.signal_id]);
+  // Le signal est plus vieux que le délai d'ancienneté, mais la fiche est encore dans sa fenêtre.
+  const vieillir = (id, jours) => q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [id, jours]);
+  await vieillir(qualifie.signal_id, AGE_MAX_SIGNAL_JOURS + 2);
+  await vieillir(neuf.signal_id, AGE_MAX_SIGNAL_JOURS + 2);
+  await vieillir(sansFiche.signal_id, AGE_MAX_SIGNAL_JOURS + 2);
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [qualifie.signal_id]);
+
+  const vivants = async () =>
+    (await q(`select id from signals where id = any($1::uuid[])`, [[qualifie.signal_id, neuf.signal_id, sansFiche.signal_id]])).rows.map((r) => r.id);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  const apres = await vivants();
+  check('20. une personne QUALIFIÉE rattachée à une fiche `pending` dans sa fenêtre est épargnée', apres.includes(qualifie.signal_id), JSON.stringify(apres));
+  check('20a. une personne jamais scorée l\'est aussi', apres.includes(neuf.signal_id), JSON.stringify(apres));
+  check('20b. sans fiche, rien n\'est épargné : la branche n\'épargne pas tout le monde', !apres.includes(sansFiche.signal_id), JSON.stringify(apres));
+
+  // La fenêtre passée, la personne retombe sous la purge ordinaire.
+  await q(`update linkedin_posts set expires_at = now() - interval '1 day' where id = any($1::uuid[])`, [[qualifie.fiche, neuf.fiche]]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  const fin = await vivants();
+  check('20c. `expires_at` passé, la personne disparaît', fin.length === 0, JSON.stringify(fin));
+}
+
+async function gelDeLaDepense() {
+  console.log('\n# aucun email acheté sur un post qu\'un humain n\'a pas relu');
+  await demarrerBoss();
+  const candidats = async (org) =>
+    (await q(`select data from pgboss.job where name = 'enrichment.contact_connu' and data->>'organizationId' = $1`, [org])).rows.map(
+      (r) => r.data.contactId,
+    );
+  // La campagne nomme le post ET envoie des emails : c'est le cas où l'achat sert.
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE, { canal: 'email' });
+  const attente = await engageurDUnPost(m, 31, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [attente.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check('21. fiche `pending` : aucun achat enfilé', !(await candidats(m.org)).includes(attente.contact_id), JSON.stringify(await candidats(m.org)));
+
+  await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [attente.fiche]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check('21a. la fiche validée, l\'achat repart', (await candidats(m.org)).includes(attente.contact_id), JSON.stringify(await candidats(m.org)));
+
+  // Une campagne qui ne nomme pas le post achète comme avant : le lot ne gèle aucune dépense existante.
+  const n = await monde();
+  await etapeAvecCorps(n, SANS_ACCROCHE, { canal: 'email' });
+  const libre = await engageurDUnPost(n, 32, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [libre.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check('21b. campagne sans accroche : l\'achat part malgré la fiche `pending`', (await candidats(n.org)).includes(libre.contact_id), JSON.stringify(await candidats(n.org)));
+
+  // Contrôle autoritaire : la fonction qui DÉPENSE refuse elle-même, et n'appelle pas le fournisseur.
+  const p = await monde();
+  await etapeAvecCorps(p, ACCROCHE, { canal: 'email' });
+  const retenu = await engageurDUnPost(p, 33, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [retenu.signal_id]);
+  const appels = [];
+  const deps = {
+    pool,
+    cleFullEnrich: async () => 'cle-de-test',
+    acheter: async (_cle, entree) => {
+      appels.push(entree);
+      return { resultat: null, credits: 1 };
+    },
+  };
+  const warn = console.warn;
+  console.warn = () => undefined;
+  let issue;
+  try {
+    issue = await enrichirContactConnu(deps, { organizationId: p.org, contactId: retenu.contact_id });
+  } finally {
+    console.warn = warn;
+  }
+  check('21c. la fonction qui dépense refuse elle-même, sans appeler le fournisseur', issue === 'post_a_relire' && appels.length === 0, `${issue} / ${appels.length} appel(s)`);
+  const marque = (await q(`select enriched_at from contacts where id = $1`, [retenu.contact_id])).rows[0];
+  check('21d. et ne marque PAS le contact : le refus est temporaire, pas définitif', marque.enriched_at === null, String(marque.enriched_at));
+
+  // Deux campagnes actives sur la MÊME source, une seule nomme le post. L'autre inscrira la
+  // personne dès qu'elle aura son adresse : l'achat n'est donc pas prématuré. C'est pour ce cas
+  // que la règle est « TOUTES les campagnes de la source nomment le post », et pas « au moins
+  // une » — avec « au moins une », la seconde campagne serait stérilisée sans un mot.
+  const r = await monde();
+  await etapeAvecCorps(r, ACCROCHE, { canal: 'email' });
+  const partage = await engageurDUnPost(r, 42, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [partage.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check("21e. une seule campagne, qui nomme le post : l'achat est retenu", !(await candidats(r.org)).includes(partage.contact_id));
+  const seconde = (
+    await q(
+      `insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Sans accroche', 'active', $2::jsonb) returning id`,
+      [r.org, JSON.stringify({ personas: [r.persona] })],
+    )
+  ).rows[0].id;
+  await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [seconde, partage.source]);
+  await etapeAvecCorps({ ...r, campagne: seconde }, SANS_ACCROCHE, { canal: 'email' });
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check("21f. une seconde campagne qui ne le nomme pas rend l'achat légitime", (await candidats(r.org)).includes(partage.contact_id), JSON.stringify(await candidats(r.org)));
+
+  // Une campagne qui n'est pas ACTIVE n'inscrit personne, donc elle ne décide rien ici : l'achat
+  // part comme avant ce lot. Sans cette réserve, mettre sa campagne en pause une semaine gèlerait
+  // en silence tous les achats de ses sources — un comportement que ce lot n'a pas à changer.
+  const u = await monde();
+  await etapeAvecCorps(u, ACCROCHE, { canal: 'email' });
+  const enPause = await engageurDUnPost(u, 45, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [enPause.signal_id]);
+  await q(`update campaigns set status = 'paused' where id = $1`, [u.campagne]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  check("21g. une campagne en pause ne gèle aucun achat", (await candidats(u.org)).includes(enPause.contact_id), JSON.stringify(await candidats(u.org)));
+}
+
+async function fenetreReglable() {
+  console.log('\n# la fenêtre de décision est un réglage, et elle a un terme');
+  const m = await monde();
+  await ecrireReglage(m.ctx, { cle: 'linkedin_fenetre_validation_post_jours', valeur: 40 });
+  check('22. la fenêtre lue est celle de l\'organisation', (await fenetreValidationPost(pool, m.org)) === 40);
+  const defaut = await monde();
+  check('22a. sans réglage, le défaut de 28 jours', (await fenetreValidationPost(pool, defaut.org)) === 28);
+
+  // Point de vigilance 4 : sous le délai d'ancienneté, l'épargne n'épargnerait jamais rien.
+  let refus = null;
+  try {
+    await ecrireReglage(m.ctx, { cle: 'linkedin_fenetre_validation_post_jours', valeur: AGE_MAX_SIGNAL_JOURS });
+  } catch (e) {
+    refus = e;
+  }
+  // Le message compte autant que le refus : c'est lui que l'écran affiche (`messageDErreur`,
+  // `app/actions/plafonds.ts` lit `details.fieldErrors.valeur`).
+  const motif = refus?.details?.fieldErrors?.valeur?.[0] ?? '';
+  check('22b. une fenêtre sous le délai d\'ancienneté est refusée, avec un message qui dit pourquoi',
+    refus !== null && motif.includes(String(AGE_MAX_SIGNAL_JOURS)) && /ancienneté/.test(motif), `${refus} / ${motif}`);
+  check('22c. et la valeur en base n\'a pas bougé', (await fenetreValidationPost(pool, m.org)) === 40);
+
+  // La bascule périodique : seule une `pending` échue change d'état.
+  const f = await enregistrerFichePost(pool, m.org, ficheN(34), { fenetreJours: FENETRE });
+  const g = await enregistrerFichePost(pool, m.org, ficheN(35), { fenetreJours: FENETRE });
+  const h = await enregistrerFichePost(pool, m.org, ficheN(36), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = any($1::uuid[])`, [[f.id, g.id]]);
+  await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [g.id]);
+  const bascules = await rejeterFichesPostExpirees(pool);
+  const etats = Object.fromEntries(
+    (await q(`select id, review_status, reviewed_at, reviewed_by from linkedin_posts where id = any($1::uuid[])`, [[f.id, g.id, h.id]])).rows.map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  check('22d. la fiche échue passe en `rejected`', bascules >= 1 && etats[f.id].review_status === 'rejected', `${bascules} / ${etats[f.id].review_status}`);
+  check('22e. une fiche validée, même échue, n\'est pas touchée', etats[g.id].review_status === 'approved');
+  check('22f. une fiche encore dans sa fenêtre non plus', etats[h.id].review_status === 'pending');
+  check('22g. le rejet d\'expiration ne se fait pas passer pour une relecture humaine',
+    etats[f.id].reviewed_at === null && etats[f.id].reviewed_by === null, JSON.stringify([etats[f.id].reviewed_at, etats[f.id].reviewed_by]));
+}
+
+async function decompteLisible() {
+  console.log('\n# le décompte : pourquoi personne ne part');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const attente = await engageurDUnPost(m, 37, { etat: 'pending' });
+  const prete = await engageurDUnPost(m, 38, { etat: 'approved' });
+  const inexploitable = await engageurDUnPost(m, 39, { etat: 'approved', sujet: null });
+  const orpheline = await engageurDUnPost(m, 40, { etat: 'pending' });
+  await q(`update signals set linkedin_post_id = null where id = $1`, [orpheline.signal_id]);
+
+  const r = await compterRetenuesParPost(pool, m.org, m.campagne);
+  check('23. la campagne nomme un post et a une source de post', r.nommeUnPost === true && r.aUneSourceDePost === true, JSON.stringify(r));
+  check('23a. les personnes en attente de validation sont comptées', r.enAttenteDeValidation === 1, JSON.stringify(r));
+  check('23b. celles sans aucun post aussi', r.sansPost === 1, JSON.stringify(r));
+  check('23c. et celles dont la fiche est inexploitable', r.postInexploitable === 1, JSON.stringify(r));
+
+  // Chaque compteur suit bien SA personne : on corrige une fiche à la fois, et un seul bouge.
+  await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [attente.fiche]);
+  const r2 = await compterRetenuesParPost(pool, m.org, m.campagne);
+  check('23d. valider le post en attente vide ce compteur-là, et lui seul',
+    r2.enAttenteDeValidation === 0 && r2.sansPost === 1 && r2.postInexploitable === 1, JSON.stringify(r2));
+  await q(`update linkedin_posts set subject = 'la prospection' where id = $1`, [inexploitable.fiche]);
+  const r3 = await compterRetenuesParPost(pool, m.org, m.campagne);
+  check('23e. compléter la fiche inexploitable vide le sien', r3.postInexploitable === 0 && r3.sansPost === 1, JSON.stringify(r3));
+
+  // La personne prête n'est comptée nulle part : une fois inscrite, elle sort même de la population.
+  await tourDInscription(m.org);
+  const apres = await compterRetenuesParPost(pool, m.org, m.campagne);
+  check('23f. la personne inscrite sort du décompte', (await inscritsDe(m.org)).includes(prete.contact_id) && apres.sansPost === 1, JSON.stringify(apres));
+
+  // La mauvaise configuration que l'enregistrement accepte volontairement.
+  const n = await monde();
+  await etapeAvecCorps(n, ACCROCHE);
+  const sansSource = await compterRetenuesParPost(pool, n.org, n.campagne);
+  check('23g. une campagne qui nomme un post sans aucune source de post est signalée',
+    sansSource.nommeUnPost === true && sansSource.aUneSourceDePost === false, JSON.stringify(sansSource));
+  check('23h. `campagneNommeUnPost` dit faux sur une campagne sans étape', (await campagneNommeUnPost(pool, (await monde()).campagne)) === false);
+}
+
 /** La partie « reprise » et la partie « auto-vérification » de la migration, telles qu'écrites dans le fichier. */
 function morceauxDeLaMigration() {
   const sql = readFileSync(new URL('../../supabase/migrations/20261015092540_linkedin_posts.sql', import.meta.url), 'utf8');
@@ -733,7 +1134,7 @@ async function repriseDeLExistant() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, repriseDeLExistant);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, repriseDeLExistant);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

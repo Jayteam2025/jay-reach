@@ -1,9 +1,14 @@
 'use client';
 
 /**
- * Les trois plafonds de la collecte LinkedIn (maquette `maquettes-lot4a.html`, § 1). Mêmes clés que
- * Réglages › Plafonds, écrites par la même action (`actionEcrireReglage`) : une seule vérité, deux
- * endroits pour la régler. Lecture seule pour qui n'est pas administrateur.
+ * Les réglages chiffrés de la collecte LinkedIn (maquette `maquettes-lot4a.html`, § 1). Mêmes clés
+ * que Réglages › Plafonds, écrites par la même action (`actionEcrireReglage`) : une seule vérité,
+ * deux endroits pour la régler. Lecture seule pour qui n'est pas administrateur.
+ *
+ * Toutes les clés ne sont pas des plafonds : `linkedin_fenetre_validation_post_jours` est une
+ * DURÉE. Le composant ne s'en occupe pas — il édite un entier positif et affiche le message que
+ * le métier renvoie quand il refuse (la fenêtre doit dépasser le délai d'ancienneté des signaux,
+ * `schemaEcrireReglage`). La règle vit dans le métier, pas dans la saisie.
  */
 import { useState, useTransition } from 'react';
 import { Bouton } from '../ui';
@@ -17,7 +22,8 @@ export interface LignePlafondLinkedin {
     | 'linkedin_invitations_par_semaine'
     | 'linkedin_messages_par_semaine'
     | 'linkedin_visites_profil_par_semaine'
-    | 'linkedin_fiches_post_par_jour';
+    | 'linkedin_fiches_post_par_jour'
+    | 'linkedin_fenetre_validation_post_jours';
   nom: string;
   /** Déjà composé (« 1 utilisé aujourd'hui ») — ce composant ne compte rien. */
   usage: string;

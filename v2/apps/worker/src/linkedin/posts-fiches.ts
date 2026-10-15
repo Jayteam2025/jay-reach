@@ -5,9 +5,10 @@
  * se distinguent que par `linkedin_posts_traites`. Le worker écrit avec la clé de service, donc
  * chaque requête filtre explicitement par organisation.
  */
-import { normaliserUrlPost } from '@jay-reach/core';
+import { CLES_REGLAGES, normaliserUrlPost, plafondDuJour } from '@jay-reach/core';
 import type { Pool } from 'pg';
 import type { FichePost } from './fiche-post.js';
+import { AGE_MAX_SIGNAL_JOURS } from '../producer.js';
 
 const URN_ACTIVITE = /^urn:li:(?:activity|ugcPost|share):(\d+)$/;
 
@@ -130,4 +131,57 @@ export async function fichesARattraper(ex: Pick<Pool, 'query'>, organizationId: 
     [organizationId, TENTATIVES_MAX, limite],
   );
   return r.rows;
+}
+
+/**
+ * La fenêtre de décision d'une fiche, en jours, pour UNE organisation : le réglage
+ * `linkedin_fenetre_validation_post_jours` (écran Réglages › LinkedIn), repli sur
+ * `LINKEDIN_POST_REVIEW_WINDOW_DAYS` puis sur 28.
+ *
+ * Deux garde-fous ici, en plus de la validation à l'écriture (`schemaEcrireReglage`) :
+ *
+ *  - une valeur non entière ou nulle retombe sur le défaut. `expires_at = now() + 0 jour` ferait
+ *    expirer chaque fiche à la seconde où elle naît : toutes rejetées, toutes les personnes
+ *    purgées, sans un mot. Le repli d'environnement n'est validé par personne, donc la garde
+ *    vit ici, à la lecture.
+ *  - une fenêtre qui ne dépasse PAS le délai d'ancienneté des signaux est dite, sans être
+ *    corrigée. La corriger en silence afficherait à l'écran un chiffre que le moteur n'applique
+ *    pas ; la taire laisserait l'opérateur croire qu'il a jusqu'à l'échéance pour valider ses
+ *    posts alors que la purge aura tout emporté avant.
+ */
+export async function fenetreValidationPost(ex: Pick<Pool, 'query'>, organizationId: string): Promise<number> {
+  const brut = await plafondDuJour(ex, organizationId, 'linkedin_fenetre_validation_post_jours');
+  const defaut = CLES_REGLAGES.find((r) => r.cle === 'linkedin_fenetre_validation_post_jours')!.defaut as number;
+  const jours = Number.isFinite(brut) && brut > 0 ? Math.trunc(brut) : defaut;
+  if (jours <= AGE_MAX_SIGNAL_JOURS) {
+    console.warn(
+      `[posts-fiches] fenêtre de validation (${jours} j) sous le délai d'ancienneté des signaux (${AGE_MAX_SIGNAL_JOURS} j) : les personnes seront effacées avant la validation de leur post`,
+    );
+  }
+  return jours;
+}
+
+/**
+ * Bascule en `rejected` les fiches `pending` dont la fenêtre est passée, et rend leur nombre.
+ *
+ * C'est ce qui referme la branche d'épargne : tant que la fiche est `pending` dans sa fenêtre,
+ * les personnes qui ont réagi à ce post échappent à la purge d'ancienneté ; une fois la fenêtre
+ * passée, elles y retombent. L'épargne a donc un terme, et ce terme est celui que l'écran
+ * annonce.
+ *
+ * `reviewed_by` reste NUL, délibérément : c'est ce qui distingue un rejet d'expiration d'un rejet
+ * prononcé par un humain. `reviewed_at` reste nul pour la même raison — personne n'a relu.
+ *
+ * Global, toutes organisations confondues : le terme est déjà inscrit dans `expires_at` de chaque
+ * fiche, posé avec la fenêtre de SON organisation. Rien à relire ici.
+ *
+ * N'efface RIEN : seul le statut change. Ce sont la purge d'ancienneté et la purge de rétention
+ * qui effacent, chacune avec ses propres gardes.
+ */
+export async function rejeterFichesPostExpirees(pool: Pool): Promise<number> {
+  const r = await pool.query(
+    `update linkedin_posts set review_status = 'rejected' /* jr:fiche_post_expiree */
+      where review_status = 'pending' and expires_at <= now()`,
+  );
+  return r.rowCount ?? 0;
 }

@@ -41,6 +41,7 @@ export type ClePlafond =
   | 'linkedin_messages_par_semaine'
   | 'linkedin_visites_profil_par_semaine'
   | 'linkedin_fiches_post_par_jour'
+  | 'linkedin_fenetre_validation_post_jours'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -56,6 +57,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_messages_par_semaine',
   'linkedin_visites_profil_par_semaine',
   'linkedin_fiches_post_par_jour',
+  'linkedin_fenetre_validation_post_jours',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -88,6 +90,14 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // de fond ne rouvre un post que pour une fiche restée incomplète. Chaque lecture est une page
   // LinkedIn de plus : 20 par jour est large pour un rattrapage, et très en deçà du seuil des vues.
   { cle: 'linkedin_fiches_post_par_jour', defaut: 20, env: 'LINKEDIN_POST_SHEETS_DAILY_CAP' },
+  // Les jours pendant lesquels une fiche de post attend la relecture d'un humain, et pendant
+  // lesquels les personnes qui ont réagi à ce post sont ÉPARGNÉES par la purge d'ancienneté.
+  // 28 parce qu'il faut qu'elle DÉPASSE le délai d'ancienneté des signaux (14 par défaut) :
+  // les personnes sont collectées le jour où le post est découvert, donc une fenêtre plus
+  // courte les ferait effacer avant que l'opérateur ait pu valider leur post — la branche
+  // d'épargne n'épargnerait jamais rien et l'écran afficherait une échéance sans effet.
+  // `schemaEcrireReglage` refuse une valeur sous ce seuil, en le disant.
+  { cle: 'linkedin_fenetre_validation_post_jours', defaut: 28, env: 'LINKEDIN_POST_REVIEW_WINDOW_DAYS' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -251,6 +261,28 @@ export async function plafondDuJour(ex: Executeur, organisationId: string, cle: 
 }
 
 /**
+ * Délai d'ancienneté des signaux, en jours, tel que le moteur l'applique.
+ *
+ * COPIE DÉLIBÉRÉE de `AGE_MAX_SIGNAL_JOURS` (`apps/worker/src/producer.ts`), et non un import :
+ * `packages/core` ne dépend pas du worker, et ce délai est volontairement une constante de
+ * module du moteur, globale et non réglable par organisation. Seule la VALIDATION ci-dessous en
+ * a besoin — jamais le comportement.
+ *
+ * Conséquence à connaître : si `SIGNAL_MAX_AGE_DAYS` est posé sur le worker mais pas sur le
+ * processus web, la validation compare à 14 alors que le moteur applique autre chose. Elle
+ * refuserait donc moins qu'il ne faudrait. Poser la variable des deux côtés, ou ne la poser nulle
+ * part, est ce qui garde les deux d'accord.
+ */
+const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
+
+function ageMaxSignalJours(): number {
+  const brut = process.env.SIGNAL_MAX_AGE_DAYS;
+  if (brut === undefined || brut.trim() === '') return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+  const valeur = Number(brut);
+  return Number.isFinite(valeur) && valeur > 0 ? Math.trunc(valeur) : AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
+}
+
+/**
  * `true` si `valeur` est un identifiant de fuseau IANA que le moteur JS
  * reconnaît — le même format que celui attendu par Postgres (`at time zone`).
  * `Intl.DateTimeFormat` lève sur un identifiant inconnu (« Paris » plutôt que
@@ -311,6 +343,21 @@ export const schemaEcrireReglage = z
         path: ['valeur'],
         message: `Ce plafond ne peut pas dépasser ${HARD_CAP_7_DAYS} par semaine : au-delà, le moteur appliquerait ${HARD_CAP_7_DAYS} sans le dire.`,
       });
+    }
+    // La fenêtre de décision d'un post doit DÉPASSER le délai d'ancienneté des signaux, sinon
+    // elle ne sert à rien : les personnes qui ont réagi au post sont collectées le jour où il est
+    // découvert, et la purge les efface au bout de ce délai. Une fenêtre égale ou plus courte
+    // laisserait donc l'écran annoncer une échéance pendant que la purge a déjà tout emporté —
+    // un mécanisme d'épargne qui n'épargne jamais rien, avec l'air de fonctionner.
+    if (entree.cle === 'linkedin_fenetre_validation_post_jours' && typeof entree.valeur === 'number') {
+      const anciennete = ageMaxSignalJours();
+      if (entree.valeur <= anciennete) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['valeur'],
+          message: `La fenêtre de validation doit dépasser le délai d'ancienneté des signaux (${anciennete} jours) : en deçà, les personnes qui ont réagi au post sont effacées avant d'avoir pu être validées.`,
+        });
+      }
     }
     if (entree.cle === 'fuseau' && typeof entree.valeur === 'string' && !fuseauValide(entree.valeur)) {
       ctx.addIssue({
@@ -650,7 +697,8 @@ export type ClePlafondLinkedIn =
   | 'linkedin_invitations_par_semaine'
   | 'linkedin_messages_par_semaine'
   | 'linkedin_visites_profil_par_semaine'
-  | 'linkedin_fiches_post_par_jour';
+  | 'linkedin_fiches_post_par_jour'
+  | 'linkedin_fenetre_validation_post_jours';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {

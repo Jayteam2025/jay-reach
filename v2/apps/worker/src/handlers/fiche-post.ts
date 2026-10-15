@@ -40,7 +40,7 @@ import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { delaiAleatoire } from '../linkedin/engageurs.js';
 import { lireFichePost } from '../linkedin/fiche-post.js';
 import type { Pilote } from '../linkedin/navigateur.js';
-import { enregistrerFichePost, fichesARattraper } from '../linkedin/posts-fiches.js';
+import { enregistrerFichePost, fenetreValidationPost, fichesARattraper } from '../linkedin/posts-fiches.js';
 
 export type FichePostJob = { organizationId: string };
 
@@ -60,8 +60,6 @@ export interface DependancesFichePost {
 
 /** Fiches lues au plus par lot : un lot par heure et par organisation, le plafond du jour borne le reste. */
 export const LOT_MAX = 5;
-/** Fenêtre de décision d'une fiche, en jours (le réglage arrive à la tâche 8). */
-const FENETRE_DECISION_JOURS = 28;
 /** Le verrou couvre un lot entier : cinq pages espacées de quelques secondes, avec une large marge. */
 const DUREE_VERROU_LOT_MS = 10 * 60_000;
 const UNE_HEURE_MS = 3_600_000;
@@ -133,6 +131,8 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
 
     // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
     let redacteur: RedacteurDeSujet | null = null;
+    // Lue UNE fois pour tout le lot : c'est un réglage d'organisation, pas une constante.
+    const fenetreJours = await fenetreValidationPost(pool, job.organizationId);
     for (const ligne of fiches) {
       // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
       await d.pause(delaiAleatoire());
@@ -142,7 +142,7 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
       // Ne lève jamais : une page illisible rend une fiche aux champs nuls, que `enregistrerFichePost`
       // compte comme une tentative sans rien effacer.
       const fiche = await lireFichePost(pilote, ligne.url);
-      await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours: FENETRE_DECISION_JOURS });
+      await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours });
 
       // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
       const texte = fiche.texte ?? ligne.text_excerpt;

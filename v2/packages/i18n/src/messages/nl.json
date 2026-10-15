@@ -1779,10 +1779,14 @@
           "nom": "Postfiches per dag",
           "usage": "Vult postfiches aan die het verzamelen niet kon invullen; elke lezing opent een LinkedIn-pagina"
         },
+        "fenetreValidationPost": {
+          "nom": "Beoordelingstermijn van een post",
+          "usage": "{n, plural, =0 {Geen enkele post wacht op beoordeling} one {# post wacht op uw beoordeling} other {# posts wachten op uw beoordeling}}; na die termijn wordt de post afgewezen en worden de personen die erop reageerden gewist"
+        },
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in.",
         "avances": "Geavanceerde instellingen",
-        "avancesLead": "De drie verzamelplafonds, één voor één aan te passen."
+        "avancesLead": "De limieten van de verzameling en de beoordelingstermijn van posts, stuk voor stuk aanpasbaar."
       },
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",

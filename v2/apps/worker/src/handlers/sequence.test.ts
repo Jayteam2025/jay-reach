@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante, actionIdempotencyKey, poserEcheanceApresDepart } from '@jay-reach/core';
 import {
+  enrollContact,
   tickDueEnrollments,
   mettreInscriptionEnPause,
   rattraperEcheancesManquantes,
   chargerContraintesSender,
   compterEntreesDuJour,
   reprendreAbsencesEchues,
+  type EnrollJob,
 } from './sequence.js';
 
 // Restauration systématique après CHAQUE test du fichier (tour de correction 2,
@@ -1220,5 +1222,76 @@ describe('reprendreAbsencesEchues (F10)', () => {
     expect(etat().status).toBe('paused_absence');
     expect(appels.some((a) => /update enrollments\s+set status = 'active'/i.test(a.sql))).toBe(false);
     expect(appels.some((a) => /insert into audit_events/i.test(a.sql))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enrollContact — la garde d'entrée du lot « accroche du post » (tâche 8)
+// ---------------------------------------------------------------------------
+
+/** Les trois requêtes que la garde et l'inscription peuvent émettre, par leur marqueur. */
+const CAMPAGNE_NOMME_UN_POST = /jr:campagne_nomme_un_post/i;
+const FICHE_POST_UTILISABLE = /jr:fiche_post_utilisable/i;
+const PLAFOND_CAMPAGNE = /select daily_cap from campaigns where id = \$1/i;
+const INSERT_ENROLLMENT = /insert into enrollments/i;
+
+const SIGNAL_ID = 'signal-1';
+
+function jobDInscription(overrides: Partial<EnrollJob> = {}): EnrollJob {
+  return { organizationId: ORG_ID, campaignId: CAMPAIGN_ID, contactId: CONTACT_ID, signalId: SIGNAL_ID, ...overrides };
+}
+
+describe('enrollContact — garde d’entrée sur la validation du post (tâche 8)', () => {
+  it('n’inscrit pas, et n’écrit RIEN, quand la campagne nomme le post et que sa fiche n’est pas utilisable', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: FICHE_POST_UTILISABLE, repondre: () => ligne([{ utilisable: false }]) },
+    ]);
+
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const id = await enrollContact(pool, jobDInscription());
+
+    expect(id).toBeNull();
+    // Le pool factice LÈVE sur toute requête non prévue : l'absence d'insertion est donc prouvée
+    // par le fait que le test passe, et pas seulement par l'assertion ci-dessous.
+    expect(appels.some((a) => INSERT_ENROLLMENT.test(a.sql))).toBe(false);
+    // La garde passe AVANT le plafond du jour : une personne retenue ne consomme pas de place.
+    expect(appels.some((a) => PLAFOND_CAMPAGNE.test(a.sql))).toBe(false);
+    expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('inscription retenue'));
+  });
+
+  it('inscrit dès que la fiche du post est utilisable', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: FICHE_POST_UTILISABLE, repondre: () => ligne([{ utilisable: true }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBe(ENROLLMENT_ID);
+    const insertion = appels.find((a) => INSERT_ENROLLMENT.test(a.sql));
+    expect(insertion?.values).toEqual([ORG_ID, CAMPAIGN_ID, CONTACT_ID, SIGNAL_ID]);
+  });
+
+  it('ne lit même pas la fiche quand la campagne ne nomme aucun post : le lot ne gèle rien d’existant', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: false }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBe(ENROLLMENT_ID);
+    expect(appels.some((a) => FICHE_POST_UTILISABLE.test(a.sql))).toBe(false);
+  });
+
+  it('refuse sans interroger la base quand l’inscription n’aurait aucun signal : pas de signal, pas d’accroche', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+    ]);
+
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    expect(await enrollContact(pool, jobDInscription({ signalId: null }))).toBeNull();
+    expect(appels.some((a) => FICHE_POST_UTILISABLE.test(a.sql))).toBe(false);
+    expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('inscription retenue'));
   });
 });

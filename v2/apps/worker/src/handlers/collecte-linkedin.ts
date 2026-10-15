@@ -41,7 +41,7 @@ import {
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ErreurCollecte, delaiAleatoire, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
 import { auteurAvecRepli, type AuteurDePost } from '../linkedin/fiche-post.js';
-import { enregistrerFichePost } from '../linkedin/posts-fiches.js';
+import { enregistrerFichePost, fenetreValidationPost } from '../linkedin/posts-fiches.js';
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { arriverSurLeFil, identifiantDeProfil, lireProfil, trouverPostsDeProfil } from '../linkedin/profils.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
@@ -89,12 +89,6 @@ export const DUREE_VERROU_COLLECTE_MS = 10 * 60_000;
 
 /** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
 const UNE_HEURE_MS = 3_600_000;
-
-/**
- * Jours pendant lesquels une fiche attend la décision d'un humain. En dur jusqu'à ce que le
- * réglage existe (tâche 8).
- */
-const FENETRE_DECISION_JOURS = 28;
 
 /**
  * Un post à lire. Deux formes, parce que la source ne donne pas la même chose : en mode `post`
@@ -1108,6 +1102,9 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     }
 
     let arret: ArretCollecte = sansPost ? arretDeRecherche : (arretRecherche ?? 'fini');
+    // Lue UNE fois pour tout le passage : la fenêtre de décision est un réglage d'organisation,
+    // pas une constante, et la relire à chaque post ferait une requête par page lue.
+    const fenetreJours = await fenetreValidationPost(pool, job.organizationId);
     for (const post of postsALire) {
       // Le trouveur rend des URN : la mémoire les garde sous cette identité. Le collecteur, lui,
       // charge la page du post, donc il lui faut une adresse.
@@ -1151,7 +1148,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
               job.organizationId,
               // Repli sur l'auteur que la source connaît par construction.
               { ...fiche, auteur: auteurAvecRepli(fiche.auteur, post.auteurConnu) },
-              { fenetreJours: FENETRE_DECISION_JOURS },
+              { fenetreJours },
             )
           ).id;
         } catch (err) {
