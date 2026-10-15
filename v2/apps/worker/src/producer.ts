@@ -650,9 +650,10 @@ export async function enqueueEnrichmentContactsConnus(
           -- Ni acheter sur un post qu'aucun humain n'a relu : la garde d'entrée refuse de toute
           -- façon d'inscrire cette personne, donc l'adresse serait payée pour un message qui ne
           -- partirait jamais — et pour rien du tout si le post est rejeté. Conditionné aux
-          -- campagnes qui NOMMENT le post (sqlSourceNommeUnPost) : une campagne qui ne cite pas
-          -- le post inscrit comme avant, et a donc toujours besoin de l'adresse. Contrôle
-          -- autoritaire refait dans enrichirContactConnu, la fonction qui dépense.
+          -- sources dont AUCUNE campagne active ne pourrait l'inscrire aujourd'hui
+          -- (sqlAchatRetenuParUnPost) : une campagne qui ne cite pas le post, ou dont la fiche
+          -- résout déjà ce qu'elle écrit, inscrit comme avant et a donc toujours besoin de
+          -- l'adresse. Contrôle autoritaire refait dans enrichirContactConnu, qui dépense.
           and not ${sqlAchatRetenuParUnPost('s')}
      )
      select organization_id, contact_id from candidats

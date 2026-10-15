@@ -4,6 +4,12 @@
  * Une fiche par (organisation, post) : deux sources qui visent le même post la partagent, et ne
  * se distinguent que par `linkedin_posts_traites`. Le worker écrit avec la clé de service, donc
  * chaque requête filtre explicitement par organisation.
+ *
+ * UNE EXCEPTION, ET UNE SEULE : `rejeterFichesPostExpirees` écrit SANS filtre d'organisation.
+ * C'est un balayage d'entretien, comme la purge de rétention : le terme de chaque fiche est déjà
+ * inscrit dans son `expires_at`, posé avec la fenêtre de SON organisation, donc il n'y a rien à
+ * relire et rien à cloisonner — une fiche échue l'est pour tout le monde. Dit ici parce que
+ * c'est précisément l'endroit où un lecteur attend l'inverse.
  */
 import { CLES_REGLAGES, normaliserUrlPost, plafondDuJour } from '@jay-reach/core';
 import type { Pool } from 'pg';

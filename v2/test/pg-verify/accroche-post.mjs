@@ -1184,6 +1184,26 @@ async function decompteLisible() {
   check('23h. `campagneNommeUnPost` dit faux sur une campagne sans étape', (await campagneNommeUnPost(pool, (await monde()).campagne)) === false);
 }
 
+async function indexDeJointureDesGabarits() {
+  console.log('\n# la jointure des gabarits, que la garde d\'accroche évalue à chaque candidat, porte un index');
+  // Les cinq sous-requêtes de la garde (une par variable de post, plus la question « nomme un
+  // post ») joignent `message_templates` par `parent_id`. Sans index, chaque évaluation est un
+  // parcours séquentiel ; et le coût croît comme le nombre de contacts sans inscription vivante
+  // multiplié par le nombre de campagnes actives — exactement ce que la collecte fait grossir.
+  const colonnes = (
+    await q(
+      `select (select array_agg(a.attname::text) from pg_attribute a
+                where a.attrelid = i.indrelid and a.attnum = any(i.indkey)) as cols
+         from pg_index i where i.indrelid = 'public.message_templates'::regclass and i.indnatts = 1`,
+    )
+  ).rows.map((r) => (r.cols ?? []).join(','));
+  check('24. un index à une colonne sur `message_templates(parent_id)` existe en base', colonnes.includes('parent_id'), JSON.stringify(colonnes));
+  const sql = readFileSync(new URL('../../supabase/migrations/20261015092540_linkedin_posts.sql', import.meta.url), 'utf8');
+  check('24a. et c\'est la migration du lot qui le pose, pas une main sur la base',
+    /create index[^;]*message_templates[^;]*parent_id/i.test(sql));
+  check('24b. la migration se vérifie elle-même sur cet index', /index de jointure/i.test(sql));
+}
+
 /** La partie « reprise » et la partie « auto-vérification » de la migration, telles qu'écrites dans le fichier. */
 function morceauxDeLaMigration() {
   const sql = readFileSync(new URL('../../supabase/migrations/20261015092540_linkedin_posts.sql', import.meta.url), 'utf8');
@@ -1222,7 +1242,7 @@ async function repriseDeLExistant() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, repriseDeLExistant);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
