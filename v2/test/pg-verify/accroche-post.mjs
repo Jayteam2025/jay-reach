@@ -35,8 +35,9 @@
 //  29. posts-fiches.ts : retirer la seconde branche du `union all` de `fichesARattraper` (les fiches
 //      complètes sans sujet) — 28, 28a et 10h rougissent : le rédacteur n'a plus de population.
 //  30. posts-fiches.ts : retirer `review_status <> 'rejected'` des deux branches — 10f et 10g rougissent.
-//  31. fiche-post.ts : traiter une fiche `a_relire` fausse comme les autres (ouvrir et tracer) —
-//      28b, 28c et 28d rougissent : une page rouverte pour un texte déjà en base.
+//  31. fiche-post.ts : retirer le `if (aRelire)` autour de l'ouverture du navigateur — 28b et 28c
+//      rougissent ; remplacer `if (ligne.a_relire && pilote)` par `if (pilote)` dans la boucle —
+//      28f, 28g, 28h et 28i rougissent (un LOT MIXTE est le seul endroit où ça se voit).
 //  32. posts.ts : remettre `coalesce(btrim(subject), '') <> ''` à la place de
 //      `sqlFicheResoutCeQuEcritLaCampagne` dans `validerPost` — 29 et 29b rougissent.
 //  33. posts.ts : retirer `corrigerAuteurDePost` (ou lui faire écrire `author_name`) — 29d et 29e
@@ -735,6 +736,28 @@ async function sujetSansRelecture() {
   await traiterFichePost(b.deps, { organizationId: m.org });
   const apres = (await q(`select subject from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
   check('28e. un sujet déjà écrit n\'est pas redemandé', apres.subject === 'sujet de : Un texte', String(apres.subject));
+
+  // UN LOT MIXTE : une fiche à relire, une fiche complète. Le navigateur est ouvert pour la
+  // première — la seconde ne doit pas en profiter pour se faire relire, son texte est déjà là.
+  const mixte = await monde();
+  await activerSessionLinkedIn(mixte.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, mixte.org, ficheN(53, VIDE), { fenetreJours: FENETRE });
+  await enregistrerFichePost(pool, mixte.org, ficheN(54), { fenetreJours: FENETRE });
+  const x = depsLot('TEXTE RELU SUR LA PAGE', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  await traiterFichePost(x.deps, { organizationId: mixte.org });
+  const parUrl = Object.fromEntries(
+    (await q(`select id, url, subject, capture_attempts from linkedin_posts where organization_id = $1`, [mixte.org])).rows.map((r) => [r.url, r]),
+  );
+  const tracesMixte = await traces(mixte.org);
+  check('28f. lot mixte : UNE seule page ouverte, celle de la fiche incomplète',
+    x.vu.navigations.length === 1 && x.vu.navigations[0] === urlN(53), JSON.stringify(x.vu.navigations));
+  check('28g. et UNE seule trace de requête, rattachée à cette fiche-là',
+    tracesMixte.length === 1 && tracesMixte[0].post_id === parUrl[urlN(53)].id, JSON.stringify(tracesMixte));
+  check('28h. les deux sujets sont écrits, celui de la fiche complète depuis le texte DÉJÀ en base',
+    parUrl[urlN(53)].subject === 'sujet de : TEXTE RE' && parUrl[urlN(54)].subject === 'sujet de : Un texte',
+    JSON.stringify([parUrl[urlN(53)].subject, parUrl[urlN(54)].subject]));
+  check('28i. et la fiche complète n\'a pas pris une tentative de capture de plus',
+    parUrl[urlN(54)].capture_attempts === 1, String(parUrl[urlN(54)].capture_attempts));
 }
 
 async function sujetCredit() {
