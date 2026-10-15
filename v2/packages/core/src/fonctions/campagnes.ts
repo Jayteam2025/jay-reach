@@ -617,6 +617,11 @@ export interface ContactCampagne {
   readonly score: number | null;
   /** `signals.title` du signal d'origine (R33, « Pourquoi lui ») — `null` sans signal. */
   readonly pourquoi: string | null;
+  /**
+   * `signals.score_reason` : la phrase du modèle qui a noté la personne. N'existe que pour une personne
+   * RETENUE (une personne écartée voit sa ligne supprimée), donc jamais un motif de rejet. `null` sans signal noté.
+   */
+  readonly explication: string | null;
   /** Dernière inscription du contact dans cette campagne — `null` sans inscription. */
   readonly inscriptionId: string | null;
   /** Motif de pause (T29, R93) — non `null` seulement quand `statut === 'en_pause'` (`motifPauseDe`). */
@@ -1396,6 +1401,7 @@ interface LigneContactCampagne {
   statut: StatutContactCampagne;
   score: number | null;
   pourquoi: string | null;
+  explication: string | null;
   enrollment_id: string | null;
   e_status: string | null;
   stop_reason: string | null;
@@ -1493,7 +1499,7 @@ export async function listerContactsCampagne(
 
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
-    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi,
+    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, explication,
             enrollment_id, e_status, stop_reason, resume_at, next_action_at, intitule_poste_liste
        from (
          select
@@ -1504,6 +1510,7 @@ export async function listerContactsCampagne(
            e.current_step,
            s.score,
            s.title as pourquoi,
+           s.score_reason as explication,
            e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at, e.next_action_at,
            ${CASE_STATUT_DERIVE} as statut,
            -- Point 2 (issue #120) : intitulé de poste de la liste importée, une seule
@@ -1544,6 +1551,7 @@ export async function listerContactsCampagne(
     etape: etapeAffichee(r.current_step, totalEtapes),
     score: r.score,
     pourquoi: r.pourquoi,
+    explication: r.explication,
     inscriptionId: r.enrollment_id,
     motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
     repriseLe: r.statut === 'en_pause' ? r.resume_at : null,

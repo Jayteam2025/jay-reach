@@ -22,6 +22,7 @@ const LIBELLES: TableContactsLibelles = {
   colonneContact: 'Contact',
   colonnePourquoi: 'Pourquoi lui',
   colonneScore: 'Score',
+  colonneExplication: 'Pourquoi ce score',
   colonneEmail: 'Email',
   colonneEtape: 'Étape',
   colonneCampagne: 'Campagne',
@@ -50,6 +51,7 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     etapeTexte: null,
     score: null,
     pourquoi: null,
+    explication: null,
     inscriptionId: null,
     motifPause: null,
     repriseLe: null,
@@ -62,6 +64,35 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
 }
 
 describe('TableContacts', () => {
+  it('campagne à sources : la colonne « Pourquoi ce score » montre l’explication', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ score: 88, explication: 'A commenté le post sur le CRM' })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('Pourquoi ce score');
+    expect(html).toContain('A commenté le post sur le CRM');
+  });
+
+  it('campagne à liste (colonne de poste) : pas de colonne d’explication', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ explication: 'A commenté le post sur le CRM' })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+        posteListe={{ trouve: true, titre: 'Intitulé de poste' }}
+      />,
+    );
+    expect(html).not.toContain('Pourquoi ce score');
+    expect(html).not.toContain('A commenté le post sur le CRM');
+  });
+
   it('ligne « Sans email » -> bouton « Chercher l’email » avec le coût', () => {
     const html = renderToStaticMarkup(
       <TableContacts

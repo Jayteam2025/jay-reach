@@ -948,6 +948,8 @@ async function collecterContactsGlobaux(
       etape: etapeAffichee(r.current_step, r.total_etapes ?? 0),
       score: r.score,
       pourquoi: r.pourquoi,
+      // L'écran global n'a pas la colonne d'explication : elle vit dans le tableau d'une campagne.
+      explication: null,
       inscriptionId: r.enrollment_id,
       motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
       repriseLe: r.statut === 'en_pause' ? r.resume_at : null,

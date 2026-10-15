@@ -241,7 +241,9 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
     `select s.id,
             coalesce(a.name, s.company_hint) as company,
             s.title, s.location,
-            s.raw ->> 'description' as description,
+            -- Un engageur n'a pas de description : le texte du post qui l'a fait réagir en tient lieu.
+            -- Jointure gauche, qui ne filtre rien : la condition de sélection reste celle du compteur.
+            coalesce(lp.text_excerpt, s.raw ->> 'description') as description,
             s.occurred_at, a.naf_code, a.prospecting_opposition as opposition,
             s.kind::text as kind,
             s.source_id,
@@ -250,6 +252,8 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
        from public.signals s
        left join public.accounts a on a.id = s.account_id
        left join public.sources so on so.id = s.source_id
+       left join public.linkedin_posts lp
+         on lp.id = s.linkedin_post_id and lp.organization_id = s.organization_id
        ${JOINTURE_PERSONA}
       where s.organization_id = $1 and s.status = 'new' and s.score is null
         -- Un signal dont la source n'a pas de prompt exploitable doit être

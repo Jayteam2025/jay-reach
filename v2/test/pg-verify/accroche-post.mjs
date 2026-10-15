@@ -22,6 +22,8 @@
 //  17. message-values.ts : retirer la jointure `linkedin_posts` de REQUETE_LIGNE_INSCRIPTION — 15a et 15c rougissent.
 //  18. valeurs-contact.ts : retirer la jointure `linkedin_posts` de lireValeursContact — 15b et 15c rougissent.
 //  19. migration linkedin_posts : remettre `people_search,job_change` dans la reprise — 16b et 16c rougissent.
+//  20. score.ts : retirer `lp.text_excerpt` du `coalesce` de `description` — 17a rougit.
+//  21. score.ts : retirer `and lp.organization_id = s.organization_id` de la jointure — 17c rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -31,6 +33,8 @@ import {
   campagneNommeUnPost,
   compterRetenuesParPost,
   ecrireReglage,
+  runScore,
+  compterSignauxScorables,
   fenetreValidationPost,
   rejeterFichesPostExpirees,
   ecarterSignauxTropAnciens,
@@ -1265,8 +1269,47 @@ async function repriseDeLExistant() {
   check('16c. aucune fiche créée pour leur adresse', fiches.length === 1 && fiches[0].url === URL_POST, JSON.stringify(fiches));
 }
 
+async function scoringNourri() {
+  console.log('\n# le scoring reçoit le texte du post de l\'engageur');
+  const m = await monde();
+  await q(`update personas set scoring_prompt = $2 where id = $1`, [m.persona, 'Qualifie les directeurs commerciaux. '.repeat(10)]);
+  const source = await sourceDePost(m, URL_POST, 'Engageurs');
+  const runId = await startSourceRun(pool, source);
+  const f = await enregistrerFichePost(pool, m.org, fiche({ texte: 'Pourquoi les commerciaux détestent leur CRM.' }), { fenetreJours: FENETRE });
+  const ctx = { pool, organizationId: m.org, sourceId: source, sourceRunId: runId, exclusions: {} };
+  const campagne = { id: m.campagne, personaId: m.persona };
+  const urlProfil = (nom) => `https://www.linkedin.com/in/${nom}/`;
+  await enregistrerEngageur(ctx, { urn: 'urn:li:fsd_profile:ACoAAscoreA', nom: 'Ana Rattachee', intitule: 'Directrice commerciale', urlProfil: urlProfil('ana-rattachee') }, campagne, URL_POST, f.id);
+  await enregistrerEngageur(ctx, { urn: 'urn:li:fsd_profile:ACoAAscoreB', nom: 'Bob Sansfiche', intitule: 'Directeur des ventes', urlProfil: urlProfil('bob-sansfiche') }, campagne, URL_POST);
+  // Une fiche d'une AUTRE organisation : la clé étrangère l'accepte, la jointure ne doit pas la lire.
+  const autre = await monde();
+  const fAutre = await enregistrerFichePost(pool, autre.org, fiche({ texte: 'TEXTE D UNE AUTRE ORGANISATION' }), { fenetreJours: FENETRE });
+  await enregistrerEngageur(ctx, { urn: 'urn:li:fsd_profile:ACoAAscoreC', nom: 'Cleo Etrangere', intitule: 'Directrice des ventes', urlProfil: urlProfil('cleo-etrangere') }, campagne, URL_POST);
+  await q(`update signals set linkedin_post_id = $2 where organization_id = $1 and external_id like '%ACoAAscoreC'`, [m.org, fAutre.id]);
+
+  const avant = await compterSignauxScorables(pool, m.org);
+  let recus = [];
+  const scorer = async (prospects) => {
+    recus = prospects;
+    return prospects.map((p) => ({ id: p.id, score: 90, reason: 'Retenu pour la preuve.' }));
+  };
+  const resume = await runScore({ pool, organizationId: m.org, scorer, now: Date.now() });
+  const parNom = async (ext) => {
+    const id = (await q(`select id from signals where organization_id = $1 and external_id like $2`, [m.org, `%${ext}`])).rows[0].id;
+    return recus.find((p) => p.id === id);
+  };
+  check('17. la jointure ne filtre rien : le compteur et la sélection voient les mêmes trois signaux',
+    avant === 3 && resume.considered === 3 && recus.length === 3, JSON.stringify({ avant, resume }));
+  check('17a. l\'engageur rattaché reçoit le texte du post en description',
+    (await parNom('ACoAAscoreA'))?.description === 'Pourquoi les commerciaux détestent leur CRM.', JSON.stringify(await parNom('ACoAAscoreA')));
+  check('17b. sans fiche, pas de description', (await parNom('ACoAAscoreB'))?.description === undefined);
+  check('17c. la fiche d\'une autre organisation n\'est pas lue', (await parNom('ACoAAscoreC'))?.description === undefined, JSON.stringify(await parNom('ACoAAscoreC')));
+  const retenus = (await q(`select count(*)::int as n from signals where organization_id = $1 and score_reason = 'Retenu pour la preuve.'`, [m.org])).rows[0].n;
+  check('17d. l\'explication du modèle est écrite pour les retenus', retenus === 3, String(retenus));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
