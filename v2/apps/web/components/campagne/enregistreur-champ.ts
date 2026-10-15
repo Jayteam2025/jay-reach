@@ -1,41 +1,42 @@
 /**
- * L'enregistrement du sujet d'un post, séparé de l'écran pour pouvoir être prouvé.
+ * L'enregistrement d'un champ d'accroche — le sujet du post, le nom de son auteur — séparé de
+ * l'écran pour pouvoir être prouvé.
  *
- * Règle : le sujet n'est « confirmé » qu'APRÈS la réponse du serveur, jamais avant. Marquer comme
- * envoyé ce qui est encore en vol laissait « Valider » passer sur l'état précédent quand
- * l'enregistrement échouait : le post partait validé avec l'ANCIEN sujet, celui que l'opérateur
- * croyait avoir remplacé. `enregistrer()` attend donc l'envoi en vol, et rend `false` si le sujet
- * affiché n'est pas celui que le serveur a confirmé : l'appelant NE DOIT PAS valider alors.
+ * Règle : la valeur n'est « confirmée » qu'APRÈS la réponse du serveur, jamais avant. Marquer
+ * comme envoyé ce qui est encore en vol laissait « Valider » passer sur l'état précédent quand
+ * l'enregistrement échouait : le post partait validé avec l'ANCIENNE valeur, celle que l'opérateur
+ * croyait avoir remplacée. `enregistrer()` attend donc l'envoi en vol, et rend `false` si ce qui
+ * est affiché n'est pas ce que le serveur a confirmé : l'appelant NE DOIT PAS valider alors.
  */
-export interface EnregistreurSujet {
-  /** `true` seulement si le sujet lu à l'instant est celui que le serveur a confirmé. */
+export interface EnregistreurChamp {
+  /** `true` seulement si la valeur lue à l'instant est celle que le serveur a confirmée. */
   enregistrer(): Promise<boolean>;
-  /** Le dernier sujet confirmé par le serveur. */
+  /** La dernière valeur confirmée par le serveur. */
   confirme(): string;
 }
 
-export function creerEnregistreurSujet(deps: {
+export function creerEnregistreurDeChamp(deps: {
   confirmeInitial: string;
   lire: () => string;
-  /** Envoie le sujet ; rend `null` si le serveur l'a accepté, sinon le message d'erreur. */
-  envoyer: (sujet: string) => Promise<string | null>;
+  /** Envoie la valeur ; rend `null` si le serveur l'a acceptée, sinon le message d'erreur. */
+  envoyer: (valeur: string) => Promise<string | null>;
   surErreur: (message: string) => void;
-}): EnregistreurSujet {
+}): EnregistreurChamp {
   let confirme = deps.confirmeInitial;
   let enVol: Promise<boolean> | null = null;
 
   async function enregistrer(): Promise<boolean> {
     while (enVol) await enVol.catch(() => undefined);
-    const sujet = deps.lire();
-    if (sujet === confirme) return true;
-    // Un sujet vidé n'est pas enregistrable : le serveur garde l'ancien, on ne valide pas dessus.
-    if (sujet === '') return false;
+    const valeur = deps.lire();
+    if (valeur === confirme) return true;
+    // Un champ vidé n'est pas enregistrable : le serveur garde l'ancien, on ne valide pas dessus.
+    if (valeur === '') return false;
     const envoi = (async () => {
       // Un échec est un échec, quelle que soit sa forme : une action qui jette (coupure réseau)
       // passe par le même chemin que celle qui rend `{ ok: false }`.
-      const erreur = await deps.envoyer(sujet).catch(messageDException);
+      const erreur = await deps.envoyer(valeur).catch(messageDException);
       if (erreur === null) {
-        confirme = sujet;
+        confirme = valeur;
         return true;
       }
       deps.surErreur(erreur);
@@ -57,17 +58,27 @@ function messageDException(e: unknown): string {
 }
 
 /**
- * Le clic sur « Valider » : enregistre le sujet, et NE VALIDE PAS si l'enregistrement a échoué,
- * par refus comme par exception. Séparé du composant pour que ce `return` précoce, qui empêche de
- * valider un post sur l'ancien sujet, soit gardé par un test.
+ * Le clic sur « Valider » : enregistre TOUS les champs de l'accroche, et NE VALIDE PAS si l'un
+ * d'eux a échoué, par refus comme par exception. Séparé du composant pour que ce `return` précoce,
+ * qui empêche de valider un post sur l'ancienne valeur, soit gardé par un test.
+ *
+ * Tous, et pas seulement le sujet : depuis que le nom de l'auteur s'édite lui aussi dans la
+ * phrase, valider sur un auteur dont l'enregistrement a échoué ferait partir le message avec
+ * l'ancien nom — exactement le défaut que ce fichier existe pour empêcher.
  */
 export async function validerApresEnregistrement(deps: {
-  enregistreur: EnregistreurSujet;
+  enregistreurs: readonly EnregistreurChamp[];
   /** Valide le post ; rend `null` si accepté, sinon le message d'erreur. */
   valider: () => Promise<string | null>;
   surErreur: (message: string) => void;
 }): Promise<void> {
-  if (!(await deps.enregistreur.enregistrer())) return;
+  // En série, pas en parallèle : deux refus donneraient deux messages dont le second effacerait
+  // le premier, et l'opérateur ne lirait que le dernier champ fautif.
+  let toutEnregistre = true;
+  for (const e of deps.enregistreurs) {
+    if (!(await e.enregistrer())) toutEnregistre = false;
+  }
+  if (!toutEnregistre) return;
   const erreur = await deps.valider().catch(messageDException);
   if (erreur !== null) deps.surErreur(erreur);
 }

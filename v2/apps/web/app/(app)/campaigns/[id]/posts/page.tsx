@@ -6,10 +6,11 @@ import {
   fuseauDeLOrganisation,
   hasMinRole,
   listerPostsDeCampagne,
+  type MorceauAccroche,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
-import { TablePosts, type LignePostEcran } from '../../../../../components/campagne/TablePosts';
+import { TablePosts, ligneValidable, type LignePostEcran } from '../../../../../components/campagne/TablePosts';
 
 export const revalidate = 0;
 
@@ -27,39 +28,50 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
   const maintenant = new Date();
   const jourMois = (d: Date) => d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', timeZone: fuseau });
 
+  // LA condition de tout ce que cet écran AFFIRME. La garde ne retient personne tant que la
+  // campagne ne nomme pas le post, et l'épargne de purge n'existe pas non plus : sans elle,
+  // l'écran annonçait des personnes bloquées et une date d'effacement qui ne valaient pas pour
+  // cette campagne — et l'opérateur passait son temps à valider des posts pour rien.
+  const nommeUnPost = retenues.nommeUnPost;
+
   const lignes: LignePostEcran[] = posts.map((p) => {
     const echeance = echeanceDePost(p.expireLe, maintenant, fuseau);
     // La phrase du gabarit de la campagne quand elle en a une, sinon la phrase par défaut : dans
-    // les deux cas le sujet s'édite à l'intérieur.
-    const phrase = decouperAccroche(p.apercuAccroche) ?? {
-      avant: t('phrase.avant', { auteur: p.auteur ?? t('ligne.auteurInconnu') }),
-      apres: '',
-    };
+    // les deux cas l'auteur et le sujet s'éditent à l'intérieur.
+    const morceaux: MorceauAccroche[] = decouperAccroche(p.apercuAccroche) ?? [
+      { texte: t('phrase.avantAuteur') },
+      { champ: 'auteur' },
+      { texte: t('phrase.apresAuteur') },
+      { champ: 'sujet' },
+    ];
     return {
       id: p.id,
       auteur: p.auteur,
       publie: p.posteLe ? t('ligne.publie', { date: jourMois(p.posteLe) }) : t('ligne.publieInconnu'),
       url: p.url,
       sujet: p.sujet,
-      avant: phrase.avant,
-      apres: phrase.apres,
+      morceaux,
       etat: p.etat,
       etatLibelle: t(`etat.${p.etat}`),
-      attente: t('ligne.attente', { n: p.personnesEnAttente }),
-      echeance: t(`echeance.${echeance.cle}`, { date: jourMois(p.expireLe), jours: echeance.jours }),
+      // Ni l'attente ni l'échéance ne valent sans accroche : sans elle personne n'est retenu, et
+      // la purge d'ancienneté efface ces personnes bien avant la date de la fenêtre.
+      attente: nommeUnPost ? t('ligne.attente', { n: p.personnesEnAttente }) : null,
+      echeance: nommeUnPost ? t(`echeance.${echeance.cle}`, { date: jourMois(p.expireLe), jours: echeance.jours }) : null,
       tonEcheance: echeance.ton,
       etiquetteSujet: t('phrase.sujetEtiquette', { auteur: p.auteur ?? t('ligne.auteurInconnu') }),
+      etiquetteAuteur: t('phrase.auteurEtiquette'),
     };
   });
 
   const enAttente = lignes.filter((l) => l.etat === 'pending');
-  const validablesEnLot = enAttente.filter((l) => (l.sujet ?? '').trim() !== '').length;
+  const validablesEnLot = enAttente.filter(ligneValidable).length;
   // Ce que la garde retient, dit tel quel : une campagne qui retient du monde sans le dire est le
-  // pire défaut de ce produit.
+  // pire défaut de ce produit. Mais une campagne qui ANNONCE une rétention qui n'a pas lieu est le
+  // défaut d'en face, et ce dépôt l'a déjà payé (« une alerte fausse en éteint une vraie »).
   const retenuesDites = {
-    sansSource: retenues.nommeUnPost && !retenues.aUneSourceDePost,
-    sansPost: retenues.sansPost,
-    inexploitable: retenues.postInexploitable,
+    sansSource: nommeUnPost && !retenues.aUneSourceDePost,
+    sansPost: nommeUnPost ? retenues.sansPost : 0,
+    inexploitable: nommeUnPost ? retenues.postInexploitable : 0,
   };
   const aDire = retenuesDites.sansSource || retenuesDites.sansPost > 0 || retenuesDites.inexploitable > 0;
 
@@ -95,13 +107,17 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               auteurInconnu: t('ligne.auteurInconnu'),
               voir: t('ligne.voir'),
               sujetInvite: t('phrase.sujetInvite'),
+              auteurInvite: t('phrase.auteurInvite'),
               valider: t('actions.valider'),
               rejeter: t('actions.rejeter'),
               rouvrir: t('actions.rouvrir'),
               // Le compte de personnes vient de la garde elle-même : c'est ce chiffre-là qui
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
               resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
-              personnes: retenues.enAttenteDeValidation > 0 ? t('bar.personnes', { n: retenues.enAttenteDeValidation }) : '',
+              personnes:
+                nommeUnPost && retenues.enAttenteDeValidation > 0
+                  ? t('bar.personnes', { n: retenues.enAttenteDeValidation })
+                  : '',
               lotBloque: t('bar.lotBloque'),
               toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}

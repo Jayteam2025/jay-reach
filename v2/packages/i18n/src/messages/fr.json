@@ -1100,22 +1100,25 @@
       "description": "Ce qu'on relit ici, c'est la phrase telle qu'elle partira. Le sujet s'écrit dans la phrase, là où il atterrira.",
       "bar": {
         "posts": "{n, plural, one {# post attend} other {# posts attendent}} votre relecture",
-        "personnes": "{n, plural, one {# personne n'entre} other {# personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
+        "personnes": "{n, plural, one {jusqu'à # personne n'entre} other {jusqu'à # personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
         "rien": "Aucun post n'attend votre relecture.",
         "toutValider": "Tout valider ({n})",
         "lotBloque": "Enregistrez ou annulez la modification d'un sujet avant de tout valider."
       },
       "phrase": {
-        "avant": "Je vous ai vu réagir au post de {auteur} sur ",
+        "avantAuteur": "Je vous ai vu réagir au post de ",
+        "apresAuteur": " sur ",
         "sujetInvite": "écrivez le sujet du post",
-        "sujetEtiquette": "Sujet du post de {auteur}"
+        "sujetEtiquette": "Sujet du post de {auteur}",
+        "auteurInvite": "écrivez le nom de l'auteur",
+        "auteurEtiquette": "Nom de l'auteur du post, tel qu'il partira"
       },
       "ligne": {
         "auteurInconnu": "Auteur inconnu",
         "publie": "publié le {date}",
         "publieInconnu": "date de publication inconnue",
         "voir": "Voir le post sur LinkedIn",
-        "attente": "{n, plural, one {# personne attend} other {# personnes attendent}}"
+        "attente": "{n, plural, one {jusqu'à # personne attend} other {jusqu'à # personnes attendent}}"
       },
       "etat": {
         "pending": "en attente",
@@ -1141,8 +1144,8 @@
       "retenues": {
         "titre": "Personnes retenues",
         "sansSource": "Le message écrit une variable de post, mais la campagne n'a aucune source qui part d'un post : personne n'entrera en séquence.",
-        "sansPost": "{n, plural, one {# personne n'a} other {# personnes n'ont}} aucun post rattaché : le message nomme un post, elles ne peuvent pas entrer.",
-        "inexploitable": "{n, plural, one {# personne est retenue} other {# personnes sont retenues}} : la fiche de leur post ne porte pas tout ce que le message écrit (auteur, sujet, date)."
+        "sansPost": "{n, plural, one {jusqu'à # personne n'a} other {jusqu'à # personnes n'ont}} aucun post rattaché : le message nomme un post, elles ne peuvent pas entrer.",
+        "inexploitable": "{n, plural, one {jusqu'à # personne est retenue} other {jusqu'à # personnes sont retenues}} : la fiche de leur post ne porte pas tout ce que le message écrit (auteur, sujet, date)."
       }
     }
   },

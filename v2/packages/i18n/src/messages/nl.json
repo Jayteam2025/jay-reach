@@ -1100,22 +1100,25 @@
       "description": "Wat je hier nalicht, is de zin zoals hij verstuurd wordt. Het onderwerp schrijf je in de zin zelf, waar het terechtkomt.",
       "bar": {
         "posts": "{n, plural, one {# post wacht} other {# posts wachten}} op je controle",
-        "personnes": "{n, plural, one {# persoon komt} other {# personen komen}} niet in de sequentie zolang hun post niet is goedgekeurd",
+        "personnes": "tot {n, plural, one {# persoon komt} other {# personen komen}} niet in de sequentie zolang hun post niet is goedgekeurd",
         "rien": "Geen enkele post wacht op je controle.",
         "toutValider": "Alles goedkeuren ({n})",
         "lotBloque": "Sla de wijziging van een onderwerp op of maak ze ongedaan voordat je alles goedkeurt."
       },
       "phrase": {
-        "avant": "Ik zag je reageren op de post van {auteur} over ",
+        "avantAuteur": "Ik zag je reageren op de post van ",
+        "apresAuteur": " over ",
         "sujetInvite": "schrijf het onderwerp van de post",
-        "sujetEtiquette": "Onderwerp van de post van {auteur}"
+        "sujetEtiquette": "Onderwerp van de post van {auteur}",
+        "auteurInvite": "schrijf de naam van de auteur",
+        "auteurEtiquette": "Naam van de auteur van de post, zoals hij verstuurd wordt"
       },
       "ligne": {
         "auteurInconnu": "Onbekende auteur",
         "publie": "gepubliceerd op {date}",
         "publieInconnu": "publicatiedatum onbekend",
         "voir": "Bekijk de post op LinkedIn",
-        "attente": "{n, plural, one {# persoon wacht} other {# personen wachten}}"
+        "attente": "tot {n, plural, one {# persoon wacht} other {# personen wachten}}"
       },
       "etat": {
         "pending": "in afwachting",
@@ -1141,8 +1144,8 @@
       "retenues": {
         "titre": "Teruggehouden personen",
         "sansSource": "Het bericht schrijft een postvariabele, maar de campagne heeft geen bron die van een post uitgaat: niemand komt in de sequentie.",
-        "sansPost": "{n, plural, one {# persoon heeft} other {# personen hebben}} geen post gekoppeld: het bericht noemt een post, ze kunnen niet binnenkomen.",
-        "inexploitable": "{n, plural, one {# persoon wordt} other {# personen worden}} teruggehouden: het postdossier mist iets wat het bericht schrijft (auteur, onderwerp, datum)."
+        "sansPost": "tot {n, plural, one {# persoon heeft} other {# personen hebben}} geen post gekoppeld: het bericht noemt een post, ze kunnen niet binnenkomen.",
+        "inexploitable": "tot {n, plural, one {# persoon wordt} other {# personen worden}} teruggehouden: het postdossier mist iets wat het bericht schrijft (auteur, onderwerp, datum)."
       }
     }
   },

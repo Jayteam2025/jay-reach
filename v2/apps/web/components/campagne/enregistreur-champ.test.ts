@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { creerEnregistreurSujet, validerApresEnregistrement } from './enregistreur-sujet';
+import { creerEnregistreurDeChamp, validerApresEnregistrement } from './enregistreur-champ';
 
 /** Une réponse du serveur que le test libère à la main. */
 function differe() {
@@ -15,7 +15,7 @@ describe('l\'enregistrement du sujet', () => {
     let affiche = 'ancien';
     const reponse = differe();
     const erreurs: string[] = [];
-    const enr = creerEnregistreurSujet({
+    const enr = creerEnregistreurDeChamp({
       confirmeInitial: 'ancien',
       lire: () => affiche,
       envoyer: () => reponse.promesse,
@@ -36,7 +36,7 @@ describe('l\'enregistrement du sujet', () => {
     let affiche = 'ancien';
     const reponse = differe();
     const envois: string[] = [];
-    const enr = creerEnregistreurSujet({
+    const enr = creerEnregistreurDeChamp({
       confirmeInitial: 'ancien',
       lire: () => affiche,
       envoyer: (s) => {
@@ -56,7 +56,7 @@ describe('l\'enregistrement du sujet', () => {
   });
 
   it('un sujet vidé n\'est jamais considéré comme enregistré', async () => {
-    const enr = creerEnregistreurSujet({
+    const enr = creerEnregistreurDeChamp({
       confirmeInitial: 'ancien',
       lire: () => '',
       envoyer: async () => null,
@@ -69,7 +69,7 @@ describe('l\'enregistrement du sujet', () => {
 describe('un échec par exception est un échec comme un autre', () => {
   it('perte de focus : l\'action qui jette affiche un message et ne rejette pas', async () => {
     const erreurs: string[] = [];
-    const enr = creerEnregistreurSujet({
+    const enr = creerEnregistreurDeChamp({
       confirmeInitial: 'ancien',
       lire: () => 'nouveau',
       envoyer: async () => {
@@ -87,10 +87,10 @@ describe('le clic sur Valider', () => {
   function monde(envoyer: () => Promise<string | null>) {
     const erreurs: string[] = [];
     const validations: string[] = [];
-    const enr = creerEnregistreurSujet({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
+    const enr = creerEnregistreurDeChamp({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
     const valider = () =>
       validerApresEnregistrement({
-        enregistreur: enr,
+        enregistreurs: [enr],
         valider: async () => {
           validations.push('valide');
           return null;
@@ -124,14 +124,59 @@ describe('le clic sur Valider', () => {
 
   it('affiche l\'exception de la validation elle-même', async () => {
     const erreurs: string[] = [];
-    const enr = creerEnregistreurSujet({ confirmeInitial: 'a', lire: () => 'a', envoyer: async () => null, surErreur: () => undefined });
+    const enr = creerEnregistreurDeChamp({ confirmeInitial: 'a', lire: () => 'a', envoyer: async () => null, surErreur: () => undefined });
     await validerApresEnregistrement({
-      enregistreur: enr,
+      enregistreurs: [enr],
       valider: async () => {
         throw new Error('coupure');
       },
       surErreur: (m) => erreurs.push(m),
     });
     expect(erreurs).toEqual(['coupure']);
+  });
+});
+
+/**
+ * Depuis que le nom de l'auteur s'édite lui aussi dans la phrase, « Valider » porte DEUX champs.
+ * Si l'un des deux n'est pas enregistré, le message partirait avec l'ancienne valeur — le même
+ * défaut que celui pour lequel ce fichier existe, par l'autre champ.
+ */
+describe('Valider porte tous les champs de la phrase', () => {
+  function champ(envoyer: () => Promise<string | null>, erreurs: string[]) {
+    return creerEnregistreurDeChamp({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
+  }
+
+  it('ne valide pas quand l enregistrement de l AUTEUR échoue, même si le sujet passe', async () => {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    const auteur = champ(async () => 'Le nom de l\'auteur ne peut pas être vide.', erreurs);
+    const sujet = champ(async () => null, erreurs);
+    await validerApresEnregistrement({
+      enregistreurs: [auteur, sujet],
+      valider: async () => {
+        validations.push('valide');
+        return null;
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(validations).toEqual([]);
+    expect(erreurs).toEqual(['Le nom de l\'auteur ne peut pas être vide.']);
+    // Le second champ a bien été tenté : on n'abandonne pas la saisie de l'opérateur au premier refus.
+    expect(sujet.confirme()).toBe('nouveau');
+  });
+
+  it('valide quand les deux champs sont enregistrés', async () => {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    await validerApresEnregistrement({
+      enregistreurs: [champ(async () => null, erreurs), champ(async () => null, erreurs)],
+      valider: async () => {
+        validations.push('valide');
+        return null;
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(validations).toEqual(['valide']);
+    expect(erreurs).toEqual([]);
   });
 });

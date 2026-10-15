@@ -30,7 +30,7 @@ describe('la taille des cibles', () => {
 
 describe('l\'écran des posts', () => {
   it('garde un contour de focus visible sur le sujet éditable', () => {
-    const regle = css.match(/\.jr-post-sujet:focus\s*\{([^}]*)\}/)?.[1];
+    const regle = css.match(/\.jr-post-champ:focus\s*\{([^}]*)\}/)?.[1];
     expect(regle, 'règle :focus du sujet introuvable').toBeDefined();
     expect(regle).not.toMatch(/outline:\s*none/);
     expect(regle).toMatch(/outline:\s*2px solid var\(--jr-accent\)/);
@@ -43,7 +43,7 @@ describe('l\'écran des posts', () => {
   });
 
   it('reste dans le barème de rayons (6, 10, 14, 999) et nomme la variante discrète', () => {
-    const regle = css.match(/\.jr-post-sujet\s*\{([^}]*)\}/)?.[1] ?? '';
+    const regle = css.match(/\.jr-post-champ\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(regle).not.toMatch(/border-radius/);
     expect(css).toMatch(/\.jr-bouton\.discret\s*\{/);
   });

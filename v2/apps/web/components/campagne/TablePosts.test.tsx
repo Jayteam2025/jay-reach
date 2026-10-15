@@ -6,6 +6,7 @@ import { BarreLot, TablePosts, type LignePostEcran, type TablePostsProps } from 
 
 // Les actions ne sont pas le sujet : ce test juge ce que l'écran MONTRE.
 vi.mock('../../app/actions/posts', () => ({
+  actionCorrigerAuteur: async () => ({ ok: true }),
   actionCorrigerSujet: async () => ({ ok: true }),
   actionRejeterPost: async () => ({ ok: true }),
   actionReouvrirPost: async () => ({ ok: true }),
@@ -19,14 +20,23 @@ const libelles: TablePostsProps['libelles'] = {
   auteurInconnu: t.ligne.auteurInconnu,
   voir: t.ligne.voir,
   sujetInvite: t.phrase.sujetInvite,
+  auteurInvite: t.phrase.auteurInvite,
   valider: t.actions.valider,
   rejeter: t.actions.rejeter,
   rouvrir: t.actions.rouvrir,
   resume: '3 posts attendent votre relecture',
-  personnes: '106 personnes n\'entrent pas en séquence tant que leur post n\'est pas validé',
+  personnes: 'jusqu\'à 106 personnes n\'entrent pas en séquence tant que leur post n\'est pas validé',
   toutValider: 'Tout valider (2)',
   lotBloque: 'Enregistrez ou annulez la modification d\'un sujet avant de tout valider.',
 };
+
+/** La phrase par défaut, telle que la page la compose : l'auteur ET le sujet s'y écrivent. */
+const MORCEAUX: LignePostEcran['morceaux'] = [
+  { texte: 'Je vous ai vu réagir au post de ' },
+  { champ: 'auteur' },
+  { texte: ' sur ' },
+  { champ: 'sujet' },
+];
 
 function ligne(sur: Partial<LignePostEcran> = {}): LignePostEcran {
   return {
@@ -35,17 +45,20 @@ function ligne(sur: Partial<LignePostEcran> = {}): LignePostEcran {
     publie: 'publié le 12/10',
     url: 'https://www.linkedin.com/feed/update/urn:li:activity:1',
     sujet: 'l\'adoption du CRM par les commerciaux',
-    avant: 'Je vous ai vu réagir au post de Christelle Moreau sur ',
-    apres: '',
+    morceaux: MORCEAUX,
     etat: 'pending',
     etatLibelle: 'en attente',
-    attente: '47 personnes attendent',
+    attente: 'jusqu\'à 47 personnes attendent',
     echeance: 'effacées le 28/10',
     tonEcheance: 'loin',
     etiquetteSujet: 'Sujet du post de Christelle Moreau',
+    etiquetteAuteur: 'Nom de l\'auteur du post, tel qu\'il partira',
     ...sur,
   };
 }
+
+/** L'apostrophe des libellés français sort échappée du rendu statique. */
+const echappe = (texte: string) => texte.replace(/'/g, '&#x27;');
 
 function rendu(lignes: LignePostEcran[], peutModifier = true) {
   return renderToStaticMarkup(
@@ -54,9 +67,11 @@ function rendu(lignes: LignePostEcran[], peutModifier = true) {
 }
 
 describe('l\'écran des posts à valider', () => {
-  it('montre la phrase telle qu\'elle partira, le sujet DANS la phrase', () => {
+  it('montre la phrase telle qu\'elle partira, l\'auteur et le sujet DANS la phrase', () => {
     const html = rendu([ligne()]);
-    expect(html).toMatch(/« Je vous ai vu réagir au post de <b>Christelle Moreau<\/b> sur <\/span><span[^>]*jr-post-sujet[^>]*>l&#x27;adoption du CRM par les commerciaux<\/span><span class="fixe"> »/);
+    expect(html).toContain('Je vous ai vu réagir au post de ');
+    expect(html).toMatch(/jr-post-champ[^>]*>Christelle Moreau<\/span>/);
+    expect(html).toMatch(/jr-post-champ[^>]*>l&#x27;adoption du CRM par les commerciaux<\/span>/);
     expect(html).toContain('contentEditable="true"');
   });
 
@@ -147,23 +162,68 @@ describe('la forme des lignes', () => {
     expect(html).toMatch(/<button[^>]*class="jr-bouton discret petit"[^>]*>Tout valider/);
   });
 
-  it('met le nom de l\'auteur en gras dans la phrase', () => {
-    expect(rendu([ligne()])).toContain('post de <b>Christelle Moreau<\/b> sur ');
-  });
-
   it('n\'a plus de style en ligne', () => {
     const source = readFileSync(new URL('./TablePosts.tsx', import.meta.url), 'utf8');
     expect(source).not.toMatch(/style=\{\{/);
   });
 });
 
-describe('l\'auteur dans la phrase', () => {
-  it('un auteur inconnu est mis en gras comme un auteur connu', () => {
-    const html = rendu([ligne({ auteur: null, avant: `Je vous ai vu réagir au post de ${t.ligne.auteurInconnu} sur ` })]);
-    expect(html).toContain(`post de <b>${t.ligne.auteurInconnu}</b> sur `);
+/**
+ * Le nom de l'auteur est ce qui PART dans le message. Avant, la phrase affichait le jeton brut
+ * `{{post_auteur}}` quand la capture n'avait pas su le lire, l'opérateur validait, et la garde
+ * continuait de retenir ses personnes sans qu'aucun écran ne permette de réparer.
+ */
+describe('l\'auteur s\'écrit dans la phrase, comme le sujet', () => {
+  it('ne montre JAMAIS le jeton brut : sans nom, c\'est l\'invite d\'édition', () => {
+    const html = rendu([ligne({ auteur: null })]);
+    expect(html).not.toContain('{{post_auteur}}');
+    expect(html).toContain(`data-invite="${echappe(t.phrase.auteurInvite)}"`);
   });
 
-  it('la phrase par défaut porte l\'auteur : sans lui, rien ne se mettrait en gras', () => {
-    expect(t.phrase.avant).toContain('{auteur}');
+  it('un auteur manquant interdit la validation quand la campagne le nomme', () => {
+    expect(rendu([ligne({ auteur: null })])).toMatch(/<button[^>]*disabled=""[^>]*>Valider<\/button>/);
+    expect(rendu([ligne({ auteur: null })])).not.toContain('Tout valider');
+  });
+
+  it('porte son étiquette d\'accessibilité propre, distincte de celle du sujet', () => {
+    const html = rendu([ligne()]);
+    expect(html).toContain('aria-label="Nom de l&#x27;auteur du post, tel qu&#x27;il partira"');
+    expect(html).toContain('aria-label="Sujet du post de Christelle Moreau"');
+  });
+
+  it('une campagne qui ne nomme que l\'auteur n\'offre pas d\'écrire un sujet qui ne partira pas', () => {
+    const html = rendu([
+      ligne({ sujet: null, morceaux: [{ texte: 'Vu votre réaction au post de ' }, { champ: 'auteur' }, { texte: '.' }] }),
+    ]);
+    expect(html).not.toContain(`data-invite="${t.phrase.sujetInvite}"`);
+    // Et « Valider » reste offert : le sujet ne partira pas, l'exiger serait du travail pour rien.
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Valider<\/button>/);
+  });
+
+  it('une accroche sans aucun champ ne rend rien d\'éditable', () => {
+    const html = rendu([ligne({ morceaux: [{ texte: 'Vu votre réaction à ce post.' }] })]);
+    expect(html).not.toContain('contentEditable');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Valider<\/button>/);
+  });
+});
+
+/**
+ * Sans accroche, la garde ne retient personne et l'épargne de purge n'existe pas : annoncer des
+ * personnes bloquées et une date d'effacement enverrait l'opérateur valider des posts pour rien
+ * (« une alerte fausse en éteint une vraie »). La page passe alors `null`.
+ */
+describe('ce que l\'écran n\'affirme pas', () => {
+  it('sans accroche, ni attente ni échéance sur la ligne', () => {
+    const html = rendu([ligne({ attente: null, echeance: null })]);
+    expect(html).not.toContain('jr-post-attente');
+    expect(html).not.toContain('jr-post-echeance');
+    expect(html).not.toContain('effacées');
+  });
+
+  it('et rien dans la barre non plus quand aucune personne n\'est retenue', () => {
+    const html = renderToStaticMarkup(
+      <TablePosts campagneId="c1" lignes={[ligne()]} peutModifier libelles={{ ...libelles, personnes: '' }} />,
+    );
+    expect(html).not.toContain('n\'entrent pas en séquence');
   });
 });
