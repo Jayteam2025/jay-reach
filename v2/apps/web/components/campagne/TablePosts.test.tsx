@@ -144,7 +144,7 @@ describe('la forme des lignes', () => {
     const html = rendu([ligne(), ligne({ id: 'p2' })]);
     expect(html.match(/jr-bouton principal/g)).toHaveLength(2); // un Valider par post
     expect(html).toMatch(/<button[^>]*class="jr-bouton discret"[^>]*>Rejeter</);
-    expect(html).toMatch(/<button[^>]*class="jr-bouton petit discret"[^>]*>Tout valider/);
+    expect(html).toMatch(/<button[^>]*class="jr-bouton discret petit"[^>]*>Tout valider/);
   });
 
   it('met le nom de l\'auteur en gras dans la phrase', () => {

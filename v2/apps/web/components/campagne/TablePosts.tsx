@@ -103,7 +103,7 @@ export function BarreLot({
   return (
     <span className="pousse jr-posts-lot">
       {bloque && <small className="jr-secondaire">{lotBloque}</small>}
-      <Bouton taille="petit" className="discret" onClick={onToutValider} disabled={pending || bloque} aria-busy={pending}>
+      <Bouton taille="petit" variante="discret" onClick={onToutValider} disabled={pending || bloque} aria-busy={pending}>
         {libelles.toutValider}
       </Bouton>
     </span>
@@ -244,7 +244,7 @@ function Ligne({
               </Bouton>
             ) : (
               <>
-                <Bouton className="discret" onClick={() => simple(actionRejeterPost)} disabled={pending}>
+                <Bouton variante="discret" onClick={() => simple(actionRejeterPost)} disabled={pending}>
                   {libelles.rejeter}
                 </Bouton>
                 {ligne.etat === 'pending' && (
