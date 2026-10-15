@@ -21,7 +21,9 @@
 //  16. fiche-post.ts : passer la quantité de `consume_provider_credit` de 1 à 2 — 14 rougit.
 //  17. message-values.ts : retirer la jointure `linkedin_posts` de REQUETE_LIGNE_INSCRIPTION — 15a et 15c rougissent.
 //  18. valeurs-contact.ts : retirer la jointure `linkedin_posts` de lireValeursContact — 15b et 15c rougissent.
+//  19. migration linkedin_posts : remettre `people_search,job_change` dans la reprise — 16b et 16c rougissent.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
+import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
 import {
@@ -693,8 +695,45 @@ async function deuxCheminsDeRendu() {
   check('15e. une fiche d\'une autre organisation n\'est lue par aucun des deux chemins', e3.post_auteur === undefined && a3.post_auteur === undefined, JSON.stringify([e3.post_auteur, a3.post_auteur]));
 }
 
+/** La partie « reprise » et la partie « auto-vérification » de la migration, telles qu'écrites dans le fichier. */
+function morceauxDeLaMigration() {
+  const sql = readFileSync(new URL('../../supabase/migrations/20261015092540_linkedin_posts.sql', import.meta.url), 'utf8');
+  const debut = sql.indexOf('create function pg_temp.cle_post');
+  const verif = sql.indexOf('-- La migration se vérifie elle-même.');
+  return { reprise: sql.slice(debut, verif), verification: sql.slice(verif) };
+}
+
+async function repriseDeLExistant() {
+  console.log('\n# la reprise de l\'existant : seulement post_engagement');
+  const m = await monde();
+  const source = await sourceDePost(m, URL_POST, 'Engageurs');
+  const signal = async (kind, ext, url) =>
+    (await q(`insert into signals (organization_id, source_id, external_id, kind, occurred_at, url) values ($1, $2, $3, $4::signal_kind, now(), $5) returning id`, [m.org, source, ext, kind, url])).rows[0].id;
+  const sPost = await signal('post_engagement', 'rep-post', URL_POST);
+  const sRech = await signal('people_search', 'rep-rech', 'https://www.linkedin.com/search/results/content/?keywords=prospection');
+  const sPoste = await signal('job_change', 'rep-poste', 'https://www.linkedin.com/in/dana-test/');
+
+  // Les sections précédentes ont laissé des signaux sans fiche (cas voulus) : l'auto-vérification de la
+  // migration lit toute la base, on ne garde donc que ceux de cette section (elle joue en dernier).
+  await q(`delete from signals where organization_id <> $1`, [m.org]);
+  const { reprise, verification } = morceauxDeLaMigration();
+  const client = await pool.connect();
+  try {
+    await client.query(reprise); // les fonctions pg_temp vivent le temps de la session
+    await client.query(verification);
+  } finally {
+    client.release();
+  }
+  const rattaches = (await q(`select id, linkedin_post_id from signals where id = any($1::uuid[])`, [[sPost, sRech, sPoste]])).rows;
+  const par = Object.fromEntries(rattaches.map((r) => [r.id, r.linkedin_post_id]));
+  const fiches = (await q(`select url from linkedin_posts where organization_id = $1`, [m.org])).rows;
+  check('16a. le signal post_engagement est rattaché', par[sPost] !== null);
+  check('16b. ni la recherche par mots-clés ni le changement de poste ne le sont', par[sRech] === null && par[sPoste] === null, JSON.stringify(par));
+  check('16c. aucune fiche créée pour leur adresse', fiches.length === 1 && fiches[0].url === URL_POST, JSON.stringify(fiches));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, repriseDeLExistant);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

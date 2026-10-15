@@ -46,7 +46,9 @@ alter table public.signals
 
 create index signals_linkedin_post_idx on public.signals (linkedin_post_id);
 
--- Reprise de l'existant. Reproduit `normaliserUrlPost` (packages/core/src/fonctions/sources.ts) :
+-- Reprise de l'existant : seulement les signaux `post_engagement`, les seuls qui viennent d'un post
+-- (les recherches par mots-clés et les changements de poste n'ont qu'une adresse de recherche ou de profil).
+-- Reproduit `normaliserUrlPost` (packages/core/src/fonctions/sources.ts) :
 -- identifiant d'activité pour un hôte LinkedIn, sinon hôte sans `www.` + chemin sans barre
 -- finale (paramètres et ancre retirés), sinon chaîne brute en minuscules sans barre finale.
 create function pg_temp.cle_post(p_url text) returns text language plpgsql immutable as $$
@@ -88,7 +90,7 @@ insert into public.linkedin_posts (organization_id, post_key, post_urn, url, exp
 select s.organization_id, pg_temp.cle_post(s.url), min(pg_temp.urn_post(s.url)), min(s.url),
        now() + interval '28 days'
   from public.signals s
- where s.kind = any('{post_engagement,people_search,job_change}'::signal_kind[])
+ where s.kind = 'post_engagement'
    and s.url is not null
  group by s.organization_id, pg_temp.cle_post(s.url)
 on conflict (organization_id, post_key) do nothing;
@@ -96,7 +98,7 @@ on conflict (organization_id, post_key) do nothing;
 update public.signals s
    set linkedin_post_id = p.id
   from public.linkedin_posts p
- where s.kind = any('{post_engagement,people_search,job_change}'::signal_kind[])
+ where s.kind = 'post_engagement'
    and s.url is not null
    and p.organization_id = s.organization_id
    and p.post_key = pg_temp.cle_post(s.url);
@@ -128,9 +130,17 @@ begin
   end if;
   if exists (
     select 1 from public.signals s
-     where s.kind = any('{post_engagement,people_search,job_change}'::signal_kind[])
+     where s.kind = 'post_engagement'
        and s.url is not null and s.linkedin_post_id is null
   ) then
-    raise exception 'des signaux de personne avec une url restent sans linkedin_post_id';
+    raise exception 'des signaux post_engagement avec une url restent sans linkedin_post_id';
+  end if;
+  -- Une recherche par mots-clés ou un changement de poste ne vient d'aucun post : leur url est
+  -- une adresse de recherche ou de profil, jamais une fiche à capturer.
+  if exists (
+    select 1 from public.signals s
+     where s.kind = any('{people_search,job_change}'::signal_kind[]) and s.linkedin_post_id is not null
+  ) then
+    raise exception 'un signal people_search ou job_change est rattaché à une fiche de post';
   end if;
 end $$;
