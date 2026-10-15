@@ -42,8 +42,16 @@
 //      `sqlFicheResoutCeQuEcritLaCampagne` dans `validerPost` — 29 et 29b rougissent.
 //  33. posts.ts : retirer `corrigerAuteurDePost` (ou lui faire écrire `author_name`) — 29d et 29e
 //      rougissent : la fiche sans auteur affichable redevient une impasse.
-//  34. migration linkedin_posts : remettre `interval '28 days'` en dur — 16d rougit (et le bloc
-//      d'auto-vérification de la migration lève).
+//  34. migration linkedin_posts : remettre `interval '28 days'` en dur — 16d et 16e rougissent.
+//  35. posts-fiches.ts : revenir à `coalesce(excluded.author_display_name, …)` dans le `do update`
+//      — 6c rougit : une capture reprend à l'opérateur le nom qu'il a écrit.
+//  36. posts-fiches.ts : retirer `and p.subject_attempts < $5` de la branche de rédaction — 28j et
+//      28k rougissent : un texte réfractaire rappelle le modèle à chaque passage.
+//  37. sujet-post-anthropic.ts : rendre `{ etat: 'refuse' }` quand le crédit est refusé — 28l
+//      rougit : une fiche brûle ses tentatives sans qu'aucun modèle ne l'ait vue.
+//  38. accroche-post.ts : remettre la jointure par `campaign_sources` seule dans
+//      `sqlAchatRetenuParUnPost` — 30b et 30c rougissent ; dans
+//      `sqlSourceAUneCampagneQuiNommeUnPost` — 30d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -76,6 +84,7 @@ import {
   prendreCreditAnthropic,
   fichesARattraper,
   ficheIncomplete,
+  TENTATIVES_SUJET_MAX,
   compterPostsAValiderDeCampagne,
   corrigerAuteurDePost,
   corrigerSujetDePost,
@@ -270,6 +279,23 @@ async function sujetOperateurSurvit() {
   check('6. `subject`, son origine et la relecture sont intacts',
     l.subject === 'la prospection par la preuve' && l.subject_origin === 'operator' && l.review_status === 'approved', JSON.stringify({ s: l.subject, o: l.subject_origin, r: l.review_status }));
   check('6b. le texte, lui, a été mis à jour', l.text_excerpt === 'Un texte tout autre, capturé plus tard.');
+
+  // Le nom d'auteur AFFICHÉ est une saisie de l'opérateur au même titre que le sujet : c'est le
+  // texte qui part dans le message. Une capture ultérieure qui lirait « Ana » là où l'opérateur a
+  // écrit « Christelle » lui reprendrait son travail sans un mot.
+  await q(`update linkedin_posts set author_display_name = 'Christelle' where id = $1`, [f.id]);
+  await enregistrerFichePost(pool, m.org, fiche(), { fenetreJours: FENETRE });
+  const l2 = (await lignesPost(m.org))[0];
+  check('6c. un nom d\'auteur affiché déjà posé n\'est jamais remplacé par une capture',
+    l2.author_display_name === 'Christelle', String(l2.author_display_name));
+  check('6d. `author_name`, identité technique écrite par la machine, suit la capture',
+    l2.author_name === 'Ana Test', String(l2.author_name));
+
+  // Et la protection ne doit pas figer un trou : un nom affiché vide se remplit toujours.
+  await q(`update linkedin_posts set author_display_name = '   ' where id = $1`, [f.id]);
+  await enregistrerFichePost(pool, m.org, fiche(), { fenetreJours: FENETRE });
+  check('6e. un nom affiché vide, lui, se remplit', (await lignesPost(m.org))[0].author_display_name === 'Ana',
+    String((await lignesPost(m.org))[0].author_display_name));
 }
 
 /** Réponse Voyager normalisée : profils dans `included`, total dans `data.paging`. */
@@ -530,7 +556,12 @@ function piloteFiche(texte, navigations) {
   };
 }
 /** Les dépendances du lot, et ce qu'elles ont vu. */
-function depsLot(texte = 'Recruter un commercial coûte cher, voici ce que nous avons mesuré.', redacteur = async () => null) {
+/** Un rédacteur factice qui écrit toujours le même sujet, dans la forme réelle (`IssueSujet`). */
+const ecrit = (sujet) => async () => ({ etat: 'ecrit', sujet });
+/** Le défaut : aucune clé de modèle, donc rien n'est demandé — et aucune tentative consommée. */
+const sansModele = async () => ({ etat: 'impossible' });
+
+function depsLot(texte = 'Recruter un commercial coûte cher, voici ce que nous avons mesuré.', redacteur = sansModele) {
   const vu = { navigations: [], ouvertures: 0, pauses: [] };
   return {
     vu,
@@ -682,7 +713,7 @@ async function rattrapageTraitement() {
   const m = await monde5(2, 20);
   const ligne = async (n) => (await q(`select * from linkedin_posts where organization_id = $1 and url = $2`, [m.org, urlN(n)])).rows[0];
 
-  const a = depsLot('', async () => 'jamais');
+  const a = depsLot('', ecrit('jamais'));
   let leve = null;
   try { await traiterFichePost(a.deps, { organizationId: m.org }); } catch (e) { leve = e; }
   const l1 = await ligne(1);
@@ -690,14 +721,14 @@ async function rattrapageTraitement() {
   check('13a. elle incrémente `capture_attempts` (1 -> 2), la fiche reste `pending`, sans texte ni sujet',
     l1.capture_attempts === 2 && l1.review_status === 'pending' && l1.text_excerpt === null && l1.subject === null, JSON.stringify([l1.capture_attempts, l1.review_status]));
 
-  const b = depsLot('Recruter un commercial coûte cher, voici ce que nous avons mesuré.', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  const b = depsLot('Recruter un commercial coûte cher, voici ce que nous avons mesuré.', async (t) => ({ etat: 'ecrit', sujet: `sujet de : ${t.slice(0, 8)}` }));
   await traiterFichePost(b.deps, { organizationId: m.org });
   const l2 = await ligne(1);
   check('13b. une page lisible complète le texte', l2.text_excerpt?.startsWith('Recruter') === true, String(l2.text_excerpt));
   check('13c. le sujet du rédacteur est rangé, d\'origine `model`', l2.subject === 'sujet de : Recruter' && l2.subject_origin === 'model', JSON.stringify([l2.subject, l2.subject_origin]));
 
   await q(`update linkedin_posts set subject = 'Mon sujet', subject_origin = 'operator', text_excerpt = null where id = $1`, [l2.id]);
-  const c = depsLot('Un autre texte lu sur la page.', async () => 'écrasement');
+  const c = depsLot('Un autre texte lu sur la page.', ecrit('écrasement'));
   await traiterFichePost(c.deps, { organizationId: m.org });
   const l3 = await ligne(1);
   check('13d. le sujet de l\'opérateur n\'est pas remplacé', l3.subject === 'Mon sujet' && l3.subject_origin === 'operator', JSON.stringify([l3.subject, l3.subject_origin]));
@@ -723,7 +754,7 @@ async function sujetSansRelecture() {
   check('28. un job est déposé même quand il n\'y a QUE des sujets à rédiger', (await jobsDe(m.org)).length === 1, JSON.stringify(await jobsDe(m.org)));
 
   // Le pilote lèverait sur toute lecture de page : la fiche ne doit JAMAIS être rouverte.
-  const { deps, vu } = depsLot('TEXTE RELU SUR LA PAGE', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  const { deps, vu } = depsLot('TEXTE RELU SUR LA PAGE', async (t) => ({ etat: 'ecrit', sujet: `sujet de : ${t.slice(0, 8)}` }));
   await traiterFichePost(deps, { organizationId: m.org });
   const l = (await q(`select subject, subject_origin, capture_attempts, text_excerpt from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
   check('28a. le sujet est écrit, à partir du texte DÉJÀ en base', l.subject === 'sujet de : Un texte' && l.subject_origin === 'model', JSON.stringify([l.subject, l.subject_origin]));
@@ -732,7 +763,7 @@ async function sujetSansRelecture() {
   check('28d. et sans compter une tentative de capture de plus', l.capture_attempts === 1 && l.text_excerpt?.startsWith('Un texte') === true, String(l.capture_attempts));
 
   // Le sujet écrit, il n'y a plus rien à faire : le lot suivant ne redemande rien.
-  const b = depsLot('TEXTE RELU SUR LA PAGE', async () => 'un second sujet');
+  const b = depsLot('TEXTE RELU SUR LA PAGE', ecrit('un second sujet'));
   await traiterFichePost(b.deps, { organizationId: m.org });
   const apres = (await q(`select subject from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
   check('28e. un sujet déjà écrit n\'est pas redemandé', apres.subject === 'sujet de : Un texte', String(apres.subject));
@@ -743,7 +774,7 @@ async function sujetSansRelecture() {
   await activerSessionLinkedIn(mixte.ctx, IP_FICHE);
   await enregistrerFichePost(pool, mixte.org, ficheN(53, VIDE), { fenetreJours: FENETRE });
   await enregistrerFichePost(pool, mixte.org, ficheN(54), { fenetreJours: FENETRE });
-  const x = depsLot('TEXTE RELU SUR LA PAGE', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  const x = depsLot('TEXTE RELU SUR LA PAGE', async (t) => ({ etat: 'ecrit', sujet: `sujet de : ${t.slice(0, 8)}` }));
   await traiterFichePost(x.deps, { organizationId: mixte.org });
   const parUrl = Object.fromEntries(
     (await q(`select id, url, subject, capture_attempts from linkedin_posts where organization_id = $1`, [mixte.org])).rows.map((r) => [r.url, r]),
@@ -758,6 +789,34 @@ async function sujetSansRelecture() {
     JSON.stringify([parUrl[urlN(53)].subject, parUrl[urlN(54)].subject]));
   check('28i. et la fiche complète n\'a pas pris une tentative de capture de plus',
     parUrl[urlN(54)].capture_attempts === 1, String(parUrl[urlN(54)].capture_attempts));
+
+  // UN TEXTE RÉFRACTAIRE. Le modèle répond, rien n'en sort : sans compteur, la fiche le rappelle
+  // à chaque passage pendant toute sa fenêtre, sur le crédit que le SCORING partage avec elle.
+  const refractaire = await monde();
+  await activerSessionLinkedIn(refractaire.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, refractaire.org, ficheN(55), { fenetreJours: FENETRE });
+  let appels = 0;
+  const refuse = async () => {
+    appels += 1;
+    return { etat: 'refuse' };
+  };
+  for (let i = 0; i < 5; i += 1) await traiterFichePost(depsLot('x', refuse).deps, { organizationId: refractaire.org });
+  const r55 = (await q(`select subject, subject_attempts from linkedin_posts where organization_id = $1`, [refractaire.org])).rows[0];
+  check('28j. cinq passages, mais le modèle n\'est rappelé que trois fois sur le même texte',
+    appels === TENTATIVES_SUJET_MAX && r55.subject_attempts === TENTATIVES_SUJET_MAX, `${appels} appel(s), ${r55.subject_attempts} tentative(s)`);
+  check('28k. et la fiche n\'est plus proposée au rattrapage',
+    (await fichesARattraper(pool, refractaire.org, { aRelire: 50, aRediger: 50 })).length === 0 && r55.subject === null);
+
+  // RIEN DEMANDÉ n'est pas une tentative : sans clé de modèle, ou le plafond du jour atteint, le
+  // lendemain change tout. Brûler les trois tentatives là-dessus condamnerait une fiche sans
+  // qu'aucun modèle ne l'ait jamais vue.
+  const sansCle = await monde();
+  await activerSessionLinkedIn(sansCle.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, sansCle.org, ficheN(56), { fenetreJours: FENETRE });
+  for (let i = 0; i < 4; i += 1) await traiterFichePost(depsLot('x').deps, { organizationId: sansCle.org });
+  const r56 = (await q(`select subject_attempts from linkedin_posts where organization_id = $1`, [sansCle.org])).rows[0];
+  check('28l. aucune clé de modèle : aucune tentative consommée, la fiche reste demandable',
+    r56.subject_attempts === 0 && (await fichesARattraper(pool, sansCle.org, { aRelire: 50, aRediger: 50 })).length === 1, String(r56.subject_attempts));
 }
 
 async function sujetCredit() {
@@ -1561,8 +1620,65 @@ async function validationExigeCeQuiPartira() {
   check('29c. et ses personnes entrent réellement en séquence', (await inscritsDe(u.org)).includes(sansSujet.contact_id), JSON.stringify(await inscritsDe(u.org)));
 }
 
+/** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
+async function parLeLienHistorique(campagne, source) {
+  await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
+  await q(`update campaigns set source_id = $2 where id = $1`, [campagne, source]);
+}
+
+async function lienHistoriqueSourceCampagne() {
+  console.log('\n# le lien historique `campaigns.source_id` vaut la table de liaison, dans les QUATRE endroits');
+  await demarrerBoss();
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE, { canal: 'email' });
+  const p = await engageurDUnPost(m, 72, { etat: 'pending' });
+  await parLeLienHistorique(m.campagne, p.source);
+  const liens = (await q(`select (select count(*)::int from campaign_sources where campaign_id = $1) as table_de_liaison, source_id from campaigns where id = $1`, [m.campagne])).rows[0];
+  check('30. la campagne n\'est reliée QUE par le lien historique', liens.table_de_liaison === 0 && liens.source_id === p.source, JSON.stringify(liens));
+
+  // 1. La garde : personne n'entre tant que le post n'est pas relu.
+  await tourDInscription(m.org);
+  check('30a. garde : personne n\'entre tant que le post n\'est pas relu', (await inscritsDe(m.org)).length === 0);
+
+  // 2. Le gel : « retenu mais payé » est exactement le défaut à éviter — la garde retient la
+  // personne pendant que l'argent de l'enrichissement part pour elle.
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [p.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  const enfiles = (await q(`select data from pgboss.job where name = 'enrichment.contact_connu' and data->>'organizationId' = $1`, [m.org])).rows.map((r) => r.data.contactId);
+  check('30b. gel : aucun achat enfilé pour une personne que la garde retient', !enfiles.includes(p.contact_id), JSON.stringify(enfiles));
+  const appelsFournisseur = [];
+  const warn = console.warn;
+  console.warn = () => undefined;
+  let issue;
+  try {
+    issue = await enrichirContactConnu(
+      { pool, cleFullEnrich: async () => 'cle-de-test', acheter: async (_c, e) => { appelsFournisseur.push(e); return { resultat: null, credits: 1 }; } },
+      { organizationId: m.org, contactId: p.contact_id },
+    );
+  } finally {
+    console.warn = warn;
+  }
+  check('30c. et la fonction qui dépense refuse elle-même, sans appeler le fournisseur',
+    issue === 'post_a_relire' && appelsFournisseur.length === 0, `${issue} / ${appelsFournisseur.length} appel(s)`);
+
+  // 3. L'écran : sans lui, la campagne retiendrait ses personnes avec un onglet Posts vide.
+  const lignes = await listerPostsDeCampagne(m.ctx, { campagneId: m.campagne });
+  check('30e. écran : le post est listé dans l\'onglet de la campagne', lignes.some((l) => l.id === p.fiche), `${lignes.length} ligne(s)`);
+  check('30f. et le badge de l\'onglet le compte', (await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })) === 1);
+  const retenues = await compterRetenuesParPost(pool, m.org, m.campagne);
+  check('30g. et le bandeau voit la campagne, sa source de post et sa personne retenue',
+    retenues.nommeUnPost === true && retenues.aUneSourceDePost === true && retenues.enAttenteDeValidation === 1, JSON.stringify(retenues));
+
+  // 4. L'épargne, EN DERNIER : elle efface, et un contrôle qui détruit ne doit pas emporter la
+  // preuve des suivants (la personne purgée faisait tomber les trois contrôles d'écran).
+  await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [p.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('30d. épargne : la personne survit tant que sa fiche attend dans sa fenêtre',
+    (await q(`select 1 from signals where id = $1`, [p.signal_id])).rowCount === 1);
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

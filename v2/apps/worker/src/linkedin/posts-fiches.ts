@@ -43,8 +43,14 @@ export function clePost(urlOuUrn: string): string {
  * Crée la fiche, ou la complète si elle existe.
  *
  * - un champ renseigné n'est jamais remplacé par un nul (une capture ratée ne défait pas la bonne) ;
- * - `subject`, `subject_origin` et la relecture ne sont pas touchés : un sujet posé par
- *   l'opérateur survit à toute nouvelle capture ;
+ * - `subject`, `subject_origin`, `subject_attempts` et la relecture ne sont pas touchés : un sujet
+ *   posé par l'opérateur survit à toute nouvelle capture ;
+ * - `author_display_name` non vide n'est jamais remplacé DU TOUT, même par une capture qui réussit.
+ *   C'est le texte qui part dans un message, et l'opérateur l'écrit à l'écran comme il écrit le
+ *   sujet : une relecture qui lirait un autre nom lui reprendrait son travail sans un mot. La même
+ *   protection que `where subject is null` côté sujet, et elle vaut aussi contre une seconde
+ *   lecture qui réussirait moins bien que la première. `author_name`, lui, est l'identité
+ *   technique : il n'est écrit que par la machine et suit la capture ;
  * - `expires_at` est posé à la création seulement ;
  * - `capture_attempts` compte chaque appel.
  */
@@ -67,7 +73,10 @@ export async function enregistrerFichePost(
        post_urn = coalesce(excluded.post_urn, linkedin_posts.post_urn),
        author_kind = coalesce(excluded.author_kind, linkedin_posts.author_kind),
        author_name = coalesce(excluded.author_name, linkedin_posts.author_name),
-       author_display_name = coalesce(excluded.author_display_name, linkedin_posts.author_display_name),
+       author_display_name = case
+         when coalesce(btrim(linkedin_posts.author_display_name), '') <> '' then linkedin_posts.author_display_name
+         else coalesce(excluded.author_display_name, linkedin_posts.author_display_name)
+       end,
        author_public_name = coalesce(excluded.author_public_name, linkedin_posts.author_public_name),
        author_url = coalesce(excluded.author_url, linkedin_posts.author_url),
        posted_at = coalesce(excluded.posted_at, linkedin_posts.posted_at),
@@ -129,6 +138,22 @@ export const SQL_FICHE_INCOMPLETE = '(p.author_name is null or p.text_excerpt is
 /** Tentatives de capture au-delà desquelles une fiche n'est plus redemandée (un post supprimé ne se redemande pas). */
 export const TENTATIVES_MAX = 3;
 
+/**
+ * Appels au modèle, pour UN texte, au-delà desquels on cesse de demander son sujet.
+ *
+ * Même esprit, et même valeur, que `TENTATIVES_MAX` : un texte dont le modèle ne tire rien à la
+ * troisième lecture n'en donnera pas davantage à la trentième. Sans cette borne, une poignée de
+ * posts réfractaires rappellent le modèle à CHAQUE passage pendant toute la fenêtre de décision
+ * (vingt-huit jours par défaut, un passage par heure) — et le crédit qu'ils dépensent est celui
+ * du scoring, qui partage le même plafond : quelques posts peuvent en affamer l'organisation
+ * entière. L'opérateur, lui, garde la main : il écrit le sujet à l'écran.
+ *
+ * Ne comptent QUE les appels où le modèle a réellement été sollicité (`etat: 'refuse'`). Un texte
+ * vide, un plafond du jour atteint ou une organisation sans clé ne consomment aucune tentative :
+ * le lendemain, ou la clé saisie, change tout.
+ */
+export const TENTATIVES_SUJET_MAX = 3;
+
 export type FicheARattraper = {
   id: string;
   url: string;
@@ -148,11 +173,12 @@ export type FicheARattraper = {
  *  - **à relire** (`a_relire` vrai) : les fiches INCOMPLÈTES, sous le plafond de tentatives, dans
  *    leur fenêtre. Chacune coûte une page LinkedIn, donc `limites.aRelire` est ce que les plafonds
  *    de requêtes laissent passer. Les moins tentées d'abord, puis les plus récentes.
- *  - **à rédiger seulement** (`a_relire` faux) : les fiches COMPLÈTES dont le sujet manque. C'est
- *    le CHEMIN NOMINAL — une collecte qui réussit produit exactement ça — et sans cette seconde
- *    moitié le rédacteur n'aurait servi que les fiches ratées : l'opérateur aurait écrit à la main
- *    le sujet de chaque post collecté. Leur texte est déjà en base : rouvrir leur page dépenserait
- *    une requête LinkedIn et du budget horaire pour un contenu qu'on a déjà.
+ *  - **à rédiger seulement** (`a_relire` faux) : les fiches COMPLÈTES dont le sujet manque, sous le
+ *    plafond de tentatives de rédaction. C'est le CHEMIN NOMINAL — une collecte qui réussit produit
+ *    exactement ça — et sans cette seconde moitié le rédacteur n'aurait servi que les fiches
+ *    ratées : l'opérateur aurait écrit à la main le sujet de chaque post collecté. Leur texte est
+ *    déjà en base : rouvrir leur page dépenserait une requête LinkedIn et du budget horaire pour un
+ *    contenu qu'on a déjà.
  *
  * Dans les DEUX cas, une fiche `rejected` est écartée : un humain a dit non. La rouvrir dépenserait
  * une page LinkedIn, puis un crédit de modèle, pour écrire le sujet d'un post qu'il vient de
@@ -183,11 +209,12 @@ export async function fichesARattraper(
            and p.expires_at > now()
            and not ${SQL_FICHE_INCOMPLETE}
            and p.subject is null
+           and p.subject_attempts < $5
          order by p.created_at desc
          limit $4)
      ) f
      order by f.a_relire desc`,
-    [organizationId, TENTATIVES_MAX, limites.aRelire, limites.aRediger],
+    [organizationId, TENTATIVES_MAX, limites.aRelire, limites.aRediger, TENTATIVES_SUJET_MAX],
   );
   return r.rows;
 }

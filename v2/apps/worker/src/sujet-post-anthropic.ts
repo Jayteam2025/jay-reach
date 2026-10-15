@@ -30,19 +30,29 @@ export interface ConfigFournisseur {
   readonly prendreCredit: () => Promise<boolean>;
 }
 
-/** Le contrat du rédacteur, sans fournisseur : prouvable sans réseau. */
+/**
+ * Le contrat du rédacteur, sans fournisseur : prouvable sans réseau.
+ *
+ * Il dit ce qu'il a FAIT, pas seulement ce qu'il rend, parce que l'appelant compte les tentatives
+ * et que deux « pas de sujet » ne se paient pas pareil. La frontière est le crédit : tant qu'il
+ * n'est pas pris, rien n'a été demandé au modèle (`impossible`, aucune tentative) ; une fois pris,
+ * c'est une tentative (`refuse`), que le modèle ait répondu quelque chose d'inutilisable ou que
+ * l'appel ait échoué — dans les deux cas le crédit est parti, et recommencer sur le même texte
+ * dans l'heure redonnera la même chose.
+ */
 export function creerRedacteurDeSujet(deps: {
   readonly appeler: AppelModeleSujet;
   readonly prendreCredit: () => Promise<boolean>;
 }): RedacteurDeSujet {
   return async (texte) => {
-    if (texte.trim() === '') return null;
-    if (!(await deps.prendreCredit())) return null;
+    if (texte.trim() === '') return { etat: 'impossible' };
+    if (!(await deps.prendreCredit())) return { etat: 'impossible' };
     try {
-      return nettoyerSujetPost(await deps.appeler(texte));
+      const sujet = nettoyerSujetPost(await deps.appeler(texte));
+      return sujet === null ? { etat: 'refuse' } : { etat: 'ecrit', sujet };
     } catch {
       // Le message d'une erreur fournisseur peut porter une URL ou une clé : rien n'en sort.
-      return null;
+      return { etat: 'refuse' };
     }
   };
 }

@@ -50,8 +50,20 @@ import { enregistrerFichePost, fenetreValidationPost, fichesARattraper } from '.
 
 export type FichePostJob = { organizationId: string };
 
-/** Le texte d'un post, ramené à un sujet nommable ; `null` quand le modèle ne sait pas en tirer un. */
-export type RedacteurDeSujet = (texte: string) => Promise<string | null>;
+/**
+ * Ce qu'un appel au rédacteur a donné. Trois issues, et pas un `string | null`, parce que deux
+ * façons de n'avoir pas de sujet ne se comptent pas pareil :
+ *
+ *  - `refuse` : le modèle a été sollicité, le crédit est parti, rien d'utilisable n'en sort. C'est
+ *    une TENTATIVE — le même texte redonnera la même chose au passage suivant.
+ *  - `impossible` : rien n'a été demandé (texte vide, plafond du jour atteint, pas de clé). Ce
+ *    n'est pas une tentative : le lendemain, ou la clé saisie, change tout, et brûler les
+ *    tentatives d'une fiche là-dessus la condamnerait sans qu'aucun modèle ne l'ait jamais vue.
+ */
+export type IssueSujet = { readonly etat: 'ecrit'; readonly sujet: string } | { readonly etat: 'refuse' } | { readonly etat: 'impossible' };
+
+/** Le texte d'un post, ramené à un sujet nommable. */
+export type RedacteurDeSujet = (texte: string) => Promise<IssueSujet>;
 
 /** Tout ce que le handler touche hors base, injecté pour que le harnais Postgres le joue sans LinkedIn. */
 export interface DependancesFichePost {
@@ -181,13 +193,22 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
 
       // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
       if (ligne.subject === null && texte !== null) {
-        redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => null);
-        const sujet = await redacteur(texte).catch(() => null);
-        if (sujet !== null) {
+        const indisponible: IssueSujet = { etat: 'impossible' };
+        redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => indisponible);
+        const issue = await redacteur(texte).catch(() => indisponible);
+        if (issue.etat === 'ecrit') {
           await pool.query(
             `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
               where organization_id = $1 and id = $2 and subject is null`,
-            [job.organizationId, ligne.id, sujet],
+            [job.organizationId, ligne.id, issue.sujet],
+          );
+        } else if (issue.etat === 'refuse') {
+          // Le modèle a vu ce texte et n'en a rien tiré : une tentative de moins avant de cesser
+          // de le lui redemander. `TENTATIVES_SUJET_MAX` dit pourquoi.
+          await pool.query(
+            `update linkedin_posts set subject_attempts = subject_attempts + 1 /* jr:fiche_post_sujet_tentative */
+              where organization_id = $1 and id = $2`,
+            [job.organizationId, ligne.id],
           );
         }
       }
@@ -200,7 +221,8 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
 
 /**
  * Les dépendances réelles. Le rédacteur est celui d'Anthropic, avec la clé de l'organisation ; sans
- * clé, il rend `null` (la fiche garde son sujet vide, l'opérateur le saisit).
+ * clé, il rend `impossible` (la fiche garde son sujet vide et toutes ses tentatives, l'opérateur
+ * le saisit à l'écran ou saisit sa clé).
  */
 export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string): DependancesFichePost {
   return {
@@ -212,7 +234,9 @@ export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string):
     redacteurPour: async (organizationId) => {
       const credentials = await resolveProviderCredentials(pool, organizationId, 'anthropic', { encryptionKey });
       const apiKey = credentials?.api_key;
-      if (!apiKey) return async () => null;
+      // Pas de clé : rien n'est demandé, donc aucune tentative n'est consommée. La fiche reste
+      // demandable le jour où l'opérateur saisit sa clé.
+      if (!apiKey) return async () => ({ etat: 'impossible' });
       return createAnthropicRedacteurDeSujet({
         apiKey,
         config: { model_smart: credentials?.model_smart },

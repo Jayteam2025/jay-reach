@@ -22,6 +22,11 @@ create table public.linkedin_posts (
   text_excerpt text,
   subject text,
   subject_origin text check (subject_origin in ('model', 'operator')),
+  -- Appels au modèle qui n'ont rien donné, pour CE texte. Même esprit que `capture_attempts` :
+  -- un post dont le modèle ne sait tirer aucun sujet ne se redemande pas indéfiniment. Sans ce
+  -- compteur, une poignée de posts réfractaires rappellent le modèle à chaque passage pendant
+  -- toute la fenêtre de décision, sur le crédit que le SCORING partage avec eux.
+  subject_attempts integer not null default 0,
   review_status text not null default 'pending' check (review_status in ('pending', 'approved', 'rejected')),
   reviewed_at timestamptz,
   reviewed_by uuid,
@@ -155,6 +160,12 @@ begin
      where table_schema = 'public' and table_name = 'signals' and column_name = 'linkedin_post_id'
   ) then
     raise exception 'colonne signals.linkedin_post_id absente';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'linkedin_posts' and column_name = 'subject_attempts'
+  ) then
+    raise exception 'colonne linkedin_posts.subject_attempts absente';
   end if;
   if not exists (
     select 1 from pg_constraint
