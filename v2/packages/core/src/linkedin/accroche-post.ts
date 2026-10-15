@@ -159,12 +159,18 @@ export function sqlFichePostEnAttente(signal: string): string {
 }
 
 /**
- * « Une campagne reliée à cette source nomme le post. »
+ * « Une campagne NON ARCHIVÉE reliée à cette source nomme le post. »
  *
- * AU MOINS UNE, et sans regarder son statut : c'est le quantificateur de l'ÉPARGNE, dont
- * l'erreur coûteuse est d'effacer à tort — une campagne mise en pause une semaine est
- * précisément le cas ordinaire que la fenêtre de décision existe pour couvrir, et l'épargne
- * reste bornée par `expires_at` de toute façon.
+ * AU MOINS UNE : c'est le quantificateur de l'ÉPARGNE, dont l'erreur coûteuse est d'effacer à
+ * tort, irréversiblement.
+ *
+ * `draft` et `paused` comptent : une campagne mise en pause une semaine, ou encore en
+ * préparation, est précisément le cas ordinaire que la fenêtre de décision existe pour couvrir,
+ * et l'épargne reste bornée par `expires_at` de toute façon.
+ *
+ * `archived` ne compte PAS, et c'est le seul statut exclu : une campagne archivée n'attend plus
+ * rien. Garder pour elle le nom et l'intitulé de personnes jamais contactées, c'est payer la
+ * rétention sans en acheter le bénéfice — exactement ce que l'arbitrage de la fenêtre a tranché.
  *
  * @param source expression SQL qui donne l'id de la source (`s.source_id`)
  */
@@ -173,6 +179,7 @@ export function sqlSourceAUneCampagneQuiNommeUnPost(source: string): string {
             select 1 from public.campaign_sources cs_at
               join public.campaigns cp_at on cp_at.id = cs_at.campaign_id
              where cs_at.source_id = ${source}
+               and cp_at.status <> 'archived'
                and ${sqlCampagneNommeUnPost('cp_at.id')})`;
 }
 

@@ -21,6 +21,7 @@ import {
   sqlAchatRetenuParUnPost,
   sqlCampagneNommeUnPost,
   sqlEpargneParUnPostARelire,
+  sqlFichePostEnAttente,
   sqlFichePostUtilisable,
   placesRestantes,
   plafondDuJour,
@@ -751,21 +752,24 @@ export async function enqueueEnrichmentContactsConnus(
  * terminé) ; l'index partiel d'`enrollments` refuse de toute façon une
  * seconde inscription vivante.
  */
-export async function enqueueEnrollments(
-  boss: PgBoss,
-  pool: Pool,
-  opts: { limit?: number } = {},
-): Promise<number> {
-  const limit = opts.limit ?? 50;
-  const res = await pool.query<{
-    organization_id: string;
-    campaign_id: string;
-    contact_id: string;
-    signal_id: string;
-  }>(
-    `select distinct on (ct.id)
-            ct.organization_id, c.id as campaign_id, ct.id as contact_id, s.id as signal_id
-       from contacts ct
+/**
+ * Les paires (contact, campagne) ÉLIGIBLES, avant la garde du post : toutes les conditions
+ * d'entrée sauf celle-là.
+ *
+ * UNE écriture, DEUX lectures : la requête qui enfile les inscriptions, et celle qui compte ce
+ * que la garde retient. Deux copies auraient divergé, et le décompte aurait fini par annoncer
+ * des personnes que la production n'aurait de toute façon pas prises — un chiffre faux est pire
+ * qu'aucun chiffre. Aucun paramètre SQL ici : chaque lecture ajoute les siens.
+ *
+ * UNE FONCTION, ET SURTOUT PAS UNE CONSTANTE DE MODULE. Ce fichier est pris dans un cycle
+ * d'imports (`posts-fiches.ts` lit `AGE_MAX_SIGNAL_JOURS` d'ici), et un cycle ne pardonne que le
+ * travail DIFFÉRÉ : une constante qui appelle `sqlCampagneSansEmail` au chargement explose en
+ * « is not a function » quand le module d'en face n'est pas encore initialisé. Mesuré : la suite
+ * de `post-engagement.test.ts` est tombée dessus à la première écriture de ce correctif. Tout
+ * appel inter-module de ce fichier doit rester dans un corps de fonction.
+ */
+function sqlPairesEligibles(): string {
+  return `       from contacts ct
        join signals s on s.id = ct.source_signal_id
        join campaigns c on c.organization_id = ct.organization_id
         and c.status = 'active'
@@ -796,15 +800,6 @@ export async function enqueueEnrollments(
                  and not ${sqlCampagneSansEmail('c.id' as FragmentSql)})
        -- Score minimum de la campagne, absent = aucune exigence.
         and coalesce(s.score, 0) >= coalesce((c.entry_rules ->> 'min_score')::int, 0)
-       -- LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST » : une campagne qui nomme le post
-       -- n'inscrit que sur une fiche relue par un humain ET utilisable (nom AFFICHÉ de l'auteur
-       -- et sujet renseignés). Mesuré le 14/10/2026 : nommer le post fait 31,1 % de réponses
-       -- contre 0 %, et le nommer de travers défait la campagne. Une campagne qui ne le nomme
-       -- pas n'est pas touchée : le lot ne gèle aucune campagne existante.
-       -- Le signal lu est s, celui que l'inscription portera (signal_id ci-dessous), donc celui
-       -- que le chemin d'ENVOI relira : garde et envoi ne peuvent pas être en désaccord sur le
-       -- post nommé. Contrôle autoritaire refait dans enrollContact.
-        and (not ${sqlCampagneNommeUnPost('c.id')} or ${sqlFichePostUtilisable('c.id', 's')})
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
        -- correction 2), pour le pré-filtre ci-dessous : cette requête mélange
        -- potentiellement plusieurs organisations en un seul passage, contrairement
@@ -832,11 +827,95 @@ export async function enqueueEnrollments(
           select 1 from enrollments e
            where e.contact_id = ct.id
              and e.status in ('active', 'paused', 'paused_absence')
-        )
+        )`;
+}
+
+/**
+ * LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST » : une campagne qui nomme le post n'inscrit que
+ * sur une fiche relue par un humain ET qui résout les variables qu'elle écrit.
+ *
+ * Mesuré le 14/10/2026 : nommer le post fait 31,1 % de réponses contre 0 %, et le nommer de
+ * travers défait la campagne. Une campagne qui ne le nomme pas n'est pas touchée : le lot ne
+ * gèle aucune campagne existante.
+ *
+ * Le signal lu est `s`, celui que l'inscription portera (`signal_id`), donc celui que le chemin
+ * d'ENVOI relira : garde et envoi ne peuvent pas être en désaccord sur le post nommé. Contrôle
+ * autoritaire refait dans `enrollContact` ; ce qu'elle retient est COMPTÉ et JOURNALISÉ par
+ * `journaliserRetenuesParLaGarde` ci-dessous.
+ *
+ * Fonction, pas constante, pour la même raison que `sqlPairesEligibles` ci-dessus.
+ */
+function sqlGardeDuPost(): string {
+  return `(not ${sqlCampagneNommeUnPost('c.id')} or ${sqlFichePostUtilisable('c.id', 's')})`;
+}
+
+/**
+ * Dit, campagne par campagne, combien de personnes la garde du post retient et POURQUOI.
+ *
+ * Sans cette trace, une campagne qui retient toute sa population serait indistinguable d'une
+ * campagne sans candidat : le producteur ne rend qu'un total enfilé, et le pré-filtre écarte les
+ * paires avant que `enrollContact` n'ait l'occasion de journaliser quoi que ce soit. C'est le
+ * silence que ce lot existe pour supprimer, et ce dépôt l'a déjà payé plusieurs fois.
+ *
+ * Même population que la requête qui enfile (`sqlPairesEligibles`), garde inversée : ce sont
+ * exactement les personnes que la garde — et elle seule — a écartées. Celles que le plafond du
+ * jour reporte ont déjà leur propre ligne, celles qui n'ont pas la persona ou le score n'entrent
+ * dans aucune des deux.
+ *
+ * Les trois motifs sont ceux que `compterRetenuesParPost` expose à l'écran (tâche 10) : une
+ * personne a le même motif dans toutes ses paires (il ne dépend que de son signal), donc les
+ * trois comptes de personnes distinctes s'additionnent sans doublon.
+ *
+ * Ne lève jamais : une trace manquante ne doit pas empêcher des inscriptions de partir.
+ */
+async function journaliserRetenuesParLaGarde(pool: Pool): Promise<void> {
+  try {
+    const res = await pool.query<{ campaign_id: string; attente: number; sans_post: number; inexploitable: number }>(
+      `select c.id as campaign_id, /* jr:enroll_retenues_post */
+              count(distinct ct.id) filter (where ${sqlFichePostEnAttente('s')})::int as attente,
+              count(distinct ct.id) filter (where s.linkedin_post_id is null)::int as sans_post,
+              count(distinct ct.id) filter (where s.linkedin_post_id is not null
+                                              and not ${sqlFichePostEnAttente('s')})::int as inexploitable
+       ${sqlPairesEligibles()}
+        and not ${sqlGardeDuPost()}
+      group by c.id`,
+    );
+    for (const r of res.rows) {
+      const total = r.attente + r.sans_post + r.inexploitable;
+      if (total === 0) continue;
+      console.warn(
+        `[enroll] campagne ${r.campaign_id} : ${total} personne(s) retenue(s) par la validation du post ` +
+          `(${r.attente} en attente de validation, ${r.sans_post} sans post, ${r.inexploitable} fiche inexploitable)`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[enroll] décompte des personnes retenues par la validation du post indisponible (${err instanceof Error ? err.name : 'erreur'})`);
+  }
+}
+
+export async function enqueueEnrollments(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? 50;
+  const res = await pool.query<{
+    organization_id: string;
+    campaign_id: string;
+    contact_id: string;
+    signal_id: string;
+  }>(
+    `select distinct on (ct.id)
+            ct.organization_id, c.id as campaign_id, ct.id as contact_id, s.id as signal_id
+     ${sqlPairesEligibles()}
+        and ${sqlGardeDuPost()}
       order by ct.id, s.score desc nulls last, c.created_at
       limit $1`,
     [limit],
   );
+  // APRÈS la requête de candidats, et jamais avant : `post-engagement.test.ts` lit la PREMIÈRE
+  // requête émise pour vérifier que la décision regarde bien la séquence de la campagne.
+  await journaliserRetenuesParLaGarde(pool);
 
   const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
   // Une campagne appartient à une seule organisation : `res.rows` en porte déjà

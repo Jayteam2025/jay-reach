@@ -201,15 +201,24 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
   }
 
   /** Motifs des requêtes d'`enqueueEnrollments`. */
+  // Testé AVANT `CANDIDATS` : le décompte des personnes retenues par la garde du post partage
+  // la population de la requête de candidats (`sqlPairesEligibles`), donc il porte lui aussi
+  // « from contacts ct ». Seul son marqueur les distingue.
+  const RETENUES_POST = /jr:enroll_retenues_post/i;
   const CANDIDATS = /from contacts ct/i;
   const CAPS = /select id, daily_cap from campaigns where id = any/i;
   const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
   const ENTREES_DU_JOUR = /from enrollments\s+where campaign_id/i;
 
-  function creerPoolFactice(dailyCap: number | null, entreesDuJour: number): { pool: Pool; appels: Appel[] } {
+  function creerPoolFactice(
+    dailyCap: number | null,
+    entreesDuJour: number,
+    retenues: unknown[] = [],
+  ): { pool: Pool; appels: Appel[] } {
     const appels: Appel[] = [];
     const query = vi.fn(async (sql: string, values: unknown[] = []) => {
       appels.push({ sql, values });
+      if (RETENUES_POST.test(sql)) return { rows: retenues, rowCount: retenues.length };
       if (CANDIDATS.test(sql)) {
         return {
           rows: [{ organization_id: ORG_ID, campaign_id: CAMPAIGN_ID, contact_id: CONTACT_ID, signal_id: SIGNAL_ID }],
@@ -223,6 +232,45 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
     });
     return { pool: { query } as unknown as Pool, appels };
   }
+
+  /**
+   * Sans cette trace, une campagne qui retient TOUTE sa population est indistinguable d'une
+   * campagne sans candidat : `enqueueEnrollments` ne rend qu'un total enfilé, et le pré-filtre
+   * écarte les paires avant que `enrollContact` n'ait l'occasion de journaliser. Le motif
+   * compte autant que le nombre — c'est lui qui dit à l'opérateur quoi faire.
+   */
+  it('journalise, campagne par campagne, combien de personnes la garde du post retient et pourquoi', async () => {
+    const { pool, appels } = creerPoolFactice(null, 0, [
+      { campaign_id: CAMPAIGN_ID, attente: 7, sans_post: 3, inexploitable: 2 },
+    ]);
+    const { boss } = fauxBoss();
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await enqueueEnrollments(boss, pool);
+
+    const compte = appels.find((a) => RETENUES_POST.test(a.sql));
+    expect(compte).toBeDefined();
+    // La même population que la requête de candidats, garde INVERSÉE : sinon le décompte
+    // annoncerait des personnes que la production n'aurait de toute façon pas prises.
+    expect(compte!.sql).toContain('from contacts ct');
+    expect(compte!.sql).toMatch(/and not \(not exists/);
+    expect(avertissements).toHaveBeenCalledWith(
+      `[enroll] campagne ${CAMPAIGN_ID} : 12 personne(s) retenue(s) par la validation du post ` +
+        '(7 en attente de validation, 3 sans post, 2 fiche inexploitable)',
+    );
+  });
+
+  it('ne journalise rien quand la garde ne retient personne', async () => {
+    const { pool } = creerPoolFactice(null, 0, [
+      { campaign_id: CAMPAIGN_ID, attente: 0, sans_post: 0, inexploitable: 0 },
+    ]);
+    const { boss } = fauxBoss();
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await enqueueEnrollments(boss, pool);
+
+    expect(avertissements).not.toHaveBeenCalledWith(expect.stringContaining('validation du post'));
+  });
 
   it('le pré-filtre de plafond ET le comptage qui suit lisent le jour de l’organisation, jamais celui du serveur', async () => {
     const { pool, appels } = creerPoolFactice(5, 2);

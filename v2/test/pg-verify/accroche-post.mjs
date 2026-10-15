@@ -778,6 +778,21 @@ async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement
 const inscritsDe = async (org) =>
   (await q(`select contact_id from enrollments where organization_id = $1`, [org])).rows.map((r) => r.contact_id);
 
+/** Joue `f` en captant ce que le moteur écrit dans ses journaux. */
+async function enEcoutant(f) {
+  const lignes = [];
+  const log = console.log;
+  const warn = console.warn;
+  console.log = (...a) => lignes.push(a.join(' '));
+  console.warn = (...a) => lignes.push(a.join(' '));
+  try {
+    return { valeur: await f(), lignes };
+  } finally {
+    console.log = log;
+    console.warn = warn;
+  }
+}
+
 /**
  * Un tour complet de production des inscriptions : le producteur dépose, le traitement inscrit.
  * `limit` large car la requête balaie TOUTES les organisations du harnais d'un seul passage.
@@ -798,12 +813,20 @@ async function gardeDEntree() {
   await etapeAvecCorps(m, ACCROCHE);
   const attente = await engageurDUnPost(m, 21, { etat: 'pending' });
 
-  const deposes = await tourDInscription(m.org);
+  const { valeur: deposes, lignes: journal } = await enEcoutant(() => tourDInscription(m.org));
   check('17. fiche `pending` : personne n\'est inscrit', (await inscritsDe(m.org)).length === 0, JSON.stringify(await inscritsDe(m.org)));
   // Le PRÉ-FILTRE du producteur, distinct du contrôle autoritaire : sans lui, un job serait
   // déposé chaque jour pour une personne que l'inscription refuse, et la file se remplirait de
   // travail nul sans que rien ne le dise.
   check('17-a. et aucun job d\'inscription n\'est déposé pour elle', deposes.length === 0, JSON.stringify(deposes));
+  // Une campagne qui retient toute sa population doit être indistinguable d'une campagne SANS
+  // candidat pour personne : ni pour l'opérateur, ni dans les journaux du moteur. Le décompte
+  // dit COMBIEN et POURQUOI, campagne par campagne.
+  const traceRetenues = journal.find((l) => l.includes(m.campagne) && l.includes('validation du post'));
+  check('17-b. le moteur journalise ce que la garde retient, par campagne et par motif',
+    traceRetenues !== undefined && /1 personne\(s\) retenue\(s\)/.test(traceRetenues)
+      && /1 en attente de validation/.test(traceRetenues) && /0 sans post/.test(traceRetenues)
+      && /0 fiche inexploitable/.test(traceRetenues), String(traceRetenues));
 
   await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [attente.fiche]);
   await tourDInscription(m.org);
@@ -985,6 +1008,13 @@ async function epargneReelle() {
   await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
   check('20f. la campagne qui nomme le post est en pause : la personne est épargnée quand même',
     (await q(`select 1 from signals where id = $1`, [attendue.signal_id])).rowCount === 1);
+
+  // Archivée, en revanche, elle n'attend plus rien : garder le nom et l'intitulé d'une personne
+  // pour une campagne que personne ne reprendra, c'est payer la rétention sans le bénéfice.
+  await q(`update campaigns set status = 'archived' where id = $1`, [campagneQuiNomme]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('20g. la campagne qui nomme le post est archivée : la personne est effacée à l\'échéance ordinaire',
+    (await q(`select 1 from signals where id = $1`, [attendue.signal_id])).rowCount === 0);
 }
 
 async function gelDeLaDepense() {
