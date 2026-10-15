@@ -160,11 +160,13 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
     // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
     let redacteur: RedacteurDeSujet | null = null;
     // Lue UNE fois pour tout le lot, et seulement si une fiche doit être réécrite : c'est un
-    // réglage d'organisation, pas une constante.
-    const fenetreJours = aRelire ? await fenetreValidationPost(pool, job.organizationId) : 0;
+    // réglage d'organisation, pas une constante. `null` — et surtout pas 0 — quand il n'y a rien à
+    // relire : une fenêtre de 0 jour ferait expirer chaque fiche à la seconde où elle naît, donc
+    // ce chiffre ne doit jamais exister à portée de `enregistrerFichePost`.
+    const fenetreJours = aRelire ? await fenetreValidationPost(pool, job.organizationId) : null;
     for (const ligne of fiches) {
       let texte = ligne.text_excerpt;
-      if (ligne.a_relire && pilote) {
+      if (ligne.a_relire && pilote && fenetreJours !== null) {
         // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
         await d.pause(delaiAleatoire());
         // AVANT l'ouverture : la trace dit ce qui est parti, et une page dont la lecture échoue est
