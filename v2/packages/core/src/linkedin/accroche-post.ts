@@ -212,10 +212,9 @@ export function sqlSourceAlimenteLaCampagne(campagne: string, source: string): s
  */
 export function sqlSourceAUneCampagneQuiNommeUnPost(source: string): string {
   return `exists (
-            select 1 from public.campaign_sources cs_at
-              join public.campaigns cp_at on cp_at.id = cs_at.campaign_id
-             where cs_at.source_id = ${source}
-               and cp_at.status <> 'archived'
+            select 1 from public.campaigns cp_at
+             where cp_at.status <> 'archived'
+               and ${sqlSourceAlimenteLaCampagne('cp_at.id', source)}
                and ${sqlCampagneNommeUnPost('cp_at.id')})`;
 }
 
@@ -274,9 +273,9 @@ export function sqlEpargneParUnPostARelire(signal: string): string {
  * @param signal alias SQL du signal d'origine du contact (`s`)
  */
 export function sqlAchatRetenuParUnPost(signal: string): string {
-  const jointure = `from public.campaign_sources cs_ap
-                      join public.campaigns cp_ap on cp_ap.id = cs_ap.campaign_id
-                     where cs_ap.source_id = ${signal}.source_id and cp_ap.status = 'active'`;
+  const jointure = `from public.campaigns cp_ap
+                     where cp_ap.status = 'active'
+                       and ${sqlSourceAlimenteLaCampagne('cp_ap.id', `${signal}.source_id`)}`;
   return `(exists (select 1 ${jointure})
             and not exists (select 1 ${jointure}
                               and (not ${sqlCampagneNommeUnPost('cp_ap.id')}

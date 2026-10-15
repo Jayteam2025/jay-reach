@@ -23,6 +23,7 @@ import {
   sqlEpargneParUnPostARelire,
   sqlFichePostEnAttente,
   sqlFichePostUtilisable,
+  sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
   fuseauDeLOrganisation,
@@ -776,9 +777,12 @@ function sqlPairesEligibles(): string {
         and c.status = 'active'
        -- Le thème peut être rattaché de deux façons : directement sur la
        -- campagne, ou par la table de liaison quand elle en sert plusieurs.
-        and (c.source_id = s.source_id
-             or exists (select 1 from campaign_sources cs
-                         where cs.campaign_id = c.id and cs.source_id = s.source_id))
+       -- UNE écriture (sqlSourceAlimenteLaCampagne), QUATRE lectures : ici, le
+       -- gel de la dépense, l'épargne de purge et l'écran. Quand cette question
+       -- se répondait différemment d'un endroit à l'autre, une campagne reliée
+       -- par le lien historique voyait ses personnes retenues par la garde
+       -- pendant que l'argent de l'enrichissement partait pour elles.
+        and ${sqlSourceAlimenteLaCampagne('c.id', 's.source_id')}
        -- La persona du contact doit être explicitement acceptée.
         and ct.persona_id is not null
         and c.entry_rules -> 'personas' ? ct.persona_id::text
