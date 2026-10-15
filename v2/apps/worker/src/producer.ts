@@ -869,23 +869,45 @@ function sqlGardeDuPost(): string {
  *
  * Ne lève jamais : une trace manquante ne doit pas empêcher des inscriptions de partir.
  */
+/**
+ * Paires lues au plus par ce décompte. BORNÉE comme la requête d'enfilage l'est : c'est une trace,
+ * elle tourne à chaque passage du producteur, et une trace ne doit pas pouvoir coûter plus que le
+ * travail qu'elle commente. Vingt fois la limite d'enfilage (50), parce qu'un décompte clipé à
+ * cinquante n'apprendrait plus rien à personne. Quand la borne est atteinte, le journal dit « au
+ * moins » : ce dépôt n'affiche pas un chiffre qu'il ne mesure pas.
+ */
+export const LIMITE_JOURNAL_RETENUES = 1000;
+
 async function journaliserRetenuesParLaGarde(pool: Pool): Promise<void> {
   try {
-    const res = await pool.query<{ campaign_id: string; attente: number; sans_post: number; inexploitable: number }>(
-      `select c.id as campaign_id, /* jr:enroll_retenues_post */
-              count(distinct ct.id) filter (where ${sqlFichePostEnAttente('s')})::int as attente,
-              count(distinct ct.id) filter (where s.linkedin_post_id is null)::int as sans_post,
-              count(distinct ct.id) filter (where s.linkedin_post_id is not null
-                                              and not ${sqlFichePostEnAttente('s')})::int as inexploitable
-       ${sqlPairesEligibles()}
-        and not ${sqlGardeDuPost()}
-      group by c.id`,
+    const res = await pool.query<{
+      campaign_id: string;
+      paires: number;
+      attente: number;
+      sans_post: number;
+      inexploitable: number;
+    }>(
+      `select r.campaign_id, /* jr:enroll_retenues_post */
+              count(*)::int as paires,
+              count(distinct r.contact_id) filter (where r.attente)::int as attente,
+              count(distinct r.contact_id) filter (where r.sans_post)::int as sans_post,
+              count(distinct r.contact_id) filter (where not r.attente and not r.sans_post)::int as inexploitable
+         from (select c.id as campaign_id, ct.id as contact_id,
+                      ${sqlFichePostEnAttente('s')} as attente,
+                      s.linkedin_post_id is null as sans_post
+               ${sqlPairesEligibles()}
+                 and not ${sqlGardeDuPost()}
+                order by ct.id
+                limit $1) r
+        group by r.campaign_id`,
+      [LIMITE_JOURNAL_RETENUES],
     );
+    const tronque = res.rows.reduce((n, r) => n + r.paires, 0) >= LIMITE_JOURNAL_RETENUES;
     for (const r of res.rows) {
       const total = r.attente + r.sans_post + r.inexploitable;
       if (total === 0) continue;
       console.warn(
-        `[enroll] campagne ${r.campaign_id} : ${total} personne(s) retenue(s) par la validation du post ` +
+        `[enroll] campagne ${r.campaign_id} : ${tronque ? 'au moins ' : ''}${total} personne(s) retenue(s) par la validation du post ` +
           `(${r.attente} en attente de validation, ${r.sans_post} sans post, ${r.inexploitable} fiche inexploitable)`,
       );
     }

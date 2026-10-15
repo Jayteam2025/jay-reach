@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { enqueueDiscoverForActiveSources, enqueueRequestedRuns, enqueueEnrollments } from './producer.js';
+import { enqueueDiscoverForActiveSources, enqueueRequestedRuns, enqueueEnrollments, LIMITE_JOURNAL_RETENUES } from './producer.js';
 
 /**
  * R72 : une source n'est due que si elle est active, son rattachement à un
@@ -241,7 +241,7 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
    */
   it('journalise, campagne par campagne, combien de personnes la garde du post retient et pourquoi', async () => {
     const { pool, appels } = creerPoolFactice(null, 0, [
-      { campaign_id: CAMPAIGN_ID, attente: 7, sans_post: 3, inexploitable: 2 },
+      { campaign_id: CAMPAIGN_ID, paires: 12, attente: 7, sans_post: 3, inexploitable: 2 },
     ]);
     const { boss } = fauxBoss();
     const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -254,15 +254,31 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
     // annoncerait des personnes que la production n'aurait de toute façon pas prises.
     expect(compte!.sql).toContain('from contacts ct');
     expect(compte!.sql).toMatch(/and not \(not exists/);
+    // BORNÉE comme l'enfilage l'est : une trace ne doit pas pouvoir coûter plus que le travail
+    // qu'elle commente. C'était la seule requête du lot sans `limit`.
+    expect(compte!.sql).toMatch(/limit \$1/);
+    expect(compte!.values).toEqual([LIMITE_JOURNAL_RETENUES]);
     expect(avertissements).toHaveBeenCalledWith(
       `[enroll] campagne ${CAMPAIGN_ID} : 12 personne(s) retenue(s) par la validation du post ` +
         '(7 en attente de validation, 3 sans post, 2 fiche inexploitable)',
     );
   });
 
+  it('dit « au moins » quand la borne de lecture est atteinte : jamais un chiffre qu on ne mesure pas', async () => {
+    const { pool } = creerPoolFactice(null, 0, [
+      { campaign_id: CAMPAIGN_ID, paires: LIMITE_JOURNAL_RETENUES, attente: 900, sans_post: 50, inexploitable: 50 },
+    ]);
+    const { boss } = fauxBoss();
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await enqueueEnrollments(boss, pool);
+
+    expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('au moins 1000 personne(s) retenue(s)'));
+  });
+
   it('ne journalise rien quand la garde ne retient personne', async () => {
     const { pool } = creerPoolFactice(null, 0, [
-      { campaign_id: CAMPAIGN_ID, attente: 0, sans_post: 0, inexploitable: 0 },
+      { campaign_id: CAMPAIGN_ID, paires: 0, attente: 0, sans_post: 0, inexploitable: 0 },
     ]);
     const { boss } = fauxBoss();
     const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

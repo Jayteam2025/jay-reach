@@ -32,6 +32,17 @@
 //  27. posts.ts : ajouter `review_status = 'pending'` au `set` de `corrigerSujetDePost` — 27i rougit.
 //  28. posts.ts : retirer `and expires_at > now()` de `validerPost` — 27n rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
+//  29. posts-fiches.ts : retirer la seconde branche du `union all` de `fichesARattraper` (les fiches
+//      complètes sans sujet) — 28, 28a et 10h rougissent : le rédacteur n'a plus de population.
+//  30. posts-fiches.ts : retirer `review_status <> 'rejected'` des deux branches — 10f et 10g rougissent.
+//  31. fiche-post.ts : traiter une fiche `a_relire` fausse comme les autres (ouvrir et tracer) —
+//      28b, 28c et 28d rougissent : une page rouverte pour un texte déjà en base.
+//  32. posts.ts : remettre `coalesce(btrim(subject), '') <> ''` à la place de
+//      `sqlFicheResoutCeQuEcritLaCampagne` dans `validerPost` — 29 et 29b rougissent.
+//  33. posts.ts : retirer `corrigerAuteurDePost` (ou lui faire écrire `author_name`) — 29d et 29e
+//      rougissent : la fiche sans auteur affichable redevient une impasse.
+//  34. migration linkedin_posts : remettre `interval '28 days'` en dur — 16d rougit (et le bloc
+//      d'auto-vérification de la migration lève).
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -65,6 +76,7 @@ import {
   fichesARattraper,
   ficheIncomplete,
   compterPostsAValiderDeCampagne,
+  corrigerAuteurDePost,
   corrigerSujetDePost,
   listerPostsDeCampagne,
   rejeterPost,
@@ -551,7 +563,7 @@ async function rattrapageSelection() {
   await enregistrerFichePost(pool, m.org, ficheN(2), { fenetreJours: FENETRE }); // complète
   for (let i = 0; i < 3; i += 1) await enregistrerFichePost(pool, m.org, ficheN(3, VIDE), { fenetreJours: FENETRE }); // épuisée
 
-  const retenues = (await fichesARattraper(pool, m.org, 50)).map((r) => r.url);
+  const retenues = (await fichesARattraper(pool, m.org, { aRelire: 50, aRediger: 50 })).filter((r) => r.a_relire).map((r) => r.url);
   check('10. la sélection retient l\'incomplète seule (ni la complète, ni l\'épuisée à 3 tentatives)', retenues.length === 1 && retenues[0] === urlN(1), JSON.stringify(retenues));
 
   await enqueueFichesPostALire(boss, pool);
@@ -565,11 +577,25 @@ async function rattrapageSelection() {
   await enqueueFichesPostALire(boss, pool);
   check('10c. une organisation sans session LinkedIn active n\'est pas servie', (await jobsDe(autre.org)).length === 0);
 
+  // « Rien à rattraper » : une fiche complète ET pourvue d'un sujet. Une fiche complète SANS sujet,
+  // elle, a du travail (la rédaction) — c'est la section `sujetSansRelecture`.
   const vide = await monde();
   await activerSessionLinkedIn(vide.ctx, IP_FICHE);
   await enregistrerFichePost(pool, vide.org, ficheN(1), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set subject = 'un sujet relu' where organization_id = $1`, [vide.org]);
   await enqueueFichesPostALire(boss, pool);
   check('10d. rien à rattraper : aucun job', (await jobsDe(vide.org)).length === 0);
+
+  // Une fiche que l'opérateur a REJETÉE ne se rouvre plus : ni page LinkedIn, ni crédit de modèle,
+  // pour un post qu'un humain vient de refuser.
+  const rejete = await monde();
+  await activerSessionLinkedIn(rejete.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, rejete.org, ficheN(1, VIDE), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set review_status = 'rejected' where organization_id = $1`, [rejete.org]);
+  const apresRejet = await fichesARattraper(pool, rejete.org, { aRelire: 50, aRediger: 50 });
+  check('10f. une fiche rejetée par l\'opérateur n\'est plus proposée au rattrapage', apresRejet.length === 0, JSON.stringify(apresRejet.map((r) => r.url)));
+  await enqueueFichesPostALire(boss, pool);
+  check('10g. et aucun job n\'est déposé pour elle', (await jobsDe(rejete.org)).length === 0);
 }
 
 async function rattrapageCritere() {
@@ -589,8 +615,12 @@ async function rattrapageCritere() {
   }
   const toutes = (await q(`select url, author_name, text_excerpt, posted_at from linkedin_posts where organization_id = $1`, [m.org])).rows;
   const attendu = toutes.filter(ficheIncomplete).map((r) => r.url).sort();
-  const lues = (await fichesARattraper(pool, m.org, 100)).map((r) => r.url).sort();
-  check('10e. huit combinaisons auteur / texte / date : mêmes fiches retenues par le SQL et par `ficheIncomplete`', JSON.stringify(lues) === JSON.stringify(attendu) && lues.length === 7, `${lues.length} / ${attendu.length}`);
+  const candidates = await fichesARattraper(pool, m.org, { aRelire: 100, aRediger: 100 });
+  const lues = candidates.filter((r) => r.a_relire).map((r) => r.url).sort();
+  check('10e. huit combinaisons auteur / texte / date : mêmes fiches À RELIRE pour le SQL et pour `ficheIncomplete`', JSON.stringify(lues) === JSON.stringify(attendu) && lues.length === 7, `${lues.length} / ${attendu.length}`);
+  // La huitième, complète, n'est pas à relire — mais son sujet manque, donc elle est à rédiger.
+  const aRediger = candidates.filter((r) => !r.a_relire).map((r) => r.url);
+  check('10h. la fiche complète n\'est pas rouverte, elle n\'attend que son sujet', aRediger.length === 1 && !attendu.includes(aRediger[0]), JSON.stringify(aRediger));
 }
 
 async function rattrapageLot() {
@@ -610,6 +640,10 @@ async function rattrapageLot() {
   await traiterFichePost(b.deps, { organizationId: m.org });
   check('11d. plafond du jour atteint : le lot suivant n\'ouvre RIEN', b.vu.ouvertures === 0 && b.vu.navigations.length === 0, JSON.stringify(b.vu.navigations));
   await q(`delete from pgboss.job where data->>'organizationId' = $1`, [m.org]);
+  // Les deux fiches lues sont désormais complètes : leur donner un sujet retire la seule autre
+  // raison de déposer un job (la rédaction, qui ne consomme aucune requête LinkedIn). Ce qui reste
+  // à prouver ici, c'est que le plafond du JOUR, lui, n'en laisse plus déposer pour la lecture.
+  await q(`update linkedin_posts set subject = 'un sujet relu' where organization_id = $1`, [m.org]);
   await enqueueFichesPostALire(boss, pool);
   check('11e. et le producteur ne dépose plus de job', (await jobsDe(m.org)).length === 0);
 
@@ -672,6 +706,35 @@ async function rattrapageTraitement() {
   const d = depsLot();
   await traiterFichePost(d.deps, { organizationId: m.org });
   check('13e. aucune fiche incomplète : aucun navigateur ouvert', d.vu.ouvertures === 0);
+}
+
+async function sujetSansRelecture() {
+  console.log('\n# une fiche COMPLÈTE sans sujet est rédigée, sans rouvrir sa page');
+  await demarrerBoss();
+  const m = await monde();
+  await activerSessionLinkedIn(m.ctx, IP_FICHE);
+  // Ce que produit la collecte quand elle réussit : auteur, texte et date en base, sujet vide.
+  // C'est le CHEMIN NOMINAL ; s'il n'appelait pas le rédacteur, l'opérateur écrirait chaque sujet
+  // à la main (197 posts chez l'opérateur qui a mesuré l'accroche).
+  await enregistrerFichePost(pool, m.org, ficheN(51), { fenetreJours: FENETRE });
+
+  await enqueueFichesPostALire(boss, pool);
+  check('28. un job est déposé même quand il n\'y a QUE des sujets à rédiger', (await jobsDe(m.org)).length === 1, JSON.stringify(await jobsDe(m.org)));
+
+  // Le pilote lèverait sur toute lecture de page : la fiche ne doit JAMAIS être rouverte.
+  const { deps, vu } = depsLot('TEXTE RELU SUR LA PAGE', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  await traiterFichePost(deps, { organizationId: m.org });
+  const l = (await q(`select subject, subject_origin, capture_attempts, text_excerpt from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
+  check('28a. le sujet est écrit, à partir du texte DÉJÀ en base', l.subject === 'sujet de : Un texte' && l.subject_origin === 'model', JSON.stringify([l.subject, l.subject_origin]));
+  check('28b. sans ouvrir de navigateur ni naviguer', vu.ouvertures === 0 && vu.navigations.length === 0, JSON.stringify(vu.navigations));
+  check('28c. sans tracer la moindre requête LinkedIn (budget horaire et plafond du jour intacts)', (await traces(m.org)).length === 0, JSON.stringify(await traces(m.org)));
+  check('28d. et sans compter une tentative de capture de plus', l.capture_attempts === 1 && l.text_excerpt?.startsWith('Un texte') === true, String(l.capture_attempts));
+
+  // Le sujet écrit, il n'y a plus rien à faire : le lot suivant ne redemande rien.
+  const b = depsLot('TEXTE RELU SUR LA PAGE', async () => 'un second sujet');
+  await traiterFichePost(b.deps, { organizationId: m.org });
+  const apres = (await q(`select subject from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
+  check('28e. un sujet déjà écrit n\'est pas redemandé', apres.subject === 'sujet de : Un texte', String(apres.subject));
 }
 
 async function sujetCredit() {
@@ -1263,6 +1326,10 @@ async function repriseDeLExistant() {
   const sPost = await signal('post_engagement', 'rep-post', URL_POST);
   const sRech = await signal('people_search', 'rep-rech', 'https://www.linkedin.com/search/results/content/?keywords=prospection');
   const sPoste = await signal('job_change', 'rep-poste', 'https://www.linkedin.com/in/dana-test/');
+  // La fenêtre de décision est un RÉGLAGE : les fiches de la reprise doivent porter celle de leur
+  // organisation, pas un intervalle en dur. Une échéance en dur annoncerait à l'écran une date que
+  // le réglage contredit, et `expires_at` n'est posé qu'à la création.
+  await ecrireReglage(m.ctx, { cle: 'linkedin_fenetre_validation_post_jours', valeur: 35 });
 
   // Les sections précédentes ont laissé des signaux sans fiche (cas voulus) : l'auto-vérification de la
   // migration lit toute la base, on ne garde donc que ceux de cette section (elle joue en dernier).
@@ -1281,6 +1348,9 @@ async function repriseDeLExistant() {
   check('16a. le signal post_engagement est rattaché', par[sPost] !== null);
   check('16b. ni la recherche par mots-clés ni le changement de poste ne le sont', par[sRech] === null && par[sPoste] === null, JSON.stringify(par));
   check('16c. aucune fiche créée pour leur adresse', fiches.length === 1 && fiches[0].url === URL_POST, JSON.stringify(fiches));
+  const fenetre = (await q(`select (extract(epoch from (expires_at - created_at)) / 86400) as jours from linkedin_posts where organization_id = $1`, [m.org])).rows[0];
+  check('16d. la fiche de reprise porte la fenêtre RÉGLÉE de son organisation, pas 28 jours en dur',
+    Math.abs(Number(fenetre.jours) - 35) < 0.01, `${fenetre.jours} jours`);
 }
 
 async function scoringNourri() {
@@ -1356,12 +1426,13 @@ async function ecranDesPosts() {
     `${lignes.length} lignes, hors-campagne ${ids.includes(hors.fiche)}, autre organisation ${ids.includes(etranger.fiche)}`);
   const la = lignes.find((l) => l.id === a.fiche);
   check('27b. chaque ligne compte ses personnes en attente', lignes.every((l) => l.personnesEnAttente === 1), JSON.stringify(lignes.map((l) => l.personnesEnAttente)));
-  check('27c. l\'aperçu est la phrase du gabarit, le sujet laissé en place', la?.apercuAccroche === 'Bonjour, je vous ai vu réagir au post de Ana sur {{post_sujet}}.', String(la?.apercuAccroche));
+  check('27c. l\'aperçu est la phrase du gabarit, l\'auteur ET le sujet laissés en place (deux champs à écrire dans la phrase)',
+    la?.apercuAccroche === 'Bonjour, je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}.', String(la?.apercuAccroche));
   check('27d. le badge de l\'onglet compte les deux posts en attente', (await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })) === 2);
 
   // Un post sans sujet ne se valide pas, et rien ne bouge.
   let refus = null;
-  await validerPost(m.ctx, { postId: a.fiche }).catch((e) => { refus = e; });
+  await validerPost(m.ctx, { postId: a.fiche, campagneId: m.campagne }).catch((e) => { refus = e; });
   const etatA = (await q(`select review_status from linkedin_posts where id = $1`, [a.fiche])).rows[0].review_status;
   check('27e. valider un post sans sujet est refusé, il reste en attente', refus !== null && etatA === 'pending', `${refus?.name} / ${etatA}`);
   await tourDInscription(m.org);
@@ -1376,8 +1447,8 @@ async function ecranDesPosts() {
     apres.subject_origin === 'operator' && recapture.subject === 'la prospection LinkedIn' && recapture.subject_origin === 'operator', JSON.stringify(recapture));
 
   // Valider ouvre la garde : la personne entre réellement.
-  await validerPost(m.ctx, { postId: a.fiche });
-  await validerPost(m.ctx, { postId: b.fiche });
+  await validerPost(m.ctx, { postId: a.fiche, campagneId: m.campagne });
+  await validerPost(m.ctx, { postId: b.fiche, campagneId: m.campagne });
   await tourDInscription(m.org);
   const inscrits = await inscritsDe(m.org);
   check('27h. valider un post fait entrer ses personnes en séquence', inscrits.includes(a.contact_id) && inscrits.includes(b.contact_id), `${inscrits.length} inscrits`);
@@ -1408,21 +1479,60 @@ async function ecranDesPosts() {
   const perimee = await engageurDUnPost(m, 45, { etat: 'pending', sujet: 'un sujet relu' });
   await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = $1`, [perimee.fiche]);
   let refusValider = null;
-  await validerPost(m.ctx, { postId: perimee.fiche }).catch((e) => { refusValider = e; });
+  await validerPost(m.ctx, { postId: perimee.fiche, campagneId: m.campagne }).catch((e) => { refusValider = e; });
   const etatPerimee = (await q(`select review_status from linkedin_posts where id = $1`, [perimee.fiche])).rows[0].review_status;
   check('27n. un post en attente dont l\'échéance est passée ne se valide pas, comme il ne se rouvre pas',
     refusValider !== null && etatPerimee === 'pending' && JSON.stringify(refusValider.details).includes('échéance'), `${refusValider?.name} / ${etatPerimee}`);
 
   // Une autre organisation n'agit jamais sur ce post.
   let intrus = null;
-  await validerPost(n.ctx, { postId: hors.fiche }).catch((e) => { intrus = e; });
+  await validerPost(n.ctx, { postId: hors.fiche, campagneId: n.campagne }).catch((e) => { intrus = e; });
   await rejeterPost(n.ctx, { postId: hors.fiche }).catch(() => undefined);
   const etatHors = (await q(`select review_status from linkedin_posts where id = $1`, [hors.fiche])).rows[0].review_status;
   check('27m. une autre organisation ne peut ni valider ni rejeter ce post', intrus !== null && etatHors === 'pending', `${intrus?.name} / ${etatHors}`);
 }
 
+async function validationExigeCeQuiPartira() {
+  console.log('\n# valider exige EXACTEMENT ce que la campagne écrit, ni plus ni moins');
+  // 1. La campagne nomme l'auteur ET le sujet, mais l'auteur affiché est vide (repli de slug) :
+  // valider ne débloquerait rien, donc valider doit être refusé — sinon l'opérateur croit avoir
+  // libéré ses personnes et la garde les retient en silence jusqu'à la purge.
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const sansAuteur = await engageurDUnPost(m, 61, { etat: 'pending', sujet: 'le recrutement des commerciaux', nomAffiche: null });
+  let refus = null;
+  await validerPost(m.ctx, { postId: sansAuteur.fiche, campagneId: m.campagne }).catch((e) => { refus = e; });
+  const etat = (await q(`select review_status from linkedin_posts where id = $1`, [sansAuteur.fiche])).rows[0].review_status;
+  check('29. valider est refusé quand une variable écrite par la campagne ne se résout pas (auteur affiché vide)',
+    refus !== null && etat === 'pending', `${refus?.name} / ${etat}`);
+  await tourDInscription(m.org);
+  check('29a. et la garde dit la même chose : personne n\'entre', (await inscritsDe(m.org)).length === 0);
+
+  // LA SORTIE : le nom de l'auteur s'écrit, comme le sujet. Sans elle, cette fiche est une impasse
+  // définitive — le rattrapage ne la reprend pas (elle est complète) et aucun écran ne la répare.
+  await corrigerAuteurDePost(m.ctx, { postId: sansAuteur.fiche, auteur: 'Ana' });
+  await validerPost(m.ctx, { postId: sansAuteur.fiche, campagneId: m.campagne });
+  const etatApres = (await q(`select review_status, author_display_name from linkedin_posts where id = $1`, [sansAuteur.fiche])).rows[0];
+  check('29d. écrire le nom de l\'auteur débloque la validation', etatApres.review_status === 'approved' && etatApres.author_display_name === 'Ana', JSON.stringify(etatApres));
+  await tourDInscription(m.org);
+  check('29e. et les personnes du post entrent enfin en séquence', (await inscritsDe(m.org)).includes(sansAuteur.contact_id), JSON.stringify(await inscritsDe(m.org)));
+
+  // 2. La campagne ne cite que l'adresse du post : exiger un sujet serait exiger ce qui ne partira
+  // pas. L'adresse existe dès la création de la fiche, donc la validation passe et les personnes
+  // entrent (c'est le quantificateur de la garde, reporté ici).
+  const u = await monde();
+  await etapeAvecCorps(u, ACCROCHE_URL);
+  const sansSujet = await engageurDUnPost(u, 62, { etat: 'pending', sujet: null, nomAffiche: null });
+  let refusUrl = null;
+  await validerPost(u.ctx, { postId: sansSujet.fiche, campagneId: u.campagne }).catch((e) => { refusUrl = e; });
+  const etatUrl = (await q(`select review_status from linkedin_posts where id = $1`, [sansSujet.fiche])).rows[0].review_status;
+  check('29b. une campagne qui ne cite que {{post_url}} valide sans sujet ni auteur', refusUrl === null && etatUrl === 'approved', `${refusUrl?.name} / ${etatUrl}`);
+  await tourDInscription(u.org);
+  check('29c. et ses personnes entrent réellement en séquence', (await inscritsDe(u.org)).includes(sansSujet.contact_id), JSON.stringify(await inscritsDe(u.org)));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

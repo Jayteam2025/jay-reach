@@ -26,6 +26,7 @@ export { buildScoringUserMessage } from '../../packages/core/src/scoring.js';
 // Tache 10 : l'ecran de validation des posts.
 export {
   compterPostsAValiderDeCampagne,
+  corrigerAuteurDePost,
   corrigerSujetDePost,
   listerPostsDeCampagne,
   rejeterPost,

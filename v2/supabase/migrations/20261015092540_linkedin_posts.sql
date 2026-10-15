@@ -93,14 +93,48 @@ begin
   return 'urn:li:' || case lower(a[1]) when 'activity' then 'activity' when 'ugcpost' then 'ugcPost' else 'share' end || ':' || a[2];
 end $$;
 
-insert into public.linkedin_posts (organization_id, post_key, post_urn, url, expires_at)
-select s.organization_id, pg_temp.cle_post(s.url), min(pg_temp.urn_post(s.url)), min(s.url),
-       now() + interval '28 days'
-  from public.signals s
- where s.kind = 'post_engagement'
-   and s.url is not null
- group by s.organization_id, pg_temp.cle_post(s.url)
-on conflict (organization_id, post_key) do nothing;
+-- La fenêtre de décision de CHAQUE organisation, pas 28 jours pour tout le monde : une valeur en
+-- dur ici donnerait aux fiches de la reprise une échéance que l'écran Réglages › LinkedIn
+-- n'annonce pas, et `expires_at` n'est posé qu'à la création — aucune recapture ne la corrigerait.
+--
+-- Mêmes garde-fous qu'à la lecture (`fenetreValidationPost`, apps/worker) : une valeur qui n'est
+-- pas un nombre strictement positif retombe sur le défaut. Le défaut, 28, est celui de
+-- `CLES_REGLAGES` (packages/core/src/fonctions/plafonds.ts).
+--
+-- UNE marche de la chaîne de repli manque, et c'est assumé : le SQL ne lit pas l'environnement,
+-- donc une instance qui n'aurait réglé que `LINKEDIN_POST_REVIEW_WINDOW_DAYS` reçoit 28 jours pour
+-- ses fiches de reprise. Elle n'en a qu'une fournée, et le réglage en base vaut pour toutes les
+-- suivantes.
+create function pg_temp.fenetre_validation(p_org uuid) returns int language sql stable as $$
+  select coalesce(
+    (select case
+              when (os.value #>> '{}') ~ '^[0-9]+(\.[0-9]+)?$' and trunc((os.value #>> '{}')::numeric) > 0
+              then trunc((os.value #>> '{}')::numeric)::int
+            end
+       from public.organization_settings os
+      where os.organization_id = p_org
+        and os.key = 'linkedin_fenetre_validation_post_jours'),
+    28);
+$$;
+
+-- Les fiches que CETTE migration crée, retenues pour que le bloc de vérification ne juge qu'elles.
+-- En production la table vient de naître, donc toutes ses lignes sont les nôtres ; le harnais, lui,
+-- rejoue la reprise sur une base où d'autres sections ont déjà posé leurs fiches.
+create temporary table if not exists reprise_fiches (id uuid primary key);
+truncate reprise_fiches;
+
+with nouvelles as (
+  insert into public.linkedin_posts (organization_id, post_key, post_urn, url, expires_at)
+  select s.organization_id, pg_temp.cle_post(s.url), min(pg_temp.urn_post(s.url)), min(s.url),
+         now() + make_interval(days => pg_temp.fenetre_validation(s.organization_id))
+    from public.signals s
+   where s.kind = 'post_engagement'
+     and s.url is not null
+   group by s.organization_id, pg_temp.cle_post(s.url)
+  on conflict (organization_id, post_key) do nothing
+  returning id
+)
+insert into reprise_fiches (id) select id from nouvelles;
 
 update public.signals s
    set linkedin_post_id = p.id
@@ -141,6 +175,17 @@ begin
        and s.url is not null and s.linkedin_post_id is null
   ) then
     raise exception 'des signaux post_engagement avec une url restent sans linkedin_post_id';
+  end if;
+  -- Chaque fiche de la reprise porte la fenêtre de SON organisation (une minute de marge : le
+  -- `now()` de l'insertion et celui du `created_at` par défaut ne sont pas le même appel).
+  if exists (
+    select 1 from public.linkedin_posts p
+     where p.id in (select id from reprise_fiches)
+       and p.expires_at not between
+             p.created_at + make_interval(days => pg_temp.fenetre_validation(p.organization_id)) - interval '1 minute'
+         and p.created_at + make_interval(days => pg_temp.fenetre_validation(p.organization_id)) + interval '1 minute'
+  ) then
+    raise exception 'une fiche de reprise n''a pas la fenêtre de validation de son organisation';
   end if;
   -- Une recherche par mots-clés ou un changement de poste ne vient d'aucun post : leur url est
   -- une adresse de recherche ou de profil, jamais une fiche à capturer.
