@@ -5,15 +5,14 @@
  *
  * **Rien de ce qui suit n'a été confronté à une page vivante** : la session LinkedIn de
  * production ne sort que par son proxy, et aucune mesure n'a pu être faite depuis le poste de
- * développement. Les formes lues viennent du code existant (`profils.ts`, `posts.ts`,
- * `engageurs.ts`) et de ce que LinkedIn publie sur ses pages de post (JSON-LD, `<title>`,
- * métadonnées OpenGraph). Chaque endroit où la page est lue est isolé dans la section
- * `LECTURE DE LA PAGE` : corriger une forme réelle se fait là, et nulle part ailleurs.
+ * développement. La page se lit dans le DOM RENDU, par `pilote.texte(selecteur)`, sans aucune requête :
+ * `engageurs.ts` a déjà chargé la page du post, la capturer est gratuite. Les sélecteurs sont des
+ * SUPPOSITIONS (aucun n'est relevé dans le dépôt), tous rassemblés dans `SELECTEURS` : corriger
+ * une forme réelle se fait là, et nulle part ailleurs.
  *
  * **Ne lève jamais.** Une page illisible rend une fiche aux champs nuls : l'appelant décide
  * alors de ne pas nommer le post, il n'a pas à rattraper une exception.
  */
-import { z } from 'zod';
 import { frictionDeLUrl, urnDActivite } from './engageurs.js';
 import type { Pilote } from './navigateur.js';
 
@@ -42,10 +41,6 @@ export function nomAffichePourAuteur(kind: 'person' | 'page', nom: string): stri
   return propre.split(' ')[0] ?? '';
 }
 
-// ---------------------------------------------------------------------------------------------
-// Identifiant d'activité -> date
-// ---------------------------------------------------------------------------------------------
-
 const DEBUT_LINKEDIN_MS = Date.UTC(2003, 0, 1);
 
 /**
@@ -63,188 +58,96 @@ export function dateDeLActivite(urn: string): Date | null {
 }
 
 // ---------------------------------------------------------------------------------------------
-// LECTURE DE LA PAGE : tout ce qui suppose une forme du HTML est ici
+// SELECTEURS : tout ce qui suppose une forme de la page est ici. TOUS sont des suppositions.
+// Chaque liste est essayée dans l'ordre ; la première qui rend du texte l'emporte.
 // ---------------------------------------------------------------------------------------------
+export const SELECTEURS = {
+  auteur: [
+    '.update-components-actor__title span[aria-hidden="true"]',
+    '.update-components-actor__name',
+    '[data-testid="actor-name"]',
+    '.feed-shared-actor__name',
+  ],
+  /** Ligne sous le nom : « 12 345 abonnés » pour une page, un degré ou « Suivre » pour une personne. */
+  sousTitreAuteur: ['.update-components-actor__description', '.update-components-actor__sub-description', '.feed-shared-actor__description'],
+  texte: [
+    '.update-components-text',
+    '.feed-shared-update-v2__description',
+    '[data-testid="expandable-text-box"]',
+    '.feed-shared-text',
+  ],
+} as const;
 
-const SchemaAuteurLd = z.object({
-  '@type': z.string().optional(),
-  name: z.string().optional(),
-  url: z.string().optional(),
-});
-const SchemaPostLd = z.object({
-  '@type': z.union([z.string(), z.array(z.string())]).optional(),
-  articleBody: z.string().optional(),
-  text: z.string().optional(),
-  datePublished: z.string().optional(),
-  author: z.union([SchemaAuteurLd, z.array(SchemaAuteurLd)]).optional(),
-});
-type PostLd = z.infer<typeof SchemaPostLd>;
+/** Délai laissé au rendu du texte du post avant de le chercher. */
+const ATTENTE_RENDU_MS = 4_000;
 
-function decoderEntites(texte: string): string {
-  return texte
-    .replace(/&quot;/g, '"')
-    .replace(/&#(?:39|x27);/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
+const MOTIF_ABONNES = /\b(abonn[ée]s?|followers?|volgers)\b/i;
 
-/** Premier bloc JSON-LD qui décrit un post (directement, en tableau ou dans `@graph`). */
-function postDuJsonLd(html: string): PostLd | null {
-  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
-    let brut: unknown;
-    try {
-      brut = JSON.parse(m[1] ?? '');
-    } catch {
-      continue;
-    }
-    const candidats: unknown[] = Array.isArray(brut) ? brut : [brut];
-    for (const c of [...candidats]) {
-      const graphe = (c as { '@graph'?: unknown } | null)?.['@graph'];
-      if (Array.isArray(graphe)) candidats.push(...(graphe as unknown[]));
-    }
-    for (const c of candidats) {
-      const lu = SchemaPostLd.safeParse(c);
-      if (!lu.success) continue;
-      const type = lu.data['@type'];
-      const types = Array.isArray(type) ? type : type === undefined ? [] : [type];
-      if (types.some((t) => /Posting|Article/i.test(t)) || lu.data.author !== undefined) return lu.data;
-    }
+async function premierTexte(pilote: Pilote, selecteurs: readonly string[]): Promise<string | null> {
+  for (const s of selecteurs) {
+    const t = (await pilote.texte(s)).trim();
+    if (t !== '') return t;
   }
   return null;
 }
 
-function metaContenu(html: string, propriete: string): string | null {
-  const balises = html.match(/<meta\b[^>]*>/gi) ?? [];
-  for (const b of balises) {
-    if (!new RegExp(`(?:property|name)=["']${propriete}["']`, 'i').test(b)) continue;
-    const contenu = /content=(?:"([^"]*)"|'([^']*)')/i.exec(b);
-    const valeur = contenu?.[1] ?? contenu?.[2];
-    if (valeur !== undefined && valeur.trim() !== '') return decoderEntites(valeur);
+/** LinkedIn double parfois le nom (version visible et version pour lecteur d'écran) : « Ana Ana ». */
+function sansDoublon(ligne: string): string {
+  const mots = ligne.split(' ');
+  const moitie = mots.length / 2;
+  if (Number.isInteger(moitie) && moitie > 0 && mots.slice(0, moitie).join(' ') === mots.slice(moitie).join(' ')) {
+    return mots.slice(0, moitie).join(' ');
   }
-  return null;
-}
-
-/** Le nom de l'auteur d'après `<title>` : « Nom sur LinkedIn : début du post » (ou « on LinkedIn: »). */
-function nomDuTitre(html: string): string | null {
-  const titre = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
-  if (titre === undefined) return null;
-  const m = /^\s*([^:|]{2,120}?)\s+(?:sur|on)\s+LinkedIn\b/i.exec(decoderEntites(titre));
-  return m?.[1]?.trim() || null;
-}
-
-/** Une adresse de profil ou de page : le type, le nom public, et l'adresse canonique reconstruite. */
-function identiteDeLien(lien: string): { kind: 'person' | 'page'; nomPublic: string; url: string } | null {
-  const m = /linkedin\.com\/(in|company|showcase)\/([^/?#"'\s<>]+)/i.exec(lien);
-  const type = m?.[1]?.toLowerCase();
-  const brut = m?.[2];
-  if (type === undefined || brut === undefined) return null;
-  let nomPublic = brut;
-  try {
-    nomPublic = decodeURIComponent(brut);
-  } catch {
-    // garder la forme brute
-  }
-  const kind = type === 'in' ? 'person' : 'page';
-  const segment = type === 'in' ? 'in' : type === 'showcase' ? 'showcase' : 'company';
-  return { kind, nomPublic, url: `https://www.linkedin.com/${segment}/${encodeURIComponent(nomPublic)}/` };
+  return ligne;
 }
 
 /**
- * Repli quand le JSON-LD manque : parmi les liens de profil ou de page du corps, celui dont la
- * position est la plus proche d'une mention du nom. Même piège que celui des profils suggérés
- * (`profils.ts`) : le PREMIER lien du document n'est pas forcément l'auteur.
+ * Lit la fiche sur la page DÉJÀ OUVERTE : aucune navigation, aucune requête.
+ *
+ * `nomPublic` et `url` restent `null` : `Pilote.texte` ne rend que du texte, jamais l'adresse
+ * d'un lien. `kind` est une HEURISTIQUE : une ligne « abonnés » sous le nom veut dire une page.
+ * Ne lève jamais.
  */
-function lienLePlusProcheDuNom(html: string, nom: string): ReturnType<typeof identiteDeLien> {
-  const corps = html.replace(/<head[\s\S]*?<\/head>/i, '');
-  const liens = [...corps.matchAll(/href=["']([^"']*linkedin\.com\/(?:in|company|showcase)\/[^"']*)["']/gi)];
-  const mentions: number[] = [];
-  const bas = corps.toLowerCase();
-  const cible = nom.toLowerCase();
-  for (let i = bas.indexOf(cible); i !== -1; i = bas.indexOf(cible, i + 1)) mentions.push(i);
-  let meilleur: { id: ReturnType<typeof identiteDeLien>; distance: number } | null = null;
-  for (const l of liens) {
-    const id = identiteDeLien(l[1] ?? '');
-    if (id === null) continue;
-    for (const pos of mentions) {
-      const distance = Math.abs((l.index ?? 0) - pos);
-      if (meilleur === null || distance < meilleur.distance) meilleur = { id, distance };
-    }
-  }
-  return meilleur?.id ?? null;
-}
-
-function auteurDuHtml(html: string, ld: PostLd | null): AuteurDePost | null {
-  const brut = Array.isArray(ld?.author) ? ld.author[0] : ld?.author;
-  const nom = (brut?.name?.trim() || nomDuTitre(html)) ?? null;
-  if (nom === null || nom === '') return null;
-
-  const parLien = brut?.url ? identiteDeLien(brut.url) : null;
-  const identite = parLien ?? lienLePlusProcheDuNom(html, nom);
-  const typeLd = brut?.['@type']?.toLowerCase();
-  const kind = typeLd === 'organization' ? 'page' : typeLd === 'person' ? 'person' : (identite?.kind ?? null);
-  // Sans type sûr, on ne devine pas : nommer une page par son « prénom » ferait un message absurde.
-  if (kind === null) return null;
-  return {
-    kind,
-    nom,
-    nomAffiche: nomAffichePourAuteur(kind, nom),
-    nomPublic: identite?.nomPublic ?? null,
-    url: identite?.url ?? null,
-  };
-}
-
-function texteDuHtml(html: string, ld: PostLd | null): string | null {
-  const brut = ld?.articleBody ?? ld?.text ?? metaContenu(html, 'og:description') ?? metaContenu(html, 'description');
-  const propre = brut?.replace(/\s+/g, ' ').trim();
-  if (!propre) return null;
-  return propre.length > TEXTE_MAX ? propre.slice(0, TEXTE_MAX).trimEnd() : propre;
-}
-
-function dateDuHtml(html: string, ld: PostLd | null, urn: string | null): Date | null {
-  for (const brut of [ld?.datePublished, metaContenu(html, 'article:published_time')]) {
-    if (brut === undefined || brut === null) continue;
-    const d = new Date(brut);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  return urn === null ? null : dateDeLActivite(urn);
-}
-
-/** Lecture pure d'une page déjà chargée. Ne lève jamais. */
-export function lireFicheDuHtml(html: string, url: string): FichePost {
-  const fiche: FichePost = { urn: urnDActivite(url), url, auteur: null, texte: null, date: null };
+export async function lireFichePostDepuisPageOuverte(pilote: Pilote): Promise<FichePost> {
+  let url = '';
+  const fiche: FichePost = { urn: null, url, auteur: null, texte: null, date: null };
   try {
-    // L'URN de la page, quand l'adresse n'en portait pas (lien raccourci, redirection).
-    fiche.urn ??= /urn:li:(activity|ugcPost|share):\d+/.exec(html)?.[0] ?? null;
-    const ld = postDuJsonLd(html);
-    fiche.auteur = auteurDuHtml(html, ld);
-    fiche.texte = texteDuHtml(html, ld);
-    fiche.date = dateDuHtml(html, ld, fiche.urn);
+    url = await pilote.url();
+    fiche.url = url;
+    fiche.urn = urnDActivite(url);
+    fiche.date = fiche.urn === null ? null : dateDeLActivite(fiche.urn);
+    if (frictionDeLUrl(url)) return fiche;
+
+    await pilote.attendre(SELECTEURS.texte.join(', '), ATTENTE_RENDU_MS);
+
+    const brut = (await premierTexte(pilote, SELECTEURS.texte))?.replace(/\s+/g, ' ').trim();
+    if (brut) fiche.texte = brut.length > TEXTE_MAX ? brut.slice(0, TEXTE_MAX).trimEnd() : brut;
+
+    const nom = sansDoublon(((await premierTexte(pilote, SELECTEURS.auteur)) ?? '').split('\n')[0]?.trim() ?? '');
+    if (nom !== '') {
+      const sousTitre = (await premierTexte(pilote, SELECTEURS.sousTitreAuteur)) ?? '';
+      const kind = MOTIF_ABONNES.test(sousTitre) ? 'page' : 'person';
+      fiche.auteur = { kind, nom, nomAffiche: nomAffichePourAuteur(kind, nom), nomPublic: null, url: null };
+    }
   } catch {
     // contrat : une page illisible rend ce qui a été lu avant, jamais une exception
   }
   return fiche;
 }
 
-// ---------------------------------------------------------------------------------------------
-
-/**
- * Charge la page du post et en lit la fiche.
- *
- * Deux requêtes vers LinkedIn : la navigation (qui pose le contexte same-origin et révèle une
- * friction) puis la lecture du document, car `Pilote` n'expose pas le HTML courant. L'appelant
- * qui est déjà sur la page (`lireEngageurs`) compte cette requête dans son budget.
- */
+/** Ouvre le post puis le lit. Une navigation, aucune requête. Ne lève jamais. */
 export async function lireFichePost(pilote: Pilote, url: string): Promise<FichePost> {
-  const vide: FichePost = { urn: urnDActivite(url), url, auteur: null, texte: null, date: null };
   try {
     await pilote.aller(url);
-    if (frictionDeLUrl(await pilote.url())) return vide;
-    const rep = await pilote.requete(url);
-    if (rep.statut < 200 || rep.statut >= 300) return vide;
-    return lireFicheDuHtml(rep.corps, url);
   } catch {
-    return vide;
+    return { urn: urnDActivite(url), url, auteur: null, texte: null, date: dateDeUrl(url) };
   }
+  const fiche = await lireFichePostDepuisPageOuverte(pilote);
+  // L'adresse demandée prime sur celle d'arrivée (redirection) pour l'identité du post.
+  return { ...fiche, url, urn: urnDActivite(url) ?? fiche.urn };
+}
+
+function dateDeUrl(url: string): Date | null {
+  const urn = urnDActivite(url);
+  return urn === null ? null : dateDeLActivite(urn);
 }
