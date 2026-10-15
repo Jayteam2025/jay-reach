@@ -1103,7 +1103,7 @@
         "personnes": "{n, plural, one {jusqu'à # personne n'entre} other {jusqu'à # personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
         "rien": "Aucun post n'attend votre relecture.",
         "toutValider": "Tout valider ({n})",
-        "lotBloque": "Enregistrez ou annulez la modification d'un sujet avant de tout valider."
+        "lotBloque": "Enregistrez ou annulez votre modification avant de tout valider."
       },
       "phrase": {
         "avantAuteur": "Je vous ai vu réagir au post de ",

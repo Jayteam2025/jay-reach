@@ -321,6 +321,14 @@ describe('compterPostsAValiderDeCampagne', () => {
     const { ctx } = contexte({ 'count\\(\\*\\)': { rows: [{ n: '3' }] } });
     expect(await compterPostsAValiderDeCampagne(ctx, { campagneId: CAMPAGNE })).toBe(3);
   });
+
+  it('ne compte rien quand la campagne ne nomme aucun post : le badge annonce du TRAVAIL', async () => {
+    const { ctx, appels } = contexte({ 'count\\(\\*\\)': { rows: [{ n: '3' }] } });
+    await compterPostsAValiderDeCampagne(ctx, { campagneId: CAMPAGNE });
+    // Le motif des quatre variables de post, le même que la garde : sans accroche, relire ces
+    // posts ne débloque personne. Le harnais le joue sur un vrai Postgres (contrôles 23i et 23j).
+    expect(appels[0]?.sql).toMatch(/post_auteur\|post_sujet\|post_url\|post_date/);
+  });
 });
 
 describe('decouperAccroche', () => {

@@ -109,7 +109,10 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               rouvrir: t('actions.rouvrir'),
               // Le compte de personnes vient de la garde elle-même : c'est ce chiffre-là qui
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
-              resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
+              // Même subordination que le badge de l'onglet (`compterPostsAValiderDeCampagne`) et
+              // que le bandeau : sans accroche, relire ces posts ne débloque personne, et
+              // l'annoncer envoie l'opérateur valider pour rien.
+              resume: dit.relecture && enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
               personnes: dit.enAttenteDeValidation > 0 ? t('bar.personnes', { n: dit.enAttenteDeValidation }) : '',
               lotBloque: t('bar.lotBloque'),
               manquantAide: t('phrase.manquantAide'),

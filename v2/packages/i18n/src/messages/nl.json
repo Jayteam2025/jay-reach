@@ -1103,7 +1103,7 @@
         "personnes": "tot {n, plural, one {# persoon komt} other {# personen komen}} niet in de sequentie zolang hun post niet is goedgekeurd",
         "rien": "Geen enkele post wacht op je controle.",
         "toutValider": "Alles goedkeuren ({n})",
-        "lotBloque": "Sla de wijziging van een onderwerp op of maak ze ongedaan voordat je alles goedkeurt."
+        "lotBloque": "Sla je wijziging op of maak ze ongedaan voordat je alles goedkeurt."
       },
       "phrase": {
         "avantAuteur": "Ik zag je reageren op de post van ",

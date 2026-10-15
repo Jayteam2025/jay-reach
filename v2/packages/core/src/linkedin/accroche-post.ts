@@ -402,9 +402,16 @@ export function retenuesAAfficher(r: RetenuesParPost): {
   readonly enAttenteDeValidation: number;
   /** L'échéance d'une fiche ne se promet que si l'épargne de purge s'applique : même condition. */
   readonly echeances: boolean;
+  /**
+   * Le travail de relecture s'ANNONCE (résumé de la barre, badge de l'onglet). Même condition,
+   * décision distincte : sans accroche, relire ne débloque personne, et l'annoncer envoie
+   * l'opérateur valider pour rien. Le badge, lui, est déjà borné à la source
+   * (`compterPostsAValiderDeCampagne`) ; ce drapeau-ci est ce qui en dit autant à la barre.
+   */
+  readonly relecture: boolean;
 } {
   if (!r.nommeUnPost) {
-    return { sansSource: false, sansPost: 0, postInexploitable: 0, enAttenteDeValidation: 0, echeances: false };
+    return { sansSource: false, sansPost: 0, postInexploitable: 0, enAttenteDeValidation: 0, echeances: false, relecture: false };
   }
   return {
     sansSource: !r.aUneSourceDePost,
@@ -412,6 +419,7 @@ export function retenuesAAfficher(r: RetenuesParPost): {
     postInexploitable: r.postInexploitable,
     enAttenteDeValidation: r.enAttenteDeValidation,
     echeances: true,
+    relecture: true,
   };
 }
 

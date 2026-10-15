@@ -1103,7 +1103,7 @@
         "personnes": "up to {n, plural, one {# person does} other {# people do}} not enter the sequence until their post is approved",
         "rien": "No post is waiting for your review.",
         "toutValider": "Approve all ({n})",
-        "lotBloque": "Save or undo the change to a subject before approving everything."
+        "lotBloque": "Save or undo your change before approving everything."
       },
       "phrase": {
         "avantAuteur": "I saw you react to ",

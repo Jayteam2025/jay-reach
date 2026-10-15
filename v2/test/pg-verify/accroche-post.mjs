@@ -54,6 +54,22 @@
 //  38. accroche-post.ts : remettre la jointure par `campaign_sources` seule dans
 //      `sqlAchatRetenuParUnPost` — 30b et 30c rougissent ; dans
 //      `sqlSourceAUneCampagneQuiNommeUnPost` — 30d rougit.
+//  39. posts.ts : faire `decouperAccroche` ne reconnaître que `post_auteur|post_sujet` — 29f et
+//      29f2 rougissent : le jeton brut `{{post_date}}` repart dans la phrase relue.
+//  40. posts.ts : dans `validerPost`, ne plus distinguer les variables RELEVÉES par la capture des
+//      champs que l'opérateur écrit (`relevees` vide, `aEcrire` = tout) — 29g rougit : le refus
+//      demande d'écrire une date dans une phrase qui n'a aucun champ de date.
+//  41. posts.ts : retirer de `validerPost` la jointure `campaigns c` sur l'organisation (et l'appel
+//      à `exigerCampagneDeLOrganisation`) — 29h rougit : un uuid de campagne étranger rend toutes
+//      les exigences vraies et la fiche est approuvée.
+//  42. fiche-post.ts : retirer le `await relacher()` placé avant la boucle de rédaction (ne garder
+//      que celui du `finally`) — 28m et 28n rougissent : le navigateur et le verrou LinkedIn sont
+//      tenus pendant les appels au modèle.
+//  43. fiche-post.ts : sortir quand la session n'est pas active, et remettre `where status =
+//      'active'` dans `enqueueFichesPostALire` — 28o et 28p rougissent : une session bloquée rend
+//      l'opérateur aux sujets manuels.
+//  44. posts.ts : retirer `sqlCampagneNommeUnPost` de `compterPostsAValiderDeCampagne` — 23i
+//      rougit : le badge annonce une relecture qui ne débloque personne.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -1409,6 +1425,24 @@ async function decompteLisible() {
   check('23g. une campagne qui nomme un post sans aucune source de post est signalée',
     sansSource.nommeUnPost === true && sansSource.aUneSourceDePost === false, JSON.stringify(sansSource));
   check('23h. `campagneNommeUnPost` dit faux sur une campagne sans étape', (await campagneNommeUnPost(pool, (await monde()).campagne)) === false);
+
+  // Le badge de l'onglet annonce du TRAVAIL. Sans accroche, relire ces posts ne débloque
+  // personne : l'annoncer envoie l'opérateur valider pour rien, et le jour où la rétention sera
+  // vraie il ne lira plus le badge.
+  const muette = await monde();
+  await etapeAvecCorps(muette, SANS_ACCROCHE);
+  const posteMuet = await engageurDUnPost(muette, 64, { etat: 'pending', sujet: null });
+  check('23i. une campagne qui ne nomme aucun post n\'affiche aucun post à relire sur son onglet',
+    (await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })) === 0,
+    String(await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })));
+  check('23i2. et le post EST bien là, en attente dans sa fenêtre : ce qui manque, c\'est l\'accroche',
+    (await q(`select review_status, expires_at > now() as vivante from linkedin_posts where id = $1`, [posteMuet.fiche])).rows[0]
+      ?.review_status === 'pending');
+  // La même campagne, l'accroche ajoutée : le badge apparaît, sans que rien d'autre ne change.
+  await etapeAvecCorps(muette, ACCROCHE, { position: 1 });
+  check('23j. l\'accroche ajoutée, le badge compte ce post',
+    (await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })) === 1,
+    String(await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })));
 }
 
 async function indexDeJointureDesGabarits() {

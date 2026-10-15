@@ -111,6 +111,7 @@ describe('ce que l\'écran a le droit d\'affirmer', () => {
       postInexploitable: 4,
       enAttenteDeValidation: 106,
       echeances: true,
+      relecture: true,
     });
   });
 
@@ -121,6 +122,9 @@ describe('ce que l\'écran a le droit d\'affirmer', () => {
       postInexploitable: 0,
       enAttenteDeValidation: 0,
       echeances: false,
+      // Le travail de relecture ne s'annonce pas non plus : « N posts attendent votre relecture »
+      // enverrait l'opérateur valider des posts qui ne débloquent personne.
+      relecture: false,
     });
   });
 

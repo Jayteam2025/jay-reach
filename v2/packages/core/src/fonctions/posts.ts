@@ -21,6 +21,7 @@ import { VARIABLES_DE_POST, renderTemplatePartial } from '../messages/variables.
 import {
   EXIGENCES_VARIABLE_DE_POST,
   sqlCampagneEcritVariableDePost,
+  sqlCampagneNommeUnPost,
   sqlFicheResoutCeQuEcritLaCampagne,
   sqlSourceAlimenteLaCampagne,
 } from '../linkedin/accroche-post.js';
@@ -236,7 +237,17 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
   }));
 }
 
-/** Nombre de posts de la campagne qui attendent leur relecture et dont la fenêtre court encore (badge de l'onglet). */
+/**
+ * Nombre de posts de la campagne qui attendent leur relecture et dont la fenêtre court encore
+ * (badge de l'onglet, et le résumé de la barre qui dit la même chose en toutes lettres).
+ *
+ * ZÉRO tant que la campagne ne NOMME aucun post, et ce n'est pas un détail d'affichage : un badge
+ * annonce du travail. Sans accroche, la garde ne retient personne et relire ces posts ne débloque
+ * rien — l'opérateur valide pour rien, et le jour où la rétention sera vraie il ne lira plus le
+ * badge (« une alerte fausse en éteint une vraie »). Même condition que le bandeau et l'échéance
+ * (`retenuesAAfficher`), posée ici pour que le badge du calque et l'écran ne puissent pas
+ * diverger.
+ */
 export async function compterPostsAValiderDeCampagne(ctx: Contexte, entree: unknown): Promise<number> {
   exiger(ctx, 'viewer');
   const e = valider(schemaCampagne, entree);
@@ -244,6 +255,9 @@ export async function compterPostsAValiderDeCampagne(ctx: Contexte, entree: unkn
     `select count(*)::text as n
        from linkedin_posts lp
       where lp.organization_id = $1 and lp.review_status = 'pending' and lp.expires_at > now()
+        and exists (select 1 from campaigns c
+                     where c.id = $2 and c.organization_id = $1
+                       and ${sqlCampagneNommeUnPost('c.id')})
         and exists (select 1 from signals s
                       join campaigns c on c.id = $2 and c.organization_id = $1
                      where s.linkedin_post_id = lp.id and s.organization_id = $1
@@ -286,6 +300,22 @@ function sEcritDansLaPhrase(variable: string): boolean {
 }
 
 /**
+ * La campagne nommée en entrée appartient-elle à l'organisation ?
+ *
+ * `campagneId` est une ENTRÉE, pas un id lu en base : l'écran le prend dans son URL, et le
+ * serveur MCP (#100) le recevra d'un appel. Un uuid absent ou étranger rend vraies toutes les
+ * exigences de `sqlFicheResoutCeQuEcritLaCampagne` (aucune étape ne nomme le post, donc rien
+ * n'est exigé) et ferait approuver la fiche sans relecture utile.
+ */
+async function exigerCampagneDeLOrganisation(ctx: Contexte, campagneId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `select 1 from campaigns where id = $2 and organization_id = $1`,
+    [ctx.organisationId, campagneId],
+  );
+  if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Campagne');
+}
+
+/**
  * Les variables de post que CETTE campagne écrit et que la fiche ne résout pas — exactement ce que
  * la garde refuserait (`sqlFicheResoutCeQuEcritLaCampagne`, lu par les deux).
  */
@@ -302,22 +332,6 @@ async function variablesManquantes(ctx: Contexte, postId: string, campagneId: st
   const ligne = res.rows[0];
   if (!ligne) return [];
   return EXIGENCES_VARIABLE_DE_POST.filter((e) => ligne[e.variable] === true).map((e) => e.variable);
-}
-
-/**
- * La campagne nommée en entrée appartient-elle à l'organisation ?
- *
- * `campagneId` est une ENTRÉE, pas un id lu en base : l'écran le prend dans son URL, et le
- * serveur MCP (#100) le recevra d'un appel. Un uuid absent ou étranger rend vraies toutes les
- * exigences de `sqlFicheResoutCeQuEcritLaCampagne` (aucune étape ne nomme le post, donc rien
- * n'est exigé) et ferait approuver la fiche sans relecture utile.
- */
-async function exigerCampagneDeLOrganisation(ctx: Contexte, campagneId: string): Promise<void> {
-  const res = await ctx.ex.query(
-    `select 1 from campaigns where id = $2 and organization_id = $1`,
-    [ctx.organisationId, campagneId],
-  );
-  if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Campagne');
 }
 
 /**
