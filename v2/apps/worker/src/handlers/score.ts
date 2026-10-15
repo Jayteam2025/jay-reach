@@ -68,6 +68,7 @@ interface CandidateRow {
   title: string | null;
   location: string | null;
   description: string | null;
+  texte_post: string | null;
   occurred_at: string;
   naf_code: string | null;
   opposition: boolean | null;
@@ -241,9 +242,10 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
     `select s.id,
             coalesce(a.name, s.company_hint) as company,
             s.title, s.location,
-            -- Un engageur n'a pas de description : le texte du post qui l'a fait réagir en tient lieu.
-            -- Jointure gauche, qui ne filtre rien : la condition de sélection reste celle du compteur.
-            coalesce(lp.text_excerpt, s.raw ->> 'description') as description,
+            s.raw ->> 'description' as description,
+            -- Le texte du post qui a fait réagir un engageur. Jointure gauche, qui ne filtre rien :
+            -- la condition de sélection reste celle du compteur.
+            lp.text_excerpt as texte_post,
             s.occurred_at, a.naf_code, a.prospecting_opposition as opposition,
             s.kind::text as kind,
             s.source_id,
@@ -352,6 +354,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       title: c.title ?? '',
       location: c.location ?? undefined,
       description: c.description ?? undefined,
+      texteDePost: c.texte_post ?? undefined,
     }));
     const scores = await input.scorer(prospects, prompt);
     const byId = new Map(scores.map((s) => [s.id, s]));

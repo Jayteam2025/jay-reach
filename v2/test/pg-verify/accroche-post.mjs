@@ -22,8 +22,9 @@
 //  17. message-values.ts : retirer la jointure `linkedin_posts` de REQUETE_LIGNE_INSCRIPTION — 15a et 15c rougissent.
 //  18. valeurs-contact.ts : retirer la jointure `linkedin_posts` de lireValeursContact — 15b et 15c rougissent.
 //  19. migration linkedin_posts : remettre `people_search,job_change` dans la reprise — 16b et 16c rougissent.
-//  20. score.ts : retirer `lp.text_excerpt` du `coalesce` de `description` — 17a rougit.
+//  20. score.ts : remplacer `lp.text_excerpt as texte_post` par `null::text as texte_post` — 17a rougit.
 //  21. score.ts : retirer `and lp.organization_id = s.organization_id` de la jointure — 17c rougit.
+//  22. scoring.ts : passer `SCORING_DESCRIPTION_MAX_CARACTERES` de 150 à 600 — 26b rougit ; passer `SCORING_TEXTE_POST_MAX_CARACTERES` à 150 — 26c rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -34,6 +35,7 @@ import {
   compterRetenuesParPost,
   ecrireReglage,
   runScore,
+  buildScoringUserMessage,
   compterSignauxScorables,
   fenetreValidationPost,
   rejeterFichesPostExpirees,
@@ -855,8 +857,8 @@ async function gardeDEntree() {
   const inscritsP = await inscritsDe(p.org);
   check('17d. fiche validée SANS nom affiché : personne n\'est inscrit (le slug ne fait pas une accroche)',
     !inscritsP.includes(slug.contact_id), JSON.stringify(inscritsP));
-  check('17e. fiche validée sans sujet : personne n\'est inscrit non plus', !inscritsP.includes(sansSujet.contact_id), JSON.stringify(inscritsP));
-  check('17f. ni l\'un ni l\'autre ne produit d\'action envoyable', inscritsP.length === 0, JSON.stringify(inscritsP));
+  check('25b. fiche validée sans sujet : personne n\'est inscrit non plus', !inscritsP.includes(sansSujet.contact_id), JSON.stringify(inscritsP));
+  check('25c. ni l\'un ni l\'autre ne produit d\'action envoyable', inscritsP.length === 0, JSON.stringify(inscritsP));
   // L'OBJET d'un email nomme le post aussi bien que son corps : la tâche 6 fabrique justement un
   // objet qui le nomme. Un gabarit dont seul le sujet porte la variable doit être gardé pareil.
   const o = await monde();
@@ -1290,7 +1292,7 @@ async function scoringNourri() {
   const avant = await compterSignauxScorables(pool, m.org);
   let recus = [];
   const scorer = async (prospects) => {
-    recus = prospects;
+    recus = [...recus, ...prospects];
     return prospects.map((p) => ({ id: p.id, score: 90, reason: 'Retenu pour la preuve.' }));
   };
   const resume = await runScore({ pool, organizationId: m.org, scorer, now: Date.now() });
@@ -1300,12 +1302,28 @@ async function scoringNourri() {
   };
   check('17. la jointure ne filtre rien : le compteur et la sélection voient les mêmes trois signaux',
     avant === 3 && resume.considered === 3 && recus.length === 3, JSON.stringify({ avant, resume }));
-  check('17a. l\'engageur rattaché reçoit le texte du post en description',
-    (await parNom('ACoAAscoreA'))?.description === 'Pourquoi les commerciaux détestent leur CRM.', JSON.stringify(await parNom('ACoAAscoreA')));
-  check('17b. sans fiche, pas de description', (await parNom('ACoAAscoreB'))?.description === undefined);
-  check('17c. la fiche d\'une autre organisation n\'est pas lue', (await parNom('ACoAAscoreC'))?.description === undefined, JSON.stringify(await parNom('ACoAAscoreC')));
+  check('17a. l\'engageur rattaché reçoit le texte du post (`texteDePost`)',
+    (await parNom('ACoAAscoreA'))?.texteDePost === 'Pourquoi les commerciaux détestent leur CRM.', JSON.stringify(await parNom('ACoAAscoreA')));
+  check('17b. sans fiche, pas de texte de post', (await parNom('ACoAAscoreB'))?.texteDePost === undefined);
+  check('17c. la fiche d\'une autre organisation n\'est pas lue', (await parNom('ACoAAscoreC'))?.texteDePost === undefined, JSON.stringify(await parNom('ACoAAscoreC')));
+  // L'offre d'emploi : source Adzuna, prompt exploitable, description longue. Elle part à 150, le post à 600.
+  const long = (c) => c.repeat(900);
+  const srcOffre = (await q(`insert into sources (organization_id, name, provider_id, config) values ($1, 'Offres', 'adzuna', $2::jsonb) returning id`,
+    [m.org, JSON.stringify({ scoring_prompt: 'Qualifie les offres de directeur commercial. '.repeat(10) })])).rows[0].id;
+  const sigOffre = (await q(`insert into signals (organization_id, source_id, external_id, kind, occurred_at, title, raw) values ($1, $2, 'offre-1', 'job_posting', now(), 'Directeur commercial', $3::jsonb) returning id`,
+    [m.org, srcOffre, JSON.stringify({ description: long('o') })])).rows[0].id;
+  await q(`update linkedin_posts set text_excerpt = $2 where id = $1`, [f.id, long('p')]);
+  await q(`update signals set status = 'new', score = null where organization_id = $1`, [m.org]);
+  recus = [];
+  await runScore({ pool, organizationId: m.org, scorer, now: Date.now() });
+  const offre = recus.find((p) => p.id === sigOffre);
+  const rattache = recus.find((p) => p.texteDePost !== undefined);
+  check('26a. l\'offre garde sa description et n\'a pas de texte de post', offre?.description?.length === 900 && offre?.texteDePost === undefined, JSON.stringify(offre && { d: offre.description?.length, t: offre.texteDePost }));
+  const message = buildScoringUserMessage([offre, rattache].filter(Boolean));
+  check('26b. l\'offre part à 150 caractères', message.includes('o'.repeat(150)) && !message.includes('o'.repeat(151)));
+  check('26c. le texte du post part à 600 caractères', message.includes('p'.repeat(600)) && !message.includes('p'.repeat(601)));
   const retenus = (await q(`select count(*)::int as n from signals where organization_id = $1 and score_reason = 'Retenu pour la preuve.'`, [m.org])).rows[0].n;
-  check('17d. l\'explication du modèle est écrite pour les retenus', retenus === 3, String(retenus));
+  check('17d. l\'explication du modèle est écrite pour les retenus', retenus === 4, String(retenus));
 }
 
 async function main() {

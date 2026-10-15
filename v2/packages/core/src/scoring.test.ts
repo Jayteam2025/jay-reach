@@ -87,13 +87,13 @@ describe('coût & message', () => {
     expect(msg).toContain('tableau JSON');
   });
 
-  it("n'ampute plus la description à 150 caractères : la borne est 600", () => {
-    const texte = 'a'.repeat(590);
-    const msg = buildScoringUserMessage([{ id: 'a', company: '', title: 'Directeur', description: texte }]);
-    expect(msg).toContain(texte);
-    const long = buildScoringUserMessage([{ id: 'a', company: '', title: 'Directeur', description: 'b'.repeat(900) }]);
-    expect(long).toContain('b'.repeat(600));
-    expect(long).not.toContain('b'.repeat(601));
+  it("garde 150 caractères pour une description d'offre, et 600 pour le texte d'un post", () => {
+    const offre = buildScoringUserMessage([{ id: 'a', company: '', title: 'Directeur', description: 'a'.repeat(900) }]);
+    expect(offre).toContain('a'.repeat(150));
+    expect(offre).not.toContain('a'.repeat(151));
+    const post = buildScoringUserMessage([{ id: 'a', company: '', title: 'Directeur', texteDePost: 'b'.repeat(900) }]);
+    expect(post).toContain('b'.repeat(600));
+    expect(post).not.toContain('b'.repeat(601));
   });
 
   it('enveloppe la description comme une donnée tierce, sans chevron', () => {
@@ -104,6 +104,9 @@ describe('coût & message', () => {
     // Un seul couple de balises par prospect : le texte ne peut pas refermer l'enveloppe.
     expect(msg.match(/<\/description>/g)).toHaveLength(1);
     expect(msg).not.toContain('<donnee>');
+    const post = buildScoringUserMessage([{ id: 'a', company: '', title: 'x', texteDePost: hostile }]);
+    expect(post.match(/<\/post>/g)).toHaveLength(1);
+    expect(post).toContain('<post>');
   });
 });
 
