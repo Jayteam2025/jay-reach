@@ -36,11 +36,10 @@ create index linkedin_posts_org_review_idx on public.linkedin_posts (organizatio
 
 -- La garde d'accroche (`linkedin/accroche-post.ts`) joint `message_templates` par `parent_id`
 -- dans CINQ sous-requêtes : une par variable de post, plus la question « cette campagne nomme-t-elle
--- un post ». Cette colonne n'avait aucun index. Aujourd'hui la table tient en une page, donc le
--- parcours séquentiel ne se voit pas — mais le coût de la garde croît comme le nombre de contacts
--- sans inscription vivante multiplié par le nombre de campagnes actives, et c'est exactement ce que
--- la collecte LinkedIn fait grossir. Une ligne ici évite d'avoir à revenir sur ces requêtes.
-create index if not exists message_templates_parent_idx on public.message_templates (parent_id);
+-- un post ». AUCUN index à poser ici : `message_templates_parent_id_version_locale_key`, l'unique
+-- (parent_id, version, locale) du schéma initial, porte déjà `parent_id` en colonne de tête et sert
+-- cette jointure (vérifié par EXPLAIN, contrôle 24a du harnais). Un index dédié n'apporterait que
+-- de la compacité, contre un coût d'écriture à chaque gabarit enregistré.
 
 alter table public.linkedin_posts enable row level security;
 alter table public.linkedin_posts force row level security;
@@ -135,15 +134,6 @@ begin
      where oid = 'public.linkedin_posts'::regclass and relrowsecurity and relforcerowsecurity
   ) then
     raise exception 'RLS non activée sur linkedin_posts';
-  end if;
-  if not exists (
-    select 1 from pg_index i
-     where i.indrelid = 'public.message_templates'::regclass
-       and i.indnatts = 1
-       and (select a.attname from pg_attribute a
-             where a.attrelid = i.indrelid and a.attnum = i.indkey[0]) = 'parent_id'
-  ) then
-    raise exception 'index de jointure sur message_templates(parent_id) absent';
   end if;
   if exists (
     select 1 from public.signals s

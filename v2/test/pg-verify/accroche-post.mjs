@@ -1185,23 +1185,47 @@ async function decompteLisible() {
 }
 
 async function indexDeJointureDesGabarits() {
-  console.log('\n# la jointure des gabarits, que la garde d\'accroche évalue à chaque candidat, porte un index');
-  // Les cinq sous-requêtes de la garde (une par variable de post, plus la question « nomme un
-  // post ») joignent `message_templates` par `parent_id`. Sans index, chaque évaluation est un
-  // parcours séquentiel ; et le coût croît comme le nombre de contacts sans inscription vivante
-  // multiplié par le nombre de campagnes actives — exactement ce que la collecte fait grossir.
-  const colonnes = (
+  console.log('\n# la jointure des gabarits, que la garde évalue à chaque candidat, est indexée');
+  // Les cinq sous-requêtes de la garde (une par variable de post, plus « cette campagne nomme-t-elle
+  // un post ») joignent `message_templates` par `parent_id`. Ce qui compte n'est pas qu'un index
+  // PRÉCIS existe, c'est que la jointure soit indexable.
+  //
+  // La première version de ce contrôle exigeait un index à UNE SEULE colonne, et ce filtre
+  // masquait exactement l'index qui existait déjà — l'unique (parent_id, version, locale) du
+  // schéma initial. Une preuve écrite autour de ce qu'on croit ne peut plus le contredire : elle
+  // avait fait poser un index redondant. Elle regarde maintenant la propriété, pas une ligne.
+  const tete = (
     await q(
-      `select (select array_agg(a.attname::text) from pg_attribute a
-                where a.attrelid = i.indrelid and a.attnum = any(i.indkey)) as cols
-         from pg_index i where i.indrelid = 'public.message_templates'::regclass and i.indnatts = 1`,
+      `select i.relname as nom, pg_get_indexdef(i.oid) as def
+         from pg_index x join pg_class i on i.oid = x.indexrelid
+        where x.indrelid = 'public.message_templates'::regclass
+          and (select a.attname from pg_attribute a
+                where a.attrelid = x.indrelid and a.attnum = x.indkey[0]) = 'parent_id'`,
     )
-  ).rows.map((r) => (r.cols ?? []).join(','));
-  check('24. un index à une colonne sur `message_templates(parent_id)` existe en base', colonnes.includes('parent_id'), JSON.stringify(colonnes));
-  const sql = readFileSync(new URL('../../supabase/migrations/20261015092540_linkedin_posts.sql', import.meta.url), 'utf8');
-  check('24a. et c\'est la migration du lot qui le pose, pas une main sur la base',
-    /create index[^;]*message_templates[^;]*parent_id/i.test(sql));
-  check('24b. la migration se vérifie elle-même sur cet index', /index de jointure/i.test(sql));
+  ).rows;
+  check('24. un index porte `parent_id` en COLONNE DE TÊTE, quel que soit son nom et sa largeur',
+    tete.length > 0, tete.map((r) => r.nom).join(', ') || 'aucun');
+
+  // Et le planificateur s'en sert pour la forme EXACTE que la garde écrit. `enable_seqscan = off`
+  // parce que la table du harnais tient en une page : sans cela un parcours séquentiel serait
+  // légitimement préféré, et le contrôle ne dirait rien de l'indexabilité.
+  const client = await pool.connect();
+  let plan = '';
+  try {
+    await client.query('begin');
+    await client.query('set local enable_seqscan = off');
+    const r = await client.query(
+      `explain (costs off) select 1 from public.message_templates mt_ap
+        where (mt_ap.id = '00000000-0000-0000-0000-000000000001'::uuid
+            or mt_ap.parent_id = '00000000-0000-0000-0000-000000000001'::uuid)`,
+    );
+    plan = r.rows.map((x) => x['QUERY PLAN']).join(' / ');
+  } finally {
+    await client.query('rollback').catch(() => undefined);
+    client.release();
+  }
+  check('24a. et le planificateur l\'utilise pour la forme exacte de la garde, sans parcours séquentiel',
+    /Index Scan/.test(plan) && !/Seq Scan/.test(plan), plan);
 }
 
 /** La partie « reprise » et la partie « auto-vérification » de la migration, telles qu'écrites dans le fichier. */
