@@ -14,6 +14,7 @@
  */
 import { useRef, useState, useTransition } from 'react';
 import { Bouton } from '../ui';
+import { creerEnregistreurSujet } from './enregistreur-sujet';
 import {
   actionCorrigerSujet,
   actionRejeterPost,
@@ -125,10 +126,6 @@ function Ligne({
 }) {
   const refSujet = useRef<HTMLSpanElement>(null);
   const [brouillon, setBrouillon] = useState(ligne.sujet ?? '');
-  // Le dernier sujet envoyé au serveur : la perte de focus enregistre, et un clic sur « Valider »
-  // juste après ne doit ni attendre cet enregistrement (le bouton se désactiverait sous le doigt)
-  // ni l'envoyer deux fois. Les Server Actions s'exécutent dans l'ordre : la validation passe après.
-  const dernierEnvoye = useRef(ligne.sujet ?? '');
   const [erreur, setErreur] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const editable = peutModifier && ligne.etat !== 'rejected';
@@ -137,21 +134,24 @@ function Ligne({
   function lire(): string {
     return (refSujet.current?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
+  // Le sujet n'est confirmé qu'APRÈS la réponse du serveur (voir `enregistreur-sujet.ts`) : un clic
+  // sur « Valider » attend l'enregistrement en vol et ne valide pas s'il a échoué.
+  const [enregistreur] = useState(() =>
+    creerEnregistreurSujet({
+      confirmeInitial: ligne.sujet ?? '',
+      lire,
+      envoyer: async (sujet) => {
+        const res = await actionCorrigerSujet(campagneId, ligne.id, sujet);
+        return res.ok ? null : res.error;
+      },
+      surErreur: setErreur,
+    }),
+  );
 
-  /** Enregistre le sujet s'il a changé. Rend `false` si l'enregistrement a échoué. */
   async function enregistrerSujet(): Promise<boolean> {
-    const sujet = lire();
-    // Un sujet vidé reste « en cours » : le serveur garde l'ancien, et le lot ne doit pas le valider.
-    if (sujet === dernierEnvoye.current || sujet === '') return true;
-    const precedent = dernierEnvoye.current;
-    dernierEnvoye.current = sujet;
-    const res = await actionCorrigerSujet(campagneId, ligne.id, sujet);
-    if (!res.ok) {
-      dernierEnvoye.current = precedent;
-      setErreur(res.error);
-    }
-    surEdition(ligne.id, lire() !== dernierEnvoye.current);
-    return res.ok;
+    const ok = await enregistreur.enregistrer();
+    surEdition(ligne.id, lire() !== enregistreur.confirme());
+    return ok;
   }
 
   function surPerte() {
@@ -198,7 +198,7 @@ function Ligne({
           data-invite={libelles.sujetInvite}
           onInput={() => {
             setBrouillon(lire());
-            surEdition(ligne.id, lire() !== dernierEnvoye.current);
+            surEdition(ligne.id, lire() !== enregistreur.confirme());
           }}
           onBlur={surPerte}
           onKeyDown={(e) => {
