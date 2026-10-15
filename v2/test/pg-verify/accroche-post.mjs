@@ -1951,11 +1951,14 @@ async function gabaritMixte() {
   // rendent le même verdict tant qu'elle l'est. On la vide, et seulement alors la différence se
   // voit.
   //
-  // AUCUNE inversion ne fait rougir 32f seul, et aucune ne le pourrait : les deux variables
-  // sortent du même appel de `motifSqlDesVariables`, donc une erreur qui toucherait `post_url`
-  // sans toucher `post_date` est inatteignable. 32f vaut pour sa COUVERTURE, et ce qui prouve
-  // son propos, c'est la PAIRE 32f / 32g — même fiche, deux gabarits qui ne diffèrent que par le
-  // repli sur l'adresse, deux verdicts opposés.
+  // Aucune inversion DU MOTIF ne fait rougir 32f seul, et aucune ne le pourrait : `post_url` et
+  // `post_date` sortent du même appel de `motifSqlDesVariables`, donc une erreur de motif qui
+  // toucherait l'une sans l'autre est inatteignable. La phrase s'arrête au motif :
+  // `EXIGENCES_VARIABLE_DE_POST` tient, elle, une condition PAR variable, et une erreur sur la
+  // seule ligne `post_url` reste parfaitement atteignable — c'est même ce que la paire attrape.
+  // 32f vaut donc pour sa COUVERTURE, et ce qui prouve son propos, c'est la PAIRE 32f / 32g —
+  // même fiche, deux gabarits qui ne diffèrent que par le repli sur l'adresse, deux verdicts
+  // opposés.
   const u = await monde();
   await etapeAvecCorps(u, ACCROCHE_MIXTE);
   const w = await engageurDUnPost(u, 78, { etat: 'pending', sujet: 'un sujet relu', nomAffiche: null });
