@@ -13,7 +13,7 @@
  * réversible (« Rouvrir »).
  */
 import { useRef, useState, useTransition } from 'react';
-import { Bouton } from '../ui';
+import { Bouton, Puce } from '../ui';
 import { creerEnregistreurSujet } from './enregistreur-sujet';
 import {
   actionCorrigerSujet,
@@ -103,10 +103,26 @@ export function BarreLot({
   return (
     <span className="pousse jr-posts-lot">
       {bloque && <small className="jr-secondaire">{lotBloque}</small>}
-      <Bouton taille="petit" onClick={onToutValider} disabled={pending || bloque} aria-busy={pending}>
+      <Bouton taille="petit" className="discret" onClick={onToutValider} disabled={pending || bloque} aria-busy={pending}>
         {libelles.toutValider}
       </Bouton>
     </span>
+  );
+}
+
+/**
+ * L'auteur et le sujet sont les deux parties variables de l'accroche : le sujet se distingue par
+ * son soulignement d'édition, l'auteur n'a que la graisse.
+ */
+function avecAuteurEnGras(avant: string, auteur: string | null) {
+  const i = auteur ? avant.indexOf(auteur) : -1;
+  if (!auteur || i < 0) return avant;
+  return (
+    <>
+      {avant.slice(0, i)}
+      <b>{auteur}</b>
+      {avant.slice(i + auteur.length)}
+    </>
   );
 }
 
@@ -181,13 +197,15 @@ function Ligne({
       <div className="jr-post-entete">
         <span className="jr-post-auteur">{ligne.auteur ?? libelles.auteurInconnu}</span>
         <span className="jr-post-meta">{ligne.publie}</span>
-        <span className="jr-post-meta">{ligne.etatLibelle}</span>
+        {/* Une marque pour ce qui sort de la norme, rien pour la norme : un « en attente » sur
+            chaque ligne d'un écran où tout attend ne dit rien. Le rejet, lui, explique le texte barré. */}
+        {ligne.etat === 'rejected' && <Puce ton="gris">{ligne.etatLibelle}</Puce>}
         <a className="jr-post-lien" href={ligne.url} target="_blank" rel="noopener noreferrer">
           {libelles.voir}
         </a>
       </div>
       <p className="jr-post-phrase">
-        <span className="fixe">« {ligne.avant}</span>
+        <span className="fixe">« {avecAuteurEnGras(ligne.avant, ligne.auteur)}</span>
         <span
           ref={refSujet}
           className={`jr-post-sujet${sansSujet ? ' vide' : ''}${editable ? '' : ' fige'}`}
@@ -226,7 +244,7 @@ function Ligne({
               </Bouton>
             ) : (
               <>
-                <Bouton onClick={() => simple(actionRejeterPost)} disabled={pending}>
+                <Bouton className="discret" onClick={() => simple(actionRejeterPost)} disabled={pending}>
                   {libelles.rejeter}
                 </Bouton>
                 {ligne.etat === 'pending' && (
@@ -289,7 +307,7 @@ export function TablePosts({ campagneId, lignes, peutModifier, libelles }: Table
         )}
       </div>
       {erreur && (
-        <p className="jr-post-erreur" role="alert" style={{ padding: '0 24px' }}>
+        <p className="jr-post-erreur jr-posts-erreur-lot" role="alert">
           {erreur}
         </p>
       )}

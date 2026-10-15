@@ -163,6 +163,9 @@ export async function compterPostsAValiderDeCampagne(ctx: Contexte, entree: unkn
   return Number(res.rows[0]?.n ?? 0);
 }
 
+const MESSAGE_ECHEANCE_PASSEE =
+  'L\'échéance de ce post est passée : les personnes collectées sur ce post ne sont plus en attente (la purge ordinaire s\'applique), il ne peut donc plus être validé ni rouvert.';
+
 function refus(message: string): ErreurEntree {
   return new ErreurEntree({ formErrors: [message], fieldErrors: {} });
 }
@@ -191,7 +194,7 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
   const res = await ctx.ex.query(
     `update linkedin_posts
         set review_status = 'approved', reviewed_at = now(), reviewed_by = $3
-      where organization_id = $1 and id = $2 and review_status = 'pending'
+      where organization_id = $1 and id = $2 and review_status = 'pending' and expires_at > now()
         and coalesce(btrim(subject), '') <> ''`,
     [ctx.organisationId, postId, ctx.utilisateurId],
   );
@@ -199,6 +202,7 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
   const etat = await etatDuPost(ctx, postId);
   if (etat.review_status === 'approved') return;
   if (etat.review_status === 'rejected') throw refus('Ce post est rejeté : rouvrez-le avant de le valider.');
+  if (etat.expired) throw refus(MESSAGE_ECHEANCE_PASSEE);
   throw refus('Ce post n\'a pas de sujet : écrivez-le avant de le valider.');
 }
 
@@ -255,7 +259,7 @@ export async function reouvrirPost(ctx: Contexte, entree: unknown): Promise<void
   if ((res.rowCount ?? 0) > 0) return;
   const etat = await etatDuPost(ctx, postId);
   if (etat.review_status === 'rejected' && etat.expired) {
-    throw refus('L\'échéance de ce post est passée : les personnes collectées sur ce post ne sont plus en attente (la purge ordinaire s\'applique), il ne peut donc plus être rouvert.');
+    throw refus(MESSAGE_ECHEANCE_PASSEE);
   }
 }
 

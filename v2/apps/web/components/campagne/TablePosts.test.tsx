@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
@@ -55,7 +56,7 @@ function rendu(lignes: LignePostEcran[], peutModifier = true) {
 describe('l\'écran des posts à valider', () => {
   it('montre la phrase telle qu\'elle partira, le sujet DANS la phrase', () => {
     const html = rendu([ligne()]);
-    expect(html).toMatch(/« Je vous ai vu réagir au post de Christelle Moreau sur <\/span><span[^>]*jr-post-sujet[^>]*>l&#x27;adoption du CRM par les commerciaux<\/span><span class="fixe"> »/);
+    expect(html).toMatch(/« Je vous ai vu réagir au post de <b>Christelle Moreau<\/b> sur <\/span><span[^>]*jr-post-sujet[^>]*>l&#x27;adoption du CRM par les commerciaux<\/span><span class="fixe"> »/);
     expect(html).toContain('contentEditable="true"');
   });
 
@@ -129,5 +130,29 @@ describe('la validation en lot', () => {
     const html = rendre(false);
     expect(html).not.toMatch(/<button[^>]*disabled=""/);
     expect(html).not.toContain('Enregistrez ou annulez');
+  });
+});
+
+describe('la forme des lignes', () => {
+  it('ne marque d\'une pastille que l\'exception : le rejet', () => {
+    expect(rendu([ligne()])).not.toContain('jr-puce');
+    const html = rendu([ligne({ etat: 'rejected', etatLibelle: 'rejeté' })]);
+    expect(html).toMatch(/jr-puce[^>]*>rejeté</);
+  });
+
+  it('une seule action principale : Valider ; Rejeter et Tout valider sont discrets', () => {
+    const html = rendu([ligne(), ligne({ id: 'p2' })]);
+    expect(html.match(/jr-bouton principal/g)).toHaveLength(2); // un Valider par post
+    expect(html).toMatch(/<button[^>]*class="jr-bouton discret"[^>]*>Rejeter</);
+    expect(html).toMatch(/<button[^>]*class="jr-bouton petit discret"[^>]*>Tout valider/);
+  });
+
+  it('met le nom de l\'auteur en gras dans la phrase', () => {
+    expect(rendu([ligne()])).toContain('post de <b>Christelle Moreau<\/b> sur ');
+  });
+
+  it('n\'a plus de style en ligne', () => {
+    const source = readFileSync(new URL('./TablePosts.tsx', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/style=\{\{/);
   });
 });

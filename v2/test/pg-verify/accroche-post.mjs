@@ -30,6 +30,7 @@
 //  25. posts.ts : remplacer `where organization_id = $1` de `rejeterPost` par `where $1::uuid is not null` — 27m rougit.
 //  26. posts.ts : retirer `and expires_at > now()` de `reouvrirPost` — 27l rougit.
 //  27. posts.ts : ajouter `review_status = 'pending'` au `set` de `corrigerSujetDePost` — 27i rougit.
+//  28. posts.ts : retirer `and expires_at > now()` de `validerPost` — 27n rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -1402,6 +1403,15 @@ async function ecranDesPosts() {
   let refusRouvrir = null;
   await reouvrirPost(m.ctx, { postId: b.fiche }).catch((e) => { refusRouvrir = e; });
   check('27l. un post dont la fenêtre est passée ne se rouvre pas', refusRouvrir !== null && (await q(`select review_status from linkedin_posts where id = $1`, [b.fiche])).rows[0].review_status === 'rejected');
+
+  // Même règle des deux côtés : une fenêtre passée ne se valide pas non plus.
+  const perimee = await engageurDUnPost(m, 45, { etat: 'pending', sujet: 'un sujet relu' });
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = $1`, [perimee.fiche]);
+  let refusValider = null;
+  await validerPost(m.ctx, { postId: perimee.fiche }).catch((e) => { refusValider = e; });
+  const etatPerimee = (await q(`select review_status from linkedin_posts where id = $1`, [perimee.fiche])).rows[0].review_status;
+  check('27n. un post en attente dont l\'échéance est passée ne se valide pas, comme il ne se rouvre pas',
+    refusValider !== null && etatPerimee === 'pending' && JSON.stringify(refusValider.details).includes('échéance'), `${refusValider?.name} / ${etatPerimee}`);
 
   // Une autre organisation n'agit jamais sur ce post.
   let intrus = null;

@@ -67,6 +67,13 @@ describe('validerPost', () => {
     await expect(validerPost(ctx, { postId: POST })).rejects.toMatchObject({ details: { formErrors: [expect.stringMatching(/rouvrez/)] } });
   });
 
+  it('refuse un post en attente dont l échéance est passée, avec le même message que la réouverture', async () => {
+    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', subject: 'x', expired: true }] } });
+    await expect(validerPost(ctx, { postId: POST })).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/échéance.*passée.*plus en attente/)] },
+    });
+  });
+
   it('ne dit rien d un post déjà validé', async () => {
     const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'approved', subject: 'x', expired: false }] } });
     await expect(validerPost(ctx, { postId: POST })).resolves.toBeUndefined();

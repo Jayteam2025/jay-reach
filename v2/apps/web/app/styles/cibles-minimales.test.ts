@@ -41,4 +41,10 @@ describe('l\'écran des posts', () => {
     expect(jetons).toMatch(/--jr-phrase:\s*17px/);
     expect(css).toMatch(/\.jr-post-phrase\s*\{[^}]*font-size:\s*var\(--jr-phrase\)/);
   });
+
+  it('reste dans le barème de rayons (6, 10, 14, 999) et nomme la variante discrète', () => {
+    const regle = css.match(/\.jr-post-sujet\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(regle).not.toMatch(/border-radius/);
+    expect(css).toMatch(/\.jr-bouton\.discret\s*\{/);
+  });
 });
