@@ -1435,9 +1435,9 @@ async function decompteLisible() {
   check('23i. une campagne qui ne nomme aucun post n\'affiche aucun post à relire sur son onglet',
     (await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })) === 0,
     String(await compterPostsAValiderDeCampagne(muette.ctx, { campagneId: muette.campagne })));
+  const etatMuet = (await q(`select review_status, expires_at > now() as vivante from linkedin_posts where id = $1`, [posteMuet.fiche])).rows[0];
   check('23i2. et le post EST bien là, en attente dans sa fenêtre : ce qui manque, c\'est l\'accroche',
-    (await q(`select review_status, expires_at > now() as vivante from linkedin_posts where id = $1`, [posteMuet.fiche])).rows[0]
-      ?.review_status === 'pending');
+    etatMuet?.review_status === 'pending' && etatMuet?.vivante === true, JSON.stringify(etatMuet));
   // La même campagne, l'accroche ajoutée : le badge apparaît, sans que rien d'autre ne change.
   await etapeAvecCorps(muette, ACCROCHE, { position: 1 });
   check('23j. l\'accroche ajoutée, le badge compte ce post',
