@@ -1080,12 +1080,16 @@ interface LigneEnvoi {
   sender_id: string | null;
   signal_id: string | null;
   /**
-   * Objet du gabarit de l'étape (`message_templates.subject`), pour un envoi
-   * pas encore parti — `objet` (`a.payload ->> 'subject'`) ne se pose qu'à
-   * l'envoi réussi (`email-salesblink.ts`), donc reste `null` pour tout ce qui
-   * est `scheduled`/`pending_approval`/`approved`/`blocked` (point 5, tour de
+   * Objet du gabarit de l'étape, pour un envoi pas encore parti — `objet`
+   * (`a.payload ->> 'subject'`) ne se pose qu'à l'envoi réussi
+   * (`email-salesblink.ts`), donc reste `null` pour tout ce qui est
+   * `scheduled`/`pending_approval`/`approved`/`blocked` (point 5, tour de
    * correction 5). `null` pour une étape LinkedIn (pas d'objet) ou sans
    * gabarit actif.
+   *
+   * `message_templates.subject`, ou son `name` quand le sujet est NUL sur une
+   * étape email : c'est ce que l'envoi expédie (`subject ?? name`), donc c'est
+   * ce que cet écran doit annoncer.
    */
   etape_sujet: string | null;
   /** `contacts.job_title` — déjà sur la table jointe, sans coût de plus (revue F5, point 2). */
@@ -1268,7 +1272,16 @@ async function lireEnvoisDuJour(
               a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
               c.first_name, c.last_name, c.job_title, c.source_signal_id as signal_id,
               camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
-              e.contact_id, mt.subject as etape_sujet, lm.raw_row
+              e.contact_id, lm.raw_row,
+              -- L'objet d'un email se replie sur le NOM du gabarit, à l'envoi
+              -- (email-salesblink.ts : subject ?? name) comme à l'aperçu
+              -- (file-du-jour.ts). Lu ici dans le MEME ordre : sans ce repli, la
+              -- colonne « Étape et objet » restait vide pour un gabarit sans objet,
+              -- et le seul écran qui montre ce qui part aujourd'hui ne montrait pas
+              -- l'accroche qui allait sortir. Bornée au canal email et au sujet NUL,
+              -- comme la garde (sqlGabaritPorteLeMotif) : ailleurs le nom ne part
+              -- jamais, et l'afficher en objet serait une invention.
+              case when a.channel = 'email' and mt.subject is null then mt.name else mt.subject end as etape_sujet
          from actions a /* jr:file_du_jour_campagne */
          join enrollments e on e.id = a.enrollment_id
          join campaigns camp on camp.id = e.campaign_id

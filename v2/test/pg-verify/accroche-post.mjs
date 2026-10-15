@@ -98,6 +98,9 @@
 //      une accroche ajoutée à une campagne qui tourne fait partir le post sans relecture.
 //  53. accroche-post.ts : faire rendre `false` à `envoiRetenuParUnPost` — 34a, 34b et 34e
 //      rougissent (et, côté Vitest, les deux contrôles de `email-salesblink.test.ts`).
+//  54. campagnes.ts : remettre `mt.subject as etape_sujet` seul dans `jr:file_du_jour_campagne` —
+//      33j rougit : la File du jour n'affiche aucun objet pour le gabarit qui partira avec son
+//      nom en objet, sur le seul écran qui montre ce qui part aujourd'hui.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -139,6 +142,7 @@ import {
   corrigerAuteurDePost,
   decouperAccroche,
   corrigerSujetDePost,
+  listerFileDuJour,
   listerPostsDeCampagne,
   rejeterPost,
   reouvrirPost,
@@ -2041,6 +2045,22 @@ async function accrocheDansLeNomDuGabarit() {
   const apercu = await apercuEnvoi(m.ctx, { actionId: action.id });
   check('33e. et l\'objet de l\'email EST ce nom, avec l\'adresse réelle du post',
     apercu.objet === `Votre réaction à ${urlN(79)}`, apercu.objet);
+
+  // Le TROISIÈME lecteur du même repli : la File du jour. Elle lit la colonne brute, donc le
+  // recensement des appelants de `renderTemplate` ne pouvait pas l'attraper. Pour le gabarit qui
+  // partira avec son nom en objet, la colonne « Étape et objet » restait VIDE : l'opérateur ne
+  // voyait nulle part l'accroche qui allait sortir, sur le seul écran qui montre ce qui part
+  // aujourd'hui. Même ordre qu'à l'envoi (subject ?? name), sur de vraies données.
+  //
+  // L'adresse, elle, reste en jeton, et c'est le contrat ASSUMÉ de cet écran : `objetAffiche`
+  // rend par `renderTemplatePartial`, avec les seules valeurs déjà en main dans cette requête de
+  // liste (prénom, poste, colonnes de liste) — `{{entreprise}}` y est visible pareil, plutôt que
+  // blanchi. Ce qu'on corrige ici, c'est la colonne vide, pas la portée de la résolution :
+  // l'adresse exacte du post se lit sur l'écran de relecture, qui, lui, joint la fiche.
+  const file = await listerFileDuJour(m.ctx, { campagneId: insc.campaign_id });
+  check('33j. la File du jour montre cet objet-là, et non une colonne vide',
+    file.prevus.some((e) => e.id === action.id && e.objet === 'Votre réaction à {{post_url}}'),
+    JSON.stringify(file.prevus.map((e) => [e.id, e.objet])));
 
   // L'AUTRE motif : un nom qui écrit `{{post_sujet}}` l'exige de la fiche, sinon l'objet partirait
   // vide — un objet vide n'est pas une accroche, c'est un email sans objet.
