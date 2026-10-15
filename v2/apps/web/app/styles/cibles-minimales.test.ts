@@ -29,9 +29,9 @@ describe('la taille des cibles', () => {
 });
 
 describe('l\'écran des posts', () => {
-  it('garde un contour de focus visible sur le sujet éditable', () => {
+  it('garde un contour de focus visible sur les champs éditables de la phrase', () => {
     const regle = css.match(/\.jr-post-champ:focus\s*\{([^}]*)\}/)?.[1];
-    expect(regle, 'règle :focus du sujet introuvable').toBeDefined();
+    expect(regle, 'règle :focus des champs de la phrase introuvable').toBeDefined();
     expect(regle).not.toMatch(/outline:\s*none/);
     expect(regle).toMatch(/outline:\s*2px solid var\(--jr-accent\)/);
   });
