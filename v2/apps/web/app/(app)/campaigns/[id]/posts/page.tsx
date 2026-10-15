@@ -46,7 +46,6 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
       etat: p.etat,
       etatLibelle: t(`etat.${p.etat}`),
       attente: t('ligne.attente', { n: p.personnesEnAttente }),
-      personnes: p.personnesEnAttente,
       echeance: t(`echeance.${echeance.cle}`, { date: jourMois(p.expireLe), jours: echeance.jours }),
       tonEcheance: echeance.ton,
       etiquetteSujet: t('phrase.sujetEtiquette', { auteur: p.auteur ?? t('ligne.auteurInconnu') }),
@@ -102,7 +101,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               // Le compte de personnes vient de la garde elle-même : c'est ce chiffre-là qui
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
               resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
-              personnes: t('bar.personnes', { n: retenues.enAttenteDeValidation }),
+              personnes: retenues.enAttenteDeValidation > 0 ? t('bar.personnes', { n: retenues.enAttenteDeValidation }) : '',
               toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}
           />

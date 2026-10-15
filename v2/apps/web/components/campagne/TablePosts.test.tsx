@@ -38,7 +38,6 @@ function ligne(sur: Partial<LignePostEcran> = {}): LignePostEcran {
     etat: 'pending',
     etatLibelle: 'en attente',
     attente: '47 personnes attendent',
-    personnes: 47,
     echeance: 'effacées le 28/10',
     tonEcheance: 'loin',
     etiquetteSujet: 'Sujet du post de Christelle Moreau',

@@ -37,7 +37,6 @@ export interface LignePostEcran {
   etatLibelle: string;
   /** Déjà composé (« 47 personnes attendent »). */
   attente: string;
-  personnes: number;
   echeance: string;
   tonEcheance: 'loin' | 'bientot' | 'urgent';
   etiquetteSujet: string;
@@ -56,7 +55,7 @@ export interface TablePostsProps {
     rouvrir: string;
     /** Déjà composé (« 3 posts attendent votre relecture »). */
     resume: string;
-    /** Déjà composé (« 106 personnes n'entrent pas… »). */
+    /** Déjà composé (« 106 personnes n'entrent pas… »), vide quand aucune personne n'attend. */
     personnes: string;
     /** « Tout valider (2) », ou `null` quand rien n'est validable en lot. */
     toutValider: string | null;
@@ -93,6 +92,10 @@ function Ligne({
 }) {
   const refSujet = useRef<HTMLSpanElement>(null);
   const [brouillon, setBrouillon] = useState(ligne.sujet ?? '');
+  // Le dernier sujet envoyé au serveur : la perte de focus enregistre, et un clic sur « Valider »
+  // juste après ne doit ni attendre cet enregistrement (le bouton se désactiverait sous le doigt)
+  // ni l'envoyer deux fois. Les Server Actions s'exécutent dans l'ordre : la validation passe après.
+  const dernierEnvoye = useRef(ligne.sujet ?? '');
   const [erreur, setErreur] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const editable = peutModifier && ligne.etat !== 'rejected';
@@ -105,17 +108,20 @@ function Ligne({
   /** Enregistre le sujet s'il a changé. Rend `false` si l'enregistrement a échoué. */
   async function enregistrerSujet(): Promise<boolean> {
     const sujet = lire();
-    if (sujet === (ligne.sujet ?? '') || sujet === '') return true;
+    if (sujet === dernierEnvoye.current || sujet === '') return true;
+    const precedent = dernierEnvoye.current;
+    dernierEnvoye.current = sujet;
     const res = await actionCorrigerSujet(campagneId, ligne.id, sujet);
-    if (!res.ok) setErreur(res.error);
+    if (!res.ok) {
+      dernierEnvoye.current = precedent;
+      setErreur(res.error);
+    }
     return res.ok;
   }
 
   function surPerte() {
     setErreur(null);
-    startTransition(async () => {
-      await enregistrerSujet();
-    });
+    void enregistrerSujet();
   }
 
   function valider() {
@@ -222,7 +228,13 @@ export function TablePosts({ campagneId, lignes, peutModifier, libelles }: Table
     <div className="jr-carte">
       <div className="jr-posts-barre">
         <span>
-          <Chiffres texte={libelles.resume} /> · <Chiffres texte={libelles.personnes} />
+          <Chiffres texte={libelles.resume} />
+          {libelles.personnes !== '' && (
+            <>
+              {' · '}
+              <Chiffres texte={libelles.personnes} />
+            </>
+          )}
         </span>
         {peutModifier && libelles.toutValider !== null && validables.length > 0 && (
           <span className="pousse">
