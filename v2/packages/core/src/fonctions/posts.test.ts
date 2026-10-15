@@ -4,6 +4,7 @@ import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import type { Contexte } from './contexte.js';
 import type { Executeur } from '../executeur.js';
 import { VARIABLES_DE_POST } from '../messages/variables.js';
+import { sqlCampagneEcritVariableDePost } from '../linkedin/accroche-post.js';
 import {
   AUTEUR_POST_MAX_CARACTERES,
   CHAMPS_ACCROCHE,
@@ -336,6 +337,48 @@ describe('listerPostsDeCampagne', () => {
       { manquant: 'post_date' },
       { texte: ' nous a marqués.' },
     ]);
+  });
+
+  /**
+   * Les DEUX lectures du repli, appelées pour de bon, sur les mêmes écritures.
+   *
+   * La garde et l'écran n'ont pas le même code : la garde compare un motif Postgres au corps du
+   * gabarit, l'écran enchaîne `sansRepliVide`, `renderTemplatePartial` et `decouperAccroche`. Si
+   * l'une dévie, l'opérateur voit un trou que le serveur ne lui demande pas de combler, ou un
+   * champ à compléter que rien n'exige. Le test appelle donc `listerPostsDeCampagne` en entier
+   * d'un côté, et le fragment SQL réellement produit de l'autre — aucune des deux n'est récrite
+   * ici, sans quoi il resterait vert le jour où elles divergent.
+   */
+  describe('les deux lectures du repli restent jumelles', () => {
+    /** Ce que la GARDE exige : le motif strict, extrait du SQL qu'elle produit. */
+    const garde = (corps: string): boolean => {
+      const sql = sqlCampagneEcritVariableDePost('$1::uuid', 'post_date');
+      const motif = /~\* '([^']+)'/.exec(sql)?.[1] ?? '';
+      return new RegExp(motif, 'i').test(corps);
+    };
+
+    /** Ce que l'ÉCRAN montre : un morceau à compléter, sur une fiche sans date. */
+    const ecran = async (corps: string): Promise<boolean> => {
+      const { ctx } = contexte({
+        'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
+        'from sequence_steps': { rows: [{ body: corps }] },
+      });
+      const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+      return (decouperAccroche(ligne?.apercuAccroche ?? null) ?? []).some(
+        (m) => 'manquant' in m && m.manquant === 'post_date',
+      );
+    };
+
+    it.each([
+      ['sans repli', '{{post_date}}'],
+      ['repli vide', '{{post_date|}}'],
+      ['repli d espaces', '{{ post_date |  }}'],
+      ['repli réel', '{{post_date|le 12 octobre}}'],
+      ['repli réel précédé d un espace', '{{post_date| x}}'],
+    ])('%s', async (_nom, jeton) => {
+      const corps = `Bonjour. Votre réaction du ${jeton} nous a marqués.`;
+      expect(await ecran(corps)).toBe(garde(corps));
+    });
   });
 
   it('rend null quand aucune étape ne nomme le post', async () => {

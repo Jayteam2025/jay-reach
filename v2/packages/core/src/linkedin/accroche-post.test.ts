@@ -105,22 +105,16 @@ describe('sqlCampagneEcritVariableDePost', () => {
    * dans un envoi, ce que le dépôt interdit. Il se lit comme une absence de repli — et l'écran
    * doit le lire pareil, sans quoi il afficherait le trou et compterait la ligne validable.
    */
-  it('un repli VIDE se lit comme une absence de repli, des deux côtés', () => {
+  it('un repli VIDE se lit comme une absence de repli', () => {
     for (const corps of ['{{post_date|}}', '{{ post_date |  }}']) {
       expect(ecrit(corps)).toBe(true);
+      // Le contrat de `sansRepliVide` : elle rend le jeton nu. Que l'écran en tire la même
+      // conclusion que la garde se prouve en appelant les DEUX lectures réelles, dans
+      // `fonctions/posts.test.ts` (« les deux lectures du repli restent jumelles »).
       expect(sansRepliVide(corps)).toMatch(/^\{\{\s*post_date\s*\}\}$/);
     }
     // Un repli RÉEL, lui, n'est pas touché par la normalisation de l'écran.
     expect(sansRepliVide('{{post_date|le 12 octobre}}')).toBe('{{post_date|le 12 octobre}}');
-  });
-
-  /** Les deux lectures doivent rester jumelles : même verdict sur les mêmes écritures. */
-  it('la lecture de l’écran et celle de la garde s’accordent', () => {
-    for (const corps of ['{{post_date}}', '{{post_date|}}', '{{ post_date | }}', '{{post_date|le 12 octobre}}', '{{post_date| x}}']) {
-      // L'écran « voit » la variable à compléter quand le jeton survit à la normalisation sans repli.
-      const vuParLEcran = /\{\{\s*post_date\s*\}\}/i.test(sansRepliVide(corps));
-      expect(vuParLEcran).toBe(ecrit(corps));
-    }
   });
 });
 

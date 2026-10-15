@@ -1932,11 +1932,13 @@ async function gabaritMixte() {
   // n'exige rien, parce qu'une fiche peut réellement n'avoir pas de date. `{{post_url|…}}` ne se
   // prouve pas pareil : `url` est renseignée dès la création, donc « exigée » et « non exigée »
   // rendent le même verdict tant qu'elle l'est. On la vide, et seulement alors la différence se
-  // voit — c'est le seul endroit où une erreur sur un motif pourrait être masquée par l'autre.
+  // voit.
   //
-  // AUCUNE inversion ne fait rougir 32f seul : la tolérance du motif strict le fait rougir avec
-  // 32b à 32e. Ce qui prouve son propos, c'est la PAIRE 32f / 32g — même fiche, deux gabarits qui
-  // ne diffèrent que par le repli sur l'adresse, deux verdicts opposés.
+  // AUCUNE inversion ne fait rougir 32f seul, et aucune ne le pourrait : les deux variables
+  // sortent du même appel de `motifSqlDesVariables`, donc une erreur qui toucherait `post_url`
+  // sans toucher `post_date` est inatteignable. 32f vaut pour sa COUVERTURE, et ce qui prouve
+  // son propos, c'est la PAIRE 32f / 32g — même fiche, deux gabarits qui ne diffèrent que par le
+  // repli sur l'adresse, deux verdicts opposés.
   const u = await monde();
   await etapeAvecCorps(u, ACCROCHE_MIXTE);
   const w = await engageurDUnPost(u, 78, { etat: 'pending', sujet: 'un sujet relu', nomAffiche: null });
