@@ -38,6 +38,10 @@ function ligne(overrides: Partial<DueRow> = {}): DueRow {
     postal_code: '69000',
     country: 'FR',
     context_note: null,
+    post_author_display_name: null,
+    post_subject: null,
+    post_url: null,
+    post_posted_at: null,
     raw_row: null,
     ...overrides,
   };
@@ -120,5 +124,30 @@ describe('buildMessageValues — types de valeur non exploitables (Mineur 5)', (
     const values = buildMessageValues(ligne({ raw_row: { nb: 3, actif: true } }));
     expect(values.liste_nb).toBe('3');
     expect(values.liste_actif).toBe('true');
+  });
+});
+
+describe('buildMessageValues : variables du post', () => {
+  it('rend les quatre valeurs de la fiche, la date comme signal_date', () => {
+    const values = buildMessageValues(
+      ligne({
+        post_author_display_name: 'Ana Test',
+        post_subject: 'le recrutement',
+        post_url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/',
+        post_posted_at: '2026-10-12T08:30:00.000Z',
+      }),
+    );
+    expect(values).toMatchObject({
+      post_auteur: 'Ana Test',
+      post_sujet: 'le recrutement',
+      post_url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/',
+      post_date: new Date('2026-10-12T08:30:00.000Z').toLocaleDateString('fr-FR'),
+    });
+  });
+
+  it('sans fiche, rien n’est inventé', () => {
+    const values = buildMessageValues(ligne());
+    expect(values.post_auteur).toBeUndefined();
+    expect(values.post_sujet).toBeUndefined();
   });
 });

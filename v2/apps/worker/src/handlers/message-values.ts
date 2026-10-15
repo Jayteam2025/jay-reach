@@ -48,6 +48,11 @@ export interface DueRow {
   readonly postal_code: string | null;
   readonly country: string | null;
   readonly context_note: string | null;
+  /** Fiche du post qui a fait réagir la personne (variables `post_*`), nulle sans fiche. */
+  readonly post_author_display_name: string | null;
+  readonly post_subject: string | null;
+  readonly post_url: string | null;
+  readonly post_posted_at: string | null;
   /**
    * Ligne brute du CSV importé (`list_members.raw_row`), clés = en-têtes tels
    * quels. Alimente les variables `{{liste_<colonne>}}` (spec import de
@@ -74,6 +79,8 @@ export const REQUETE_LIGNE_INSCRIPTION = `
          p.angle as persona_angle,
          sig.title as signal_title, sig.occurred_at as signal_occurred_at, sig.location as signal_location,
          sig.url as signal_url,
+         lp.author_display_name as post_author_display_name, lp.subject as post_subject,
+         lp.url as post_url, lp.posted_at as post_posted_at,
          lst.context_note,
          ls.mode as lk_mode,
          lm.raw_row
@@ -84,6 +91,9 @@ export const REQUETE_LIGNE_INSCRIPTION = `
     left join accounts a on a.id = c.account_id
     left join personas p on p.id = c.persona_id
     left join signals sig on sig.id = e.signal_id
+    -- Fiche du post (variables post_*) : même jointure que lireValeursContact
+    -- (packages/core), pour que l'aperçu et l'envoi ne divergent jamais.
+    left join linkedin_posts lp on lp.id = sig.linkedin_post_id and lp.organization_id = e.organization_id
     left join lists lst on lst.id = camp.list_id
     left join linkedin_settings ls on ls.organization_id = e.organization_id
     -- Colonnes du CSV importé (variables liste_<colonne>) : jointe sur

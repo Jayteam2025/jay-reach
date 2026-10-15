@@ -4,7 +4,30 @@
   },
   "common": {
     "loading": "Laden…",
-    "language": "Taal"
+    "language": "Taal",
+    "variables": {
+      "prenom": "Voornaam van het contact",
+      "salutation": "Aanspreking: « Bonjour Marie », of « Bonjour » zonder voornaam",
+      "nom": "Achternaam van het contact",
+      "poste": "Functie van het contact",
+      "entreprise": "Naam van het bedrijf",
+      "ville": "Stad van het bedrijf",
+      "effectif": "Aantal medewerkers van het bedrijf",
+      "persona_angle": "Aanpak van de persona",
+      "signal_date": "Datum van het signaal",
+      "signal_mois": "Maand van het signaal",
+      "signal_titre": "Titel van het signaal (de vacature, het evenement)",
+      "signal_zone": "Locatie van het signaal",
+      "lien_offre": "Link naar de vacature",
+      "contexte": "Contextnotitie van de geïmporteerde lijst",
+      "site": "Website van het bedrijf",
+      "departement": "Departement (eerste twee cijfers van de postcode)",
+      "pays": "Land van het bedrijf",
+      "post_auteur": "Auteur van de post waarop de persoon reageerde",
+      "post_sujet": "Onderwerp van de post, gevalideerd voor het geciteerd wordt",
+      "post_url": "Link naar de post",
+      "post_date": "Publicatiedatum van de post"
+    }
   },
   "login": {
     "title": "Inloggen",

@@ -19,6 +19,8 @@
 //  14. queues.ts : retirer `policy: 'stately'` de la file — 10b rougit.
 //  15. posts-fiches.ts : changer `SQL_FICHE_INCOMPLETE` (ex. ajouter `or subject is null`) — 10e rougit.
 //  16. fiche-post.ts : passer la quantité de `consume_provider_credit` de 1 à 2 — 14 rougit.
+//  17. message-values.ts : retirer la jointure `linkedin_posts` de REQUETE_LIGNE_INSCRIPTION — 15a et 15c rougissent.
+//  18. valeurs-contact.ts : retirer la jointure `linkedin_posts` de lireValeursContact — 15b et 15c rougissent.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -39,6 +41,10 @@ import {
   ficheIncomplete,
   prendreVerrouLinkedIn,
   registerQueues,
+  chargerLigneInscription,
+  buildMessageValues,
+  lireValeursContact,
+  renderTemplate,
 } from './_accroche-post-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -647,8 +653,48 @@ async function sujetCredit() {
   check('14a. une unité par appel, sur le fournisseur `anthropic`', u.length === 1 && u[0].used === 2, JSON.stringify(u));
 }
 
+async function deuxCheminsDeRendu() {
+  console.log('\n# les variables de post : même rendu à l\'envoi et à l\'aperçu, sur le même enregistrement');
+  const m = await monde();
+  const source = await sourceDePost(m, URL_POST, 'Engageurs');
+  const runId = await startSourceRun(pool, source);
+  const f = await enregistrerFichePost(pool, m.org, fiche(), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set subject = 'le recrutement des commerciaux', subject_origin = 'operator', review_status = 'approved' where id = $1`, [f.id]);
+  const ctx = { pool, organizationId: m.org, sourceId: source, sourceRunId: runId, exclusions: {} };
+  await enregistrerEngageur(ctx, { urn: 'urn:li:fsd_profile:ACoAAdeux', nom: 'Dana Test', intitule: 'Directrice commerciale' }, { id: m.campagne, personaId: m.persona }, URL_POST, f.id);
+  const sig = (await q(`select id from signals where organization_id = $1`, [m.org])).rows[0];
+  const contact = (await q(`select id from contacts where organization_id = $1 order by created_at desc limit 1`, [m.org])).rows[0];
+  const insc = (
+    await q(`insert into enrollments (organization_id, campaign_id, contact_id, signal_id) values ($1, $2, $3, $4) returning id`, [m.org, m.campagne, contact.id, sig.id])
+  ).rows[0].id;
+
+  const CORPS = '{{post_auteur}} | {{post_sujet}} | {{post_url}} | {{post_date}}';
+  const envoi = buildMessageValues(await chargerLigneInscription(pool, insc));
+  const apercu = (await lireValeursContact(pool, m.org, contact.id, m.campagne))?.valeurs ?? {};
+  const rE = renderTemplate(CORPS, envoi);
+  const rA = renderTemplate(CORPS, apercu);
+  check('15a. la requête d\'envoi résout les quatre variables', rE.missing.length === 0 && rE.text.startsWith('Ana | le recrutement des commerciaux | https://www.linkedin.com/'), JSON.stringify(rE));
+  check('15b. la requête de l\'aperçu résout les quatre variables', rA.missing.length === 0, JSON.stringify(rA));
+  check('15c. les deux chemins rendent exactement la même chose', rE.text === rA.text && rE.text.endsWith('12/10/2026'), `${rE.text} / ${rA.text}`);
+
+  // Une fiche sans nom affiché : ni l'un ni l'autre n'invente une valeur.
+  await q(`update linkedin_posts set author_display_name = null, subject = null where id = $1`, [f.id]);
+  const e2 = renderTemplate(CORPS, buildMessageValues(await chargerLigneInscription(pool, insc)));
+  const a2 = renderTemplate(CORPS, (await lireValeursContact(pool, m.org, contact.id, m.campagne))?.valeurs ?? {});
+  check('15d. sans nom affiché ni sujet, les deux chemins les retiennent', JSON.stringify(e2.missing.sort()) === '["post_auteur","post_sujet"]' && JSON.stringify(a2.missing.sort()) === JSON.stringify(e2.missing), JSON.stringify([e2.missing, a2.missing]));
+
+  // La fiche d'une autre organisation ne se lit jamais, même rattachée par erreur au signal.
+  const autre = await monde();
+  const g = await enregistrerFichePost(pool, autre.org, fiche(), { fenetreJours: FENETRE });
+  await q(`update linkedin_posts set author_display_name = 'Intrus', subject = 'sujet étranger' where id = $1`, [g.id]);
+  await q(`update signals set linkedin_post_id = $2 where id = $1`, [sig.id, g.id]);
+  const e3 = buildMessageValues(await chargerLigneInscription(pool, insc));
+  const a3 = (await lireValeursContact(pool, m.org, contact.id, m.campagne))?.valeurs ?? {};
+  check('15e. une fiche d\'une autre organisation n\'est lue par aucun des deux chemins', e3.post_auteur === undefined && a3.post_auteur === undefined, JSON.stringify([e3.post_auteur, a3.post_auteur]));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

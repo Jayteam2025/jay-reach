@@ -1126,6 +1126,10 @@ function objetAffiche(r: LigneEnvoi, extraits: ReadonlyMap<string, string>): str
     postal_code: null,
     country: null,
     signal_occurred_at: null,
+    post_author_display_name: null,
+    post_subject: null,
+    post_url: null,
+    post_posted_at: null,
     raw_row: r.raw_row,
   };
   return renderTemplatePartial(r.etape_sujet, construireValeursContact(ligne, extraits));

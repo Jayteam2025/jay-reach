@@ -9,6 +9,8 @@ import {
   renderTemplatePartial,
   validateTemplateVariables,
   normalizeVariableSyntax,
+  variablesProposees,
+  VARIABLES_HERITEES,
 } from './variables.js';
 
 describe('extraction des variables', () => {
@@ -294,5 +296,71 @@ describe('variables de colonnes importées {{liste_*}}', () => {
     expect(soucis).toHaveLength(1);
     expect(soucis[0]?.message).toContain('espace');
     expect(soucis[0]?.suggestion).toBe('liste_poste');
+  });
+});
+
+describe('variables d’accroche de post', () => {
+  const POST = ['post_auteur', 'post_sujet', 'post_url', 'post_date'] as const;
+
+  it('sont acceptées dans une campagne de signal', () => {
+    expect(validateTemplateVariables(POST.map((v) => `{{${v}}}`).join(' '), 'signal')).toEqual([]);
+  });
+
+  it('sont refusées dans une campagne de liste', () => {
+    const issues = validateTemplateVariables('{{post_auteur}}', 'list');
+    expect(issues[0]).toMatchObject({ variable: 'post_auteur', kind: 'unavailable' });
+  });
+
+  it('refusent un repli sur l’auteur et sur le sujet, comme sur le prénom', () => {
+    for (const v of ['post_auteur', 'post_sujet']) {
+      expect(validateTemplateVariables(`{{${v}|votre secteur}}`, 'signal')[0]).toMatchObject({
+        variable: v,
+        kind: 'fallback_forbidden',
+      });
+    }
+  });
+
+  it('gardent le repli sur l’adresse et sur la date, qui ne portent pas l’accroche', () => {
+    expect(validateTemplateVariables('{{post_url|un lien}} {{post_date|récemment}}', 'signal')).toEqual([]);
+  });
+
+  it('un rendu sans valeur met l’auteur et le sujet dans `missing`', () => {
+    const r = renderTemplate('{{post_auteur}} : {{post_sujet}}', { post_auteur: undefined, post_sujet: null });
+    expect(r.missing.sort()).toEqual(['post_auteur', 'post_sujet']);
+  });
+
+  it('un rendu avec valeurs les substitue', () => {
+    const r = renderTemplate('{{post_auteur}} sur {{post_sujet}}', { post_auteur: 'Ana Test', post_sujet: 'le recrutement' });
+    expect(r).toEqual({ text: 'Ana Test sur le recrutement', missing: [] });
+  });
+});
+
+describe('variablesProposees (source unique des puces)', () => {
+  it('signal sans source de post : ni variable de liste ni variable de post', () => {
+    const v = variablesProposees('signal', false);
+    expect(v).toContain('signal_titre');
+    expect(v).toContain('prenom');
+    expect(v).not.toContain('contexte');
+    expect(v.some((n) => n.startsWith('post_'))).toBe(false);
+  });
+
+  it('signal avec source de post : propose les quatre variables de post', () => {
+    const v = variablesProposees('signal', true);
+    expect(v).toEqual(expect.arrayContaining(['post_auteur', 'post_sujet', 'post_url', 'post_date']));
+  });
+
+  it('liste : aucune variable de signal, jamais de variable de post, même avec le drapeau', () => {
+    const v = variablesProposees('list', true);
+    expect(v).toContain('contexte');
+    expect(v).toContain('prenom');
+    expect(v.some((n) => n.startsWith('signal_') || n === 'lien_offre' || n.startsWith('post_'))).toBe(false);
+  });
+
+  it('ne propose aucun alias hérité, et chaque nom proposé est valide pour la nature', () => {
+    for (const nature of ['signal', 'list'] as const) {
+      const v = variablesProposees(nature, true);
+      for (const alias of Object.keys(VARIABLES_HERITEES)) expect(v).not.toContain(alias);
+      expect(validateTemplateVariables(v.map((n) => `{{${n}}}`).join(' '), nature)).toEqual([]);
+    }
   });
 });

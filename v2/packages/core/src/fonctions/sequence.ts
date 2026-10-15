@@ -33,7 +33,7 @@ import {
   type CampaignNature,
 } from '../messages/index.js';
 import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } from './campagnes.js';
-import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_SOURCES_DE_POST } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
 import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
@@ -715,6 +715,39 @@ export async function colonnesDeListeCampagne(ctx: Contexte, entree: unknown): P
 }
 
 // ---------------------------------------------------------------------------
+// variablesDeLaCampagne : ce que le sélecteur de variables a besoin de savoir
+// ---------------------------------------------------------------------------
+
+export const schemaVariablesDeLaCampagne = z.object({ campagneId: z.string().uuid() });
+
+export interface VariablesDeLaCampagne {
+  /** Même règle que `enregistrerEtape` : une campagne reliée à une source est de signal, sinon de liste. */
+  readonly nature: CampaignNature;
+  /** Au moins une source dont les signaux portent une fiche de post : les variables `post_*` ont alors un sens. */
+  readonly aSourceDePost: boolean;
+}
+
+/**
+ * Nature de la campagne et présence d'une source de post, pour que `TiroirEtape` et le reste du
+ * sélecteur ne proposent que ce que l'enregistrement acceptera, et les variables de post que
+ * lorsqu'elles se résoudront. Campagne hors organisation ou inconnue : `ErreurIntrouvable`.
+ */
+export async function variablesDeLaCampagne(ctx: Contexte, entree: unknown): Promise<VariablesDeLaCampagne> {
+  exiger(ctx, 'viewer');
+  const { campagneId } = valider(schemaVariablesDeLaCampagne, entree);
+  const campagne = await lireCampagnePourEtape(ctx, campagneId);
+  const res = await ctx.ex.query<{ present: boolean }>(
+    `select exists (
+              select 1 from campaign_sources cs join sources so on so.id = cs.source_id /* jr:sequence_source_de_post */
+               where cs.campaign_id = $1 and so.organization_id = $2
+                 and so.config->>'sourceType' = any($3::text[])
+            ) as present`,
+    [campagneId, ctx.organisationId, TYPES_SOURCES_DE_POST],
+  );
+  return { nature: campagne.source_id ? 'signal' : 'list', aSourceDePost: res.rows[0]?.present === true };
+}
+
+// ---------------------------------------------------------------------------
 // apercuEtape
 // ---------------------------------------------------------------------------
 
@@ -743,6 +776,10 @@ const VALEURS_CONTACT_FICTIF: Readonly<Record<string, string>> = {
   pays: 'France',
   signal_date: '12 septembre 2026',
   signal_mois: 'septembre',
+  post_auteur: 'Ana Test',
+  post_sujet: 'le recrutement des commerciaux',
+  post_url: 'https://exemple.fr/posts/12345',
+  post_date: '8 octobre 2026',
 };
 
 export interface ApercuEtape {

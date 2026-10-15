@@ -15,6 +15,7 @@ import {
   envoyerTest,
   verserDansBibliotheque,
   colonnesDeListeCampagne,
+  variablesDeLaCampagne,
   reprendreInscription,
 } from './sequence.js';
 
@@ -1042,5 +1043,29 @@ describe('reprendreInscription', () => {
     const journal = appelsDe(ctx).find((a) => /insert into audit_events/i.test(String(a[0])));
     expect(journal).toBeDefined();
     expect(String((journal?.[1] as unknown[])[5])).toMatch(/déjà parti/i);
+  });
+});
+
+describe('variablesDeLaCampagne', () => {
+  const CAMPAGNE = '11111111-1111-4111-8111-111111111111';
+
+  it('campagne de signal avec une source de post : nature signal, drapeau levé', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: true }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'signal', aSourceDePost: true });
+  });
+
+  it('campagne de signal sans source de post : drapeau baissé', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: false }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'signal', aSourceDePost: false });
+  });
+
+  it('campagne de liste : nature list', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: null, locale: 'fr' }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'list', aSourceDePost: false });
+  });
+
+  it('campagne hors organisation : introuvable', async () => {
+    const ctx = faux({});
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).rejects.toBeInstanceOf(ErreurIntrouvable);
   });
 });

@@ -141,6 +141,15 @@ export const TYPES_LINKEDIN_COLLECTES: readonly string[] = [
 ];
 
 /**
+ * Types de source dont les signaux portent une fiche de post (`signals.linkedin_post_id`) : tous
+ * les collecteurs LinkedIn sauf le changement de poste, qui réveille une personne sans passer
+ * par un post. Une campagne qui en relie une peut écrire les variables `post_*`.
+ */
+export const TYPES_SOURCES_DE_POST: readonly string[] = TYPES_LINKEDIN_COLLECTES.filter(
+  (t) => t !== 'linkedin_job_change',
+);
+
+/**
  * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
  * n'en a pas (une source LinkedIn se repère par `config.sourceType`, jamais par cette table).
  */

@@ -4,7 +4,30 @@
   },
   "common": {
     "loading": "Loading…",
-    "language": "Language"
+    "language": "Language",
+    "variables": {
+      "prenom": "Contact's first name",
+      "salutation": "Greeting: “Bonjour Marie”, or “Bonjour” without a first name",
+      "nom": "Contact's last name",
+      "poste": "Contact's job title",
+      "entreprise": "Company name",
+      "ville": "Company city",
+      "effectif": "Company headcount",
+      "persona_angle": "Persona's angle of approach",
+      "signal_date": "Signal date",
+      "signal_mois": "Signal month",
+      "signal_titre": "Signal title (the job offer, the event)",
+      "signal_zone": "Signal location",
+      "lien_offre": "Link to the job offer",
+      "contexte": "Context note of the imported list",
+      "site": "Company website",
+      "departement": "Department (first two digits of the postcode)",
+      "pays": "Company country",
+      "post_auteur": "Author of the post the person reacted to",
+      "post_sujet": "Subject of the post, validated before being quoted",
+      "post_url": "Link to the post",
+      "post_date": "Publication date of the post"
+    }
   },
   "login": {
     "title": "Sign in",

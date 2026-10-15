@@ -38,6 +38,15 @@ export interface LigneValeursContact {
   readonly country: string | null;
   readonly signal_occurred_at: string | null;
   /**
+   * Fiche du post qui a fait réagir la personne (`linkedin_posts`, jointe par
+   * `signals.linkedin_post_id`). Tout nul sans fiche. `post_author_display_name` est le nom
+   * AFFICHÉ : un identifiant technique de page n'y figure jamais (nul plutôt qu'un slug).
+   */
+  readonly post_author_display_name: string | null;
+  readonly post_subject: string | null;
+  readonly post_url: string | null;
+  readonly post_posted_at: string | null;
+  /**
    * Ligne brute du CSV importé (`list_members.raw_row`), clés = en-têtes tels
    * quels. Alimente les variables `{{liste_<colonne>}}` (spec import de
    * listes). `null`/absente si l'inscription n'a pas de liste — jamais de
@@ -76,6 +85,11 @@ export function construireValeursContact(
     // Le département se lit sur les deux premiers chiffres du code postal.
     departement: row.postal_code ? row.postal_code.slice(0, 2) : undefined,
     pays: row.country ?? undefined,
+    // Une fiche sans nom affiché ou sans sujet ne produit pas d'accroche : la valeur reste
+    // absente, `renderTemplate` la remonte et l'envoi est retenu.
+    post_auteur: row.post_author_display_name?.trim() || undefined,
+    post_sujet: row.post_subject?.trim() || undefined,
+    post_url: row.post_url ?? undefined,
   };
   // Colonnes du CSV importé : chaque clé de `raw_row` devient
   // `liste_<colonne normalisée>` (même règle que `validateTemplateVariables`,
@@ -123,6 +137,9 @@ export function construireValeursContact(
     const d = new Date(row.signal_occurred_at);
     values.signal_date = d.toLocaleDateString('fr-FR');
     values.signal_mois = d.toLocaleDateString('fr-FR', { month: 'long' });
+  }
+  if (row.post_posted_at) {
+    values.post_date = new Date(row.post_posted_at).toLocaleDateString('fr-FR');
   }
   return values;
 }
@@ -179,6 +196,8 @@ export async function lireValeursContact(
             p.angle as persona_angle,
             sig.title as signal_title, sig.location as signal_location, sig.url as signal_url,
             sig.occurred_at as signal_occurred_at,
+            lp.author_display_name as post_author_display_name, lp.subject as post_subject,
+            lp.url as post_url, lp.posted_at as post_posted_at,
             lst.context_note,
             lm.raw_row
        from contacts c /* jr:valeurs_contact */
@@ -188,6 +207,8 @@ export async function lireValeursContact(
        left join campaigns camp on camp.id = e.campaign_id
        left join lists lst on lst.id = camp.list_id
        left join signals sig on sig.id = coalesce(e.signal_id, c.source_signal_id)
+       -- Fiche du post (variables post_*) : même jointure que la requête du worker.
+       left join linkedin_posts lp on lp.id = sig.linkedin_post_id and lp.organization_id = c.organization_id
        -- Colonnes du CSV importé (variables liste_<colonne>) : jointe sur
        -- l'inscription elle-même, jamais sur contacts.source_list_id — un
        -- contact peut venir d'une liste et être réinscrit via une autre ;

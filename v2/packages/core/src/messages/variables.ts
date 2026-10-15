@@ -48,7 +48,33 @@ export const STANDARD_VARIABLES: Readonly<Record<string, VariableAvailability>> 
   /** Deux premiers chiffres du code postal — « 44 », « 75 ». */
   departement: 'always',
   pays: 'always',
+  /**
+   * Accroche du post qui a fait réagir la personne (fiche `linkedin_posts`). Disponibles
+   * dans toute campagne de signal : l'enregistrement ne les refuse pas à un opérateur qui
+   * branche la source après coup. Le sélecteur, lui, ne les propose qu'avec une source de
+   * post (`variablesProposees`).
+   */
+  post_auteur: 'signal',
+  post_sujet: 'signal',
+  post_url: 'signal',
+  post_date: 'signal',
 };
+
+/** Les variables qui ne valent que si la campagne a une source de post. */
+const VARIABLES_DE_POST: ReadonlySet<string> = new Set(['post_auteur', 'post_sujet', 'post_url', 'post_date']);
+
+/**
+ * Variables proposées à l'insertion (puces des écrans), dans l'ordre de `STANDARD_VARIABLES`.
+ * UNE seule liste pour le tiroir d'étape et la table des modèles. Les alias de
+ * `VARIABLES_HERITEES` n'y sont pas : ils se tolèrent à la lecture, ils ne se proposent pas.
+ * Les variables de post ne sont offertes qu'avec une source de post, pour ne pas tendre un
+ * piège : sans fiche, elles bloqueraient chaque envoi.
+ */
+export function variablesProposees(nature: CampaignNature, aSourceDePost: boolean): string[] {
+  return Object.entries(STANDARD_VARIABLES)
+    .filter(([nom, dispo]) => (dispo === 'always' || dispo === nature) && (aSourceDePost || !VARIABLES_DE_POST.has(nom)))
+    .map(([nom]) => nom);
+}
 
 /**
  * Ce que les modèles du socle v1 appelaient, et ce que cela devient ici.
@@ -68,8 +94,13 @@ export const VARIABLES_HERITEES: Readonly<Record<string, string>> = {
   job_title: 'poste',
 };
 
-/** Variables sur lesquelles une valeur de repli est interdite (spec : jamais {{prenom}}). */
-export const NO_FALLBACK_VARIABLES: ReadonlySet<string> = new Set(['prenom']);
+/**
+ * Variables sur lesquelles une valeur de repli est interdite (spec : jamais {{prenom}}).
+ * `post_auteur` et `post_sujet` y entrent : un repli (`{{post_sujet|votre secteur}}`) serait un
+ * interrupteur silencieux vers le message sans accroche, celui qui ne répond pas (0 % contre
+ * 31,1 % mesurés), sans que personne ne le voie.
+ */
+export const NO_FALLBACK_VARIABLES: ReadonlySet<string> = new Set(['prenom', 'post_auteur', 'post_sujet']);
 
 /**
  * Variable de colonne importée : `{{liste_<colonne>}}`. Contrairement aux

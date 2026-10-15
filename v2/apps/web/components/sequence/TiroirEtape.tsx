@@ -3,10 +3,11 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { CanalEtape } from '@jay-reach/core';
+import { variablesProposees, type CampaignNature, type CanalEtape } from '@jay-reach/core';
 import { Bouton, Champ, Puce, Tiroir, TuileLogo } from '../ui';
 import { actionEnregistrerEtape, actionEnvoyerTest, actionSupprimerEtape } from '../../app/actions/step-message';
 import { ApercuMessage } from './ApercuMessage';
+import { PucesVariables } from '../messages/PucesVariables';
 
 /** Valeur du select, ramenée au type : tout ce qui n'est pas un canal connu retombe sur l'email. */
 function lireCanal(valeur: string): CanalEtape {
@@ -39,6 +40,13 @@ export interface TiroirEtapeProps {
    * reliée. Calculé côté serveur par la page (`sequence/page.tsx`).
    */
   readonly variablesListe: readonly string[];
+  /**
+   * Nature de la campagne (`variablesDeLaCampagne`) : sans elle, le tiroir proposait `signal_*` sur
+   * une campagne de liste, et l'enregistrement les refusait ensuite.
+   */
+  readonly nature: CampaignNature;
+  /** La campagne a au moins une source de post : les variables `post_*` n'ont de sens qu'alors. */
+  readonly aSourceDePost: boolean;
 }
 
 export interface VariablesDeListeLibelles {
@@ -80,18 +88,6 @@ export function VariablesDeListe({ variablesListe, onInserer, libelles }: Variab
   );
 }
 
-/** Variables offertes à l'insertion (maquette `tiroir-etape.html`), cliquer insère `{{nom}}` au curseur. */
-const VARIABLES_INSERABLES = [
-  'prenom',
-  'entreprise',
-  'poste',
-  'ville',
-  'signal_titre',
-  'signal_date',
-  'lien_offre',
-  'persona_angle',
-] as const;
-
 function heuresVersUnite(heures: number): { valeur: number; unite: 'heures' | 'jours' } {
   if (heures > 0 && heures % 24 === 0) return { valeur: heures / 24, unite: 'jours' };
   return { valeur: heures, unite: 'heures' };
@@ -105,8 +101,9 @@ function heuresVersUnite(heures: number): { valeur: number; unite: 'heures' | 'j
  * côté envoi comme aujourd'hui), délai, aperçu rendu et envoi de test (email
  * seulement — une invitation/message LinkedIn s'exécute côté serveur, lot 4).
  */
-export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: TiroirEtapeProps) {
+export function TiroirEtape({ campagneId, etape, apercu, variablesListe, nature, aSourceDePost }: TiroirEtapeProps) {
   const t = useTranslations('campagne.sequence');
+  const tRacine = useTranslations();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
@@ -308,18 +305,11 @@ export function TiroirEtape({ campagneId, etape, apercu, variablesListe }: Tiroi
           {/* La signature de la boîte d'envoi est une affaire d'email : un message LinkedIn
               part tel qu'il est écrit, rien ne lui est ajouté. */}
           <div className="jr-aide">{t(canal === 'email' ? 'drawer.bodyHint' : 'drawer.bodyHintLinkedin')}</div>
-          <div className="jr-puces variables">
-            {VARIABLES_INSERABLES.map((nom) => (
-              <button
-                key={nom}
-                type="button"
-                className="jr-puce variable"
-                onClick={() => inserVariable(nom)}
-              >
-                {`{{${nom}}}`}
-              </button>
-            ))}
-          </div>
+          <PucesVariables
+            variables={variablesProposees(nature, aSourceDePost)}
+            onInserer={inserVariable}
+            libelle={(nom) => tRacine(`common.variables.${nom}`)}
+          />
           <VariablesDeListe
             variablesListe={variablesListe}
             onInserer={inserVariable}

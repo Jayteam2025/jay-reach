@@ -10,3 +10,6 @@ export { activerSessionLinkedIn } from '../../packages/core/src/fonctions/linked
 export { enqueueFichesPostALire, prendreCreditAnthropic, traiterFichePost } from '../../apps/worker/src/handlers/fiche-post.js';
 export { prendreVerrouLinkedIn } from '../../packages/core/src/fonctions/linkedin-session.js';
 export { registerQueues } from '../../apps/worker/src/runtime.js';
+export { chargerLigneInscription, buildMessageValues } from '../../apps/worker/src/handlers/message-values.js';
+export { lireValeursContact } from '../../packages/core/src/messages/valeurs-contact.js';
+export { renderTemplate, validateTemplateVariables } from '../../packages/core/src/messages/variables.js';

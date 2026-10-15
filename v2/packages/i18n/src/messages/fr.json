@@ -4,7 +4,30 @@
   },
   "common": {
     "loading": "Chargement…",
-    "language": "Langue"
+    "language": "Langue",
+    "variables": {
+      "prenom": "Prénom du contact",
+      "salutation": "Formule d'appel : « Bonjour Marie », ou « Bonjour » sans prénom",
+      "nom": "Nom du contact",
+      "poste": "Poste du contact",
+      "entreprise": "Nom de l'entreprise",
+      "ville": "Ville de l'entreprise",
+      "effectif": "Effectif de l'entreprise",
+      "persona_angle": "Angle d'approche de la persona",
+      "signal_date": "Date du signal",
+      "signal_mois": "Mois du signal",
+      "signal_titre": "Titre du signal (l'offre, l'événement)",
+      "signal_zone": "Zone du signal",
+      "lien_offre": "Adresse de l'annonce",
+      "contexte": "Note de contexte de la liste importée",
+      "site": "Site web de l'entreprise",
+      "departement": "Département (deux premiers chiffres du code postal)",
+      "pays": "Pays de l'entreprise",
+      "post_auteur": "Auteur du post auquel la personne a réagi",
+      "post_sujet": "Sujet du post, validé avant d'être cité",
+      "post_url": "Adresse du post",
+      "post_date": "Date de publication du post"
+    }
   },
   "login": {
     "title": "Connexion",
