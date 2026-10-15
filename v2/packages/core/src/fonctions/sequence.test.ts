@@ -1059,6 +1059,16 @@ describe('variablesDeLaCampagne', () => {
     await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'signal', aSourceDePost: false });
   });
 
+  it('la requête ne retient que les trois sources qui partent d\u2019un post, jamais les mots-clés', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: false }] });
+    await variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE });
+    const appel = appelsDe(ctx).find((a) => String(a[0]).includes('sequence_source_de_post'));
+    const types = (appel?.[1] as unknown[])[2];
+    expect(types).toEqual(['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_creator_posts']);
+    expect(types).not.toContain('linkedin_keywords');
+    expect(types).not.toContain('linkedin_job_change');
+  });
+
   it('campagne de liste : nature list', async () => {
     const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: null, locale: 'fr' }] });
     await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'list', aSourceDePost: false });

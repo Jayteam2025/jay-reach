@@ -141,13 +141,18 @@ export const TYPES_LINKEDIN_COLLECTES: readonly string[] = [
 ];
 
 /**
- * Types de source dont les signaux portent une fiche de post (`signals.linkedin_post_id`) : tous
- * les collecteurs LinkedIn sauf le changement de poste, qui réveille une personne sans passer
- * par un post. Une campagne qui en relie une peut écrire les variables `post_*`.
+ * Types de source dont les signaux portent une fiche de post (`signals.linkedin_post_id`) : les
+ * trois qui partent d'un post. Seule la boucle des posts de `collecte-linkedin.ts` capture une
+ * fiche et la passe à `enregistrerEngageur`. Les personnes d'une recherche par mots-clés sont
+ * enregistrées ailleurs (`identiteDeRecherche`, sans fiche), le changement de poste réveille un
+ * contact sans post : proposer les variables `post_*` à une telle campagne la verrait retenir
+ * toutes ses personnes, sans erreur visible.
  */
-export const TYPES_SOURCES_DE_POST: readonly string[] = TYPES_LINKEDIN_COLLECTES.filter(
-  (t) => t !== 'linkedin_job_change',
-);
+export const TYPES_SOURCES_DE_POST: readonly string[] = [
+  'linkedin_post_engagers',
+  'linkedin_competitor_posts',
+  'linkedin_creator_posts',
+];
 
 /**
  * Décision MÉTIER : le `provider_id` à écrire dans `source_providers`, ou `null` quand le type
