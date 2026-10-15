@@ -125,9 +125,11 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               personnes: dit.enAttenteDeValidation > 0 ? t('bar.personnes', { n: dit.enAttenteDeValidation }) : '',
               lotBloque: t('bar.lotBloque'),
               manquantAide: t('phrase.manquantAide'),
-              // Le MÊME quantificateur que le résumé : « Aucun post n'attend votre relecture »
-              // avec « Tout valider (2) » juste à sa droite, c'est une barre qui se contredit.
-              toutValider: dit.relecture && validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
+              // Disponible même sans accroche, depuis que la barre dit pourquoi : relire ces
+              // posts sert aux campagnes qui les nomment (la fiche est unique par organisation),
+              // et le dire pour ensuite obliger à cliquer ligne par ligne serait un travail
+              // reconnu utile puis rendu pénible.
+              toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}
           />
         )}

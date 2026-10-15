@@ -111,10 +111,24 @@ export const EXIGENCES_VARIABLE_DE_POST: readonly {
 /**
  * « Une étape en vigueur de cette campagne porte ce motif. »
  *
- * Le sujet compte autant que le corps : l'objet d'un email est rendu par le même
- * `renderTemplate` (`email-salesblink.ts`). Seules les versions EN VIGUEUR (`is_active`) sont
- * lues, parce que ce sont les seules que `resolveTemplate` choisit : une variable restée dans
- * une version désactivée ne part jamais, et retenir ses personnes serait du gel sans cause.
+ * TROIS champs, et il en faut trois : ce sont les trois qui peuvent se retrouver dans ce que
+ * le prospect lit.
+ *
+ *  - `body` : le corps du message ;
+ *  - `subject` : l'objet d'un email, rendu par le même `renderTemplate` ;
+ *  - `name` : **l'objet d'un email quand le sujet est vide.** `subject ?? name`, à l'envoi
+ *    (`email-salesblink.ts`) comme à l'aperçu de la file du jour (`file-du-jour.ts`). Le nom
+ *    d'un gabarit n'est ni validé, ni normalisé, ni proposé à l'insertion : rien n'empêche d'y
+ *    écrire une variable, et un gabarit nommé « Votre réaction à {{post_url}} », au sujet vide,
+ *    envoyait l'adresse réelle d'un post que personne n'avait relu — sans garde d'entrée, sans
+ *    gel d'achat, sans épargne, et avec un écran muet. C'est la propriété que ce lot promet.
+ *
+ * Les trois champs valent pour les DEUX questions : un nom qui écrit `{{post_sujet}}` doit
+ * exiger un sujet de la fiche, sinon l'email part avec un objet vide.
+ *
+ * Seules les versions EN VIGUEUR (`is_active`) sont lues, parce que ce sont les seules que
+ * `resolveTemplate` choisit : une variable restée dans une version désactivée ne part jamais, et
+ * retenir ses personnes serait du gel sans cause.
  */
 function sqlGabaritPorteLeMotif(campagne: string, motif: string): string {
   return `exists (
@@ -124,7 +138,8 @@ function sqlGabaritPorteLeMotif(campagne: string, motif: string): string {
              where st_ap.campaign_id = ${campagne}
                and mt_ap.is_active
                and (coalesce(mt_ap.body, '') ~* '${motif}'
-                 or coalesce(mt_ap.subject, '') ~* '${motif}'))`;
+                 or coalesce(mt_ap.subject, '') ~* '${motif}'
+                 or coalesce(mt_ap.name, '') ~* '${motif}'))`;
 }
 
 /**

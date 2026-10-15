@@ -83,6 +83,10 @@
 //      strict) — 31h rougit : « votre réaction du ␣m'a interpellé » part sans que rien ne le dise.
 //  48. posts.ts : retirer `sansRepliVide` de l'aperçu — 31i rougit : l'écran montre le trou au
 //      lieu d'un morceau manquant, et compte la ligne validable.
+//  49. accroche-post.ts : retirer `mt_ap.name` de `sqlGabaritPorteLeMotif` — 33, 33a, 33c, 33f et
+//      33g rougissent : une accroche cachée dans le NOM du gabarit (objet d'un email quand le
+//      sujet est vide) échappe à la garde, au gel, à l'épargne et à l'écran, et l'adresse réelle
+//      d'un post jamais relu part dans l'objet.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -91,6 +95,7 @@ import {
   campagneNommeUnPost,
   compterRetenuesParPost,
   retenuesAAfficher,
+  apercuEnvoi,
   ecrireReglage,
   runScore,
   buildScoringUserMessage,
@@ -993,18 +998,20 @@ const ACCROCHE_DATE_REPLI_VIDE = 'Bonjour, votre réaction du {{post_date|}} m\'
  * fiche que le sujet (les deux autres se résolvent toutes seules).
  */
 const ACCROCHE_MIXTE = 'Bonjour, je vous ai vu réagir au post sur {{post_sujet}}, publié le {{post_date|12 octobre}} : {{post_url|https://www.linkedin.com/feed/}}.';
+/** La même, à ceci près que l'adresse n'a PAS de repli : le seul écart entre 32f et 32g. */
+const ACCROCHE_MIXTE_URL_STRICTE = 'Bonjour, je vous ai vu réagir au post sur {{post_sujet}}, publié le {{post_date|12 octobre}} : {{post_url}}.';
 
 /**
  * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
  * un post. Canal `linkedin_message` par défaut — une campagne 100 % LinkedIn inscrit un engageur
  * sans email (`sqlCampagneSansEmail`), ce qui isole la garde du post de celle de l'adresse.
  */
-async function etapeAvecCorps(m, corps, { canal = 'linkedin_message', position = 0, sujet = null } = {}) {
+async function etapeAvecCorps(m, corps, { canal = 'linkedin_message', position = 0, sujet = null, nom = 'Modele' } = {}) {
   const gabarit = (
     await q(
       `insert into message_templates (organization_id, name, channel, locale, body, subject)
-       values ($1, 'Modele', $2::channel_kind, 'fr', $3, $4) returning id`,
-      [m.org, canal, corps, sujet],
+       values ($1, $5, $2::channel_kind, 'fr', $3, $4) returning id`,
+      [m.org, canal, corps, sujet, nom],
     )
   ).rows[0].id;
   await q(
@@ -1926,6 +1933,10 @@ async function gabaritMixte() {
   // prouve pas pareil : `url` est renseignée dès la création, donc « exigée » et « non exigée »
   // rendent le même verdict tant qu'elle l'est. On la vide, et seulement alors la différence se
   // voit — c'est le seul endroit où une erreur sur un motif pourrait être masquée par l'autre.
+  //
+  // AUCUNE inversion ne fait rougir 32f seul : la tolérance du motif strict le fait rougir avec
+  // 32b à 32e. Ce qui prouve son propos, c'est la PAIRE 32f / 32g — même fiche, deux gabarits qui
+  // ne diffèrent que par le repli sur l'adresse, deux verdicts opposés.
   const u = await monde();
   await etapeAvecCorps(u, ACCROCHE_MIXTE);
   const w = await engageurDUnPost(u, 78, { etat: 'pending', sujet: 'un sujet relu', nomAffiche: null });
@@ -1936,6 +1947,96 @@ async function gabaritMixte() {
   check('32f. l\'adresse à repli n\'exige rien non plus : sans adresse ni date, le sujet suffit',
     refusUrl === null && etatUrl.review_status === 'approved' && etatUrl.url === '' && etatUrl.posted_at === null,
     `${refusUrl?.details?.formErrors?.[0] ?? ''} / ${JSON.stringify(etatUrl)}`);
+
+  // Le jumeau de 32f : MÊME fiche, même date absente, même adresse vide — le gabarit ne change
+  // que d'un repli. Le verdict s'inverse, et c'est ça qui prouve que le repli décide.
+  const v = await monde();
+  await etapeAvecCorps(v, ACCROCHE_MIXTE_URL_STRICTE);
+  const x = await engageurDUnPost(v, 83, { etat: 'pending', sujet: 'un sujet relu', nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null, url = '' where id = $1`, [x.fiche]);
+  let refusStrict = null;
+  await validerPost(v.ctx, { postId: x.fiche, campagneId: v.campagne }).catch((e) => { refusStrict = e; });
+  check('32g. la même adresse vide, le MÊME gabarit sans son repli : valider est refusé',
+    refusStrict !== null && /adresse du post/.test(refusStrict?.details?.formErrors?.[0] ?? ''),
+    refusStrict?.details?.formErrors?.[0] ?? 'aucun refus');
+}
+
+/**
+ * Ce qu'un gabarit porte d'accroche AILLEURS que dans son corps.
+ *
+ * L'objet d'un email se replie sur le NOM du gabarit quand le sujet est vide — `subject ?? name`,
+ * à l'envoi (`email-salesblink.ts`) comme à l'aperçu (`file-du-jour.ts`). Le nom n'est ni validé,
+ * ni normalisé : rien n'empêche d'y écrire une variable. Une garde qui ne lirait que le corps et
+ * le sujet laisserait donc partir un message nommant un post que personne n'a relu — exactement
+ * ce que ce lot promet d'empêcher.
+ */
+const ACCROCHE_DANS_LE_NOM = 'Votre réaction à {{post_url}}';
+const ACCROCHE_NOM_SUJET = 'Votre réaction au post sur {{post_sujet}}';
+const CORPS_MUET = 'Bonjour, parlons prospection.';
+
+async function accrocheDansLeNomDuGabarit() {
+  console.log('\n# l\'accroche cachée dans le NOM du gabarit, dont l\'objet d\'un email se repose');
+  await demarrerBoss();
+  const m = await monde();
+  // Corps sans la moindre variable de post, sujet VIDE, accroche dans le nom seul.
+  await etapeAvecCorps(m, CORPS_MUET, { canal: 'email', nom: ACCROCHE_DANS_LE_NOM });
+  const p = await engageurDUnPost(m, 79, { etat: 'pending' });
+  // Une adresse, pour que la campagne email puisse réellement inscrire : sans elle, « personne
+  // n'entre » ne prouverait rien (c'est l'adresse qui retiendrait, pas le post).
+  await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob79-${Date.now()}@exemple.invalid`]);
+
+  check('33. une accroche cachée dans le NOM fait nommer le post comme les autres',
+    (await compterRetenuesParPost(pool, m.org, m.campagne)).nommeUnPost === true);
+  check('33a. et le badge de l\'onglet l\'annonce',
+    (await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })) === 1,
+    String(await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })));
+
+  // Le gel se juge sur une personne SANS adresse : celle d'au-dessus n'est candidate à aucun
+  // achat, justement parce qu'on vient de lui en donner une.
+  const sansAdresse = await engageurDUnPost(m, 82, { etat: 'pending' });
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [sansAdresse.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  const enfiles = (await q(`select data from pgboss.job where name = 'enrichment.contact_connu' and data->>'organizationId' = $1`, [m.org])).rows.map((r) => r.data.contactId);
+  check('33b. gel : aucun achat pour une personne dont le post n\'est pas relu', !enfiles.includes(sansAdresse.contact_id), JSON.stringify(enfiles));
+  await tourDInscription(m.org);
+  check('33c. garde : personne n\'entre tant que ce post n\'est pas relu',
+    (await inscritsDe(m.org)).length === 0, JSON.stringify(await inscritsDe(m.org)));
+
+  // Relu, la personne entre — et l'objet de son email, c'est le NOM du gabarit, rendu.
+  await validerPost(m.ctx, { postId: p.fiche, campagneId: m.campagne });
+  await tourDInscription(m.org);
+  check('33d. relu, ses personnes entrent', (await inscritsDe(m.org)).includes(p.contact_id), JSON.stringify(await inscritsDe(m.org)));
+  // L'envoi lui-même part par SalesBlink, hors de ce harnais ; `apercuEnvoi` est l'autre lecteur
+  // du MÊME repli (`subject ?? name`), et il tourne sur les vraies données. L'action est posée en
+  // fixture : l'inscription seule n'en crée pas, c'est la planification d'étape qui s'en charge.
+  const insc = (await q(`select id, campaign_id from enrollments where organization_id = $1 and contact_id = $2`, [m.org, p.contact_id])).rows[0];
+  const etape = (await q(`select id from sequence_steps where campaign_id = $1 order by position limit 1`, [insc.campaign_id])).rows[0];
+  const action = (await q(
+    `insert into actions (organization_id, enrollment_id, step_id, channel, status, scheduled_for, idempotency_key)
+     values ($1, $2, $3, 'email', 'scheduled', now(), $4) returning id`,
+    [m.org, insc.id, etape.id, `nom-gabarit-${insc.id}`],
+  )).rows[0];
+  const apercu = await apercuEnvoi(m.ctx, { actionId: action.id });
+  check('33e. et l\'objet de l\'email EST ce nom, avec l\'adresse réelle du post',
+    apercu.objet === `Votre réaction à ${urlN(79)}`, apercu.objet);
+
+  // L'AUTRE motif : un nom qui écrit `{{post_sujet}}` l'exige de la fiche, sinon l'objet partirait
+  // vide — un objet vide n'est pas une accroche, c'est un email sans objet.
+  const n = await monde();
+  await etapeAvecCorps(n, CORPS_MUET, { canal: 'email', nom: ACCROCHE_NOM_SUJET });
+  const w = await engageurDUnPost(n, 80, { etat: 'pending', sujet: null, nomAffiche: null });
+  let refusNom = null;
+  await validerPost(n.ctx, { postId: w.fiche, campagneId: n.campagne }).catch((e) => { refusNom = e; });
+  check('33f. un nom qui écrit {{post_sujet}} l\'exige de la fiche : sans sujet, valider est refusé',
+    refusNom !== null && /le sujet/.test(refusNom?.details?.formErrors?.[0] ?? ''),
+    refusNom?.details?.formErrors?.[0] ?? 'aucun refus');
+
+  // L'ÉPARGNE, EN DERNIER : elle efface.
+  const b = await engageurDUnPost(m, 81, { etat: 'pending' });
+  await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [b.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('33g. épargne : la personne survit tant que sa fiche attend',
+    (await q(`select 1 from signals where id = $1`, [b.signal_id])).rowCount === 1);
 }
 
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
@@ -1996,7 +2097,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

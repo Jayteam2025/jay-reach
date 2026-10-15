@@ -8,7 +8,8 @@
  *  - « N posts attendent votre relecture » annoncé par une campagne qui ne nomme aucun post. Le
  *    bandeau et l'échéance s'y subordonnaient déjà, pas ce résumé-là : l'opérateur relisait des
  *    posts qui ne débloquent personne, et le jour où la rétention sera vraie il ne le lira plus
- *    (« une alerte fausse en éteint une vraie ») ;
+ *    (« une alerte fausse en éteint une vraie ». La barre ne se tait pas pour autant : elle dit
+ *    maintenant que la relecture faite ici sert aux campagnes qui, elles, nomment ce post) ;
  *  - le jeton brut d'une variable de post que la capture n'a pas pu lire, affiché tel quel dans
  *    la phrase relue (« votre réaction du {{post_date}} »).
  */
@@ -99,8 +100,6 @@ describe('le résumé de la barre', () => {
   });
 
   it('n\'annonce AUCUNE relecture quand la campagne ne nomme aucun post', async () => {
-    // DEUX posts complets, donc deux lignes validables : avec un seul, « Tout valider » vaudrait
-    // `null` de toute façon et la contradiction d'en face ne serait pas visible.
     etat.retenues = { ...RETENUES, nommeUnPost: false };
     etat.posts = [post(null), { ...post(null), id: 'p2' }];
     const html = await rendre();
@@ -108,19 +107,22 @@ describe('le résumé de la barre', () => {
     // Et pas « Aucun post n'attend votre relecture » non plus : ce serait affirmer qu'il n'y a
     // rien à faire au-dessus de lignes qui proposent de faire quelque chose d'utile.
     expect(html).toContain(echappe(fr.campagne.posts.bar.sansAccroche));
-    // « Aucun post n'attend votre relecture » et « Tout valider (2) » côte à côte, c'est la même
-    // barre qui se contredit : le quantificateur de la garde porte les deux ou aucun.
-    expect(html).not.toContain('Tout valider');
+    // Le lot reste offert : la barre vient de dire que relire ici sert aux campagnes qui nomment
+    // ce post, et le dire pour ensuite obliger à cliquer ligne par ligne serait se dédire.
+    expect(html).toContain('Tout valider (2)');
   });
 });
 
 /**
- * L'invariant de la barre : elle parle POUR les lignes qu'elle surmonte. « Aucun post n'attend
- * votre relecture » au-dessus de deux boutons « Valider » est une contradiction à l'écran, et
- * c'est de cette famille qu'était le défaut corrigé en `5a121ad`.
+ * L'invariant de la barre : elle parle POUR les lignes qu'elle surmonte, jamais contre elles.
+ *
+ * Ce que ce test N'EXERCE PAS : `compterRetenuesParPost` est simulé ici, donc rien ne prouve à ce
+ * niveau QUELLE écriture fait qu'une campagne nomme un post — un repli, le nom du gabarit, un
+ * corps. C'est le harnais qui le prouve, sur Postgres (contrôles 31, 31a, 33, 33a). Ici on ne
+ * juge que la composition : les trois éléments de l'écran disent-ils la même chose.
  */
 describe('la barre et les lignes ne se contredisent pas', () => {
-  it('une accroche à repli nomme le post : la barre annonce ce que les lignes proposent', async () => {
+  it('quand la campagne nomme le post, la barre annonce ce que les lignes proposent', async () => {
     etat.posts = [post(ACCROCHE_REPLI_RENDUE), { ...post(ACCROCHE_REPLI_RENDUE), id: 'p2' }];
     const html = await rendre();
     expect(html).toContain('posts attendent votre relecture');
