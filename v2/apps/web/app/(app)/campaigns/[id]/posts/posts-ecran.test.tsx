@@ -89,11 +89,16 @@ describe('le résumé de la barre', () => {
   });
 
   it('n\'annonce AUCUNE relecture quand la campagne ne nomme aucun post', async () => {
+    // DEUX posts complets, donc deux lignes validables : avec un seul, « Tout valider » vaudrait
+    // `null` de toute façon et la contradiction d'en face ne serait pas visible.
     etat.retenues = { ...RETENUES, nommeUnPost: false };
-    etat.posts = [post(null)];
+    etat.posts = [post(null), { ...post(null), id: 'p2' }];
     const html = await rendre();
     expect(html).not.toContain('post attend');
     expect(html).toContain('Aucun post n&#x27;attend votre relecture.');
+    // « Aucun post n'attend votre relecture » et « Tout valider (2) » côte à côte, c'est la même
+    // barre qui se contredit : le quantificateur de la garde porte les deux ou aucun.
+    expect(html).not.toContain('Tout valider');
   });
 });
 
