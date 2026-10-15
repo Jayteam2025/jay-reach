@@ -306,6 +306,38 @@ describe('listerPostsDeCampagne', () => {
     ]);
   });
 
+  /**
+   * Un repli RÉEL se rend dans l'aperçu, comme il se rendra dans l'envoi : il n'y a plus rien à
+   * compléter, et la garde n'exige rien de la fiche non plus.
+   */
+  it('rend un repli réel, et ne laisse rien à compléter', async () => {
+    const { ctx } = contexte({
+      'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
+      'from sequence_steps': { rows: [{ body: 'Bonjour. Votre réaction du {{post_date|12 octobre}} nous a marqués.' }] },
+    });
+    const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+      { texte: 'Votre réaction du 12 octobre nous a marqués.' },
+    ]);
+  });
+
+  /**
+   * Un repli VIDE, lui, n'est pas un repli : `renderTemplate` rendrait « du ␣nous », un blanc
+   * dans un envoi. L'écran doit le lire comme la garde — une valeur à reposer, pas un trou.
+   */
+  it('lit un repli VIDE comme une absence de repli : le morceau manquant revient', async () => {
+    const { ctx } = contexte({
+      'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
+      'from sequence_steps': { rows: [{ body: 'Bonjour. Votre réaction du {{post_date|}} nous a marqués.' }] },
+    });
+    const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+      { texte: 'Votre réaction du ' },
+      { manquant: 'post_date' },
+      { texte: ' nous a marqués.' },
+    ]);
+  });
+
   it('rend null quand aucune étape ne nomme le post', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },

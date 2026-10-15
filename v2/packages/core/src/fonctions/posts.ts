@@ -113,6 +113,23 @@ export type MorceauAccroche =
 const JETON_DE_POST_RESTANT = new RegExp(`\\{\\{\\s*(${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'gi');
 const JETON_DE_POST = new RegExp(`\\{\\{\\s*(?:${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'i');
 
+/** Un jeton de post dont le repli est vide, ou fait d'espaces. */
+const REPLI_VIDE_DE_POST = new RegExp(`(\\{\\{\\s*(?:${[...VARIABLES_DE_POST].join('|')})\\s*)\\|\\s*(\\}\\})`, 'gi');
+
+/**
+ * `{{post_date|}}` se lit `{{post_date}}` : **un repli vide n'est pas un repli.**
+ *
+ * `renderTemplate` rendrait la chaîne vide du repli — « votre réaction du ␣m'a interpellé »,
+ * c'est-à-dire un blanc dans un envoi, que le dépôt interdit. La garde le lit déjà ainsi
+ * (`motifSqlDesVariables`, `linkedin/accroche-post.ts`) : sans cette normalisation ici, l'écran
+ * afficherait le trou, compterait la ligne validable, et le serveur la refuserait — le défaut
+ * exact que le morceau `manquant` existe pour supprimer. `accroche-post.test.ts` compare les deux
+ * lectures sur les mêmes écritures.
+ */
+export function sansRepliVide(corps: string): string {
+  return corps.replace(REPLI_VIDE_DE_POST, '$1$2');
+}
+
 /**
  * Coupe une accroche rendue en morceaux : le texte déjà résolu, les champs que l'opérateur édite
  * DANS la phrase (le nom de l'auteur, le sujet), et ce que la capture n'a pas pu relever.
@@ -239,7 +256,7 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
     apercuAccroche:
       phrase === null
         ? null
-        : renderTemplatePartial(phrase, {
+        : renderTemplatePartial(sansRepliVide(phrase), {
             post_url: p.url,
             post_date: p.posted_at ? new Date(p.posted_at).toLocaleDateString('fr-FR') : undefined,
           }),

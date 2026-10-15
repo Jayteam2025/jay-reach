@@ -8,6 +8,13 @@
  * fichier porte : **on n'inscrit personne, et on ne dépense rien, sur un post qu'un humain n'a
  * pas relu.**
  *
+ * Elle vaut SANS RÉSERVE : dès qu'une étape en vigueur parle du post, de quelque façon que ce
+ * soit — repli compris —, la relecture est exigée (`sqlCampagneNommeUnPost`). Ce qu'un repli
+ * change, et la seule chose qu'il change, c'est ce qu'on exige de la FICHE : `{{post_date|le 12
+ * octobre}}` n'attend pas de date, puisque le message part de toute façon. Le post se relit, la
+ * fiche n'a rien à fournir. Les deux questions, et pourquoi elles ne peuvent pas partager un
+ * motif, sont écrites sur `motifSqlDesVariables`.
+ *
  * UNE définition, plusieurs écritures, c'est le point : la garde vit à quatre endroits (le
  * pré-filtre du producteur, le contrôle autoritaire de la fonction qui inscrit, celui de la
  * fonction qui dépense, et le décompte montré à l'opérateur). Quatre copies auraient divergé, et
@@ -24,43 +31,53 @@ import { VARIABLES_DE_POST } from '../messages/variables.js';
 import { TYPES_SOURCES_DE_POST } from '../fonctions/sources.js';
 
 /**
- * Le motif Postgres qui reconnaît, dans un corps de message, un jeton parmi `variables` ÉCRIT
- * SANS REPLI.
+ * Les motifs Postgres qui reconnaissent, dans un corps de message, un jeton parmi `variables`.
  *
- * Même forme que `TOKEN_RE` (`messages/variables.ts`) — espaces tolérés autour du nom — moins la
- * valeur de repli. Les noms de variables sont des identifiants (`[a-z_]`), donc rien à échapper
- * dans l'alternative.
+ * Même forme que `TOKEN_RE` (`messages/variables.ts`) : espaces tolérés autour du nom, valeur de
+ * repli facultative après `|`, qui ne peut pas contenir d'accolade fermante. Les noms de
+ * variables sont des identifiants (`[a-z_]`), donc rien à échapper dans l'alternative.
  *
- * **Le repli est exclu DÉLIBÉRÉMENT, et c'est la définition même d'« écrire une variable de
- * post ».** La règle du dépôt est qu'une variable non résolue bloque l'envoi ; une variable à
- * repli, elle, EST résolue — `renderTemplate` rend le repli dès que la valeur est vide. Avec
- * `{{post_date|le 12 octobre}}` et une fiche sans date, retenir la personne, c'est donc geler
- * indéfiniment un message qui serait parti correctement : la garde attendrait un horodatage que
- * seul le rattrapage peut poser, et que ce message n'attend pas.
+ * DEUX motifs, parce qu'il y a DEUX questions, et qu'un seul motif pour les deux se trompe
+ * forcément sur l'une :
  *
- * Deux variables seulement sont concernées : `NO_FALLBACK_VARIABLES` refuse déjà le repli sur
+ *  - `repli: true` — « cette campagne PARLE-T-ELLE du post ? » C'est ce qui déclenche la
+ *    relecture humaine, et un repli n'en dispense pas. « j'ai vu votre réaction à ce post :
+ *    `{{post_url|https://www.linkedin.com/feed/}}` » envoie l'adresse RÉELLE du post, puisque
+ *    `url` est renseignée dès la création de la fiche : le repli ne sert jamais, et pourtant il
+ *    suffirait à désactiver toute la relecture sans que l'opérateur le sache, ni que l'écran le
+ *    dise. La relecture est une règle du lot, pas une question de résolution de variable.
+ *  - `repli: false` — « que faut-il EXIGER de la fiche ? » Là, un repli change tout : la règle du
+ *    dépôt est qu'une variable non résolue bloque l'envoi, et une variable à repli EST résolue
+ *    (`renderTemplate` rend le repli dès que la valeur est vide). Exiger une date de la fiche
+ *    pour `{{post_date|le 12 octobre}}`, ce serait retenir la personne indéfiniment en attendant
+ *    un horodatage que seul le rattrapage peut poser, et que ce message n'attend pas.
+ *
+ * **Un repli VIDE n'est pas un repli** (`{{post_date|}}`, ou fait d'espaces) : `renderTemplate`
+ * rendrait une chaîne vide, donc un blanc dans un envoi, ce que le dépôt interdit. Il se lit
+ * comme une absence de repli, des deux côtés. La même lecture vit côté écran
+ * (`fonctions/posts.ts`), et `accroche-post.test.ts` compare les deux sur les mêmes écritures.
+ *
+ * Deux variables seulement peuvent porter un repli : `NO_FALLBACK_VARIABLES` le refuse sur
  * `post_auteur` et `post_sujet` dès l'enregistrement, parce qu'il y serait l'interrupteur
  * silencieux vers le message sans accroche (0 % de réponses contre 31,1 %).
- *
- * Cette définition vaut aux QUATRE endroits d'un coup — la garde d'entrée, l'écran, le gel de la
- * dépense, l'épargne de purge — parce qu'ils lisent tous ce motif-ci, comme ils lisent tous
- * `sqlSourceAlimenteLaCampagne` pour le lien source-campagne. Aucune campagne n'écrit de variable
- * de post aujourd'hui : c'est précisément pour ça que la règle se pose maintenant.
  */
-function motifSqlDesVariables(variables: readonly string[]): string {
-  return `\\{\\{\\s*(${variables.join('|')})\\s*\\}\\}`;
+function motifSqlDesVariables(variables: readonly string[], opts: { repli: boolean }): string {
+  const jeton = `\\{\\{\\s*(${variables.join('|')})\\s*`;
+  return opts.repli ? `${jeton}(\\|[^}]*)?\\}\\}` : `${jeton}(\\|\\s*)?\\}\\}`;
 }
 
 /**
  * Le motif des QUATRE variables de post, dérivé de `VARIABLES_DE_POST` et jamais recopié : le
  * jour où une cinquième existe, la garde la connaît sans qu'on y pense.
  *
+ * Celui de la question « cette campagne parle-t-elle du post », donc tolérant au repli.
+ *
  * Comparé en insensible à la casse (`~*`) par les fragments ci-dessous : l'enregistrement
  * canonise bien `{{POST_AUTEUR}}` en minuscules (`normalizeVariableSyntax`), mais une ligne
  * écrite avant cette canonisation, ou par une importation, doit compter quand même — se tromper
  * ici laisserait partir une accroche sans relecture.
  */
-export const MOTIF_SQL_VARIABLE_DE_POST = motifSqlDesVariables([...VARIABLES_DE_POST]);
+export const MOTIF_SQL_VARIABLE_DE_POST = motifSqlDesVariables([...VARIABLES_DE_POST], { repli: true });
 
 /**
  * Ce que CHAQUE variable de post exige de la fiche pour se résoudre — la condition SQL miroir de
@@ -119,9 +136,14 @@ export function sqlCampagneNommeUnPost(campagne: string): string {
   return sqlGabaritPorteLeMotif(campagne, MOTIF_SQL_VARIABLE_DE_POST);
 }
 
-/** « Cette campagne écrit CETTE variable de post. » C'est ce qui décide de ce que la garde EXIGE. */
+/**
+ * « Cette campagne écrit CETTE variable de post, sans repli. » C'est ce qui décide de ce que la
+ * garde EXIGE de la fiche — et un repli dispense de l'exigence, lui, parce qu'il résout la
+ * variable. Voir `motifSqlDesVariables` : ce n'est pas la même question que « nomme-t-elle un
+ * post », qui, elle, reste vraie avec un repli.
+ */
 export function sqlCampagneEcritVariableDePost(campagne: string, variable: string): string {
-  return sqlGabaritPorteLeMotif(campagne, motifSqlDesVariables([variable]));
+  return sqlGabaritPorteLeMotif(campagne, motifSqlDesVariables([variable], { repli: false }));
 }
 
 /**

@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { VARIABLES_DE_POST } from '../messages/variables.js';
+import { sansRepliVide } from '../fonctions/posts.js';
 import {
   retenuesAAfficher,
   type RetenuesParPost,
@@ -66,29 +67,60 @@ describe('MOTIF_SQL_VARIABLE_DE_POST', () => {
   });
 
   /**
-   * Écrire une variable de post, c'est l'écrire SANS repli. Une variable à repli se résout
-   * toujours (`renderTemplate` rend le repli quand la valeur est vide), donc elle ne peut pas
-   * bloquer un envoi — et retenir une personne pour elle, c'est geler indéfiniment un message qui
-   * serait parti correctement, au mépris de la règle du dépôt : une variable non résolue bloque
-   * l'envoi, et une variable à repli EST résolue.
-   *
-   * Seules `post_url` et `post_date` sont concernées : `NO_FALLBACK_VARIABLES` refuse le repli sur
-   * `post_auteur` et `post_sujet` dès l'enregistrement, parce qu'il y serait l'interrupteur
-   * silencieux vers le message sans accroche.
+   * Un repli ne dispense PAS de faire relire le post. « j'ai vu votre réaction à ce post :
+   * {{post_url|https://www.linkedin.com/feed/}} » envoie l'adresse RÉELLE du post — `url` est
+   * renseignée dès la création de la fiche, le repli ne sert jamais — et il suffirait pourtant à
+   * désactiver toute la relecture humaine sans que l'opérateur le sache.
    */
-  it('ne reconnaît PAS une variable de post écrite avec un repli', () => {
+  it('reconnaît une variable de post ÉCRITE AVEC UN REPLI : la relecture reste exigée', () => {
     const re = new RegExp(MOTIF_SQL_VARIABLE_DE_POST, 'i');
-    expect(re.test('{{post_url|https://exemple.fr}}')).toBe(false);
-    expect(re.test('{{ post_date | le 12 octobre }}')).toBe(false);
-    // Et une campagne qui écrit la MÊME variable des deux façons l'écrit quand même.
-    expect(re.test('{{post_date|le 12 octobre}} puis {{post_date}}')).toBe(true);
+    expect(re.test('à ce post : {{post_url|https://www.linkedin.com/feed/}}')).toBe(true);
+    expect(re.test('{{ post_date | le 12 octobre }}')).toBe(true);
+  });
+});
+
+/**
+ * L'autre question : ce qu'il faut EXIGER de la fiche. Là, un repli dispense — la variable se
+ * résout, le message part, et retenir la personne gèlerait indéfiniment un envoi correct.
+ */
+describe('sqlCampagneEcritVariableDePost', () => {
+  /** Ce que le motif de CETTE question reconnaît, lu comme une expression régulière. */
+  const ecrit = (corps: string, variable = 'post_date'): boolean => {
+    const sql = sqlCampagneEcritVariableDePost('$1::uuid', variable);
+    const motif = /~\* '([^']+)'/.exec(sql)?.[1] ?? '';
+    return new RegExp(motif, 'i').test(corps);
+  };
+
+  it('une variable à repli n’est pas « écrite » : rien n’est exigé de la fiche', () => {
+    expect(ecrit('{{post_date}}')).toBe(true);
+    expect(ecrit('{{ POST_DATE }}')).toBe(true);
+    expect(ecrit('{{post_date|le 12 octobre}}')).toBe(false);
+    expect(ecrit('{{ post_date | le 12 octobre }}')).toBe(false);
+    // Écrite des DEUX façons, elle reste écrite : l’une des deux partira sans repli.
+    expect(ecrit('{{post_date|le 12 octobre}} puis {{post_date}}')).toBe(true);
   });
 
-  /** Le motif par variable suit la même règle, puisqu'il sort de la même fonction. */
-  it('et la question « cette campagne écrit-elle CETTE variable » non plus', () => {
-    const sql = sqlCampagneEcritVariableDePost('$1::uuid', 'post_date');
-    expect(sql).toContain('post_date');
-    expect(sql).not.toContain('[^}]*');
+  /**
+   * Un repli VIDE n'est pas un repli : `renderTemplate` rendrait une chaîne vide, donc un blanc
+   * dans un envoi, ce que le dépôt interdit. Il se lit comme une absence de repli — et l'écran
+   * doit le lire pareil, sans quoi il afficherait le trou et compterait la ligne validable.
+   */
+  it('un repli VIDE se lit comme une absence de repli, des deux côtés', () => {
+    for (const corps of ['{{post_date|}}', '{{ post_date |  }}']) {
+      expect(ecrit(corps)).toBe(true);
+      expect(sansRepliVide(corps)).toMatch(/^\{\{\s*post_date\s*\}\}$/);
+    }
+    // Un repli RÉEL, lui, n'est pas touché par la normalisation de l'écran.
+    expect(sansRepliVide('{{post_date|le 12 octobre}}')).toBe('{{post_date|le 12 octobre}}');
+  });
+
+  /** Les deux lectures doivent rester jumelles : même verdict sur les mêmes écritures. */
+  it('la lecture de l’écran et celle de la garde s’accordent', () => {
+    for (const corps of ['{{post_date}}', '{{post_date|}}', '{{ post_date | }}', '{{post_date|le 12 octobre}}', '{{post_date| x}}']) {
+      // L'écran « voit » la variable à compléter quand le jeton survit à la normalisation sans repli.
+      const vuParLEcran = /\{\{\s*post_date\s*\}\}/i.test(sansRepliVide(corps));
+      expect(vuParLEcran).toBe(ecrit(corps));
+    }
   });
 });
 
