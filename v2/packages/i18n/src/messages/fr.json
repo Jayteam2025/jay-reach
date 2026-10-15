@@ -393,6 +393,7 @@
       "contacts": "Contacts",
       "queue": "File du jour",
       "sources": "Sources",
+      "posts": "Posts",
       "sequence": "Séquence",
       "activity": "Activité",
       "settings": "Réglages"
@@ -1092,6 +1093,55 @@
         "saveDraft": "Enregistrer en brouillon",
         "createAndLaunch": "Créer et lancer",
         "continue": "Continuer"
+      }
+    },
+    "posts": {
+      "title": "Posts à relire",
+      "description": "Ce qu'on relit ici, c'est la phrase telle qu'elle partira. Le sujet s'écrit dans la phrase, là où il atterrira.",
+      "bar": {
+        "posts": "{n, plural, one {# post attend} other {# posts attendent}} votre relecture",
+        "personnes": "{n, plural, one {# personne n'entre} other {# personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
+        "rien": "Aucun post n'attend votre relecture.",
+        "toutValider": "Tout valider ({n})"
+      },
+      "phrase": {
+        "avant": "Je vous ai vu réagir au post de {auteur} sur ",
+        "sujetInvite": "écrivez le sujet du post",
+        "sujetEtiquette": "Sujet du post de {auteur}"
+      },
+      "ligne": {
+        "auteurInconnu": "Auteur inconnu",
+        "publie": "publié le {date}",
+        "publieInconnu": "date de publication inconnue",
+        "voir": "Voir le post sur LinkedIn",
+        "attente": "{n, plural, one {# personne attend} other {# personnes attendent}}"
+      },
+      "etat": {
+        "pending": "en attente",
+        "approved": "validé",
+        "rejected": "rejeté"
+      },
+      "echeance": {
+        "loin": "effacées le {date}",
+        "bientot": "effacées le {date}, dans {jours, plural, one {# jour} other {# jours}}",
+        "demain": "effacées demain",
+        "aujourdhui": "effacées aujourd'hui",
+        "passee": "échéance passée"
+      },
+      "actions": {
+        "valider": "Valider",
+        "rejeter": "Rejeter",
+        "rouvrir": "Rouvrir"
+      },
+      "vide": {
+        "titre": "Aucun post à relire.",
+        "texte": "Les posts collectés par vos sources LinkedIn apparaissent ici. Leurs contacts entrent en séquence une fois que vous avez relu la phrase qui les nommera."
+      },
+      "retenues": {
+        "titre": "Personnes retenues",
+        "sansSource": "Le message écrit une variable de post, mais la campagne n'a aucune source qui part d'un post : personne n'entrera en séquence.",
+        "sansPost": "{n, plural, one {# personne n'a} other {# personnes n'ont}} aucun post rattaché : le message nomme un post, elles ne peuvent pas entrer.",
+        "inexploitable": "{n, plural, one {# personne est retenue} other {# personnes sont retenues}} : la fiche de leur post ne porte pas tout ce que le message écrit (auteur, sujet, date)."
       }
     }
   },

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ErreurIntrouvable } from '@jay-reach/core';
+import { ErreurIntrouvable, compterPostsAValiderDeCampagne } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { compteurOngletSources, lireVueDEnsembleCourante } from '../../../../lib/campagne';
 import { EnTeteCampagne } from '../../../../components/campagne/EnTeteCampagne';
@@ -30,8 +30,13 @@ export default async function CampagneLayout({ children, params }: { children: R
 
   let t: Awaited<ReturnType<typeof getTranslations>>;
   let vue: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
+  let postsAValider: number;
   try {
-    [t, vue] = await Promise.all([getTranslations('campagne'), lireVueDEnsembleCourante(ctx, id)]);
+    [t, vue, postsAValider] = await Promise.all([
+      getTranslations('campagne'),
+      lireVueDEnsembleCourante(ctx, id),
+      compterPostsAValiderDeCampagne(ctx, { campagneId: id }),
+    ]);
   } catch (err) {
     if (err instanceof ErreurIntrouvable) notFound();
     throw err;
@@ -58,6 +63,7 @@ export default async function CampagneLayout({ children, params }: { children: R
               contacts: vue.entonnoir.origine === 'sources' ? vue.entonnoir.contacts : vue.entonnoir.contactsImportes,
               fileDuJour: vue.fileDuJour.length,
               sources: compteurOngletSources(vue.entonnoir.origine, vue.nombreSources),
+              posts: postsAValider > 0 ? postsAValider : undefined,
             }}
           />
         }

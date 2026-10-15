@@ -393,6 +393,7 @@
       "contacts": "Contacts",
       "queue": "Today's queue",
       "sources": "Sources",
+      "posts": "Posts",
       "sequence": "Sequence",
       "activity": "Activity",
       "settings": "Settings"
@@ -1092,6 +1093,55 @@
         "saveDraft": "Save as draft",
         "createAndLaunch": "Create and launch",
         "continue": "Continue"
+      }
+    },
+    "posts": {
+      "title": "Posts to review",
+      "description": "What you review here is the sentence as it will be sent. The subject is written inside the sentence, where it will land.",
+      "bar": {
+        "posts": "{n, plural, one {# post is} other {# posts are}} waiting for your review",
+        "personnes": "{n, plural, one {# person does} other {# people do}} not enter the sequence until their post is approved",
+        "rien": "No post is waiting for your review.",
+        "toutValider": "Approve all ({n})"
+      },
+      "phrase": {
+        "avant": "I saw you react to {auteur}'s post about ",
+        "sujetInvite": "write the post's subject",
+        "sujetEtiquette": "Subject of {auteur}'s post"
+      },
+      "ligne": {
+        "auteurInconnu": "Unknown author",
+        "publie": "published {date}",
+        "publieInconnu": "publication date unknown",
+        "voir": "View the post on LinkedIn",
+        "attente": "{n, plural, one {# person is} other {# people are}} waiting"
+      },
+      "etat": {
+        "pending": "pending",
+        "approved": "approved",
+        "rejected": "rejected"
+      },
+      "echeance": {
+        "loin": "deleted on {date}",
+        "bientot": "deleted on {date}, in {jours, plural, one {# day} other {# days}}",
+        "demain": "deleted tomorrow",
+        "aujourdhui": "deleted today",
+        "passee": "deadline passed"
+      },
+      "actions": {
+        "valider": "Approve",
+        "rejeter": "Reject",
+        "rouvrir": "Reopen"
+      },
+      "vide": {
+        "titre": "No post to review.",
+        "texte": "Posts collected by your LinkedIn sources appear here. Their contacts enter the sequence once you have reviewed the sentence that will name them."
+      },
+      "retenues": {
+        "titre": "People held back",
+        "sansSource": "The message writes a post variable, but the campaign has no source that starts from a post: nobody will enter the sequence.",
+        "sansPost": "{n, plural, one {# person has} other {# people have}} no post attached: the message names a post, so they cannot enter.",
+        "inexploitable": "{n, plural, one {# person is} other {# people are}} held back: their post's record lacks something the message writes (author, subject, date)."
       }
     }
   },

@@ -393,6 +393,7 @@
       "contacts": "Contacten",
       "queue": "Wachtrij van vandaag",
       "sources": "Bronnen",
+      "posts": "Posts",
       "sequence": "Sequentie",
       "activity": "Activiteit",
       "settings": "Instellingen"
@@ -1092,6 +1093,55 @@
         "saveDraft": "Als concept opslaan",
         "createAndLaunch": "Aanmaken en starten",
         "continue": "Doorgaan"
+      }
+    },
+    "posts": {
+      "title": "Posts om na te lezen",
+      "description": "Wat je hier nalicht, is de zin zoals hij verstuurd wordt. Het onderwerp schrijf je in de zin zelf, waar het terechtkomt.",
+      "bar": {
+        "posts": "{n, plural, one {# post wacht} other {# posts wachten}} op je controle",
+        "personnes": "{n, plural, one {# persoon komt} other {# personen komen}} niet in de sequentie zolang hun post niet is goedgekeurd",
+        "rien": "Geen enkele post wacht op je controle.",
+        "toutValider": "Alles goedkeuren ({n})"
+      },
+      "phrase": {
+        "avant": "Ik zag je reageren op de post van {auteur} over ",
+        "sujetInvite": "schrijf het onderwerp van de post",
+        "sujetEtiquette": "Onderwerp van de post van {auteur}"
+      },
+      "ligne": {
+        "auteurInconnu": "Onbekende auteur",
+        "publie": "gepubliceerd op {date}",
+        "publieInconnu": "publicatiedatum onbekend",
+        "voir": "Bekijk de post op LinkedIn",
+        "attente": "{n, plural, one {# persoon wacht} other {# personen wachten}}"
+      },
+      "etat": {
+        "pending": "in afwachting",
+        "approved": "goedgekeurd",
+        "rejected": "afgewezen"
+      },
+      "echeance": {
+        "loin": "gewist op {date}",
+        "bientot": "gewist op {date}, over {jours, plural, one {# dag} other {# dagen}}",
+        "demain": "morgen gewist",
+        "aujourdhui": "vandaag gewist",
+        "passee": "termijn verstreken"
+      },
+      "actions": {
+        "valider": "Goedkeuren",
+        "rejeter": "Afwijzen",
+        "rouvrir": "Heropenen"
+      },
+      "vide": {
+        "titre": "Geen post om na te lezen.",
+        "texte": "Posts die je LinkedIn-bronnen verzamelen verschijnen hier. Hun contacten komen in de sequentie zodra je de zin hebt nagelezen die hen noemt."
+      },
+      "retenues": {
+        "titre": "Teruggehouden personen",
+        "sansSource": "Het bericht schrijft een postvariabele, maar de campagne heeft geen bron die van een post uitgaat: niemand komt in de sequentie.",
+        "sansPost": "{n, plural, one {# persoon heeft} other {# personen hebben}} geen post gekoppeld: het bericht noemt een post, ze kunnen niet binnenkomen.",
+        "inexploitable": "{n, plural, one {# persoon wordt} other {# personen worden}} teruggehouden: het postdossier mist iets wat het bericht schrijft (auteur, onderwerp, datum)."
       }
     }
   },

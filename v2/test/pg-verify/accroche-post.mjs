@@ -25,6 +25,11 @@
 //  20. score.ts : remplacer `lp.text_excerpt as texte_post` par `null::text as texte_post` — 17a rougit.
 //  21. score.ts : retirer `and lp.organization_id = s.organization_id` de la jointure — 17c rougit.
 //  22. scoring.ts : passer `SCORING_DESCRIPTION_MAX_CARACTERES` de 150 à 600 — 26b rougit ; passer `SCORING_TEXTE_POST_MAX_CARACTERES` à 150 — 26c rougit.
+//  23. posts.ts : retirer `and coalesce(btrim(subject), '') <> ''` de `validerPost` — 27e rougit.
+//  24. posts.ts : retirer `and cs.campaign_id = $2` de la jointure de `listerPostsDeCampagne` — 27a et 27b rougissent.
+//  25. posts.ts : remplacer `where organization_id = $1` de `rejeterPost` par `where $1::uuid is not null` — 27m rougit.
+//  26. posts.ts : retirer `and expires_at > now()` de `reouvrirPost` — 27l rougit.
+//  27. posts.ts : remplacer le `case` de `corrigerSujetDePost` par `review_status = review_status` — 27i rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -58,6 +63,12 @@ import {
   prendreCreditAnthropic,
   fichesARattraper,
   ficheIncomplete,
+  compterPostsAValiderDeCampagne,
+  corrigerSujetDePost,
+  listerPostsDeCampagne,
+  rejeterPost,
+  reouvrirPost,
+  validerPost,
   prendreVerrouLinkedIn,
   registerQueues,
   chargerLigneInscription,
@@ -1326,8 +1337,81 @@ async function scoringNourri() {
   check('17d. l\'explication du modèle est écrite pour les retenus', retenus === 4, String(retenus));
 }
 
+async function ecranDesPosts() {
+  console.log('\n# l\'écran de validation : la relecture humaine que la garde exige');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const a = await engageurDUnPost(m, 41, { etat: 'pending', sujet: null });
+  const b = await engageurDUnPost(m, 42, { etat: 'pending', sujet: 'le recrutement des commerciaux' });
+  // Hors périmètre : une autre campagne de la MÊME organisation, et une autre organisation.
+  const autreCampagne = (await q(`insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Autre', 'active', $2::jsonb) returning id`, [m.org, JSON.stringify({ personas: [m.persona] })])).rows[0].id;
+  const hors = await engageurDUnPost({ ...m, campagne: autreCampagne }, 43, { etat: 'pending' });
+  const n = await monde();
+  const etranger = await engageurDUnPost(n, 44, { etat: 'pending' });
+
+  const lignes = await listerPostsDeCampagne(m.ctx, { campagneId: m.campagne });
+  const ids = lignes.map((l) => l.id).sort();
+  check('27a. la liste ne rend que les posts des sources de CETTE campagne', JSON.stringify(ids) === JSON.stringify([a.fiche, b.fiche].sort()),
+    `${lignes.length} lignes, hors-campagne ${ids.includes(hors.fiche)}, autre organisation ${ids.includes(etranger.fiche)}`);
+  const la = lignes.find((l) => l.id === a.fiche);
+  check('27b. chaque ligne compte ses personnes en attente', lignes.every((l) => l.personnesEnAttente === 1), JSON.stringify(lignes.map((l) => l.personnesEnAttente)));
+  check('27c. l\'aperçu est la phrase du gabarit, le sujet laissé en place', la?.apercuAccroche === 'Bonjour, je vous ai vu réagir au post de Ana sur {{post_sujet}}.', String(la?.apercuAccroche));
+  check('27d. le badge de l\'onglet compte les deux posts en attente', (await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })) === 2);
+
+  // Un post sans sujet ne se valide pas, et rien ne bouge.
+  let refus = null;
+  await validerPost(m.ctx, { postId: a.fiche }).catch((e) => { refus = e; });
+  const etatA = (await q(`select review_status from linkedin_posts where id = $1`, [a.fiche])).rows[0].review_status;
+  check('27e. valider un post sans sujet est refusé, il reste en attente', refus !== null && etatA === 'pending', `${refus?.name} / ${etatA}`);
+  await tourDInscription(m.org);
+  check('27f. et personne n\'entre en séquence tant qu\'il n\'est pas relu', (await inscritsDe(m.org)).length === 0);
+
+  // Corriger, puis une capture ultérieure : le sujet de l'opérateur survit.
+  await corrigerSujetDePost(m.ctx, { postId: a.fiche, sujet: 'la prospection LinkedIn' });
+  const apres = (await q(`select subject, subject_origin from linkedin_posts where id = $1`, [a.fiche])).rows[0];
+  await enregistrerFichePost(pool, m.org, ficheN(41), { fenetreJours: FENETRE });
+  const recapture = (await q(`select subject, subject_origin from linkedin_posts where id = $1`, [a.fiche])).rows[0];
+  check('27g. corriger pose subject_origin operator, et une nouvelle capture ne l\'écrase pas',
+    apres.subject_origin === 'operator' && recapture.subject === 'la prospection LinkedIn' && recapture.subject_origin === 'operator', JSON.stringify(recapture));
+
+  // Valider ouvre la garde : la personne entre réellement.
+  await validerPost(m.ctx, { postId: a.fiche });
+  await validerPost(m.ctx, { postId: b.fiche });
+  await tourDInscription(m.org);
+  const inscrits = await inscritsDe(m.org);
+  check('27h. valider un post fait entrer ses personnes en séquence', inscrits.includes(a.contact_id) && inscrits.includes(b.contact_id), `${inscrits.length} inscrits`);
+
+  // Corriger un post validé le ramène en attente.
+  await corrigerSujetDePost(m.ctx, { postId: b.fiche, sujet: 'le recrutement commercial' });
+  const reOuvert = (await q(`select review_status from linkedin_posts where id = $1`, [b.fiche])).rows[0].review_status;
+  check('27i. corriger le sujet d\'un post déjà validé le ramène en attente', reOuvert === 'pending', reOuvert);
+
+  // Rejeter n'efface rien ; rouvrir annule.
+  const avantRejet = (await q(`select (select count(*) from contacts where organization_id = $1)::int as c, (select count(*) from signals where organization_id = $1)::int as s`, [m.org])).rows[0];
+  await rejeterPost(m.ctx, { postId: b.fiche });
+  const apresRejet = (await q(`select (select count(*) from contacts where organization_id = $1)::int as c, (select count(*) from signals where organization_id = $1)::int as s, (select review_status from linkedin_posts where id = $2) as etat`, [m.org, b.fiche])).rows[0];
+  check('27j. rejeter est un drapeau : ni personne ni signal n\'est effacé',
+    apresRejet.etat === 'rejected' && apresRejet.c === avantRejet.c && apresRejet.s === avantRejet.s, JSON.stringify({ avantRejet, apresRejet }));
+  await reouvrirPost(m.ctx, { postId: b.fiche });
+  check('27k. rouvrir ramène un post rejeté en attente', (await q(`select review_status from linkedin_posts where id = $1`, [b.fiche])).rows[0].review_status === 'pending');
+
+  // Une fenêtre passée ne se rouvre pas : l'échéance borne la rétention.
+  await rejeterPost(m.ctx, { postId: b.fiche });
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = $1`, [b.fiche]);
+  let refusRouvrir = null;
+  await reouvrirPost(m.ctx, { postId: b.fiche }).catch((e) => { refusRouvrir = e; });
+  check('27l. un post dont la fenêtre est passée ne se rouvre pas', refusRouvrir !== null && (await q(`select review_status from linkedin_posts where id = $1`, [b.fiche])).rows[0].review_status === 'rejected');
+
+  // Une autre organisation n'agit jamais sur ce post.
+  let intrus = null;
+  await validerPost(n.ctx, { postId: hors.fiche }).catch((e) => { intrus = e; });
+  await rejeterPost(n.ctx, { postId: hors.fiche }).catch(() => undefined);
+  const etatHors = (await q(`select review_status from linkedin_posts where id = $1`, [hors.fiche])).rows[0].review_status;
+  check('27m. une autre organisation ne peut ni valider ni rejeter ce post', intrus !== null && etatHors === 'pending', `${intrus?.name} / ${etatHors}`);
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
