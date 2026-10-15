@@ -75,7 +75,9 @@
 //      la relecture humaine aux quatre endroits à la fois.
 //  46. accroche-post.ts : un SEUL motif, tolérant partout (`sqlCampagneEcritVariableDePost` en
 //      `repli: true`) — 31g rougit : une fiche sans date n'est plus validable et l'achat reste
-//      gelé, alors que le message partirait en rendant le repli.
+//      gelé, alors que le message partirait en rendant le repli. Et 32b à 32e rougissent avec
+//      lui, sur le gabarit MIXTE : le refus réclame la date EN PLUS du sujet, donc la fiche
+//      n'est plus validable du tout et personne n'entre.
 //  47. accroche-post.ts : faire du repli VIDE un repli côté garde (retirer `(\|\s*)?` du motif
 //      strict) — 31h rougit : « votre réaction du ␣m'a interpellé » part sans que rien ne le dise.
 //  48. posts.ts : retirer `sansRepliVide` de l'aperçu — 31i rougit : l'écran montre le trou au
@@ -984,6 +986,12 @@ const ACCROCHE_URL_REPLI = 'Bonjour, j\'ai vu votre réaction à ce post : {{pos
 const ACCROCHE_DATE_REPLI = 'Bonjour, votre réaction du {{post_date|12 octobre}} m\'a interpellé.';
 /** Un repli VIDE n'est pas un repli : `renderTemplate` rendrait un blanc, que le dépôt interdit. */
 const ACCROCHE_DATE_REPLI_VIDE = 'Bonjour, votre réaction du {{post_date|}} m\'a interpellé.';
+/**
+ * LE CAS MIXTE, celui que la séparation des deux motifs rend central : une variable de post SANS
+ * repli, deux AVEC. La campagne doit faire relire le post (elle en parle), et n'exiger de la
+ * fiche que le sujet (les deux autres se résolvent toutes seules).
+ */
+const ACCROCHE_MIXTE = 'Bonjour, je vous ai vu réagir au post sur {{post_sujet}}, publié le {{post_date|12 octobre}} : {{post_url|https://www.linkedin.com/feed/}}.';
 
 /**
  * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
@@ -1868,6 +1876,51 @@ async function repliNExigeRienDeLaFiche() {
     (await q(`select 1 from signals where id = $1`, [b.signal_id])).rowCount === 1);
 }
 
+async function gabaritMixte() {
+  console.log('\n# un gabarit MIXTE : une variable de post sans repli, deux avec');
+  await demarrerBoss();
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE_MIXTE);
+  const p = await engageurDUnPost(m, 77, { etat: 'pending', sujet: null, nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [p.fiche]);
+
+  check('32. la campagne parle du post : la relecture est exigée',
+    (await compterRetenuesParPost(pool, m.org, m.campagne)).nommeUnPost === true);
+  await tourDInscription(m.org);
+  check('32a. garde : personne n\'entre tant qu\'un humain n\'a pas relu ce post',
+    (await inscritsDe(m.org)).length === 0, JSON.stringify(await inscritsDe(m.org)));
+
+  // LE CŒUR DU CAS MIXTE, et la raison d'être de ce contrôle-ci : les deux motifs s'exécutent
+  // ici pour de bon, avec `~*` dans Postgres, sur le MÊME corps. Le refus doit nommer le sujet,
+  // et lui seul — ni la date ni l'adresse, qui portent un repli, ni l'auteur, qui n'est pas écrit.
+  let refus = null;
+  await validerPost(m.ctx, { postId: p.fiche, campagneId: m.campagne }).catch((e) => { refus = e; });
+  const msg = refus?.details?.formErrors?.[0] ?? '';
+  check('32b. valider n\'exige QUE le sujet : ni la date, ni l\'adresse, ni l\'auteur',
+    refus !== null && /le sujet/.test(msg) && !/date de publication/.test(msg)
+      && !/adresse du post/.test(msg) && !/nom de l'auteur/.test(msg), msg);
+
+  // Le sujet écrit — la seule chose qui manquait — et tout se débloque, la date toujours nulle.
+  await corrigerSujetDePost(m.ctx, { postId: p.fiche, sujet: 'la prospection par la preuve' });
+  let refus2 = null;
+  await validerPost(m.ctx, { postId: p.fiche, campagneId: m.campagne }).catch((e) => { refus2 = e; });
+  const apres = (await q(`select review_status, posted_at from linkedin_posts where id = $1`, [p.fiche])).rows[0];
+  check('32c. le sujet écrit, valider passe — la date manque toujours, et c\'est sans effet',
+    refus2 === null && apres.review_status === 'approved' && apres.posted_at === null,
+    `${refus2?.message ?? ''} / ${JSON.stringify(apres)}`);
+  await tourDInscription(m.org);
+  check('32d. et ses personnes entrent en séquence', (await inscritsDe(m.org)).includes(p.contact_id), JSON.stringify(await inscritsDe(m.org)));
+
+  // Et ce qui part le prouve : le sujet relu, le repli pour la date absente, l'adresse RÉELLE.
+  const insc = (await q(`select id from enrollments where organization_id = $1`, [m.org])).rows[0]?.id ?? null;
+  const rendu = insc === null
+    ? { text: '', missing: ['(aucune inscription)'] }
+    : renderTemplate(ACCROCHE_MIXTE, buildMessageValues(await chargerLigneInscription(pool, insc)));
+  check('32e. le message part entier : sujet relu, repli pour la date, adresse réelle du post',
+    rendu.missing.length === 0 && rendu.text.includes('sur la prospection par la preuve')
+      && rendu.text.includes('publié le 12 octobre') && rendu.text.includes(urlN(77)), JSON.stringify(rendu));
+}
+
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
 async function parLeLienHistorique(campagne, source) {
   await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
@@ -1926,7 +1979,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

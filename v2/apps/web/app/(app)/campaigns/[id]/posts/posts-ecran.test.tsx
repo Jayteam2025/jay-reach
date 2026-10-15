@@ -52,6 +52,12 @@ import CampagnePostsPage from './page';
 const ACCROCHE = 'Je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}.';
 /** Ce que rend `listerPostsDeCampagne` quand la capture n'a pas pu lire la date du post. */
 const ACCROCHE_SANS_DATE = 'Votre réaction du {{post_date}} m\'a interpellé.';
+/**
+ * Une accroche dont la seule variable de post portait un repli, telle que l'aperçu la rend : le
+ * repli ne sert jamais (`url` existe dès la création de la fiche), et la campagne nomme QUAND
+ * MÊME le post — le harnais le prouve sur Postgres (contrôles 31 et 31a).
+ */
+const ACCROCHE_REPLI_RENDUE = 'J\'ai vu votre réaction à ce post : https://www.linkedin.com/feed/update/urn:li:activity:1.';
 
 function post(apercuAccroche: string | null): LignePost {
   return {
@@ -99,6 +105,21 @@ describe('le résumé de la barre', () => {
     // « Aucun post n'attend votre relecture » et « Tout valider (2) » côte à côte, c'est la même
     // barre qui se contredit : le quantificateur de la garde porte les deux ou aucun.
     expect(html).not.toContain('Tout valider');
+  });
+});
+
+/**
+ * L'invariant de la barre : elle parle POUR les lignes qu'elle surmonte. « Aucun post n'attend
+ * votre relecture » au-dessus de deux boutons « Valider » est une contradiction à l'écran, et
+ * c'est de cette famille qu'était le défaut corrigé en `5a121ad`.
+ */
+describe('la barre et les lignes ne se contredisent pas', () => {
+  it('une accroche à repli nomme le post : la barre annonce ce que les lignes proposent', async () => {
+    etat.posts = [post(ACCROCHE_REPLI_RENDUE), { ...post(ACCROCHE_REPLI_RENDUE), id: 'p2' }];
+    const html = await rendre();
+    expect(html).toContain('posts attendent votre relecture');
+    expect(html).toContain('Tout valider (2)');
+    expect(html).toMatch(/<button[^>]*>Valider<\/button>/);
   });
 });
 
