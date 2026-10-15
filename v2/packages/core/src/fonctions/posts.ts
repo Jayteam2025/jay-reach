@@ -13,7 +13,17 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable, exiger, valider } from './contexte.js';
-import { renderTemplatePartial } from '../messages/variables.js';
+import { VARIABLES_DE_POST, renderTemplatePartial } from '../messages/variables.js';
+// Imports internes au paquet (pas via le barrel) : la garde d'accroche EN fait partie, et c'est
+// elle qui dit ce qu'une campagne exige d'une fiche. UNE écriture, deux lecteurs — la garde du
+// moteur et la validation de cet écran — parce qu'un bouton « Valider » qui exige autre chose que
+// la garde est un bouton qui ne débloque rien.
+import {
+  EXIGENCES_VARIABLE_DE_POST,
+  sqlCampagneEcritVariableDePost,
+  sqlFicheResoutCeQuEcritLaCampagne,
+  sqlSourceAlimenteLaCampagne,
+} from '../linkedin/accroche-post.js';
 // Même borne que le sujet écrit par le modèle : un sujet de l'opérateur se glisse dans la même phrase.
 import { SUJET_POST_MAX_CARACTERES } from '../scoring.js';
 
@@ -33,35 +43,79 @@ export type LignePost = {
 
 const ETATS: readonly [EtatPost, ...EtatPost[]] = ['pending', 'approved', 'rejected'];
 
+/**
+ * Borne du nom d'auteur affiché. Du même ordre que celle du sujet, et pour la même raison : ce
+ * texte se glisse dans une phrase envoyée à un prospect, il ne doit pas la noyer. Plus large que
+ * le sujet parce qu'un nom de page LinkedIn peut être long sans être bavard.
+ */
+export const AUTEUR_POST_MAX_CARACTERES = 80;
+
 const schemaListe = z.object({ campagneId: z.string().uuid(), etat: z.enum(ETATS).optional() });
 const schemaPost = z.object({ postId: z.string().uuid() });
+/**
+ * Valider se fait DEPUIS une campagne, et pas dans l'absolu : ce qu'il faut exiger de la fiche,
+ * c'est ce que cette campagne écrit (`sqlFicheResoutCeQuEcritLaCampagne`). Sans l'id de campagne,
+ * la fonction devrait inventer un quantificateur que la garde, elle, n'a pas.
+ */
+const schemaValidation = z.object({ postId: z.string().uuid(), campagneId: z.string().uuid() });
 const schemaCorrection = z.object({
   postId: z.string().uuid(),
   sujet: z.string().trim().min(1, 'Le sujet ne peut pas être vide.').max(SUJET_POST_MAX_CARACTERES, `Le sujet doit tenir en ${SUJET_POST_MAX_CARACTERES} caractères : il se glisse dans une phrase.`),
 });
+const schemaCorrectionAuteur = z.object({
+  postId: z.string().uuid(),
+  auteur: z.string().trim().min(1, 'Le nom de l\'auteur ne peut pas être vide.').max(AUTEUR_POST_MAX_CARACTERES, `Le nom de l'auteur doit tenir en ${AUTEUR_POST_MAX_CARACTERES} caractères : il se glisse dans une phrase.`),
+});
 const schemaCampagne = z.object({ campagneId: z.string().uuid() });
 
-/** Le jeton de la variable de sujet, tel que `renderTemplatePartial` le laisse (`{{ post_sujet }}`). */
-const JETON_SUJET = /\{\{\s*post_sujet\s*(?:\|[^}]*)?\}\}/i;
+/** Les deux parties de l'accroche que l'opérateur ÉCRIT lui-même, dans la phrase. */
+export const CHAMPS_ACCROCHE = ['auteur', 'sujet'] as const;
+export type ChampAccroche = (typeof CHAMPS_ACCROCHE)[number];
+
+/** Un morceau d'accroche : du texte déjà résolu, ou un champ que l'opérateur édite dans la phrase. */
+export type MorceauAccroche = { readonly texte: string } | { readonly champ: ChampAccroche };
+
+/** Les jetons que l'écran rend éditables, et ceux qui suffisent à faire d'une phrase une accroche. */
+const JETON_CHAMP = new RegExp(`\\{\\{\\s*post_(${CHAMPS_ACCROCHE.join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'gi');
+const JETON_DE_POST = new RegExp(`\\{\\{\\s*(?:${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'i');
 
 /**
- * Coupe une accroche rendue autour de son sujet : ce qui précède, ce qui suit. `null` quand le
- * sujet n'y figure pas (l'écran retombe alors sur sa phrase par défaut).
+ * Coupe une accroche rendue en morceaux : le texte déjà résolu, et les champs que l'opérateur
+ * édite DANS la phrase (le nom de l'auteur, le sujet).
  *
- * Pure et exportée : l'écran édite le sujet À L'INTÉRIEUR de la phrase, il lui faut donc les deux
- * moitiés, pas la phrase entière.
+ * `null` seulement quand il n'y a pas d'accroche du tout (aucune étape de la campagne ne nomme le
+ * post) : l'écran retombe alors sur sa phrase par défaut. Une accroche qui ne cite que
+ * `{{post_url}}` rend UN morceau de texte et aucun champ — c'est exact, il n'y a rien à écrire.
+ *
+ * L'ancienne découpe en `avant` / `apres` ne connaissait que le sujet : une accroche qui nomme
+ * l'auteur laissait donc `{{post_auteur}}` en clair sous les yeux de l'opérateur, sans aucun moyen
+ * de le corriger.
  */
-export function decouperAccroche(apercu: string | null): { avant: string; apres: string } | null {
+export function decouperAccroche(apercu: string | null): MorceauAccroche[] | null {
   if (apercu === null) return null;
-  const m = JETON_SUJET.exec(apercu);
-  if (!m) return null;
-  return { avant: apercu.slice(0, m.index), apres: apercu.slice(m.index + m[0].length) };
+  const morceaux: MorceauAccroche[] = [];
+  let curseur = 0;
+  for (const m of apercu.matchAll(JETON_CHAMP)) {
+    if (m.index > curseur) morceaux.push({ texte: apercu.slice(curseur, m.index) });
+    morceaux.push({ champ: m[1]?.toLowerCase() === 'auteur' ? 'auteur' : 'sujet' });
+    curseur = m.index + m[0].length;
+  }
+  if (curseur < apercu.length) morceaux.push({ texte: apercu.slice(curseur) });
+  return morceaux;
 }
 
-/** La phrase du gabarit qui porte le sujet, ou `null`. Une phrase finit à `. ! ?` ou à un saut de ligne. */
-function phraseDuSujet(corps: string): string | null {
+/**
+ * La phrase du gabarit qui nomme le post, ou `null`. Une phrase finit à `. ! ?` ou à un saut de
+ * ligne.
+ *
+ * N'importe laquelle des quatre variables de post suffit, et pas seulement le sujet : une campagne
+ * qui ne cite que `{{post_auteur}}` retombait sinon sur la phrase par défaut, où le sujet
+ * s'éditait alors qu'il ne partirait jamais. L'écran doit rendre éditable ce qui partira, ni plus
+ * ni moins — la même règle que la garde.
+ */
+function phraseAvecVariableDePost(corps: string): string | null {
   for (const morceau of corps.split(/(?<=[.!?])\s+|\n+/)) {
-    if (JETON_SUJET.test(morceau)) return morceau.trim();
+    if (JETON_DE_POST.test(morceau)) return morceau.trim();
   }
   return null;
 }
@@ -83,9 +137,10 @@ interface LignePostBrute {
  * `personnesEnAttente` : les personnes de CETTE campagne rattachées au post et sans inscription
  * vivante (même population que `compterRetenuesParPost`, un majorant honnête).
  *
- * `apercuAccroche` : la phrase du gabarit en vigueur qui nomme le sujet, avec auteur, date et lien
- * déjà résolus pour CE post, et le jeton du sujet laissé en place (`decouperAccroche`). `null` si
- * aucune étape de la campagne ne cite `{{post_sujet}}`.
+ * `apercuAccroche` : la phrase du gabarit en vigueur qui nomme le post, avec la date et le lien
+ * déjà résolus pour CE post, et les jetons de l'AUTEUR et du SUJET laissés en place — ce sont les
+ * deux que l'opérateur écrit lui-même, dans la phrase (`decouperAccroche`). `null` si aucune étape
+ * de la campagne ne nomme le post.
  */
 export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Promise<LignePost[]> {
   exiger(ctx, 'viewer');
@@ -97,16 +152,16 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
                  from signals s
                  join contacts ct on ct.source_signal_id = s.id and ct.organization_id = s.organization_id
                 where s.linkedin_post_id = lp.id and s.organization_id = $1
-                  and exists (select 1 from campaign_sources cs where cs.campaign_id = $2 and cs.source_id = s.source_id)
+                  and ${sqlSourceAlimenteLaCampagne('$2::uuid', 's.source_id')}
                   and not exists (select 1 from enrollments en
                                    where en.contact_id = ct.id and en.status in ('active', 'paused', 'paused_absence'))) as personnes
          from linkedin_posts lp
         where lp.organization_id = $1
           and ($3::text is null or lp.review_status = $3)
           and exists (select 1 from signals s
-                        join campaign_sources cs on cs.source_id = s.source_id and cs.campaign_id = $2
-                        join campaigns c on c.id = cs.campaign_id and c.organization_id = $1
-                       where s.linkedin_post_id = lp.id and s.organization_id = $1)
+                        join campaigns c on c.id = $2 and c.organization_id = $1
+                       where s.linkedin_post_id = lp.id and s.organization_id = $1
+                         and ${sqlSourceAlimenteLaCampagne('c.id', 's.source_id')})
         order by (lp.review_status = 'pending') desc,
                  case when lp.review_status = 'pending' then lp.expires_at end asc,
                  lp.posted_at desc nulls last, lp.id`,
@@ -123,7 +178,7 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
   ]);
   let phrase: string | null = null;
   for (const g of gabarits.rows) {
-    phrase = g.body === null ? null : phraseDuSujet(g.body);
+    phrase = g.body === null ? null : phraseAvecVariableDePost(g.body);
     if (phrase !== null) break;
   }
   return posts.rows.map((p) => ({
@@ -135,11 +190,14 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
     etat: p.review_status,
     personnesEnAttente: Number(p.personnes),
     expireLe: p.expires_at,
+    // `post_auteur` n'est volontairement PAS résolu ici : c'est un champ que l'opérateur édite dans
+    // la phrase, au même titre que le sujet. Le résoudre laissait `{{post_auteur}}` en clair quand
+    // le nom manquait (« valeur cherchée mais vide » : `renderTemplatePartial` garde le gabarit),
+    // sans aucun moyen de le corriger.
     apercuAccroche:
       phrase === null
         ? null
         : renderTemplatePartial(phrase, {
-            post_auteur: p.author_display_name?.trim() || undefined,
             post_url: p.url,
             post_date: p.posted_at ? new Date(p.posted_at).toLocaleDateString('fr-FR') : undefined,
           }),
@@ -155,9 +213,9 @@ export async function compterPostsAValiderDeCampagne(ctx: Contexte, entree: unkn
        from linkedin_posts lp
       where lp.organization_id = $1 and lp.review_status = 'pending' and lp.expires_at > now()
         and exists (select 1 from signals s
-                      join campaign_sources cs on cs.source_id = s.source_id and cs.campaign_id = $2
-                      join campaigns c on c.id = cs.campaign_id and c.organization_id = $1
-                     where s.linkedin_post_id = lp.id and s.organization_id = $1)`,
+                      join campaigns c on c.id = $2 and c.organization_id = $1
+                     where s.linkedin_post_id = lp.id and s.organization_id = $1
+                       and ${sqlSourceAlimenteLaCampagne('c.id', 's.source_id')})`,
     [ctx.organisationId, e.campagneId],
   );
   return Number(res.rows[0]?.n ?? 0);
@@ -172,8 +230,8 @@ function refus(message: string): ErreurEntree {
 
 /** Dit pourquoi une mise à jour n'a rien touché : introuvable, ou état qui ne s'y prête pas. */
 async function etatDuPost(ctx: Contexte, postId: string) {
-  const res = await ctx.ex.query<{ review_status: EtatPost; subject: string | null; expired: boolean }>(
-    `select review_status, subject, expires_at <= now() as expired
+  const res = await ctx.ex.query<{ review_status: EtatPost; expired: boolean }>(
+    `select review_status, expires_at <= now() as expired
        from linkedin_posts where organization_id = $1 and id = $2`,
     [ctx.organisationId, postId],
   );
@@ -182,28 +240,69 @@ async function etatDuPost(ctx: Contexte, postId: string) {
   return ligne;
 }
 
+/** Ce que chaque variable de post désigne, pour le dire à l'opérateur dans sa langue de travail. */
+const LIBELLE_VARIABLE_DE_POST: Readonly<Record<string, string>> = {
+  post_auteur: 'le nom de l\'auteur',
+  post_sujet: 'le sujet',
+  post_url: 'l\'adresse du post',
+  post_date: 'la date de publication',
+};
+
 /**
- * Valide un post : ses personnes peuvent entrer en séquence. REFUSÉ sans sujet : on ne valide pas
- * ce qu'on n'a pas relu, et une phrase sans sujet est ce que la garde existe pour empêcher.
- * L'écriture est conditionnelle (un seul `update`) : pas de fenêtre entre la lecture du sujet et
+ * Les variables de post que CETTE campagne écrit et que la fiche ne résout pas — exactement ce que
+ * la garde refuserait (`sqlFicheResoutCeQuEcritLaCampagne`, lu par les deux).
+ */
+async function variablesManquantes(ctx: Contexte, postId: string, campagneId: string): Promise<string[]> {
+  const colonnes = EXIGENCES_VARIABLE_DE_POST.map(
+    (e) => `(${sqlCampagneEcritVariableDePost('$3::uuid', e.variable)}
+              and not ${e.colonneRenseignee('p')}) as "${e.variable}"`,
+  ).join(',\n            ');
+  const res = await ctx.ex.query<Record<string, boolean>>(
+    `select ${colonnes}
+       from linkedin_posts p where p.organization_id = $1 and p.id = $2`,
+    [ctx.organisationId, postId, campagneId],
+  );
+  const ligne = res.rows[0];
+  if (!ligne) return [];
+  return EXIGENCES_VARIABLE_DE_POST.filter((e) => ligne[e.variable] === true).map((e) => e.variable);
+}
+
+/**
+ * Valide un post : ses personnes peuvent entrer en séquence.
+ *
+ * REFUSÉ tant que la fiche ne porte pas ce que la campagne ÉCRIT — ni plus, ni moins. Le même
+ * quantificateur que la garde, et la même écriture (`sqlFicheResoutCeQuEcritLaCampagne`) : exiger
+ * davantage fabrique un travail inutile (écrire un sujet qui ne partira pas), exiger moins fabrique
+ * pire — l'opérateur valide, la garde continue de retenir ses personnes, et rien ne le lui dit.
+ *
+ * L'écriture est conditionnelle (un seul `update`) : pas de fenêtre entre la lecture de la fiche et
  * la validation.
  */
 export async function validerPost(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
-  const { postId } = valider(schemaPost, entree);
+  const { postId, campagneId } = valider(schemaValidation, entree);
   const res = await ctx.ex.query(
-    `update linkedin_posts
+    `update linkedin_posts p
         set review_status = 'approved', reviewed_at = now(), reviewed_by = $3
-      where organization_id = $1 and id = $2 and review_status = 'pending' and expires_at > now()
-        and coalesce(btrim(subject), '') <> ''`,
-    [ctx.organisationId, postId, ctx.utilisateurId],
+      where p.organization_id = $1 and p.id = $2 and p.review_status = 'pending' and p.expires_at > now()
+        and ${sqlFicheResoutCeQuEcritLaCampagne('$4::uuid', 'p')}`,
+    [ctx.organisationId, postId, ctx.utilisateurId, campagneId],
   );
   if ((res.rowCount ?? 0) > 0) return;
   const etat = await etatDuPost(ctx, postId);
   if (etat.review_status === 'approved') return;
   if (etat.review_status === 'rejected') throw refus('Ce post est rejeté : rouvrez-le avant de le valider.');
   if (etat.expired) throw refus(MESSAGE_ECHEANCE_PASSEE);
-  throw refus('Ce post n\'a pas de sujet : écrivez-le avant de le valider.');
+  const manquantes = await variablesManquantes(ctx, postId, campagneId);
+  if (manquantes.length === 1) {
+    throw refus(`Ce post n'a pas ${LIBELLE_VARIABLE_DE_POST[manquantes[0]!]} : écrivez-le dans la phrase avant de le valider.`);
+  }
+  if (manquantes.length > 1) {
+    throw refus(
+      `Ce post ne porte pas tout ce que votre message écrit (${manquantes.map((v) => LIBELLE_VARIABLE_DE_POST[v]).join(', ')}) : complétez la phrase avant de le valider.`,
+    );
+  }
+  throw refus('Ce post n\'a pas pu être validé : rechargez l\'écran.');
 }
 
 /**
@@ -222,6 +321,31 @@ export async function corrigerSujetDePost(ctx: Contexte, entree: unknown): Promi
         set subject = $3, subject_origin = 'operator'
       where organization_id = $1 and id = $2`,
     [ctx.organisationId, postId, sujet],
+  );
+  if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Post');
+}
+
+/**
+ * Pose le nom d'auteur affiché, celui qui PART dans le message (`{{post_auteur}}`).
+ *
+ * Sans elle, une fiche dont la capture n'a pas su lire l'auteur était une impasse : la garde exige
+ * `author_display_name` dès que la campagne l'écrit, le rattrapage ne reprend que les fiches
+ * incomplètes (celle-ci ne l'est pas, son `author_name` porte le slug de la page), et aucun écran
+ * ne permettait de le corriger. L'opérateur voyait « Auteur inconnu », validait, et rien ne
+ * bougeait. La spec l'exigeait en toutes lettres : le nom affiché est « relisible et corrigeable
+ * comme le sujet ».
+ *
+ * Comme `corrigerSujetDePost`, elle ne touche PAS l'état de relecture : corriger une coquille sur
+ * un post validé ne remet pas la campagne en attente.
+ */
+export async function corrigerAuteurDePost(ctx: Contexte, entree: unknown): Promise<void> {
+  exiger(ctx, 'operator');
+  const { postId, auteur } = valider(schemaCorrectionAuteur, entree);
+  const res = await ctx.ex.query(
+    `update linkedin_posts
+        set author_display_name = $3
+      where organization_id = $1 and id = $2`,
+    [ctx.organisationId, postId, auteur],
   );
   if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Post');
 }

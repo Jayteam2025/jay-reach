@@ -8,6 +8,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import {
+  corrigerAuteurDePost,
   corrigerSujetDePost,
   rejeterPost,
   reouvrirPost,
@@ -53,7 +54,7 @@ function revalider(campagneId: string) {
 export async function actionValiderPost(campagneId: string, postId: string): Promise<ResultatPost> {
   try {
     const ctx = await contexteCourant();
-    await validerPost(ctx, { postId });
+    await validerPost(ctx, { postId, campagneId });
     revalider(campagneId);
     return { ok: true };
   } catch (err) {
@@ -68,7 +69,7 @@ export async function actionValiderPost(campagneId: string, postId: string): Pro
 export async function actionValiderPosts(campagneId: string, postIds: string[]): Promise<ResultatPost> {
   try {
     const ctx = await contexteCourant();
-    for (const postId of postIds) await validerPost(ctx, { postId });
+    for (const postId of postIds) await validerPost(ctx, { postId, campagneId });
     revalider(campagneId);
     return { ok: true };
   } catch (err) {
@@ -81,6 +82,17 @@ export async function actionCorrigerSujet(campagneId: string, postId: string, su
   try {
     const ctx = await contexteCourant();
     await corrigerSujetDePost(ctx, { postId, sujet });
+    revalider(campagneId);
+    return { ok: true };
+  } catch (err) {
+    return resultatDErreur(err);
+  }
+}
+
+export async function actionCorrigerAuteur(campagneId: string, postId: string, auteur: string): Promise<ResultatPost> {
+  try {
+    const ctx = await contexteCourant();
+    await corrigerAuteurDePost(ctx, { postId, auteur });
     revalider(campagneId);
     return { ok: true };
   } catch (err) {

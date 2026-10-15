@@ -108,6 +108,25 @@ export function sqlCampagneEcritVariableDePost(campagne: string, variable: strin
 }
 
 /**
+ * « Cette fiche résout TOUT ce que cette campagne écrit, et rien de plus. »
+ *
+ * Le quantificateur du lot, isolé pour avoir DEUX lecteurs et une seule écriture : la garde
+ * d'entrée (`sqlFichePostUtilisable`, ci-dessous) et la validation à l'écran (`validerPost`,
+ * `fonctions/posts.ts`). Les deux doivent exiger la même chose, sous peine d'offrir à l'opérateur
+ * un bouton « Valider » qui ne débloque rien — il valide, la garde continue de retenir, et rien à
+ * l'écran ne dit pourquoi.
+ *
+ * @param campagne expression SQL qui donne l'id de la campagne
+ * @param fiche    alias SQL de la ligne `linkedin_posts`
+ */
+export function sqlFicheResoutCeQuEcritLaCampagne(campagne: string, fiche: string): string {
+  return EXIGENCES_VARIABLE_DE_POST.map(
+    (e) => `(not ${sqlCampagneEcritVariableDePost(campagne, e.variable)}
+                     or ${e.colonneRenseignee(fiche)})`,
+  ).join('\n               and ');
+}
+
+/**
  * « La fiche du post de ce signal est relue par un humain, ET elle résout ce que CETTE campagne
  * écrit. »
  *
@@ -129,10 +148,7 @@ export function sqlCampagneEcritVariableDePost(campagne: string, variable: strin
  * @param signal   alias SQL du signal (`s`), dont on lit `linkedin_post_id` et `organization_id`
  */
 export function sqlFichePostUtilisable(campagne: string, signal: string): string {
-  const exigences = EXIGENCES_VARIABLE_DE_POST.map(
-    (e) => `(not ${sqlCampagneEcritVariableDePost(campagne, e.variable)}
-                     or ${e.colonneRenseignee('fp_ap')})`,
-  ).join('\n               and ');
+  const exigences = sqlFicheResoutCeQuEcritLaCampagne(campagne, 'fp_ap');
   return `exists (
             select 1 from public.linkedin_posts fp_ap
              where fp_ap.id = ${signal}.linkedin_post_id
@@ -156,6 +172,26 @@ export function sqlFichePostEnAttente(signal: string): string {
                and fp_at.organization_id = ${signal}.organization_id
                and fp_at.review_status = 'pending'
                and fp_at.expires_at > now())`;
+}
+
+/**
+ * « Cette source alimente cette campagne. »
+ *
+ * DEUX liens, pas un : la table de liaison `campaign_sources`, et le lien historique
+ * `campaigns.source_id`, que le producteur accepte toujours (`sqlPairesEligibles`). Ne regarder
+ * que le premier donne une campagne qui RETIENT ses personnes avec un onglet Posts vide — la
+ * garde voit les deux liens, l'écran n'en verrait qu'un. Zéro campagne concernée aujourd'hui ;
+ * c'est la raison pour laquelle on l'écrit ici une fois, plutôt que de le découvrir sur une
+ * campagne vivante.
+ *
+ * @param campagne expression SQL qui donne l'id de la campagne
+ * @param source   expression SQL qui donne l'id de la source
+ */
+export function sqlSourceAlimenteLaCampagne(campagne: string, source: string): string {
+  return `(exists (select 1 from public.campaigns cp_sa
+                    where cp_sa.id = ${campagne} and cp_sa.source_id = ${source})
+            or exists (select 1 from public.campaign_sources cs_sa
+                        where cs_sa.campaign_id = ${campagne} and cs_sa.source_id = ${source}))`;
 }
 
 /**
@@ -369,9 +405,10 @@ export async function compterRetenuesParPost(
     inexploitable: string;
   }>(
     `select ${sqlCampagneNommeUnPost('$2::uuid')} as nomme_un_post, /* jr:retenues_par_post */
-            exists (select 1 from campaign_sources cs join sources so on so.id = cs.source_id
-                     where cs.campaign_id = $2 and so.organization_id = $1
-                       and so.config->>'sourceType' = any($3::text[])) as a_une_source_de_post,
+            exists (select 1 from sources so
+                     where so.organization_id = $1
+                       and so.config->>'sourceType' = any($3::text[])
+                       and ${sqlSourceAlimenteLaCampagne('$2::uuid', 'so.id')}) as a_une_source_de_post,
             count(*) filter (where ${sqlFichePostEnAttente('s')})::text as en_attente,
             count(*) filter (where s.linkedin_post_id is null)::text as sans_post,
             count(*) filter (where s.linkedin_post_id is not null
@@ -380,7 +417,7 @@ export async function compterRetenuesParPost(
        from contacts ct
        join signals s on s.id = ct.source_signal_id and s.organization_id = ct.organization_id
       where ct.organization_id = $1
-        and exists (select 1 from campaign_sources cs2 where cs2.campaign_id = $2 and cs2.source_id = s.source_id)
+        and ${sqlSourceAlimenteLaCampagne('$2::uuid', 's.source_id')}
         and not exists (select 1 from enrollments e
                          where e.contact_id = ct.id and e.status in ('active', 'paused', 'paused_absence'))`,
     [organisationId, campagneId, TYPES_SOURCES_DE_POST],

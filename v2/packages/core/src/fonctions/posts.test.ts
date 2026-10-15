@@ -4,7 +4,9 @@ import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import type { Contexte } from './contexte.js';
 import type { Executeur } from '../executeur.js';
 import {
+  AUTEUR_POST_MAX_CARACTERES,
   compterPostsAValiderDeCampagne,
+  corrigerAuteurDePost,
   corrigerSujetDePost,
   decouperAccroche,
   echeanceDePost,
@@ -48,45 +50,94 @@ function contexte(
   return { ctx: { ex, organisationId: 'org-1', utilisateurId: 'user-1', role }, appels };
 }
 
+/** Valider se fait depuis une campagne : c'est elle qui dit ce que la fiche doit porter. */
+const DEPUIS_CAMPAGNE = { postId: POST, campagneId: CAMPAGNE };
+
 describe('validerPost', () => {
-  it('écrit en une seule requête conditionnelle sur le sujet', async () => {
+  it('écrit en une seule requête conditionnelle sur ce que la campagne ÉCRIT, pas sur le sujet seul', async () => {
     const { ctx, appels } = contexte({ 'set review_status = \'approved\'': { rowCount: 1 } });
-    await validerPost(ctx, { postId: POST });
+    await validerPost(ctx, DEPUIS_CAMPAGNE);
     expect(appels).toHaveLength(1);
-    expect(appels[0]?.sql).toMatch(/coalesce\(btrim\(subject\), ''\) <> ''/);
+    // Les quatre exigences de la garde, chacune conditionnée à la variable réellement écrite.
+    expect(appels[0]?.sql).toMatch(/coalesce\(btrim\(p\.subject\), ''\) <> ''/);
+    expect(appels[0]?.sql).toMatch(/coalesce\(btrim\(p\.author_display_name\), ''\) <> ''/);
+    expect(appels[0]?.sql).toMatch(/not exists[^]*post_sujet/);
     expect(appels[0]?.sql).toMatch(/organization_id = \$1/);
+    expect(appels[0]?.valeurs).toEqual(['org-1', POST, 'user-1', CAMPAGNE]);
   });
 
-  it('refuse un post sans sujet', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', subject: null, expired: false }] } });
-    await expect(validerPost(ctx, { postId: POST })).rejects.toBeInstanceOf(ErreurEntree);
+  it('refuse quand une variable écrite par la campagne manque, et NOMME laquelle', async () => {
+    const { ctx } = contexte({
+      'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
+      'from linkedin_posts p where': { rows: [{ post_auteur: true, post_sujet: false, post_url: false, post_date: false }] },
+    });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/nom de l'auteur/)] },
+    });
+  });
+
+  it('dit les deux quand il en manque deux', async () => {
+    const { ctx } = contexte({
+      'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
+      'from linkedin_posts p where': { rows: [{ post_auteur: true, post_sujet: true, post_url: false, post_date: false }] },
+    });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/nom de l'auteur.*le sujet|le sujet.*nom de l'auteur/)] },
+    });
   });
 
   it('refuse un post rejeté : il faut le rouvrir', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'rejected', subject: 'x', expired: false }] } });
-    await expect(validerPost(ctx, { postId: POST })).rejects.toMatchObject({ details: { formErrors: [expect.stringMatching(/rouvrez/)] } });
+    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'rejected', expired: false }] } });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({ details: { formErrors: [expect.stringMatching(/rouvrez/)] } });
   });
 
   it('refuse un post en attente dont l échéance est passée, avec le même message que la réouverture', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', subject: 'x', expired: true }] } });
-    await expect(validerPost(ctx, { postId: POST })).rejects.toMatchObject({
+    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'pending', expired: true }] } });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toMatchObject({
       details: { formErrors: [expect.stringMatching(/échéance.*passée.*plus en attente/)] },
     });
   });
 
   it('ne dit rien d un post déjà validé', async () => {
-    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'approved', subject: 'x', expired: false }] } });
-    await expect(validerPost(ctx, { postId: POST })).resolves.toBeUndefined();
+    const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'approved', expired: false }] } });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).resolves.toBeUndefined();
   });
 
   it('dit introuvable pour un post hors de l organisation', async () => {
     const { ctx } = contexte();
-    await expect(validerPost(ctx, { postId: POST })).rejects.toBeInstanceOf(ErreurIntrouvable);
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toBeInstanceOf(ErreurIntrouvable);
   });
 
-  it('refuse un identifiant qui n est pas un uuid, et un lecteur', async () => {
-    await expect(validerPost(contexte().ctx, { postId: 'abc' })).rejects.toBeInstanceOf(ErreurEntree);
-    await expect(validerPost(contexte({}, 'viewer').ctx, { postId: POST })).rejects.toBeInstanceOf(ForbiddenError);
+  it('refuse un identifiant qui n est pas un uuid, une campagne absente, et un lecteur', async () => {
+    await expect(validerPost(contexte().ctx, { postId: 'abc', campagneId: CAMPAGNE })).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(validerPost(contexte().ctx, { postId: POST })).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(validerPost(contexte({}, 'viewer').ctx, DEPUIS_CAMPAGNE)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe('corrigerAuteurDePost', () => {
+  it('écrit le nom affiché sans toucher à l état de relecture', async () => {
+    const { ctx, appels } = contexte({ 'update linkedin_posts': { rowCount: 1 } });
+    await corrigerAuteurDePost(ctx, { postId: POST, auteur: '  Christelle  ' });
+    expect(appels[0]?.sql).toContain('author_display_name = $3');
+    expect(appels[0]?.sql).not.toMatch(/review_status\s*=/);
+    // `author_name` porte l'identifiant technique (le slug d'une page) : il ne doit pas bouger.
+    expect(appels[0]?.sql).not.toMatch(/\bauthor_name\s*=/);
+    expect(appels[0]?.valeurs).toEqual(['org-1', POST, 'Christelle']);
+  });
+
+  it('refuse un nom vide ou plus long que ce qui tient dans une phrase', async () => {
+    const { ctx, appels } = contexte();
+    await expect(corrigerAuteurDePost(ctx, { postId: POST, auteur: '  ' })).rejects.toBeInstanceOf(ErreurEntree);
+    await expect(
+      corrigerAuteurDePost(ctx, { postId: POST, auteur: 'x'.repeat(AUTEUR_POST_MAX_CARACTERES + 1) }),
+    ).rejects.toBeInstanceOf(ErreurEntree);
+    expect(appels).toHaveLength(0);
+  });
+
+  it('dit introuvable pour un post hors de l organisation', async () => {
+    const { ctx } = contexte();
+    await expect(corrigerAuteurDePost(ctx, { postId: POST, auteur: 'Ana' })).rejects.toBeInstanceOf(ErreurIntrouvable);
   });
 });
 
@@ -147,24 +198,62 @@ describe('listerPostsDeCampagne', () => {
     const lignes = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(lignes[0]?.personnesEnAttente).toBe(47);
     expect(lignes[0]?.auteur).toBe('Christelle Moreau');
-    expect(appels[0]?.sql).toMatch(/cs\.campaign_id = \$2/);
+    expect(appels[0]?.sql).toMatch(/cs_sa\.campaign_id = \$2::uuid/);
     expect(appels[0]?.valeurs).toEqual(['org-1', CAMPAGNE, null]);
   });
 
-  it('compose l accroche à partir du gabarit en vigueur, sujet laissé en place', async () => {
+  it('voit les DEUX liens source-campagne, comme la garde : la liaison et le lien historique', async () => {
+    const { ctx, appels } = contexte({ 'from linkedin_posts lp': { rows: [brut] } });
+    await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+    // Sans le lien historique, une campagne reliée par `campaigns.source_id` retiendrait ses
+    // personnes avec un onglet Posts vide : la garde la voit, l'écran ne la verrait pas.
+    expect(appels[0]?.sql).toMatch(/cp_sa\.source_id = s\.source_id/);
+    expect(appels[0]?.sql).toMatch(/cs_sa\.source_id = s\.source_id/);
+  });
+
+  it('compose l accroche à partir du gabarit en vigueur, auteur ET sujet laissés en place', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
       'from sequence_steps': { rows: [{ body: 'Bonjour {{prenom}}. Je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}. À bientôt.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
-    expect(ligne?.apercuAccroche).toBe('Je vous ai vu réagir au post de Christelle Moreau sur {{post_sujet}}.');
-    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual({
-      avant: 'Je vous ai vu réagir au post de Christelle Moreau sur ',
-      apres: '.',
-    });
+    // L'auteur reste un jeton : c'est un champ que l'opérateur écrit DANS la phrase. Résolu, il
+    // laissait « {{post_auteur}} » en clair quand le nom manquait, sans moyen de le corriger.
+    expect(ligne?.apercuAccroche).toBe('Je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}.');
+    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+      { texte: 'Je vous ai vu réagir au post de ' },
+      { champ: 'auteur' },
+      { texte: ' sur ' },
+      { champ: 'sujet' },
+      { texte: '.' },
+    ]);
   });
 
-  it('rend null quand aucune étape ne cite le sujet', async () => {
+  it('prend la phrase qui nomme l AUTEUR même sans sujet : la campagne n écrit que lui', async () => {
+    const { ctx } = contexte({
+      'from linkedin_posts lp': { rows: [brut] },
+      'from sequence_steps': { rows: [{ body: 'Bonjour. Vu votre réaction au post de {{post_auteur}}. À bientôt.' }] },
+    });
+    const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+      { texte: 'Vu votre réaction au post de ' },
+      { champ: 'auteur' },
+      { texte: '.' },
+    ]);
+  });
+
+  it('une accroche qui ne cite que l adresse ne rend AUCUN champ à écrire', async () => {
+    const { ctx } = contexte({
+      'from linkedin_posts lp': { rows: [brut] },
+      'from sequence_steps': { rows: [{ body: 'Bonjour. Vu votre réaction à {{post_url}}. À bientôt.' }] },
+    });
+    const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+    expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+      { texte: 'Vu votre réaction à https://www.linkedin.com/feed/update/urn:li:activity:1.' },
+    ]);
+  });
+
+  it('rend null quand aucune étape ne nomme le post', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
       'from sequence_steps': { rows: [{ body: 'Bonjour {{prenom}}' }] },
@@ -183,11 +272,20 @@ describe('compterPostsAValiderDeCampagne', () => {
 
 describe('decouperAccroche', () => {
   it('tolère les espaces et la casse du jeton, et un repli', () => {
-    expect(decouperAccroche('sur {{ POST_SUJET | ceci }} fin')).toEqual({ avant: 'sur ', apres: ' fin' });
+    expect(decouperAccroche('sur {{ POST_SUJET | ceci }} fin')).toEqual([
+      { texte: 'sur ' },
+      { champ: 'sujet' },
+      { texte: ' fin' },
+    ]);
   });
-  it('rend null sans jeton', () => {
-    expect(decouperAccroche('rien')).toBeNull();
+  it('rend un seul morceau de texte quand rien n est à écrire', () => {
+    expect(decouperAccroche('rien')).toEqual([{ texte: 'rien' }]);
+  });
+  it('rend null seulement quand il n y a pas d accroche du tout', () => {
     expect(decouperAccroche(null)).toBeNull();
+  });
+  it('coupe deux champs collés sans texte entre eux', () => {
+    expect(decouperAccroche('{{post_auteur}}{{post_sujet}}')).toEqual([{ champ: 'auteur' }, { champ: 'sujet' }]);
   });
 });
 
