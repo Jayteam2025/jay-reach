@@ -18,12 +18,14 @@ export { enqueueEnrollments, enqueueEnrichmentContactsConnus, ecarterSignauxTrop
 export { enrollContact, tickDueEnrollments } from '../../apps/worker/src/handlers/sequence.js';
 export { enrichirContactConnu } from '../../apps/worker/src/handlers/enrichment-contact-connu.js';
 export { fenetreValidationPost, rejeterFichesPostExpirees } from '../../apps/worker/src/linkedin/posts-fiches.js';
-export { campagneNommeUnPost, compterRetenuesParPost, retenuesAAfficher, envoiRetenuParUnPost } from '../../packages/core/src/linkedin/accroche-post.js';
+export { achatRetenuParUnPost, campagneNommeUnPost, compterRetenuesParPost, retenuesAAfficher, envoiRetenuParUnPost } from '../../packages/core/src/linkedin/accroche-post.js';
 export { ecrireReglage } from '../../packages/core/src/fonctions/plafonds.js';
 // L'objet d'un email se replie sur le NOM du gabarit : `apercuEnvoi` fait ce repli sur de vraies donnees.
 export { apercuEnvoi } from '../../packages/core/src/fonctions/file-du-jour.js';
 // Et la File du jour, troisieme lecteur du meme repli : elle lit la colonne brute du gabarit.
 export { listerFileDuJour } from '../../packages/core/src/fonctions/campagnes.js';
+// Les deux rejeux LinkedIn et le rejeu email : eux aussi rendent le corps APRES coup.
+export { rejouerActionsEmailEnAttente, rejouerActionsLinkedInEnAttente, rejouerActionsLinkedInReprises } from '../../apps/worker/src/traitements.js';
 // Tache 9 : le scoring nourri du texte du post.
 export { runScore, compterSignauxScorables } from '../../apps/worker/src/handlers/score.js';
 export { buildScoringUserMessage } from '../../packages/core/src/scoring.js';

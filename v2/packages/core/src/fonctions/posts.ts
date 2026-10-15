@@ -394,7 +394,10 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
         and ${sqlFicheResoutCeQuEcritLaCampagne('c.id', 'p')}`,
     [ctx.organisationId, postId, ctx.utilisateurId, campagneId],
   );
-  if ((res.rowCount ?? 0) > 0) return;
+  if ((res.rowCount ?? 0) > 0) {
+    await relacherLesRetenuesDuPost(ctx, postId);
+    return;
+  }
   // AVANT de diagnostiquer : sans campagne à nous, il n'y a rien à exiger, donc rien à dire.
   await exigerCampagneDeLOrganisation(ctx, campagneId);
   const etat = await etatDuPost(ctx, postId);
@@ -427,6 +430,51 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
     );
   }
   throw refus('Ce post n\'a pas pu être validé : rechargez l\'écran.');
+}
+
+/**
+ * Fait REPARTIR les inscriptions que ce post retenait.
+ *
+ * Sans ça, `post_a_relire` est un cul-de-sac. L'inscription reste `active` avec `next_action_at`
+ * nul et une action `blocked` : la sélection des dues exige une échéance (`tickDueEnrollments`),
+ * `rattraperEcheancesManquantes` écarte explicitement les inscriptions sans échéance,
+ * `reprendreInscription` n'accepte que `paused`/`paused_absence` et `relancerEnvoi` que `failed`.
+ * Personne ne repart, et aucun geste d'écran ne les relance. La sémantique est bien celle de
+ * `missing_variable` — sauf qu'ici c'est le chemin NORMAL du lot, pas un cas d'erreur : chaque
+ * post relu doit libérer ses personnes, sans intervention.
+ *
+ * Le geste est celui du rejeu déjà éprouvé (`reprendreAbsencesEchues`, `apps/worker`) : l'action
+ * redevient `scheduled`, et on NE POSE PAS `next_action_at`. Poser les deux ferait boucler
+ * l'inscription indéfiniment — l'échéance et le rejeu ne visent jamais la même étape, c'est le
+ * défaut le plus grave qu'ait trouvé la revue transversale du lot 2. Les balayages de rattrapage
+ * (`rejouerActionsEmailEnAttente`, `rejouerActionsLinkedInEnAttente`) enfilent ensuite l'action
+ * comme n'importe quelle autre restée en attente, et `cloreDepartReel` avance l'étape au départ
+ * réel.
+ *
+ * On relâche LARGEMENT — toute action bloquée sur ce post, quelle que soit sa campagne — et sans
+ * rejouer les exigences : le filet est la garde à l'ENVOI (`envoiRetenuParUnPost`), qui rebloque
+ * ce qui doit l'être, dans les trois chemins qui rendent un corps après coup. Rejouer ici le
+ * quantificateur en ferait une cinquième copie, pour un gain nul.
+ *
+ * `block_reason = 'post_a_relire'` seul : une action bloquée pour un autre motif
+ * (`missing_variable`, `missing_locale`, un gate d'email) ne doit rien à la validation d'un post,
+ * et la relâcher la ferait partir sans que sa cause ait été traitée.
+ */
+async function relacherLesRetenuesDuPost(ctx: Contexte, postId: string): Promise<void> {
+  await ctx.ex.query(
+    `update actions a /* jr:relacher_retenues_du_post */
+        set status = 'scheduled', block_reason = null
+       from enrollments e
+       join signals s on s.id = e.signal_id and s.organization_id = e.organization_id
+      where a.enrollment_id = e.id
+        and a.organization_id = $1
+        and a.status = 'blocked'
+        and a.block_reason = 'post_a_relire'
+        and a.dispatched_at is null
+        and e.status = 'active'
+        and s.linkedin_post_id = $2::uuid`,
+    [ctx.organisationId, postId],
+  );
 }
 
 /**

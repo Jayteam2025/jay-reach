@@ -67,13 +67,45 @@ describe('validerPost', () => {
   it('écrit en une seule requête conditionnelle sur ce que la campagne ÉCRIT, pas sur le sujet seul', async () => {
     const { ctx, appels } = contexte({ 'set review_status = \'approved\'': { rowCount: 1 } });
     await validerPost(ctx, DEPUIS_CAMPAGNE);
-    expect(appels).toHaveLength(1);
+    // UNE seule requête décide : le verdict ne se joue pas en deux temps, qu'une course pourrait
+    // contredire. La seconde ne décide rien — elle relâche ce que ce post retenait.
+    expect(appels).toHaveLength(2);
     // Les quatre exigences de la garde, chacune conditionnée à la variable réellement écrite.
     expect(appels[0]?.sql).toMatch(/coalesce\(btrim\(p\.subject\), ''\) <> ''/);
     expect(appels[0]?.sql).toMatch(/coalesce\(btrim\(p\.author_display_name\), ''\) <> ''/);
     expect(appels[0]?.sql).toMatch(/not exists[^]*post_sujet/);
     expect(appels[0]?.sql).toMatch(/organization_id = \$1/);
     expect(appels[0]?.valeurs).toEqual(['org-1', POST, 'user-1', CAMPAGNE]);
+    expect(appels[1]?.sql).toMatch(/jr:relacher_retenues_du_post/);
+  });
+
+  /**
+   * Le cul-de-sac que la relance supprime : sans elle, une inscription bloquée `post_a_relire`
+   * reste `active` sans échéance, et plus rien ne la reprend — ni le tick (il exige une échéance),
+   * ni `reprendreInscription` (elle n'accepte que `paused`), ni `relancerEnvoi` (que `failed`).
+   */
+  it('la relance ne vise QUE `post_a_relire`, et une inscription encore vivante', async () => {
+    const { ctx, appels } = contexte({ 'set review_status = \'approved\'': { rowCount: 1 } });
+    await validerPost(ctx, DEPUIS_CAMPAGNE);
+    const relance = appels.find((a) => /jr:relacher_retenues_du_post/.test(a.sql))?.sql ?? '';
+    expect(relance).toMatch(/block_reason = 'post_a_relire'/);
+    expect(relance).toMatch(/a\.status = 'blocked'/);
+    expect(relance).toMatch(/set status = 'scheduled', block_reason = null/);
+    expect(relance).toMatch(/e\.status = 'active'/);
+    expect(relance).toMatch(/s\.linkedin_post_id = \$2::uuid/);
+    // L'échéance de l'inscription n'est PAS posée : l'échéance et le rejeu ne visent jamais la
+    // même étape, sous peine de faire boucler l'inscription indéfiniment.
+    expect(relance).not.toMatch(/next_action_at/);
+  });
+
+  it('ne relâche rien quand la validation n’a rien écrit', async () => {
+    const { ctx, appels } = contexte({
+      ...CAMPAGNE_A_NOUS,
+      'select review_status': { rows: [{ review_status: 'pending', expired: false }] },
+      'from linkedin_posts p where': { rows: [{ post_auteur: true, post_sujet: false, post_url: false, post_date: false }] },
+    });
+    await expect(validerPost(ctx, DEPUIS_CAMPAGNE)).rejects.toThrow();
+    expect(appels.some((a) => /jr:relacher_retenues_du_post/.test(a.sql))).toBe(false);
   });
 
   it('refuse quand une variable écrite par la campagne manque, et NOMME laquelle', async () => {

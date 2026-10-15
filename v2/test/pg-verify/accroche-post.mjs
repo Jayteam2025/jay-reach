@@ -101,6 +101,20 @@
 //  54. campagnes.ts : remettre `mt.subject as etape_sujet` seul dans `jr:file_du_jour_campagne` —
 //      33j rougit : la File du jour n'affiche aucun objet pour le gabarit qui partira avec son
 //      nom en objet, sur le seul écran qui montre ce qui part aujourd'hui.
+//  55. accroche-post.ts : retirer `linkedin_post_id is not null` de `sqlPostRetientLaPersonne` —
+//      23c, 23d, 23e, 23f2, 35a, 35b, 35c et 35d rougissent : une personne dont le signal n'a
+//      aucune fiche est retenue POUR TOUJOURS (rien à relire, et le repli empêche
+//      `missing_variable` de prendre le relais), et son adresse ne s'achète plus.
+//  56. traitements.ts : retirer la garde de `rejouerActionsLinkedInEnAttente` — 36 et 36a
+//      rougissent : le balayage re-rend le corps depuis le gabarit courant et enfile un envoi
+//      qui nomme un post non relu.
+//  57. traitements.ts : retirer la garde de `rejouerActionsLinkedInReprises` — 36b rougit :
+//      l'opérateur clique « Reprendre » et le message part en nommant un post non relu.
+//  58. posts.ts : retirer l'appel à `relacherLesRetenuesDuPost` dans `validerPost` — 37b et 37d
+//      rougissent : valider le post ne relance rien, et l'inscription reste `active` sans
+//      échéance, que plus aucun chemin ne reprend.
+//  59. posts.ts : retirer `and a.block_reason = 'post_a_relire'` de la relance — 37e rougit :
+//      valider un post ferait partir une action bloquée pour une variable manquante.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -142,8 +156,12 @@ import {
   corrigerAuteurDePost,
   decouperAccroche,
   corrigerSujetDePost,
+  achatRetenuParUnPost,
   listerFileDuJour,
   listerPostsDeCampagne,
+  rejouerActionsEmailEnAttente,
+  rejouerActionsLinkedInEnAttente,
+  rejouerActionsLinkedInReprises,
   rejeterPost,
   reouvrirPost,
   validerPost,
@@ -1466,22 +1484,29 @@ async function decompteLisible() {
   const r = await compterRetenuesParPost(pool, m.org, m.campagne);
   check('23. la campagne nomme un post et a une source de post', r.nommeUnPost === true && r.aUneSourceDePost === true, JSON.stringify(r));
   check('23a. les personnes en attente de validation sont comptées', r.enAttenteDeValidation === 1, JSON.stringify(r));
-  check('23b. celles sans aucun post aussi', r.sansPost === 1, JSON.stringify(r));
+  // La personne SANS aucune fiche n'est plus retenue (voir `rienARelireNeRetientPas`), donc le
+  // décompte n'a plus de catégorie pour elle : un compteur qui annonce une rétention qui n'a pas
+  // lieu est le défaut d'en face, et ce dépôt l'a déjà payé.
+  check('23b. celles sans aucun post ne sont plus une catégorie du décompte', r.sansPost === undefined, JSON.stringify(r));
   check('23c. et celles dont la fiche est inexploitable', r.postInexploitable === 1, JSON.stringify(r));
 
   // Chaque compteur suit bien SA personne : on corrige une fiche à la fois, et un seul bouge.
   await q(`update linkedin_posts set review_status = 'approved' where id = $1`, [attente.fiche]);
   const r2 = await compterRetenuesParPost(pool, m.org, m.campagne);
   check('23d. valider le post en attente vide ce compteur-là, et lui seul',
-    r2.enAttenteDeValidation === 0 && r2.sansPost === 1 && r2.postInexploitable === 1, JSON.stringify(r2));
+    r2.enAttenteDeValidation === 0 && r2.postInexploitable === 1, JSON.stringify(r2));
   await q(`update linkedin_posts set subject = 'la prospection' where id = $1`, [inexploitable.fiche]);
   const r3 = await compterRetenuesParPost(pool, m.org, m.campagne);
-  check('23e. compléter la fiche inexploitable vide le sien', r3.postInexploitable === 0 && r3.sansPost === 1, JSON.stringify(r3));
+  check('23e. compléter la fiche inexploitable vide le sien', r3.postInexploitable === 0, JSON.stringify(r3));
 
   // La personne prête n'est comptée nulle part : une fois inscrite, elle sort même de la population.
   await tourDInscription(m.org);
   const apres = await compterRetenuesParPost(pool, m.org, m.campagne);
-  check('23f. la personne inscrite sort du décompte', (await inscritsDe(m.org)).includes(prete.contact_id) && apres.sansPost === 1, JSON.stringify(apres));
+  check('23f. la personne inscrite sort du décompte',
+    (await inscritsDe(m.org)).includes(prete.contact_id) && apres.enAttenteDeValidation === 0, JSON.stringify(apres));
+  // Et l'orpheline, qui n'a aucune fiche, est entrée elle aussi : plus rien ne la retient.
+  check('23f2. la personne sans aucune fiche entre, elle n\'a rien à faire relire',
+    (await inscritsDe(m.org)).includes(orpheline.contact_id), JSON.stringify(await inscritsDe(m.org)));
 
   // La mauvaise configuration que l'enregistrement accepte volontairement.
   const n = await monde();
@@ -1997,6 +2022,8 @@ async function gabaritMixte() {
  * ce que ce lot promet d'empêcher.
  */
 const ACCROCHE_DANS_LE_NOM = 'Votre réaction à {{post_url}}';
+/** L'accroche du ruling : un repli, donc la campagne nomme le post sans rien exiger de la fiche. */
+const ACCROCHE_URL_A_REPLI = 'Bonjour, votre réaction à {{post_url|https://www.linkedin.com/feed/}} nous a marqués.';
 const ACCROCHE_NOM_SUJET = 'Votre réaction au post sur {{post_sujet}}';
 const CORPS_MUET = 'Bonjour, parlons prospection.';
 
@@ -2193,6 +2220,221 @@ async function gardeALEnvoi() {
     (await envoiRetenuParUnPost(pool, d.org, d.campagne, null)) === false);
 }
 
+/**
+ * « On ne retient que s'il y a quelque chose à relire. »
+ *
+ * Le ruling des replis, pris seul, fabriquait un blocage SANS REMÈDE : une campagne dont
+ * l'accroche porte un repli (`{{post_url|https://…}}`) NOMME le post — c'est voulu, la relecture
+ * ne se désactive pas par un repli. Mais pour une inscription dont le signal n'a aucune fiche
+ * rattachée (un contact Adzuna, une liste importée), il n'existe AUCUNE fiche à relire : la
+ * personne était retenue pour toujours, sans écran qui l'explique, et `missing_variable` ne
+ * prenait pas le relais puisque le repli résout la variable. Avant ce lot, son message partait
+ * avec le repli, ce qui est le comportement correct.
+ *
+ * La règle : pas de fiche rattachée, rien à relire, le message part — le rendu décide seul,
+ * repli ou variable manquante. Une fiche rattachée et non relue, on retient.
+ *
+ * CONSÉQUENCE ASSUMÉE, figée ici pour qu'elle ne surprenne personne : un engageur dont la fiche
+ * n'a pas pu être enregistrée (`collecte-linkedin.ts` continue sans elle, et rien ne rattache un
+ * signal après coup) n'aura jamais de fiche. Son message part donc avec le repli, c'est-à-dire
+ * une accroche fausse. Sans repli, `missing_variable` le bloque, et c'est le cas ordinaire.
+ */
+async function rienARelireNeRetientPas() {
+  console.log('\n# pas de fiche rattachée, rien à relire : on ne retient pas');
+  await demarrerBoss();
+
+  // Le cas du ruling : accroche À REPLI, signal SANS fiche.
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE_URL_A_REPLI, { canal: 'email' });
+  const p = await engageurDUnPost(m, 110, { etat: 'pending' });
+  await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob110-${Date.now()}@exemple.invalid`]);
+  await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp110-${Date.now()}@exemple.invalid`]);
+  await q(`update signals set linkedin_post_id = null where id = $1`, [p.signal_id]);
+
+  check('35. la campagne nomme toujours le post : un repli ne désactive pas la relecture',
+    (await compterRetenuesParPost(pool, m.org, m.campagne)).nommeUnPost === true);
+  check('35a. mais sans fiche rattachée, aucun envoi n\'est retenu',
+    (await envoiRetenuParUnPost(pool, m.org, m.campagne, p.signal_id)) === false);
+  await tourDInscription(m.org);
+  check('35b. et la personne entre en séquence au lieu d\'attendre pour toujours',
+    (await inscritsDe(m.org)).includes(p.contact_id), JSON.stringify(await inscritsDe(m.org)));
+
+  // Elle part VRAIMENT : le tick compose l'action sans la bloquer.
+  await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+  await tickDueEnrollments(pool, new Date());
+  const a = (await q(`select status, block_reason from actions where organization_id = $1 order by created_at desc limit 1`, [m.org])).rows[0];
+  check('35c. son action n\'est pas bloquée par le post', a !== undefined && a.block_reason !== 'post_a_relire', JSON.stringify(a));
+
+  // L'ACHAT non plus : le gel suivait la même lecture.
+  const g = await monde();
+  await etapeAvecCorps(g, ACCROCHE_URL_A_REPLI, { canal: 'email' });
+  const pg = await engageurDUnPost(g, 111, { etat: 'pending' });
+  await q(`update signals set linkedin_post_id = null, status = 'qualified', score = 90, scored_at = now() where id = $1`, [pg.signal_id]);
+  check('35d. et son adresse peut s\'acheter : le gel suivait la même lecture',
+    (await achatRetenuParUnPost(pool, g.org, pg.contact_id)) === false);
+
+  // LE JUMEAU. Même campagne, même repli, même tout — une fiche EST rattachée, et non relue.
+  // C'est ce qui prouve que la fiche décide, et non le repli.
+  const n = await monde();
+  await etapeAvecCorps(n, ACCROCHE_URL_A_REPLI, { canal: 'email' });
+  const pn = await engageurDUnPost(n, 112, { etat: 'pending' });
+  check('35e. la MÊME campagne, avec une fiche rattachée non relue : l\'envoi est retenu',
+    (await envoiRetenuParUnPost(pool, n.org, n.campagne, pn.signal_id)) === true);
+  await tourDInscription(n.org);
+  check('35f. et personne n\'entre tant qu\'elle n\'est pas relue',
+    (await inscritsDe(n.org)).length === 0, JSON.stringify(await inscritsDe(n.org)));
+
+  // LA BORNE : le chemin du NOM du gabarit reste fermé. Une fiche existe, donc on retient.
+  const z = await monde();
+  await etapeAvecCorps(z, CORPS_MUET, { canal: 'email', nom: ACCROCHE_DANS_LE_NOM });
+  const pz = await engageurDUnPost(z, 113, { etat: 'pending' });
+  check('35g. l\'accroche cachée dans le NOM retient toujours, la fiche existe',
+    (await envoiRetenuParUnPost(pool, z.org, z.campagne, pz.signal_id)) === true);
+}
+
+/**
+ * La garde aux DEUX rejeux LinkedIn.
+ *
+ * L'email n'est pas le seul canal qui rend son corps plus tard : `rejouerActionsLinkedInEnAttente`
+ * et `rejouerActionsLinkedInReprises` re-rendent le corps depuis le gabarit COURANT puis enfilent,
+ * en ne contrôlant que `missing_locale` et `missing_variable`. Scénario : un envoi LinkedIn
+ * échoue, l'opérateur ajoute l'accroche, clique « Reprendre » — le balayage re-rend avec
+ * l'accroche, les variables se résolvent (la fiche porte l'url dès la capture), rien ne bloque,
+ * et le message part en nommant un post que personne n'a relu.
+ */
+async function gardeAuxRejeuxLinkedIn() {
+  console.log('\n# les deux rejeux LinkedIn re-rendent le corps : la garde doit y être aussi');
+  await demarrerBoss();
+
+  // 1. LE REJEU DES ACTIONS JAMAIS ENFILÉES.
+  for (const relu of [false, true]) {
+    const m = await monde();
+    const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message' });
+    const p = await engageurDUnPost(m, relu ? 115 : 114, { etat: relu ? 'approved' : 'pending' });
+    await tourDInscription(m.org);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+    await tickDueEnrollments(pool, new Date());
+    // L'accroche est ajoutée APRÈS que l'action a été créée : c'est le chemin réel.
+    await q(`update message_templates set body = $2 where id = $1`, [gabarit, ACCROCHE_URL]);
+    // L'action redevient éligible au balayage : jamais partie, jamais enfilée, assez vieille.
+    await q(`update actions set status = 'scheduled', block_reason = null, dispatched_at = null,
+                created_at = now() - interval '10 minutes' where organization_id = $1`, [m.org]);
+    await q(`delete from linkedin_action_queue where organization_id = $1`, [m.org]);
+    await rejouerActionsLinkedInEnAttente({ pool, boss });
+    const a = (await q(`select id, status, block_reason from actions where organization_id = $1`, [m.org])).rows[0];
+    const jobs = (await q(`select 1 from pgboss.job where name = 'actions.dispatch' and data->>'organizationId' = $1`, [m.org])).rowCount;
+    if (relu) {
+      check('36c. [attente] le post RELU, le rejeu enfile normalement',
+        a?.status === 'scheduled' && a?.block_reason === null && jobs === 1, `${JSON.stringify(a)} / ${jobs} job(s)`);
+    } else {
+      check('36. [attente] le post en attente : le rejeu bloque, motif nommé',
+        a?.status === 'blocked' && a?.block_reason === 'post_a_relire', JSON.stringify(a));
+      check('36a. [attente] et n\'enfile RIEN', jobs === 0, `${jobs} job(s)`);
+    }
+  }
+
+  // 2. LE REJEU DES REPRISES HUMAINES : une ligne de file en échec, reprise par l'opérateur.
+  for (const relu of [false, true]) {
+    const m = await monde();
+    const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message' });
+    // Une SECONDE étape : `rejouerActionsLinkedInReprises` exige `e.status = 'active'`, et une
+    // séquence à une seule étape laisse l'inscription `completed` dès la première planifiée.
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message', position: 1 });
+    const p = await engageurDUnPost(m, relu ? 117 : 116, { etat: relu ? 'approved' : 'pending' });
+    await tourDInscription(m.org);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+    await tickDueEnrollments(pool, new Date());
+    await q(`update message_templates set body = $2 where id = $1`, [gabarit, ACCROCHE_URL]);
+    const act = (await q(`select id from actions where organization_id = $1 limit 1`, [m.org])).rows[0];
+    await q(`update actions set status = 'scheduled', block_reason = null where id = $1`, [act.id]);
+    await q(`delete from linkedin_action_queue where organization_id = $1`, [m.org]);
+    await q(
+      `insert into linkedin_action_queue (organization_id, action_id, kind, linkedin_url, contact_id, signal_id, status, error_code, reprise_le, method)
+       values ($1, $2, 'message', $3, $4, $5, 'failed', 'echec_envoi', now(), 'serveur')`,
+      [m.org, act.id, `https://www.linkedin.com/in/bob-${relu ? 117 : 116}/`, p.contact_id, p.signal_id],
+    );
+    await rejouerActionsLinkedInReprises({ pool });
+    const a = (await q(`select status, block_reason from actions where id = $1`, [act.id])).rows[0];
+    const enfilees = (await q(`select 1 from linkedin_action_queue where organization_id = $1 and status = 'pending'`, [m.org])).rowCount;
+    if (relu) {
+      check('36d. [reprise] le post RELU, la reprise réenfile normalement',
+        a?.block_reason !== 'post_a_relire' && enfilees === 1, `${JSON.stringify(a)} / ${enfilees} ligne(s)`);
+    } else {
+      check('36b. [reprise] le post en attente : la reprise bloque, motif nommé, et n\'enfile RIEN',
+        a?.status === 'blocked' && a?.block_reason === 'post_a_relire' && enfilees === 0,
+        `${JSON.stringify(a)} / ${enfilees} ligne(s)`);
+    }
+  }
+}
+
+/**
+ * Valider un post fait REPARTIR les inscriptions qu'il retenait.
+ *
+ * Sans ça, `post_a_relire` est un cul-de-sac : l'inscription reste `active` avec
+ * `next_action_at` nul et une action `blocked`, or la sélection des dues exige une échéance,
+ * `rattraperEcheancesManquantes` l'écarte, `reprendreInscription` n'accepte que `paused` et
+ * `relancerEnvoi` que `failed`. Personne ne repart, et aucun geste d'écran ne les relance. La
+ * sémantique est bien celle de `missing_variable` — sauf qu'ici c'est le chemin NORMAL du lot.
+ *
+ * Le geste est celui du rejeu éprouvé (`reprendreAbsencesEchues`) : l'action redevient
+ * `scheduled`, et on NE POSE PAS `next_action_at`. Poser les deux ferait boucler l'inscription
+ * indéfiniment — le défaut le plus grave de la revue transversale du lot 2.
+ */
+async function validerRelanceLesRetenues() {
+  console.log('\n# valider un post fait repartir les inscriptions qu\'il retenait');
+  await demarrerBoss();
+  const m = await monde();
+  const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email' });
+  const p = await engageurDUnPost(m, 120, { etat: 'pending' });
+  await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob120-${Date.now()}@exemple.invalid`]);
+  await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp120-${Date.now()}@exemple.invalid`]);
+  await tourDInscription(m.org);
+  await q(`update message_templates set body = $2 where id = $1`, [gabarit, ACCROCHE_URL]);
+  await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+  await tickDueEnrollments(pool, new Date());
+
+  const avant = (await q(`select a.id, a.status, a.block_reason, e.status as insc, e.next_action_at, e.current_step
+                            from actions a join enrollments e on e.id = a.enrollment_id
+                           where a.organization_id = $1`, [m.org])).rows[0];
+  check('37. retenue : action bloquée, inscription vivante, aucune échéance',
+    avant?.block_reason === 'post_a_relire' && avant?.insc === 'active' && avant?.next_action_at === null, JSON.stringify(avant));
+  // L'impasse, dite explicitement : le tick ne resélectionne JAMAIS cette inscription.
+  await tickDueEnrollments(pool, new Date());
+  check('37a. et aucun tick ne la reprend : sans échéance, elle n\'est jamais due',
+    (await q(`select status from actions where id = $1`, [avant.id])).rows[0].status === 'blocked');
+
+  await validerPost(m.ctx, { postId: p.fiche, campagneId: m.campagne });
+  const apres = (await q(`select a.status, a.block_reason, e.next_action_at, e.current_step, e.status as insc
+                            from actions a join enrollments e on e.id = a.enrollment_id where a.id = $1`, [avant.id])).rows[0];
+  check('37b. valider le post relâche son action : elle redevient `scheduled`',
+    apres?.status === 'scheduled' && apres?.block_reason === null, JSON.stringify(apres));
+  check('37c. et l\'échéance de l\'inscription reste nulle : l\'échéance et le rejeu ne visent jamais la même étape',
+    apres?.next_action_at === null && apres?.insc === 'active' && apres?.current_step === 0, JSON.stringify(apres));
+
+  // Et elle PART : le balayage de rejeu l'enfile, comme n'importe quelle action en attente.
+  await q(`update actions set created_at = now() - interval '10 minutes' where id = $1`, [avant.id]);
+  await rejouerActionsEmailEnAttente({ pool, boss });
+  check('37d. le balayage de rejeu l\'enfile : l\'envoi part pour de bon',
+    (await q(`select 1 from pgboss.job where name = 'actions.dispatch' and data->>'actionId' = $1`, [avant.id])).rowCount === 1);
+
+  // LA BORNE : un autre motif de blocage n'est pas relâché par la validation d'un post.
+  // En LinkedIn : c'est le seul canal dont le tick rend le corps, donc le seul où il peut poser
+  // `missing_variable` (l'email est rendu à l'envoi). `{{ville}}` n'a pas de repli et le contact
+  // n'en a pas : un blocage franc, qui ne doit RIEN devoir à la validation du post.
+  const n = await monde();
+  const gabaritN = await etapeAvecCorps(n, SANS_ACCROCHE, { canal: 'linkedin_message' });
+  const pn = await engageurDUnPost(n, 121, { etat: 'pending' });
+  await tourDInscription(n.org);
+  await q(`update message_templates set body = $2 where id = $1`, [gabaritN, 'Bonjour, à {{ville}} ?']);
+  await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [n.org]);
+  await tickDueEnrollments(pool, new Date());
+  const bloqueeAutrement = (await q(`select id, status, block_reason from actions where organization_id = $1`, [n.org])).rows[0];
+  await validerPost(n.ctx, { postId: pn.fiche, campagneId: n.campagne });
+  const apresN = (await q(`select status, block_reason from actions where id = $1`, [bloqueeAutrement.id])).rows[0];
+  check('37e. une action bloquée pour un AUTRE motif n\'est pas relâchée par la validation d\'un post',
+    bloqueeAutrement?.block_reason === 'missing_variable' && apresN?.status === 'blocked', JSON.stringify([bloqueeAutrement, apresN]));
+}
+
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
 async function parLeLienHistorique(campagne, source) {
   await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
@@ -2251,7 +2493,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
