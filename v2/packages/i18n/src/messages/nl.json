@@ -1150,7 +1150,6 @@
       "retenues": {
         "titre": "Teruggehouden personen",
         "sansSource": "Het bericht schrijft een postvariabele, maar de campagne heeft geen bron die van een post uitgaat: niemand komt in de sequentie.",
-        "sansPost": "tot {n, plural, one {# persoon heeft} other {# personen hebben}} geen post gekoppeld: het bericht noemt een post, ze kunnen niet binnenkomen.",
         "inexploitable": "tot {n, plural, one {# persoon wordt} other {# personen worden}} teruggehouden: het postdossier mist iets wat het bericht schrijft (auteur, onderwerp, datum)."
       }
     }

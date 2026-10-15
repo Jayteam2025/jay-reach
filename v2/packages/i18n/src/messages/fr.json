@@ -1150,7 +1150,6 @@
       "retenues": {
         "titre": "Personnes retenues",
         "sansSource": "Le message écrit une variable de post, mais la campagne n'a aucune source qui part d'un post : personne n'entrera en séquence.",
-        "sansPost": "{n, plural, one {jusqu'à # personne n'a} other {jusqu'à # personnes n'ont}} aucun post rattaché : le message nomme un post, elles ne peuvent pas entrer.",
         "inexploitable": "{n, plural, one {jusqu'à # personne est retenue} other {jusqu'à # personnes sont retenues}} : la fiche de leur post ne porte pas tout ce que le message écrit (auteur, sujet, date)."
       }
     }

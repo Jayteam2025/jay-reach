@@ -1231,7 +1231,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
 
 /** Les trois requêtes que la garde et l'inscription peuvent émettre, par leur marqueur. */
 const CAMPAGNE_NOMME_UN_POST = /jr:campagne_nomme_un_post/i;
-const FICHE_POST_UTILISABLE = /jr:fiche_post_utilisable/i;
+const POST_RETIENT = /jr:post_retient_la_personne/i;
 const PLAFOND_CAMPAGNE = /select daily_cap from campaigns where id = \$1/i;
 const INSERT_ENROLLMENT = /insert into enrollments/i;
 
@@ -1245,7 +1245,7 @@ describe('enrollContact — garde d’entrée sur la validation du post (tâche 
   it('n’inscrit pas, et n’écrit RIEN, quand la campagne nomme le post et que sa fiche n’est pas utilisable', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
-      { motif: FICHE_POST_UTILISABLE, repondre: () => ligne([{ utilisable: false }]) },
+      { motif: POST_RETIENT, repondre: () => ligne([{ retenu: true }]) },
     ]);
 
     const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -1260,10 +1260,10 @@ describe('enrollContact — garde d’entrée sur la validation du post (tâche 
     expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('inscription retenue'));
   });
 
-  it('inscrit dès que la fiche du post est utilisable', async () => {
+  it('inscrit dès que plus rien ne retient : fiche relue, ou aucune fiche à relire', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
-      { motif: FICHE_POST_UTILISABLE, repondre: () => ligne([{ utilisable: true }]) },
+      { motif: POST_RETIENT, repondre: () => ligne([{ retenu: false }]) },
       { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
       { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
     ]);
@@ -1281,17 +1281,20 @@ describe('enrollContact — garde d’entrée sur la validation du post (tâche 
     ]);
 
     expect(await enrollContact(pool, jobDInscription())).toBe(ENROLLMENT_ID);
-    expect(appels.some((a) => FICHE_POST_UTILISABLE.test(a.sql))).toBe(false);
+    expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
   });
 
-  it('refuse sans interroger la base quand l’inscription n’aurait aucun signal : pas de signal, pas d’accroche', async () => {
+  // On ne retient que s'il y a quelque chose à relire. Sans signal, il n'existe aucune fiche à
+  // faire relire : retenir la personne la bloquerait POUR TOUJOURS, puisque aucun geste d'écran
+  // ne lève une rétention sans objet. C'est le rendu qui décide — repli, ou variable manquante.
+  it('inscrit sans interroger la base quand l’inscription n’a aucun signal : rien à relire', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
     ]);
 
-    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    expect(await enrollContact(pool, jobDInscription({ signalId: null }))).toBeNull();
-    expect(appels.some((a) => FICHE_POST_UTILISABLE.test(a.sql))).toBe(false);
-    expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('inscription retenue'));
+    expect(await enrollContact(pool, jobDInscription({ signalId: null }))).toBe(ENROLLMENT_ID);
+    expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
   });
 });

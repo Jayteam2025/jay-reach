@@ -22,7 +22,7 @@ import {
   sqlCampagneNommeUnPost,
   sqlEpargneParUnPostARelire,
   sqlFichePostEnAttente,
-  sqlFichePostUtilisable,
+  sqlPostRetientLaPersonne,
   sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
@@ -851,7 +851,7 @@ function sqlPairesEligibles(): string {
  * Fonction, pas constante, pour la même raison que `sqlPairesEligibles` ci-dessus.
  */
 function sqlGardeDuPost(): string {
-  return `(not ${sqlCampagneNommeUnPost('c.id')} or ${sqlFichePostUtilisable('c.id', 's')})`;
+  return `(not ${sqlCampagneNommeUnPost('c.id')} or not ${sqlPostRetientLaPersonne('c.id', 's')})`;
 }
 
 /**

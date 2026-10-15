@@ -164,14 +164,12 @@ describe('ce que l\'écran a le droit d\'affirmer', () => {
     nommeUnPost: true,
     aUneSourceDePost: false,
     enAttenteDeValidation: 106,
-    sansPost: 12,
     postInexploitable: 4,
   };
 
   it('dit tout ce que la garde retient quand la campagne nomme le post', () => {
     expect(retenuesAAfficher(retenues)).toEqual({
       sansSource: true,
-      sansPost: 12,
       postInexploitable: 4,
       enAttenteDeValidation: 106,
       echeances: true,
@@ -182,7 +180,6 @@ describe('ce que l\'écran a le droit d\'affirmer', () => {
   it('n\'affirme RIEN quand la campagne ne nomme aucun post : rien n\'est retenu, rien n\'est épargné', () => {
     expect(retenuesAAfficher({ ...retenues, nommeUnPost: false })).toEqual({
       sansSource: false,
-      sansPost: 0,
       postInexploitable: 0,
       enAttenteDeValidation: 0,
       echeances: false,

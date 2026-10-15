@@ -219,6 +219,36 @@ export function sqlFichePostUtilisable(campagne: string, signal: string): string
 }
 
 /**
+ * « Le post de ce signal RETIENT cette personne. »
+ *
+ * Deux conditions, et la première est celle qui manquait : **une fiche doit exister**. Retenir
+ * une personne dont le signal n'a aucun post rattaché — un contact Adzuna, une ligne importée —
+ * la bloquait POUR TOUJOURS : il n'y a aucune fiche à relire, donc aucun geste d'écran ne lève
+ * la rétention, et `missing_variable` ne prend pas le relais quand la campagne écrit un repli
+ * (le repli résout la variable, l'envoi partait très bien avant ce lot).
+ *
+ * La règle est donc : **on ne retient que s'il y a quelque chose à relire.** Pas de fiche, rien à
+ * relire, le message part — le rendu décide seul, repli ou variable manquante. Une fiche
+ * rattachée et non relue (ou qui ne résout pas ce que la campagne écrit), on retient.
+ *
+ * Ça ne rouvre AUCUN des chemins que la garde ferme, parce que tous en ont une : l'engageur d'un
+ * post a sa fiche dès la capture, y compris pour l'accroche cachée dans le nom du gabarit. La
+ * seule population que ce prédicat relâche est celle qui n'a jamais eu de post.
+ *
+ * CONSÉQUENCE ASSUMÉE : un engageur dont la fiche n'a pas pu être enregistrée (`collecte-linkedin`
+ * continue sans elle, et rien ne rattache un signal après coup) n'en aura jamais. Son message
+ * part donc avec le repli — une accroche fausse. Sans repli, `missing_variable` le bloque, et
+ * c'est le cas ordinaire.
+ *
+ * @param campagne expression SQL qui donne l'id de la campagne
+ * @param signal   alias SQL du signal (`s`)
+ */
+export function sqlPostRetientLaPersonne(campagne: string, signal: string): string {
+  return `(${signal}.linkedin_post_id is not null
+            and not ${sqlFichePostUtilisable(campagne, signal)})`;
+}
+
+/**
  * « La fiche du post de ce signal attend encore sa relecture, et sa fenêtre n'est pas passée. »
  *
  * `expires_at` passé : plus d'attente, même si la bascule périodique n'a pas encore écrit
@@ -340,7 +370,7 @@ export function sqlAchatRetenuParUnPost(signal: string): string {
   return `(exists (select 1 ${jointure})
             and not exists (select 1 ${jointure}
                               and (not ${sqlCampagneNommeUnPost('cp_ap.id')}
-                                or ${sqlFichePostUtilisable('cp_ap.id', signal)})))`;
+                                or not ${sqlPostRetientLaPersonne('cp_ap.id', signal)})))`;
 }
 
 /**
@@ -360,7 +390,7 @@ export async function campagneNommeUnPost(ex: Executeur, campagneId: string): Pr
 }
 
 /**
- * Lecture autoritaire de `sqlFichePostUtilisable`, pour UN signal précis.
+ * Lecture autoritaire de `sqlPostRetientLaPersonne`, pour UN signal précis.
  *
  * Le signal est celui que portera l'inscription (`enrollments.signal_id`), donc celui que le
  * chemin d'ENVOI relit pour résoudre les variables (`REQUETE_LIGNE_INSCRIPTION`, jointure sur
@@ -369,22 +399,22 @@ export async function campagneNommeUnPost(ex: Executeur, campagneId: string): Pr
  * toutes les campagnes). La garde suit l'envoi, pour que garde et envoi ne puissent pas être en
  * désaccord sur le post nommé.
  *
- * Sans signal (`signalId` nul) : faux. Une inscription sans signal n'a pas de post, donc pas
- * d'accroche possible.
+ * Sans signal (`signalId` nul) : rien ne retient. Une inscription sans signal n'a aucune fiche à
+ * faire relire ; c'est le rendu qui décidera, repli ou variable manquante.
  */
-export async function fichePostUtilisable(
+export async function postRetientLaPersonne(
   ex: Executeur,
   organisationId: string,
   campagneId: string,
   signalId: string | null | undefined,
 ): Promise<boolean> {
   if (!signalId) return false;
-  const res = await ex.query<{ utilisable: boolean }>(
-    `select ${sqlFichePostUtilisable('$3::uuid', 's')} as utilisable /* jr:fiche_post_utilisable */
+  const res = await ex.query<{ retenu: boolean }>(
+    `select ${sqlPostRetientLaPersonne('$3::uuid', 's')} as retenu /* jr:post_retient_la_personne */
        from signals s where s.id = $1 and s.organization_id = $2`,
     [signalId, organisationId, campagneId],
   );
-  return res.rows[0]?.utilisable === true;
+  return res.rows[0]?.retenu === true;
 }
 
 /**
@@ -397,14 +427,13 @@ export async function fichePostUtilisable(
  * (l'adresse existe dès la création de la fiche), rien ne manque, et le message part en nommant
  * un post que personne n'a relu. C'est exactement ce que ce lot promet d'empêcher.
  *
- * Même quantificateur que `sqlFichePostUtilisable`, et le même signal : celui que porte
- * l'inscription (`enrollments.signal_id`), donc celui que le chemin d'envoi relit pour résoudre
- * les variables.
+ * Même quantificateur que la garde d'entrée (`sqlPostRetientLaPersonne`), et le même signal :
+ * celui que porte l'inscription (`enrollments.signal_id`), donc celui que le chemin d'envoi relit
+ * pour résoudre les variables.
  *
- * Sans signal (`signalId` nul) : faux, et ce n'est pas un trou. Une inscription sans signal n'a
- * pas de fiche, donc `{{post_url}}` ne se résout pas, donc l'envoi est déjà bloqué par le
- * mécanisme ordinaire — une variable non résolue bloque l'envoi. Rendre vrai ici doublerait le
- * blocage avec un motif moins juste.
+ * Sans signal (`signalId` nul), et plus généralement sans fiche rattachée : faux, et ce n'est pas
+ * un trou. Rien à relire, donc rien à retenir ; c'est le rendu qui décide, repli ou variable
+ * manquante — et une variable non résolue bloque déjà l'envoi par le mécanisme ordinaire.
  */
 export async function envoiRetenuParUnPost(
   ex: Executeur,
@@ -415,7 +444,7 @@ export async function envoiRetenuParUnPost(
   if (!signalId) return false;
   const res = await ex.query<{ retenu: boolean }>(
     `select (${sqlCampagneNommeUnPost('$3::uuid')}
-              and not ${sqlFichePostUtilisable('$3::uuid', 's')}) as retenu /* jr:envoi_retenu_par_un_post */
+              and ${sqlPostRetientLaPersonne('$3::uuid', 's')}) as retenu /* jr:envoi_retenu_par_un_post */
        from signals s where s.id = $1 and s.organization_id = $2`,
     [signalId, organisationId, campagneId],
   );
@@ -472,9 +501,14 @@ export interface RetenuesParPost {
   readonly aUneSourceDePost: boolean;
   /** Personnes pas encore inscrites dont le post attend sa relecture (fiche `pending` dans sa fenêtre). */
   readonly enAttenteDeValidation: number;
-  /** Personnes pas encore inscrites qui ne viennent d'AUCUN post : aucune accroche ne les concerne. */
-  readonly sansPost: number;
-  /** Personnes dont le post est rejeté, échu, ou validé mais sans nom affiché ni sujet : fiche inexploitable. */
+  /**
+   * Personnes dont le post est rejeté, échu, ou validé mais sans nom affiché ni sujet : fiche
+   * inexploitable.
+   *
+   * Il n'y a PLUS de catégorie « sans aucun post » : depuis `sqlPostRetientLaPersonne`, ces
+   * personnes ne sont plus retenues du tout, et annoncer une rétention qui n'a pas lieu est le
+   * défaut d'en face — celui qui éteint les vraies alertes.
+   */
   readonly postInexploitable: number;
 }
 
@@ -493,7 +527,6 @@ export interface RetenuesParPost {
 export function retenuesAAfficher(r: RetenuesParPost): {
   /** La campagne nomme un post mais aucune de ses sources n'en produit : personne n'entrera. */
   readonly sansSource: boolean;
-  readonly sansPost: number;
   readonly postInexploitable: number;
   readonly enAttenteDeValidation: number;
   /** L'échéance d'une fiche ne se promet que si l'épargne de purge s'applique : même condition. */
@@ -507,11 +540,10 @@ export function retenuesAAfficher(r: RetenuesParPost): {
   readonly relecture: boolean;
 } {
   if (!r.nommeUnPost) {
-    return { sansSource: false, sansPost: 0, postInexploitable: 0, enAttenteDeValidation: 0, echeances: false, relecture: false };
+    return { sansSource: false, postInexploitable: 0, enAttenteDeValidation: 0, echeances: false, relecture: false };
   }
   return {
     sansSource: !r.aUneSourceDePost,
-    sansPost: r.sansPost,
     postInexploitable: r.postInexploitable,
     enAttenteDeValidation: r.enAttenteDeValidation,
     echeances: true,
@@ -537,7 +569,6 @@ export async function compterRetenuesParPost(
     nomme_un_post: boolean;
     a_une_source_de_post: boolean;
     en_attente: string;
-    sans_post: string;
     inexploitable: string;
   }>(
     `select ${sqlCampagneNommeUnPost('$2::uuid')} as nomme_un_post, /* jr:retenues_par_post */
@@ -546,10 +577,8 @@ export async function compterRetenuesParPost(
                        and so.config->>'sourceType' = any($3::text[])
                        and ${sqlSourceAlimenteLaCampagne('$2::uuid', 'so.id')}) as a_une_source_de_post,
             count(*) filter (where ${sqlFichePostEnAttente('s')})::text as en_attente,
-            count(*) filter (where s.linkedin_post_id is null)::text as sans_post,
-            count(*) filter (where s.linkedin_post_id is not null
-                               and not ${sqlFichePostEnAttente('s')}
-                               and not ${sqlFichePostUtilisable('$2::uuid', 's')})::text as inexploitable
+            count(*) filter (where not ${sqlFichePostEnAttente('s')}
+                               and ${sqlPostRetientLaPersonne('$2::uuid', 's')})::text as inexploitable
        from contacts ct
        join signals s on s.id = ct.source_signal_id and s.organization_id = ct.organization_id
       where ct.organization_id = $1
@@ -563,7 +592,6 @@ export async function compterRetenuesParPost(
     nommeUnPost: l?.nomme_un_post === true,
     aUneSourceDePost: l?.a_une_source_de_post === true,
     enAttenteDeValidation: Number(l?.en_attente ?? 0),
-    sansPost: Number(l?.sans_post ?? 0),
     postInexploitable: Number(l?.inexploitable ?? 0),
   };
 }

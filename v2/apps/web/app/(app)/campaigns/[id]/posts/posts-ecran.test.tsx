@@ -79,7 +79,6 @@ const RETENUES: RetenuesParPost = {
   nommeUnPost: true,
   aUneSourceDePost: true,
   enAttenteDeValidation: 47,
-  sansPost: 0,
   postInexploitable: 0,
 };
 

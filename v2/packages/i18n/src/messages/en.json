@@ -1150,7 +1150,6 @@
       "retenues": {
         "titre": "People held back",
         "sansSource": "The message writes a post variable, but the campaign has no source that starts from a post: nobody will enter the sequence.",
-        "sansPost": "up to {n, plural, one {# person has} other {# people have}} no post attached: the message names a post, so they cannot enter.",
         "inexploitable": "up to {n, plural, one {# person is} other {# people are}} held back: their post's record lacks something the message writes (author, subject, date)."
       }
     }

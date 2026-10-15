@@ -69,7 +69,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
   // Ce que la garde retient, dit tel quel : une campagne qui retient du monde sans le dire est le
   // pire défaut de ce produit. Mais une campagne qui ANNONCE une rétention qui n'a pas lieu est le
   // défaut d'en face, et ce dépôt l'a déjà payé (« une alerte fausse en éteint une vraie »).
-  const aDire = dit.sansSource || dit.sansPost > 0 || dit.postInexploitable > 0;
+  const aDire = dit.sansSource || dit.postInexploitable > 0;
 
   return (
     <>
@@ -87,7 +87,6 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
             <div className="jr-posts-retenues">
               <h3>{t('retenues.titre')}</h3>
               {dit.sansSource && <p>{t('retenues.sansSource')}</p>}
-              {dit.sansPost > 0 && <p>{t('retenues.sansPost', { n: dit.sansPost })}</p>}
               {dit.postInexploitable > 0 && <p>{t('retenues.inexploitable', { n: dit.postInexploitable })}</p>}
             </div>
           </div>
