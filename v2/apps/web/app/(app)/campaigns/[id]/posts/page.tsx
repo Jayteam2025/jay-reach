@@ -110,9 +110,18 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               // Le compte de personnes vient de la garde elle-même : c'est ce chiffre-là qui
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
               // Même subordination que le badge de l'onglet (`compterPostsAValiderDeCampagne`) et
-              // que le bandeau : sans accroche, relire ces posts ne débloque personne, et
-              // l'annoncer envoie l'opérateur valider pour rien.
-              resume: dit.relecture && enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
+              // que le bandeau : sans accroche, relire ces posts ne débloque personne ici, et
+              // l'annoncer enverrait l'opérateur valider pour rien.
+              //
+              // Mais « Aucun post n'attend votre relecture » serait faux à sa place : les lignes,
+              // elles, proposent toujours de valider, et c'est utile — la fiche est unique par
+              // organisation, donc la relecture faite ici vaut pour les campagnes qui, elles,
+              // nomment ce post. La barre dit donc ça, plutôt qu'il n'y a rien à faire.
+              resume: !dit.relecture
+                ? t('bar.sansAccroche')
+                : enAttente.length > 0
+                  ? t('bar.posts', { n: enAttente.length })
+                  : t('bar.rien'),
               personnes: dit.enAttenteDeValidation > 0 ? t('bar.personnes', { n: dit.enAttenteDeValidation }) : '',
               lotBloque: t('bar.lotBloque'),
               manquantAide: t('phrase.manquantAide'),

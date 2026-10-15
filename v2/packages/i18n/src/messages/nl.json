@@ -1102,6 +1102,7 @@
         "posts": "{n, plural, one {# post wacht} other {# posts wachten}} op je controle",
         "personnes": "tot {n, plural, one {# persoon komt} other {# personen komen}} niet in de sequentie zolang hun post niet is goedgekeurd",
         "rien": "Geen enkele post wacht op je controle.",
+        "sansAccroche": "Deze campagne noemt geen enkele post. Ze hier nakijken deblokkeert niemand voor deze campagne, maar telt voor de campagnes die ze wel noemen.",
         "toutValider": "Alles goedkeuren ({n})",
         "lotBloque": "Sla je wijziging op of maak ze ongedaan voordat je alles goedkeurt."
       },

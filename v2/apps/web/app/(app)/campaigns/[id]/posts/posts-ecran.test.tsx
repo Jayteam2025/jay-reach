@@ -14,6 +14,7 @@
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fr from '@jay-reach/i18n/messages/fr.json';
 import type { LignePost, RetenuesParPost } from '@jay-reach/core';
 
 const etat = vi.hoisted(() => ({
@@ -81,6 +82,9 @@ const RETENUES: RetenuesParPost = {
   postInexploitable: 0,
 };
 
+/** L'apostrophe des libellés français sort échappée du rendu statique. */
+const echappe = (texte: string) => texte.replace(/'/g, '&#x27;');
+
 const rendre = async () =>
   renderToStaticMarkup(await CampagnePostsPage({ params: Promise.resolve({ id: 'camp-1' }) }));
 
@@ -101,7 +105,9 @@ describe('le résumé de la barre', () => {
     etat.posts = [post(null), { ...post(null), id: 'p2' }];
     const html = await rendre();
     expect(html).not.toContain('post attend');
-    expect(html).toContain('Aucun post n&#x27;attend votre relecture.');
+    // Et pas « Aucun post n'attend votre relecture » non plus : ce serait affirmer qu'il n'y a
+    // rien à faire au-dessus de lignes qui proposent de faire quelque chose d'utile.
+    expect(html).toContain(echappe(fr.campagne.posts.bar.sansAccroche));
     // « Aucun post n'attend votre relecture » et « Tout valider (2) » côte à côte, c'est la même
     // barre qui se contredit : le quantificateur de la garde porte les deux ou aucun.
     expect(html).not.toContain('Tout valider');

@@ -1102,6 +1102,7 @@
         "posts": "{n, plural, one {# post is} other {# posts are}} waiting for your review",
         "personnes": "up to {n, plural, one {# person does} other {# people do}} not enter the sequence until their post is approved",
         "rien": "No post is waiting for your review.",
+        "sansAccroche": "This campaign doesn't name any post. Reviewing them here unblocks no one for it, but counts for the campaigns that do.",
         "toutValider": "Approve all ({n})",
         "lotBloque": "Save or undo your change before approving everything."
       },

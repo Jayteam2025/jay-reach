@@ -1102,6 +1102,7 @@
         "posts": "{n, plural, one {# post attend} other {# posts attendent}} votre relecture",
         "personnes": "{n, plural, one {jusqu'à # personne n'entre} other {jusqu'à # personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
         "rien": "Aucun post n'attend votre relecture.",
+        "sansAccroche": "Cette campagne ne nomme aucun post. Les relire ici ne débloque personne pour elle, mais vaut pour les campagnes qui les nomment.",
         "toutValider": "Tout valider ({n})",
         "lotBloque": "Enregistrez ou annulez votre modification avant de tout valider."
       },
