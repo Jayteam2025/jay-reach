@@ -24,6 +24,8 @@ interface PiloteFactice {
 
 function pilote(opts: {
   url?: string;
+  /** Le texte rendu pour tout sélecteur : de quoi lire une fiche de post sur la page ouverte. */
+  texte?: string;
   reponse?: (url: string) => { statut: number; corps: string };
 }): PiloteFactice {
   const requetes: string[] = [];
@@ -38,8 +40,8 @@ function pilote(opts: {
       url: async () => opts.url ?? POST,
       saisir: async () => undefined,
       presserEntree: async () => undefined,
-      texte: async () => '',
-      attendre: async () => false,
+      texte: async () => opts.texte ?? '',
+      attendre: async () => opts.texte !== undefined,
       requete: async (u) => {
         requetes.push(u);
         const r = opts.reponse?.(u);
@@ -206,6 +208,11 @@ function base(opts: {
       return rep([{}]);
     }
     if (t.includes('jr:linkedin_fuseau')) return rep([]);
+    // La fiche d'un post : l'identifiant rendu est celui que le signal doit porter.
+    if (t.includes('insert into linkedin_posts')) {
+      ecritures.push({ sql: 'fiche', params });
+      return rep([{ id: 'fiche-1', nouvelle: true }]);
+    }
     // Un engageur inconnu : l'insertion du signal rend son identifiant, donc l'issue est `nouveau`.
     if (t.includes('insert into signals')) {
       ecritures.push({ sql: 'signal', params });
@@ -311,6 +318,51 @@ describe('lireEngageurs', () => {
     await traiterCollecteLinkedIn(deps(p, b), JOB);
     expect(bloque(b)).toEqual([]);
     expect(clos(b)?.params[2]).toBe('error');
+  });
+});
+
+describe('la fiche du post, capturée pendant la collecte (mode post)', () => {
+  const UNE = { id: 'ACoAAaaa', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale' };
+  const TEXTE = 'Recruter un commercial coûte cher';
+
+  it('lireEngageurs lit la fiche sur la page déjà ouverte : aucune navigation ni requête de plus', async () => {
+    const p = pilote({ texte: TEXTE, reponse: () => ({ statut: 200, corps: voyager([UNE]) }) });
+    const r = await lireEngageurs(p.pilote, POST, ['reagi'], BUDGET, TRACE_MUETTE, SANS_PAUSE, true);
+    expect(r.fiche?.texte).toBe(TEXTE);
+    expect(r.fiche?.url).toBe(POST);
+    expect(p.navigations).toEqual([POST]);
+    expect(p.requetes).toHaveLength(1);
+  });
+
+  it('sans demande de capture, aucune fiche n’est lue', async () => {
+    const p = pilote({ texte: TEXTE, reponse: () => ({ statut: 200, corps: voyager([UNE]) }) });
+    const r = await lireEngageurs(p.pilote, POST, ['reagi'], BUDGET, TRACE_MUETTE, SANS_PAUSE);
+    expect(r.fiche).toBeUndefined();
+  });
+
+  it('une page en friction ne laisse aucune fiche', async () => {
+    const p = pilote({ url: 'https://www.linkedin.com/checkpoint/challenge/abc', texte: TEXTE, reponse: () => ({ statut: 200, corps: '' }) });
+    const r = await lireEngageurs(p.pilote, POST, ['reagi'], BUDGET, TRACE_MUETTE, SANS_PAUSE, true);
+    expect(r.fiche).toBeUndefined();
+  });
+
+  it('le passage enregistre la fiche et rattache le signal de chaque engageur, sans requête de plus', async () => {
+    const b = base({});
+    const p = pilote({ texte: TEXTE, reponse: () => ({ statut: 200, corps: voyager([UNE]) }) });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await traiterCollecteLinkedIn(deps(p, b), JOB);
+    // Une seule navigation (la page du post) et une seule requête Voyager : la capture est gratuite.
+    expect(p.navigations).toEqual([POST]);
+    expect(p.requetes).toHaveLength(1);
+    const fiches = b.ecritures.filter((e) => e.sql === 'fiche');
+    expect(fiches).toHaveLength(1);
+    expect(fiches[0]?.params[0]).toBe('org-1');
+    expect(fiches[0]?.params).toContain(TEXTE);
+    // Le piège : un signal qui naît sans post n'échoue nulle part. On exige le rattachement.
+    const rattachements = b.ecritures.filter((e) => e.sql.startsWith('update signals set linkedin_post_id'));
+    expect(rattachements).toHaveLength(1);
+    const signalCree = b.ecritures.find((e) => e.sql === 'signal');
+    expect(rattachements[0]?.params).toEqual(['org-1', `signal-${String(signalCree?.params[2])}`, 'fiche-1']);
   });
 });
 

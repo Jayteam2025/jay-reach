@@ -8,6 +8,9 @@
 //   2. posts-fiches.ts : poser `expires_at = excluded.expires_at` dans le `do update` — 1b rougit.
 //   3. posts-fiches.ts : ajouter `subject = null` au `do update` — 3 et 6 rougissent.
 //   4. post-engagement.ts : retirer l'appel à `rattacherSignalAuPost` — 5b et 5d rougissent.
+//   5. collecte-linkedin.ts : ne pas passer `linkedinPostId` à `enregistrerEngageur` — 7c rougit.
+//   6. collecte-linkedin.ts : ne plus demander la capture (dernier argument de `lireEngageurs`) — 7b et 7c rougissent.
+//   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
 import {
   clePost,
@@ -17,6 +20,8 @@ import {
   rattacherSignalAuPost,
   creerSource,
   startSourceRun,
+  traiterCollecteLinkedIn,
+  activerSessionLinkedIn,
 } from './_accroche-post-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -200,8 +205,84 @@ async function sujetOperateurSurvit() {
   check('6b. le texte, lui, a été mis à jour', l.text_excerpt === 'Un texte tout autre, capturé plus tard.');
 }
 
+/** Réponse Voyager normalisée : profils dans `included`, total dans `data.paging`. */
+function voyager(profils) {
+  return JSON.stringify({
+    data: {
+      paging: { start: 0, count: 50, total: profils.length },
+      elements: profils.map((p) => ({ reactionType: 'LIKE', actorUrn: `urn:li:fsd_profile:${p.id}` })),
+    },
+    included: profils.map((p) => ({
+      $type: 'com.linkedin.voyager.dash.identity.profile.Profile',
+      entityUrn: `urn:li:fsd_profile:${p.id}`,
+      firstName: p.prenom,
+      lastName: p.nom,
+      headline: p.titre,
+    })),
+  });
+}
+
+async function collecteEnModePost() {
+  console.log('\n# la collecte réelle en mode `post` capture la fiche et rattache chaque engageur');
+  const IP = '203.0.113.7';
+  const m = await monde();
+  const source = await sourceDePost(m, URL_POST, 'Engageurs collectés');
+  await activerSessionLinkedIn(m.ctx, IP);
+  const runId = await startSourceRun(pool, source);
+
+  const navigations = [];
+  const requetes = [];
+  const TEXTE = 'Recruter un commercial coûte cher, voici ce que nous avons mesuré.';
+  const pilote = {
+    aller: async (u) => void navigations.push(u),
+    url: async () => URL_POST,
+    saisir: async () => undefined,
+    presserEntree: async () => undefined,
+    texte: async () => TEXTE,
+    attendre: async () => true,
+    requete: async (u) => {
+      requetes.push(u);
+      return {
+        statut: 200,
+        corps: voyager([
+          { id: 'ACoAAada', prenom: 'Ada', nom: 'Lovelace', titre: 'Directrice commerciale chez Acme' },
+          { id: 'ACoAAbob', prenom: 'Bob', nom: 'Durand', titre: 'Directeur commercial' },
+        ]),
+      };
+    },
+    effacerCookies: async () => undefined,
+    fermer: async () => undefined,
+  };
+  const log = console.log;
+  console.log = () => undefined; // le handler journalise chaque passage
+  try {
+    await traiterCollecteLinkedIn(
+      {
+        pool,
+        env: { JAY_REACH_LINKEDIN: '1' },
+        ouvrirNavigateur: async () => pilote,
+        releverSortie: async () => ({ ip: IP, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
+        pause: async () => undefined,
+      },
+      { organizationId: m.org, sourceId: source, sourceRunId: runId },
+    );
+  } finally {
+    console.log = log;
+  }
+
+  const passage = (await q(`select status, error, nouveaux from source_runs where id = $1`, [runId])).rows[0];
+  check('7. le passage est un succès, deux personnes nouvelles', passage.status === 'success' && passage.nouveaux === 2, JSON.stringify(passage));
+  const posts = await lignesPost(m.org);
+  check('7b. une fiche est créée, avec le texte lu sur la page', posts.length === 1 && posts[0].text_excerpt === TEXTE && posts[0].post_key === `linkedin:${ID_POST}`, JSON.stringify(posts.map((p) => p.text_excerpt)));
+  const signaux = (await q(`select linkedin_post_id from signals where organization_id = $1`, [m.org])).rows;
+  // Le piège : un signal sans post ne lève aucune erreur, et tout le lot ne sert alors à rien.
+  check('7c. CHAQUE engageur collecté est rattaché à sa fiche', signaux.length === 2 && posts.length === 1 && signaux.every((s) => s.linkedin_post_id === posts[0].id), JSON.stringify(signaux));
+  check('7d. la capture est gratuite : une navigation (la page du post), une requête Voyager',
+    navigations.length === 1 && navigations[0] === URL_POST && requetes.length === 1, `${navigations.length} navigation(s), ${requetes.length} requête(s)`);
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);

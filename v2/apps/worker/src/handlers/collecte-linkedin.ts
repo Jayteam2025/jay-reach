@@ -40,6 +40,8 @@ import {
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ErreurCollecte, delaiAleatoire, lireEngageurs, type ArretCollecte, type Budget, type Friction } from '../linkedin/engageurs.js';
+import type { AuteurDePost } from '../linkedin/fiche-post.js';
+import { enregistrerFichePost } from '../linkedin/posts-fiches.js';
 import { trouverPostsDePage, urlDePost } from '../linkedin/posts.js';
 import { arriverSurLeFil, identifiantDeProfil, lireProfil, trouverPostsDeProfil } from '../linkedin/profils.js';
 import { lirePostsTraites, marquerPostTraite } from '../linkedin/posts-traites.js';
@@ -87,6 +89,25 @@ export const DUREE_VERROU_COLLECTE_MS = 10 * 60_000;
 
 /** Fenêtre glissante du plafond horaire : la dernière heure, pas l'heure en cours. */
 const UNE_HEURE_MS = 3_600_000;
+
+/**
+ * Jours pendant lesquels une fiche attend la décision d'un humain. En dur jusqu'à ce que le
+ * réglage existe (tâche 8).
+ */
+const FENETRE_DECISION_JOURS = 28;
+
+/**
+ * Un post à lire. Deux formes, parce que la source ne donne pas la même chose : en mode `post`
+ * l'opérateur a collé une ADRESSE (`url`), en modes `pages` et `profils` le trouveur rend des URN
+ * (`urn`), que la mémoire des posts traités garde telles quelles. `auteurConnu` n'est renseigné
+ * que quand la source en connaît l'auteur par construction : la page, ou le profil, dont on lit
+ * les posts.
+ */
+export type PostALire = {
+  readonly forme: 'url' | 'urn';
+  readonly valeur: string;
+  readonly auteurConnu: AuteurDePost | null;
+};
 
 /** Fenêtre glissante du plafond de visites de profil : sept jours, comme les plafonds d'envoi. */
 const SEPT_JOURS_MS = 7 * 24 * UNE_HEURE_MS;
@@ -730,7 +751,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     };
 
     /** Enregistre les personnes d'un post. Rend vrai si le plafond de personnes a tout arrêté. */
-    const enregistrer = async (personnes: readonly unknown[], urlPost: string): Promise<boolean> => {
+    const enregistrer = async (personnes: readonly unknown[], urlPost: string, linkedinPostId: string | null): Promise<boolean> => {
       for (const [rang, personne] of personnes.entries()) {
         // `enregistrerEngageur` LÈVE sur une entrée invalide : un seul profil
         // malformé emporterait tout le passage. On valide ici, et on compte ce
@@ -740,7 +761,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
           bilan.ignores += 1;
           continue;
         }
-        const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, urlPost);
+        const issue: IssueEngageur = await enregistrerEngageur(contexteEngageur, valide.data, config.campagne, urlPost, linkedinPostId);
         compterIssue(issue);
         if (issue === 'nouveau' && adresseDeduite(valide.data)) bilan.adressesDeduites += 1;
 
@@ -764,14 +785,14 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     // il faut les chercher — et cette recherche part vers LinkedIn, donc elle se paie sur le MÊME budget de
     // requêtes que la lecture des engageurs. La compter à part ferait valoir le trafic réel
     // « plafond + ce qu'a coûté la recherche », sur un plafond censé le borner.
-    const postsALire: string[] = [];
+    const postsALire: PostALire[] = [];
     let arretRecherche: ArretCollecte | null = null;
     /** Les entrées (pages ou profils) qu'on n'a pas su lire. Une seule n'arrête pas le passage ; toutes, si. */
     const pagesEnEchec: string[] = [];
     /** Résultat des modes `recherche` et `changement`, qui ne lisent aucun post. */
     let arretDeRecherche: ArretCollecte = 'fini';
     if (config.mode === 'post') {
-      postsALire.push(config.urlPost);
+      postsALire.push({ forme: 'url', valeur: config.urlPost, auteurConnu: null });
     } else if (config.mode === 'changement') {
       // Chaque profil relu coûte une requête : le passage est borné par le budget de requêtes
       // comme par le plafond de personnes, le plus bas des deux. Une requête de plus part pour
@@ -1044,7 +1065,7 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
               ? await trouverPostsDeProfil(pilote, page, { dejaTraites, budget: restant, surRequete, surVisiteProfil })
               : await trouverPostsDePage(pilote, page, { dejaTraites, budget: restant, surRequete, pause: d.pause });
           for (const urn of trouve.urns) {
-            postsALire.push(urn);
+            postsALire.push({ forme: 'urn', valeur: urn, auteurConnu: trouve.auteur });
             dejaTraites.add(urn);
           }
           // Une page sans post nouveau n'est pas une friction du passage : les autres pages de la
@@ -1090,32 +1111,40 @@ export async function traiterCollecteLinkedIn(d: DependancesCollecte, job: Colle
     for (const post of postsALire) {
       // Le trouveur rend des URN : la mémoire les garde sous cette identité. Le collecteur, lui,
       // charge la page du post, donc il lui faut une adresse.
-      const urlPost = config.mode === 'post' ? post : urlDePost(post);
+      const urlPost = post.forme === 'url' ? post.valeur : urlDePost(post.valeur);
       if (arretRecherche !== null) break;
       if (requetesRestantes() <= 0) {
         arret = 'plafond';
         break;
       }
-      const { personnes, arret: arretDuPost } = await lireEngageurs(
+      const { personnes, arret: arretDuPost, fiche } = await lireEngageurs(
         pilote,
         urlPost,
         config.garder,
         { requetesRestantes: requetesRestantes(), postsRestants: 1 },
         surRequete,
         d.pause,
+        // Seul le mode `post` capture ici : sa page est déjà ouverte et lue, donc gratuite. Les deux
+        // autres modes rattachent leurs fiches par le travail de fond.
+        config.mode === 'post',
       );
       bilan.posts += 1;
       bilan.vus += personnes.length;
       // Marqué dès que ses engageurs sont lus, avant même d'être enregistrés : la requête est
       // partie, elle est payée, et relire ce post au passage suivant la repaierait. Un post qui
       // n'a produit personne est justement celui qu'il ne faut pas rouvrir.
-      if (config.mode !== 'post') await marquerPostTraite(pool, job.organizationId, job.sourceId, post);
+      if (config.mode !== 'post') await marquerPostTraite(pool, job.organizationId, job.sourceId, post.valeur);
 
       // Plus une requête LinkedIn pendant l'enregistrement, qui ne fait que du Postgres : une
       // erreur inconnue qui survient là ne dit RIEN du compte. Le drapeau se rouvre avant le
       // post suivant, où le trafic reprend.
       traficTermine = true;
-      const plafondPersonnes = await enregistrer(personnes, urlPost);
+      // La fiche s'enregistre AVANT les personnes : c'est son identifiant que chaque signal doit porter.
+      const linkedinPostId =
+        fiche === undefined
+          ? null
+          : (await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours: FENETRE_DECISION_JOURS })).id;
+      const plafondPersonnes = await enregistrer(personnes, urlPost, linkedinPostId);
       traficTermine = false;
 
       if (typeof arretDuPost === 'object') {

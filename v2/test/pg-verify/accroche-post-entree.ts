@@ -5,3 +5,5 @@ export { enregistrerEngageur } from '../../apps/worker/src/handlers/post-engagem
 export { marquerPostTraite } from '../../apps/worker/src/linkedin/posts-traites.js';
 export { startSourceRun } from '../../apps/worker/src/db.js';
 export { creerSource } from '../../packages/core/src/fonctions/sources.js';
+export { traiterCollecteLinkedIn } from '../../apps/worker/src/handlers/collecte-linkedin.js';
+export { activerSessionLinkedIn } from '../../packages/core/src/fonctions/linkedin-session.js';

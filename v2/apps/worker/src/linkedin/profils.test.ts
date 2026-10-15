@@ -175,7 +175,16 @@ describe('trouverPostsDeProfil', () => {
       'https://www.linkedin.com/in/ACoAAExemple/',
       { dejaTraites: new Set(), budget: budget(10, 10), surRequete },
     );
-    expect(r).toEqual({ urns: ['urn:li:share:1', 'urn:li:share:2'], arret: 'fini' });
+    expect(r.urns).toEqual(['urn:li:share:1', 'urn:li:share:2']);
+    expect(r.arret).toBe('fini');
+    // L'auteur est connu par construction : le nom public résolu, sans requête de plus.
+    expect(r.auteur).toEqual({
+      kind: 'person',
+      nom: 'prenom-nom',
+      nomAffiche: 'prenom-nom',
+      nomPublic: 'prenom-nom',
+      url: 'https://www.linkedin.com/in/prenom-nom/',
+    });
     // Deux requêtes, pas plus : la résolution, puis l'activité.
     expect(surRequete).toHaveBeenCalledTimes(2);
   });
@@ -195,7 +204,7 @@ describe('trouverPostsDeProfil', () => {
       'https://www.linkedin.com/in/prenom-nom/',
       { dejaTraites: new Set(), budget: budget(2, 10), surRequete: async () => undefined },
     );
-    expect(r).toEqual({ urns: ['urn:li:share:1', 'urn:li:share:2'], arret: 'plafond' });
+    expect(r).toEqual({ urns: ['urn:li:share:1', 'urn:li:share:2'], arret: 'plafond', auteur: expect.objectContaining({ kind: 'person' }) });
   });
 
   it('ne part pas du tout quand le budget est déjà épuisé', async () => {
@@ -207,7 +216,7 @@ describe('trouverPostsDeProfil', () => {
       budget: budget(0, 10),
       surRequete,
     });
-    expect(r).toEqual({ urns: [], arret: 'plafond' });
+    expect(r).toEqual({ urns: [], arret: 'plafond', auteur: null });
     expect(surRequete).not.toHaveBeenCalled();
   });
 
@@ -217,7 +226,7 @@ describe('trouverPostsDeProfil', () => {
       budget: budget(10, 10),
       surRequete: async () => undefined,
     });
-    expect(r).toEqual({ urns: [], arret: { type: 'liste_vide' } });
+    expect(r).toEqual({ urns: [], arret: { type: 'liste_vide' }, auteur: expect.objectContaining({ kind: 'person' }) });
   });
 
   it('remonte une friction sur le statut de la page d’activité', async () => {

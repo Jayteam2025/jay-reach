@@ -29,6 +29,7 @@ import {
   type ArretCollecte,
   type Budget,
 } from './engageurs.js';
+import { nomAffichePourAuteur, type AuteurDePost } from './fiche-post.js';
 import type { Pilote } from './navigateur.js';
 
 /** Les trois types d'identifiant qu'un post peut porter dans un lien de la page d'activité. */
@@ -346,10 +347,10 @@ export async function trouverPostsDeProfil(
      */
     readonly surVisiteProfil?: () => Promise<void>;
   },
-): Promise<{ urns: string[]; arret: ArretCollecte }> {
+): Promise<{ urns: string[]; arret: ArretCollecte; auteur: AuteurDePost | null }> {
   const { dejaTraites, budget, surRequete } = options;
   const surVisite = options.surVisiteProfil ?? surRequete;
-  if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { urns: [], arret: 'plafond' };
+  if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { urns: [], arret: 'plafond', auteur: null };
 
   let restantes = budget.requetesRestantes;
   const compter = async (tracer: () => Promise<void>): Promise<void> => {
@@ -358,7 +359,7 @@ export async function trouverPostsDeProfil(
   };
 
   const nomPublic = await resoudreNomPublic(pilote, urlProfil, () => compter(surVisite));
-  if (restantes <= 0) return { urns: [], arret: 'plafond' };
+  if (restantes <= 0) return { urns: [], arret: 'plafond', auteur: null };
 
   await compter(surRequete);
   const rep = await pilote.requete(adresseActivite(nomPublic));
@@ -379,14 +380,22 @@ export async function trouverPostsDeProfil(
     );
   }
 
+  // L'auteur de ces posts est le profil lui-même : son nom public, déjà résolu.
+  const auteur: AuteurDePost = {
+    kind: 'person',
+    nom: nomPublic,
+    nomAffiche: nomAffichePourAuteur('person', nomPublic),
+    nomPublic,
+    url: adresseDeProfil(nomPublic),
+  };
   const retenus: string[] = [];
   for (const urn of extrairePostsDeProfil(rep.corps)) {
     if (dejaTraites.has(urn)) continue;
     retenus.push(urn);
-    if (retenus.length >= budget.postsRestants) return { urns: retenus, arret: 'plafond' };
+    if (retenus.length >= budget.postsRestants) return { urns: retenus, arret: 'plafond', auteur };
   }
   // `liste_vide` dit « ce profil ne publie pas », et c'est une information juste : l'existence du
   // profil a déjà été prouvée par la résolution. Sans elle, ce même message aurait couvert une
   // adresse périmée.
-  return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini' };
+  return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini', auteur };
 }
