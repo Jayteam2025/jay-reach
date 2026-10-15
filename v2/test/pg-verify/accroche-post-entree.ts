@@ -18,7 +18,7 @@ export { enqueueEnrollments, enqueueEnrichmentContactsConnus, ecarterSignauxTrop
 export { enrollContact } from '../../apps/worker/src/handlers/sequence.js';
 export { enrichirContactConnu } from '../../apps/worker/src/handlers/enrichment-contact-connu.js';
 export { fenetreValidationPost, rejeterFichesPostExpirees } from '../../apps/worker/src/linkedin/posts-fiches.js';
-export { campagneNommeUnPost, compterRetenuesParPost } from '../../packages/core/src/linkedin/accroche-post.js';
+export { campagneNommeUnPost, compterRetenuesParPost, retenuesAAfficher } from '../../packages/core/src/linkedin/accroche-post.js';
 export { ecrireReglage } from '../../packages/core/src/fonctions/plafonds.js';
 // Tache 9 : le scoring nourri du texte du post.
 export { runScore, compterSignauxScorables } from '../../apps/worker/src/handlers/score.js';

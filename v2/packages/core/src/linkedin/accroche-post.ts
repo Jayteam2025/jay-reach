@@ -24,14 +24,31 @@ import { VARIABLES_DE_POST } from '../messages/variables.js';
 import { TYPES_SOURCES_DE_POST } from '../fonctions/sources.js';
 
 /**
- * Le motif Postgres qui reconnaît, dans un corps de message, un jeton parmi `variables`.
+ * Le motif Postgres qui reconnaît, dans un corps de message, un jeton parmi `variables` ÉCRIT
+ * SANS REPLI.
  *
- * Même forme que `TOKEN_RE` (`messages/variables.ts`) — espaces tolérés autour du nom, valeur de
- * repli facultative après `|`, qui ne peut pas contenir d'accolade fermante. Les noms de
- * variables sont des identifiants (`[a-z_]`), donc rien à échapper dans l'alternative.
+ * Même forme que `TOKEN_RE` (`messages/variables.ts`) — espaces tolérés autour du nom — moins la
+ * valeur de repli. Les noms de variables sont des identifiants (`[a-z_]`), donc rien à échapper
+ * dans l'alternative.
+ *
+ * **Le repli est exclu DÉLIBÉRÉMENT, et c'est la définition même d'« écrire une variable de
+ * post ».** La règle du dépôt est qu'une variable non résolue bloque l'envoi ; une variable à
+ * repli, elle, EST résolue — `renderTemplate` rend le repli dès que la valeur est vide. Avec
+ * `{{post_date|le 12 octobre}}` et une fiche sans date, retenir la personne, c'est donc geler
+ * indéfiniment un message qui serait parti correctement : la garde attendrait un horodatage que
+ * seul le rattrapage peut poser, et que ce message n'attend pas.
+ *
+ * Deux variables seulement sont concernées : `NO_FALLBACK_VARIABLES` refuse déjà le repli sur
+ * `post_auteur` et `post_sujet` dès l'enregistrement, parce qu'il y serait l'interrupteur
+ * silencieux vers le message sans accroche (0 % de réponses contre 31,1 %).
+ *
+ * Cette définition vaut aux QUATRE endroits d'un coup — la garde d'entrée, l'écran, le gel de la
+ * dépense, l'épargne de purge — parce qu'ils lisent tous ce motif-ci, comme ils lisent tous
+ * `sqlSourceAlimenteLaCampagne` pour le lien source-campagne. Aucune campagne n'écrit de variable
+ * de post aujourd'hui : c'est précisément pour ça que la règle se pose maintenant.
  */
 function motifSqlDesVariables(variables: readonly string[]): string {
-  return `\\{\\{\\s*(${variables.join('|')})\\s*(\\|[^}]*)?\\}\\}`;
+  return `\\{\\{\\s*(${variables.join('|')})\\s*\\}\\}`;
 }
 
 /**

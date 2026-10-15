@@ -60,10 +60,35 @@ describe('MOTIF_SQL_VARIABLE_DE_POST', () => {
     const re = new RegExp(MOTIF_SQL_VARIABLE_DE_POST, 'i');
     expect(re.test('bonjour {{post_auteur}}')).toBe(true);
     expect(re.test('{{ post_sujet }}')).toBe(true);
-    expect(re.test('{{post_url|https://exemple.fr}}')).toBe(true);
     expect(re.test('{{POST_DATE}}')).toBe(true);
     expect(re.test('{{prenom}} {{entreprise}}')).toBe(false);
     expect(re.test('post_auteur sans accolades')).toBe(false);
+  });
+
+  /**
+   * Écrire une variable de post, c'est l'écrire SANS repli. Une variable à repli se résout
+   * toujours (`renderTemplate` rend le repli quand la valeur est vide), donc elle ne peut pas
+   * bloquer un envoi — et retenir une personne pour elle, c'est geler indéfiniment un message qui
+   * serait parti correctement, au mépris de la règle du dépôt : une variable non résolue bloque
+   * l'envoi, et une variable à repli EST résolue.
+   *
+   * Seules `post_url` et `post_date` sont concernées : `NO_FALLBACK_VARIABLES` refuse le repli sur
+   * `post_auteur` et `post_sujet` dès l'enregistrement, parce qu'il y serait l'interrupteur
+   * silencieux vers le message sans accroche.
+   */
+  it('ne reconnaît PAS une variable de post écrite avec un repli', () => {
+    const re = new RegExp(MOTIF_SQL_VARIABLE_DE_POST, 'i');
+    expect(re.test('{{post_url|https://exemple.fr}}')).toBe(false);
+    expect(re.test('{{ post_date | le 12 octobre }}')).toBe(false);
+    // Et une campagne qui écrit la MÊME variable des deux façons l'écrit quand même.
+    expect(re.test('{{post_date|le 12 octobre}} puis {{post_date}}')).toBe(true);
+  });
+
+  /** Le motif par variable suit la même règle, puisqu'il sort de la même fonction. */
+  it('et la question « cette campagne écrit-elle CETTE variable » non plus', () => {
+    const sql = sqlCampagneEcritVariableDePost('$1::uuid', 'post_date');
+    expect(sql).toContain('post_date');
+    expect(sql).not.toContain('[^}]*');
   });
 });
 

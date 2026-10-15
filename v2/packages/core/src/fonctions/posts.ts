@@ -100,7 +100,16 @@ export type MorceauAccroche =
   | { readonly champ: ChampAccroche }
   | { readonly manquant: VariableDePostRelevee };
 
-/** Les jetons de post restés dans l'aperçu, et ceux qui suffisent à faire d'une phrase une accroche. */
+/**
+ * Les jetons de post restés dans l'aperçu, et ceux qui suffisent à faire d'une phrase une accroche.
+ *
+ * Ces deux-ci tolèrent le repli, là où le motif de la GARDE l'exclut (`motifSqlDesVariables`), et
+ * la divergence est voulue : les deux ne répondent pas à la même question. La garde demande « que
+ * faut-il EXIGER de la fiche », et une variable à repli n'exige rien puisqu'elle se résout
+ * toujours. Ces motifs-ci demandent « quelle phrase parle du post, et qu'y reste-t-il à
+ * l'écran » : écarter une phrase parce que sa date porte un repli ferait retomber l'écran sur sa
+ * phrase par défaut — une phrase inventée, que cette campagne n'enverra jamais.
+ */
 const JETON_DE_POST_RESTANT = new RegExp(`\\{\\{\\s*(${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'gi');
 const JETON_DE_POST = new RegExp(`\\{\\{\\s*(?:${[...VARIABLES_DE_POST].join('|')})\\s*(?:\\|[^}]*)?\\}\\}`, 'i');
 

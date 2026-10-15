@@ -77,6 +77,7 @@ import {
   AGE_MAX_SIGNAL_JOURS,
   campagneNommeUnPost,
   compterRetenuesParPost,
+  retenuesAAfficher,
   ecrireReglage,
   runScore,
   buildScoringUserMessage,
@@ -956,6 +957,13 @@ const SANS_ACCROCHE = 'Bonjour, parlons prospection.';
 /** Accroches qui ne citent qu'UNE variable de post : la garde ne doit exiger que celle-là. */
 const ACCROCHE_URL = 'Bonjour, je vous ai vu réagir à ce post : {{post_url}}.';
 const ACCROCHE_DATE = 'Bonjour, votre réaction du {{post_date}} m\'a interpellé.';
+/**
+ * La même, ÉCRITE AVEC UN REPLI. Une variable à repli se résout toujours — c'est la définition de
+ * `renderTemplate` — donc elle ne peut pas bloquer un envoi, donc rien ne doit être retenu pour
+ * elle. Seules `post_url` et `post_date` peuvent en porter un : `NO_FALLBACK_VARIABLES` refuse le
+ * repli sur `post_auteur` et `post_sujet` dès l'enregistrement.
+ */
+const ACCROCHE_DATE_REPLI = 'Bonjour, votre réaction du {{post_date|12 octobre}} m\'a interpellé.';
 
 /**
  * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
@@ -1749,6 +1757,70 @@ async function validationExigeCeQuiPartira() {
     intrus !== null && etatIntrus === 'pending', `${intrus?.name} / ${etatIntrus}`);
 }
 
+async function repliNeDeclencheRien() {
+  console.log('\n# une variable de post écrite AVEC un repli ne déclenche rien, aux quatre endroits');
+  await demarrerBoss();
+
+  // Canal LinkedIn : une campagne 100 % LinkedIn inscrit un engageur sans email, ce qui isole la
+  // garde du post de celle de l'adresse (même raison que `gardeDEntree`).
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE_DATE_REPLI);
+  const p = await engageurDUnPost(m, 73, { etat: 'pending', sujet: null, nomAffiche: null });
+  // Le pire cas : ni date, ni sujet, ni nom affiché, et personne n'a relu la fiche.
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [p.fiche]);
+
+  // L'ÉCRAN (1/4). Rien n'est annoncé, et valider n'exige rien.
+  const retenues = await compterRetenuesParPost(pool, m.org, m.campagne);
+  // Le compteur brut compte toujours (la fiche EST en attente) ; c'est la règle d'affichage qui
+  // décide, et elle ne dit rien dès que la campagne ne nomme pas le post.
+  const dit = retenuesAAfficher(retenues);
+  check('31. « nommer un post », c\'est l\'écrire SANS repli : le bandeau ne dit rien',
+    retenues.nommeUnPost === false && dit.enAttenteDeValidation === 0 && dit.echeances === false && dit.relecture === false,
+    JSON.stringify({ retenues, dit }));
+  check('31a. et le badge de l\'onglet reste à zéro',
+    (await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })) === 0,
+    String(await compterPostsAValiderDeCampagne(m.ctx, { campagneId: m.campagne })));
+
+  // LA GARDE (2/4). La fiche n'a jamais été relue, et pourtant personne n'est retenu.
+  await tourDInscription(m.org);
+  check('31b. garde : la personne entre en séquence sur une fiche JAMAIS relue',
+    (await inscritsDe(m.org)).includes(p.contact_id), JSON.stringify(await inscritsDe(m.org)));
+
+  // ET LE MESSAGE PART. Toute la règle tient là-dessus : une variable à repli EST résolue, donc
+  // retenir la personne pour elle, c'est geler un envoi qui serait parti correctement.
+  const insc = (await q(`select id from enrollments where organization_id = $1`, [m.org])).rows[0]?.id ?? null;
+  const rendu = insc === null
+    ? { text: '', missing: ['(aucune inscription)'] }
+    : renderTemplate(ACCROCHE_DATE_REPLI, buildMessageValues(await chargerLigneInscription(pool, insc)));
+  check('31c. et son message part, le repli rendu, sans une seule variable manquante',
+    rendu.missing.length === 0 && rendu.text.includes('du 12 octobre m'), JSON.stringify(rendu));
+
+  // Valider n'exige rien non plus — EN DERNIER dans ce monde-ci, parce que valider change l'état
+  // de la fiche et que les contrôles d'avant la veulent « jamais relue ».
+  let refusRepli = null;
+  await validerPost(m.ctx, { postId: p.fiche, campagneId: m.campagne }).catch((err) => { refusRepli = err; });
+  check('31c2. et valider n\'exige rien d\'une fiche dont la campagne n\'écrit rien sans repli',
+    refusRepli === null && (await q(`select review_status from linkedin_posts where id = $1`, [p.fiche])).rows[0].review_status === 'approved',
+    String(refusRepli?.message ?? ''));
+
+  // LE GEL (3/4), dans une campagne qui envoie des emails : c'est le cas où l'achat sert.
+  const e = await monde();
+  await etapeAvecCorps(e, ACCROCHE_DATE_REPLI, { canal: 'email' });
+  const a = await engageurDUnPost(e, 74, { etat: 'pending', sujet: null, nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [a.fiche]);
+  await q(`update signals set status = 'qualified', score = 90, scored_at = now() where id = $1`, [a.signal_id]);
+  await enqueueEnrichmentContactsConnus(boss, pool, { limit: 100, limiteGlobale: 500 });
+  const enfiles = (await q(`select data from pgboss.job where name = 'enrichment.contact_connu' and data->>'organizationId' = $1`, [e.org])).rows.map((r) => r.data.contactId);
+  check('31d. gel : l\'achat de son adresse n\'est pas gelé', enfiles.includes(a.contact_id), JSON.stringify(enfiles));
+
+  // L'ÉPARGNE (4/4), EN DERNIER : elle efface, et un contrôle qui détruit ne doit pas emporter la
+  // preuve des suivants. Personne n'attend ce post, donc la fenêtre n'a rien à épargner.
+  await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [a.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('31e. épargne : personne n\'attend la relecture de ce post, il n\'épargne personne',
+    (await q(`select 1 from signals where id = $1`, [a.signal_id])).rowCount === 0);
+}
+
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
 async function parLeLienHistorique(campagne, source) {
   await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
@@ -1807,7 +1879,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDeclencheRien, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
