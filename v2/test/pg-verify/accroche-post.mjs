@@ -1359,12 +1359,16 @@ async function repriseDeLExistant() {
   await q(`delete from signals where organization_id <> $1`, [m.org]);
   const { reprise, verification } = morceauxDeLaMigration();
   const client = await pool.connect();
+  let leveeVerification = null;
   try {
     await client.query(reprise); // les fonctions pg_temp vivent le temps de la session
-    await client.query(verification);
+    // Dans SON propre try : la migration se vérifie elle-même, et une vérification qui lève ne
+    // doit pas emporter les contrôles de cette section — c'est elle qu'on veut voir rougir.
+    await client.query(verification).catch((e) => { leveeVerification = e; });
   } finally {
     client.release();
   }
+  check('16e. le bloc d\'auto-vérification de la migration passe', leveeVerification === null, String(leveeVerification?.message ?? ''));
   const rattaches = (await q(`select id, linkedin_post_id from signals where id = any($1::uuid[])`, [[sPost, sRech, sPoste]])).rows;
   const par = Object.fromEntries(rattaches.map((r) => [r.id, r.linkedin_post_id]));
   const fiches = (await q(`select url from linkedin_posts where organization_id = $1`, [m.org])).rows;
@@ -1534,9 +1538,12 @@ async function validationExigeCeQuiPartira() {
   // LA SORTIE : le nom de l'auteur s'écrit, comme le sujet. Sans elle, cette fiche est une impasse
   // définitive — le rattrapage ne la reprend pas (elle est complète) et aucun écran ne la répare.
   await corrigerAuteurDePost(m.ctx, { postId: sansAuteur.fiche, auteur: 'Ana' });
-  await validerPost(m.ctx, { postId: sansAuteur.fiche, campagneId: m.campagne });
+  let refusApres = null;
+  await validerPost(m.ctx, { postId: sansAuteur.fiche, campagneId: m.campagne }).catch((e) => { refusApres = e; });
   const etatApres = (await q(`select review_status, author_display_name from linkedin_posts where id = $1`, [sansAuteur.fiche])).rows[0];
-  check('29d. écrire le nom de l\'auteur débloque la validation', etatApres.review_status === 'approved' && etatApres.author_display_name === 'Ana', JSON.stringify(etatApres));
+  check('29d. écrire le nom de l\'auteur débloque la validation',
+    refusApres === null && etatApres.review_status === 'approved' && etatApres.author_display_name === 'Ana',
+    `${refusApres?.message ?? ''} / ${JSON.stringify(etatApres)}`);
   await tourDInscription(m.org);
   check('29e. et les personnes du post entrent enfin en séquence', (await inscritsDe(m.org)).includes(sansAuteur.contact_id), JSON.stringify(await inscritsDe(m.org)));
 
