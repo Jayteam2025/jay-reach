@@ -29,7 +29,7 @@
 //  24. posts.ts : retirer `and cs.campaign_id = $2` de la jointure de `listerPostsDeCampagne` — 27a et 27b rougissent.
 //  25. posts.ts : remplacer `where organization_id = $1` de `rejeterPost` par `where $1::uuid is not null` — 27m rougit.
 //  26. posts.ts : retirer `and expires_at > now()` de `reouvrirPost` — 27l rougit.
-//  27. posts.ts : remplacer le `case` de `corrigerSujetDePost` par `review_status = review_status` — 27i rougit.
+//  27. posts.ts : ajouter `review_status = 'pending'` au `set` de `corrigerSujetDePost` — 27i rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -1381,10 +1381,11 @@ async function ecranDesPosts() {
   const inscrits = await inscritsDe(m.org);
   check('27h. valider un post fait entrer ses personnes en séquence', inscrits.includes(a.contact_id) && inscrits.includes(b.contact_id), `${inscrits.length} inscrits`);
 
-  // Corriger un post validé le ramène en attente.
+  // Corriger un post validé le laisse validé : la correction EST la relecture.
   await corrigerSujetDePost(m.ctx, { postId: b.fiche, sujet: 'le recrutement commercial' });
-  const reOuvert = (await q(`select review_status from linkedin_posts where id = $1`, [b.fiche])).rows[0].review_status;
-  check('27i. corriger le sujet d\'un post déjà validé le ramène en attente', reOuvert === 'pending', reOuvert);
+  const apresCorrection = (await q(`select review_status, reviewed_at, subject from linkedin_posts where id = $1`, [b.fiche])).rows[0];
+  check('27i. corriger le sujet d\'un post déjà validé le laisse validé, relecture conservée',
+    apresCorrection.review_status === 'approved' && apresCorrection.reviewed_at !== null && apresCorrection.subject === 'le recrutement commercial', JSON.stringify(apresCorrection));
 
   // Rejeter n'efface rien ; rouvrir annule.
   const avantRejet = (await q(`select (select count(*) from contacts where organization_id = $1)::int as c, (select count(*) from signals where organization_id = $1)::int as s`, [m.org])).rows[0];

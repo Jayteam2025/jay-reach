@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { TablePosts, type LignePostEcran, type TablePostsProps } from './TablePosts';
+import { BarreLot, TablePosts, type LignePostEcran, type TablePostsProps } from './TablePosts';
 
 // Les actions ne sont pas le sujet : ce test juge ce que l'écran MONTRE.
 vi.mock('../../app/actions/posts', () => ({
@@ -24,6 +24,7 @@ const libelles: TablePostsProps['libelles'] = {
   resume: '3 posts attendent votre relecture',
   personnes: '106 personnes n\'entrent pas en séquence tant que leur post n\'est pas validé',
   toutValider: 'Tout valider (2)',
+  lotBloque: 'Enregistrez ou annulez la modification d\'un sujet avant de tout valider.',
 };
 
 function ligne(sur: Partial<LignePostEcran> = {}): LignePostEcran {
@@ -109,5 +110,24 @@ describe('l\'écran des posts à valider', () => {
 
   it('écrit « Auteur inconnu » plutôt qu\'un trou', () => {
     expect(rendu([ligne({ auteur: null })])).toContain('Auteur inconnu');
+  });
+});
+
+describe('la validation en lot', () => {
+  const rendre = (bloque: boolean) =>
+    renderToStaticMarkup(
+      <BarreLot libelles={libelles} lotBloque={libelles.lotBloque} bloque={bloque} pending={false} onToutValider={() => undefined} />,
+    );
+
+  it('est bloquée, avec une ligne qui dit pourquoi, tant qu\'un sujet modifié n\'est pas enregistré', () => {
+    const html = rendre(true);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Tout valider \(2\)<\/button>/);
+    expect(html).toContain('Enregistrez ou annulez la modification d&#x27;un sujet avant de tout valider.');
+  });
+
+  it('est active, sans explication, quand rien n\'est en cours d\'édition', () => {
+    const html = rendre(false);
+    expect(html).not.toMatch(/<button[^>]*disabled=""/);
+    expect(html).not.toContain('Enregistrez ou annulez');
   });
 });

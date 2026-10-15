@@ -206,18 +206,16 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
  * Pose le sujet de l'opérateur (`subject_origin = 'operator'`) : une capture ultérieure ne
  * l'écrase jamais (le worker n'écrit que `where subject is null`).
  *
- * Corriger le sujet d'un post DÉJÀ validé le ramène en attente : la phrase qui partirait n'est
- * plus celle qu'un humain a relue. Un post rejeté le reste.
+ * La correction vient de l'opérateur : elle EST la relecture humaine (c'est ce que dit
+ * `subject_origin = 'operator'`). L'état de relecture n'est donc jamais touché : un post validé
+ * dont on corrige une coquille reste validé, et la campagne qui tournait ne s'arrête pas.
  */
 export async function corrigerSujetDePost(ctx: Contexte, entree: unknown): Promise<void> {
   exiger(ctx, 'operator');
   const { postId, sujet } = valider(schemaCorrection, entree);
   const res = await ctx.ex.query(
     `update linkedin_posts
-        set subject = $3, subject_origin = 'operator',
-            review_status = case when review_status = 'approved' then 'pending' else review_status end,
-            reviewed_at = case when review_status = 'approved' then null else reviewed_at end,
-            reviewed_by = case when review_status = 'approved' then null else reviewed_by end
+        set subject = $3, subject_origin = 'operator'
       where organization_id = $1 and id = $2`,
     [ctx.organisationId, postId, sujet],
   );
@@ -257,7 +255,7 @@ export async function reouvrirPost(ctx: Contexte, entree: unknown): Promise<void
   if ((res.rowCount ?? 0) > 0) return;
   const etat = await etatDuPost(ctx, postId);
   if (etat.review_status === 'rejected' && etat.expired) {
-    throw refus('La fenêtre de décision de ce post est passée : il ne peut plus être rouvert.');
+    throw refus('L\'échéance de ce post est passée : les personnes collectées sur ce post ne sont plus en attente (la purge ordinaire s\'applique), il ne peut donc plus être rouvert.');
   }
 }
 

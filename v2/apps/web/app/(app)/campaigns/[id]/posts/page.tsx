@@ -102,6 +102,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
               resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
               personnes: retenues.enAttenteDeValidation > 0 ? t('bar.personnes', { n: retenues.enAttenteDeValidation }) : '',
+              lotBloque: t('bar.lotBloque'),
               toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}
           />

@@ -59,6 +59,8 @@ export interface TablePostsProps {
     personnes: string;
     /** « Tout valider (2) », ou `null` quand rien n'est validable en lot. */
     toutValider: string | null;
+    /** Pourquoi « Tout valider » est inactif : un sujet modifié n'est pas encore enregistré. */
+    lotBloque: string;
   };
 }
 
@@ -79,16 +81,47 @@ function Chiffres({ texte }: { texte: string }) {
   );
 }
 
+/**
+ * « Tout valider » et, quand il est bloqué, la ligne qui dit pourquoi : un bouton désactivé sans
+ * explication est un silence. Il l'est tant qu'un sujet modifié n'est pas enregistré, sinon c'est
+ * l'ancien sujet qui partirait, sans que l'opérateur puisse s'en apercevoir.
+ */
+export function BarreLot({
+  libelles,
+  lotBloque,
+  bloque,
+  pending,
+  onToutValider,
+}: {
+  libelles: TablePostsProps['libelles'];
+  lotBloque: string;
+  bloque: boolean;
+  pending: boolean;
+  onToutValider: () => void;
+}) {
+  return (
+    <span className="pousse jr-posts-lot">
+      {bloque && <small className="jr-secondaire">{lotBloque}</small>}
+      <Bouton taille="petit" onClick={onToutValider} disabled={pending || bloque} aria-busy={pending}>
+        {libelles.toutValider}
+      </Bouton>
+    </span>
+  );
+}
+
 function Ligne({
   campagneId,
   ligne,
   peutModifier,
   libelles,
+  surEdition,
 }: {
   campagneId: string;
   ligne: LignePostEcran;
   peutModifier: boolean;
   libelles: TablePostsProps['libelles'];
+  /** Dit au parent si ce sujet porte une modification que le serveur n'a pas encore. */
+  surEdition: (id: string, enCours: boolean) => void;
 }) {
   const refSujet = useRef<HTMLSpanElement>(null);
   const [brouillon, setBrouillon] = useState(ligne.sujet ?? '');
@@ -108,6 +141,7 @@ function Ligne({
   /** Enregistre le sujet s'il a changé. Rend `false` si l'enregistrement a échoué. */
   async function enregistrerSujet(): Promise<boolean> {
     const sujet = lire();
+    // Un sujet vidé reste « en cours » : le serveur garde l'ancien, et le lot ne doit pas le valider.
     if (sujet === dernierEnvoye.current || sujet === '') return true;
     const precedent = dernierEnvoye.current;
     dernierEnvoye.current = sujet;
@@ -116,6 +150,7 @@ function Ligne({
       dernierEnvoye.current = precedent;
       setErreur(res.error);
     }
+    surEdition(ligne.id, lire() !== dernierEnvoye.current);
     return res.ok;
   }
 
@@ -161,7 +196,10 @@ function Ligne({
           role="textbox"
           aria-label={ligne.etiquetteSujet}
           data-invite={libelles.sujetInvite}
-          onInput={() => setBrouillon(lire())}
+          onInput={() => {
+            setBrouillon(lire());
+            surEdition(ligne.id, lire() !== dernierEnvoye.current);
+          }}
           onBlur={surPerte}
           onKeyDown={(e) => {
             // Le sujet tient sur une ligne : Entrée valide la saisie au lieu de couper la phrase.
@@ -213,6 +251,16 @@ function Ligne({
 export function TablePosts({ campagneId, lignes, peutModifier, libelles }: TablePostsProps) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [enEdition, setEnEdition] = useState<ReadonlySet<string>>(new Set());
+  function surEdition(id: string, enCours: boolean) {
+    setEnEdition((courant) => {
+      if (courant.has(id) === enCours) return courant;
+      const suivant = new Set(courant);
+      if (enCours) suivant.add(id);
+      else suivant.delete(id);
+      return suivant;
+    });
+  }
   // Seuls les posts en attente ET déjà pourvus d'un sujet enregistré se valident en lot.
   const validables = lignes.filter((l) => l.etat === 'pending' && (l.sujet ?? '').trim() !== '').map((l) => l.id);
 
@@ -237,11 +285,7 @@ export function TablePosts({ campagneId, lignes, peutModifier, libelles }: Table
           )}
         </span>
         {peutModifier && libelles.toutValider !== null && validables.length > 0 && (
-          <span className="pousse">
-            <Bouton taille="petit" onClick={toutValider} disabled={pending} aria-busy={pending}>
-              {libelles.toutValider}
-            </Bouton>
-          </span>
+          <BarreLot libelles={libelles} lotBloque={libelles.lotBloque} bloque={enEdition.size > 0} pending={pending} onToutValider={toutValider} />
         )}
       </div>
       {erreur && (
@@ -250,7 +294,14 @@ export function TablePosts({ campagneId, lignes, peutModifier, libelles }: Table
         </p>
       )}
       {lignes.map((ligne) => (
-        <Ligne key={ligne.id} campagneId={campagneId} ligne={ligne} peutModifier={peutModifier} libelles={libelles} />
+        <Ligne
+          key={ligne.id}
+          campagneId={campagneId}
+          ligne={ligne}
+          peutModifier={peutModifier}
+          libelles={libelles}
+          surEdition={surEdition}
+        />
       ))}
     </div>
   );

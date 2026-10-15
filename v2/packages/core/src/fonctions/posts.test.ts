@@ -84,11 +84,12 @@ describe('validerPost', () => {
 });
 
 describe('corrigerSujetDePost', () => {
-  it('pose subject_origin operator et ramène un post validé en attente', async () => {
+  it('pose subject_origin operator sans toucher à l état de relecture : un post validé reste validé', async () => {
     const { ctx, appels } = contexte({ 'update linkedin_posts': { rowCount: 1 } });
     await corrigerSujetDePost(ctx, { postId: POST, sujet: '  l\'adoption du CRM  ' });
     expect(appels[0]?.sql).toContain("subject_origin = 'operator'");
-    expect(appels[0]?.sql).toMatch(/case when review_status = 'approved' then 'pending'/);
+    expect(appels[0]?.sql).not.toMatch(/review_status\s*=/);
+    expect(appels[0]?.sql).not.toMatch(/reviewed_(at|by)\s*=/);
     expect(appels[0]?.valeurs).toEqual(['org-1', POST, 'l\'adoption du CRM']);
   });
 
@@ -116,7 +117,9 @@ describe('rejeterPost et reouvrirPost', () => {
 
   it('rouvrir refuse un post dont la fenêtre est passée', async () => {
     const { ctx } = contexte({ 'select review_status': { rows: [{ review_status: 'rejected', subject: 'x', expired: true }] } });
-    await expect(reouvrirPost(ctx, { postId: POST })).rejects.toMatchObject({ details: { formErrors: [expect.stringMatching(/fenêtre/)] } });
+    await expect(reouvrirPost(ctx, { postId: POST })).rejects.toMatchObject({
+      details: { formErrors: [expect.stringMatching(/échéance.*passée.*plus en attente/)] },
+    });
   });
 });
 

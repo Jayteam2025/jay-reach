@@ -791,6 +791,7 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-posts-barre .n, .jr-post-attente .n, .jr-post-echeance { font-family: var(--font-mono), ui-monospace, monospace; }
 .jr-posts-barre .n { color: var(--jr-encre); font-weight: 600; }
 .jr-posts-barre .pousse { margin-left: auto; }
+.jr-posts-lot { display: flex; align-items: center; gap: 12px; }
 .jr-post { padding: 20px 24px; border-bottom: 1px solid var(--jr-filet); }
 .jr-post:last-child { border-bottom: 0; }
 .jr-post-entete { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
