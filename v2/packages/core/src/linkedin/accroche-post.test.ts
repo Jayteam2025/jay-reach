@@ -80,16 +80,29 @@ describe('MOTIF_SQL_VARIABLE_DE_POST', () => {
 });
 
 /**
+ * Le motif appliqué au CORPS du gabarit, extrait du fragment SQL réellement produit.
+ *
+ * On nomme la COLONNE, et non « le premier `~*` du fragment » : celui-ci en compare trois
+ * (corps, objet, et nom borné au canal email). Prendre le premier venu, c'est tenir pour acquis
+ * un ordre que rien ne fige — le jour où il change, le test comparerait le corps au motif d'une
+ * autre colonne sans que rien ne le signale. Le `throw` rend l'hypothèse vérifiée plutôt que
+ * supposée : si le fragment cesse de comparer le corps, le test tombe au lieu de se rabattre en
+ * silence sur le motif du voisin.
+ */
+const motifDuCorps = (sql: string): string => {
+  const trouve = /coalesce\(mt_ap\.body, ''\) ~\* '([^']+)'/.exec(sql);
+  if (trouve === null) throw new Error('le fragment ne compare plus le CORPS du gabarit à un motif');
+  return trouve[1]!;
+};
+
+/**
  * L'autre question : ce qu'il faut EXIGER de la fiche. Là, un repli dispense — la variable se
  * résout, le message part, et retenir la personne gèlerait indéfiniment un envoi correct.
  */
 describe('sqlCampagneEcritVariableDePost', () => {
   /** Ce que le motif de CETTE question reconnaît, lu comme une expression régulière. */
-  const ecrit = (corps: string, variable = 'post_date'): boolean => {
-    const sql = sqlCampagneEcritVariableDePost('$1::uuid', variable);
-    const motif = /~\* '([^']+)'/.exec(sql)?.[1] ?? '';
-    return new RegExp(motif, 'i').test(corps);
-  };
+  const ecrit = (corps: string, variable = 'post_date'): boolean =>
+    new RegExp(motifDuCorps(sqlCampagneEcritVariableDePost('$1::uuid', variable)), 'i').test(corps);
 
   it('une variable à repli n’est pas « écrite » : rien n’est exigé de la fiche', () => {
     expect(ecrit('{{post_date}}')).toBe(true);

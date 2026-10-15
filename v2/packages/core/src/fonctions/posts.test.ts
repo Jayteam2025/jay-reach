@@ -350,11 +350,18 @@ describe('listerPostsDeCampagne', () => {
    * ici, sans quoi il resterait vert le jour où elles divergent.
    */
   describe('les deux lectures du repli restent jumelles', () => {
-    /** Ce que la GARDE exige : le motif strict, extrait du SQL qu'elle produit. */
+    /**
+     * Ce que la GARDE exige : le motif strict, extrait du SQL qu'elle produit — et celui de la
+     * COLONNE que l'écran juge ici, le corps. Le fragment en compare trois (corps, objet, nom
+     * borné au canal email) : prendre le premier `~*` venu, c'est tenir pour acquis un ordre que
+     * rien ne fige, et comparer un jour l'écran au motif d'une autre colonne sans que rien ne le
+     * signale. Le `throw` rend l'hypothèse vérifiée plutôt que supposée.
+     */
     const garde = (corps: string): boolean => {
       const sql = sqlCampagneEcritVariableDePost('$1::uuid', 'post_date');
-      const motif = /~\* '([^']+)'/.exec(sql)?.[1] ?? '';
-      return new RegExp(motif, 'i').test(corps);
+      const trouve = /coalesce\(mt_ap\.body, ''\) ~\* '([^']+)'/.exec(sql);
+      if (trouve === null) throw new Error('le fragment ne compare plus le CORPS du gabarit à un motif');
+      return new RegExp(trouve[1]!, 'i').test(corps);
     };
 
     /** Ce que l'ÉCRAN montre : un morceau à compléter, sur une fiche sans date. */
