@@ -384,6 +384,39 @@ export interface RetenuesParPost {
 }
 
 /**
+ * Ce que l'écran a le DROIT d'affirmer.
+ *
+ * Le quantificateur du moteur, reporté sur l'affichage : la garde ne retient personne tant que la
+ * campagne ne nomme pas le post, et l'épargne de purge n'existe pas davantage. Sans cette
+ * condition, l'écran annonce des personnes bloquées et une date d'effacement qui ne valent pas
+ * pour cette campagne — l'opérateur passe son temps à valider des posts en croyant débloquer ce
+ * que rien ne bloque, et le jour où la rétention sera vraie il ne la lira plus (ce dépôt a déjà
+ * payé « une alerte fausse en éteint une vraie »).
+ *
+ * Pure, et ici plutôt que dans l'écran, pour vivre à côté du quantificateur qu'elle recopie.
+ */
+export function retenuesAAfficher(r: RetenuesParPost): {
+  /** La campagne nomme un post mais aucune de ses sources n'en produit : personne n'entrera. */
+  readonly sansSource: boolean;
+  readonly sansPost: number;
+  readonly postInexploitable: number;
+  readonly enAttenteDeValidation: number;
+  /** L'échéance d'une fiche ne se promet que si l'épargne de purge s'applique : même condition. */
+  readonly echeances: boolean;
+} {
+  if (!r.nommeUnPost) {
+    return { sansSource: false, sansPost: 0, postInexploitable: 0, enAttenteDeValidation: 0, echeances: false };
+  }
+  return {
+    sansSource: !r.aUneSourceDePost,
+    sansPost: r.sansPost,
+    postInexploitable: r.postInexploitable,
+    enAttenteDeValidation: r.enAttenteDeValidation,
+    echeances: true,
+  };
+}
+
+/**
  * Compte, par campagne, les personnes que la garde retient et dit pourquoi.
  *
  * La population comptée est volontairement LARGE : les personnes des sources de cette campagne

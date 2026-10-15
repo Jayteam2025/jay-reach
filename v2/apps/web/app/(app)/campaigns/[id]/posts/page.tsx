@@ -6,6 +6,7 @@ import {
   fuseauDeLOrganisation,
   hasMinRole,
   listerPostsDeCampagne,
+  retenuesAAfficher,
   type MorceauAccroche,
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
@@ -28,11 +29,9 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
   const maintenant = new Date();
   const jourMois = (d: Date) => d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', timeZone: fuseau });
 
-  // LA condition de tout ce que cet écran AFFIRME. La garde ne retient personne tant que la
-  // campagne ne nomme pas le post, et l'épargne de purge n'existe pas non plus : sans elle,
-  // l'écran annonçait des personnes bloquées et une date d'effacement qui ne valaient pas pour
-  // cette campagne — et l'opérateur passait son temps à valider des posts pour rien.
-  const nommeUnPost = retenues.nommeUnPost;
+  // Ce que cet écran a le droit d'AFFIRMER : la règle vit à côté du quantificateur qu'elle
+  // recopie (`retenuesAAfficher`, packages/core), elle n'est pas rejouée ici.
+  const dit = retenuesAAfficher(retenues);
 
   const lignes: LignePostEcran[] = posts.map((p) => {
     const echeance = echeanceDePost(p.expireLe, maintenant, fuseau);
@@ -55,8 +54,8 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
       etatLibelle: t(`etat.${p.etat}`),
       // Ni l'attente ni l'échéance ne valent sans accroche : sans elle personne n'est retenu, et
       // la purge d'ancienneté efface ces personnes bien avant la date de la fenêtre.
-      attente: nommeUnPost ? t('ligne.attente', { n: p.personnesEnAttente }) : null,
-      echeance: nommeUnPost ? t(`echeance.${echeance.cle}`, { date: jourMois(p.expireLe), jours: echeance.jours }) : null,
+      attente: dit.echeances ? t('ligne.attente', { n: p.personnesEnAttente }) : null,
+      echeance: dit.echeances ? t(`echeance.${echeance.cle}`, { date: jourMois(p.expireLe), jours: echeance.jours }) : null,
       tonEcheance: echeance.ton,
       etiquetteSujet: t('phrase.sujetEtiquette', { auteur: p.auteur ?? t('ligne.auteurInconnu') }),
       etiquetteAuteur: t('phrase.auteurEtiquette'),
@@ -68,12 +67,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
   // Ce que la garde retient, dit tel quel : une campagne qui retient du monde sans le dire est le
   // pire défaut de ce produit. Mais une campagne qui ANNONCE une rétention qui n'a pas lieu est le
   // défaut d'en face, et ce dépôt l'a déjà payé (« une alerte fausse en éteint une vraie »).
-  const retenuesDites = {
-    sansSource: nommeUnPost && !retenues.aUneSourceDePost,
-    sansPost: nommeUnPost ? retenues.sansPost : 0,
-    inexploitable: nommeUnPost ? retenues.postInexploitable : 0,
-  };
-  const aDire = retenuesDites.sansSource || retenuesDites.sansPost > 0 || retenuesDites.inexploitable > 0;
+  const aDire = dit.sansSource || dit.sansPost > 0 || dit.postInexploitable > 0;
 
   return (
     <>
@@ -90,9 +84,9 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
           <div className="jr-carte">
             <div className="jr-posts-retenues">
               <h3>{t('retenues.titre')}</h3>
-              {retenuesDites.sansSource && <p>{t('retenues.sansSource')}</p>}
-              {retenuesDites.sansPost > 0 && <p>{t('retenues.sansPost', { n: retenuesDites.sansPost })}</p>}
-              {retenuesDites.inexploitable > 0 && <p>{t('retenues.inexploitable', { n: retenuesDites.inexploitable })}</p>}
+              {dit.sansSource && <p>{t('retenues.sansSource')}</p>}
+              {dit.sansPost > 0 && <p>{t('retenues.sansPost', { n: dit.sansPost })}</p>}
+              {dit.postInexploitable > 0 && <p>{t('retenues.inexploitable', { n: dit.postInexploitable })}</p>}
             </div>
           </div>
         )}
@@ -114,10 +108,7 @@ export default async function CampagnePostsPage({ params }: { params: Promise<{ 
               // Le compte de personnes vient de la garde elle-même : c'est ce chiffre-là qui
               // retient, pas la somme des lignes (un contact peut dépendre de deux posts).
               resume: enAttente.length > 0 ? t('bar.posts', { n: enAttente.length }) : t('bar.rien'),
-              personnes:
-                nommeUnPost && retenues.enAttenteDeValidation > 0
-                  ? t('bar.personnes', { n: retenues.enAttenteDeValidation })
-                  : '',
+              personnes: dit.enAttenteDeValidation > 0 ? t('bar.personnes', { n: dit.enAttenteDeValidation }) : '',
               lotBloque: t('bar.lotBloque'),
               toutValider: validablesEnLot > 1 ? t('bar.toutValider', { n: validablesEnLot }) : null,
             }}
