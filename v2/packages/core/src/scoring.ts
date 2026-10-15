@@ -160,7 +160,7 @@ export function scoringMaxTokens(prospectCount: number): number {
  * Au-delà, un sujet est REFUSÉ (jamais tronqué) : une phrase coupée au milieu ne tient pas dans
  * « le post de {auteur} sur {sujet} ».
  */
-export const SUJET_POST_MAX_CARACTERES = 60;
+export const SUJET_POST_MAX_CARACTERES = 70;
 
 /** Sortie courte (un groupe nominal) ; `thinking` est désactivé, ce budget sert entièrement au sujet. */
 export const SUJET_POST_MAX_TOKENS = 128;
@@ -185,9 +185,9 @@ export const SUJET_POST_SYSTEM_PROMPT = [
   'Réponds par le sujet seul, sur une seule ligne.',
 ].join('\n');
 
-/** Le message utilisateur : le texte du post, délimité, sans balise `post` qui permettrait d'en sortir. */
+/** Le message utilisateur : le texte du post, délimité, sans chevron : aucune balise, imbriquée ou non, ne permet d'en sortir. */
 export function construireMessagePost(texte: string): string {
-  const donnee = texte.replace(/<\/?\s*post\s*>/gi, '').slice(0, 4000);
+  const donnee = texte.replace(/[<>]/g, ' ').slice(0, 4000);
   return `<post>\n${donnee}\n</post>`;
 }
 
@@ -224,7 +224,7 @@ export function nettoyerSujetPost(brut: string | null | undefined): string | nul
     .replace(/[\s"»“”.!?…:;,]+$/u, '')
     .trim();
   if (sujet === '' || sujet.length > SUJET_POST_MAX_CARACTERES) return null;
-  if (/^[-•–—>+\d]/u.test(sujet) || SUJET_INTERDIT.some((r) => r.test(sujet))) return null;
+  if (/^[-•–—>+]/u.test(sujet) || SUJET_INTERDIT.some((r) => r.test(sujet))) return null;
   // « Le », « L’adoption » -> minuscule ; « Salesforce », « Paris », « CRM » restent tels quels.
   const m = /^(\p{L}+)(['’](?=\p{Ll})|\s|$)/u.exec(sujet);
   const article = m !== null && DETERMINANTS.has((m[1] ?? '').toLowerCase()) && /^\p{Lu}/u.test(sujet);
