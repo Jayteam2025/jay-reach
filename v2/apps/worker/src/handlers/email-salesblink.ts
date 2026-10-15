@@ -15,6 +15,7 @@
  */
 import type { Pool } from 'pg';
 import {
+  envoiRetenuParUnPost,
   renderTemplate,
   deciderModeEnvoi,
   sortDErreur,
@@ -490,6 +491,16 @@ export async function envoyerEmailSalesBlink(
     // `{{champ}}` littéral envoyé (CLAUDE.md #2).
     await bloquerAction(pool, actionId, 'missing_variable', { missingVariables: manquantes });
     console.warn(`[email-salesblink] action ${actionId} bloquée : variable(s) manquante(s)`);
+    return;
+  }
+  // La garde d'accroche, rejouée ICI et pas seulement au tick : l'email est le seul canal dont
+  // le corps et l'objet sont rendus au moment de l'envoi, à partir du gabarit COURANT. Une
+  // accroche ajoutée à une campagne qui tourne déjà se retrouve donc dans des actions créées
+  // avant elle — et ce qui part nomme alors un post que personne n'a relu. Rien ne « manque »
+  // ici : l'adresse d'un post existe dès la création de sa fiche, d'où un motif à part.
+  if (await envoiRetenuParUnPost(pool, job.organizationId, ligne.campaign_id, ligne.signal_id)) {
+    await bloquerAction(pool, actionId, 'post_a_relire');
+    console.warn(`[email-salesblink] action ${actionId} bloquée : le message nomme un post qui n’est pas relu`);
     return;
   }
   // Une personne collectée sur LinkedIn apprend d'où vient la donnée dès le premier

@@ -15,10 +15,10 @@ export { lireValeursContact } from '../../packages/core/src/messages/valeurs-con
 export { renderTemplate, validateTemplateVariables } from '../../packages/core/src/messages/variables.js';
 // Tache 8 : la garde d'entree, la fenetre de decision, le gel de la depense.
 export { enqueueEnrollments, enqueueEnrichmentContactsConnus, ecarterSignauxTropAnciens, AGE_MAX_SIGNAL_JOURS } from '../../apps/worker/src/producer.js';
-export { enrollContact } from '../../apps/worker/src/handlers/sequence.js';
+export { enrollContact, tickDueEnrollments } from '../../apps/worker/src/handlers/sequence.js';
 export { enrichirContactConnu } from '../../apps/worker/src/handlers/enrichment-contact-connu.js';
 export { fenetreValidationPost, rejeterFichesPostExpirees } from '../../apps/worker/src/linkedin/posts-fiches.js';
-export { campagneNommeUnPost, compterRetenuesParPost, retenuesAAfficher } from '../../packages/core/src/linkedin/accroche-post.js';
+export { campagneNommeUnPost, compterRetenuesParPost, retenuesAAfficher, envoiRetenuParUnPost } from '../../packages/core/src/linkedin/accroche-post.js';
 export { ecrireReglage } from '../../packages/core/src/fonctions/plafonds.js';
 // L'objet d'un email se replie sur le NOM du gabarit : `apercuEnvoi` fait ce repli sur de vraies donnees.
 export { apercuEnvoi } from '../../packages/core/src/fonctions/file-du-jour.js';

@@ -226,8 +226,8 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
                  lp.posted_at desc nulls last, lp.id`,
       [ctx.organisationId, e.campagneId, e.etat ?? null],
     ),
-    ctx.ex.query<{ body: string | null }>(
-      `select mt.body
+    ctx.ex.query<{ body: string | null; subject: string | null; name: string | null; channel: string }>(
+      `select mt.body, mt.subject, mt.name, st.channel
          from sequence_steps st
          join message_templates mt on (mt.id = st.template_parent_id or mt.parent_id = st.template_parent_id)
         where st.campaign_id = $2 and mt.is_active and mt.organization_id = $1
@@ -237,7 +237,16 @@ export async function listerPostsDeCampagne(ctx: Contexte, entree: unknown): Pro
   ]);
   let phrase: string | null = null;
   for (const g of gabarits.rows) {
-    phrase = g.body === null ? null : phraseAvecVariableDePost(g.body);
+    // LES TROIS COLONNES, comme la garde, et dans l'ordre de ce que le prospect lit : le corps,
+    // l'objet, puis le nom — qui ne devient l'objet que pour un pas d'étape en email au sujet
+    // NUL (`subject ?? name`, `email-salesblink.ts`). Le corps seul laissait l'écran retomber
+    // sur sa phrase par défaut quand l'accroche vivait ailleurs : pas de morceau `manquant`,
+    // donc une ligne comptée dans « Tout valider », que `validerPost` refusait ensuite.
+    const nomServantDObjet = g.channel === 'email' && (g.subject ?? null) === null ? g.name ?? null : null;
+    for (const source of [g.body ?? null, g.subject ?? null, nomServantDObjet]) {
+      phrase = source === null ? null : phraseAvecVariableDePost(source);
+      if (phrase !== null) break;
+    }
     if (phrase !== null) break;
   }
   return posts.rows.map((p) => ({

@@ -83,10 +83,21 @@
 //      strict) — 31h rougit : « votre réaction du ␣m'a interpellé » part sans que rien ne le dise.
 //  48. posts.ts : retirer `sansRepliVide` de l'aperçu — 31i rougit : l'écran montre le trou au
 //      lieu d'un morceau manquant, et compte la ligne validable.
-//  49. accroche-post.ts : retirer `mt_ap.name` de `sqlGabaritPorteLeMotif` — 33, 33a, 33c, 33f et
-//      33g rougissent : une accroche cachée dans le NOM du gabarit (objet d'un email quand le
+//  49. accroche-post.ts : retirer `mt_ap.name` de `sqlGabaritPorteLeMotif` — 33, 33a, 33b, 33c,
+//      33f et 33g rougissent : une accroche cachée dans le NOM du gabarit (objet d'un email quand le
 //      sujet est vide) échappe à la garde, au gel, à l'épargne et à l'écran, et l'adresse réelle
 //      d'un post jamais relu part dans l'objet.
+//  50. accroche-post.ts : retirer la borne `st_ap.channel = 'email' and mt_ap.subject is null`
+//      autour de `mt_ap.name` — les deux 33i rougissent : un nom que personne ne lit (sujet posé,
+//      ou canal LinkedIn) gèlerait inscriptions et achats, et le nom d'un gabarit d'étape EST
+//      celui de la campagne.
+//  51. posts.ts : faire `listerPostsDeCampagne` ne lire que `mt.body` — 33h rougit : l'écran
+//      retombe sur sa phrase par défaut, sans morceau manquant, et compte la ligne validable
+//      pendant que `validerPost` la refuse.
+//  52. tick.ts : retirer la branche `postARelire` — 34a et 34b rougissent sur les deux canaux :
+//      une accroche ajoutée à une campagne qui tourne fait partir le post sans relecture.
+//  53. accroche-post.ts : faire rendre `false` à `envoiRetenuParUnPost` — 34a, 34b et 34e
+//      rougissent (et, côté Vitest, les deux contrôles de `email-salesblink.test.ts`).
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -107,6 +118,8 @@ import {
   enqueueEnrollments,
   enrichirContactConnu,
   enrollContact,
+  tickDueEnrollments,
+  envoiRetenuParUnPost,
   clePost,
   enregistrerEngageur,
   enregistrerFichePost,
@@ -998,8 +1011,12 @@ const ACCROCHE_DATE_REPLI_VIDE = 'Bonjour, votre réaction du {{post_date|}} m\'
  * fiche que le sujet (les deux autres se résolvent toutes seules).
  */
 const ACCROCHE_MIXTE = 'Bonjour, je vous ai vu réagir au post sur {{post_sujet}}, publié le {{post_date|12 octobre}} : {{post_url|https://www.linkedin.com/feed/}}.';
-/** La même, à ceci près que l'adresse n'a PAS de repli : le seul écart entre 32f et 32g. */
-const ACCROCHE_MIXTE_URL_STRICTE = 'Bonjour, je vous ai vu réagir au post sur {{post_sujet}}, publié le {{post_date|12 octobre}} : {{post_url}}.';
+/**
+ * La même, à ceci près que l'adresse n'a PAS de repli : le seul écart entre 32f et 32g. DÉRIVÉE,
+ * jamais recopiée — sans quoi un éditeur futur casserait l'appariement sans s'en apercevoir, et
+ * la paire cesserait de prouver que c'est le repli, et lui seul, qui change le verdict.
+ */
+const ACCROCHE_MIXTE_URL_STRICTE = ACCROCHE_MIXTE.replace('{{post_url|https://www.linkedin.com/feed/}}', '{{post_url}}');
 
 /**
  * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
@@ -2033,12 +2050,124 @@ async function accrocheDansLeNomDuGabarit() {
     refusNom !== null && /le sujet/.test(refusNom?.details?.formErrors?.[0] ?? ''),
     refusNom?.details?.formErrors?.[0] ?? 'aucun refus');
 
+  // L'ÉCRAN, sur le même gabarit : la phrase relue doit venir du NOM, pas de la phrase par
+  // défaut. Sans ça, aucun morceau `manquant`, la ligne entre dans « Tout valider », et
+  // `validerPost` la refuse — le symptôme revenu trois fois par un champ qu'un lecteur ignore.
+  const d = await monde();
+  await etapeAvecCorps(d, CORPS_MUET, { canal: 'email', nom: 'Votre réaction du {{post_date}}' });
+  const y = await engageurDUnPost(d, 84, { etat: 'pending', sujet: null, nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [y.fiche]);
+  const morceauxNom = decouperAccroche((await listerPostsDeCampagne(d.ctx, { campagneId: d.campagne })).find((l) => l.id === y.fiche)?.apercuAccroche ?? null) ?? [];
+  check('33h. l\'écran dérive la phrase du NOM, et y voit la date à reposer',
+    morceauxNom.some((x) => x.manquant === 'post_date') && morceauxNom.some((x) => x.texte === 'Votre réaction du '),
+    JSON.stringify(morceauxNom));
+
+  // LA BORNE. Le nom d'un gabarit d'étape EST le nom de la campagne, et `verserDansBibliotheque`
+  // réécrit celui de toute la lignée : lu sans condition, un nom de campagne porteur d'un jeton
+  // gèlerait inscriptions et achats sur tous les canaux, pour un texte que personne ne lit.
+  for (const [cas, opts] of [
+    ['un sujet posé : le nom ne part jamais', { canal: 'email', sujet: 'Un objet bien à lui' }],
+    ['un canal LinkedIn : le nom ne part jamais non plus', { canal: 'linkedin_message' }],
+  ]) {
+    const z = await monde();
+    await etapeAvecCorps(z, CORPS_MUET, { ...opts, nom: ACCROCHE_DANS_LE_NOM });
+    await engageurDUnPost(z, 85, { etat: 'pending' });
+    check(`33i. ${cas} : la campagne ne nomme aucun post`,
+      (await compterRetenuesParPost(pool, z.org, z.campagne)).nommeUnPost === false,
+      JSON.stringify(await compterRetenuesParPost(pool, z.org, z.campagne)));
+  }
+
   // L'ÉPARGNE, EN DERNIER : elle efface.
   const b = await engageurDUnPost(m, 81, { etat: 'pending' });
   await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [b.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
   await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
   check('33g. épargne : la personne survit tant que sa fiche attend',
     (await q(`select 1 from signals where id = $1`, [b.signal_id])).rowCount === 1);
+}
+
+/**
+ * La garde du côté de l'ENVOI.
+ *
+ * Le chemin d'usage le plus probable : une campagne qui tourne déjà, à laquelle on ajoute
+ * l'accroche après coup — exactement ce que les 31,1 % mesurés invitent à faire. Ses personnes
+ * sont inscrites depuis longtemps, l'adresse du post se résout, rien ne manque, et le message
+ * partirait en nommant un post que personne n'a relu. La garde d'entrée n'y peut rien : elle
+ * garde l'entrée.
+ */
+async function gardeALEnvoi() {
+  console.log('\n# la garde ne protège pas que l\'entrée : une accroche ajoutée après coup');
+  await demarrerBoss();
+  let n = 86;
+  // `letter` est traité à part : un garde-fou ANTÉRIEUR au lot le bloque plus tôt (voir 34d).
+  for (const canal of ['email', 'linkedin_message']) {
+    // Le post EN ATTENTE et le post RELU, même montage, pour que la différence soit lisible.
+    for (const relu of [false, true]) {
+      n += 1;
+      const m = await monde();
+      const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal });
+      const p = await engageurDUnPost(m, n, { etat: relu ? 'approved' : 'pending' });
+      if (canal === 'email') {
+        await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob${n}@exemple.invalid`]);
+        // Un expéditeur : sans lui le tick met l'inscription en pause AVANT d'insérer l'action,
+        // et le contrôle du post relu n'observerait rien.
+        await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp${n}@exemple.invalid`]);
+      }
+      // 1. La campagne ne nomme aucun post : la personne s'inscrit, comme avant ce lot.
+      await tourDInscription(m.org);
+      if (!relu) {
+        check(`34. [${canal}] inscrite tant que la campagne ne nomme aucun post`,
+          (await inscritsDe(m.org)).includes(p.contact_id), JSON.stringify(await inscritsDe(m.org)));
+      }
+
+      // 2. L'ACCROCHE EST AJOUTÉE à la campagne qui tourne — ce que les 31,1 % invitent à faire.
+      await q(`update message_templates set body = $2 where id = $1`, [gabarit, ACCROCHE_URL]);
+      await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+      await tickDueEnrollments(pool, new Date());
+      const a = (await q(`select status, block_reason from actions where organization_id = $1 order by created_at desc limit 1`, [m.org])).rows[0];
+      const insc = (await q(`select status, current_step from enrollments where organization_id = $1`, [m.org])).rows[0];
+      if (relu) {
+        check(`34c. [${canal}] le post RELU, la même action ne bloque pas`,
+          a !== undefined && a.block_reason !== 'post_a_relire', JSON.stringify(a));
+      } else {
+        check(`34a. [${canal}] le post en attente : l\'action part en file, bloquée, motif nommé`,
+          a?.status === 'blocked' && a?.block_reason === 'post_a_relire', JSON.stringify(a));
+        check(`34b. [${canal}] et l\'inscription reste vivante, sans avancer d\'étape`,
+          insc?.status === 'active' && insc?.current_step === 0, JSON.stringify(insc));
+      }
+    }
+  }
+
+  // LE COURRIER. `runGuards` tourne AVANT `composeTick` et exige une adresse postale vérifiée,
+  // que rien ne renseigne aujourd'hui (`postalVerified` n'est passé nulle part) : une étape
+  // courrier est donc déjà bloquée, pour un motif antérieur à ce lot. Rien ne part, mais la
+  // branche du post ne l'atteint pas — dit ici pour qu'un lecteur futur ne s'y trompe pas.
+  const l = await monde();
+  const gabaritL = await etapeAvecCorps(l, SANS_ACCROCHE, { canal: 'letter' });
+  const pl = await engageurDUnPost(l, 95, { etat: 'pending' });
+  await tourDInscription(l.org);
+  await q(`update message_templates set body = $2 where id = $1`, [gabaritL, ACCROCHE_URL]);
+  await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [l.org]);
+  await tickDueEnrollments(pool, new Date());
+  const al = (await q(`select status, block_reason from actions where organization_id = $1 order by created_at desc limit 1`, [l.org])).rows[0];
+  check('34d. [letter] rien ne part non plus, mais par un garde-fou antérieur (adresse postale)',
+    al?.status === 'blocked' && al?.block_reason !== null && pl.fiche !== undefined, JSON.stringify(al));
+
+  // LA DÉCISION ELLE-MÊME, lue sur Postgres : c'est elle que le tick et l'envoi email consomment.
+  const d = await monde();
+  await etapeAvecCorps(d, ACCROCHE_URL, { canal: 'email' });
+  const pd = await engageurDUnPost(d, 96, { etat: 'pending' });
+  check('34e. `envoiRetenuParUnPost` retient un envoi dont le post attend sa relecture',
+    (await envoiRetenuParUnPost(pool, d.org, d.campagne, pd.signal_id)) === true);
+  await validerPost(d.ctx, { postId: pd.fiche, campagneId: d.campagne });
+  check('34f. et le relâche dès qu\'il est relu',
+    (await envoiRetenuParUnPost(pool, d.org, d.campagne, pd.signal_id)) === false);
+  const muette = await monde();
+  await etapeAvecCorps(muette, SANS_ACCROCHE, { canal: 'email' });
+  const pm = await engageurDUnPost(muette, 97, { etat: 'pending' });
+  check('34g. une campagne qui ne nomme aucun post ne retient aucun envoi',
+    (await envoiRetenuParUnPost(pool, muette.org, muette.campagne, pm.signal_id)) === false);
+  check('34h. sans signal, elle ne retient rien : c\'est la variable manquante qui bloquera',
+    (await envoiRetenuParUnPost(pool, d.org, d.campagne, null)) === false);
 }
 
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
@@ -2099,7 +2228,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

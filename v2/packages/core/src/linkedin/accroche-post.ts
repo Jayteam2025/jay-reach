@@ -116,12 +116,18 @@ export const EXIGENCES_VARIABLE_DE_POST: readonly {
  *
  *  - `body` : le corps du message ;
  *  - `subject` : l'objet d'un email, rendu par le même `renderTemplate` ;
- *  - `name` : **l'objet d'un email quand le sujet est vide.** `subject ?? name`, à l'envoi
- *    (`email-salesblink.ts`) comme à l'aperçu de la file du jour (`file-du-jour.ts`). Le nom
- *    d'un gabarit n'est ni validé, ni normalisé, ni proposé à l'insertion : rien n'empêche d'y
- *    écrire une variable, et un gabarit nommé « Votre réaction à {{post_url}} », au sujet vide,
- *    envoyait l'adresse réelle d'un post que personne n'avait relu — sans garde d'entrée, sans
- *    gel d'achat, sans épargne, et avec un écran muet. C'est la propriété que ce lot promet.
+ *  - `name`, **mais seulement quand il devient l'objet** : un pas d'étape en email dont le sujet
+ *    est NUL. `subject ?? name`, à l'envoi (`email-salesblink.ts`) comme à l'aperçu de la file
+ *    du jour (`file-du-jour.ts`) — `??`, donc un sujet vide (`''`) ne se replie pas, seul un
+ *    sujet nul le fait. Le nom d'un gabarit n'est ni validé, ni normalisé, ni proposé à
+ *    l'insertion : rien n'empêche d'y écrire une variable, et un gabarit nommé « Votre réaction
+ *    à {{post_url}} », au sujet nul, envoyait l'adresse réelle d'un post que personne n'avait
+ *    relu — sans garde d'entrée, sans gel d'achat, sans épargne, et avec un écran muet.
+ *
+ * La BORNE compte autant que la lecture : le nom d'un gabarit d'étape est le nom de la campagne,
+ * et `verserDansBibliotheque` réécrit celui de toute la lignée. Lu sans condition, une campagne
+ * nommée avec un jeton gèlerait inscriptions et achats sur TOUS les canaux, pour un nom que
+ * personne ne lirait jamais.
  *
  * Les trois champs valent pour les DEUX questions : un nom qui écrit `{{post_sujet}}` doit
  * exiger un sujet de la fiche, sinon l'email part avec un objet vide.
@@ -139,7 +145,8 @@ function sqlGabaritPorteLeMotif(campagne: string, motif: string): string {
                and mt_ap.is_active
                and (coalesce(mt_ap.body, '') ~* '${motif}'
                  or coalesce(mt_ap.subject, '') ~* '${motif}'
-                 or coalesce(mt_ap.name, '') ~* '${motif}'))`;
+                 or (st_ap.channel = 'email' and mt_ap.subject is null
+                     and coalesce(mt_ap.name, '') ~* '${motif}')))`;
 }
 
 /**
@@ -378,6 +385,41 @@ export async function fichePostUtilisable(
     [signalId, organisationId, campagneId],
   );
   return res.rows[0]?.utilisable === true;
+}
+
+/**
+ * « Cet envoi nomme un post que personne n'a relu. »
+ *
+ * La garde d'entrée ne protège que l'ENTRÉE en séquence : elle décide qui s'inscrit, pas ce qui
+ * part. Or le chemin d'usage le plus probable est justement l'autre — une campagne qui tourne
+ * déjà, à laquelle on ajoute l'accroche après coup, ce que les 31,1 % mesurés invitent à faire.
+ * Ses personnes sont inscrites depuis longtemps ; à l'étape suivante, `{{post_url}}` se résout
+ * (l'adresse existe dès la création de la fiche), rien ne manque, et le message part en nommant
+ * un post que personne n'a relu. C'est exactement ce que ce lot promet d'empêcher.
+ *
+ * Même quantificateur que `sqlFichePostUtilisable`, et le même signal : celui que porte
+ * l'inscription (`enrollments.signal_id`), donc celui que le chemin d'envoi relit pour résoudre
+ * les variables.
+ *
+ * Sans signal (`signalId` nul) : faux, et ce n'est pas un trou. Une inscription sans signal n'a
+ * pas de fiche, donc `{{post_url}}` ne se résout pas, donc l'envoi est déjà bloqué par le
+ * mécanisme ordinaire — une variable non résolue bloque l'envoi. Rendre vrai ici doublerait le
+ * blocage avec un motif moins juste.
+ */
+export async function envoiRetenuParUnPost(
+  ex: Executeur,
+  organisationId: string,
+  campagneId: string,
+  signalId: string | null | undefined,
+): Promise<boolean> {
+  if (!signalId) return false;
+  const res = await ex.query<{ retenu: boolean }>(
+    `select (${sqlCampagneNommeUnPost('$3::uuid')}
+              and not ${sqlFichePostUtilisable('$3::uuid', 's')}) as retenu /* jr:envoi_retenu_par_un_post */
+       from signals s where s.id = $1 and s.organization_id = $2`,
+    [signalId, organisationId, campagneId],
+  );
+  return res.rows[0]?.retenu === true;
 }
 
 /** Lecture autoritaire de `sqlAchatRetenuParUnPost`, pour UN contact précis. */

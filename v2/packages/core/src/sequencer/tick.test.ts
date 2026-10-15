@@ -81,6 +81,23 @@ describe('composeTick', () => {
     expect(r.nextActionAtMs).toBeNull();
   });
 
+  it('post non relu → bloqué post_a_relire, pas d’arrêt : il suffit de relire le post', () => {
+    const r = composeTick({ ...base, postARelire: true });
+    expect(r.action?.status).toBe('blocked');
+    // Un motif à part, et pas `missing_variable` : l'adresse d'un post existe dès la création de
+    // sa fiche, donc rien ne manque. Dire « post_url manquante » enverrait chercher ce qui est là.
+    expect(r.action?.blockReason).toBe('post_a_relire');
+    expect(r.dispatch).toBe(false);
+    expect(r.nextStep).toBe(0); // n'avance pas
+    expect(r.nextStatus).toBe('active');
+    expect(r.nextActionAtMs).toBeNull();
+  });
+
+  it('une variable réellement vide se dit AVANT le post : elle est plus fondamentale', () => {
+    const r = composeTick({ ...base, postARelire: true, unresolvedVariables: ['prenom'] });
+    expect(r.action?.blockReason).toBe('missing_variable');
+  });
+
   it('variante de langue absente → bloqué missing_locale', () => {
     const r = composeTick({ ...base, missingLocale: true });
     expect(r.action?.blockReason).toBe('missing_locale');

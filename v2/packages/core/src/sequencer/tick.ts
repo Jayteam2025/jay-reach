@@ -45,6 +45,19 @@ export interface ComposeTickInput {
    * famille de templates → action bloquée `missing_locale` (spec §84-88).
    */
   readonly missingLocale?: boolean;
+  /**
+   * Le message nomme un post que personne n'a relu → action bloquée
+   * `post_a_relire`. Même effet qu'une variable non résolue, pour une raison
+   * voisine : la valeur EXISTE (l'adresse d'un post est renseignée dès la
+   * création de sa fiche), mais elle n'a pas le droit de partir — « on
+   * n'inscrit personne, et on ne dépense rien, sur un post qu'un humain n'a pas
+   * relu » ne vaudrait rien si l'envoi, lui, passait.
+   *
+   * Un motif DISTINCT de `missing_variable`, et pas un ajout à
+   * `unresolvedVariables` : dire « post_url manquante » d'une adresse qui est
+   * là enverrait l'opérateur chercher ce qui ne manque pas.
+   */
+  readonly postARelire?: boolean;
 }
 
 export interface EmittedAction {
@@ -128,6 +141,19 @@ export function composeTick(input: ComposeTickInput): ComposeTickResult {
   if (input.unresolvedVariables && input.unresolvedVariables.length > 0) {
     return {
       action: { ...base, status: 'blocked', blockReason: 'missing_variable' },
+      nextStatus: 'active',
+      nextStep: currentStep,
+      nextActionAtMs: null,
+      stopReason: null,
+      dispatch: false,
+    };
+  }
+
+  // Le message nomme un post qu'aucun humain n'a relu → bloqué, on N'AVANCE PAS.
+  // Après `unresolvedVariables` : un champ réellement vide se dit d'abord, c'est plus fondamental.
+  if (input.postARelire) {
+    return {
+      action: { ...base, status: 'blocked', blockReason: 'post_a_relire' },
       nextStatus: 'active',
       nextStep: currentStep,
       nextActionAtMs: null,

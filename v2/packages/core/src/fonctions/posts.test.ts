@@ -268,7 +268,7 @@ describe('listerPostsDeCampagne', () => {
   it('compose l accroche à partir du gabarit en vigueur, auteur ET sujet laissés en place', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour {{prenom}}. Je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}. À bientôt.' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour {{prenom}}. Je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}. À bientôt.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     // L'auteur reste un jeton : c'est un champ que l'opérateur écrit DANS la phrase. Résolu, il
@@ -286,7 +286,7 @@ describe('listerPostsDeCampagne', () => {
   it('prend la phrase qui nomme l AUTEUR même sans sujet : la campagne n écrit que lui', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour. Vu votre réaction au post de {{post_auteur}}. À bientôt.' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour. Vu votre réaction au post de {{post_auteur}}. À bientôt.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
@@ -299,7 +299,7 @@ describe('listerPostsDeCampagne', () => {
   it('une accroche qui ne cite que l adresse ne rend AUCUN champ à écrire', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour. Vu votre réaction à {{post_url}}. À bientôt.' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour. Vu votre réaction à {{post_url}}. À bientôt.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
@@ -314,7 +314,7 @@ describe('listerPostsDeCampagne', () => {
   it('rend un repli réel, et ne laisse rien à compléter', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour. Votre réaction du {{post_date|12 octobre}} nous a marqués.' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour. Votre réaction du {{post_date|12 octobre}} nous a marqués.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
@@ -329,7 +329,7 @@ describe('listerPostsDeCampagne', () => {
   it('lit un repli VIDE comme une absence de repli : le morceau manquant revient', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour. Votre réaction du {{post_date|}} nous a marqués.' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour. Votre réaction du {{post_date|}} nous a marqués.' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
@@ -361,7 +361,7 @@ describe('listerPostsDeCampagne', () => {
     const ecran = async (corps: string): Promise<boolean> => {
       const { ctx } = contexte({
         'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
-        'from sequence_steps': { rows: [{ body: corps }] },
+        'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: corps }] },
       });
       const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
       return (decouperAccroche(ligne?.apercuAccroche ?? null) ?? []).some(
@@ -381,10 +381,48 @@ describe('listerPostsDeCampagne', () => {
     });
   });
 
+  /**
+   * L'accroche peut vivre ailleurs que dans le corps : l'objet d'un email, et son NOM quand le
+   * sujet est nul. L'écran doit la chercher aux trois endroits, sinon il retombe sur sa phrase
+   * par défaut — donc aucun morceau `manquant`, donc une ligne comptée dans « Tout valider », que
+   * `validerPost` refuse. Même symptôme que celui du jeton brut, par un champ non regardé.
+   */
+  it('dérive la phrase de l objet, et du NOM quand il sert d objet', async () => {
+    for (const g of [
+      { body: 'Bonjour.', subject: 'Votre réaction du {{post_date}}', name: 'Modele', channel: 'email' },
+      { body: 'Bonjour.', subject: null, name: 'Votre réaction du {{post_date}}', channel: 'email' },
+    ]) {
+      const { ctx } = contexte({
+        'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
+        'from sequence_steps': { rows: [g] },
+      });
+      const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+      expect(decouperAccroche(ligne?.apercuAccroche ?? null)).toEqual([
+        { texte: 'Votre réaction du ' },
+        { manquant: 'post_date' },
+      ]);
+    }
+  });
+
+  /** Et seulement quand il sert d'objet : le nom d'un gabarit d'étape EST le nom de la campagne. */
+  it('ne lit PAS le nom quand il ne part jamais : sujet posé, ou canal non email', async () => {
+    for (const g of [
+      { body: 'Bonjour.', subject: 'Un objet bien à lui', name: 'Votre réaction du {{post_date}}', channel: 'email' },
+      { body: 'Bonjour.', subject: null, name: 'Votre réaction du {{post_date}}', channel: 'linkedin_message' },
+    ]) {
+      const { ctx } = contexte({
+        'from linkedin_posts lp': { rows: [{ ...brut, posted_at: null }] },
+        'from sequence_steps': { rows: [g] },
+      });
+      const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
+      expect(ligne?.apercuAccroche).toBeNull();
+    }
+  });
+
   it('rend null quand aucune étape ne nomme le post', async () => {
     const { ctx } = contexte({
       'from linkedin_posts lp': { rows: [brut] },
-      'from sequence_steps': { rows: [{ body: 'Bonjour {{prenom}}' }] },
+      'from sequence_steps': { rows: [{ subject: null, name: 'Modele', channel: 'email', body: 'Bonjour {{prenom}}' }] },
     });
     const [ligne] = await listerPostsDeCampagne(ctx, { campagneId: CAMPAGNE });
     expect(ligne?.apercuAccroche).toBeNull();

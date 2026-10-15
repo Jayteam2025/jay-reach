@@ -167,6 +167,10 @@ const POSE_ECHEANCE = /update enrollments\s+set next_action_at = \$2\s+where id 
 // Rang de l'etape qui vient de partir (`rangDeLEtapeDeLAction`) : `cloreDepartReel` le compare
 // a `current_step` pour distinguer un envoi normal d'un rejeu apres pause (issue #160).
 const RANG_ETAPE_ACTION = /jr:rang_etape_action/i;
+// La garde d'accroche, rejouée à l'envoi : l'email est le seul canal dont le corps et l'objet
+// sont rendus ICI, donc le seul où une accroche ajoutée après la création de l'action se
+// retrouve dans ce qui part.
+const POST_A_RELIRE = /jr:envoi_retenu_par_un_post/i;
 
 /** Gestionnaires par defaut du chemin heureux, partages par plusieurs tests. */
 function gestionnairesBase(): Gestionnaire[] {
@@ -280,6 +284,47 @@ describe('envoyerEmailSalesBlink', () => {
     // Aucun appel SalesBlink ne doit avoir eu lieu : bloqué avant tout envoi.
     expect(client.creerListe).not.toHaveBeenCalled();
     expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
+  it('le message nomme un post que personne n’a relu : action bloquée, aucun envoi', async () => {
+    // La valeur ne MANQUE pas — l'adresse d'un post existe dès la création de sa fiche — donc le
+    // blocage ordinaire `missing_variable` ne se déclenche pas. C'est le chemin d'usage le plus
+    // probable : une campagne qui tourne, à laquelle on ajoute l'accroche après coup.
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        // Une inscription NÉE d'un signal : sans lui il n'y a pas de fiche, donc pas de post à
+        // relire, et c'est le blocage ordinaire de variable manquante qui s'applique.
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ signal_id: 'signal-1' })]) },
+        { motif: POST_A_RELIRE, repondre: () => ligne([{ retenu: true }]) },
+        { motif: UPDATE_BLOQUE, repondre: () => ligne([]) },
+      ),
+    );
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    const blocage = appels.find((a) => UPDATE_BLOQUE.test(a.sql));
+    expect(blocage?.values[1]).toBe('post_a_relire');
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+    expect(client.creerListe).not.toHaveBeenCalled();
+  });
+
+  it('le post relu, l’envoi reprend son cours', async () => {
+    const { pool, appels } = creerPoolFactice(
+      avecBase(
+        { motif: INSCRIPTION, repondre: () => ligne([ligneInscription({ signal_id: 'signal-1' })]) },
+        { motif: POST_A_RELIRE, repondre: () => ligne([{ retenu: false }]) },
+        { motif: BINDING_SELECT, repondre: () => ligne([]) },
+        { motif: BINDING_INSERT, repondre: () => ligne([{ sequence_id: 'sequence-1', list_id: 'liste-1' }]) },
+        { motif: CAMPAGNE_NOM, repondre: () => ligne([{ name: 'Campagne Test' }]) },
+        { motif: ETAPE_POSITION, repondre: () => ligne([{ rang: 0 }]) },
+      ),
+    );
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    expect(appels.find((a) => UPDATE_BLOQUE.test(a.sql))).toBeUndefined();
+    expect(appels.some((a) => POST_A_RELIRE.test(a.sql))).toBe(true);
   });
 
   it('inscription replied/stopped/bounced (rejeu/course) : action ignorée sans aucun appel client (C1)', async () => {

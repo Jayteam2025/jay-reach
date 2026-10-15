@@ -13,6 +13,7 @@ import type { Pool } from 'pg';
 import {
   actionIdempotencyKey,
   campagneNommeUnPost,
+  envoiRetenuParUnPost,
   composeTick,
   fichePostUtilisable,
   ecrireEvenement,
@@ -1161,6 +1162,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);
+    // La garde d'accroche, du côté de l'ENVOI. Elle vit ici, avec les autres conditions
+    // d'éligibilité de l'action (suppression, expéditeur), et pas dans le rendu : un post non
+    // relu ne rend rien de vide, il interdit seulement de s'en servir. Posée au tick, elle couvre
+    // les TROIS canaux d'un coup — l'email rejoue le contrôle à l'envoi, parce que lui seul rend
+    // son corps plus tard et peut donc voir une accroche ajoutée après la création de l'action.
+    const postARelire = step ? await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_id) : false;
 
     // Garde-fous d'envoi (T18). Interrogés AVANT `composeTick` : un report ne
     // doit pas faire avancer l'inscription, alors que composer l'avance.
@@ -1258,6 +1265,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       sendable,
       unresolvedVariables,
       missingLocale,
+      postARelire,
     });
 
     // Attribution de l'expéditeur (docs/04), UNIQUEMENT quand un envoi va vraiment
