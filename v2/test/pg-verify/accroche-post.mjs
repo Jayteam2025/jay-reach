@@ -710,6 +710,9 @@ async function deuxCheminsDeRendu() {
 
 const ACCROCHE = 'Bonjour, je vous ai vu réagir au post de {{post_auteur}} sur {{post_sujet}}.';
 const SANS_ACCROCHE = 'Bonjour, parlons prospection.';
+/** Accroches qui ne citent qu'UNE variable de post : la garde ne doit exiger que celle-là. */
+const ACCROCHE_URL = 'Bonjour, je vous ai vu réagir à ce post : {{post_url}}.';
+const ACCROCHE_DATE = 'Bonjour, votre réaction du {{post_date}} m\'a interpellé.';
 
 /**
  * Une étape de séquence et son gabarit : c'est le CORPS du gabarit qui dit si la campagne nomme
@@ -869,6 +872,25 @@ async function gardeDEntree() {
   await q(`update signals set linkedin_post_id = $2 where id = $1`, [local.signal_id, ficheEtrangere.id]);
   check('17j. une fiche validée d\'une autre organisation ne fait entrer personne',
     (await enrollContact(pool, { organizationId: x.org, campaignId: x.campagne, contactId: local.contact_id, signalId: local.signal_id })) === null);
+
+  // La garde exige les SEULES variables que la campagne écrit. Une campagne qui ne cite que
+  // l'adresse du post n'a besoin de rien d'autre : l'URL existe dès la création de la fiche.
+  // Exiger l'auteur et le sujet ici retiendrait ses personnes sans aucune raison.
+  const y = await monde();
+  await etapeAvecCorps(y, ACCROCHE_URL);
+  const parLUrl = await engageurDUnPost(y, 46, { etat: 'approved', sujet: null, nomAffiche: null });
+  check('17k. une campagne qui ne cite que {{post_url}} inscrit sans auteur affiché ni sujet',
+    typeof (await enrollContact(pool, { organizationId: y.org, campaignId: y.campagne, contactId: parLUrl.contact_id, signalId: parLUrl.signal_id })) === 'string');
+
+  // Et symétriquement : celle qui cite la date exige la date, pas le sujet.
+  const z = await monde();
+  await etapeAvecCorps(z, ACCROCHE_DATE);
+  const parLaDate = await engageurDUnPost(z, 47, { etat: 'approved', sujet: null, nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null where id = $1`, [parLaDate.fiche]);
+  const jobZ = { organizationId: z.org, campaignId: z.campagne, contactId: parLaDate.contact_id, signalId: parLaDate.signal_id };
+  check('17l. une campagne qui cite {{post_date}} est retenue tant que la fiche n\'a pas de date', (await enrollContact(pool, jobZ)) === null);
+  await q(`update linkedin_posts set posted_at = now() - interval '2 days' where id = $1`, [parLaDate.fiche]);
+  check('17m. et elle entre dès que la date est là, sans exiger ni auteur ni sujet', typeof (await enrollContact(pool, jobZ)) === 'string');
 }
 
 async function campagneSansAccrocheNonGelee() {
@@ -927,6 +949,42 @@ async function epargneReelle() {
   await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
   const fin = await vivants();
   check('20c. `expires_at` passé, la personne disparaît', fin.length === 0, JSON.stringify(fin));
+
+  // L'épargne ne vaut que si QUELQU'UN attend la validation de ce post : une campagne qui nomme
+  // le post, reliée à la source d'où il vient. Sans cela, on garderait plus longtemps le nom et
+  // l'intitulé de personnes que personne n'attend — le coût de la fenêtre sans son bénéfice.
+  const sans = await monde();
+  await etapeAvecCorps(sans, SANS_ACCROCHE);
+  const delaissee = await engageurDUnPost(sans, 48, { etat: 'pending' });
+  await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [delaissee.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  const resteDelaissee = async () => (await q(`select 1 from signals where id = $1`, [delaissee.signal_id])).rowCount;
+  check('20d. aucune campagne ne nomme le post : la personne est effacée à l\'échéance ordinaire', (await resteDelaissee()) === 0);
+
+  // La même situation, mais une campagne qui nomme le post est reliée à la source : épargnée.
+  const avecQui = await monde();
+  await etapeAvecCorps(avecQui, SANS_ACCROCHE);
+  const attendue = await engageurDUnPost(avecQui, 49, { etat: 'pending' });
+  await q(`update signals set occurred_at = now() - make_interval(days => $2) where id = $1`, [attendue.signal_id, AGE_MAX_SIGNAL_JOURS + 2]);
+  const campagneQuiNomme = (
+    await q(
+      `insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Avec accroche', 'active', $2::jsonb) returning id`,
+      [avecQui.org, JSON.stringify({ personas: [avecQui.persona] })],
+    )
+  ).rows[0].id;
+  await q(`insert into campaign_sources (campaign_id, source_id) values ($1, $2)`, [campagneQuiNomme, attendue.source]);
+  await etapeAvecCorps({ ...avecQui, campagne: campagneQuiNomme }, ACCROCHE);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('20e. une campagne qui nomme le post, reliée à sa source, l\'épargne', (await q(`select 1 from signals where id = $1`, [attendue.signal_id])).rowCount === 1);
+
+  // Et elle l'épargne même en PAUSE : mettre sa campagne en pause une semaine ne doit pas faire
+  // effacer les personnes dont on allait valider le post. C'est l'inverse du quantificateur du
+  // gel de la dépense (contrôle 21g), et pour la raison inverse : ici, l'erreur coûteuse est
+  // d'effacer à tort. L'épargne reste bornée par `expires_at`.
+  await q(`update campaigns set status = 'paused' where id = $1`, [campagneQuiNomme]);
+  await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
+  check('20f. la campagne qui nomme le post est en pause : la personne est épargnée quand même',
+    (await q(`select 1 from signals where id = $1`, [attendue.signal_id])).rowCount === 1);
 }
 
 async function gelDeLaDepense() {

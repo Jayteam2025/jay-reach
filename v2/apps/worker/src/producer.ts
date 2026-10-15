@@ -20,7 +20,7 @@ import {
   normaliserPlafond,
   sqlAchatRetenuParUnPost,
   sqlCampagneNommeUnPost,
-  sqlFichePostEnAttente,
+  sqlEpargneParUnPostARelire,
   sqlFichePostUtilisable,
   placesRestantes,
   plafondDuJour,
@@ -189,13 +189,13 @@ export async function ecarterSignauxTropAnciens(
     `select id, organization_id from signals
       where ${sqlEstSignalDePersonne('signals')} and status = 'new' and score is null
         and occurred_at < now() - make_interval(days => $1)
-        -- Le post qui l'a fait réagir attend encore sa relecture : l'effacer maintenant rendrait
-        -- la validation inutile, puisqu'elle arriverait sur une personne qui n'existe plus. Même
+        -- Une campagne attend la relecture du post qui l'a fait réagir : l'effacer maintenant
+        -- rendrait la validation inutile, elle arriverait sur une personne disparue. Même
         -- épargne que pour les qualifiées ci-dessous, et elle compte ici aussi : une personne
         -- collectée sur un post reste nouvelle tant que le scoring ne l'a pas prise (plafond du
         -- jour, panne), et la fenêtre de décision est tenue de dépasser le délai d'ancienneté
         -- (schemaEcrireReglage le refuse autrement, fenetreValidationPost le dit sinon).
-        and not ${sqlFichePostEnAttente('signals')}`,
+        and not ${sqlEpargneParUnPostARelire('signals')}`,
     [maxJours],
   );
   for (const p of personnes.rows) await ecarterSignalDePersonne(pool, p.organization_id, p.id, { juge: false });
@@ -203,13 +203,17 @@ export async function ecarterSignauxTropAnciens(
     `select s.id, s.organization_id from signals s
       where ${sqlEstSignalDePersonne('s')} and s.status = 'qualified'
         and s.occurred_at < now() - make_interval(days => $1)
-        -- CINQUIÈME ÉPARGNE, et la seule qui ne porte pas sur le contact : le post qui a fait
-        -- réagir cette personne attend sa relecture. Elle a été collectée le jour où le post a
-        -- été découvert, et la garde d'entrée refuse de l'inscrire tant qu'un humain n'a pas vu
-        -- le post : sans cette épargne, la purge l'effacerait AVANT la fin de la fenêtre, et
-        -- valider le post n'inscrirait plus personne. La fenêtre a un terme (expires_at), que
-        -- rejeterFichesPostExpirees fait respecter : l'épargne n'est jamais indéfinie.
-        and not ${sqlFichePostEnAttente('s')}
+        -- CINQUIÈME ÉPARGNE, et la seule qui ne porte pas sur le contact : QUELQU'UN attend la
+        -- relecture du post qui a fait réagir cette personne — une campagne reliée à la source
+        -- d'où ce post vient le nomme. Elle a été collectée le jour où le post a été découvert,
+        -- et la garde d'entrée refuse de l'inscrire tant qu'un humain n'a pas vu le post : sans
+        -- cette épargne, la purge l'effacerait AVANT la fin de la fenêtre, et valider le post
+        -- n'inscrirait plus personne.
+        -- La condition de campagne compte autant que celle sur la fiche : sans elle, on
+        -- garderait plus longtemps le nom et l'intitulé de personnes que PERSONNE n'attend.
+        -- La fenêtre a un terme (expires_at), que rejeterFichesPostExpirees fait respecter :
+        -- l'épargne n'est jamais indéfinie.
+        and not ${sqlEpargneParUnPostARelire('s')}
         and not exists (
           select 1 from contacts ct
            where ct.source_signal_id = s.id
@@ -800,7 +804,7 @@ export async function enqueueEnrollments(
        -- Le signal lu est s, celui que l'inscription portera (signal_id ci-dessous), donc celui
        -- que le chemin d'ENVOI relira : garde et envoi ne peuvent pas être en désaccord sur le
        -- post nommé. Contrôle autoritaire refait dans enrollContact.
-        and (not ${sqlCampagneNommeUnPost('c.id')} or ${sqlFichePostUtilisable('s')})
+        and (not ${sqlCampagneNommeUnPost('c.id')} or ${sqlFichePostUtilisable('c.id', 's')})
        -- Fuseau de l'organisation de CETTE campagne (revue F5, point 1, tour de
        -- correction 2), pour le pré-filtre ci-dessous : cette requête mélange
        -- potentiellement plusieurs organisations en un seul passage, contrairement

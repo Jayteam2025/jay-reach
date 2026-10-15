@@ -109,10 +109,13 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
   // `enrollments.signal_id` : exactement celui que le chemin d'envoi relira pour résoudre les
   // variables de post. Sans signal, aucune accroche n'est possible, donc aucune inscription.
   //
+  // La campagne est passée parce que la garde n'exige QUE les variables de post qu'elle écrit :
+  // une campagne qui ne cite que `{{post_url}}` entre dès la validation du post.
+  //
   // AVANT le plafond du jour, délibérément : une personne retenue ne doit pas consommer une
   // place d'entrée que la campagne donnerait à quelqu'un d'envoyable.
   if (await campagneNommeUnPost(pool, job.campaignId)) {
-    if (!(await fichePostUtilisable(pool, job.organizationId, job.signalId))) {
+    if (!(await fichePostUtilisable(pool, job.organizationId, job.campaignId, job.signalId))) {
       console.warn(
         `[enroll] campagne ${job.campaignId} : le post du contact ${job.contactId} n'est pas validé (ou sa fiche est incomplète), inscription retenue`,
       );

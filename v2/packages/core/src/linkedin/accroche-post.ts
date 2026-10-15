@@ -24,87 +24,127 @@ import { VARIABLES_DE_POST } from '../messages/variables.js';
 import { TYPES_SOURCES_DE_POST } from '../fonctions/sources.js';
 
 /**
- * Le motif Postgres qui reconnaît un jeton de variable de post dans un corps de message.
+ * Le motif Postgres qui reconnaît, dans un corps de message, un jeton parmi `variables`.
  *
- * Dérivé de `VARIABLES_DE_POST`, jamais recopié : le jour où une cinquième variable de post
- * existe, la garde la connaît sans qu'on y pense. Même forme que `TOKEN_RE`
- * (`messages/variables.ts`) — espaces tolérés autour du nom, valeur de repli facultative après
- * `|`, qui ne peut pas contenir d'accolade fermante.
+ * Même forme que `TOKEN_RE` (`messages/variables.ts`) — espaces tolérés autour du nom, valeur de
+ * repli facultative après `|`, qui ne peut pas contenir d'accolade fermante. Les noms de
+ * variables sont des identifiants (`[a-z_]`), donc rien à échapper dans l'alternative.
+ */
+function motifSqlDesVariables(variables: readonly string[]): string {
+  return `\\{\\{\\s*(${variables.join('|')})\\s*(\\|[^}]*)?\\}\\}`;
+}
+
+/**
+ * Le motif des QUATRE variables de post, dérivé de `VARIABLES_DE_POST` et jamais recopié : le
+ * jour où une cinquième existe, la garde la connaît sans qu'on y pense.
  *
  * Comparé en insensible à la casse (`~*`) par les fragments ci-dessous : l'enregistrement
  * canonise bien `{{POST_AUTEUR}}` en minuscules (`normalizeVariableSyntax`), mais une ligne
  * écrite avant cette canonisation, ou par une importation, doit compter quand même — se tromper
  * ici laisserait partir une accroche sans relecture.
  */
-export const MOTIF_SQL_VARIABLE_DE_POST = `\\{\\{\\s*(${[...VARIABLES_DE_POST].join('|')})\\s*(\\|[^}]*)?\\}\\}`;
+export const MOTIF_SQL_VARIABLE_DE_POST = motifSqlDesVariables([...VARIABLES_DE_POST]);
 
 /**
- * « Au moins une étape de cette campagne nomme le post. »
+ * Ce que CHAQUE variable de post exige de la fiche pour se résoudre — la condition SQL miroir de
+ * ce que `construireValeursContact` lit (`messages/valeurs-contact.ts`).
+ *
+ * C'est le cœur de la garde : elle n'exige que les variables réellement écrites par la campagne.
+ * Une campagne qui ne cite que `{{post_url}}` part dès la validation du post, puisque l'adresse
+ * existe dès la création de la fiche ; exiger d'elle un auteur affiché et un sujet serait une
+ * rétention silencieuse, exactement ce que cette garde existe pour éviter.
+ *
+ * `post_auteur` lit `author_display_name` et JAMAIS `author_name` : en mode créateur,
+ * `author_name` peut valoir un identifiant technique (« uptoo-france »), que le nom affiché
+ * laisse délibérément vide pour qu'aucune accroche illisible ne parte. Tester `author_name`
+ * ferait entrer une personne dont le message dirait « le post de uptoo-france sur … ».
+ *
+ * La liste doit couvrir `VARIABLES_DE_POST` en entier : `accroche-post.test.ts` le vérifie, car
+ * une variable sans exigence serait gardée (la campagne « nomme le post ») sans jamais être
+ * vérifiée, et fabriquerait une action bloquée à l'envoi.
+ */
+export const EXIGENCES_VARIABLE_DE_POST: readonly {
+  readonly variable: string;
+  /** Condition SQL sur la fiche, dont l'alias est passé en paramètre. */
+  readonly colonneRenseignee: (fiche: string) => string;
+}[] = [
+  { variable: 'post_auteur', colonneRenseignee: (f) => `coalesce(btrim(${f}.author_display_name), '') <> ''` },
+  { variable: 'post_sujet', colonneRenseignee: (f) => `coalesce(btrim(${f}.subject), '') <> ''` },
+  { variable: 'post_url', colonneRenseignee: (f) => `coalesce(btrim(${f}.url), '') <> ''` },
+  { variable: 'post_date', colonneRenseignee: (f) => `${f}.posted_at is not null` },
+];
+
+/**
+ * « Une étape en vigueur de cette campagne porte ce motif. »
  *
  * Le sujet compte autant que le corps : l'objet d'un email est rendu par le même
  * `renderTemplate` (`email-salesblink.ts`). Seules les versions EN VIGUEUR (`is_active`) sont
  * lues, parce que ce sont les seules que `resolveTemplate` choisit : une variable restée dans
  * une version désactivée ne part jamais, et retenir ses personnes serait du gel sans cause.
- *
- * @param campagne expression SQL qui donne l'id de la campagne (`c.id`)
  */
-export function sqlCampagneNommeUnPost(campagne: string): string {
+function sqlGabaritPorteLeMotif(campagne: string, motif: string): string {
   return `exists (
             select 1 from public.sequence_steps st_ap
               join public.message_templates mt_ap
                 on (mt_ap.id = st_ap.template_parent_id or mt_ap.parent_id = st_ap.template_parent_id)
              where st_ap.campaign_id = ${campagne}
                and mt_ap.is_active
-               and (coalesce(mt_ap.body, '') ~* '${MOTIF_SQL_VARIABLE_DE_POST}'
-                 or coalesce(mt_ap.subject, '') ~* '${MOTIF_SQL_VARIABLE_DE_POST}'))`;
+               and (coalesce(mt_ap.body, '') ~* '${motif}'
+                 or coalesce(mt_ap.subject, '') ~* '${motif}'))`;
 }
 
 /**
- * « La fiche du post de ce signal est relue par un humain ET utilisable. »
+ * « Au moins une étape de cette campagne nomme le post. » C'est ce qui DÉCLENCHE la garde.
+ *
+ * @param campagne expression SQL qui donne l'id de la campagne (`c.id`)
+ */
+export function sqlCampagneNommeUnPost(campagne: string): string {
+  return sqlGabaritPorteLeMotif(campagne, MOTIF_SQL_VARIABLE_DE_POST);
+}
+
+/** « Cette campagne écrit CETTE variable de post. » C'est ce qui décide de ce que la garde EXIGE. */
+export function sqlCampagneEcritVariableDePost(campagne: string, variable: string): string {
+  return sqlGabaritPorteLeMotif(campagne, motifSqlDesVariables([variable]));
+}
+
+/**
+ * « La fiche du post de ce signal est relue par un humain, ET elle résout ce que CETTE campagne
+ * écrit. »
  *
  * Deux conditions, pas une :
  *
- *  - `review_status = 'approved'` : un humain a vu le post. C'est la règle du lot.
- *  - le nom AFFICHÉ de l'auteur et le sujet sont renseignés. Ce sont les deux variables de post
- *    sur lesquelles une valeur de repli est interdite (`NO_FALLBACK_VARIABLES`) : sans elles,
- *    `renderTemplate` les remonte dans `missing` et l'envoi est bloqué. Inscrire quand même
- *    brûlerait une place du plafond du jour pour fabriquer une action qui ne partira jamais —
- *    exactement le silence que ce lot existe pour supprimer. Retenu, la personne est COMPTÉE
- *    (`compterRetenuesParPost`) et l'opérateur peut compléter la fiche.
+ *  - `review_status = 'approved'` : un humain a vu le post. C'est la règle du lot, et elle ne
+ *    dépend pas des variables écrites.
+ *  - chaque variable de post que la campagne écrit se résout (`EXIGENCES_VARIABLE_DE_POST`).
+ *    Une variable non résolue est remontée par `renderTemplate` dans `missing`, et l'envoi est
+ *    bloqué : inscrire quand même brûlerait une place du plafond du jour pour fabriquer une
+ *    action qui ne partira jamais — exactement le silence que ce lot existe pour supprimer.
+ *    Retenue, la personne est COMPTÉE (`compterRetenuesParPost`) et l'opérateur peut compléter
+ *    la fiche.
  *
- * Les deux champs sont exigés ENSEMBLE, sans regarder lesquelles des quatre variables la
- * campagne écrit : une campagne qui ne citerait que `{{post_url}}` retient donc ses personnes
- * jusqu'à ce que la fiche ait un auteur affiché et un sujet. C'est le sens d'erreur choisi —
- * retenir à tort est visible et réversible (le décompte le dit, l'épargne garde la personne),
- * inscrire à tort fabrique une action bloquée que personne ne regarde.
+ * Les variables que la campagne N'ÉCRIT PAS n'exigent rien : une campagne qui ne cite que
+ * `{{post_url}}` entre dès la validation, sans auteur affiché ni sujet.
  *
- * `author_display_name`, et JAMAIS `author_name` : en mode créateur, `author_name` peut valoir
- * un identifiant technique (« uptoo-france »), que le nom affiché laisse délibérément vide pour
- * qu'aucune accroche illisible ne parte. Tester `author_name` ferait entrer une personne dont le
- * message dirait « le post de uptoo-france sur … ».
- *
- * @param signal alias SQL du signal (`s`), dont on lit `linkedin_post_id` et `organization_id`
+ * @param campagne expression SQL qui donne l'id de la campagne (`c.id`)
+ * @param signal   alias SQL du signal (`s`), dont on lit `linkedin_post_id` et `organization_id`
  */
-export function sqlFichePostUtilisable(signal: string): string {
+export function sqlFichePostUtilisable(campagne: string, signal: string): string {
+  const exigences = EXIGENCES_VARIABLE_DE_POST.map(
+    (e) => `(not ${sqlCampagneEcritVariableDePost(campagne, e.variable)}
+                     or ${e.colonneRenseignee('fp_ap')})`,
+  ).join('\n               and ');
   return `exists (
             select 1 from public.linkedin_posts fp_ap
              where fp_ap.id = ${signal}.linkedin_post_id
                and fp_ap.organization_id = ${signal}.organization_id
                and fp_ap.review_status = 'approved'
-               and coalesce(btrim(fp_ap.author_display_name), '') <> ''
-               and coalesce(btrim(fp_ap.subject), '') <> '')`;
+               and ${exigences})`;
 }
 
 /**
- * « La fiche du post de ce signal attend encore sa relecture. »
+ * « La fiche du post de ce signal attend encore sa relecture, et sa fenêtre n'est pas passée. »
  *
- * C'est la branche d'épargne de la purge d'ancienneté : la personne a été collectée le jour où
- * le post a été découvert, et la fenêtre de décision est plus longue que le délai d'ancienneté
- * des signaux (`schemaEcrireReglage` le refuse autrement). Sans cette épargne, la personne
- * serait effacée AVANT que l'opérateur ait eu le temps de valider son post, et valider ne
- * servirait plus à rien.
- *
- * `expires_at` passé : plus d'épargne, même si la bascule périodique n'a pas encore écrit
+ * `expires_at` passé : plus d'attente, même si la bascule périodique n'a pas encore écrit
  * `rejected`. La date fait foi, pas l'horaire du passage.
  *
  * @param signal alias SQL du signal (`s`)
@@ -119,44 +159,85 @@ export function sqlFichePostEnAttente(signal: string): string {
 }
 
 /**
- * La même question qu'au-dessus, posée à l'échelle d'une SOURCE : toute campagne active qui
- * s'en nourrit nomme le post. Symétrique de `sqlSourceSansEmail`
- * (`apps/worker/src/handlers/post-engagement.ts`), et pour la même raison : l'enrichissement
- * part d'un signal, qui connaît sa source mais pas la campagne qui inscrira la personne.
+ * « Une campagne reliée à cette source nomme le post. »
  *
- * Le quantificateur est « TOUTES », pas « au moins une », et ce n'est pas une nuance. Si UNE
- * campagne active de cette source n'exige pas d'accroche, elle inscrira la personne dès qu'elle
- * aura son adresse : geler l'achat la stériliserait pour rien. C'est seulement quand AUCUNE
- * campagne ne peut l'inscrire avant la relecture du post que l'achat est prématuré.
- *
- * Aucune campagne active du tout : `false`, donc on n'empêche rien — le défaut sûr est celui qui
- * ne change pas le comportement existant.
+ * AU MOINS UNE, et sans regarder son statut : c'est le quantificateur de l'ÉPARGNE, dont
+ * l'erreur coûteuse est d'effacer à tort — une campagne mise en pause une semaine est
+ * précisément le cas ordinaire que la fenêtre de décision existe pour couvrir, et l'épargne
+ * reste bornée par `expires_at` de toute façon.
  *
  * @param source expression SQL qui donne l'id de la source (`s.source_id`)
  */
-export function sqlSourceNommeUnPost(source: string): string {
-  const jointure = `from public.campaign_sources cs_ap
-                      join public.campaigns cp_ap on cp_ap.id = cs_ap.campaign_id
-                     where cs_ap.source_id = ${source} and cp_ap.status = 'active'`;
-  return `(exists (select 1 ${jointure})
-            and not exists (select 1 ${jointure} and not ${sqlCampagneNommeUnPost('cp_ap.id')}))`;
+export function sqlSourceAUneCampagneQuiNommeUnPost(source: string): string {
+  return `exists (
+            select 1 from public.campaign_sources cs_at
+              join public.campaigns cp_at on cp_at.id = cs_at.campaign_id
+             where cs_at.source_id = ${source}
+               and ${sqlCampagneNommeUnPost('cp_at.id')})`;
+}
+
+/**
+ * « QUELQU'UN attend la relecture de ce post » : la fiche est en attente DANS sa fenêtre, et une
+ * campagne reliée à la source d'où ce post vient le nomme.
+ *
+ * C'est la branche d'épargne de la purge d'ancienneté. Les deux moitiés comptent :
+ *
+ *  - sans la première, l'épargne serait sans terme ;
+ *  - sans la seconde, on garderait plus longtemps le nom et l'intitulé de personnes que PERSONNE
+ *    n'attend. La fenêtre échange du temps de décision contre de la rétention : la payer sans
+ *    acheter le bénéfice n'aurait aucun sens.
+ *
+ * Même atome que la garde d'entrée et que le gel de la dépense (`sqlCampagneNommeUnPost`),
+ * composé différemment parce que les trois protègent d'erreurs opposées.
+ *
+ * La personne a été collectée le jour où le post a été découvert, et la fenêtre de décision
+ * dépasse le délai d'ancienneté des signaux (`schemaEcrireReglage` le refuse autrement) : sans
+ * cette épargne, la purge l'effacerait avant que l'opérateur ait pu valider son post, et valider
+ * n'inscrirait plus personne.
+ *
+ * @param signal alias SQL du signal (`s`, ou `signals` quand la table n'est pas aliasée)
+ */
+export function sqlEpargneParUnPostARelire(signal: string): string {
+  return `(${sqlFichePostEnAttente(signal)}
+            and ${sqlSourceAUneCampagneQuiNommeUnPost(`${signal}.source_id`)})`;
 }
 
 /**
  * « L'achat de l'adresse de cette personne attend la relecture d'un post. »
  *
+ * Posé à l'échelle d'une SOURCE, parce que l'enrichissement part d'un signal, qui connaît sa
+ * source mais pas la campagne qui inscrira la personne. La question exacte est : « AUCUNE
+ * campagne active de cette source ne peut l'inscrire aujourd'hui ». Une campagne le peut si elle
+ * ne nomme pas le post, ou si la fiche résout déjà les variables qu'elle écrit.
+ *
+ * Le quantificateur est « TOUTES », pas « au moins une », et ce n'est pas une nuance. Si UNE
+ * campagne active de cette source peut l'inscrire, elle le fera dès qu'elle aura son adresse :
+ * geler l'achat la stériliserait pour rien (contrôle 21f du harnais).
+ *
+ * `status = 'active'` : une campagne en pause n'inscrit personne, donc elle ne décide rien ici.
+ * Sans cette réserve, mettre sa campagne en pause une semaine gèlerait en silence tous les
+ * achats de ses sources — un comportement que ce lot n'a pas à changer (contrôle 21g). C'est
+ * l'inverse du quantificateur de l'épargne, et pour la raison inverse : ici l'erreur coûteuse
+ * est de GELER à tort, là-bas d'EFFACER à tort.
+ *
+ * Aucune campagne active du tout : `false`, donc on n'empêche rien — le défaut sûr est celui qui
+ * ne change pas le comportement existant.
+ *
  * Le pré-filtre du producteur (`enqueueEnrichmentContactsConnus`) et le contrôle autoritaire de
  * la fonction qui dépense (`enrichirContactConnu`) posent la MÊME condition, écrite une fois.
- *
- * Aucune campagne ne peut l'inscrire avant la relecture du post : payer son adresse aujourd'hui,
- * c'est payer pour une personne qui, si le post est rejeté, sera effacée sans avoir reçu un seul
- * message. Le refus est TEMPORAIRE — la fiche validée, le contact redevient candidat dès le tour
- * suivant, et rien n'est marqué sur lui entre-temps.
+ * Le refus est TEMPORAIRE : la fiche validée, le contact redevient candidat dès le tour suivant,
+ * et rien n'est marqué sur lui entre-temps.
  *
  * @param signal alias SQL du signal d'origine du contact (`s`)
  */
 export function sqlAchatRetenuParUnPost(signal: string): string {
-  return `(${sqlSourceNommeUnPost(`${signal}.source_id`)} and not ${sqlFichePostUtilisable(signal)})`;
+  const jointure = `from public.campaign_sources cs_ap
+                      join public.campaigns cp_ap on cp_ap.id = cs_ap.campaign_id
+                     where cs_ap.source_id = ${signal}.source_id and cp_ap.status = 'active'`;
+  return `(exists (select 1 ${jointure})
+            and not exists (select 1 ${jointure}
+                              and (not ${sqlCampagneNommeUnPost('cp_ap.id')}
+                                or ${sqlFichePostUtilisable('cp_ap.id', signal)})))`;
 }
 
 /**
@@ -191,13 +272,14 @@ export async function campagneNommeUnPost(ex: Executeur, campagneId: string): Pr
 export async function fichePostUtilisable(
   ex: Executeur,
   organisationId: string,
+  campagneId: string,
   signalId: string | null | undefined,
 ): Promise<boolean> {
   if (!signalId) return false;
   const res = await ex.query<{ utilisable: boolean }>(
-    `select ${sqlFichePostUtilisable('s')} as utilisable /* jr:fiche_post_utilisable */
+    `select ${sqlFichePostUtilisable('$3::uuid', 's')} as utilisable /* jr:fiche_post_utilisable */
        from signals s where s.id = $1 and s.organization_id = $2`,
-    [signalId, organisationId],
+    [signalId, organisationId, campagneId],
   );
   return res.rows[0]?.utilisable === true;
 }
@@ -287,7 +369,7 @@ export async function compterRetenuesParPost(
             count(*) filter (where s.linkedin_post_id is null)::text as sans_post,
             count(*) filter (where s.linkedin_post_id is not null
                                and not ${sqlFichePostEnAttente('s')}
-                               and not ${sqlFichePostUtilisable('s')})::text as inexploitable
+                               and not ${sqlFichePostUtilisable('$2::uuid', 's')})::text as inexploitable
        from contacts ct
        join signals s on s.id = ct.source_signal_id and s.organization_id = ct.organization_id
       where ct.organization_id = $1
