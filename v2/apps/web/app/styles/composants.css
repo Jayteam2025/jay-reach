@@ -797,11 +797,11 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-post-entete { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
 .jr-post-auteur { font-weight: 600; }
 .jr-post-meta { color: var(--jr-secondaire); font-size: var(--jr-petit); }
-.jr-post-lien { margin-left: auto; color: var(--jr-linkedin); font-size: var(--jr-petit); border-bottom: 1px solid var(--jr-linkedin-doux); }
-.jr-post-phrase { font-size: 17px; line-height: 1.6; max-width: 66ch; margin: 0 0 16px; }
+.jr-post-lien { display: inline-block; padding-block: 4px; margin-left: auto; color: var(--jr-linkedin); font-size: var(--jr-petit); border-bottom: 1px solid var(--jr-linkedin-doux); }
+.jr-post-phrase { font-size: var(--jr-phrase); line-height: 1.6; max-width: 66ch; margin: 0 0 16px; }
 .jr-post-phrase .fixe { color: var(--jr-secondaire); }
 .jr-post-sujet { color: var(--jr-encre); font-weight: 600; border-bottom: 2px dashed var(--jr-accent); padding: 0 4px; border-radius: 2px; cursor: text; }
-.jr-post-sujet:focus { outline: none; background: var(--jr-accent-doux); border-bottom-style: solid; }
+.jr-post-sujet:focus { outline: 2px solid var(--jr-accent); outline-offset: 2px; background: var(--jr-accent-doux); border-bottom-style: solid; }
 .jr-post-sujet:empty::before { content: attr(data-invite); color: var(--jr-attention); font-weight: 500; font-style: italic; }
 .jr-post-sujet.vide { border-bottom-color: var(--jr-attention); }
 .jr-post-sujet.fige { border-bottom-style: none; cursor: default; }
