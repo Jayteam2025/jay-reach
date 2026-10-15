@@ -15,10 +15,11 @@ import { FILES_AVEC_NAVIGATEUR, FILES_BRANCHEES } from '../traitements.js';
 import { traiterFichePost, type DependancesFichePost } from './fiche-post.js';
 
 describe('la file linkedin.fiche-post', () => {
-  it('est déclarée, avec deux reprises', () => {
+  it('est déclarée, avec deux reprises et un seul job en vol par organisation', () => {
     const file = QUEUES.find((q) => q.name === 'linkedin.fiche-post');
     expect(file?.descriptionKey).toBe('jobs.q.linkedinFichePost');
     expect(file?.retry).toEqual({ retryLimit: 2, retryBackoff: true });
+    expect(file?.policy).toBe('stately');
   });
 
   it('est consommée par le worker', () => {
@@ -49,9 +50,10 @@ describe('traiterFichePost', () => {
       env: {},
       ouvrirNavigateur: ouvrir,
       releverSortie: async () => ({ ip: '203.0.113.7' }),
+      pause: async () => undefined,
       redacteur: async () => null,
     };
-    await traiterFichePost(d, { organizationId: 'org-1', postId: 'post-1' });
+    await traiterFichePost(d, { organizationId: 'org-1' });
     expect(requete).not.toHaveBeenCalled();
     expect(ouvrir).not.toHaveBeenCalled();
     await pool.end();

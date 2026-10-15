@@ -662,7 +662,7 @@ export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn
  * colonne, et celles qui ne relèvent d'aucun plafond propre. Seule 'profil' est lue aujourd'hui,
  * par `compterVisitesProfilLinkedIn`.
  */
-export type KindRequeteLinkedIn = 'profil';
+export type KindRequeteLinkedIn = 'profil' | 'fiche';
 
 /**
  * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
@@ -697,6 +697,39 @@ export async function tracerEnvoiLinkedIn(ctx: Contexte, actionQueueId: string):
     [ctx.organisationId, actionQueueId],
   );
   if (res.rowCount === 0) throw new Error("Action LinkedIn introuvable pour cette organisation.");
+}
+
+/**
+ * Consigne UNE lecture de fiche de post (le rattrapage), au moment où la page s'ouvre : même table,
+ * même fenêtre horaire que la collecte, donc le même budget. Rattachée à la FICHE lue, qui doit
+ * appartenir à l'organisation (même raison que `tracerRequeteLinkedIn`).
+ */
+export async function tracerLectureFichePost(ctx: Pick<Contexte, 'ex' | 'organisationId'>, postId: string): Promise<void> {
+  const res = await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, post_id, kind) /* jr:linkedin_fiche_tracer */
+     select p.organization_id, p.id, 'fiche'
+       from linkedin_posts p
+      where p.id = $2 and p.organization_id = $1`,
+    [ctx.organisationId, postId],
+  );
+  if (res.rowCount === 0) throw new Error("Fiche de post introuvable pour cette organisation.");
+}
+
+/** Lectures de fiche du jour (dans le fuseau de l'organisation) : ce que le plafond du jour consomme. */
+export async function compterFichesPostLinkedInDuJour(
+  ctx: Pick<Contexte, 'ex' | 'organisationId'>,
+  jour: string,
+  fuseau: string,
+): Promise<number> {
+  const res = await ctx.ex.query<{ n: number }>(
+    `select count(*)::int as n /* jr:linkedin_fiches_du_jour */
+       from linkedin_requetes
+      where organization_id = $1 and kind = 'fiche'
+        and requested_at >= ($2::date::timestamp at time zone $3)
+        and requested_at < (($2::date + 1)::timestamp at time zone $3)`,
+    [ctx.organisationId, jour, fuseau],
+  );
+  return res.rows[0]?.n ?? 0;
 }
 
 /**

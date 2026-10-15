@@ -1,6 +1,6 @@
 // Point d'entrée du bundle de accroche-post.sh : réexporte, sans les modifier, les fonctions de
 // production que le harnais exécute. Les tâches suivantes du lot y ajoutent les leurs.
-export { clePost, enregistrerFichePost, rattacherSignalAuPost, ficheIncomplete } from '../../apps/worker/src/linkedin/posts-fiches.js';
+export { clePost, enregistrerFichePost, fichesARattraper, rattacherSignalAuPost, ficheIncomplete } from '../../apps/worker/src/linkedin/posts-fiches.js';
 export { enregistrerEngageur } from '../../apps/worker/src/handlers/post-engagement.js';
 export { marquerPostTraite } from '../../apps/worker/src/linkedin/posts-traites.js';
 export { startSourceRun } from '../../apps/worker/src/db.js';
@@ -8,3 +8,5 @@ export { creerSource } from '../../packages/core/src/fonctions/sources.js';
 export { traiterCollecteLinkedIn } from '../../apps/worker/src/handlers/collecte-linkedin.js';
 export { activerSessionLinkedIn } from '../../packages/core/src/fonctions/linkedin-session.js';
 export { enqueueFichesPostALire, traiterFichePost } from '../../apps/worker/src/handlers/fiche-post.js';
+export { prendreVerrouLinkedIn } from '../../packages/core/src/fonctions/linkedin-session.js';
+export { registerQueues } from '../../apps/worker/src/runtime.js';

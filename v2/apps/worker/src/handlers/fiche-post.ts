@@ -4,34 +4,42 @@
  * La collecte capture déjà la fiche de chaque post qu'elle ouvre, sans requête de plus. Ce travail
  * de fond ne sert qu'aux fiches que la collecte n'a pas pu remplir : celles nées de la reprise de
  * l'existant (ni auteur, ni texte, ni date), celles dont la capture a échoué en cours de passage,
- * et toute fiche restée incomplète. Il OUVRE une page LinkedIn : la file est exclue de la route
+ * et toute fiche restée incomplète. Il OUVRE des pages LinkedIn : la file est exclue de la route
  * cron de Vercel (`FILES_AVEC_NAVIGATEUR`), le navigateur ne vit que sur le serveur dédié.
  *
- * Mêmes garde-fous que la collecte, dans le même ordre : canal autorisé, session active, IP de
- * sortie relevée AVANT d'ouvrir LinkedIn, verrou du navigateur. Une page illisible ne lève pas :
- * `capture_attempts` monte, la fiche reste `pending`, et le producteur cesse de la redemander à
- * la troisième tentative (un post supprimé ne se redemande pas indéfiniment).
+ * **Un job par ORGANISATION, pas par fiche.** Un job par fiche aurait ouvert jusqu'à vingt
+ * navigateurs coup sur coup, chacun émettant du trafic par le proxy avant de savoir s'il avait le
+ * verrou. Ici la file est `stately` (un job en attente par organisation, comme `linkedin.envoi`) ;
+ * le lot prend le verrou AVANT d'ouvrir quoi que ce soit (la collecte le tient : on sort sans
+ * trafic), ouvre UN navigateur, puis lit ses fiches À LA SUITE, sous ce même verrou, avec une pause
+ * avant chaque page et une trace par lecture dans `linkedin_requetes` (même budget horaire que la
+ * collecte). Le plafond du jour compte ces traces : une lecture compte, qu'elle réussisse ou non.
  *
- * Aucun secret ni URL de proxy dans un message : seul le type d'erreur est consigné.
+ * Une page illisible ne lève pas : `capture_attempts` monte, la fiche reste `pending`, et la
+ * sélection cesse de la proposer à la troisième tentative. Aucun secret ni URL de proxy dans un
+ * message : seul le type d'erreur est consigné.
  */
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
 import {
+  compterFichesPostLinkedInDuJour,
+  compterRequetesLinkedIn,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
+  tracerLectureFichePost,
   type Contexte,
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
+import { delaiAleatoire } from '../linkedin/engageurs.js';
 import { lireFichePost } from '../linkedin/fiche-post.js';
 import type { Pilote } from '../linkedin/navigateur.js';
-import { enregistrerFichePost, ficheIncomplete } from '../linkedin/posts-fiches.js';
-import { deterministicUuid } from '../ids.js';
+import { enregistrerFichePost, fichesARattraper } from '../linkedin/posts-fiches.js';
 
-export type FichePostJob = { organizationId: string; postId: string };
+export type FichePostJob = { organizationId: string };
 
 /** Le texte d'un post, ramené à un sujet nommable ; `null` quand le modèle ne sait pas en tirer un. */
 export type RedacteurDeSujet = (texte: string) => Promise<string | null>;
@@ -42,17 +50,31 @@ export interface DependancesFichePost {
   readonly env: Record<string, string | undefined>;
   ouvrirNavigateur(): Promise<Pilote>;
   releverSortie(pilote: Pilote): Promise<Sortie>;
+  pause(ms: number): Promise<void>;
   readonly redacteur: RedacteurDeSujet;
 }
 
-/** Tentatives de capture au-delà desquelles une fiche n'est plus redemandée. */
-export const TENTATIVES_MAX = 3;
+/** Fiches lues au plus par lot : un lot par heure et par organisation, le plafond du jour borne le reste. */
+export const LOT_MAX = 5;
 /** Fenêtre de décision d'une fiche, en jours (le réglage arrive à la tâche 8). */
 const FENETRE_DECISION_JOURS = 28;
-/** Un verrou court : le traitement fait une navigation, pas une collecte. */
-const DUREE_VERROU_FICHE_MS = 5 * 60_000;
+/** Le verrou couvre un lot entier : cinq pages espacées de quelques secondes, avec une large marge. */
+const DUREE_VERROU_LOT_MS = 10 * 60_000;
+const UNE_HEURE_MS = 3_600_000;
 
 const FILE = 'linkedin.fiche-post';
+
+/** Ce qu'il reste à lire, sous les DEUX plafonds : celui du jour, et le budget horaire de la collecte. */
+async function placeRestante(ctx: Contexte): Promise<number> {
+  const fuseau = await fuseauDeLOrganisation(ctx.ex, ctx.organisationId);
+  const [plafondJour, luesAujourdhui, plafondHeure, requetesHeure] = await Promise.all([
+    lirePlafondLinkedIn(ctx, 'linkedin_fiches_post_par_jour'),
+    compterFichesPostLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau), fuseau),
+    lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
+    compterRequetesLinkedIn(ctx, new Date(Date.now() - UNE_HEURE_MS)),
+  ]);
+  return Math.max(0, Math.min(LOT_MAX, plafondJour - luesAujourdhui, plafondHeure - requetesHeure));
+}
 
 export async function traiterFichePost(d: DependancesFichePost, job: FichePostJob): Promise<void> {
   const { pool } = d;
@@ -61,26 +83,17 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
   const session = await lireSessionLinkedIn(ctx);
   if (!session || session.etat !== 'active') return;
 
-  const lue = await pool.query<{
-    id: string;
-    url: string;
-    author_name: string | null;
-    text_excerpt: string | null;
-    posted_at: Date | null;
-    subject: string | null;
-  }>(
-    `select id, url, author_name, text_excerpt, posted_at, subject /* jr:fiche_post_lire */
-       from linkedin_posts where organization_id = $1 and id = $2`,
-    [job.organizationId, job.postId],
-  );
-  const ligne = lue.rows[0];
-  // Complétée entre-temps (par la collecte, par exemple) : rien à rattraper.
-  if (!ligne || !ficheIncomplete(ligne)) return;
-
-  const proprietaire = `fiche-post-${job.postId}`;
-  let verrouPris = false;
+  // Le verrou AVANT le navigateur : tenu par une collecte, on sort sans avoir émis le moindre trafic.
+  const proprietaire = `fiche-post-${job.organizationId}`;
+  if (!(await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_LOT_MS))) return;
   let pilote: Pilote | null = null;
   try {
+    // Aucune place ou aucune fiche : rien n'est ouvert, rien n'est tracé.
+    const place = await placeRestante(ctx);
+    if (place <= 0) return;
+    const fiches = await fichesARattraper(pool, job.organizationId, place);
+    if (fiches.length === 0) return;
+
     try {
       pilote = await d.ouvrirNavigateur();
     } catch (err) {
@@ -100,28 +113,32 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
     // `verifierSortie` a déjà bloqué la session : rien ne doit partir vers LinkedIn.
     if (!controle.ok) return;
 
-    verrouPris = await prendreVerrouLinkedIn(ctx, proprietaire, DUREE_VERROU_FICHE_MS);
-    if (!verrouPris) throw new Error('Un autre passage conduit déjà le navigateur LinkedIn.');
+    for (const ligne of fiches) {
+      // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
+      await d.pause(delaiAleatoire());
+      // AVANT l'ouverture : la trace dit ce qui est parti, et une page dont la lecture échoue est
+      // quand même partie.
+      await tracerLectureFichePost(ctx, ligne.id);
+      // Ne lève jamais : une page illisible rend une fiche aux champs nuls, que `enregistrerFichePost`
+      // compte comme une tentative sans rien effacer.
+      const fiche = await lireFichePost(pilote, ligne.url);
+      await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours: FENETRE_DECISION_JOURS });
 
-    // Ne lève jamais : une page illisible rend une fiche aux champs nuls, que `enregistrerFichePost`
-    // compte comme une tentative sans rien effacer.
-    const fiche = await lireFichePost(pilote, ligne.url);
-    await enregistrerFichePost(pool, job.organizationId, fiche, { fenetreJours: FENETRE_DECISION_JOURS });
-
-    // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
-    const texte = fiche.texte ?? ligne.text_excerpt;
-    if (ligne.subject === null && texte !== null) {
-      const sujet = await d.redacteur(texte).catch(() => null);
-      if (sujet !== null) {
-        await pool.query(
-          `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
-            where organization_id = $1 and id = $2 and subject is null`,
-          [job.organizationId, job.postId, sujet],
-        );
+      // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
+      const texte = fiche.texte ?? ligne.text_excerpt;
+      if (ligne.subject === null && texte !== null) {
+        const sujet = await d.redacteur(texte).catch(() => null);
+        if (sujet !== null) {
+          await pool.query(
+            `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
+              where organization_id = $1 and id = $2 and subject is null`,
+            [job.organizationId, ligne.id, sujet],
+          );
+        }
       }
     }
   } finally {
-    if (verrouPris) await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);
+    await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);
     if (pilote) await pilote.fermer().catch(() => undefined);
   }
 }
@@ -133,70 +150,30 @@ export function dependancesFichePostReelles(pool: Pool): DependancesFichePost {
     env: process.env,
     ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
     releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
+    pause: (ms) => new Promise((r) => setTimeout(r, ms)),
     redacteur: async () => null,
   };
 }
 
 /**
- * Le rattrapage : enfile, par organisation à session active, les fiches incomplètes dans la limite
- * du plafond du jour. Retourne le nombre de jobs déposés.
- *
- * Le plafond compte les jobs de la file déposés AUJOURD'HUI (file active et archive, car pg-boss
- * archive un job terminé au bout de douze heures), dans le fuseau de l'organisation : une capture
- * échouée compte donc autant qu'une réussie, ce qui est voulu, puisque chacune a ouvert LinkedIn.
- * Un post déjà enfilé aujourd'hui n'est pas redéposé, pour la même raison.
+ * Le rattrapage : dépose UN job de lot par organisation à session active qui a de la place sous le
+ * plafond du jour et au moins une fiche à rouvrir. La clé de singleton est l'organisation et la file
+ * est `stately` : un second `send` pendant qu'un job attend rend `null`, ce qui n'est pas une
+ * erreur. Retourne le nombre de jobs RÉELLEMENT déposés.
  */
 export async function enqueueFichesPostALire(boss: PgBoss, pool: Pool): Promise<number> {
   const orgs = await pool.query<{ organization_id: string }>(
     `select organization_id /* jr:fiche_post_organisations */
        from linkedin_server_sessions where status = 'active'`,
   );
-  let enfiles = 0;
+  let deposes = 0;
   for (const { organization_id: organizationId } of orgs.rows) {
     try {
       const ctx: Contexte = { ex: pool, organisationId: organizationId, utilisateurId: null, role: null };
-      const fuseau = await fuseauDeLOrganisation(pool, organizationId);
-      const jour = jourCourantDansFuseau(fuseau);
-      const plafond = await lirePlafondLinkedIn(ctx, 'linkedin_fiches_post_par_jour');
-      const jobsDuJour = `
-        select data->>'postId' as post_id from pgboss.job
-         where name = $4 and data->>'organizationId' = $1::text
-           and created_on >= ($2::date::timestamp at time zone $3)
-        union all
-        select data->>'postId' from pgboss.archive
-         where name = $4 and data->>'organizationId' = $1::text
-           and created_on >= ($2::date::timestamp at time zone $3)`;
-      const dejaRes = await pool.query<{ n: number }>(
-        `select count(*)::int as n /* jr:fiche_post_deja_enfiles */ from (${jobsDuJour}) t`,
-        [organizationId, jour, fuseau, FILE],
-      );
-      const restants = plafond - (dejaRes.rows[0]?.n ?? 0);
-      if (restants <= 0) continue;
-
-      const candidats = await pool.query<{ id: string }>(
-        `select p.id /* jr:fiche_post_candidates */
-           from linkedin_posts p
-          where p.organization_id = $1
-            and p.capture_attempts < $5
-            and p.expires_at > now()
-            and (p.captured_at is null or p.author_name is null or p.text_excerpt is null or p.posted_at is null)
-            and p.id::text not in (select post_id from (${jobsDuJour}) t where post_id is not null)
-          order by p.capture_attempts, p.created_at desc
-          limit $6`,
-        [organizationId, jour, fuseau, FILE, TENTATIVES_MAX, restants],
-      );
-      for (const { id: postId } of candidats.rows) {
-        await boss.insert([
-          {
-            name: FILE,
-            id: deterministicUuid('fiche-post', postId, jour),
-            data: { organizationId, postId },
-            retryLimit: 2,
-            retryBackoff: true,
-          },
-        ]);
-        enfiles += 1;
-      }
+      if ((await placeRestante(ctx)) <= 0) continue;
+      if ((await fichesARattraper(pool, organizationId, 1)).length === 0) continue;
+      const id = await boss.send(FILE, { organizationId } satisfies FichePostJob, { singletonKey: organizationId });
+      if (id !== null) deposes += 1;
     } catch (err) {
       // Une organisation qui échoue n'emporte pas les autres. Seul le type d'erreur sort.
       console.error(
@@ -204,5 +181,5 @@ export async function enqueueFichesPostALire(boss: PgBoss, pool: Pool): Promise<
       );
     }
   }
-  return enfiles;
+  return deposes;
 }

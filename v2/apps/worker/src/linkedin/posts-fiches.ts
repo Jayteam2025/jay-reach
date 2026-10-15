@@ -93,11 +93,41 @@ export async function rattacherSignalAuPost(
   ]);
 }
 
-/** Vrai dès qu'il manque l'auteur, le texte ou la date : le post ne peut pas encore être nommé. */
+/**
+ * « Incomplète » : il manque l'auteur, le texte ou la date, le post ne peut pas encore être nommé.
+ * UNE définition, en deux écritures qui doivent rester jumelles : `ficheIncomplete` (une ligne en
+ * mémoire) et `SQL_FICHE_INCOMPLETE` (la même condition pour la sélection). Le harnais les compare
+ * sur les huit combinaisons (contrôle 10e).
+ */
 export function ficheIncomplete(ligne: {
   author_name: string | null;
   text_excerpt: string | null;
   posted_at: Date | null;
 }): boolean {
   return ligne.author_name === null || ligne.text_excerpt === null || ligne.posted_at === null;
+}
+export const SQL_FICHE_INCOMPLETE = '(p.author_name is null or p.text_excerpt is null or p.posted_at is null)';
+
+/** Tentatives de capture au-delà desquelles une fiche n'est plus redemandée (un post supprimé ne se redemande pas). */
+export const TENTATIVES_MAX = 3;
+
+export type FicheARattraper = { id: string; url: string; text_excerpt: string | null; subject: string | null };
+
+/**
+ * Les fiches à rouvrir, au plus `limite` : incomplètes, sous le plafond de tentatives, dans leur
+ * fenêtre. Les moins tentées d'abord, puis les plus récentes.
+ */
+export async function fichesARattraper(ex: Pick<Pool, 'query'>, organizationId: string, limite: number): Promise<FicheARattraper[]> {
+  const r = await ex.query<FicheARattraper>(
+    `select p.id, p.url, p.text_excerpt, p.subject /* jr:fiche_post_candidates */
+       from linkedin_posts p
+      where p.organization_id = $1
+        and p.capture_attempts < $2
+        and p.expires_at > now()
+        and ${SQL_FICHE_INCOMPLETE}
+      order by p.capture_attempts, p.created_at desc
+      limit $3`,
+    [organizationId, TENTATIVES_MAX, limite],
+  );
+  return r.rows;
 }

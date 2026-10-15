@@ -13,12 +13,14 @@
 //   8. collecte-linkedin.ts : ne pas passer `auteurAvecRepli` (fiche brute) — 8d rougit.
 //   9. collecte-linkedin.ts : ne pas passer `linkedinPostId` — 7c et 8c rougissent.
 //  10. collecte-linkedin.ts : retirer le try/catch autour de `enregistrerFichePost` — 9 à 9c rougissent.
-//  11. fiche-post.ts : retirer `and p.capture_attempts < $5` de la sélection — 10b rougit.
-//  12. fiche-post.ts : retirer `limit $6` (ou `restants`) — 11 rougit.
-//  13. fiche-post.ts : retirer la clause `not in (...jobsDuJour)` — 11e rougit.
-//  14. fiche-post.ts : retirer la condition d'incomplétude de la sélection — 10a rougit.
+//  11. fiche-post.ts : ne plus tracer la lecture (`tracerLectureFichePost`) — 11a, 11c, 11d rougissent.
+//  12. fiche-post.ts : prendre le verrou APRÈS `ouvrirNavigateur` — 12a rougit.
+//  13. fiche-post.ts : retirer le `limite` de `fichesARattraper` — 11 rougit.
+//  14. queues.ts : retirer `policy: 'stately'` de la file — 10b rougit.
+//  15. posts-fiches.ts : changer `SQL_FICHE_INCOMPLETE` (ex. ajouter `or subject is null`) — 10e rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
+import PgBoss from 'pg-boss';
 import {
   clePost,
   enregistrerEngageur,
@@ -31,6 +33,10 @@ import {
   activerSessionLinkedIn,
   enqueueFichesPostALire,
   traiterFichePost,
+  fichesARattraper,
+  ficheIncomplete,
+  prendreVerrouLinkedIn,
+  registerQueues,
 } from './_accroche-post-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -438,103 +444,29 @@ async function captureEnPanne() {
 
 // --------------------------------------------------------------------- rattrapage (tâche 5)
 
-// pg-boss n'est pas dans ce harnais : deux tables de même forme que `pgboss.job` et `pgboss.archive`
-// (les seules colonnes que le producteur lit), et un `boss` dont `insert` écrit dedans, un identifiant
-// déjà présent étant sans effet comme chez pg-boss.
-async function poserPgboss() {
-  await q(`create schema if not exists pgboss`);
-  for (const t of ['job', 'archive']) {
-    await q(`create table if not exists pgboss.${t} (id uuid not null, name text not null, data jsonb, created_on timestamptz not null default now())`);
-  }
-  await q(`create unique index if not exists pgboss_job_id on pgboss.job (name, id)`);
+// Le VRAI pg-boss : il installe lui-même son schéma sur le Postgres jetable, et la file est
+// créée par `registerQueues` à partir de `QUEUES` (donc avec sa politique `stately`). Aucune table
+// de substitution : la singularité par organisation est celle de pg-boss, pas une copie.
+const boss = new PgBoss({ connectionString: process.env.DATABASE_URL, schema: 'pgboss' });
+let bossPret = false;
+async function demarrerBoss() {
+  if (bossPret) return;
+  boss.on('error', () => undefined);
+  await boss.start();
+  await registerQueues(boss);
+  bossPret = true;
 }
-const boss = {
-  insert: async (jobs) => {
-    for (const j of jobs) {
-      await q(`insert into pgboss.job (id, name, data) values ($1, $2, $3::jsonb) on conflict do nothing`, [j.id, j.name, JSON.stringify(j.data)]);
-    }
-  },
-};
 const urlN = (n) => `https://www.linkedin.com/feed/update/urn:li:activity:72710000000000${String(n).padStart(5, '0')}/`;
 const ficheN = (n, surcharge = {}) => ({ ...fiche({ urn: `urn:li:activity:72710000000000${String(n).padStart(5, '0')}`, url: urlN(n) }), ...surcharge });
-const enfilees = async (org) => (await q(`select data->>'postId' as post from pgboss.job where name = 'linkedin.fiche-post' and data->>'organizationId' = $1`, [org])).rows.map((r) => r.post);
-const idDe = async (org, n) => (await q(`select id from linkedin_posts where organization_id = $1 and url = $2`, [org, urlN(n)])).rows[0].id;
+const VIDE = { auteur: null, texte: null, date: null };
+const jobsDe = async (org) => (await q(`select id, data from pgboss.job where name = 'linkedin.fiche-post' and data->>'organizationId' = $1`, [org])).rows;
+const traces = async (org) => (await q(`select kind, post_id, source_run_id from linkedin_requetes where organization_id = $1 and kind = 'fiche'`, [org])).rows;
+const IP_FICHE = '203.0.113.7';
 
-async function rattrapageSelection() {
-  console.log('\n# le rattrapage retient les fiches incomplètes, pas les complètes, pas les épuisées');
-  await poserPgboss();
-  const m = await monde();
-  await activerSessionLinkedIn(m.ctx, '203.0.113.7');
-  await enregistrerFichePost(pool, m.org, ficheN(1, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE }); // vide : 1 tentative
-  await enregistrerFichePost(pool, m.org, ficheN(2), { fenetreJours: FENETRE }); // complète
-  for (let i = 0; i < 3; i += 1) await enregistrerFichePost(pool, m.org, ficheN(3, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE }); // épuisée
-  await enregistrerFichePost(pool, m.org, ficheN(4, { texte: null }), { fenetreJours: FENETRE }); // incomplète : sans texte
-
-  const n = await enqueueFichesPostALire(boss, pool);
-  const posts = await enfilees(m.org);
-  const [i1, i2, i3, i4] = await Promise.all([1, 2, 3, 4].map((x) => idDe(m.org, x)));
-  // `n` compte TOUTES les organisations à session active de la base du harnais : seule la nôtre se juge.
-  check('10. deux fiches enfilées sur quatre, pour cette organisation', posts.length === 2 && n >= 2, `${n} / ${posts.length}`);
-  check('10a. l\'incomplète et l\'absente de capture sont retenues, la complète non', posts.includes(i1) && posts.includes(i4) && !posts.includes(i2), JSON.stringify(posts));
-  check('10b. une fiche à 3 tentatives n\'est plus redemandée', !posts.includes(i3));
-
-  const n2 = await enqueueFichesPostALire(boss, pool);
-  check('10c. un second passage le même jour ne redépose rien pour cette organisation', (await enfilees(m.org)).length === 2, String(n2));
-
-  // Une autre organisation sans session active n'est pas servie.
-  const autre = await monde();
-  await enregistrerFichePost(pool, autre.org, ficheN(1, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-  await enqueueFichesPostALire(boss, pool);
-  check('10d. une organisation sans session LinkedIn active n\'est pas servie', (await enfilees(autre.org)).length === 0);
-}
-
-async function rattrapagePlafond() {
-  console.log('\n# le rattrapage s\'arrête au plafond du jour');
-  await poserPgboss();
-  const m = await monde();
-  await activerSessionLinkedIn(m.ctx, '203.0.113.7');
-  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_fiches_post_par_jour', '2'::jsonb)`, [m.org]);
-  for (let i = 1; i <= 5; i += 1) await enregistrerFichePost(pool, m.org, ficheN(i, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-
-  const n = await enqueueFichesPostALire(boss, pool);
-  check('11. plafond 2 : deux jobs sur cinq fiches', n >= 2 && (await enfilees(m.org)).length === 2, String(n));
-  const n2 = await enqueueFichesPostALire(boss, pool);
-  check('11b. le plafond compte les jobs déjà déposés aujourd\'hui : rien de plus',  (await enfilees(m.org)).length === 2, String(n2));
-  // Un job d'avant-hier ne compte pas (il porte un autre identifiant, celui de son jour) : il reste du crédit.
-  await q(`update pgboss.job set created_on = created_on - interval '2 days', id = gen_random_uuid() where data->>'organizationId' = $1`, [m.org]);
-  await enqueueFichesPostALire(boss, pool);
-  check('11c. les jobs d\'hier ne comptent pas dans le plafond d\'aujourd\'hui', (await enfilees(m.org)).length === 4, String((await enfilees(m.org)).length));
-
-  // Le plafond relevé en cours de journée : le crédit neuf va à une fiche NEUVE, pas à une déjà enfilée.
-  const r = await monde();
-  await activerSessionLinkedIn(r.ctx, '203.0.113.7');
-  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_fiches_post_par_jour', '2'::jsonb)`, [r.org]);
-  for (let i = 1; i <= 5; i += 1) await enregistrerFichePost(pool, r.org, ficheN(i, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-  await enqueueFichesPostALire(boss, pool);
-  await q(`update organization_settings set value = '3'::jsonb where organization_id = $1 and key = 'linkedin_fiches_post_par_jour'`, [r.org]);
-  await enqueueFichesPostALire(boss, pool);
-  const distincts = new Set(await enfilees(r.org)).size;
-  check('11e. plafond relevé de 2 à 3 : trois fiches DISTINCTES enfilées', distincts === 3, String(distincts));
-
-  // Sans réglage : le défaut (20) laisse passer les cinq.
-  const d = await monde();
-  await activerSessionLinkedIn(d.ctx, '203.0.113.7');
-  for (let i = 1; i <= 5; i += 1) await enregistrerFichePost(pool, d.org, ficheN(i, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-  await enqueueFichesPostALire(boss, pool);
-  check('11d. sans réglage, le défaut de 20 laisse passer les cinq', (await enfilees(d.org)).length === 5);
-}
-
-async function rattrapageTraitement() {
-  console.log('\n# le traitement d\'une fiche : page illisible, page lisible, sujet de l\'opérateur');
-  const IP = '203.0.113.7';
-  const m = await monde();
-  await activerSessionLinkedIn(m.ctx, IP);
-  await enregistrerFichePost(pool, m.org, ficheN(1, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-  await enregistrerFichePost(pool, m.org, ficheN(2, { auteur: null, texte: null, date: null }), { fenetreJours: FENETRE });
-  const [p1, p2] = await Promise.all([idDe(m.org, 1), idDe(m.org, 2)]);
-
-  const pilote = (texte) => ({
-    aller: async () => undefined,
+/** Un pilote qui consigne ses navigations ; `texte` est ce que rend n'importe quel sélecteur. */
+function piloteFiche(texte, navigations) {
+  return {
+    aller: async (u) => void navigations.push(u),
     url: async () => URL_POST,
     saisir: async () => undefined,
     presserEntree: async () => undefined,
@@ -543,46 +475,170 @@ async function rattrapageTraitement() {
     requete: async () => { throw new Error('aucune requête attendue'); },
     effacerCookies: async () => undefined,
     fermer: async () => undefined,
-  });
-  const deps = (texte, redacteur) => ({
-    pool,
-    env: { JAY_REACH_LINKEDIN: '1' },
-    ouvrirNavigateur: async () => pilote(texte),
-    releverSortie: async () => ({ ip: IP, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
-    redacteur,
-  });
-  const ligne = async (id) => (await q(`select * from linkedin_posts where id = $1`, [id])).rows[0];
+  };
+}
+/** Les dépendances du lot, et ce qu'elles ont vu. */
+function depsLot(texte = 'Recruter un commercial coûte cher, voici ce que nous avons mesuré.', redacteur = async () => null) {
+  const vu = { navigations: [], ouvertures: 0, pauses: [] };
+  return {
+    vu,
+    deps: {
+      pool,
+      env: { JAY_REACH_LINKEDIN: '1' },
+      ouvrirNavigateur: async () => { vu.ouvertures += 1; return piloteFiche(texte, vu.navigations); },
+      releverSortie: async () => ({ ip: IP_FICHE, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
+      pause: async (ms) => void vu.pauses.push(ms),
+      redacteur,
+    },
+  };
+}
+/** Une organisation à session active, avec `n` fiches vides (une tentative chacune). */
+async function monde5(n, plafondJour = null, plafondHeure = null) {
+  const m = await monde();
+  await activerSessionLinkedIn(m.ctx, IP_FICHE);
+  const reg = (cle, v) => q(`insert into organization_settings (organization_id, key, value) values ($1, $2, $3::jsonb)`, [m.org, cle, String(v)]);
+  if (plafondJour !== null) await reg('linkedin_fiches_post_par_jour', plafondJour);
+  if (plafondHeure !== null) await reg('linkedin_requetes_par_heure', plafondHeure);
+  for (let i = 1; i <= n; i += 1) await enregistrerFichePost(pool, m.org, ficheN(i, VIDE), { fenetreJours: FENETRE });
+  return m;
+}
 
+async function rattrapageSelection() {
+  console.log('\n# le rattrapage retient les fiches incomplètes, pas les complètes, pas les épuisées, un job par organisation');
+  await demarrerBoss();
+  const m = await monde();
+  await activerSessionLinkedIn(m.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, m.org, ficheN(1, VIDE), { fenetreJours: FENETRE }); // vide
+  await enregistrerFichePost(pool, m.org, ficheN(2), { fenetreJours: FENETRE }); // complète
+  for (let i = 0; i < 3; i += 1) await enregistrerFichePost(pool, m.org, ficheN(3, VIDE), { fenetreJours: FENETRE }); // épuisée
+
+  const retenues = (await fichesARattraper(pool, m.org, 50)).map((r) => r.url);
+  check('10. la sélection retient l\'incomplète seule (ni la complète, ni l\'épuisée à 3 tentatives)', retenues.length === 1 && retenues[0] === urlN(1), JSON.stringify(retenues));
+
+  await enqueueFichesPostALire(boss, pool);
+  const j1 = await jobsDe(m.org);
+  check('10a. un job de lot pour l\'organisation, chargé de l\'organisation seule', j1.length === 1 && JSON.stringify(j1[0].data) === JSON.stringify({ organizationId: m.org }), JSON.stringify(j1.map((j) => j.data)));
+  await enqueueFichesPostALire(boss, pool);
+  check('10b. un second passage ne dépose rien de plus (file `stately`, singleton par organisation)', (await jobsDe(m.org)).length === 1);
+
+  const autre = await monde();
+  await enregistrerFichePost(pool, autre.org, ficheN(1, VIDE), { fenetreJours: FENETRE });
+  await enqueueFichesPostALire(boss, pool);
+  check('10c. une organisation sans session LinkedIn active n\'est pas servie', (await jobsDe(autre.org)).length === 0);
+
+  const vide = await monde();
+  await activerSessionLinkedIn(vide.ctx, IP_FICHE);
+  await enregistrerFichePost(pool, vide.org, ficheN(1), { fenetreJours: FENETRE });
+  await enqueueFichesPostALire(boss, pool);
+  check('10d. rien à rattraper : aucun job', (await jobsDe(vide.org)).length === 0);
+}
+
+async function rattrapageCritere() {
+  console.log('\n# « incomplète » n\'a qu\'une définition : la sélection SQL et `ficheIncomplete` s\'accordent');
+  const m = await monde();
+  const lignes = [];
+  let i = 0;
+  for (const auteur of [null, 'Ana']) for (const texte of [null, 't']) for (const date of [null, new Date('2026-10-12T08:30:00Z')]) {
+    i += 1;
+    const f = ficheN(i, {
+      auteur: auteur ? { kind: 'person', nom: auteur, nomAffiche: auteur, nomPublic: null, url: null } : null,
+      texte,
+      date,
+    });
+    await enregistrerFichePost(pool, m.org, f, { fenetreJours: FENETRE });
+    lignes.push(urlN(i));
+  }
+  const toutes = (await q(`select url, author_name, text_excerpt, posted_at from linkedin_posts where organization_id = $1`, [m.org])).rows;
+  const attendu = toutes.filter(ficheIncomplete).map((r) => r.url).sort();
+  const lues = (await fichesARattraper(pool, m.org, 100)).map((r) => r.url).sort();
+  check('10e. huit combinaisons auteur / texte / date : mêmes fiches retenues par le SQL et par `ficheIncomplete`', JSON.stringify(lues) === JSON.stringify(attendu) && lues.length === 7, `${lues.length} / ${attendu.length}`);
+}
+
+async function rattrapageLot() {
+  console.log('\n# le lot : une trace par lecture, un rythme, les plafonds, le verrou');
+  // Plafond du jour : 2 sur 5.
+  const m = await monde5(5, 2);
+  const { deps, vu } = depsLot();
+  await traiterFichePost(deps, { organizationId: m.org });
+  const t = await traces(m.org);
+  check('11. plafond du jour 2 : deux fiches lues sur cinq, UN navigateur', vu.navigations.length === 2 && vu.ouvertures === 1, `${vu.navigations.length} navigation(s), ${vu.ouvertures} ouverture(s)`);
+  check('11a. chaque lecture est TRACÉE dans `linkedin_requetes` (kind `fiche`, rattachée à la fiche)', t.length === 2 && t.every((r) => r.post_id !== null && r.source_run_id === null), JSON.stringify(t));
+  check('11b. une pause avant CHAQUE ouverture de page', vu.pauses.length === 2 && vu.pauses.every((ms) => ms > 0), JSON.stringify(vu.pauses));
+  const heure = await q(`select count(*)::int as n from linkedin_requetes where organization_id = $1 and requested_at > now() - interval '1 hour'`, [m.org]);
+  check('11c. ces lectures comptent dans le même budget horaire que la collecte', heure.rows[0].n === 2, String(heure.rows[0].n));
+
+  const b = depsLot();
+  await traiterFichePost(b.deps, { organizationId: m.org });
+  check('11d. plafond du jour atteint : le lot suivant n\'ouvre RIEN', b.vu.ouvertures === 0 && b.vu.navigations.length === 0, JSON.stringify(b.vu.navigations));
+  await q(`delete from pgboss.job where data->>'organizationId' = $1`, [m.org]);
+  await enqueueFichesPostALire(boss, pool);
+  check('11e. et le producteur ne dépose plus de job', (await jobsDe(m.org)).length === 0);
+
+  // Plafond relevé : le crédit neuf va à des fiches NEUVES.
+  await q(`update organization_settings set value = '3'::jsonb where organization_id = $1 and key = 'linkedin_fiches_post_par_jour'`, [m.org]);
+  const c = depsLot();
+  await traiterFichePost(c.deps, { organizationId: m.org });
+  const tout = (await q(`select distinct post_id from linkedin_requetes where organization_id = $1 and kind = 'fiche'`, [m.org])).rows.length;
+  check('11f. plafond relevé de 2 à 3 : une fiche de plus, et trois fiches distinctes en tout', c.vu.navigations.length === 1 && tout === 3, `${c.vu.navigations.length} / ${tout}`);
+
+  // Plafond horaire de la collecte : 1 requête par heure.
+  const h = await monde5(5, 20, 1);
+  const d = depsLot();
+  await traiterFichePost(d.deps, { organizationId: h.org });
+  check('11g. plafond horaire de requêtes à 1 : une seule lecture', d.vu.navigations.length === 1, String(d.vu.navigations.length));
+
+  // Verrou tenu par une collecte : ni navigateur, ni trace, ni crédit consommé.
+  const v = await monde5(3, 20);
+  check('12. le verrou est pris par une collecte', await prendreVerrouLinkedIn(v.ctx, 'collecte-en-cours', 600_000));
+  const e = depsLot();
+  await traiterFichePost(e.deps, { organizationId: v.org });
+  check('12a. verrou tenu : AUCUN navigateur ouvert, aucune navigation', e.vu.ouvertures === 0 && e.vu.navigations.length === 0, JSON.stringify(e.vu));
+  check('12b. et aucune trace, aucun crédit du jour consommé', (await traces(v.org)).length === 0);
+  const verrou = (await q(`select lock_owner from linkedin_server_sessions where organization_id = $1`, [v.org])).rows[0].lock_owner;
+  check('12c. le verrou de la collecte reste à la collecte', verrou === 'collecte-en-cours', String(verrou));
+  await prendreVerrouLinkedIn(v.ctx, 'collecte-en-cours', 0);
+  const f = depsLot();
+  await traiterFichePost(f.deps, { organizationId: v.org });
+  check('12d. verrou libre : le lot s\'exécute, puis rend le verrou', f.vu.navigations.length === 3
+    && (await q(`select lock_until is null or lock_until <= now() as libre from linkedin_server_sessions where organization_id = $1`, [v.org])).rows[0].libre === true);
+}
+
+async function rattrapageTraitement() {
+  console.log('\n# le traitement : page illisible, page lisible, sujet de l\'opérateur');
+  const m = await monde5(2, 20);
+  const ligne = async (n) => (await q(`select * from linkedin_posts where organization_id = $1 and url = $2`, [m.org, urlN(n)])).rows[0];
+
+  const a = depsLot('', async () => 'jamais');
   let leve = null;
-  try { await traiterFichePost(deps('', async () => 'jamais'), { organizationId: m.org, postId: p1 }); } catch (e) { leve = e; }
-  const l1 = await ligne(p1);
-  check('12. une page illisible ne lève pas', leve === null, String(leve));
-  check('12a. elle incrémente `capture_attempts` (1 -> 2)', l1.capture_attempts === 2, String(l1.capture_attempts));
-  check('12b. la fiche reste `pending`, sans texte ni sujet', l1.review_status === 'pending' && l1.text_excerpt === null && l1.subject === null);
+  try { await traiterFichePost(a.deps, { organizationId: m.org }); } catch (e) { leve = e; }
+  const l1 = await ligne(1);
+  check('13. une page illisible ne lève pas', leve === null, String(leve));
+  check('13a. elle incrémente `capture_attempts` (1 -> 2), la fiche reste `pending`, sans texte ni sujet',
+    l1.capture_attempts === 2 && l1.review_status === 'pending' && l1.text_excerpt === null && l1.subject === null, JSON.stringify([l1.capture_attempts, l1.review_status]));
 
-  await traiterFichePost(deps('Recruter un commercial coûte cher, voici ce que nous avons mesuré.', async (t) => `sujet de : ${t.slice(0, 8)}`), { organizationId: m.org, postId: p2 });
-  const l2 = await ligne(p2);
-  check('12c. une page lisible complète le texte', l2.text_excerpt?.startsWith('Recruter') === true, String(l2.text_excerpt));
-  check('12d. le sujet rendu par le rédacteur est rangé, d\'origine `model`', l2.subject === 'sujet de : Recruter' && l2.subject_origin === 'model', JSON.stringify([l2.subject, l2.subject_origin]));
+  const b = depsLot('Recruter un commercial coûte cher, voici ce que nous avons mesuré.', async (t) => `sujet de : ${t.slice(0, 8)}`);
+  await traiterFichePost(b.deps, { organizationId: m.org });
+  const l2 = await ligne(1);
+  check('13b. une page lisible complète le texte', l2.text_excerpt?.startsWith('Recruter') === true, String(l2.text_excerpt));
+  check('13c. le sujet du rédacteur est rangé, d\'origine `model`', l2.subject === 'sujet de : Recruter' && l2.subject_origin === 'model', JSON.stringify([l2.subject, l2.subject_origin]));
 
-  // Un sujet posé par l'opérateur survit au rattrapage.
-  await q(`update linkedin_posts set subject = 'Mon sujet', subject_origin = 'operator', text_excerpt = null where id = $1`, [p2]);
-  await traiterFichePost(deps('Un autre texte lu sur la page.', async () => 'écrasement'), { organizationId: m.org, postId: p2 });
-  const l3 = await ligne(p2);
-  check('12e. le sujet de l\'opérateur n\'est pas remplacé', l3.subject === 'Mon sujet' && l3.subject_origin === 'operator', JSON.stringify([l3.subject, l3.subject_origin]));
+  await q(`update linkedin_posts set subject = 'Mon sujet', subject_origin = 'operator', text_excerpt = null where id = $1`, [l2.id]);
+  const c = depsLot('Un autre texte lu sur la page.', async () => 'écrasement');
+  await traiterFichePost(c.deps, { organizationId: m.org });
+  const l3 = await ligne(1);
+  check('13d. le sujet de l\'opérateur n\'est pas remplacé', l3.subject === 'Mon sujet' && l3.subject_origin === 'operator', JSON.stringify([l3.subject, l3.subject_origin]));
 
-  // Une fiche complète n'ouvre rien.
-  await q(`update linkedin_posts set author_name = 'Ana', posted_at = now(), text_excerpt = 'texte' where id = $1`, [p2]);
-  const avant = (await ligne(p2)).capture_attempts;
-  let ouvert = false;
-  await traiterFichePost({ ...deps('x', async () => null), ouvrirNavigateur: async () => { ouvert = true; return pilote('x'); } }, { organizationId: m.org, postId: p2 });
-  check('12f. une fiche déjà complète n\'ouvre pas le navigateur', ouvert === false);
-  check('12g. et ne compte aucune tentative de plus', (await ligne(p2)).capture_attempts === avant);
+  // Plus rien d'incomplet : le lot n'ouvre rien.
+  await q(`update linkedin_posts set author_name = 'Ana', posted_at = now(), text_excerpt = 'texte' where organization_id = $1`, [m.org]);
+  const d = depsLot();
+  await traiterFichePost(d.deps, { organizationId: m.org });
+  check('13e. aucune fiche incomplète : aucun navigateur ouvert', d.vu.ouvertures === 0);
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapagePlafond, rattrapageTraitement);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
+  await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
   process.exit(failures === 0 ? 0 : 1);
 }

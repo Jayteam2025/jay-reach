@@ -66,8 +66,9 @@ export const QUEUES: readonly QueueDef[] = [
   // envois serait contourné, soit la signature de machine qu'il existe pour éviter.
   { name: 'linkedin.envoi', descriptionKey: 'jobs.q.linkedinEnvoi', retry: { retryLimit: 0, retryBackoff: false }, policy: 'stately' },
   // Rattrapage des fiches de post incomplètes. Ouvre une page LinkedIn : exclue de la route cron
-  // (`FILES_AVEC_NAVIGATEUR`). Deux reprises suffisent, une page illisible ne se corrige pas en insistant.
-  { name: 'linkedin.fiche-post', descriptionKey: 'jobs.q.linkedinFichePost', retry: { retryLimit: 2, retryBackoff: true } },
+  // (`FILES_AVEC_NAVIGATEUR`). Un job de lot par organisation, `stately` comme l'envoi : un seul
+  // navigateur à la fois par organisation. Deux reprises suffisent, une page illisible ne se corrige pas en insistant.
+  { name: 'linkedin.fiche-post', descriptionKey: 'jobs.q.linkedinFichePost', retry: { retryLimit: 2, retryBackoff: true }, policy: 'stately' },
 ] as const;
 
 export const QUEUE_NAMES = QUEUES.map((q) => q.name);
