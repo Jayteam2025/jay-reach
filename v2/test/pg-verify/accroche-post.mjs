@@ -115,6 +115,8 @@
 //      échéance, que plus aucun chemin ne reprend.
 //  59. posts.ts : retirer `and a.block_reason = 'post_a_relire'` de la relance — 37e rougit :
 //      valider un post ferait partir une action bloquée pour une variable manquante.
+//  60. posts.ts : retirer `and s.linkedin_post_id = $2::uuid` de la relance — 37f rougit :
+//      valider un post réveillerait les personnes qui en attendent un AUTRE, encore en attente.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -2176,8 +2178,11 @@ async function gardeALEnvoi() {
       const a = (await q(`select status, block_reason from actions where organization_id = $1 order by created_at desc limit 1`, [m.org])).rows[0];
       const insc = (await q(`select status, current_step from enrollments where organization_id = $1`, [m.org])).rows[0];
       if (relu) {
-        check(`34c. [${canal}] le post RELU, la même action ne bloque pas`,
-          a !== undefined && a.block_reason !== 'post_a_relire', JSON.stringify(a));
+        // L'état ATTENDU, pas « un autre motif » : affirmer `block_reason !== 'post_a_relire'`
+        // laissait le contrôle vert alors que l'action serait bloquée pour une tout autre cause,
+        // donc il ne prouvait pas que le post relu laisse passer.
+        check(`34c. [${canal}] le post RELU, la même action part : planifiée, aucun motif`,
+          a?.status === 'scheduled' && a?.block_reason === null, JSON.stringify(a));
       } else {
         check(`34a. [${canal}] le post en attente : l\'action part en file, bloquée, motif nommé`,
           a?.status === 'blocked' && a?.block_reason === 'post_a_relire', JSON.stringify(a));
@@ -2388,14 +2393,20 @@ async function validerRelanceLesRetenues() {
   const p = await engageurDUnPost(m, 120, { etat: 'pending' });
   await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob120-${Date.now()}@exemple.invalid`]);
   await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp120-${Date.now()}@exemple.invalid`]);
+  // Une SECONDE personne, sur un AUTRE post, retenue elle aussi : valider le premier ne doit pas
+  // la réveiller. `reprendreInscription`, le seul autre mécanisme de reprise du dépôt, s'appelle
+  // par inscription et n'aurait pas cette borne — c'est pourquoi elle est écrite dans la requête.
+  const autre = await engageurDUnPost(m, 122, { etat: 'pending' });
+  await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [autre.contact_id, `bob122-${Date.now()}@exemple.invalid`]);
   await tourDInscription(m.org);
   await q(`update message_templates set body = $2 where id = $1`, [gabarit, ACCROCHE_URL]);
   await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
   await tickDueEnrollments(pool, new Date());
 
+  // L'action DE CETTE personne : l'organisation en porte deux depuis la seconde borne ci-dessous.
   const avant = (await q(`select a.id, a.status, a.block_reason, e.status as insc, e.next_action_at, e.current_step
                             from actions a join enrollments e on e.id = a.enrollment_id
-                           where a.organization_id = $1`, [m.org])).rows[0];
+                           where a.organization_id = $1 and e.contact_id = $2`, [m.org, p.contact_id])).rows[0];
   check('37. retenue : action bloquée, inscription vivante, aucune échéance',
     avant?.block_reason === 'post_a_relire' && avant?.insc === 'active' && avant?.next_action_at === null, JSON.stringify(avant));
   // L'impasse, dite explicitement : le tick ne resélectionne JAMAIS cette inscription.
@@ -2416,6 +2427,14 @@ async function validerRelanceLesRetenues() {
   await rejouerActionsEmailEnAttente({ pool, boss });
   check('37d. le balayage de rejeu l\'enfile : l\'envoi part pour de bon',
     (await q(`select 1 from pgboss.job where name = 'actions.dispatch' and data->>'actionId' = $1`, [avant.id])).rowCount === 1);
+
+  // LA SECONDE BORNE : l'autre personne attend un AUTRE post, encore en attente. Elle reste
+  // retenue — sinon valider un post ferait partir des messages qui en nomment un autre.
+  const actionAutre = (await q(
+    `select a.status, a.block_reason from actions a
+       join enrollments e on e.id = a.enrollment_id where e.contact_id = $1`, [autre.contact_id])).rows[0];
+  check('37f. la personne qui attend un AUTRE post n\'est pas réveillée',
+    actionAutre?.status === 'blocked' && actionAutre?.block_reason === 'post_a_relire', JSON.stringify(actionAutre));
 
   // LA BORNE : un autre motif de blocage n'est pas relâché par la validation d'un post.
   // En LinkedIn : c'est le seul canal dont le tick rend le corps, donc le seul où il peut poser
