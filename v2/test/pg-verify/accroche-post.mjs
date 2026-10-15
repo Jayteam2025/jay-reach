@@ -77,7 +77,8 @@
 //      `repli: true`) — 31g rougit : une fiche sans date n'est plus validable et l'achat reste
 //      gelé, alors que le message partirait en rendant le repli. Et 32b à 32e rougissent avec
 //      lui, sur le gabarit MIXTE : le refus réclame la date EN PLUS du sujet, donc la fiche
-//      n'est plus validable du tout et personne n'entre.
+//      n'est plus validable du tout et personne n'entre, et 32f avec eux : l'adresse vide, à
+//      repli, redevient exigée.
 //  47. accroche-post.ts : faire du repli VIDE un repli côté garde (retirer `(\|\s*)?` du motif
 //      strict) — 31h rougit : « votre réaction du ␣m'a interpellé » part sans que rien ne le dise.
 //  48. posts.ts : retirer `sansRepliVide` de l'aperçu — 31i rougit : l'écran montre le trou au
@@ -1919,6 +1920,22 @@ async function gabaritMixte() {
   check('32e. le message part entier : sujet relu, repli pour la date, adresse réelle du post',
     rendu.missing.length === 0 && rendu.text.includes('sur la prospection par la preuve')
       && rendu.text.includes('publié le 12 octobre') && rendu.text.includes(urlN(77)), JSON.stringify(rendu));
+
+  // L'AUTRE moitié de l'intersection. Les contrôles d'avant prouvent que `{{post_date|…}}`
+  // n'exige rien, parce qu'une fiche peut réellement n'avoir pas de date. `{{post_url|…}}` ne se
+  // prouve pas pareil : `url` est renseignée dès la création, donc « exigée » et « non exigée »
+  // rendent le même verdict tant qu'elle l'est. On la vide, et seulement alors la différence se
+  // voit — c'est le seul endroit où une erreur sur un motif pourrait être masquée par l'autre.
+  const u = await monde();
+  await etapeAvecCorps(u, ACCROCHE_MIXTE);
+  const w = await engageurDUnPost(u, 78, { etat: 'pending', sujet: 'un sujet relu', nomAffiche: null });
+  await q(`update linkedin_posts set posted_at = null, url = '' where id = $1`, [w.fiche]);
+  let refusUrl = null;
+  await validerPost(u.ctx, { postId: w.fiche, campagneId: u.campagne }).catch((e) => { refusUrl = e; });
+  const etatUrl = (await q(`select review_status, url, posted_at from linkedin_posts where id = $1`, [w.fiche])).rows[0];
+  check('32f. l\'adresse à repli n\'exige rien non plus : sans adresse ni date, le sujet suffit',
+    refusUrl === null && etatUrl.review_status === 'approved' && etatUrl.url === '' && etatUrl.posted_at === null,
+    `${refusUrl?.details?.formErrors?.[0] ?? ''} / ${JSON.stringify(etatUrl)}`);
 }
 
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
