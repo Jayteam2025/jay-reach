@@ -47,8 +47,10 @@
 //      — 6c rougit : une capture reprend à l'opérateur le nom qu'il a écrit.
 //  36. posts-fiches.ts : retirer `and p.subject_attempts < $5` de la branche de rédaction — 28j et
 //      28k rougissent : un texte réfractaire rappelle le modèle à chaque passage.
-//  37. sujet-post-anthropic.ts : rendre `{ etat: 'refuse' }` quand le crédit est refusé — 28l
-//      rougit : une fiche brûle ses tentatives sans qu'aucun modèle ne l'ait vue.
+//  37. fiche-post.ts : compter la tentative sur TOUTE issue sans sujet (`else` au lieu de
+//      `else if (issue.etat === 'refuse')`) — 28l rougit : une organisation sans clé de modèle
+//      brûle les tentatives de ses fiches sans qu'aucun modèle ne les ait vues. La distinction
+//      elle-même (crédit pris ou non) vit dans `creerRedacteurDeSujet` et se mute côté Vitest.
 //  38. accroche-post.ts : remettre la jointure par `campaign_sources` seule dans
 //      `sqlAchatRetenuParUnPost` — 30b et 30c rougissent ; dans
 //      `sqlSourceAUneCampagneQuiNommeUnPost` — 30d rougit.
