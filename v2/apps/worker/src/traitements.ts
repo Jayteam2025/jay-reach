@@ -1190,7 +1190,7 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
     case 'linkedin.envoi':
       return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
     case 'linkedin.fiche-post':
-      return traiterFichePost(dependancesFichePostReelles(ctx.pool), donnees as FichePostJob);
+      return traiterFichePost(dependancesFichePostReelles(ctx.pool, ctx.encryptionKey), donnees as FichePostJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

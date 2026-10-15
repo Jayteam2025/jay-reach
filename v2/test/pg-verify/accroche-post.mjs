@@ -18,6 +18,7 @@
 //  13. fiche-post.ts : retirer le `limite` de `fichesARattraper` — 11 rougit.
 //  14. queues.ts : retirer `policy: 'stately'` de la file — 10b rougit.
 //  15. posts-fiches.ts : changer `SQL_FICHE_INCOMPLETE` (ex. ajouter `or subject is null`) — 10e rougit.
+//  16. fiche-post.ts : passer la quantité de `consume_provider_credit` de 1 à 2 — 14 rougit.
 //   7. engageurs.ts : faire naviguer `lireFicheDuPostOuvert` (`pilote.aller`) — 7d rougit.
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -33,6 +34,7 @@ import {
   activerSessionLinkedIn,
   enqueueFichesPostALire,
   traiterFichePost,
+  prendreCreditAnthropic,
   fichesARattraper,
   ficheIncomplete,
   prendreVerrouLinkedIn,
@@ -488,7 +490,7 @@ function depsLot(texte = 'Recruter un commercial coûte cher, voici ce que nous 
       ouvrirNavigateur: async () => { vu.ouvertures += 1; return piloteFiche(texte, vu.navigations); },
       releverSortie: async () => ({ ip: IP_FICHE, operateur: 'AS64496 Exemple Telecom', pays: 'FR' }),
       pause: async (ms) => void vu.pauses.push(ms),
-      redacteur,
+      redacteurPour: async () => redacteur,
     },
   };
 }
@@ -635,8 +637,18 @@ async function rattrapageTraitement() {
   check('13e. aucune fiche incomplète : aucun navigateur ouvert', d.vu.ouvertures === 0);
 }
 
+async function sujetCredit() {
+  console.log('\n# le crédit du sujet : celui du scoring, une unité par appel');
+  const m = await monde();
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'scoring_par_jour', '2'::jsonb)`, [m.org]);
+  const r = [await prendreCreditAnthropic(pool, m.org), await prendreCreditAnthropic(pool, m.org), await prendreCreditAnthropic(pool, m.org)];
+  const u = (await q(`select used from provider_daily_usage where organization_id = $1 and provider_id = 'anthropic'`, [m.org])).rows;
+  check('14. plafond de scoring à 2 : deux crédits accordés, le troisième refusé', JSON.stringify(r) === '[true,true,false]', JSON.stringify(r));
+  check('14a. une unité par appel, sur le fournisseur `anthropic`', u.length === 1 && u[0].used === 2, JSON.stringify(u));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetCredit);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

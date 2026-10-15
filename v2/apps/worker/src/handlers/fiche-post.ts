@@ -28,11 +28,14 @@ import {
   jourCourantDansFuseau,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
+  plafondDuJour,
   prendreVerrouLinkedIn,
   tracerLectureFichePost,
   type Contexte,
   type Sortie,
 } from '@jay-reach/core';
+import { resolveProviderCredentials } from '../credentials.js';
+import { createAnthropicRedacteurDeSujet } from '../sujet-post-anthropic.js';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { delaiAleatoire } from '../linkedin/engageurs.js';
 import { lireFichePost } from '../linkedin/fiche-post.js';
@@ -51,7 +54,8 @@ export interface DependancesFichePost {
   ouvrirNavigateur(): Promise<Pilote>;
   releverSortie(pilote: Pilote): Promise<Sortie>;
   pause(ms: number): Promise<void>;
-  readonly redacteur: RedacteurDeSujet;
+  /** Le rédacteur de l'organisation : il dépense SON crédit et lit SES clés, d'où le paramètre. */
+  redacteurPour(organizationId: string): Promise<RedacteurDeSujet>;
 }
 
 /** Fiches lues au plus par lot : un lot par heure et par organisation, le plafond du jour borne le reste. */
@@ -63,6 +67,20 @@ const DUREE_VERROU_LOT_MS = 10 * 60_000;
 const UNE_HEURE_MS = 3_600_000;
 
 const FILE = 'linkedin.fiche-post';
+
+/**
+ * Une unité du crédit `anthropic` du jour, le même que consomme le scoring (même plafond, même clé de
+ * jour de l'organisation). Pas de plafond neuf : un plafond atteint rend `false`.
+ */
+export async function prendreCreditAnthropic(pool: Pool, organizationId: string): Promise<boolean> {
+  const plafond = await plafondDuJour(pool, organizationId, 'scoring_par_jour');
+  const jour = jourCourantDansFuseau(await fuseauDeLOrganisation(pool, organizationId));
+  const credit = await pool.query<{ ok: boolean }>(
+    `select app.consume_provider_credit($1, 'anthropic', $2, 1, $3::date) as ok /* jr:fiche_post_credit */`,
+    [organizationId, plafond, jour],
+  );
+  return credit.rows[0]?.ok === true;
+}
 
 /** Ce qu'il reste à lire, sous les DEUX plafonds : celui du jour, et le budget horaire de la collecte. */
 async function placeRestante(ctx: Contexte): Promise<number> {
@@ -113,6 +131,8 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
     // `verifierSortie` a déjà bloqué la session : rien ne doit partir vers LinkedIn.
     if (!controle.ok) return;
 
+    // Résolu à la première fiche qui en a besoin : aucune clé lue pour un lot sans sujet à rédiger.
+    let redacteur: RedacteurDeSujet | null = null;
     for (const ligne of fiches) {
       // Toujours une pause : enchaîner des pages sans délai est ce qui se repère le mieux.
       await d.pause(delaiAleatoire());
@@ -127,7 +147,8 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
       // Le sujet : seulement s'il n'y en a pas (un sujet de l'opérateur ne se remplace jamais).
       const texte = fiche.texte ?? ligne.text_excerpt;
       if (ligne.subject === null && texte !== null) {
-        const sujet = await d.redacteur(texte).catch(() => null);
+        redacteur ??= await d.redacteurPour(job.organizationId).catch(() => async () => null);
+        const sujet = await redacteur(texte).catch(() => null);
         if (sujet !== null) {
           await pool.query(
             `update linkedin_posts set subject = $3, subject_origin = 'model' /* jr:fiche_post_sujet */
@@ -143,15 +164,27 @@ export async function traiterFichePost(d: DependancesFichePost, job: FichePostJo
   }
 }
 
-/** Les dépendances réelles. Le rédacteur rend `null` jusqu'à la tâche 6. */
-export function dependancesFichePostReelles(pool: Pool): DependancesFichePost {
+/**
+ * Les dépendances réelles. Le rédacteur est celui d'Anthropic, avec la clé de l'organisation ; sans
+ * clé, il rend `null` (la fiche garde son sujet vide, l'opérateur le saisit).
+ */
+export function dependancesFichePostReelles(pool: Pool, encryptionKey?: string): DependancesFichePost {
   return {
     pool,
     env: process.env,
     ouvrirNavigateur: async () => (await import('../linkedin/navigateur.js')).ouvrirNavigateur(),
     releverSortie: async (p) => (await import('../linkedin/navigateur.js')).releverSortie(p),
     pause: (ms) => new Promise((r) => setTimeout(r, ms)),
-    redacteur: async () => null,
+    redacteurPour: async (organizationId) => {
+      const credentials = await resolveProviderCredentials(pool, organizationId, 'anthropic', { encryptionKey });
+      const apiKey = credentials?.api_key;
+      if (!apiKey) return async () => null;
+      return createAnthropicRedacteurDeSujet({
+        apiKey,
+        config: credentials,
+        prendreCredit: () => prendreCreditAnthropic(pool, organizationId),
+      });
+    },
   };
 }
 

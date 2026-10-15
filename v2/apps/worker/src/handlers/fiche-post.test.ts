@@ -10,9 +10,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { Pool } from 'pg';
-import { CLES_REGLAGES, QUEUES } from '@jay-reach/core';
+import { CLES_REGLAGES, QUEUES, SUJET_POST_MAX_CARACTERES } from '@jay-reach/core';
 import { FILES_AVEC_NAVIGATEUR, FILES_BRANCHEES } from '../traitements.js';
 import { traiterFichePost, type DependancesFichePost } from './fiche-post.js';
+import { creerRedacteurDeSujet, type AppelModeleSujet } from '../sujet-post-anthropic.js';
 
 describe('la file linkedin.fiche-post', () => {
   it('est déclarée, avec deux reprises et un seul job en vol par organisation', () => {
@@ -51,11 +52,88 @@ describe('traiterFichePost', () => {
       ouvrirNavigateur: ouvrir,
       releverSortie: async () => ({ ip: '203.0.113.7' }),
       pause: async () => undefined,
-      redacteur: async () => null,
+      redacteurPour: async () => async () => null,
     };
     await traiterFichePost(d, { organizationId: 'org-1' });
     expect(requete).not.toHaveBeenCalled();
     expect(ouvrir).not.toHaveBeenCalled();
     await pool.end();
+  });
+});
+
+describe('le rédacteur de sujet', () => {
+  /** Un modèle factice et un crédit factice, qui comptent leurs appels. */
+  function monde(reponse: string | null, credit = true) {
+    const vu = { appels: [] as string[], credits: 0 };
+    const appeler: AppelModeleSujet = async (texte) => {
+      vu.appels.push(texte);
+      return reponse;
+    };
+    const prendreCredit = async () => {
+      vu.credits += 1;
+      return credit;
+    };
+    return { vu, redacteur: creerRedacteurDeSujet({ appeler, prendreCredit }) };
+  }
+
+  it('rend le sujet du modèle, et dépense une unité de crédit', async () => {
+    const m = monde("l'adoption du CRM par les commerciaux");
+    expect(await m.redacteur('Les commerciaux n’adoptent pas leur CRM.')).toBe("l'adoption du CRM par les commerciaux");
+    expect(m.vu.credits).toBe(1);
+    expect(m.vu.appels).toHaveLength(1);
+  });
+
+  it('un texte vide ou fait d’espaces n’appelle pas le modèle et ne dépense rien', async () => {
+    const m = monde('un sujet');
+    expect(await m.redacteur('')).toBeNull();
+    expect(await m.redacteur('  \n ')).toBeNull();
+    expect(m.vu).toEqual({ appels: [], credits: 0 });
+  });
+
+  it('un crédit refusé n’appelle pas le modèle', async () => {
+    const m = monde('un sujet', false);
+    expect(await m.redacteur('Un texte')).toBeNull();
+    expect(m.vu.appels).toEqual([]);
+  });
+
+  it('un sujet vide ou fait d’espaces rend null', async () => {
+    expect(await monde('').redacteur('Un texte')).toBeNull();
+    expect(await monde('   \n ').redacteur('Un texte')).toBeNull();
+    expect(await monde(null).redacteur('Un texte')).toBeNull();
+  });
+
+  it('un sujet trop long est refusé, pas tronqué', async () => {
+    const long = 'la façon dont les directeurs commerciaux des PME françaises repensent entièrement leur outil de suivi';
+    expect(long.length).toBeGreaterThan(SUJET_POST_MAX_CARACTERES);
+    expect(await monde(long).redacteur('Un texte')).toBeNull();
+  });
+
+  it('un sujet sur plusieurs lignes est refusé', async () => {
+    expect(await monde("l'adoption du CRM\net de l'IA").redacteur('Un texte')).toBeNull();
+  });
+
+  it('retire guillemets et point final, et la majuscule initiale d’un mot ordinaire', async () => {
+    expect(await monde('« L’adoption du CRM par les commerciaux. »').redacteur('t')).toBe("l’adoption du CRM par les commerciaux");
+    expect(await monde('"Le recrutement des commerciaux"').redacteur('t')).toBe('le recrutement des commerciaux');
+  });
+
+  it('garde la casse d’un sigle ou d’un nom propre en tête', async () => {
+    expect(await monde('CRM et adoption par les commerciaux').redacteur('t')).toBe('CRM et adoption par les commerciaux');
+    expect(await monde('LinkedIn comme canal de prospection').redacteur('t')).toBe('LinkedIn comme canal de prospection');
+  });
+
+  it('une erreur du modèle ne dépense pas deux fois et rend null', async () => {
+    const vu = { credits: 0 };
+    const r = creerRedacteurDeSujet({
+      appeler: async () => {
+        throw new Error('panne');
+      },
+      prendreCredit: async () => {
+        vu.credits += 1;
+        return true;
+      },
+    });
+    expect(await r('Un texte')).toBeNull();
+    expect(vu.credits).toBe(1);
   });
 });
