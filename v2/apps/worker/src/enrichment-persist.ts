@@ -6,7 +6,7 @@
  * contacts (+ colonnes email/email_status/email_confidence) du cahier des charges.
  */
 import type { Pool } from 'pg';
-import { normaliserUrlProfil } from '@jay-reach/core';
+import { normaliserUrlProfil, normaliserUrnLinkedIn } from '@jay-reach/core';
 
 /**
  * Verdict de délivrabilité stocké dans `contacts.email_status`, et lu par le gate.
@@ -132,6 +132,10 @@ export async function persistEnrichedContact(
   // FullEnrich : le premier a interrogé le serveur de messagerie, le second
   // rapporte ce qu'il croit savoir.
   const { status, confidence } = verified ?? mapEmailStatus(c.emailStatusRaw);
+  // Garde à l'écriture : la colonne ne porte qu'un identifiant de membre LinkedIn (forme nue). Un
+  // identifiant d'un autre fournisseur (l'UUID FullEnrich) y fabriquait des adresses de profil qui
+  // n'existent pas, et des exclusions posées sur un faux lien.
+  const urnMembre = c.linkedinProviderId ? normaliserUrnLinkedIn(c.linkedinProviderId) : null;
   // L'adresse rendue par le fournisseur s'écrit de plusieurs façons : on la ramène
   // à la forme des contacts avant de chercher ou d'insérer, sinon un engageur est
   // manqué et doublé sous une autre graphie.
@@ -159,7 +163,7 @@ export async function persistEnrichedContact(
           status,
           confidence,
           c.personaId ?? null,
-          c.linkedinProviderId ?? null,
+          urnMembre,
           urlProfil,
         ],
       );
@@ -208,7 +212,7 @@ export async function persistEnrichedContact(
         status,
         confidence,
         urlProfil,
-        c.linkedinProviderId ?? null,
+        urnMembre,
         JSON.stringify({ emailStatusRaw: c.emailStatusRaw ?? null }),
         c.sourceSignalId ?? null,
       ],
