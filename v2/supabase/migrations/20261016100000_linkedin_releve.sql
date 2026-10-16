@@ -111,7 +111,7 @@ begin
 
   -- 1.c : la contrainte d'origine, jouée sur une copie (CHECK seulement, aucune clé étrangère).
   drop table if exists pg_temp._origine_test;
-  create temp table _origine_test (like public.linkedin_requetes including constraints);
+  create temp table _origine_test (like public.linkedin_requetes including defaults including constraints);
   -- messagerie sans origine : admise
   insert into _origine_test (id, organization_id, kind) values (1, gen_random_uuid(), 'messagerie');
   -- une origine, kind nul (trace de collecte existante) : admise
