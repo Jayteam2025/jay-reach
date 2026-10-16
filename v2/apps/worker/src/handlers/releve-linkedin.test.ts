@@ -98,6 +98,10 @@ function monde(opts: {
   jour?: Date;
   contactsParUrn?: Record<string, string[]>;
   contactsParUrl?: Record<string, string[]>;
+  plafondHoraire?: number;
+  requetesDeLHeure?: number;
+  /** L'ecriture de l'URN du contact echoue. */
+  urnEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -130,6 +134,13 @@ function monde(opts: {
       w.traces += 1;
       w.journal.push('trace');
       return rep([{}]);
+    }
+    if (tag === 'plafond_du_jour' || t.includes('organization_settings')) return rep([{ value: String(opts.plafondHoraire ?? 60) }]);
+    if (tag === 'linkedin_requetes_compter') return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
+    if (tag === 'contact_memoriser_urn') {
+      w.journal.push(`urn_contact contact=${String(params[0])} org=${String(params[1])} urn=${String(params[2])}`);
+      if (opts.urnEchoue) throw new Error('base indisponible');
+      return rep([]);
     }
     if (tag === 'linkedin_releve_etat_lire') {
       return rep([{ releve_curseur_at: opts.curseur ?? null, releve_compte_urn: opts.compte ?? null }]);
@@ -287,6 +298,26 @@ describe('la sortie reseau et le navigateur', () => {
   });
 });
 
+describe('le plafond de requetes de l heure', () => {
+  it('budget insuffisant : ni verrou ni navigateur, curseur inchange', async () => {
+    const w = monde({ plafondHoraire: 60, requetesDeLHeure: 59, compte: MOI_NU, curseur: new Date(AVANT) });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.journal.some((l) => l.startsWith('verrou'))).toBe(false);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+    expect(etatEcrit(w)).toEqual([]);
+  });
+
+  it('juste assez de budget pour deux requetes : le passage a lieu', async () => {
+    const w = monde({ plafondHoraire: 60, requetesDeLHeure: 58, compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.ouvrir).toHaveBeenCalled();
+  });
+
+  it('le verrou dure autant que celui de l envoi : cinq minutes', () => {
+    expect(DUREE_VERROU_RELEVE_MS).toBe(5 * 60_000);
+  });
+});
+
 describe('le compte connecté', () => {
   it('compte change : rien traite, curseur fige, nouveau compte pose, aucune lecture des conversations', async () => {
     const w = monde({ compte: 'ACoAAancien', curseur: new Date(AVANT), conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne' }) } });
@@ -295,7 +326,7 @@ describe('le compte connecté', () => {
     expect(mocks.notifier).not.toHaveBeenCalled();
     expect(w.requetes).toEqual([URL_ME]);
     // Le nouveau compte est posé, SANS curseur (`null` : la requête garde l'existant).
-    expect(etatEcrit(w)).toEqual([`etat compte=${MOI_NU} curseur=null`]);
+    expect(etatEcrit(w)).toEqual([`etat compte=${MOI} curseur=null`]);
   });
 
   it('la meme personne sous une autre forme (prefixee en base) n est PAS un changement de compte', async () => {
@@ -313,7 +344,7 @@ describe('le compte connecté', () => {
     const w = monde({ compte: null, curseur: null, conversations: { statut: 200, corps: charge() } });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(w.requetes).toEqual([URL_ME, URL_CONVERSATIONS]);
-    expect(etatEcrit(w)).toEqual([`etat compte=${MOI_NU} curseur=${MAINTENANT.toISOString()}`]);
+    expect(etatEcrit(w)).toEqual([`etat compte=${MOI} curseur=${MAINTENANT.toISOString()}`]);
   });
 
   it('une lecture de /me illisible leve et fige le curseur : sans identite, nos sortants passeraient pour des reponses', async () => {
@@ -334,14 +365,14 @@ describe('le curseur', () => {
     });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(mocks.enregistrer).not.toHaveBeenCalled();
-    expect(etatEcrit(w)).toEqual([`etat compte=${MOI_NU} curseur=${MAINTENANT.toISOString()}`]);
+    expect(etatEcrit(w)).toEqual([`etat compte=${MOI} curseur=${MAINTENANT.toISOString()}`]);
   });
 
   it('apres un succes, le curseur avance a maintenant moins la marge', async () => {
     const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(etatEcrit(w)).toEqual([
-      `etat compte=${MOI_NU} curseur=${new Date(MAINTENANT.getTime() - MARGE_CURSEUR_MS).toISOString()}`,
+      `etat compte=${MOI} curseur=${new Date(MAINTENANT.getTime() - MARGE_CURSEUR_MS).toISOString()}`,
     ]);
   });
 
@@ -349,7 +380,7 @@ describe('le curseur', () => {
     const recent = new Date(MAINTENANT.getTime() - 60_000);
     const w = monde({ compte: MOI_NU, curseur: recent, conversations: { statut: 200, corps: charge() } });
     await traiterReleveLinkedIn(deps(w), JOB);
-    expect(etatEcrit(w)).toEqual([`etat compte=${MOI_NU} curseur=${recent.toISOString()}`]);
+    expect(etatEcrit(w)).toEqual([`etat compte=${MOI} curseur=${recent.toISOString()}`]);
   });
 
   it('ErreurMessagerie (forme illisible) : erreur propagee, curseur fige, verrou rendu, navigateur ferme', async () => {
@@ -428,6 +459,8 @@ describe('les entrants', () => {
     });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(mocks.enregistrer.mock.calls[0]![2]).toMatchObject({ contactId: 'contact-url' });
+    // Le contact bascule sur le chemin principal : son URN est memorise (forme nue ou non, `memoriserUrnDuContact` normalise).
+    expect(w.journal).toContain('urn_contact contact=contact-url org=org-1 urn=ACoAAjeanne');
     // Le repli est borne a l'organisation, comme le premier temps.
     const sqlUrl = w.requetesSql.filter((q) => q.tag === 'releve_rattacher_url');
     expect(sqlUrl).toHaveLength(1);
@@ -446,6 +479,71 @@ describe('les entrants', () => {
     await traiterReleveLinkedIn(deps(w), JOB);
     const q = w.requetesSql.find((r) => r.tag === 'releve_rattacher_urn')!;
     expect(q.params[1]).toEqual(['ACoAAjeanne', 'urn:li:fsd_profile:ACoAAjeanne', 'urn:li:fs_miniProfile:ACoAAjeanne']);
+  });
+
+  it('une URL qui ne designe pas un profil (membre hors reseau, autre hote) ne rattache rien et n interroge pas la base', async () => {
+    for (const url of ['https://www.linkedin.com/in/', 'https://www.linkedin.com/in', 'https://example.com/in/jeanne', 'https://www.linkedin.com/company/acme']) {
+      mocks.enregistrer.mockClear();
+      const w = monde({
+        compte: MOI_NU,
+        curseur: new Date(AVANT),
+        conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne', url }) },
+        contactsParUrl: { [url]: ['contact-tronque'], 'https://www.linkedin.com/in': ['contact-tronque'] },
+      });
+      await traiterReleveLinkedIn(deps(w), JOB);
+      expect(mocks.enregistrer, url).not.toHaveBeenCalled();
+      expect(w.requetesSql.some((q) => q.tag === 'releve_rattacher_url'), url).toBe(false);
+    }
+  });
+
+  it('l URL est ecrite sous sa forme canonique avant la recherche', async () => {
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne', url: 'linkedin.com/in/jeanne-dupont/?trk=x' }) },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.requetesSql.find((q) => q.tag === 'releve_rattacher_url')!.params[1]).toBe('https://www.linkedin.com/in/jeanne-dupont');
+  });
+
+  it('une URL portee par plusieurs contacts est refusee : deux personnes possibles, on ne rattache pas', async () => {
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne', url: 'https://www.linkedin.com/in/jeanne-dupont' }) },
+      contactsParUrl: { 'https://www.linkedin.com/in/jeanne-dupont': ['c-a', 'c-b'] },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.enregistrer).not.toHaveBeenCalled();
+    const log = sortie.log.join('\n');
+    expect(log).toContain('"urlAmbigues":1');
+    expect(log).toContain('"nonRattaches":1');
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('l URN n est memorise que pour un rattachement par URL, jamais par URN', async () => {
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne' }) },
+      contactsParUrn: { ACoAAjeanne: ['contact-1'] },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.journal.some((l) => l.startsWith('urn_contact'))).toBe(false);
+  });
+
+  it('une memorisation d URN qui echoue ne fait pas echouer la reponse : elle est enregistree et notifiee', async () => {
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      urnEchoue: true,
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne', url: 'https://www.linkedin.com/in/jeanne-dupont' }) },
+      contactsParUrl: { 'https://www.linkedin.com/in/jeanne-dupont': ['contact-url'] },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.enregistrer).toHaveBeenCalledTimes(1);
+    expect(mocks.notifier).toHaveBeenCalledTimes(1);
+    expect(etatEcrit(w)).toHaveLength(1);
   });
 
   it('l URN prime sur l URL : un contact trouve par URN n declenche pas la recherche par URL', async () => {

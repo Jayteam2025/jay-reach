@@ -458,9 +458,8 @@ describe('plafonds LinkedIn', () => {
     await tracerRequeteMessagerie(ctx);
     const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
     expect(sql).toMatch(/insert into linkedin_requetes/);
-    expect(sql).toContain("'messagerie'");
     expect(sql).not.toMatch(/source_run_id|action_queue_id|post_id/);
-    expect(params).toEqual(['org-1']);
+    expect(params).toEqual(['org-1', 'messagerie']);
   });
 });
 

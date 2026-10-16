@@ -32,7 +32,10 @@ import {
   heureLocale,
   isWithinWindow,
   lireHeuresEnvoiLinkedIn,
+  compterRequetesLinkedIn,
   lirePlafondLinkedIn,
+  memoriserUrnDuContact,
+  normaliserUrlProfil,
   lireSessionLinkedIn,
   normaliserUrnLinkedIn,
   notifyReply,
@@ -64,8 +67,15 @@ export type DependancesReleve = {
   releverSortie(pilote: Pilote): Promise<Sortie>;
 };
 
-/** Un passage coûte deux requêtes (`/me`, conversations) : trois minutes couvrent un navigateur lent. */
-export const DUREE_VERROU_RELEVE_MS = 3 * 60_000;
+/**
+ * Durée du verrou : celle de l'envoi, dont la relève partage l'amont (Chromium, écho d'IP) et la
+ * session. Un verrou qui expire avant la fin du passage laisserait `linkedin.envoi` le prendre
+ * légitimement : deux navigateurs sur la même session, le signal qui fait sauter un compte.
+ */
+export const DUREE_VERROU_RELEVE_MS = 5 * 60_000;
+/** Ce qu'un passage coûte au budget de requêtes de l'heure : `/me` et les conversations. */
+export const REQUETES_PAR_RELEVE = 2;
+const UNE_HEURE_MS = 3_600_000;
 /** Conversations lues par passage : le nombre que l'ancienne extension demandait. */
 const NOMBRE_CONVERSATIONS = 20;
 /**
@@ -92,7 +102,7 @@ const nomDe = (err: unknown): string => (err instanceof Error ? err.name : 'Erre
 
 type EtatReleve = { curseur: Date | null; compteUrn: string | null };
 
-async function lireEtat(pool: Pool, organizationId: string): Promise<EtatReleve> {
+export async function lireEtat(pool: Pool, organizationId: string): Promise<EtatReleve> {
   const res = await pool.query<{ releve_curseur_at: Date | null; releve_compte_urn: string | null }>(
     `select releve_curseur_at, releve_compte_urn
        from linkedin_server_sessions /* jr:linkedin_releve_etat_lire */
@@ -104,7 +114,7 @@ async function lireEtat(pool: Pool, organizationId: string): Promise<EtatReleve>
 }
 
 /** Pose le compte connecté ; le curseur, lui, ne bouge que s'il est fourni. */
-async function ecrireEtat(pool: Pool, organizationId: string, compteUrn: string, curseur: Date | null): Promise<void> {
+export async function ecrireEtat(pool: Pool, organizationId: string, compteUrn: string, curseur: Date | null): Promise<void> {
   await pool.query(
     `update linkedin_server_sessions /* jr:linkedin_releve_etat_ecrire */
         set releve_compte_urn = $2,
@@ -114,15 +124,23 @@ async function ecrireEtat(pool: Pool, organizationId: string, compteUrn: string,
   );
 }
 
-type Rattachement = { contactId: string; par: 'urn' | 'url'; ambigu: boolean } | null;
+/** `url_ambigue` : plusieurs contacts portent cette URL, et ce peuvent être des personnes différentes. */
+type Rattachement = { contactId: string; par: 'urn' | 'url'; ambigu: boolean } | 'url_ambigue' | null;
 
 /**
  * Le contact de l'organisation que ce message désigne : d'abord par l'identifiant du profil (comparé
  * après normalisation, les deux formes — nue et préfixée — étant lues), puis en repli par l'URL de
- * profil, comparée par `app.url_linkedin_normalisee`. Plusieurs contacts pour une même personne :
- * le plus ancien, et le cas est compté. Borné à l'organisation (le worker n'a pas de RLS).
+ * profil. Borné à l'organisation (le worker n'a pas de RLS).
+ *
+ * Par URN, plusieurs contacts sont la même personne en double : le plus ancien, et le cas est compté.
+ * Par URL c'est autre chose, deux contacts peuvent être deux personnes : on refuse (`url_ambigue`),
+ * un mauvais rattachement arrête définitivement la séquence d'un prospect.
+ *
+ * L'URL passe d'abord par `normaliserUrlProfil`, qui exige l'hôte LinkedIn ET `/in/<segment>` :
+ * `app.url_linkedin_normalisee` ne valide aucune forme, et `https://www.linkedin.com/in/` (un membre
+ * hors réseau) se réduirait à `linkedin.com/in`, égal à toute URL enregistrée tronquée.
  */
-async function rattacher(pool: Pool, organizationId: string, m: MessageReleve): Promise<Rattachement> {
+export async function rattacher(pool: Pool, organizationId: string, m: MessageReleve): Promise<Rattachement> {
   const urn = normaliserUrnLinkedIn(m.expediteurUrn);
   if (urn !== null) {
     const res = await pool.query<{ id: string }>(
@@ -133,8 +151,8 @@ async function rattacher(pool: Pool, organizationId: string, m: MessageReleve): 
     );
     if (res.rows[0]) return { contactId: res.rows[0].id, par: 'urn', ambigu: res.rows.length > 1 };
   }
-  const url = m.expediteurUrl?.trim() ?? '';
-  if (url === '') return null;
+  const url = m.expediteurUrl === null ? null : normaliserUrlProfil(m.expediteurUrl);
+  if (url === null) return null;
   const res = await pool.query<{ id: string }>(
     `select id from contacts /* jr:releve_rattacher_url */
       where organization_id = $1
@@ -143,7 +161,8 @@ async function rattacher(pool: Pool, organizationId: string, m: MessageReleve): 
       order by created_at, id`,
     [organizationId, url],
   );
-  return res.rows[0] ? { contactId: res.rows[0].id, par: 'url', ambigu: res.rows.length > 1 } : null;
+  if (res.rows.length > 1) return 'url_ambigue';
+  return res.rows[0] ? { contactId: res.rows[0].id, par: 'url', ambigu: false } : null;
 }
 
 /** Les 140 premiers caractères (par points de code : jamais une paire de substitution coupée). */
@@ -156,6 +175,8 @@ type Compteurs = {
   dejaEnregistres: number;
   nonRattaches: number;
   rattachesParUrl: number;
+  /** Entrants dont l'URL désigne plusieurs contacts : refusés, comptés non rattachés aussi. */
+  urlAmbigues: number;
   ambigus: number;
   /** Entrants dont l'enregistrement ou la notification a échoué : le curseur ne bouge pas. */
   echecs: number;
@@ -184,6 +205,17 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
   const { hour, isoDay } = heureLocale(maintenant, heures.fuseau);
   if (!heures.jours.includes(isoDay) || !isWithinWindow(hour, heures.debutHeure, heures.finHeure)) {
     console.log('[releve-linkedin] hors de la plage horaire, passage suivant');
+    return;
+  }
+
+  // Plafond de requêtes de l'heure, partagé avec les autres canaux : lu AVANT le verrou et le navigateur,
+  // comme l'envoi. Un budget épuisé ne doit rien ouvrir ; le curseur ne bouge pas, le passage suivant rattrape.
+  const [plafondHoraire, deLHeure] = await Promise.all([
+    lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
+    compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
+  ]);
+  if (plafondHoraire - deLHeure < REQUETES_PAR_RELEVE) {
+    console.log('[releve-linkedin] plafond de requêtes de l’heure atteint, passage suivant');
     return;
   }
 
@@ -233,7 +265,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     const etat = await lireEtat(pool, org);
     const ancien = etat.compteUrn === null ? null : normaliserUrnLinkedIn(etat.compteUrn);
     if (ancien !== null && ancien !== moi) {
-      await ecrireEtat(pool, org, moi, null);
+      await ecrireEtat(pool, org, identite.urn, null);
       console.warn('[releve-linkedin] le compte connecté a changé : rien traité, curseur inchangé');
       return;
     }
@@ -247,7 +279,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     if (rep.statut < 200 || rep.statut >= 300) {
       throw erreurNommee('StatutInattendu', `La messagerie LinkedIn a répondu ${rep.statut} : la relève est suspendue.`);
     }
-    const releve = analyserConversations(rep.corps, moi, depuis);
+    const releve = analyserConversations(rep.corps, identite.urn, depuis);
 
     const c: Compteurs = {
       entrants: releve.entrants.length,
@@ -255,6 +287,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
       dejaEnregistres: 0,
       nonRattaches: 0,
       rattachesParUrl: 0,
+      urlAmbigues: 0,
       ambigus: 0,
       echecs: 0,
     };
@@ -263,11 +296,19 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     for (const m of entrants) {
       try {
         const lien = await rattacher(pool, org, m);
-        if (lien === null) {
+        if (lien === 'url_ambigue') c.urlAmbigues += 1;
+        if (lien === null || lien === 'url_ambigue') {
           c.nonRattaches += 1;
           continue;
         }
-        if (lien.par === 'url') c.rattachesParUrl += 1;
+        if (lien.par === 'url') {
+          c.rattachesParUrl += 1;
+          // Le contact bascule sur le chemin principal pour toutes ses réponses suivantes. Confort : un
+          // échec n'est pas un échec du message (la réponse reste rattachée par l'URL au prochain passage).
+          await memoriserUrnDuContact(pool, org, lien.contactId, m.expediteurUrn).catch((err: unknown) => {
+            console.error(`[releve-linkedin] identifiant du contact non mémorisé (${nomDe(err)})`);
+          });
+        }
         if (lien.ambigu) c.ambigus += 1;
         const enregistre = await recordInboundReply(pool, org, {
           contactId: lien.contactId,
@@ -301,7 +342,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
       );
     }
     const suivant = etat.curseur === null ? maintenant : new Date(Math.max(etat.curseur.getTime(), maintenant.getTime() - MARGE_CURSEUR_MS));
-    await ecrireEtat(pool, org, moi, suivant);
+    await ecrireEtat(pool, org, identite.urn, suivant);
   } finally {
     // Durée nulle, même propriétaire : le verrou tombe tout de suite.
     if (verrouPris) await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);

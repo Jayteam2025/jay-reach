@@ -728,7 +728,7 @@ export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn
  * colonne, et celles qui ne relèvent d'aucun plafond propre. Seule 'profil' est lue aujourd'hui,
  * par `compterVisitesProfilLinkedIn`.
  */
-export type KindRequeteLinkedIn = 'profil' | 'fiche';
+export type KindRequeteLinkedIn = 'profil' | 'fiche' | 'messagerie';
 
 /**
  * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
@@ -748,6 +748,8 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string, 
   if (res.rowCount === 0) throw new Error("Passage de collecte introuvable pour cette organisation.");
 }
 
+const KIND_MESSAGERIE: KindRequeteLinkedIn = 'messagerie';
+
 /**
  * Consigne UNE requête de la relève de messagerie, au moment où elle part : même table, même fenêtre
  * horaire que la collecte, donc le même budget. Elle ne se rattache à aucun passage, action ni
@@ -756,8 +758,8 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string, 
 export async function tracerRequeteMessagerie(ctx: Pick<Contexte, 'ex' | 'organisationId'>): Promise<void> {
   await ctx.ex.query(
     `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_messagerie_tracer */
-     values ($1, 'messagerie')`,
-    [ctx.organisationId],
+     values ($1, $2)`,
+    [ctx.organisationId, KIND_MESSAGERIE],
   );
 }
 
