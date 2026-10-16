@@ -26,6 +26,12 @@
 //      `where not exists` d'une des deux insertions — 101 et 102 rougissent ; retirer le `and organization_id = $2` de la
 //      lecture du contact — 104 rougit ; de la mise a jour du statut dans `poserExclusion` — 107 rougit ; `enrollContact` sans le `not exists (... do_not_contact)` — 96 rougit (la
 //      paire : l'inscription du contact exclu aboutit) ; `poserExclusion` qui pose toujours 'manual' — 93 rougit.
+//  11. (tache 8) annulerEnvoisEnFile : retirer l'appel dans exclureApresReponse — 113 a 118 rougissent ; retirer `status = 'pending'`
+//      — 114 rougit ; retirer `origine <> 'reponse'` — 118 rougit ; retirer le `update actions` — 115 ; retirer la branche
+//      `contact_id is null or ...` — 116 ; passer `contact.linkedin_url` brut au lieu de `reelle` (retirer la validation) — 117 SEUL rougit ;
+//      GARDE de reclamerProchaineAction : retirer le bloc `jr:linkedin_garde_contact_exclu` — 119, 119b et 122 rougissent (120 et 121 restent verts) ;
+//      retirer `q.origine <> 'reponse'` DE LA GARDE — 121 seul ; retirer son `exists (... do_not_contact)` — 120 et 122 (tout est refuse) ; retirer son `update actions` — 119b ;
+//      retirer `organization_id = $1` de l'annulation — 123.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -48,6 +54,7 @@ import {
   poserExclusion,
   enrollContact,
   inscrireContact,
+  reclamerProchaineAction,
 } from './_releve-linkedin-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -666,9 +673,136 @@ async function exclusionSurReponse() {
       l310.length === 2 && l310.every((r) => r.origin === 'manual' && r.reason === 'operator_do_not_contact') && (await etat(310)) === 'do_not_contact', JSON.stringify([e310, l310]));
 }
 
+// Tâche 8 : une exclusion annule les envois LinkedIn EN FILE, et la réclamation refuse un contact exclu.
+async function exclusionEtFile() {
+  const org = ORG_A;
+  const contact = async (n, url, orgId = org) =>
+    q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, $3, $4)`, [id(n), orgId, `c${n}@example.test`, url]);
+  const ligne = async (contactN, kind, { status = 'pending', url = null, origine = 'sequence', actionId = null, orgId = org, quand = null } = {}) =>
+    (await q(
+      `insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, message_body, method, status, origine, action_id, scheduled_for)
+       values ($1, $2, $3, $4, $5, 'serveur', $6, $7, $8, coalesce($9::timestamptz, now() - interval '1 hour')) returning id`,
+      [orgId, contactN === null ? null : id(contactN), url ?? `https://www.linkedin.com/in/ligne-${contactN}`, kind, kind === 'message' ? 'bonjour' : null, status, origine, actionId, quand],
+    )).rows[0].id;
+  const st = async (ligneId) => (await q(`select status, error_code from linkedin_action_queue where id = $1`, [ligneId])).rows[0];
+  const humaine = 'Bonjour, merci pour votre message, on se rappelle la semaine prochaine.';
+
+  // 113. Bout en bout par une vraie reponse : le message ET l'invitation en file sont annules.
+  await contact(400, 'https://www.linkedin.com/in/annul-400');
+  const m400 = await ligne(400, 'message');
+  const i400 = await ligne(400, 'invite');
+  await recordInboundReply(pool, org, { contactId: id(400), channel: 'linkedin_message', body: humaine });
+  const [sm, si] = [await st(m400), await st(i400)];
+  check('113 une reponse humaine annule le message ET l invitation en file (cancelled / contact_exclu)',
+    sm.status === 'cancelled' && si.status === 'cancelled' && sm.error_code === 'contact_exclu' && si.error_code === 'contact_exclu', JSON.stringify([sm, si]));
+
+  // 114. Une ligne processing est partie : on ne la rattrape pas, et rien ne casse.
+  await contact(401, 'https://www.linkedin.com/in/annul-401');
+  const p401 = await ligne(401, 'message', { status: 'processing' });
+  const e401 = await erreur(exclureApresReponse(pool, org, id(401)));
+  const s401 = await st(p401);
+  check('114 une ligne processing survit a l exclusion, sans erreur', e401 === null && s401.status === 'processing' && s401.error_code === null && (await q(`select status from contacts where id = $1`, [id(401)])).rows[0].status === 'do_not_contact', JSON.stringify([s401, e401?.message]));
+
+  // 115. L'action du sequenceur liee (scheduled ou approved) est ecartee, sinon le tick la ressort.
+  await contact(402, 'https://www.linkedin.com/in/annul-402');
+  const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp T8', 'active') returning id`, [org])).rows[0].id;
+  const enr = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active') returning id`, [org, camp, id(402)])).rows[0].id;
+  const act = async (canal, statut, cle) =>
+    (await q(`insert into actions (organization_id, enrollment_id, channel, status, idempotency_key) values ($1, $2, $3::channel_kind, $4::action_status, $5) returning id`, [org, enr, canal, statut, `t8-${cle}`])).rows[0].id;
+  const aMsg = await act('linkedin_message', 'scheduled', 'msg');
+  const aInv = await act('linkedin_invite', 'approved', 'inv');
+  await ligne(402, 'message', { actionId: aMsg });
+  await ligne(402, 'invite', { actionId: aInv });
+  await exclureApresReponse(pool, org, id(402));
+  const as = (await q(`select status::text as s, error from actions where id = any($1::uuid[]) order by channel`, [[aMsg, aInv]])).rows;
+  check('115 les actions liees (scheduled et approved) passent en skipped / enrollment_inactive',
+    as.length === 2 && as.every((a) => a.s === 'skipped' && a.error === 'enrollment_inactive'), JSON.stringify(as));
+
+  // 116. Ligne sans contact_id : rattachee par adresse, meme ecrite dans une autre casse.
+  await contact(403, 'https://www.linkedin.com/in/Annul-403');
+  const sans = await ligne(null, 'message', { url: 'HTTPS://WWW.LinkedIn.com/in/annul-403/' });
+  await exclureApresReponse(pool, org, id(403));
+  check('116 une ligne sans contact_id portant la meme adresse (autre casse) est annulee', (await st(sans)).status === 'cancelled', JSON.stringify(await st(sans)));
+
+  // 117. Adresse degeneree : aucune ligne d'un tiers n'est annulee. Le contact lui-meme l'est, par son id.
+  await contact(404, 'https://linkedin.com/in/');
+  await contact(405, 'https://www.linkedin.com/in/tiers-405');
+  const propre = await ligne(404, 'message');
+  const orpheline = await ligne(null, 'message', { url: 'https://www.linkedin.com/in' });
+  const tiers = await ligne(405, 'message');
+  await exclureApresReponse(pool, org, id(404));
+  check('117 adresse degeneree (/in/) : la ligne du contact part par son id, les lignes de tiers (sans contact_id ou d un autre contact) restent pending',
+    (await st(propre)).status === 'cancelled' && (await st(orpheline)).status === 'pending' && (await st(tiers)).status === 'pending',
+    JSON.stringify([await st(propre), await st(orpheline), await st(tiers)]));
+
+  // 118. Une reponse d'operateur en file survit ; l'invitation de sequence du meme contact, non.
+  await contact(406, 'https://www.linkedin.com/in/annul-406');
+  const rep = await ligne(406, 'message', { origine: 'reponse' });
+  const seqInv = await ligne(406, 'invite');
+  await exclureApresReponse(pool, org, id(406));
+  check('118 origine=reponse reste pending, l invitation de sequence du meme contact est annulee',
+    (await st(rep)).status === 'pending' && (await st(seqInv)).status === 'cancelled', JSON.stringify([await st(rep), await st(seqInv)]));
+
+  // 123. Le filtre d'organisation de l'annulation : une ligne d'une AUTRE organisation, meme rattachee par
+  // erreur a ce contact, n'est pas touchee.
+  await contact(407, 'https://www.linkedin.com/in/annul-407');
+  const etrangere = await ligne(407, 'message', { orgId: ORG_B });
+  await exclureApresReponse(pool, org, id(407));
+  check('123 une ligne en file d une autre organisation, rattachee au meme contact_id, n est pas annulee', (await st(etrangere)).status === 'pending', JSON.stringify(await st(etrangere)));
+
+  // 119 a 122. La garde de la reclamation, dans une organisation a part : session active, rien d'autre en file.
+  const ORG_G = '00000000-0000-0000-0000-0000000000c1';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org G', 'org-g')`, [ORG_G]);
+  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [ORG_G]);
+  const NOW = new Date('2026-09-15T10:00:00.000Z'); // mardi 12h Paris : dans la fenetre, quelle que soit l'heure reelle
+  const AVANT_G = '2026-09-15T08:00:00.000Z';
+  const vider = () => q(`delete from linkedin_action_queue where organization_id = $1`, [ORG_G]);
+
+  await contact(410, 'https://www.linkedin.com/in/garde-410', ORG_G);
+  await poserExclusion(pool, ORG_G, id(410), { email: null, adressesLinkedin: [], motif: 'test', origine: 'api' });
+  const campG = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp G', 'active') returning id`, [ORG_G])).rows[0].id;
+  const enrG = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active') returning id`, [ORG_G, campG, id(410)])).rows[0].id;
+  const actG = (await q(`insert into actions (organization_id, enrollment_id, channel, status, idempotency_key) values ($1, $2, 'linkedin_message', 'scheduled', 't8-garde') returning id`, [ORG_G, enrG])).rows[0].id;
+  const exclu = await ligne(410, 'message', { orgId: ORG_G, quand: AVANT_G, actionId: actG });
+  const refus = await reclamerProchaineAction(pool, ORG_G, NOW);
+  const sx = await st(exclu);
+  check('119 la reclamation refuse une ligne dont le contact est exclu : motif contact_exclu, aucune action rendue, ligne jamais en processing',
+    refus.action === null && refus.motif === 'contact_exclu' && sx.status === 'cancelled', JSON.stringify([refus, sx]));
+  const aG = (await q(`select status::text as s, error from actions where id = $1`, [actG])).rows[0];
+  check('119b la garde ecarte aussi l action du sequenceur liee (skipped / enrollment_inactive), sinon le tick la ressort',
+    aG.s === 'skipped' && aG.error === 'enrollment_inactive', JSON.stringify(aG));
+  await vider();
+
+  await contact(411, 'https://www.linkedin.com/in/garde-411', ORG_G);
+  const vivant = await ligne(411, 'message', { orgId: ORG_G, quand: AVANT_G });
+  const ok = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('120 la paire : meme file, contact non exclu, la ligne est reclamee', ok.action?.id === vivant && ok.motif === null, JSON.stringify(ok));
+  await vider();
+
+  await contact(412, 'https://www.linkedin.com/in/garde-412', ORG_G);
+  await poserExclusion(pool, ORG_G, id(412), { email: null, adressesLinkedin: [], motif: 'test', origine: 'api' });
+  const reponse = await ligne(412, 'message', { orgId: ORG_G, origine: 'reponse', quand: AVANT_G });
+  const part = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('121 une reponse d operateur vers un contact REELLEMENT do_not_contact est reclamee : l exclusion ne la bloque jamais',
+    part.action?.id === reponse && part.motif === null, JSON.stringify(part));
+  await vider();
+
+  // 122. Le premier de la file est exclu : il est ecarte, et le suivant (non exclu) part au tick suivant.
+  await contact(413, 'https://www.linkedin.com/in/garde-413', ORG_G);
+  await contact(414, 'https://www.linkedin.com/in/garde-414', ORG_G);
+  await poserExclusion(pool, ORG_G, id(413), { email: null, adressesLinkedin: [], motif: 'test', origine: 'api' });
+  const tete = await ligne(413, 'message', { orgId: ORG_G, quand: AVANT_G });
+  await q(`update linkedin_action_queue set scheduled_for = '2026-09-15T07:00:00.000Z' where id = $1`, [tete]);
+  const suivant = await ligne(414, 'message', { orgId: ORG_G, quand: AVANT_G });
+  const t1 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  const t2 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('122 une tete de file exclue n affame pas la suivante : premier tick refuse, second reclame la suivante',
+    t1.motif === 'contact_exclu' && t2.action?.id === suivant, JSON.stringify([t1.motif, t2.action?.id ?? t2.motif]));
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

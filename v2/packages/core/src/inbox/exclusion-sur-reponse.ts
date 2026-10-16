@@ -78,6 +78,49 @@ export async function poserExclusion(
 }
 
 /**
+ * Annule les envois LinkedIn encore EN FILE d'un contact qu'on vient d'exclure, et écarte l'action
+ * du séquenceur qui les portait (`skipped` / `enrollment_inactive`, comme `applyToEnrollment` : sinon
+ * le tick la ressortirait). Rend le nombre de lignes annulées.
+ *
+ * - Seules les lignes `pending` : une ligne `processing` est partie, on ne la rattrape pas.
+ * - Invitations et messages, sans distinction.
+ * - Jamais une ligne `origine = 'reponse'` : c'est la réponse d'un opérateur à cette personne, que
+ *   l'exclusion ne bloque jamais (même règle que la garde de `reclamerProchaineAction`).
+ * - Une ligne sans `contact_id` (colonne nullable) se rattache par adresse, mais SEULEMENT si
+ *   `adresseProfil` est une adresse de profil valide : `app.url_linkedin_normalisee` ne valide rien,
+ *   et `linkedin.com/in` (issue de `.../in/`) est un préfixe de tout le monde. Sans adresse valide,
+ *   on n'annule que par `contact_id` : une ligne non annulée sera arrêtée par la garde d'envoi, une
+ *   ligne annulée chez le mauvais prospect ne se retrouve jamais. Les DEUX côtés de la comparaison
+ *   passent par la fonction SQL, car `normaliserUrlProfil` préserve la casse et elle non.
+ */
+export async function annulerEnvoisEnFile(
+  ex: Executeur,
+  org: string,
+  contactId: string,
+  adresseProfil: string | null,
+): Promise<number> {
+  const res = await ex.query<{ action_id: string | null }>(
+    `update linkedin_action_queue /* jr:annulation_file_exclusion */
+        set status = 'cancelled', error_code = 'contact_exclu', updated_at = now()
+      where organization_id = $1 and status = 'pending' and origine <> 'reponse'
+        and (contact_id = $2
+             or (contact_id is null and $3::text is not null
+                 and app.url_linkedin_normalisee(linkedin_url) = app.url_linkedin_normalisee($3::text)))
+      returning action_id`,
+    [org, contactId, adresseProfil],
+  );
+  const actions = res.rows.flatMap((r) => (r.action_id ? [r.action_id] : []));
+  if (actions.length > 0) {
+    await ex.query(
+      `update actions set status = 'skipped', error = 'enrollment_inactive' /* jr:annulation_action_exclusion */
+        where organization_id = $1 and id = any($2::uuid[]) and status in ('scheduled', 'approved')`,
+      [org, actions],
+    );
+  }
+  return res.rowCount ?? res.rows.length;
+}
+
+/**
  * Exclusion posée par une réponse humaine reçue.
  *
  * DEUX graphies de l'adresse LinkedIn au plus, comme la collecte les connaît :
@@ -112,6 +155,7 @@ export async function exclureApresReponse(
   const adresses: string[] = [];
   const reelle = contact.linkedin_url ? normaliserUrlProfil(contact.linkedin_url) : null;
   if (reelle) adresses.push(reelle);
+  // Même exigence que pour l'opposition : une adresse qui n'est pas un profil ne rattache aucune ligne.
   const membre = contact.linkedin_provider_id ? normaliserUrnLinkedIn(contact.linkedin_provider_id) : null;
   if (membre) adresses.push(lienProfilDeduit(membre));
 
@@ -121,6 +165,8 @@ export async function exclureApresReponse(
     motif: 'reponse_recue',
     origine: 'api',
   });
+  // Même transaction que l'exclusion : une exclusion dont les envois restent en file ne doit pas exister.
+  await annulerEnvoisEnFile(ex, org, contactId, reelle);
   if (contact.status !== 'do_not_contact' || posees.email + posees.linkedin > 0) {
     await ecrireEvenement(ex, {
       organisationId: org,

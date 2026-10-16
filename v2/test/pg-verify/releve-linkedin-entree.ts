@@ -7,3 +7,5 @@ export { enregistrerMessageSortant, toucherDernierMessage } from '@jay-reach/cor
 // Tâche 7 : l'exclusion automatique sur une réponse humaine, et la garde d'entrée qui la fait tenir.
 export { recordInboundReply, exclureApresReponse, nePlusContacter, poserExclusion } from '@jay-reach/core';
 export { enrollContact, inscrireContact } from '../../apps/worker/src/handlers/sequence.js';
+// Tâche 8 : l'annulation des envois en file à l'exclusion, et la garde de la réclamation.
+export { reclamerProchaineAction } from '../../packages/core/src/linkedin/file.js';

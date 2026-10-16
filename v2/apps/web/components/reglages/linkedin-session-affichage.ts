@@ -164,11 +164,12 @@ export function phraseEtatEnvoi(
     case 'plafond_horaire_atteint':
       return { ton: 'attention', cle: prochain.disponibleA ? 'plafondHoraireDate' : 'plafondHoraire' };
     // Inatteignables par `prochainEnvoiLinkedIn` : `too_soon` y arrive toujours avec un délai,
-    // donc avec une date, et `race_retry` n'appartient qu'à la réclamation. Nommés quand même,
+    // donc avec une date, et `race_retry` comme `contact_exclu` n'appartiennent qu'à la réclamation. Nommés quand même,
     // parce qu'un motif rangé dans un fourre-tout silencieux est un motif qu'on ne verra pas
     // changer de sens.
     case 'too_soon':
     case 'race_retry':
+    case 'contact_exclu':
       return { ton: 'bon', cle: 'rienAEnvoyer' };
     // Le `never` fait échouer la COMPILATION si un motif nouveau apparaît ; le `return` qui suit
     // garde l'écran debout à l'exécution, car un écran de réglages ne doit pas tomber parce que

@@ -55,7 +55,8 @@ export type MotifRefus =
   | 'queue_empty'
   | 'race_retry'
   | 'canal_en_pause'
-  | 'session_inactive';
+  | 'session_inactive'
+  | 'contact_exclu';
 
 export type ResultatReclamation =
   | { readonly action: ActionReclamee; readonly motif: null }
@@ -383,6 +384,33 @@ export async function reclamerProchaineAction(
     return { action: null, motif: verdict.motif };
   }
   const id = candidate.id;
+
+  // 6 bis. Garde d'exclusion : le contact a pu être exclu (réponse humaine) APRÈS l'enfilement, ou la
+  // ligne avoir échappé à l'annulation (`annulerEnvoisEnFile`). Elle vit ici, dans la réclamation, pour
+  // que worker, MCP et écran la partagent. La ligne est ANNULÉE et non laissée `pending` : plus ancienne
+  // de son type, elle serait choisie à chaque tick et affamerait celles qui la suivent. Jamais une ligne
+  // `origine = 'reponse'` : elle part justement vers quelqu'un que la réponse vient d'exclure.
+  const exclue = await ex.query<{ action_id: string | null }>(
+    `update linkedin_action_queue q /* jr:linkedin_garde_contact_exclu */
+        set status = 'cancelled', error_code = 'contact_exclu', updated_at = now()
+      where q.id = $1 and q.organization_id = $2 and q.status = 'pending' and q.origine <> 'reponse'
+        and exists (select 1 from contacts c
+                     where c.id = q.contact_id and c.organization_id = q.organization_id
+                       and c.status = 'do_not_contact')
+      returning q.action_id`,
+    [id, orgId],
+  );
+  if (exclue.rows.length > 0) {
+    const actionId = exclue.rows[0]?.action_id;
+    if (actionId) {
+      await ex.query(
+        `update actions set status = 'skipped', error = 'enrollment_inactive'
+          where organization_id = $1 and id = $2 and status in ('scheduled', 'approved')`,
+        [orgId, actionId],
+      );
+    }
+    return { action: null, motif: 'contact_exclu' };
+  }
 
   // 7. Claim atomique.
   const claimed = await ex.query<ActionReclamee>(
