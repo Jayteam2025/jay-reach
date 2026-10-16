@@ -554,12 +554,14 @@ async function exclusionSurReponse() {
   check('98 sans adresse de profil, une reponse humaine pose l email et AUCUNE adresse LinkedIn fabriquee a partir de l identifiant',
     fausse.length === 0 && toutes302.length === 1 && toutes302[0].scope === 'email' && (await etat(302)) === 'do_not_contact', JSON.stringify([fausse, toutes302]));
 
-  // Meme chose avec une adresse qui n'est pas un profil.
-  await contact(303, null, 'https://exemple.test/in/quelquun', 'pas-un-urn-303');
+  // Cas nominal d'un engageur collecte : un identifiant de membre valide, une adresse publique absente ou douteuse
+  // (ici une adresse qui n'est pas un profil). L'URL non profil n'est jamais opposee, la graphie deduite l'est :
+  // sans elle l'engageur resterait joignable par LinkedIn alors qu'il vient de repondre.
+  await contact(303, null, 'https://exemple.test/in/quelquun', 'ACoAAfaux303');
   await recordInboundReply(pool, org, { contactId: id(303), channel: 'linkedin_message', body: humaine });
-  const n303 = (await q(`select count(*)::int as n from suppressions where organization_id = $1 and (value ilike '%quelquun%' or value ilike '%pas-un-urn-303%')`, [org])).rows[0].n;
-  check('99 une adresse qui n est pas un profil LinkedIn ne devient pas une opposition (et le contact est tout de meme exclu)',
-    n303 === 0 && (await etat(303)) === 'do_not_contact', `${n303} suppression(s)`);
+  const s303 = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%quelquun%' or value ilike '%acoaafaux303%')`, [org])).rows.map((r) => r.value);
+  check('99 URL non profil + identifiant valide : aucune opposition sur l URL, UNE sur la graphie deduite, contact exclu',
+    s303.length === 1 && s303[0] === 'https://www.linkedin.com/in/ACoAAfaux303' && (await etat(303)) === 'do_not_contact', JSON.stringify(s303));
 
   // auto_left_company : arrete, n'exclut pas.
   await contact(304, 'parti@example.test', 'https://www.linkedin.com/in/parti');

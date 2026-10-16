@@ -1219,16 +1219,20 @@ async function etapeAvecCorps(m, corps, { canal = 'linkedin_message', position =
  * l'état demandé. Une fiche par post : deux états à éprouver dans la même organisation
  * demandent deux posts.
  */
-async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement des commerciaux', nomAffiche = 'Ana' } = {}) {
-  const source = await sourceDePost(m, urlN(n), `Engageurs ${n}`);
+async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement des commerciaux', nomAffiche = 'Ana', memePost = null } = {}) {
+  // `memePost` : le retour d'un appel precedent. Un post a plusieurs engageurs : meme fiche, meme source,
+  // seul l'engageur change.
+  const source = memePost ? memePost.source : await sourceDePost(m, urlN(n), `Engageurs ${n}`);
   const runId = await startSourceRun(pool, source);
-  const f = await enregistrerFichePost(pool, m.org, ficheN(n), { fenetreJours: FENETRE });
-  await q(`update linkedin_posts set review_status = $2, subject = $3, author_display_name = $4 where id = $1`, [
-    f.id,
-    etat,
-    sujet,
-    nomAffiche,
-  ]);
+  const f = memePost ? { id: memePost.fiche } : await enregistrerFichePost(pool, m.org, ficheN(n), { fenetreJours: FENETRE });
+  if (!memePost) {
+    await q(`update linkedin_posts set review_status = $2, subject = $3, author_display_name = $4 where id = $1`, [
+      f.id,
+      etat,
+      sujet,
+      nomAffiche,
+    ]);
+  }
   const ctx = { pool, organizationId: m.org, sourceId: source, sourceRunId: runId, exclusions: {} };
   await enregistrerEngageur(
     ctx,
@@ -1241,17 +1245,17 @@ async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement
       urlProfil: `https://www.linkedin.com/in/bob-${n}-${seq}/`,
     },
     { id: m.campagne, personaId: m.persona },
-    urlN(n),
+    memePost ? urlN(memePost.n) : urlN(n),
     f.id,
   );
   const ligne = (
     await q(
       `select c.id as contact_id, s.id as signal_id from contacts c join signals s on s.id = c.source_signal_id
-        where c.organization_id = $1 and s.linkedin_post_id = $2`,
-      [m.org, f.id],
+        where c.organization_id = $1 and s.linkedin_post_id = $2 and c.linkedin_url like $3`,
+      [m.org, f.id, `%/in/bob-${n}-${seq}%`],
     )
   ).rows[0];
-  return { fiche: f.id, source, ...ligne };
+  return { fiche: f.id, source, n, ...ligne };
 }
 
 /** Les inscriptions réellement créées pour une organisation, par la production seule. */
@@ -1417,7 +1421,8 @@ async function contactExcluNeRevientPas() {
   const m = await monde();
   await etapeAvecCorps(m, ACCROCHE);
   const exclu = await engageurDUnPost(m, 31, { etat: 'approved' });
-  const jumeau = await engageurDUnPost(m, 32, { etat: 'approved' });
+  // MEME post pour les deux : un seul terme change, le statut du contact.
+  const jumeau = await engageurDUnPost(m, 32, { memePost: exclu });
   await q(`update contacts set status = 'do_not_contact' where id = $1`, [exclu.contact_id]);
   const deposes = await tourDInscription(m.org);
   // La paire : meme campagne, meme etat de fiche, seul le statut du contact differe.
