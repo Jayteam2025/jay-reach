@@ -232,7 +232,10 @@ export const CLASSES_RECLASSABLES: readonly string[] = ['auto_absence', 'auto_ot
  * Reclasse un fil dont la classification vient d'être contredite par le corps du dernier message, et
  * applique les conséquences. Rend `true` seulement si la classification a changé. Ne touche ni
  * `last_message_at` ni `is_read` : rien de neuf n'est arrivé, l'opérateur a déjà vu ce message.
- * Pas de notification : le message a déjà été notifié à sa première réception.
+ * Ne notifie pas elle-même : elle signale le changement, et c'est l'appelant qui prévient. Le
+ * message avait déjà été notifié à sa première réception, mais comme une absence automatique —
+ * découvrir que c'était une réponse humaine ou un départ est une information neuve, que l'opérateur
+ * doit recevoir (règle 9 : une réponse ne passe jamais inaperçue).
  */
 export async function reclasserFil(
   tx: Executeur,
