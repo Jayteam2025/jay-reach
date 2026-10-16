@@ -11,7 +11,7 @@
  * relire et rien à cloisonner — une fiche échue l'est pour tout le monde. Dit ici parce que
  * c'est précisément l'endroit où un lecteur attend l'inverse.
  */
-import { CLES_REGLAGES, normaliserUrlPost, plafondDuJour } from '@jay-reach/core';
+import { CLES_REGLAGES, normaliserUrlPost, plafondDuJour, sqlSourceAUneCampagneQuiNommeUnPost } from '@jay-reach/core';
 import type { Pool } from 'pg';
 import type { FichePost } from './fiche-post.js';
 // Sens d'import inhabituel (un utilitaire LinkedIn qui lit le moteur), et assumé : c'est la SEULE
@@ -185,6 +185,32 @@ export type FicheARattraper = {
  * refuser — jusqu'à trois fois. Une fiche `approved` reste servie : elle peut encore nourrir une
  * seconde campagne qui, elle, nomme le sujet.
  */
+/**
+ * « Au moins une campagne NON ARCHIVÉE attend ce post. »
+ *
+ * Sans ce filtre, chaque post collecté coûtait une page LinkedIn ouverte et un crédit de
+ * rédaction — y compris quand aucune campagne ne nomme de post, donc pour un résultat que
+ * personne n'attend. Six posts sur la base aujourd'hui, mais à 500 ce serait vingt-cinq jours de
+ * budget LinkedIn brûlés.
+ *
+ * DEUX liens vers la source, comme partout ailleurs dans ce lot : les signaux déjà rattachés à la
+ * fiche, et la trace de traitement par source (`linkedin_posts_traites`, qui existe dès que la
+ * collecte a vu le post, avant même ses engageurs). N'en regarder qu'un laisserait des fiches
+ * légitimes sans rattrapage.
+ *
+ * RIEN N'EST PERDU quand l'accroche est branchée après coup : la condition devient vraie et la
+ * fiche redevient candidate au passage suivant, tant que sa fenêtre tient. Au-delà, elle est
+ * `rejected` et `reouvrirPost` exige `expires_at > now()` — donc elle était déjà inutilisable,
+ * rattrapée ou non.
+ */
+const SQL_POST_ATTENDU = `(
+  exists (select 1 from signals sg_at
+           where sg_at.linkedin_post_id = p.id and sg_at.organization_id = p.organization_id
+             and ${sqlSourceAUneCampagneQuiNommeUnPost('sg_at.source_id')})
+  or exists (select 1 from linkedin_posts_traites pt_at
+              where pt_at.organization_id = p.organization_id and pt_at.post_urn = p.post_urn
+                and ${sqlSourceAUneCampagneQuiNommeUnPost('pt_at.source_id')}))`;
+
 export async function fichesARattraper(
   ex: Pick<Pool, 'query'>,
   organizationId: string,
@@ -198,6 +224,7 @@ export async function fichesARattraper(
            and p.review_status <> 'rejected'
            and p.capture_attempts < $2
            and p.expires_at > now()
+           and ${SQL_POST_ATTENDU}
            and ${SQL_FICHE_INCOMPLETE}
          order by p.capture_attempts, p.created_at desc
          limit $3)
@@ -207,6 +234,7 @@ export async function fichesARattraper(
          where p.organization_id = $1
            and p.review_status <> 'rejected'
            and p.expires_at > now()
+           and ${SQL_POST_ATTENDU}
            and not ${SQL_FICHE_INCOMPLETE}
            and p.subject is null
            and p.subject_attempts < $5
