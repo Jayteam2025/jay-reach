@@ -42,6 +42,17 @@ alter table public.linkedin_action_queue
 
 -- 4. Un fil par contact et par canal : fusion des doublons, puis index unique partiel.
 --    Le fil conservé est le plus ancien (created_at, puis id pour départager).
+--    Choix assumé, pas un oubli : seuls les messages et l'état lu/traité/dernier message sont repris
+--    du fil supprimé. `classification`, `assigned_to`, `resume_at` et `provider_thread_id` du fil
+--    supprimé sont PERDUS ; le fil conservé garde les siens.
+--    Verrou posé AVANT la fusion et tenu jusqu'à la fin de l'instruction : un passage concurrent ne
+--    peut pas recréer un doublon entre la fusion et la création de l'index (qui échouerait). Le tout
+--    tient dans UN bloc `do`, donc dans une seule transaction même hors `db push -1` (un `lock`
+--    isolé est refusé hors transaction).
+do $fusion$
+begin
+lock table public.threads in share row exclusive mode;
+
 drop table if exists pg_temp._fils_doublons;
 create temp table _fils_doublons as
 select id,
@@ -62,7 +73,7 @@ update public.thread_messages m
 -- l'étaient, dernier message le plus récent. Le plus prudent pour qu'une réponse ne passe pas
 -- inaperçue.
 update public.threads t
-   set last_message_at = (select max(m.sent_at) from public.thread_messages m where m.thread_id = t.id),
+   set last_message_at = coalesce((select max(m.sent_at) from public.thread_messages m where m.thread_id = t.id), t.last_message_at),
        is_read = t.is_read and not exists (
          select 1 from _fils_doublons d join public.threads x on x.id = d.id where d.garde_id = t.id and not x.is_read
        ),
@@ -80,6 +91,7 @@ drop table pg_temp._fils_doublons;
 create unique index if not exists threads_un_fil_par_contact_et_canal
   on public.threads (organization_id, contact_id, channel)
   where contact_id is not null;
+end $fusion$;
 
 -- Contrôles : la migration échoue si l'un manque, ou si la contrainte n'a pas la forme voulue.
 do $$
