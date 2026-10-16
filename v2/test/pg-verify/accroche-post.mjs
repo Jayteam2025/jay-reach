@@ -117,9 +117,11 @@
 //      valider un post ferait partir une action bloquée pour une variable manquante.
 //  60. posts.ts : retirer `and s.linkedin_post_id = $2::uuid` de la relance — 37f rougit :
 //      valider un post réveillerait les personnes qui en attendent un AUTRE, encore en attente.
-//  61. sequence.ts : retirer `payload.requiresApproval` du blocage `post_a_relire`, OU
-//      posts.ts : relâcher en `scheduled` sans lire ce drapeau — 37h rougit dans les deux cas :
-//      une action qui attendait l'accord d'un humain saute la file d'attente.
+//  61. sequence.ts : retirer `payload.requiresApproval` du blocage `post_a_relire`, OU retirer
+//      `coalesce((a.payload ->> 'requiresApproval')::boolean, false) or` des TROIS expressions de
+//      relâchement — 37h, 38a et 38b rougissent : une action qui attendait l'accord d'un humain
+//      saute la file. Ces trois-là retirent la politique AVANT la reprise, pour que seul le
+//      drapeau puisse encore décider ; 38e à 38g gardent l'autre moitié de l'expression.
 //  62. posts.ts : filtrer `listerPostsDeCampagne` sur `review_status = 'pending'` — 35h rougit :
 //      le lien de la File du jour mènerait à une liste qui a écarté le post à rouvrir.
 //  63. accroche-post.ts : ranger l'orpheline dans N'IMPORTE QUELLE catégorie du décompte (la
@@ -133,8 +135,11 @@
 //  66. retirer les deux lignes `camp.approval_policy` des trois expressions de relâchement —
 //      38e, 38f et 38g rougissent : une politique d'approbation posée APRÈS le blocage ne
 //      s'applique pas, et l'action repart sans l'accord désormais exigé.
-//  67. traitements.ts : remettre `a.status = 'scheduled'` dans les deux balayages — les deux
-//      contrôles 39 rougissent : une action approuvée par un humain ne part sur aucun canal.
+//  67. traitements.ts : remettre `a.status = 'scheduled'` dans l'un des TROIS balayages — les
+//      deux contrôles 39 rougissent pour les deux premiers, 39b pour `rejouerActionsLinkedIn
+//      Reprises` ; y accepter `pending_approval` fait rougir 39a ou 39c. Une action approuvée par
+//      un humain ne partait sur aucun canal, et en ouvrir deux sorties sur trois fabriquait un
+//      blocage définitif et muet.
 //  68. email-salesblink.ts : refuser `approved` au contrôle de statut, OU y accepter
 //      `pending_approval` — côté Vitest, l'un des deux contrôles du gestionnaire rougit à chaque
 //      fois ; le second compte le plus, il garde la file d'attente fermée.
@@ -2552,6 +2557,13 @@ async function validerRelanceLesRetenues() {
   const avantAp = (await q(`select id, status, block_reason from actions where organization_id = $1`, [ap.org])).rows[0];
   check('37g. une action qui exigeait l\'accord d\'un humain est bien bloquée par le post',
     avantAp?.status === 'blocked' && avantAp?.block_reason === 'post_a_relire', JSON.stringify(avantAp));
+  // LA POLITIQUE EST RETIRÉE avant la reprise, et c'est tout l'intérêt : le drapeau du payload
+  // est déjà posé (le tick l'a écrit au blocage), donc seule SA lecture peut encore rendre
+  // `pending_approval`. Sans ce retrait, la clause de politique suffisait à verdir le contrôle,
+  // et le drapeau n'était gardé par rien — or c'est le seul mécanisme qui couvre une campagne
+  // SANS politique dont l'approbation vient du seuil des premiers envois (règle non négociable
+  // n°1). Les contrôles 38e à 38g font l'inverse : drapeau faux, politique posée après.
+  await q(`update campaigns set approval_policy = '{}'::jsonb where id = $1`, [ap.campagne]);
   await validerPost(ap.ctx, { postId: pap.fiche, campagneId: ap.campagne });
   const apresAp = (await q(`select status, block_reason from actions where id = $1`, [avantAp.id])).rows[0];
   check('37h. relâchée, elle retourne dans la FILE D\'ATTENTE, pas en partance',
@@ -2638,6 +2650,13 @@ async function repriseRestitueLaFile() {
               next_action_at = null where id = $1`, [abs.action.inscription]);
   // La relance a sauté cette inscription (plus `active`) : on la remet bloquée, comme elle l'était.
   await q(`update actions set status = 'blocked', block_reason = 'post_a_relire' where id = $1`, [abs.action.id]);
+  // LA POLITIQUE EST RETIRÉE avant la reprise, et c'est tout l'intérêt : le drapeau du payload
+  // est déjà posé (le tick l'a écrit au blocage), donc seule SA lecture peut encore rendre
+  // `pending_approval`. Sans ce retrait, la clause de politique suffisait à verdir le contrôle,
+  // et le drapeau n'était gardé par rien — or c'est le seul mécanisme qui couvre une campagne
+  // SANS politique dont l'approbation vient du seuil des premiers envois (règle non négociable
+  // n°1). Les contrôles 38e à 38g font l'inverse : drapeau faux, politique posée après.
+  await q(`update campaigns set approval_policy = '{}'::jsonb where id = $1`, [abs.m.campagne]);
   await reprendreAbsencesEchues(pool, new Date());
   const apresAbs = (await q(`select status, block_reason from actions where id = $1`, [abs.action.id])).rows[0];
   check('38a. au retour d\'absence, elle retourne dans la FILE D\'ATTENTE, pas en partance',
@@ -2648,6 +2667,8 @@ async function repriseRestitueLaFile() {
   await validerPost(rep.m.ctx, { postId: rep.p.fiche, campagneId: rep.m.campagne });
   await q(`update enrollments set status = 'paused', next_action_at = null where id = $1`, [rep.action.inscription]);
   await q(`update actions set status = 'blocked', block_reason = 'post_a_relire' where id = $1`, [rep.action.id]);
+  // Même isolement qu'en 38a : seule la lecture du drapeau peut encore décider.
+  await q(`update campaigns set approval_policy = '{}'::jsonb where id = $1`, [rep.m.campagne]);
   await reprendreInscription(rep.m.ctx, { inscriptionId: rep.action.inscription });
   const apresRep = (await q(`select status, block_reason from actions where id = $1`, [rep.action.id])).rows[0];
   check('38b. reprise à la main, même verdict : la file, pas la partance',
@@ -2756,6 +2777,42 @@ async function approuveePart() {
         check(`39a. [${canal}] une action qui attend encore l'accord n'est PAS enfilée`,
           enfilee === 0, `${enfilee} job(s)`);
       }
+    }
+  }
+
+  // LA TROISIÈME SORTIE, celle des REPRISES humaines. Ouvrir les deux autres sans celle-ci
+  // fabriquait un blocage définitif et muet, créé par notre propre élargissement : campagne avec
+  // politique d'approbation, action LinkedIn approuvée donc enfilée — ce que la correction
+  // ci-dessus rend possible —, ligne de file en échec, inscription mise en pause, reprise à la
+  // main, l'expression rend `pending_approval`, un humain approuve, l'action passe `approved`...
+  // et plus personne ne la lit : les reprises filtraient `scheduled`, et le balayage des actions
+  // jamais enfilées l'exclut par son `not exists` sur la file.
+  for (const statut of ['approved', 'pending_approval']) {
+    const m = await monde();
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message' });
+    // Une SECONDE étape : les reprises exigent `e.status = 'active'`, et une séquence à une seule
+    // étape laisse l'inscription `completed` dès la première planifiée.
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message', position: 1 });
+    const p = await engageurDUnPost(m, 142, { etat: 'approved' });
+    await tourDInscription(m.org);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+    await tickDueEnrollments(pool, new Date());
+    const act = (await q(`select id from actions where organization_id = $1 limit 1`, [m.org])).rows[0];
+    await q(`update actions set status = $2 where id = $1`, [act.id, statut]);
+    await q(`delete from linkedin_action_queue where organization_id = $1`, [m.org]);
+    await q(
+      `insert into linkedin_action_queue (organization_id, action_id, kind, linkedin_url, contact_id, signal_id, status, error_code, reprise_le, method)
+       values ($1, $2, 'message', $3, $4, $5, 'failed', 'echec_envoi', now(), 'serveur')`,
+      [m.org, act.id, `https://www.linkedin.com/in/bob-142/`, p.contact_id, p.signal_id],
+    );
+    await rejouerActionsLinkedInReprises({ pool });
+    const reenfilee = (await q(`select 1 from linkedin_action_queue where organization_id = $1 and status = 'pending'`, [m.org])).rowCount;
+    if (statut === 'approved') {
+      check('39b. [reprise] une action approuvée est réenfilée : la troisième sortie est ouverte aussi',
+        reenfilee === 1, `${reenfilee} ligne(s)`);
+    } else {
+      check('39c. [reprise] une action qui attend encore l\'accord n\'est PAS réenfilée',
+        reenfilee === 0, `${reenfilee} ligne(s)`);
     }
   }
 }
