@@ -33,7 +33,20 @@ export type Releve = {
   readonly unAUnSansIndice: number;
   /** Conversations traitées sans `lastActivityAt` : le curseur n'a pas pu les écarter. */
   readonly sansHorodatage: number;
+  /** Messages entrants écartés faute d'identifiant ou de date exploitables : jamais un échec du passage. */
+  readonly entrantsIllisibles: number;
 };
+
+/** Tous les compteurs d'une relève, pour le journal du passage. `Record` exhaustif : un compteur ajouté à `Releve` sans l'être ici ne compile plus. */
+export function compteursDuReleve(r: Releve): Readonly<Record<Exclude<keyof Releve, 'entrants'>, number>> {
+  return {
+    ecartesNonUnAUn: r.ecartesNonUnAUn,
+    ecartesAnterieuresAuCurseur: r.ecartesAnterieuresAuCurseur,
+    unAUnSansIndice: r.unAUnSansIndice,
+    sansHorodatage: r.sansHorodatage,
+    entrantsIllisibles: r.entrantsIllisibles,
+  };
+}
 
 /**
  * Une charge utile qui n'a pas la forme attendue. Le jour où LinkedIn périme le `queryId` ou
@@ -118,6 +131,7 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
   let ecartesAnterieuresAuCurseur = 0;
   let unAUnSansIndice = 0;
   let sansHorodatage = 0;
+  let entrantsIllisibles = 0;
 
   for (const conv of conversations) {
     if (!estObjet(conv)) {
@@ -157,11 +171,14 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
     const conversationUrn = conv.entityUrn;
     const quand = nombre(message.deliveredAt) ?? activite;
     if (typeof messageUrn !== 'string' || typeof conversationUrn !== 'string' || quand === null) {
-      throw new ErreurMessagerie('Un message entrant de la messagerie LinkedIn n’a pas la forme attendue.');
+      // Un message biscornu ne doit pas emporter le passage : le curseur n'avancerait pas et toutes
+      // les autres réponses seraient perdues à chaque passage suivant. On le compte.
+      entrantsIllisibles += 1;
+      continue;
     }
     const texte = estObjet(message.body) && typeof message.body.text === 'string' ? message.body.text : '';
     entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, texte, recuLe: new Date(quand) });
   }
 
-  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansHorodatage };
+  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansHorodatage, entrantsIllisibles };
 }

@@ -3,6 +3,7 @@ import {
   ErreurMessagerie,
   QUERY_ID_CONVERSATIONS,
   analyserConversations,
+  compteursDuReleve,
   urlConversations,
 } from './messagerie.js';
 
@@ -43,9 +44,16 @@ function conv(o: {
     },
   };
 }
-const VIDE = { ecartesNonUnAUn: 0, ecartesAnterieuresAuCurseur: 0, unAUnSansIndice: 0, sansHorodatage: 0 };
+const VIDE = { ecartesNonUnAUn: 0, ecartesAnterieuresAuCurseur: 0, unAUnSansIndice: 0, sansHorodatage: 0, entrantsIllisibles: 0 };
 const charge = (elements: unknown[], cle = 'messengerConversationsBySyncToken') =>
   JSON.stringify({ data: { [cle]: { elements } } });
+
+describe('compteursDuReleve', () => {
+  it('expose tous les compteurs', () => {
+    const r = analyserConversations(charge([conv({ id: 'g', groupe: true })]), MOI, DEPUIS);
+    expect(compteursDuReleve(r)).toEqual({ ...VIDE, ecartesNonUnAUn: 1 });
+  });
+});
 
 describe('urlConversations', () => {
   it('reprend l’appel de l’extension', () => {
@@ -165,9 +173,7 @@ describe('analyserConversations', () => {
     }
 
     it('ne recopie jamais la charge utile dans le message', () => {
-      const c = conv({ id: 'a', groupe: false, texte: 'SECRET-PRIVE' });
-      delete (c.messages.elements[0] as { entityUrn?: string }).entityUrn;
-      expect(() => analyserConversations(charge([c]), MOI, DEPUIS)).toThrow(
+      expect(() => analyserConversations('{"data":{"x":"SECRET-PRIVE"}}', MOI, DEPUIS)).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining('SECRET-PRIVE') }),
       );
     });
@@ -176,10 +182,20 @@ describe('analyserConversations', () => {
       expect(() => analyserConversations(charge([]), 'undefined', DEPUIS)).toThrow(ErreurMessagerie);
     });
 
-    it('un message entrant sans identifiant lève', () => {
-      const c = conv({ id: 'a', groupe: false });
-      delete (c.messages.elements[0] as { entityUrn?: string }).entityUrn;
-      expect(() => analyserConversations(charge([c]), MOI, DEPUIS)).toThrow(ErreurMessagerie);
+    it('un message entrant sans identifiant est compté, il ne lève pas et n’emporte pas les autres', () => {
+      const biscornu = conv({ id: 'b', groupe: false });
+      delete (biscornu.messages.elements[0] as { entityUrn?: string }).entityUrn;
+      const r = analyserConversations(charge([biscornu, conv({ id: 'a', groupe: false })]), MOI, DEPUIS);
+      expect(r.entrants).toHaveLength(1);
+      expect(r.entrants[0]?.messageUrn).toContain('a-m');
+      expect(r.entrantsIllisibles).toBe(1);
+    });
+
+    it('un message sans date ni lastActivityAt est compté', () => {
+      const c = conv({ id: 'b', groupe: false });
+      delete (c as { lastActivityAt?: number }).lastActivityAt;
+      delete (c.messages.elements[0] as { deliveredAt?: number }).deliveredAt;
+      expect(analyserConversations(charge([c]), MOI, DEPUIS).entrantsIllisibles).toBe(1);
     });
   });
 });
