@@ -31,7 +31,12 @@
 //      `contact_id is null or ...` — 116 ; passer `contact.linkedin_url` brut au lieu de `reelle` (retirer la validation) — 117 SEUL rougit ;
 //      GARDE de reclamerProchaineAction : retirer le bloc `jr:linkedin_garde_contact_exclu` — 119, 119b et 122 rougissent (120 et 121 restent verts) ;
 //      retirer `q.origine <> 'reponse'` DE LA GARDE — 121 seul ; retirer son `exists (... do_not_contact)` — 120 et 122 (tout est refuse) ; retirer son `update actions` — 119b ;
-//      retirer `organization_id = $1` de l'annulation — 123.
+//      retirer `organization_id = $1` de l'annulation — 123 ; du `update actions` de l'annulation — 128 ;
+//      retirer `c.organization_id = q.organization_id` de la garde — 132 ; la branche suppressions de la garde — 129 ;
+//      sa regex de profil — 131 seul ; `annulerEnvoisEnFile` sans la forme deduite — 124 ; sans validation de `normaliserUrnLinkedIn` — 125 et 127 ;
+//      `nePlusContacter` sans l'annulation — 126.
+//      NON PROUVES, par construction : `q.organization_id = $2` de la garde et le filtre du `update actions` de la garde (l'id vient de
+//      `prochainesCandidates`, deja filtre par organisation).
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -676,8 +681,8 @@ async function exclusionSurReponse() {
 // Tâche 8 : une exclusion annule les envois LinkedIn EN FILE, et la réclamation refuse un contact exclu.
 async function exclusionEtFile() {
   const org = ORG_A;
-  const contact = async (n, url, orgId = org) =>
-    q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, $3, $4)`, [id(n), orgId, `c${n}@example.test`, url]);
+  const contact = async (n, url, orgId = org, provider = null) =>
+    q(`insert into contacts (id, organization_id, email, linkedin_url, linkedin_provider_id) values ($1, $2, $3, $4, $5)`, [id(n), orgId, `c${n}@example.test`, url, provider]);
   const ligne = async (contactN, kind, { status = 'pending', url = null, origine = 'sequence', actionId = null, orgId = org, quand = null } = {}) =>
     (await q(
       `insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, message_body, method, status, origine, action_id, scheduled_for)
@@ -750,6 +755,47 @@ async function exclusionEtFile() {
   await exclureApresReponse(pool, org, id(407));
   check('123 une ligne en file d une autre organisation, rattachee au meme contact_id, n est pas annulee', (await st(etrangere)).status === 'pending', JSON.stringify(await st(etrangere)));
 
+  // 124 / 125. Ligne ORPHELINE ecrite sous la graphie deduite de l'URN (celle que la collecte fabrique faute
+  // d'adresse publique). Le contact a aussi une adresse vanity : l'egalite avec la seule adresse reelle ne
+  // rapprocherait jamais les deux. Sa paire : un identifiant FullEnrich, qui ne designe aucun membre.
+  await contact(500, 'https://www.linkedin.com/in/vanity-500', org, 'ACoAAorph500');
+  const orph = await ligne(null, 'message', { url: 'https://www.linkedin.com/in/ACoAAorph500' });
+  await contact(501, 'https://www.linkedin.com/in/vanity-501', org, '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6c');
+  const orphFe = await ligne(null, 'message', { url: 'https://www.linkedin.com/in/3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6c' });
+  await exclureApresReponse(pool, org, id(500));
+  await exclureApresReponse(pool, org, id(501));
+  check('124 une ligne orpheline sur la graphie deduite de l URN de membre est annulee, meme quand le contact a une adresse vanity',
+    (await st(orph)).status === 'cancelled', JSON.stringify(await st(orph)));
+  check('125 la paire : une ligne sur la forme fabriquee d un identifiant FullEnrich n est PAS annulee (aucun membre ne s y trouve)',
+    (await st(orphFe)).status === 'pending', JSON.stringify(await st(orphFe)));
+
+  // 126. Le clic de l'operateur (nePlusContacter) arrete lui aussi la file : ligne du contact et ligne orpheline.
+  await contact(502, 'https://www.linkedin.com/in/operateur-502', org, 'ACoAAoper502');
+  const op1 = await ligne(502, 'message');
+  const op2 = await ligne(null, 'invite', { url: 'https://www.linkedin.com/in/ACoAAoper502' });
+  await nePlusContacter({ ex: pool, organisationId: org, utilisateurId: null, role: 'operator' }, { contactId: id(502) });
+  check('126 nePlusContacter annule la ligne du contact ET la ligne orpheline rattachee par adresse',
+    (await st(op1)).status === 'cancelled' && (await st(op2)).status === 'cancelled', JSON.stringify([await st(op1), await st(op2)]));
+
+  // 127. nePlusContacter n'oppose plus une adresse fabriquee d'un identifiant FullEnrich.
+  await contact(503, 'https://www.linkedin.com/in/operateur-503', org, '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6d');
+  await nePlusContacter({ ex: pool, organisationId: org, utilisateurId: null, role: 'operator' }, { contactId: id(503) });
+  const l503 = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%operateur-503%' or value ilike '%3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6d%')`, [org])).rows.map((r) => r.value);
+  check('127 nePlusContacter, identifiant FullEnrich : UNE opposition (l adresse reelle, normalisee), aucune fabriquee',
+    JSON.stringify(l503) === JSON.stringify(['https://www.linkedin.com/in/operateur-503']), JSON.stringify(l503));
+
+  // 128. Filtre d'organisation de l'update actions : une ligne de CETTE organisation dont l'action_id pointe
+  // une action d'une AUTRE ne la fait pas passer en skipped.
+  await contact(520, 'https://www.linkedin.com/in/etr-520', ORG_B);
+  const campB = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp B8', 'active') returning id`, [ORG_B])).rows[0].id;
+  const enrB = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active') returning id`, [ORG_B, campB, id(520)])).rows[0].id;
+  const actB = (await q(`insert into actions (organization_id, enrollment_id, channel, status, idempotency_key) values ($1, $2, 'linkedin_message', 'scheduled', 't8-etrangere') returning id`, [ORG_B, enrB])).rows[0].id;
+  await contact(521, 'https://www.linkedin.com/in/annul-521');
+  await ligne(521, 'message', { actionId: actB });
+  await exclureApresReponse(pool, org, id(521));
+  const aB = (await q(`select status::text as s from actions where id = $1`, [actB])).rows[0].s;
+  check('128 l action d une autre organisation, referencee par une ligne de file, reste scheduled', aB === 'scheduled', aB);
+
   // 119 a 122. La garde de la reclamation, dans une organisation a part : session active, rien d'autre en file.
   const ORG_G = '00000000-0000-0000-0000-0000000000c1';
   await q(`insert into organizations (id, name, slug) values ($1, 'Org G', 'org-g')`, [ORG_G]);
@@ -798,6 +844,37 @@ async function exclusionEtFile() {
   const t2 = await reclamerProchaineAction(pool, ORG_G, NOW);
   check('122 une tete de file exclue n affame pas la suivante : premier tick refuse, second reclame la suivante',
     t1.motif === 'contact_exclu' && t2.action?.id === suivant, JSON.stringify([t1.motif, t2.action?.id ?? t2.motif]));
+
+  // 129 a 131. La garde par adresse : une ligne ORPHELINE enfilee apres l'exclusion (ni enqueueAction ni
+  // enqueueLinkedInAction ne consultent `suppressions`).
+  await contact(430, 'https://www.linkedin.com/in/garde-430', ORG_G, 'ACoAAgarde430');
+  await poserExclusion(pool, ORG_G, id(430), { email: null, adressesLinkedin: ['https://www.linkedin.com/in/ACoAAgarde430'], motif: 'test', origine: 'api' });
+  const apres = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in/ACoAAgarde430/' });
+  const o1 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('129 une ligne orpheline enfilee APRES l exclusion, sur une adresse opposee, est refusee et annulee (contact_exclu)',
+    o1.motif === 'contact_exclu' && (await st(apres)).status === 'cancelled', JSON.stringify([o1.motif, await st(apres)]));
+  await vider();
+  const autre = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in/ACoAAautre430' });
+  const o2 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('130 la paire : une ligne orpheline sur une autre adresse est reclamee', o2.action?.id === autre, JSON.stringify(o2));
+  await vider();
+
+  // 131. Une opposition degeneree (saisie a la main) ne vaut pas pour une ligne a l'adresse degeneree.
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'linkedin', 'https://www.linkedin.com/in/', 'test', 'manual')`, [ORG_G]);
+  const degen = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in' });
+  const o3 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('131 une ligne a l adresse degeneree (/in) n est pas refusee par une opposition degeneree : l egalite ne designe personne',
+    o3.action?.id === degen, JSON.stringify(o3));
+  await vider();
+
+  // 132. Filtre d'organisation de la garde : un contact do_not_contact d'une AUTRE organisation, rattache
+  // par contact_id, ne bloque pas la ligne.
+  await contact(440, 'https://www.linkedin.com/in/etr-440', ORG_B);
+  await poserExclusion(pool, ORG_B, id(440), { email: null, adressesLinkedin: [], motif: 'test', origine: 'api' });
+  const rat = await ligne(440, 'message', { orgId: ORG_G, quand: AVANT_G });
+  const o4 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('132 un contact exclu d une autre organisation, rattache par contact_id, ne bloque pas la ligne', o4.action?.id === rat, JSON.stringify(o4));
+  await vider();
 }
 
 try {

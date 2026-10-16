@@ -78,6 +78,26 @@ export async function poserExclusion(
 }
 
 /**
+ * Les adresses LinkedIn VALIDÉES à opposer pour un contact : l'adresse réelle quand c'est une adresse
+ * de profil (`normaliserUrlProfil`), et la forme fabriquée depuis `linkedin_provider_id` SEULEMENT
+ * quand `normaliserUrnLinkedIn` reconnaît un identifiant de membre. Un identifiant FullEnrich (353
+ * contacts sur 590) fabriquerait une adresse qui n'existe pas et l'opposition ne protégerait personne.
+ * Partagée par l'exclusion sur réponse et par `nePlusContacter` : leurs oppositions et leurs
+ * annulations de file ne peuvent pas diverger.
+ */
+export function adressesLinkedinAOpposer(contact: {
+  readonly linkedin_url: string | null;
+  readonly linkedin_provider_id: string | null;
+}): string[] {
+  const adresses: string[] = [];
+  const reelle = contact.linkedin_url ? normaliserUrlProfil(contact.linkedin_url) : null;
+  if (reelle) adresses.push(reelle);
+  const membre = contact.linkedin_provider_id ? normaliserUrnLinkedIn(contact.linkedin_provider_id) : null;
+  if (membre) adresses.push(lienProfilDeduit(membre));
+  return adresses;
+}
+
+/**
  * Annule les envois LinkedIn encore EN FILE d'un contact qu'on vient d'exclure, et écarte l'action
  * du séquenceur qui les portait (`skipped` / `enrollment_inactive`, comme `applyToEnrollment` : sinon
  * le tick la ressortirait). Rend le nombre de lignes annulées.
@@ -86,10 +106,10 @@ export async function poserExclusion(
  * - Invitations et messages, sans distinction.
  * - Jamais une ligne `origine = 'reponse'` : c'est la réponse d'un opérateur à cette personne, que
  *   l'exclusion ne bloque jamais (même règle que la garde de `reclamerProchaineAction`).
- * - Une ligne sans `contact_id` (colonne nullable) se rattache par adresse, mais SEULEMENT si
- *   `adresseProfil` est une adresse de profil valide : `app.url_linkedin_normalisee` ne valide rien,
- *   et `linkedin.com/in` (issue de `.../in/`) est un préfixe de tout le monde. Sans adresse valide,
- *   on n'annule que par `contact_id` : une ligne non annulée sera arrêtée par la garde d'envoi, une
+ * - Une ligne sans `contact_id` (colonne nullable) se rattache par adresse, parmi `adressesProfil`
+ *   (voir `adressesLinkedinAOpposer` : adresse réelle ET forme déduite de l'URN, toutes deux
+ *   VALIDÉES). `app.url_linkedin_normalisee` ne valide rien, et `linkedin.com/in` (issue de `.../in/`)
+ *   est la même chaîne pour toute adresse dégénérée. Tableau vide : on n'annule que par `contact_id` : une ligne non annulée sera arrêtée par la garde d'envoi, une
  *   ligne annulée chez le mauvais prospect ne se retrouve jamais. Les DEUX côtés de la comparaison
  *   passent par la fonction SQL, car `normaliserUrlProfil` préserve la casse et elle non.
  */
@@ -97,17 +117,18 @@ export async function annulerEnvoisEnFile(
   ex: Executeur,
   org: string,
   contactId: string,
-  adresseProfil: string | null,
+  adressesProfil: readonly string[],
 ): Promise<number> {
   const res = await ex.query<{ action_id: string | null }>(
     `update linkedin_action_queue /* jr:annulation_file_exclusion */
         set status = 'cancelled', error_code = 'contact_exclu', updated_at = now()
       where organization_id = $1 and status = 'pending' and origine <> 'reponse'
         and (contact_id = $2
-             or (contact_id is null and $3::text is not null
-                 and app.url_linkedin_normalisee(linkedin_url) = app.url_linkedin_normalisee($3::text)))
+             or (contact_id is null and cardinality($3::text[]) > 0
+                 and app.url_linkedin_normalisee(linkedin_url)
+                     = any(array(select app.url_linkedin_normalisee(a) from unnest($3::text[]) a))))
       returning action_id`,
-    [org, contactId, adresseProfil],
+    [org, contactId, [...adressesProfil]],
   );
   const actions = res.rows.flatMap((r) => (r.action_id ? [r.action_id] : []));
   if (actions.length > 0) {
@@ -152,12 +173,7 @@ export async function exclureApresReponse(
   const contact = res.rows[0];
   if (!contact) return { email: 0, linkedin: 0 };
 
-  const adresses: string[] = [];
-  const reelle = contact.linkedin_url ? normaliserUrlProfil(contact.linkedin_url) : null;
-  if (reelle) adresses.push(reelle);
-  // Même exigence que pour l'opposition : une adresse qui n'est pas un profil ne rattache aucune ligne.
-  const membre = contact.linkedin_provider_id ? normaliserUrnLinkedIn(contact.linkedin_provider_id) : null;
-  if (membre) adresses.push(lienProfilDeduit(membre));
+  const adresses = adressesLinkedinAOpposer(contact);
 
   const posees = await poserExclusion(ex, org, contactId, {
     email: contact.email,
@@ -166,7 +182,7 @@ export async function exclureApresReponse(
     origine: 'api',
   });
   // Même transaction que l'exclusion : une exclusion dont les envois restent en file ne doit pas exister.
-  await annulerEnvoisEnFile(ex, org, contactId, reelle);
+  await annulerEnvoisEnFile(ex, org, contactId, adresses);
   if (contact.status !== 'do_not_contact' || posees.email + posees.linkedin > 0) {
     await ecrireEvenement(ex, {
       organisationId: org,

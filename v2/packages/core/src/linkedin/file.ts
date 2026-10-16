@@ -394,15 +394,26 @@ export async function reclamerProchaineAction(
     `update linkedin_action_queue q /* jr:linkedin_garde_contact_exclu */
         set status = 'cancelled', error_code = 'contact_exclu', updated_at = now()
       where q.id = $1 and q.organization_id = $2 and q.status = 'pending' and q.origine <> 'reponse'
-        and exists (select 1 from contacts c
-                     where c.id = q.contact_id and c.organization_id = q.organization_id
-                       and c.status = 'do_not_contact')
+        and (exists (select 1 from contacts c
+                      where c.id = q.contact_id and c.organization_id = q.organization_id
+                        and c.status = 'do_not_contact')
+             -- Une ligne sans contact_id (engageur collecte) ou enfilee APRES l'exclusion : ni enqueueAction
+             -- ni enqueueLinkedInAction ne consultent suppressions, seule cette garde l'arrete. Comparaison
+             -- par adresse, SEULEMENT si celle de la ligne est un profil (url_linkedin_normalisee ne valide
+             -- rien : /in/ et /in ne designent personne).
+             or (app.url_linkedin_normalisee(q.linkedin_url) ~ '^linkedin\\.com/in/[^/]+$'
+                 and exists (select 1 from suppressions su
+                              where su.organization_id = q.organization_id and su.scope = 'linkedin'
+                                and (su.expires_at is null or su.expires_at > now())
+                                and app.url_linkedin_normalisee(su.value) = app.url_linkedin_normalisee(q.linkedin_url))))
       returning q.action_id`,
     [id, orgId],
   );
   if (exclue.rows.length > 0) {
     const actionId = exclue.rows[0]?.action_id;
     if (actionId) {
+      // `organization_id` : défense en profondeur. `id` vient de `prochainesCandidates`, déjà filtré par
+      // organisation : aucun chemin ne le prouve, et aucun contrôle ne prétend le faire.
       await ex.query(
         `update actions set status = 'skipped', error = 'enrollment_inactive'
           where organization_id = $1 and id = $2 and status in ('scheduled', 'approved')`,
