@@ -10,12 +10,23 @@ import {
 /**
  * Forme réduite de l'appel de l'extension gelée (`linkedin-inbox.js`), identifiants inventés :
  * `data.<messengerConversations…>.elements[]`, dernier message dans `messages.elements[0]`.
- * `groupChat` et `conversationParticipants` sont des hypothèses non attestées (voir messagerie.ts).
+ * Forme confirmée par un relevé réel (20 conversations) : `groupChat` booléen, `conversationParticipants` avec `hostIdentityUrn` et `participantType.member.profileUrl`.
  */
 const MOI = 'ACoAAmoimoimoi';
 const LUI = 'ACoAAluiluilui';
 const DEPUIS = new Date('2026-10-10T00:00:00Z');
 const APRES = Date.parse('2026-10-15T10:00:00Z');
+
+/** Le premier participant est l'expéditeur, les autres sont des inconnus ; `moi` est toujours dans la boîte. */
+function participantsDe(n: number, expediteur: string) {
+  return Array.from({ length: n }, (_, i) => {
+    const id = i === 0 ? expediteur : `ACoAAautre${i}`;
+    return {
+      hostIdentityUrn: `urn:li:fsd_profile:${id}`,
+      participantType: { member: { profileUrl: `https://www.linkedin.com/in/profil-${id}` } },
+    };
+  });
+}
 
 function conv(o: {
   id: string;
@@ -31,7 +42,7 @@ function conv(o: {
     ...(o.groupe === undefined ? {} : { groupChat: o.groupe }),
     ...(o.participants === undefined
       ? {}
-      : { conversationParticipants: Array.from({ length: o.participants }, (_, i) => ({ entityUrn: `p${i}` })) }),
+      : { conversationParticipants: participantsDe(o.participants, o.de ?? LUI) }),
     messages: {
       elements: [
         {
@@ -109,6 +120,25 @@ describe('analyserConversations', () => {
     expect(r.ecartesNonUnAUn).toBe(1);
     expect(r.entrants).toHaveLength(1);
     expect(r.unAUnSansIndice).toBe(0);
+  });
+
+  it('expose l’URL du profil de l’expéditeur, tirée du participant de même identité', () => {
+    const r = analyserConversations(charge([conv({ id: 'a', groupe: false, participants: 2 })]), MOI, DEPUIS);
+    expect(r.entrants[0]?.expediteurUrl).toBe(`https://www.linkedin.com/in/profil-${LUI}`);
+  });
+
+  it('l’URL n’est pas celle d’un autre participant', () => {
+    const c = conv({ id: 'a', groupe: false, participants: 2 });
+    (c.conversationParticipants as { participantType: { member: { profileUrl: string } } }[])[0]!.participantType.member.profileUrl = 'https://x/lui';
+    c.messages.elements[0]!.sender.hostIdentityUrn = `urn:li:fsd_profile:ACoAAautre1`;
+    expect(analyserConversations(charge([c]), MOI, DEPUIS).entrants[0]?.expediteurUrl).toBe('https://www.linkedin.com/in/profil-ACoAAautre1');
+  });
+
+  it('URL null quand aucun participant ne correspond ou qu’elle manque', () => {
+    expect(analyserConversations(charge([conv({ id: 'a', groupe: false })]), MOI, DEPUIS).entrants[0]?.expediteurUrl).toBeNull();
+    const c = conv({ id: 'b', groupe: false, participants: 2 });
+    delete (c.conversationParticipants as { participantType?: unknown }[])[0]!.participantType;
+    expect(analyserConversations(charge([c]), MOI, DEPUIS).entrants[0]?.expediteurUrl).toBeNull();
   });
 
   it('groupChat true écarte, même avec deux participants', () => {

@@ -18,6 +18,8 @@ export type MessageReleve = {
   readonly conversationUrn: string;
   readonly messageUrn: string;
   readonly expediteurUrn: string;
+  /** URL publique du profil de l'expéditeur, lue chez le participant de même identité ; `null` si elle n'est pas établie. */
+  readonly expediteurUrl: string | null;
   readonly texte: string;
   readonly recuLe: Date;
 };
@@ -77,23 +79,40 @@ function extraireConversations(corps: unknown): readonly unknown[] | null {
   return noeud.elements;
 }
 
+/** Les participants d'une conversation : `conversationParticipants` est un tableau (relevé réel, 20 conversations). */
+function participantsDe(conv: Objet): readonly unknown[] | null {
+  const p = conv.conversationParticipants;
+  return Array.isArray(p) ? p : estObjet(p) && Array.isArray(p.elements) ? p.elements : null;
+}
+
 /**
- * CRITÈRE NON ATTESTÉ. Aucun relevé réel de la messagerie n'existe dans le dépôt : l'extension gelée
- * ne lit ni `groupChat` ni les participants. Les deux signaux ci-dessous sont les noms Voyager
- * habituels, posés comme HYPOTHÈSE à confirmer sur une charge réelle :
- *  - `groupChat === true` ;
- *  - `conversationParticipants` (tableau, ou objet portant `elements`) de plus de deux membres.
- * Sans aucun des deux, on ne sait pas : on lit comme un-à-un (cas majoritaire en prospection) et on
- * le COMPTE à part (`unAUnSansIndice`). Éteindre toute la relève sur un champ inventé serait pire
- * que le risque couvert.
+ * Un-à-un ou groupe. Relevé réel : `groupChat` (booléen) est sur chaque conversation et
+ * `conversationParticipants` compte 2 éléments dans le cas nominal. Les deux signaux sont lus ;
+ * sans aucun des deux, on lit comme un-à-un et on le COMPTE à part (`unAUnSansIndice`) : si la
+ * forme change, ce compteur monte, alors qu'éteindre la relève ne dirait rien.
  */
 function typeDeConversation(conv: Objet): 'groupe' | 'un_a_un' | 'sans_indice' {
   if (conv.groupChat === true) return 'groupe';
-  const p = conv.conversationParticipants;
-  const liste = Array.isArray(p) ? p : estObjet(p) && Array.isArray(p.elements) ? p.elements : null;
+  const liste = participantsDe(conv);
   if (liste !== null && liste.length > 2) return 'groupe';
   if (conv.groupChat === false || liste !== null) return 'un_a_un';
   return 'sans_indice';
+}
+
+/**
+ * L'URL de profil de l'expéditeur : le `sender` d'un message ne porte que son URN, mais le
+ * participant de même identité porte `participantType.member.profileUrl` (relevé réel).
+ */
+function urlDeLExpediteur(conv: Objet, expediteur: string): string | null {
+  for (const part of participantsDe(conv) ?? []) {
+    if (!estObjet(part) || typeof part.hostIdentityUrn !== 'string') continue;
+    if (normaliserUrnLinkedIn(part.hostIdentityUrn) !== expediteur) continue;
+    const type = part.participantType;
+    const membre = estObjet(type) ? type.member : undefined;
+    const url = estObjet(membre) ? membre.profileUrl : undefined;
+    return typeof url === 'string' && url.trim() !== '' ? url : null;
+  }
+  return null;
 }
 
 const nombre = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -177,7 +196,7 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
       continue;
     }
     const texte = estObjet(message.body) && typeof message.body.text === 'string' ? message.body.text : '';
-    entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, texte, recuLe: new Date(quand) });
+    entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, expediteurUrl: urlDeLExpediteur(conv, expediteur), texte, recuLe: new Date(quand) });
   }
 
   return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansHorodatage, entrantsIllisibles };
