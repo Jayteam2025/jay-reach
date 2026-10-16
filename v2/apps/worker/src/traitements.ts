@@ -535,7 +535,12 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
        join sequence_steps s on s.id = a.step_id
        join organizations org on org.id = a.organization_id
       where a.channel = 'email'
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled : une action approuvée par un humain n'était reprise
+        -- par AUCUN chemin — les deux balayages filtraient scheduled, approuverEnvoi n'enfile
+        -- rien, et rien ne la ramenait en arrière. Elle restait approved sans erreur, pendant
+        -- que l'écran la comptait comme « prévue ». pending_approval reste dehors : elle attend
+        -- encore un accord, et la laisser partir casserait la règle non négociable n°1.
+        and a.status in ('scheduled', 'approved')
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
@@ -641,7 +646,12 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
        join organizations org on org.id = a.organization_id
        left join sequence_steps st on st.id = a.step_id
       where a.channel in ('linkedin_invite', 'linkedin_message')
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled : une action approuvée par un humain n'était reprise
+        -- par AUCUN chemin — les deux balayages filtraient scheduled, approuverEnvoi n'enfile
+        -- rien, et rien ne la ramenait en arrière. Elle restait approved sans erreur, pendant
+        -- que l'écran la comptait comme « prévue ». pending_approval reste dehors : elle attend
+        -- encore un accord, et la laisser partir casserait la règle non négociable n°1.
+        and a.status in ('scheduled', 'approved')
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
@@ -689,7 +699,7 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
             `update actions
                 set status = 'blocked', block_reason = $2,
                     payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('missingVariables', $3::jsonb)
-              where id = $1 and organization_id = $4 and status = 'scheduled' and dispatched_at is null /* jr:linkedin_rejeu_attente_bloque */`,
+              where id = $1 and organization_id = $4 and status in ('scheduled', 'approved') and dispatched_at is null /* jr:linkedin_rejeu_attente_bloque */`,
             [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
           );
           continue;
@@ -704,7 +714,7 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
       if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_id)) {
         await pool.query(
           `update actions set status = 'blocked', block_reason = 'post_a_relire'
-            where id = $1 and organization_id = $2 and status = 'scheduled' and dispatched_at is null /* jr:linkedin_rejeu_attente_post */`,
+            where id = $1 and organization_id = $2 and status in ('scheduled', 'approved') and dispatched_at is null /* jr:linkedin_rejeu_attente_post */`,
           [row.action_id, row.organization_id],
         );
         console.warn(`[tick] action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);

@@ -334,7 +334,11 @@ export async function envoyerEmailSalesBlink(
   // déjà occupé.
   const etatActuel = await pool.query<{ status: string }>(`select status from actions where id = $1`, [actionId]);
   const statut = etatActuel.rows[0]?.status;
-  if (statut !== 'scheduled') {
+  // `approved` AUTANT que `scheduled` : une action validée par un humain doit partir. Sans elle,
+  // la file d'attente n'a pas de sortie côté email — et ce lot la remplit pour la première fois,
+  // puisqu'une action relâchée restitue `pending_approval` quand l'accord était exigé.
+  // `pending_approval` reste refusée : elle attend encore cet accord.
+  if (statut !== 'scheduled' && statut !== 'approved') {
     console.log(`[email-salesblink] action ${actionId} déjà ${statut ?? 'introuvable'} — ignorée`);
     return;
   }

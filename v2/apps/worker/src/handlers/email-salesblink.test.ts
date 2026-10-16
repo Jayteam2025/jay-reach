@@ -327,6 +327,48 @@ describe('envoyerEmailSalesBlink', () => {
     expect(appels.some((a) => POST_A_RELIRE.test(a.sql))).toBe(true);
   });
 
+  /**
+   * La file d'attente humaine n'avait pas de sortie côté email : une action `approved` restait
+   * `approved` indéfiniment, sans erreur, pendant que l'écran la comptait comme « prévue ». Ce
+   * lot remplit cette file pour la première fois (une action relâchée restitue
+   * `pending_approval` quand l'accord était exigé), donc elle doit en sortir.
+   */
+  it('une action APPROUVÉE par un humain est traitée comme une action prévue', async () => {
+    // Montage du test voisin (inscription `replied`) : il arrête le gestionnaire juste après le
+    // contrôle de statut, donc ce qu'on observe ne dépend d'aucune étape plus lointaine.
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'approved' }]) },
+      { motif: INSCRIPTION_ACTIVE, repondre: () => ligne([{ status: 'replied', email: 'contact@exemple.fr' }]) },
+      { motif: UPDATE_SKIPPED, repondre: () => ligne([]) },
+    ]);
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), clientFactice());
+
+    // Elle n'est pas écartée au premier contrôle : le gestionnaire va jusqu'à lire l'inscription,
+    // et c'est CELLE-CI qui décide ensuite.
+    expect(appels.some((a) => INSCRIPTION_ACTIVE.test(a.sql))).toBe(true);
+    expect(appels.find((a) => UPDATE_SKIPPED.test(a.sql))?.values).toEqual([ACTION_ID, 'enrollment_inactive']);
+  });
+
+  /**
+   * L'AUTRE SENS, et c'est celui qui compte : une action qui attend encore l'accord d'un humain
+   * ne doit pas partir. Sans cette borne, la correction ci-dessus casserait la règle non
+   * négociable n°1, que la garde du post protège par ailleurs.
+   */
+  it('une action qui attend encore l’accord d’un humain n’est pas traitée', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'pending_approval' }]) },
+    ]);
+    const client = clientFactice();
+
+    await envoyerEmailSalesBlink({ pool }, jobEmail(), client);
+
+    // Le pool factice LÈVE sur toute requête non prévue : l'arrêt au premier contrôle est donc
+    // prouvé par le fait que le test passe, pas seulement par l'assertion.
+    expect(appels.some((a) => INSCRIPTION_ACTIVE.test(a.sql))).toBe(false);
+    expect(client.pousserLeads).not.toHaveBeenCalled();
+  });
+
   it('inscription replied/stopped/bounced (rejeu/course) : action ignorée sans aucun appel client (C1)', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: ETAT_ACTION, repondre: () => ligne([{ status: 'scheduled' }]) },
