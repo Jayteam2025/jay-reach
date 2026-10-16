@@ -1672,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "A LinkedIn collection stops",
               "detail": "when a post returns nothing, with the session still valid"
+            },
+            "reponse_echouee": {
+              "titre": "A LinkedIn reply did not go out",
+              "detail": "when a reply written from Jay Reach could not be sent, or needs checking"
             }
           }
         }

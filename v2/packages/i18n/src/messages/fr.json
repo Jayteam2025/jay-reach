@@ -1672,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "Une collecte LinkedIn s’arrête",
               "detail": "quand un post ne livre rien, sans que la session soit en cause"
+            },
+            "reponse_echouee": {
+              "titre": "Une réponse LinkedIn n’est pas partie",
+              "detail": "quand une réponse écrite depuis Jay Reach n’a pas pu être envoyée, ou doit être vérifiée"
             }
           }
         }

@@ -1672,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "Een LinkedIn-verzameling stopt",
               "detail": "wanneer een bericht niets oplevert, terwijl de sessie geldig blijft"
+            },
+            "reponse_echouee": {
+              "titre": "Een LinkedIn-antwoord is niet verstuurd",
+              "detail": "wanneer een vanuit Jay Reach geschreven antwoord niet kon worden verstuurd of nagekeken moet worden"
             }
           }
         }
