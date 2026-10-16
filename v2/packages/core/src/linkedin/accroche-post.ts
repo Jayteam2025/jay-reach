@@ -266,6 +266,38 @@ export function sqlFichePostEnAttente(signal: string): string {
 }
 
 /**
+ * « La fiche du post de ce signal est encore dans sa fenêtre », quel que soit son état de
+ * relecture. C'est ce que l'ÉPARGNE regarde, et la raison tient en une phrase :
+ *
+ * **la fenêtre annoncée à l'écran doit être celle où valider sert encore.**
+ *
+ * L'épargne s'indexait sur `pending` seul, quand les quatre autres gardes s'indexent sur
+ * `approved`. Au moment précis où l'opérateur validait, l'épargne tombait — et dans `produire`,
+ * la purge d'ancienneté passe AVANT l'enfilage des inscriptions. Le geste utile effaçait donc
+ * ses propres personnes au passage suivant, quinze minutes plus tard : la ligne promettait
+ * « effacées le 29/10 », et valider le 20 les supprimait. Fenêtre annoncée 28 jours, fenêtre
+ * réelle 14.
+ *
+ * Trois autres états sont dans le même cas, et pour la même raison : une fiche `approved` mais
+ * INCOMPLÈTE retient (la garde exige qu'elle résolve ce que la campagne écrit), une fiche
+ * `rejected` retient aussi, et toutes deux se réparent — compléter le sujet, ou « Rouvrir ».
+ * Retenir sans épargner, c'est promettre une fenêtre qu'on n'honore pas.
+ *
+ * CE QUE ÇA COÛTE : on garde le nom et l'intitulé d'une personne jusqu'à `expires_at` même quand
+ * sa fiche est rejetée et ne sera jamais rouverte. C'est borné par la fenêtre réglable, qui est
+ * exactement la promesse faite à l'écran — et c'est le prix de cette promesse, pas un oubli.
+ *
+ * @param signal alias SQL du signal (`s`)
+ */
+export function sqlFichePostDansSaFenetre(signal: string): string {
+  return `exists (
+            select 1 from public.linkedin_posts fp_fe
+             where fp_fe.id = ${signal}.linkedin_post_id
+               and fp_fe.organization_id = ${signal}.organization_id
+               and fp_fe.expires_at > now())`;
+}
+
+/**
  * « Cette source alimente cette campagne. »
  *
  * DEUX liens, pas un : la table de liaison `campaign_sources`, et le lien historique
@@ -315,7 +347,10 @@ export function sqlSourceAUneCampagneQuiNommeUnPost(source: string): string {
  *
  * C'est la branche d'épargne de la purge d'ancienneté. Les deux moitiés comptent :
  *
- *  - sans la première, l'épargne serait sans terme ;
+ *  - sans la première, l'épargne serait sans terme ; c'est la FENÊTRE qu'elle regarde, et non
+ *    l'état de relecture (`sqlFichePostDansSaFenetre`) — s'indexer sur `pending` faisait tomber
+ *    l'épargne à l'instant même où l'opérateur validait, et la purge, qui passe avant l'enfilage,
+ *    effaçait les personnes qu'il venait de débloquer ;
  *  - sans la seconde, on garderait plus longtemps le nom et l'intitulé de personnes que PERSONNE
  *    n'attend. La fenêtre échange du temps de décision contre de la rétention : la payer sans
  *    acheter le bénéfice n'aurait aucun sens.
@@ -331,7 +366,7 @@ export function sqlSourceAUneCampagneQuiNommeUnPost(source: string): string {
  * @param signal alias SQL du signal (`s`, ou `signals` quand la table n'est pas aliasée)
  */
 export function sqlEpargneParUnPostARelire(signal: string): string {
-  return `(${sqlFichePostEnAttente(signal)}
+  return `(${sqlFichePostDansSaFenetre(signal)}
             and ${sqlSourceAUneCampagneQuiNommeUnPost(`${signal}.source_id`)})`;
 }
 
