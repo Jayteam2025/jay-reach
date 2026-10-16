@@ -52,6 +52,13 @@
 //      `echec` — 147, 159, 160 ; balayage des lignes `sent` — 158 ; des lignes `failed` — 147, 157, 157c, 157d, 160, 161 ; la sonde du producteur — 157b ; le balayage dans
 //      reparerLignesCoincees — 147, 157, 158, 160, 161 ; le signalement direct de arreterSequence — 146, 159 ; l'enfilement sans transaction — 155 ; la deduction de
 //      l'adresse — 162, sa reconnaissance de membre — 163.
+//  14. (tache 9, tour 2) balayage : le `try/catch` par ligne (le catch relance) — 170 seul ; `q.origine = 'reponse'` de la branche sent — 164 seul, de la branche
+//      failed — 165 seul ; `q.status = 'sent'` — 166 (et la suite, car le balayage date des messages echoues) ; `'cancelled'` — 167 ; le repli `error_code ?? 'echec'` — 168 ;
+//      les DEUX filtres d'organisation de la branche sent ensemble — 169 ; la migration 20261016120000 : sans l'index ou sans son predicat, son propre controle
+//      echoue (MIGRATION_FAIL), et 172 lit l'index.
+//      NON PROUVES (declares) : `q.organization_id = $1` et `t.organization_id = $1` de la branche sent, CHACUN SEUL (ils se couvrent : seuls les deux retires font rougir 169) ;
+//      les filtres d'organisation de la branche failed (le signalement refiltre par `t.organization_id`, defense en profondeur) ; le `order by q.created_at` du balayage (il
+//      ne fait que rendre le poison de 170 deterministe : retire, le controle reste vert) ; le PLAN du balayage (l'index existe, on ne prouve pas que le planificateur le choisit).
 //      NON PROUVE au harnais (declare, tache 9) : le mot `method` explicite de l'insertion de enfilerReponseLinkedIn (la valeur par defaut de la
 //      colonne est deja 'serveur', retirer la ligne ne change rien) ; l'appel de marquerReponseEnvoyee dans `executer` du worker (`executer` n'est
 //      pas exporte : prouve par envoi-linkedin.test.ts, pas ici, et son echec par le balayage 158).
@@ -1187,6 +1194,81 @@ async function reponseManuelle() {
   const m161 = (await sortants(f604)).filter((m) => m.raw.queue_id === e161.ligneId);
   check('161 paire : failed / cannot_message -> echec', m161[0].raw.etat === 'echec', JSON.stringify(m161));
   await vider();
+
+  // 164 a 170. Les gardes du balayage : chacune a sa paire, sa fixture SAURAIT attraper la faute.
+  const messageLie = async (filId, queueId) =>
+    q(`insert into thread_messages (thread_id, direction, body, raw, sent_at) values ($1, 'out', 'lie', $2::jsonb, null)`, [filId, JSON.stringify({ queue_id: queueId, etat: 'en_cours' })]);
+  const dernier = async (filId, queueId) => (await sortants(filId)).filter((m) => m.raw.queue_id === queueId)[0];
+  await contact(710);
+  const f710 = (await q(`insert into threads (organization_id, contact_id, channel, is_read) values ($1, $2, 'linkedin_message', false) returning id`, [ORG_R, id(710)])).rows[0].id;
+  // 164 / 165. Une ligne de SEQUENCE (origine) liee a un message en_cours : ni datee (sent) ni signalee (failed).
+  const seqSent = await ligne(710, 'message', { origine: 'sequence', status: 'sent', sentAt: '2026-09-15T09:00:00.000Z' });
+  const seqFailed = await ligne(710, 'invite', { origine: 'sequence', status: 'failed' });
+  await messageLie(f710, seqSent);
+  await messageLie(f710, seqFailed);
+  const nSeq = await notifs();
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const dSent = await dernier(f710, seqSent);
+  const dFailed = await dernier(f710, seqFailed);
+  check('164 le balayage ne date pas un message lie a une ligne de SEQUENCE sent (garde q.origine = reponse, branche sent)', dSent.sent_at === null && dSent.raw.etat === 'en_cours', JSON.stringify(dSent));
+  check('165 ni ne signale celui d une ligne de SEQUENCE failed (garde q.origine = reponse, branche failed), aucune notification', dFailed.raw.etat === 'en_cours' && (await notifs()) === nSeq, JSON.stringify([dFailed, await notifs()]));
+  await vider();
+  // 166. Un message dont la ligne a ECHOUE n'est jamais date (garde q.status = 'sent') : paire de 158.
+  const repEchouee = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f602, corps: 'Bonjour 166' });
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_message', sent_at = '2026-09-15T09:00:00.000Z' where id = $1`, [repEchouee.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const d166 = await dernier(f602, repEchouee.ligneId);
+  check('166 une ligne failed qui porte meme un sent_at ne fait JAMAIS dater le message : il passe echec, sans date (garde q.status = sent)', d166.raw.etat === 'echec' && d166.sent_at === null, JSON.stringify(d166));
+  await vider();
+  // 167. Branche cancelled.
+  const repAnnulee = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f603, corps: 'Bonjour 167' });
+  await q(`update linkedin_action_queue set status = 'cancelled', error_code = 'contact_exclu' where id = $1`, [repAnnulee.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const d167 = await dernier(f603, repAnnulee.ligneId);
+  check('167 une reponse annulee (cancelled) ne reste pas en_cours : echec', d167.raw.etat === 'echec', JSON.stringify(d167));
+  await vider();
+  // 168. Repli : sans error_code, le code est `echec` (et l'etat echec, jamais a_verifier).
+  const repSansCode = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f604, corps: 'Bonjour 168' });
+  await q(`update linkedin_action_queue set status = 'failed', error_code = null, error_message = null where id = $1`, [repSansCode.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const d168 = await dernier(f604, repSansCode.ligneId);
+  check('168 une ligne failed sans code : le message passe echec avec le code de repli echec', d168.raw.etat === 'echec' && d168.raw.code === 'echec', JSON.stringify(d168));
+  await vider();
+  // 169. Isolation : le balayage de l'organisation R ne touche pas le message d'une AUTRE organisation (les filtres q.organization_id
+  // et t.organization_id du balayage des lignes sent se couvrent l'un l'autre : prouves ensemble, jamais l'un sans l'autre).
+  await q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, 'b711@example.test', 'https://www.linkedin.com/in/b-711')`, [id(711), ORG_B]);
+  const fB = (await q(`insert into threads (organization_id, contact_id, channel, is_read) values ($1, $2, 'linkedin_message', false) returning id`, [ORG_B, id(711)])).rows[0].id;
+  const ligneB = (await q(`insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, message_body, method, status, origine, sent_at) values ($1, $2, 'https://www.linkedin.com/in/b-711', 'message', 'x', 'serveur', 'sent', 'reponse', now()) returning id`, [ORG_B, id(711)])).rows[0].id;
+  await messageLie(fB, ligneB);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const dB = await dernier(fB, ligneB);
+  check('169 le balayage de l organisation R ne date pas le message d une autre organisation', dB.sent_at === null && dB.raw.etat === 'en_cours', JSON.stringify(dB));
+  const nBavant = await sortants(fB);
+  await reparerLignesCoincees(pool, ORG_B, MARDI);
+  check('169b paire : le balayage de SA propre organisation le date', (await dernier(fB, ligneB)).sent_at !== null && nBavant.length === 1, JSON.stringify(await dernier(fB, ligneB)));
+  await vider();
+  // 170 / 171. Une ligne empoisonnee (notification qui leve toujours pour elle) ne bloque pas celles qui la suivent.
+  await q(`create or replace function jr_t9_poison() returns trigger language plpgsql as $f$ begin if new.payload ->> 'body' = 'poison' then raise exception 'notification empoisonnee'; end if; return new; end $f$`);
+  await q(`create trigger jr_t9_poison before insert on notifications for each row execute function jr_t9_poison()`);
+  const poison = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f602, corps: 'Bonjour poison' });
+  const sain1 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f603, corps: 'Bonjour sain 1' });
+  const sain2 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f604, corps: 'Bonjour sain 2' });
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_message', error_message = 'poison', created_at = now() - interval '3 hours' where id = $1`, [poison.ligneId]);
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_message', error_message = 'sain', created_at = now() - interval '2 hours' where id = $1`, [sain1.ligneId]);
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_message', error_message = 'sain', created_at = now() - interval '1 hour' where id = $1`, [sain2.ligneId]);
+  const nP = await notifs();
+  const e170 = await erreur(reparerLignesCoincees(pool, ORG_R, MARDI));
+  const [dp, d1, d2] = [await dernier(f602, poison.ligneId), await dernier(f603, sain1.ligneId), await dernier(f604, sain2.ligneId)];
+  check('170 une ligne empoisonnee (en tete de file) ne fige pas les suivantes : les deux autres passent echec et notifient, la boucle ne leve pas',
+    e170 === null && d1.raw.etat === 'echec' && d2.raw.etat === 'echec' && (await notifs()) === nP + 2, JSON.stringify([e170?.message, d1.raw.etat, d2.raw.etat, await notifs()]));
+  check('170b la ligne empoisonnee reste en_cours (retentee au tick suivant), jamais echec sans notification', dp.raw.etat === 'en_cours', JSON.stringify(dp));
+  await q(`drop trigger jr_t9_poison on notifications`);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  check('170c le poison levé, le tick suivant la regle : echec et une notification de plus', (await dernier(f602, poison.ligneId)).raw.etat === 'echec' && (await notifs()) === nP + 3, String(await notifs()));
+  await vider();
+  // 172. L'index partiel de la migration existe, partiel sur en_cours, pour l'expression queue_id.
+  const idx = (await q(`select indexdef from pg_indexes where indexname = 'thread_messages_reponse_en_cours_idx'`)).rows[0]?.indexdef ?? '';
+  check('172 l index partiel du balayage existe : expression queue_id, predicat etat = en_cours', idx.includes("raw ->> 'queue_id'") && idx.includes("'en_cours'") && idx.includes('WHERE'), idx);
 
   // 162 / 163. Contact sans adresse : deduite de l'identifiant de membre RECONNU, refusee sinon.
   const sansUrl = async (n, provider) => {

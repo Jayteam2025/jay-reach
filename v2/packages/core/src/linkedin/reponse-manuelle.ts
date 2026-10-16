@@ -175,14 +175,22 @@ export async function balayerReponsesSansSort(ex: Executeur, org: string): Promi
        from linkedin_action_queue q
        join thread_messages m on m.raw ->> 'queue_id' = q.id::text and m.direction = 'out' and m.raw ->> 'etat' = 'en_cours'
        join threads t on t.id = m.thread_id and t.organization_id = q.organization_id
-      where q.organization_id = $1 and q.origine = 'reponse' and q.status in ('failed', 'cancelled')`,
+      where q.organization_id = $1 and q.origine = 'reponse' and q.status in ('failed', 'cancelled')
+      order by q.created_at asc, q.id asc`,
     [org],
   );
   let regles = parties.rowCount ?? 0;
   for (const l of mortes.rows) {
     const code = l.error_code ?? 'echec';
     const texte = l.error_message ?? 'L’envoi de la réponse a échoué.';
-    if (await signalerEchecReponse(ex, org, l.id, code, texte)) regles += 1;
+    // Une ligne par ligne : une notification qui échoue de façon persistante sur UNE réponse ne doit
+    // pas figer la file derrière elle (elle serait rejouée en tête à chaque tick). Elle sera retentée
+    // au tick suivant ; les autres aboutissent maintenant.
+    try {
+      if (await signalerEchecReponse(ex, org, l.id, code, texte)) regles += 1;
+    } catch (err) {
+      console.error(`[linkedin] réponse sans sort non signalée, à retenter (${err instanceof Error ? err.name : 'erreur'})`);
+    }
   }
   return regles;
 }
