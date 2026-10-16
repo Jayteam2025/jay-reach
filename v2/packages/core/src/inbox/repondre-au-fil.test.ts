@@ -104,6 +104,31 @@ describe('choisirTransport', () => {
 });
 
 describe('repondreAuFil', () => {
+
+  it("fil LinkedIn : enfile la réponse au lieu de refuser, sans appeler aucun transport", async () => {
+    const appels: string[] = [];
+    const ex: Executeur = {
+      async query<T>(text: string) {
+        const t = text.trim();
+        appels.push(t);
+        if (t.startsWith('select channel from threads')) return { rows: [{ channel: 'linkedin_message' }] as T[], rowCount: 1 };
+        if (t.startsWith('select t.channel')) {
+          return {
+            rows: [{ channel: 'linkedin_message', contact_id: 'c-1', linkedin_url: 'https://www.linkedin.com/in/x' }] as T[],
+            rowCount: 1,
+          };
+        }
+        if (t.startsWith('select id from threads')) return { rows: [{ id: 'fil-1' }] as T[], rowCount: 1 };
+        if (t.startsWith('insert into linkedin_action_queue')) return { rows: [{ id: 'ligne-9' }] as T[], rowCount: 1 };
+        return { rows: [] as T[], rowCount: 1 };
+      },
+    };
+    const transports = creerTransportsFactices();
+    const r = await repondreAuFil(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' }, transports);
+    expect(r).toEqual({ messageId: 'ligne-9', transport: 'linkedin' });
+    expect(transports.graph).not.toHaveBeenCalled();
+    expect(transports.salesblink).not.toHaveBeenCalled();
+  });
   it("fil sans message entrant : ErreurReponseImpossible, aucun insert ni transport appelé", async () => {
     const { ex, appels } = creerExecuteurFactice(null);
     const transports = creerTransportsFactices();

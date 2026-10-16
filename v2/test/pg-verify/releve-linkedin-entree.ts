@@ -9,3 +9,7 @@ export { recordInboundReply, exclureApresReponse, nePlusContacter, poserExclusio
 export { enrollContact, inscrireContact } from '../../apps/worker/src/handlers/sequence.js';
 // Tâche 8 : l'annulation des envois en file à l'exclusion, et la garde de la réclamation.
 export { reclamerProchaineAction } from '../../packages/core/src/linkedin/file.js';
+// Tâche 9 : répondre depuis Jay Reach (enfilement, état du message du fil, échec signalé) et le rythme de la file.
+export { enfilerReponseLinkedIn, marquerReponseEnvoyee, signalerEchecReponse, repondreAuFil, ErreurReponseImpossible } from '@jay-reach/core';
+export { reparerLignesCoincees } from '../../packages/core/src/linkedin/file.js';
+export { regler } from '../../apps/worker/src/handlers/envoi-linkedin.js';

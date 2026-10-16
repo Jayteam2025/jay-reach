@@ -13,6 +13,7 @@ import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { cloreDepartReel } from '../sequencer/echeance.js';
 import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
+import { signalerEchecReponse } from './reponse-manuelle.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
 import {
   decideCanSend,
@@ -34,6 +35,21 @@ export interface ActionReclamee {
   readonly messageBody: string | null;
   /** Le contact visé ; absent ou `null` pour une ligne que l'extension a créée sans contact. */
   readonly contactId?: string | null;
+  /** `reponse` : message de l'opérateur à quelqu'un qui lui a écrit. Absent = `sequence`. */
+  readonly origine?: OrigineAction;
+}
+
+/**
+ * `sequence` : une action du séquenceur, soumise au rythme. `reponse` : l'opérateur répond lui-même
+ * (`reponse-manuelle.ts`), elle passe devant, hors fenêtre horaire, hors rythme et hors plafond
+ * hebdomadaire, et la garde d'exclusion ne l'arrête pas.
+ */
+export type OrigineAction = 'sequence' | 'reponse';
+
+interface CandidateFile {
+  readonly id: string;
+  readonly kind: TypeActionLinkedIn;
+  readonly origine: OrigineAction;
 }
 
 /** Le type d'une action de la file : le rythme se juge PAR type (invitation ou message). */
@@ -103,13 +119,13 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
        count(*) filter (where sent_at >= $2) as last7,
        count(*) filter (where sent_at >= $3) as today
      from linkedin_action_queue /* jr:linkedin_envoyes_par_type */
-     where organization_id = $1 and status = 'sent'
+     where organization_id = $1 and status = 'sent' and origine = 'sequence'
      group by kind`,
     [orgId, sevenDaysAgo, oneDayAgo],
   );
   const last = await ex.query<{ sent_at: string | Date }>(
     `select sent_at from linkedin_action_queue
-     where organization_id = $1 and status = 'sent'
+     where organization_id = $1 and status = 'sent' and origine = 'sequence' /* jr:linkedin_rythme_sans_reponses */
      order by sent_at desc limit 1`,
     [orgId],
   );
@@ -207,14 +223,21 @@ export async function reparerLignesCoincees(ex: Executeur, organisationId: strin
          and method <> 'serveur'`,
     [organisationId, stuckCutoff],
   );
-  await ex.query(
+  const coincees = await ex.query<{ id: string; origine: OrigineAction }>(
     `update linkedin_action_queue /* jr:linkedin_coincees_serveur */
          set status = 'failed', error_code = 'resultat_indetermine',
              error_message = $3, updated_at = now()
        where organization_id = $1 and status = 'processing' and processing_started_at < $2
-         and method = 'serveur'`,
+         and method = 'serveur'
+     returning id, origine`,
     [organisationId, stuckCutoff, MESSAGE_RESULTAT_INDETERMINE],
   );
+  // Une réponse de l'opérateur n'a ni action ni inscription : rien d'autre ne préviendrait personne.
+  for (const l of coincees.rows) {
+    if (l.origine === 'reponse') {
+      await signalerEchecReponse(ex, organisationId, l.id, 'resultat_indetermine', MESSAGE_RESULTAT_INDETERMINE);
+    }
+  }
 }
 
 type VerdictRythme =
@@ -278,10 +301,10 @@ async function prochainesCandidates(
   ex: Executeur,
   organisationId: string,
   now: Date,
-): Promise<Array<{ id: string; kind: TypeActionLinkedIn }>> {
-  const candidates = await ex.query<{ id: string; kind: TypeActionLinkedIn }>(
-    `select id, kind from (
-       select distinct on (q.kind) q.id, q.kind, q.scheduled_for /* jr:linkedin_candidates_par_type */
+): Promise<CandidateFile[]> {
+  const candidates = await ex.query<CandidateFile>(
+    `select id, kind, origine from (
+       select distinct on (q.kind) q.id, q.kind, q.origine, q.scheduled_for /* jr:linkedin_candidates_par_type */
          from linkedin_action_queue q
          left join actions a on a.id = q.action_id
          left join enrollments e on e.id = a.enrollment_id
@@ -289,9 +312,9 @@ async function prochainesCandidates(
         where q.organization_id = $1 and q.status = 'pending'
           and q.method = 'serveur' and q.scheduled_for <= $2
           and (q.action_id is null or camp.status = 'active')
-        order by q.kind, q.scheduled_for asc, q.id asc
+        order by q.kind, (q.origine = 'reponse') desc, q.scheduled_for asc, q.id asc
      ) par_type
-     order by scheduled_for asc, id asc`,
+     order by (origine = 'reponse') desc, scheduled_for asc, id asc`,
     [organisationId, now.toISOString()],
   );
   return candidates.rows;
@@ -304,11 +327,19 @@ async function prochainesCandidates(
  * qu'il pose et la décision de la réclamation ne peuvent pas diverger.
  */
 function jugerCandidates(
-  candidates: ReadonlyArray<{ id: string; kind: TypeActionLinkedIn }>,
+  candidates: ReadonlyArray<CandidateFile>,
   stats: StatsRythme,
   now: Date,
-): { readonly candidate: { id: string; kind: TypeActionLinkedIn }; readonly verdict: VerdictRythme } {
-  const juges = candidates.map((candidate) => ({ candidate, verdict: jugerRythme(stats, candidate.kind, now) }));
+): { readonly candidate: CandidateFile; readonly verdict: VerdictRythme } {
+  const juges = candidates.map((candidate) => ({
+    candidate,
+    // Une réponse de l'opérateur échappe au rythme : ni fenêtre, ni intervalle, ni plafonds de volume.
+    // Session inactive et canal en pause la retiennent déjà, plus haut, pour toutes les lignes.
+    verdict:
+      candidate.origine === 'reponse'
+        ? ({ ok: true } satisfies VerdictRythme)
+        : jugerRythme(stats, candidate.kind, now),
+  }));
   const premier = juges.find((j) => j.verdict.ok);
   if (premier) return premier;
   const datee = juges.find((j) => !j.verdict.ok && j.verdict.attendreMinutes !== undefined);
@@ -430,7 +461,7 @@ export async function reclamerProchaineAction(
              attempts = attempts + 1, updated_at = now()
        where id = $1 and status = 'pending'
        returning id, kind, linkedin_url as "linkedinUrl", message_body as "messageBody",
-                 contact_id as "contactId"`,
+                 contact_id as "contactId", origine`,
     [id, now.toISOString()],
   );
   const row = claimed.rows[0];
@@ -444,6 +475,7 @@ export async function reclamerProchaineAction(
       linkedinUrl: row.linkedinUrl,
       messageBody: row.messageBody,
       contactId: row.contactId ?? null,
+      origine: row.origine,
     },
     motif: null,
   };

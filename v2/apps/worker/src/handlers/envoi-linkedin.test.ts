@@ -171,6 +171,14 @@ function monde(opts: {
       if (opts.urnEchoue) throw new Error('base indisponible');
       return rep([]);
     }
+    if (t.includes('jr:linkedin_reponse_envoyee')) {
+      w.journal.push(`reponse_datee queue=${params[1]}`);
+      return rep([{}]);
+    }
+    if (t.includes('jr:linkedin_reponse_echec')) {
+      w.journal.push(`reponse_echec queue=${params[1]} code=${params[2]}`);
+      return rep([{}]);
+    }
     if (t.includes('threads') || t.includes('thread_messages')) {
       if (opts.filEchoue) throw new Error('base indisponible');
       if (t.includes('select id from threads')) {
@@ -522,6 +530,26 @@ describe('un envoi qui réussit', () => {
     expect(w.journal).toContain(`fil_maj fil=fil-1 org=${ORG}`);
     // Le message n'est écrit qu'une fois parti, jamais avant le POST.
     expect(w.journal.indexOf(`requete ${URL_MESSAGE}`)).toBeLessThan(w.journal.findIndex((j) => j.startsWith('fil_message')));
+  });
+
+  it('une réponse de l opérateur date le message DÉJÀ présent dans le fil, sans en insérer un second', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain('reponse_datee queue=q-1');
+    expect(w.journal.some((j) => j.startsWith('fil_message'))).toBe(false);
+  });
+
+  it('un refus définitif d une réponse de l opérateur la signale, sans toucher à une séquence', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 422 } },
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal.some((j) => j.startsWith('reponse_echec queue=q-1'))).toBe(true);
+    expect(w.journal.some((j) => j.startsWith('reponse_datee'))).toBe(false);
   });
 
   it('une invitation, un message sans contact ou un refus n écrivent rien dans un fil', async () => {

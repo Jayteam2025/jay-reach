@@ -36,6 +36,8 @@ import {
   bloquerSessionLinkedIn,
   compterRequetesLinkedIn,
   enregistrerMessageSortant,
+  marquerReponseEnvoyee,
+  signalerEchecReponse,
   enregistrerResultat,
   jourCourantDansFuseau,
   enregistrerCompteLinkedIn,
@@ -253,14 +255,21 @@ async function executer(
     // « indéterminé » en remontant dans `executer`) : perdre la trace du fil est désagréable,
     // perdre l'envoi est irréversible.
     try {
-      await enregistrerMessageSortant(d.pool, {
-        organizationId: organisationId,
-        contactId: action.contactId,
-        channel: 'linkedin_message',
-        body: texte,
-        etat: 'envoye',
-        raw: { queue_id: action.id },
-      });
+      // Une réponse de l'opérateur est DÉJÀ dans le fil (`en_cours`, écrite à la saisie) : on la date
+      // sur place, on n'en insère pas une seconde. Si elle manque (fil purgé), on écrit comme pour
+      // une action de séquence plutôt que de perdre la trace.
+      const datee =
+        action.origine === 'reponse' && (await marquerReponseEnvoyee(d.pool, organisationId, action.id));
+      if (!datee) {
+        await enregistrerMessageSortant(d.pool, {
+          organizationId: organisationId,
+          contactId: action.contactId,
+          channel: 'linkedin_message',
+          body: texte,
+          etat: 'envoye',
+          raw: { queue_id: action.id },
+        });
+      }
     } catch (err) {
       console.warn(`[envoi-linkedin] message absent du fil (${nomDe(err)})`);
     }
@@ -517,6 +526,14 @@ async function arreterSequence(
   code: string,
   message: string,
 ): Promise<void> {
+  // Une réponse de l'opérateur n'a ni action ni inscription à arrêter : sans ceci son échec ne
+  // préviendrait personne. Idempotent, et sans effet sur une ligne de séquence. Un échec ici ne doit
+  // pas empêcher l'arrêt de la séquence qui suit.
+  try {
+    await signalerEchecReponse(d.pool, ctx.organisationId, queueId, code, message);
+  } catch (err) {
+    console.error(`[envoi-linkedin] échec de réponse non signalé (${nomDe(err)})`);
+  }
   for (let essai = 1; ; essai += 1) {
     try {
       await arreterSequenceDeLaLigne(d.pool, ctx.organisationId, queueId, code, message);
