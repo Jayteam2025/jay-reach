@@ -521,6 +521,26 @@ describe('schemaEcrireReglage — la fenetre de validation des posts doit depass
   });
 });
 
+describe('linkedin_releve_intervalle_min — intervalle de relève', () => {
+  const CLE = 'linkedin_releve_intervalle_min';
+
+  it('écrit et relit l’intervalle de relève, refuse 4 et 1441', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: CLE, value: 15 }] });
+    await ecrireReglage(ctx, { cle: CLE, valeur: 15 });
+    expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/insert into organization_settings/i), expect.any(Array));
+    expect((await lireReglages(ctx))[CLE]).toBe(15);
+
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 4 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 1441 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 5 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 1440 }).success).toBe(true);
+  });
+
+  it('le défaut est de 30 minutes', async () => {
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(30);
+  });
+});
+
 describe('schemaEcrireReglage — les plafonds d envoi LinkedIn sont bornes', () => {
   /**
    * Le moteur rabote ces deux plafonds a HARD_CAP_7_DAYS. Sans borne a l'ecriture,

@@ -42,6 +42,7 @@ export type ClePlafond =
   | 'linkedin_visites_profil_par_semaine'
   | 'linkedin_fiches_post_par_jour'
   | 'linkedin_fenetre_validation_post_jours'
+  | 'linkedin_releve_intervalle_min'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -58,6 +59,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_visites_profil_par_semaine',
   'linkedin_fiches_post_par_jour',
   'linkedin_fenetre_validation_post_jours',
+  'linkedin_releve_intervalle_min',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -98,6 +100,10 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // d'épargne n'épargnerait jamais rien et l'écran afficherait une échéance sans effet.
   // `schemaEcrireReglage` refuse une valeur sous ce seuil, en le disant.
   { cle: 'linkedin_fenetre_validation_post_jours', defaut: 28, env: 'LINKEDIN_POST_REVIEW_WINDOW_DAYS' },
+  // Intervalle entre deux relèves de la messagerie LinkedIn, en minutes. Chaque relève est une
+  // requête de plus vers LinkedIn : 30 laisse une réponse visible en moins d'une heure sans
+  // fréquenter la messagerie en continu. Bornes [5, 1440] posées par `schemaEcrireReglage`.
+  { cle: 'linkedin_releve_intervalle_min', defaut: 30, env: 'LINKEDIN_RELEVE_INTERVAL_MIN' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -358,6 +364,15 @@ export const schemaEcrireReglage = z
           code: z.ZodIssueCode.custom,
           path: ['valeur'],
           message: `La fenêtre de validation doit dépasser le délai d'ancienneté des signaux (${anciennete} jours) : en deçà, les personnes qui ont réagi au post sont effacées avant d'avoir pu être validées.`,
+        });
+      }
+    }
+    if (entree.cle === 'linkedin_releve_intervalle_min' && typeof entree.valeur === 'number') {
+      if (entree.valeur < 5 || entree.valeur > 1440) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['valeur'],
+          message: "L'intervalle de relève doit être compris entre 5 et 1440 minutes.",
         });
       }
     }
@@ -700,7 +715,8 @@ export type ClePlafondLinkedIn =
   | 'linkedin_messages_par_semaine'
   | 'linkedin_visites_profil_par_semaine'
   | 'linkedin_fiches_post_par_jour'
-  | 'linkedin_fenetre_validation_post_jours';
+  | 'linkedin_fenetre_validation_post_jours'
+  | 'linkedin_releve_intervalle_min';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
