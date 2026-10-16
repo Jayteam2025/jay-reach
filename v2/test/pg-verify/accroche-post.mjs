@@ -2428,9 +2428,9 @@ async function gardeALEnvoi() {
         check(`34c. [${canal}] le post RELU, la même action part : planifiée, aucun motif`,
           a?.status === 'scheduled' && a?.block_reason === null, JSON.stringify(a));
       } else {
-        check(`34a. [${canal}] le post en attente : l\'action part en file, bloquée, motif nommé`,
+        check(`34a. [${canal}] le post en attente : l'action part en file, bloquée, motif nommé`,
           a?.status === 'blocked' && a?.block_reason === 'post_a_relire', JSON.stringify(a));
-        check(`34b. [${canal}] et l\'inscription reste vivante, sans avancer d\'étape`,
+        check(`34b. [${canal}] et l'inscription reste vivante, sans avancer d'étape`,
           insc?.status === 'active' && insc?.current_step === 0, JSON.stringify(insc));
       }
     }
@@ -2581,7 +2581,7 @@ async function gardeAuxRejeuxLinkedIn() {
   for (const relu of [false, true]) {
     const m = await monde();
     const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message' });
-    const p = await engageurDUnPost(m, relu ? 115 : 114, { etat: relu ? 'approved' : 'pending' });
+    await engageurDUnPost(m, relu ? 115 : 114, { etat: relu ? 'approved' : 'pending' });
     await tourDInscription(m.org);
     await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
     await tickDueEnrollments(pool, new Date());
