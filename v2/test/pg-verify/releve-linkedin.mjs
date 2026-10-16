@@ -71,7 +71,7 @@
 //      NON PROUVES (declares) : `and organization_id = $2` de la mise a jour de reclasserFil et `t.organization_id = $3` de la lecture de completerCorps : l'identifiant du fil
 //      vient d'une lecture deja filtree par organisation, chacun retire laisse tout vert ; la transaction par fil du rejeu (le rollback d'un fil qui echoue en cours de route
 //      n'est pas joue : un echec reel laisse les fils precedents appliques, ce qui est voulu mais non prouve ici).
-//  16. (tache 10, tour 1) `try/catch` par fil du rejeu — 189, 189b, 189c ; ne compter qu'apres succes (`continue` du catch) — 189 ; le `select` sans verrou du corps stocke
+//  16. (tache 10, tour 1) `try/catch` par fil du rejeu — 189 (nomme : l'exception est capturee par `erreur`, la section continue) ; ne compter qu'apres succes (`continue` du catch) — 189 ; le `select` sans verrou du corps stocke
 //      (ouvrir toujours la transaction) — 191 seul ; le `.catch` de completerCorps — 190 seul ; `reclasse` de recordInboundReply — 173, 176c, 190b ;
 //      notification du rejeu — 186, 189 ; compte des sequences — 179, 180 ; son dedoublonnage par contact — 179.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
@@ -1466,10 +1466,11 @@ async function reclassementTardif() {
   await q(`create or replace function jr_t10_poison_fil() returns trigger language plpgsql as $f$ begin if new.id = '${fPoison}' then raise exception 'fil empoisonne'; end if; return new; end $f$`);
   await q(`create trigger jr_t10_poison_fil before update on threads for each row execute function jr_t10_poison_fil()`);
   const nN = await nNotifs();
-  const pz = await rejouerClassement(pool, org, { appliquer: true });
+  let pz = null;
+  const ePz = await erreur((async () => { pz = await rejouerClassement(pool, org, { appliquer: true }); })());
   check('189 un fil empoisonné en tête : un échec compté, le suivant aboutit (reclassé, exclu, notifié), les compteurs ne sont pas perdus',
-    pz.echecs === 1 && pz.reclasses === 1 && pz.exclus === 1 && pz.notifications === 1 && (await fil(841)) === 'human_reply' && (await etat(841)) === 'do_not_contact' && (await nNotifs()) === nN + 1,
-    JSON.stringify(pz));
+    ePz === null && pz?.echecs === 1 && pz?.reclasses === 1 && pz?.exclus === 1 && pz?.notifications === 1 && (await fil(841)) === 'human_reply' && (await etat(841)) === 'do_not_contact' && (await nNotifs()) === nN + 1,
+    JSON.stringify([ePz?.message, pz]));
   check('189b le fil empoisonné est intact (sa transaction est défaite : classe, contact, aucune notification)', (await fil(840)) === 'auto_absence' && (await etat(840)) === 'active' && (await nSupp('poison@')) === 0);
   await q(`drop trigger jr_t10_poison_fil on threads`);
   const pz2 = await rejouerClassement(pool, org, { appliquer: true });

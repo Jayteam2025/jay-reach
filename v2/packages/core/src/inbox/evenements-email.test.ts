@@ -123,4 +123,42 @@ describe('traiterEvenementEmail', () => {
     const resultat = await traiterEvenementEmail(ex, 'org-1', ERREUR, 'SalesBlink');
     expect(resultat).toEqual({ stored: false, reason: 'ignored' });
   });
+
+  describe('message déjà connu dont le corps arrive après coup (le cas Pluxee, par email)', () => {
+    const TARDIF: EvenementEmail = {
+      type: 'repondu', email: 'marie@exemple.fr', corps: 'I am no longer with Pluxee.', messageId: 'p-1', aMs: 1000,
+      headers: { 'auto-submitted': 'auto-replied' },
+    };
+    function connu(corpsVide: boolean) {
+      const appels: string[] = [];
+      const ex: Executeur = {
+        async query<T>(text: string) {
+          const t = text.trim();
+          appels.push(t);
+          const r = (rows: unknown[]) => ({ rows: rows as T[], rowCount: rows.length });
+          if (t.startsWith('select id from contacts')) return r([{ id: 'contact-1' }]);
+          if (t.startsWith('select m.id from thread_messages')) return r([{ id: 'm-1' }]);
+          if (t.startsWith('select thread_id as id')) return r([{ id: 'f-1' }]);
+          if (t.includes('as vide')) return r([{ vide: corpsVide }]);
+          if (t.includes('as corps_vide')) return r([{ contact_id: 'contact-1', classification: 'auto_absence', corps_vide: corpsVide, est_dernier: true }]);
+          return r([]);
+        },
+      };
+      return { ex, appels };
+    }
+
+    it('reclassé en auto_left_company : l’opérateur est notifié, aucun message de plus', async () => {
+      const { ex, appels } = connu(true);
+      const resultat = await traiterEvenementEmail(ex, 'org-1', TARDIF, 'microsoft_graph');
+      expect(resultat).toMatchObject({ stored: true, effect: 'reply', classification: 'auto_left_company' });
+      expect(appels.filter((t) => t.includes('insert into notifications'))).toHaveLength(1);
+      expect(appels.some((t) => t.includes('insert into thread_messages'))).toBe(false);
+    });
+
+    it('corps déjà stocké : pas de notification (rien n’a changé)', async () => {
+      const { ex, appels } = connu(false);
+      await traiterEvenementEmail(ex, 'org-1', TARDIF, 'microsoft_graph');
+      expect(appels.some((t) => t.includes('insert into notifications'))).toBe(false);
+    });
+  });
 });
