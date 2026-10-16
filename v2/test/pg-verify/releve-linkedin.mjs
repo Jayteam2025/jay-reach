@@ -2,7 +2,12 @@
 // de production n'est recopiée ici : seules les fixtures sont en SQL (et deux requêtes témoins, marquées
 // « témoin », qui prouvent que la fixture SAURAIT attraper la faute que le contrôle écarte).
 //
-// Mutations qui font rougir (à rejouer à la main) :
+// Mutations qui font rougir (à rejouer à la main). ATTENTION : une mutation peut faire rougir PLUSIEURS contrôles, et
+// c'est normal quand ils dépendent de la même garde (ex. retirer `jr:linkedin_garde_contact_exclu` : 119, 119b ET 122, les
+// trois lisent cette garde). Trois rouges pour une seule mutation ne sont pas une régression de plus : lire la liste de
+// la mutation avant de chercher ailleurs. Le contrôle 192 à 203 (parcours enchaîné) rougit, lui, dès qu'UN maillon casse,
+// et son numéro dit lequel.
+//
 //   1. releve-linkedin.ts : retirer le `normaliserUrlProfil` du repli par URL — 20 (URL dégénérée) rougit ;
 //   2. retirer `if (res.rows.length > 1) return 'url_ambigue'` — 21 rougit ;
 //   3. retirer `and organization_id = $1` d'une des deux recherches — 25 rougit ;
@@ -74,7 +79,13 @@
 //  16. (tache 10, tour 1) `try/catch` par fil du rejeu — 189 (nomme : l'exception est capturee par `erreur`, la section continue) ; ne compter qu'apres succes (`continue` du catch) — 189 ; le `select` sans verrou du corps stocke
 //      (ouvrir toujours la transaction) — 191 seul ; le `.catch` de completerCorps — 190 seul ; `reclasse` de recordInboundReply — 173, 176c, 190b ;
 //      notification du rejeu — 186, 189 ; compte des sequences — 179, 180 ; son dedoublonnage par contact — 179.
+//  17. (tache 12) parcours enchaîné d'une réponse, 192 à 203, sur UN contact : retirer l'appel d'exclusion de recordInboundReply — 194 à 196 ;
+//      l'annulation des envois en file — 198 ; le `origine <> 'reponse'` de l'annulation — 199 ; la garde d'envoi — 200 ; le `q.origine <> 'reponse'`
+//      de la garde — 200 et 201 ; `marquerReponseEnvoyee` — 202 ; un second insert dans thread_messages à l'envoi — 203.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
+//   6b (sens inverse, tache 12) : même migration, assouplir en `num_nonnulls(...) <= 1` pour TOUS les kinds (la relève sans origine passe, mais
+//      aussi la collecte) : la migration se verifie elle-meme et echoue d'abord (MIGRATION_FAIL, constate le 16/10) ; en relachant AUSSI son
+//      controle final, 43 rougit pour chaque kind de collecte (profil, fiche) et 42 aussi (la trace sans nature ni origine passerait).
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
@@ -172,6 +183,14 @@ async function fixtures() {
   // Même identifiant et même URL dans une AUTRE organisation : jamais rattachés depuis A.
   await c(21, ORG_B, 'b-nu@example.test', 'ACoAAurnnu', null, 1);
   await c(22, ORG_B, 'b-url@example.test', null, 'https://www.linkedin.com/in/seulement-b', 1);
+  // Plage d'envoi ouverte en permanence pour l'organisation du passage complet : posée ICI, avant toute section, pour que
+  // le verdict ne dépende ni de l'heure du poste ni de l'ordre des sections (le harnais a déjà été rouge à 8 h 35 et vert
+  // à 14 h sans changement de code). Le contrôle 150a pose sa propre fenêtre restreinte, sur son organisation.
+  await q(
+    `insert into linkedin_settings (organization_id, send_from_hour, send_to_hour, send_days, timezone)
+     values ($1, 0, 24, '{1,2,3,4,5,6,7}', 'Europe/Paris')`,
+    [ORG_A],
+  );
 }
 
 async function rattachementParUrn() {
@@ -248,18 +267,15 @@ async function trace() {
   check('41 elle compte dans le budget de l heure des autres canaux', apres === avant + 1, `${avant} -> ${apres}`);
   const sans = await erreur(q(`insert into linkedin_requetes (organization_id) values ($1)`, [ORG_A]));
   check('42 sens inverse : une trace sans nature ET sans origine reste refusee par la contrainte', sans !== null && /une_origine/.test(String(sans.message)), String(sans?.message));
-  const nommee = await erreur(q(`insert into linkedin_requetes (organization_id, kind) values ($1, 'profil')`, [ORG_A]));
-  check('43 sens inverse : une trace de profil sans origine reste refusee', nommee !== null, String(nommee?.message));
+  // Chaque nature de collecte exige UNE origine ; le refus doit venir de la contrainte d'origine, pas d'ailleurs.
+  for (const kind of ['profil', 'fiche']) {
+    const nommee = await erreur(q(`insert into linkedin_requetes (organization_id, kind) values ($1, $2)`, [ORG_A, kind]));
+    check(`43 sens inverse : une trace de ${kind} sans origine reste refusee, par linkedin_requetes_une_origine`,
+      nommee !== null && /linkedin_requetes_une_origine/.test(String(nommee.message)), String(nommee?.message));
+  }
 }
 
 async function passageComplet() {
-  // Plage ouverte en permanence : le verdict ne doit pas dépendre de l'heure du poste.
-  await q(
-    `insert into linkedin_settings (organization_id, send_from_hour, send_to_hour, send_days, timezone)
-     values ($1, 0, 24, '{1,2,3,4,5,6,7}', 'Europe/Paris')
-     on conflict (organization_id) do update set send_from_hour = 0, send_to_hour = 24, send_days = '{1,2,3,4,5,6,7}'`,
-    [ORG_A],
-  );
   const MOI = 'urn:li:fsd_profile:ACoAAmoi';
   const maintenant = Date.now();
   const recu = maintenant + 1000; // après le curseur « maintenant » du premier passage
@@ -1070,6 +1086,13 @@ async function reponseManuelle() {
   check('149 elle passe aussi devant une invitation plus ancienne (types differents)', p2.action?.id === rep2, JSON.stringify(p2));
   await vider();
 
+  // Fenetre propre a cette paire, posee ici : la refus du dimanche ne depend ni des defauts ni d'une autre section.
+  await q(
+    `insert into linkedin_settings (organization_id, send_from_hour, send_to_hour, send_days, timezone)
+     values ($1, 9, 18, '{1,2,3,4,5}', 'Europe/Paris')
+     on conflict (organization_id) do update set send_from_hour = 9, send_to_hour = 18, send_days = '{1,2,3,4,5}', timezone = 'Europe/Paris'`,
+    [ORG_R],
+  );
   await ligne(610, 'message', { quand: AVANT });
   const horsSeq = await reclamerProchaineAction(pool, ORG_R, DIMANCHE);
   check('150a paire : hors fenetre horaire (dimanche 3h), une ligne de sequence est refusee', horsSeq.action === null && horsSeq.motif !== null, JSON.stringify(horsSeq));
@@ -1500,9 +1523,116 @@ async function reclassementTardif() {
   check('191b témoin : un corps stocké vide, lui, ouvre bien sa transaction (le compteur sait voir)', connexions === 1, String(connexions));
 }
 
+// Tâche 12 : le parcours ENCHAÎNÉ, sur un seul contact. Chaque maillon est prouvé ailleurs ; seul ce parcours dit si
+// l'opérateur peut travailler : une réponse exclut, annule ce qui part tout seul, et laisse malgré tout répondre.
+// Le vrai chemin (recordInboundReply, repondreAuFil, reclamerProchaineAction, regler) : aucun état posé à la main après le départ.
+async function parcoursComplet() {
+  const ORG_S = '00000000-0000-0000-0000-0000000000f1';
+  const org = ORG_S;
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org S', 'org-s')`, [org]);
+  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [org]);
+  await q(`insert into auth.users (id, email) values ($1, 'membre-s@example.test')`, [id(9100)]);
+  await q(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [org, id(9100)]);
+  const MARDI = new Date('2026-09-15T10:00:00.000Z');
+  const AVANT = '2026-09-10T08:00:00.000Z';
+  const URL = 'https://www.linkedin.com/in/parcours-900';
+  const transports = { graph: async () => { throw new Error('graph appele'); }, salesblink: async () => { throw new Error('salesblink appele'); } };
+
+  // 192. Le départ : inscrit, séquence active, un envoi LinkedIn pending en file avec son action liée.
+  await q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, 'parcours@example.test', $3)`, [id(900), org, URL]);
+  const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp S', 'active') returning id`, [org])).rows[0].id;
+  const enr = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active') returning id`, [org, camp, id(900)])).rows[0].id;
+  const action = (await q(`insert into actions (organization_id, enrollment_id, channel, status, idempotency_key) values ($1, $2, 'linkedin_message', 'scheduled', 't12-parcours') returning id`, [org, enr])).rows[0].id;
+  const envoi = (await q(
+    `insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, message_body, method, status, origine, action_id, scheduled_for)
+     values ($1, $2, $3, 'message', 'relance', 'serveur', 'pending', 'sequence', $4, $5::timestamptz) returning id`,
+    [org, id(900), URL, action, AVANT],
+  )).rows[0].id;
+  const lireEnvoi = async (i) => (await q(`select status, error_code, origine from linkedin_action_queue where id = $1`, [i])).rows[0];
+  const depart = { c: (await q(`select status::text as s from contacts where id = $1`, [id(900)])).rows[0].s, e: (await q(`select status::text as s from enrollments where id = $1`, [enr])).rows[0].s,
+    a: (await q(`select status::text as s from actions where id = $1`, [action])).rows[0].s, q: (await lireEnvoi(envoi)).status };
+  check('192 depart : contact actif, inscription active, action scheduled, envoi pending',
+    depart.c === 'active' && depart.e === 'active' && depart.a === 'scheduled' && depart.q === 'pending', JSON.stringify(depart));
+
+  // 193. La réponse entre par le VRAI chemin de production : le handler de relève (recordInboundReply PUIS notifyReply, que
+  // recordInboundReply n'appelle pas : la notification est le fait de l'appelant). Un pilote qui rend une boîte de réception.
+  const MOI = 'urn:li:fsd_profile:ACoAAmoi-s';
+  const recu = Date.now() + 1000;
+  const conversation = { elements: [] };
+  const pilote = {
+    aller: async () => undefined, url: async () => 'https://www.linkedin.com/feed/', saisir: async () => undefined, presserEntree: async () => undefined,
+    texte: async () => '', attendre: async () => true, effacerCookies: async () => undefined, fermer: async () => undefined,
+    requete: async (u) => {
+      if (u === 'https://www.linkedin.com/voyager/api/me') {
+        return { statut: 200, corps: JSON.stringify({ data: { '*miniProfile': 'urn:li:fs_miniProfile:ACoAAmoi-s' }, included: [{ entityUrn: 'urn:li:fs_miniProfile:ACoAAmoi-s', publicIdentifier: 'moi-s' }] }) };
+      }
+      if (u === urlConversations(MOI, 20)) return { statut: 200, corps: JSON.stringify({ data: { messengerConversationsX: conversation } }) };
+      throw new Error(`requete non prevue : ${u}`);
+    },
+  };
+  const deps = { pool, env: { JAY_REACH_LINKEDIN: '1' }, ouvrirNavigateur: async () => pilote, releverSortie: async () => ({ ip: '203.0.113.7' }) };
+  await traiterReleveLinkedIn(deps, { organizationId: org }); // boite vide : pose le compte et le curseur
+  conversation.elements = [{
+    entityUrn: 'urn:li:msg_conversation:c-parcours', lastActivityAt: recu, groupChat: false,
+    conversationParticipants: [
+      { hostIdentityUrn: MOI, participantType: { member: { profileUrl: 'https://www.linkedin.com/in/moi-s' } } },
+      { hostIdentityUrn: 'urn:li:fsd_profile:ACoAAparcours', participantType: { member: { profileUrl: URL } } },
+    ],
+    messages: { elements: [{ entityUrn: 'urn:li:msg_message:parcours', deliveredAt: recu, sender: { hostIdentityUrn: 'urn:li:fsd_profile:ACoAAparcours' }, body: { text: 'Bonjour, merci pour votre message, on se rappelle la semaine prochaine.' } }] },
+  }];
+  await traiterReleveLinkedIn(deps, { organizationId: org });
+  const entrants = (await q(`select t.classification::text as c, m.direction from thread_messages m join threads t on t.id = m.thread_id where t.contact_id = $1`, [id(900)])).rows;
+  check('193 la reponse humaine entre par la releve (rattachee par URL, classee human_reply, un seul message entrant)',
+    entrants.length === 1 && entrants[0].c === 'human_reply' && entrants[0].direction === 'in', JSON.stringify(entrants));
+
+  // 194 a 197. Les consequences, une a une.
+  check('194 le contact est do_not_contact', (await q(`select status::text as s from contacts where id = $1`, [id(900)])).rows[0].s === 'do_not_contact');
+  const opp = (await q(`select scope::text as scope, reason from suppressions where organization_id = $1 and (lower(value) = 'parcours@example.test' or value = 'https://www.linkedin.com/in/parcours-900')`, [org])).rows;
+  check('195 ses oppositions sont posees : email ET linkedin, reponse_recue',
+    opp.length === 2 && opp.some((o) => o.scope === 'email') && opp.some((o) => o.scope === 'linkedin') && opp.every((o) => o.reason === 'reponse_recue'), JSON.stringify(opp));
+  const insc = (await q(`select status::text as s from enrollments where id = $1`, [enr])).rows[0].s;
+  check('196 sa sequence est arretee (inscription replied : plus jamais relancee)', insc === 'replied', insc);
+  const nb = (await q(`select count(*)::int as n from notifications where organization_id = $1 and event = 'contact.replied'`, [org])).rows[0].n;
+  check('197 l operateur est notifie (contact.replied, une fois : par la releve, pas par recordInboundReply)', nb === 1, String(nb));
+
+  // 198. Rien ne partira plus tout seul.
+  const ap = await lireEnvoi(envoi);
+  const aa = (await q(`select status::text as s from actions where id = $1`, [action])).rows[0].s;
+  check('198 l envoi pending est cancelled (contact_exclu) et son action skipped', ap.status === 'cancelled' && ap.error_code === 'contact_exclu' && aa === 'skipped', JSON.stringify([ap, aa]));
+
+  // 199. L'operateur repond depuis l'application.
+  const fil = (await q(`select id from threads where organization_id = $1 and contact_id = $2 and channel = 'linkedin_message'`, [org, id(900)])).rows[0].id;
+  let rep;
+  const err = await erreur((async () => { rep = await repondreAuFil(pool, org, { threadId: fil, corps: 'Merci pour votre retour !' }, transports); })());
+  if (err) { check('199 pre : repondreAuFil ne leve pas', false, err.message); return; }
+  const ligneRep = await lireEnvoi(rep.messageId);
+  const sortant = (await q(`select sent_at, raw from thread_messages where thread_id = $1 and direction = 'out'`, [fil])).rows;
+  check('199 la reponse s enfile (pending, origine reponse) et apparait en_cours dans le fil, sans date',
+    rep.transport === 'linkedin' && ligneRep.status === 'pending' && ligneRep.origine === 'reponse'
+      && sortant.length === 1 && sortant[0].raw.etat === 'en_cours' && sortant[0].sent_at === null, JSON.stringify([rep, ligneRep, sortant]));
+
+  // 200, 201. La reclamation rend cette ligne malgre l'exclusion.
+  await q(`update linkedin_action_queue set scheduled_for = $2 where id = $1`, [rep.messageId, AVANT]);
+  const rec = await reclamerProchaineAction(pool, org, MARDI);
+  check('200 la reclamation rend la reponse malgre le contact exclu (et non l envoi annule)', rec.action?.id === rep.messageId && rec.action?.origine === 'reponse' && rec.motif === null, JSON.stringify(rec));
+  check('201 la ligne est passee processing', (await lireEnvoi(rep.messageId)).status === 'processing', JSON.stringify(await lireEnvoi(rep.messageId)));
+  if (!rec.action) return;
+
+  // 202, 203. L'envoi aboutit, par le vrai `regler` du worker puis la datation du fil.
+  const d = { pool, env: {}, ouvrirNavigateur: async () => { throw new Error('navigateur'); }, releverSortie: async () => { throw new Error('releve'); }, pause: async () => undefined };
+  await regler(d, { ex: pool, organisationId: org, utilisateurId: null, role: null }, rec.action, { type: 'envoye' });
+  const date = await marquerReponseEnvoyee(pool, org, rep.messageId);
+  const apres = (await q(`select sent_at, raw from thread_messages where thread_id = $1 and direction = 'out'`, [fil])).rows;
+  check('202 la ligne est sent et le message du fil est date, sans etat en_cours',
+    (await lireEnvoi(rep.messageId)).status === 'sent' && date === true && apres.length === 1 && apres[0].sent_at !== null && !('etat' in apres[0].raw), JSON.stringify([await lireEnvoi(rep.messageId), date, apres]));
+  const toutes = (await q(`select count(*)::int as n from thread_messages where raw->>'queue_id' = $1`, [rep.messageId])).rows[0].n;
+  const total = (await q(`select count(*)::int as n from thread_messages where thread_id = $1`, [fil])).rows[0].n;
+  check('203 UNE seule ligne dans thread_messages pour cette reponse (et le fil ne compte que l entrante et elle)', toutes === 1 && total === 2, `${toutes} / ${total}`);
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif, parcoursComplet);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;
