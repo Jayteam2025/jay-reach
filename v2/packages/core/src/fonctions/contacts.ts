@@ -600,7 +600,7 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
       await tx.query(
         `update actions /* jr:dnc_actions */
             set status = 'skipped', error = coalesce(error, 'operator_do_not_contact')
-          where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'pending_approval')`,
+          where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'approved', 'pending_approval')`,
         [idsInscriptions, ctx.organisationId],
       );
     }

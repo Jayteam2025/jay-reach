@@ -160,7 +160,10 @@ async function applyToEnrollment(
     // (`email-salesblink.ts`, `enrollment_inactive`).
     await ex.query(
       `update actions set status = 'skipped', error = 'enrollment_inactive'
-        where organization_id = $1 and status = 'scheduled'
+        -- approved AUTANT que scheduled : un envoi approuvé mais pas encore parti doit être
+        -- sauté comme les autres quand la personne a répondu. pending_approval reste dehors,
+        -- comme avant ce lot : ce balayage n'a jamais touché la file d'attente humaine.
+        where organization_id = $1 and status in ('scheduled', 'approved')
           and enrollment_id in (
             select id from enrollments where organization_id = $1 and contact_id = $2 and status = 'replied'
           )`,

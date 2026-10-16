@@ -141,7 +141,8 @@ describe('reporterEnvoi', () => {
     await reporterEnvoi(ctx, { actionId });
     const ecriture = appelsDe(ctx).find((a) => /jr:reporter_ecrire/i.test(String(a[0])));
     expect(String(ecriture?.[0])).toMatch(/organization_id = \$4/);
-    expect(String(ecriture?.[0])).toMatch(/status in \('scheduled', 'pending_approval'\)/);
+    // `approved` compte comme `scheduled` : c'est un envoi à venir, et l'écran le range déjà là.
+    expect(String(ecriture?.[0])).toMatch(/status in \('scheduled', 'approved', 'pending_approval'\)/);
   });
 
   it('lève ErreurIntrouvable si l’écriture ne touche aucune ligne (organisation ou statut divergents entre temps)', async () => {

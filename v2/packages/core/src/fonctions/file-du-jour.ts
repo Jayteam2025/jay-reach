@@ -94,7 +94,7 @@ export async function reporterEnvoi(ctx: Contexte, entree: unknown): Promise<voi
     `select a.id, a.scheduled_for, a.dispatch_after, a.sender_id, e.contact_id
        from actions a /* jr:reporter_lire */
        join enrollments e on e.id = a.enrollment_id
-      where a.id = $1 and a.organization_id = $2 and a.status in ('scheduled', 'pending_approval')`,
+      where a.id = $1 and a.organization_id = $2 and a.status in ('scheduled', 'approved', 'pending_approval')`,
     [actionId, ctx.organisationId],
   );
   const ligne = res.rows[0];
@@ -133,7 +133,7 @@ export async function reporterEnvoi(ctx: Contexte, entree: unknown): Promise<voi
   const ecriture = await ctx.ex.query(
     `update actions /* jr:reporter_ecrire */
         set scheduled_for = $2, dispatch_after = $3
-      where id = $1 and organization_id = $4 and status in ('scheduled', 'pending_approval')`,
+      where id = $1 and organization_id = $4 and status in ('scheduled', 'approved', 'pending_approval')`,
     [actionId, new Date(decale).toISOString(), new Date(decale + ecartMs).toISOString(), ctx.organisationId],
   );
   if (ecriture.rowCount === 0) throw new ErreurIntrouvable('Envoi');
@@ -198,7 +198,7 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
     await ctx.ex.query(
       `update actions /* jr:ecarter_actions */
           set status = 'skipped', error = coalesce(error, 'operator_skip')
-        where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'pending_approval')`,
+        where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'approved', 'pending_approval')`,
       [idsInscriptions, ctx.organisationId],
     );
   }
