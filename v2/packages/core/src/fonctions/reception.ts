@@ -265,13 +265,15 @@ export async function listerFils(
     `select t.id, t.contact_id, t.channel, t.classification, t.interest, t.handled_at, t.last_message_at, t.resume_at,
             c.first_name, c.last_name, c.job_title, ac.name as account_name,
             camp.name as campagne_nom,
-            -- nulls first : un message sans date est un message qui vient d'être écrit et n'est
-            -- pas encore parti. C'est le dernier du fil, donc celui que l'aperçu doit montrer --
-            -- avec nulls last il passait derrière tous les messages datés, et la liste affichait
-            -- un message plus ancien. Départage par id faute de colonne de création : arbitraire
-            -- entre deux messages non datés, mais stable d'un rafraîchissement à l'autre.
+            -- Seul un message EN COURS D'ENVOI remonte en tête : il vient d'être écrit et n'est pas encore
+            -- parti, c'est le dernier du fil. Un message échoué ou à vérifier garde sent_at nul pour
+            -- toujours (signalerEchecReponse ne touche que raw) : sans cette distinction il resterait
+            -- en tête après une nouvelle réponse du prospect. Les autres messages non datés passent en
+            -- dernier. Départage par id faute de colonne de création : arbitraire entre deux messages de
+            -- même rang, mais stable d'un rafraîchissement à l'autre.
             (select m.body from thread_messages m where m.thread_id = t.id
-              order by m.sent_at desc nulls first, m.id desc limit 1) as dernier_message
+              order by (m.sent_at is null and m.raw ->> 'etat' = 'en_cours') desc,
+                       m.sent_at desc nulls last, m.id desc limit 1) as dernier_message
        from threads t /* jr:liste_fils */
        left join contacts c on c.id = t.contact_id
        left join accounts ac on ac.id = c.account_id${JOINTURE_DERNIERE_INSCRIPTION}
