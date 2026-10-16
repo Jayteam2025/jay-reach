@@ -15,6 +15,7 @@ import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js'
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
+import { poserExclusion } from '../inbox/exclusion-sur-reponse.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { lienProfilDeduit } from './sources.js';
@@ -544,32 +545,15 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
     const contact = contactRes.rows[0];
     if (!contact) throw new ErreurIntrouvable('Contact');
 
-    await tx.query(
-      `update contacts set status = 'do_not_contact' /* jr:dnc_statut */ where id = $1 and organization_id = $2`,
-      [contactId, ctx.organisationId],
-    );
-
-    if (contact.email) {
-      await tx.query(
-        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression */
-         select $1, 'email', $2, 'operator_do_not_contact', 'manual'
-         where not exists (
-           select 1 from suppressions where organization_id = $1 and scope = 'email' and value = $2
-         )`,
-        [ctx.organisationId, contact.email],
-      );
-    }
-
-    // L'opposition porte sur le TRAITEMENT, pas seulement sur l'envoi : sans cette
-    // ligne, la personne serait re-collectée au prochain post, re-scorée et
-    // ré-enrichie (jetons et achat payés) avant que l'envoi, tout à la fin, ne
-    // soit bloqué. La collecte (`enregistrerEngageur`) consulte ce périmètre.
+    // Une seule écriture de « exclure » (`poserExclusion`), partagée avec l'exclusion automatique
+    // sur réponse. Ici l'opérateur décide, donc `manual`.
     //
-    // DEUX graphies, pas une : la collecte reconnaît une personne par l'adresse qu'elle
-    // lit ET par celle qu'elle déduit de l'URN. Si le contact a été créé sous son nom
-    // public et qu'un passage ultérieur ne le relit pas, seule la forme déduite arrive à
-    // `enregistrerEngageur` : une opposition posée sur la seule adresse du contact ne
-    // correspondrait à rien, et la personne serait recollectée malgré elle.
+    // DEUX graphies, pas une : la collecte reconnaît une personne par l'adresse qu'elle lit ET par
+    // celle qu'elle déduit de l'URN. Si le contact a été créé sous son nom public et qu'un passage
+    // ultérieur ne le relit pas, seule la forme déduite arrive à `enregistrerEngageur` : une
+    // opposition posée sur la seule adresse du contact ne correspondrait à rien, et la personne
+    // serait recollectée malgré elle. (L'exclusion sur réponse, elle, ne déduit rien : voir
+    // `exclureApresReponse`.)
     const adresses = [
       ...new Set(
         [contact.linkedin_url, contact.linkedin_provider_id ? lienProfilDeduit(contact.linkedin_provider_id) : null].filter(
@@ -577,16 +561,12 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
         ),
       ),
     ];
-    for (const adresse of adresses) {
-      await tx.query(
-        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression_linkedin */
-         select $1, 'linkedin', $2, 'operator_do_not_contact', 'manual'
-         where not exists (
-           select 1 from suppressions where organization_id = $1 and scope = 'linkedin' and lower(value) = lower($2)
-         )`,
-        [ctx.organisationId, adresse],
-      );
-    }
+    await poserExclusion(tx, ctx.organisationId, contactId, {
+      email: contact.email,
+      adressesLinkedin: adresses,
+      motif: 'operator_do_not_contact',
+      origine: 'manual',
+    });
 
     const inscriptionsRes = await tx.query<{ id: string }>(
       `update enrollments /* jr:dnc_inscriptions */

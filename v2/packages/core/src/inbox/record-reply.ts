@@ -16,7 +16,9 @@
  * l'appellent avec leur propre exécuteur de requêtes structurel.
  */
 import type { Executeur } from '../executeur.js';
+import { dansUneTransaction } from '../transaction.js';
 import { classifyReply } from './classify.js';
+import { exclureApresReponse } from './exclusion-sur-reponse.js';
 
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
 export const LIVE_STATUSES = "('active','paused','paused_absence')";
@@ -299,24 +301,33 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
     }
   }
 
-  const threadId = await upsertThread(ex, org, reply.contactId, reply.channel, cls.classification);
-  await ex.query(
-    // `headers` (tâche 10) : posé tel quel, `null` quand absent — jamais la
-    // chaîne JSON `"null"`, qui resterait une valeur au lieu d'un NULL SQL.
-    `insert into thread_messages (thread_id, direction, body, provider_message_id, headers, raw, sent_at)
-     values ($1, 'in', $2, $3, $4::jsonb, $5::jsonb, $6)`,
-    [
-      threadId,
-      reply.body,
-      reply.providerMessageId ?? null,
-      reply.headers ? JSON.stringify(reply.headers) : null,
-      JSON.stringify(reply.raw ?? {}),
-      receivedAt.toISOString(),
-    ],
-  );
+  // UNE transaction pour tout ce qui suit : sans elle, un échec entre l'enregistrement du message
+  // et l'exclusion laisserait une réponse enregistrée et un contact non exclu, que la garde
+  // `isNew: false` ci-dessus empêcherait ensuite de rattraper à la relève suivante.
+  const threadId = await dansUneTransaction(ex, async (tx) => {
+    const fil = await upsertThread(tx, org, reply.contactId, reply.channel, cls.classification);
+    await tx.query(
+      // `headers` (tâche 10) : posé tel quel, `null` quand absent — jamais la
+      // chaîne JSON `"null"`, qui resterait une valeur au lieu d'un NULL SQL.
+      `insert into thread_messages (thread_id, direction, body, provider_message_id, headers, raw, sent_at)
+       values ($1, 'in', $2, $3, $4::jsonb, $5::jsonb, $6)`,
+      [
+        fil,
+        reply.body,
+        reply.providerMessageId ?? null,
+        reply.headers ? JSON.stringify(reply.headers) : null,
+        JSON.stringify(reply.raw ?? {}),
+        receivedAt.toISOString(),
+      ],
+    );
 
-  await applyToEnrollment(ex, org, reply.contactId, cls.classification, cls.resumeInDays);
-  await recordOutcome(ex, org, reply.contactId, cls.classification);
+    await applyToEnrollment(tx, org, reply.contactId, cls.classification, cls.resumeInDays);
+    await recordOutcome(tx, org, reply.contactId, cls.classification);
+    // Seule `human_reply` exclut : une absence, un départ ou une signature automatique ne sont pas
+    // une réponse (règle du commanditaire, 16/10). Les gardes ci-dessus gardent leur effet propre.
+    if (cls.classification === 'human_reply') await exclureApresReponse(tx, org, reply.contactId);
+    return fil;
+  });
 
   return { threadId, classification: cls.classification, isNew: true };
 }

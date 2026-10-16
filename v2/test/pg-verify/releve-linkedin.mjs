@@ -19,6 +19,13 @@
 //      threads — 80 (reutilisation) ou 85 rougit ; poser `is_read = false`/`classification` a la mise a jour
 //      du fil — 83 et 84 rougissent ; retirer `update threads set last_message_at` — 82 ; `etat: 'en_cours'`
 //      qui pose sent_at — 87 ; retirer `and organization_id = $2` de `toucherDernierMessage` — 89.
+//  10. (tache 7) exclusion-sur-reponse : retirer le `if (cls.classification === 'human_reply')` autour de
+//      `exclureApresReponse` (exclure toujours) — 95 rougit (la paire : l'absence est alors exclue) ; ne plus l'appeler
+//      du tout — 92 a 94 rougissent ; la sortir de la transaction n'est prouve que par le test unitaire (rollback) ;
+//      lire `linkedin_provider_id` et deduire l'adresse — 98 rougit (l'adresse fabriquee apparait) ; retirer
+//      `where not exists` d'une des deux insertions — 101 et 102 rougissent ; retirer le `and organization_id = $2` de la
+//      lecture du contact — 104 rougit ; de la mise a jour du statut dans `poserExclusion` — 107 rougit ; `enrollContact` sans le `not exists (... do_not_contact)` — 96 rougit (la
+//      paire : l'inscription du contact exclu aboutit) ; `poserExclusion` qui pose toujours 'manual' — 93 rougit.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -35,6 +42,11 @@ import {
   tracerRequeteMessagerie,
   traiterReleveLinkedIn,
   urlConversations,
+  recordInboundReply,
+  exclureApresReponse,
+  nePlusContacter,
+  poserExclusion,
+  enrollContact,
 } from './_releve-linkedin-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -490,9 +502,131 @@ async function messageSortant() {
     fe === email && me.direction === 'out' && me.objet === 'Objet email' && me.action === 'act-1' && me.sent_at !== null, JSON.stringify(me));
 }
 
+// Tâche 7 : le SQL de production de l'exclusion automatique, exécuté. La paire différentielle (92 a 96) joue
+// DEUX contacts identiques (meme email, meme profil, aucune inscription) que seule la reponse distingue :
+// « human_reply » exclut, « auto_absence » non. Sans elle, un controle vert prouverait seulement que le code
+// ecrit quelque chose.
+async function exclusionSurReponse() {
+  const org = ORG_A;
+  const contact = async (n, email, url, provider = null) =>
+    q(`insert into contacts (id, organization_id, email, linkedin_url, linkedin_provider_id) values ($1, $2, $3, $4, $5)`, [id(n), org, email, url, provider]);
+  const etat = async (n) => (await q(`select status from contacts where id = $1`, [id(n)])).rows[0].status;
+  const supp = async (scope, valeur) =>
+    (await q(`select reason, origin::text as origin, value from suppressions where organization_id = $1 and scope = $2::suppression_scope and lower(value) = lower($3)`, [org, scope, valeur])).rows;
+
+  const humaine = 'Bonjour, merci pour votre message, on se rappelle la semaine prochaine.';
+  const absence = 'Je suis actuellement en conges, de retour le 20.';
+
+  // La paire : meme etat de depart, une seule difference, la reponse.
+  await contact(300, 'paire-humain@example.test', 'https://www.linkedin.com/in/paire-humain/');
+  await contact(301, 'paire-absent@example.test', 'https://www.linkedin.com/in/paire-absent/');
+  const rh = await recordInboundReply(pool, org, { contactId: id(300), channel: 'linkedin_message', body: humaine });
+  const ra = await recordInboundReply(pool, org, { contactId: id(301), channel: 'linkedin_message', body: absence });
+  check('92 la paire : les deux reponses sont enregistrees, classees differemment',
+    rh.isNew && ra.isNew && rh.classification === 'human_reply' && ra.classification === 'auto_absence', JSON.stringify([rh.classification, ra.classification]));
+
+  check('93 human_reply : contact do_not_contact, suppression email reconnaissable (reponse_recue, api)',
+    (await etat(300)) === 'do_not_contact' && JSON.stringify(await supp('email', 'paire-humain@example.test')) ===
+      JSON.stringify([{ reason: 'reponse_recue', origin: 'api', value: 'paire-humain@example.test' }]),
+    JSON.stringify(await supp('email', 'paire-humain@example.test')));
+  const sl = await supp('linkedin', 'https://www.linkedin.com/in/paire-humain');
+  check('94 human_reply : une suppression linkedin sur l adresse REELLE du contact, forme normalisee, reponse_recue / api',
+    sl.length === 1 && sl[0].reason === 'reponse_recue' && sl[0].origin === 'api' && sl[0].value === 'https://www.linkedin.com/in/paire-humain', JSON.stringify(sl));
+  const aucune = (await q(`select count(*)::int as n from suppressions where organization_id = $1 and lower(value) in ('paire-absent@example.test', 'https://www.linkedin.com/in/paire-absent', 'https://www.linkedin.com/in/paire-absent/')`, [org])).rows[0].n;
+  check('95 auto_absence, meme etat de depart : contact reste actif et AUCUNE suppression', (await etat(301)) === 'active' && aucune === 0, `${await etat(301)}, ${aucune} suppression(s)`);
+
+  // Le contrat de bout en bout : une autre campagne, la meme personne. Le contact exclu ne s'inscrit pas,
+  // son jumeau non exclu s'inscrit (sans quoi le refus pourrait venir d'ailleurs : campagne, plafond).
+  const campB = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Autre campagne', 'active') returning id`, [org])).rows[0].id;
+  const refus = await enrollContact(pool, { organizationId: org, campaignId: campB, contactId: id(300), signalId: null });
+  const accepte = await enrollContact(pool, { organizationId: org, campaignId: campB, contactId: id(301), signalId: null });
+  check('96 une reponse humaine sur un canal empeche l inscription dans une autre campagne ; le jumeau, lui, s inscrit',
+    refus === null && typeof accepte === 'string', JSON.stringify([refus, accepte]));
+  const enrExclu = (await q(`select count(*)::int as n from enrollments where contact_id = $1`, [id(300)])).rows[0].n;
+  check('97 aucune inscription n a ete creee pour le contact exclu', enrExclu === 0, String(enrExclu));
+
+  // Le piege : un identifiant qui n'est pas un URN LinkedIn, et aucune adresse de profil.
+  await contact(302, 'sans-url@example.test', null, 'fullenrich-id-0042');
+  await recordInboundReply(pool, org, { contactId: id(302), channel: 'email', body: humaine });
+  const fausse = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%fullenrich%' or value ilike '%0042%')`, [org])).rows;
+  const toutes302 = (await q(`select scope::text as scope from suppressions where organization_id = $1 and (value ilike '%fullenrich%' or value ilike '%0042%' or value = 'sans-url@example.test')`, [org])).rows;
+  check('98 sans adresse de profil, une reponse humaine pose l email et AUCUNE adresse LinkedIn fabriquee a partir de l identifiant',
+    fausse.length === 0 && toutes302.length === 1 && toutes302[0].scope === 'email' && (await etat(302)) === 'do_not_contact', JSON.stringify([fausse, toutes302]));
+
+  // Meme chose avec une adresse qui n'est pas un profil.
+  await contact(303, null, 'https://exemple.test/in/quelquun', 'ACoAAfaux303');
+  await recordInboundReply(pool, org, { contactId: id(303), channel: 'linkedin_message', body: humaine });
+  const n303 = (await q(`select count(*)::int as n from suppressions where organization_id = $1 and (value ilike '%quelquun%' or value ilike '%acoaafaux303%')`, [org])).rows[0].n;
+  check('99 une adresse qui n est pas un profil LinkedIn ne devient pas une opposition (et le contact est tout de meme exclu)',
+    n303 === 0 && (await etat(303)) === 'do_not_contact', `${n303} suppression(s)`);
+
+  // auto_left_company : arrete, n'exclut pas.
+  await contact(304, 'parti@example.test', 'https://www.linkedin.com/in/parti');
+  const campC = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Campagne C', 'active') returning id`, [org])).rows[0].id;
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active')`, [org, campC, id(304)]);
+  const rp = await recordInboundReply(pool, org, { contactId: id(304), channel: 'email', body: 'Je ne suis plus en poste dans cette entreprise.' });
+  const insc304 = (await q(`select status::text as s from enrollments where contact_id = $1`, [id(304)])).rows[0].s;
+  check('100 auto_left_company : l inscription s arrete, le contact n est PAS exclu',
+    rp.classification === 'auto_left_company' && insc304 === 'stopped' && (await etat(304)) === 'active' && (await supp('email', 'parti@example.test')).length === 0, `${insc304}, ${await etat(304)}`);
+
+  // Rejeu : meme message deux fois (garde isNew), puis exclusion rappelee a la main.
+  await contact(305, 'rejeu@example.test', 'https://www.linkedin.com/in/rejeu');
+  const r1 = await recordInboundReply(pool, org, { contactId: id(305), channel: 'linkedin_message', body: humaine, providerMessageId: 'urn:li:msg_message:rejeu' });
+  const r2 = await recordInboundReply(pool, org, { contactId: id(305), channel: 'linkedin_message', body: humaine, providerMessageId: 'urn:li:msg_message:rejeu' });
+  const p1 = await exclureApresReponse(pool, org, id(305));
+  const p2 = await exclureApresReponse(pool, org, id(305));
+  const nbEmail = (await supp('email', 'rejeu@example.test')).length;
+  const nbLi = (await supp('linkedin', 'https://www.linkedin.com/in/rejeu')).length;
+  check('101 rejouee (deux messages identiques, puis deux appels directs) : une seule suppression par canal, et les appels suivants ne posent rien',
+    r1.isNew && !r2.isNew && nbEmail === 1 && nbLi === 1 && p1.email === 0 && p1.linkedin === 0 && p2.email === 0 && p2.linkedin === 0, JSON.stringify([nbEmail, nbLi, p1, p2]));
+
+  // Une opposition deja posee (autre graphie, par l'operateur) : pas de doublon, l'existante reste telle quelle.
+  await contact(306, 'deja@example.test', 'https://www.linkedin.com/in/deja');
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'email', 'deja@example.test', 'operator_do_not_contact', 'manual'), ($1, 'linkedin', 'https://www.linkedin.com/in/DEJA', 'operator_do_not_contact', 'manual')`, [org]);
+  const pd = await exclureApresReponse(pool, org, id(306));
+  const e306 = await supp('email', 'deja@example.test');
+  const l306 = await supp('linkedin', 'https://www.linkedin.com/in/deja');
+  check('102 une opposition deja posee n est pas doublee ni rereciee en api',
+    pd.email === 0 && pd.linkedin === 0 && e306.length === 1 && l306.length === 1 && e306[0].origin === 'manual' && l306[0].origin === 'manual', JSON.stringify([pd, e306, l306]));
+
+  // Un contact sans email ni profil : le statut change, rien d'autre.
+  await contact(307, null, null);
+  const p307 = await exclureApresReponse(pool, org, id(307));
+  check('103 un contact sans email ni profil : exclu, aucune suppression posee', (await etat(307)) === 'do_not_contact' && p307.email === 0 && p307.linkedin === 0, JSON.stringify(p307));
+
+  // Le filtre d'organisation : le contact d'ORG_A, vu depuis ORG_B, n'est ni lu ni exclu.
+  await contact(308, 'cloison@example.test', 'https://www.linkedin.com/in/cloison');
+  const pb = await exclureApresReponse(pool, ORG_B, id(308));
+  const touche = (await q(`select count(*)::int as n from suppressions where value in ('cloison@example.test', 'https://www.linkedin.com/in/cloison')`)).rows[0].n;
+  check('104 vu depuis une autre organisation, le contact n est ni lu, ni exclu, aucune suppression n est posee',
+    pb.email === 0 && pb.linkedin === 0 && (await etat(308)) === 'active' && touche === 0, JSON.stringify([pb, touche]));
+
+  // Defense en profondeur : la meme ecriture, appelee directement avec le MAUVAIS identifiant d'organisation
+  // (la lecture du contact, filtree plus haut, ne peut pas la proteger quand l'appelant la saute).
+  const pp = await poserExclusion(pool, ORG_B, id(308), { email: null, adressesLinkedin: [], motif: 'test', origine: 'api' });
+  check('107 poserExclusion appelee avec une autre organisation ne change pas le statut du contact', (await etat(308)) === 'active', `${pp.email}/${pp.linkedin}`);
+
+  // Les inscriptions vivantes de TOUTES les campagnes : la reponse humaine ferme celle qui existe (une seule par contact).
+  await contact(309, 'inscrit@example.test', null);
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active')`, [org, campC, id(309)]);
+  await recordInboundReply(pool, org, { contactId: id(309), channel: 'email', body: humaine });
+  const insc309 = (await q(`select status::text as s from enrollments where contact_id = $1`, [id(309)])).rows[0].s;
+  check('105 la reponse humaine ferme l inscription vivante ET exclut', insc309 === 'replied' && (await etat(309)) === 'do_not_contact', insc309);
+
+  // Non-regression de nePlusContacter apres le partage du corps SQL : toujours manual / operator_do_not_contact,
+  // et toujours les DEUX graphies (adresse du contact + forme deduite de l'URN).
+  await contact(310, 'operateur@example.test', 'https://www.linkedin.com/in/operateur', 'ACoAAoperateur310');
+  await nePlusContacter({ ex: pool, organisationId: org, utilisateurId: null, role: 'operator' }, { contactId: id(310) });
+  const e310 = await supp('email', 'operateur@example.test');
+  const l310 = (await q(`select value, reason, origin::text as origin from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%/in/operateur' or value ilike '%acoaaoperateur310%') order by value`, [org])).rows;
+  check('106 nePlusContacter : toujours manual / operator_do_not_contact, email et deux graphies LinkedIn',
+    e310.length === 1 && e310[0].origin === 'manual' && e310[0].reason === 'operator_do_not_contact' &&
+      l310.length === 2 && l310.every((r) => r.origin === 'manual' && r.reason === 'operator_do_not_contact') && (await etat(310)) === 'do_not_contact', JSON.stringify([e310, l310]));
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

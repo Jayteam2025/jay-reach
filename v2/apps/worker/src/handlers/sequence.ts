@@ -141,9 +141,16 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
     }
   }
   const res = await pool.query<{ id: string }>(
+    // Un contact exclu (réponse humaine reçue, ou « ne plus contacter » de l'opérateur) n'entre
+    // dans AUCUNE campagne, quelle que soit la source qui le propose : `exclureApresReponse` pose
+    // ce statut, et sans ce contrôle ici une autre source réinscrirait la personne qui a répondu.
+    // Dans l'insertion elle-même : un contrôle séparé laisserait une fenêtre entre lecture et écriture.
     `insert into enrollments
        (organization_id, campaign_id, contact_id, signal_id, status, current_step, next_action_at, started_at)
-     values ($1, $2, $3, $4, 'active', 0, now(), now())
+     select $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'active', 0, now(), now()
+      where not exists (
+        select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
+      )
      on conflict (contact_id) where status in ('active','paused','paused_absence')
      do nothing
      returning id`,
