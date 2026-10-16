@@ -23,13 +23,15 @@ import type { Executeur } from '../executeur.js';
 const FAMILLE = /^[A-Za-z0-9_-]{5,}$/;
 const DEBUT_CONNU = /^(?:ACo|ACw|AEM)/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Valeurs que des appelants écrivent faute d'identifiant (`String(undefined)`) : jamais un identifiant. */
+const PARASITES = new Set(['undefined', 'null', 'none', 'nan', 'unknown']);
 const PREFIXE_URN = /^urn:li:(?:fsd_profile|fs_miniProfile):/;
 
 export function normaliserUrnLinkedIn(valeur: string): string | null {
   const brut = valeur.trim();
   const prefixe = PREFIXE_URN.test(brut);
   const nu = brut.replace(PREFIXE_URN, '');
-  if (UUID.test(nu) || !FAMILLE.test(nu)) return null;
+  if (UUID.test(nu) || !FAMILLE.test(nu) || PARASITES.has(nu.toLowerCase())) return null;
   return prefixe || DEBUT_CONNU.test(nu) ? nu : null;
 }
 
@@ -38,6 +40,16 @@ export function normaliserUrnLinkedIn(valeur: string): string | null {
  * son expéditeur, aucune adresse) n'est rattachable à personne. Un URN illisible n'écrit rien.
  * Filtre explicitement par organisation : le worker travaille avec la clé de service.
  */
+/**
+ * Ce qu'on peut journaliser d'un identifiant refusé sans le recopier : sa longueur, et trois
+ * caractères de début seulement quand il en a plus de 8 (une valeur courte tiendrait tout entière
+ * dans un « début »). Le début passe par `JSON.stringify` : un saut de ligne ne s'imprime pas tel quel.
+ */
+export function decrireIdentifiantRefuse(valeur: string): string {
+  const debut = valeur.length > 8 ? ` début ${JSON.stringify(valeur.slice(0, 3))},` : '';
+  return `identifiant LinkedIn illisible ignoré (${debut} ${valeur.length} caractères)`;
+}
+
 export async function memoriserUrnDuContact(
   ex: Executeur,
   org: string,
@@ -46,9 +58,8 @@ export async function memoriserUrnDuContact(
 ): Promise<void> {
   const nu = normaliserUrnLinkedIn(urn);
   if (nu === null) {
-    // Jamais la valeur : elle peut identifier quelqu'un. Le début et la longueur suffisent à
-    // reconnaître un identifiant valide dont le préfixe est inconnu.
-    console.warn(`[identite-linkedin] identifiant illisible ignoré (début "${urn.slice(0, 8)}", ${urn.length} caractères)`);
+    // Jamais la valeur : elle peut identifier quelqu'un (voir `decrireIdentifiantRefuse`).
+    console.warn(`[identite-linkedin] ${decrireIdentifiantRefuse(urn)}`);
     return;
   }
   await ex.query(

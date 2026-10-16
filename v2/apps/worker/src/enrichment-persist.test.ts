@@ -25,6 +25,14 @@ describe('persistEnrichedContact : linkedin_provider_id', () => {
     for (const v of valeurs) expect(v).not.toContain(UUID);
   });
 
+  it('dit son refus sans recopier la valeur', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await ecrit('Zq7Xk2');
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain('Zq7');
+    warn.mockRestore();
+  });
+
   it("écrit un URN complet sous sa forme nue", async () => {
     const valeurs = await ecrit('urn:li:fsd_profile:ACoAAB1234567890');
     expect(valeurs.some((v) => v.includes('ACoAAB1234567890'))).toBe(true);

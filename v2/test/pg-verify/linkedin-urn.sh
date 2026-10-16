@@ -43,8 +43,11 @@ insert into contacts (id, organization_id, email, linkedin_provider_id) values
   ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'societe@example.test',  'urn:li:fsd_company:ACoAAB1234567893'),
   ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', 'vide@example.test',     null),
   ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', 'uuid@example.test',     '015fc7a2-abd9-500c-a379-b5268f293c13'),
+  ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000a1', 'maj@example.test',      '  015FC7A2-ABD9-500C-A379-B5268F293C13 '),
+  ('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000a1', 'parasite@example.test', 'urn:li:fsd_profile:undefined'),
   ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-0000000000a1', 'court@example.test',    'urn:li:fsd_profile:ACoAAada');
 update contacts set linkedin_url = 'https://www.linkedin.com/in/jeanne-dupont' where id = '00000000-0000-0000-0000-000000000007';
+update contacts set linkedin_url = 'https://www.linkedin.com/in/marc-martin' where id = '00000000-0000-0000-0000-00000000000a';
 SQL
 
 # Sens négatif d'abord, sur la base seedée : privée d'un de ses deux UPDATE, la migration doit échouer
@@ -67,7 +70,7 @@ echo "[$tag] un UUID sans linkedin_url fait échouer la migration sans rien écr
 
 # Sens 1 : la vraie migration.
 psql -1 < "$MIG" >/dev/null || fail "MIGRATION_FAIL: linkedin_urn_normalise"
-ATTENDU='ACoAAB1234567890|ACoAAB1234567891|ACoAAB1234567892|https://www.linkedin.com/in/jeanne-dupont|urn:li:fsd_company:ACoAAB1234567893|||ACoAAada'
+ATTENDU='ACoAAB1234567890|ACoAAB1234567891|ACoAAB1234567892|https://www.linkedin.com/in/jeanne-dupont|urn:li:fsd_company:ACoAAB1234567893|||ACoAAada||urn:li:fsd_profile:undefined'
 LU="$(psql -tA -c "select string_agg(coalesce(linkedin_provider_id, ''), '|' order by id) from contacts" | tr -d '\n')"
 [ "$LU" = "$ATTENDU" ] || fail "ETAT_INATTENDU: $LU"
 # Idempotente : un second passage ne change rien.

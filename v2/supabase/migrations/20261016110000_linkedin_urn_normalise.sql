@@ -26,12 +26,12 @@ declare
 begin
   select count(*), count(*) filter (where linkedin_url is null or btrim(linkedin_url) = '')
     into v_attendu, v_sans_url
-    from public.contacts where linkedin_provider_id ~ v_uuid;
+    from public.contacts where btrim(linkedin_provider_id) ~* v_uuid;
   if v_sans_url > 0 then
     raise exception '% contact(s) portent un UUID dans linkedin_provider_id sans linkedin_url : effacer perdrait tout lien avec leur profil', v_sans_url;
   end if;
 
-  update public.contacts set linkedin_provider_id = null where linkedin_provider_id ~ v_uuid;
+  update public.contacts set linkedin_provider_id = null where btrim(linkedin_provider_id) ~* v_uuid;
   get diagnostics v_efface = row_count;
   -- Ce qui est effacé est exactement ce qui a été compté, et rien d'autre : un écart annule tout.
   if v_efface <> v_attendu then
@@ -41,24 +41,30 @@ begin
 end $$;
 
 -- [urn]
+-- Valeurs parasites refusées derrière le préfixe (`urn:li:fsd_profile:undefined`) : même liste que
+-- `normaliserUrnLinkedIn`. Les écrire ferait croire que le contact a son URN.
 update public.contacts
-   set linkedin_provider_id = regexp_replace(linkedin_provider_id, '^urn:li:(fsd_profile|fs_miniProfile):', '')
- where linkedin_provider_id ~ '^urn:li:(fsd_profile|fs_miniProfile):[A-Za-z0-9_-]{5,}$'
-   and linkedin_provider_id !~ '^urn:li:(fsd_profile|fs_miniProfile):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+   set linkedin_provider_id = regexp_replace(btrim(linkedin_provider_id), '^urn:li:(fsd_profile|fs_miniProfile):', '')
+ where btrim(linkedin_provider_id) ~ '^urn:li:(fsd_profile|fs_miniProfile):[A-Za-z0-9_-]{5,}$'
+   and btrim(linkedin_provider_id) !~* '^urn:li:(fsd_profile|fs_miniProfile):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   and lower(regexp_replace(btrim(linkedin_provider_id), '^urn:li:(fsd_profile|fs_miniProfile):', ''))
+       not in ('undefined', 'null', 'none', 'nan', 'unknown');
 
 -- Contrôle : la migration échoue s'il reste un URN complet reconnaissable ou un UUID.
 do $$
 begin
   if exists (
     select 1 from public.contacts
-     where linkedin_provider_id ~ '^urn:li:(fsd_profile|fs_miniProfile):[A-Za-z0-9_-]{5,}$'
-       and linkedin_provider_id !~ '^urn:li:(fsd_profile|fs_miniProfile):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     where btrim(linkedin_provider_id) ~ '^urn:li:(fsd_profile|fs_miniProfile):[A-Za-z0-9_-]{5,}$'
+       and btrim(linkedin_provider_id) !~* '^urn:li:(fsd_profile|fs_miniProfile):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       and lower(regexp_replace(btrim(linkedin_provider_id), '^urn:li:(fsd_profile|fs_miniProfile):', ''))
+       not in ('undefined', 'null', 'none', 'nan', 'unknown')
   ) then
     raise exception 'des contacts portent encore un URN LinkedIn complet dans linkedin_provider_id';
   end if;
   if exists (
     select 1 from public.contacts
-     where linkedin_provider_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     where btrim(linkedin_provider_id) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ) then
     raise exception 'des contacts portent encore un UUID FullEnrich dans linkedin_provider_id';
   end if;

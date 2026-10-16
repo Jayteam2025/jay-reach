@@ -6,7 +6,7 @@
  * contacts (+ colonnes email/email_status/email_confidence) du cahier des charges.
  */
 import type { Pool } from 'pg';
-import { normaliserUrlProfil, normaliserUrnLinkedIn } from '@jay-reach/core';
+import { decrireIdentifiantRefuse, normaliserUrlProfil, normaliserUrnLinkedIn } from '@jay-reach/core';
 
 /**
  * Verdict de délivrabilité stocké dans `contacts.email_status`, et lu par le gate.
@@ -136,6 +136,9 @@ export async function persistEnrichedContact(
   // identifiant d'un autre fournisseur (l'UUID FullEnrich) y fabriquait des adresses de profil qui
   // n'existent pas, et des exclusions posées sur un faux lien.
   const urnMembre = c.linkedinProviderId ? normaliserUrnLinkedIn(c.linkedinProviderId) : null;
+  if (c.linkedinProviderId && urnMembre === null) {
+    console.warn(`[enrichment-persist] ${decrireIdentifiantRefuse(c.linkedinProviderId)}`);
+  }
   // L'adresse rendue par le fournisseur s'écrit de plusieurs façons : on la ramène
   // à la forme des contacts avant de chercher ou d'insérer, sinon un engageur est
   // manqué et doublé sous une autre graphie.
