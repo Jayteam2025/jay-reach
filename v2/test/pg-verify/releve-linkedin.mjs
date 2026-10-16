@@ -478,6 +478,16 @@ async function messageSortant() {
   const propre = await toucherDernierMessage(ex, ORG_A, fil);
   const apresA = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
   check('90 pour la bonne organisation elle touche exactement le fil', propre === 1 && new Date(apresA) > new Date(avantB), `${propre} ligne(s)`);
+
+  // Le chemin email SalesBlink passe par la meme fonction : sa forme d'appel (canal email, raw avec l'objet),
+  // relue en base. Le fil email du contact 202 existe deja : il est reutilise, jamais duplique.
+  const fe = await enregistrerMessageSortant(ex, {
+    organizationId: ORG_A, contactId: id(202), channel: 'email', body: 'Corps email', etat: 'envoye',
+    raw: { action_id: 'act-1', mode: 'sequence', subject: 'Objet email' },
+  });
+  const me = (await q(`select direction, body, raw ->> 'subject' as objet, raw ->> 'action_id' as action, sent_at from thread_messages where thread_id = $1 and body = 'Corps email'`, [fe])).rows[0];
+  check('91 chemin email : meme fil email reutilise, message sortant avec son objet et son action relus en base',
+    fe === email && me.direction === 'out' && me.objet === 'Objet email' && me.action === 'act-1' && me.sent_at !== null, JSON.stringify(me));
 }
 
 try {
