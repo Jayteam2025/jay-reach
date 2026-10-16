@@ -18,14 +18,14 @@
 //   9. (tache 6) enregistrer-message-sortant : retirer `assurerFil` au profit d'un insert direct dans
 //      threads — 80 (reutilisation) ou 85 rougit ; poser `is_read = false`/`classification` a la mise a jour
 //      du fil — 83 et 84 rougissent ; retirer `update threads set last_message_at` — 82 ; `etat: 'en_cours'`
-//      qui pose sent_at — 87. SURVIT (defense en profondeur, non gardee) : retirer `and organization_id = $2`
-//      de la mise a jour de `last_message_at`, car l'id du fil vient deja de `assurerFil`, borne a l'organisation.
+//      qui pose sent_at — 87 ; retirer `and organization_id = $2` de `toucherDernierMessage` — 89.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
   contactsSansUrn,
   enregistrerMessageSortant,
+  toucherDernierMessage,
   ecrireEtat,
   lirePlafondLinkedIn,
   enqueueReleveLinkedIn,
@@ -468,17 +468,16 @@ async function messageSortant() {
   const m6 = (await q(`select raw from thread_messages where thread_id = $1 and body = 'Bonjour 200'`, [f1])).rows[0];
   check('88 un message envoye ne porte pas l etat en_cours', m6.raw.etat === undefined, JSON.stringify(m6.raw));
 
-  // Isolement : un contact d une autre organisation ne se rattache pas depuis A (contact et fils separes).
-  await enregistrerMessageSortant(ex, { ...base, organizationId: ORG_B, contactId: id(203), body: 'Bonjour B' });
-  const mB = await q(`select organization_id from threads where contact_id = $1`, [id(203)]);
-  const nA = (await q(`select count(*)::int as n from threads where organization_id = $1 and contact_id = $2`, [ORG_A, id(203)])).rows[0].n;
-  check('89 le fil est cree dans l organisation du message, jamais dans une autre', mB.rows.length === 1 && mB.rows[0].organization_id === ORG_B && nA === 0);
-  // Mise a jour du dernier message : bornee a l organisation (un id de fil d une autre org n est pas touche).
+  // Le filtre d'organisation de la mise a jour du dernier message : le SQL de production, appele avec
+  // le fil d'ORG_A et l'organisation ORG_B. Aucune ligne touchee, date inchangee ; avec la bonne organisation, une.
   const avantB = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
   await q(`select pg_sleep(0.01)`);
-  await enregistrerMessageSortant(ex, { ...base, organizationId: ORG_B, contactId: id(203), body: 'Encore B' });
+  const autre = await toucherDernierMessage(ex, ORG_B, fil);
   const apresB = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
-  check('90 isolement : l ecriture d une organisation ne touche pas le fil d une autre', String(avantB) === String(apresB));
+  check('89 la mise a jour du dernier message d un fil ne touche rien pour une autre organisation', autre === 0 && String(avantB) === String(apresB), `${autre} ligne(s)`);
+  const propre = await toucherDernierMessage(ex, ORG_A, fil);
+  const apresA = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
+  check('90 pour la bonne organisation elle touche exactement le fil', propre === 1 && new Date(apresA) > new Date(avantB), `${propre} ligne(s)`);
 }
 
 try {
