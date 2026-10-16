@@ -114,6 +114,8 @@ function monde(opts: {
   profils?: Record<string, { statut: number; corps?: unknown } | Error>;
   /** La requete de candidats echoue. */
   candidatsEchoue?: boolean;
+  /** L'ecriture de la date d'echec definitif echoue. */
+  tenteeEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -154,6 +156,11 @@ function monde(opts: {
       w.journal.push(`candidats org=${String(params[0])} limite=${String(params[1])}`);
       if (opts.candidatsEchoue) throw new Error('base indisponible');
       return rep(opts.candidats ?? []);
+    }
+    if (tag === 'contact_urn_tentee') {
+      w.journal.push(`irresolu org=${String(params[0])} ids=${(params[1] as string[]).join(',')}`);
+      if (opts.tenteeEchoue) throw new Error('base indisponible');
+      return rep([]);
     }
     if (tag === 'contact_memoriser_urn') {
       w.journal.push(`urn_contact contact=${String(params[0])} org=${String(params[1])} urn=${String(params[2])}`);
@@ -945,6 +952,67 @@ describe('la resolution des URN manquants', () => {
     const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(sortie.log.join('\n')).toContain('resolution {"candidats":1,"tentees":1,"resolues":1,"echecs":0,"interrompu":false}');
+  });
+});
+
+const irresolus = (w: Monde) => w.journal.filter((l) => l.startsWith('irresolu'));
+
+describe('la memoire des echecs definitifs de resolution', () => {
+  it('un profil introuvable (404) est date, borne a l organisation, et la boucle continue', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 404 }, b: profil('b', 'ACoAAb') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(irresolus(w)).toEqual([`irresolu org=${ORG} ids=c1`]);
+    expect(w.profilsDemandes).toEqual(['a', 'b']);
+  });
+
+  it.each([
+    ['5xx', { statut: 503 }],
+    ['reseau', new Error('net::ERR_FAILED')],
+    ['reponse illisible', { statut: 200, corps: 'pas du json' }],
+    ['cookie refuse (401)', { statut: 401 }],
+    ['defi (999)', { statut: 999 }],
+    ['limitation (429)', { statut: 429 }],
+    ['403', { statut: 403 }],
+  ])('un echec qui peut reussir demain (%s) ne date rien', async (_nom, reponse) => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: reponse as { statut: number } } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a']);
+    expect(irresolus(w)).toEqual([]);
+  });
+
+  it('les adresses qui ne sont pas une page de profil sont datees en UNE requete, et jamais interrogees', async () => {
+    const w = monde({
+      ...base,
+      candidats: [
+        { id: 'x1', linkedin_url: 'https://www.linkedin.com/in/' },
+        { id: 'x2', linkedin_url: 'https://example.com/in/qqn' },
+        cand('c1', 'a'),
+      ],
+      profils: { a: profil('a', 'ACoAAa') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(irresolus(w)).toEqual([`irresolu org=${ORG} ids=x1,x2`]);
+    expect(w.profilsDemandes).toEqual(['a']);
+  });
+
+  it('rien a dater : aucune requete d ecriture', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.requetesSql.some((r) => r.tag === 'contact_urn_tentee')).toBe(false);
+  });
+
+  it('une ecriture de date qui echoue n emporte pas le passage ni la boucle', async () => {
+    const w = monde({ ...base, tenteeEchoue: true, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 404 }, b: profil('b', 'ACoAAb') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual(['a', 'b']);
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(memorises(w)).toHaveLength(1);
+  });
+
+  it('la date d un echec ne passe pas pour un succes : compteur d echecs inchange', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: { statut: 404 } } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(sortie.log.join('\n')).toContain('"resolues":0,"echecs":1');
   });
 });
 

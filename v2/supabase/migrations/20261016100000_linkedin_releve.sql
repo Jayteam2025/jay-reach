@@ -12,6 +12,10 @@
 --    mise en route.
 -- 3. `linkedin_action_queue.origine` : une action née d'une réponse d'opérateur se distingue de
 --    celle d'une séquence.
+-- 5. `contacts.urn_tentee_le` : date du dernier échec DÉFINITIF de résolution de l'URN (profil introuvable,
+--    adresse qui n'est pas une page de profil). Sans elle, un contact irrésoluble reste en tête de la file
+--    de résolution et le passage ne résout plus personne d'autre. Nullable, sans défaut : aucune ligne
+--    existante n'est touchée. Les échecs passagers (réseau, 5xx, refus de session) ne la posent jamais.
 -- 4. `threads` : un seul fil par contact et par canal, tenu par un index et non plus par le seul
 --    code (select puis insert), qui laissait deux passages concurrents créer deux fils. Les
 --    doublons existants sont FUSIONNÉS vers le fil le plus ancien avant de poser l'index : un
@@ -39,6 +43,9 @@ alter table public.linkedin_action_queue
 alter table public.linkedin_action_queue drop constraint if exists linkedin_action_queue_origine_check;
 alter table public.linkedin_action_queue
   add constraint linkedin_action_queue_origine_check check (origine in ('sequence', 'reponse'));
+
+-- 5. Mémoire des échecs de résolution d'URN
+alter table public.contacts add column if not exists urn_tentee_le timestamptz;
 
 -- 4. Un fil par contact et par canal : fusion des doublons, puis index unique partiel.
 --    Le fil conservé est le plus ancien (created_at, puis id pour départager).
@@ -107,6 +114,16 @@ begin
     raise exception 'le curseur de relève ne doit pas être pré-rempli';
   end if;
 
+  if not exists (
+    select 1 from pg_attribute
+     where attrelid = 'public.contacts'::regclass and attname = 'urn_tentee_le'
+       and not attnotnull and not attisdropped
+  ) or exists (
+    select 1 from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+     where d.adrelid = 'public.contacts'::regclass and a.attname = 'urn_tentee_le'
+  ) then
+    raise exception 'colonne contacts.urn_tentee_le absente, non nullable, ou avec un defaut';
+  end if;
   if not exists (
     select 1 from pg_attribute
      where attrelid = 'public.linkedin_action_queue'::regclass and attname = 'origine'

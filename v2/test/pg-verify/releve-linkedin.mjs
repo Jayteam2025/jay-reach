@@ -11,6 +11,8 @@
 //   7. contactsSansUrn : retirer `c.linkedin_provider_id is null` — 60, 61, 63, 66 rougissent ;
 //      retirer `q.organization_id = c.organization_id` — 60 et 62 ; retirer `q.status = 'sent'` — 60 et 61
 //      (l'action en echec porte un sent_at : sans lui `dernier is not null` ne l'ecarterait pas) ;
+//   7b. retirer `and (c.urn_tentee_le is null or ...)` — 73 rougit (109 revient) ; passer 7 jours a 5 — 75 ; a 9 — 74 ;
+//      ne plus dater les adresses ecartees (marquerIrresolus avant le filtre) — 76 ;
 //   8. (tests unitaires) `.slice(0, nombre)`, le budget, la trace avant l'appel, le filtre `normaliserUrlProfil`,
 //      l'arret sur refus de session, la capture d'un echec individuel : chacun fait rougir au moins un test.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
@@ -23,6 +25,7 @@ import {
   enqueueReleveLinkedIn,
   lireEtat,
   rattacher,
+  REQUETES_PAR_RELEVE,
   tracerRequeteMessagerie,
   traiterReleveLinkedIn,
   urlConversations,
@@ -344,12 +347,12 @@ async function resolutionDesUrn() {
   // Budget épuisé : exactement les deux requêtes de la relève restent. Aucune résolution, aucune erreur.
   const plafond = await lirePlafondLinkedIn({ ex: pool, organisationId: ORG_A }, 'linkedin_requetes_par_heure');
   const deja = await compterRequetesLinkedIn({ ex: pool, organisationId: ORG_A }, new Date(Date.now() - 3_600_000));
-  await q(`insert into linkedin_requetes (organization_id, kind) select $1, 'messagerie' from generate_series(1, $2::int)`, [ORG_A, plafond - 2 - deja]);
+  await q(`insert into linkedin_requetes (organization_id, kind) select $1, 'messagerie' from generate_series(1, $2::int)`, [ORG_A, plafond - REQUETES_PAR_RELEVE - deja]);
   await unJourAvant();
   const avantBudget = await traces();
   const sansBudget = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
   check('65 budget epuise apres la releve : le passage REUSSIT, le curseur avance, aucune resolution',
-    sansBudget === null && demandes.length === 0 && (await curseurAvance()) && (await urnDe(100)) === null && (await traces()) === avantBudget + 2,
+    sansBudget === null && demandes.length === 0 && (await curseurAvance()) && (await urnDe(100)) === null && (await traces()) === avantBudget + REQUETES_PAR_RELEVE,
     `${sansBudget?.message ?? ''} demandes=${demandes.length}`);
   await q(`delete from linkedin_requetes where organization_id = $1`, [ORG_A]);
 
@@ -364,17 +367,42 @@ async function resolutionDesUrn() {
   check('68 les URN resolus sont memorises sous leur forme nue, sur les bons contacts ; l echec ne laisse rien',
     (await urnDe(100)) === 'ACoAAurnrecent' && (await urnDe(101)) === 'ACoAAurnancien' && (await urnDe(109)) === null,
     `${await urnDe(100)} ${await urnDe(101)} ${await urnDe(109)}`);
-  check('69 chaque resolution est tracee : 2 requetes de la releve + 3 resolutions', (await traces()) === avant + 5, `${avant} -> ${await traces()}`);
+  check('69 chaque resolution est tracee : les requetes de la releve + 3 resolutions', (await traces()) === avant + REQUETES_PAR_RELEVE + 3, `${avant} -> ${await traces()}`);
   const autres = await q(`select count(*)::int n from contacts where organization_id = $1 and id = any($2::uuid[]) and linkedin_provider_id is distinct from $3`, [ORG_A, [id(102)], 'ACoAAdejaposee']);
   check('70 un contact qui avait deja un URN n est ni resolu ni modifie', autres.rows[0].n === 0 && !demandes.includes('urn-deja-posee'));
   const bB = await urnDe(108);
   check('71 le contact de l autre organisation n est pas touche', bB === null);
 
-  // Second passage : les deux restants (109 introuvable et 110) ; seul 110 se résout. Les résolus ne reviennent pas.
+  // La mémoire de l'échec définitif : 109 (404) est daté, un échec passager ne date rien.
+  const tentee = async (n) => (await q(`select urn_tentee_le is not null as d from contacts where id = $1`, [id(n)])).rows[0].d;
+  check('72 le profil introuvable est DATE ; les contacts resolus et le contact non tente ne le sont pas',
+    (await tentee(109)) === true && (await tentee(100)) === false && (await tentee(101)) === false && (await tentee(110)) === false);
+
+  // Second passage : 109 ne revient PAS (c'est le contrôle qui prouve la fin de la famine), 110 se résout.
   demandes.length = 0;
   await unJourAvant();
   const e2 = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
-  check('72 second passage : on ne re-resout jamais un contact qui a son URN', e2 === null && !demandes.includes('recent') && !demandes.includes('ancien') && (await urnDe(110)) === 'ACoAAurndix', JSON.stringify(demandes));
+  check('73 un contact introuvable ne revient pas au passage suivant ; un contact resolu non plus ; le suivant passe',
+    e2 === null && JSON.stringify(demandes) === JSON.stringify(['dix-jours']) && (await urnDe(110)) === 'ACoAAurndix', JSON.stringify(demandes));
+
+  // Passé sept jours, il peut revenir (le profil a pu réapparaître).
+  await q(`update contacts set urn_tentee_le = now() - interval '8 days' where id = $1`, [id(109)]);
+  const revenus = await contactsSansUrn(pool, ORG_A, 20);
+  check('74 sept jours apres, le contact introuvable redevient candidat', JSON.stringify(revenus.map((l) => l.id)) === JSON.stringify([id(109)]), JSON.stringify(revenus.map((l) => l.id.slice(-3))));
+  await q(`update contacts set urn_tentee_le = now() - interval '6 days' where id = $1`, [id(109)]);
+  const encore = await contactsSansUrn(pool, ORG_A, 20);
+  check('75 six jours apres, non', encore.length === 0, JSON.stringify(encore.map((l) => l.id.slice(-3))));
+
+  // Une adresse qui n'est pas une page de profil est datée par le passage, sans requête vers LinkedIn.
+  await contact(111, ORG_A, null, 'https://www.linkedin.com/company/page-entreprise');
+  await action(111, ORG_A, 111, 'message', 'sent', `now() - interval '1 hour'`);
+  await q(`update contacts set urn_tentee_le = null where id = $1`, [id(109)]);
+  demandes.length = 0;
+  await unJourAvant();
+  await traiterReleveLinkedIn(deps, { organizationId: ORG_A });
+  check('76 une adresse qui n est pas une page de profil est datee et jamais interrogee',
+    (await tentee(111)) === true && !demandes.includes('') && demandes.length === 1 && demandes[0] === 'introuvable', JSON.stringify(demandes));
+  check('77 isolement : la date ne touche aucun contact de l autre organisation', (await tentee(108)) === false);
 }
 
 try {

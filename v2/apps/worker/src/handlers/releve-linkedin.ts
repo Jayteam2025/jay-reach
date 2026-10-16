@@ -201,11 +201,31 @@ export async function contactsSansUrn(pool: Pool, organizationId: string, limite
       where c.organization_id = $1
         and c.linkedin_provider_id is null
         and btrim(coalesce(c.linkedin_url, '')) <> ''
+        and (c.urn_tentee_le is null or c.urn_tentee_le < now() - interval '7 days')
       order by e.dernier desc, c.id
       limit $2`,
     [organizationId, limite],
   );
   return res.rows;
+}
+
+/**
+ * Date un échec DÉFINITIF d'un contact (profil introuvable, adresse qui n'est pas une page de profil) :
+ * il ne revient dans la file qu'après sept jours. Sans cette mémoire, il resterait en tête pour toujours
+ * et le passage ne résoudrait plus personne d'autre. Un échec qui peut réussir demain (réseau, 5xx,
+ * refus de session) ne passe JAMAIS ici. Ne lève pas : un confort, comme `memoriserUrnDuContact`.
+ */
+async function marquerIrresolus(pool: Pool, org: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await pool
+    .query(
+      `update contacts set urn_tentee_le = now() /* jr:contact_urn_tentee */
+        where organization_id = $1 and id = any($2::uuid[])`,
+      [org, ids],
+    )
+    .catch((err: unknown) => {
+      console.error(`[releve-linkedin] échec de résolution non daté (${nomDe(err)})`);
+    });
 }
 
 type CompteursResolution = { candidats: number; tentees: number; resolues: number; echecs: number; interrompu: boolean };
@@ -230,9 +250,10 @@ async function resoudreUrnManquants(
   if (nombre <= 0) return c;
   try {
     const lus = await contactsSansUrn(pool, ctx.organisationId, CANDIDATS_LUS);
-    const retenus = lus
-      .map((l) => ({ id: l.id, url: normaliserUrlProfil(l.linkedin_url) }))
-      .filter((l): l is { id: string; url: string } => l.url !== null);
+    const lues = lus.map((l) => ({ id: l.id, url: normaliserUrlProfil(l.linkedin_url) }));
+    const retenus = lues.filter((l): l is { id: string; url: string } => l.url !== null);
+    // Une adresse qui n'est pas une page de profil ne le deviendra pas : datée, une seule requête pour toutes.
+    await marquerIrresolus(pool, ctx.organisationId, lues.filter((l) => l.url === null).map((l) => l.id));
     c.candidats = retenus.length;
     for (const cible of retenus.slice(0, nombre)) {
       c.tentees += 1;
@@ -244,6 +265,9 @@ async function resoudreUrnManquants(
       } catch (err) {
         c.echecs += 1;
         console.error(`[releve-linkedin] URN d’un contact non résolue (${nomDe(err)})`);
+        if (err instanceof ErreurEnvoi && (err.code === 'profile_not_found' || err.code === 'invalid_url')) {
+          await marquerIrresolus(pool, ctx.organisationId, [cible.id]);
+        }
         if (err instanceof ErreurEnvoi && (err.code === 'not_logged_in' || err.code === 'defi' || err.code === 'restricted')) {
           c.interrompu = true;
           if (err.code !== 'restricted') {
