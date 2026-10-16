@@ -1,0 +1,141 @@
+import { normaliserUrnLinkedIn } from '@jay-reach/core';
+
+/**
+ * Lecture de la messagerie LinkedIn : logique PURE (aucun appel réseau ici).
+ *
+ * Source de vérité : l'appel de l'ancienne extension, gelée (`apps/extension/linkedin-inbox.js`).
+ * Un seul appel rend les vingt dernières conversations AVEC leur dernier message.
+ */
+
+export const QUERY_ID_CONVERSATIONS = 'messengerConversations.b7affb08320b28f0d8bf883fe8590337';
+const VOYAGER_GRAPHQL = 'https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql';
+
+export function urlConversations(mailboxUrn: string, nombre: number): string {
+  return `${VOYAGER_GRAPHQL}?queryId=${QUERY_ID_CONVERSATIONS}&variables=(mailboxUrn:${encodeURIComponent(mailboxUrn)},count:${nombre})`;
+}
+
+export type MessageReleve = {
+  readonly conversationUrn: string;
+  readonly messageUrn: string;
+  readonly expediteurUrn: string;
+  readonly texte: string;
+  readonly recuLe: Date;
+};
+
+export type Releve = {
+  readonly entrants: readonly MessageReleve[];
+  readonly ecartesNonUnAUn: number;
+  readonly ecartesAnterieuresAuCurseur: number;
+};
+
+/**
+ * Une charge utile qui n'a pas la forme attendue. Le jour où LinkedIn périme le `queryId` ou
+ * renomme ses champs, rendre « zéro conversation » serait indistinguable d'une boîte vide : une
+ * réponse passerait inaperçue pendant des semaines. On lève une erreur que l'opérateur voit.
+ * Le message est construit ici et ne cite jamais la charge utile (elle contient des messages privés).
+ */
+export class ErreurMessagerie extends Error {
+  readonly code = 'IllisibleMessagerie' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'IllisibleMessagerie';
+  }
+}
+
+type Objet = Record<string, unknown>;
+const estObjet = (v: unknown): v is Objet => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Les conversations de la réponse, ou `null` si elle n'a pas la forme attendue (`data.<clé>.elements[]`). */
+function extraireConversations(corps: unknown): readonly unknown[] | null {
+  if (!estObjet(corps) || !estObjet(corps.data)) return null;
+  // Le nom du champ porte la requête et change avec le queryId : on le cherche par préfixe,
+  // on ne le code pas en dur (même principe que `extrairePostsDePage`).
+  const cle = Object.keys(corps.data).find((k) => k.startsWith('messengerConversations'));
+  if (cle === undefined) return null;
+  const noeud = corps.data[cle];
+  if (!estObjet(noeud) || !Array.isArray(noeud.elements)) return null;
+  return noeud.elements;
+}
+
+const nombre = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * Trie les conversations d'une relève.
+ *
+ * - `compteUrn` : le compte connecté. Un message est ENTRANT quand l'identifiant de son expéditeur
+ *   diffère du sien, tous deux passés par `normaliserUrnLinkedIn` (la même personne s'écrit sous deux formes).
+ * - `depuis` : curseur ; une conversation dont l'activité est antérieure ou égale est écartée et comptée.
+ * - Seules les conversations un-à-un sont lues. Un InMail, un message système ou un groupe n'a pas
+ *   d'en-tête à lire : classé réponse humaine, il causerait une exclusion définitive sur un faux
+ *   positif. Elles sont comptées, jamais lues.
+ */
+export function analyserConversations(brut: string, compteUrn: string, depuis: Date): Releve {
+  const moi = normaliserUrnLinkedIn(compteUrn);
+  if (moi === null) {
+    // Sans identité du compte, chaque message sortant passerait pour une réponse.
+    throw new ErreurMessagerie('L’identité du compte LinkedIn est illisible : la relève ne peut pas distinguer ses messages.');
+  }
+
+  let corps: unknown;
+  try {
+    corps = JSON.parse(brut);
+  } catch {
+    throw new ErreurMessagerie('La réponse de la messagerie LinkedIn n’est pas lisible.');
+  }
+  const conversations = extraireConversations(corps);
+  if (conversations === null) {
+    throw new ErreurMessagerie('LinkedIn a changé la forme de sa messagerie : la relève ne sait plus la lire.');
+  }
+
+  // Une réponse non vide où AUCUNE conversation ne porte le discriminant un-à-un / groupe est une
+  // forme inconnue, pas une boîte de groupes : on ne rend pas un « tout écarté » silencieux.
+  const objets = conversations.filter(estObjet);
+  if (objets.length > 0 && !objets.some((c) => typeof c.groupChat === 'boolean')) {
+    throw new ErreurMessagerie('LinkedIn a changé la forme de sa messagerie : le type de conversation n’est plus lisible.');
+  }
+
+  const entrants: MessageReleve[] = [];
+  let ecartesNonUnAUn = 0;
+  let ecartesAnterieuresAuCurseur = 0;
+
+  for (const conv of conversations) {
+    if (!estObjet(conv)) {
+      ecartesNonUnAUn += 1;
+      continue;
+    }
+    const activite = nombre(conv.lastActivityAt);
+    if (activite !== null && activite <= depuis.getTime()) {
+      ecartesAnterieuresAuCurseur += 1;
+      continue;
+    }
+    // Strictement `false` : un champ absent ne vaut pas « un-à-un », dans le doute on ne lit pas.
+    if (conv.groupChat !== false) {
+      ecartesNonUnAUn += 1;
+      continue;
+    }
+
+    const elements = estObjet(conv.messages) ? conv.messages.elements : undefined;
+    const message = Array.isArray(elements) ? elements[0] : undefined;
+    if (!estObjet(message)) continue; // conversation un-à-un sans message : rien à relever
+
+    const hostUrn = estObjet(message.sender) ? message.sender.hostIdentityUrn : undefined;
+    const expediteur = typeof hostUrn === 'string' ? normaliserUrnLinkedIn(hostUrn) : null;
+    if (expediteur === null) {
+      // Expéditeur qui n'est pas un membre (système, organisation) : jamais une réponse humaine.
+      ecartesNonUnAUn += 1;
+      continue;
+    }
+    if (expediteur === moi) continue; // notre propre message
+
+    const messageUrn = message.entityUrn;
+    const conversationUrn = conv.entityUrn;
+    const quand = nombre(message.deliveredAt) ?? activite;
+    if (typeof messageUrn !== 'string' || typeof conversationUrn !== 'string' || quand === null) {
+      throw new ErreurMessagerie('Un message entrant de la messagerie LinkedIn n’a pas la forme attendue.');
+    }
+    const texte = estObjet(message.body) && typeof message.body.text === 'string' ? message.body.text : '';
+    entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, texte, recuLe: new Date(quand) });
+  }
+
+  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur };
+}
