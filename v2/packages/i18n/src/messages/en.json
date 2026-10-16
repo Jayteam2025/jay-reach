@@ -586,12 +586,14 @@
         "skipped": "Cancelled"
       },
       "pendingDelivery": "delivery pending",
+      "blockedPostToReview": "This message names a post nobody has reviewed.",
       "actions": {
         "review": "Review",
         "postpone": "Postpone",
         "discard": "Discard",
         "findEmail": "Find the email",
-        "retry": "Retry"
+        "retry": "Retry",
+        "reviewPost": "Review the post"
       },
       "empty": {
         "title": "Nothing to send today",

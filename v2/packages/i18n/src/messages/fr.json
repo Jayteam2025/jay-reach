@@ -586,12 +586,14 @@
         "skipped": "Annulé"
       },
       "pendingDelivery": "livraison en attente",
+      "blockedPostToReview": "Ce message nomme un post que personne n’a relu.",
       "actions": {
         "review": "Relire",
         "postpone": "Reporter",
         "discard": "Écarter",
         "findEmail": "Chercher l'email",
-        "retry": "Réessayer"
+        "retry": "Réessayer",
+        "reviewPost": "Relire le post"
       },
       "empty": {
         "title": "Rien à envoyer aujourd'hui",

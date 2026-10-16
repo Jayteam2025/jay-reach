@@ -586,12 +586,14 @@
         "skipped": "Geannuleerd"
       },
       "pendingDelivery": "bezorging in behandeling",
+      "blockedPostToReview": "Dit bericht noemt een post die niemand heeft nagelezen.",
       "actions": {
         "review": "Herzien",
         "postpone": "Uitstellen",
         "discard": "Afwijzen",
         "findEmail": "E-mail zoeken",
-        "retry": "Opnieuw proberen"
+        "retry": "Opnieuw proberen",
+        "reviewPost": "Post nalezen"
       },
       "empty": {
         "title": "Niets om vandaag te versturen",
