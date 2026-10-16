@@ -143,6 +143,12 @@
 //  68. email-salesblink.ts : refuser `approved` au contrôle de statut, OU y accepter
 //      `pending_approval` — côté Vitest, l'un des deux contrôles du gestionnaire rougit à chaque
 //      fois ; le second compte le plus, il garde la file d'attente fermée.
+//  69. file-du-jour.ts : retirer `approved` des trois filtres d'état — 40 et 40a rougissent :
+//      « Reporter » lève « Envoi introuvable » sur un envoi approuvé, et « Écarter » le laisse
+//      compté comme prévu.
+//  70. approbation.ts : faire diverger les deux écritures de la règle (retirer la clause
+//      `channels` du SQL, ou le `includes` du TypeScript) — 40b rougit en NOMMANT les politiques
+//      sur lesquelles elles ne disent plus la même chose.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -192,6 +198,10 @@ import {
   rejouerActionsLinkedInReprises,
   reprendreAbsencesEchues,
   reprendreInscription,
+  reporterEnvoi,
+  ecarterDuneCampagne,
+  policyRequiresApproval,
+  sqlApprobationExigee,
   rejeterPost,
   reouvrirPost,
   validerPost,
@@ -2817,6 +2827,106 @@ async function approuveePart() {
   }
 }
 
+/**
+ * `approved` est un état que les écrans ne connaissaient pas — et c'est ce lot qui le fait exister
+ * pour la première fois, en renvoyant les actions relâchées dans la file d'attente humaine.
+ *
+ * Cinq filtres l'ignoraient, pendant que l'écran, lui, range `approved` dans « à venir ». Aucun
+ * envoi fautif à la clé (les deux gestes arrêtent l'inscription, que les balayages excluent),
+ * mais l'opérateur voyait un « Reporter » qui lève « Envoi introuvable » et des chiffres qui ne
+ * bougent pas après « Écarter de la campagne ».
+ *
+ * Et la RÈGLE d'approbation elle-même, qui vit en deux formes : du TypeScript pour le tick, du
+ * SQL pour les trois chemins qui débloquent. Elles ne peuvent pas être une seule fonction, donc
+ * un contrôle les compare sur un jeu de politiques — c'est ce garde qui tient la promesse, pas la
+ * proximité des lignes. Une clause posée à deux endroits sur trois vient de coûter un blocage
+ * définitif et muet.
+ */
+async function approuveVisibleParLesEcrans() {
+  console.log('\n# l\'état `approved` : les gestes d\'écran le connaissent, et la règle n\'a qu\'une écriture');
+  await demarrerBoss();
+
+  /** Une action approuvée, sur une campagne qui tourne. */
+  const actionApprouvee = async (n) => {
+    const m = await monde();
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email' });
+    // Une SECONDE étape : « Écarter » n'arrête que les inscriptions VIVANTES, et une séquence à
+    // une seule étape laisse l'inscription `completed` dès la première planifiée. Sans elle, le
+    // contrôle serait rouge pour une raison qui n'a rien à voir avec l'état de l'action.
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email', position: 1 });
+    const p = await engageurDUnPost(m, n, { etat: 'approved' });
+    await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob${n}-${Date.now()}@exemple.invalid`]);
+    await expediteurEmail(m.org, `exp${n}-${Date.now()}@exemple.invalid`);
+    await tourDInscription(m.org);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+    await tickDueEnrollments(pool, new Date());
+    const a = (await q(`select id, scheduled_for from actions where organization_id = $1`, [m.org])).rows[0];
+    await q(`update actions set status = 'approved' where id = $1`, [a.id]);
+    return { m, p, action: a };
+  };
+
+  // 1. REPORTER. Le geste levait « Envoi introuvable » sur une action approuvée.
+  const r = await actionApprouvee(150);
+  let refus = null;
+  await reporterEnvoi(r.m.ctx, { actionId: r.action.id, minutes: 60 }).catch((e) => { refus = e; });
+  const apresReport = (await q(`select scheduled_for from actions where id = $1`, [r.action.id])).rows[0];
+  check('40. « Reporter » marche sur un envoi approuvé, au lieu de lever « Envoi introuvable »',
+    refus === null && apresReport.scheduled_for.getTime() > r.action.scheduled_for.getTime(),
+    `${refus?.message ?? 'aucun refus'} / ${apresReport.scheduled_for?.toISOString()}`);
+
+  // 2. ÉCARTER. La ligne restait comptée comme prévue.
+  const e = await actionApprouvee(151);
+  await ecarterDuneCampagne(e.m.ctx, { contactId: e.p.contact_id, campagneId: e.m.campagne });
+  const apresEcart = (await q(`select status from actions where id = $1`, [e.action.id])).rows[0];
+  check('40a. « Écarter de la campagne » saute aussi l\'envoi approuvé',
+    apresEcart?.status === 'skipped', JSON.stringify(apresEcart));
+
+  // 3. LES DEUX FORMES DE LA RÈGLE, comparées sur un jeu de politiques. Le SQL est évalué par
+  // Postgres, le TypeScript par nous : si l'une dévie, un message part sans l'accord requis.
+  const politiques = [
+    {},
+    { mode: 'all' },
+    { mode: 'auto' },
+    { channels: ['email'] },
+    { channels: ['linkedin_message'] },
+    { channels: [] },
+    { mode: 'all', channels: ['letter'] },
+    { mode: 'none', channels: ['email', 'call'] },
+  ];
+  const ecarts = [];
+  for (const politique of politiques) {
+    for (const canal of ['email', 'linkedin_message', 'call']) {
+      const sql = (await q(
+        `select ${sqlApprobationExigee('a', 'camp')} as exige
+           from (select $1::jsonb as payload, $2::text as channel) a,
+                (select $3::jsonb as approval_policy) camp`,
+        [JSON.stringify({}), canal, JSON.stringify(politique)],
+      )).rows[0].exige === true;
+      const ts = policyRequiresApproval(politique, canal);
+      if (sql !== ts) ecarts.push({ politique, canal, sql, ts });
+    }
+  }
+  check('40b. les deux écritures de la règle d\'approbation disent la même chose, politique par politique',
+    ecarts.length === 0, JSON.stringify(ecarts));
+
+  // Et les deux termes que le SQL ajoute, que le TypeScript ne connaît pas : le canal `letter`
+  // et le drapeau du payload. Sans eux, le contrôle ci-dessus serait vrai d'une expression
+  // amputée de la moitié de son travail.
+  const enPlus = (await q(
+    `select ${sqlApprobationExigee('a', 'camp')} as exige
+       from (select $1::jsonb as payload, 'letter'::text as channel) a, (select '{}'::jsonb as approval_policy) camp`,
+    [JSON.stringify({})],
+  )).rows[0].exige;
+  const parLeDrapeau = (await q(
+    `select ${sqlApprobationExigee('a', 'camp')} as exige
+       from (select $1::jsonb as payload, 'email'::text as channel) a, (select '{}'::jsonb as approval_policy) camp`,
+    [JSON.stringify({ requiresApproval: true })],
+  )).rows[0].exige;
+  check('40c. le SQL ajoute ce que le TypeScript ne voit pas : le courrier, et le drapeau du blocage',
+    enPlus === true && parLeDrapeau === true && policyRequiresApproval({}, 'letter') === false,
+    JSON.stringify([enPlus, parLeDrapeau]));
+}
+
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
 async function parLeLienHistorique(campagne, source) {
   await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
@@ -2875,7 +2985,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

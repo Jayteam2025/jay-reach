@@ -10,6 +10,7 @@
  * personnes restent, elles retombent sous la purge ordinaire (`expires_at`). Un clic ne doit pas
  * pouvoir effacer quatre-vingt-treize personnes.
  */
+import { sqlEtatApresDeblocage } from '../sequencer/approbation.js';
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable, exiger, valider } from './contexte.js';
@@ -468,8 +469,12 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
  * premiers envois d'un couple gabarit+version, l'exigent aussi en email (règle non négociable #1).
  *
  * Les actions bloquées par les gardes à l'ENVOI (`email-salesblink`, les deux rejeux LinkedIn)
- * n'ont pas ce drapeau, et c'est juste : elles étaient déjà sorties de la file d'approbation —
- * `scheduled` est bien l'état où elles retournent.
+ * n'ont pas ce drapeau : elles étaient déjà sorties de la file. Mais la clause de politique, elle,
+ * s'applique quand même — une action déjà approuvée par un humain, puis bloquée à l'envoi parce
+ * que son post n'est pas relu, repart en `pending_approval` si la campagne exige l'approbation.
+ * Elle demande donc un second accord. C'est assumé : un tour d'approbation de plus, rien de
+ * perdu, et l'alternative (lire le drapeau sans la politique) laisserait partir sans accord une
+ * action dont la politique a changé depuis — exactement le défaut du drapeau gelé.
  */
 async function relacherLesRetenuesDuPost(ctx: Contexte, postId: string): Promise<void> {
   await ctx.ex.query(
@@ -480,11 +485,7 @@ async function relacherLesRetenuesDuPost(ctx: Contexte, postId: string): Promise
       -- ça ne peut que durcir, jamais laisser partir davantage.
       -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
       -- partis, hors de portée d'une mise à jour en masse.)
-        set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
-                       or a.channel = 'letter'
-                       or camp.approval_policy ->> 'mode' = 'all'
-                       or camp.approval_policy -> 'channels' ? a.channel::text
-                     then 'pending_approval'::action_status else 'scheduled'::action_status end,
+        set status = ${sqlEtatApresDeblocage('a', 'camp')},
             block_reason = null
        from enrollments e
        join campaigns camp on camp.id = e.campaign_id

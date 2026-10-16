@@ -20,6 +20,8 @@ import {
   placesRestantes,
   runGuards,
   resolveSender,
+  policyRequiresApproval,
+  sqlEtatApresDeblocage,
   shiftIntoBusinessHours,
   applyLeadTime,
   poserEcheanceDepuisDispatch,
@@ -382,15 +384,6 @@ async function loadBindings(pool: Pool, contactIds: string[]): Promise<Binding[]
     [contactIds],
   );
   return res.rows.map((r) => ({ contactId: r.contact_id, senderId: r.sender_id, kind: r.sender_kind }));
-}
-
-/** La politique d'approbation de la campagne exige-t-elle ce canal ? */
-function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean {
-  if (!policy || typeof policy !== 'object') return false;
-  const p = policy as { mode?: unknown; channels?: unknown };
-  if (p.mode === 'all') return true;
-  if (Array.isArray(p.channels) && p.channels.includes(channel)) return true;
-  return false;
 }
 
 /**
@@ -942,11 +935,7 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
       -- ça ne peut que durcir, jamais laisser partir davantage.
       -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
       -- partis, hors de portée d'une mise à jour en masse.)
-            set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
-                       or a.channel = 'letter'
-                       or camp.approval_policy ->> 'mode' = 'all'
-                       or camp.approval_policy -> 'channels' ? a.channel::text
-                     then 'pending_approval'::action_status else 'scheduled'::action_status end,
+            set status = ${sqlEtatApresDeblocage('a', 'camp')},
                 scheduled_for = $3, error = null, block_reason = null
            from enrollments e
            join campaigns camp on camp.id = e.campaign_id

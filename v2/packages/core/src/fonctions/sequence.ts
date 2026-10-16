@@ -20,6 +20,7 @@
  * (constaté en base réelle, R30 : une séquence alterne email et
  * invitations/messages LinkedIn, jamais couvert par la maquette).
  */
+import { sqlEtatApresDeblocage } from '../sequencer/approbation.js';
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable, ErreurEntree } from './contexte.js';
@@ -1191,11 +1192,7 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
       -- ça ne peut que durcir, jamais laisser partir davantage.
       -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
       -- partis, hors de portée d'une mise à jour en masse.)
-          set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
-                       or a.channel = 'letter'
-                       or camp.approval_policy ->> 'mode' = 'all'
-                       or camp.approval_policy -> 'channels' ? a.channel::text
-                     then 'pending_approval'::action_status else 'scheduled'::action_status end,
+          set status = ${sqlEtatApresDeblocage('a', 'camp')},
               scheduled_for = $3, error = null, block_reason = null
          from enrollments e
          join campaigns camp on camp.id = e.campaign_id

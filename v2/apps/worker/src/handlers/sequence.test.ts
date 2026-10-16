@@ -831,7 +831,7 @@ describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () =>
  * se lit sur le payload (`pending_approval` quand l'accord d'un humain était exigé, `scheduled`
  * sinon — le tick pose le drapeau au blocage `post_a_relire`).
  */
-const REJEU_ACTION_ABSENCE = /update actions a\s+--[^]*?set status = case when coalesce\(\(a\.payload ->> 'requiresApproval'\)/i;
+const REJEU_ACTION_ABSENCE = /update actions a\s+--[^]*?set status = case when \(coalesce\(\(a\.payload ->> 'requiresApproval'\)/i;
 
 describe('reprendreAbsencesEchues (F10)', () => {
   const STEP_ID_ABSENCE = 'etape-en-attente';

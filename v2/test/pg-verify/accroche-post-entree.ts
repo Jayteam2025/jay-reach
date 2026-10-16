@@ -29,6 +29,10 @@ export { rejouerActionsEmailEnAttente, rejouerActionsLinkedInEnAttente, rejouerA
 // Les DEUX autres chemins qui debloquent une action : ils ecrivaient `scheduled` en dur.
 export { reprendreAbsencesEchues } from '../../apps/worker/src/handlers/sequence.js';
 export { reprendreInscription } from '../../packages/core/src/fonctions/sequence.js';
+// La regle d'approbation, dans ses DEUX formes : le harnais les compare sur un jeu de politiques.
+export { policyRequiresApproval, sqlApprobationExigee } from '../../packages/core/src/sequencer/approbation.js';
+// Les gestes d'ecran qui ignoraient l'etat `approved`.
+export { reporterEnvoi, ecarterDuneCampagne } from '../../packages/core/src/fonctions/file-du-jour.js';
 // Tache 9 : le scoring nourri du texte du post.
 export { runScore, compterSignauxScorables } from '../../apps/worker/src/handlers/score.js';
 export { buildScoringUserMessage } from '../../packages/core/src/scoring.js';
